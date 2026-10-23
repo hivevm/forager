@@ -1,9 +1,10 @@
-# NUC — an Agentic, Specification-Oriented Starter Template
+# Forager — a MapServer-compatible render core in Rust
 
-[![Checks](https://github.com/hivevm/nuc/actions/workflows/checks.yml/badge.svg)](https://github.com/hivevm/nuc/actions/workflows/checks.yml)
+[![Checks](https://github.com/hivevm/forager/actions/workflows/checks.yml/badge.svg)](https://github.com/hivevm/forager/actions/workflows/checks.yml)
 
-**NUC** is named after the small *nucleus colony* a full hive grows from in beekeeping. It is a
-starting point for building software **with coding agents** inside a ready-to-use Dev Container.
+**Forager** renders maps with the styling semantics of UMN MapServer: it reads mapfiles and
+rasterizes them itself, in the browser as WebAssembly and on the server as a Rust library. It is
+built **with coding agents** inside a ready-to-use Dev Container.
 The work is driven by a written **specification**
 ([`docs/SPECIFICATION.md`](docs/SPECIFICATION.md)) and **Architecture Decision Records**
 ([`docs/adr/`](docs/adr/)), so intent and the reasoning behind every structural choice stay
@@ -178,4 +179,5 @@ of opening a public issue.
 
 ## License
 
-Released under the MIT License. See [`LICENSE`](LICENSE).
+Released under `MIT OR Apache-2.0`. See [`LICENSE`](LICENSE) (MIT) and
+[`LICENSE-APACHE`](LICENSE-APACHE).
