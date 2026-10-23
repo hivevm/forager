@@ -103,7 +103,13 @@ from the threats below.
 
 What this project explicitly does not try to do.
 
-- …
+- Data queries: `TYPE QUERY`, `TEMPLATE`, `QUERYMAP`, hilite, GetFeatureInfo.
+- CGI/FastCGI, MapScript, and OGC services (WMS, WFS, WCS).
+- Runtime substitution of `%var%`, beyond the default from `VALIDATION` applied at load time.
+- Vector output (SVG, PDF).
+- An EPSG database in the core; `init=epsg:` is resolved only by a resolver the host injects.
+- A strict mode that fails a map when one layer's source is unavailable.
+- Pixel-identical output to MapServer: fidelity is a tolerance (Q-4), not equality.
 
 ## Constraints
 
