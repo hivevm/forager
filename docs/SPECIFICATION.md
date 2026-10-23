@@ -7,20 +7,34 @@
 
 ## Problem
 
-What is painful or missing today, for whom, and what evidence says it is worth solving now: the
-discovery everything below rests on.
+Teams that maintain their cartography as UMN MapServer mapfiles can render it only on a server:
+MapServer is a C program bound to CGI/FastCGI and to C libraries (GDAL, PROJ, AGG, FreeType), and
+it does not run in a browser. To show the same maps client-side they render raster tiles on the
+server, which costs server capacity and round-trips and leaves the client unable to restyle or
+label per viewport, or they rewrite the styling by hand for a web renderer such as MapLibre or
+OpenLayers, which loses MapServer semantics (classes, expressions, symbol scaling, the label
+cache) and doubles maintenance. Nothing renders a mapfile with MapServer's semantics in
+WebAssembly, and nothing embeds that semantics as a pure-Rust library in a server.
+
+The evidence that this is worth solving now is not yet recorded; see *Assumptions*.
 
 ## Mission
 
-The core purpose of this project, in one sentence.
+Forager brings existing MapServer cartography to the browser without a map server, and keeps the
+server path on the same code.
 
 ## Vision
 
-The desired future state, in a paragraph or two.
+Forager replaces MapServer's rendering path wherever pixels are produced: in the browser, in a
+Rust server, and in a wasmtime sandbox. MapServer remains only as the semantic reference and the
+test oracle.
 
 ## Strategy
 
-The high-level approach to get there.
+Translate mapfiles at load time into a MapServer-free style IR whose expressions are CQL2. Keep
+the core synchronous, free of I/O, and deterministic, with all data behind async ports and
+adapters. Grow it in phases, each ending with a running WASM build and green conformance tests
+against msautotest.
 
 ## Goals / Success Criteria
 
