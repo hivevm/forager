@@ -91,6 +91,8 @@ is the table a session reads.
 | [0012](0012-crate-supply-chain.md) | Crate dependencies come only from crates.io, are locked in `Cargo.lock`, and pass `cargo deny` for licences, advisories, and sources | `Cargo.lock`, `deny.toml`, and every `[dependencies]` entry of the workspace | 🟡 proposed |
 | [0013](0013-no-project-secrets.md) | The project holds no secrets of its own, and secret scanning with push protection is the only control | the repository, its workflows, and their `secrets.*` references | 🟡 proposed |
 | [0014](0014-style-document-serde.md) | The style document is serialized through serde, as JSON with `serde_json` and as YAML with `serde-saphyr` | `crates/style-ir` and every crate that reads or writes a style document | 🟡 proposed |
+| [0015](0015-agg-rust-rasterizer.md) | The reference renderer rasterizes with agg-rust in `render-agg`, behind clipping that keeps every coordinate near the image, with `unsafe` allowed in that crate alone | `crates/render`, `crates/render-agg`, and the `unsafe_code` lint of the workspace | 🟡 proposed |
+| [0016](0016-geojson-crate.md) | The GeoJSON adapter parses with the georust `geojson` crate | `crates/adapter-geojson` | 🟡 proposed |
 
 ### Superseded and rejected
 
