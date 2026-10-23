@@ -90,6 +90,7 @@ is the table a session reads.
 | [0011](0011-action-references-major-tag.md) | Workflows reference actions by major version tag, as the template ships them | every `uses:` line under `.github/workflows/`, `.github/dependabot.yml`, and the `sensors` job of `checks.yml` | 🟡 proposed |
 | [0012](0012-crate-supply-chain.md) | Crate dependencies come only from crates.io, are locked in `Cargo.lock`, and pass `cargo deny` for licences, advisories, and sources | `Cargo.lock`, `deny.toml`, and every `[dependencies]` entry of the workspace | 🟡 proposed |
 | [0013](0013-no-project-secrets.md) | The project holds no secrets of its own, and secret scanning with push protection is the only control | the repository, its workflows, and their `secrets.*` references | 🟡 proposed |
+| [0014](0014-style-document-serde.md) | The style document is serialized through serde, as JSON with `serde_json` and as YAML with `serde-saphyr` | `crates/style-ir` and every crate that reads or writes a style document | 🟡 proposed |
 
 ### Superseded and rejected
 
