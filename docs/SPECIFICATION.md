@@ -1,4 +1,4 @@
-# Specification — <Project Name>
+# Specification — Forager
 
 > The **specification** of this project: the problem it solves, where it is going, and what has to
 > be true for it to have succeeded, written in the vocabulary of [`GLOSSARY.md`](GLOSSARY.md). It
@@ -165,4 +165,14 @@ What is believed true today and would invalidate the decisions above if it turne
 expected scale, the shape of the data, who operates the result, which dependency stays
 maintained.
 
-- …
+- There is demand for rendering existing mapfiles in the browser; no evidence for it is recorded
+  yet (see *Problem*).
+- The pure-Rust crates the work leans on — agg-rust, proj4rs, rustybuzz, unicode-bidi, skrifa,
+  i_overlay, shapefile, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and
+  stay maintained. The ADR that picks each one verifies it.
+- The msautotest reference images are reproducible enough that the tolerances of G-6 lie above
+  their platform noise; the noise is measured before the first rendering criterion is held.
+- proj4 strings cover the projections that client-side maps need.
+- Browser hosts can serve HTTP range requests for COG and FlatGeobuf.
+- The expected scale — features per viewport, image size, layer count — is not known yet; the
+  limits of Q-9 are set from a first measurement.
