@@ -89,7 +89,6 @@ const SQUARE_WITH_HOLE: &str = r#"{"type": "Polygon", "coordinates": [
 
 #[test]
 fn a_polygon_layer_is_filled_and_outlined() {
-    // Verifies: G-5
     let style = Style {
         color: Some(GREEN),
         outline_color: Some(BLACK),
