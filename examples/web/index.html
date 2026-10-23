@@ -68,7 +68,7 @@
       <h2>Map</h2>
       <canvas id="map" width="640" height="400"></canvas>
       <div class="row">
-        <button id="render">Render</button>
+        <button id="render" disabled>Render</button>
         <span id="status">Loading…</span>
       </div>
       <ul id="diagnostics" aria-live="polite"></ul>
@@ -76,7 +76,8 @@
   </div>
 </main>
 <script type="module">
-  import init, { render } from "./pkg/forager_bindings_wasm.js";
+  // Imported dynamically, so that a missing bundle is reported on the page.
+  let render;
 
   const sources = document.getElementById("sources");
   const status = document.getElementById("status");
@@ -92,6 +93,14 @@
   }
 
   function draw() {
+    try {
+      drawMap();
+    } catch (error) {
+      status.textContent = `Rendering failed: ${error}`;
+    }
+  }
+
+  function drawMap() {
     const bound = {};
     for (const row of sources.querySelectorAll(".source")) {
       const layer = row.querySelector(".layer").value.trim();
@@ -99,13 +108,23 @@
     }
     const started = performance.now();
     const result = render(document.getElementById("mapfile").value, JSON.stringify(bound));
-    const elapsed = performance.now() - started;
+    try {
+      show(result, performance.now() - started);
+    } finally {
+      result.free();
+    }
+  }
+
+  function show(result, elapsed) {
     const canvas = document.getElementById("map");
+    const context = canvas.getContext("2d");
     if (result.width > 0) {
       canvas.width = result.width;
       canvas.height = result.height;
       const image = new ImageData(new Uint8ClampedArray(result.pixels), result.width, result.height);
-      canvas.getContext("2d").putImageData(image, 0, 0);
+      context.putImageData(image, 0, 0);
+    } else {
+      context.clearRect(0, 0, canvas.width, canvas.height);
     }
     const list = document.getElementById("diagnostics");
     list.replaceChildren();
@@ -118,7 +137,6 @@
     status.textContent = result.width > 0
       ? `${result.width} × ${result.height} px in ${elapsed.toFixed(1)} ms`
       : "The map could not be drawn; see the diagnostics.";
-    result.free();
   }
 
   async function text(path) {
@@ -127,9 +145,19 @@
   }
 
   document.getElementById("add").addEventListener("click", () => addSource());
-  document.getElementById("render").addEventListener("click", draw);
 
-  await init();
+  try {
+    const bundle = await import("./pkg/forager_bindings_wasm.js");
+    await bundle.default();
+    render = bundle.render;
+  } catch (error) {
+    status.textContent =
+      "The WebAssembly bundle did not load; run `bash scripts/build-web.sh` and reload.";
+    throw error;
+  }
+  const renderButton = document.getElementById("render");
+  renderButton.addEventListener("click", draw);
+  renderButton.disabled = false;
   document.getElementById("mapfile").value = await text("sample.map");
   for (const layer of ["areas", "roads", "places"]) {
     addSource(layer, await text(`${layer}.geojson`));

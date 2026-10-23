@@ -37,10 +37,12 @@ pub struct Output {
 /// object or to GeoJSON text. Source references that carry credentials are dropped (Q-7).
 pub fn render_map(mapfile: &str, sources: &str, viewport: &Viewport) -> Output {
     let mut diagnostics = Vec::new();
-    let loaded = now(forager_mapfile::load(
+    let Some(loaded) = now(forager_mapfile::load(
         &ResourcePath::new(MAPFILE_NAME).expect("a plain file name is a resource path"),
         &OneFile(mapfile),
-    ));
+    )) else {
+        return waited();
+    };
     diagnostics.extend(loaded.diagnostics);
     let Some(document) = loaded.document else {
         return Output {
@@ -54,13 +56,14 @@ pub fn render_map(mapfile: &str, sources: &str, viewport: &Viewport) -> Output {
         if layer
             .source
             .as_ref()
-            .is_some_and(credentials::carries_credentials)
+            .is_some_and(|source| !credentials::admissible(source))
         {
             let source = layer.source.take().expect("checked just above");
             rejected.extend(layer.name.clone());
-            let message = "the layer's source carries credentials, which never reach the browser";
+            let message =
+                "only DATA without credentials reaches the browser; the source is dropped";
             diagnostics.push(Diagnostic::error(
-                "credential-rejected",
+                "source-rejected",
                 message,
                 source.span.or_else(|| layer.span.clone()),
             ));
@@ -77,7 +80,9 @@ pub fn render_map(mapfile: &str, sources: &str, viewport: &Viewport) -> Output {
     for name in &rejected {
         bound.remove(name);
     }
-    let rendered = now(forager_engine::render(&map, &bound, AggRenderer::new()));
+    let Some(rendered) = now(forager_engine::render(&map, &bound, AggRenderer::new())) else {
+        return waited();
+    };
     diagnostics.extend(rendered.diagnostics);
     Output {
         image: rendered.image,
@@ -130,15 +135,25 @@ impl ResourceLoader for OneFile<'_> {
     }
 }
 
-/// Runs a future whose ports never wait — the mapfile and the GeoJSON are in memory — to its
-/// end on this thread. The browser is single-threaded, so nothing could wake it otherwise.
-fn now<F: Future>(future: F) -> F::Output {
+/// Runs a future whose ports never wait — the mapfile and the GeoJSON are in memory — in one
+/// poll. The browser is single-threaded, so nothing could wake a future that waits; `None` then,
+/// rather than a spinning tab.
+fn now<F: Future>(future: F) -> Option<F::Output> {
     let mut future = std::pin::pin!(future);
-    let mut context = Context::from_waker(Waker::noop());
-    loop {
-        if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
-            return output;
-        }
+    match future
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(output) => Some(output),
+        Poll::Pending => None,
+    }
+}
+
+fn waited() -> Output {
+    let message = "a port waited, which the browser bindings cannot";
+    Output {
+        image: None,
+        diagnostics: vec![Diagnostic::error("port-waited", message, None)],
     }
 }
 
@@ -204,7 +219,15 @@ pub fn render(
         }
     };
     let viewport = Viewport {
-        size: width.zip(height).map(|(w, h)| [w, h]),
+        size: match (width, height) {
+            (Some(w), Some(h)) => Some([w, h]),
+            (None, None) => None,
+            _ => {
+                let message = "width and height are given together";
+                diagnostics.push(Diagnostic::error("viewport-invalid", message, None));
+                None
+            }
+        },
         extent,
     };
     let output = render_map(mapfile, sources, &viewport);
@@ -259,7 +282,7 @@ mod tests {
         let sources = serde_json::json!({ "areas": AREAS }).to_string();
         let output = render_map(&mapfile, &sources, &Viewport::default());
         let rejected = &output.diagnostics[0];
-        assert_eq!(rejected.code, "credential-rejected");
+        assert_eq!(rejected.code, "source-rejected");
         assert!(!rejected.message.contains("secret"));
         let image = output.image.unwrap();
         assert_eq!(
@@ -303,6 +326,8 @@ mod tests {
         let result = render("MAP END", "{}", None, None, Some(vec![1.0]));
         assert!(result.diagnostics().contains("viewport-invalid"));
         assert_eq!(result.width(), 0);
+        let result = render(SQUARE_MAP, "{}", Some(10), None, None);
+        assert!(result.diagnostics().contains("viewport-invalid"));
     }
 }
 
@@ -313,7 +338,6 @@ mod example {
     /// The page under `examples/web/` passes these files to `render`; they render clean.
     #[test]
     fn the_browser_example_renders_without_diagnostics() {
-        // Verifies: G-5
         let sources = serde_json::json!({
             "areas": include_str!("../../../examples/web/areas.geojson"),
             "roads": include_str!("../../../examples/web/roads.geojson"),
@@ -328,8 +352,5 @@ mod example {
         assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
         let image = output.image.unwrap();
         assert_eq!((image.width, image.height), (640, 400));
-        if let Some(path) = std::env::var_os("FORAGER_PREVIEW") {
-            std::fs::write(path, forager_encode::png(&image).unwrap()).unwrap();
-        }
     }
 }

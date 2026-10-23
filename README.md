@@ -57,9 +57,12 @@ tools the checks need, and the Dev Container runs it after creation (ADR-0008, A
 - **Build:** `cargo build --workspace`
 - **Test:** `cargo test --workspace`
 - **Lint:** `bash scripts/check-rust.sh` — formatting, clippy, tests, the `wasm32-unknown-unknown`
-  build, and `cargo deny`; `scripts/check-all.sh` runs it with the repository's other checks
+  build, the WebAssembly bundle and its size, and `cargo deny`; `scripts/check-all.sh` runs it with
+  the repository's other checks
 - **Run:** `cargo run -p forager-cli -- read <mapfile>`, or
   `cargo run -p forager-cli -- render <mapfile> --source <layer>=<file.geojson> -o <image.png>`
+- **Browser example:** `bash scripts/build-web.sh`, then `cargo run -p forager-dev-server` and open
+  <http://127.0.0.1:8000/>
 
 ## Usage
 

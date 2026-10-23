@@ -5,6 +5,8 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
 use forager_ports::ResourcePath;
 
@@ -40,10 +42,16 @@ fn main() {
         }
     };
     println!("Serving the Forager example on http://127.0.0.1:{port}/");
+    // A thread per connection: browsers open idle connections in advance, and one of them must not
+    // hold up the others.
+    let site = Arc::new(site);
     for stream in listener.incoming().flatten() {
-        if let Err(e) = site.answer(stream) {
-            eprintln!("forager-dev-server: {e}");
-        }
+        let site = Arc::clone(&site);
+        std::thread::spawn(move || {
+            if let Err(e) = site.answer(stream) {
+                eprintln!("forager-dev-server: {e}");
+            }
+        });
     }
 }
 
@@ -54,9 +62,16 @@ struct Site {
 
 impl Site {
     fn answer(&self, mut stream: TcpStream) -> std::io::Result<()> {
+        stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+        // The request line, then the headers up to the blank line, at most 64 KiB in all: reading
+        // them all lets the connection close cleanly after the response.
+        let mut reader = BufReader::new((&stream).take(64 * 1024));
         let mut request_line = String::new();
-        // The request line only, and at most 8 KiB of it.
-        BufReader::new((&stream).take(8192)).read_line(&mut request_line)?;
+        reader.read_line(&mut request_line)?;
+        let mut header = String::new();
+        while reader.read_line(&mut header)? > 0 && header.trim_end() != "" {
+            header.clear();
+        }
         let mut parts = request_line.split_whitespace();
         let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
         if method != "GET" {

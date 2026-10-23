@@ -1,54 +1,55 @@
-//! The credential filter of the browser (Q-7): a source reference that carries a credential is
-//! never used in the client. The host should have rewritten it on the server; if it did not,
-//! the bindings drop it and say so.
+//! The credential filter of the browser (Q-7). The browser binds its data by layer name and
+//! never uses a source reference, so it admits only the one property that names a file, `data`,
+//! and only when that carries nothing that looks like a secret. Everything else — CONNECTION
+//! above all, whatever its form — is refused, so no heuristic has to recognize every way to
+//! write a password.
 
 use forager_style_ir::SourceRef;
 
-/// Parameter names whose value is a secret, as they appear in connection strings
-/// (`password=…`) and URLs (`?apikey=…`).
+/// Parameter names whose value is a secret, as they appear in URLs and connection strings.
 const SECRET_KEYS: &[&str] = &[
     "password",
     "passwd",
     "pwd",
+    "pass",
     "secret",
     "token",
     "apikey",
     "api_key",
     "access_key",
+    "key",
+    "sig",
+    "signature",
 ];
 
-/// Whether any property of `source` carries a credential: a secret parameter, a property named
-/// like one, or a URL with a password in its user information (`scheme://user:pass@host`).
-pub fn carries_credentials(source: &SourceRef) -> bool {
-    source.props.iter().any(|(key, value)| {
-        is_secret_key(key) || has_secret_parameter(value) || has_url_password(value)
-    })
+/// Whether the browser may keep `source`: only a `data` property, without a secret in it.
+pub fn admissible(source: &SourceRef) -> bool {
+    source
+        .props
+        .iter()
+        .all(|(key, value)| key == "data" && !has_secret_parameter(value) && !has_userinfo(value))
 }
 
-fn is_secret_key(key: &str) -> bool {
-    let key = key.to_ascii_lowercase();
-    SECRET_KEYS.iter().any(|secret| key.ends_with(secret))
-}
-
-/// `name=value` anywhere in the text, `name` one of the secret keys, delimited on its left by
-/// the start, whitespace, `;`, `&`, `?`, or `:`.
+/// `name = value` anywhere, `name` ending in one of the secret keys, spaces around `=` allowed.
 fn has_secret_parameter(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     lower.match_indices('=').any(|(eq, _)| {
-        let start = lower[..eq]
-            .rfind(|c: char| c.is_whitespace() || matches!(c, ';' | '&' | '?' | ':'))
+        let before = lower[..eq].trim_end();
+        let name_start = before
+            .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
             .map_or(0, |i| i + 1);
-        is_secret_key(lower[start..eq].trim())
+        let name = &before[name_start..];
+        !name.is_empty() && SECRET_KEYS.iter().any(|secret| name.ends_with(secret))
     })
 }
 
-fn has_url_password(text: &str) -> bool {
-    text.match_indices("://").any(|(i, _)| {
-        let rest = &text[i + 3..];
-        let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-        authority
-            .rsplit_once('@')
-            .is_some_and(|(userinfo, _)| userinfo.contains(':'))
+/// User information before an `@`: `scheme://user:pass@host`, or Oracle's `user/pass@db`.
+fn has_userinfo(text: &str) -> bool {
+    text.split_whitespace().any(|word| {
+        word.rsplit_once('@').is_some_and(|(before, _)| {
+            let userinfo = before.rsplit("://").next().unwrap_or(before);
+            userinfo.contains(':') || userinfo.contains('/')
+        })
     })
 }
 
@@ -56,43 +57,63 @@ fn has_url_password(text: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn source(key: &str, value: &str) -> SourceRef {
+    fn source(props: &[(&str, &str)]) -> SourceRef {
         SourceRef {
-            kind: "postgis".into(),
-            props: [(key.to_owned(), value.to_owned())].into(),
+            kind: "local".into(),
+            props: props
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
             span: None,
         }
     }
 
     #[test]
-    fn credentials_in_connection_strings_and_urls_are_found() {
+    fn a_connection_is_refused_whatever_it_holds() {
         // Verifies: Q-7
-        for (key, value) in [
-            ("connection", "host=db dbname=gis user=u password=secret"),
-            ("connection", "PG:host=db PWD=x"),
-            ("connection", "Server=db;Uid=u;Pwd=x"),
-            ("connection", "https://u:p@tiles.example.org/{z}/{x}/{y}"),
-            (
-                "connection",
-                "https://tiles.example.org/wms?layers=a&apikey=123",
-            ),
-            ("connection", "https://tiles.example.org/wms?ACCESS_KEY=1"),
-            ("db_password", "x"),
+        for connection in [
+            "host=db dbname=gis user=u password = secret",
+            "host=db dbname=gis user=reader",
+            "scott/tiger@orcl",
+            "https://tiles.example.org/{z}/{x}/{y}.pbf",
         ] {
-            assert!(carries_credentials(&source(key, value)), "{key}={value}");
+            assert!(
+                !admissible(&source(&[("connection", connection)])),
+                "{connection}"
+            );
+        }
+        assert!(!admissible(&source(&[
+            ("data", "a.shp"),
+            ("db_password", "x")
+        ])));
+    }
+
+    #[test]
+    fn data_with_a_secret_is_refused() {
+        // Verifies: Q-7
+        for data in [
+            "PG:host=db password\t=secret",
+            "PG:host=db PWD=x",
+            "https://u:pa/ss@host/a.fgb",
+            "https://host/a.fgb?key=1",
+            "https://host/a.fgb?sv=1&sig=abc",
+            "https://host/a.fgb?X-Amz-Signature=abc",
+            "scott/tiger@orcl",
+        ] {
+            assert!(!admissible(&source(&[("data", data)])), "{data}");
         }
     }
 
     #[test]
-    fn plain_sources_pass() {
-        for (key, value) in [
-            ("data", "countries.shp"),
-            ("connection", "host=db dbname=gis user=reader"),
-            ("connection", "https://tiles.example.org/{z}/{x}/{y}.pbf"),
-            ("connection", "https://user@tiles.example.org/a"),
-            ("data", "the_geom from (select * from passwords_table) as t"),
+    fn plain_data_is_kept() {
+        for data in [
+            "countries.shp",
+            "areas.geojson",
+            "the_geom from (select * from passwords_table) as t",
+            "https://host/tiles/a.fgb",
         ] {
-            assert!(!carries_credentials(&source(key, value)), "{key}={value}");
+            assert!(admissible(&source(&[("data", data)])), "{data}");
         }
+        assert!(admissible(&source(&[])));
     }
 }
