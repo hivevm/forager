@@ -117,7 +117,20 @@ What the solution has to live with regardless of the better choice: platforms, s
 systems to interoperate with, limits of time, budget, and team. A constraint not written here is
 rediscovered as a rejected alternative in an ADR.
 
-- …
+- Core crates do no I/O — no file system, no network — link no C code, need no threads, and build
+  for `wasm32-unknown-unknown`.
+- Async exists only at the ports, and no async trait requires `Send`: the browser is
+  single-threaded.
+- Only the mapfile frontend knows MapServer syntax; the core sees the style IR alone.
+- The core accepts projections only as proj4 strings.
+- The licence is `MIT OR Apache-2.0`, and dependencies carry permissive licences only. Where logic
+  is ported from MapServer's C code, the affected file keeps MapServer's copyright notice.
+- `cargo fmt`, `cargo clippy -D warnings`, and all tests are green; identifiers and comments are
+  in English.
+- The reference is the MapServer source and its msautotest suite at the latest 8.x release,
+  pinned by tag; moving the pin is a deliberate change with a full conformance run. Older mapfile
+  syntax is read as far as that release accepts it.
+- The team is one maintainer working with coding agents, without a fixed deadline or budget.
 
 ## Threats & Forbidden Actions
 
