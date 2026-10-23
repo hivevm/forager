@@ -80,9 +80,24 @@ against them. Each has a measure concrete enough to settle a disagreement and st
 `Q-n`, cited like a goal. Security goals, what the system must never do, belong here, derived
 from the threats below.
 
-- **Q-1** — <Quality, e.g. Performance>: why it matters, and how it is measured (e.g. "p95 response
-  under 200 ms at 100 requests per second").
-- **Q-2** — <Quality, e.g. Security, Availability, Portability, Accessibility>: …
+- **Q-1** — Portability: the core runs in the browser, so every core crate builds for
+  `wasm32-unknown-unknown` and links no C code. Measured by CI building the core for that target,
+  and by `cargo tree` of the core naming no `-sys` crate.
+- **Q-2** — Determinism: a map must look the same wherever it is rendered, and reference images
+  are only comparable if output is reproducible. The same input yields bit-identical RGBA buffers
+  on every target (G-9); no output path depends on hash-map iteration order, a clock, or a random
+  source.
+- **Q-3** — Robustness: mapfiles and data come from users, and a panic in the browser loses the
+  whole map. Invalid geometries, broken files, and errors of third-party crates become
+  diagnostics. Measured by a fuzz run of 5 minutes per target in CI on every pull request — the
+  mapfile parser, the YAML/JSON loader, and the renderer — that ends without a panic.
+- **Q-4** — Fidelity: the point of Forager is MapServer's semantics. The share of in-scope
+  msautotest cases that pass G-6 does not fall from one release to the next.
+- **Q-5** — Bundle size: the core is downloaded by every browser that shows a map. The gzipped
+  `.wasm` of the browser bindings stays under 3 MB; CI fails above it.
+- **Q-6** — Licence hygiene: Forager is released as `MIT OR Apache-2.0` and must stay
+  redistributable. Every dependency carries a permissive licence, measured by
+  `cargo deny check licenses` being green.
 
 ## Non-Goals
 
