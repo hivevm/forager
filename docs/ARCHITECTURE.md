@@ -18,7 +18,9 @@ than anywhere else, and none beats one that has stopped being true.
 
 A host embeds the core and owns all I/O: today the CLI, which reads files. The host hands the
 mapfile frontend a resource loader rooted at the mapfile's directory, the base context; the
-frontend returns a style document and diagnostics. Nothing else crosses the boundary yet.
+frontend returns a style document and diagnostics. To render, the host binds a feature source to
+each layer by the layer's name and hands the engine a renderer; the engine returns an RGBA image
+and diagnostics, and the host encodes it.
 
 ## Building blocks
 
@@ -35,8 +37,19 @@ golden path and the test pattern an agent copies from are named here.
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
   bounded in depth, cycles, and total size (Q-9), and the translation into the style IR, which
   reports every keyword it does not carry over. It is the only crate that knows MapServer syntax.
+- **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
+  bound feature source for the features in view, and turns each feature and style into display
+  items by the layer's render mode. A layer without a source, or whose source fails, is skipped
+  with a diagnostic (G-8). It is the one core crate that awaits the ports.
+- **`render`** — the display list, the renderer trait, and the RGBA image.
+- **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
+  before rasterizing, and is the one crate that may use `unsafe`
+  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)).
+- **`encode`** — PNG from and to an RGBA image ([ADR-0017](adr/0017-png-crate.md)).
+- **`adapter-geojson`** — a feature source over a GeoJSON document
+  ([ADR-0016](adr/0016-geojson-crate.md)).
 - **`cli`** — the `forager` command, a host with a file loader that also refuses symbolic links
-  out of the base context.
+  out of the base context; `forager render` binds GeoJSON files to layers and writes a PNG.
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend.
@@ -61,3 +74,8 @@ directory. The frontend reads the mapfile through the loader, lexes it, and spli
 the `MAP` block; the translation walks it into the style IR and adds a warning for each keyword
 not carried over. With no error, the CLI prints the style document; diagnostics go to standard
 error. No state outlives the call.
+
+`forager render <mapfile> --source <layer>=<file> -o <png>` loads the mapfile the same way, parses
+each GeoJSON file into a source bound to its layer, and runs the engine with the agg-rust renderer.
+For each layer that is not OFF, in order, the engine queries the source with the fitted extent and
+draws every feature in each style of the first class; the image is encoded as PNG.

@@ -194,3 +194,32 @@ fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
     assert_eq!(may_depend("bindings-wasm", "arch-test"), Some(false));
     assert!(must_be_pure_rust("mapfile") && !must_be_pure_rust("bindings-wasm"));
 }
+
+#[test]
+fn only_render_agg_allows_unsafe_code() {
+    // Verifies: ADR-0015
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut offenders = Vec::new();
+    let mut stack = vec![crates.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            let relative = path.strip_prefix(&crates).unwrap().to_owned();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs" || e == "toml")
+                && !relative.starts_with("render-agg")
+                && !relative.starts_with("arch-test")
+            {
+                let text = std::fs::read_to_string(&path).unwrap();
+                if text.contains("allow(unsafe_code)") || text.contains("unsafe_code = \"allow\"") {
+                    offenders.push(relative.display().to_string());
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "unsafe code allowed outside render-agg: {offenders:?}"
+    );
+}

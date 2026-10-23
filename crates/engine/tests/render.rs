@@ -1,0 +1,173 @@
+//! The engine end to end: a style IR and GeoJSON in, an RGBA image out, compared with a reference
+//! image of Forager's own (spec of the browser tracer, Testing decisions). Set FORAGER_BLESS=1 to
+//! write the references after a deliberate change, and review the images before committing them.
+
+use std::collections::BTreeMap;
+use std::future::Future;
+use std::path::PathBuf;
+use std::task::{Context, Poll, Waker};
+
+use forager_adapter_geojson::GeoJsonSource;
+use forager_engine::{MAX_IMAGE_SIDE, Rendered, render};
+use forager_render::RgbaImage;
+use forager_render_agg::AggRenderer;
+use forager_style_ir::{
+    Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span, Style,
+};
+
+const WHITE: Rgba = Rgba::opaque(255, 255, 255);
+const GREEN: Rgba = Rgba::opaque(200, 220, 180);
+const BLACK: Rgba = Rgba::opaque(0, 0, 0);
+const BLUE: Rgba = Rgba::opaque(30, 60, 200);
+
+fn ready<F: Future>(future: F) -> F::Output {
+    let mut future = std::pin::pin!(future);
+    match future
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(output) => output,
+        Poll::Pending => panic!("the engine waited on a source that never waits"),
+    }
+}
+
+/// A 101 × 101 image of the extent 0..100, so that one map unit is one pixel.
+fn map(mode: RenderMode, style: Style) -> Map {
+    Map {
+        extent: Some(Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 100.0,
+            max_y: 100.0,
+        }),
+        size: Some([101, 101]),
+        image_color: Some(WHITE),
+        layers: vec![Layer {
+            name: Some("data".into()),
+            render_mode: Some(mode),
+            status: Some(LayerStatus::On),
+            source: Some(SourceRef {
+                kind: "local".into(),
+                span: Some(Span::new("m.map", 5, 3)),
+                ..SourceRef::default()
+            }),
+            classes: vec![Class {
+                styles: vec![style],
+                ..Class::default()
+            }],
+            span: Some(Span::new("m.map", 2, 1)),
+        }],
+        ..Map::default()
+    }
+}
+
+fn render_with(map: &Map, geojson: Option<&str>) -> Rendered {
+    let sources: BTreeMap<String, GeoJsonSource> = geojson
+        .map(|text| ("data".to_owned(), GeoJsonSource::parse(text).unwrap()))
+        .into_iter()
+        .collect();
+    ready(render(map, &sources, AggRenderer::new()))
+}
+
+fn assert_matches_reference(image: &RgbaImage, name: &str) {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name);
+    if std::env::var_os("FORAGER_BLESS").is_some() {
+        std::fs::write(&path, forager_encode::png(image).unwrap()).unwrap();
+    }
+    let reference = forager_encode::decode_png(&std::fs::read(&path).unwrap()).unwrap();
+    assert!(
+        reference == *image,
+        "{name} differs from its reference image"
+    );
+}
+
+const SQUARE_WITH_HOLE: &str = r#"{"type": "Polygon", "coordinates": [
+    [[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]],
+    [[40, 40], [60, 40], [60, 60], [40, 60], [40, 40]]]}"#;
+
+#[test]
+fn a_polygon_layer_is_filled_and_outlined() {
+    // Verifies: G-5
+    let style = Style {
+        color: Some(GREEN),
+        outline_color: Some(BLACK),
+        width: Some(2.0),
+        ..Style::default()
+    };
+    let rendered = render_with(&map(RenderMode::Polygon, style), Some(SQUARE_WITH_HOLE));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    // Map y grows upwards, pixel y downwards: (25, 25) in map units is pixel (25, 75).
+    assert_eq!(image.pixel(25, 75), Some(GREEN));
+    assert_eq!(image.pixel(50, 50), Some(WHITE), "the hole stays empty");
+    assert_eq!(image.pixel(5, 5), Some(WHITE));
+    assert_eq!(
+        image.pixel(10, 50),
+        Some(BLACK),
+        "the outline runs along x = 10"
+    );
+    assert_matches_reference(&image, "polygon.png");
+}
+
+#[test]
+fn a_line_layer_strokes_lines_and_outlines_polygons() {
+    let style = Style {
+        color: Some(BLUE),
+        width: Some(3.0),
+        ..Style::default()
+    };
+    let collection = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry":
+            {"type": "LineString", "coordinates": [[0, 20], [100, 20]]}},
+        {"type": "Feature", "properties": {}, "geometry":
+            {"type": "Polygon", "coordinates": [[[30, 40], [70, 40], [70, 80], [30, 80], [30, 40]]]}}
+    ]}"#;
+    let rendered = render_with(&map(RenderMode::Line, style), Some(collection));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 80), Some(BLUE), "the line at y = 20");
+    assert_eq!(image.pixel(30, 40), Some(BLUE), "the outline at x = 30");
+    assert_eq!(
+        image.pixel(50, 40),
+        Some(WHITE),
+        "a line layer does not fill"
+    );
+    assert_matches_reference(&image, "line.png");
+}
+
+#[test]
+fn a_layer_without_a_source_is_skipped_with_a_diagnostic() {
+    // Verifies: G-8
+    let rendered = render_with(&map(RenderMode::Polygon, Style::default()), None);
+    let image = rendered.image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+    assert_eq!(rendered.diagnostics.len(), 1);
+    let d = &rendered.diagnostics[0];
+    assert_eq!(d.code, "layer-skipped");
+    assert!(
+        d.message.contains("`data`") && d.message.contains("local"),
+        "{}",
+        d.message
+    );
+    assert_eq!(d.span, Some(Span::new("m.map", 5, 3)));
+}
+
+#[test]
+fn an_image_past_the_size_limit_is_an_error() {
+    // Verifies: Q-9
+    let mut big = map(RenderMode::Polygon, Style::default());
+    big.size = Some([MAX_IMAGE_SIDE + 1, 10]);
+    let rendered = render_with(&big, Some(SQUARE_WITH_HOLE));
+    assert!(rendered.image.is_none());
+    assert_eq!(rendered.diagnostics[0].code, "image-too-large");
+}

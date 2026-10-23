@@ -1,0 +1,17 @@
+[package]
+name = "forager-render-agg"
+description = "The reference renderer of Forager, on agg-rust (ADR-0015)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+forager-style-ir.workspace = true
+forager-render.workspace = true
+agg-rust = "1.2.0"
+
+[lints]
+workspace = true

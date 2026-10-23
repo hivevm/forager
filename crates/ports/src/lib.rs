@@ -4,6 +4,8 @@
 
 use std::fmt;
 
+use forager_style_ir::Extent;
+
 /// A path inside the base context: relative, normalized, and unable to leave it (Q-8).
 ///
 /// Built only by [`ResourcePath::new`], which refuses absolute paths and any `..` that would
@@ -147,4 +149,45 @@ mod tests {
         assert_eq!(ResourcePath::new("./"), Err(PathError::Empty));
         assert_eq!(ResourcePath::new("a/.."), Err(PathError::Empty));
     }
+}
+
+/// A position in the coordinates of its source.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Coord {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// The geometry of a feature. A polygon is its rings, the exterior first.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Geometry {
+    Point(Coord),
+    MultiPoint(Vec<Coord>),
+    LineString(Vec<Coord>),
+    MultiLineString(Vec<Vec<Coord>>),
+    Polygon(Vec<Vec<Coord>>),
+    MultiPolygon(Vec<Vec<Vec<Coord>>>),
+    Collection(Vec<Geometry>),
+}
+
+/// A feature as a source delivers it. Its id is stable for a source, so that output that depends
+/// on feature order stays deterministic (Q-2).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Feature {
+    pub id: u64,
+    pub geometry: Geometry,
+}
+
+/// What the core asks a feature source for.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FeatureQuery {
+    /// The area of interest, in the source's coordinates.
+    pub extent: Extent,
+}
+
+/// Delivers the features of one layer's source.
+// Not `Send`, for the reason given at `ResourceLoader`.
+#[allow(async_fn_in_trait)]
+pub trait FeatureSource {
+    async fn features(&self, query: &FeatureQuery) -> Result<Vec<Feature>, SourceError>;
 }
