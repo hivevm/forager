@@ -47,8 +47,9 @@ dependency edges between workspace crates:
 | Tooling | `arch-test` | — |
 
 - Every core crate but `engine` is synchronous and does no I/O. `engine` is the one core crate
-  that awaits the ports; async otherwise exists only in `ports`, the adapters, and the hosts, and
-  no port trait requires `Send`.
+  that awaits the ports. The mapfile frontend awaits the resource loader too, since the files an
+  `INCLUDE` names are known only once the including file is parsed. Async otherwise exists only
+  in `ports`, the adapters, and the hosts, and no port trait requires `Send`.
 - No crate of the IR, the core, the ports, or the frontend depends, directly or transitively, on
   a crate that links C code; a crate whose name ends in `-sys` is taken to link C code, except the
   pure-Rust JavaScript bindings `js-sys` and `web-sys`, which only hosts and adapters may use.
@@ -58,6 +59,8 @@ of the style IR; the server host; transformation layers such as contours and the
 
 ## Alternatives considered
 
+- **A synchronous frontend handed every file up front** — the host would have to parse to learn
+  the `INCLUDE`s, or load in rounds, one per level of nesting; awaiting the loader is simpler.
 - **One crate with modules** — fewer manifests, but the dependency direction becomes a convention
   no compiler enforces, and the core could not be built for `wasm32-unknown-unknown` without the
   server's adapters.
@@ -96,4 +99,4 @@ workspace crates that the table does not allow, on a workspace crate the table d
 on any `-sys` crate, `js-sys` and `web-sys` included, in the dependency tree of the IR, the core,
 the ports, or the frontend; it cites this ADR with `Verifies:`. The build of the browser crates
 for `wasm32-unknown-unknown` ([ADR-0008](0008-rust-toolchain.md)), which has no file system or
-network, catches most I/O in the core; that `engine` alone awaits is review.
+network, catches most I/O in the core; that only `engine` and the frontend await is review.
