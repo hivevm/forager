@@ -164,6 +164,14 @@ mapfile -t quals < <(grep -oE '^[-0-9. ]*\*\*Q-[0-9]+\*\*' "$copy/docs/SPECIFICA
 { cycle "${adrs[@]}"; cycle "${goals[@]}"; cycle "${quals[@]}"; } > "$work/map-tree"
 (cd "$copy" && bash .agents/skills/normalize/remap.sh "$work/map-tree") > /dev/null 2>&1; rc=$?
 check "a cycle of the real tree's ADRs and criteria exits 0" "[[ $rc -eq 0 ]]"
+# The record moves as a normalization moves it: each ADR's body to its new file. Without it the
+# citations would move and the statuses stay, and an accepted ADR could end up uncited whenever
+# the last one in the cycle is cited by no test, as a proposed one is.
+mkdir -p "$work/record"
+while read -r old new; do
+  [[ "$old" == *.md ]] && cp "$copy/docs/adr/$old" "$work/record/$new"
+done < "$work/map-tree"
+cp "$work/record"/*.md "$copy/docs/adr/"
 pids=()
 names=()
 for t in "$copy"/scripts/test-*.sh; do
