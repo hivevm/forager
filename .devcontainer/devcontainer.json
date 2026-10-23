@@ -34,7 +34,9 @@
   // shell lint CI runs; without it the lint skips itself locally.
   "postCreateCommand": {
     "hooks": "git config core.hooksPath .githooks",
-    "shellcheck": "sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck"
+    "shellcheck": "sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck",
+    // The pinned toolchain, cargo-deny, and the wasm-bindgen CLI (ADR-0008, ADR-0010).
+    "tools": "bash scripts/install-tools.sh"
   },
 
   // DevContainer Features layered on top of the base image. The container intentionally has NO
@@ -44,7 +46,10 @@
     // GitHub CLI (`gh`) — used by the coding agent for GitHub operations and as the git
     // credential helper. A push and every gh action wait for a human instruction
     // (AGENTS.md, section 6).
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // rustup, which installs the toolchain rust-toolchain.toml pins (ADR-0010). The Feature also
+    // installs the latest stable, which the pin overrides.
+    "ghcr.io/devcontainers/features/rust:1": {}
   },
 
   "customizations": {

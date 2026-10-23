@@ -1,0 +1,3 @@
+MAP
+  INCLUDE "../layers/countries.inc"
+END

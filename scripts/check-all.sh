@@ -54,6 +54,8 @@ run "Action references sensor" scripts/sensor-action-refs.sh
 run "Git hooks self-test" scripts/test-git-hooks.sh
 run "Shell lint self-test" scripts/test-check-shell.sh
 run "Shell lint" scripts/check-shell.sh
+run "Rust toolchain and tools" scripts/install-tools.sh
+run "Rust build, test, lint" scripts/check-rust.sh
 
 printf '\n'
 if ((${#failed[@]})); then

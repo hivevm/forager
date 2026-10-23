@@ -12,4 +12,8 @@ an ADR. What the golden path already shows needs none. Few entries that hold bea
 skimmed. The design revision drops what prevented nothing
 ([`AGENTS.md` §5](../AGENTS.md#5-quality-bar--definition-of-done)).
 
-- **<Convention>** — what is done, and why.
+- **Diagnostic codes are kebab-case and stable** — tests and tools match on `code`, never on the
+  message, so messages can be reworded freely and a code once used keeps its meaning.
+- **Logic ported from MapServer keeps MapServer's notice** — a file whose rules follow MapServer's
+  C code names the source file and release and carries its copyright and permission notice at the
+  top, as the specification's licence constraint requires.
