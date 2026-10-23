@@ -1,4 +1,4 @@
-# ADR-0011: Workflows use only `actions/*`, referenced by major version tag, and install the Rust toolchain with rustup
+# ADR-0011: Workflows reference actions by major version tag, as the template ships them
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-10-23
@@ -7,35 +7,26 @@
 
 ## Context
 
-The template references `actions/*` by major version tag. Rust is commonly installed in CI by a
-third-party action; `rustup`, preinstalled on the GitHub-hosted runners, reads
-`rust-toolchain.toml` itself. CI holds no secret of the project (ADR-0013).
+The template references `actions/*` by major version tag, updated by Dependabot; CI holds no secret
+of the project ([ADR-0013](0013-no-project-secrets.md)).
 
 ## Decision
 
-We will keep the template's form — only actions of the `actions/` organisation, each by major
-version tag, updated by Dependabot — and install the toolchain with `rustup` from
-`rust-toolchain.toml` inside `scripts/check-rust.sh` instead of a third-party action.
+We will keep the template's form and reference every action by its major version tag.
 
 **Out of scope:** nothing beyond the sentence above.
 
 ## Alternatives considered
 
-- **Commit SHAs for every action** — protects against a retagged action, at the cost of an update
-  per release; with only `actions/*` and no secrets in CI, the risk does not pay for it.
-- **`dtolnay/rust-toolchain` or a similar action** — a third-party action for what rustup does
-  from the same file.
+None — cheap to reverse.
 
 ## Sources / Prior art
 
-- The catalogue entry *Action references* of the `propose-adr` skill.
+None — cheap to reverse.
 
 ## Consequences
 
-- Positive: one source of the toolchain version for container, CI, and local runs.
-- Negative / trade-offs: a retagged `actions/*` release reaches CI without a commit; the weekly
-  scheduled run surfaces it.
-- Follow-ups: revisit when a workflow needs a secret or an action outside `actions/*`.
+None — cheap to reverse.
 
 ## Enforcement
 
