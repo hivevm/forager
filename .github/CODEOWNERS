@@ -3,5 +3,5 @@
 # AGENTS.md, section 3; the review this file drives is a repository setting, listed under
 # "Repository settings" in ../README.md, and until that setting is enabled this file changes
 # nothing.
-/docs/SPECIFICATION.md @hivevm
-/docs/adr/ @hivevm
+/docs/SPECIFICATION.md @mbrigl
+/docs/adr/ @mbrigl
