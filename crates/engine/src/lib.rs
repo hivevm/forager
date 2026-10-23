@@ -14,6 +14,15 @@ pub use crate::extent::View;
 /// The largest width or height of an image, MapServer's default `MAXSIZE` (Q-9).
 pub const MAX_IMAGE_SIDE: u32 = 4096;
 
+/// The widest line, MapServer's default `MAXWIDTH` (`MS_MAXSYMBOLWIDTH`).
+const MAX_SYMBOL_WIDTH: f64 = 32.0;
+
+/// The largest symbol, MapServer's default `MAXSIZE` of a style (`MS_MAXSYMBOLSIZE`).
+const MAX_SYMBOL_SIZE: f64 = 500.0;
+
+/// The most features one layer draws (Q-9); a layer with more is skipped with a diagnostic.
+pub const MAX_FEATURES_PER_LAYER: usize = 1_000_000;
+
 /// MapServer's default `IMAGECOLOR`.
 const DEFAULT_BACKGROUND: Rgba = Rgba::opaque(255, 255, 255);
 
@@ -42,7 +51,8 @@ pub async fn render<S: FeatureSource, R: Renderer>(
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
     for layer in &map.layers {
-        if layer.status == Some(LayerStatus::Off) {
+        // As in MapServer, a layer without STATUS is OFF; ON and DEFAULT layers are drawn.
+        if !matches!(layer.status, Some(LayerStatus::On | LayerStatus::Default)) {
             continue;
         }
         let Some(mode) = drawable_mode(layer, &mut diagnostics) else {
@@ -55,15 +65,32 @@ pub async fn render<S: FeatureSource, R: Renderer>(
         let Some(class) = layer.classes.first() else {
             continue;
         };
+        let mut undrawn = BTreeMap::new();
         for feature in &features {
             for style in &class.styles {
-                for op in draw_ops(mode, &feature.geometry, style, &view) {
+                let Some(ops) = draw_ops(mode, &feature.geometry, style, &view) else {
+                    *undrawn.entry(kind(&feature.geometry)).or_insert(0usize) += 1;
+                    continue;
+                };
+                for op in ops {
                     renderer.draw(&DisplayItem {
                         op,
                         feature_id: Some(feature.id),
                     });
                 }
             }
+        }
+        for (kind, count) in undrawn {
+            let message = format!(
+                "layer {} cannot draw {count} {kind} geometr{} in its render mode",
+                name(layer),
+                if count == 1 { "y" } else { "ies" }
+            );
+            diagnostics.push(Diagnostic::warning(
+                "geometry-not-drawn",
+                message,
+                layer.span.clone(),
+            ));
         }
     }
     Rendered {
@@ -97,7 +124,7 @@ fn view(map: &Map, diagnostics: &mut Vec<Diagnostic>) -> Option<(u32, u32, View)
         ));
         return None;
     };
-    let Some(view) = View::fit(extent, width, height) else {
+    let Some(view) = View::for_image(extent, width, height) else {
         let message = "the map's EXTENT and SIZE give no scale";
         diagnostics.push(Diagnostic::error("view-invalid", message, span));
         return None;
@@ -145,6 +172,14 @@ async fn features<S: FeatureSource>(
         extent: view.extent,
     };
     match source.features(&query).await {
+        Ok(features) if features.len() > MAX_FEATURES_PER_LAYER => {
+            let reason = format!(
+                "{} features exceed the limit of {MAX_FEATURES_PER_LAYER}",
+                features.len()
+            );
+            diagnostics.push(skip(reason));
+            None
+        }
         Ok(features) => Some(features),
         Err(e) => {
             diagnostics.push(skip(e.message));
@@ -160,17 +195,28 @@ fn name(layer: &Layer) -> String {
         .map_or("without NAME".to_owned(), |n| format!("`{n}`"))
 }
 
-/// The drawing operations of one feature in one style. The render mode decides how a geometry
-/// is drawn: polygons in a line layer are drawn as their outlines; what a mode cannot draw is
-/// left out.
-fn draw_ops(mode: RenderMode, geometry: &Geometry, style: &Style, view: &View) -> Vec<DrawOp> {
-    let width = style.width.unwrap_or(1.0);
+/// The drawing operations of one feature in one style, by the layer's render mode, or `None`
+/// when the mode cannot draw the geometry. As in MapServer, a line layer draws polygons as their
+/// outlines and a point layer draws a marker at every vertex; a polygon layer draws no lines or
+/// points, and a line layer no points.
+fn draw_ops(
+    mode: RenderMode,
+    geometry: &Geometry,
+    style: &Style,
+    view: &View,
+) -> Option<Vec<DrawOp>> {
+    let width = style.width.unwrap_or(1.0).clamp(0.0, MAX_SYMBOL_WIDTH);
     let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
     let mut ops = Vec::new();
     match (mode, geometry) {
         (_, Geometry::Collection(geometries)) => {
             for g in geometries {
-                ops.extend(draw_ops(mode, g, style, view));
+                ops.extend(draw_ops(mode, g, style, view)?);
+            }
+        }
+        (RenderMode::Point, _) => {
+            for c in vertices(geometry) {
+                point_ops(&mut ops, view.to_pixel(c), style, width);
             }
         }
         (RenderMode::Polygon, Geometry::Polygon(rings)) => {
@@ -196,27 +242,39 @@ fn draw_ops(mode: RenderMode, geometry: &Geometry, style: &Style, view: &View) -
         }
         (RenderMode::Line, Geometry::MultiLineString(lines) | Geometry::Polygon(lines)) => {
             let closed = matches!(geometry, Geometry::Polygon(_));
-            stroke(
-                &mut ops,
-                lines.iter().map(|l| pixels(l)).collect(),
-                closed,
-                style.color,
-                width,
-            );
+            let paths = lines.iter().map(|l| pixels(l)).collect();
+            stroke(&mut ops, paths, closed, style.color, width);
         }
         (RenderMode::Line, Geometry::MultiPolygon(polygons)) => {
             let rings = polygons.iter().flatten().map(|r| pixels(r)).collect();
             stroke(&mut ops, rings, true, style.color, width);
         }
-        (RenderMode::Point, Geometry::Point(c)) => point_ops(&mut ops, view.to_pixel(*c), style),
-        (RenderMode::Point, Geometry::MultiPoint(cs)) => {
-            for &c in cs {
-                point_ops(&mut ops, view.to_pixel(c), style);
-            }
-        }
-        _ => {}
+        _ => return None,
     }
-    ops
+    Some(ops)
+}
+
+/// Every vertex of a geometry, in order.
+fn vertices(geometry: &Geometry) -> Vec<Coord> {
+    match geometry {
+        Geometry::Point(c) => vec![*c],
+        Geometry::MultiPoint(cs) | Geometry::LineString(cs) => cs.clone(),
+        Geometry::MultiLineString(lines) | Geometry::Polygon(lines) => lines.concat(),
+        Geometry::MultiPolygon(polygons) => polygons.iter().flatten().flatten().copied().collect(),
+        Geometry::Collection(geometries) => geometries.iter().flat_map(vertices).collect(),
+    }
+}
+
+fn kind(geometry: &Geometry) -> &'static str {
+    match geometry {
+        Geometry::Point(_) => "point",
+        Geometry::MultiPoint(_) => "multipoint",
+        Geometry::LineString(_) => "line",
+        Geometry::MultiLineString(_) => "multiline",
+        Geometry::Polygon(_) => "polygon",
+        Geometry::MultiPolygon(_) => "multipolygon",
+        Geometry::Collection(_) => "collection",
+    }
 }
 
 fn polygon_ops(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style, width: f64) {
@@ -247,25 +305,17 @@ fn stroke(
 }
 
 /// A point as a square of the style's size, centred on it.
-fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
-    let half = style.size.unwrap_or(1.0) / 2.0;
+fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, width: f64) {
+    let half = style.size.unwrap_or(1.0).clamp(0.0, MAX_SYMBOL_SIZE) / 2.0;
+    let corner = |dx: f64, dy: f64| Point {
+        x: at.x + dx,
+        y: at.y + dy,
+    };
     let square = vec![
-        Point {
-            x: at.x - half,
-            y: at.y - half,
-        },
-        Point {
-            x: at.x + half,
-            y: at.y - half,
-        },
-        Point {
-            x: at.x + half,
-            y: at.y + half,
-        },
-        Point {
-            x: at.x - half,
-            y: at.y + half,
-        },
+        corner(-half, -half),
+        corner(half, -half),
+        corner(half, half),
+        corner(-half, half),
     ];
-    polygon_ops(ops, vec![square], style, style.width.unwrap_or(1.0));
+    polygon_ops(ops, vec![square], style, width);
 }

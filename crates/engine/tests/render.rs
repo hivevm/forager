@@ -170,3 +170,76 @@ fn an_image_past_the_size_limit_is_an_error() {
     assert!(rendered.image.is_none());
     assert_eq!(rendered.diagnostics[0].code, "image-too-large");
 }
+
+#[test]
+fn a_layer_without_status_is_off_as_in_mapserver() {
+    let mut no_status = map(
+        RenderMode::Polygon,
+        Style {
+            color: Some(GREEN),
+            ..Style::default()
+        },
+    );
+    no_status.layers[0].status = None;
+    let rendered = render_with(&no_status, Some(SQUARE_WITH_HOLE));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image.unwrap().pixel(25, 75), Some(WHITE));
+}
+
+#[test]
+fn a_geometry_the_render_mode_cannot_draw_is_reported() {
+    // Verifies: Q-3
+    let line = r#"{"type": "LineString", "coordinates": [[0, 50], [100, 50]]}"#;
+    let rendered = render_with(
+        &map(
+            RenderMode::Polygon,
+            Style {
+                color: Some(GREEN),
+                ..Style::default()
+            },
+        ),
+        Some(line),
+    );
+    assert_eq!(rendered.diagnostics.len(), 1, "{:?}", rendered.diagnostics);
+    assert_eq!(rendered.diagnostics[0].code, "geometry-not-drawn");
+    assert_eq!(rendered.diagnostics[0].span, Some(Span::new("m.map", 2, 1)));
+}
+
+#[test]
+fn a_point_layer_marks_every_vertex() {
+    let style = Style {
+        color: Some(BLUE),
+        size: Some(5.0),
+        ..Style::default()
+    };
+    let line = r#"{"type": "LineString", "coordinates": [[20, 20], [80, 80]]}"#;
+    let image = render_with(&map(RenderMode::Point, style), Some(line))
+        .image
+        .unwrap();
+    assert_eq!(image.pixel(20, 80), Some(BLUE));
+    assert_eq!(image.pixel(80, 20), Some(BLUE));
+    assert_eq!(
+        image.pixel(50, 50),
+        Some(WHITE),
+        "no line between the vertices"
+    );
+}
+
+#[test]
+fn line_width_is_capped_at_mapservers_maxwidth() {
+    let style = Style {
+        color: Some(BLUE),
+        width: Some(1e6),
+        ..Style::default()
+    };
+    let line = r#"{"type": "LineString", "coordinates": [[0, 50], [100, 50]]}"#;
+    let image = render_with(&map(RenderMode::Line, style), Some(line))
+        .image
+        .unwrap();
+    assert_eq!(image.pixel(50, 50 + 14), Some(BLUE), "inside 32 px");
+    assert_eq!(image.pixel(50, 50 + 18), Some(WHITE), "outside 32 px");
+}

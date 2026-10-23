@@ -27,7 +27,7 @@ impl View {
     /// from the centre of the first pixel to the centre of the last, and grows on the shorter
     /// axis, centred. `None` when no cellsize follows, for an image one pixel wide or an empty
     /// extent.
-    pub fn fit(extent: Extent, width: u32, height: u32) -> Option<Self> {
+    pub fn for_image(extent: Extent, width: u32, height: u32) -> Option<Self> {
         let corners = [extent.min_x, extent.min_y, extent.max_x, extent.max_y];
         if width <= 1 || height <= 1 || !corners.iter().all(|v| v.is_finite()) {
             return None;
@@ -73,7 +73,7 @@ mod tests {
 
     #[test]
     fn the_extent_grows_on_the_shorter_axis_and_maps_corners_to_pixel_centres() {
-        let view = View::fit(extent(0.0, 0.0, 100.0, 100.0), 201, 101).unwrap();
+        let view = View::for_image(extent(0.0, 0.0, 100.0, 100.0), 201, 101).unwrap();
         assert_eq!(view.cellsize, 1.0);
         assert_eq!(view.extent, extent(-50.0, 0.0, 150.0, 100.0));
         assert_eq!(
@@ -88,8 +88,11 @@ mod tests {
 
     #[test]
     fn degenerate_images_and_extents_have_no_view() {
-        assert_eq!(View::fit(extent(0.0, 0.0, 1.0, 1.0), 1, 100), None);
-        assert_eq!(View::fit(extent(0.0, 0.0, 0.0, 0.0), 100, 100), None);
-        assert_eq!(View::fit(extent(0.0, 0.0, f64::NAN, 1.0), 100, 100), None);
+        assert_eq!(View::for_image(extent(0.0, 0.0, 1.0, 1.0), 1, 100), None);
+        assert_eq!(View::for_image(extent(0.0, 0.0, 0.0, 0.0), 100, 100), None);
+        assert_eq!(
+            View::for_image(extent(0.0, 0.0, f64::NAN, 1.0), 100, 100),
+            None
+        );
     }
 }

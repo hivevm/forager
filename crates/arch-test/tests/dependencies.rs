@@ -198,28 +198,33 @@ fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
 #[test]
 fn only_render_agg_allows_unsafe_code() {
     // Verifies: ADR-0015
+    // The workspace denies `unsafe_code`; any mention of the lint in a crate's code or manifest is
+    // a way to lift it (`allow`, `expect`, a lint table), so it may appear in render-agg alone,
+    // and every crate must take the workspace's lints.
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut offenders = Vec::new();
-    let mut stack = vec![crates.clone()];
-    while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir).unwrap() {
-            let path = entry.unwrap().path();
-            let relative = path.strip_prefix(&crates).unwrap().to_owned();
+    for entry in std::fs::read_dir(&crates).unwrap() {
+        let dir = entry.unwrap().path();
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let manifest = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap_or_default();
+        if !manifest.contains("[lints]\nworkspace = true") {
+            offenders.push(format!("{name}: does not take the workspace lints"));
+        }
+        if name == "render-agg" || name == "arch-test" {
+            continue;
+        }
+        let mut stack = vec![dir];
+        while let Some(path) = stack.pop() {
             if path.is_dir() {
-                stack.push(path);
+                stack.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
             } else if path.extension().is_some_and(|e| e == "rs" || e == "toml")
-                && !relative.starts_with("render-agg")
-                && !relative.starts_with("arch-test")
+                && std::fs::read_to_string(&path)
+                    .unwrap_or_default()
+                    .contains("unsafe_code")
             {
-                let text = std::fs::read_to_string(&path).unwrap();
-                if text.contains("allow(unsafe_code)") || text.contains("unsafe_code = \"allow\"") {
-                    offenders.push(relative.display().to_string());
-                }
+                offenders.push(path.strip_prefix(&crates).unwrap().display().to_string());
             }
         }
     }
-    assert!(
-        offenders.is_empty(),
-        "unsafe code allowed outside render-agg: {offenders:?}"
-    );
+    assert!(offenders.is_empty(), "{offenders:?}");
 }

@@ -36,25 +36,42 @@ fn a_mapfile_layer_is_rendered_from_geojson_to_png() {
     assert_eq!(image.pixel(50, 50), Some(Rgba::opaque(255, 255, 255)));
 }
 
-#[test]
-fn invalid_geojson_fails_without_a_panic() {
-    // Verifies: Q-3
-    let broken =
-        std::env::temp_dir().join(format!("forager-broken-{}.geojson", std::process::id()));
-    std::fs::write(&broken, "{\"type\": \"Point\"").unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_forager"))
+fn render(args: &[String]) -> (Option<i32>, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_forager"))
         .arg("render")
         .arg(fixture("square.map"))
-        .arg("--source")
-        .arg(format!("areas={}", broken.display()))
+        .args(args)
         .args(["-o", "/dev/null"])
         .output()
         .unwrap();
+    (
+        output.status.code(),
+        String::from_utf8(output.stderr).unwrap(),
+    )
+}
+
+#[test]
+fn invalid_geojson_skips_its_layer_with_diagnostics() {
+    // Verifies: G-8, Q-3
+    let broken =
+        std::env::temp_dir().join(format!("forager-broken-{}.geojson", std::process::id()));
+    std::fs::write(&broken, "{\"type\": \"Point\"").unwrap();
+    let (code, stderr) = render(&["--source".into(), format!("areas={}", broken.display())]);
     std::fs::remove_file(&broken).unwrap();
-    assert_eq!(result.status.code(), Some(1), "{result:?}");
+    assert_eq!(code, Some(0), "{stderr}");
+    assert!(stderr.contains("warning [source-unreadable]"), "{stderr}");
     assert!(
-        String::from_utf8(result.stderr)
-            .unwrap()
-            .contains("invalid GeoJSON")
+        stderr.contains("square.map:10:5: warning [layer-skipped]"),
+        "{stderr}"
     );
+}
+
+#[test]
+fn a_source_for_no_layer_is_reported_and_a_doubled_one_refused() {
+    let areas = format!("areas={}", fixture("areas.geojson").display());
+    let (code, stderr) = render(&["--source".into(), "rivers=x.geojson".into()]);
+    assert_eq!(code, Some(0), "{stderr}");
+    assert!(stderr.contains("warning [source-unbound]"), "{stderr}");
+    let (code, _) = render(&["--source".into(), areas.clone(), "--source".into(), areas]);
+    assert_eq!(code, Some(2));
 }

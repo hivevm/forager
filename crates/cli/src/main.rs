@@ -88,6 +88,12 @@ fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
                 let (layer, file) = text
                     .split_once('=')
                     .ok_or("--source takes <layer>=<file>")?;
+                if sources
+                    .iter()
+                    .any(|(named, _): &(String, PathBuf)| named == layer)
+                {
+                    return Err(format!("--source names layer `{layer}` twice"));
+                }
                 sources.push((layer.to_owned(), PathBuf::from(file)));
             }
             Some("-o") => output = Some(PathBuf::from(iter.next().ok_or("-o takes a file")?)),
@@ -142,16 +148,30 @@ fn render(args: &RenderArgs) -> ExitCode {
     };
     let mut sources = BTreeMap::new();
     for (layer, file) in &args.sources {
-        let parsed = std::fs::read_to_string(file)
-            .map_err(|e| e.to_string())
-            .and_then(|text| GeoJsonSource::parse(&text).map_err(|e| e.message));
-        match parsed {
+        if !document
+            .map
+            .layers
+            .iter()
+            .any(|l| l.name.as_deref() == Some(layer.as_str()))
+        {
+            let message = format!(
+                "no layer is named `{layer}`; --source {} is unused",
+                file.display()
+            );
+            eprintln!("{}", Diagnostic::warning("source-unbound", message, None));
+            continue;
+        }
+        // A source that cannot be read is not bound, so the engine skips its layer (G-8).
+        match read_source(file) {
             Ok(source) => {
                 sources.insert(layer.clone(), source);
             }
             Err(message) => {
-                eprintln!("forager: {}: {message}", file.display());
-                return ExitCode::FAILURE;
+                let message = format!("{}: {message}", file.display());
+                eprintln!(
+                    "{}",
+                    Diagnostic::warning("source-unreadable", message, None)
+                );
             }
         }
     }
@@ -180,4 +200,18 @@ fn render(args: &RenderArgs) -> ExitCode {
 fn report(diagnostic: &Diagnostic) -> ExitCode {
     eprintln!("{diagnostic}");
     ExitCode::FAILURE
+}
+
+/// The largest GeoJSON file the CLI reads (Q-9).
+const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
+
+fn read_source(file: &Path) -> Result<GeoJsonSource, String> {
+    let size = std::fs::metadata(file).map_err(|e| e.to_string())?.len();
+    if size > MAX_SOURCE_BYTES {
+        return Err(format!(
+            "{size} bytes exceed the limit of {MAX_SOURCE_BYTES}"
+        ));
+    }
+    let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
+    GeoJsonSource::parse(&text).map_err(|e| e.message)
 }

@@ -56,6 +56,8 @@ pub fn clip_ring(ring: &[Point], rect: &Rect) -> Vec<Point> {
         }
         points = output;
     }
+    // Huge coordinates can still overflow an intersection; such points are dropped as well.
+    points.retain(|p| p.x.is_finite() && p.y.is_finite());
     if points.len() < 3 { Vec::new() } else { points }
 }
 
@@ -80,10 +82,10 @@ impl Edge {
     fn intersect(self, a: Point, b: Point, r: &Rect) -> Point {
         let at_x = |x: f64| Point {
             x,
-            y: a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x),
+            y: a.y + (x - a.x) / (b.x - a.x) * (b.y - a.y),
         };
         let at_y = |y: f64| Point {
-            x: a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y),
+            x: a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x),
             y,
         };
         match self {
@@ -128,6 +130,10 @@ pub fn clip_line(line: &[Point], rect: &Rect) -> Vec<Vec<Point>> {
 
 fn clip_segment(a: Point, b: Point, r: &Rect) -> Option<(Point, Point)> {
     let (dx, dy) = (b.x - a.x, b.y - a.y);
+    if !(dx.is_finite() && dy.is_finite()) {
+        // The difference of two huge coordinates overflows; such a segment is dropped.
+        return None;
+    }
     let mut t0: f64 = 0.0;
     let mut t1: f64 = 1.0;
     for (p, q) in [
@@ -159,7 +165,8 @@ fn clip_segment(a: Point, b: Point, r: &Rect) -> Option<(Point, Point)> {
     // The unclipped end keeps its exact value, so that consecutive segments join.
     let start = if t0 == 0.0 { a } else { at(t0) };
     let end = if t1 == 1.0 { b } else { at(t1) };
-    Some((start, end))
+    let finite = |p: Point| p.x.is_finite() && p.y.is_finite();
+    (finite(start) && finite(end)).then_some((start, end))
 }
 
 #[cfg(test)]
@@ -183,6 +190,19 @@ mod tests {
         let ring = clip_ring(&[p(-1e15, -1e15), p(1e15, 5.0), p(30.0, 1e15)], &r);
         assert!(ring.len() >= 3);
         assert!(inside(&ring, &r), "{ring:?}");
+    }
+
+    #[test]
+    fn coordinates_near_the_limit_of_f64_never_yield_non_finite_points() {
+        // Verifies: ADR-0015
+        let r = Rect::around_image(64, 64, 2.0);
+        for big in [1e200, 1e300, f64::MAX] {
+            let ring = clip_ring(&[p(-big, -big), p(big, 5.0), p(30.0, big)], &r);
+            assert!(inside(&ring, &r), "{big}: {ring:?}");
+            for run in clip_line(&[p(-big, 1.0), p(big, 50.0), p(3.0, -big)], &r) {
+                assert!(inside(&run, &r), "{big}: {run:?}");
+            }
+        }
     }
 
     #[test]

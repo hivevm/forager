@@ -77,5 +77,5 @@ error. No state outlives the call.
 
 `forager render <mapfile> --source <layer>=<file> -o <png>` loads the mapfile the same way, parses
 each GeoJSON file into a source bound to its layer, and runs the engine with the agg-rust renderer.
-For each layer that is not OFF, in order, the engine queries the source with the fitted extent and
-draws every feature in each style of the first class; the image is encoded as PNG.
+For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted
+extent and draws every feature in each style of the first class; the image is encoded as PNG.

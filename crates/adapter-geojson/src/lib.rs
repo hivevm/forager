@@ -17,17 +17,19 @@ impl GeoJsonSource {
         let document: GeoJson = text
             .parse()
             .map_err(|e: geojson::Error| SourceError::new(format!("invalid GeoJSON: {e}")))?;
-        let geometries: Vec<geojson::Geometry> = match document {
+        // A feature's id is its index in the document, features without a geometry counted.
+        let geometries: Vec<Option<geojson::Geometry>> = match document {
             GeoJson::FeatureCollection(collection) => collection
                 .features
                 .into_iter()
-                .filter_map(|f| f.geometry)
+                .map(|f| f.geometry)
                 .collect(),
-            GeoJson::Feature(feature) => feature.geometry.into_iter().collect(),
-            GeoJson::Geometry(geometry) => vec![geometry],
+            GeoJson::Feature(feature) => vec![feature.geometry],
+            GeoJson::Geometry(geometry) => vec![Some(geometry)],
         };
         let mut features = Vec::with_capacity(geometries.len());
         for (id, geometry) in (0u64..).zip(geometries) {
+            let Some(geometry) = geometry else { continue };
             let geometry = convert(&geometry.value)?;
             if let Some(bounds) = bounds(&geometry) {
                 features.push((Feature { id, geometry }, bounds));
@@ -155,6 +157,7 @@ mod tests {
 
     const ALL_TYPES: &str = r#"{"type": "FeatureCollection", "features": [
         {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [1, 2]}},
+        {"type": "Feature", "properties": {}, "geometry": null},
         {"type": "Feature", "properties": {}, "geometry": {"type": "MultiPoint", "coordinates": [[1, 2], [3, 4]]}},
         {"type": "Feature", "properties": {}, "geometry": {"type": "LineString", "coordinates": [[0, 0], [5, 5]]}},
         {"type": "Feature", "properties": {}, "geometry": {"type": "MultiLineString", "coordinates": [[[0, 0], [1, 1]]]}},
@@ -170,9 +173,10 @@ mod tests {
         let source = GeoJsonSource::parse(ALL_TYPES).unwrap();
         let features = ready(source.features(&query(-100.0, -100.0, 100.0, 100.0))).unwrap();
         assert_eq!(features.len(), 7);
+        // The feature without a geometry keeps its index: ids skip 1 and 8.
         assert_eq!(
             features.iter().map(|f| f.id).collect::<Vec<_>>(),
-            [0, 1, 2, 3, 4, 5, 6]
+            [0, 2, 3, 4, 5, 6, 7]
         );
         assert_eq!(
             features[0].geometry,
@@ -186,7 +190,7 @@ mod tests {
     fn only_features_touching_the_extent_are_delivered() {
         let source = GeoJsonSource::parse(ALL_TYPES).unwrap();
         let features = ready(source.features(&query(9.0, 9.0, 11.0, 11.0))).unwrap();
-        assert_eq!(features.iter().map(|f| f.id).collect::<Vec<_>>(), [5]);
+        assert_eq!(features.iter().map(|f| f.id).collect::<Vec<_>>(), [6]);
     }
 
     #[test]

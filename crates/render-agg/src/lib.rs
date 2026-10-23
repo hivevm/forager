@@ -37,20 +37,21 @@ impl AggRenderer {
     /// Runs `f` on an agg-rust renderer attached to the pixel buffer.
     #[allow(unsafe_code)]
     fn with_agg(&mut self, f: impl FnOnce(&mut RendererBase<PixfmtRgba32<'_>>)) {
-        if self.pixels.is_empty() {
+        let Some(stride) = i32::try_from(self.width)
+            .ok()
+            .and_then(|w| w.checked_mul(4))
+        else {
+            return;
+        };
+        if self.pixels.is_empty() || self.pixels.len() != stride as usize * self.height as usize {
             return;
         }
-        // SAFETY: `pixels` holds exactly width × height × 4 bytes (set in `begin`, never
-        // resized), and the accessor, the pixel format, and the renderer built on it are
+        // SAFETY: `pixels` holds exactly `stride` × height bytes, checked just above, and the
+        // accessor, the pixel format, and the renderer built on it are
         // dropped at the end of this function, while `self.pixels` is mutably borrowed and
         // cannot move or be read elsewhere.
         let mut buffer = unsafe {
-            RowAccessor::new_with_buf(
-                self.pixels.as_mut_ptr(),
-                self.width,
-                self.height,
-                (self.width * 4) as i32,
-            )
+            RowAccessor::new_with_buf(self.pixels.as_mut_ptr(), self.width, self.height, stride)
         };
         let mut renderer = RendererBase::new(PixfmtRgba32::new(&mut buffer));
         f(&mut renderer);
@@ -70,9 +71,12 @@ impl AggRenderer {
                 Some(width) => {
                     let mut outline = ConvStroke::new(path);
                     outline.set_width(width);
-                    // MapServer's defaults for LINECAP and LINEJOIN.
-                    outline.set_line_cap(LineCap::Round);
-                    outline.set_line_join(LineJoin::Round);
+                    // MapServer: round caps and bevel joins by default, and for lines no wider
+                    // than a pixel bevel joins with AGG.s butt caps (mapagg.cpp, applyCJC).
+                    if width > 1.0 {
+                        outline.set_line_cap(LineCap::Round);
+                    }
+                    outline.set_line_join(LineJoin::Bevel);
                     rasterizer.add_path(&mut outline, 0);
                 }
                 None => {
@@ -99,6 +103,11 @@ fn add(path: &mut PathStorage, points: &[Point], close: bool) {
 
 impl Renderer for AggRenderer {
     fn begin(&mut self, width: u32, height: u32, background: Rgba) {
+        // An image whose size overflows is drawn as no image at all; the engine never asks for one.
+        let pixels = (width as usize).checked_mul(height as usize);
+        let fits = pixels.and_then(|n| n.checked_mul(4)).is_some()
+            && i32::try_from(width).is_ok_and(|w| w.checked_mul(4).is_some());
+        let (width, height) = if fits { (width, height) } else { (0, 0) };
         self.width = width;
         self.height = height;
         self.pixels = [background.r, background.g, background.b, background.a]
@@ -221,5 +230,36 @@ mod tests {
             },
         ]);
         assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
+    }
+
+    #[test]
+    fn a_huge_square_around_the_image_still_fills_it() {
+        // Verifies: ADR-0015
+        for big in [1e15, 1e200] {
+            let square = vec![p(-big, -big), p(big, -big), p(big, big), p(-big, big)];
+            let image = render(&[DrawOp::Fill {
+                rings: vec![square],
+                color: RED,
+            }]);
+            assert!(
+                image.pixels.chunks(4).all(|px| px == [200, 80, 80, 255]),
+                "{big}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_image_whose_size_overflows_is_empty() {
+        let mut renderer = AggRenderer::new();
+        renderer.begin(u32::MAX, u32::MAX, WHITE);
+        renderer.draw(&DisplayItem {
+            op: DrawOp::Fill {
+                rings: vec![vec![p(0.0, 0.0), p(9.0, 0.0), p(9.0, 9.0)]],
+                color: RED,
+            },
+            feature_id: None,
+        });
+        let image = renderer.finish();
+        assert_eq!((image.width, image.height, image.pixels.len()), (0, 0, 0));
     }
 }
