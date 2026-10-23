@@ -37,9 +37,8 @@ cargo build --locked --target wasm32-unknown-unknown "${browser[@]}"
 
 if [[ -d crates/bindings-wasm ]]; then
   step "WebAssembly bindings and their size"
-  cargo build --locked --release --target wasm32-unknown-unknown -p forager-bindings-wasm
-  wasm-bindgen --target web --out-dir target/web \
-    target/wasm32-unknown-unknown/release/forager_bindings_wasm.wasm
+  bash scripts/build-web.sh
+  # Verifies: Q-5
   size="$(gzip -9 -c target/web/forager_bindings_wasm_bg.wasm | wc -c)"
   echo "gzipped .wasm: $size bytes (budget $WASM_BUDGET_BYTES)"
   if ((size > WASM_BUDGET_BYTES)); then

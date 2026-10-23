@@ -91,6 +91,21 @@ square.map:23:5: warning [layer-skipped]: layer `unbound` (source local) is skip
 The first class of each layer draws every feature for now; class expressions, symbols, labels,
 and projections come with later work.
 
+Render in the browser: build the WebAssembly bundle, start the local server, and open
+<http://127.0.0.1:8000/>. The page loads a sample mapfile with GeoJSON for its three layers; edit
+either and press **Render**.
+
+```console
+$ bash scripts/build-web.sh
+$ cargo run -p forager-dev-server
+Serving the Forager example on http://127.0.0.1:8000/
+```
+
+From JavaScript, the bundle's `render(mapfile, sources, width?, height?, extent?)` takes the
+mapfile text and a JSON object from layer name to GeoJSON, and returns the image's `width`,
+`height`, RGBA `pixels`, and its `diagnostics` as JSON. A source reference that carries credentials
+is refused in the browser.
+
 ## Project Layout
 
 ```
@@ -103,6 +118,7 @@ docs/CONVENTIONS.md   # how this project writes what no check decides, kept curr
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
 docs/plan/            # feature specs and their tickets, deleted as their work lands (ADR-0006)
+examples/web/         # the browser example: a page, a sample mapfile, and its GeoJSON
 Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0009)
 crates/               # the crates, one per responsibility: style-ir, mapfile, engine, cli, …
 rust-toolchain.toml   # the pinned Rust toolchain (ADR-0008)

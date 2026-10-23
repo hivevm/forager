@@ -29,3 +29,9 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 too_many_lines = "warn"
 cognitive_complexity = "warn"
+
+# The browser bundle is downloaded by every map viewer (Q-5): optimize release builds for size.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

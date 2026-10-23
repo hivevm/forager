@@ -16,11 +16,11 @@
 What sits outside the system and what crosses its boundary. A diagram earns its place here more
 than anywhere else, and none beats one that has stopped being true.
 
-A host embeds the core and owns all I/O: today the CLI, which reads files. The host hands the
-mapfile frontend a resource loader rooted at the mapfile's directory, the base context; the
-frontend returns a style document and diagnostics. To render, the host binds a feature source to
-each layer by the layer's name and hands the engine a renderer; the engine returns an RGBA image
-and diagnostics, and the host encodes it.
+A host embeds the core and owns all I/O: the CLI reads files, and the browser bindings take what a
+page passes in. The host hands the mapfile frontend a resource loader rooted at the base context;
+the frontend returns a style document and diagnostics. To render, the host binds a feature source
+to each layer by the layer's name and hands the engine a renderer; the engine returns an RGBA
+image and diagnostics, and the host encodes it or hands it to the page.
 
 ## Building blocks
 
@@ -50,6 +50,10 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0016](adr/0016-geojson-crate.md)).
 - **`cli`** — the `forager` command, a host with a file loader that also refuses symbolic links
   out of the base context; `forager render` binds GeoJSON files to layers and writes a PNG.
+- **`bindings-wasm`** — the host for the browser: a mapfile, GeoJSON per layer name, and a
+  viewport in, the RGBA image and the diagnostics out; it drops source references that carry
+  credentials (Q-7). `scripts/build-web.sh` builds it into `target/web/`.
+- **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out.
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend.
