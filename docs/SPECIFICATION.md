@@ -89,8 +89,8 @@ from the threats below.
   source.
 - **Q-3** — Robustness: mapfiles and data come from users, and a panic in the browser loses the
   whole map. Invalid geometries, broken files, and errors of third-party crates become
-  diagnostics. Measured by a fuzz run of 5 minutes per target in CI on every pull request — the
-  mapfile parser, the YAML/JSON loader, and the renderer — that ends without a panic.
+  diagnostics. Measured by a weekly scheduled fuzz run of 5 minutes per target — the mapfile
+  parser, the YAML/JSON loader, and the renderer — that ends without a panic.
 - **Q-4** — Fidelity: the point of Forager is MapServer's semantics. The share of in-scope
   msautotest cases that pass G-6 does not fall from one release to the next.
 - **Q-5** — Bundle size: the core is downloaded by every browser that shows a map. The gzipped
