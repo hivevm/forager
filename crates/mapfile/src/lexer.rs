@@ -183,7 +183,13 @@ impl Lexer<'_> {
                     &format!("missing closing `{close}`"),
                     span,
                 );
-                self.skip_line();
+                if greedy {
+                    self.skip_line();
+                } else {
+                    // No closing character up to the end, so none for any later opening one
+                    // either: stop here instead of scanning to the end again for each of them.
+                    self.advance(self.chars.len() - self.pos);
+                }
             }
         }
     }
@@ -241,9 +247,10 @@ impl Lexer<'_> {
         self.advance(longest);
         if longest == number {
             match text.parse::<f64>() {
-                Ok(n) => self.push(TokenKind::Number(n), span),
-                // MapServer reads such a token with atof(), as 0; Forager refuses it instead.
-                Err(_) => self.error("invalid-number", &format!("`{text}` is not a number"), span),
+                Ok(n) if n.is_finite() => self.push(TokenKind::Number(n), span),
+                // MapServer reads `.` with atof(), as 0, and `1e999` as infinity; Forager refuses
+                // both, since JSON cannot carry a non-finite number.
+                _ => self.error("invalid-number", &format!("`{text}` is not a number"), span),
             }
         } else if longest == regex {
             let ignore_case = text.ends_with('i');
@@ -404,6 +411,22 @@ mod tests {
     fn spans_count_lines_and_columns_from_one() {
         let (tokens, _) = lex("MAP\n  NAME \"x\"", "t.map");
         assert_eq!(tokens[2].span, Span::new("t.map", 2, 8));
+    }
+
+    #[test]
+    fn non_finite_numbers_are_refused() {
+        let (_, diagnostics) = lex("WIDTH 1e999", "t.map");
+        assert_eq!(diagnostics[0].code, "invalid-number");
+    }
+
+    #[test]
+    fn many_unterminated_bindings_lex_in_linear_time() {
+        // Verifies: Q-9
+        let text = "[\n".repeat(200_000);
+        let started = std::time::Instant::now();
+        let (_, diagnostics) = lex(&text, "t.map");
+        assert_eq!(diagnostics.len(), 1);
+        assert!(started.elapsed().as_secs() < 5, "{:?}", started.elapsed());
     }
 
     #[test]

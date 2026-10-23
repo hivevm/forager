@@ -2,6 +2,7 @@
 
 mod files;
 
+use std::ffi::OsString;
 use std::path::Path;
 use std::process::ExitCode;
 
@@ -18,8 +19,9 @@ enum Format {
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.first().map(String::as_str) {
+    // Arguments as the OS gives them: a path need not be UTF-8.
+    let args: Vec<OsString> = std::env::args_os().skip(1).collect();
+    match args.first().and_then(|a| a.to_str()) {
         Some("read") => match parse_read(&args[1..]) {
             Ok((mapfile, format)) => read(Path::new(mapfile), &format),
             Err(message) => usage(&message),
@@ -29,7 +31,8 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some(other) => usage(&format!("unknown command `{other}`")),
-        None => usage("a command is required"),
+        None if args.is_empty() => usage("a command is required"),
+        None => usage("unknown command"),
     }
 }
 
@@ -38,21 +41,21 @@ fn usage(message: &str) -> ExitCode {
     ExitCode::from(2)
 }
 
-fn parse_read(args: &[String]) -> Result<(&str, Format), String> {
+fn parse_read(args: &[OsString]) -> Result<(&OsString, Format), String> {
     let mut mapfile = None;
     let mut format = Format::Yaml;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--format" => {
-                format = match iter.next().map(String::as_str) {
+        match arg.to_str() {
+            Some("--format") => {
+                format = match iter.next().and_then(|a| a.to_str()) {
                     Some("yaml") => Format::Yaml,
                     Some("json") => Format::Json,
                     _ => return Err("--format takes yaml or json".to_owned()),
                 }
             }
-            _ if mapfile.is_none() => mapfile = Some(arg.as_str()),
-            _ => return Err(format!("unexpected argument `{arg}`")),
+            _ if mapfile.is_none() => mapfile = Some(arg),
+            _ => return Err(format!("unexpected argument `{}`", arg.to_string_lossy())),
         }
     }
     Ok((mapfile.ok_or("a mapfile is required")?, format))

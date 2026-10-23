@@ -91,3 +91,36 @@ fn a_missing_mapfile_and_bad_arguments_are_reported() {
     );
     assert_eq!(forager(&["frobnicate"]).status.code(), Some(2));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_path_that_is_not_utf8_is_an_error_not_a_panic() {
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::OsStr::from_bytes(b"/nonexistent/\xff.map");
+    let output = Command::new(env!("CARGO_BIN_EXE_forager"))
+        .arg("read")
+        .arg(path)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symbolic_link_out_of_the_mapfile_directory_is_refused() {
+    // Verifies: Q-8
+    let root = std::env::temp_dir().join(format!("forager-symlink-{}", std::process::id()));
+    let base = root.join("base");
+    std::fs::create_dir_all(&base).unwrap();
+    std::fs::write(root.join("secret.inc"), "NAME 'secret'\n").unwrap();
+    std::os::unix::fs::symlink(root.join("secret.inc"), base.join("link.inc")).unwrap();
+    std::fs::write(base.join("m.map"), "MAP INCLUDE 'link.inc' END\n").unwrap();
+    let output = forager(&["read", base.join("m.map").to_str().unwrap()]);
+    std::fs::remove_dir_all(&root).unwrap();
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("the path leaves the base context"),
+        "{stderr}"
+    );
+}

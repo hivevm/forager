@@ -71,13 +71,15 @@ fn read<'a, L: ResourceLoader>(
         diagnostics.append(&mut lex_diagnostics);
         stack.push(path.clone());
         let mut spliced = Vec::with_capacity(tokens.len());
-        let mut iter = tokens.into_iter();
+        let mut iter = tokens.into_iter().peekable();
         while let Some(token) = iter.next() {
             if !token.is_word("INCLUDE") {
                 spliced.push(token);
                 continue;
             }
-            let Some(target) = include_target(&token, iter.next(), stack, diagnostics) else {
+            // Only a string is taken as the argument, so `INCLUDE END` keeps its END.
+            let argument = iter.next_if(|t| matches!(t.kind, lexer::TokenKind::Str { .. }));
+            let Some(target) = include_target(&token, argument, stack, diagnostics) else {
                 continue;
             };
             let included = read(&target, Some(token.span), loader, stack, diagnostics).await;

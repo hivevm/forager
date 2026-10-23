@@ -6,7 +6,19 @@ use std::process::Command;
 
 use serde_json::Value;
 
-/// What a workspace crate may depend on, by crate name without the `forager-` prefix.
+/// The hosts, which may depend on every crate but hosts and tooling, adapters included.
+const HOSTS: &[&str] = &["cli", "bindings-wasm", "dev-server", "bindings-wit"];
+
+/// Whether `from` may depend on `to`, by crate name without the `forager-` prefix; `None` when
+/// ADR-0009 does not name `from`.
+fn may_depend(from: &str, to: &str) -> Option<bool> {
+    if HOSTS.contains(&from) {
+        return Some(!HOSTS.contains(&to) && to != "arch-test");
+    }
+    Some(allowed(from)?.contains(&to))
+}
+
+/// What a crate other than a host may depend on.
 fn allowed(from: &str) -> Option<&'static [&'static str]> {
     const CORE: &[&str] = &[
         "style-ir",
@@ -20,20 +32,6 @@ fn allowed(from: &str) -> Option<&'static [&'static str]> {
         "raster",
         "ports",
     ];
-    const EVERYTHING: &[&str] = &[
-        "style-ir",
-        "expr",
-        "proj",
-        "render",
-        "render-agg",
-        "encode",
-        "symbolize",
-        "label",
-        "raster",
-        "engine",
-        "ports",
-        "mapfile",
-    ];
     Some(match from {
         "style-ir" | "arch-test" => &[],
         "expr" | "proj" | "render" | "ports" => &["style-ir"],
@@ -42,7 +40,6 @@ fn allowed(from: &str) -> Option<&'static [&'static str]> {
         "symbolize" | "label" | "raster" => &["style-ir", "expr", "proj", "render"],
         "engine" => CORE,
         "mapfile" => &["style-ir", "ports"],
-        "cli" | "bindings-wasm" | "dev-server" | "bindings-wit" => EVERYTHING,
         adapter if adapter.starts_with("adapter-") => &["style-ir", "ports"],
         _ => return None,
     })
@@ -141,13 +138,13 @@ fn workspace_crates_depend_only_along_the_allowed_edges() {
     let ws = workspace();
     let mut violations = Vec::new();
     for (id, from) in &ws.members {
-        let Some(allowed) = allowed(from) else {
+        if may_depend(from, "style-ir").is_none() {
             violations.push(format!("{from} is not a crate ADR-0009 names"));
             continue;
-        };
+        }
         for dep in &ws.deps[id] {
             if let Some(to) = ws.members.get(dep)
-                && !allowed.contains(&to.as_str())
+                && may_depend(from, to) != Some(true)
             {
                 violations.push(format!("{from} -> {to}"));
             }
@@ -192,5 +189,8 @@ fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
     assert!(!allowed("adapter-geojson").unwrap().contains(&"engine"));
     assert!(allowed("engine").unwrap().contains(&"ports"));
     assert!(allowed("server").is_none());
+    assert_eq!(may_depend("cli", "adapter-geojson"), Some(true));
+    assert_eq!(may_depend("cli", "bindings-wasm"), Some(false));
+    assert_eq!(may_depend("bindings-wasm", "arch-test"), Some(false));
     assert!(must_be_pure_rust("mapfile") && !must_be_pure_rust("bindings-wasm"));
 }

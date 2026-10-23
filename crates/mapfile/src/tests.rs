@@ -201,3 +201,15 @@ fn colours_of_minus_one_mean_no_colour() {
     assert_eq!(style.color, None);
     assert_eq!(style.outline_color, Some(Rgba::opaque(1, 2, 3)));
 }
+
+#[test]
+fn an_include_without_a_string_keeps_the_next_token() {
+    let loaded = load_files(&[("m.map", "MAP INCLUDE END")]);
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+}
+
+#[test]
+fn an_unknown_keyword_is_reported_once() {
+    let loaded = load_files(&[("m.map", "MAP FROBNICATE 1 END")]);
+    assert_eq!(codes(&loaded), ["unknown-keyword"]);
+}

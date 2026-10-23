@@ -49,7 +49,7 @@ impl Translator<'_> {
                             .map(|n| [n[0].max(0.0) as u32, n[1].max(0.0) as u32]);
                     }
                     "IMAGECOLOR" => map.image_color = self.color(d),
-                    _ => self.unhandled(&d.keyword, &d.span),
+                    _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) => match b.keyword.as_str() {
                     "LAYER" => {
@@ -110,7 +110,7 @@ impl Translator<'_> {
                             source_span.get_or_insert_with(|| d.span.clone());
                         }
                     }
-                    _ => self.unhandled(&d.keyword, &d.span),
+                    _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) => match b.keyword.as_str() {
                     "CLASS" => layer.classes.push(self.class(b)),
@@ -138,8 +138,8 @@ impl Translator<'_> {
             match node {
                 Node::Directive(d) if d.keyword == "NAME" => class.name = self.string(d),
                 Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b)),
-                Node::Directive(Directive { keyword, span, .. })
-                | Node::Block(Block { keyword, span, .. }) => self.unhandled(keyword, span),
+                Node::Directive(d) => self.unhandled_directive(d),
+                Node::Block(b) => self.unhandled(&b.keyword, &b.span),
             }
         }
         class
@@ -157,7 +157,7 @@ impl Translator<'_> {
                     "OUTLINECOLOR" => style.outline_color = self.color(d),
                     "WIDTH" => style.width = self.numbers(d, 1).map(|n| n[0]),
                     "SIZE" => style.size = self.numbers(d, 1).map(|n| n[0]),
-                    _ => self.unhandled(&d.keyword, &d.span),
+                    _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
             }
@@ -201,6 +201,13 @@ impl Translator<'_> {
             }
         }
         (!params.is_empty()).then(|| params.join(" "))
+    }
+
+    /// A directive not carried over, unless the parser has already warned that it is unknown.
+    fn unhandled_directive(&mut self, d: &Directive) {
+        if d.known {
+            self.unhandled(&d.keyword, &d.span);
+        }
     }
 
     fn unhandled(&mut self, keyword: &str, span: &Span) {

@@ -42,6 +42,8 @@ pub struct Directive {
     pub keyword: String,
     pub span: Span,
     pub values: Vec<Token>,
+    /// Whether the keyword is a statement of its block; the parser has warned about it if not.
+    pub known: bool,
 }
 
 struct Schema {
@@ -282,7 +284,8 @@ impl Parser<'_> {
                     .push(Node::Block(self.block(keyword, token.span.clone())?));
                 continue;
             }
-            if !schema.statements.contains(&keyword.as_str()) {
+            let known = schema.statements.contains(&keyword.as_str());
+            if !known {
                 self.diagnostics.push(Diagnostic::warning(
                     "unknown-keyword",
                     format!("{keyword} is not a keyword of {}", block.keyword),
@@ -294,6 +297,7 @@ impl Parser<'_> {
                 keyword,
                 span: token.span.clone(),
                 values,
+                known,
             }));
         }
     }
@@ -311,13 +315,18 @@ impl Parser<'_> {
         None
     }
 
+    /// The values of a directive. The first token is always one, as MapServer reads a value after
+    /// every keyword, so that a value spelled like a keyword stays a value: `CONNECTIONTYPE
+    /// PLUGIN` followed by `PLUGIN "…"`. Further tokens are values up to the next keyword of the
+    /// block.
     fn values(&mut self, schema: &Schema) -> Vec<Token> {
         let start = self.pos;
         while let Some(token) = self.tokens.get(self.pos) {
             if let Some(keyword) = token.keyword()
                 && (keyword == "END"
-                    || schema.statements.contains(&keyword.as_str())
-                    || schema.blocks.contains(&keyword.as_str()))
+                    || (self.pos > start
+                        && (schema.statements.contains(&keyword.as_str())
+                            || schema.blocks.contains(&keyword.as_str()))))
             {
                 break;
             }
@@ -396,6 +405,21 @@ mod tests {
         assert!(
             matches!(&projection.values[0].kind, TokenKind::Str { value, .. } if value == "proj=utm")
         );
+    }
+
+    #[test]
+    fn a_value_spelled_like_a_keyword_stays_a_value() {
+        let (map, diagnostics) =
+            parse_text("MAP LAYER CONNECTIONTYPE PLUGIN PLUGIN 'msplugin.dll' END END");
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let Node::Block(layer) = &map.unwrap().nodes[0] else {
+            panic!()
+        };
+        assert_eq!(keywords(&layer.nodes), ["CONNECTIONTYPE", "PLUGIN"]);
+        let Node::Directive(connection_type) = &layer.nodes[0] else {
+            panic!()
+        };
+        assert!(connection_type.values[0].is_word("PLUGIN"));
     }
 
     #[test]
