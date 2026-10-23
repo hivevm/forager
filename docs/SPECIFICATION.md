@@ -98,6 +98,15 @@ from the threats below.
 - **Q-6** — Licence hygiene: Forager is released as `MIT OR Apache-2.0` and must stay
   redistributable. Every dependency carries a permissive licence, measured by
   `cargo deny check licenses` being green.
+- **Q-7** — Confidentiality: no credential reaches a client. The host rewrites source references
+  before they leave the server, and the browser bindings reject a source reference with a
+  credential property; a test feeds one and expects the rejection.
+- **Q-8** — Containment: `INCLUDE`, `SYMBOLSET`, `FONTSET`, `SHAPEPATH`, and pixmap paths resolve
+  only inside the base context the host gives. A path with a `..` escape or an absolute path is a
+  diagnostic; a test feeds each and expects it.
+- **Q-9** — Bounded resources: `INCLUDE` depth and cycles, image size, feature count, expression
+  nesting, and regular-expression size are limited, and exceeding a limit is a diagnostic. A test
+  per limit feeds an input past it and expects the diagnostic.
 
 ## Non-Goals
 
@@ -138,9 +147,17 @@ The assets, the actors who threaten them, and the trust boundaries between the p
 the system must never do, regardless of what a task asks. A prohibition not written here does not
 exist for an agent. One a test can decide is restated as a `Q-n`, so that it is verified.
 
-- **Assets:** …
-- **Actors and trust boundaries:** …
-- The system shall never …
+- **Assets:** credentials in connection strings (`CONNECTION`); the host's files behind the
+  resource loader; the availability of the server and of the user's browser tab.
+- **Actors and trust boundaries:** the authors of mapfiles and style documents and the providers
+  of data files are untrusted, since a server may render maps its users upload. The boundary
+  between host and core runs through the ports; the boundary between server and client runs
+  through the source references the host hands out.
+- The system shall never pass a connection string, or a source reference property that carries
+  credentials, to a client (Q-7).
+- The system shall never resolve a resource path outside the base context the host gives it
+  (Q-8).
+- The system shall never let one input exhaust memory or time without bound (Q-9).
 
 ## Assumptions
 
