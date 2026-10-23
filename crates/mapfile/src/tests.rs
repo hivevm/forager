@@ -213,3 +213,34 @@ fn an_unknown_keyword_is_reported_once() {
     let loaded = load_files(&[("m.map", "MAP FROBNICATE 1 END")]);
     assert_eq!(codes(&loaded), ["unknown-keyword"]);
 }
+
+#[test]
+fn includes_that_multiply_past_the_size_limit_are_an_error() {
+    // Verifies: Q-9
+    // Each level includes the next 64 times: 64^4 copies of a 32 KiB file exceed the limit long
+    // before they are all read.
+    let leaf: &'static str = format!("NAME '{}'\n", "x".repeat(32 * 1024)).leak();
+    let fan = |next: &str| -> &'static str { format!("INCLUDE '{next}'\n").repeat(64).leak() };
+    let started = std::time::Instant::now();
+    let loaded = load_files(&[
+        ("m.map", "MAP INCLUDE '1' END"),
+        ("1", fan("2")),
+        ("2", fan("3")),
+        ("3", fan("4")),
+        ("4", leaf),
+    ]);
+    assert!(loaded.document.is_none());
+    assert_eq!(codes(&loaded), ["mapfile-too-large"]);
+    assert!(started.elapsed().as_secs() < 10, "{:?}", started.elapsed());
+}
+
+#[test]
+fn diagnostics_past_the_limit_are_counted_not_listed() {
+    // Verifies: Q-9
+    let text: &'static str = format!("MAP\n{}END\n", "@\n".repeat(1500)).leak();
+    let loaded = load_files(&[("m.map", text)]);
+    assert_eq!(loaded.diagnostics.len(), super::MAX_DIAGNOSTICS + 1);
+    let last = loaded.diagnostics.last().unwrap();
+    assert_eq!(last.code, "diagnostics-truncated");
+    assert!(last.message.starts_with("500 "), "{}", last.message);
+}

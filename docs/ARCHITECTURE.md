@@ -33,8 +33,8 @@ golden path and the test pattern an agent copies from are named here.
   leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
-  bounded in depth and cycles (Q-9), and the translation into the style IR, which reports every
-  keyword it does not carry over. It is the only crate that knows MapServer syntax.
+  bounded in depth, cycles, and total size (Q-9), and the translation into the style IR, which
+  reports every keyword it does not carry over. It is the only crate that knows MapServer syntax.
 - **`cli`** — the `forager` command, a host with a file loader that also refuses symbolic links
   out of the base context.
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):

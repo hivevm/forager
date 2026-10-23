@@ -17,7 +17,14 @@ use crate::lexer::Token;
 /// How deep `INCLUDE`s may nest, as in MapServer (`MAX_INCLUDE_DEPTH` of its lexer).
 pub const MAX_INCLUDE_DEPTH: usize = 5;
 
-/// The result of loading a mapfile: the document if no error occurred, and every diagnostic.
+/// How much text a mapfile with all its `INCLUDE`s may amount to (Q-9). Depth alone does not
+/// bound it: five levels of files that each include the next many times multiply.
+pub const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+
+/// How many diagnostics one load reports (Q-9); the rest are counted in a last one.
+pub const MAX_DIAGNOSTICS: usize = 1000;
+
+/// The result of loading a mapfile: the document if no error occurred, and the diagnostics.
 #[derive(Debug)]
 pub struct Loaded {
     pub document: Option<StyleDocument>,
@@ -27,9 +34,14 @@ pub struct Loaded {
 /// Loads the mapfile at `path` inside the base context of `loader`. As in MapServer, every
 /// `INCLUDE` is resolved against the base context, which is the main mapfile's directory.
 pub async fn load<L: ResourceLoader>(path: &ResourcePath, loader: &L) -> Loaded {
-    let mut diagnostics = Vec::new();
-    let mut stack = Vec::new();
-    let tokens = read(path, None, loader, &mut stack, &mut diagnostics).await;
+    let mut reading = Reading {
+        loader,
+        stack: Vec::new(),
+        diagnostics: Vec::new(),
+        bytes: 0,
+    };
+    let tokens = reading.read(path, None).await;
+    let mut diagnostics = reading.diagnostics;
     let document = match tokens {
         Some(tokens) if !diagnostics.iter().any(Diagnostic::is_error) => {
             let (map, mut parse_diagnostics) = syntax::parse(&tokens);
@@ -39,55 +51,85 @@ pub async fn load<L: ResourceLoader>(path: &ResourcePath, loader: &L) -> Loaded 
         _ => None,
     };
     let document = document.filter(|_| !diagnostics.iter().any(Diagnostic::is_error));
+    if diagnostics.len() > MAX_DIAGNOSTICS {
+        let dropped = diagnostics.len() - MAX_DIAGNOSTICS;
+        diagnostics.truncate(MAX_DIAGNOSTICS);
+        diagnostics.push(Diagnostic::warning(
+            "diagnostics-truncated",
+            format!("{dropped} more diagnostics are not shown"),
+            None,
+        ));
+    }
     Loaded {
         document,
         diagnostics,
     }
 }
 
-/// Reads one file into tokens, splicing in the tokens of its `INCLUDE`s.
-fn read<'a, L: ResourceLoader>(
-    path: &'a ResourcePath,
-    included_at: Option<Span>,
+/// The state of one load: the files being read, what they reported, and how much was read.
+struct Reading<'a, L> {
     loader: &'a L,
-    stack: &'a mut Vec<ResourcePath>,
-    diagnostics: &'a mut Vec<Diagnostic>,
-) -> Pin<Box<dyn Future<Output = Option<Vec<Token>>> + 'a>> {
-    Box::pin(async move {
-        let bytes = match loader.load(path).await {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                let message = format!("cannot read `{path}`: {e}");
-                diagnostics.push(Diagnostic::error(
-                    "resource-unreadable",
-                    message,
-                    included_at,
-                ));
+    stack: Vec<ResourcePath>,
+    diagnostics: Vec<Diagnostic>,
+    bytes: usize,
+}
+
+impl<L: ResourceLoader> Reading<'_, L> {
+    /// Reads one file into tokens, splicing in the tokens of its `INCLUDE`s.
+    fn read<'s>(
+        &'s mut self,
+        path: &'s ResourcePath,
+        included_at: Option<Span>,
+    ) -> Pin<Box<dyn Future<Output = Option<Vec<Token>>> + 's>> {
+        Box::pin(async move {
+            if self.bytes > MAX_TOTAL_BYTES {
                 return None;
             }
-        };
-        let text = String::from_utf8_lossy(&bytes);
-        let (tokens, mut lex_diagnostics) = lexer::lex(&text, path.as_str());
-        diagnostics.append(&mut lex_diagnostics);
-        stack.push(path.clone());
-        let mut spliced = Vec::with_capacity(tokens.len());
-        let mut iter = tokens.into_iter().peekable();
-        while let Some(token) = iter.next() {
-            if !token.is_word("INCLUDE") {
-                spliced.push(token);
-                continue;
-            }
-            // Only a string is taken as the argument, so `INCLUDE END` keeps its END.
-            let argument = iter.next_if(|t| matches!(t.kind, lexer::TokenKind::Str { .. }));
-            let Some(target) = include_target(&token, argument, stack, diagnostics) else {
-                continue;
+            let bytes = match self.loader.load(path).await {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    let message = format!("cannot read `{path}`: {e}");
+                    self.diagnostics.push(Diagnostic::error(
+                        "resource-unreadable",
+                        message,
+                        included_at,
+                    ));
+                    return None;
+                }
             };
-            let included = read(&target, Some(token.span), loader, stack, diagnostics).await;
-            spliced.extend(included.unwrap_or_default());
-        }
-        stack.pop();
-        Some(spliced)
-    })
+            self.bytes += bytes.len();
+            if self.bytes > MAX_TOTAL_BYTES {
+                let message =
+                    format!("the mapfile with its INCLUDEs exceeds {MAX_TOTAL_BYTES} bytes");
+                self.diagnostics
+                    .push(Diagnostic::error("mapfile-too-large", message, included_at));
+                return None;
+            }
+            let text = String::from_utf8_lossy(&bytes);
+            let (tokens, mut lex_diagnostics) = lexer::lex(&text, path.as_str());
+            self.diagnostics.append(&mut lex_diagnostics);
+            self.stack.push(path.clone());
+            let mut spliced = Vec::with_capacity(tokens.len());
+            let mut iter = tokens.into_iter().peekable();
+            while let Some(token) = iter.next() {
+                if !token.is_word("INCLUDE") {
+                    spliced.push(token);
+                    continue;
+                }
+                // Only a string is taken as the argument, so `INCLUDE END` keeps its END.
+                let argument = iter.next_if(|t| matches!(t.kind, lexer::TokenKind::Str { .. }));
+                let Some(target) =
+                    include_target(&token, argument, &self.stack, &mut self.diagnostics)
+                else {
+                    continue;
+                };
+                let included = self.read(&target, Some(token.span)).await;
+                spliced.extend(included.unwrap_or_default());
+            }
+            self.stack.pop();
+            Some(spliced)
+        })
+    }
 }
 
 /// The file an `INCLUDE` names, if it may be read: inside the base context (Q-8), not already
