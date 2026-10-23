@@ -44,8 +44,34 @@ that test exists the criterion is pending work, and the traceability check lists
 ([ADR-0002](adr/0002-decisions-verified-by-tests.md)). Identifiers are never reused.
 Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules), rule 5).
 
-1. **G-1** — …
-2. **G-2** — …
+1. **G-1** — When a mapfile of the msautotest suite is loaded with a resource loader for its
+   `INCLUDE`, `SYMBOLSET`, and `FONTSET` files, the system shall produce a style IR and no
+   diagnostic of severity error; warnings are allowed.
+2. **G-2** — When the CLI is given the path of a mapfile, it shall print the style IR as YAML or
+   JSON and every diagnostic with severity, code, message, and source span, and exit non-zero if
+   loading failed.
+3. **G-3** — When a mapfile is converted mapfile → style IR → YAML → JSON → style IR, the system
+   shall yield a style IR equal to the first.
+4. **G-4** — When a style document of a newer minor format version is loaded, the system shall
+   ignore its unknown fields with a diagnostic naming the field and its location; a newer major
+   version shall be a load error, and an older major version shall be migrated to the current one.
+5. **G-5** — When the WASM bindings receive a style, GeoJSON features, and a viewport, they shall
+   return the rendered RGBA image, and the HTML example shall display it.
+6. **G-6** — When a msautotest case is rendered, its RGBA buffer shall match the reference image
+   within the tolerance of its category: geometry and symbols, raster nearest neighbour, raster
+   bilinear or average, text.
+7. **G-7** — When a filter is evaluated with and without pushdown, the system shall return
+   identical feature sets.
+8. **G-8** — When a layer's source has no bound adapter or its adapter fails, the system shall
+   skip the layer and emit a diagnostic naming the layer, the source kind, and the source span.
+9. **G-9** — When the same input is rendered natively and on `wasm32-unknown-unknown`, the system
+   shall produce bit-identical RGBA buffers.
+10. **G-10** — When labels are placed for a msautotest case, the system shall place and discard
+    the same labels as the reference, each within 1 px of its reference position.
+11. **G-11** — When a proj4 transformation used by a test case is evaluated, proj4rs shall agree
+    with PROJ within a tolerance stated in metres.
+12. **G-12** — When an RGBA buffer is encoded as PNG and decoded again, the system shall yield the
+    identical buffer.
 
 ## Quality Goals
 
