@@ -11,20 +11,32 @@ pub struct FileLoader {
 }
 
 impl FileLoader {
-    /// The loader for a mapfile's directory, and the mapfile's name inside it.
-    pub fn for_mapfile(mapfile: &Path) -> Result<(Self, String), String> {
+    /// The loader for `base`, by default the mapfile's directory, and the mapfile's path inside
+    /// it. The mapfile must lie inside `base`.
+    pub fn for_mapfile(mapfile: &Path, base: Option<&Path>) -> Result<(Self, String), String> {
         let mapfile = mapfile.canonicalize().map_err(|e| e.to_string())?;
-        let root = mapfile.parent().ok_or("the mapfile has no directory")?;
-        let name = mapfile
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or("the mapfile's name is not valid UTF-8")?;
-        Ok((
-            Self {
-                root: root.to_path_buf(),
-            },
-            name.to_owned(),
-        ))
+        let root = match base {
+            Some(base) => base
+                .canonicalize()
+                .map_err(|e| format!("--base {}: {e}", base.display()))?,
+            None => mapfile
+                .parent()
+                .ok_or("the mapfile has no directory")?
+                .to_path_buf(),
+        };
+        let inside = mapfile.strip_prefix(&root).map_err(|_| {
+            format!(
+                "the mapfile lies outside the base context {}",
+                root.display()
+            )
+        })?;
+        let name = inside
+            .iter()
+            .map(|part| part.to_str())
+            .collect::<Option<Vec<_>>>()
+            .ok_or("the mapfile's path is not valid UTF-8")?
+            .join("/");
+        Ok((Self { root }, name))
     }
 }
 

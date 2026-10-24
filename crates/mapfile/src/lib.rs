@@ -34,7 +34,8 @@ pub struct Loaded {
 }
 
 /// Loads the mapfile at `path` inside the base context of `loader`. As in MapServer, every
-/// `INCLUDE` is resolved against the base context, which is the main mapfile's directory.
+/// `INCLUDE` is resolved against the main mapfile's directory, nested ones too; a `..` may leave
+/// that directory but not the base context (Q-8).
 /// `init=` projections are resolved by `resolver` (ADR-0018); without one they are load errors.
 pub async fn load<L: ResourceLoader>(
     path: &ResourcePath,
@@ -133,7 +134,8 @@ impl<L: ResourceLoader> Reading<'_, L> {
     }
 }
 
-/// The file an `INCLUDE` names, if it may be read: inside the base context (Q-8), not already
+/// The file an `INCLUDE` names, resolved against the main mapfile at the bottom of `stack`, if it
+/// may be read: inside the base context (Q-8), not already
 /// being read, and not nested deeper than [`MAX_INCLUDE_DEPTH`] (Q-9).
 fn include_target(
     include: &Token,
@@ -154,7 +156,8 @@ fn include_target(
         ));
         return None;
     };
-    let target = match ResourcePath::new(&value) {
+    let main = stack.first().expect("the main mapfile is being read");
+    let target = match main.resolve(&value) {
         Ok(target) => target,
         Err(e) => {
             let message = format!("INCLUDE `{value}` is refused: {e}");
