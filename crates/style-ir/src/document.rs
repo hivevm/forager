@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::migration::{self, STEPS, Step};
+use crate::migration::{self, STEPS};
 use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, Map};
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
@@ -32,6 +32,76 @@ fn older_major(document: Option<Versioned>) -> Option<(String, u32)> {
 #[derive(Deserialize)]
 struct Versioned {
     version: String,
+}
+
+/// Whether a document of `version` is of a newer minor of this build's major.
+fn newer_minor(version_text: Option<&str>) -> bool {
+    match (version_text.and_then(version), version(FORMAT_VERSION)) {
+        (Some(theirs), Some(ours)) => theirs.0 == ours.0 && theirs.1 > ours.1,
+        _ => false,
+    }
+}
+
+/// How many unknown values a newer minor's document may drop before it is refused: each one is
+/// found by reading the document again (Q-9).
+pub const MAX_DROPPED_VALUES: usize = 100;
+
+/// A step of the path to a place in a document.
+enum Segment {
+    Key(String),
+    Index(usize),
+}
+
+/// The segments of the path at which a typed read failed.
+fn segments(path: &serde_path_to_error::Path) -> Vec<Segment> {
+    path.iter()
+        .filter_map(|segment| match segment {
+            serde_path_to_error::Segment::Map { key } => Some(Segment::Key(key.clone())),
+            serde_path_to_error::Segment::Seq { index } => Some(Segment::Index(*index)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The JSON Pointer (RFC 6901) of `segments`.
+fn segments_pointer(segments: &[Segment]) -> String {
+    segments
+        .iter()
+        .map(|step| match step {
+            Segment::Key(key) => format!("/{}", key.replace('~', "~0").replace('/', "~1")),
+            Segment::Index(index) => format!("/{index}"),
+        })
+        .collect()
+}
+
+/// A read error, prefixed with the JSON Pointer of where it happened.
+fn read_error<E: std::fmt::Display>(
+    code: &str,
+    error: &serde_path_to_error::Error<E>,
+) -> Diagnostic {
+    let at = segments_pointer(&segments(error.path()));
+    let message = if at.is_empty() {
+        error.inner().to_string()
+    } else {
+        format!("{at}: {}", error.inner())
+    };
+    Diagnostic::error(code, message, None)
+}
+
+/// The first operator in `value` that this build does not know.
+fn unknown_operator(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Object(object) => {
+            if let Some(serde_json::Value::String(op)) = object.get("op")
+                && serde_json::from_value::<crate::Op>(op.clone().into()).is_err()
+            {
+                return Some(op.clone());
+            }
+            object.values().find_map(unknown_operator)
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(unknown_operator),
+        _ => None,
+    }
 }
 
 /// The JSON Pointer (RFC 6901) of a place in a document.
@@ -89,36 +159,148 @@ impl StyleDocument {
     /// [`StyleDocument::from_yaml`] with the migration steps `steps`, for the tests and the fuzz
     /// target that exercise the chain before a second major exists.
     #[doc(hidden)]
-    pub fn from_yaml_with(text: &str, steps: &[Step]) -> Result<Read, Diagnostic> {
-        if let Some((theirs, major)) = older_major(serde_saphyr::from_str(text).ok()) {
+    pub fn from_yaml_with(text: &str, steps: &[migration::Step]) -> Result<Read, Diagnostic> {
+        let versioned: Option<Versioned> = serde_saphyr::from_str(text).ok();
+        let lenient = newer_minor(versioned.as_ref().map(|v| v.version.as_str()));
+        if let Some((theirs, major)) = older_major(versioned) {
             let value = serde_saphyr::from_str(text)
                 .map_err(|e| Diagnostic::error("yaml-read", e.to_string(), None))?;
             return Self::migrated(value, &theirs, major, steps);
         }
         let mut ignored = Vec::new();
-        let document: Self = serde_saphyr::with_deserializer_from_str(text, |de| {
+        let mut track = serde_path_to_error::Track::new();
+        let read = serde_saphyr::with_deserializer_from_str(text, |de| {
+            let de = serde_path_to_error::Deserializer::new(de, &mut track);
             serde_ignored::deserialize(de, |path| ignored.push(pointer(&path)))
-        })
-        .map_err(|e| Diagnostic::error("yaml-read", e.to_string(), None))?;
-        document.checked(ignored)
+        });
+        match read {
+            Ok(document) => Self::checked(document, ignored),
+            Err(_) if lenient => {
+                let value = serde_saphyr::from_str(text)
+                    .map_err(|e| Diagnostic::error("yaml-read", e.to_string(), None))?;
+                Self::lenient(value, "yaml-read")
+            }
+            Err(e) => Err(read_error(
+                "yaml-read",
+                &serde_path_to_error::Error::new(track.path(), e),
+            )),
+        }
     }
 
     /// [`StyleDocument::from_json`] with the migration steps `steps`.
     #[doc(hidden)]
-    pub fn from_json_with(text: &str, steps: &[Step]) -> Result<Read, Diagnostic> {
-        if let Some((theirs, major)) = older_major(serde_json::from_str(text).ok()) {
+    pub fn from_json_with(text: &str, steps: &[migration::Step]) -> Result<Read, Diagnostic> {
+        let versioned: Option<Versioned> = serde_json::from_str(text).ok();
+        let lenient = newer_minor(versioned.as_ref().map(|v| v.version.as_str()));
+        if let Some((theirs, major)) = older_major(versioned) {
             let value = serde_json::from_str(text)
                 .map_err(|e| Diagnostic::error("json-read", e.to_string(), None))?;
             return Self::migrated(value, &theirs, major, steps);
         }
         let mut ignored = Vec::new();
+        let mut track = serde_path_to_error::Track::new();
         let mut deserializer = serde_json::Deserializer::from_str(text);
-        let read = serde_ignored::deserialize(&mut deserializer, |path| {
-            ignored.push(pointer(&path));
-        })
+        let read = serde_ignored::deserialize(
+            serde_path_to_error::Deserializer::new(&mut deserializer, &mut track),
+            |path| ignored.push(pointer(&path)),
+        )
         .and_then(|document: Self| deserializer.end().map(|()| document));
-        let document = read.map_err(|e| Diagnostic::error("json-read", e.to_string(), None))?;
-        document.checked(ignored)
+        match read {
+            Ok(document) => Self::checked(document, ignored),
+            Err(_) if lenient => {
+                let value = serde_json::from_str(text)
+                    .map_err(|e| Diagnostic::error("json-read", e.to_string(), None))?;
+                Self::lenient(value, "json-read")
+            }
+            Err(e) => Err(read_error(
+                "json-read",
+                &serde_path_to_error::Error::new(track.path(), e),
+            )),
+        }
+    }
+
+    /// Reads `value`, a document of a newer minor that does not read as this build's version,
+    /// dropping each value this build does not know with a warning naming it and its path: an
+    /// enum value unsets its field, and an expression with an unknown operator or function
+    /// becomes one that never matches, so that its class or filter is kept (ADR-0019, ADR-0020).
+    /// Anything else that does not read is the error `code`, naming its path.
+    fn lenient(mut value: serde_json::Value, code: &str) -> Result<Read, Diagnostic> {
+        let mut dropped = Vec::new();
+        loop {
+            let mut ignored = Vec::new();
+            let read = serde_path_to_error::deserialize(serde_ignored::Deserializer::new(
+                value.clone(),
+                &mut |path: serde_ignored::Path| ignored.push(pointer(&path)),
+            ));
+            let error = match read {
+                Ok(document) => {
+                    let mut read = Self::checked(document, ignored)?;
+                    dropped.append(&mut read.warnings);
+                    read.warnings = dropped;
+                    return Ok(read);
+                }
+                Err(error) => error,
+            };
+            let path = segments(error.path());
+            // The field that holds what did not read: the nearest key on its path.
+            let Some(key_at) = path.iter().rposition(|s| matches!(s, Segment::Key(_))) else {
+                return Err(read_error(code, &error));
+            };
+            let at = segments_pointer(&path[..=key_at]);
+            let Some(field) = value.pointer_mut(&at) else {
+                return Err(read_error(code, &error));
+            };
+            let warning = if let Some(op) = unknown_operator(field) {
+                let filter =
+                    matches!(&path[key_at], Segment::Key(k) if k == "expression" || k == "filter");
+                if filter {
+                    *field = serde_json::Value::Bool(false);
+                    let message = format!(
+                        "{at}: the operator `{op}` is unknown to format version {FORMAT_VERSION}, \
+                         and the expression never matches"
+                    );
+                    Diagnostic::warning("unknown-operator", message, None)
+                } else {
+                    let message = format!(
+                        "{at}: the operator `{op}` is unknown to format version {FORMAT_VERSION}, \
+                         and the field is ignored"
+                    );
+                    Self::remove(&mut value, &at);
+                    Diagnostic::warning("unknown-operator", message, None)
+                }
+            } else if error.inner().to_string().starts_with("unknown variant")
+                || error.inner().to_string().contains("untagged enum")
+            {
+                let shown = match field {
+                    serde_json::Value::String(text) => text.clone(),
+                    other => other.to_string(),
+                };
+                let message = format!(
+                    "{at}: `{shown}` is unknown to format version {FORMAT_VERSION} and is ignored"
+                );
+                Self::remove(&mut value, &at);
+                Diagnostic::warning("unknown-value", message, None)
+            } else {
+                return Err(read_error(code, &error));
+            };
+            if dropped.len() == MAX_DROPPED_VALUES {
+                let message = format!(
+                    "the document holds more than {MAX_DROPPED_VALUES} values unknown to format \
+                     version {FORMAT_VERSION}"
+                );
+                return Err(Diagnostic::error("too-many-unknown-values", message, None));
+            }
+            dropped.push(warning);
+        }
+    }
+
+    /// Removes the field at the JSON Pointer `at` from its object.
+    fn remove(value: &mut serde_json::Value, at: &str) {
+        let (parent, key) = at.rsplit_once('/').unwrap_or(("", at));
+        let key = key.replace("~1", "/").replace("~0", "~");
+        if let Some(serde_json::Value::Object(object)) = value.pointer_mut(parent) {
+            object.remove(&key);
+        }
     }
 
     /// Reads `value`, a document of the older format version `theirs` with the major `major`,
@@ -128,7 +310,7 @@ impl StyleDocument {
         value: serde_json::Value,
         theirs: &str,
         major: u32,
-        steps: &[Step],
+        steps: &[migration::Step],
     ) -> Result<Read, Diagnostic> {
         let current = version(FORMAT_VERSION).map_or(major, |(current, _)| current);
         let value = migration::migrate(value, theirs, major, current, steps)?;
@@ -227,6 +409,7 @@ impl StyleDocument {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Step;
     use crate::{
         Align, AngleMode, Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer,
         LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset, MinFeatureSize, Op, Position,
@@ -595,5 +778,100 @@ mod tests {
         let read = StyleDocument::from_json_with(older_major, FIXTURE).unwrap();
         assert_eq!(read.document.map.image_color, Some(Rgba::opaque(1, 2, 3)));
         assert_eq!(read.warnings[0].code, "format-migrated");
+    }
+
+    /// A layer with a render mode and a class whose expression uses `op`, in YAML of `version`.
+    fn with_unknowns(version: &str, render_mode: &str, op: &str) -> String {
+        format!(
+            "version: \"{version}\"\nmap:\n  layers:\n  - render_mode: {render_mode}\n    \
+             classes:\n    - name: c\n      expression: {{op: {op}, args: [{{property: geom}}, 5]}}\n"
+        )
+    }
+
+    #[test]
+    fn a_newer_minors_unknown_enum_value_is_dropped_with_a_warning() {
+        // Verifies: ADR-0020
+        let read = StyleDocument::from_yaml(&with_unknowns("1.9", "hologram", "=")).unwrap();
+        let layer = &read.document.map.layers[0];
+        assert_eq!(layer.render_mode, None);
+        assert_eq!(layer.classes[0].name.as_deref(), Some("c"));
+        let messages: Vec<_> = read.warnings.iter().map(|w| w.message.as_str()).collect();
+        assert_eq!(
+            messages,
+            [
+                "/map/layers/0/render_mode: `hologram` is unknown to format version 1.0 and is ignored"
+            ]
+        );
+        assert_eq!(read.warnings[0].code, "unknown-value");
+        let again = StyleDocument::from_yaml(&read.document.to_yaml().unwrap()).unwrap();
+        assert_eq!(
+            again.document, read.document,
+            "the dropped value does not reappear"
+        );
+        assert!(again.warnings.is_empty());
+    }
+
+    #[test]
+    fn a_newer_minors_unknown_operator_keeps_its_class_which_never_matches() {
+        // Verifies: ADR-0019
+        let read = StyleDocument::from_yaml(&with_unknowns("1.9", "polygon", "s_buffer")).unwrap();
+        let class = &read.document.map.layers[0].classes[0];
+        assert_eq!(class.name.as_deref(), Some("c"));
+        assert_eq!(class.expression, Some(Expr::Bool(false)));
+        let messages: Vec<_> = read.warnings.iter().map(|w| w.message.as_str()).collect();
+        assert_eq!(
+            messages,
+            [
+                "/map/layers/0/classes/0/expression: the operator `s_buffer` is unknown to format \
+                 version 1.0, and the expression never matches"
+            ]
+        );
+        assert_eq!(read.warnings[0].code, "unknown-operator");
+        let json = read.document.to_json().unwrap();
+        assert!(!json.contains("s_buffer"), "the operator does not reappear");
+        // A filter is kept the same way; JSON reads as YAML does.
+        let json = r#"{"version":"1.2","map":{"layers":[{"filter":{"op":"s_buffer","args":[]}}]}}"#;
+        let read = StyleDocument::from_json(json).unwrap();
+        assert_eq!(read.document.map.layers[0].filter, Some(Expr::Bool(false)));
+    }
+
+    #[test]
+    fn in_the_current_minor_an_unknown_value_or_operator_is_a_load_error_naming_its_path() {
+        let error = StyleDocument::from_yaml(&with_unknowns("1.0", "hologram", "=")).unwrap_err();
+        assert!(
+            error.message.starts_with("/map/layers/0/render_mode: "),
+            "{}",
+            error.message
+        );
+        let error =
+            StyleDocument::from_yaml(&with_unknowns("1.0", "polygon", "s_buffer")).unwrap_err();
+        assert!(
+            error
+                .message
+                .starts_with("/map/layers/0/classes/0/expression: "),
+            "{}",
+            error.message
+        );
+        let json = r#"{"version":"1.0","map":{"layers":[{"status":"dim"}]}}"#;
+        let error = StyleDocument::from_json(json).unwrap_err();
+        assert!(
+            error.message.starts_with("/map/layers/0/status: "),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn a_newer_minor_drops_a_bounded_number_of_values() {
+        // Verifies: Q-9
+        let layers = |n: usize| {
+            let layer = r#"{"status":"dim"}"#;
+            let layers = vec![layer; n].join(",");
+            format!(r#"{{"version":"1.9","map":{{"layers":[{layers}]}}}}"#)
+        };
+        let read = StyleDocument::from_json(&layers(MAX_DROPPED_VALUES)).unwrap();
+        assert_eq!(read.warnings.len(), MAX_DROPPED_VALUES);
+        let error = StyleDocument::from_json(&layers(MAX_DROPPED_VALUES + 1)).unwrap_err();
+        assert_eq!(error.code, "too-many-unknown-values");
     }
 }
