@@ -36,6 +36,17 @@ impl Serialize for Span {
     }
 }
 
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for Span {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Span".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({ "type": "string", "description": "file:line:column" })
+    }
+}
+
 impl<'de> Deserialize<'de> for Span {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;

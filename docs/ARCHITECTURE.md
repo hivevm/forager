@@ -32,14 +32,18 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0019](adr/0019-cql2-expressions.md)), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0014](adr/0014-style-document-serde.md)), whose readers name each field they do not know
-  by its JSON Pointer ([ADR-0020](adr/0020-style-document-compatibility.md)). It depends on no
-  other crate of the workspace.
+  by its JSON Pointer. Its `schema` feature derives the JSON Schema of the current format version
+  with schemars, checked in under `schema/` and compared on every push
+  ([ADR-0020](adr/0020-style-document-compatibility.md)); the browser bindings never enable it.
+  It depends on no other crate of the workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
   resolver — with the features and geometries a source delivers, and the resource path that
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
-  against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), and the
+  against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), the
+  symbol file and font set `SYMBOLSET` and `FONTSET` name, read through the resource loader
+  within the same bounds, and the
   translation into the style IR, which reports every keyword it does not carry over and
   translates MapServer's expressions with their typing into the CQL2 tree. A load reports at
   most a thousand diagnostics (Q-9). It is the only crate that knows MapServer syntax.

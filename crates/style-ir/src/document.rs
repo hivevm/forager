@@ -29,6 +29,7 @@ fn pointer(path: &serde_ignored::Path) -> String {
 
 /// The style IR as a document: a format version and the map (ADR-0014).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct StyleDocument {
     pub version: String,
     pub map: Map,
@@ -135,7 +136,8 @@ impl StyleDocument {
         let expressions = layers.flat_map(|layer| {
             let classes = layer.classes.iter().flat_map(|class| {
                 let styles = class.styles.iter().flat_map(|style| style.expressions());
-                class.expression.iter().chain(styles)
+                let labels = class.labels.iter().flat_map(|label| label.expressions());
+                class.expression.iter().chain(styles).chain(labels)
             });
             layer.filter.iter().chain(classes)
         });
@@ -153,8 +155,9 @@ impl StyleDocument {
 mod tests {
     use super::*;
     use crate::{
-        Bound, Class, Expr, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin,
-        LineOffset, Op, RenderMode, Rgba, SourceRef, Span, Style, SymbolRef, Units,
+        Align, AngleMode, Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer,
+        LayerStatus, LineCap, LineJoin, LineOffset, MinFeatureSize, Op, Position, RenderMode, Rgba,
+        SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
     };
 
     fn sample() -> StyleDocument {
@@ -212,52 +215,103 @@ mod tests {
                             Expr::Bool(false),
                         ],
                     )),
-                    styles: vec![Style {
-                        color: Some(Bound::Value(Rgba::opaque(200, 220, 180))),
-                        outline_color: Some(Bound::Binding {
-                            binding: "rim".into(),
-                        }),
-                        width: Some(Bound::Value(0.5)),
-                        size: Some(Bound::Binding {
-                            binding: "VAL".into(),
-                        }),
-                        angle: Some(Bound::Expr(Expr::call(
-                            Op::ToNumber,
-                            vec![Expr::call(
-                                Op::Tostring,
-                                vec![
-                                    Expr::call(Op::ToNumber, vec![Expr::property("a")]),
-                                    "%g".into(),
-                                ],
-                            )],
-                        ))),
-                        auto_angle: true,
-                        symbol: Some(Bound::Value(SymbolRef::Name("1".into()))),
-                        offset: Some([
-                            Bound::Value(1.0),
-                            Bound::Binding {
-                                binding: "dy".into(),
-                            },
-                        ]),
-                        line_offset: Some(LineOffset {
-                            distance: Bound::Value(3.0),
-                            both_sides: true,
-                        }),
-                        pattern: vec![10.0, 5.0],
-                        line_cap: Some(LineCap::Butt),
-                        line_join: Some(LineJoin::Miter),
-                        opacity: Some(Bound::Value(50.0)),
-                        max_width: Some(8.0),
-                        geom_transform: Some(GeomTransform::Vertices),
-                        span: Some(Span::new("world.map", 14, 9)),
-                        ..Style::default()
-                    }],
+                    styles: vec![sample_style()],
+                    labels: vec![sample_label()],
                     span: Some(Span::new("world.map", 12, 7)),
                 }],
                 span: Some(Span::new("world.map", 6, 3)),
             }],
+            symbols: vec![sample_symbol()],
+            fonts: [("sans".to_owned(), "fonts/DejaVuSans.ttf".to_owned())].into(),
             span: Some(Span::new("world.map", 1, 1)),
         })
+    }
+
+    fn sample_style() -> Style {
+        Style {
+            color: Some(Bound::Value(Rgba::opaque(200, 220, 180))),
+            outline_color: Some(Bound::Binding {
+                binding: "rim".into(),
+            }),
+            width: Some(Bound::Value(0.5)),
+            size: Some(Bound::Binding {
+                binding: "VAL".into(),
+            }),
+            angle: Some(Bound::Expr(Expr::call(
+                Op::ToNumber,
+                vec![Expr::call(
+                    Op::Tostring,
+                    vec![
+                        Expr::call(Op::ToNumber, vec![Expr::property("a")]),
+                        "%g".into(),
+                    ],
+                )],
+            ))),
+            auto_angle: true,
+            symbol: Some(Bound::Value(SymbolRef::Name("1".into()))),
+            offset: Some([
+                Bound::Value(1.0),
+                Bound::Binding {
+                    binding: "dy".into(),
+                },
+            ]),
+            line_offset: Some(LineOffset {
+                distance: Bound::Value(3.0),
+                both_sides: true,
+            }),
+            pattern: vec![10.0, 5.0],
+            line_cap: Some(LineCap::Butt),
+            line_join: Some(LineJoin::Miter),
+            opacity: Some(Bound::Value(50.0)),
+            max_width: Some(8.0),
+            geom_transform: Some(GeomTransform::Vertices),
+            span: Some(Span::new("world.map", 14, 9)),
+            ..Style::default()
+        }
+    }
+
+    fn sample_symbol() -> Symbol {
+        Symbol {
+            name: Some("arrow".into()),
+            kind: SymbolKind::Vector,
+            paths: vec![vec![[0.0, 0.0], [2.0, 4.0]], vec![[1.0, 0.0]]],
+            extent: Some([2.0, 4.0]),
+            filled: true,
+            anchor_point: Some([0.5, 1.0]),
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }
+    }
+
+    fn sample_label() -> Label {
+        Label {
+            text: Some(Expr::call(
+                Op::Concat,
+                vec![
+                    Expr::call(Op::ToString, vec![Expr::property("name")]),
+                    " (".into(),
+                ],
+            )),
+            font: Some(Bound::Value("sans".into())),
+            size: Some(Bound::Binding {
+                binding: "s".into(),
+            }),
+            position: Some(Bound::Value(Position::Auto)),
+            angle_mode: Some(AngleMode::Follow),
+            align: Some(Bound::Value(Align::Center)),
+            wrap: Some(" ".into()),
+            min_feature_size: Some(MinFeatureSize::Pixels(8.0)),
+            force: Some(Force::Group),
+            priority: Some(Bound::Value(5.0)),
+            styles: vec![Style {
+                geom_transform: Some(GeomTransform::LabelPoly),
+                ..Style::default()
+            }],
+            ..Label::default()
+        }
     }
 
     #[test]

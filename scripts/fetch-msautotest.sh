@@ -28,9 +28,6 @@ fi
 if [[ ! -f "$DIR/.complete" ]]; then
   rm -rf "$DIR"
   git -c advice.detachedHead=false clone -q --depth 1 --branch "$TAG" --filter=blob:none --sparse "$REMOTE" "$DIR" >&2
-  git -C "$DIR" sparse-checkout set --no-cone \
-    '/msautotest/**/*.map' '/msautotest/**/*.MAP' '/msautotest/**/*.inc' \
-    '/msautotest/**/*.include' '/msautotest/**/*.sym' '/msautotest/**/*.txt' >&2
   checked_out="$(git -C "$DIR" rev-parse HEAD)"
   if [[ "$checked_out" != "$COMMIT" ]]; then
     echo "fetch-msautotest: the checkout is $checked_out, the pin is $COMMIT" >&2
@@ -39,4 +36,10 @@ if [[ ! -f "$DIR/.complete" ]]; then
   fi
   touch "$DIR/.complete"
 fi
+# Set on every run, so that a checkout made with fewer patterns takes the files a later version of
+# this script asks for; unchanged, it fetches nothing.
+git -C "$DIR" sparse-checkout set --no-cone \
+  '/msautotest/**/*.map' '/msautotest/**/*.MAP' '/msautotest/**/*.inc' \
+  '/msautotest/**/*.include' '/msautotest/**/*.sym' '/msautotest/**/*.txt' \
+  '/msautotest/**/*symbolset' '/msautotest/**/*.lst' >&2
 echo "$DIR/msautotest"

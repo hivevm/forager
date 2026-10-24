@@ -98,7 +98,7 @@ fn a_mapfile_translates_into_the_style_ir() {
 fn keywords_not_yet_supported_and_out_of_scope_are_warnings() {
     let loaded = load_files(&[(
         "m.map",
-        "MAP\n  WEB TEMPLATE 'x.html' END\n  LAYER NAME 'a' LABELITEM 'n' END\nEND\n",
+        "MAP\n  WEB TEMPLATE 'x.html' END\n  LAYER NAME 'a' GROUP 'n' END\nEND\n",
     )]);
     assert!(loaded.document.is_some());
     assert_eq!(codes(&loaded), ["discarded-keyword", "unsupported-keyword"]);
@@ -691,7 +691,7 @@ fn bound_style_properties_read_back_equal_from_yaml_and_json() {
 fn every_style_property_that_renders_is_carried_over() {
     use forager_style_ir::{GeomTransform, LineCap, LineJoin, SymbolRef};
     let (loaded, style) = first_style(
-        "MAP LAYER CLASS STYLE
+        "MAP SYMBOL NAME 'circle' TYPE ELLIPSE POINTS 1 1 END END LAYER CLASS STYLE
            SYMBOL 'circle' ANGLE AUTO OFFSET 2 [dy] POLAROFFSET 5 45 GAP -20 INITIALGAP 4
            PATTERN 10 5 END LINECAP BUTT LINEJOIN MITER LINEJOINMAXSIZE 2 OPACITY 150
            OUTLINEWIDTH 1 MINSIZE 2 MAXSIZE 40 MINWIDTH 0.5 MAXWIDTH 8 GEOMTRANSFORM 'vertices'
@@ -699,10 +699,7 @@ fn every_style_property_that_renders_is_carried_over() {
     );
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     let style = style.unwrap();
-    assert_eq!(
-        style.symbol,
-        Some(Bound::Value(SymbolRef::Name("circle".into())))
-    );
+    assert_eq!(style.symbol, Some(Bound::Value(SymbolRef::Index(1))));
     assert!(style.auto_angle);
     assert_eq!(
         style.offset,
@@ -805,4 +802,288 @@ fn style_values_outside_loadstyles_checks_are_errors() {
     let (loaded, style) = first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM bbox END END END END");
     assert_eq!(codes(&loaded), ["unsupported-value"]);
     assert_eq!(style.unwrap().geom_transform, None);
+}
+
+const SYMBOLS: &str = "SYMBOLSET
+  SYMBOL NAME 'dot' TYPE ELLIPSE FILLED TRUE POINTS 1 1 END END
+  SYMBOL NAME 'tick' TYPE VECTOR POINTS -1 0 1 0 -99 -99 0 -2 0 2 END END
+  SYMBOL NAME 'flag' TYPE PIXMAP IMAGE 'img/flag.png' TRANSPARENT 3 END
+END";
+
+#[test]
+fn symbols_come_from_the_map_then_its_symbol_set_in_mapservers_order() {
+    use forager_style_ir::{SymbolKind, SymbolRef};
+    let loaded = load_files(&[
+        (
+            "m.map",
+            "MAP SYMBOLSET 'sym/set.sym'
+               SYMBOL NAME 'box' TYPE VECTOR FILLED TRUE POINTS 0 0 2 0 2 4 0 4 END END
+               LAYER CLASS STYLE SYMBOL 'TICK' END STYLE SYMBOL 'box' END
+                 STYLE SYMBOL 4 END END END
+             END",
+        ),
+        ("sym/set.sym", SYMBOLS),
+    ]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let map = loaded.document.unwrap().map;
+    let names: Vec<_> = map
+        .symbols
+        .iter()
+        .map(|s| s.name.as_deref().unwrap())
+        .collect();
+    assert_eq!(names, ["box", "dot", "tick", "flag"]);
+    let refs: Vec<_> = map.layers[0].classes[0]
+        .styles
+        .iter()
+        .map(|s| s.symbol.clone().unwrap())
+        .collect();
+    let index = |i| Bound::Value(SymbolRef::Index(i));
+    assert_eq!(refs, [index(3), index(1), index(4)]);
+    let flag = &map.symbols[3];
+    assert_eq!(flag.kind, SymbolKind::Pixmap);
+    assert_eq!(
+        flag.image.as_deref(),
+        Some("sym/img/flag.png"),
+        "beside the symbol file"
+    );
+    assert_eq!(flag.transparent, Some(3));
+}
+
+#[test]
+fn a_vector_symbol_is_shifted_and_measured_as_loadsymbol_does() {
+    let loaded = load_files(&[("m.map", "MAP SYMBOLSET 's.sym' END"), ("s.sym", SYMBOLS)]);
+    let map = loaded.document.unwrap().map;
+    let tick = &map.symbols[1];
+    // -1..1 by -2..2 shifted by (-1, -2): two lines, 2 wide and 4 high.
+    assert_eq!(
+        tick.paths,
+        [vec![[0.0, 2.0], [2.0, 2.0]], vec![[1.0, 0.0], [1.0, 4.0]]]
+    );
+    assert_eq!(tick.extent, Some([2.0, 4.0]));
+    let dot = &map.symbols[0];
+    assert_eq!((dot.extent, dot.filled), (Some([1.0, 1.0]), true));
+
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP SYMBOL TYPE VECTOR ANCHORPOINT 0 1 POINTS 1 1 3 5 END END END",
+    )]);
+    let symbol = &loaded.document.unwrap().map.symbols[0];
+    assert_eq!(
+        symbol.paths,
+        [vec![[0.0, 0.0], [2.0, 4.0]]],
+        "shifted for the anchor"
+    );
+    assert_eq!(symbol.extent, Some([2.0, 4.0]));
+}
+
+#[test]
+fn a_symbol_set_or_image_outside_the_base_context_is_refused() {
+    // Verifies: Q-8
+    let loaded = load_files(&[("m.map", "MAP SYMBOLSET '../x.sym' END")]);
+    assert_eq!(codes(&loaded), ["symbolset-refused"]);
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP SYMBOL TYPE PIXMAP IMAGE '/etc/passwd' END END",
+    )]);
+    assert_eq!(codes(&loaded), ["image-refused"]);
+    let loaded = load_files(&[("m.map", "MAP SYMBOLSET 's.sym' END"), ("s.sym", "MAP END")]);
+    assert_eq!(codes(&loaded), ["expected-symbolset"]);
+}
+
+#[test]
+fn an_unknown_symbol_is_a_warning() {
+    let (loaded, _) = first_style("MAP LAYER CLASS STYLE SYMBOL 'nowhere' END END END END");
+    assert_eq!(codes(&loaded), ["symbol-unknown"]);
+    let (loaded, _) = first_style("MAP LAYER CLASS STYLE SYMBOL 3 END END END END");
+    assert_eq!(codes(&loaded), ["symbol-unknown"]);
+    for text in [
+        "MAP SYMBOL TYPE VECTOR END END",
+        "MAP SYMBOL TYPE SVG END END",
+        "MAP SYMBOL TYPE VECTOR POINTS 1 END END END",
+    ] {
+        let loaded = load_files(&[("m.map", text)]);
+        assert_eq!(codes(&loaded), ["invalid-value"], "{text}");
+    }
+}
+
+#[test]
+fn symbols_read_back_equal_from_yaml_and_json() {
+    let loaded = load_files(&[("m.map", "MAP SYMBOLSET 's.sym' END"), ("s.sym", SYMBOLS)]);
+    let document = loaded.document.unwrap();
+    let yaml = document.to_yaml().unwrap();
+    let json = document.to_json().unwrap();
+    assert_eq!(
+        forager_style_ir::StyleDocument::from_yaml(&yaml)
+            .unwrap()
+            .document,
+        document
+    );
+    assert_eq!(
+        forager_style_ir::StyleDocument::from_json(&json)
+            .unwrap()
+            .document,
+        document
+    );
+}
+
+fn first_label(
+    files: &[(&'static str, &'static str)],
+) -> (Loaded, Option<forager_style_ir::Label>) {
+    let loaded = load_files(files);
+    let label = loaded
+        .document
+        .as_ref()
+        .map(|d| d.map.layers[0].classes[0].labels[0].clone());
+    (loaded, label)
+}
+
+fn json(e: &Option<forager_style_ir::Expr>) -> String {
+    serde_json::to_string(e).unwrap()
+}
+
+#[test]
+fn a_labels_text_falls_back_on_the_class_then_the_labelitem() {
+    let (loaded, label) = first_label(&[(
+        "m.map",
+        "MAP LAYER LABELITEM 'name' CLASS LABEL END END END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        json(&label.unwrap().text),
+        r#"{"op":"to_string","args":[{"property":"name"}]}"#
+    );
+    let (_, label) = first_label(&[(
+        "m.map",
+        "MAP LAYER LABELITEM 'name' CLASS LABEL END TEXT 'k' END END END",
+    )]);
+    assert_eq!(json(&label.unwrap().text), r#""k""#);
+}
+
+#[test]
+fn a_text_is_evaluated_as_mapserver_evaluates_it() {
+    // Verifies: ADR-0019
+    let (loaded, label) = first_label(&[(
+        "m.map",
+        r#"MAP LAYER CLASS LABEL TEXT ("Area: " + tostring([area],"%.2f")) END END END END"#,
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        json(&label.unwrap().text),
+        concat!(
+            r#"{"op":"concat","args":["Area: ",{"op":"tostring","args":["#,
+            r#"{"op":"to_number","args":[{"property":"area"}]},"%.2f"]}]}"#
+        )
+    );
+    let (_, label) = first_label(&[(
+        "m.map",
+        "MAP LAYER CLASS LABEL TEXT '[name] ([pop])' END END END END",
+    )]);
+    assert_eq!(
+        json(&label.unwrap().text),
+        concat!(
+            r#"{"op":"concat","args":[{"op":"to_string","args":[{"property":"name"}]}," (","#,
+            r#"{"op":"to_string","args":[{"property":"pop"}]},")"]}"#
+        )
+    );
+    let (_, label) = first_label(&[(
+        "m.map",
+        "MAP LAYER CLASS LABEL TEXT ([n] * 2) END END END END",
+    )]);
+    assert_eq!(
+        json(&label.unwrap().text),
+        r#"{"op":"tostring","args":[{"op":"*","args":[{"op":"to_number","args":[{"property":"n"}]},2.0]},"%g"]}"#
+    );
+}
+
+#[test]
+fn fonts_come_from_the_font_set_and_a_label_names_one() {
+    let files = [
+        (
+            "m.map",
+            "MAP FONTSET 'f/fonts.txt' LAYER CLASS LABEL FONT 'sans,serif' END END END END",
+        ),
+        (
+            "f/fonts.txt",
+            "# fonts\nsans  DejaVuSans.ttf\n indented skipped.ttf\nmono\tttf/mono.ttf  \n",
+        ),
+    ];
+    let (loaded, label) = first_label(&files);
+    assert_eq!(codes(&loaded), ["font-unknown"], "serif is not in the set");
+    assert_eq!(
+        label.unwrap().font,
+        Some(Bound::Value("sans,serif".to_owned()))
+    );
+    let fonts = loaded.document.unwrap().map.fonts;
+    assert_eq!(fonts["sans"], "f/DejaVuSans.ttf", "beside the font set");
+    assert_eq!(fonts["mono"], "f/ttf/mono.ttf");
+    assert_eq!(fonts.len(), 2);
+}
+
+#[test]
+fn a_font_set_or_font_outside_the_base_context_is_refused() {
+    // Verifies: Q-8
+    let loaded = load_files(&[("m.map", "MAP FONTSET '../fonts.txt' END")]);
+    assert_eq!(codes(&loaded), ["fontset-refused"]);
+    let loaded = load_files(&[
+        ("m.map", "MAP FONTSET 'f.txt' END"),
+        ("f.txt", "sans /usr/x.ttf\n"),
+    ]);
+    assert_eq!(codes(&loaded), ["font-refused"]);
+    assert!(loaded.document.unwrap().map.fonts.is_empty());
+}
+
+#[test]
+fn a_label_carries_what_placement_and_drawing_need() {
+    use forager_style_ir::{AngleMode, Force, GeomTransform, MinFeatureSize, Position};
+    let (loaded, label) = first_label(&[(
+        "m.map",
+        "MAP LAYER CLASS LABEL
+           SIZE giant COLOR 1 2 3 OUTLINECOLOR [oc] OUTLINEWIDTH 2 SHADOWCOLOR 0 0 0
+           SHADOWSIZE 1 1 POSITION auto OFFSET 0 -5 ANGLE follow ALIGN center WRAP ' '
+           MAXLENGTH 20 BUFFER 2 MINDISTANCE 100 REPEATDISTANCE 300 MINFEATURESIZE auto
+           MAXOVERLAPANGLE 30 PARTIALS false FORCE group PRIORITY 7 MINSIZE 4 MAXSIZE 20
+           STYLE COLOR 255 255 255 END
+           STYLE GEOMTRANSFORM 'labelpoly' END
+         END END END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let label = label.unwrap();
+    assert_eq!(label.size, Some(Bound::Value(16.0)), "MS_GIANT");
+    assert_eq!(label.outline_color, binding("oc"));
+    assert_eq!(label.position, Some(Bound::Value(Position::Auto)));
+    assert_eq!(label.angle_mode, Some(AngleMode::Follow));
+    assert_eq!(label.wrap.as_deref(), Some(" "));
+    assert_eq!(label.min_feature_size, Some(MinFeatureSize::Auto));
+    assert_eq!(
+        (label.partials, label.force),
+        (Some(false), Some(Force::Group))
+    );
+    assert_eq!(label.priority, Some(Bound::Value(7.0)));
+    let transforms: Vec<_> = label.styles.iter().map(|s| s.geom_transform).collect();
+    assert_eq!(
+        transforms,
+        [
+            Some(GeomTransform::LabelPoint),
+            Some(GeomTransform::LabelPoly)
+        ],
+        "a label's style draws at the label point unless it says otherwise"
+    );
+    let loaded = load_files(&[("m.map", "MAP LAYER CLASS LABEL PRIORITY 11 END END END END")]);
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+}
+
+#[test]
+fn true_and_on_false_and_off_stand_for_each_other() {
+    use forager_style_ir::Force;
+    let (_, label) = first_label(&[(
+        "m.map",
+        "MAP LAYER CLASS LABEL FORCE true PARTIALS ON END END END END",
+    )]);
+    let label = label.unwrap();
+    assert_eq!((label.force, label.partials), (Some(Force::On), Some(true)));
+    let loaded = load_files(&[("m.map", "MAP LAYER STATUS FALSE END END")]);
+    assert_eq!(
+        loaded.document.unwrap().map.layers[0].status,
+        Some(LayerStatus::Off)
+    );
 }
