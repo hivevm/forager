@@ -93,7 +93,8 @@ mod tests {
     use super::*;
     use crate::{
         Bound, Class, Expr, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin,
-        LineOffset, Op, RenderMode, Rgba, SourceRef, Span, Style, SymbolRef, Units,
+        LineOffset, Op, RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
+        Units,
     };
 
     fn sample() -> StyleDocument {
@@ -151,52 +152,73 @@ mod tests {
                             Expr::Bool(false),
                         ],
                     )),
-                    styles: vec![Style {
-                        color: Some(Bound::Value(Rgba::opaque(200, 220, 180))),
-                        outline_color: Some(Bound::Binding {
-                            binding: "rim".into(),
-                        }),
-                        width: Some(Bound::Value(0.5)),
-                        size: Some(Bound::Binding {
-                            binding: "VAL".into(),
-                        }),
-                        angle: Some(Bound::Expr(Expr::call(
-                            Op::ToNumber,
-                            vec![Expr::call(
-                                Op::Tostring,
-                                vec![
-                                    Expr::call(Op::ToNumber, vec![Expr::property("a")]),
-                                    "%g".into(),
-                                ],
-                            )],
-                        ))),
-                        auto_angle: true,
-                        symbol: Some(Bound::Value(SymbolRef::Name("1".into()))),
-                        offset: Some([
-                            Bound::Value(1.0),
-                            Bound::Binding {
-                                binding: "dy".into(),
-                            },
-                        ]),
-                        line_offset: Some(LineOffset {
-                            distance: Bound::Value(3.0),
-                            both_sides: true,
-                        }),
-                        pattern: vec![10.0, 5.0],
-                        line_cap: Some(LineCap::Butt),
-                        line_join: Some(LineJoin::Miter),
-                        opacity: Some(Bound::Value(50.0)),
-                        max_width: Some(8.0),
-                        geom_transform: Some(GeomTransform::Vertices),
-                        span: Some(Span::new("world.map", 14, 9)),
-                        ..Style::default()
-                    }],
+                    styles: vec![sample_style()],
                     span: Some(Span::new("world.map", 12, 7)),
                 }],
                 span: Some(Span::new("world.map", 6, 3)),
             }],
+            symbols: vec![sample_symbol()],
             span: Some(Span::new("world.map", 1, 1)),
         })
+    }
+
+    fn sample_style() -> Style {
+        Style {
+            color: Some(Bound::Value(Rgba::opaque(200, 220, 180))),
+            outline_color: Some(Bound::Binding {
+                binding: "rim".into(),
+            }),
+            width: Some(Bound::Value(0.5)),
+            size: Some(Bound::Binding {
+                binding: "VAL".into(),
+            }),
+            angle: Some(Bound::Expr(Expr::call(
+                Op::ToNumber,
+                vec![Expr::call(
+                    Op::Tostring,
+                    vec![
+                        Expr::call(Op::ToNumber, vec![Expr::property("a")]),
+                        "%g".into(),
+                    ],
+                )],
+            ))),
+            auto_angle: true,
+            symbol: Some(Bound::Value(SymbolRef::Name("1".into()))),
+            offset: Some([
+                Bound::Value(1.0),
+                Bound::Binding {
+                    binding: "dy".into(),
+                },
+            ]),
+            line_offset: Some(LineOffset {
+                distance: Bound::Value(3.0),
+                both_sides: true,
+            }),
+            pattern: vec![10.0, 5.0],
+            line_cap: Some(LineCap::Butt),
+            line_join: Some(LineJoin::Miter),
+            opacity: Some(Bound::Value(50.0)),
+            max_width: Some(8.0),
+            geom_transform: Some(GeomTransform::Vertices),
+            span: Some(Span::new("world.map", 14, 9)),
+            ..Style::default()
+        }
+    }
+
+    fn sample_symbol() -> Symbol {
+        Symbol {
+            name: Some("arrow".into()),
+            kind: SymbolKind::Vector,
+            paths: vec![vec![[0.0, 0.0], [2.0, 4.0]], vec![[1.0, 0.0]]],
+            extent: Some([2.0, 4.0]),
+            filled: true,
+            anchor_point: Some([0.5, 1.0]),
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }
     }
 
     #[test]

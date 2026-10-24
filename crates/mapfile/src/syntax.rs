@@ -175,6 +175,7 @@ const SCHEMAS: &[(&str, &[&str], &[&str])] = &[
         &["LABEL"],
     ),
     ("SCALETOKEN", &["NAME"], &["VALUES"]),
+    ("SYMBOLSET", &[], &["SYMBOL"]),
     ("SYMBOL",
         &[
             "ANCHORPOINT", "ANTIALIAS", "CHARACTER", "FILLED", "FONT", "IMAGE", "NAME",
@@ -201,43 +202,60 @@ fn schema(block: &str) -> Option<Schema> {
 
 /// Parses the tokens of a mapfile, its `INCLUDE`s already spliced in, into the `MAP` block.
 pub fn parse(tokens: &[Token]) -> (Option<Block>, Vec<Diagnostic>) {
+    parse_root(tokens, "MAP", "map", "mapfile")
+}
+
+/// Parses the tokens of a symbol file into its `SYMBOLSET` block, as MapServer's loadSymbolSet
+/// requires it to start.
+pub fn parse_symbol_set(tokens: &[Token]) -> (Option<Block>, Vec<Diagnostic>) {
+    parse_root(tokens, "SYMBOLSET", "symbolset", "symbol file")
+}
+
+/// Parses `tokens` into the one block `root` that a file of the kind `file` starts with.
+fn parse_root(
+    tokens: &[Token],
+    root: &str,
+    code: &str,
+    file: &str,
+) -> (Option<Block>, Vec<Diagnostic>) {
     let mut parser = Parser {
         tokens,
         pos: 0,
         diagnostics: Vec::new(),
     };
-    let map = match tokens.first() {
-        Some(first) if first.is_word("MAP") => {
+    let expected = format!("expected-{code}");
+    let block = match tokens.first() {
+        Some(first) if first.is_word(root) => {
             parser.pos = 1;
-            parser.block("MAP".to_owned(), first.span.clone())
+            parser.block(root.to_owned(), first.span.clone())
         }
         Some(first) => {
             parser.error(
-                "expected-map",
-                "a mapfile starts with MAP",
+                &expected,
+                &format!("a {file} starts with {root}"),
                 first.span.clone(),
             );
             None
         }
         None => {
             parser.diagnostics.push(Diagnostic::error(
-                "expected-map",
-                "the mapfile is empty",
+                &expected,
+                format!("the {file} is empty"),
                 None,
             ));
             None
         }
     };
-    if map.is_some()
+    if block.is_some()
         && let Some(rest) = tokens.get(parser.pos)
     {
         parser.diagnostics.push(Diagnostic::warning(
-            "content-after-map",
-            "content after the END of MAP is ignored",
+            &format!("content-after-{code}"),
+            format!("content after the END of {root} is ignored"),
             Some(rest.span.clone()),
         ));
     }
-    (map, parser.diagnostics)
+    (block, parser.diagnostics)
 }
 
 struct Parser<'a> {

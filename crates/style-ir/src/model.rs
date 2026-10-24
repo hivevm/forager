@@ -29,8 +29,61 @@ pub struct Map {
     pub def_resolution: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<Layer>,
+    /// The map's symbols in MapServer's order: those of its `SYMBOL` blocks, then those of its
+    /// symbol set. The one at position `i` has MapServer's index `i + 1`; index 0 is MapServer's
+    /// default symbol, a filled circle of size 1, which the list leaves out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub symbols: Vec<Symbol>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
+}
+
+/// A symbol a style draws.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Symbol {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    pub kind: SymbolKind,
+    /// A vector symbol's lines, each a list of `[x, y]`, y downwards, shifted as MapServer shifts
+    /// them so that none is negative; an ellipse's one point, its width and height.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<Vec<[f64; 2]>>,
+    /// The width and height of a vector symbol or an ellipse, as MapServer measures them. A
+    /// style's size is the symbol's height drawn, or its width where it has no height.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extent: Option<[f64; 2]>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub filled: bool,
+    /// The point of the symbol placed on the feature, as fractions of its extent; without one,
+    /// the centre.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor_point: Option<[f64; 2]>,
+    /// The glyph of a TrueType symbol, and its font by the name the font set gives it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub character: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<String>,
+    /// The image of a pixmap or SVG symbol: a resource path inside the base context, not read at
+    /// load (Q-8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    /// The palette index of a pixmap that draws transparent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transparent: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span: Option<Span>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SymbolKind {
+    Vector,
+    Ellipse,
+    Pixmap,
+    Simple,
+    Truetype,
+    Hatch,
+    Svg,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

@@ -37,7 +37,8 @@ golden path and the test pattern an agent copies from are named here.
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
-  against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), and the
+  against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), the
+  symbol file `SYMBOLSET` names, read through the resource loader within the same bounds, and the
   translation into the style IR, which reports every keyword it does not carry over and
   translates MapServer's expressions with their typing into the CQL2 tree. A load reports at
   most a thousand diagnostics (Q-9). It is the only crate that knows MapServer syntax.
