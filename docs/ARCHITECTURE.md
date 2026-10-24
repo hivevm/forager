@@ -75,6 +75,10 @@ path on GeoJSON — run by `scripts/fuzz.sh`, every Sunday through `.github/work
 it keeps libFuzzer and the nightly toolchain out of the product's build, and
 `scripts/check-rust.sh` lints it on every push.
 
+The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
+pins, by tag and commit: a sparse checkout into `target/`, cached in CI, never in the repository.
+`scripts/check-rust.sh` loads every mapfile of it through the CLI on every push (G-1).
+
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).
 

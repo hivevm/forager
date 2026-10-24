@@ -18,7 +18,8 @@ name: Checks
 # - Shell lint: scripts/check-shell.sh, after the self-test of the git hooks.
 # - Build, test, lint: scripts/check-rust.sh after scripts/install-tools.sh (ADR-0008), the one
 #   job of this workflow that installs something; ~/.cargo/bin and the registry are cached, keyed
-#   on the files that decide their content.
+#   on the files that decide their content, and so is the msautotest suite check-rust.sh fetches,
+#   keyed on the script that holds its pin.
 #
 # Every job is bounded by a timeout — a hung step would otherwise occupy a runner until the
 # platform's own six-hour limit — and every checkout runs with 'persist-credentials: false': the
@@ -159,6 +160,10 @@ jobs:
             ~/.cargo/bin
             ~/.cargo/registry
           key: rust-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'scripts/install-tools.sh') }}
+      - uses: actions/cache@v6
+        with:
+          path: target/msautotest
+          key: msautotest-${{ hashFiles('scripts/fetch-msautotest.sh') }}
       - name: Install the toolchain and the cargo tools
         run: bash scripts/install-tools.sh
       - name: Build, test, and lint the workspace
