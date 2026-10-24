@@ -100,7 +100,8 @@ fn released(root: &Path) -> Result<Vec<Released>, String> {
         assert!(output.status.success(), "git {args:?} fails");
         String::from_utf8(output.stdout).unwrap()
     };
-    if git(&["rev-parse", "--is-shallow-repository"]).trim() == "true" {
+    // An old git echoes the option it does not know; anything but `false` is refused.
+    if git(&["rev-parse", "--is-shallow-repository"]).trim() != "false" {
         return Err(format!(
             "{} is a shallow clone, so the schema check cannot see the release tags whose schema \
              files are frozen; fetch its history with\n  git fetch --unshallow --tags",
