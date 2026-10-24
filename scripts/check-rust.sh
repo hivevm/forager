@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Builds, tests, and lints the Rust workspace (ADR-0008): formatting, clippy with warnings as
-# errors, the tests, the build of every crate that must run in the browser for
-# wasm32-unknown-unknown (Q-1), the WebAssembly bindings and their size (Q-5) once they exist, and
-# cargo deny (ADR-0012). scripts/check-all.sh and the `rust` job of checks.yml run it; the tools
-# come from scripts/install-tools.sh.
+# errors, the tests, the load of the msautotest suite at the pinned MapServer release (G-1,
+# fetched once into target/ by scripts/fetch-msautotest.sh), the build of every crate that must
+# run in the browser for wasm32-unknown-unknown (Q-1), the WebAssembly bindings and their size
+# (Q-5) once they exist, and cargo deny (ADR-0012). scripts/check-all.sh and the `rust` job of
+# checks.yml run it; the tools come from scripts/install-tools.sh.
 #
 # Usage: bash scripts/check-rust.sh
 set -euo pipefail
@@ -26,6 +27,10 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 
 step "Tests"
 cargo test --workspace --locked
+
+step "msautotest: every mapfile loads without an error (G-1)"
+suite="$(bash scripts/fetch-msautotest.sh)"
+FORAGER_MSAUTOTEST="$suite" cargo test -p forager-cli --locked --test msautotest -- --ignored
 
 step "Fuzz targets: formatting and clippy"
 # The fuzz workspace is not a member of the main one; built here, an API change of the crates it

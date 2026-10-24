@@ -1,4 +1,5 @@
-// Token rules follow MapServer's lexer, src/maplexer.l of release 8.6.6.
+// Token rules follow MapServer's lexer, src/maplexer.l of the release pinned in
+// scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,

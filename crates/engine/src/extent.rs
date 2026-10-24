@@ -1,5 +1,6 @@
 // The fitting of the extent to the image follows MapServer's msAdjustExtent(), src/maputil.c of
-// release 8.6.6, and its MS_CELLSIZE and MS_MAP2IMAGE macros, src/mapserver.h.
+// the release pinned in scripts/fetch-msautotest.sh, and its MS_CELLSIZE and MS_MAP2IMAGE
+// macros, src/mapserver.h.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,

@@ -3,8 +3,9 @@
 // The tokens follow the EXPRESSION_STRING rules of src/maplexer.l, which MapServer builds with
 // `flex -i`, so its keywords match in any case; the grammar, its precedence, and its typing
 // follow src/mapparser.y, and the four kinds of expression follow msEvalExpression in
-// src/maputil.c, all of MapServer release 8.6.6. MapServer's syntax decides each operand's type,
-// so every attribute is wrapped in a conversion that states it.
+// src/maputil.c, all of the MapServer release pinned in scripts/fetch-msautotest.sh. MapServer's
+// syntax decides each operand's type, so every attribute is wrapped in a conversion that states
+// it.
 
 use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
 
