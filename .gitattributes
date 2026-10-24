@@ -20,3 +20,7 @@
 # 'linguist-generated': check 15 of scripts/check-docs.sh then leaves its line width alone, and
 # GitHub folds it in a diff. For example:
 #     CHANGELOG.md linguist-generated
+
+# Vendored third-party files keep the bytes their release published, CRLF included: their SHA-256
+# checksums in examples/web/vendor/SHA256SUMS are of those bytes (ADR-0021).
+examples/web/vendor/** -text

@@ -130,6 +130,10 @@ jobs:
       # Verifies: ADR-0011
       - name: Check that every action is referenced by its major version tag
         run: bash scripts/sensor-action-refs.sh --require major-tag
+      - name: Self-test the vendor check
+        run: bash scripts/test-check-vendor.sh
+      - name: Check the vendored JavaScript of the browser example against its checksums
+        run: bash scripts/check-vendor.sh
 
   shell:
     runs-on: ubuntu-latest
