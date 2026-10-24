@@ -59,20 +59,22 @@ pub async fn load<L: ResourceLoader>(
         }
         _ => None,
     };
-    let symbol_set = match &map {
-        Some(map) => reading.symbol_set(path, map).await,
-        None => None,
+    let (symbol_set, font_set) = match &map {
+        Some(map) => (
+            reading.symbol_set(path, map).await,
+            reading.font_set(path, map).await,
+        ),
+        None => (None, None),
     };
     let mut report = reading.report;
     let document = map.filter(|_| !report.failed()).map(|block| {
         let mut translate_diagnostics = Vec::new();
-        let map = translate::translate(
-            &block,
-            path,
-            symbol_set.as_ref(),
-            resolver,
-            &mut translate_diagnostics,
-        );
+        let files = translate::Files {
+            main: path,
+            symbol_set: symbol_set.as_ref(),
+            font_set: font_set.as_ref(),
+        };
+        let map = translate::translate(&block, &files, resolver, &mut translate_diagnostics);
         report.extend(translate_diagnostics);
         StyleDocument::new(map)
     });
@@ -94,6 +96,70 @@ struct Reading<'a, L> {
 }
 
 impl<L: ResourceLoader> Reading<'_, L> {
+    /// The text of the font set the map's last `FONTSET` names, with the path it was read from,
+    /// resolved and bounded as the symbol file is.
+    async fn font_set(
+        &mut self,
+        main: &ResourcePath,
+        map: &syntax::Block,
+    ) -> Option<(ResourcePath, String)> {
+        let (directive, target) = self.named_file(main, map, "FONTSET")?;
+        let span = Some(directive.span.clone());
+        let bytes = match self.loader.load(&target).await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                let message = format!("cannot read `{target}`: {e}");
+                self.report
+                    .push(Diagnostic::error("resource-unreadable", message, span));
+                return None;
+            }
+        };
+        self.bytes += bytes.len();
+        if self.bytes > MAX_TOTAL_BYTES {
+            let message = format!("the mapfile with its files exceeds {MAX_TOTAL_BYTES} bytes");
+            self.report
+                .push(Diagnostic::error("mapfile-too-large", message, span));
+            return None;
+        }
+        Some((target, String::from_utf8_lossy(&bytes).into_owned()))
+    }
+
+    /// The last `keyword` directive of the map and the file it names, resolved against the main
+    /// mapfile's directory inside the base context (Q-8).
+    fn named_file<'b>(
+        &mut self,
+        main: &ResourcePath,
+        map: &'b syntax::Block,
+        keyword: &str,
+    ) -> Option<(&'b syntax::Directive, ResourcePath)> {
+        let directive = map.nodes.iter().rev().find_map(|node| match node {
+            syntax::Node::Directive(d) if d.keyword == keyword => Some(d),
+            _ => None,
+        })?;
+        let span = Some(directive.span.clone());
+        let [
+            Token {
+                kind: lexer::TokenKind::Str { value, .. } | lexer::TokenKind::Word(value),
+                ..
+            },
+        ] = directive.values.as_slice()
+        else {
+            let message = format!("{keyword} expects a file");
+            self.report
+                .push(Diagnostic::error("invalid-value", message, span));
+            return None;
+        };
+        match main.resolve(value) {
+            Ok(target) => Some((directive, target)),
+            Err(e) => {
+                let message = format!("{keyword} `{value}` is refused: {e}");
+                let code = format!("{}-refused", keyword.to_ascii_lowercase());
+                self.report.push(Diagnostic::error(&code, message, span));
+                None
+            }
+        }
+    }
+
     /// The symbol file the map's last `SYMBOLSET` names, parsed, with the path it was read from:
     /// resolved against the main mapfile's directory inside the base context, as MapServer
     /// resolves it against the map's path (Q-8), and read within the limits of `INCLUDE` (Q-9).
@@ -102,35 +168,7 @@ impl<L: ResourceLoader> Reading<'_, L> {
         main: &ResourcePath,
         map: &syntax::Block,
     ) -> Option<(ResourcePath, syntax::Block)> {
-        let directive = map.nodes.iter().rev().find_map(|node| match node {
-            syntax::Node::Directive(d) if d.keyword == "SYMBOLSET" => Some(d),
-            _ => None,
-        })?;
-        let [
-            Token {
-                kind: lexer::TokenKind::Str { value, .. } | lexer::TokenKind::Word(value),
-                ..
-            },
-        ] = directive.values.as_slice()
-        else {
-            let span = Some(directive.span.clone());
-            self.report.push(Diagnostic::error(
-                "invalid-value",
-                "SYMBOLSET expects a file",
-                span,
-            ));
-            return None;
-        };
-        let target = match main.resolve(value) {
-            Ok(target) => target,
-            Err(e) => {
-                let message = format!("SYMBOLSET `{value}` is refused: {e}");
-                let span = Some(directive.span.clone());
-                self.report
-                    .push(Diagnostic::error("symbolset-refused", &message, span));
-                return None;
-            }
-        };
+        let (directive, target) = self.named_file(main, map, "SYMBOLSET")?;
         let tokens = self.read(&target, Some(directive.span.clone())).await?;
         let (block, diagnostics) = syntax::parse_symbol_set(&tokens);
         self.report.extend(diagnostics);

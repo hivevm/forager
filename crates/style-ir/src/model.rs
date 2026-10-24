@@ -29,6 +29,9 @@ pub struct Map {
     pub def_resolution: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<Layer>,
+    /// The map's fonts by name, each a resource path inside the base context, not read at load.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub fonts: BTreeMap<String, String>,
     /// The map's symbols in MapServer's order: those of its `SYMBOL` blocks, then those of its
     /// symbol set. The one at position `i` has MapServer's index `i + 1`; index 0 is MapServer's
     /// default symbol, a filled circle of size 1, which the list leaves out.
@@ -156,6 +159,8 @@ pub struct Class {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expression: Option<Expr>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<Label>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<Style>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
@@ -261,6 +266,26 @@ impl Style {
     }
 }
 
+impl Label {
+    /// The expressions among the label's properties and its styles'.
+    pub(crate) fn expressions(&self) -> Vec<&Expr> {
+        let numbers = [&self.size, &self.angle, &self.priority]
+            .into_iter()
+            .flatten();
+        let pairs = [&self.shadow_size, &self.offset]
+            .into_iter()
+            .flatten()
+            .flatten();
+        let colors = [&self.color, &self.outline_color, &self.shadow_color];
+        let mut found: Vec<&Expr> = self.text.iter().collect();
+        found.extend(numbers.chain(pairs).filter_map(Bound::expression));
+        found.extend(colors.into_iter().flatten().filter_map(Bound::expression));
+        found.extend(self.font.iter().filter_map(Bound::expression));
+        found.extend(self.styles.iter().flat_map(Style::expressions));
+        found
+    }
+}
+
 /// A symbol of the map's symbol set: by its name, or by MapServer's index, in which 0 is the
 /// default symbol.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -306,6 +331,132 @@ pub enum GeomTransform {
     /// Every point of a line but the first and the last.
     Vertices,
     Centroid,
+    /// Where a label is placed; a label's style without a transform draws there.
+    #[serde(rename = "labelpoint")]
+    LabelPoint,
+    /// The box around a label's text.
+    #[serde(rename = "labelpoly")]
+    LabelPoly,
+}
+
+/// A label a class draws for each feature.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Label {
+    /// The text: the label's `TEXT`, else the class's, else the layer's `LABELITEM`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<Expr>,
+    /// A font of the map's fonts, by name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font: Option<Bound<String>>,
+    /// The size in points; MapServer's bitmap sizes `tiny` to `giant` stand as 5, 7, 10, 13, 16.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<Bound<f64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_size: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<Bound<Rgba>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline_color: Option<Bound<Rgba>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline_width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_color: Option<Bound<Rgba>>,
+    /// The shadow's offset, `[x, y]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shadow_size: Option<[Bound<f64>; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<Bound<Position>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<[Bound<f64>; 2]>,
+    /// Degrees counter-clockwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle: Option<Bound<f64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle_mode: Option<AngleMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub align: Option<Bound<Align>>,
+    /// The character at which the text wraps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wrap: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<f64>,
+    /// Space kept free around the label, in pixels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub buffer: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_distance: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat_distance: Option<f64>,
+    /// The smallest feature labelled, in pixels; `auto`: one the label fits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_feature_size: Option<MinFeatureSize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_overlap_angle: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partials: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub force: Option<Force>,
+    /// 1 to 10; a higher one is placed first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<Bound<f64>>,
+    /// Drawn with the label, at its point unless a style names another transform.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<Style>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span: Option<Span>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Position {
+    Ul,
+    Uc,
+    Ur,
+    Cl,
+    Cc,
+    Cr,
+    Ll,
+    Lc,
+    Lr,
+    Auto,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AngleMode {
+    /// Along the line.
+    Auto,
+    /// Along the line, and never upside down.
+    Auto2,
+    /// Following the line's curve, character by character.
+    Follow,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Align {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MinFeatureSize {
+    Auto,
+    #[serde(untagged)]
+    Pixels(f64),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Force {
+    On,
+    Off,
+    /// The label and its styles are placed together or not at all.
+    Group,
 }
 
 /// A unit of length.

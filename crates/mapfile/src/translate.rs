@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 
 use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::{
-    Bound, Class, Diagnostic, Expr, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin,
-    LineOffset, Map, RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
-    Units,
+    Align, AngleMode, Bound, Class, Diagnostic, Expr, Extent, Force, GeomTransform, Label, Layer,
+    LayerStatus, LineCap, LineJoin, LineOffset, Map, MinFeatureSize, Op, Position, RenderMode,
+    Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
 };
 
 use crate::expression;
@@ -44,19 +44,28 @@ fn item(block: &Block, keyword: &str) -> Option<String> {
     })
 }
 
-/// Translates the `MAP` block of the mapfile at `main`, with the symbol file its `SYMBOLSET`
-/// named, read from the path beside it.
+/// The files a map was read from: the main mapfile, and the symbol file and font set it names,
+/// each with the path it was read from.
+pub struct Files<'a> {
+    pub main: &'a ResourcePath,
+    pub symbol_set: Option<&'a (ResourcePath, Block)>,
+    pub font_set: Option<&'a (ResourcePath, String)>,
+}
+
+/// Translates the `MAP` block of a mapfile read from `files`.
 pub fn translate(
     map: &Block,
-    main: &ResourcePath,
-    symbol_set: Option<&(ResourcePath, Block)>,
+    files: &Files<'_>,
     resolver: Option<&dyn ProjectionResolver>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Map {
+    let main = files.main;
+    let symbol_set = files.symbol_set;
     let mut t = Translator {
         resolver,
         diagnostics,
         symbols: Vec::new(),
+        fonts: BTreeMap::new(),
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
     // its symbol set after the whole map (loadMap, loadSymbolSet).
@@ -75,8 +84,12 @@ pub fn translate(
         .into_iter()
         .filter_map(|(beside, b)| t.symbol_block(b, beside))
         .collect();
+    if let Some((path, text)) = files.font_set {
+        t.fonts = t.fonts(path, text);
+    }
     let mut map = t.map(map);
     map.symbols = std::mem::take(&mut t.symbols);
+    map.fonts = std::mem::take(&mut t.fonts);
     map
 }
 
@@ -85,6 +98,8 @@ struct Translator<'a> {
     diagnostics: &'a mut Vec<Diagnostic>,
     /// The map's symbols, read before its layers so that a style's reference resolves.
     symbols: Vec<Symbol>,
+    /// The map's fonts, read before its layers so that a label's font is checked.
+    fonts: BTreeMap<String, String>,
 }
 
 impl Translator<'_> {
@@ -110,7 +125,7 @@ impl Translator<'_> {
                         map.def_resolution = self.number(d, Range::within(10.0, 1000.0));
                     }
                     // Read with the map, before translation.
-                    "SYMBOLSET" => {}
+                    "SYMBOLSET" | "FONTSET" => {}
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) => match b.keyword.as_str() {
@@ -138,6 +153,7 @@ impl Translator<'_> {
         let mut source_span = None;
         // MapServer reads the items when it evaluates, so they hold wherever they stand.
         let class_item = item(block, "CLASSITEM");
+        let label_item = item(block, "LABELITEM");
         let filter_item = item(block, "FILTERITEM");
         for node in &block.nodes {
             match node {
@@ -159,18 +175,21 @@ impl Translator<'_> {
                         }
                         None => {}
                     },
-                    "STATUS" => match self.word(d).as_deref() {
-                        Some("ON") => layer.status = Some(LayerStatus::On),
-                        Some("OFF") => layer.status = Some(LayerStatus::Off),
-                        Some("DEFAULT") => layer.status = Some(LayerStatus::Default),
-                        Some(_) => self.invalid(d, "ON, OFF, or DEFAULT"),
-                        None => {}
-                    },
+                    "STATUS" => {
+                        layer.status = self.choice(
+                            d,
+                            &[
+                                ("ON", LayerStatus::On),
+                                ("OFF", LayerStatus::Off),
+                                ("DEFAULT", LayerStatus::Default),
+                            ],
+                        );
+                    }
                     "CONNECTIONTYPE" => {
                         connection_type = self.word(d).map(|w| w.to_ascii_lowercase());
                         source_span.get_or_insert_with(|| d.span.clone());
                     }
-                    "CLASSITEM" | "FILTERITEM" => {
+                    "CLASSITEM" | "FILTERITEM" | "LABELITEM" => {
                         self.string(d);
                     }
                     "FILTER" => layer.filter = self.expression(d, filter_item.as_deref()),
@@ -198,7 +217,10 @@ impl Translator<'_> {
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) => match b.keyword.as_str() {
-                    "CLASS" => layer.classes.push(self.class(b, class_item.as_deref())),
+                    "CLASS" => {
+                        let class = self.class(b, class_item.as_deref(), label_item.as_deref());
+                        layer.classes.push(class);
+                    }
                     _ => self.unhandled(&b.keyword, &b.span),
                 },
             }
@@ -214,10 +236,25 @@ impl Translator<'_> {
         Some(layer)
     }
 
-    fn class(&mut self, block: &Block, class_item: Option<&str>) -> Class {
+    fn class(
+        &mut self,
+        block: &Block,
+        class_item: Option<&str>,
+        label_item: Option<&str>,
+    ) -> Class {
         let mut class = Class {
             span: Some(block.span.clone()),
             ..Class::default()
+        };
+        // A label's text falls back on the class's TEXT, then on the layer's LABELITEM, as
+        // msShapeGetLabelAnnotation does; the class's TEXT holds wherever it stands.
+        let class_text = block.nodes.iter().rev().find_map(|node| match node {
+            Node::Directive(d) if d.keyword == "TEXT" => Some(d),
+            _ => None,
+        });
+        let fallback = match class_text {
+            Some(d) => self.text(d),
+            None => label_item.map(|name| Expr::call(Op::ToString, vec![Expr::property(name)])),
         };
         for node in &block.nodes {
             match node {
@@ -225,12 +262,268 @@ impl Translator<'_> {
                 Node::Directive(d) if d.keyword == "EXPRESSION" => {
                     class.expression = self.expression(d, class_item);
                 }
+                Node::Directive(d) if d.keyword == "TEXT" => {}
                 Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b)),
+                Node::Block(b) if b.keyword == "LABEL" => {
+                    class.labels.push(self.label(b, fallback.as_ref()));
+                }
                 Node::Directive(d) => self.unhandled_directive(d),
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
             }
         }
         class
+    }
+
+    /// A label's or class's `TEXT`. One that cannot be carried over is a warning and an empty
+    /// text, which draws no label, as MapServer draws none for a text it cannot evaluate.
+    fn text(&mut self, d: &Directive) -> Option<Expr> {
+        let [token] = d.values.as_slice() else {
+            self.invalid(d, "one string or expression");
+            return None;
+        };
+        match expression::text(token) {
+            Ok(expr) => Some(expr),
+            Err(problem) if problem.error => {
+                self.error(problem.code, &problem.message, &d.span);
+                None
+            }
+            Err(problem) => {
+                let message = format!("{}; the label has no text", problem.message);
+                self.warn(problem.code, &message, &d.span);
+                Some(Expr::String(String::new()))
+            }
+        }
+    }
+
+    /// A `LABEL` as loadLabel reads it, its text falling back on `fallback`.
+    fn label(&mut self, block: &Block, fallback: Option<&Expr>) -> Label {
+        let mut label = Label {
+            span: Some(block.span.clone()),
+            ..Label::default()
+        };
+        let mut text = None;
+        for node in &block.nodes {
+            match node {
+                Node::Directive(d) => match d.keyword.as_str() {
+                    "TEXT" => text = self.text(d),
+                    "FONT" => {
+                        label.font = self.bound_string(d);
+                        if let Some(Bound::Value(names)) = &label.font {
+                            self.check_fonts(names, &d.span);
+                        }
+                    }
+                    "SIZE" => label.size = self.label_size(d),
+                    "MINSIZE" => label.min_size = self.number(d, Range::above(0.0)).map(f64::trunc),
+                    "MAXSIZE" => label.max_size = self.number(d, Range::above(0.0)).map(f64::trunc),
+                    "COLOR" => label.color = self.bound_color(d),
+                    "OUTLINECOLOR" => label.outline_color = self.bound_color(d),
+                    "OUTLINEWIDTH" => {
+                        label.outline_width = self.number(d, Range::above(0.0)).map(f64::trunc);
+                    }
+                    "SHADOWCOLOR" => label.shadow_color = self.bound_color(d),
+                    "SHADOWSIZE" => label.shadow_size = self.bound_pair(d, Range::any()),
+                    "POSITION" => label.position = self.position(d),
+                    "OFFSET" => label.offset = self.bound_pair(d, Range::any()),
+                    "ANGLE" => self.label_angle(d, &mut label),
+                    "ALIGN" => {
+                        label.align = self.bound_choice(
+                            d,
+                            &[
+                                ("LEFT", Align::Left),
+                                ("CENTER", Align::Center),
+                                ("RIGHT", Align::Right),
+                            ],
+                        );
+                    }
+                    "WRAP" => {
+                        label.wrap = self
+                            .string(d)
+                            .and_then(|w| w.chars().next())
+                            .map(String::from);
+                    }
+                    "MAXLENGTH" => {
+                        label.max_length = self.number(d, Range::above(0.0)).map(f64::trunc);
+                    }
+                    "BUFFER" => label.buffer = self.number(d, Range::any()).map(f64::trunc),
+                    "MINDISTANCE" => {
+                        label.min_distance = self.number(d, Range::above(0.0)).map(f64::trunc);
+                    }
+                    "REPEATDISTANCE" => {
+                        label.repeat_distance = self.number(d, Range::above(0.0)).map(f64::trunc);
+                    }
+                    "MINFEATURESIZE" if d.values.len() == 1 && d.values[0].is_word("AUTO") => {
+                        label.min_feature_size = Some(MinFeatureSize::Auto);
+                    }
+                    "MINFEATURESIZE" => {
+                        label.min_feature_size = self
+                            .number(d, Range::above(0.0))
+                            .map(|n| MinFeatureSize::Pixels(n.trunc()));
+                    }
+                    "MAXOVERLAPANGLE" => {
+                        label.max_overlap_angle = self.number(d, Range::within(0.0, 360.0));
+                    }
+                    "PARTIALS" => {
+                        label.partials = self.choice(d, &[("TRUE", true), ("FALSE", false)]);
+                    }
+                    "FORCE" => {
+                        label.force = self.choice(
+                            d,
+                            &[
+                                ("ON", Force::On),
+                                ("OFF", Force::Off),
+                                ("GROUP", Force::Group),
+                            ],
+                        );
+                    }
+                    "PRIORITY" => {
+                        label.priority = self.bound_number(d, Range::within(1.0, 10.0), true);
+                    }
+                    // loadLabel reads and discards them.
+                    "TYPE" | "ANTIALIAS" => {}
+                    _ => self.unhandled_directive(d),
+                },
+                Node::Block(b) if b.keyword == "STYLE" => {
+                    let mut style = self.style(b);
+                    // loadLabel's default for a label's style.
+                    style
+                        .geom_transform
+                        .get_or_insert(GeomTransform::LabelPoint);
+                    label.styles.push(style);
+                }
+                Node::Block(b) => self.unhandled(&b.keyword, &b.span),
+            }
+        }
+        label.text = text.or_else(|| fallback.cloned());
+        label
+    }
+
+    /// A label's `SIZE`: a number above 0, MapServer's bitmap sizes, an attribute, or an
+    /// expression.
+    fn label_size(&mut self, d: &Directive) -> Option<Bound<f64>> {
+        // MS_TINY to MS_GIANT, src/mapserver.h.
+        let bitmap = [
+            ("TINY", 5.0),
+            ("SMALL", 7.0),
+            ("MEDIUM", 10.0),
+            ("LARGE", 13.0),
+            ("GIANT", 16.0),
+        ];
+        if let [token] = d.values.as_slice()
+            && let Some(word) = token.keyword()
+            && let Some((_, size)) = bitmap.iter().find(|(name, _)| *name == word)
+        {
+            return Some(Bound::Value(*size));
+        }
+        self.bound_number(d, Range::above(0.0), true)
+    }
+
+    /// A label's `ANGLE`: a number from -360 to 360, an attribute, or `AUTO`, `AUTO2`, `FOLLOW`.
+    fn label_angle(&mut self, d: &Directive, label: &mut Label) {
+        let modes = [
+            ("AUTO", AngleMode::Auto),
+            ("AUTO2", AngleMode::Auto2),
+            ("FOLLOW", AngleMode::Follow),
+        ];
+        if let [token] = d.values.as_slice()
+            && let Some(word) = token.keyword()
+            && let Some((_, mode)) = modes.iter().find(|(name, _)| *name == word)
+        {
+            label.angle_mode = Some(*mode);
+            return;
+        }
+        label.angle = self.bound_number(d, Range::within(-360.0, 360.0), false);
+    }
+
+    fn position(&mut self, d: &Directive) -> Option<Bound<Position>> {
+        self.bound_choice(
+            d,
+            &[
+                ("UL", Position::Ul),
+                ("UC", Position::Uc),
+                ("UR", Position::Ur),
+                ("CL", Position::Cl),
+                ("CC", Position::Cc),
+                ("CR", Position::Cr),
+                ("LL", Position::Ll),
+                ("LC", Position::Lc),
+                ("LR", Position::Lr),
+                ("AUTO", Position::Auto),
+            ],
+        )
+    }
+
+    /// Warns of each font of a `FONT` list, `a,b` naming fallbacks, that the font set lacks.
+    fn check_fonts(&mut self, names: &str, span: &Span) {
+        for name in names.split(',') {
+            if !self.fonts.contains_key(name) {
+                let message = format!("the font set has no font `{name}`");
+                self.warn("font-unknown", &message, span);
+            }
+        }
+    }
+
+    /// One of `choices`, or an attribute.
+    fn bound_choice<T: Copy>(&mut self, d: &Directive, choices: &[(&str, T)]) -> Option<Bound<T>> {
+        if let [
+            Token {
+                kind: TokenKind::Binding(name),
+                ..
+            },
+        ] = d.values.as_slice()
+        {
+            return Some(Bound::Binding {
+                binding: name.clone(),
+            });
+        }
+        self.choice(d, choices).map(Bound::Value)
+    }
+
+    /// A string, or an attribute.
+    fn bound_string(&mut self, d: &Directive) -> Option<Bound<String>> {
+        if let [
+            Token {
+                kind: TokenKind::Binding(name),
+                ..
+            },
+        ] = d.values.as_slice()
+        {
+            return Some(Bound::Binding {
+                binding: name.clone(),
+            });
+        }
+        self.string(d).map(Bound::Value)
+    }
+
+    /// A font set as msLoadFontSet reads it: a line `name path` per font, lines that start with
+    /// `#`, a space, or nothing skipped; a path resolved beside the font set, and one outside the
+    /// base context a warning (Q-8).
+    fn fonts(&mut self, path: &ResourcePath, text: &str) -> BTreeMap<String, String> {
+        let span = Span::new(path.as_str(), 1, 1);
+        let mut fonts = BTreeMap::new();
+        for line in text.lines() {
+            if line.is_empty() || line.starts_with(['#', ' ', '\r']) {
+                continue;
+            }
+            let Some((name, file)) = line.split_once([' ', '\t']) else {
+                continue;
+            };
+            let file = file.trim();
+            if file.is_empty() {
+                continue;
+            }
+            match path.resolve(file) {
+                Ok(font) => {
+                    fonts.insert(name.to_owned(), font.as_str().to_owned());
+                }
+                // One font is needed only when it is drawn, so its refusal leaves it out of
+                // the map rather than failing the load.
+                Err(e) => {
+                    let message = format!("font `{name}` at `{file}` is refused and left out: {e}");
+                    self.warn("font-refused", &message, &span);
+                }
+            }
+        }
+        fonts
     }
 
     fn style(&mut self, block: &Block) -> Style {
@@ -426,12 +719,21 @@ impl Translator<'_> {
         }
     }
 
-    /// One of the keywords `choices` names.
+    /// One of the keywords `choices` names. `TRUE` and `ON`, and `FALSE` and `OFF`, stand for
+    /// each other, as MapServer's lexer gives them the same token values (`MS_TRUE` and `MS_ON`
+    /// are 1, `MS_FALSE` and `MS_OFF` 0, src/mapserver.h) and its parser compares those.
     fn choice<T: Copy>(&mut self, d: &Directive, choices: &[(&str, T)]) -> Option<T> {
         let word = self.word(d)?;
+        let alias = match word.as_str() {
+            "TRUE" => "ON",
+            "ON" => "TRUE",
+            "FALSE" => "OFF",
+            "OFF" => "FALSE",
+            other => other,
+        };
         let found = choices
             .iter()
-            .find(|(name, _)| *name == word)
+            .find(|(name, _)| *name == word || *name == alias)
             .map(|(_, v)| *v);
         if found.is_none() {
             let names: Vec<&str> = choices.iter().map(|(name, _)| *name).collect();
@@ -487,6 +789,8 @@ impl Translator<'_> {
         };
         let transform = match name.as_str() {
             "start" => Some(GeomTransform::Start),
+            "labelpoint" => Some(GeomTransform::LabelPoint),
+            "labelpoly" => Some(GeomTransform::LabelPoly),
             "end" => Some(GeomTransform::End),
             "vertices" => Some(GeomTransform::Vertices),
             "centroid" => Some(GeomTransform::Centroid),

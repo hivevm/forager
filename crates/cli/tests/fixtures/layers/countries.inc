@@ -3,7 +3,7 @@ LAYER
   TYPE POLYGON
   STATUS ON
   DATA "countries.shp"
-  LABELITEM "name"
+  GROUP "countries"
   CLASS
     NAME "all"
     STYLE
