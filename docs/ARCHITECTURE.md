@@ -1,4 +1,4 @@
-# Architecture — <Project Name>
+# Architecture — Forager
 
 > The system **as it stands today**: the parts it is built from, what each is responsible for, and
 > how they fit together. It holds no rule and no decision. It names the ADR behind each structural

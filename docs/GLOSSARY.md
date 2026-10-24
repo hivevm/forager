@@ -1,4 +1,4 @@
-# Glossary — <Project Name>
+# Glossary — Forager
 
 > The **vocabulary** of this project: the terms everyone, humans and agents alike, uses in code,
 > comments, documentation, and ADRs. It defines words and decides nothing. Whoever resolves a term
@@ -9,5 +9,49 @@ sentences, and list under _Avoid:_ the synonyms it displaces, where there are an
 specification, an ADR, or the code uses without an entry here is a gap to close, not a convention
 to invent.
 
-- **<Term>** — what it is, in one or two sentences.
-  _Avoid:_ <the synonyms not used here>.
+- **Adapter** — The implementation of a port for one kind of source or resource, such as
+  Shapefile, GeoJSON, or FlatGeobuf; it depends on the ports and the style IR, never on the core.
+  _Avoid:_ driver, provider, plugin.
+- **Base context** — What the host gives the core to resolve relative paths against: the root
+  inside which every resource path must stay.
+- **Core** — The crates that turn a style IR and features into pixels: no I/O, no C code, no
+  MapServer syntax, and buildable for `wasm32-unknown-unknown`.
+- **Diagnostic** — A message from loading or rendering, with a severity, a code, a text, and a
+  source span where one is known; errors from user data are reported as diagnostics, never as
+  panics.
+  _Avoid:_ warning (for the general concept), log message.
+- **Display list** — The ordered sequence of drawing operations the core hands a renderer, each
+  tagged with the feature it came from.
+- **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
+  crate versions and of the core's API.
+- **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through
+  the WASM bindings, or a server.
+- **Label cache** — MapServer's deferred placement of labels: labels are collected over all layers
+  and placed in a separate pass, after the geometry.
+- **Mapfile** — A map definition in UMN MapServer's text syntax, read only by the mapfile
+  frontend.
+- **Mapfile frontend** — The crate that parses a mapfile, its expressions, and its symbol
+  definitions, resolves MapServer's quirks, and emits a style IR.
+  _Avoid:_ mapfile parser (it does more than parse).
+- **Metatile** — A block of tiles rendered together on the server so that labels can be placed
+  across tile boundaries.
+- **msautotest** — The conformance suite of the MapServer repository: mapfiles, data, and
+  reference images.
+- **Port** — A trait at the edge of the core through which the host supplies data and resources;
+  the only place async appears.
+- **Pushdown** — Handing the part of a filter that an adapter can evaluate natively to that
+  adapter; the core evaluates the rest.
+- **Render mode** — What a layer's `TYPE` states: how its features are drawn (point, line,
+  polygon, raster, labels only), independent of their geometry type.
+  _Avoid:_ layer type, geometry type (for this concept).
+- **Source reference** — A layer's description of where its data lives — a kind and properties
+  taken unparsed from `CONNECTIONTYPE`, `CONNECTION`, `DATA`, and related keywords — which a
+  resolver binds to an adapter.
+  _Avoid:_ connection, data source.
+- **Source span** — The location in a mapfile or style document a diagnostic or IR element comes
+  from: file, line, and column.
+- **Style document** — The style IR serialized as YAML or JSON, with a `version` field naming its
+  format version.
+- **Style IR** — The data model of a map, its layers, classes, styles, symbols, and labels, free
+  of MapServer syntax, with expressions as CQL2.
+  _Avoid:_ model, AST (for the whole map).
