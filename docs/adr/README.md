@@ -95,6 +95,7 @@ is the table a session reads.
 | [0016](0016-geojson-crate.md) | The GeoJSON adapter parses with the georust `geojson` crate | `crates/adapter-geojson` | 🟢 accepted |
 | [0017](0017-png-crate.md) | The encoder writes PNG with the image-rs `png` crate | `crates/encode` | 🟢 accepted |
 | [0018](0018-projection-resolver.md) | `init=` projections are resolved through a resolver port the host passes in, with a minimal built-in table and a host-supplied file for the rest | `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm` | 🟢 accepted |
+| [0019](0019-cql2-expressions.md) | Expressions in the style IR are a lean CQL2 tree of Forager's own types, serialized as CQL2-JSON, with MapServer's typing made explicit at import | `crates/style-ir`, the translation of expressions in `crates/mapfile`, and every crate that evaluates an expression of the style IR | 🟡 proposed |
 
 ### Superseded and rejected
 
