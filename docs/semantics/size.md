@@ -12,5 +12,5 @@ read back with `atof`. The IR states this: `to_number(tostring(e, "%g"))` for a 
 `to_number(e)` for a string. An expression MapServer cannot parse yields 0; the frontend warns
 and stores 0. A condition or a time is not a number, and is the same warning.
 
-The quirks of the symbol's size — a vector symbol's size is its height, `SIZEUNITS`,
-`SYMBOLSCALEDENOM`, `MINSIZE`, `MAXSIZE` — come with the parameters that carry them.
+How a size is scaled and bounded is [`scale.md`](scale.md); that a vector symbol's size is its
+height comes with the symbols.

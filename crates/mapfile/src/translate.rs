@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use forager_ports::ProjectionResolver;
 use forager_style_ir::{
-    Bound, Class, Diagnostic, Expr, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef,
-    Span, Style,
+    Bound, Class, Diagnostic, Expr, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin,
+    LineOffset, Map, RenderMode, Rgba, SourceRef, Span, Style, SymbolRef, Units,
 };
 
 use crate::expression;
@@ -77,6 +77,11 @@ impl Translator<'_> {
                             .map(|n| [n[0].max(0.0) as u32, n[1].max(0.0) as u32]);
                     }
                     "IMAGECOLOR" => map.image_color = self.color(d),
+                    // MS_RESOLUTION_MIN and MS_RESOLUTION_MAX.
+                    "RESOLUTION" => map.resolution = self.number(d, Range::within(10.0, 1000.0)),
+                    "DEFRESOLUTION" => {
+                        map.def_resolution = self.number(d, Range::within(10.0, 1000.0));
+                    }
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) => match b.keyword.as_str() {
@@ -139,6 +144,21 @@ impl Translator<'_> {
                         self.string(d);
                     }
                     "FILTER" => layer.filter = self.expression(d, filter_item.as_deref()),
+                    "SIZEUNITS" => {
+                        layer.size_units = self.choice(
+                            d,
+                            &[
+                                ("PIXELS", Units::Pixels),
+                                ("INCHES", Units::Inches),
+                                ("FEET", Units::Feet),
+                                ("MILES", Units::Miles),
+                                ("METERS", Units::Meters),
+                                ("KILOMETERS", Units::Kilometers),
+                                ("NAUTICALMILES", Units::NauticalMiles),
+                                ("DD", Units::Degrees),
+                            ],
+                        );
+                    }
                     "CONNECTION" | "DATA" => {
                         if let Some(value) = self.string(d) {
                             props.insert(d.keyword.to_ascii_lowercase(), value);
@@ -200,19 +220,229 @@ impl Translator<'_> {
                     }
                     "SIZE" => style.size = self.bound_number(d, Range::above(0.0), true),
                     "ANGLE" if d.values.len() == 1 && d.values[0].is_word("AUTO") => {
-                        let message = "ANGLE AUTO is not yet supported and is ignored";
-                        self.warn("unsupported-value", message, &d.span);
+                        style.auto_angle = true;
                     }
                     "ANGLE" => {
                         let range = Range::within(-360.0, 360.0);
                         style.angle = self.bound_number(d, range, false);
                     }
+                    "SYMBOL" => style.symbol = self.symbol(d),
+                    "OFFSET" => self.offset(d, &mut style),
+                    "POLAROFFSET" => {
+                        style.polar_offset = self.bound_pair(d, Range::any());
+                    }
+                    "GAP" => style.gap = self.number(d, Range::any()),
+                    "INITIALGAP" => style.initial_gap = self.number(d, Range::at_least(0.0)),
+                    "LINECAP" => {
+                        style.line_cap = self.choice(
+                            d,
+                            &[
+                                ("BUTT", LineCap::Butt),
+                                ("ROUND", LineCap::Round),
+                                ("SQUARE", LineCap::Square),
+                                ("TRIANGLE", LineCap::Triangle),
+                            ],
+                        );
+                    }
+                    "LINEJOIN" => {
+                        style.line_join = self.choice(
+                            d,
+                            &[
+                                ("NONE", LineJoin::None),
+                                ("ROUND", LineJoin::Round),
+                                ("MITER", LineJoin::Miter),
+                                ("BEVEL", LineJoin::Bevel),
+                            ],
+                        );
+                    }
+                    "LINEJOINMAXSIZE" => {
+                        style.line_join_max_size = self.number(d, Range::above(0.0));
+                    }
+                    // loadStyle truncates an opacity and clamps it to 0..100.
+                    "OPACITY" => {
+                        style.opacity =
+                            self.bound_number(d, Range::any(), false).map(|o| match o {
+                                Bound::Value(n) => Bound::Value(n.trunc().clamp(0.0, 100.0)),
+                                bound => bound,
+                            });
+                    }
+                    "OUTLINEWIDTH" => {
+                        style.outline_width = self.bound_number(d, Range::at_least(0.0), false);
+                    }
+                    "MINSIZE" => style.min_size = self.number(d, Range::at_least(0.0)),
+                    "MAXSIZE" => style.max_size = self.number(d, Range::above(0.0)),
+                    "MINWIDTH" => style.min_width = self.number(d, Range::at_least(0.0)),
+                    "MAXWIDTH" => style.max_width = self.number(d, Range::above(0.0)),
+                    "GEOMTRANSFORM" => style.geom_transform = self.geom_transform(d),
                     _ => self.unhandled_directive(d),
                 },
+                Node::Block(b) if b.keyword == "PATTERN" => style.pattern = self.pattern(b),
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
             }
         }
         style
+    }
+
+    /// `SYMBOL` by its index, at least 0, by its name, or bound to a property. The name is
+    /// resolved against the symbol set when symbols are carried over.
+    fn symbol(&mut self, d: &Directive) -> Option<Bound<SymbolRef>> {
+        match d.values.as_slice() {
+            [
+                Token {
+                    kind: TokenKind::Number(n),
+                    ..
+                },
+            ] if *n >= 0.0 && *n <= f64::from(u32::MAX) => {
+                Some(Bound::Value(SymbolRef::Index(*n as u32)))
+            }
+            [
+                Token {
+                    kind: TokenKind::Str { value, .. } | TokenKind::Word(value),
+                    ..
+                },
+            ] => Some(Bound::Value(SymbolRef::Name(value.clone()))),
+            [
+                Token {
+                    kind: TokenKind::Binding(name),
+                    ..
+                },
+            ] => Some(Bound::Binding {
+                binding: name.clone(),
+            }),
+            _ => {
+                self.invalid(
+                    d,
+                    "a symbol index of at least 0, a symbol name, or an attribute",
+                );
+                None
+            }
+        }
+    }
+
+    /// `OFFSET x y`. MapServer writes a line drawn parallel to the feature's as a y of -99, or
+    /// -999 for both sides (`MS_STYLE_SINGLE_SIDED_OFFSET`, `MS_STYLE_DOUBLE_SIDED_OFFSET`);
+    /// the IR states it as a line offset.
+    fn offset(&mut self, d: &Directive, style: &mut Style) {
+        let Some([x, y]) = self.bound_pair(d, Range::any()) else {
+            return;
+        };
+        match y {
+            Bound::Value(n) if n == -99.0 || n == -999.0 => {
+                style.line_offset = Some(LineOffset {
+                    distance: x,
+                    both_sides: n == -999.0,
+                });
+            }
+            y => style.offset = Some([x, y]),
+        }
+    }
+
+    /// Two numbers inside `range`, each of which may be bound to a property.
+    fn bound_pair(&mut self, d: &Directive, range: Range) -> Option<[Bound<f64>; 2]> {
+        let bound = |token: &Token| match &token.kind {
+            TokenKind::Number(n) if range.contains(*n) => Some(Bound::Value(*n)),
+            TokenKind::Binding(name) => Some(Bound::Binding {
+                binding: name.clone(),
+            }),
+            _ => None,
+        };
+        match d.values.as_slice() {
+            [a, b] if bound(a).is_some() && bound(b).is_some() => Some([bound(a)?, bound(b)?]),
+            _ => {
+                self.invalid(d, &format!("two numbers{range} or attributes"));
+                None
+            }
+        }
+    }
+
+    /// One number inside `range`.
+    fn number(&mut self, d: &Directive, range: Range) -> Option<f64> {
+        match d.values.as_slice() {
+            [
+                Token {
+                    kind: TokenKind::Number(n),
+                    ..
+                },
+            ] if range.contains(*n) => Some(*n),
+            _ => {
+                self.invalid(d, &format!("a number{range}"));
+                None
+            }
+        }
+    }
+
+    /// One of the keywords `choices` names.
+    fn choice<T: Copy>(&mut self, d: &Directive, choices: &[(&str, T)]) -> Option<T> {
+        let word = self.word(d)?;
+        let found = choices
+            .iter()
+            .find(|(name, _)| *name == word)
+            .map(|(_, v)| *v);
+        if found.is_none() {
+            let names: Vec<&str> = choices.iter().map(|(name, _)| *name).collect();
+            self.invalid(d, &names.join(", "));
+        }
+        found
+    }
+
+    /// `PATTERN` with 2 to 10 numbers, as loadStyle takes it.
+    fn pattern(&mut self, block: &Block) -> Vec<f64> {
+        let numbers: Option<Vec<f64>> = block
+            .values
+            .iter()
+            .map(|t| match t.kind {
+                TokenKind::Number(n) => Some(n),
+                _ => None,
+            })
+            .collect();
+        match numbers {
+            Some(numbers) if (2..=10).contains(&numbers.len()) => numbers,
+            _ => {
+                self.error(
+                    "invalid-value",
+                    "PATTERN expects 2 to 10 numbers",
+                    &block.span,
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    /// `GEOMTRANSFORM` by name; MapServer's other transforms and its expressions are not yet
+    /// carried over.
+    fn geom_transform(&mut self, d: &Directive) -> Option<GeomTransform> {
+        let name = match d.values.as_slice() {
+            // An unquoted word is a string to MapServer's lexer.
+            [
+                Token {
+                    kind: TokenKind::Str { value, .. } | TokenKind::Word(value),
+                    ..
+                },
+            ] => value.to_ascii_lowercase(),
+            [
+                Token {
+                    kind: TokenKind::Expression(_),
+                    ..
+                },
+            ] => String::new(),
+            _ => {
+                self.invalid(d, "a transform name or an expression");
+                return None;
+            }
+        };
+        let transform = match name.as_str() {
+            "start" => Some(GeomTransform::Start),
+            "end" => Some(GeomTransform::End),
+            "vertices" => Some(GeomTransform::Vertices),
+            "centroid" => Some(GeomTransform::Centroid),
+            _ => None,
+        };
+        if transform.is_none() {
+            let message = "this GEOMTRANSFORM is not yet supported, and the style is drawn as \
+                           if it had none";
+            self.warn("unsupported-value", message, &d.span);
+        }
+        transform
     }
 
     /// A proj4 string from the parameters of a PROJECTION block. `init=<authority>:<code>` is
@@ -444,7 +674,7 @@ impl Translator<'_> {
                 } else {
                     " or an attribute"
                 };
-                self.invalid(d, &format!("a number {range}{what}"));
+                self.invalid(d, &format!("a number{range}{what}"));
                 None
             }
         }
@@ -493,6 +723,10 @@ enum Range {
 }
 
 impl Range {
+    fn any() -> Self {
+        Range::Within(f64::MIN, f64::MAX)
+    }
+
     fn at_least(min: f64) -> Self {
         Range::AtLeast(min)
     }
@@ -517,9 +751,10 @@ impl Range {
 impl std::fmt::Display for Range {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Range::AtLeast(min) => write!(f, "of at least {min}"),
-            Range::Above(min) => write!(f, "greater than {min}"),
-            Range::Within(min, max) => write!(f, "from {min} to {max}"),
+            Range::AtLeast(min) => write!(f, " of at least {min}"),
+            Range::Above(min) => write!(f, " greater than {min}"),
+            Range::Within(min, max) if *min == f64::MIN && *max == f64::MAX => Ok(()),
+            Range::Within(min, max) => write!(f, " from {min} to {max}"),
         }
     }
 }

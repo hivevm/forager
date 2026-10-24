@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Bound, Diagnostic, MAX_EXPRESSION_DEPTH, Map};
+use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, Map};
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
 pub const FORMAT_VERSION: &str = "1.0";
@@ -73,13 +73,7 @@ impl StyleDocument {
         let layers = self.map.layers.iter();
         let expressions = layers.flat_map(|layer| {
             let classes = layer.classes.iter().flat_map(|class| {
-                let styles = class.styles.iter().flat_map(|style| {
-                    let colors = [&style.color, &style.outline_color];
-                    let numbers = [&style.width, &style.size, &style.angle];
-                    let colors = colors.into_iter().flatten().filter_map(Bound::expression);
-                    let numbers = numbers.into_iter().flatten().filter_map(Bound::expression);
-                    colors.chain(numbers)
-                });
+                let styles = class.styles.iter().flat_map(|style| style.expressions());
                 class.expression.iter().chain(styles)
             });
             layer.filter.iter().chain(classes)
@@ -98,8 +92,8 @@ impl StyleDocument {
 mod tests {
     use super::*;
     use crate::{
-        Bound, Class, Expr, Extent, Layer, LayerStatus, Op, RenderMode, Rgba, SourceRef, Span,
-        Style,
+        Bound, Class, Expr, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin,
+        LineOffset, Op, RenderMode, Rgba, SourceRef, Span, Style, SymbolRef, Units,
     };
 
     fn sample() -> StyleDocument {
@@ -114,6 +108,8 @@ mod tests {
             size: Some([400, 200]),
             image_color: Some(Rgba::opaque(255, 255, 255)),
             projection: Some("+proj=longlat +datum=WGS84".into()),
+            resolution: Some(96.0),
+            def_resolution: None,
             layers: vec![Layer {
                 name: Some("countries".into()),
                 render_mode: Some(RenderMode::Polygon),
@@ -123,6 +119,7 @@ mod tests {
                     props: [("data".to_owned(), "countries.shp".to_owned())].into(),
                     span: Some(Span::new("world.map", 9, 5)),
                 }),
+                size_units: Some(Units::Meters),
                 filter: Some(Expr::call(
                     Op::In,
                     vec![
@@ -173,7 +170,26 @@ mod tests {
                                 ],
                             )],
                         ))),
+                        auto_angle: true,
+                        symbol: Some(Bound::Value(SymbolRef::Name("1".into()))),
+                        offset: Some([
+                            Bound::Value(1.0),
+                            Bound::Binding {
+                                binding: "dy".into(),
+                            },
+                        ]),
+                        line_offset: Some(LineOffset {
+                            distance: Bound::Value(3.0),
+                            both_sides: true,
+                        }),
+                        pattern: vec![10.0, 5.0],
+                        line_cap: Some(LineCap::Butt),
+                        line_join: Some(LineJoin::Miter),
+                        opacity: Some(Bound::Value(50.0)),
+                        max_width: Some(8.0),
+                        geom_transform: Some(GeomTransform::Vertices),
                         span: Some(Span::new("world.map", 14, 9)),
+                        ..Style::default()
                     }],
                     span: Some(Span::new("world.map", 12, 7)),
                 }],
