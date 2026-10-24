@@ -16,3 +16,6 @@ Thumbs.db
 
 # Session artifacts — plans, handoff notes, scratch files (AGENTS.md, section 4)
 .scratch/
+
+# Rust build output
+/target/

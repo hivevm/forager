@@ -21,8 +21,11 @@ explicit and reviewable.
 
 ## Overview
 
-Describe what this project does, who it is for, and its main goals. The full problem statement and
-goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), the vocabulary in
+Forager renders maps with the styling semantics of UMN MapServer. Its mapfile frontend reads a
+mapfile into a style IR free of MapServer syntax; a core without I/O or C code renders that IR,
+as WebAssembly in the browser and as a Rust library on a server. It is for teams that maintain
+their cartography as mapfiles and want it in the browser without a map server. The full problem
+statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), the vocabulary in
 [`docs/GLOSSARY.md`](docs/GLOSSARY.md).
 
 ## Prerequisites
@@ -47,22 +50,34 @@ goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), the vocabulary i
 
 ## Build, Test & Run
 
-<!-- Fill in once the toolchain is chosen. This section is the single source for
-     build/test/lint/run commands; both humans and agents rely on it, and the rule file names
-     it. -->
+The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml); rustup installs it on
+first use. [`scripts/install-tools.sh`](scripts/install-tools.sh) installs it with the cargo
+tools the checks need, and the Dev Container runs it after creation (ADR-0008, ADR-0010).
 
-- **Build:** TODO <!-- e.g. `make build` -->
-- **Test:** TODO <!-- e.g. `make test` -->
-- **Lint:** TODO <!-- e.g. `make lint` -->
-- **Run:** TODO <!-- e.g. `make run` -->
+- **Build:** `cargo build --workspace`
+- **Test:** `cargo test --workspace`
+- **Lint:** `bash scripts/check-rust.sh` — formatting, clippy, tests, the `wasm32-unknown-unknown`
+  build, and `cargo deny`; `scripts/check-all.sh` runs it with the repository's other checks
+- **Run:** `cargo run -p forager-cli -- read <mapfile>`
 
 ## Usage
 
-<!-- Once there is something to use, show how to use the built software: the primary commands or
-     API, a minimal example, and the expected output. Keep build/test/run mechanics in the section
-     above; this section is about using the result, not producing it. -->
+Read a mapfile and print the style IR it translates into, with every diagnostic on standard
+error:
 
-TODO — show a minimal example of using the project.
+```console
+$ forager read crates/cli/tests/fixtures/world.map --format yaml
+world.map:11:3: warning [discarded-keyword]: WEB is out of Forager's scope and is discarded
+layers/countries.inc:6:3: warning [unsupported-keyword]: LABELITEM is not yet supported and is ignored
+version: "1.0"
+map:
+  name: world
+  …
+```
+
+`--format json` prints the same document as JSON. The exit code is 0 when the mapfile loaded, 1
+when it did not, and 2 on wrong arguments. `INCLUDE`s are resolved inside the mapfile's
+directory, and a path that leaves it is refused.
 
 ## Project Layout
 
@@ -75,6 +90,11 @@ docs/GLOSSARY.md      # the vocabulary everyone uses, kept current inline
 docs/CONVENTIONS.md   # how this project writes what no check decides, kept current inline
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
+docs/plan/            # feature specs and their tickets, deleted as their work lands (ADR-0006)
+Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0009)
+crates/               # the crates: style-ir, ports, mapfile, cli, arch-test, …
+rust-toolchain.toml   # the pinned Rust toolchain (ADR-0008)
+deny.toml             # cargo-deny: licences, advisories, sources (ADR-0012)
 scripts/              # consistency checks and sensors (check-all.sh runs them all), run in CI
 .githooks/            # git hooks: refuse a commit on main and a push while the checks are red
 .github/              # CI workflows, Dependabot, issue & pull request templates, code owners
@@ -149,7 +169,7 @@ configured once by a maintainer and worth re-checking after a repository move or
 
 - a **ruleset on `main`** that requires pull requests, requires the
   <!-- required-checks begin — compared with the workflow's jobs by scripts/check-docs.sh -->
-  `docs`, `traceability`, `devcontainer`, `sensors`, and `shell`
+  `docs`, `traceability`, `devcontainer`, `sensors`, `shell`, and `rust`
   <!-- required-checks end -->
   jobs of the **Checks** workflow as required status checks (rulesets list checks by their job
   name) and a branch up to date with `main` before it merges, so that the checks see what the

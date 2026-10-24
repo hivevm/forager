@@ -1,0 +1,21 @@
+[package]
+name = "forager-cli"
+description = "The Forager command line."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "forager"
+path = "src/main.rs"
+
+[dependencies]
+forager-style-ir.workspace = true
+forager-ports.workspace = true
+forager-mapfile.workspace = true
+
+[lints]
+workspace = true
