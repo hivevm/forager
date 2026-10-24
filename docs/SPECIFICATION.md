@@ -105,7 +105,7 @@ from the threats below.
   only inside the base context the host gives. A path with a `..` escape or an absolute path is a
   diagnostic; a test feeds each and expects it.
 - **Q-9** — Bounded resources: `INCLUDE` depth and cycles, the total size of a mapfile with its
-  `INCLUDE`s (64 MiB of text), the number of diagnostics one load reports (1000), image size,
+  `INCLUDE`s (16 MiB of text), the number of diagnostics one load reports (1000), image size,
   feature count, expression nesting, and regular-expression size are limited, and exceeding a
   limit is a diagnostic. A test per limit feeds an input past it and expects the diagnostic.
 
