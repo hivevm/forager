@@ -35,7 +35,7 @@ reports a waiting port as the bindings do.
 
 <!-- Both change fuzz/fuzz_targets/mapfile.rs. -->
 
-- docs/plan/revision-2026-10-24/02-style-document-numbers-round-trip.md
+- docs/plan/ir-completeness/02-style-document-numbers-round-trip.md
 
 ## Mode
 
