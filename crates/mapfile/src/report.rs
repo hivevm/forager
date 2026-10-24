@@ -22,12 +22,6 @@ impl Report {
         }
     }
 
-    pub fn extend(&mut self, diagnostics: impl IntoIterator<Item = Diagnostic>) {
-        for diagnostic in diagnostics {
-            self.push(diagnostic);
-        }
-    }
-
     /// Whether any error was reported, kept or dropped.
     pub fn failed(&self) -> bool {
         self.failed

@@ -14,6 +14,7 @@ use crate::expression;
 use crate::init_file::InitFile;
 use crate::lexer::{Token, TokenKind};
 use crate::projection::{self, Init, Projection};
+use crate::report::Report;
 use crate::syntax::{Block, Directive, Node};
 
 /// Keywords out of Forager's scope (specification, Non-Goals): read and discarded.
@@ -61,7 +62,7 @@ pub fn translate(
     map: &Block,
     files: &Files<'_>,
     resolver: Option<&dyn ProjectionResolver>,
-    diagnostics: &mut Vec<Diagnostic>,
+    diagnostics: &mut Report,
 ) -> Map {
     let main = files.main;
     let symbol_set = files.symbol_set;
@@ -101,7 +102,7 @@ pub fn translate(
 struct Translator<'a> {
     resolver: Option<&'a dyn ProjectionResolver>,
     init_files: &'a BTreeMap<String, Result<InitFile, String>>,
-    diagnostics: &'a mut Vec<Diagnostic>,
+    diagnostics: &'a mut Report,
     /// The map's symbols, read before its layers so that a style's reference resolves.
     symbols: Vec<Symbol>,
     /// The map's fonts, read before its layers so that a label's font is checked.

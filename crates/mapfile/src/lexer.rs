@@ -13,6 +13,8 @@ use std::sync::Arc;
 
 use forager_style_ir::{Diagnostic, Span};
 
+use crate::report::Report;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
     /// A bare word: a keyword, or a value such as `ON` or `polygon`.
@@ -54,8 +56,9 @@ impl Token {
     }
 }
 
-/// Splits mapfile text into tokens. Errors are reported and the lexer continues after them.
-pub fn lex(text: &str, file: &str) -> (Vec<Token>, Vec<Diagnostic>) {
+/// Splits mapfile text into tokens. Errors go to `report`, bounded while they are collected
+/// (Q-9), and the lexer continues after them.
+pub fn lex_into(text: &str, file: &str, report: &mut Report) -> Vec<Token> {
     let mut lexer = Lexer {
         chars: text.chars().collect(),
         pos: 0,
@@ -63,23 +66,31 @@ pub fn lex(text: &str, file: &str) -> (Vec<Token>, Vec<Diagnostic>) {
         column: 1,
         file: Arc::from(file),
         tokens: Vec::new(),
-        diagnostics: Vec::new(),
+        diagnostics: report,
     };
     lexer.run();
-    (lexer.tokens, lexer.diagnostics)
+    lexer.tokens
 }
 
-struct Lexer {
+/// [`lex_into`] with a report of its own, for the lexer's tests.
+#[cfg(test)]
+pub fn lex(text: &str, file: &str) -> (Vec<Token>, Vec<Diagnostic>) {
+    let mut report = Report::default();
+    let tokens = lex_into(text, file, &mut report);
+    (tokens, report.finish())
+}
+
+struct Lexer<'r> {
     chars: Vec<char>,
     pos: usize,
     line: u32,
     column: u32,
     file: Arc<str>,
     tokens: Vec<Token>,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: &'r mut Report,
 }
 
-impl Lexer {
+impl Lexer<'_> {
     fn run(&mut self) {
         while let Some(c) = self.peek(0) {
             let span = self.span();
