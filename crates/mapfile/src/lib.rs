@@ -21,7 +21,7 @@ pub const MAX_INCLUDE_DEPTH: usize = 5;
 
 /// How much text a mapfile with all its `INCLUDE`s may amount to (Q-9). Depth alone does not
 /// bound it: five levels of files that each include the next many times multiply.
-pub const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_TOTAL_BYTES: usize = 16 * 1024 * 1024;
 
 /// How many diagnostics one load reports (Q-9); the rest are counted in a last one.
 pub const MAX_DIAGNOSTICS: usize = 1000;
