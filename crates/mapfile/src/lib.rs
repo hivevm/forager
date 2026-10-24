@@ -87,6 +87,14 @@ pub async fn load<L: ResourceLoader>(
     }
 }
 
+/// Why a file was not read.
+enum Refused {
+    /// The loader could not read it, for the reason it gives.
+    Unreadable(String),
+    /// The bound on what a load reads is passed, and reported.
+    OverLimit,
+}
+
 /// The state of one load: the files being read, what they reported, and how much was read.
 struct Reading<'a, L> {
     loader: &'a L,
@@ -108,22 +116,16 @@ impl<L: ResourceLoader> Reading<'_, L> {
     ) -> Option<(ResourcePath, String)> {
         let (directive, target) = self.named_file(main, map, "FONTSET")?;
         let span = Some(directive.span.clone());
-        let bytes = match self.loader.load(&target).await {
+        let bytes = match self.load_bounded(&target, span.clone()).await {
             Ok(bytes) => bytes,
-            Err(e) => {
+            Err(Refused::Unreadable(e)) => {
                 let message = format!("cannot read `{target}`: {e}");
                 self.report
                     .push(Diagnostic::error("resource-unreadable", message, span));
                 return None;
             }
+            Err(Refused::OverLimit) => return None,
         };
-        self.bytes += bytes.len();
-        if self.bytes > MAX_TOTAL_BYTES {
-            let message = format!("the mapfile with its files exceeds {MAX_TOTAL_BYTES} bytes");
-            self.report
-                .push(Diagnostic::error("mapfile-too-large", message, span));
-            return None;
-        }
         Some((target, String::from_utf8_lossy(&bytes).into_owned()))
     }
 
@@ -150,34 +152,51 @@ impl<L: ResourceLoader> Reading<'_, L> {
             };
             let text = match read.get(&target) {
                 Some(text) => text.clone(),
-                None => match self.loader.load(&target).await {
+                None => match self.load_bounded(&target, Some(span)).await {
                     Ok(bytes) => {
-                        self.bytes += bytes.len();
-                        if self.bytes > MAX_TOTAL_BYTES {
-                            let message = format!(
-                                "the mapfile with its files exceeds {MAX_TOTAL_BYTES} bytes"
-                            );
-                            self.report.push(Diagnostic::error(
-                                "mapfile-too-large",
-                                message,
-                                Some(span),
-                            ));
-                            return files;
-                        }
                         let text = String::from_utf8_lossy(&bytes).into_owned();
                         read.insert(target.clone(), text.clone());
                         text
                     }
-                    Err(e) => {
+                    Err(Refused::Unreadable(e)) => {
                         let why = format!("cannot read the init file `{target}`: {e}");
                         files.insert(name, Err(why));
                         continue;
                     }
+                    Err(Refused::OverLimit) => return files,
                 },
             };
             files.insert(name, Ok(init_file::InitFile::new(target, &text)));
         }
         files
+    }
+
+    /// The bytes of `path`, within the bound on everything a load reads (Q-9): past it, the load
+    /// error `mapfile-too-large` at `span`, what names the file, reported once, and every later
+    /// file refused unread. A file that cannot be read is the caller's to report.
+    async fn load_bounded(
+        &mut self,
+        path: &ResourcePath,
+        span: Option<Span>,
+    ) -> Result<Vec<u8>, Refused> {
+        let over = |bytes: usize| bytes > MAX_TOTAL_BYTES;
+        if over(self.bytes) {
+            return Err(Refused::OverLimit);
+        }
+        let bytes = self
+            .loader
+            .load(path)
+            .await
+            .map_err(|e| Refused::Unreadable(e.to_string()))?;
+        self.bytes += bytes.len();
+        if over(self.bytes) {
+            let message =
+                format!("the mapfile with the files it names exceeds {MAX_TOTAL_BYTES} bytes");
+            self.report
+                .push(Diagnostic::error("mapfile-too-large", message, span));
+            return Err(Refused::OverLimit);
+        }
+        Ok(bytes)
     }
 
     /// The last `keyword` directive of the map and the file it names, resolved against the main
@@ -237,12 +256,9 @@ impl<L: ResourceLoader> Reading<'_, L> {
         included_at: Option<Span>,
     ) -> Pin<Box<dyn Future<Output = Option<Vec<Token>>> + 's>> {
         Box::pin(async move {
-            if self.bytes > MAX_TOTAL_BYTES {
-                return None;
-            }
-            let bytes = match self.loader.load(path).await {
+            let bytes = match self.load_bounded(path, included_at.clone()).await {
                 Ok(bytes) => bytes,
-                Err(e) => {
+                Err(Refused::Unreadable(e)) => {
                     let message = format!("cannot read `{path}`: {e}");
                     self.report.push(Diagnostic::error(
                         "resource-unreadable",
@@ -251,15 +267,8 @@ impl<L: ResourceLoader> Reading<'_, L> {
                     ));
                     return None;
                 }
+                Err(Refused::OverLimit) => return None,
             };
-            self.bytes += bytes.len();
-            if self.bytes > MAX_TOTAL_BYTES {
-                let message =
-                    format!("the mapfile with its INCLUDEs exceeds {MAX_TOTAL_BYTES} bytes");
-                self.report
-                    .push(Diagnostic::error("mapfile-too-large", message, included_at));
-                return None;
-            }
             let text = String::from_utf8_lossy(&bytes);
             let tokens = lexer::lex_into(&text, path.as_str(), &mut self.report);
             self.stack.push(path.clone());
