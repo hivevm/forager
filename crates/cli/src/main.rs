@@ -15,15 +15,26 @@ use forager_style_ir::{Diagnostic, StyleDocument};
 
 use crate::files::{FileLoader, block_on};
 
-const USAGE: &str = "usage: forager read <mapfile> [--format yaml|json] [--epsg <file>]
+const USAGE: &str =
+    "usage: forager read <mapfile> [--format yaml|json] [--epsg <file>] [--base <dir>]
        forager render <mapfile> --source <layer>=<file.geojson>... -o <image.png> [--epsg <file>]
+                      [--base <dir>]
 
 --epsg names a table of EPSG definitions, lines `<code> +proj=... <>`; EPSG:4326, EPSG:3857,
-and the WGS84 UTM zones are built in.";
+and the WGS84 UTM zones are built in.
+--base names the base context, a directory that holds the mapfile: INCLUDEs and other paths
+resolve inside it, `..` included. By default it is the mapfile's directory.";
 
 enum Format {
     Yaml,
     Json,
+}
+
+struct ReadArgs {
+    mapfile: PathBuf,
+    format: Format,
+    epsg: Option<PathBuf>,
+    base: Option<PathBuf>,
 }
 
 struct RenderArgs {
@@ -31,6 +42,7 @@ struct RenderArgs {
     sources: Vec<(String, PathBuf)>,
     output: PathBuf,
     epsg: Option<PathBuf>,
+    base: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -38,7 +50,7 @@ fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     match args.first().and_then(|a| a.to_str()) {
         Some("read") => match parse_read(&args[1..]) {
-            Ok((mapfile, format, epsg)) => read(Path::new(mapfile), &format, epsg.as_deref()),
+            Ok(read_args) => read(&read_args),
             Err(message) => usage(&message),
         },
         Some("render") => match parse_render(&args[1..]) {
@@ -60,10 +72,11 @@ fn usage(message: &str) -> ExitCode {
     ExitCode::from(2)
 }
 
-fn parse_read(args: &[OsString]) -> Result<(&OsString, Format, Option<PathBuf>), String> {
+fn parse_read(args: &[OsString]) -> Result<ReadArgs, String> {
     let mut mapfile = None;
     let mut format = Format::Yaml;
     let mut epsg = None;
+    let mut base = None;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.to_str() {
@@ -75,11 +88,17 @@ fn parse_read(args: &[OsString]) -> Result<(&OsString, Format, Option<PathBuf>),
                 }
             }
             Some("--epsg") => epsg = Some(PathBuf::from(iter.next().ok_or("--epsg takes a file")?)),
-            _ if mapfile.is_none() => mapfile = Some(arg),
+            Some("--base") => base = Some(PathBuf::from(iter.next().ok_or("--base takes a dir")?)),
+            _ if mapfile.is_none() => mapfile = Some(PathBuf::from(arg)),
             _ => return Err(format!("unexpected argument `{}`", arg.to_string_lossy())),
         }
     }
-    Ok((mapfile.ok_or("a mapfile is required")?, format, epsg))
+    Ok(ReadArgs {
+        mapfile: mapfile.ok_or("a mapfile is required")?,
+        format,
+        epsg,
+        base,
+    })
 }
 
 fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
@@ -87,6 +106,7 @@ fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
     let mut sources = Vec::new();
     let mut output = None;
     let mut epsg = None;
+    let mut base = None;
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.to_str() {
@@ -106,6 +126,7 @@ fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
             }
             Some("-o") => output = Some(PathBuf::from(iter.next().ok_or("-o takes a file")?)),
             Some("--epsg") => epsg = Some(PathBuf::from(iter.next().ok_or("--epsg takes a file")?)),
+            Some("--base") => base = Some(PathBuf::from(iter.next().ok_or("--base takes a dir")?)),
             _ if mapfile.is_none() => mapfile = Some(PathBuf::from(arg)),
             _ => return Err(format!("unexpected argument `{}`", arg.to_string_lossy())),
         }
@@ -115,12 +136,13 @@ fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
         sources,
         output: output.ok_or("-o <image.png> is required")?,
         epsg,
+        base,
     })
 }
 
-/// Loads a mapfile with its directory as the base context, resolving `init=` projections with the
+/// Loads a mapfile inside `base`, by default its directory, resolving `init=` projections with the
 /// built-in EPSG definitions and those of `epsg` (ADR-0018), and prints every diagnostic.
-fn load(mapfile: &Path, epsg: Option<&Path>) -> Option<StyleDocument> {
+fn load(mapfile: &Path, epsg: Option<&Path>, base: Option<&Path>) -> Option<StyleDocument> {
     let resolver = match epsg {
         None => EpsgTable::new(),
         Some(file) => match read_epsg(file) {
@@ -131,7 +153,7 @@ fn load(mapfile: &Path, epsg: Option<&Path>) -> Option<StyleDocument> {
             }
         },
     };
-    let (loader, name) = FileLoader::for_mapfile(mapfile)
+    let (loader, name) = FileLoader::for_mapfile(mapfile, base)
         .map_err(|message| eprintln!("forager: {}: {message}", mapfile.display()))
         .ok()?;
     let path = ResourcePath::new(&name)
@@ -145,11 +167,11 @@ fn load(mapfile: &Path, epsg: Option<&Path>) -> Option<StyleDocument> {
 }
 
 /// Prints a mapfile's style document.
-fn read(mapfile: &Path, format: &Format, epsg: Option<&Path>) -> ExitCode {
-    let Some(document) = load(mapfile, epsg) else {
+fn read(args: &ReadArgs) -> ExitCode {
+    let Some(document) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref()) else {
         return ExitCode::FAILURE;
     };
-    let text = match format {
+    let text = match args.format {
         Format::Yaml => document.to_yaml(),
         Format::Json => document.to_json().map(|json| json + "\n"),
     };
@@ -164,7 +186,7 @@ fn read(mapfile: &Path, format: &Format, epsg: Option<&Path>) -> ExitCode {
 
 /// Renders a mapfile with GeoJSON files bound to its layers by name, and writes a PNG.
 fn render(args: &RenderArgs) -> ExitCode {
-    let Some(document) = load(&args.mapfile, args.epsg.as_deref()) else {
+    let Some(document) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref()) else {
         return ExitCode::FAILURE;
     };
     let mut sources = BTreeMap::new();

@@ -82,6 +82,66 @@ fn an_include_outside_the_mapfile_directory_is_refused() {
 }
 
 #[test]
+fn a_base_context_above_the_mapfile_lets_an_include_climb_inside_it() {
+    // Verifies: Q-8
+    let mapfile = fixture("nested/escape.map");
+    let base = fixture("");
+    let output = forager(&[
+        "read",
+        mapfile.to_str().unwrap(),
+        "--base",
+        base.to_str().unwrap(),
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    let document = StyleDocument::from_yaml(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(
+        document
+            .map
+            .span
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("nested/escape.map:1:1")
+    );
+    assert_eq!(document.map.layers[0].name.as_deref(), Some("countries"));
+}
+
+#[test]
+fn an_include_that_climbs_out_of_the_base_context_is_refused() {
+    // Verifies: Q-8
+    let mapfile = fixture("nested/escape.map");
+    let base = fixture("nested");
+    let output = forager(&[
+        "read",
+        mapfile.to_str().unwrap(),
+        "--base",
+        base.to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("error [include-refused]"), "{stderr}");
+}
+
+#[test]
+fn a_mapfile_outside_the_base_context_is_an_error_naming_both() {
+    let mapfile = fixture("world.map");
+    let base = fixture("nested");
+    let output = forager(&[
+        "read",
+        mapfile.to_str().unwrap(),
+        "--base",
+        base.to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("world.map"), "{stderr}");
+    assert!(
+        stderr.contains("outside the base context") && stderr.contains("nested"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn a_missing_mapfile_and_bad_arguments_are_reported() {
     assert_eq!(read("missing.map", "yaml").status.code(), Some(1));
     assert_eq!(forager(&["read"]).status.code(), Some(2));

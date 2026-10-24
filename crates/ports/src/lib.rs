@@ -8,8 +8,9 @@ use forager_style_ir::Extent;
 
 /// A path inside the base context: relative, normalized, and unable to leave it (Q-8).
 ///
-/// Built only by [`ResourcePath::new`], which refuses absolute paths and any `..` that would
-/// climb out of the base context, so a loader that joins it to its root cannot escape.
+/// Built only by [`ResourcePath::new`] and [`ResourcePath::resolve`], which refuse absolute paths
+/// and any `..` that would climb out of the base context, so a loader that joins it to its root
+/// cannot escape.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ResourcePath(String);
 
@@ -57,6 +58,19 @@ impl ResourcePath {
             return Err(PathError::Empty);
         }
         Ok(Self(parts.join("/")))
+    }
+
+    /// Normalizes `raw`, a path as written in a style, relative to the directory of this path, as
+    /// MapServer resolves an `INCLUDE` against the main mapfile's directory. A `..` may climb out
+    /// of that directory but not out of the base context.
+    pub fn resolve(&self, raw: &str) -> Result<Self, PathError> {
+        if raw.starts_with(['/', '\\']) || has_drive_prefix(raw) {
+            return Err(PathError::Absolute);
+        }
+        match self.0.rsplit_once('/') {
+            Some((dir, _)) => Self::new(&format!("{dir}/{raw}")),
+            None => Self::new(raw),
+        }
     }
 
     /// The normalized path, components separated by `/`.
@@ -141,6 +155,26 @@ mod tests {
         assert_eq!(ResourcePath::new("C:\\Windows"), Err(PathError::Absolute));
         assert_eq!(ResourcePath::new("c:relative"), Err(PathError::Absolute));
         assert_eq!(ResourcePath::new("a\0b"), Err(PathError::InvalidCharacter));
+    }
+
+    #[test]
+    fn a_path_resolves_against_the_directory_of_another_inside_the_base_context() {
+        // Verifies: Q-8
+        let main = ResourcePath::new("maps/world.map").unwrap();
+        assert_eq!(
+            main.resolve("inc/a.inc").unwrap().as_str(),
+            "maps/inc/a.inc"
+        );
+        assert_eq!(main.resolve("../inc/a.inc").unwrap().as_str(), "inc/a.inc");
+        assert_eq!(
+            main.resolve("../../secret"),
+            Err(PathError::EscapesBaseContext)
+        );
+        assert_eq!(main.resolve("/etc/passwd"), Err(PathError::Absolute));
+        assert_eq!(main.resolve("C:\\Windows"), Err(PathError::Absolute));
+        let top = ResourcePath::new("world.map").unwrap();
+        assert_eq!(top.resolve("a.inc").unwrap().as_str(), "a.inc");
+        assert_eq!(top.resolve("../a.inc"), Err(PathError::EscapesBaseContext));
     }
 
     #[test]

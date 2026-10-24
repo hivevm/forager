@@ -36,9 +36,9 @@ golden path and the test pattern an agent copies from are named here.
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
-  bounded in depth, cycles, and total size (Q-9), and the translation into the style IR, which
-  reports every keyword it does not carry over. A load reports at most a thousand diagnostics
-  (Q-9). It is the only crate that knows MapServer syntax.
+  against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), and the
+  translation into the style IR, which reports every keyword it does not carry over. A load
+  reports at most a thousand diagnostics (Q-9). It is the only crate that knows MapServer syntax.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, and turns each feature and style into display
   items by the layer's render mode. A layer without a source, or whose source fails, is skipped
@@ -54,8 +54,9 @@ golden path and the test pattern an agent copies from are named here.
   `ProjectionResolver` port: built in are only EPSG:4326, EPSG:3857, and the WGS84 UTM zones;
   every other code comes from a table the host supplies
   ([ADR-0018](adr/0018-projection-resolver.md)).
-- **`cli`** — the `forager` command, a host with a file loader that also refuses symbolic links
-  out of the base context; `forager render` binds GeoJSON files to layers and writes a PNG.
+- **`cli`** — the `forager` command, a host with a file loader rooted at the base context — the
+  mapfile's directory, or the directory `--base` names — that also refuses symbolic links out of
+  it; `forager render` binds GeoJSON files to layers and writes a PNG.
 - **`bindings-wasm`** — the host for the browser: a mapfile, GeoJSON per layer name, and a
   viewport in, the RGBA image and the diagnostics out; it keeps a layer's source reference only
   when that is a `DATA` without credentials, and drops and unbinds every other (Q-7).

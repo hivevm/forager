@@ -127,6 +127,22 @@ fn an_include_is_spliced_in_with_its_own_spans() {
 }
 
 #[test]
+fn includes_resolve_against_the_main_mapfiles_directory_inside_the_base_context() {
+    // Verifies: Q-8
+    let loaded = load_files(&[
+        ("maps/m.map", "MAP INCLUDE '../inc/a.inc' END"),
+        ("inc/a.inc", "INCLUDE 'b.inc'"),
+        ("maps/b.inc", "LAYER NAME 'b' END"),
+    ]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let layer = &loaded.document.unwrap().map.layers[0];
+    assert_eq!(layer.span, Some(Span::new("maps/b.inc", 1, 1)));
+
+    let loaded = load_files(&[("maps/m.map", "MAP INCLUDE '../../x.inc' END")]);
+    assert_eq!(codes(&loaded), ["include-refused"]);
+}
+
+#[test]
 fn an_include_outside_the_base_context_is_refused() {
     // Verifies: Q-8
     for target in ["../secret.map", "/etc/passwd", "C:\\secret.map"] {
