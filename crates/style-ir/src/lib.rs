@@ -12,5 +12,5 @@ pub use document::{FORMAT_VERSION, StyleDocument};
 pub use expression::{Expr, MAX_EXPRESSION_DEPTH, Op};
 pub use model::{
     Bound, Class, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
-    RenderMode, Rgba, SourceRef, Style, SymbolRef, Units,
+    RenderMode, Rgba, SourceRef, Style, Symbol, SymbolKind, SymbolRef, Units,
 };

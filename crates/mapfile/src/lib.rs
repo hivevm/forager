@@ -45,25 +45,37 @@ pub async fn load<L: ResourceLoader>(
 ) -> Loaded {
     let mut reading = Reading {
         loader,
+        main: path.clone(),
         stack: Vec::new(),
         report: Report::default(),
         bytes: 0,
     };
     let tokens = reading.read(path, None).await;
-    let mut report = reading.report;
-    let document = match tokens {
-        Some(tokens) if !report.failed() => {
+    let map = match tokens {
+        Some(tokens) if !reading.report.failed() => {
             let (map, parse_diagnostics) = syntax::parse(&tokens);
-            report.extend(parse_diagnostics);
-            map.map(|block| {
-                let mut translate_diagnostics = Vec::new();
-                let map = translate::translate(&block, resolver, &mut translate_diagnostics);
-                report.extend(translate_diagnostics);
-                StyleDocument::new(map)
-            })
+            reading.report.extend(parse_diagnostics);
+            map
         }
         _ => None,
     };
+    let symbol_set = match &map {
+        Some(map) => reading.symbol_set(path, map).await,
+        None => None,
+    };
+    let mut report = reading.report;
+    let document = map.filter(|_| !report.failed()).map(|block| {
+        let mut translate_diagnostics = Vec::new();
+        let map = translate::translate(
+            &block,
+            path,
+            symbol_set.as_ref(),
+            resolver,
+            &mut translate_diagnostics,
+        );
+        report.extend(translate_diagnostics);
+        StyleDocument::new(map)
+    });
     Loaded {
         document: document.filter(|_| !report.failed()),
         diagnostics: report.finish(),
@@ -73,12 +85,58 @@ pub async fn load<L: ResourceLoader>(
 /// The state of one load: the files being read, what they reported, and how much was read.
 struct Reading<'a, L> {
     loader: &'a L,
+    /// The main mapfile, whose directory every `INCLUDE` resolves against, also one in the
+    /// symbol file.
+    main: ResourcePath,
     stack: Vec<ResourcePath>,
     report: Report,
     bytes: usize,
 }
 
 impl<L: ResourceLoader> Reading<'_, L> {
+    /// The symbol file the map's last `SYMBOLSET` names, parsed, with the path it was read from:
+    /// resolved against the main mapfile's directory inside the base context, as MapServer
+    /// resolves it against the map's path (Q-8), and read within the limits of `INCLUDE` (Q-9).
+    async fn symbol_set(
+        &mut self,
+        main: &ResourcePath,
+        map: &syntax::Block,
+    ) -> Option<(ResourcePath, syntax::Block)> {
+        let directive = map.nodes.iter().rev().find_map(|node| match node {
+            syntax::Node::Directive(d) if d.keyword == "SYMBOLSET" => Some(d),
+            _ => None,
+        })?;
+        let [
+            Token {
+                kind: lexer::TokenKind::Str { value, .. } | lexer::TokenKind::Word(value),
+                ..
+            },
+        ] = directive.values.as_slice()
+        else {
+            let span = Some(directive.span.clone());
+            self.report.push(Diagnostic::error(
+                "invalid-value",
+                "SYMBOLSET expects a file",
+                span,
+            ));
+            return None;
+        };
+        let target = match main.resolve(value) {
+            Ok(target) => target,
+            Err(e) => {
+                let message = format!("SYMBOLSET `{value}` is refused: {e}");
+                let span = Some(directive.span.clone());
+                self.report
+                    .push(Diagnostic::error("symbolset-refused", &message, span));
+                return None;
+            }
+        };
+        let tokens = self.read(&target, Some(directive.span.clone())).await?;
+        let (block, diagnostics) = syntax::parse_symbol_set(&tokens);
+        self.report.extend(diagnostics);
+        block.map(|block| (target, block))
+    }
+
     /// Reads one file into tokens, splicing in the tokens of its `INCLUDE`s.
     fn read<'s>(
         &'s mut self,
@@ -122,8 +180,9 @@ impl<L: ResourceLoader> Reading<'_, L> {
                 }
                 // Only a string is taken as the argument, so `INCLUDE END` keeps its END.
                 let argument = iter.next_if(|t| matches!(t.kind, lexer::TokenKind::Str { .. }));
-                let Some(target) = include_target(&token, argument, &self.stack, &mut self.report)
-                else {
+                let target =
+                    include_target(&token, argument, &self.main, &self.stack, &mut self.report);
+                let Some(target) = target else {
                     continue;
                 };
                 let included = self.read(&target, Some(token.span)).await;
@@ -135,12 +194,13 @@ impl<L: ResourceLoader> Reading<'_, L> {
     }
 }
 
-/// The file an `INCLUDE` names, resolved against the main mapfile at the bottom of `stack`, if it
-/// may be read: inside the base context (Q-8), not already
+/// The file an `INCLUDE` names, resolved against the main mapfile `main`, if it may be read:
+/// inside the base context (Q-8), not already
 /// being read, and not nested deeper than [`MAX_INCLUDE_DEPTH`] (Q-9).
 fn include_target(
     include: &Token,
     argument: Option<Token>,
+    main: &ResourcePath,
     stack: &[ResourcePath],
     report: &mut Report,
 ) -> Option<ResourcePath> {
@@ -157,7 +217,6 @@ fn include_target(
         ));
         return None;
     };
-    let main = stack.first().expect("the main mapfile is being read");
     let target = match main.resolve(&value) {
         Ok(target) => target,
         Err(e) => {
