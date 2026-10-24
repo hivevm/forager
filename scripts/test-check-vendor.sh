@@ -79,11 +79,42 @@ expect "a vendor directory without a list fails" "$dir" 1 "has no SHA256SUMS"
 dir="$(repo cdn)"
 printf '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>\n' \
   >> "$dir/examples/web/index.html"
-expect "a script from another origin fails" "$dir" 1 "another origin: src=\"https://unpkg.com"
+expect "a script from another origin fails" "$dir" 1 "another origin: <script src=\"https://unpkg.com"
 
 dir="$(repo relative-origin)"
 printf "<link href='//cdn.example/x.css'>\n" >> "$dir/examples/web/index.html"
-expect "a protocol-relative stylesheet fails" "$dir" 1 "another origin: href='//cdn.example"
+expect "a protocol-relative stylesheet fails" "$dir" 1 "another origin: <link href='//cdn.example"
+
+dir="$(repo spaced)"
+printf '<script type="module" src = "https://cdn.example/x.js"></script>\n' \
+  >> "$dir/examples/web/index.html"
+expect "a script source with spaces around = fails" "$dir" 1 "another origin: <script"
+
+dir="$(repo import)"
+printf '<script type="module">import L from "https://cdn.example/l.js";</script>\n' \
+  >> "$dir/examples/web/index.html"
+expect "a module import from another origin fails" "$dir" 1 "another origin: from \"https://cdn.example"
+
+dir="$(repo dynamic-import)"
+printf '<script type="module">await import("//cdn.example/l.js");</script>\n' \
+  >> "$dir/examples/web/index.html"
+expect "a dynamic import from another origin fails" "$dir" 1 "another origin: import(\"//cdn.example"
+
+dir="$(repo anchor)"
+printf '<a href="https://leafletjs.com/">Leaflet</a>\n' >> "$dir/examples/web/index.html"
+expect "a link to another origin passes" "$dir" 0 "Vendor check passed."
+
+dir="$(repo unreadable)"
+mkdir -p "$dir/bin"
+printf '#!/usr/bin/env bash\nexit 2\n' > "$dir/bin/grep"
+chmod +x "$dir/bin/grep"
+out="$(PATH="$dir/bin:$PATH" bash "$CHECK" "$dir" 2>&1)"
+if [[ $? == 1 && "$out" == *"cannot read examples/web/index.html"* ]]; then
+  passed=$((passed + 1))
+else
+  failed=$((failed + 1))
+  echo "FAIL: a failing grep fails the check" >&2
+fi
 
 echo "Vendor check self-test: $passed passed, $failed failed."
 ((failed == 0))

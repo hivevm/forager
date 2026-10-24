@@ -7,8 +7,10 @@
 #
 #   1. a file listed in examples/web/vendor/SHA256SUMS is missing or its SHA-256 differs;
 #   2. a file under examples/web/vendor/ is not listed there;
-#   3. a 'src' or 'href' of examples/web/index.html names another origin ('http:', 'https:', or
-#      '//'), so that the page would load code the repository does not hold.
+#   3. a <script> or <link> of examples/web/index.html, or an import of its module script, names
+#      another origin ('http:', 'https:', or '//'), so that the page would load code the
+#      repository does not hold. A link in an <a> is no load and passes; a url() in the inline
+#      style is not read.
 #
 # Pure bash + coreutils (sha256sum, or shasum on macOS). Usage:
 #     scripts/check-vendor.sh [repository root]
@@ -35,19 +37,27 @@ if [[ -d "$VENDOR" ]]; then
   if [[ -f "$VENDOR/SHA256SUMS" ]]; then
     (cd "$VENDOR" && sha256 --check --quiet SHA256SUMS) \
       || fail "a vendored file differs from examples/web/vendor/SHA256SUMS"
+    # Collected first, so that a failing find fails the check instead of listing nothing.
+    files="$(cd "$VENDOR" && find . -type f ! -name SHA256SUMS)" \
+      || fail "cannot list the files under examples/web/vendor/"
     while IFS= read -r file; do
+      [[ -n "$file" ]] || continue
+      file="${file#./}"
       awk -v f="$file" '$2 == f { found = 1 } END { exit !found }' "$VENDOR/SHA256SUMS" \
         || fail "examples/web/vendor/$file is not listed in SHA256SUMS"
-    done < <(cd "$VENDOR" && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort)
+    done <<< "$files"
   else
     fail "examples/web/vendor/ has no SHA256SUMS"
   fi
 fi
 
 if [[ -f "$PAGE" ]]; then
+  # grep exits 1 when nothing matches, the passing case; 2 is an error and fails the check.
+  refs="$(grep -oiE "<(script|link)[^>]*(src|href)[[:space:]]*=[[:space:]]*[\"']?(https?:|//)[^\"' >]*|(import|from)[[:space:]]*\(?[[:space:]]*[\"'](https?:|//)[^\"']*" "$PAGE")"
+  (($? > 1)) && fail "cannot read examples/web/index.html"
   while IFS= read -r ref; do
-    fail "examples/web/index.html loads from another origin: $ref"
-  done < <(grep -oiE "(src|href)=[\"']?(https?:|//)[^\"' >]*" "$PAGE")
+    [[ -n "$ref" ]] && fail "examples/web/index.html loads from another origin: $ref"
+  done <<< "$refs"
 fi
 
 if ((failures)); then

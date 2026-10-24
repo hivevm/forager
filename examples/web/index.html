@@ -161,12 +161,17 @@
     },
   });
 
-  // The tile view in plain map units, framed by the mapfile's EXTENT.
+  // The tile view in plain map units, framed once at load by the first EXTENT line of the
+  // mapfile, which in the sample is the map's.
   function showTiles() {
     const map = L.map("tiles", { crs: L.CRS.Simple, minZoom: -4, maxZoom: 10 });
-    const extent = current.mapfile.match(/^\s*EXTENT\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/im);
-    const [minx, miny, maxx, maxy] = extent ? extent.slice(1).map(Number) : [0, 0, 100, 100];
-    map.fitBounds([[miny, minx], [maxy, maxx]]);
+    const line = current.mapfile.match(/^\s*EXTENT\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/im);
+    const [minx, miny, maxx, maxy] = line ? line.slice(1).map(Number) : [];
+    if ([minx, miny, maxx, maxy].every(Number.isFinite)) {
+      map.fitBounds([[miny, minx], [maxy, maxx]]);
+    } else {
+      map.setView([0, 0], 0);
+    }
     tiles = new ForagerTiles().addTo(map);
   }
 

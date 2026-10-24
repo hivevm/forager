@@ -376,6 +376,46 @@ mod example {
         let image = output.image.unwrap();
         assert_eq!((image.width, image.height), (640, 400));
     }
+
+    /// The page's tile view renders each tile with its edges moved in by half a pixel; two
+    /// neighbouring tiles then match one image of both within rounding.
+    #[test]
+    fn neighbouring_tiles_meet_without_a_seam() {
+        let sources = serde_json::json!({
+            "areas": include_str!("../../../examples/web/areas.geojson"),
+            "roads": include_str!("../../../examples/web/roads.geojson"),
+            "places": include_str!("../../../examples/web/places.geojson"),
+        })
+        .to_string();
+        let draw = |min_x: f64, max_x: f64, width: u32| {
+            let half = (max_x - min_x) / f64::from(width) / 2.0;
+            let viewport = Viewport {
+                size: Some([width, 256]),
+                extent: Some(Extent {
+                    min_x: min_x + half,
+                    min_y: half,
+                    max_x: max_x - half,
+                    max_y: 50.0 - half,
+                }),
+            };
+            let mapfile = include_str!("../../../examples/web/sample.map");
+            render_map(mapfile, &sources, None, &viewport)
+                .image
+                .unwrap()
+        };
+        let whole = draw(0.0, 100.0, 512);
+        let tiles = [draw(0.0, 50.0, 256), draw(50.0, 100.0, 256)];
+        for y in 0..256 {
+            for x in 0..512 {
+                let tile = &tiles[x / 256];
+                let a = (y * 512 + x) * 4;
+                let b = (y * 256 + x % 256) * 4;
+                for (p, q) in whole.pixels[a..a + 4].iter().zip(&tile.pixels[b..b + 4]) {
+                    assert!(p.abs_diff(*q) <= 1, "pixel ({x}, {y}): {p} against {q}");
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
