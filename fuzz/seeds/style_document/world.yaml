@@ -1,0 +1,32 @@
+version: "1.0"
+map:
+  name: world
+  extent:
+    min_x: -180.0
+    min_y: -90.0
+    max_x: 180.0
+    max_y: 90.0
+  size:
+  - 400
+  - 200
+  image_color: "#ffffff"
+  projection: +proj=longlat +datum=WGS84
+  layers:
+  - name: countries
+    render_mode: polygon
+    status: "on"
+    source:
+      kind: local
+      props:
+        data: countries.shp
+      span: layers/countries.inc:5:3
+    classes:
+    - name: all
+      styles:
+      - color: "#c8dcb4"
+        outline_color: "#000000"
+        width: 0.5
+        span: layers/countries.inc:9:5
+      span: layers/countries.inc:7:3
+    span: layers/countries.inc:1:1
+  span: world.map:2:1

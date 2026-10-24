@@ -1,0 +1,44 @@
+name: Fuzz
+
+# The fuzz run of Q-3: scripts/fuzz.sh, five minutes per target, once a week and on demand. Too
+# slow to gate a push, so a workflow of its own (ADR-0008). A failure uploads the inputs that
+# caused it.
+
+on:
+  schedule:
+    - cron: "41 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+          key: fuzz-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'scripts/install-tools.sh', 'scripts/fuzz.sh', 'fuzz/Cargo.lock') }}
+      # The corpus grows from run to run: each run saves under its own key and restores the last.
+      - uses: actions/cache@v6
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+      - name: Install the toolchain and the cargo tools
+        run: bash scripts/install-tools.sh
+      - name: Fuzz every target for five minutes
+        run: bash scripts/fuzz.sh 300
+      - name: Keep the inputs that failed
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/

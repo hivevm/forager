@@ -1,0 +1,54 @@
+# The fuzz targets of Q-3, run by scripts/fuzz.sh on a nightly toolchain. A workspace of its own:
+# libfuzzer-sys links LLVM's libFuzzer, which the product's crates never may (ADR-0009), and the
+# nightly toolchain stays out of the main build (ADR-0008).
+[package]
+name = "forager-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+arbitrary = { version = "1.5.0", features = ["derive"] }
+serde_json = "1"
+forager-ports = { path = "../crates/ports" }
+forager-mapfile = { path = "../crates/mapfile" }
+forager-style-ir = { path = "../crates/style-ir" }
+forager-bindings-wasm = { path = "../crates/bindings-wasm" }
+forager-engine = { path = "../crates/engine" }
+forager-render-agg = { path = "../crates/render-agg" }
+
+[[bin]]
+name = "mapfile"
+path = "fuzz_targets/mapfile.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "style_document"
+path = "fuzz_targets/style_document.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "render"
+path = "fuzz_targets/render.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "geojson"
+path = "fuzz_targets/geojson.rs"
+test = false
+doc = false
+bench = false

@@ -19,3 +19,8 @@ Thumbs.db
 
 # Rust build output
 /target/
+
+# Fuzzing: build output, the growing corpus, and the inputs of failures
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/

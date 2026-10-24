@@ -27,6 +27,12 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 step "Tests"
 cargo test --workspace --locked
 
+step "Fuzz targets: formatting and clippy"
+# The fuzz workspace is not a member of the main one; built here, an API change of the crates it
+# fuzzes breaks the push, not next week's fuzz run.
+cargo fmt --manifest-path fuzz/Cargo.toml --check
+cargo clippy --manifest-path fuzz/Cargo.toml --locked --all-targets -- -D warnings
+
 step "Build for wasm32-unknown-unknown"
 browser=()
 while IFS= read -r manifest; do

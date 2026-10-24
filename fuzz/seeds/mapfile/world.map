@@ -1,0 +1,17 @@
+# A small map of the kind MapServer 8 reads.
+MAP
+  NAME "world"
+  EXTENT -180 -90 180 90
+  SIZE 400 200
+  IMAGECOLOR "#ffffff"
+  PROJECTION
+    "proj=longlat"
+    "datum=WGS84"
+  END
+  WEB
+    METADATA
+      "wms_title" "World"
+    END
+  END
+  INCLUDE "layers/countries.inc"
+END

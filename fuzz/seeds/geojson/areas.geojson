@@ -1,0 +1,7 @@
+{"type": "FeatureCollection", "features": [
+  {"type": "Feature", "properties": {"name": "Park"}, "geometry": {"type": "Polygon",
+    "coordinates": [[[8, 8], [42, 6], [46, 34], [24, 44], [6, 30], [8, 8]],
+                    [[20, 18], [30, 18], [30, 26], [20, 26], [20, 18]]]}},
+  {"type": "Feature", "properties": {"name": "Field"}, "geometry": {"type": "Polygon",
+    "coordinates": [[[58, 30], [92, 26], [94, 54], [62, 56], [58, 30]]]}}
+]}
