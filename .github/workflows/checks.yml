@@ -10,7 +10,8 @@ name: Checks
 # - Traceability: scripts/check-traceability.sh (ADR-0002).
 # - Dev Container: scripts/check-devcontainer.sh (ADR-0004).
 # - Sensors: scripts/sensor-tests-kept.sh, sensor-binding-adrs.sh (ADR-0001),
-#   sensor-revision-due.sh and sensor-plan-frontier.sh (ADR-0006), and sensor-action-refs.sh.
+#   sensor-revision-due.sh and sensor-plan-frontier.sh (ADR-0006), and sensor-action-refs.sh, run
+#   with --require major-tag as the check of ADR-0011.
 #   They report for the reviewer and fail on nothing they count, except the action references
 #   once a project runs that sensor with --require. The job checks out the full history because
 #   three sensors read it.
@@ -128,8 +129,9 @@ jobs:
         run: bash scripts/sensor-plan-frontier.sh
       - name: Self-test the action references sensor
         run: bash scripts/test-sensor-action-refs.sh
-      - name: Report the forms of the action references the workflows use
-        run: bash scripts/sensor-action-refs.sh
+      # The check of ADR-0011: every action by its major version tag, kept current by Dependabot.
+      - name: Check that every action is referenced by its major version tag
+        run: bash scripts/sensor-action-refs.sh --require major-tag
 
   shell:
     runs-on: ubuntu-latest
