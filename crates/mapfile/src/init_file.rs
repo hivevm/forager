@@ -128,5 +128,5 @@ fn usable(code: &str, definition: &str) -> Result<String, String> {
             "`{code}` names a grid file, which the core cannot read"
         ));
     }
-    Ok(definition.to_owned())
+    Ok(definition.split_whitespace().collect::<Vec<_>>().join(" "))
 }

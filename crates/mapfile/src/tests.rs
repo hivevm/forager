@@ -1350,3 +1350,24 @@ fn an_init_file_is_read_as_proj_reads_it() {
         loaded.diagnostics[0].message
     );
 }
+
+#[test]
+fn an_init_file_reads_the_format_cases_both_readers_share() {
+    // Verifies: ADR-0023
+    let format = include_str!("../../adapter-epsg/tests/fixtures/init-file-format.txt");
+    let file = crate::init_file::InitFile::new(ResourcePath::new("epsg2").unwrap(), format);
+    for line in format.lines() {
+        let Some(expect) = line.strip_prefix("# expect ") else {
+            continue;
+        };
+        let (code, outcome) = expect.split_once(' ').unwrap();
+        match outcome.strip_prefix("= ") {
+            Some(definition) => assert_eq!(file.definition(code), Ok(definition), "{code}"),
+            None => {
+                let reason = outcome.strip_prefix("refused ").unwrap();
+                let why = file.definition(code).unwrap_err();
+                assert!(why.contains(reason), "{code}: {why}");
+            }
+        }
+    }
+}
