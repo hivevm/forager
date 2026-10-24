@@ -17,6 +17,10 @@
 # Exit code 0 when every check passes, 1 when any of them fails.
 
 set -uo pipefail
+# A caller's GIT_DIR, such as a hook's in a linked worktree, would turn the git of every check and
+# self-test on its repository; they find theirs from the working directory (docs/CONVENTIONS.md).
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -55,6 +59,7 @@ run "Action references" scripts/sensor-action-refs.sh --require major-tag
 run "Vendor check self-test" scripts/test-check-vendor.sh
 run "Vendor check" scripts/check-vendor.sh
 run "Git hooks self-test" scripts/test-git-hooks.sh
+run "Fixture git self-test" scripts/test-fixture-git-env.sh
 run "Shell lint self-test" scripts/test-check-shell.sh
 run "Shell lint" scripts/check-shell.sh
 run "Rust toolchain and tools" scripts/install-tools.sh

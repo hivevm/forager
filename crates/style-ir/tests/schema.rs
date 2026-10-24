@@ -74,15 +74,27 @@ struct Released {
     text: String,
 }
 
+/// git in the repository at `dir`, and only there: without git's repository variables, which a
+/// caller such as a hook in a linked worktree sets and `-C` does not override
+/// (docs/CONVENTIONS.md).
+fn git_in(dir: &Path) -> Command {
+    let names = Command::new("git")
+        .args(["rev-parse", "--local-env-vars"])
+        .output()
+        .expect("git runs");
+    assert!(names.status.success(), "git names its repository variables");
+    let mut git = Command::new("git");
+    for name in String::from_utf8_lossy(&names.stdout).lines() {
+        git.env_remove(name);
+    }
+    git.arg("-C").arg(dir);
+    git
+}
+
 /// The schema files of every release tag `v<semver>` of the repository at `root`.
 fn released(root: &Path) -> Vec<Released> {
     let git = |args: &[&str]| {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(args)
-            .output()
-            .expect("git runs");
+        let output = git_in(root).args(args).output().expect("git runs");
         assert!(output.status.success(), "git {args:?} fails");
         String::from_utf8(output.stdout).unwrap()
     };
@@ -532,9 +544,7 @@ fn a_documented_variant_is_no_change_and_a_new_shape_of_a_union_is_major() {
 fn a_release_tag_from_before_the_schema_holds_no_schema_file() {
     let dir = std::env::temp_dir().join(format!("forager-schema-tags-{}", std::process::id()));
     let git = |args: &[&str]| {
-        let status = Command::new("git")
-            .arg("-C")
-            .arg(&dir)
+        let status = git_in(&dir)
             .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
             .args(args)
             .status()
@@ -557,4 +567,69 @@ fn a_release_tag_from_before_the_schema_holds_no_schema_file() {
         .map(|f| (f.tag.as_str(), f.path.as_str()))
         .collect();
     assert_eq!(found, [("v0.1.0", "schema/style-document-1.0.json")]);
+}
+
+#[test]
+fn the_fixture_repository_is_the_only_one_its_git_touches() {
+    // Verifies: ADR-0002
+    // The tag test again, in a process whose GIT_DIR names a decoy, as a hook in a linked
+    // worktree would set it: the decoy has no new commit and no tag afterwards.
+    if std::env::var_os("FORAGER_DECOY").is_some() {
+        return;
+    }
+    let decoy = std::env::temp_dir().join(format!("forager-schema-decoy-{}", std::process::id()));
+    let refs = || {
+        let output = git_in(&decoy)
+            .args(["for-each-ref", "--format=%(refname) %(objectname)"])
+            .output()
+            .unwrap();
+        String::from_utf8(output.stdout).unwrap()
+    };
+    std::fs::create_dir_all(&decoy).unwrap();
+    assert!(
+        git_in(&decoy)
+            .args(["init", "-q"])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let commit = [
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.invalid",
+        "commit",
+    ];
+    let made = git_in(&decoy)
+        .args(commit)
+        .args(["-q", "--allow-empty", "-m", "decoy"])
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let before = refs();
+    let status = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "a_release_tag_from_before_the_schema_holds_no_schema_file",
+        ])
+        .env("GIT_DIR", decoy.join(".git"))
+        .env("FORAGER_DECOY", "1")
+        .output()
+        .unwrap();
+    let after = refs();
+    std::fs::remove_dir_all(&decoy).unwrap();
+    assert!(
+        status.status.success(),
+        "the tag test fails under a GIT_DIR"
+    );
+    // A renamed tag test would leave the filter matching nothing, and pass unseen.
+    let stdout = String::from_utf8_lossy(&status.stdout);
+    assert!(
+        stdout.contains("1 passed"),
+        "the tag test did not run:\n{stdout}"
+    );
+    assert_eq!(
+        after, before,
+        "the tag test wrote into the repository GIT_DIR names"
+    );
 }
