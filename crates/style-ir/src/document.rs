@@ -156,8 +156,8 @@ mod tests {
     use super::*;
     use crate::{
         Align, AngleMode, Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer,
-        LayerStatus, LineCap, LineJoin, LineOffset, MinFeatureSize, Op, Position, RenderMode, Rgba,
-        SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
+        LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset, MinFeatureSize, Op, Position,
+        RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
     };
 
     fn sample() -> StyleDocument {
@@ -174,6 +174,7 @@ mod tests {
             projection: Some("+proj=longlat +datum=WGS84".into()),
             resolution: Some(96.0),
             def_resolution: None,
+            units: Some(Units::Degrees),
             layers: vec![Layer {
                 name: Some("countries".into()),
                 render_mode: Some(RenderMode::Polygon),
@@ -184,6 +185,10 @@ mod tests {
                     span: Some(Span::new("world.map", 9, 5)),
                 }),
                 size_units: Some(Units::Meters),
+                symbol_scale_denom: Some(25000.0),
+                projection: Some(LayerProjection::FromSource),
+                min_scale_denom: Some(1000.0),
+                max_scale_denom: None,
                 filter: Some(Expr::call(
                     Op::In,
                     vec![
@@ -193,6 +198,8 @@ mod tests {
                 )),
                 classes: vec![Class {
                     name: Some("all".into()),
+                    min_scale_denom: None,
+                    max_scale_denom: Some(50000.0),
                     expression: Some(Expr::call(
                         Op::And,
                         vec![

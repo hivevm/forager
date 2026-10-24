@@ -202,6 +202,21 @@
             "$ref": "#/$defs/Label"
           }
         },
+        "max_scale_denom": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_scale_denom": {
+          "description": "The class draws at a scale from `min_scale_denom` up to below `max_scale_denom`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
         "name": {
           "type": [
             "string",
@@ -465,6 +480,13 @@
           ],
           "format": "double"
         },
+        "max_scale_denom": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
         "max_size": {
           "type": [
             "number",
@@ -489,6 +511,14 @@
               "type": "null"
             }
           ]
+        },
+        "min_scale_denom": {
+          "description": "The label is placed at a scale from `min_scale_denom` up to below `max_scale_denom`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         },
         "min_size": {
           "type": [
@@ -649,10 +679,36 @@
             }
           ]
         },
+        "max_scale_denom": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_scale_denom": {
+          "description": "The layer is drawn at a scale above `min_scale_denom` and up to `max_scale_denom`; a\n`max_scale_denom` of 0 bounds nothing.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
         "name": {
           "type": [
             "string",
             "null"
+          ]
+        },
+        "projection": {
+          "description": "The projection of the layer's features; without one, the map's.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LayerProjection"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "render_mode": {
@@ -705,8 +761,39 @@
               "type": "null"
             }
           ]
+        },
+        "symbol_scale_denom": {
+          "description": "The scale, as MapServer computes it, at which the layer's symbols are drawn at their size\nas written; at other scales their size scales with it.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         }
       }
+    },
+    "LayerProjection": {
+      "description": "The projection of a layer.",
+      "oneOf": [
+        {
+          "description": "A proj4 string.",
+          "type": "object",
+          "properties": {
+            "proj4": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "proj4"
+          ]
+        },
+        {
+          "description": "The projection the layer's source declares, read when it opens; where it declares none,\nthe map's.",
+          "type": "string",
+          "const": "from_source"
+        }
+      ]
     },
     "LayerStatus": {
       "oneOf": [
@@ -853,6 +940,17 @@
           "items": {
             "$ref": "#/$defs/Symbol"
           }
+        },
+        "units": {
+          "description": "The unit of the map's coordinates, which the scale and sizes in other units are computed\nin; MapServer's default is meters.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Units"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },
@@ -1093,6 +1191,13 @@
             }
           ]
         },
+        "max_scale_denom": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
         "max_size": {
           "type": [
             "number",
@@ -1101,6 +1206,14 @@
           "format": "double"
         },
         "max_width": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_scale_denom": {
+          "description": "The style draws at a scale from `min_scale_denom` up to below `max_scale_denom`.",
           "type": [
             "number",
             "null"

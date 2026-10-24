@@ -28,6 +28,10 @@ pub struct Map {
     /// Every length in pixels is drawn scaled by `resolution` over this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub def_resolution: Option<f64>,
+    /// The unit of the map's coordinates, which the scale and sizes in other units are computed
+    /// in; MapServer's default is meters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units: Option<Units>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<Layer>,
     /// The map's fonts by name, each a resource path inside the base context, not read at load.
@@ -118,10 +122,35 @@ pub struct Layer {
     /// The unit of its styles' sizes, widths, gaps, patterns, and offsets; without one, pixels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size_units: Option<Units>,
+    /// The scale, as MapServer computes it, at which the layer's symbols are drawn at their size
+    /// as written; at other scales their size scales with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol_scale_denom: Option<f64>,
+    /// The projection of the layer's features; without one, the map's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<LayerProjection>,
+    /// The layer is drawn at a scale above `min_scale_denom` and up to `max_scale_denom`; a
+    /// `max_scale_denom` of 0 bounds nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_scale_denom: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_scale_denom: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
+}
+
+/// The projection of a layer.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum LayerProjection {
+    /// A proj4 string.
+    Proj4(String),
+    /// The projection the layer's source declares, read when it opens; where it declares none,
+    /// the map's.
+    FromSource,
 }
 
 /// How a layer's features are drawn, independent of their geometry type: polygons in a line
@@ -167,6 +196,11 @@ pub struct Class {
     /// Which features the class draws; without one, every feature that reaches it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expression: Option<Expr>,
+    /// The class draws at a scale from `min_scale_denom` up to below `max_scale_denom`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_scale_denom: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_scale_denom: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<Label>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -243,6 +277,11 @@ pub struct Style {
     /// The geometry the style draws instead of the feature's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geom_transform: Option<GeomTransform>,
+    /// The style draws at a scale from `min_scale_denom` up to below `max_scale_denom`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_scale_denom: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_scale_denom: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
 }
@@ -417,6 +456,11 @@ pub struct Label {
     /// 1 to 10; a higher one is placed first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<Bound<f64>>,
+    /// The label is placed at a scale from `min_scale_denom` up to below `max_scale_denom`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_scale_denom: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_scale_denom: Option<f64>,
     /// Drawn with the label, at its point unless a style names another transform.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<Style>,
