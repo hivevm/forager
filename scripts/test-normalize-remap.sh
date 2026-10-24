@@ -18,6 +18,10 @@
 # Exit code 0 when every case passes, 1 otherwise.
 
 set -uo pipefail
+# A caller's GIT_DIR, such as a hook's in a linked worktree, would turn the fixtures' git on its
+# repository; they run on their own (docs/CONVENTIONS.md).
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMAP="$ROOT/.agents/skills/normalize/remap.sh"
@@ -175,7 +179,7 @@ cp "$work/record"/*.md "$copy/docs/adr/"
 pids=()
 names=()
 for t in "$copy"/scripts/test-*.sh; do
-  case "$t" in */test-template-setup.sh | */test-normalize-remap.sh) continue ;; esac
+  case "$t" in */test-template-setup.sh | */test-normalize-remap.sh | */test-fixture-git-env.sh) continue ;; esac
   name="$(basename "$t")"
   names+=("$name")
   bash "$t" > "$work/$name.log" 2>&1 &

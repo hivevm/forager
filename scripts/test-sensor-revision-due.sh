@@ -14,6 +14,10 @@
 # Exit code 0 when every case passes, 1 otherwise.
 
 set -uo pipefail
+# A caller's GIT_DIR, such as a hook's in a linked worktree, would turn the fixtures' git on its
+# repository; they run on their own (docs/CONVENTIONS.md).
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SENSOR="$ROOT/scripts/sensor-revision-due.sh"
