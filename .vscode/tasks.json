@@ -1,0 +1,13 @@
+{
+  // The browser example's WebAssembly bundle, built as README.md's "Browser example" says.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build the browser bundle",
+      "type": "shell",
+      "command": "bash scripts/build-web.sh",
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    }
+  ]
+}
