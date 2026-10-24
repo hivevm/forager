@@ -1,7 +1,7 @@
 # ADR-0016: The GeoJSON adapter parses with the georust `geojson` crate
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/adapter-geojson`
 

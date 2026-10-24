@@ -1,7 +1,7 @@
 # ADR-0012: Crate dependencies come only from crates.io, are locked in `Cargo.lock`, and pass `cargo deny` for licences, advisories, and sources
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `Cargo.lock`, `deny.toml`, and every `[dependencies]` entry of the workspace
 

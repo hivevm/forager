@@ -1,7 +1,7 @@
 # ADR-0010: The Dev Container adds the locked Rust Feature to the Debian base image, runs `scripts/install-tools.sh` after creation, and gives no access to containers
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `.devcontainer/devcontainer.json` and `.devcontainer/devcontainer-lock.json`
 

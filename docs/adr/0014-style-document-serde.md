@@ -1,7 +1,7 @@
 # ADR-0014: The style document is serialized through serde, as JSON with `serde_json` and as YAML with `serde-saphyr`
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/style-ir` and every crate that reads or writes a style document
 

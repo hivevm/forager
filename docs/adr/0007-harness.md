@@ -1,7 +1,7 @@
 # ADR-0007: Tickets are worked in parallel by Claude Code sessions under a cap of three, claimed locally, each reviewed in a fresh session, with the threat-protected parts and public interfaces never worked unattended
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** every session that implements or reviews a change, `docs/plan/`, the `work-tickets` and `review` skills, and the worktrees under `.scratch/`
 
