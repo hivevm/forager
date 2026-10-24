@@ -1427,3 +1427,44 @@ fn an_error_past_the_limit_still_fails_the_load() {
             .starts_with("501 more")
     );
 }
+
+#[test]
+fn an_auto_projection_names_no_init_file() {
+    // Verifies: ADR-0023
+    use forager_style_ir::LayerProjection;
+    let loaded = layer_projection(&[(
+        "m.map",
+        "MAP LAYER PROJECTION 'AUTO' 'init=./data/epsg2:1' END END END",
+    )]);
+    assert_eq!(
+        codes(&loaded),
+        Vec::<&str>::new(),
+        "{:?}",
+        loaded.diagnostics
+    );
+    assert_eq!(
+        loaded.document.unwrap().map.layers[0].projection,
+        Some(LayerProjection::FromSource)
+    );
+    // Nor is the file read, or counted toward the size limit.
+    let reads = std::cell::RefCell::new(Vec::new());
+    struct Counting<'a>(Files, &'a std::cell::RefCell<Vec<String>>);
+    impl ResourceLoader for Counting<'_> {
+        async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+            self.1.borrow_mut().push(path.as_str().to_owned());
+            self.0.load(path).await
+        }
+    }
+    let text = "MAP LAYER PROJECTION 'AUTO' 'init=./data/epsg2:1' END END END";
+    let files = Files(
+        [("m.map", text), ("data/epsg2", EPSG2)]
+            .into_iter()
+            .collect(),
+    );
+    block_on(load(
+        &ResourcePath::new("m.map").unwrap(),
+        &Counting(files, &reads),
+        None,
+    ));
+    assert_eq!(*reads.borrow(), ["m.map"]);
+}

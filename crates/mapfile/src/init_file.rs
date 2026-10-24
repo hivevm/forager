@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use forager_ports::ResourcePath;
 use forager_style_ir::Span;
 
-use crate::lexer::TokenKind;
+use crate::projection::{self, Projection};
 use crate::syntax::{Block, Node};
 
 /// An init file as read: where it lies, and each code's definition, or why it cannot be used.
@@ -35,7 +35,8 @@ impl InitFile {
 }
 
 /// The init files named by a path, each with the span of a projection that names it: every
-/// `init=` file name that holds a `/`, in the map's projection and in its layers'.
+/// `init=` file name that holds a `/`, in the map's projection and in its layers', except in a
+/// projection that is `AUTO`, which resolves none.
 pub fn named(map: &Block) -> Vec<(String, Span)> {
     let mut named: Vec<(String, Span)> = Vec::new();
     let mut pending = vec![map];
@@ -46,22 +47,17 @@ pub fn named(map: &Block) -> Vec<(String, Span)> {
                 pending.push(b);
                 continue;
             }
-            for token in &b.values {
-                let (TokenKind::Str { value, .. } | TokenKind::Word(value)) = &token.kind else {
-                    continue;
-                };
-                for param in value.split_whitespace() {
-                    let reference = param.trim_start_matches('+').strip_prefix("init=");
-                    // The code follows the last `:`, as PROJ splits it (`get_init_string`).
-                    let file = reference
-                        .and_then(|r| r.rsplit_once(':'))
-                        .map(|(file, _)| file);
-                    if let Some(file) = file.filter(|f| f.contains('/'))
-                        && !named.iter().any(|(n, _)| n == file)
-                    {
-                        named.push((file.to_owned(), token.span.clone()));
-                    }
-                }
+            // A projection that does not read is reported by the translation.
+            let Ok(Projection::Parameters {
+                init: Some(init), ..
+            }) = projection::read(b)
+            else {
+                continue;
+            };
+            if let Some(file) = init.file()
+                && !named.iter().any(|(n, _)| n == file)
+            {
+                named.push((file.to_owned(), init.span.clone()));
             }
         }
     }

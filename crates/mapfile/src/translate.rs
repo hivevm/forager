@@ -13,6 +13,7 @@ use forager_style_ir::{
 use crate::expression;
 use crate::init_file::InitFile;
 use crate::lexer::{Token, TokenKind};
+use crate::projection::{self, Init, Projection};
 use crate::report::Report;
 use crate::syntax::{Block, Directive, Node};
 
@@ -832,72 +833,45 @@ impl Translator<'_> {
         transform
     }
 
-    /// A proj4 string from the parameters of a PROJECTION block. `init=<authority>:<code>` is
-    /// resolved by the resolver the host passes in (ADR-0023); without one, or for a code it does
-    /// not know, it is a load error. A first parameter that is `AUTO`, in any case, is the
-    /// projection of the source, as `msProcessProjection` leaves it to the source to declare.
-    ///
-    /// As MapServer hands every parameter to PROJ, `init=` is matched case-sensitively, there is
-    /// at most one, and its expansion follows the explicit parameters, which PROJ lets take
-    /// precedence (its `pj_expand_init`).
+    /// A proj4 string from the parameters of a PROJECTION block (`projection::read`), its
+    /// `init=` reference resolved and expanded after the explicit parameters, which PROJ lets
+    /// take precedence (its `pj_expand_init`). Without a resolver, or for a code it does not
+    /// know, an `init=` is a load error (ADR-0023).
     fn projection(&mut self, block: &Block) -> Option<LayerProjection> {
-        let mut params = Vec::new();
-        let mut expansion: Option<Vec<String>> = None;
-        for token in &block.values {
-            let text = match &token.kind {
-                TokenKind::Str { value, .. } | TokenKind::Word(value) => value.trim(),
-                _ => {
-                    self.error(
-                        "invalid-value",
-                        "a projection parameter is a string",
-                        &token.span,
-                    );
+        let (mut params, init) = match projection::read(block) {
+            Ok(Projection::Auto) => return Some(LayerProjection::FromSource),
+            Ok(Projection::Parameters { explicit, init }) => (explicit, init),
+            Err(invalid) => {
+                self.error("invalid-value", invalid.message, &invalid.span);
+                return None;
+            }
+        };
+        if let Some(init) = init {
+            let resolved = match self.resolve(&init) {
+                Ok(resolved) => resolved,
+                Err(why) => {
+                    let message = format!("`{}`: {why}", init.param);
+                    self.error("projection-unresolved", &message, &init.span);
                     return None;
                 }
             };
-            if params.is_empty() && expansion.is_none() && text.eq_ignore_ascii_case("AUTO") {
-                return Some(LayerProjection::FromSource);
-            }
-            for param in text.split_whitespace() {
-                let param = param.trim_start_matches('+');
-                if let Some(reference) = param.strip_prefix("init=") {
-                    if expansion.is_some() {
-                        let message = "a PROJECTION has at most one init=";
-                        self.error("invalid-value", message, &token.span);
-                        return None;
-                    }
-                    let resolved = match self.resolve(reference) {
-                        Ok(resolved) => resolved,
-                        Err(why) => {
-                            let message = format!("`{param}`: {why}");
-                            self.error("projection-unresolved", &message, &token.span);
-                            return None;
-                        }
-                    };
-                    expansion = Some(
-                        resolved
-                            .split_whitespace()
-                            .map(|p| format!("+{}", p.trim_start_matches('+')))
-                            .collect(),
-                    );
-                    continue;
-                }
-                params.push(format!("+{param}"));
-            }
+            params.extend(
+                resolved
+                    .split_whitespace()
+                    .map(|p| format!("+{}", p.trim_start_matches('+'))),
+            );
         }
-        params.extend(expansion.unwrap_or_default());
         (!params.is_empty()).then(|| LayerProjection::Proj4(params.join(" ")))
     }
 
-    /// The definition `init=<reference>` names: from the init file the mapfile names when its
-    /// file name holds a `/`, else from the host's resolver, with `<file>` as the authority
+    /// The definition an `init=` reference names: from the init file the mapfile names when its
+    /// file name holds a `/`, else from the host's resolver, with the file name as the authority
     /// (ADR-0023).
-    fn resolve(&self, reference: &str) -> Result<String, String> {
-        // The code follows the last `:`, as PROJ splits it (`get_init_string`).
-        let Some((file, code)) = reference.rsplit_once(':') else {
+    fn resolve(&self, init: &Init) -> Result<String, String> {
+        let Some((file, code)) = &init.reference else {
             return Err("a projection is named as `<authority>:<code>`".to_owned());
         };
-        if file.contains('/') {
+        if let Some(file) = init.file() {
             let init_file = self
                 .init_files
                 .get(file)
