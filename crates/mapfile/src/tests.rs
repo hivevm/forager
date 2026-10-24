@@ -555,11 +555,15 @@ fn every_expression_reads_back_equal_from_yaml_and_json() {
     let yaml = document.to_yaml().unwrap();
     let json = document.to_json().unwrap();
     assert_eq!(
-        forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap(),
+        forager_style_ir::StyleDocument::from_yaml(&yaml)
+            .unwrap()
+            .document,
         document
     );
     assert_eq!(
-        forager_style_ir::StyleDocument::from_json(&json).unwrap(),
+        forager_style_ir::StyleDocument::from_json(&json)
+            .unwrap()
+            .document,
         document
     );
 }
@@ -670,11 +674,15 @@ fn bound_style_properties_read_back_equal_from_yaml_and_json() {
     let yaml = document.to_yaml().unwrap();
     let json = document.to_json().unwrap();
     assert_eq!(
-        forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap(),
+        forager_style_ir::StyleDocument::from_yaml(&yaml)
+            .unwrap()
+            .document,
         document
     );
     assert_eq!(
-        forager_style_ir::StyleDocument::from_json(&json).unwrap(),
+        forager_style_ir::StyleDocument::from_json(&json)
+            .unwrap()
+            .document,
         document
     );
 }
@@ -905,11 +913,15 @@ fn symbols_read_back_equal_from_yaml_and_json() {
     let yaml = document.to_yaml().unwrap();
     let json = document.to_json().unwrap();
     assert_eq!(
-        forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap(),
+        forager_style_ir::StyleDocument::from_yaml(&yaml)
+            .unwrap()
+            .document,
         document
     );
     assert_eq!(
-        forager_style_ir::StyleDocument::from_json(&json).unwrap(),
+        forager_style_ir::StyleDocument::from_json(&json)
+            .unwrap()
+            .document,
         document
     );
 }

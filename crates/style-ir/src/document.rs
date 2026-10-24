@@ -5,6 +5,28 @@ use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, Map};
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
 pub const FORMAT_VERSION: &str = "1.0";
 
+/// A style document as read, with the warnings reading it raised.
+#[derive(Debug)]
+pub struct Read {
+    pub document: StyleDocument,
+    pub warnings: Vec<Diagnostic>,
+}
+
+/// The JSON Pointer (RFC 6901) of a place in a document.
+fn pointer(path: &serde_ignored::Path) -> String {
+    match path {
+        serde_ignored::Path::Root => String::new(),
+        serde_ignored::Path::Seq { parent, index } => format!("{}/{index}", pointer(parent)),
+        serde_ignored::Path::Map { parent, key } => {
+            let key = key.replace('~', "~0").replace('/', "~1");
+            format!("{}/{key}", pointer(parent))
+        }
+        serde_ignored::Path::Some { parent }
+        | serde_ignored::Path::NewtypeStruct { parent }
+        | serde_ignored::Path::NewtypeVariant { parent } => pointer(parent),
+    }
+}
+
 /// The style IR as a document: a format version and the map (ADR-0014).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -32,23 +54,62 @@ impl StyleDocument {
             .map_err(|e| Diagnostic::error("json-write", e.to_string(), None))
     }
 
-    pub fn from_yaml(text: &str) -> Result<Self, Diagnostic> {
-        let document: Self = serde_saphyr::from_str(text)
-            .map_err(|e| Diagnostic::error("yaml-read", e.to_string(), None))?;
-        document.checked()
+    /// Reads a document from YAML, with the warnings of reading it (ADR-0020).
+    pub fn from_yaml(text: &str) -> Result<Read, Diagnostic> {
+        let mut ignored = Vec::new();
+        let document: Self = serde_saphyr::with_deserializer_from_str(text, |de| {
+            serde_ignored::deserialize(de, |path| ignored.push(pointer(&path)))
+        })
+        .map_err(|e| Diagnostic::error("yaml-read", e.to_string(), None))?;
+        document.checked(ignored)
     }
 
-    pub fn from_json(text: &str) -> Result<Self, Diagnostic> {
-        let document: Self = serde_json::from_str(text)
-            .map_err(|e| Diagnostic::error("json-read", e.to_string(), None))?;
-        document.checked()
+    /// Reads a document from JSON, with the warnings of reading it (ADR-0020).
+    pub fn from_json(text: &str) -> Result<Read, Diagnostic> {
+        let mut ignored = Vec::new();
+        let mut deserializer = serde_json::Deserializer::from_str(text);
+        let read = serde_ignored::deserialize(&mut deserializer, |path| {
+            ignored.push(pointer(&path));
+        })
+        .and_then(|document: Self| deserializer.end().map(|()| document));
+        let document = read.map_err(|e| Diagnostic::error("json-read", e.to_string(), None))?;
+        document.checked(ignored)
     }
 
-    fn checked(self) -> Result<Self, Diagnostic> {
-        let major = |v: &str| v.split('.').next().and_then(|m| m.parse::<u32>().ok());
-        match (major(&self.version), major(FORMAT_VERSION)) {
-            (Some(theirs), Some(ours)) if theirs == ours => self.bounded(),
-            (Some(theirs), Some(ours)) if theirs > ours => Err(Diagnostic::error(
+    /// Checks the format version, and decides on the fields the reader did not know, `ignored`
+    /// by their JSON Pointer: a newer minor than this build's may have them, each a warning, and
+    /// its document is read without them; in the current or an older minor, no version this
+    /// build knows has them, so the first is a load error.
+    fn checked(self, ignored: Vec<String>) -> Result<Read, Diagnostic> {
+        let version = |v: &str| {
+            let (major, minor) = v.split_once('.').unwrap_or((v, "0"));
+            Some((major.parse::<u32>().ok()?, minor.parse::<u32>().ok()?))
+        };
+        match (version(&self.version), version(FORMAT_VERSION)) {
+            (Some(theirs), Some(ours)) if theirs.0 == ours.0 => {
+                let newer_minor = theirs.1 > ours.1;
+                if !newer_minor && let Some(field) = ignored.first() {
+                    let message = format!(
+                        "format version {} has no field {field}; this build reads {FORMAT_VERSION}",
+                        self.version
+                    );
+                    return Err(Diagnostic::error("unknown-field", message, None));
+                }
+                let warnings = ignored
+                    .into_iter()
+                    .map(|field| {
+                        let message = format!(
+                            "{field} is unknown to format version {FORMAT_VERSION} and is ignored"
+                        );
+                        Diagnostic::warning("unknown-field", message, None)
+                    })
+                    .collect();
+                Ok(Read {
+                    document: self.bounded()?,
+                    warnings,
+                })
+            }
+            (Some(theirs), Some(ours)) if theirs.0 > ours.0 => Err(Diagnostic::error(
                 "format-version-unsupported",
                 format!(
                     "format version {} is newer than {FORMAT_VERSION}, the newest this build reads",
@@ -257,8 +318,12 @@ mod tests {
     fn a_document_reads_back_equal_from_yaml_and_from_json() {
         // Verifies: ADR-0014
         let document = sample();
-        let from_yaml = StyleDocument::from_yaml(&document.to_yaml().unwrap()).unwrap();
-        let from_json = StyleDocument::from_json(&document.to_json().unwrap()).unwrap();
+        let from_yaml = StyleDocument::from_yaml(&document.to_yaml().unwrap())
+            .unwrap()
+            .document;
+        let from_json = StyleDocument::from_json(&document.to_json().unwrap())
+            .unwrap()
+            .document;
         assert_eq!(from_yaml, document);
         assert_eq!(from_json, document);
     }
@@ -278,7 +343,9 @@ mod tests {
             }),
             ..Map::default()
         });
-        let read = StyleDocument::from_json(&document.to_json().unwrap()).unwrap();
+        let read = StyleDocument::from_json(&document.to_json().unwrap())
+            .unwrap()
+            .document;
         let extent = read.map.extent.unwrap();
         assert_eq!(extent.min_x.to_bits(), x.to_bits());
         assert_eq!(extent.min_y.to_bits(), (-x).to_bits());
@@ -298,15 +365,55 @@ mod tests {
         };
         let at_limit = nested(MAX_EXPRESSION_DEPTH);
         let yaml = at_limit.to_yaml().unwrap();
-        assert_eq!(StyleDocument::from_yaml(&yaml).unwrap(), at_limit);
+        assert_eq!(StyleDocument::from_yaml(&yaml).unwrap().document, at_limit);
         let json = at_limit.to_json().unwrap();
-        assert_eq!(StyleDocument::from_json(&json).unwrap(), at_limit);
+        assert_eq!(StyleDocument::from_json(&json).unwrap().document, at_limit);
 
         let past = nested(MAX_EXPRESSION_DEPTH + 1);
         let error = StyleDocument::from_json(&past.to_json().unwrap()).unwrap_err();
         assert_eq!(error.code, "expression-too-deep");
         let error = StyleDocument::from_yaml(&past.to_yaml().unwrap()).unwrap_err();
         assert_eq!(error.code, "expression-too-deep");
+    }
+
+    #[test]
+    fn a_newer_minors_unknown_fields_are_named_by_their_path() {
+        // Verifies: ADR-0020
+        let json = r#"{"version":"1.9","map":{"layers":[{"name":"a","glow":1}],"a/b~":2}}"#;
+        let yaml = "version: \"1.9\"\nmap:\n  layers:\n  - name: a\n    glow: 1\n  a/b~: 2\n";
+        for read in [
+            StyleDocument::from_json(json),
+            StyleDocument::from_yaml(yaml),
+        ] {
+            let read = read.unwrap();
+            assert_eq!(read.document.map.layers[0].name.as_deref(), Some("a"));
+            let messages: Vec<_> = read.warnings.iter().map(|w| w.message.as_str()).collect();
+            assert_eq!(
+                messages,
+                [
+                    "/map/layers/0/glow is unknown to format version 1.0 and is ignored",
+                    "/map/a~1b~0 is unknown to format version 1.0 and is ignored",
+                ]
+            );
+            assert!(read.warnings.iter().all(|w| w.code == "unknown-field"));
+        }
+    }
+
+    #[test]
+    fn an_unknown_field_in_the_current_or_an_older_minor_is_a_load_error() {
+        // Verifies: ADR-0020
+        for version in ["1.0", "1"] {
+            let json = format!(r#"{{"version":"{version}","map":{{"layers":[{{"glow":1}}]}}}}"#);
+            let error = StyleDocument::from_json(&json).unwrap_err();
+            assert_eq!(error.code, "unknown-field");
+            assert!(
+                error.message.contains("/map/layers/0/glow"),
+                "{}",
+                error.message
+            );
+        }
+        let read = StyleDocument::from_yaml("version: \"1.0\"\nmap: {}\n").unwrap();
+        assert!(read.warnings.is_empty());
     }
 
     #[test]
