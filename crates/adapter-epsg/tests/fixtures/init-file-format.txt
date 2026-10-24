@@ -1,0 +1,20 @@
+﻿# The format of PROJ's former `epsg` init file, as PROJ's get_init_string reads it, and as the
+# host table of adapter-epsg and the init files of the mapfile frontend are read (ADR-0023). Each
+# `# expect` line states what both readers make of a code; both crates' tests run this file.
+# expect 1 = +proj=longlat +ellps=GRS80 +no_defs
+<1> +proj=longlat
+    +ellps=GRS80
+    +no_defs <>
+# expect 2 = +proj=merc +lon_0=0
+<2> +proj=merc # a comment inside a definition
+    +lon_0=0 <>
+# The first definition of a code holds.
+<1> +proj=tmerc <>
+# expect 3 refused grid file
+<3> +proj=longlat +nadgrids=ntv1_can.dat <>
+# expect 4 refused init=
+<4> +init=epsg:1 <>
+# The first definition holds even when it is empty.
+# expect 5 refused no definition
+<5> <>
+<5> +proj=longlat <>
