@@ -1,6 +1,6 @@
 # ADR-0023: `init=` projections are resolved through a resolver port the host passes in, and from an init file the mapfile names by a path inside the base context
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm`
@@ -112,4 +112,4 @@ Tests of `adapter-epsg` resolve 4326, 3857, and UTM zones and read a table file;
 mapfile frontend load `init=epsg:` with and without a resolver, an init file named by a path
 inside the base context, one outside it, and a code it does not hold; the msautotest test of G-1
 loads every mapfile whose init file is named by a path through the CLI without a stand-in. All
-cite this ADR with `Verifies:` once it is accepted.
+cite this ADR with `Verifies:`.
