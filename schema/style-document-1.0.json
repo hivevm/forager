@@ -1,0 +1,1385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StyleDocument",
+  "description": "The style IR as a document: a format version and the map (ADR-0014).",
+  "type": "object",
+  "properties": {
+    "map": {
+      "$ref": "#/$defs/Map"
+    },
+    "version": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "version",
+    "map"
+  ],
+  "$defs": {
+    "Align": {
+      "type": "string",
+      "enum": [
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    "AngleMode": {
+      "oneOf": [
+        {
+          "description": "Along the line.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "Along the line, and never upside down.",
+          "type": "string",
+          "const": "auto2"
+        },
+        {
+          "description": "Following the line's curve, character by character.",
+          "type": "string",
+          "const": "follow"
+        }
+      ]
+    },
+    "Bound": {
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces. An empty value leaves a number at its default, and a colour that does not read\nleaves no colour.",
+          "type": "object",
+          "properties": {
+            "binding": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "binding"
+          ]
+        },
+        {
+          "$ref": "#/$defs/Expr"
+        }
+      ]
+    },
+    "Bound2": {
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "anyOf": [
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces. An empty value leaves a number at its default, and a colour that does not read\nleaves no colour.",
+          "type": "object",
+          "properties": {
+            "binding": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "binding"
+          ]
+        },
+        {
+          "$ref": "#/$defs/Expr"
+        }
+      ]
+    },
+    "Bound3": {
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Rgba"
+        },
+        {
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces. An empty value leaves a number at its default, and a colour that does not read\nleaves no colour.",
+          "type": "object",
+          "properties": {
+            "binding": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "binding"
+          ]
+        },
+        {
+          "$ref": "#/$defs/Expr"
+        }
+      ]
+    },
+    "Bound4": {
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Position"
+        },
+        {
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces. An empty value leaves a number at its default, and a colour that does not read\nleaves no colour.",
+          "type": "object",
+          "properties": {
+            "binding": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "binding"
+          ]
+        },
+        {
+          "$ref": "#/$defs/Expr"
+        }
+      ]
+    },
+    "Bound5": {
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Align"
+        },
+        {
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces. An empty value leaves a number at its default, and a colour that does not read\nleaves no colour.",
+          "type": "object",
+          "properties": {
+            "binding": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "binding"
+          ]
+        },
+        {
+          "$ref": "#/$defs/Expr"
+        }
+      ]
+    },
+    "Bound6": {
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SymbolRef"
+        },
+        {
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces. An empty value leaves a number at its default, and a colour that does not read\nleaves no colour.",
+          "type": "object",
+          "properties": {
+            "binding": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "binding"
+          ]
+        },
+        {
+          "$ref": "#/$defs/Expr"
+        }
+      ]
+    },
+    "Class": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "description": "Which features the class draws; without one, every feature that reaches it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Label"
+          }
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "styles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Style"
+          }
+        }
+      }
+    },
+    "Expr": {
+      "description": "An expression: a literal, a property of the feature, a list, a time, or an operator or\nfunction applied to its arguments.",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number",
+          "format": "double"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "description": "The second argument of `in`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Expr"
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "op": {
+              "$ref": "#/$defs/Op"
+            }
+          },
+          "required": [
+            "op",
+            "args"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "property": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "property"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "date": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "date"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "timestamp": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "timestamp"
+          ]
+        }
+      ]
+    },
+    "Extent": {
+      "type": "object",
+      "properties": {
+        "max_x": {
+          "type": "number",
+          "format": "double"
+        },
+        "max_y": {
+          "type": "number",
+          "format": "double"
+        },
+        "min_x": {
+          "type": "number",
+          "format": "double"
+        },
+        "min_y": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "min_x",
+        "min_y",
+        "max_x",
+        "max_y"
+      ]
+    },
+    "Force": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
+        },
+        {
+          "description": "The label and its styles are placed together or not at all.",
+          "type": "string",
+          "const": "group"
+        }
+      ]
+    },
+    "GeomTransform": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "centroid"
+          ]
+        },
+        {
+          "description": "The first point of a line.",
+          "type": "string",
+          "const": "start"
+        },
+        {
+          "description": "The last point of a line.",
+          "type": "string",
+          "const": "end"
+        },
+        {
+          "description": "Every point of a line but the first and the last.",
+          "type": "string",
+          "const": "vertices"
+        },
+        {
+          "description": "Where a label is placed; a label's style without a transform draws there.",
+          "type": "string",
+          "const": "labelpoint"
+        },
+        {
+          "description": "The box around a label's text.",
+          "type": "string",
+          "const": "labelpoly"
+        }
+      ]
+    },
+    "Label": {
+      "description": "A label a class draws for each feature.",
+      "type": "object",
+      "properties": {
+        "align": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound5"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "angle": {
+          "description": "Degrees counter-clockwise.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "angle_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AngleMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buffer": {
+          "description": "Space kept free around the label, in pixels.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "font": {
+          "description": "A font of the map's fonts, by name.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "force": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Force"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_length": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_overlap_angle": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_size": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_distance": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_feature_size": {
+          "description": "The smallest feature labelled, in pixels; `auto`: one the label fits.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MinFeatureSize"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "min_size": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "offset": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/Bound2"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "outline_color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outline_width": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "partials": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound4"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "description": "1 to 10; a higher one is placed first.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repeat_distance": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "shadow_color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shadow_size": {
+          "description": "The shadow's offset, `[x, y]`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/Bound2"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "size": {
+          "description": "The size in points; MapServer's bitmap sizes `tiny` to `giant` stand as 5, 7, 10, 13, 16.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "styles": {
+          "description": "Drawn with the label, at its point unless a style names another transform.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Style"
+          }
+        },
+        "text": {
+          "description": "The text: the label's `TEXT`, else the class's, else the layer's `LABELITEM`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wrap": {
+          "description": "The character at which the text wraps.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Layer": {
+      "type": "object",
+      "properties": {
+        "classes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Class"
+          }
+        },
+        "filter": {
+          "description": "Which of the source's features the layer reads; without one, all of them.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "render_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RenderMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size_units": {
+          "description": "The unit of its styles' sizes, widths, gaps, patterns, and offsets; without one, pixels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Units"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LayerStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "LayerStatus": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ]
+        },
+        {
+          "description": "Always drawn, whatever a request asks for.",
+          "type": "string",
+          "const": "default"
+        }
+      ]
+    },
+    "LineCap": {
+      "type": "string",
+      "enum": [
+        "butt",
+        "round",
+        "square",
+        "triangle"
+      ]
+    },
+    "LineJoin": {
+      "type": "string",
+      "enum": [
+        "none",
+        "round",
+        "miter",
+        "bevel"
+      ]
+    },
+    "LineOffset": {
+      "type": "object",
+      "properties": {
+        "both_sides": {
+          "description": "Drawn on both sides of the line, MapServer's `-999`.",
+          "type": "boolean"
+        },
+        "distance": {
+          "$ref": "#/$defs/Bound2"
+        }
+      },
+      "required": [
+        "distance"
+      ]
+    },
+    "Map": {
+      "description": "A map: its image, its extent, and its layers in drawing order.",
+      "type": "object",
+      "properties": {
+        "def_resolution": {
+          "description": "The resolution the map's pixel lengths are written for, in dpi; MapServer's default is 72.\nEvery length in pixels is drawn scaled by `resolution` over this.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "extent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Extent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fonts": {
+          "description": "The map's fonts by name, each a resource path inside the base context, not read at load.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "image_color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rgba"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Layer"
+          }
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "projection": {
+          "description": "The map's projection as a proj4 string.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolution": {
+          "description": "The resolution of the image in dpi; MapServer's default is 72.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "size": {
+          "description": "Width and height of the image in pixels.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "symbols": {
+          "description": "The map's symbols in MapServer's order: those of its `SYMBOL` blocks, then those of its\nsymbol set. The one at position `i` has MapServer's index `i + 1`; index 0 is MapServer's\ndefault symbol, a filled circle of size 1, which the list leaves out.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Symbol"
+          }
+        }
+      }
+    },
+    "MinFeatureSize": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "auto"
+          ]
+        },
+        {
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "Op": {
+      "description": "The operators of CQL2 an expression uses, and the functions for what CQL2 lacks.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "=",
+            "<>",
+            "<",
+            ">",
+            "<=",
+            ">=",
+            "in",
+            "and",
+            "or",
+            "not",
+            "+",
+            "-",
+            "*",
+            "/",
+            "%",
+            "^",
+            "casei",
+            "t_before",
+            "t_after",
+            "t_equals",
+            "to_string",
+            "concat",
+            "upper",
+            "lower",
+            "initcap",
+            "firstcap",
+            "commify",
+            "length",
+            "round"
+          ]
+        },
+        {
+          "description": "A property's value as a number, as C's `atof` reads it: its longest numeric prefix, or 0.",
+          "type": "string",
+          "const": "to_number"
+        },
+        {
+          "description": "A property's value as a time, as MapServer's `msParseTime` reads it.",
+          "type": "string",
+          "const": "to_timestamp"
+        },
+        {
+          "description": "`regexp_like(value, pattern, flags)`: the pattern in POSIX extended syntax, the flag `i`.",
+          "type": "string",
+          "const": "regexp_like"
+        },
+        {
+          "description": "`tostring(number, format)`: the number formatted by a C `printf` format.",
+          "type": "string",
+          "const": "tostring"
+        }
+      ]
+    },
+    "Position": {
+      "type": "string",
+      "enum": [
+        "ul",
+        "uc",
+        "ur",
+        "cl",
+        "cc",
+        "cr",
+        "ll",
+        "lc",
+        "lr",
+        "auto"
+      ]
+    },
+    "RenderMode": {
+      "description": "How a layer's features are drawn, independent of their geometry type: polygons in a line\nlayer are drawn as their outlines.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "point",
+            "line",
+            "polygon",
+            "raster"
+          ]
+        },
+        {
+          "description": "Labels only, no geometry.",
+          "type": "string",
+          "const": "annotation"
+        }
+      ]
+    },
+    "Rgba": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+    },
+    "SourceRef": {
+      "description": "Where a layer's data lives, kept unparsed for a resolver to bind to an adapter.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "Span": {
+      "description": "file:line:column",
+      "type": "string"
+    },
+    "Style": {
+      "type": "object",
+      "properties": {
+        "angle": {
+          "description": "Rotation in degrees, counter-clockwise.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "auto_angle": {
+          "description": "Whether the symbol turns with the direction of the line it is drawn on, MapServer's\n`ANGLE AUTO`.",
+          "type": "boolean"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gap": {
+          "description": "The distance between symbols drawn along a line; a negative one turns them with the line,\na positive one keeps them upright.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "geom_transform": {
+          "description": "The geometry the style draws instead of the feature's own.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GeomTransform"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "initial_gap": {
+          "description": "The distance before the first symbol or dash along a line.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "line_cap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LineCap"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line_join": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LineJoin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line_join_max_size": {
+          "description": "How far a miter join may reach, as a multiple of the width.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "line_offset": {
+          "description": "A line drawn parallel to the feature's line at this distance, positive to its left in\nthe direction of drawing; MapServer writes it as `OFFSET d -99`, or `-999` for both sides.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LineOffset"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_size": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_width": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_size": {
+          "description": "The bounds of the scaled size and width, in pixels at the map's `def_resolution`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_width": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "offset": {
+          "description": "A shift of what is drawn, `[x, y]`, y downwards.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/Bound2"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "opacity": {
+          "description": "Opacity in percent, 0 to 100.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outline_color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outline_width": {
+          "description": "The width of a symbol's outline in pixels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pattern": {
+          "description": "Dash and gap lengths, alternating, 2 to 10 of them.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "polar_offset": {
+          "description": "A shift by distance and angle in degrees, `[distance, angle]`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/Bound2"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "size": {
+          "description": "Symbol size in pixels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "symbol": {
+          "description": "The symbol drawn, by its name or MapServer's index into the symbol set.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound6"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "width": {
+          "description": "Line width in pixels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Symbol": {
+      "description": "A symbol a style draws.",
+      "type": "object",
+      "properties": {
+        "anchor_point": {
+          "description": "The point of the symbol placed on the feature, as fractions of its extent; without one,\nthe centre.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "character": {
+          "description": "The glyph of a TrueType symbol, and its font by the name the font set gives it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extent": {
+          "description": "The width and height of a vector symbol or an ellipse, as MapServer measures them. A\nstyle's size is the symbol's height drawn, or its width where it has no height.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "filled": {
+          "type": "boolean"
+        },
+        "font": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "description": "The image of a pixmap or SVG symbol: a resource path inside the base context, not read at\nload (Q-8).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/SymbolKind"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paths": {
+          "description": "A vector symbol's lines, each a list of `[x, y]`, y downwards, shifted as MapServer shifts\nthem so that none is negative; an ellipse's one point, its width and height.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              },
+              "maxItems": 2,
+              "minItems": 2
+            }
+          }
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transparent": {
+          "description": "The palette index of a pixmap that draws transparent.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "SymbolKind": {
+      "type": "string",
+      "enum": [
+        "vector",
+        "ellipse",
+        "pixmap",
+        "simple",
+        "truetype",
+        "hatch",
+        "svg"
+      ]
+    },
+    "SymbolRef": {
+      "description": "A symbol of the map's symbol set: by its name, or by MapServer's index, in which 0 is the\ndefault symbol.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Units": {
+      "description": "A unit of length.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "pixels",
+            "inches",
+            "feet",
+            "miles",
+            "meters",
+            "kilometers",
+            "nautical_miles"
+          ]
+        },
+        {
+          "description": "Decimal degrees.",
+          "type": "string",
+          "const": "degrees"
+        }
+      ]
+    }
+  }
+}

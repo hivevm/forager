@@ -7,6 +7,7 @@ use crate::{Expr, Span};
 
 /// A map: its image, its extent, and its layers in drawing order.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Map {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -43,6 +44,7 @@ pub struct Map {
 
 /// A symbol a style draws.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Symbol {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -78,6 +80,7 @@ pub struct Symbol {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum SymbolKind {
     Vector,
@@ -90,6 +93,7 @@ pub enum SymbolKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Extent {
     pub min_x: f64,
     pub min_y: f64,
@@ -98,6 +102,7 @@ pub struct Extent {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Layer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -122,6 +127,7 @@ pub struct Layer {
 /// How a layer's features are drawn, independent of their geometry type: polygons in a line
 /// layer are drawn as their outlines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum RenderMode {
     Point,
@@ -133,6 +139,7 @@ pub enum RenderMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum LayerStatus {
     On,
@@ -143,6 +150,7 @@ pub enum LayerStatus {
 
 /// Where a layer's data lives, kept unparsed for a resolver to bind to an adapter.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct SourceRef {
     pub kind: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -152,6 +160,7 @@ pub struct SourceRef {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Class {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -167,6 +176,7 @@ pub struct Class {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Style {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<Bound<Rgba>>,
@@ -289,6 +299,7 @@ impl Label {
 /// A symbol of the map's symbol set: by its name, or by MapServer's index, in which 0 is the
 /// default symbol.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum SymbolRef {
     Index(u32),
@@ -296,6 +307,7 @@ pub enum SymbolRef {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct LineOffset {
     pub distance: Bound<f64>,
     /// Drawn on both sides of the line, MapServer's `-999`.
@@ -304,6 +316,7 @@ pub struct LineOffset {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum LineCap {
     Butt,
@@ -313,6 +326,7 @@ pub enum LineCap {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum LineJoin {
     None,
@@ -322,6 +336,7 @@ pub enum LineJoin {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum GeomTransform {
     /// The first point of a line.
@@ -341,6 +356,7 @@ pub enum GeomTransform {
 
 /// A label a class draws for each feature.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Label {
     /// The text: the label's `TEXT`, else the class's, else the layer's `LABELITEM`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -409,6 +425,7 @@ pub struct Label {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Position {
     Ul,
@@ -424,6 +441,7 @@ pub enum Position {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum AngleMode {
     /// Along the line.
@@ -435,6 +453,7 @@ pub enum AngleMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Align {
     Left,
@@ -443,6 +462,7 @@ pub enum Align {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum MinFeatureSize {
     Auto,
@@ -451,6 +471,7 @@ pub enum MinFeatureSize {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Force {
     On,
@@ -461,6 +482,7 @@ pub enum Force {
 
 /// A unit of length.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Units {
     Pixels,
@@ -478,6 +500,7 @@ pub enum Units {
 /// A style property that may vary by feature: a value, a property bound as MapServer binds an
 /// attribute, or an expression (ADR-0019).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum Bound<T> {
     Value(T),
@@ -554,6 +577,20 @@ impl fmt::Display for Rgba {
 impl Serialize for Rgba {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_str(self)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl schemars::JsonSchema for Rgba {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Rgba".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+        })
     }
 }
 

@@ -12,6 +12,11 @@ publish.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde-saphyr.workspace = true
+schemars = { workspace = true, optional = true }
 
 [lints]
 workspace = true
+
+[features]
+# The JSON Schema of the style document (ADR-0020); never enabled by the browser bindings (Q-5).
+schema = ["dep:schemars"]
