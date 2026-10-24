@@ -5,9 +5,11 @@ use std::collections::BTreeMap;
 
 use forager_ports::ProjectionResolver;
 use forager_style_ir::{
-    Class, Diagnostic, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span, Style,
+    Class, Diagnostic, Expr, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span,
+    Style,
 };
 
+use crate::expression;
 use crate::lexer::{Token, TokenKind};
 use crate::syntax::{Block, Directive, Node};
 
@@ -23,6 +25,23 @@ const DISCARDED: &[&str] = &[
     "TOLERANCEUNITS",
     "WEB",
 ];
+
+/// The string value of the last `keyword` directive of a block, the one MapServer keeps, read
+/// without a diagnostic; the directive reports its own when the block's loop reaches it.
+fn item(block: &Block, keyword: &str) -> Option<String> {
+    block.nodes.iter().rev().find_map(|node| match node {
+        Node::Directive(d) if d.keyword == keyword => match d.values.as_slice() {
+            [
+                Token {
+                    kind: TokenKind::Str { value, .. } | TokenKind::Word(value),
+                    ..
+                },
+            ] => Some(value.clone()),
+            _ => None,
+        },
+        _ => None,
+    })
+}
 
 pub fn translate(
     map: &Block,
@@ -82,6 +101,9 @@ impl Translator<'_> {
         let mut connection_type = None;
         let mut props = BTreeMap::new();
         let mut source_span = None;
+        // MapServer reads the items when it evaluates, so they hold wherever they stand.
+        let class_item = item(block, "CLASSITEM");
+        let filter_item = item(block, "FILTERITEM");
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -113,6 +135,10 @@ impl Translator<'_> {
                         connection_type = self.word(d).map(|w| w.to_ascii_lowercase());
                         source_span.get_or_insert_with(|| d.span.clone());
                     }
+                    "CLASSITEM" | "FILTERITEM" => {
+                        self.string(d);
+                    }
+                    "FILTER" => layer.filter = self.expression(d, filter_item.as_deref()),
                     "CONNECTION" | "DATA" => {
                         if let Some(value) = self.string(d) {
                             props.insert(d.keyword.to_ascii_lowercase(), value);
@@ -122,7 +148,7 @@ impl Translator<'_> {
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) => match b.keyword.as_str() {
-                    "CLASS" => layer.classes.push(self.class(b)),
+                    "CLASS" => layer.classes.push(self.class(b, class_item.as_deref())),
                     _ => self.unhandled(&b.keyword, &b.span),
                 },
             }
@@ -138,7 +164,7 @@ impl Translator<'_> {
         Some(layer)
     }
 
-    fn class(&mut self, block: &Block) -> Class {
+    fn class(&mut self, block: &Block, class_item: Option<&str>) -> Class {
         let mut class = Class {
             span: Some(block.span.clone()),
             ..Class::default()
@@ -146,6 +172,9 @@ impl Translator<'_> {
         for node in &block.nodes {
             match node {
                 Node::Directive(d) if d.keyword == "NAME" => class.name = self.string(d),
+                Node::Directive(d) if d.keyword == "EXPRESSION" => {
+                    class.expression = self.expression(d, class_item);
+                }
                 Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b)),
                 Node::Directive(d) => self.unhandled_directive(d),
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
@@ -344,6 +373,28 @@ impl Translator<'_> {
                     return None;
                 }
                 Some(Rgba::opaque(rgb[0] as u8, rgb[1] as u8, rgb[2] as u8))
+            }
+        }
+    }
+
+    /// The expression of an `EXPRESSION` or `FILTER` against `item` (ADR-0019). One that cannot
+    /// be carried over is kept as `false`, never matching, as MapServer never matches one it
+    /// cannot parse; one MapServer would not load fails the load.
+    fn expression(&mut self, d: &Directive, item: Option<&str>) -> Option<Expr> {
+        let [token] = d.values.as_slice() else {
+            self.invalid(d, "one expression");
+            return None;
+        };
+        match expression::translate(token, item) {
+            Ok(expr) => Some(expr),
+            Err(problem) if problem.error => {
+                self.error(problem.code, &problem.message, &d.span);
+                None
+            }
+            Err(problem) => {
+                let message = format!("{}; the {} never matches", problem.message, d.keyword);
+                self.warn(problem.code, &message, &d.span);
+                Some(Expr::Bool(false))
             }
         }
     }

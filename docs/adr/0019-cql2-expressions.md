@@ -1,6 +1,6 @@
 # ADR-0019: Expressions in the style IR are a lean CQL2 tree of Forager's own types, serialized as CQL2-JSON, with MapServer's typing made explicit at import
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/style-ir`, the translation of expressions in `crates/mapfile`, and every crate that evaluates an expression of the style IR
@@ -50,21 +50,26 @@ types made explicit by the frontend as conversion functions around each attribut
   strings, numbers, and booleans are JSON literals, and every operator or function is
   `{"op": name, "args": [...]}`. The operators are CQL2's: `=`, `<>`, `<`, `>`, `<=`, `>=`,
   `in`, `and`, `or`, `not`, `+`, `-`, `*`, `/`, `%`, `^`, `casei`, and the temporal predicates.
-- **Typing.** An attribute read as a number is wrapped in `to_number`, with `atof` semantics; one
-  read as a string is wrapped in `to_string` when its source type may not be a string. The IR
-  therefore means the same whatever type a feature source delivers.
+- **Typing.** An attribute read as a number is wrapped in `to_number`, with `atof` semantics, one
+  read as a string in `to_string`, and one read as a time in `to_timestamp`, with
+  `msParseTime` semantics. The IR therefore means the same whatever type a feature source
+  delivers.
 - **Functions** for what CQL2 lacks: `regexp_like(value, pattern, flags)` with the pattern kept
   verbatim as POSIX extended syntax and the flag `i`; `concat`; and MapServer's string functions
   under their own lower-case names. Each function's semantics is MapServer's and is written down
   where the IR's semantics are specified.
-- **Import.** The frontend translates each kind into this tree: a string or list against the
-  `CLASSITEM` becomes `=` or `in` on that property, `"value"i` and `=*` become `=` over `casei`,
-  `IN` against a literal string becomes `in` with the list split at the commas at load time, and
-  time comparisons become temporal predicates. A construct outside the subset — geometry
-  functions and predicates, `IN` against a computed string — is a warning, and the class or
-  filter that carries it is kept and never matches.
-- **Bounds.** The tree's nesting depth is limited when it is read, from a mapfile or a style
-  document, and exceeding it is a diagnostic (Q-9).
+- **Import.** The frontend translates each kind into this tree: a string, regular expression, or
+  list against the `CLASSITEM`, or the `FILTERITEM` for a layer's filter, becomes `=`,
+  `regexp_like`, or `in` on that property, `"value"i` and `=*` become `=` over `casei`, `IN`
+  against a literal string becomes `in` with the list split at the commas at load time, a chain
+  of `AND` or of `OR` becomes one `and` or `or` over all its operands, and time comparisons
+  become temporal predicates. A construct outside the subset — geometry functions and
+  predicates, `IN` against a computed string — and an expression MapServer cannot parse are a
+  warning, and the class or filter that carries it is kept with the expression `false`, so that
+  it never matches, as MapServer never matches an expression it cannot parse.
+- **Bounds.** The tree nests at most 24 deep, so that a document holding it stays inside the
+  nesting limits of the YAML and JSON readers; it is checked when the tree is read, from a
+  mapfile or a style document, and exceeding it is a load error (Q-9).
 
 **Out of scope:** evaluating expressions and choosing the regular-expression engine, which come
 with the engine's use of the IR and with pushdown (G-7); CQL2-Text, as input or output; geometry

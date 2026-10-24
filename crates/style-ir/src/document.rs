@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Diagnostic, Map};
+use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, Map};
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
 pub const FORMAT_VERSION: &str = "1.0";
@@ -46,7 +46,7 @@ impl StyleDocument {
     fn checked(self) -> Result<Self, Diagnostic> {
         let major = |v: &str| v.split('.').next().and_then(|m| m.parse::<u32>().ok());
         match (major(&self.version), major(FORMAT_VERSION)) {
-            (Some(theirs), Some(ours)) if theirs == ours => Ok(self),
+            (Some(theirs), Some(ours)) if theirs == ours => self.bounded(),
             (Some(theirs), Some(ours)) if theirs > ours => Err(Diagnostic::error(
                 "format-version-unsupported",
                 format!(
@@ -67,10 +67,30 @@ impl StyleDocument {
     }
 }
 
+impl StyleDocument {
+    /// Refuses a document with an expression nested deeper than [`MAX_EXPRESSION_DEPTH`] (Q-9).
+    fn bounded(self) -> Result<Self, Diagnostic> {
+        let layers = self.map.layers.iter();
+        let expressions = layers.flat_map(|layer| {
+            let classes = layer.classes.iter().filter_map(|c| c.expression.as_ref());
+            layer.filter.iter().chain(classes)
+        });
+        for expression in expressions {
+            if expression.depth() > MAX_EXPRESSION_DEPTH {
+                let message = format!("an expression nests deeper than {MAX_EXPRESSION_DEPTH}");
+                return Err(Diagnostic::error("expression-too-deep", message, None));
+            }
+        }
+        Ok(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Class, Extent, Layer, LayerStatus, RenderMode, Rgba, SourceRef, Span, Style};
+    use crate::{
+        Class, Expr, Extent, Layer, LayerStatus, Op, RenderMode, Rgba, SourceRef, Span, Style,
+    };
 
     fn sample() -> StyleDocument {
         StyleDocument::new(Map {
@@ -93,8 +113,37 @@ mod tests {
                     props: [("data".to_owned(), "countries.shp".to_owned())].into(),
                     span: Some(Span::new("world.map", 9, 5)),
                 }),
+                filter: Some(Expr::call(
+                    Op::In,
+                    vec![
+                        Expr::call(Op::ToString, vec![Expr::property("iso")]),
+                        Expr::List(vec!["AT".into(), "1000".into(), "true".into()]),
+                    ],
+                )),
                 classes: vec![Class {
                     name: Some("all".into()),
+                    expression: Some(Expr::call(
+                        Op::And,
+                        vec![
+                            Expr::call(
+                                Op::Ge,
+                                vec![
+                                    Expr::call(Op::ToNumber, vec![Expr::property("pop")]),
+                                    Expr::Number(27374987.048899982),
+                                ],
+                            ),
+                            Expr::call(
+                                Op::TAfter,
+                                vec![
+                                    Expr::call(Op::ToTimestamp, vec![Expr::property("t")]),
+                                    Expr::Date {
+                                        date: "2010-12-01".into(),
+                                    },
+                                ],
+                            ),
+                            Expr::Bool(false),
+                        ],
+                    )),
                     styles: vec![Style {
                         color: Some(Rgba::opaque(200, 220, 180)),
                         outline_color: Some(Rgba::opaque(0, 0, 0)),
@@ -139,6 +188,31 @@ mod tests {
         let extent = read.map.extent.unwrap();
         assert_eq!(extent.min_x.to_bits(), x.to_bits());
         assert_eq!(extent.min_y.to_bits(), (-x).to_bits());
+    }
+
+    #[test]
+    fn an_expression_past_the_nesting_limit_is_refused_and_one_at_it_reads() {
+        // Verifies: Q-9, ADR-0019
+        let nested = |depth: usize| {
+            let mut expr = Expr::Bool(true);
+            for _ in 1..depth {
+                expr = Expr::call(Op::Not, vec![expr]);
+            }
+            let mut document = sample();
+            document.map.layers[0].filter = Some(expr);
+            document
+        };
+        let at_limit = nested(MAX_EXPRESSION_DEPTH);
+        let yaml = at_limit.to_yaml().unwrap();
+        assert_eq!(StyleDocument::from_yaml(&yaml).unwrap(), at_limit);
+        let json = at_limit.to_json().unwrap();
+        assert_eq!(StyleDocument::from_json(&json).unwrap(), at_limit);
+
+        let past = nested(MAX_EXPRESSION_DEPTH + 1);
+        let error = StyleDocument::from_json(&past.to_json().unwrap()).unwrap_err();
+        assert_eq!(error.code, "expression-too-deep");
+        let error = StyleDocument::from_yaml(&past.to_yaml().unwrap()).unwrap_err();
+        assert_eq!(error.code, "expression-too-deep");
     }
 
     #[test]

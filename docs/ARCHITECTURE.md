@@ -28,7 +28,8 @@ The parts the system is made of, each with one responsibility, named in the voca
 [`GLOSSARY.md`](GLOSSARY.md). One level deep, deeper only where the size of a part earns it. The
 golden path and the test pattern an agent copies from are named here.
 
-- **`style-ir`** — the data model of a map, the diagnostics with their source spans, and the
+- **`style-ir`** — the data model of a map, its expressions a CQL2 tree
+  ([ADR-0019](adr/0019-cql2-expressions.md)), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0014](adr/0014-style-document-serde.md)). It depends on no other crate of the workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
@@ -37,8 +38,9 @@ golden path and the test pattern an agent copies from are named here.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
   against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), and the
-  translation into the style IR, which reports every keyword it does not carry over. A load
-  reports at most a thousand diagnostics (Q-9). It is the only crate that knows MapServer syntax.
+  translation into the style IR, which reports every keyword it does not carry over and
+  translates MapServer's expressions with their typing into the CQL2 tree. A load reports at
+  most a thousand diagnostics (Q-9). It is the only crate that knows MapServer syntax.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, and turns each feature and style into display
   items by the layer's render mode. A layer without a source, or whose source fails, is skipped
