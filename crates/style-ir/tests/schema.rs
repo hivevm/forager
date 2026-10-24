@@ -50,7 +50,7 @@ fn the_checked_in_schema_is_the_one_the_ir_derives() {
 #[test]
 fn the_bump_matches_the_change_since_the_last_release() {
     // Verifies: ADR-0020
-    let released = released(&root());
+    let released = released(&root()).unwrap_or_else(|e| panic!("{e}"));
     frozen(&released, |path| {
         std::fs::read_to_string(root().join(path)).ok()
     })
@@ -92,12 +92,22 @@ fn git_in(dir: &Path) -> Command {
 }
 
 /// The schema files of every release tag `v<semver>` of the repository at `root`.
-fn released(root: &Path) -> Vec<Released> {
+/// A clone without its history has no tags to read, and would pass every change as made before
+/// the first release, so it is refused.
+fn released(root: &Path) -> Result<Vec<Released>, String> {
     let git = |args: &[&str]| {
         let output = git_in(root).args(args).output().expect("git runs");
         assert!(output.status.success(), "git {args:?} fails");
         String::from_utf8(output.stdout).unwrap()
     };
+    // An old git echoes the option it does not know; anything but `false` is refused.
+    if git(&["rev-parse", "--is-shallow-repository"]).trim() != "false" {
+        return Err(format!(
+            "{} is a shallow clone, so the schema check cannot see the release tags whose schema \
+             files are frozen; fetch its history with\n  git fetch --unshallow --tags",
+            root.display()
+        ));
+    }
     let mut files = Vec::new();
     for tag in git(&["tag", "--list", "v[0-9]*"]).lines() {
         // A tag before the schema existed holds none, and lists nothing.
@@ -111,7 +121,7 @@ fn released(root: &Path) -> Vec<Released> {
             });
         }
     }
-    files
+    Ok(files)
 }
 
 /// Fails where a released schema file differs from its copy in the tree, as `read` reads it.
@@ -560,7 +570,7 @@ fn a_release_tag_from_before_the_schema_holds_no_schema_file() {
     git(&["add", "schema"]);
     git(&["commit", "-q", "-m", "the schema"]);
     git(&["tag", "-a", "v0.1.0", "-m", "release"]);
-    let released = released(&dir);
+    let released = released(&dir).unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
     let found: Vec<_> = released
         .iter()
@@ -632,4 +642,32 @@ fn the_fixture_repository_is_the_only_one_its_git_touches() {
         after, before,
         "the tag test wrote into the repository GIT_DIR names"
     );
+}
+
+#[test]
+fn a_clone_without_its_history_is_refused_and_one_without_a_release_passes() {
+    // Verifies: ADR-0020
+    let base = std::env::temp_dir().join(format!("forager-schema-shallow-{}", std::process::id()));
+    let origin = base.join("origin");
+    let git = |dir: &Path, args: &[&str]| {
+        let status = git_in(dir)
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+            .args(args)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?}");
+    };
+    std::fs::create_dir_all(&origin).unwrap();
+    git(&origin, &["init", "-q"]);
+    git(&origin, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    git(&origin, &["commit", "-q", "--allow-empty", "-m", "two"]);
+    let url = format!("file://{}", origin.display());
+    git(&base, &["clone", "-q", "--depth", "1", &url, "shallow"]);
+    git(&base, &["clone", "-q", "--no-tags", &url, "full"]);
+    let shallow = released(&base.join("shallow"));
+    let full = released(&base.join("full"));
+    std::fs::remove_dir_all(&base).unwrap();
+    let error = shallow.err().expect("a shallow clone is refused");
+    assert!(error.contains("git fetch --unshallow --tags"), "{error}");
+    assert!(full.unwrap().is_empty());
 }

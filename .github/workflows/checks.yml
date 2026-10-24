@@ -158,8 +158,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # The schema check reads the release tags, whose schema files are frozen (ADR-0020); a
-          # shallow checkout has none and would pass every change as unreleased.
+          # The schema check reads the release tags, whose schema files are frozen (ADR-0020), and
+          # refuses a shallow checkout, which has none.
           fetch-depth: 0
       # The tools are compiled by cargo install on a cache miss, which takes minutes; the key
       # changes whenever a pinned version can.
