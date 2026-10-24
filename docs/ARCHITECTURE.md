@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-04, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-10-24, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -32,12 +32,13 @@ golden path and the test pattern an agent copies from are named here.
   style document that serializes it as YAML or JSON through serde
   ([ADR-0014](adr/0014-style-document-serde.md)). It depends on no other crate of the workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
-  resolver — and the resource path that cannot leave the base context (Q-8). Async lives here and
-  in hosts and adapters, never `Send`.
+  resolver — with the features and geometries a source delivers, and the resource path that
+  cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
   bounded in depth, cycles, and total size (Q-9), and the translation into the style IR, which
-  reports every keyword it does not carry over. It is the only crate that knows MapServer syntax.
+  reports every keyword it does not carry over. A load reports at most a thousand diagnostics
+  (Q-9). It is the only crate that knows MapServer syntax.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, and turns each feature and style into display
   items by the layer's render mode. A layer without a source, or whose source fails, is skipped
@@ -56,17 +57,20 @@ golden path and the test pattern an agent copies from are named here.
 - **`cli`** — the `forager` command, a host with a file loader that also refuses symbolic links
   out of the base context; `forager render` binds GeoJSON files to layers and writes a PNG.
 - **`bindings-wasm`** — the host for the browser: a mapfile, GeoJSON per layer name, and a
-  viewport in, the RGBA image and the diagnostics out; it drops source references that carry
-  credentials (Q-7). `scripts/build-web.sh` builds it into `target/web/`.
+  viewport in, the RGBA image and the diagnostics out; it keeps a layer's source reference only
+  when that is a `DATA` without credentials, and drops and unbinds every other (Q-7).
+  `scripts/build-web.sh` builds it into `target/web/`.
 - **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out.
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
-  frontend.
+  frontend; it also refuses `unsafe` outside `render-agg`
+  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)).
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers, the renderer on structured shapes, and the browser
-path on GeoJSON — run weekly by `scripts/fuzz.sh`; it keeps libFuzzer and the nightly toolchain
-out of the product's build.
+path on GeoJSON — run by `scripts/fuzz.sh`, every Sunday through `.github/workflows/fuzz.yml`;
+it keeps libFuzzer and the nightly toolchain out of the product's build, and
+`scripts/check-rust.sh` lints it on every push.
 
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).
@@ -93,3 +97,11 @@ error. No state outlives the call.
 each GeoJSON file into a source bound to its layer, and runs the engine with the agg-rust renderer.
 For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted
 extent and draws every feature in each style of the first class; the image is encoded as PNG.
+
+In the browser, the page calls the bundle's `render` with the mapfile text, a JSON object of
+GeoJSON by layer name, and an optional viewport. The bindings hand the frontend a loader that
+holds the mapfile alone, so an `INCLUDE` finds nothing; they drop every source reference the
+credential filter does not admit, apply the viewport over `SIZE` and `EXTENT`, parse the GeoJSON,
+and run the engine with the agg-rust renderer. Every port answers from memory, so each future
+is polled once; one that waits ends the call with a diagnostic instead of a spinning tab. The
+page puts the pixels on a canvas and lists the diagnostics.
