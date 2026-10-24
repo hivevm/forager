@@ -6,6 +6,9 @@
 #
 # Each self-test that drives git runs with GIT_DIR naming a decoy repository; the decoy's refs
 # and config must be unchanged afterwards, and the self-test must pass as it does without one.
+# Every other script under scripts/ that points git at a directory with -C or clone, such as the
+# corpus fetch, which needs the network to run, must clear the variables itself: a script without
+# the line fails by name.
 #
 # Usage:
 #     scripts/test-fixture-git-env.sh
@@ -29,6 +32,16 @@ before="$(state)"
 
 failed=0
 passed=0
+for script in "$ROOT"/scripts/*.sh; do
+  grep -qE '\bgit (-C|.*\bclone\b)' "$script" || continue
+  # shellcheck disable=SC2016 # the line itself, not its expansion
+  if grep -qF 'unset $(git rev-parse --local-env-vars)' "$script"; then
+    passed=$((passed + 1))
+  else
+    failed=$((failed + 1))
+    echo "FAIL: $(basename "$script") points git at a directory and keeps git's repository variables" >&2
+  fi
+done
 for test in "$ROOT"/scripts/test-*.sh; do
   name="$(basename "$test")"
   # Itself, and the normalize self-test, which runs every self-test in a copy of the tree.
@@ -49,8 +62,8 @@ for test in "$ROOT"/scripts/test-*.sh; do
 done
 
 if ((failed)); then
-  echo "Fixture git self-test FAILED ($failed of $((passed + failed)) self-tests)." >&2
+  echo "Fixture git self-test FAILED ($failed of $((passed + failed)) cases)." >&2
   exit 1
 fi
-echo "Fixture git self-test passed ($passed self-tests)."
+echo "Fixture git self-test passed ($passed cases)."
 exit 0
