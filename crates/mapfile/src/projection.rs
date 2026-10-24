@@ -8,7 +8,7 @@ use crate::syntax::Block;
 
 /// What a `PROJECTION` block's parameters are.
 pub enum Projection {
-    /// A first parameter that is `AUTO` and nothing else, in any case: the projection the source
+    /// A first token that is `AUTO` and nothing else, in any case: the projection the source
     /// declares, as `msProcessProjection` leaves it to the source.
     Auto,
     /// The explicit parameters, each with a leading `+`, and at most one `init=` reference.
