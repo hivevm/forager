@@ -3,11 +3,13 @@
 //! MapServer syntax.
 
 mod expression;
+mod init_file;
 mod lexer;
 mod report;
 mod syntax;
 mod translate;
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -37,7 +39,9 @@ pub struct Loaded {
 /// Loads the mapfile at `path` inside the base context of `loader`. As in MapServer, every
 /// `INCLUDE` is resolved against the main mapfile's directory, nested ones too; a `..` may leave
 /// that directory but not the base context (Q-8).
-/// `init=` projections are resolved by `resolver` (ADR-0023); without one they are load errors.
+/// `init=` projections are resolved by `resolver` (ADR-0023); without one they are load errors,
+/// unless they name an init file by a path, which is read against the main mapfile's directory
+/// as an `INCLUDE` is.
 pub async fn load<L: ResourceLoader>(
     path: &ResourcePath,
     loader: &L,
@@ -59,12 +63,13 @@ pub async fn load<L: ResourceLoader>(
         }
         _ => None,
     };
-    let (symbol_set, font_set) = match &map {
+    let (symbol_set, font_set, init_files) = match &map {
         Some(map) => (
             reading.symbol_set(path, map).await,
             reading.font_set(path, map).await,
+            reading.init_files(path, map).await,
         ),
-        None => (None, None),
+        None => (None, None, BTreeMap::new()),
     };
     let mut report = reading.report;
     let document = map.filter(|_| !report.failed()).map(|block| {
@@ -73,6 +78,7 @@ pub async fn load<L: ResourceLoader>(
             main: path,
             symbol_set: symbol_set.as_ref(),
             font_set: font_set.as_ref(),
+            init_files: &init_files,
         };
         let map = translate::translate(&block, &files, resolver, &mut translate_diagnostics);
         report.extend(translate_diagnostics);
@@ -122,6 +128,59 @@ impl<L: ResourceLoader> Reading<'_, L> {
             return None;
         }
         Some((target, String::from_utf8_lossy(&bytes).into_owned()))
+    }
+
+    /// The init files the map's projections name by a path, each read once and bounded as an
+    /// `INCLUDE` is (ADR-0023), keyed by the name as written. One that is refused or cannot be
+    /// read is the reason, which the projection that names it reports.
+    async fn init_files(
+        &mut self,
+        main: &ResourcePath,
+        map: &syntax::Block,
+    ) -> BTreeMap<String, Result<init_file::InitFile, String>> {
+        let mut files: BTreeMap<String, Result<init_file::InitFile, String>> = BTreeMap::new();
+        let mut read: BTreeMap<ResourcePath, String> = BTreeMap::new();
+        for (name, span) in init_file::named(map) {
+            let target = match main.resolve(&name) {
+                Ok(target) => target,
+                Err(e) => {
+                    files.insert(
+                        name.clone(),
+                        Err(format!("the init file `{name}` is refused: {e}")),
+                    );
+                    continue;
+                }
+            };
+            let text = match read.get(&target) {
+                Some(text) => text.clone(),
+                None => match self.loader.load(&target).await {
+                    Ok(bytes) => {
+                        self.bytes += bytes.len();
+                        if self.bytes > MAX_TOTAL_BYTES {
+                            let message = format!(
+                                "the mapfile with its files exceeds {MAX_TOTAL_BYTES} bytes"
+                            );
+                            self.report.push(Diagnostic::error(
+                                "mapfile-too-large",
+                                message,
+                                Some(span),
+                            ));
+                            return files;
+                        }
+                        let text = String::from_utf8_lossy(&bytes).into_owned();
+                        read.insert(target.clone(), text.clone());
+                        text
+                    }
+                    Err(e) => {
+                        let why = format!("cannot read the init file `{target}`: {e}");
+                        files.insert(name, Err(why));
+                        continue;
+                    }
+                },
+            };
+            files.insert(name, Ok(init_file::InitFile::new(target, &text)));
+        }
+        files
     }
 
     /// The last `keyword` directive of the map and the file it names, resolved against the main

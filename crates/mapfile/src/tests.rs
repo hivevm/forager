@@ -1199,3 +1199,122 @@ fn scale_values_out_of_mapservers_range_are_errors() {
         assert_eq!(codes(&loaded), ["invalid-value"], "{text}");
     }
 }
+
+const EPSG2: &str = "# A custom projection, as msautotest's wxs/data/epsg2 holds it.
+<42304> +proj=lcc +lat_1=49 +lat_2=77 +units=m +no_defs  no_defs <>
+<1> +proj=longlat +nadgrids=ntv1_can.dat <>
+";
+
+fn layer_projection(files: &[(&'static str, &'static str)]) -> Loaded {
+    load_files(files)
+}
+
+#[test]
+fn an_init_file_named_by_a_path_is_read_inside_the_base_context() {
+    // Verifies: ADR-0023
+    use forager_style_ir::LayerProjection;
+    let lcc = "+proj=lcc +lat_1=49 +lat_2=77 +units=m +no_defs +no_defs";
+    for (map, init) in [
+        ("m.map", "./data/epsg2"),
+        ("m.map", "data/epsg2"),
+        ("maps/m.map", "../data/epsg2"),
+    ] {
+        let text = format!("MAP LAYER PROJECTION 'init={init}:42304' END END END");
+        let text: &'static str = Box::leak(text.into_boxed_str());
+        let loaded = layer_projection(&[(map, text), ("data/epsg2", EPSG2)]);
+        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{init}");
+        assert_eq!(
+            loaded.document.unwrap().map.layers[0].projection,
+            Some(LayerProjection::Proj4(lcc.to_owned())),
+            "{init}"
+        );
+    }
+    // The map's projection reads one the same way, and explicit parameters still come first.
+    let loaded = layer_projection(&[
+        (
+            "m.map",
+            "MAP PROJECTION 'init=./data/epsg2:42304' '+over' END END",
+        ),
+        ("data/epsg2", EPSG2),
+    ]);
+    assert_eq!(
+        loaded.document.unwrap().map.projection.as_deref(),
+        Some(format!("+over {lcc}").as_str())
+    );
+}
+
+#[test]
+fn an_init_file_outside_the_base_context_or_without_the_code_is_a_load_error() {
+    // Verifies: ADR-0023
+    for (text, named) in [
+        (
+            "MAP LAYER PROJECTION 'init=../epsg2:42304' END END END",
+            "../epsg2",
+        ),
+        (
+            "MAP LAYER PROJECTION 'init=/etc/epsg2:42304' END END END",
+            "/etc/epsg2",
+        ),
+        (
+            "MAP LAYER PROJECTION 'init=./data/missing:42304' END END END",
+            "data/missing",
+        ),
+        (
+            "MAP LAYER PROJECTION 'init=./data/epsg2:4' END END END",
+            "`4`",
+        ),
+        (
+            "MAP LAYER PROJECTION 'init=./data/epsg2:1' END END END",
+            "grid",
+        ),
+    ] {
+        let loaded = layer_projection(&[("m.map", text), ("data/epsg2", EPSG2)]);
+        assert!(loaded.document.is_none(), "{text}");
+        assert_eq!(codes(&loaded), ["projection-unresolved"], "{text}");
+        assert!(
+            loaded.diagnostics[0].message.contains(named),
+            "{text}: {}",
+            loaded.diagnostics[0].message
+        );
+    }
+    // A name without a `/` is an authority, which only a resolver knows.
+    let loaded = layer_projection(&[
+        (
+            "m.map",
+            "MAP LAYER PROJECTION 'init=epsg2:42304' END END END",
+        ),
+        ("epsg2", EPSG2),
+    ]);
+    assert_eq!(codes(&loaded), ["projection-unresolved"]);
+    assert!(loaded.diagnostics[0].message.contains("resolver"));
+}
+
+#[test]
+fn an_init_file_is_read_once_and_counts_toward_the_size_limit() {
+    // Verifies: ADR-0023
+    let text = "MAP LAYER PROJECTION 'init=./data/epsg2:42304' END END
+      LAYER PROJECTION 'init=data/epsg2:42304' END END END";
+    let reads = std::cell::RefCell::new(Vec::new());
+    struct Counting<'a>(Files, &'a std::cell::RefCell<Vec<String>>);
+    impl ResourceLoader for Counting<'_> {
+        async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+            self.1.borrow_mut().push(path.as_str().to_owned());
+            self.0.load(path).await
+        }
+    }
+    let files = Files(
+        [("m.map", text), ("data/epsg2", EPSG2)]
+            .into_iter()
+            .collect(),
+    );
+    let loaded = block_on(load(
+        &ResourcePath::new("m.map").unwrap(),
+        &Counting(files, &reads),
+        None,
+    ));
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(*reads.borrow(), ["m.map", "data/epsg2"]);
+    let big: &'static str = Box::leak("#".repeat(super::MAX_TOTAL_BYTES).into_boxed_str());
+    let loaded = layer_projection(&[("m.map", text), ("data/epsg2", big)]);
+    assert_eq!(codes(&loaded), ["mapfile-too-large"]);
+}

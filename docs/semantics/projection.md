@@ -12,9 +12,20 @@ difference). Reprojection itself is not yet drawn.
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the
 host passes in (ADR-0023); without one, or for a code it does not know, it is a load error. As in
 PROJ's `pj_expand_init`, there is at most one `init=`, it is matched case-sensitively, and its
-expansion follows the explicit parameters, which take precedence. An `init=` that names a file by
-a path, such as `init=./data/epsg2:42304`, has its path as the authority and is resolved, or not,
-like any other.
+expansion follows the explicit parameters, which take precedence.
+
+**Init files.** MapServer hands `init=<file>:<code>` to PROJ, which opens a name beginning with
+`/`, `./`, or `../` as a path from the working directory and searches any other in its search
+paths, `PROJ_DATA` first, before the working directory (`pj_open_lib_internal` in PROJ's
+`src/filemanager.cpp`); msautotest runs each mapfile from its own directory. The frontend reads
+a file whose name holds a `/`, such as `./data/epsg2` or `data/epsg2`, through the resource loader
+against the main mapfile's directory inside the base context, as `INCLUDE` and `FONTSET` are
+(Q-8), once per load and within the size limit of the mapfile (Q-9), and takes the code's
+definition from it, in the format of PROJ's former `epsg` init file: `<code>` and the parameters
+up to the next `<`, `#` starting a comment. A file outside the base context, one that cannot be
+read, a code it does not hold, and a definition that names a grid file or refers on with `init=`
+are each the load error `projection-unresolved`, naming the file or the code. A name without a
+`/`, such as `epsg2`, is an authority like `epsg` and goes to the resolver (ADR-0023).
 
 **`AUTO`.** A first parameter that is `AUTO` and nothing else, in any case, leaves the projection to
 the layer's source: `msProcessProjection` sets no PROJ object for it, and the source declares one

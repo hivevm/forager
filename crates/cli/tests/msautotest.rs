@@ -1,6 +1,6 @@
 //! The conformance suite, msautotest at the pinned MapServer release. G-1: every mapfile loads
 //! through the CLI, with the suite's directory as the base context, without a diagnostic of
-//! severity error, or, where its only errors are the suite's init file named by a path, in-process
+//! severity error, or, where its only errors are the suite's init file named bare, in-process
 //! with a stand-in for that file. G-3: the style IR of every one survives YAML and JSON unchanged.
 //! `scripts/check-rust.sh` fetches the suite with `scripts/fetch-msautotest.sh`, which holds the
 //! pin, and runs these tests with `FORAGER_MSAUTOTEST` naming it; `cargo test` alone skips them,
@@ -70,17 +70,18 @@ const EPSG_CODES: &[u32] = &[
     2157, 3347, 3395, 3978, 21781, 25833, 26711, 26915, 26917, 27700, 102977,
 ];
 
-/// The suite's own init file, `wxs/data/epsg2`, which its mapfiles name by a path, as in
-/// `init=./data/epsg2:42304`. A resolver has no such file yet, so the CLI fails these mapfiles;
-/// the test loads them again with a stand-in for the file.
+/// The suite's own init file, `wxs/data/epsg2`. Named by a path, as in `init=./data/epsg2:42304`,
+/// the frontend reads it (ADR-0023); named bare, as `init=epsg2:42304`, PROJ finds it through
+/// `PROJ_DATA`, which msautotest's run sets and the CLI has no counterpart of, so the CLI fails
+/// that mapfile and the test loads it again with a stand-in for the file.
 const INIT_FILE: &str = "epsg2";
 
-/// The suite's EPSG codes, and a stand-in for every code of its init file.
+/// The suite's EPSG codes, and a stand-in for every code of its init file named bare.
 struct StandIn(EpsgTable);
 
 impl ProjectionResolver for StandIn {
     fn resolve(&self, authority: &str, code: &str) -> Option<String> {
-        if authority.rsplit('/').next() == Some(INIT_FILE) {
+        if authority == INIT_FILE {
             return Some("+proj=longlat +datum=WGS84 +no_defs".to_owned());
         }
         self.0.resolve(authority, code)
@@ -127,6 +128,7 @@ fn epsg_table() -> String {
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_mapfile_loads_without_an_error() {
     // Verifies: G-1
+    // Verifies: ADR-0023
     let suite = suite();
     let table =
         std::env::temp_dir().join(format!("forager-msautotest-{}.epsg", std::process::id()));
@@ -160,7 +162,7 @@ fn every_msautotest_mapfile_loads_without_an_error() {
         let errors: Vec<&str> = stderr.lines().filter(|l| l.contains(" error ")).collect();
         let only_init_file = !errors.is_empty()
             && errors.iter().all(|l| {
-                l.contains("[projection-unresolved]") && l.contains(&format!("{INIT_FILE}:"))
+                l.contains("[projection-unresolved]") && l.contains(&format!("`init={INIT_FILE}:"))
             });
         if output.status.success() {
             loaded += 1;
@@ -179,6 +181,11 @@ fn every_msautotest_mapfile_loads_without_an_error() {
         }
     }
     std::fs::remove_file(&table).unwrap();
+    assert!(
+        with_init_file <= 1,
+        "{with_init_file} mapfiles needed the stand-in; only the one that names the init file bare \
+         may (ADR-0023)"
+    );
 
     assert_eq!(
         skipped,

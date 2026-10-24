@@ -11,6 +11,7 @@ use forager_style_ir::{
 };
 
 use crate::expression;
+use crate::init_file::InitFile;
 use crate::lexer::{Token, TokenKind};
 use crate::syntax::{Block, Directive, Node};
 
@@ -50,6 +51,8 @@ pub struct Files<'a> {
     pub main: &'a ResourcePath,
     pub symbol_set: Option<&'a (ResourcePath, Block)>,
     pub font_set: Option<&'a (ResourcePath, String)>,
+    /// The init files the projections name by a path, by the name as written (ADR-0023).
+    pub init_files: &'a BTreeMap<String, Result<InitFile, String>>,
 }
 
 /// Translates the `MAP` block of a mapfile read from `files`.
@@ -63,6 +66,7 @@ pub fn translate(
     let symbol_set = files.symbol_set;
     let mut t = Translator {
         resolver,
+        init_files: files.init_files,
         diagnostics,
         symbols: Vec::new(),
         fonts: BTreeMap::new(),
@@ -95,6 +99,7 @@ pub fn translate(
 
 struct Translator<'a> {
     resolver: Option<&'a dyn ProjectionResolver>,
+    init_files: &'a BTreeMap<String, Result<InitFile, String>>,
     diagnostics: &'a mut Vec<Diagnostic>,
     /// The map's symbols, read before its layers so that a style's reference resolves.
     symbols: Vec<Symbol>,
@@ -860,18 +865,13 @@ impl Translator<'_> {
                         self.error("invalid-value", message, &token.span);
                         return None;
                     }
-                    let resolved = reference
-                        .split_once(':')
-                        .and_then(|(authority, code)| self.resolver?.resolve(authority, code));
-                    let Some(resolved) = resolved else {
-                        let message = match self.resolver {
-                            Some(_) => format!("`{param}` is not a projection the resolver knows"),
-                            None => {
-                                format!("`{param}` needs a projection resolver, and none is given")
-                            }
-                        };
-                        self.error("projection-unresolved", &message, &token.span);
-                        return None;
+                    let resolved = match self.resolve(reference) {
+                        Ok(resolved) => resolved,
+                        Err(why) => {
+                            let message = format!("`{param}`: {why}");
+                            self.error("projection-unresolved", &message, &token.span);
+                            return None;
+                        }
                     };
                     expansion = Some(
                         resolved
@@ -886,6 +886,31 @@ impl Translator<'_> {
         }
         params.extend(expansion.unwrap_or_default());
         (!params.is_empty()).then(|| LayerProjection::Proj4(params.join(" ")))
+    }
+
+    /// The definition `init=<reference>` names: from the init file the mapfile names when its
+    /// file name holds a `/`, else from the host's resolver, with `<file>` as the authority
+    /// (ADR-0023).
+    fn resolve(&self, reference: &str) -> Result<String, String> {
+        let Some((file, code)) = reference.split_once(':') else {
+            return Err("a projection is named as `<authority>:<code>`".to_owned());
+        };
+        if file.contains('/') {
+            let init_file = self
+                .init_files
+                .get(file)
+                .ok_or_else(|| format!("the init file `{file}` was not read"))?;
+            return match init_file {
+                Ok(init_file) => init_file.definition(code).map(str::to_owned),
+                Err(why) => Err(why.clone()),
+            };
+        }
+        match self.resolver {
+            Some(resolver) => resolver
+                .resolve(file, code)
+                .ok_or_else(|| "it is not a projection the resolver knows".to_owned()),
+            None => Err("it needs a projection resolver, and none is given".to_owned()),
+        }
     }
 
     /// A directive not carried over, unless the parser has already warned that it is unknown.

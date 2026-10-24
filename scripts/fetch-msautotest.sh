@@ -41,5 +41,5 @@ fi
 git -C "$DIR" sparse-checkout set --no-cone \
   '/msautotest/**/*.map' '/msautotest/**/*.MAP' '/msautotest/**/*.inc' \
   '/msautotest/**/*.include' '/msautotest/**/*.sym' '/msautotest/**/*.txt' \
-  '/msautotest/**/*symbolset' '/msautotest/**/*.lst' >&2
+  '/msautotest/**/*symbolset' '/msautotest/**/*.lst' '/msautotest/**/epsg2' >&2
 echo "$DIR/msautotest"
