@@ -122,6 +122,7 @@ docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
 docs/plan/            # feature specs and their tickets, deleted as their work lands (ADR-0006)
 examples/web/         # the browser example: a page, a sample mapfile, and its GeoJSON
+fuzz/                 # the fuzz targets of Q-3, run weekly by scripts/fuzz.sh (own workspace)
 Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0009)
 crates/               # the crates, one per responsibility: style-ir, mapfile, engine, cli, …
 rust-toolchain.toml   # the pinned Rust toolchain (ADR-0008)
