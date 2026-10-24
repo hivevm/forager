@@ -138,6 +138,13 @@ impl StyleDocument {
                 let message = format!("format version {theirs}, migrated: {e}");
                 Diagnostic::error("format-migration-failed", message, None)
             })?;
+        // What the steps leave unknown, the document's own version did not know either.
+        if let Some(field) = ignored.first() {
+            let message = format!(
+                "format version {theirs} has no field {field}; this build reads {FORMAT_VERSION}"
+            );
+            return Err(Diagnostic::error("unknown-field", message, None));
+        }
         let mut read = document.checked(ignored)?;
         let message =
             format!("the document was migrated from format version {theirs} to {FORMAT_VERSION}");
@@ -530,6 +537,7 @@ mod tests {
 
     #[test]
     fn an_older_major_is_migrated_step_by_step() {
+        // Verifies: ADR-0020
         let json = r##"{"version":"0.3","map":{"name":"m","colour":"#010203"}}"##;
         let yaml = "version: \"0.3\"\nmap:\n  name: m\n  colour: \"#010203\"\n";
         for read in [
@@ -564,6 +572,10 @@ mod tests {
         let json = r#"{"version":"0.1","map":{"glow":1}}"#;
         let error = StyleDocument::from_json_with(json, FIXTURE).unwrap_err();
         assert_eq!(error.code, "unknown-field");
+        assert_eq!(
+            error.message,
+            "format version 0.1 has no field /map/glow; this build reads 1.0"
+        );
     }
 
     #[test]
