@@ -3,6 +3,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::expression::Keys;
 use crate::{Expr, Span};
 
 /// A map: its image, its extent, and its layers in drawing order.
@@ -542,8 +543,9 @@ pub enum Units {
 }
 
 /// A style property that may vary by feature: a value, a property bound as MapServer binds an
-/// attribute, or an expression (ADR-0019).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// attribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value
+/// before an expression, but an object by its keys, so that a key it does not know is named.
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum Bound<T> {
@@ -556,6 +558,65 @@ pub enum Bound<T> {
         binding: String,
     },
     Expr(Expr),
+}
+
+struct BoundVisitor<T>(std::marker::PhantomData<T>);
+
+impl<'de, T: Deserialize<'de>> BoundVisitor<T> {
+    /// The value, if `T` reads from `scalar`, else the expression `literal`.
+    fn value<E: serde::de::Error>(
+        scalar: impl serde::de::IntoDeserializer<'de, serde::de::value::Error>,
+        literal: Expr,
+    ) -> Result<Bound<T>, E> {
+        Ok(T::deserialize(scalar.into_deserializer()).map_or(Bound::Expr(literal), Bound::Value))
+    }
+}
+
+impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for BoundVisitor<T> {
+    type Value = Bound<T>;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("a value, a binding, or an expression")
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Bound<T>, E> {
+        Self::value(v, Expr::Bool(v))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Bound<T>, E> {
+        Self::value(v, Expr::Number(v as f64))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Bound<T>, E> {
+        Self::value(v, Expr::Number(v as f64))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Bound<T>, E> {
+        Self::value(v, Expr::Number(v))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Bound<T>, E> {
+        Self::value(v.to_owned(), Expr::String(v.to_owned()))
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, seq: A) -> Result<Bound<T>, A::Error> {
+        let seq = serde::de::value::SeqAccessDeserializer::new(seq);
+        Expr::deserialize(seq).map(Bound::Expr)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Bound<T>, A::Error> {
+        let mut keys = Keys::read(map, true)?;
+        match keys.binding.take() {
+            Some(binding) => Ok(Bound::Binding { binding }),
+            None => keys.expr("Bound").map(Bound::Expr),
+        }
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Bound<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(BoundVisitor(std::marker::PhantomData))
+    }
 }
 
 impl<T: Copy> Bound<T> {

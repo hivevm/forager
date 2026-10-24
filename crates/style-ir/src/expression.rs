@@ -1,7 +1,10 @@
 //! Expressions of the style IR: a lean CQL2 tree, serialized in the shape of CQL2-JSON
 //! (ADR-0019). What CQL2 lacks is written as functions in the same `{"op", "args"}` shape.
 
-use serde::{Deserialize, Serialize};
+use std::fmt;
+
+use serde::de::{self, IgnoredAny, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// How deep an expression may nest (Q-9). A deeper one is refused where it is read, from a
 /// mapfile or from a style document. Each level is two levels of a YAML or JSON document, so
@@ -9,8 +12,9 @@ use serde::{Deserialize, Serialize};
 pub const MAX_EXPRESSION_DEPTH: usize = 24;
 
 /// An expression: a literal, a property of the feature, a list, a time, or an operator or
-/// function applied to its arguments.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// function applied to its arguments. It is read by the keys of its object, as CQL2-JSON tells
+/// its alternatives apart, so that a key it does not know is named like any other field.
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum Expr {
@@ -137,6 +141,122 @@ impl Expr {
             }
         }
         deepest
+    }
+}
+
+/// The keys of an expression's object, or of a binding's, read one by one. A key this build
+/// does not know is read as ignored, so that the style document's reader names it with its path
+/// (ADR-0020), where an untagged enum would have skipped it unseen.
+#[derive(Default)]
+pub(crate) struct Keys {
+    op: Option<Op>,
+    args: Option<Vec<Expr>>,
+    property: Option<String>,
+    date: Option<String>,
+    timestamp: Option<String>,
+    pub(crate) binding: Option<String>,
+}
+
+/// The error of an object that is no expression, worded as serde words that of an untagged
+/// enum, which the reader of a newer minor recognizes.
+pub(crate) fn no_variant<E: de::Error>(name: &str) -> E {
+    E::custom(format!(
+        "data did not match any variant of untagged enum {name}"
+    ))
+}
+
+impl Keys {
+    /// Reads the keys of `map`; `binding` is a key only where a binding may stand.
+    pub(crate) fn read<'de, A: MapAccess<'de>>(
+        mut map: A,
+        binding: bool,
+    ) -> Result<Self, A::Error> {
+        let mut keys = Keys::default();
+        while let Some(key) = map.next_key::<String>()? {
+            match key.as_str() {
+                "op" => keys.op = Some(map.next_value()?),
+                "args" => keys.args = Some(map.next_value()?),
+                "property" => keys.property = Some(map.next_value()?),
+                "date" => keys.date = Some(map.next_value()?),
+                "timestamp" => keys.timestamp = Some(map.next_value()?),
+                "binding" if binding => keys.binding = Some(map.next_value()?),
+                _ => {
+                    map.next_value::<IgnoredAny>()?;
+                }
+            }
+        }
+        Ok(keys)
+    }
+
+    /// The expression the keys make, or the error `name` gives for an object that is none.
+    pub(crate) fn expr<E: de::Error>(self, name: &str) -> Result<Expr, E> {
+        match self {
+            Keys {
+                op: Some(op),
+                args: Some(args),
+                ..
+            } => Ok(Expr::Call { op, args }),
+            Keys {
+                property: Some(property),
+                ..
+            } => Ok(Expr::Property { property }),
+            Keys {
+                date: Some(date), ..
+            } => Ok(Expr::Date { date }),
+            Keys {
+                timestamp: Some(timestamp),
+                ..
+            } => Ok(Expr::Timestamp { timestamp }),
+            _ => Err(no_variant(name)),
+        }
+    }
+}
+
+struct ExprVisitor;
+
+impl<'de> Visitor<'de> for ExprVisitor {
+    type Value = Expr;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("an expression")
+    }
+
+    fn visit_bool<E: de::Error>(self, v: bool) -> Result<Expr, E> {
+        Ok(Expr::Bool(v))
+    }
+
+    fn visit_i64<E: de::Error>(self, v: i64) -> Result<Expr, E> {
+        Ok(Expr::Number(v as f64))
+    }
+
+    fn visit_u64<E: de::Error>(self, v: u64) -> Result<Expr, E> {
+        Ok(Expr::Number(v as f64))
+    }
+
+    fn visit_f64<E: de::Error>(self, v: f64) -> Result<Expr, E> {
+        Ok(Expr::Number(v))
+    }
+
+    fn visit_str<E: de::Error>(self, v: &str) -> Result<Expr, E> {
+        Ok(Expr::String(v.to_owned()))
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Expr, A::Error> {
+        let mut items = Vec::new();
+        while let Some(item) = seq.next_element()? {
+            items.push(item);
+        }
+        Ok(Expr::List(items))
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Expr, A::Error> {
+        Keys::read(map, false)?.expr("Expr")
+    }
+}
+
+impl<'de> Deserialize<'de> for Expr {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(ExprVisitor)
     }
 }
 

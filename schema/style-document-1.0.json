@@ -44,7 +44,7 @@
       ]
     },
     "Bound": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "type": "string"
@@ -67,7 +67,7 @@
       ]
     },
     "Bound2": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "type": "number",
@@ -91,7 +91,7 @@
       ]
     },
     "Bound3": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "$ref": "#/$defs/Rgba"
@@ -114,7 +114,7 @@
       ]
     },
     "Bound4": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "$ref": "#/$defs/Position"
@@ -137,7 +137,7 @@
       ]
     },
     "Bound5": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "$ref": "#/$defs/Align"
@@ -160,7 +160,7 @@
       ]
     },
     "Bound6": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019).",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "$ref": "#/$defs/SymbolRef"
@@ -242,7 +242,7 @@
       }
     },
     "Expr": {
-      "description": "An expression: a literal, a property of the feature, a list, a time, or an operator or\nfunction applied to its arguments.",
+      "description": "An expression: a literal, a property of the feature, a list, a time, or an operator or\nfunction applied to its arguments. It is read by the keys of its object, as CQL2-JSON tells\nits alternatives apart, so that a key it does not know is named like any other field.",
       "anyOf": [
         {
           "type": "boolean"

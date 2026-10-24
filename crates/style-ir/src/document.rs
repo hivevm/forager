@@ -106,6 +106,22 @@ fn required_dropped(
     Some(Diagnostic::error("unknown-value", message, None))
 }
 
+/// The keys of an expression's or a binding's object, which no other part of the IR has.
+const EXPRESSION_KEYS: [&str; 6] = ["op", "args", "property", "date", "timestamp", "binding"];
+
+/// Where on `path` the outermost expression or binding it runs into begins: the path without
+/// the keys of expressions and the indices of their arguments at its end.
+fn expression_start(path: &[Segment]) -> usize {
+    let mut end = path.len();
+    loop {
+        match &path[..end] {
+            [.., Segment::Key(key)] if EXPRESSION_KEYS.contains(&key.as_str()) => end -= 1,
+            [.., Segment::Key(args), Segment::Index(_)] if args == "args" => end -= 1,
+            _ => return end,
+        }
+    }
+}
+
 /// Whether `path` is that of a layer's filter or a class's expression: a condition, which is
 /// kept and never matches when it does not read.
 fn condition(path: &[Segment]) -> bool {
@@ -296,12 +312,15 @@ impl StyleDocument {
             };
             let path = segments(error.path());
             let reason = error.inner().to_string();
+            // What failed inside an expression or a binding is the whole one's.
+            let slot = &path[..expression_start(&path)];
+            let inside = slot.len() < path.len();
             // The field that holds what did not read: the nearest key on its path.
-            let Some(key_at) = path.iter().rposition(|s| matches!(s, Segment::Key(_))) else {
+            let Some(key_at) = slot.iter().rposition(|s| matches!(s, Segment::Key(_))) else {
                 return Err(read_error(code, &error));
             };
-            let at = segments_pointer(&path[..=key_at]);
-            let Some(failed) = value.pointer(&segments_pointer(&path)).cloned() else {
+            let at = segments_pointer(&slot[..=key_at]);
+            let Some(failed) = value.pointer(&segments_pointer(slot)).cloned() else {
                 return Err(read_error(code, &error));
             };
             if let Some(error) = required_dropped(&reason, &path, &removed) {
@@ -312,9 +331,9 @@ impl StyleDocument {
                 other => other.to_string(),
             };
             // Only an expression, which serde reads as an untagged enum, holds operators.
-            let untagged = reason.contains("untagged enum");
+            let untagged = inside || reason.contains("untagged enum");
             let operator = untagged.then(|| unknown_operator(&failed)).flatten();
-            let warning = if condition(&path[..=key_at]) {
+            let warning = if condition(&slot[..=key_at]) {
                 // A class or filter that does not read is kept and never matches; dropped, it
                 // would match every feature.
                 let field = value
@@ -929,7 +948,7 @@ mod tests {
         assert!(
             error
                 .message
-                .starts_with("/map/layers/0/classes/0/expression: "),
+                .starts_with("/map/layers/0/classes/0/expression/op: "),
             "{}",
             error.message
         );
@@ -1004,5 +1023,64 @@ mod tests {
         let json = format!(r#"{{"version":"1.9","map":{{"layers":[{{"filter":{filter}}}]}}}}"#);
         let error = StyleDocument::from_json(&json).unwrap_err();
         assert_eq!(error.code, "expression-too-deep");
+    }
+
+    /// The document of revision ticket 09: an unknown key in a property, in a call, and in a
+    /// binding.
+    fn unknown_keys_inside(version: &str) -> String {
+        format!(
+            r#"{{"version":"{version}","map":{{"layers":[{{"filter":{{"op":"=","args":[{{"property":"a","glow":1}},1],"flags":"x"}},
+               "classes":[{{"styles":[{{"width":{{"binding":"w","glow":2}}}}]}}]}}]}}}}"#
+        )
+    }
+
+    #[test]
+    fn an_unknown_key_inside_an_expression_or_a_binding_is_an_unknown_field() {
+        // Verifies: ADR-0020
+        let json = unknown_keys_inside("1.0");
+        let error = StyleDocument::from_json(&json).unwrap_err();
+        assert_eq!(error.code, "unknown-field");
+        assert!(
+            error.message.contains("/map/layers/0/filter/"),
+            "{}",
+            error.message
+        );
+        let read = StyleDocument::from_json(&unknown_keys_inside("1.9")).unwrap();
+        let mut fields: Vec<_> = read.warnings.iter().map(|w| w.message.as_str()).collect();
+        fields.sort_unstable();
+        assert_eq!(
+            fields,
+            [
+                "/map/layers/0/classes/0/styles/0/width/glow is unknown to format version 1.0 and is ignored",
+                "/map/layers/0/filter/args/0/glow is unknown to format version 1.0 and is ignored",
+                "/map/layers/0/filter/flags is unknown to format version 1.0 and is ignored",
+            ]
+        );
+        let layer = &read.document.map.layers[0];
+        assert_eq!(
+            layer.filter,
+            Some(Expr::call(
+                Op::Eq,
+                vec![Expr::property("a"), Expr::Number(1.0)]
+            ))
+        );
+        assert_eq!(
+            layer.classes[0].styles[0].width,
+            Some(Bound::Binding {
+                binding: "w".into()
+            })
+        );
+    }
+
+    #[test]
+    fn an_unknown_key_inside_an_expression_is_an_error_in_yaml_too() {
+        let yaml = "version: \"1.0\"\nmap:\n  layers:\n  - filter: {op: '=', args: [{property: a, glow: 1}, 1]}\n";
+        let error = StyleDocument::from_yaml(yaml).unwrap_err();
+        assert_eq!(error.code, "unknown-field");
+        assert!(
+            error.message.contains("/map/layers/0/filter/args/0/glow"),
+            "{}",
+            error.message
+        );
     }
 }
