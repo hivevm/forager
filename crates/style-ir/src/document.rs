@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::migration::{self, STEPS, Step};
 use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, Map};
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
@@ -10,6 +11,27 @@ pub const FORMAT_VERSION: &str = "1.0";
 pub struct Read {
     pub document: StyleDocument,
     pub warnings: Vec<Diagnostic>,
+}
+
+/// The major and minor of a format version `MAJOR.MINOR`; a bare `MAJOR` has the minor 0.
+fn version(text: &str) -> Option<(u32, u32)> {
+    let (major, minor) = text.split_once('.').unwrap_or((text, "0"));
+    Some((major.parse().ok()?, minor.parse().ok()?))
+}
+
+/// The major of a document's version where it is older than this build's, read before the
+/// document itself, whose shape that version decides.
+fn older_major(document: Option<Versioned>) -> Option<(String, u32)> {
+    let theirs = document?.version;
+    let (major, _) = version(&theirs)?;
+    let (current, _) = version(FORMAT_VERSION)?;
+    (major < current).then_some((theirs, major))
+}
+
+/// A document's version alone.
+#[derive(Deserialize)]
+struct Versioned {
+    version: String,
 }
 
 /// The JSON Pointer (RFC 6901) of a place in a document.
@@ -56,6 +78,23 @@ impl StyleDocument {
 
     /// Reads a document from YAML, with the warnings of reading it (ADR-0020).
     pub fn from_yaml(text: &str) -> Result<Read, Diagnostic> {
+        Self::from_yaml_with(text, STEPS)
+    }
+
+    /// Reads a document from JSON, with the warnings of reading it (ADR-0020).
+    pub fn from_json(text: &str) -> Result<Read, Diagnostic> {
+        Self::from_json_with(text, STEPS)
+    }
+
+    /// [`StyleDocument::from_yaml`] with the migration steps `steps`, for the tests and the fuzz
+    /// target that exercise the chain before a second major exists.
+    #[doc(hidden)]
+    pub fn from_yaml_with(text: &str, steps: &[Step]) -> Result<Read, Diagnostic> {
+        if let Some((theirs, major)) = older_major(serde_saphyr::from_str(text).ok()) {
+            let value = serde_saphyr::from_str(text)
+                .map_err(|e| Diagnostic::error("yaml-read", e.to_string(), None))?;
+            return Self::migrated(value, &theirs, major, steps);
+        }
         let mut ignored = Vec::new();
         let document: Self = serde_saphyr::with_deserializer_from_str(text, |de| {
             serde_ignored::deserialize(de, |path| ignored.push(pointer(&path)))
@@ -64,8 +103,14 @@ impl StyleDocument {
         document.checked(ignored)
     }
 
-    /// Reads a document from JSON, with the warnings of reading it (ADR-0020).
-    pub fn from_json(text: &str) -> Result<Read, Diagnostic> {
+    /// [`StyleDocument::from_json`] with the migration steps `steps`.
+    #[doc(hidden)]
+    pub fn from_json_with(text: &str, steps: &[Step]) -> Result<Read, Diagnostic> {
+        if let Some((theirs, major)) = older_major(serde_json::from_str(text).ok()) {
+            let value = serde_json::from_str(text)
+                .map_err(|e| Diagnostic::error("json-read", e.to_string(), None))?;
+            return Self::migrated(value, &theirs, major, steps);
+        }
         let mut ignored = Vec::new();
         let mut deserializer = serde_json::Deserializer::from_str(text);
         let read = serde_ignored::deserialize(&mut deserializer, |path| {
@@ -76,15 +121,36 @@ impl StyleDocument {
         document.checked(ignored)
     }
 
+    /// Reads `value`, a document of the older format version `theirs` with the major `major`,
+    /// migrated to the current major and then read as that version is, with a warning naming the
+    /// version it came from.
+    fn migrated(
+        value: serde_json::Value,
+        theirs: &str,
+        major: u32,
+        steps: &[Step],
+    ) -> Result<Read, Diagnostic> {
+        let current = version(FORMAT_VERSION).map_or(major, |(current, _)| current);
+        let value = migration::migrate(value, theirs, major, current, steps)?;
+        let mut ignored = Vec::new();
+        let document: Self = serde_ignored::deserialize(value, |path| ignored.push(pointer(&path)))
+            .map_err(|e| {
+                let message = format!("format version {theirs}, migrated: {e}");
+                Diagnostic::error("format-migration-failed", message, None)
+            })?;
+        let mut read = document.checked(ignored)?;
+        let message =
+            format!("the document was migrated from format version {theirs} to {FORMAT_VERSION}");
+        read.warnings
+            .insert(0, Diagnostic::warning("format-migrated", message, None));
+        Ok(read)
+    }
+
     /// Checks the format version, and decides on the fields the reader did not know, `ignored`
     /// by their JSON Pointer: a newer minor than this build's may have them, each a warning, and
     /// its document is read without them; in the current or an older minor, no version this
     /// build knows has them, so the first is a load error.
     fn checked(self, ignored: Vec<String>) -> Result<Read, Diagnostic> {
-        let version = |v: &str| {
-            let (major, minor) = v.split_once('.').unwrap_or((v, "0"));
-            Some((major.parse::<u32>().ok()?, minor.parse::<u32>().ok()?))
-        };
         match (version(&self.version), version(FORMAT_VERSION)) {
             (Some(theirs), Some(ours)) if theirs.0 == ours.0 => {
                 let newer_minor = theirs.1 > ours.1;
@@ -159,6 +225,7 @@ mod tests {
         LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset, MinFeatureSize, Op, Position,
         RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
     };
+    use serde_json::Value;
 
     fn sample() -> StyleDocument {
         StyleDocument::new(Map {
@@ -442,5 +509,79 @@ mod tests {
             "yaml-read"
         );
         assert_eq!(StyleDocument::from_json("{").unwrap_err().code, "json-read");
+    }
+
+    /// A fixture step from the test-only major 0: `colour` became `image_color`.
+    fn rename_colour(mut value: Value) -> Result<Value, String> {
+        let map = value
+            .get_mut("map")
+            .and_then(Value::as_object_mut)
+            .ok_or("a document of major 0 has a map")?;
+        if let Some(colour) = map.remove("colour") {
+            map.insert("image_color".to_owned(), colour);
+        }
+        Ok(value)
+    }
+
+    const FIXTURE: &[Step] = &[Step {
+        from_major: 0,
+        migrate: rename_colour,
+    }];
+
+    #[test]
+    fn an_older_major_is_migrated_step_by_step() {
+        let json = r##"{"version":"0.3","map":{"name":"m","colour":"#010203"}}"##;
+        let yaml = "version: \"0.3\"\nmap:\n  name: m\n  colour: \"#010203\"\n";
+        for read in [
+            StyleDocument::from_json_with(json, FIXTURE),
+            StyleDocument::from_yaml_with(yaml, FIXTURE),
+        ] {
+            let read = read.unwrap();
+            assert_eq!(read.document.version, FORMAT_VERSION);
+            assert_eq!(read.document.map.image_color, Some(Rgba::opaque(1, 2, 3)));
+            let messages: Vec<_> = read.warnings.iter().map(|w| w.message.as_str()).collect();
+            assert_eq!(
+                messages,
+                ["the document was migrated from format version 0.3 to 1.0"]
+            );
+        }
+    }
+
+    #[test]
+    fn an_older_major_without_a_step_is_a_load_error() {
+        let json = r#"{"version":"0.3","map":{}}"#;
+        let error = StyleDocument::from_json(json).unwrap_err();
+        assert_eq!(error.code, "format-version-unsupported");
+        assert!(error.message.contains("0.3"), "{}", error.message);
+    }
+
+    #[test]
+    fn a_failing_step_is_a_load_error() {
+        let error =
+            StyleDocument::from_json_with(r#"{"version":"0.1","map":[]}"#, FIXTURE).unwrap_err();
+        assert_eq!(error.code, "format-migration-failed");
+        // What a step leaves unknown to the current version is the old document's own error.
+        let json = r#"{"version":"0.1","map":{"glow":1}}"#;
+        let error = StyleDocument::from_json_with(json, FIXTURE).unwrap_err();
+        assert_eq!(error.code, "unknown-field");
+    }
+
+    #[test]
+    fn newer_minors_are_lenient_newer_majors_refused_older_majors_migrated() {
+        // Verifies: G-4
+        let newer_minor = r#"{"version":"1.9","map":{"name":"m","glow":1}}"#;
+        let read = StyleDocument::from_json(newer_minor).unwrap();
+        assert_eq!(read.document.map.name.as_deref(), Some("m"));
+        assert_eq!(
+            read.warnings[0].message,
+            "/map/glow is unknown to format version 1.0 and is ignored"
+        );
+        let newer_major = r#"{"version":"2.0","map":{}}"#;
+        let error = StyleDocument::from_json(newer_major).unwrap_err();
+        assert_eq!(error.code, "format-version-unsupported");
+        let older_major = r##"{"version":"0.3","map":{"colour":"#010203"}}"##;
+        let read = StyleDocument::from_json_with(older_major, FIXTURE).unwrap();
+        assert_eq!(read.document.map.image_color, Some(Rgba::opaque(1, 2, 3)));
+        assert_eq!(read.warnings[0].code, "format-migrated");
     }
 }
