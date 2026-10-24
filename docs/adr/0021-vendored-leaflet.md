@@ -1,6 +1,6 @@
 # ADR-0021: The browser example loads third-party JavaScript only from copies vendored in the tree and checked by checksum
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `examples/web/`, its `vendor/` directory, and every JavaScript library the example loads
