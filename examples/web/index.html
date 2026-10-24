@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forager example</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #dcdcd6;
+    --accent: #2f6f4f; --warning: #8a6200; --error: #a12a2a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161715; --panel: #1f201e; --text: #ececea; --muted: #a3a39d; --line: #34352f;
+      --accent: #7cc39b; --warning: #e0b44c; --error: #ef7d7d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.lead { margin: 0 0 20px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+            padding: 14px; min-width: 0; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+       margin: 0 0 10px; }
+  textarea, input { width: 100%; background: var(--bg); color: var(--text);
+                    border: 1px solid var(--line); border-radius: 6px; padding: 8px;
+                    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  textarea { resize: vertical; }
+  #mapfile { height: 340px; }
+  .source { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+  .source label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .source textarea { height: 120px; margin-top: 6px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  button { background: var(--accent); color: var(--bg); border: 0; border-radius: 6px;
+           padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent);
+                     border: 1px solid var(--accent); }
+  canvas { display: block; max-width: 100%; height: auto; border: 1px solid var(--line);
+           border-radius: 4px; background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+  #status { color: var(--muted); font-size: 13px; }
+  ul#diagnostics { list-style: none; padding: 0; margin: 12px 0 0;
+                   font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #diagnostics li { padding: 4px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+  .warning { color: var(--warning); } .error { color: var(--error); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Forager in the browser</h1>
+  <p class="lead">A mapfile and GeoJSON for its layers, rendered by Forager's WebAssembly build.
+    GeoJSON is bound to the layer whose NAME you give.</p>
+  <div class="grid">
+    <section>
+      <h2>Mapfile</h2>
+      <textarea id="mapfile" spellcheck="false" aria-label="Mapfile"></textarea>
+      <h2 style="margin-top: 16px">GeoJSON by layer</h2>
+      <div id="sources"></div>
+      <div class="row">
+        <button class="secondary" id="add">Add source</button>
+      </div>
+    </section>
+    <section>
+      <h2>Map</h2>
+      <canvas id="map" width="640" height="400"></canvas>
+      <div class="row">
+        <button id="render" disabled>Render</button>
+        <span id="status">Loading…</span>
+      </div>
+      <ul id="diagnostics" aria-live="polite"></ul>
+    </section>
+  </div>
+</main>
+<script type="module">
+  // Imported dynamically, so that a missing bundle is reported on the page.
+  let render;
+
+  const sources = document.getElementById("sources");
+  const status = document.getElementById("status");
+
+  function addSource(layer = "", geojson = "") {
+    const row = document.createElement("div");
+    row.className = "source";
+    row.innerHTML = `<label>Layer NAME</label><input class="layer" spellcheck="false">
+      <textarea class="geojson" spellcheck="false" aria-label="GeoJSON"></textarea>`;
+    row.querySelector(".layer").value = layer;
+    row.querySelector(".geojson").value = geojson;
+    sources.append(row);
+  }
+
+  function draw() {
+    try {
+      drawMap();
+    } catch (error) {
+      status.textContent = `Rendering failed: ${error}`;
+    }
+  }
+
+  function drawMap() {
+    const bound = {};
+    for (const row of sources.querySelectorAll(".source")) {
+      const layer = row.querySelector(".layer").value.trim();
+      if (layer) bound[layer] = row.querySelector(".geojson").value;
+    }
+    const started = performance.now();
+    const result = render(document.getElementById("mapfile").value, JSON.stringify(bound));
+    try {
+      show(result, performance.now() - started);
+    } finally {
+      result.free();
+    }
+  }
+
+  function show(result, elapsed) {
+    const canvas = document.getElementById("map");
+    const context = canvas.getContext("2d");
+    if (result.width > 0) {
+      canvas.width = result.width;
+      canvas.height = result.height;
+      const image = new ImageData(new Uint8ClampedArray(result.pixels), result.width, result.height);
+      context.putImageData(image, 0, 0);
+    } else {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    const list = document.getElementById("diagnostics");
+    list.replaceChildren();
+    for (const d of JSON.parse(result.diagnostics)) {
+      const item = document.createElement("li");
+      item.className = d.severity;
+      item.textContent = `${d.span ? d.span + ": " : ""}${d.severity} [${d.code}]: ${d.message}`;
+      list.append(item);
+    }
+    status.textContent = result.width > 0
+      ? `${result.width} × ${result.height} px in ${elapsed.toFixed(1)} ms`
+      : "The map could not be drawn; see the diagnostics.";
+  }
+
+  async function text(path) {
+    const response = await fetch(path);
+    return response.ok ? response.text() : "";
+  }
+
+  document.getElementById("add").addEventListener("click", () => addSource());
+
+  try {
+    const bundle = await import("./pkg/forager_bindings_wasm.js");
+    await bundle.default();
+    render = bundle.render;
+  } catch (error) {
+    status.textContent =
+      "The WebAssembly bundle did not load; run `bash scripts/build-web.sh` and reload.";
+    throw error;
+  }
+  const renderButton = document.getElementById("render");
+  renderButton.addEventListener("click", draw);
+  renderButton.disabled = false;
+  document.getElementById("mapfile").value = await text("sample.map");
+  for (const layer of ["areas", "roads", "places"]) {
+    addSource(layer, await text(`${layer}.geojson`));
+  }
+  draw();
+</script>
+</body>
+</html>

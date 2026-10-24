@@ -22,6 +22,7 @@ forager-adapter-geojson = { path = "crates/adapter-geojson" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde-saphyr = "2"
+wasm-bindgen = "0.2.129"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -29,3 +30,11 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 too_many_lines = "warn"
 cognitive_complexity = "warn"
+
+# The browser bundle is downloaded by every map viewer (Q-5): scripts/build-web.sh builds it with
+# this profile, optimized for size; other release builds keep the default.
+[profile.wasm]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1

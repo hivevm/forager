@@ -1,0 +1,51 @@
+# A small map in the mapfile syntax of MapServer 8: areas, roads, and places.
+MAP
+  NAME "sample"
+  EXTENT 0 0 100 60
+  SIZE 640 400
+  IMAGECOLOR "#f4f1ea"
+  LAYER
+    NAME "areas"
+    TYPE POLYGON
+    STATUS ON
+    DATA "areas.geojson"
+    CLASS
+      NAME "land use"
+      STYLE
+        COLOR 200 220 180
+        OUTLINECOLOR 90 120 80
+        WIDTH 1.5
+      END
+    END
+  END
+  LAYER
+    NAME "roads"
+    TYPE LINE
+    STATUS ON
+    DATA "roads.geojson"
+    CLASS
+      STYLE
+        COLOR 120 120 120
+        WIDTH 6
+      END
+      STYLE
+        COLOR 255 210 90
+        WIDTH 3.5
+      END
+    END
+  END
+  LAYER
+    NAME "places"
+    TYPE POINT
+    STATUS ON
+    DATA "places.geojson"
+    CLASS
+      STYLE
+        COLOR 190 40 40
+        OUTLINECOLOR 255 255 255
+        SIZE 9
+        WIDTH 1.5
+      END
+    END
+  END
+END
