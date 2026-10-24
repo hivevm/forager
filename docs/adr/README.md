@@ -94,7 +94,7 @@ is the table a session reads.
 | [0015](0015-agg-rust-rasterizer.md) | The reference renderer rasterizes with agg-rust in `render-agg`, behind clipping that keeps every coordinate near the image, with `unsafe` allowed in that crate alone | `crates/render`, `crates/render-agg`, and the `unsafe_code` lint of the workspace | 🟢 accepted |
 | [0016](0016-geojson-crate.md) | The GeoJSON adapter parses with the georust `geojson` crate | `crates/adapter-geojson` | 🟢 accepted |
 | [0017](0017-png-crate.md) | The encoder writes PNG with the image-rs `png` crate | `crates/encode` | 🟢 accepted |
-| [0018](0018-projection-resolver.md) | `init=` projections are resolved through a resolver port the host passes in, with a minimal built-in table and a host-supplied file for the rest | `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm` | 🟡 proposed |
+| [0018](0018-projection-resolver.md) | `init=` projections are resolved through a resolver port the host passes in, with a minimal built-in table and a host-supplied file for the rest | `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm` | 🟢 accepted |
 
 ### Superseded and rejected
 
