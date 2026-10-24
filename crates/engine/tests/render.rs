@@ -56,6 +56,7 @@ fn map(mode: RenderMode, style: Style) -> Map {
                 ..Class::default()
             }],
             span: Some(Span::new("m.map", 2, 1)),
+            ..Layer::default()
         }],
         ..Map::default()
     }

@@ -3,7 +3,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::Span;
+use crate::{Expr, Span};
 
 /// A map: its image, its extent, and its layers in drawing order.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -44,6 +44,9 @@ pub struct Layer {
     pub status: Option<LayerStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceRef>,
+    /// Which of the source's features the layer reads; without one, all of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<Expr>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -86,6 +89,9 @@ pub struct SourceRef {
 pub struct Class {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Which features the class draws; without one, every feature that reaches it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression: Option<Expr>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<Style>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

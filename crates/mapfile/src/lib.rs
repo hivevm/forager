@@ -2,6 +2,7 @@
 //! [`ResourceLoader`], and translates it into the style IR. It is the only crate that knows
 //! MapServer syntax.
 
+mod expression;
 mod lexer;
 mod report;
 mod syntax;

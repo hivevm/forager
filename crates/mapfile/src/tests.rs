@@ -337,3 +337,223 @@ fn an_init_projection_the_resolver_does_not_know_is_a_load_error() {
     assert_eq!(codes(&loaded), ["projection-unresolved"]);
     assert!(loaded.diagnostics[0].message.contains("epsg:27700"));
 }
+
+/// The CQL2-JSON of the expression of each class of the first layer, `null` where it has none,
+/// and of the layer's filter, after loading `text` as a mapfile.
+fn expressions(text: &'static str) -> (Loaded, Vec<String>, String) {
+    let loaded = load_files(&[("m.map", text)]);
+    let json = |e: Option<&forager_style_ir::Expr>| serde_json::to_string(&e).unwrap();
+    let (classes, filter) = match &loaded.document {
+        Some(document) => {
+            let layer = &document.map.layers[0];
+            (
+                layer
+                    .classes
+                    .iter()
+                    .map(|c| json(c.expression.as_ref()))
+                    .collect(),
+                json(layer.filter.as_ref()),
+            )
+        }
+        None => (Vec::new(), String::new()),
+    };
+    (loaded, classes, filter)
+}
+
+#[test]
+fn the_four_kinds_of_class_expression_compare_against_the_classitem() {
+    // Verifies: ADR-0019
+    let (loaded, classes, _) = expressions(
+        r#"MAP LAYER
+             CLASS EXPRESSION "road" END
+             CLASS EXPRESSION "Road"i END
+             CLASS EXPRESSION /^r.*d$/i END
+             CLASS EXPRESSION /x/ END
+             CLASS EXPRESSION {a,b,c} END
+             CLASSITEM "type"
+           END END"#,
+    );
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let item = r#"{"op":"to_string","args":[{"property":"type"}]}"#;
+    assert_eq!(
+        classes,
+        [
+            format!(r#"{{"op":"=","args":[{item},"road"]}}"#),
+            format!(
+                r#"{{"op":"=","args":[{{"op":"casei","args":[{item}]}},{{"op":"casei","args":["Road"]}}]}}"#
+            ),
+            format!(r#"{{"op":"regexp_like","args":[{item},"^r.*d$","i"]}}"#),
+            format!(r#"{{"op":"regexp_like","args":[{item},"x",""]}}"#),
+            format!(r#"{{"op":"in","args":[{item},["a","b","c"]]}}"#),
+        ]
+    );
+}
+
+#[test]
+fn a_logical_expression_states_the_type_of_each_attribute() {
+    // Verifies: ADR-0019
+    let (loaded, classes, _) = expressions(
+        r#"MAP LAYER CLASS EXPRESSION ([pop] >= 1000 AND "[name]" =* "x") END END END"#,
+    );
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        classes,
+        [concat!(
+            r#"{"op":"and","args":["#,
+            r#"{"op":">=","args":[{"op":"to_number","args":[{"property":"pop"}]},1000.0]},"#,
+            r#"{"op":"=","args":[{"op":"casei","args":[{"op":"to_string","args":[{"property":"name"}]}]},"#,
+            r#"{"op":"casei","args":["x"]}]}]}"#
+        )]
+    );
+}
+
+#[test]
+fn operators_bind_as_in_mapserver() {
+    // Verifies: ADR-0019
+    let (_, classes, _) = expressions(
+        r#"MAP LAYER
+             CLASS EXPRESSION ([a] + 2 * 3 ^ 2 ^ 1 > 5 OR NOT [b] = 1 AND [c]) END
+             CLASS EXPRESSION ("A" + "B" ~* "^a") END
+             CLASS EXPRESSION (-[d] < 0 && [e] eq 2 || ! true) END
+           END END"#,
+    );
+    let n = |p: &str| format!(r#"{{"op":"to_number","args":[{{"property":"{p}"}}]}}"#);
+    assert_eq!(
+        classes[0],
+        format!(
+            concat!(
+                r#"{{"op":"or","args":["#,
+                r#"{{"op":">","args":[{{"op":"+","args":[{a},{{"op":"*","args":[2.0,"#,
+                r#"{{"op":"^","args":[3.0,{{"op":"^","args":[2.0,1.0]}}]}}]}}]}},5.0]}},"#,
+                r#"{{"op":"and","args":[{{"op":"not","args":[{{"op":"=","args":[{b},1.0]}}]}},"#,
+                r#"{{"op":"<>","args":[{c},0.0]}}]}}]}}"#
+            ),
+            a = n("a"),
+            b = n("b"),
+            c = n("c")
+        )
+    );
+    assert_eq!(
+        classes[1],
+        r#"{"op":"regexp_like","args":[{"op":"concat","args":["A","B"]},"^a","i"]}"#
+    );
+    assert_eq!(
+        classes[2],
+        format!(
+            concat!(
+                r#"{{"op":"or","args":[{{"op":"and","args":["#,
+                r#"{{"op":"<","args":[{{"op":"*","args":[{d},-1.0]}},0.0]}},"#,
+                r#"{{"op":"=","args":[{e},2.0]}}]}},{{"op":"not","args":[true]}}]}}"#
+            ),
+            d = n("d"),
+            e = n("e")
+        )
+    );
+}
+
+#[test]
+fn a_layer_filter_splits_in_lists_at_load_and_compares_times() {
+    // Verifies: ADR-0019
+    let (loaded, _, filter) = expressions(
+        r#"MAP LAYER FILTER ('[a]' in 'A,B,C' AND `[t]` > `2010-12-01` AND [n] IN "1,2") END END"#,
+    );
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        filter,
+        concat!(
+            r#"{"op":"and","args":["#,
+            r#"{"op":"in","args":[{"op":"to_string","args":[{"property":"a"}]},["A","B","C"]]},"#,
+            r#"{"op":"t_after","args":[{"op":"to_timestamp","args":[{"property":"t"}]},{"date":"2010-12-01"}]},"#,
+            r#"{"op":"in","args":[{"op":"to_number","args":[{"property":"n"}]},[1.0,2.0]]}]}"#
+        )
+    );
+    let (_, _, filter) = expressions(r#"MAP LAYER FILTER "x" FILTERITEM "kind" END END"#);
+    assert_eq!(
+        filter,
+        r#"{"op":"=","args":[{"op":"to_string","args":[{"property":"kind"}]},"x"]}"#
+    );
+}
+
+#[test]
+fn an_expression_outside_the_subset_is_a_warning_and_never_matches() {
+    // Verifies: ADR-0019
+    for text in [
+        "MAP LAYER CLASS EXPRESSION (intersects([shape], fromtext('POINT(1 1)'))) END END END",
+        r#"MAP LAYER CLASS EXPRESSION ("a" IN ("b" + "c")) END END END"#,
+        "MAP LAYER CLASS EXPRESSION (`[t]` > `2004/01/01`) END END END",
+    ] {
+        let (loaded, classes, _) = expressions(text);
+        assert_eq!(codes(&loaded), ["unsupported-expression"], "{text}");
+        assert_eq!(loaded.diagnostics[0].severity, Severity::Warning);
+        assert_eq!(classes, ["false"], "{text}");
+    }
+}
+
+#[test]
+fn an_expression_mapserver_cannot_parse_is_a_warning_and_never_matches() {
+    for text in [
+        r#"MAP LAYER CLASS EXPRESSION ([a] = "x") END END END"#,
+        "MAP LAYER CLASS EXPRESSION ([a] =! 1) END END END",
+        "MAP LAYER CLASS EXPRESSION ([a] -1) END END END",
+        r#"MAP LAYER CLASS EXPRESSION "x" END END END"#,
+    ] {
+        let (loaded, classes, _) = expressions(text);
+        assert_eq!(codes(&loaded), ["invalid-expression"], "{text}");
+        assert_eq!(classes, ["false"], "{text}");
+    }
+}
+
+#[test]
+fn an_expression_nested_past_the_limit_fails_the_load() {
+    // Verifies: Q-9, ADR-0019
+    let depth = forager_style_ir::MAX_EXPRESSION_DEPTH;
+    let nots = |n: usize| -> &'static str {
+        format!(
+            "MAP LAYER CLASS EXPRESSION ({}true) END END END",
+            "NOT ".repeat(n)
+        )
+        .leak()
+    };
+    let (loaded, _, _) = expressions(nots(depth - 1));
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    for past in [
+        nots(depth),
+        format!(
+            "MAP LAYER CLASS EXPRESSION ({}1{}) END END END",
+            "(".repeat(200),
+            ")".repeat(200)
+        )
+        .leak(),
+    ] {
+        let (loaded, _, _) = expressions(past);
+        assert!(loaded.document.is_none());
+        assert_eq!(codes(&loaded), ["expression-too-deep"]);
+    }
+}
+
+#[test]
+fn every_expression_reads_back_equal_from_yaml_and_json() {
+    // Verifies: ADR-0019
+    let loaded = load_files(&[(
+        "m.map",
+        r#"MAP LAYER
+             FILTER ([a] > 1.5 OR '[b]' ~ "x\"y" AND `[t]` = `2010-12-01T10:00:00Z`)
+             CLASS EXPRESSION {1000,true,,x} END
+             CLASS EXPRESSION (tostring([p], "%.2f") + commify("12") = upper("a")) END
+             CLASS EXPRESSION (round([q], 2) + length("ab") = 4 AND [x] % 2 = 1) END
+             CLASSITEM "k"
+           END END"#,
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let document = loaded.document.unwrap();
+    let yaml = document.to_yaml().unwrap();
+    let json = document.to_json().unwrap();
+    assert_eq!(
+        forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap(),
+        document
+    );
+    assert_eq!(
+        forager_style_ir::StyleDocument::from_json(&json).unwrap(),
+        document
+    );
+}

@@ -22,6 +22,10 @@ to invent.
   _Avoid:_ warning (for the general concept), log message.
 - **Display list** — The ordered sequence of drawing operations the core hands a renderer, each
   tagged with the feature it came from.
+- **Expression** — A condition or value over a feature's properties in the style IR: a CQL2
+  tree ([ADR-0019](adr/0019-cql2-expressions.md)) the mapfile frontend translates from an
+  `EXPRESSION`, a `FILTER`, a `TEXT`, or an attribute binding. Its semantics per parameter are in
+  [`semantics/`](semantics/README.md).
 - **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
   crate versions and of the core's API.
 - **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through
@@ -39,6 +43,8 @@ to invent.
   reference images.
 - **Port** — A trait at the edge of the core through which the host supplies data and resources;
   the only place async appears.
+- **Property** — A named value of a feature, which a mapfile calls an item and binds as
+  `[name]`. _Avoid:_ attribute, item, outside mapfile syntax.
 - **Pushdown** — Handing the part of a filter that an adapter can evaluate natively to that
   adapter; the core evaluates the rest.
 - **Render mode** — What a layer's `TYPE` states: how its features are drawn (point, line,
