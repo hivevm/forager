@@ -22,5 +22,8 @@ forager-encode.workspace = true
 forager-adapter-geojson.workspace = true
 forager-adapter-epsg.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true

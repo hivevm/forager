@@ -177,6 +177,7 @@ dependencies = [
  "forager-ports",
  "forager-render-agg",
  "forager-style-ir",
+ "serde_json",
 ]
 
 [[package]]
