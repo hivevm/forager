@@ -19,4 +19,7 @@ describe and decide nothing: the decisions are the ADRs they cite.
 - [`OFFSET` and `POLAROFFSET`](offset.md)
 - [`PATTERN`, `GAP`, `INITIALGAP`, `LINECAP`, `LINEJOIN`](line.md)
 - [`OPACITY` and `OUTLINEWIDTH`](opacity.md)
-- [Scaling: `RESOLUTION`, `DEFRESOLUTION`, `SIZEUNITS`, and the bounds](scale.md)
+- [Scaling: `RESOLUTION`, `DEFRESOLUTION`, `UNITS`, `SIZEUNITS`, `SYMBOLSCALEDENOM`, and the
+  bounds](scale.md)
+- [Scale ranges: `MINSCALEDENOM` and `MAXSCALEDENOM`](scale-range.md)
+- [`PROJECTION`](projection.md) of the map and of a layer

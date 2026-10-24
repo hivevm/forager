@@ -11,7 +11,7 @@ pub use diagnostic::{Diagnostic, Severity, Span};
 pub use document::{FORMAT_VERSION, Read, StyleDocument};
 pub use expression::{Expr, MAX_EXPRESSION_DEPTH, Op};
 pub use model::{
-    Align, AngleMode, Bound, Class, Extent, Force, GeomTransform, Label, Layer, LayerStatus,
-    LineCap, LineJoin, LineOffset, Map, MinFeatureSize, Position, RenderMode, Rgba, SourceRef,
-    Style, Symbol, SymbolKind, SymbolRef, Units,
+    Align, AngleMode, Bound, Class, Extent, Force, GeomTransform, Label, Layer, LayerProjection,
+    LayerStatus, LineCap, LineJoin, LineOffset, Map, MinFeatureSize, Position, RenderMode, Rgba,
+    SourceRef, Style, Symbol, SymbolKind, SymbolRef, Units,
 };

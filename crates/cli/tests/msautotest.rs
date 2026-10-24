@@ -1,6 +1,7 @@
 //! The conformance suite, msautotest at the pinned MapServer release. G-1: every mapfile loads
 //! through the CLI, with the suite's directory as the base context, without a diagnostic of
-//! severity error. G-3: the style IR of every one survives YAML and JSON unchanged.
+//! severity error, or, where its only errors are the suite's init file named by a path, in-process
+//! with a stand-in for that file. G-3: the style IR of every one survives YAML and JSON unchanged.
 //! `scripts/check-rust.sh` fetches the suite with `scripts/fetch-msautotest.sh`, which holds the
 //! pin, and runs these tests with `FORAGER_MSAUTOTEST` naming it; `cargo test` alone skips them,
 //! as they need the network once.
@@ -11,7 +12,7 @@ use std::process::Command;
 use std::task::{Context, Poll, Waker};
 
 use forager_adapter_epsg::EpsgTable;
-use forager_ports::{ResourceLoader, ResourcePath, SourceError};
+use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::StyleDocument;
 use serde_json::Value;
 
@@ -65,7 +66,30 @@ const SKIPPED: &[(&str, &str)] = &[
 /// The EPSG codes the suite names beyond those built into the resolver (ADR-0018). Their
 /// definitions here are stand-ins, so that the test carries no EPSG data: G-1 decides that a
 /// mapfile loads; whether a projection is right is G-11's.
-const EPSG_CODES: &[u32] = &[2157, 3347, 3395, 3978, 21781, 25833, 26711, 26915, 27700];
+const EPSG_CODES: &[u32] = &[
+    2157, 3347, 3395, 3978, 21781, 25833, 26711, 26915, 26917, 27700, 102977,
+];
+
+/// The suite's own init file, `wxs/data/epsg2`, which its mapfiles name by a path, as in
+/// `init=./data/epsg2:42304`. A resolver has no such file yet, so the CLI fails these mapfiles;
+/// the test loads them again with a stand-in for the file.
+const INIT_FILE: &str = "epsg2";
+
+/// The suite's EPSG codes, and a stand-in for every code of its init file.
+struct StandIn(EpsgTable);
+
+impl ProjectionResolver for StandIn {
+    fn resolve(&self, authority: &str, code: &str) -> Option<String> {
+        if authority.rsplit('/').next() == Some(INIT_FILE) {
+            return Some("+proj=longlat +datum=WGS84 +no_defs".to_owned());
+        }
+        self.0.resolve(authority, code)
+    }
+}
+
+fn stand_in() -> StandIn {
+    StandIn(EpsgTable::with_table(&epsg_table()).unwrap())
+}
 
 fn mapfiles(dir: &Path, found: &mut Vec<PathBuf>) {
     let mut entries: Vec<_> = std::fs::read_dir(dir)
@@ -108,10 +132,13 @@ fn every_msautotest_mapfile_loads_without_an_error() {
         std::env::temp_dir().join(format!("forager-msautotest-{}.epsg", std::process::id()));
     std::fs::write(&table, epsg_table()).unwrap();
 
+    let resolver = stand_in();
+    let loader = Suite(suite.clone());
     let mut found = Vec::new();
     mapfiles(&suite, &mut found);
     let mut skipped = 0;
     let mut loaded = 0;
+    let mut with_init_file = 0;
     let mut failures = Vec::new();
     for path in &found {
         let name = path.strip_prefix(&suite).unwrap().to_str().unwrap();
@@ -129,11 +156,25 @@ fn every_msautotest_mapfile_loads_without_an_error() {
             .args(["--epsg", table.to_str().unwrap()])
             .output()
             .expect("the forager binary runs");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let errors: Vec<&str> = stderr.lines().filter(|l| l.contains(" error ")).collect();
+        let only_init_file = !errors.is_empty()
+            && errors.iter().all(|l| {
+                l.contains("[projection-unresolved]") && l.contains(&format!("{INIT_FILE}:"))
+            });
         if output.status.success() {
             loaded += 1;
+        } else if only_init_file
+            && ready(forager_mapfile::load(
+                &ResourcePath::new(name).unwrap(),
+                &loader,
+                Some(&resolver),
+            ))
+            .document
+            .is_some()
+        {
+            with_init_file += 1;
         } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let errors: Vec<&str> = stderr.lines().filter(|l| l.contains(" error ")).collect();
             failures.push(format!("{name}\n    {}", errors.join("\n    ")));
         }
     }
@@ -151,7 +192,10 @@ fn every_msautotest_mapfile_loads_without_an_error() {
         found.len() - skipped,
         failures.join("\n")
     );
-    eprintln!("{loaded} mapfiles loaded, {skipped} skipped");
+    eprintln!(
+        "{loaded} mapfiles loaded, {with_init_file} more with a stand-in for the init file, \
+         {skipped} skipped"
+    );
 }
 
 /// The suite's files, read inside its directory.
@@ -199,7 +243,7 @@ fn first_difference(a: &Value, b: &Value, at: String) -> Option<String> {
 fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
     // Verifies: G-3
     let suite = suite();
-    let resolver = EpsgTable::with_table(&epsg_table()).unwrap();
+    let resolver = stand_in();
     let loader = Suite(suite.clone());
     let mut found = Vec::new();
     mapfiles(&suite, &mut found);

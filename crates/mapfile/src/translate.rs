@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::{
     Align, AngleMode, Bound, Class, Diagnostic, Expr, Extent, Force, GeomTransform, Label, Layer,
-    LayerStatus, LineCap, LineJoin, LineOffset, Map, MinFeatureSize, Op, Position, RenderMode,
-    Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
+    LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset, Map, MinFeatureSize, Op, Position,
+    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
 };
 
 use crate::expression;
@@ -124,6 +124,7 @@ impl Translator<'_> {
                     "DEFRESOLUTION" => {
                         map.def_resolution = self.number(d, Range::within(10.0, 1000.0));
                     }
+                    "UNITS" => map.units = self.choice(d, &UNITS[1..]),
                     // Read with the map, before translation.
                     "SYMBOLSET" | "FONTSET" => {}
                     _ => self.unhandled_directive(d),
@@ -135,7 +136,17 @@ impl Translator<'_> {
                             map.layers.push(layer);
                         }
                     }
-                    "PROJECTION" => map.projection = self.projection(b),
+                    "PROJECTION" => {
+                        map.projection = match self.projection(b) {
+                            Some(LayerProjection::Proj4(proj4)) => Some(proj4),
+                            Some(LayerProjection::FromSource) => {
+                                let message = "PROJECTION AUTO of a map is not yet supported";
+                                self.warn("unsupported-value", message, &b.span);
+                                None
+                            }
+                            None => None,
+                        };
+                    }
                     _ => self.unhandled(&b.keyword, &b.span),
                 },
             }
@@ -193,20 +204,11 @@ impl Translator<'_> {
                         self.string(d);
                     }
                     "FILTER" => layer.filter = self.expression(d, filter_item.as_deref()),
-                    "SIZEUNITS" => {
-                        layer.size_units = self.choice(
-                            d,
-                            &[
-                                ("PIXELS", Units::Pixels),
-                                ("INCHES", Units::Inches),
-                                ("FEET", Units::Feet),
-                                ("MILES", Units::Miles),
-                                ("METERS", Units::Meters),
-                                ("KILOMETERS", Units::Kilometers),
-                                ("NAUTICALMILES", Units::NauticalMiles),
-                                ("DD", Units::Degrees),
-                            ],
-                        );
+                    "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
+                    "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
+                    "MAXSCALE" | "MAXSCALEDENOM" => layer.max_scale_denom = self.scale_denom(d),
+                    "SYMBOLSCALE" | "SYMBOLSCALEDENOM" => {
+                        layer.symbol_scale_denom = self.number(d, Range::at_least(1.0));
                     }
                     "CONNECTION" | "DATA" => {
                         if let Some(value) = self.string(d) {
@@ -221,6 +223,7 @@ impl Translator<'_> {
                         let class = self.class(b, class_item.as_deref(), label_item.as_deref());
                         layer.classes.push(class);
                     }
+                    "PROJECTION" => layer.projection = self.projection(b),
                     _ => self.unhandled(&b.keyword, &b.span),
                 },
             }
@@ -263,6 +266,16 @@ impl Translator<'_> {
                     class.expression = self.expression(d, class_item);
                 }
                 Node::Directive(d) if d.keyword == "TEXT" => {}
+                Node::Directive(d)
+                    if matches!(d.keyword.as_str(), "MINSCALE" | "MINSCALEDENOM") =>
+                {
+                    class.min_scale_denom = self.scale_denom(d);
+                }
+                Node::Directive(d)
+                    if matches!(d.keyword.as_str(), "MAXSCALE" | "MAXSCALEDENOM") =>
+                {
+                    class.max_scale_denom = self.scale_denom(d);
+                }
                 Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b)),
                 Node::Block(b) if b.keyword == "LABEL" => {
                     class.labels.push(self.label(b, fallback.as_ref()));
@@ -313,6 +326,8 @@ impl Translator<'_> {
                         }
                     }
                     "SIZE" => label.size = self.label_size(d),
+                    "MINSCALEDENOM" => label.min_scale_denom = self.scale_denom(d),
+                    "MAXSCALEDENOM" => label.max_scale_denom = self.scale_denom(d),
                     "MINSIZE" => label.min_size = self.number(d, Range::above(0.0)).map(f64::trunc),
                     "MAXSIZE" => label.max_size = self.number(d, Range::above(0.0)).map(f64::trunc),
                     "COLOR" => label.color = self.bound_color(d),
@@ -592,6 +607,8 @@ impl Translator<'_> {
                     "OUTLINEWIDTH" => {
                         style.outline_width = self.bound_number(d, Range::at_least(0.0), false);
                     }
+                    "MINSCALEDENOM" => style.min_scale_denom = self.scale_denom(d),
+                    "MAXSCALEDENOM" => style.max_scale_denom = self.scale_denom(d),
                     "MINSIZE" => style.min_size = self.number(d, Range::at_least(0.0)),
                     "MAXSIZE" => style.max_size = self.number(d, Range::above(0.0)),
                     "MINWIDTH" => style.min_width = self.number(d, Range::at_least(0.0)),
@@ -703,6 +720,11 @@ impl Translator<'_> {
         }
     }
 
+    /// A scale denominator, a number of at least 0, as `getDouble` checks it.
+    fn scale_denom(&mut self, d: &Directive) -> Option<f64> {
+        self.number(d, Range::at_least(0.0))
+    }
+
     /// One number inside `range`.
     fn number(&mut self, d: &Directive, range: Range) -> Option<f64> {
         match d.values.as_slice() {
@@ -806,12 +828,13 @@ impl Translator<'_> {
 
     /// A proj4 string from the parameters of a PROJECTION block. `init=<authority>:<code>` is
     /// resolved by the resolver the host passes in (ADR-0018); without one, or for a code it does
-    /// not know, it is a load error.
+    /// not know, it is a load error. A first parameter that is `AUTO`, in any case, is the
+    /// projection of the source, as `msProcessProjection` leaves it to the source to declare.
     ///
     /// As MapServer hands every parameter to PROJ, `init=` is matched case-sensitively, there is
     /// at most one, and its expansion follows the explicit parameters, which PROJ lets take
     /// precedence (its `pj_expand_init`).
-    fn projection(&mut self, block: &Block) -> Option<String> {
+    fn projection(&mut self, block: &Block) -> Option<LayerProjection> {
         let mut params = Vec::new();
         let mut expansion: Option<Vec<String>> = None;
         for token in &block.values {
@@ -826,13 +849,8 @@ impl Translator<'_> {
                     return None;
                 }
             };
-            if text.eq_ignore_ascii_case("AUTO") {
-                self.warn(
-                    "unsupported-value",
-                    "PROJECTION AUTO is not yet supported",
-                    &token.span,
-                );
-                return None;
+            if params.is_empty() && expansion.is_none() && text.eq_ignore_ascii_case("AUTO") {
+                return Some(LayerProjection::FromSource);
             }
             for param in text.split_whitespace() {
                 let param = param.trim_start_matches('+');
@@ -867,7 +885,7 @@ impl Translator<'_> {
             }
         }
         params.extend(expansion.unwrap_or_default());
-        (!params.is_empty()).then(|| params.join(" "))
+        (!params.is_empty()).then(|| LayerProjection::Proj4(params.join(" ")))
     }
 
     /// A directive not carried over, unless the parser has already warned that it is unknown.
@@ -1189,6 +1207,18 @@ impl Translator<'_> {
             .push(Diagnostic::error(code, message, Some(span.clone())));
     }
 }
+
+/// The unit keywords of `SIZEUNITS`; a map's `UNITS` takes them without `PIXELS`.
+const UNITS: &[(&str, Units)] = &[
+    ("PIXELS", Units::Pixels),
+    ("INCHES", Units::Inches),
+    ("FEET", Units::Feet),
+    ("MILES", Units::Miles),
+    ("METERS", Units::Meters),
+    ("KILOMETERS", Units::Kilometers),
+    ("NAUTICALMILES", Units::NauticalMiles),
+    ("DD", Units::Degrees),
+];
 
 /// The values a number may take, as MapServer's `msCheckNumber` checks them.
 #[derive(Clone, Copy)]

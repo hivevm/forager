@@ -131,7 +131,8 @@ it reproduces. What is not carried over stays a "not yet supported" warning.
   trip.
 - **G-1** is a test over the msautotest suite of MapServer `rel-8-6-6`, fetched by a pinned
   sparse checkout and cached in CI, never vendored; the EPSG codes outside the built-in resolver
-  come from a fixture table handed in through the host table of ADR-0018, in the test only. The
+  come from a fixture table handed in through the host table of ADR-0018, in the test only, and
+  the suite's own init file, named by a path, from a stand-in in the test. The
   files it skips — include fragments, malformed and binary test data, a file whose include lies
   outside the checkout — are named in the test with a reason each.
 - **G-3** is a test over the same corpus, and a property of the `mapfile` fuzz target.

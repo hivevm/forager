@@ -1087,3 +1087,115 @@ fn true_and_on_false_and_off_stand_for_each_other() {
         Some(LayerStatus::Off)
     );
 }
+
+#[test]
+fn a_layers_projection_resolves_as_the_maps_does() {
+    // Verifies: ADR-0018
+    use forager_style_ir::LayerProjection;
+    let text = "MAP LAYER PROJECTION 'init=epsg:4326' END END END";
+    let loaded = load_with_resolver(text);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        loaded.document.unwrap().map.layers[0].projection,
+        Some(LayerProjection::Proj4(
+            "+proj=longlat +datum=WGS84 +no_defs".to_owned()
+        ))
+    );
+    let loaded = load_files(&[("m.map", text)]);
+    assert!(loaded.document.is_none());
+    assert_eq!(codes(&loaded), ["projection-unresolved"]);
+    // MapServer reads the projection of an AUTO layer from its source (msSHPLayerOpen,
+    // msDrawRasterLayerLow).
+    let loaded = load_files(&[("m.map", "MAP LAYER PROJECTION auto END END END")]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        loaded.document.unwrap().map.layers[0].projection,
+        Some(LayerProjection::FromSource)
+    );
+    // MapServer compares the whole first parameter, so this one goes to PROJ.
+    let loaded = load_files(&[("m.map", "MAP LAYER PROJECTION 'auto over' END END END")]);
+    assert_eq!(
+        loaded.document.unwrap().map.layers[0].projection,
+        Some(LayerProjection::Proj4("+auto +over".to_owned()))
+    );
+    // A map has no source to declare one.
+    let loaded = load_files(&[("m.map", "MAP PROJECTION AUTO END END")]);
+    assert_eq!(codes(&loaded), ["unsupported-value"]);
+    assert_eq!(loaded.document.unwrap().map.projection, None);
+}
+
+#[test]
+fn scale_ranges_load_on_layers_classes_labels_and_styles() {
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP UNITS dd
+           LAYER MINSCALEDENOM 1000 MAXSCALE 50000 SYMBOLSCALE 25000
+             CLASS MINSCALE 1000 MAXSCALEDENOM 50000
+               STYLE SIZE 10 MINSIZE 4 MAXSIZE 20 MINSCALEDENOM 10 MAXSCALEDENOM 20 END
+               LABEL MINSCALEDENOM 30 MAXSCALEDENOM 40 END
+             END
+           END
+         END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let document = loaded.document.unwrap();
+    let map = &document.map;
+    assert_eq!(map.units, Some(forager_style_ir::Units::Degrees));
+    let layer = &map.layers[0];
+    let class = &layer.classes[0];
+    let ranges = [
+        (layer.min_scale_denom, layer.max_scale_denom),
+        (class.min_scale_denom, class.max_scale_denom),
+        (
+            class.styles[0].min_scale_denom,
+            class.styles[0].max_scale_denom,
+        ),
+        (
+            class.labels[0].min_scale_denom,
+            class.labels[0].max_scale_denom,
+        ),
+    ];
+    assert_eq!(
+        ranges,
+        [
+            (Some(1000.0), Some(50000.0)),
+            (Some(1000.0), Some(50000.0)),
+            (Some(10.0), Some(20.0)),
+            (Some(30.0), Some(40.0)),
+        ],
+        "the old spellings load as the new"
+    );
+    assert_eq!(layer.symbol_scale_denom, Some(25000.0));
+    let style = &class.styles[0];
+    assert_eq!(
+        (style.size.clone(), style.min_size, style.max_size),
+        (Some(Bound::Value(10.0)), Some(4.0), Some(20.0))
+    );
+    let yaml = document.to_yaml().unwrap();
+    let json = document.to_json().unwrap();
+    assert_eq!(
+        forager_style_ir::StyleDocument::from_yaml(&yaml)
+            .unwrap()
+            .document,
+        document
+    );
+    assert_eq!(
+        forager_style_ir::StyleDocument::from_json(&json)
+            .unwrap()
+            .document,
+        document
+    );
+}
+
+#[test]
+fn scale_values_out_of_mapservers_range_are_errors() {
+    for text in [
+        "MAP LAYER MINSCALEDENOM -1 END END",
+        "MAP LAYER SYMBOLSCALEDENOM 0.5 END END",
+        "MAP LAYER CLASS STYLE MAXSCALEDENOM -1 END END END END",
+        "MAP UNITS pixels END",
+    ] {
+        let loaded = load_files(&[("m.map", text)]);
+        assert_eq!(codes(&loaded), ["invalid-value"], "{text}");
+    }
+}

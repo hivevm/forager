@@ -1,9 +1,10 @@
-# Scaling: `RESOLUTION`, `DEFRESOLUTION`, `SIZEUNITS`, and the size and width bounds
+# Scaling: resolution, units, `SYMBOLSCALEDENOM`, and the size and width bounds
 
-**Where:** `RESOLUTION` and `DEFRESOLUTION` in `MAP`, `SIZEUNITS` in `LAYER`, `MINSIZE`,
-`MAXSIZE`, `MINWIDTH`, `MAXWIDTH` in `STYLE`. **IR:** the map's `resolution` and
-`def_resolution`, the layer's `size_units`, the style's `min_size`, `max_size`, `min_width`,
-`max_width`.
+**Where:** `RESOLUTION`, `DEFRESOLUTION`, and `UNITS` in `MAP`, `SIZEUNITS` and
+`SYMBOLSCALEDENOM` (or its old spelling `SYMBOLSCALE`) in `LAYER`, `MINSIZE`, `MAXSIZE`,
+`MINWIDTH`, `MAXWIDTH` in `STYLE`. **IR:** the map's `resolution`, `def_resolution`, and `units`,
+the layer's `size_units` and `symbol_scale_denom`, the style's `min_size`, `max_size`,
+`min_width`, `max_width`.
 
 **Meaning.** The style IR holds sizes, widths, gaps, patterns, and offsets as the mapfile writes
 them, and these parameters state how they are scaled when a map is drawn. MapServer computes the
@@ -18,6 +19,15 @@ applies the formulas below.
   RESOLUTION / DEFRESOLUTION`.
 - else `RESOLUTION / DEFRESOLUTION`. Both default to 72 dpi and take 10 to 1000.
 
+The map's scale is its scale denominator as `msCalculateScale` in `src/mapscale.c` computes it.
+So with `SYMBOLSCALEDENOM 25000`, a style of `SIZE 10` is drawn 10 pixels high at 1:25000, 20 at
+1:12500, and 5 at 1:50000, at the default resolutions, before the bounds below.
+
+The inches per unit are those of `inchesPerUnit` in `src/mapscale.c`, which
+`msInchesPerUnit` reads: inches 1, feet 12, miles 63360, meters 39.3701, kilometers 39370.1,
+nautical miles 72913.3858, decimal degrees 4374754. The map's `UNITS` defaults to meters
+(`initMap` in `src/mapfile.c`).
+
 **Applying it.** A symbol's size is `size × factor`, then bounded by `MINSIZE` and `MAXSIZE`,
 each times `RESOLUTION / DEFRESOLUTION` (`computeSymbolStyle` in `src/maprendering.c`); the
 defaults are 0 and 500. A line's width is `width × factor`, bounded by `MINWIDTH` and
@@ -27,5 +37,6 @@ gap by the bounded size over the size as written. A bound value or an expression
 it is evaluated.
 
 `MINSIZE` and `MAXSIZE` take numbers of at least 0 and above 0, `MINWIDTH` and `MAXWIDTH` the
-same, as `loadStyle` in `src/mapfile.c` checks; `SIZEUNITS` takes `pixels`, `inches`, `feet`,
-`miles`, `meters`, `kilometers`, `nauticalmiles`, and `dd`.
+same, as `loadStyle` in `src/mapfile.c` checks; `SYMBOLSCALEDENOM` takes a number of at least 1,
+as `loadLayer` checks. `SIZEUNITS` takes `pixels`, `inches`, `feet`, `miles`, `meters`,
+`kilometers`, `nauticalmiles`, and `dd`; the map's `UNITS` the same without `pixels`.
