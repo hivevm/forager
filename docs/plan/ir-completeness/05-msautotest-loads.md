@@ -9,6 +9,12 @@ comes from a pinned sparse checkout of the MapServer repository, cached in CI an
 script locally, never vendored. Files that are not standalone mapfiles are named in the test,
 each with its reason. It carries `Verifies: G-1` and runs in CI on every push.
 
+The pin of the reference release (*Constraints*: "pinned by tag") lives in exactly one tracked
+place, the tag together with the commit it names (`rel-8-6-6`, `7515cccf…` as of 2026-10-24),
+and the fetch checks that the tag still names that commit. The comments in the code that cite
+"release 8.6.6" point to that place instead of naming the release, so moving the pin is a
+one-line change that the conformance run follows.
+
 ## Acceptance criteria
 
 - [ ] Given the pinned checkout, when the test runs, then every mapfile not named as skipped
@@ -19,6 +25,11 @@ each with its reason. It carries `Verifies: G-1` and runs in CI on every push.
   the file and the diagnostic.
 - [ ] Given a second CI run, when the cache is warm, then no clone happens; given a new pin, the
   cache key changes.
+- [ ] Given the pin, when the fetch runs and the tag names another commit than the pinned one,
+  then it fails naming both.
+- [ ] Given the code, scripts, and CI files, when they are searched for the release number, then
+  it stands only in the pin, and the comments that cite MapServer's source refer to the pin; ADRs
+  keep the release they were decided against.
 - [ ] Given the fixture table, when it is read, then it holds only the codes the corpus needs, and
   it lives with the test, not in the product (ADR-0018).
 
