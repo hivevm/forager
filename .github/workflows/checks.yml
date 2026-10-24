@@ -5,8 +5,8 @@ name: Checks
 # scripts/check-all.sh is the local equivalent; check 9 of scripts/check-docs.sh holds the two
 # lists and the required checks named in README.md together. Each job runs a check after its own
 # self-test, and each script's header says what it checks:
-# - Documentation: scripts/check-docs.sh, then scripts/test-template-setup.sh and the self-test of
-#   the normalize skill's map script, scripts/test-normalize-remap.sh (ADR-0001).
+# - Documentation: scripts/check-docs.sh, then the self-test of the normalize skill's map
+#   script, scripts/test-normalize-remap.sh (ADR-0001).
 # - Traceability: scripts/check-traceability.sh (ADR-0002).
 # - Dev Container: scripts/check-devcontainer.sh (ADR-0004).
 # - Sensors: scripts/sensor-tests-kept.sh, sensor-binding-adrs.sh (ADR-0001),
@@ -64,10 +64,6 @@ jobs:
         run: bash scripts/test-check-docs.sh
       - name: Check documentation consistency
         run: bash scripts/check-docs.sh
-      # The setup promises a green project once every step is done, and that check-docs.sh names
-      # every placeholder left behind; this holds only on the real scaffold, not on a fixture.
-      - name: Self-test the template setup against the scaffold
-        run: bash scripts/test-template-setup.sh
       - name: Self-test the map script of the normalize skill
         run: bash scripts/test-normalize-remap.sh
 

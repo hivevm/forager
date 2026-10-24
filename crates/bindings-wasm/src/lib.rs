@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::task::{Context, Poll, Waker};
 
+use forager_adapter_epsg::EpsgTable;
 use forager_adapter_geojson::GeoJsonSource;
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
@@ -35,11 +36,28 @@ pub struct Output {
 
 /// Renders `mapfile` with the GeoJSON in `sources`, a JSON object from layer name to a GeoJSON
 /// object or to GeoJSON text. Source references that carry credentials are dropped (Q-7).
-pub fn render_map(mapfile: &str, sources: &str, viewport: &Viewport) -> Output {
+/// `init=` projections resolve with the built-in EPSG codes and those of `epsg`, a table in the
+/// format of PROJ's former `epsg` init file (ADR-0018).
+pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &Viewport) -> Output {
     let mut diagnostics = Vec::new();
+    let resolver = match epsg.map(EpsgTable::with_table) {
+        None => EpsgTable::new(),
+        Some(Ok(table)) => table,
+        Some(Err(errors)) => {
+            for e in errors {
+                let message = format!("EPSG table, {e}");
+                diagnostics.push(Diagnostic::error("epsg-table-invalid", message, None));
+            }
+            return Output {
+                image: None,
+                diagnostics,
+            };
+        }
+    };
     let Some(loaded) = now(forager_mapfile::load(
         &ResourcePath::new(MAPFILE_NAME).expect("a plain file name is a resource path"),
         &OneFile(mapfile),
+        Some(&resolver),
     )) else {
         return waited();
     };
@@ -194,7 +212,8 @@ impl RenderResult {
 
 /// Renders a mapfile in the browser. `sources` is a JSON object from layer name to GeoJSON (an
 /// object or its text). `width`, `height`, and `extent` (`[minx, miny, maxx, maxy]`) override
-/// the mapfile's SIZE and EXTENT when given.
+/// the mapfile's SIZE and EXTENT when given. `epsg` is a table of further EPSG definitions
+/// (ADR-0018).
 #[wasm_bindgen]
 pub fn render(
     mapfile: &str,
@@ -202,6 +221,7 @@ pub fn render(
     width: Option<u32>,
     height: Option<u32>,
     extent: Option<Vec<f64>>,
+    epsg: Option<String>,
 ) -> RenderResult {
     let mut diagnostics = Vec::new();
     let extent = match extent.as_deref() {
@@ -230,7 +250,7 @@ pub fn render(
         },
         extent,
     };
-    let output = render_map(mapfile, sources, &viewport);
+    let output = render_map(mapfile, sources, epsg.as_deref(), &viewport);
     diagnostics.extend(output.diagnostics);
     let image = output.image.unwrap_or(RgbaImage {
         width: 0,
@@ -260,7 +280,7 @@ mod tests {
     fn the_cli_fixture_renders_to_the_engines_reference_image() {
         // Verifies: G-5
         let sources = serde_json::json!({ "areas": AREAS }).to_string();
-        let output = render_map(SQUARE_MAP, &sources, &Viewport::default());
+        let output = render_map(SQUARE_MAP, &sources, None, &Viewport::default());
         assert_eq!(
             codes(&output),
             ["layer-skipped"],
@@ -280,7 +300,7 @@ mod tests {
             "CONNECTIONTYPE POSTGIS CONNECTION \"host=db user=u password=secret\" DATA \"geom from t\"",
         );
         let sources = serde_json::json!({ "areas": AREAS }).to_string();
-        let output = render_map(&mapfile, &sources, &Viewport::default());
+        let output = render_map(&mapfile, &sources, None, &Viewport::default());
         let rejected = &output.diagnostics[0];
         assert_eq!(rejected.code, "source-rejected");
         assert!(!rejected.message.contains("secret"));
@@ -303,7 +323,9 @@ mod tests {
                 max_y: 60.0,
             }),
         };
-        let image = render_map(SQUARE_MAP, &sources, &viewport).image.unwrap();
+        let image = render_map(SQUARE_MAP, &sources, None, &viewport)
+            .image
+            .unwrap();
         assert_eq!((image.width, image.height), (11, 11));
         assert_eq!(
             image.pixel(5, 5),
@@ -316,17 +338,17 @@ mod tests {
     fn broken_inputs_are_diagnostics() {
         // Verifies: Q-3
         assert_eq!(
-            codes(&render_map("MAP", "{}", &Viewport::default())),
+            codes(&render_map("MAP", "{}", None, &Viewport::default())),
             ["unterminated-block"]
         );
-        let output = render_map(SQUARE_MAP, "[1]", &Viewport::default());
+        let output = render_map(SQUARE_MAP, "[1]", None, &Viewport::default());
         assert_eq!(output.diagnostics[0].code, "sources-invalid");
-        let output = render_map(SQUARE_MAP, r#"{"areas": "{"}"#, &Viewport::default());
+        let output = render_map(SQUARE_MAP, r#"{"areas": "{"}"#, None, &Viewport::default());
         assert_eq!(output.diagnostics[0].code, "source-unreadable");
-        let result = render("MAP END", "{}", None, None, Some(vec![1.0]));
+        let result = render("MAP END", "{}", None, None, Some(vec![1.0]), None);
         assert!(result.diagnostics().contains("viewport-invalid"));
         assert_eq!(result.width(), 0);
-        let result = render(SQUARE_MAP, "{}", Some(10), None, None);
+        let result = render(SQUARE_MAP, "{}", Some(10), None, None, None);
         assert!(result.diagnostics().contains("viewport-invalid"));
     }
 }
@@ -347,10 +369,51 @@ mod example {
         let output = render_map(
             include_str!("../../../examples/web/sample.map"),
             &sources,
+            None,
             &Viewport::default(),
         );
         assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
         let image = output.image.unwrap();
         assert_eq!((image.width, image.height), (640, 400));
+    }
+}
+
+#[cfg(test)]
+mod projections {
+    use super::*;
+
+    const GRID_MAP: &str = "MAP PROJECTION 'init=epsg:27700' END END";
+
+    #[test]
+    fn the_browser_resolves_built_in_codes_and_takes_a_table_for_others() {
+        // Verifies: ADR-0018
+        let wgs84 = render_map(
+            "MAP SIZE 10 10 EXTENT 0 0 1 1 PROJECTION 'init=epsg:4326' END END",
+            "{}",
+            None,
+            &Viewport::default(),
+        );
+        assert!(wgs84.diagnostics.is_empty(), "{:?}", wgs84.diagnostics);
+
+        let without = render_map(GRID_MAP, "{}", None, &Viewport::default());
+        assert_eq!(without.diagnostics[0].code, "projection-unresolved");
+
+        let table = "<27700> +proj=tmerc +lat_0=49 +lon_0=-2 +ellps=airy +units=m +no_defs <>";
+        let with = render_map(GRID_MAP, "{}", Some(table), &Viewport::default());
+        assert!(
+            with.diagnostics
+                .iter()
+                .all(|d| d.code != "projection-unresolved"),
+            "{:?}",
+            with.diagnostics
+        );
+
+        let broken = render_map(
+            GRID_MAP,
+            "{}",
+            Some("27700 +proj=tmerc"),
+            &Viewport::default(),
+        );
+        assert_eq!(broken.diagnostics[0].code, "epsg-table-invalid");
     }
 }

@@ -6,7 +6,7 @@
 use std::future::Future;
 use std::task::{Context, Poll, Waker};
 
-use forager_ports::{ResourceLoader, ResourcePath, SourceError};
+use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use libfuzzer_sys::fuzz_target;
 
 /// Every path names the same input, so INCLUDEs are followed as deep as the limits allow.
@@ -18,10 +18,19 @@ impl ResourceLoader for Echo<'_> {
     }
 }
 
+/// Resolves every `init=` reference, so that inputs get past the projection.
+struct AnyProjection;
+
+impl ProjectionResolver for AnyProjection {
+    fn resolve(&self, _: &str, _: &str) -> Option<String> {
+        Some("+proj=longlat +datum=WGS84 +no_defs".to_owned())
+    }
+}
+
 fuzz_target!(|data: &[u8]| {
     let path = ResourcePath::new("fuzz.map").unwrap();
     let loader = Echo(data);
-    let mut future = std::pin::pin!(forager_mapfile::load(&path, &loader));
+    let mut future = std::pin::pin!(forager_mapfile::load(&path, &loader, Some(&AnyProjection)));
     let Poll::Ready(_) = future
         .as_mut()
         .poll(&mut Context::from_waker(Waker::noop()))

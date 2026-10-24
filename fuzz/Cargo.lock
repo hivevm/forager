@@ -123,6 +123,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
+name = "forager-adapter-epsg"
+version = "0.1.0"
+dependencies = [
+ "forager-ports",
+]
+
+[[package]]
 name = "forager-adapter-geojson"
 version = "0.1.0"
 dependencies = [
@@ -135,6 +142,7 @@ dependencies = [
 name = "forager-bindings-wasm"
 version = "0.1.0"
 dependencies = [
+ "forager-adapter-epsg",
  "forager-adapter-geojson",
  "forager-engine",
  "forager-mapfile",
