@@ -5,6 +5,7 @@
 mod expression;
 mod init_file;
 mod lexer;
+mod projection;
 mod report;
 mod syntax;
 mod translate;
