@@ -47,12 +47,16 @@ fuzz_target!(|data: &[u8]| {
             .to_json()
             .expect("a loaded document writes as JSON");
         assert_eq!(
-            StyleDocument::from_yaml(&yaml).as_ref(),
+            StyleDocument::from_yaml(&yaml)
+                .map(|read| read.document)
+                .as_ref(),
             Ok(&document),
             "{yaml}"
         );
         assert_eq!(
-            StyleDocument::from_json(&json).as_ref(),
+            StyleDocument::from_json(&json)
+                .map(|read| read.document)
+                .as_ref(),
             Ok(&document),
             "{json}"
         );

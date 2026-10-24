@@ -31,7 +31,9 @@ golden path and the test pattern an agent copies from are named here.
 - **`style-ir`** — the data model of a map, its expressions a CQL2 tree
   ([ADR-0019](adr/0019-cql2-expressions.md)), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
-  ([ADR-0014](adr/0014-style-document-serde.md)). It depends on no other crate of the workspace.
+  ([ADR-0014](adr/0014-style-document-serde.md)), whose readers name each field they do not know
+  by its JSON Pointer ([ADR-0020](adr/0020-style-document-compatibility.md)). It depends on no
+  other crate of the workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
   resolver — with the features and geometries a source delivers, and the resource path that
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.

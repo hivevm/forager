@@ -215,9 +215,9 @@ fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
             .document
             .unwrap_or_else(|| panic!("{name} does not load; see the G-1 test"));
         let yaml = first.to_yaml().unwrap();
-        let from_yaml = StyleDocument::from_yaml(&yaml).unwrap();
+        let from_yaml = StyleDocument::from_yaml(&yaml).unwrap().document;
         let json = from_yaml.to_json().unwrap();
-        let last = StyleDocument::from_json(&json).unwrap();
+        let last = StyleDocument::from_json(&json).unwrap().document;
         checked += 1;
         if last != first {
             let (a, b) = (serde_json::to_value(&first), serde_json::to_value(&last));

@@ -24,6 +24,8 @@ serde = { version = "1", features = ["derive"] }
 # float_roundtrip: every number of a style document reads back bit for bit (G-3).
 serde_json = { version = "1", features = ["float_roundtrip"] }
 serde-saphyr = "2"
+# Reports each key a reader ignores with its path (ADR-0020).
+serde_ignored = "0.1.14"
 wasm-bindgen = "0.2.129"
 
 [workspace.lints.rust]

@@ -30,7 +30,7 @@ fn a_mapfile_is_printed_as_a_style_document_with_its_warnings() {
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.starts_with("version: \"1.0\"\n"), "{stdout}");
-    let document = StyleDocument::from_yaml(&stdout).unwrap();
+    let document = StyleDocument::from_yaml(&stdout).unwrap().document;
     let layer = &document.map.layers[0];
     assert_eq!(layer.name.as_deref(), Some("countries"));
     assert_eq!(
@@ -54,8 +54,8 @@ fn yaml_and_json_carry_the_same_style_ir() {
     let yaml = String::from_utf8(read("world.map", "yaml").stdout).unwrap();
     let json = String::from_utf8(read("world.map", "json").stdout).unwrap();
     assert_eq!(
-        StyleDocument::from_yaml(&yaml).unwrap(),
-        StyleDocument::from_json(&json).unwrap()
+        StyleDocument::from_yaml(&yaml).unwrap().document,
+        StyleDocument::from_json(&json).unwrap().document
     );
 }
 
@@ -93,7 +93,9 @@ fn a_base_context_above_the_mapfile_lets_an_include_climb_inside_it() {
         base.to_str().unwrap(),
     ]);
     assert!(output.status.success(), "{output:?}");
-    let document = StyleDocument::from_yaml(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    let document = StyleDocument::from_yaml(&String::from_utf8(output.stdout).unwrap())
+        .unwrap()
+        .document;
     assert_eq!(
         document
             .map
@@ -190,7 +192,9 @@ fn a_built_in_epsg_code_resolves_without_a_table() {
     // Verifies: ADR-0018
     let output = read("wgs84.map", "json");
     assert!(output.status.success(), "{output:?}");
-    let document = StyleDocument::from_json(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    let document = StyleDocument::from_json(&String::from_utf8(output.stdout).unwrap())
+        .unwrap()
+        .document;
     assert_eq!(
         document.map.projection.as_deref(),
         Some("+proj=longlat +datum=WGS84 +no_defs")
@@ -219,7 +223,9 @@ fn other_epsg_codes_need_the_hosts_table() {
         table.to_str().unwrap(),
     ]);
     assert!(with.status.success(), "{with:?}");
-    let document = StyleDocument::from_json(&String::from_utf8(with.stdout).unwrap()).unwrap();
+    let document = StyleDocument::from_json(&String::from_utf8(with.stdout).unwrap())
+        .unwrap()
+        .document;
     assert!(
         document
             .map

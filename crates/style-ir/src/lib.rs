@@ -8,7 +8,7 @@ mod expression;
 mod model;
 
 pub use diagnostic::{Diagnostic, Severity, Span};
-pub use document::{FORMAT_VERSION, StyleDocument};
+pub use document::{FORMAT_VERSION, Read, StyleDocument};
 pub use expression::{Expr, MAX_EXPRESSION_DEPTH, Op};
 pub use model::{
     Bound, Class, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
