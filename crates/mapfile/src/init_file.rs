@@ -52,8 +52,9 @@ pub fn named(map: &Block) -> Vec<(String, Span)> {
                 };
                 for param in value.split_whitespace() {
                     let reference = param.trim_start_matches('+').strip_prefix("init=");
+                    // The code follows the last `:`, as PROJ splits it (`get_init_string`).
                     let file = reference
-                        .and_then(|r| r.split_once(':'))
+                        .and_then(|r| r.rsplit_once(':'))
                         .map(|(file, _)| file);
                     if let Some(file) = file.filter(|f| f.contains('/'))
                         && !named.iter().any(|(n, _)| n == file)
@@ -67,24 +68,34 @@ pub fn named(map: &Block) -> Vec<(String, Span)> {
     named
 }
 
-/// Each code's definition, as PROJ's reader takes it: a line is `<code>` and the parameters up
-/// to the next `<`, `#` starts a comment. A definition that names a grid file, or refers on with
-/// `init=`, is kept as the reason it cannot be used (ADR-0023); a line that is no definition is
-/// skipped, as PROJ skips what it does not look for.
+/// Each code's definition, as PROJ's reader takes it (`get_init_string` in its `src/init.cpp`):
+/// `<code>` and the parameters up to the next `<`, across lines, `#` starting a comment to the
+/// end of its line; the first definition of a code holds. A definition that names a grid file, or
+/// refers on with `init=`, is kept as the reason it cannot be used (ADR-0023).
 fn parse(text: &str) -> BTreeMap<String, Result<String, String>> {
     let mut definitions = BTreeMap::new();
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    for raw in text.lines() {
-        let content = raw.split('#').next().unwrap_or("").trim();
-        let Some((code, rest)) = content.strip_prefix('<').and_then(|r| r.split_once('>')) else {
-            continue;
+    let lines: Vec<&str> = text
+        .lines()
+        .map(|line| line.split('#').next().unwrap_or(""))
+        .collect();
+    let joined = lines.join(" ");
+    let mut rest = joined.as_str();
+    while let Some(open) = rest.find('<') {
+        let Some((code, after)) = rest[open + 1..].split_once('>') else {
+            break;
         };
-        let code = code.trim();
-        let definition = rest.split('<').next().unwrap_or("").trim();
+        let end = after.find('<').unwrap_or(after.len());
+        let (definition, next) = after.split_at(end);
+        rest = next;
+        let (code, definition) = (code.trim(), definition.trim());
+        // `<>` closes a definition; a code without one is no definition.
         if code.is_empty() || definition.is_empty() {
             continue;
         }
-        definitions.insert(code.to_owned(), usable(code, definition));
+        definitions
+            .entry(code.to_owned())
+            .or_insert_with(|| usable(code, definition));
     }
     definitions
 }

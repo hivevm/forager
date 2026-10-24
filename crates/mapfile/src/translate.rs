@@ -892,7 +892,8 @@ impl Translator<'_> {
     /// file name holds a `/`, else from the host's resolver, with `<file>` as the authority
     /// (ADR-0023).
     fn resolve(&self, reference: &str) -> Result<String, String> {
-        let Some((file, code)) = reference.split_once(':') else {
+        // The code follows the last `:`, as PROJ splits it (`get_init_string`).
+        let Some((file, code)) = reference.rsplit_once(':') else {
             return Err("a projection is named as `<authority>:<code>`".to_owned());
         };
         if file.contains('/') {

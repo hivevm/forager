@@ -181,10 +181,9 @@ fn every_msautotest_mapfile_loads_without_an_error() {
         }
     }
     std::fs::remove_file(&table).unwrap();
-    assert!(
-        with_init_file <= 1,
-        "{with_init_file} mapfiles needed the stand-in; only the one that names the init file bare \
-         may (ADR-0023)"
+    assert_eq!(
+        with_init_file, 1,
+        "only the mapfile that names the init file bare needs the stand-in (ADR-0023)"
     );
 
     assert_eq!(

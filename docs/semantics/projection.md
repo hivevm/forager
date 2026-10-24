@@ -21,8 +21,10 @@ paths, `PROJ_DATA` first, before the working directory (`pj_open_lib_internal` i
 a file whose name holds a `/`, such as `./data/epsg2` or `data/epsg2`, through the resource loader
 against the main mapfile's directory inside the base context, as `INCLUDE` and `FONTSET` are
 (Q-8), once per load and within the size limit of the mapfile (Q-9), and takes the code's
-definition from it, in the format of PROJ's former `epsg` init file: `<code>` and the parameters
-up to the next `<`, `#` starting a comment. A file outside the base context, one that cannot be
+definition from it, in the format of PROJ's former `epsg` init file as PROJ reads it
+(`get_init_string` in its `src/init.cpp`): `<code>` and the parameters up to the next `<`, across
+lines, `#` starting a comment, the first definition of a code holding, and the code after the last
+`:` of the reference. A file outside the base context, one that cannot be
 read, a code it does not hold, and a definition that names a grid file or refers on with `init=`
 are each the load error `projection-unresolved`, naming the file or the code. A name without a
 `/`, such as `epsg2`, is an authority like `epsg` and goes to the resolver (ADR-0023).

@@ -1318,3 +1318,35 @@ fn an_init_file_is_read_once_and_counts_toward_the_size_limit() {
     let loaded = layer_projection(&[("m.map", text), ("data/epsg2", big)]);
     assert_eq!(codes(&loaded), ["mapfile-too-large"]);
 }
+
+#[test]
+fn an_init_file_is_read_as_proj_reads_it() {
+    // Verifies: ADR-0023
+    use forager_style_ir::LayerProjection;
+    let file = "<1> +proj=first\n  +ellps=GRS80 # a comment\n <>\n<1> +proj=second <>\n";
+    let loaded = layer_projection(&[
+        (
+            "m.map",
+            "MAP LAYER PROJECTION 'init=./a:b/epsg2:1' END END END",
+        ),
+        ("a:b/epsg2", file),
+    ]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        loaded.document.unwrap().map.layers[0].projection,
+        Some(LayerProjection::Proj4(
+            "+proj=first +ellps=GRS80".to_owned()
+        )),
+        "the code follows the last `:`, a definition runs across lines, and the first one holds"
+    );
+    let loaded = layer_projection(&[(
+        "m.map",
+        "MAP LAYER PROJECTION 'init=C:/x/epsg2:1' END END END",
+    )]);
+    assert_eq!(codes(&loaded), ["projection-unresolved"]);
+    assert!(
+        loaded.diagnostics[0].message.contains("refused"),
+        "{}",
+        loaded.diagnostics[0].message
+    );
+}
