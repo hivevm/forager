@@ -130,6 +130,7 @@ jobs:
       - name: Self-test the action references sensor
         run: bash scripts/test-sensor-action-refs.sh
       # The check of ADR-0011: every action by its major version tag, kept current by Dependabot.
+      # Verifies: ADR-0011
       - name: Check that every action is referenced by its major version tag
         run: bash scripts/sensor-action-refs.sh --require major-tag
 
