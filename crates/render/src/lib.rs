@@ -1,0 +1,65 @@
+//! The display list and the renderer trait: what is drawn, in pixel coordinates, independent of
+//! the backend that rasterizes it (ADR-0009). Only `style-ir` is known here.
+
+use forager_style_ir::Rgba;
+
+/// A position in pixels, from the top-left corner of the image.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// One drawing operation.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DrawOp {
+    /// Fills the area the rings enclose under the even-odd rule, so holes stay empty whatever
+    /// their winding.
+    Fill { rings: Vec<Vec<Point>>, color: Rgba },
+    /// Strokes each path; a closed path joins its last point to its first.
+    Stroke {
+        paths: Vec<Vec<Point>>,
+        closed: bool,
+        color: Rgba,
+        width: f64,
+    },
+}
+
+/// A drawing operation and the feature it came from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DisplayItem {
+    pub op: DrawOp,
+    pub feature_id: Option<u64>,
+}
+
+/// An image as rows of straight-alpha RGBA bytes, top row first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RgbaImage {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+}
+
+impl RgbaImage {
+    /// The colour at a pixel, or `None` outside the image.
+    pub fn pixel(&self, x: u32, y: u32) -> Option<Rgba> {
+        if x >= self.width || y >= self.height {
+            return None;
+        }
+        let i = (y as usize * self.width as usize + x as usize) * 4;
+        let p = &self.pixels[i..i + 4];
+        Some(Rgba {
+            r: p[0],
+            g: p[1],
+            b: p[2],
+            a: p[3],
+        })
+    }
+}
+
+/// Rasterizes a display list.
+pub trait Renderer {
+    fn begin(&mut self, width: u32, height: u32, background: Rgba);
+    fn draw(&mut self, item: &DisplayItem);
+    fn finish(self) -> RgbaImage;
+}

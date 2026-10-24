@@ -194,3 +194,37 @@ fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
     assert_eq!(may_depend("bindings-wasm", "arch-test"), Some(false));
     assert!(must_be_pure_rust("mapfile") && !must_be_pure_rust("bindings-wasm"));
 }
+
+#[test]
+fn only_render_agg_allows_unsafe_code() {
+    // Verifies: ADR-0015
+    // The workspace denies `unsafe_code`; any mention of the lint in a crate's code or manifest is
+    // a way to lift it (`allow`, `expect`, a lint table), so it may appear in render-agg alone,
+    // and every crate must take the workspace's lints.
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut offenders = Vec::new();
+    for entry in std::fs::read_dir(&crates).unwrap() {
+        let dir = entry.unwrap().path();
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let manifest = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap_or_default();
+        if !manifest.contains("[lints]\nworkspace = true") {
+            offenders.push(format!("{name}: does not take the workspace lints"));
+        }
+        if name == "render-agg" || name == "arch-test" {
+            continue;
+        }
+        let mut stack = vec![dir];
+        while let Some(path) = stack.pop() {
+            if path.is_dir() {
+                stack.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
+            } else if path.extension().is_some_and(|e| e == "rs" || e == "toml")
+                && std::fs::read_to_string(&path)
+                    .unwrap_or_default()
+                    .contains("unsafe_code")
+            {
+                offenders.push(path.strip_prefix(&crates).unwrap().display().to_string());
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "{offenders:?}");
+}

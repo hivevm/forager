@@ -14,12 +14,17 @@ publish = false
 forager-style-ir = { path = "crates/style-ir" }
 forager-ports = { path = "crates/ports" }
 forager-mapfile = { path = "crates/mapfile" }
+forager-render = { path = "crates/render" }
+forager-render-agg = { path = "crates/render-agg" }
+forager-encode = { path = "crates/encode" }
+forager-engine = { path = "crates/engine" }
+forager-adapter-geojson = { path = "crates/adapter-geojson" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde-saphyr = "2"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 too_many_lines = "warn"

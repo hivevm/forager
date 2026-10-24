@@ -1,0 +1,30 @@
+MAP
+  NAME "square"
+  EXTENT 0 0 100 100
+  SIZE 101 101
+  IMAGECOLOR 255 255 255
+  LAYER
+    NAME "areas"
+    TYPE POLYGON
+    STATUS ON
+    DATA "areas.geojson"
+    CLASS
+      STYLE
+        COLOR 200 220 180
+        OUTLINECOLOR 0 0 0
+        WIDTH 2
+      END
+    END
+  END
+  LAYER
+    NAME "unbound"
+    TYPE LINE
+    STATUS ON
+    DATA "nothing.geojson"
+    CLASS
+      STYLE
+        COLOR 0 0 255
+      END
+    END
+  END
+END

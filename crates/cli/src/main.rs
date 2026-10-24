@@ -2,20 +2,30 @@
 
 mod files;
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use forager_adapter_geojson::GeoJsonSource;
 use forager_ports::ResourcePath;
-use forager_style_ir::Diagnostic;
+use forager_render_agg::AggRenderer;
+use forager_style_ir::{Diagnostic, StyleDocument};
 
 use crate::files::{FileLoader, block_on};
 
-const USAGE: &str = "usage: forager read <mapfile> [--format yaml|json]";
+const USAGE: &str = "usage: forager read <mapfile> [--format yaml|json]
+       forager render <mapfile> --source <layer>=<file.geojson>... -o <image.png>";
 
 enum Format {
     Yaml,
     Json,
+}
+
+struct RenderArgs {
+    mapfile: PathBuf,
+    sources: Vec<(String, PathBuf)>,
+    output: PathBuf,
 }
 
 fn main() -> ExitCode {
@@ -24,6 +34,10 @@ fn main() -> ExitCode {
     match args.first().and_then(|a| a.to_str()) {
         Some("read") => match parse_read(&args[1..]) {
             Ok((mapfile, format)) => read(Path::new(mapfile), &format),
+            Err(message) => usage(&message),
+        },
+        Some("render") => match parse_render(&args[1..]) {
+            Ok(render_args) => render(&render_args),
             Err(message) => usage(&message),
         },
         Some("-h" | "--help") => {
@@ -61,27 +75,57 @@ fn parse_read(args: &[OsString]) -> Result<(&OsString, Format), String> {
     Ok((mapfile.ok_or("a mapfile is required")?, format))
 }
 
-/// Loads a mapfile with its directory as the base context and prints its style document.
-fn read(mapfile: &Path, format: &Format) -> ExitCode {
-    let (loader, name) = match FileLoader::for_mapfile(mapfile) {
-        Ok(found) => found,
-        Err(message) => {
-            eprintln!("forager: {}: {message}", mapfile.display());
-            return ExitCode::FAILURE;
+fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
+    let mut mapfile = None;
+    let mut sources = Vec::new();
+    let mut output = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.to_str() {
+            Some("--source") => {
+                let binding = iter.next().ok_or("--source takes <layer>=<file>")?;
+                let text = binding.to_str().ok_or("--source must be valid UTF-8")?;
+                let (layer, file) = text
+                    .split_once('=')
+                    .ok_or("--source takes <layer>=<file>")?;
+                if sources
+                    .iter()
+                    .any(|(named, _): &(String, PathBuf)| named == layer)
+                {
+                    return Err(format!("--source names layer `{layer}` twice"));
+                }
+                sources.push((layer.to_owned(), PathBuf::from(file)));
+            }
+            Some("-o") => output = Some(PathBuf::from(iter.next().ok_or("-o takes a file")?)),
+            _ if mapfile.is_none() => mapfile = Some(PathBuf::from(arg)),
+            _ => return Err(format!("unexpected argument `{}`", arg.to_string_lossy())),
         }
-    };
-    let path = match ResourcePath::new(&name) {
-        Ok(path) => path,
-        Err(e) => {
-            eprintln!("forager: {}: {e}", mapfile.display());
-            return ExitCode::FAILURE;
-        }
-    };
+    }
+    Ok(RenderArgs {
+        mapfile: mapfile.ok_or("a mapfile is required")?,
+        sources,
+        output: output.ok_or("-o <image.png> is required")?,
+    })
+}
+
+/// Loads a mapfile with its directory as the base context, printing every diagnostic.
+fn load(mapfile: &Path) -> Option<StyleDocument> {
+    let (loader, name) = FileLoader::for_mapfile(mapfile)
+        .map_err(|message| eprintln!("forager: {}: {message}", mapfile.display()))
+        .ok()?;
+    let path = ResourcePath::new(&name)
+        .map_err(|e| eprintln!("forager: {}: {e}", mapfile.display()))
+        .ok()?;
     let loaded = block_on(forager_mapfile::load(&path, &loader));
     for diagnostic in &loaded.diagnostics {
         eprintln!("{diagnostic}");
     }
-    let Some(document) = loaded.document else {
+    loaded.document
+}
+
+/// Prints a mapfile's style document.
+fn read(mapfile: &Path, format: &Format) -> ExitCode {
+    let Some(document) = load(mapfile) else {
         return ExitCode::FAILURE;
     };
     let text = match format {
@@ -97,7 +141,77 @@ fn read(mapfile: &Path, format: &Format) -> ExitCode {
     }
 }
 
+/// Renders a mapfile with GeoJSON files bound to its layers by name, and writes a PNG.
+fn render(args: &RenderArgs) -> ExitCode {
+    let Some(document) = load(&args.mapfile) else {
+        return ExitCode::FAILURE;
+    };
+    let mut sources = BTreeMap::new();
+    for (layer, file) in &args.sources {
+        if !document
+            .map
+            .layers
+            .iter()
+            .any(|l| l.name.as_deref() == Some(layer.as_str()))
+        {
+            let message = format!(
+                "no layer is named `{layer}`; --source {} is unused",
+                file.display()
+            );
+            eprintln!("{}", Diagnostic::warning("source-unbound", message, None));
+            continue;
+        }
+        // A source that cannot be read is not bound, so the engine skips its layer (G-8).
+        match read_source(file) {
+            Ok(source) => {
+                sources.insert(layer.clone(), source);
+            }
+            Err(message) => {
+                let message = format!("{}: {message}", file.display());
+                eprintln!(
+                    "{}",
+                    Diagnostic::warning("source-unreadable", message, None)
+                );
+            }
+        }
+    }
+    let rendered = block_on(forager_engine::render(
+        &document.map,
+        &sources,
+        AggRenderer::new(),
+    ));
+    for diagnostic in &rendered.diagnostics {
+        eprintln!("{diagnostic}");
+    }
+    let Some(image) = rendered.image else {
+        return ExitCode::FAILURE;
+    };
+    let written = forager_encode::png(&image)
+        .and_then(|png| std::fs::write(&args.output, png).map_err(|e| e.to_string()));
+    match written {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(message) => {
+            eprintln!("forager: {}: {message}", args.output.display());
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn report(diagnostic: &Diagnostic) -> ExitCode {
     eprintln!("{diagnostic}");
     ExitCode::FAILURE
+}
+
+/// The largest GeoJSON file the CLI reads (Q-9).
+const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
+
+fn read_source(file: &Path) -> Result<GeoJsonSource, String> {
+    let size = std::fs::metadata(file).map_err(|e| e.to_string())?.len();
+    if size > MAX_SOURCE_BYTES {
+        return Err(format!(
+            "{size} bytes exceed the limit of {MAX_SOURCE_BYTES}"
+        ));
+    }
+    let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
+    GeoJsonSource::parse(&text).map_err(|e| e.message)
 }

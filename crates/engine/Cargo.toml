@@ -1,0 +1,22 @@
+[package]
+name = "forager-engine"
+description = "Orchestrates a render request: style IR and bound sources in, display list out."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+forager-style-ir.workspace = true
+forager-ports.workspace = true
+forager-render.workspace = true
+
+[dev-dependencies]
+forager-adapter-geojson.workspace = true
+forager-render-agg.workspace = true
+forager-encode.workspace = true
+
+[lints]
+workspace = true

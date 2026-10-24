@@ -16,6 +16,10 @@ path = "src/main.rs"
 forager-style-ir.workspace = true
 forager-ports.workspace = true
 forager-mapfile.workspace = true
+forager-engine.workspace = true
+forager-render-agg.workspace = true
+forager-encode.workspace = true
+forager-adapter-geojson.workspace = true
 
 [lints]
 workspace = true

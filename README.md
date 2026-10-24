@@ -58,7 +58,8 @@ tools the checks need, and the Dev Container runs it after creation (ADR-0008, A
 - **Test:** `cargo test --workspace`
 - **Lint:** `bash scripts/check-rust.sh` — formatting, clippy, tests, the `wasm32-unknown-unknown`
   build, and `cargo deny`; `scripts/check-all.sh` runs it with the repository's other checks
-- **Run:** `cargo run -p forager-cli -- read <mapfile>`
+- **Run:** `cargo run -p forager-cli -- read <mapfile>`, or
+  `cargo run -p forager-cli -- render <mapfile> --source <layer>=<file.geojson> -o <image.png>`
 
 ## Usage
 
@@ -79,6 +80,17 @@ map:
 when it did not, and 2 on wrong arguments. `INCLUDE`s are resolved inside the mapfile's
 directory, and a path that leaves it is refused.
 
+Render a mapfile's layers from GeoJSON files, bound to the layers by name, into a PNG:
+
+```console
+$ forager render crates/cli/tests/fixtures/square.map \
+    --source areas=crates/cli/tests/fixtures/areas.geojson -o square.png
+square.map:23:5: warning [layer-skipped]: layer `unbound` (source local) is skipped: no source is bound to it
+```
+
+The first class of each layer draws every feature for now; class expressions, symbols, labels,
+and projections come with later work.
+
 ## Project Layout
 
 ```
@@ -92,7 +104,7 @@ docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
 docs/plan/            # feature specs and their tickets, deleted as their work lands (ADR-0006)
 Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0009)
-crates/               # the crates: style-ir, ports, mapfile, cli, arch-test, …
+crates/               # the crates, one per responsibility: style-ir, mapfile, engine, cli, …
 rust-toolchain.toml   # the pinned Rust toolchain (ADR-0008)
 deny.toml             # cargo-deny: licences, advisories, sources (ADR-0012)
 scripts/              # consistency checks and sensors (check-all.sh runs them all), run in CI
