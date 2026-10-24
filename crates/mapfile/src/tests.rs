@@ -1394,3 +1394,15 @@ fn an_init_file_tag_that_is_no_code_is_skipped_as_proj_skips_it() {
         "a code inside a line is none"
     );
 }
+
+#[test]
+fn the_translations_warnings_past_the_limit_are_counted() {
+    // Verifies: Q-9
+    let lines = "  SHAPEPATH \"x\"\n".repeat(super::MAX_DIAGNOSTICS + 500);
+    let text: &'static str = Box::leak(format!("MAP\n{lines}END\n").into_boxed_str());
+    let loaded = load_files(&[("m.map", text)]);
+    assert_eq!(loaded.diagnostics.len(), super::MAX_DIAGNOSTICS + 1);
+    let last = loaded.diagnostics.last().unwrap();
+    assert_eq!(last.code, "diagnostics-truncated");
+    assert!(last.message.starts_with("500 more"), "{}", last.message);
+}

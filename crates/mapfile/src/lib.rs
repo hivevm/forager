@@ -57,9 +57,7 @@ pub async fn load<L: ResourceLoader>(
     let tokens = reading.read(path, None).await;
     let map = match tokens {
         Some(tokens) if !reading.report.failed() => {
-            let (map, parse_diagnostics) = syntax::parse(&tokens);
-            reading.report.extend(parse_diagnostics);
-            map
+            syntax::parse_into(&tokens, &mut reading.report)
         }
         _ => None,
     };
@@ -73,15 +71,13 @@ pub async fn load<L: ResourceLoader>(
     };
     let mut report = reading.report;
     let document = map.filter(|_| !report.failed()).map(|block| {
-        let mut translate_diagnostics = Vec::new();
         let files = translate::Files {
             main: path,
             symbol_set: symbol_set.as_ref(),
             font_set: font_set.as_ref(),
             init_files: &init_files,
         };
-        let map = translate::translate(&block, &files, resolver, &mut translate_diagnostics);
-        report.extend(translate_diagnostics);
+        let map = translate::translate(&block, &files, resolver, &mut report);
         StyleDocument::new(map)
     });
     Loaded {
@@ -229,8 +225,7 @@ impl<L: ResourceLoader> Reading<'_, L> {
     ) -> Option<(ResourcePath, syntax::Block)> {
         let (directive, target) = self.named_file(main, map, "SYMBOLSET")?;
         let tokens = self.read(&target, Some(directive.span.clone())).await?;
-        let (block, diagnostics) = syntax::parse_symbol_set(&tokens);
-        self.report.extend(diagnostics);
+        let block = syntax::parse_symbol_set(&tokens, &mut self.report);
         block.map(|block| (target, block))
     }
 
@@ -265,8 +260,7 @@ impl<L: ResourceLoader> Reading<'_, L> {
                 return None;
             }
             let text = String::from_utf8_lossy(&bytes);
-            let (tokens, lex_diagnostics) = lexer::lex(&text, path.as_str());
-            self.report.extend(lex_diagnostics);
+            let tokens = lexer::lex_into(&text, path.as_str(), &mut self.report);
             self.stack.push(path.clone());
             let mut spliced = Vec::with_capacity(tokens.len());
             let mut iter = tokens.into_iter().peekable();

@@ -19,6 +19,7 @@
 use forager_style_ir::{Diagnostic, Span};
 
 use crate::lexer::Token;
+use crate::report::Report;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Node {
@@ -200,15 +201,24 @@ fn schema(block: &str) -> Option<Schema> {
         .map(|&(_, statements, blocks)| Schema { statements, blocks })
 }
 
-/// Parses the tokens of a mapfile, its `INCLUDE`s already spliced in, into the `MAP` block.
+/// Parses the tokens of a mapfile, its `INCLUDE`s already spliced in, into the `MAP` block, its
+/// diagnostics into `report` (Q-9).
+pub fn parse_into(tokens: &[Token], report: &mut Report) -> Option<Block> {
+    parse_root(tokens, "MAP", "map", "mapfile", report)
+}
+
+/// [`parse_into`] with a report of its own, for the parser's tests.
+#[cfg(test)]
 pub fn parse(tokens: &[Token]) -> (Option<Block>, Vec<Diagnostic>) {
-    parse_root(tokens, "MAP", "map", "mapfile")
+    let mut report = Report::default();
+    let block = parse_into(tokens, &mut report);
+    (block, report.finish())
 }
 
 /// Parses the tokens of a symbol file into its `SYMBOLSET` block, as MapServer's loadSymbolSet
 /// requires it to start.
-pub fn parse_symbol_set(tokens: &[Token]) -> (Option<Block>, Vec<Diagnostic>) {
-    parse_root(tokens, "SYMBOLSET", "symbolset", "symbol file")
+pub fn parse_symbol_set(tokens: &[Token], report: &mut Report) -> Option<Block> {
+    parse_root(tokens, "SYMBOLSET", "symbolset", "symbol file", report)
 }
 
 /// Parses `tokens` into the one block `root` that a file of the kind `file` starts with.
@@ -217,11 +227,12 @@ fn parse_root(
     root: &str,
     code: &str,
     file: &str,
-) -> (Option<Block>, Vec<Diagnostic>) {
+    report: &mut Report,
+) -> Option<Block> {
     let mut parser = Parser {
         tokens,
         pos: 0,
-        diagnostics: Vec::new(),
+        diagnostics: report,
     };
     let expected = format!("expected-{code}");
     let block = match tokens.first() {
@@ -255,16 +266,16 @@ fn parse_root(
             Some(rest.span.clone()),
         ));
     }
-    (block, parser.diagnostics)
+    block
 }
 
-struct Parser<'a> {
+struct Parser<'a, 'r> {
     tokens: &'a [Token],
     pos: usize,
-    diagnostics: Vec<Diagnostic>,
+    diagnostics: &'r mut Report,
 }
 
-impl Parser<'_> {
+impl Parser<'_, '_> {
     fn error(&mut self, code: &str, message: &str, span: Span) {
         self.diagnostics
             .push(Diagnostic::error(code, message, Some(span)));
