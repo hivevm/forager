@@ -20,6 +20,13 @@ pub struct Map {
     /// The map's projection as a proj4 string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projection: Option<String>,
+    /// The resolution of the image in dpi; MapServer's default is 72.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<f64>,
+    /// The resolution the map's pixel lengths are written for, in dpi; MapServer's default is 72.
+    /// Every length in pixels is drawn scaled by `resolution` over this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub def_resolution: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<Layer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,6 +54,9 @@ pub struct Layer {
     /// Which of the source's features the layer reads; without one, all of them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filter: Option<Expr>,
+    /// The unit of its styles' sizes, widths, gaps, patterns, and offsets; without one, pixels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_units: Option<Units>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -113,8 +123,152 @@ pub struct Style {
     /// Rotation in degrees, counter-clockwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle: Option<Bound<f64>>,
+    /// Whether the symbol turns with the direction of the line it is drawn on, MapServer's
+    /// `ANGLE AUTO`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_angle: bool,
+    /// The symbol drawn, by its name or MapServer's index into the symbol set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<Bound<SymbolRef>>,
+    /// A shift of what is drawn, `[x, y]`, y downwards.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<[Bound<f64>; 2]>,
+    /// A line drawn parallel to the feature's line at this distance, positive to its left in
+    /// the direction of drawing; MapServer writes it as `OFFSET d -99`, or `-999` for both sides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_offset: Option<LineOffset>,
+    /// A shift by distance and angle in degrees, `[distance, angle]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub polar_offset: Option<[Bound<f64>; 2]>,
+    /// The distance between symbols drawn along a line; a negative one turns them with the line,
+    /// a positive one keeps them upright.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap: Option<f64>,
+    /// The distance before the first symbol or dash along a line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_gap: Option<f64>,
+    /// Dash and gap lengths, alternating, 2 to 10 of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pattern: Vec<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_cap: Option<LineCap>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_join: Option<LineJoin>,
+    /// How far a miter join may reach, as a multiple of the width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_join_max_size: Option<f64>,
+    /// Opacity in percent, 0 to 100.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<Bound<f64>>,
+    /// The width of a symbol's outline in pixels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline_width: Option<Bound<f64>>,
+    /// The bounds of the scaled size and width, in pixels at the map's `def_resolution`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_size: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_width: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<f64>,
+    /// The geometry the style draws instead of the feature's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geom_transform: Option<GeomTransform>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
+}
+
+impl Style {
+    /// The expressions among the style's properties.
+    pub(crate) fn expressions(&self) -> Vec<&Expr> {
+        let colors = [&self.color, &self.outline_color].into_iter().flatten();
+        let numbers = [
+            &self.width,
+            &self.size,
+            &self.angle,
+            &self.opacity,
+            &self.outline_width,
+        ];
+        let pairs = [&self.offset, &self.polar_offset]
+            .into_iter()
+            .flatten()
+            .flatten();
+        let numbers = numbers
+            .into_iter()
+            .flatten()
+            .chain(pairs)
+            .chain(self.line_offset.iter().map(|o| &o.distance));
+        let symbol = self.symbol.iter().filter_map(Bound::expression);
+        colors
+            .filter_map(Bound::expression)
+            .chain(numbers.filter_map(Bound::expression))
+            .chain(symbol)
+            .collect()
+    }
+}
+
+/// A symbol of the map's symbol set: by its name, or by MapServer's index, in which 0 is the
+/// default symbol.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SymbolRef {
+    Index(u32),
+    Name(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LineOffset {
+    pub distance: Bound<f64>,
+    /// Drawn on both sides of the line, MapServer's `-999`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub both_sides: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LineCap {
+    Butt,
+    Round,
+    Square,
+    Triangle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LineJoin {
+    None,
+    Round,
+    Miter,
+    Bevel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GeomTransform {
+    /// The first point of a line.
+    Start,
+    /// The last point of a line.
+    End,
+    /// Every point of a line but the first and the last.
+    Vertices,
+    Centroid,
+}
+
+/// A unit of length.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Units {
+    Pixels,
+    Inches,
+    Feet,
+    Miles,
+    Meters,
+    Kilometers,
+    #[serde(rename = "nautical_miles")]
+    NauticalMiles,
+    /// Decimal degrees.
+    Degrees,
 }
 
 /// A style property that may vary by feature: a value, a property bound as MapServer binds an

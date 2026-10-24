@@ -55,6 +55,9 @@ to invent.
   _Avoid:_ layer type, geometry type (for this concept).
 - **Resource loader** — The port through which the host supplies the bytes of files a style refers
   to — `INCLUDE`s, symbol sets, font sets, fonts, pixmaps — resolved against the base context.
+- **Scale factor** — What a style's sizes, widths, gaps, patterns, and offsets are multiplied by
+  when a map is drawn, from its resolution, its scale, and the layer's size units, as MapServer
+  computes it ([`semantics/scale.md`](semantics/scale.md)).
 - **Source reference** — A layer's description of where its data lives — a kind and properties
   taken unparsed from `CONNECTIONTYPE`, `CONNECTION`, `DATA`, and related keywords — which a
   resolver binds to an adapter.

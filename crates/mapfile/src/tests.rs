@@ -650,8 +650,10 @@ fn style_numbers_outside_mapservers_ranges_are_errors() {
         assert_eq!(codes(&loaded), ["invalid-value"], "{text}");
     }
     let (loaded, style) = first_style("MAP LAYER CLASS STYLE ANGLE AUTO END END END END");
-    assert_eq!(codes(&loaded), ["unsupported-value"]);
-    assert_eq!(style.unwrap().angle, None);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let style = style.unwrap();
+    assert_eq!(style.angle, None);
+    assert!(style.auto_angle);
 }
 
 #[test]
@@ -675,4 +677,124 @@ fn bound_style_properties_read_back_equal_from_yaml_and_json() {
         forager_style_ir::StyleDocument::from_json(&json).unwrap(),
         document
     );
+}
+
+#[test]
+fn every_style_property_that_renders_is_carried_over() {
+    use forager_style_ir::{GeomTransform, LineCap, LineJoin, SymbolRef};
+    let (loaded, style) = first_style(
+        "MAP LAYER CLASS STYLE
+           SYMBOL 'circle' ANGLE AUTO OFFSET 2 [dy] POLAROFFSET 5 45 GAP -20 INITIALGAP 4
+           PATTERN 10 5 END LINECAP BUTT LINEJOIN MITER LINEJOINMAXSIZE 2 OPACITY 150
+           OUTLINEWIDTH 1 MINSIZE 2 MAXSIZE 40 MINWIDTH 0.5 MAXWIDTH 8 GEOMTRANSFORM 'vertices'
+         END END END END",
+    );
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let style = style.unwrap();
+    assert_eq!(
+        style.symbol,
+        Some(Bound::Value(SymbolRef::Name("circle".into())))
+    );
+    assert!(style.auto_angle);
+    assert_eq!(
+        style.offset,
+        Some([Bound::Value(2.0), binding("dy").unwrap()])
+    );
+    assert_eq!(
+        style.polar_offset,
+        Some([Bound::Value(5.0), Bound::Value(45.0)])
+    );
+    assert_eq!((style.gap, style.initial_gap), (Some(-20.0), Some(4.0)));
+    assert_eq!(style.pattern, [10.0, 5.0]);
+    assert_eq!(style.line_cap, Some(LineCap::Butt));
+    assert_eq!(style.line_join, Some(LineJoin::Miter));
+    assert_eq!(style.line_join_max_size, Some(2.0));
+    assert_eq!(
+        style.opacity,
+        Some(Bound::Value(100.0)),
+        "clamped as loadStyle clamps"
+    );
+    assert_eq!(style.outline_width, Some(Bound::Value(1.0)));
+    assert_eq!((style.min_size, style.max_size), (Some(2.0), Some(40.0)));
+    assert_eq!((style.min_width, style.max_width), (Some(0.5), Some(8.0)));
+    assert_eq!(style.geom_transform, Some(GeomTransform::Vertices));
+
+    let (_, style) = first_style("MAP LAYER CLASS STYLE SYMBOL 2 OPACITY 50.7 END END END END");
+    let style = style.unwrap();
+    assert_eq!(style.symbol, Some(Bound::Value(SymbolRef::Index(2))));
+    assert_eq!(style.opacity, Some(Bound::Value(50.0)));
+}
+
+#[test]
+fn an_offset_of_minus_99_is_a_line_offset() {
+    use forager_style_ir::LineOffset;
+    let offset = |text: &'static str| first_style(text).1.unwrap();
+    let style = offset("MAP LAYER CLASS STYLE OFFSET 3 -99 END END END END");
+    assert_eq!(style.offset, None);
+    assert_eq!(
+        style.line_offset,
+        Some(LineOffset {
+            distance: Bound::Value(3.0),
+            both_sides: false
+        })
+    );
+    let style = offset("MAP LAYER CLASS STYLE OFFSET [d] -999 END END END END");
+    assert_eq!(
+        style.line_offset,
+        Some(LineOffset {
+            distance: binding("d").unwrap(),
+            both_sides: true
+        })
+    );
+}
+
+#[test]
+fn lengths_are_carried_as_written_with_the_factors_that_scale_them() {
+    use forager_style_ir::Units;
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP RESOLUTION 144 DEFRESOLUTION 96
+           LAYER SIZEUNITS meters CLASS STYLE SIZE 10 WIDTH 2 PATTERN 10 5 END END END END
+         END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let map = loaded.document.unwrap().map;
+    assert_eq!(
+        (map.resolution, map.def_resolution),
+        (Some(144.0), Some(96.0))
+    );
+    assert_eq!(map.layers[0].size_units, Some(Units::Meters));
+    let style = &map.layers[0].classes[0].styles[0];
+    assert_eq!(style.size, Some(Bound::Value(10.0)));
+    assert_eq!(style.width, Some(Bound::Value(2.0)));
+    assert_eq!(style.pattern, [10.0, 5.0]);
+}
+
+#[test]
+fn style_values_outside_loadstyles_checks_are_errors() {
+    for text in [
+        "MAP LAYER CLASS STYLE INITIALGAP -1 END END END END",
+        "MAP LAYER CLASS STYLE MAXSIZE 0 END END END END",
+        "MAP LAYER CLASS STYLE MAXWIDTH 0 END END END END",
+        "MAP LAYER CLASS STYLE LINEJOINMAXSIZE 0 END END END END",
+        "MAP LAYER CLASS STYLE LINECAP WAVY END END END END",
+        "MAP LAYER CLASS STYLE PATTERN 10 END END END END END",
+        "MAP LAYER CLASS STYLE PATTERN 1 2 3 4 5 6 7 8 9 10 11 END END END END END",
+        "MAP LAYER CLASS STYLE SYMBOL -1 END END END END",
+        "MAP LAYER CLASS STYLE OFFSET 1 END END END END",
+        "MAP LAYER SIZEUNITS parsecs END END",
+        "MAP RESOLUTION 5 END",
+    ] {
+        let loaded = load_files(&[("m.map", text)]);
+        assert!(loaded.document.is_none(), "{text}");
+        assert_eq!(codes(&loaded), ["invalid-value"], "{text}");
+    }
+    let (_, style) = first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM VERTICES END END END END");
+    assert_eq!(
+        style.unwrap().geom_transform,
+        Some(forager_style_ir::GeomTransform::Vertices)
+    );
+    let (loaded, style) = first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM bbox END END END END");
+    assert_eq!(codes(&loaded), ["unsupported-value"]);
+    assert_eq!(style.unwrap().geom_transform, None);
 }

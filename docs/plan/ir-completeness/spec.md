@@ -19,10 +19,10 @@ by the test, loads without an error into a style IR that carries the styling cor
 survives the round trip through YAML and JSON unchanged. The IR carries the parts that render:
 classes with their expressions and scale ranges; styles complete, attribute bindings and symbol
 references included; symbols and symbol sets; labels and font sets; and the layer's filter,
-class item, projection, and scale ranges. MapServer's quirks are resolved at import, so the IR
-holds values that mean what they say. Each parameter the IR carries has a short semantics page
-that says what it means and which MapServer behaviour it reproduces. What is not carried over
-stays a "not yet supported" warning.
+class item, projection, and scale ranges. MapServer's encodings are resolved at import, and the
+IR carries what scales its lengths, so it holds values that mean what they say. Each parameter
+the IR carries has a short semantics page that says what it means and which MapServer behaviour
+it reproduces. What is not carried over stays a "not yet supported" warning.
 
 ## Existing behaviour
 
@@ -73,8 +73,9 @@ stays a "not yet supported" warning.
    classes in the IR, so that a layer shows in the right place at the right scales.
 8. As a cartographer, I want MapServer's quirks — a vector symbol's size being its height, dash
    lengths scaling with the width, `OFFSET x -99`, `SYMBOLSCALEDENOM` with `MINSIZE` and
-   `MAXSIZE`, 72 versus 96 dpi, `SIZEUNITS` — resolved when the mapfile is read, so that the IR
-   says what is drawn and not what MapServer would make of it.
+   `MAXSIZE`, 72 versus 96 dpi, `SIZEUNITS` — stated in the IR, encodings resolved and scaling
+   carried with its factors, so that the IR says what is drawn and not what MapServer's syntax
+   happens to encode.
 9. As an operator, I want `forager read --base <dir>` to allow `INCLUDE "../…"` inside a
    directory I name, so that mapfiles that share includes one level up load without opening the
    whole file system.
@@ -104,12 +105,13 @@ stays a "not yet supported" warning.
 - **Fonts** are the `FONTSET` file's name-to-path table, read through the resource loader; a label
   names its font. Font files are not read at load.
 - **Labels** belong to their class; `TEXT` is a string expression, `LABELITEM` a property.
-- **Units and scale.** The IR holds lengths in pixels of the output image: the frontend scales
-  them by `RESOLUTION` over `DEFRESOLUTION` (both 72 dpi unless the mapfile sets them, as in
-  MapServer), so the IR does not carry the two; `SIZEUNITS` other than
-  pixels and `SYMBOLSCALEDENOM` become a scale factor the engine applies, together with the
-  clamping bounds, without the IR repeating MapServer's arithmetic. The semantics page of each
-  quirk states the formula and the MapServer source it follows.
+- **Units and scale.** The IR holds sizes, widths, gaps, patterns, and offsets as the mapfile
+  writes them, with what scales them: the map's `RESOLUTION` and `DEFRESOLUTION`, the layer's
+  `SIZEUNITS` and `SYMBOLSCALEDENOM`, the styles' size and width bounds. MapServer computes the
+  scale factor while it draws, from the map's scale, and applies it to bound values too, so the
+  engine applies it, by MapServer's formulas, which the semantics page states with their source.
+  The frontend resolves at import only what is an encoding: `OFFSET x -99` and `-999` as a line
+  offset, a symbol by index or name, a unit keyword.
 - **Projection** of a layer resolves like the map's (ADR-0018); reprojection is not part of this
   spec.
 - **Base context.** The CLI takes `--base <dir>`; the mapfile must lie inside it, and `..` is

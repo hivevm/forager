@@ -11,5 +11,6 @@ pub use diagnostic::{Diagnostic, Severity, Span};
 pub use document::{FORMAT_VERSION, StyleDocument};
 pub use expression::{Expr, MAX_EXPRESSION_DEPTH, Op};
 pub use model::{
-    Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Style,
+    Bound, Class, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
+    RenderMode, Rgba, SourceRef, Style, SymbolRef, Units,
 };

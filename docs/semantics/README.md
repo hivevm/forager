@@ -12,3 +12,8 @@ describe and decide nothing: the decisions are the ADRs they cite.
 - [Attribute bindings `[name]`](binding.md)
 - [`COLOR` and `OUTLINECOLOR`](color.md)
 - [`SIZE`](size.md), [`WIDTH`](width.md), [`ANGLE`](angle.md) of a style
+- [`SYMBOL` and `GEOMTRANSFORM`](style-symbol.md) of a style
+- [`OFFSET` and `POLAROFFSET`](offset.md)
+- [`PATTERN`, `GAP`, `INITIALGAP`, `LINECAP`, `LINEJOIN`](line.md)
+- [`OPACITY` and `OUTLINEWIDTH`](opacity.md)
+- [Scaling: `RESOLUTION`, `DEFRESOLUTION`, `SIZEUNITS`, and the bounds](scale.md)
