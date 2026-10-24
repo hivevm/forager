@@ -98,6 +98,7 @@ is the table a session reads.
 | [0019](0019-cql2-expressions.md) | Expressions in the style IR are a lean CQL2 tree of Forager's own types, serialized as CQL2-JSON, with MapServer's typing made explicit at import | `crates/style-ir`, the translation of expressions in `crates/mapfile`, and every crate that evaluates an expression of the style IR | 🟢 accepted |
 | [0020](0020-style-document-compatibility.md) | The style document is versioned by a JSON Schema per format version, read leniently across minors, and migrated across majors in steps | `crates/style-ir` (the style document, its readers, its `schema` feature), the schema files of the style document and the check that compares them, and every change to the shape of the style IR | 🟢 accepted |
 | [0021](0021-vendored-leaflet.md) | The browser example loads third-party JavaScript only from copies vendored in the tree and checked by checksum | `examples/web/`, its `vendor/` directory, and every JavaScript library the example loads | 🟢 accepted |
+| [0022](0022-lenient-reader-path-to-error.md) | A newer minor's document that does not read is located with `serde_path_to_error` and read again with the failed value dropped, at most a hundred times | `crates/style-ir` (the lenient reader of the style document in `document.rs`), the `serde_path_to_error` entry of `Cargo.toml`, and every read error of the style document that names a path | 🟡 proposed |
 
 ### Superseded and rejected
 

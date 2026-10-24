@@ -31,11 +31,17 @@ golden path and the test pattern an agent copies from are named here.
 - **`style-ir`** — the data model of a map, its expressions a CQL2 tree
   ([ADR-0019](adr/0019-cql2-expressions.md)), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
-  ([ADR-0014](adr/0014-style-document-serde.md)), whose readers name each field they do not know
-  by its JSON Pointer. Its `schema` feature derives the JSON Schema of the current format version
-  with schemars, checked in under `schema/` and compared on every push
-  ([ADR-0020](adr/0020-style-document-compatibility.md)); the browser bindings never enable it.
-  It depends on no other crate of the workspace.
+  ([ADR-0014](adr/0014-style-document-serde.md)). Its readers
+  ([ADR-0020](adr/0020-style-document-compatibility.md)) name each field they do not know by its
+  JSON Pointer; a document of a newer minor that does not read is read again from its value tree
+  with each unknown value dropped and each condition that does not read kept as `false`, at most
+  a hundred times (Q-9); a document of an older major is migrated on its value tree by the chain
+  of steps in `migration.rs`, one major at a time, and then read as the current version. Its
+  `schema` feature derives the JSON Schema of the current format version with schemars, checked
+  in under `schema/`; `tests/schema.rs` compares a fresh derivation with that file on every push
+  and, once a release tag `v<semver>` holds schema files, freezes them and asks for the bump the
+  change since the last release needs. The browser bindings never enable the feature. It
+  depends on no other crate of the workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
   resolver — with the features and geometries a source delivers, and the resource path that
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.
@@ -79,10 +85,10 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0015](adr/0015-agg-rust-rasterizer.md)).
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
-mapfile frontend, the style document readers, the renderer on structured shapes, and the browser
-path on GeoJSON — run by `scripts/fuzz.sh`, every Sunday through `.github/workflows/fuzz.yml`;
-it keeps libFuzzer and the nightly toolchain out of the product's build, and
-`scripts/check-rust.sh` lints it on every push.
+mapfile frontend, the style document readers with and without a migration step, the renderer on
+structured shapes, and the browser path on GeoJSON — run by `scripts/fuzz.sh`, every Sunday
+through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out of the
+product's build, and `scripts/check-rust.sh` lints it on every push.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
 pins, by tag and commit: a sparse checkout into `target/`, cached in CI, never in the repository.
