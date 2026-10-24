@@ -25,3 +25,11 @@ skimmed. The design revision drops what prevented nothing
 - **Logic ported from MapServer keeps MapServer's notice** — a file whose rules follow MapServer's
   C code names the source file and release and carries its copyright and permission notice at the
   top, as the specification's licence constraint requires.
+- **A reader that skips what it cannot read fails closed** — a condition it cannot read becomes
+  one that never matches, never one that is absent, and what it skips is still held to the limits
+  of Q-9; a lenient path is a second way in, and what it leaves out must not widen what a map
+  draws or what an input may cost.
+- **A test's fixture repository runs git without git's repository variables** — a test or
+  self-test that drives git on a repository of its own removes what `git rev-parse
+  --local-env-vars` names from git's environment, because a caller that set `GIT_DIR`, such as a
+  hook in a linked worktree, otherwise turns every fixture command on the real repository.
