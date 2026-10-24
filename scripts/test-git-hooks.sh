@@ -92,6 +92,26 @@ d="$(repo detached)"
 git -C "${d:?}" checkout -q --detach
 expect pass "a commit on a detached HEAD is not on main" "$d" "" commit -q --allow-empty -m x
 
+d="$(repo worktree)"
+git -C "${d:?}" worktree add -q -b feature "$d-wt"
+# A check that runs git in a repository of its own, as the self-tests and the corpus fetch do:
+# with the hook's repository variables, it would write the fixture's config instead.
+mkdir -p "$d-wt/scripts"
+cat > "$d-wt/scripts/check-all.sh" <<'EOF'
+#!/usr/bin/env bash
+own="$(mktemp -d)"
+git -C "$own" init -q
+git -C "$own" config fixture.touched yes
+rm -rf "$own"
+EOF
+expect pass "a push from a linked worktree" "$d-wt" "" push -q origin feature
+if [[ -z "$(git -C "${d:?}" config --get fixture.touched)" ]]; then
+  passed=$((passed + 1))
+else
+  failed=$((failed + 1))
+  echo "FAIL: the checks of a push from a linked worktree wrote the repository's config" >&2
+fi
+
 # --- summary -------------------------------------------------------------------------------
 
 if ((failed)); then
