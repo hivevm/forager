@@ -17,11 +17,12 @@ label property takes beside a plain value and an expression.
 
 A label's properties are read by `bindLabel` in the same file: `ANGLE` as a number, `SIZE`,
 `PRIORITY`, `SHADOWSIZE`, and `OFFSET` as a number rounded to an integer (`bindIntegerAttribute`,
-`MS_NINT(atof(…))`), `FONT` as the value as written, and `ALIGN` and `POSITION` as an integer, or,
-where that reads as 0, as a keyword (`left`, `center`, `right`; `ul` … `lr`, `cc`) compared
-without case. MapServer binds no `SHADOWCOLOR` (`loadLabel` reads it with `loadColor` and no
-binding); the frontend still carries one, a difference revision ticket 26 removes, together
-with the rounding the IR does not yet state.
+`MS_NINT(atof(…))`), and `FONT` as the value as written. `ALIGN` and `POSITION` take a nonzero
+integer as it is, without a range check; where the value reads as 0, `ALIGN` takes a value of at
+least four characters that begins with `left`, `cente`, or `right`, and `POSITION` one of exactly
+two characters among `ul` … `lr` and `cc`, each compared without case. MapServer binds no
+`SHADOWCOLOR`: `loadLabel` reads it with `loadColor` and no binding. The frontend carries a
+`SHADOWCOLOR` binding all the same, and the style IR does not state the rounding.
 
 A binding is not an expression: MapServer keeps the two apart (`bindings` and `exprBindings` of a
 style), and a binding has the empty-value rule that an expression's `to_number` does not, which

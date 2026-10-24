@@ -13,8 +13,8 @@ says a bound number is read with `atof`, without the rounding a label's integer 
 
 The frontend refuses a `SHADOWCOLOR` binding as MapServer does, and the IR states, for the
 label properties MapServer binds as integers, that a bound value is rounded as `MS_NINT` rounds
-it, and how `ALIGN` and `POSITION` read a bound value; `docs/semantics/binding.md` then drops its
-note on the difference.
+it, and how `ALIGN` and `POSITION` read a bound value; `docs/semantics/binding.md` then states the
+frontend's reading as MapServer's.
 
 ## Acceptance criteria
 
@@ -22,8 +22,10 @@ note on the difference.
   gives for a colour that takes no binding, at its span.
 - [ ] Given a label with `SIZE [s]`, `PRIORITY [p]`, `OFFSET [x] [y]`, `SHADOWSIZE [a] [b]`, when
   the IR is read, then the documentation of each says the bound value is rounded to an integer.
-- [ ] Given `ALIGN [a]` and `POSITION [p]`, when the IR is read, then it states the integer and
-  keyword reading of `bindLabel`, with its source.
+- [ ] Given `ALIGN [a]` and `POSITION [p]`, when the IR is read, then it states the reading of
+  `bindLabel`, with its source: a nonzero integer taken without a range check; else, for `ALIGN`,
+  a value of at least four characters matched by its prefix (`left`, `cente`, `right`), for
+  `POSITION`, one of exactly two characters, each without case.
 
 ## Read first
 
