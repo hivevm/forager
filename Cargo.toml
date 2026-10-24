@@ -26,6 +26,9 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 serde-saphyr = "2"
 # Reports each key a reader ignores with its path (ADR-0020).
 serde_ignored = "0.1.14"
+# Names the path at which a typed read failed, so that a newer minor's unknown value is dropped
+# there and any other read error names its place (ADR-0020).
+serde_path_to_error = "0.1.20"
 # Derives the JSON Schema of the style document, behind style-ir's `schema` feature (ADR-0020).
 schemars = "1.2.3"
 wasm-bindgen = "0.2.129"

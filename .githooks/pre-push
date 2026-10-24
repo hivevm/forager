@@ -14,6 +14,12 @@ set -uo pipefail
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 
+# In a linked worktree git runs the hook with GIT_DIR and the other repository variables set;
+# passed on, they turn every git command of the checks, such as a self-test's fixture, on this
+# repository instead. The checks find it from the working directory, as they do outside a hook.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
+
 if [[ -n "$root" && -f "$root/scripts/check-all.sh" ]]; then
   if ! bash "$root/scripts/check-all.sh"; then
     echo >&2

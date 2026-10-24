@@ -92,6 +92,35 @@ d="$(repo detached)"
 git -C "${d:?}" checkout -q --detach
 expect pass "a commit on a detached HEAD is not on main" "$d" "" commit -q --allow-empty -m x
 
+d="$(repo worktree)"
+git -C "${d:?}" worktree add -q -b feature "$d-wt"
+# A check that finds its repository from the working directory, then runs git in a repository of
+# its own — config, a branch, a push — as the self-tests and the corpus fetch do: with the hook's
+# repository variables, all of it would land in the fixture instead.
+mkdir -p "$d-wt/scripts"
+cat > "$d-wt/scripts/check-all.sh" <<'EOF'
+#!/usr/bin/env bash
+set -e
+[[ "$(git rev-parse --show-toplevel)" == "$PWD" ]]
+own="$(mktemp -d)"
+git -C "$own" init -q -b main
+git -C "$own" config fixture.touched yes
+git -C "$own" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m own
+git -C "$own" branch leaked
+git init -q --bare "$own.git"
+git -C "$own" push -q "$own.git" leaked
+EOF
+refs() { git -C "$d" for-each-ref; git -C "$d.git" for-each-ref; }
+before="$(refs | grep -v '/feature$')"
+TMPDIR="$work" expect pass "a push from a linked worktree" "$d-wt" "" push -q origin feature
+if [[ -z "$(git -C "${d:?}" config --get fixture.touched)" ]] \
+   && [[ "$(refs | grep -v '/feature$')" == "$before" ]]; then
+  passed=$((passed + 1))
+else
+  failed=$((failed + 1))
+  echo "FAIL: the checks of a push from a linked worktree changed the repository's config or refs" >&2
+fi
+
 # --- summary -------------------------------------------------------------------------------
 
 if ((failed)); then
