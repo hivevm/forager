@@ -67,7 +67,7 @@ golden path and the test pattern an agent copies from are named here.
 - **`adapter-epsg`** — resolves `init=epsg:` projections for the frontend through the
   `ProjectionResolver` port: built in are only EPSG:4326, EPSG:3857, and the WGS84 UTM zones;
   every other code comes from a table the host supplies
-  ([ADR-0018](adr/0018-projection-resolver.md)).
+  ([ADR-0023](adr/0023-projection-resolver-and-init-files.md)).
 - **`cli`** — the `forager` command, a host with a file loader rooted at the base context — the
   mapfile's directory, or the directory `--base` names — that also refuses symbolic links out of
   it; `forager render` binds GeoJSON files to layers and writes a PNG.

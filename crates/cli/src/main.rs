@@ -141,7 +141,7 @@ fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
 }
 
 /// Loads a mapfile inside `base`, by default its directory, resolving `init=` projections with the
-/// built-in EPSG definitions and those of `epsg` (ADR-0018), and prints every diagnostic.
+/// built-in EPSG definitions and those of `epsg` (ADR-0023), and prints every diagnostic.
 fn load(mapfile: &Path, epsg: Option<&Path>, base: Option<&Path>) -> Option<StyleDocument> {
     let resolver = match epsg {
         None => EpsgTable::new(),
@@ -252,7 +252,7 @@ fn read_source(file: &Path) -> Result<GeoJsonSource, String> {
     GeoJsonSource::parse(&read_bounded(file)?).map_err(|e| e.message)
 }
 
-/// The EPSG table a host file supplies (ADR-0018), within the size limit of a source. Each
+/// The EPSG table a host file supplies (ADR-0023), within the size limit of a source. Each
 /// unusable line is a line of the message.
 fn read_epsg(file: &Path) -> Result<EpsgTable, String> {
     EpsgTable::with_table(&read_bounded(file)?).map_err(|errors| {

@@ -94,11 +94,11 @@ is the table a session reads.
 | [0015](0015-agg-rust-rasterizer.md) | The reference renderer rasterizes with agg-rust in `render-agg`, behind clipping that keeps every coordinate near the image, with `unsafe` allowed in that crate alone | `crates/render`, `crates/render-agg`, and the `unsafe_code` lint of the workspace | 🟢 accepted |
 | [0016](0016-geojson-crate.md) | The GeoJSON adapter parses with the georust `geojson` crate | `crates/adapter-geojson` | 🟢 accepted |
 | [0017](0017-png-crate.md) | The encoder writes PNG with the image-rs `png` crate | `crates/encode` | 🟢 accepted |
-| [0018](0018-projection-resolver.md) | `init=` projections are resolved through a resolver port the host passes in, with a minimal built-in table and a host-supplied file for the rest | `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm` | 🟢 accepted |
 | [0019](0019-cql2-expressions.md) | Expressions in the style IR are a lean CQL2 tree of Forager's own types, serialized as CQL2-JSON, with MapServer's typing made explicit at import | `crates/style-ir`, the translation of expressions in `crates/mapfile`, and every crate that evaluates an expression of the style IR | 🟢 accepted |
 | [0020](0020-style-document-compatibility.md) | The style document is versioned by a JSON Schema per format version, read leniently across minors, and migrated across majors in steps | `crates/style-ir` (the style document, its readers, its `schema` feature), the schema files of the style document and the check that compares them, and every change to the shape of the style IR | 🟢 accepted |
 | [0021](0021-vendored-leaflet.md) | The browser example loads third-party JavaScript only from copies vendored in the tree and checked by checksum | `examples/web/`, its `vendor/` directory, and every JavaScript library the example loads | 🟢 accepted |
 | [0022](0022-lenient-reader-path-to-error.md) | A newer minor's document that does not read is located with `serde_path_to_error` and read again with the failed value dropped, at most a hundred times | `crates/style-ir` (the lenient reader of the style document in `document.rs`), the `serde_path_to_error` entry of `Cargo.toml`, and every read error of the style document that names a path | 🟢 accepted |
+| [0023](0023-projection-resolver-and-init-files.md) | `init=` projections are resolved through a resolver port the host passes in, and from an init file the mapfile names by a path inside the base context | `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm` | 🟡 proposed |
 
 ### Superseded and rejected
 
@@ -106,4 +106,6 @@ The record of what was decided against or replaced: read one when a change touch
 governed, to learn why the current decision stands. A row moves here in the pull request that
 flips its status.
 
-None yet.
+| ADR | Title | Applies to | Status |
+|-----|-------|------------|--------|
+| [0018](0018-projection-resolver.md) | `init=` projections are resolved through a resolver port the host passes in, with a minimal built-in table and a host-supplied file for the rest | `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm` | ⚪ superseded |

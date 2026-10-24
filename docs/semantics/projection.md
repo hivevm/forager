@@ -10,7 +10,7 @@ difference). Reprojection itself is not yet drawn.
 
 **Parameters.** MapServer hands every parameter to PROJ, so the frontend writes each one with a
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the
-host passes in (ADR-0018); without one, or for a code it does not know, it is a load error. As in
+host passes in (ADR-0023); without one, or for a code it does not know, it is a load error. As in
 PROJ's `pj_expand_init`, there is at most one `init=`, it is matched case-sensitively, and its
 expansion follows the explicit parameters, which take precedence. An `init=` that names a file by
 a path, such as `init=./data/epsg2:42304`, has its path as the authority and is resolved, or not,
