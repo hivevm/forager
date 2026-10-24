@@ -1,6 +1,6 @@
 # ADR-0022: A newer minor's document that does not read is located with `serde_path_to_error` and read again with the failed value dropped, at most a hundred times
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/style-ir` (the lenient reader of the style document in `document.rs`), the `serde_path_to_error` entry of `Cargo.toml`, and every read error of the style document that names a path
