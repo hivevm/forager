@@ -33,7 +33,7 @@ for test in "$ROOT"/scripts/test-*.sh; do
   name="$(basename "$test")"
   # Itself, and the normalize self-test, which runs every self-test in a copy of the tree.
   [[ "$name" == "$SELF" || "$name" == test-normalize-remap.sh ]] && continue
-  grep -qE 'git (init|-C)' "$test" || continue
+  grep -qE '\bgit ' "$test" || continue
   if ! GIT_DIR="$decoy/.git" bash "$test" > "$work/out" 2>&1; then
     failed=$((failed + 1))
     echo "FAIL: $name fails with GIT_DIR set" >&2
@@ -41,10 +41,11 @@ for test in "$ROOT"/scripts/test-*.sh; do
   elif [[ "$(state)" != "$before" ]]; then
     failed=$((failed + 1))
     echo "FAIL: $name changed the repository GIT_DIR names" >&2
-    before="$(state)"
   else
     passed=$((passed + 1))
   fi
+  # Each self-test is judged on what it changed itself.
+  before="$(state)"
 done
 
 if ((failed)); then

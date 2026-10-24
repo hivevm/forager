@@ -82,6 +82,7 @@ fn git_in(dir: &Path) -> Command {
         .args(["rev-parse", "--local-env-vars"])
         .output()
         .expect("git runs");
+    assert!(names.status.success(), "git names its repository variables");
     let mut git = Command::new("git");
     for name in String::from_utf8_lossy(&names.stdout).lines() {
         git.env_remove(name);
@@ -613,11 +614,20 @@ fn the_fixture_repository_is_the_only_one_its_git_touches() {
         ])
         .env("GIT_DIR", decoy.join(".git"))
         .env("FORAGER_DECOY", "1")
-        .status()
+        .output()
         .unwrap();
     let after = refs();
     std::fs::remove_dir_all(&decoy).unwrap();
-    assert!(status.success(), "the tag test fails under a GIT_DIR");
+    assert!(
+        status.status.success(),
+        "the tag test fails under a GIT_DIR"
+    );
+    // A renamed tag test would leave the filter matching nothing, and pass unseen.
+    let stdout = String::from_utf8_lossy(&status.stdout);
+    assert!(
+        stdout.contains("1 passed"),
+        "the tag test did not run:\n{stdout}"
+    );
     assert_eq!(
         after, before,
         "the tag test wrote into the repository GIT_DIR names"
