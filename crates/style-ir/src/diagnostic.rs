@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -7,13 +8,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// A span serializes as `file:line:column`, so the style document stays readable.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Span {
-    pub file: String,
+    /// Shared, so that the many spans of one file cost one copy of its name.
+    pub file: Arc<str>,
     pub line: u32,
     pub column: u32,
 }
 
 impl Span {
-    pub fn new(file: impl Into<String>, line: u32, column: u32) -> Self {
+    pub fn new(file: impl Into<Arc<str>>, line: u32, column: u32) -> Self {
         Self {
             file: file.into(),
             line,

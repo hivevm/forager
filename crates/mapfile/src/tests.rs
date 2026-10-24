@@ -244,3 +244,27 @@ fn diagnostics_past_the_limit_are_counted_not_listed() {
     assert_eq!(last.code, "diagnostics-truncated");
     assert!(last.message.starts_with("500 "), "{}", last.message);
 }
+
+#[test]
+fn diagnostics_are_bounded_while_they_are_collected() {
+    // Verifies: Q-9
+    // Every INCLUDE names a file that is the input again: tens of thousands of cycle and depth
+    // errors, of which the load keeps the first thousand and counts the rest.
+    let text: &'static str = format!(
+        "MAP\n{}END\n",
+        (0..12)
+            .map(|i| format!("INCLUDE '{i}'\n"))
+            .collect::<String>()
+    )
+    .leak();
+    let files: Vec<(&'static str, &'static str)> = std::iter::once(("m.map", text))
+        .chain((0..12).map(|i| (&*format!("{i}").leak(), text)))
+        .collect();
+    let loaded = load_files(&files);
+    assert!(loaded.document.is_none());
+    assert_eq!(loaded.diagnostics.len(), super::MAX_DIAGNOSTICS + 1);
+    assert_eq!(
+        loaded.diagnostics.last().unwrap().code,
+        "diagnostics-truncated"
+    );
+}

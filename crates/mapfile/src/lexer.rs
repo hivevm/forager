@@ -8,6 +8,8 @@
 // permission notice shall be included in all copies of this Software or works derived from this
 // Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
 
+use std::sync::Arc;
+
 use forager_style_ir::{Diagnostic, Span};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -58,7 +60,7 @@ pub fn lex(text: &str, file: &str) -> (Vec<Token>, Vec<Diagnostic>) {
         pos: 0,
         line: 1,
         column: 1,
-        file,
+        file: Arc::from(file),
         tokens: Vec::new(),
         diagnostics: Vec::new(),
     };
@@ -66,17 +68,17 @@ pub fn lex(text: &str, file: &str) -> (Vec<Token>, Vec<Diagnostic>) {
     (lexer.tokens, lexer.diagnostics)
 }
 
-struct Lexer<'a> {
+struct Lexer {
     chars: Vec<char>,
     pos: usize,
     line: u32,
     column: u32,
-    file: &'a str,
+    file: Arc<str>,
     tokens: Vec<Token>,
     diagnostics: Vec<Diagnostic>,
 }
 
-impl Lexer<'_> {
+impl Lexer {
     fn run(&mut self) {
         while let Some(c) = self.peek(0) {
             let span = self.span();
@@ -99,7 +101,11 @@ impl Lexer<'_> {
     }
 
     fn span(&self) -> Span {
-        Span::new(self.file, self.line, self.column)
+        Span {
+            file: Arc::clone(&self.file),
+            line: self.line,
+            column: self.column,
+        }
     }
 
     fn advance(&mut self, n: usize) {
