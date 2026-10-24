@@ -827,7 +827,7 @@ impl Translator<'_> {
     }
 
     /// A proj4 string from the parameters of a PROJECTION block. `init=<authority>:<code>` is
-    /// resolved by the resolver the host passes in (ADR-0018); without one, or for a code it does
+    /// resolved by the resolver the host passes in (ADR-0023); without one, or for a code it does
     /// not know, it is a load error. A first parameter that is `AUTO`, in any case, is the
     /// projection of the source, as `msProcessProjection` leaves it to the source to declare.
     ///

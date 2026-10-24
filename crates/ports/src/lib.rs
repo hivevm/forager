@@ -227,7 +227,7 @@ pub trait FeatureSource {
 }
 
 /// Resolves a projection a style names by authority and code, as `init=epsg:4326` does, to a
-/// proj4 string (ADR-0018). Synchronous: a host that fetches its definitions loads them before it
+/// proj4 string (ADR-0023). Synchronous: a host that fetches its definitions loads them before it
 /// loads the style.
 pub trait ProjectionResolver {
     /// The proj4 string for `code` of `authority` (such as `epsg`, case-insensitive), or `None`

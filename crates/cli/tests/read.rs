@@ -189,7 +189,7 @@ fn a_symbolic_link_out_of_the_mapfile_directory_is_refused() {
 
 #[test]
 fn a_built_in_epsg_code_resolves_without_a_table() {
-    // Verifies: ADR-0018
+    // Verifies: ADR-0023
     let output = read("wgs84.map", "json");
     assert!(output.status.success(), "{output:?}");
     let document = StyleDocument::from_json(&String::from_utf8(output.stdout).unwrap())
@@ -203,7 +203,7 @@ fn a_built_in_epsg_code_resolves_without_a_table() {
 
 #[test]
 fn other_epsg_codes_need_the_hosts_table() {
-    // Verifies: ADR-0018
+    // Verifies: ADR-0023
     let without = read("national-grid.map", "json");
     assert_eq!(without.status.code(), Some(1));
     assert!(

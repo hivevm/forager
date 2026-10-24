@@ -37,7 +37,7 @@ pub struct Output {
 /// Renders `mapfile` with the GeoJSON in `sources`, a JSON object from layer name to a GeoJSON
 /// object or to GeoJSON text. Source references that carry credentials are dropped (Q-7).
 /// `init=` projections resolve with the built-in EPSG codes and those of `epsg`, a table in the
-/// format of PROJ's former `epsg` init file (ADR-0018).
+/// format of PROJ's former `epsg` init file (ADR-0023).
 pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &Viewport) -> Output {
     let mut diagnostics = Vec::new();
     let resolver = match epsg.map(EpsgTable::with_table) {
@@ -213,7 +213,7 @@ impl RenderResult {
 /// Renders a mapfile in the browser. `sources` is a JSON object from layer name to GeoJSON (an
 /// object or its text). `width`, `height`, and `extent` (`[minx, miny, maxx, maxy]`) override
 /// the mapfile's SIZE and EXTENT when given. `epsg` is a table of further EPSG definitions
-/// (ADR-0018).
+/// (ADR-0023).
 #[wasm_bindgen]
 pub fn render(
     mapfile: &str,
@@ -426,7 +426,7 @@ mod projections {
 
     #[test]
     fn the_browser_resolves_built_in_codes_and_takes_a_table_for_others() {
-        // Verifies: ADR-0018
+        // Verifies: ADR-0023
         let wgs84 = render_map(
             "MAP SIZE 10 10 EXTENT 0 0 1 1 PROJECTION 'init=epsg:4326' END END",
             "{}",

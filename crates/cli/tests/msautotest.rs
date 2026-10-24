@@ -63,7 +63,7 @@ const SKIPPED: &[(&str, &str)] = &[
     ),
 ];
 
-/// The EPSG codes the suite names beyond those built into the resolver (ADR-0018). Their
+/// The EPSG codes the suite names beyond those built into the resolver (ADR-0023). Their
 /// definitions here are stand-ins, so that the test carries no EPSG data: G-1 decides that a
 /// mapfile loads; whether a projection is right is G-11's.
 const EPSG_CODES: &[u32] = &[

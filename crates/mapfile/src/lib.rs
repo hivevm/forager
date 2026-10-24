@@ -37,7 +37,7 @@ pub struct Loaded {
 /// Loads the mapfile at `path` inside the base context of `loader`. As in MapServer, every
 /// `INCLUDE` is resolved against the main mapfile's directory, nested ones too; a `..` may leave
 /// that directory but not the base context (Q-8).
-/// `init=` projections are resolved by `resolver` (ADR-0018); without one they are load errors.
+/// `init=` projections are resolved by `resolver` (ADR-0023); without one they are load errors.
 pub async fn load<L: ResourceLoader>(
     path: &ResourcePath,
     loader: &L,

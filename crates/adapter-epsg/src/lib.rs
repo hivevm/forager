@@ -1,4 +1,4 @@
-//! Resolves EPSG codes to proj4 strings (ADR-0018). Built in are only EPSG:4326, EPSG:3857, and
+//! Resolves EPSG codes to proj4 strings (ADR-0023). Built in are only EPSG:4326, EPSG:3857, and
 //! the WGS84 UTM zones, derived from the zone number; every other code comes from a table the host
 //! supplies in the format of PROJ's former `epsg` init file. The repository holds no EPSG data.
 
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn the_built_in_codes_resolve() {
-        // Verifies: ADR-0018
+        // Verifies: ADR-0023
         let table = EpsgTable::new();
         assert_eq!(
             table.resolve("EPSG", "4326").as_deref(),
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn a_host_table_adds_and_overrides_codes() {
-        // Verifies: ADR-0018
+        // Verifies: ADR-0023
         let table = EpsgTable::with_table(
             "# British National Grid\n\
              <27700> +proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +units=m +no_defs <>\n\
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn definitions_that_need_files_or_other_definitions_are_refused() {
-        // Verifies: ADR-0018
+        // Verifies: ADR-0023
         let errors = EpsgTable::with_table(
             "<1> +init=epsg:2 <>\n\
              <2> +proj=pipeline +step +proj=hgridshift +grids=foo.tif <>\n\

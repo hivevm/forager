@@ -33,7 +33,7 @@ it reproduces. What is not carried over stays a "not yet supported" warning.
 - `INCLUDE` splicing, its bounds (Q-9), containment (Q-8), and the diagnostics cap stay as they
   are; their tests stay green unchanged. The CLI keeps the mapfile's directory as the base
   context by default.
-- `init=` resolution stays as ADR-0018 decides it; no EPSG data enters the product.
+- `init=` resolution stays as ADR-0023 decides it; no EPSG data enters the product.
 - A colour of −1 still means "no colour".
 - The engine keeps rendering from the IR fields it reads today; new IR fields it does not read
   yet change no pixel, so the engine's and the browser's render tests stay as they are.
@@ -112,7 +112,7 @@ it reproduces. What is not carried over stays a "not yet supported" warning.
   engine applies it, by MapServer's formulas, which the semantics page states with their source.
   The frontend resolves at import only what is an encoding: `OFFSET x -99` and `-999` as a line
   offset, a symbol by index or name, a unit keyword.
-- **Projection** of a layer resolves like the map's (ADR-0018); reprojection is not part of this
+- **Projection** of a layer resolves like the map's (ADR-0023); reprojection is not part of this
   spec.
 - **Base context.** The CLI takes `--base <dir>`; the mapfile must lie inside it, and `..` is
   allowed as long as the path stays inside it (Q-8 unchanged in substance: the base context is
@@ -131,7 +131,7 @@ it reproduces. What is not carried over stays a "not yet supported" warning.
   trip.
 - **G-1** is a test over the msautotest suite of MapServer `rel-8-6-6`, fetched by a pinned
   sparse checkout and cached in CI, never vendored; the EPSG codes outside the built-in resolver
-  come from a fixture table handed in through the host table of ADR-0018, in the test only, and
+  come from a fixture table handed in through the host table of ADR-0023, in the test only, and
   the suite's own init file, named by a path, from a stand-in in the test. The
   files it skips — include fragments, malformed and binary test data, a file whose include lies
   outside the checkout — are named in the test with a reason each.
@@ -154,7 +154,7 @@ it reproduces. What is not carried over stays a "not yet supported" warning.
 
 - Binding: ADR-0009 (crates and edges; the IR stays free of workspace dependencies), ADR-0012
   (supply chain, for any feature or crate added), ADR-0014 (the style document through serde),
-  ADR-0018 (projection resolution), ADR-0007 (the style document format and resource paths stay
+  ADR-0023 (projection resolution), ADR-0007 (the style document format and resource paths stay
   with the maintainer).
 - New: ADR-0019 (expressions as a CQL2 tree), proposed before this spec, to be accepted before its
   first ticket lands.

@@ -8,7 +8,10 @@ the mapfile: 39 mapfiles of msautotest name `init=./data/epsg2:42304`, the suite
 mapfiles fail to load; the G-1 test loads them with a stand-in for the file
 (`crates/cli/tests/msautotest.rs`, `INIT_FILE`). The frontend reads such a file through the
 resource loader, inside the base context (Q-8) and within the size limit of Q-9, parses it as the
-host table of ADR-0018 is parsed, and resolves the code from it; the stand-in goes.
+host table is parsed, and resolves the code from it, for every file name that holds a `/`, as
+ADR-0023 decides. The sparse checkout of `scripts/fetch-msautotest.sh` takes the suite's init
+files (`**/epsg2`), and the stand-in stays only for the one file name without a `/`
+(`init=epsg2:42304`, which PROJ finds through `PROJ_DATA`).
 
 ## Acceptance criteria
 
@@ -16,13 +19,14 @@ host table of ADR-0018 is parsed, and resolves the code from it; the stand-in go
   mapfile, when it loads without a resolver, then the layer's projection is the file's definition.
 - [ ] Given such a file outside the base context, or a code it does not hold, when it loads, then
   it is the load error `projection-unresolved`, naming the file and the code.
-- [ ] Given the msautotest suite, when G-1 runs, then every mapfile loads through the CLI with no
-  stand-in for the init file.
+- [ ] Given the msautotest suite, when G-1 runs, then every mapfile whose init file is named by a
+  path loads through the CLI with no stand-in, and only `init=epsg2:42304` keeps one.
 
 ## Read first
 
-- [ADR-0018](../../adr/0018-projection-resolver.md), which decides `init=` through the resolver
-  port and needs amending for files the mapfile names; the spec next to this ticket.
+- [ADR-0023](../../adr/0023-projection-resolver-and-init-files.md), which decides `init=` through
+  the resolver port and from an init file the mapfile names by a path; the spec next to this
+  ticket.
 - `docs/semantics/projection.md`; `projection` in `crates/mapfile/src/translate.rs`; PROJ's
   `pj_init` file lookup.
 
@@ -32,5 +36,5 @@ host table of ADR-0018 is parsed, and resolves the code from it; the stand-in go
 
 ## Mode
 
-with the human: it amends ADR-0018 and resolves a resource path
+with the human: it implements the proposed ADR-0023 and resolves a resource path
 ([ADR-0007](../../adr/0007-harness.md)).

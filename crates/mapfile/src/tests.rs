@@ -312,7 +312,7 @@ fn load_with_resolver(text: &'static str) -> Loaded {
 
 #[test]
 fn an_init_projection_is_resolved_by_the_hosts_resolver() {
-    // Verifies: ADR-0018
+    // Verifies: ADR-0023
     let loaded = load_with_resolver("MAP PROJECTION 'init=epsg:4326' END END");
     assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
     assert_eq!(
@@ -337,7 +337,7 @@ fn an_init_projection_is_resolved_by_the_hosts_resolver() {
 
 #[test]
 fn an_init_projection_the_resolver_does_not_know_is_a_load_error() {
-    // Verifies: ADR-0018
+    // Verifies: ADR-0023
     let loaded = load_with_resolver("MAP PROJECTION 'init=epsg:27700' END END");
     assert!(loaded.document.is_none());
     assert_eq!(codes(&loaded), ["projection-unresolved"]);
@@ -1090,7 +1090,7 @@ fn true_and_on_false_and_off_stand_for_each_other() {
 
 #[test]
 fn a_layers_projection_resolves_as_the_maps_does() {
-    // Verifies: ADR-0018
+    // Verifies: ADR-0023
     use forager_style_ir::LayerProjection;
     let text = "MAP LAYER PROJECTION 'init=epsg:4326' END END END";
     let loaded = load_with_resolver(text);
