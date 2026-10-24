@@ -90,22 +90,47 @@ pub fn translate(token: &Token, item: Option<&str>) -> Result<Expr, Problem> {
     }
 }
 
-/// A logical expression in parentheses, its value taken as MapServer takes it for a class or a
-/// filter: a number is true when it is not 0, a string is always true.
-fn logical(text: &str) -> Result<Expr, Problem> {
+/// An expression in parentheses that a style property binds, such as `SIZE ([a] * 2)`, its value
+/// taken as MapServer's `msEvalDoubleExpression` takes it: evaluated as text, a number printed
+/// with `%g`, and the text read back with `atof`.
+pub fn number_value(text: &str) -> Result<Expr, Problem> {
+    let (expr, kind) = parse(text)?;
+    let text = match kind {
+        Kind::Number => Expr::call(Op::Tostring, vec![expr, Expr::String("%g".to_owned())]),
+        Kind::String => expr,
+        Kind::Logical | Kind::Time => {
+            return Err(Problem::invalid("a condition or a time is not a number"));
+        }
+    };
+    let expr = Expr::call(Op::ToNumber, vec![text]);
+    if expr.depth() > MAX_EXPRESSION_DEPTH {
+        return Err(too_deep());
+    }
+    Ok(expr)
+}
+
+/// The tree of an expression in parentheses and the type of its value.
+fn parse(text: &str) -> Result<(Expr, Kind), Problem> {
     let tokens = tokenize(text)?;
     let mut parser = Parser {
         tokens,
         at: 0,
         depth: 0,
     };
-    let (expr, kind) = parser.expression(0)?;
+    let parsed = parser.expression(0)?;
     if parser.at != parser.tokens.len() {
         return Err(Problem::invalid(format!(
             "unexpected {} in the expression",
             parser.tokens[parser.at].describe()
         )));
     }
+    Ok(parsed)
+}
+
+/// A logical expression in parentheses, its value taken as MapServer takes it for a class or a
+/// filter: a number is true when it is not 0, a string is always true.
+fn logical(text: &str) -> Result<Expr, Problem> {
+    let (expr, kind) = parse(text)?;
     let expr = match kind {
         Kind::Logical => expr,
         Kind::Number => truthy(expr),

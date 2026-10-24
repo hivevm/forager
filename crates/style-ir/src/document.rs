@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, Map};
+use crate::{Bound, Diagnostic, MAX_EXPRESSION_DEPTH, Map};
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
 pub const FORMAT_VERSION: &str = "1.0";
@@ -72,7 +72,16 @@ impl StyleDocument {
     fn bounded(self) -> Result<Self, Diagnostic> {
         let layers = self.map.layers.iter();
         let expressions = layers.flat_map(|layer| {
-            let classes = layer.classes.iter().filter_map(|c| c.expression.as_ref());
+            let classes = layer.classes.iter().flat_map(|class| {
+                let styles = class.styles.iter().flat_map(|style| {
+                    let colors = [&style.color, &style.outline_color];
+                    let numbers = [&style.width, &style.size, &style.angle];
+                    let colors = colors.into_iter().flatten().filter_map(Bound::expression);
+                    let numbers = numbers.into_iter().flatten().filter_map(Bound::expression);
+                    colors.chain(numbers)
+                });
+                class.expression.iter().chain(styles)
+            });
             layer.filter.iter().chain(classes)
         });
         for expression in expressions {
@@ -89,7 +98,8 @@ impl StyleDocument {
 mod tests {
     use super::*;
     use crate::{
-        Class, Expr, Extent, Layer, LayerStatus, Op, RenderMode, Rgba, SourceRef, Span, Style,
+        Bound, Class, Expr, Extent, Layer, LayerStatus, Op, RenderMode, Rgba, SourceRef, Span,
+        Style,
     };
 
     fn sample() -> StyleDocument {
@@ -145,10 +155,24 @@ mod tests {
                         ],
                     )),
                     styles: vec![Style {
-                        color: Some(Rgba::opaque(200, 220, 180)),
-                        outline_color: Some(Rgba::opaque(0, 0, 0)),
-                        width: Some(0.5),
-                        size: None,
+                        color: Some(Bound::Value(Rgba::opaque(200, 220, 180))),
+                        outline_color: Some(Bound::Binding {
+                            binding: "rim".into(),
+                        }),
+                        width: Some(Bound::Value(0.5)),
+                        size: Some(Bound::Binding {
+                            binding: "VAL".into(),
+                        }),
+                        angle: Some(Bound::Expr(Expr::call(
+                            Op::ToNumber,
+                            vec![Expr::call(
+                                Op::Tostring,
+                                vec![
+                                    Expr::call(Op::ToNumber, vec![Expr::property("a")]),
+                                    "%g".into(),
+                                ],
+                            )],
+                        ))),
                         span: Some(Span::new("world.map", 14, 9)),
                     }],
                     span: Some(Span::new("world.map", 12, 7)),

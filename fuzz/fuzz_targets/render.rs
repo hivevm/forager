@@ -12,7 +12,7 @@ use std::task::{Context, Poll, Waker};
 use arbitrary::Arbitrary;
 use forager_ports::{Coord, Feature, FeatureQuery, FeatureSource, Geometry, SourceError};
 use forager_render_agg::AggRenderer;
-use forager_style_ir::{Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
+use forager_style_ir::{Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
 use libfuzzer_sys::fuzz_target;
 
 #[derive(Arbitrary, Debug)]
@@ -75,11 +75,11 @@ fuzz_target!(|input: Input| {
         })
         .collect();
     let style = Style {
-        color: Some(Rgba::opaque(200, 80, 80)),
-        outline_color: Some(Rgba::opaque(0, 0, 0)),
-        width: Some(input.line_width),
-        size: Some(input.symbol_size),
-        span: None,
+        color: Some(Bound::Value(Rgba::opaque(200, 80, 80))),
+        outline_color: Some(Bound::Value(Rgba::opaque(0, 0, 0))),
+        width: Some(Bound::Value(input.line_width)),
+        size: Some(Bound::Value(input.symbol_size)),
+        ..Style::default()
     };
     let [min_x, min_y, max_x, max_y] = input.extent;
     let map = Map {

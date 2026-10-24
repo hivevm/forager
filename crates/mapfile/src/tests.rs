@@ -3,7 +3,7 @@ use std::future::Future;
 use std::task::{Context, Poll, Waker};
 
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
-use forager_style_ir::{LayerStatus, RenderMode, Rgba, Severity, Span};
+use forager_style_ir::{Bound, LayerStatus, RenderMode, Rgba, Severity, Span};
 
 use super::{Loaded, load};
 
@@ -85,9 +85,12 @@ fn a_mapfile_translates_into_the_style_ir() {
     assert_eq!(source.kind, "local");
     assert_eq!(source.props["data"], "countries.shp");
     let style = &layer.classes[0].styles[0];
-    assert_eq!(style.color, Some(Rgba::opaque(200, 220, 180)));
-    assert_eq!(style.outline_color, Some(Rgba::opaque(0, 0, 0)));
-    assert_eq!(style.width, Some(0.5));
+    assert_eq!(style.color, Some(Bound::Value(Rgba::opaque(200, 220, 180))));
+    assert_eq!(
+        style.outline_color,
+        Some(Bound::Value(Rgba::opaque(0, 0, 0)))
+    );
+    assert_eq!(style.width, Some(Bound::Value(0.5)));
     assert_eq!(style.span, Some(Span::new("world.map", 17, 7)));
 }
 
@@ -215,7 +218,10 @@ fn colours_of_minus_one_mean_no_colour() {
     )]);
     let style = &loaded.document.unwrap().map.layers[0].classes[0].styles[0];
     assert_eq!(style.color, None);
-    assert_eq!(style.outline_color, Some(Rgba::opaque(1, 2, 3)));
+    assert_eq!(
+        style.outline_color,
+        Some(Bound::Value(Rgba::opaque(1, 2, 3)))
+    );
 }
 
 #[test]
@@ -543,6 +549,119 @@ fn every_expression_reads_back_equal_from_yaml_and_json() {
              CLASS EXPRESSION (round([q], 2) + length("ab") = 4 AND [x] % 2 = 1) END
              CLASSITEM "k"
            END END"#,
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let document = loaded.document.unwrap();
+    let yaml = document.to_yaml().unwrap();
+    let json = document.to_json().unwrap();
+    assert_eq!(
+        forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap(),
+        document
+    );
+    assert_eq!(
+        forager_style_ir::StyleDocument::from_json(&json).unwrap(),
+        document
+    );
+}
+
+fn first_style(text: &'static str) -> (Loaded, Option<forager_style_ir::Style>) {
+    let loaded = load_files(&[("m.map", text)]);
+    let style = loaded
+        .document
+        .as_ref()
+        .map(|d| d.map.layers[0].classes[0].styles[0].clone());
+    (loaded, style)
+}
+
+fn binding<T>(name: &str) -> Option<Bound<T>> {
+    Some(Bound::Binding {
+        binding: name.to_owned(),
+    })
+}
+
+#[test]
+fn style_properties_bind_to_attributes() {
+    // Verifies: ADR-0019
+    let (loaded, style) = first_style(
+        "MAP LAYER CLASS STYLE
+           SIZE [VAL] WIDTH [w] ANGLE [a] COLOR [c] OUTLINECOLOR [o]
+         END END END END",
+    );
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let style = style.unwrap();
+    assert_eq!(style.size, binding("VAL"));
+    assert_eq!(style.width, binding("w"));
+    assert_eq!(style.angle, binding("a"));
+    assert_eq!(style.color, binding("c"));
+    assert_eq!(style.outline_color, binding("o"));
+}
+
+#[test]
+fn a_size_expression_is_evaluated_as_mapserver_evaluates_it() {
+    // Verifies: ADR-0019
+    let (loaded, style) = first_style("MAP LAYER CLASS STYLE SIZE ([a] * 2) END END END END");
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        serde_json::to_string(&style.unwrap().size).unwrap(),
+        concat!(
+            r#"{"op":"to_number","args":[{"op":"tostring","args":["#,
+            r#"{"op":"*","args":[{"op":"to_number","args":[{"property":"a"}]},2.0]},"%g"]}]}"#
+        )
+    );
+    let (loaded, style) = first_style("MAP LAYER CLASS STYLE SIZE ([a] =) END END END END");
+    assert_eq!(codes(&loaded), ["invalid-expression"]);
+    assert_eq!(style.unwrap().size, Some(Bound::Value(0.0)));
+}
+
+#[test]
+fn colours_take_mapservers_range_and_a_negative_channel_wraps() {
+    let colour = |text: &'static str| {
+        let (loaded, style) = first_style(text);
+        (codes(&loaded).join(","), style.and_then(|s| s.color))
+    };
+    let value = |r, g, b| Some(Bound::Value(Rgba::opaque(r, g, b)));
+    assert_eq!(
+        colour("MAP LAYER CLASS STYLE COLOR -255 -255 -255 END END END END"),
+        (String::new(), value(1, 1, 1))
+    );
+    assert_eq!(
+        colour("MAP LAYER CLASS STYLE COLOR -2 0 254.9 END END END END"),
+        (String::new(), value(254, 0, 254))
+    );
+    assert_eq!(
+        colour("MAP LAYER CLASS STYLE COLOR 255 -1 0 END END END END"),
+        (String::new(), None)
+    );
+    let (loaded, _) = first_style("MAP LAYER CLASS STYLE COLOR 300 0 0 END END END END");
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+}
+
+#[test]
+fn style_numbers_outside_mapservers_ranges_are_errors() {
+    for text in [
+        "MAP LAYER CLASS STYLE SIZE 0 END END END END",
+        "MAP LAYER CLASS STYLE WIDTH -1 END END END END",
+        "MAP LAYER CLASS STYLE ANGLE 400 END END END END",
+        "MAP LAYER CLASS STYLE WIDTH ([a]) END END END END",
+        "MAP IMAGECOLOR [c] END",
+    ] {
+        let loaded = load_files(&[("m.map", text)]);
+        assert!(loaded.document.is_none(), "{text}");
+        assert_eq!(codes(&loaded), ["invalid-value"], "{text}");
+    }
+    let (loaded, style) = first_style("MAP LAYER CLASS STYLE ANGLE AUTO END END END END");
+    assert_eq!(codes(&loaded), ["unsupported-value"]);
+    assert_eq!(style.unwrap().angle, None);
+}
+
+#[test]
+fn bound_style_properties_read_back_equal_from_yaml_and_json() {
+    // Verifies: ADR-0019
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER CLASS STYLE
+           SIZE ([a] + 1) WIDTH [w] ANGLE -30 COLOR [c] OUTLINECOLOR '#102030'
+         END END END END",
     )]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     let document = loaded.document.unwrap();
