@@ -69,7 +69,10 @@ golden path and the test pattern an agent copies from are named here.
   viewport in, the RGBA image and the diagnostics out; it keeps a layer's source reference only
   when that is a `DATA` without credentials, and drops and unbinds every other (Q-7).
   `scripts/build-web.sh` builds it into `target/web/`.
-- **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out.
+- **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out. The
+  page shows the image, and a Leaflet map whose tiles each call the bindings with the tile's
+  extent; Leaflet is a vendored copy that `scripts/check-vendor.sh` checks by checksum
+  ([ADR-0021](adr/0021-vendored-leaflet.md)).
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`

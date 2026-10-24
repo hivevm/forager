@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Forager example</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <style>
   :root {
     --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #dcdcd6;
@@ -47,6 +48,9 @@
                    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
   #diagnostics li { padding: 4px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
   .warning { color: var(--warning); } .error { color: var(--error); }
+  section.wide { grid-column: 1 / -1; }
+  #tiles { height: 440px; border: 1px solid var(--line); border-radius: 4px;
+           background: var(--bg); }
 </style>
 </head>
 <body>
@@ -73,11 +77,19 @@
       </div>
       <ul id="diagnostics" aria-live="polite"></ul>
     </section>
+    <section class="wide">
+      <h2>Tiles</h2>
+      <div id="tiles"></div>
+    </section>
   </div>
 </main>
+<script src="vendor/leaflet/leaflet.js"></script>
 <script type="module">
   // Imported dynamically, so that a missing bundle is reported on the page.
   let render;
+  // The mapfile and sources of the last Render, which the tiles draw until the next one.
+  let current;
+  let tiles;
 
   const sources = document.getElementById("sources");
   const status = document.getElementById("status");
@@ -106,13 +118,56 @@
       const layer = row.querySelector(".layer").value.trim();
       if (layer) bound[layer] = row.querySelector(".geojson").value;
     }
+    current = { mapfile: document.getElementById("mapfile").value, sources: JSON.stringify(bound) };
+    tiles?.redraw();
     const started = performance.now();
-    const result = render(document.getElementById("mapfile").value, JSON.stringify(bound));
+    const result = render(current.mapfile, current.sources);
     try {
       show(result, performance.now() - started);
     } finally {
       result.free();
     }
+  }
+
+  // A Leaflet layer whose tiles Forager renders, each with the extent of the tile. MapServer's
+  // extent runs from the centre of the first pixel to the centre of the last, so the tile's edges
+  // are moved in by half a pixel; then neighbouring tiles meet without a seam.
+  const ForagerTiles = L.GridLayer.extend({
+    createTile(coords) {
+      const tile = document.createElement("canvas");
+      const size = this.getTileSize();
+      tile.width = size.x;
+      tile.height = size.y;
+      const topLeft = this._map.unproject(coords.scaleBy(size), coords.z);
+      const bottomRight = this._map.unproject(coords.add([1, 1]).scaleBy(size), coords.z);
+      const half = (bottomRight.lng - topLeft.lng) / size.x / 2;
+      const extent = [topLeft.lng + half, bottomRight.lat + half,
+                      bottomRight.lng - half, topLeft.lat - half];
+      try {
+        const result = render(current.mapfile, current.sources, size.x, size.y, extent);
+        try {
+          if (result.width > 0) {
+            const pixels = new Uint8ClampedArray(result.pixels);
+            const image = new ImageData(pixels, result.width, result.height);
+            tile.getContext("2d").putImageData(image, 0, 0);
+          }
+        } finally {
+          result.free();
+        }
+      } catch (error) {
+        console.error(error);
+      }
+      return tile;
+    },
+  });
+
+  // The tile view in plain map units, framed by the mapfile's EXTENT.
+  function showTiles() {
+    const map = L.map("tiles", { crs: L.CRS.Simple, minZoom: -4, maxZoom: 10 });
+    const extent = current.mapfile.match(/^\s*EXTENT\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/im);
+    const [minx, miny, maxx, maxy] = extent ? extent.slice(1).map(Number) : [0, 0, 100, 100];
+    map.fitBounds([[miny, minx], [maxy, maxx]]);
+    tiles = new ForagerTiles().addTo(map);
   }
 
   function show(result, elapsed) {
@@ -163,6 +218,7 @@
     addSource(layer, await text(`${layer}.geojson`));
   }
   draw();
+  showTiles();
 </script>
 </body>
 </html>

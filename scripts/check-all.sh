@@ -52,6 +52,8 @@ run "Action references sensor self-test" scripts/test-sensor-action-refs.sh
 # The check of ADR-0011: every action by its major version tag.
 # Verifies: ADR-0011
 run "Action references" scripts/sensor-action-refs.sh --require major-tag
+run "Vendor check self-test" scripts/test-check-vendor.sh
+run "Vendor check" scripts/check-vendor.sh
 run "Git hooks self-test" scripts/test-git-hooks.sh
 run "Shell lint self-test" scripts/test-check-shell.sh
 run "Shell lint" scripts/check-shell.sh
