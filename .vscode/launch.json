@@ -1,0 +1,20 @@
+{
+  // Starts the browser example: builds the bundle, runs the dev server, and opens the page once
+  // the server names its address. `node-terminal` is built into VS Code and needs no extension.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Browser example",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "cargo run -p forager-dev-server",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Build the browser bundle",
+      "serverReadyAction": {
+        "pattern": "Serving the Forager example on (https?://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    }
+  ]
+}
