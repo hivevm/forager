@@ -171,19 +171,46 @@ impl Keys {
         mut map: A,
         binding: bool,
     ) -> Result<Self, A::Error> {
+        /// A key's value, refused the second time, as a derived struct refuses a field twice.
+        fn once<'de, A: MapAccess<'de>, T: Deserialize<'de>>(
+            map: &mut A,
+            slot: &mut Option<T>,
+            key: &'static str,
+        ) -> Result<(), A::Error> {
+            if slot.is_some() {
+                return Err(de::Error::duplicate_field(key));
+            }
+            *slot = Some(map.next_value()?);
+            Ok(())
+        }
         let mut keys = Keys::default();
         while let Some(key) = map.next_key::<String>()? {
             match key.as_str() {
-                "op" => keys.op = Some(map.next_value()?),
-                "args" => keys.args = Some(map.next_value()?),
-                "property" => keys.property = Some(map.next_value()?),
-                "date" => keys.date = Some(map.next_value()?),
-                "timestamp" => keys.timestamp = Some(map.next_value()?),
-                "binding" if binding => keys.binding = Some(map.next_value()?),
+                "op" => once(&mut map, &mut keys.op, "op")?,
+                "args" => once(&mut map, &mut keys.args, "args")?,
+                "property" => once(&mut map, &mut keys.property, "property")?,
+                "date" => once(&mut map, &mut keys.date, "date")?,
+                "timestamp" => once(&mut map, &mut keys.timestamp, "timestamp")?,
+                "binding" if binding => once(&mut map, &mut keys.binding, "binding")?,
                 _ => {
                     map.next_value::<IgnoredAny>()?;
                 }
             }
+        }
+        // The keys of one alternative only: an object with those of two is none of them.
+        let kinds = [
+            keys.op.is_some() || keys.args.is_some(),
+            keys.property.is_some(),
+            keys.date.is_some(),
+            keys.timestamp.is_some(),
+            keys.binding.is_some(),
+        ];
+        if kinds.iter().filter(|kind| **kind).count() > 1 {
+            let name = if binding { "Bound" } else { "Expr" };
+            let error: A::Error = no_variant(name);
+            return Err(de::Error::custom(format!(
+                "{error}: the object holds the keys of more than one alternative"
+            )));
         }
         Ok(keys)
     }

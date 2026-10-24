@@ -110,13 +110,24 @@ fn required_dropped(
 const EXPRESSION_KEYS: [&str; 6] = ["op", "args", "property", "date", "timestamp", "binding"];
 
 /// Where on `path` the outermost expression or binding it runs into begins: the path without
-/// the keys of expressions and the indices of their arguments at its end.
+/// the keys of expressions and the indices of their arguments, and of the lists among them, at
+/// its end.
 fn expression_start(path: &[Segment]) -> usize {
     let mut end = path.len();
     loop {
         match &path[..end] {
             [.., Segment::Key(key)] if EXPRESSION_KEYS.contains(&key.as_str()) => end -= 1,
-            [.., Segment::Key(args), Segment::Index(_)] if args == "args" => end -= 1,
+            [rest @ .., Segment::Index(_)] => {
+                let indices = rest
+                    .iter()
+                    .rev()
+                    .take_while(|s| matches!(s, Segment::Index(_)))
+                    .count();
+                match rest[..rest.len() - indices].last() {
+                    Some(Segment::Key(args)) if args == "args" => end -= 1,
+                    _ => return end,
+                }
+            }
             _ => return end,
         }
     }
@@ -1082,5 +1093,34 @@ mod tests {
             "{}",
             error.message
         );
+    }
+
+    #[test]
+    fn a_newer_minor_neutralizes_what_does_not_read_inside_a_list_of_an_expression() {
+        // Verifies: ADR-0022
+        let json = r#"{"version":"1.9","map":{"layers":[{"filter":{"op":"in","args":[{"property":"a"},[1,null]]},
+            "classes":[{"styles":[{"width":{"op":"+","args":[[1,null],2]}}]}]}]}}"#;
+        let read = StyleDocument::from_json(json).unwrap();
+        let layer = &read.document.map.layers[0];
+        assert_eq!(layer.filter, Some(Expr::Bool(false)));
+        assert_eq!(layer.classes[0].styles[0].width, None);
+        assert_eq!(read.warnings.len(), 2, "{:?}", read.warnings);
+    }
+
+    #[test]
+    fn an_expression_with_a_key_twice_or_keys_of_two_kinds_does_not_read() {
+        for filter in [
+            r#"{"property":"a","property":"b"}"#,
+            r#"{"op":"=","op":"<","args":[]}"#,
+            r#"{"op":"=","args":[],"property":"b"}"#,
+        ] {
+            let json = format!(r#"{{"version":"1.0","map":{{"layers":[{{"filter":{filter}}}]}}}}"#);
+            assert!(StyleDocument::from_json(&json).is_err(), "{filter}");
+        }
+        let json = r#"{"version":"1.0","map":{"layers":[{"classes":[{"styles":[{"width":{"binding":"w","property":"b"}}]}]}]}}"#;
+        assert!(StyleDocument::from_json(json).is_err());
+        // In a newer minor, such a property is dropped like any other that does not read.
+        let read = StyleDocument::from_json(&json.replace("\"1.0\"", "\"1.9\"")).unwrap();
+        assert_eq!(read.document.map.layers[0].classes[0].styles[0].width, None);
     }
 }
