@@ -45,8 +45,11 @@ that test exists the criterion is pending work, and the traceability check lists
 Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules), rule 5).
 
 1. **G-1** — When a mapfile of the msautotest suite is loaded with a resource loader for its
-   `INCLUDE`, `SYMBOLSET`, and `FONTSET` files, the system shall produce a style IR and no
-   diagnostic of severity error; warnings are allowed.
+   `INCLUDE`, `SYMBOLSET`, and `FONTSET` files and the init files it names by a path, and with a
+   projection resolver for the codes it names by an authority, the system shall produce a style
+   IR and no diagnostic of severity error; warnings are allowed. Files of the suite that are not
+   mapfiles — include fragments, malformed and binary test data — are named by the test with a
+   reason each.
 2. **G-2** — When the CLI is given the path of a mapfile, it shall print the style IR as YAML or
    JSON and every diagnostic with severity, code, message, and source span, and exit non-zero if
    loading failed.
@@ -101,15 +104,15 @@ from the threats below.
 - **Q-7** — Confidentiality: no credential reaches a client. The host rewrites source references
   before they leave the server, and the browser bindings reject a source reference with a
   credential property; a test feeds one and expects the rejection.
-- **Q-8** — Containment: `INCLUDE`, `SYMBOLSET`, `FONTSET`, `SHAPEPATH`, and pixmap paths resolve
-  only inside the base context the host gives. A path with a `..` escape or an absolute path is a
-  diagnostic; a test feeds each and expects it.
+- **Q-8** — Containment: `INCLUDE`, `SYMBOLSET`, `FONTSET`, `SHAPEPATH`, pixmap paths, and the init
+  files a projection names by a path resolve only inside the base context the host gives. A path
+  with a `..` escape or an absolute path is a diagnostic; a test feeds each and expects it.
 - **Q-9** — Bounded resources: `INCLUDE` depth and cycles, the total size of a mapfile with its
-  `INCLUDE`s (16 MiB of text), the number of diagnostics one load reports (1000), image size,
-  the features one layer draws (1,000,000), the size of a data file a host reads (256 MiB),
-  expression nesting (24 levels), the values a style document of a newer minor drops (100), and
-  regular-expression size are limited, and exceeding a limit is a diagnostic. A test per limit
-  feeds an input past it and expects the diagnostic.
+  `INCLUDE`s and the files it names (16 MiB of text), the number of diagnostics one load reports
+  (1000), image size, the features one layer draws (1,000,000), the size of a data file a host reads
+  (256 MiB), expression nesting (24 levels), the values a style document of a newer minor drops
+  (100), and regular-expression size are limited, and exceeding a limit is a diagnostic. A test per
+  limit feeds an input past it and expects the diagnostic.
 
 ## Non-Goals
 
