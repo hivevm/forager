@@ -1,7 +1,7 @@
 # ADR-0009: The code is a Cargo workspace of one crate per responsibility, shaped as ports and adapters around a functional core, with the allowed dependency edges decided by a test
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `Cargo.toml`, every crate under `crates/`, the `[dependencies]` of each, and the dependency test of `crates/arch-test`
 

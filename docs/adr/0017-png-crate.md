@@ -1,7 +1,7 @@
 # ADR-0017: The encoder writes PNG with the image-rs `png` crate
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/encode`
 

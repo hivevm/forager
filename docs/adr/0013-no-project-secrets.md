@@ -1,7 +1,7 @@
 # ADR-0013: The project holds no secrets of its own, and secret scanning with push protection is the only control
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** the repository, its workflows, and their `secrets.*` references
 

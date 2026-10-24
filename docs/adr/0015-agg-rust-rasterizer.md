@@ -1,7 +1,7 @@
 # ADR-0015: The reference renderer rasterizes with agg-rust in `render-agg`, behind clipping that keeps every coordinate near the image, with `unsafe` allowed in that crate alone
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/render`, `crates/render-agg`, and the `unsafe_code` lint of the workspace
 

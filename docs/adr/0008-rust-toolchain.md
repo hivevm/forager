@@ -1,7 +1,7 @@
 # ADR-0008: The toolchain is pinned stable Rust with cargo, clippy, rustfmt, cargo-deny, and the wasm-bindgen CLI, installed by `scripts/install-tools.sh` and run by `scripts/check-rust.sh`
 
-- **Status:** 🟡 proposed
-- **Date:** 2026-10-23
+- **Status:** 🟢 accepted
+- **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.cargo/`, `clippy.toml`, `rustfmt.toml`, `deny.toml`, `scripts/install-tools.sh`, `scripts/check-rust.sh`, the `rust` job of `.github/workflows/checks.yml`, the scheduled workflow of the slow sensors, and the **Build, Test & Run** section of `README.md`
 
