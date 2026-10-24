@@ -110,6 +110,63 @@ pub fn number_value(text: &str) -> Result<Expr, Problem> {
     Ok(expr)
 }
 
+/// The text of a label's or class's `TEXT`, as msEvalTextExpression evaluates it: a string with
+/// each `[name]` in it replaced by the property's value, or an expression in parentheses taken as
+/// text, a number printed with `%g`.
+pub fn text(token: &Token) -> Result<Expr, Problem> {
+    let expr = match &token.kind {
+        TokenKind::Str { value, .. } | TokenKind::Word(value) => substituted(value),
+        TokenKind::Expression(text) => {
+            let (expr, kind) = parse(text)?;
+            match kind {
+                Kind::String => expr,
+                Kind::Number => Expr::call(Op::Tostring, vec![expr, Expr::String("%g".to_owned())]),
+                Kind::Logical | Kind::Time => {
+                    return Err(Problem::unsupported(
+                        "a condition or a time as a label's text",
+                    ));
+                }
+            }
+        }
+        _ => {
+            return Err(Problem {
+                error: true,
+                code: "invalid-value",
+                message: "TEXT expects a string or an expression".to_owned(),
+            });
+        }
+    };
+    if expr.depth() > MAX_EXPRESSION_DEPTH {
+        return Err(too_deep());
+    }
+    Ok(expr)
+}
+
+/// `text` with every `[name]` in it as the property's value: a literal, or a `concat`.
+fn substituted(text: &str) -> Expr {
+    let mut parts = Vec::new();
+    let mut rest = text;
+    while let Some(open) = rest.find('[') {
+        let Some(close) = rest[open..].find(']').map(|c| open + c) else {
+            break;
+        };
+        if open > 0 {
+            parts.push(Expr::String(rest[..open].to_owned()));
+        }
+        let name = &rest[open + 1..close];
+        parts.push(Expr::call(Op::ToString, vec![Expr::property(name)]));
+        rest = &rest[close + 1..];
+    }
+    if !rest.is_empty() || parts.is_empty() {
+        parts.push(Expr::String(rest.to_owned()));
+    }
+    if parts.len() == 1 {
+        parts.pop().expect("one part")
+    } else {
+        Expr::call(Op::Concat, parts)
+    }
+}
+
 /// The tree of an expression in parentheses and the type of its value.
 fn parse(text: &str) -> Result<(Expr, Kind), Problem> {
     let tokens = tokenize(text)?;

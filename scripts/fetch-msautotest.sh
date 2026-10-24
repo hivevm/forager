@@ -31,7 +31,7 @@ if [[ ! -f "$DIR/.complete" ]]; then
   git -C "$DIR" sparse-checkout set --no-cone \
     '/msautotest/**/*.map' '/msautotest/**/*.MAP' '/msautotest/**/*.inc' \
     '/msautotest/**/*.include' '/msautotest/**/*.sym' '/msautotest/**/*.txt' \
-    '/msautotest/**/*symbolset' >&2
+    '/msautotest/**/*symbolset' '/msautotest/**/*.lst' >&2
   checked_out="$(git -C "$DIR" rev-parse HEAD)"
   if [[ "$checked_out" != "$COMMIT" ]]; then
     echo "fetch-msautotest: the checkout is $checked_out, the pin is $COMMIT" >&2

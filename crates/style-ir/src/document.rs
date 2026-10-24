@@ -74,7 +74,8 @@ impl StyleDocument {
         let expressions = layers.flat_map(|layer| {
             let classes = layer.classes.iter().flat_map(|class| {
                 let styles = class.styles.iter().flat_map(|style| style.expressions());
-                class.expression.iter().chain(styles)
+                let labels = class.labels.iter().flat_map(|label| label.expressions());
+                class.expression.iter().chain(styles).chain(labels)
             });
             layer.filter.iter().chain(classes)
         });
@@ -92,9 +93,9 @@ impl StyleDocument {
 mod tests {
     use super::*;
     use crate::{
-        Bound, Class, Expr, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin,
-        LineOffset, Op, RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
-        Units,
+        Align, AngleMode, Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer,
+        LayerStatus, LineCap, LineJoin, LineOffset, MinFeatureSize, Op, Position, RenderMode, Rgba,
+        SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
     };
 
     fn sample() -> StyleDocument {
@@ -153,11 +154,13 @@ mod tests {
                         ],
                     )),
                     styles: vec![sample_style()],
+                    labels: vec![sample_label()],
                     span: Some(Span::new("world.map", 12, 7)),
                 }],
                 span: Some(Span::new("world.map", 6, 3)),
             }],
             symbols: vec![sample_symbol()],
+            fonts: [("sans".to_owned(), "fonts/DejaVuSans.ttf".to_owned())].into(),
             span: Some(Span::new("world.map", 1, 1)),
         })
     }
@@ -218,6 +221,34 @@ mod tests {
             image: None,
             transparent: None,
             span: None,
+        }
+    }
+
+    fn sample_label() -> Label {
+        Label {
+            text: Some(Expr::call(
+                Op::Concat,
+                vec![
+                    Expr::call(Op::ToString, vec![Expr::property("name")]),
+                    " (".into(),
+                ],
+            )),
+            font: Some(Bound::Value("sans".into())),
+            size: Some(Bound::Binding {
+                binding: "s".into(),
+            }),
+            position: Some(Bound::Value(Position::Auto)),
+            angle_mode: Some(AngleMode::Follow),
+            align: Some(Bound::Value(Align::Center)),
+            wrap: Some(" ".into()),
+            min_feature_size: Some(MinFeatureSize::Pixels(8.0)),
+            force: Some(Force::Group),
+            priority: Some(Bound::Value(5.0)),
+            styles: vec![Style {
+                geom_transform: Some(GeomTransform::LabelPoly),
+                ..Style::default()
+            }],
+            ..Label::default()
         }
     }
 
