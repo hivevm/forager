@@ -1,3 +1,14 @@
+// The expression grammar and its evaluation follow MapServer's src/maplexer.l, src/mapparser.y,
+// and msEvalExpression of the release pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+
 //! Translates MapServer's expressions into the CQL2 tree of the style IR (ADR-0019).
 //!
 // The tokens follow the EXPRESSION_STRING rules of src/maplexer.l, which MapServer builds with

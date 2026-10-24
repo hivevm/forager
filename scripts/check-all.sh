@@ -58,6 +58,8 @@ run "Action references sensor self-test" scripts/test-sensor-action-refs.sh
 run "Action references" scripts/sensor-action-refs.sh --require major-tag
 run "Vendor check self-test" scripts/test-check-vendor.sh
 run "Vendor check" scripts/check-vendor.sh
+run "Notice check self-test" scripts/test-check-notice.sh
+run "MapServer notice check" scripts/check-notice.sh
 run "Git hooks self-test" scripts/test-git-hooks.sh
 run "Fixture git self-test" scripts/test-fixture-git-env.sh
 run "Shell lint self-test" scripts/test-check-shell.sh
