@@ -126,6 +126,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "forager-adapter-epsg"
+version = "0.1.0"
+dependencies = [
+ "forager-ports",
+]
+
+[[package]]
 name = "forager-adapter-geojson"
 version = "0.1.0"
 dependencies = [
@@ -145,6 +152,7 @@ dependencies = [
 name = "forager-bindings-wasm"
 version = "0.1.0"
 dependencies = [
+ "forager-adapter-epsg",
  "forager-adapter-geojson",
  "forager-encode",
  "forager-engine",
@@ -161,6 +169,7 @@ dependencies = [
 name = "forager-cli"
 version = "0.1.0"
 dependencies = [
+ "forager-adapter-epsg",
  "forager-adapter-geojson",
  "forager-encode",
  "forager-engine",

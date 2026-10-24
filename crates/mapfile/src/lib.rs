@@ -10,7 +10,7 @@ mod translate;
 use std::future::Future;
 use std::pin::Pin;
 
-use forager_ports::{ResourceLoader, ResourcePath};
+use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath};
 use forager_style_ir::{Diagnostic, Span, StyleDocument};
 
 use crate::lexer::Token;
@@ -35,7 +35,12 @@ pub struct Loaded {
 
 /// Loads the mapfile at `path` inside the base context of `loader`. As in MapServer, every
 /// `INCLUDE` is resolved against the base context, which is the main mapfile's directory.
-pub async fn load<L: ResourceLoader>(path: &ResourcePath, loader: &L) -> Loaded {
+/// `init=` projections are resolved by `resolver` (ADR-0018); without one they are load errors.
+pub async fn load<L: ResourceLoader>(
+    path: &ResourcePath,
+    loader: &L,
+    resolver: Option<&dyn ProjectionResolver>,
+) -> Loaded {
     let mut reading = Reading {
         loader,
         stack: Vec::new(),
@@ -50,7 +55,7 @@ pub async fn load<L: ResourceLoader>(path: &ResourcePath, loader: &L) -> Loaded 
             report.extend(parse_diagnostics);
             map.map(|block| {
                 let mut translate_diagnostics = Vec::new();
-                let map = translate::translate(&block, &mut translate_diagnostics);
+                let map = translate::translate(&block, resolver, &mut translate_diagnostics);
                 report.extend(translate_diagnostics);
                 StyleDocument::new(map)
             })

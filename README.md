@@ -13,12 +13,6 @@ explicit and reviewable.
 > For agent instructions, see [`AGENTS.md`](AGENTS.md), the single source of truth for all coding
 > agents.
 
-> [!NOTE]
-> **This project still carries its template setup.** The one-time steps that turn the scaffold
-> into your own project are in [`TEMPLATE-SETUP.md`](TEMPLATE-SETUP.md); ask your agent to run the
-> `setup-project` skill to be walked through them, one question at a time. Delete that file and
-> this note once you are through them.
-
 ## Overview
 
 Forager renders maps with the styling semantics of UMN MapServer. Its mapfile frontend reads a
@@ -37,8 +31,6 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 ## Getting Started
 
-> Setting the project up for the first time? The one-time steps are in
-> [`TEMPLATE-SETUP.md`](TEMPLATE-SETUP.md). Delete this paragraph together with that file.
 
 1. Open the repository in VS Code and choose **Reopen in Container**. The Dev Container and the
    preconfigured agent extensions build automatically, and the container enables the repository's
@@ -87,6 +79,11 @@ map:
 when it did not, and 2 on wrong arguments. `INCLUDE`s are resolved inside the mapfile's
 directory, and a path that leaves it is refused.
 
+`init=epsg:` projections resolve without further input for EPSG:4326, EPSG:3857, and the WGS84
+UTM zones; for other codes pass a table in the format of PROJ's former `epsg` init file, lines
+`<27700> +proj=tmerc … <>`, with `--epsg <file>` (the browser's `render` takes its text as a last
+argument). Forager ships no EPSG data beyond those built-in codes.
+
 Render a mapfile's layers from GeoJSON files, bound to the layers by name, into a PNG:
 
 ```console
@@ -116,7 +113,6 @@ is refused in the browser.
 ## Project Layout
 
 ```
-TEMPLATE-SETUP.md     # one-time template setup; delete it when the project is yours
 README.md             # overview & setup for humans
 AGENTS.md             # single source of truth for coding agents
 docs/SPECIFICATION.md # the specification: problem, goals, success criteria
