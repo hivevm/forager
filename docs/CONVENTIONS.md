@@ -34,7 +34,8 @@ skimmed. The design revision drops what prevented nothing
   one that never matches, never one that is absent, and what it skips is still held to the limits
   of Q-9; a lenient path is a second way in, and what it leaves out must not widen what a map
   draws or what an input may cost.
-- **A test's fixture repository runs git without git's repository variables** — a test or
-  self-test that drives git on a repository of its own removes what `git rev-parse
-  --local-env-vars` names from git's environment, because a caller that set `GIT_DIR`, such as a
-  hook in a linked worktree, otherwise turns every fixture command on the real repository.
+- **A script that points git at a repository runs git without git's repository variables** — a
+  test, a self-test, or a script under `scripts/` that drives git on a repository it names, a
+  fixture or a checkout, removes what `git rev-parse --local-env-vars` names from git's
+  environment, because a caller that set `GIT_DIR`, such as a hook in a linked worktree, otherwise
+  turns every such command on the real repository; `scripts/test-fixture-git-env.sh` checks it.

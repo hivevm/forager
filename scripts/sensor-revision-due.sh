@@ -22,6 +22,10 @@
 # Exit code 0 when the line was read, 1 otherwise.
 
 set -uo pipefail
+# A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
+# repository instead of the one it names (docs/CONVENTIONS.md).
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
 
 ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
 OVERVIEW="docs/ARCHITECTURE.md"
