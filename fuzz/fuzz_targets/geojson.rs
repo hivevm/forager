@@ -20,5 +20,5 @@ END"#;
 fuzz_target!(|geojson: &str| {
     let text = serde_json::to_string(geojson).expect("a string serializes");
     let sources = format!(r#"{{"a": {text}, "b": {text}, "c": {text}}}"#);
-    let _ = render_map(MAP, &sources, &Viewport::default());
+    let _ = render_map(MAP, &sources, None, &Viewport::default());
 });

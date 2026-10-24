@@ -31,8 +31,9 @@ golden path and the test pattern an agent copies from are named here.
 - **`style-ir`** — the data model of a map, the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0014](adr/0014-style-document-serde.md)). It depends on no other crate of the workspace.
-- **`ports`** — the port traits, today the resource loader, and the resource path that cannot
-  leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.
+- **`ports`** — the port traits — the resource loader, the feature source, the projection
+  resolver — and the resource path that cannot leave the base context (Q-8). Async lives here and
+  in hosts and adapters, never `Send`.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
   bounded in depth, cycles, and total size (Q-9), and the translation into the style IR, which
@@ -48,6 +49,10 @@ golden path and the test pattern an agent copies from are named here.
 - **`encode`** — PNG from and to an RGBA image ([ADR-0017](adr/0017-png-crate.md)).
 - **`adapter-geojson`** — a feature source over a GeoJSON document
   ([ADR-0016](adr/0016-geojson-crate.md)).
+- **`adapter-epsg`** — resolves `init=epsg:` projections for the frontend through the
+  `ProjectionResolver` port: built in are only EPSG:4326, EPSG:3857, and the WGS84 UTM zones;
+  every other code comes from a table the host supplies
+  ([ADR-0018](adr/0018-projection-resolver.md)).
 - **`cli`** — the `forager` command, a host with a file loader that also refuses symbolic links
   out of the base context; `forager render` binds GeoJSON files to layers and writes a PNG.
 - **`bindings-wasm`** — the host for the browser: a mapfile, GeoJSON per layer name, and a

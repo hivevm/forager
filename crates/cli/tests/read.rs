@@ -124,3 +124,66 @@ fn a_symbolic_link_out_of_the_mapfile_directory_is_refused() {
         "{stderr}"
     );
 }
+
+#[test]
+fn a_built_in_epsg_code_resolves_without_a_table() {
+    // Verifies: ADR-0018
+    let output = read("wgs84.map", "json");
+    assert!(output.status.success(), "{output:?}");
+    let document = StyleDocument::from_json(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(
+        document.map.projection.as_deref(),
+        Some("+proj=longlat +datum=WGS84 +no_defs")
+    );
+}
+
+#[test]
+fn other_epsg_codes_need_the_hosts_table() {
+    // Verifies: ADR-0018
+    let without = read("national-grid.map", "json");
+    assert_eq!(without.status.code(), Some(1));
+    assert!(
+        String::from_utf8(without.stderr)
+            .unwrap()
+            .contains("[projection-unresolved]")
+    );
+
+    let mapfile = fixture("national-grid.map");
+    let table = fixture("national-grid.epsg");
+    let with = forager(&[
+        "read",
+        mapfile.to_str().unwrap(),
+        "--format",
+        "json",
+        "--epsg",
+        table.to_str().unwrap(),
+    ]);
+    assert!(with.status.success(), "{with:?}");
+    let document = StyleDocument::from_json(&String::from_utf8(with.stdout).unwrap()).unwrap();
+    assert!(
+        document
+            .map
+            .projection
+            .unwrap()
+            .starts_with("+proj=tmerc +lat_0=49")
+    );
+}
+
+#[test]
+fn an_unusable_epsg_table_is_reported() {
+    let mapfile = fixture("wgs84.map");
+    // world.map is no table: line 1 is a comment, line 2 (`MAP`) the first unusable line.
+    let broken = fixture("world.map");
+    let output = forager(&[
+        "read",
+        mapfile.to_str().unwrap(),
+        "--epsg",
+        broken.to_str().unwrap(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("line 2:")
+    );
+}

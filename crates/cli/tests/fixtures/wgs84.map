@@ -1,0 +1,6 @@
+MAP
+  NAME "wgs84"
+  PROJECTION
+    "init=epsg:4326"
+  END
+END

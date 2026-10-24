@@ -31,7 +31,7 @@ fn block_on<F: Future>(future: F) -> F::Output {
 
 fn load_files(files: &[(&'static str, &'static str)]) -> Loaded {
     let loader = Files(files.iter().copied().collect());
-    block_on(load(&ResourcePath::new(files[0].0).unwrap(), &loader))
+    block_on(load(&ResourcePath::new(files[0].0).unwrap(), &loader, None))
 }
 
 fn codes(loaded: &Loaded) -> Vec<&str> {
@@ -267,4 +267,48 @@ fn diagnostics_are_bounded_while_they_are_collected() {
         loaded.diagnostics.last().unwrap().code,
         "diagnostics-truncated"
     );
+}
+
+/// Knows one projection, as a host's resolver would.
+struct OneProjection;
+
+impl forager_ports::ProjectionResolver for OneProjection {
+    fn resolve(&self, authority: &str, code: &str) -> Option<String> {
+        (authority.eq_ignore_ascii_case("epsg") && code == "4326")
+            .then(|| "+proj=longlat +datum=WGS84 +no_defs".to_owned())
+    }
+}
+
+fn load_with_resolver(text: &'static str) -> Loaded {
+    let loader = Files([("m.map", text)].into_iter().collect());
+    block_on(load(
+        &ResourcePath::new("m.map").unwrap(),
+        &loader,
+        Some(&OneProjection),
+    ))
+}
+
+#[test]
+fn an_init_projection_is_resolved_by_the_hosts_resolver() {
+    // Verifies: ADR-0018
+    let loaded = load_with_resolver("MAP PROJECTION 'init=epsg:4326' END END");
+    assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
+    assert_eq!(
+        loaded.document.unwrap().map.projection.as_deref(),
+        Some("+proj=longlat +datum=WGS84 +no_defs")
+    );
+    let loaded = load_with_resolver("MAP PROJECTION 'INIT=EPSG:4326' '+over' END END");
+    assert_eq!(
+        loaded.document.unwrap().map.projection.as_deref(),
+        Some("+proj=longlat +datum=WGS84 +no_defs +over")
+    );
+}
+
+#[test]
+fn an_init_projection_the_resolver_does_not_know_is_a_load_error() {
+    // Verifies: ADR-0018
+    let loaded = load_with_resolver("MAP PROJECTION 'init=epsg:27700' END END");
+    assert!(loaded.document.is_none());
+    assert_eq!(codes(&loaded), ["projection-unresolved"]);
+    assert!(loaded.diagnostics[0].message.contains("epsg:27700"));
 }
