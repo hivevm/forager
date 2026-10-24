@@ -1,6 +1,6 @@
 # ADR-0020: The style document is versioned by a JSON Schema per format version, read leniently across minors, and migrated across majors in steps
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/style-ir` (the style document, its readers, its `schema` feature), the schema files of the style document and the check that compares them, and every change to the shape of the style IR

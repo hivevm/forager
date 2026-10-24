@@ -96,7 +96,7 @@ is the table a session reads.
 | [0017](0017-png-crate.md) | The encoder writes PNG with the image-rs `png` crate | `crates/encode` | 🟢 accepted |
 | [0018](0018-projection-resolver.md) | `init=` projections are resolved through a resolver port the host passes in, with a minimal built-in table and a host-supplied file for the rest | `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm` | 🟢 accepted |
 | [0019](0019-cql2-expressions.md) | Expressions in the style IR are a lean CQL2 tree of Forager's own types, serialized as CQL2-JSON, with MapServer's typing made explicit at import | `crates/style-ir`, the translation of expressions in `crates/mapfile`, and every crate that evaluates an expression of the style IR | 🟢 accepted |
-| [0020](0020-style-document-compatibility.md) | The style document is versioned by a JSON Schema per format version, read leniently across minors, and migrated across majors in steps | `crates/style-ir` (the style document, its readers, its `schema` feature), the schema files of the style document and the check that compares them, and every change to the shape of the style IR | 🟡 proposed |
+| [0020](0020-style-document-compatibility.md) | The style document is versioned by a JSON Schema per format version, read leniently across minors, and migrated across majors in steps | `crates/style-ir` (the style document, its readers, its `schema` feature), the schema files of the style document and the check that compares them, and every change to the shape of the style IR | 🟢 accepted |
 
 ### Superseded and rejected
 
