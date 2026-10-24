@@ -57,6 +57,8 @@ tools the checks need, and the Dev Container runs it after creation (ADR-0008, A
   <http://127.0.0.1:8000/>
 - **Fuzz:** `bash scripts/fuzz.sh [seconds per target]` — the weekly fuzz run of Q-3, locally; it
   installs its nightly toolchain and cargo-fuzz
+- **Mutants:** `bash scripts/mutants.sh [shard such as 1/20]` — the weekly mutation testing of
+  ADR-0008, locally; it reports the mutants no test caught
 
 ## Usage
 

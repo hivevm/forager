@@ -1,0 +1,49 @@
+name: Mutants
+
+# The mutation testing of ADR-0008: scripts/mutants.sh over the workspace, once a week and on
+# demand; about 800 mutants take some 15 minutes. A sensor: the surviving mutants are reported in the job summary and kept as an
+# artifact; the run fails only when it breaks.
+
+on:
+  schedule:
+    - cron: "17 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+          key: mutants-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'scripts/install-tools.sh', 'scripts/mutants.sh') }}
+      - name: Install the toolchain and the cargo tools
+        run: bash scripts/install-tools.sh
+      # `shell: bash` runs with pipefail, so a broken run is not hidden behind tee.
+      - name: Mutate the workspace
+        shell: bash
+        run: bash scripts/mutants.sh | tee mutants.log
+      - name: Report the mutants no test caught
+        if: always()
+        run: |
+          {
+            echo "### Mutants no test caught"
+            echo '```'
+            sed -n '/^Mutants no test caught/,$p' mutants.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutants
+          path: target/mutants/mutants.out/
