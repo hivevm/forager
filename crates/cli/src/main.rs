@@ -126,7 +126,7 @@ fn load(mapfile: &Path, epsg: Option<&Path>) -> Option<StyleDocument> {
         Some(file) => match read_epsg(file) {
             Ok(table) => table,
             Err(message) => {
-                eprintln!("forager: {}: {message}", file.display());
+                eprintln!("forager: {}:\n  {message}", file.display());
                 return None;
             }
         },
@@ -227,30 +227,33 @@ fn report(diagnostic: &Diagnostic) -> ExitCode {
 const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
 
 fn read_source(file: &Path) -> Result<GeoJsonSource, String> {
-    let size = std::fs::metadata(file).map_err(|e| e.to_string())?.len();
-    if size > MAX_SOURCE_BYTES {
-        return Err(format!(
-            "{size} bytes exceed the limit of {MAX_SOURCE_BYTES}"
-        ));
-    }
-    let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
-    GeoJsonSource::parse(&text).map_err(|e| e.message)
+    GeoJsonSource::parse(&read_bounded(file)?).map_err(|e| e.message)
 }
 
-/// The EPSG table a host file supplies (ADR-0018), within the size limit of a source.
+/// The EPSG table a host file supplies (ADR-0018), within the size limit of a source. Each
+/// unusable line is a line of the message.
 fn read_epsg(file: &Path) -> Result<EpsgTable, String> {
-    let size = std::fs::metadata(file).map_err(|e| e.to_string())?.len();
-    if size > MAX_SOURCE_BYTES {
-        return Err(format!(
-            "{size} bytes exceed the limit of {MAX_SOURCE_BYTES}"
-        ));
-    }
-    let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
-    EpsgTable::with_table(&text).map_err(|errors| {
+    EpsgTable::with_table(&read_bounded(file)?).map_err(|errors| {
         errors
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>()
-            .join("; ")
+            .join("\n  ")
     })
+}
+
+/// A text file of at most [`MAX_SOURCE_BYTES`] (Q-9). The limit bounds what is read, not only
+/// what the file system reports, so that a device or a pipe cannot exhaust memory.
+fn read_bounded(file: &Path) -> Result<String, String> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(file)
+        .and_then(|f| f.take(MAX_SOURCE_BYTES + 1).read_to_end(&mut bytes))
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_SOURCE_BYTES {
+        return Err(format!(
+            "the file exceeds the limit of {MAX_SOURCE_BYTES} bytes"
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| "the file is not UTF-8 text".to_owned())
 }

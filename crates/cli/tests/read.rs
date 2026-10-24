@@ -172,8 +172,7 @@ fn other_epsg_codes_need_the_hosts_table() {
 #[test]
 fn an_unusable_epsg_table_is_reported() {
     let mapfile = fixture("wgs84.map");
-    // world.map is no table: line 1 is a comment, line 2 (`MAP`) the first unusable line.
-    let broken = fixture("world.map");
+    let broken = fixture("broken.epsg");
     let output = forager(&[
         "read",
         mapfile.to_str().unwrap(),
@@ -185,5 +184,19 @@ fn an_unusable_epsg_table_is_reported() {
         String::from_utf8(output.stderr)
             .unwrap()
             .contains("line 2:")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_endless_epsg_file_is_cut_at_the_limit() {
+    // Verifies: Q-9
+    let mapfile = fixture("wgs84.map");
+    let output = forager(&["read", mapfile.to_str().unwrap(), "--epsg", "/dev/zero"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("exceeds the limit")
     );
 }

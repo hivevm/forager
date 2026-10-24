@@ -177,8 +177,13 @@ impl Translator<'_> {
     /// A proj4 string from the parameters of a PROJECTION block. `init=<authority>:<code>` is
     /// resolved by the resolver the host passes in (ADR-0018); without one, or for a code it does
     /// not know, it is a load error.
+    ///
+    /// As MapServer hands every parameter to PROJ, `init=` is matched case-sensitively, there is
+    /// at most one, and its expansion follows the explicit parameters, which PROJ lets take
+    /// precedence (its `pj_expand_init`).
     fn projection(&mut self, block: &Block) -> Option<String> {
         let mut params = Vec::new();
+        let mut expansion: Option<Vec<String>> = None;
         for token in &block.values {
             let text = match &token.kind {
                 TokenKind::Str { value, .. } | TokenKind::Word(value) => value.trim(),
@@ -201,11 +206,12 @@ impl Translator<'_> {
             }
             for param in text.split_whitespace() {
                 let param = param.trim_start_matches('+');
-                if let Some(reference) = param
-                    .get(..5)
-                    .filter(|key| key.eq_ignore_ascii_case("init="))
-                    .map(|_| &param[5..])
-                {
+                if let Some(reference) = param.strip_prefix("init=") {
+                    if expansion.is_some() {
+                        let message = "a PROJECTION has at most one init=";
+                        self.error("invalid-value", message, &token.span);
+                        return None;
+                    }
                     let resolved = reference
                         .split_once(':')
                         .and_then(|(authority, code)| self.resolver?.resolve(authority, code));
@@ -219,16 +225,18 @@ impl Translator<'_> {
                         self.error("projection-unresolved", &message, &token.span);
                         return None;
                     };
-                    params.extend(
+                    expansion = Some(
                         resolved
                             .split_whitespace()
-                            .map(|p| format!("+{}", p.trim_start_matches('+'))),
+                            .map(|p| format!("+{}", p.trim_start_matches('+')))
+                            .collect(),
                     );
                     continue;
                 }
                 params.push(format!("+{param}"));
             }
         }
+        params.extend(expansion.unwrap_or_default());
         (!params.is_empty()).then(|| params.join(" "))
     }
 

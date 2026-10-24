@@ -297,11 +297,20 @@ fn an_init_projection_is_resolved_by_the_hosts_resolver() {
         loaded.document.unwrap().map.projection.as_deref(),
         Some("+proj=longlat +datum=WGS84 +no_defs")
     );
-    let loaded = load_with_resolver("MAP PROJECTION 'INIT=EPSG:4326' '+over' END END");
+    // Explicit parameters come first, so that they take precedence in PROJ.
+    let loaded = load_with_resolver("MAP PROJECTION 'init=epsg:4326' '+over' END END");
     assert_eq!(
         loaded.document.unwrap().map.projection.as_deref(),
-        Some("+proj=longlat +datum=WGS84 +no_defs +over")
+        Some("+over +proj=longlat +datum=WGS84 +no_defs")
     );
+    // As in MapServer, only a lower-case `init=` is a reference.
+    let loaded = load_with_resolver("MAP PROJECTION 'INIT=EPSG:4326' END END");
+    assert_eq!(
+        loaded.document.unwrap().map.projection.as_deref(),
+        Some("+INIT=EPSG:4326")
+    );
+    let loaded = load_with_resolver("MAP PROJECTION 'init=epsg:4326' 'init=epsg:4326' END END");
+    assert_eq!(codes(&loaded), ["invalid-value"]);
 }
 
 #[test]

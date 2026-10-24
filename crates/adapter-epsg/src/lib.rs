@@ -7,6 +7,9 @@ use std::fmt;
 
 use forager_ports::ProjectionResolver;
 
+/// How many unusable lines of a table are reported (Q-9).
+pub const MAX_TABLE_ERRORS: usize = 100;
+
 /// The definitions of EPSG codes: the built-in ones, and those of a host's table.
 #[derive(Clone, Debug, Default)]
 pub struct EpsgTable {
@@ -35,9 +38,13 @@ impl EpsgTable {
     /// The built-in definitions and those of `text`, a table of lines `<code> +proj=… <>`.
     /// Comments start with `#`; a definition that names a grid file is refused, since the core
     /// reads no files.
+    ///
+    /// At most [`MAX_TABLE_ERRORS`] errors are reported; a last one counts the rest (Q-9).
     pub fn with_table(text: &str) -> Result<Self, Vec<TableError>> {
         let mut entries = BTreeMap::new();
         let mut errors = Vec::new();
+        let mut dropped = 0usize;
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         for (index, raw) in text.lines().enumerate() {
             let line = index + 1;
             let content = raw.split('#').next().unwrap_or("").trim();
@@ -48,8 +55,17 @@ impl EpsgTable {
                 Ok((code, definition)) => {
                     entries.insert(code, definition);
                 }
-                Err(message) => errors.push(TableError { line, message }),
+                Err(message) if errors.len() < MAX_TABLE_ERRORS => {
+                    errors.push(TableError { line, message });
+                }
+                Err(_) => dropped += 1,
             }
+        }
+        if dropped > 0 {
+            errors.push(TableError {
+                line: text.lines().count(),
+                message: format!("{dropped} more unusable lines are not shown"),
+            });
         }
         if errors.is_empty() {
             Ok(Self { entries })
@@ -77,19 +93,36 @@ fn parse_line(content: &str) -> Result<(u32, String), String> {
         .strip_prefix('<')
         .ok_or("a definition starts with <code>")?;
     let (code, rest) = rest.split_once('>').ok_or("the code is not closed by >")?;
-    let code: u32 = code
-        .trim()
-        .parse()
-        .map_err(|_| format!("`{}` is not an EPSG code", code.trim()))?;
-    let definition = rest.trim().strip_suffix("<>").unwrap_or(rest).trim();
+    let code = code.trim();
+    let code: u32 = Some(code)
+        .filter(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_digit()))
+        .and_then(|c| c.parse().ok())
+        .ok_or_else(|| format!("`{code}` is not an EPSG code"))?;
+    // As PROJ's reader does, the definition ends at the next `<`, which the `<>` terminator opens.
+    let definition = rest.split('<').next().unwrap_or("").trim();
     if definition.is_empty() {
         return Err(format!("EPSG:{code} has no definition"));
     }
-    let names_a_grid = definition.split_whitespace().any(|param| {
-        let param = param.trim_start_matches('+');
-        let grids = param
-            .strip_prefix("nadgrids=")
-            .or_else(|| param.strip_prefix("geoidgrids="));
+    let params = || {
+        definition
+            .split_whitespace()
+            .map(|p| p.trim_start_matches('+'))
+    };
+    if params().any(|p| p.starts_with("init=")) {
+        return Err(format!(
+            "EPSG:{code} refers to another definition with init=, which the core cannot read"
+        ));
+    }
+    let names_a_grid = params().any(|param| {
+        let grids = [
+            "nadgrids=",
+            "geoidgrids=",
+            "grids=",
+            "xy_grids=",
+            "z_grids=",
+        ]
+        .iter()
+        .find_map(|key| param.strip_prefix(key));
         grids.is_some_and(|value| {
             value
                 .split(',')
@@ -178,6 +211,44 @@ mod tests {
             Some("+proj=longlat +ellps=WGS84 +no_defs")
         );
         assert!(table.resolve("epsg", "32632").is_some(), "built-ins remain");
+    }
+
+    #[test]
+    fn a_definition_ends_at_its_terminator_and_a_bom_is_ignored() {
+        let table = EpsgTable::with_table("\u{feff}<1> +proj=longlat +no_defs <> +junk\n").unwrap();
+        assert_eq!(
+            table.resolve("epsg", "1").as_deref(),
+            Some("+proj=longlat +no_defs")
+        );
+    }
+
+    #[test]
+    fn definitions_that_need_files_or_other_definitions_are_refused() {
+        // Verifies: ADR-0018
+        let errors = EpsgTable::with_table(
+            "<1> +init=epsg:2 <>\n\
+             <2> +proj=pipeline +step +proj=hgridshift +grids=foo.tif <>\n\
+             <3> +proj=longlat +xy_grids=a.tif <>\n\
+             <+4> +proj=longlat <>\n",
+        )
+        .unwrap_err();
+        assert_eq!(
+            errors.iter().map(|e| e.line).collect::<Vec<_>>(),
+            [1, 2, 3, 4]
+        );
+        assert!(errors[0].message.contains("init="), "{}", errors[0]);
+    }
+
+    #[test]
+    fn the_errors_of_a_table_are_bounded() {
+        // Verifies: Q-9
+        let errors = EpsgTable::with_table(&"x\n".repeat(100_000)).unwrap_err();
+        assert_eq!(errors.len(), MAX_TABLE_ERRORS + 1);
+        assert!(
+            errors.last().unwrap().message.starts_with("99900 more"),
+            "{}",
+            errors.last().unwrap()
+        );
     }
 
     #[test]
