@@ -1,11 +1,19 @@
-//! G-1 over the conformance suite: every mapfile of msautotest at the pinned MapServer release
-//! loads through the CLI, with the suite's directory as the base context, without a diagnostic of
-//! severity error. `scripts/check-rust.sh` fetches the suite with `scripts/fetch-msautotest.sh`,
-//! which holds the pin, and runs this test with `FORAGER_MSAUTOTEST` naming it; `cargo test`
-//! alone skips it, as it needs the network once.
+//! The conformance suite, msautotest at the pinned MapServer release. G-1: every mapfile loads
+//! through the CLI, with the suite's directory as the base context, without a diagnostic of
+//! severity error. G-3: the style IR of every one survives YAML and JSON unchanged.
+//! `scripts/check-rust.sh` fetches the suite with `scripts/fetch-msautotest.sh`, which holds the
+//! pin, and runs these tests with `FORAGER_MSAUTOTEST` naming it; `cargo test` alone skips them,
+//! as they need the network once.
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::task::{Context, Poll, Waker};
+
+use forager_adapter_epsg::EpsgTable;
+use forager_ports::{ResourceLoader, ResourcePath, SourceError};
+use forager_style_ir::StyleDocument;
+use serde_json::Value;
 
 /// The files of the suite that are not standalone mapfiles, each with its reason.
 const SKIPPED: &[(&str, &str)] = &[
@@ -77,21 +85,28 @@ fn mapfiles(dir: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
+fn suite() -> PathBuf {
+    PathBuf::from(
+        std::env::var("FORAGER_MSAUTOTEST")
+            .expect("FORAGER_MSAUTOTEST names the suite; scripts/check-rust.sh sets it"),
+    )
+}
+
+fn epsg_table() -> String {
+    EPSG_CODES
+        .iter()
+        .map(|code| format!("<{code}> +proj=longlat +datum=WGS84 +no_defs <>\n"))
+        .collect()
+}
+
 #[test]
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_mapfile_loads_without_an_error() {
     // Verifies: G-1
-    let suite = PathBuf::from(
-        std::env::var("FORAGER_MSAUTOTEST")
-            .expect("FORAGER_MSAUTOTEST names the suite; scripts/check-rust.sh sets it"),
-    );
+    let suite = suite();
     let table =
         std::env::temp_dir().join(format!("forager-msautotest-{}.epsg", std::process::id()));
-    let lines: String = EPSG_CODES
-        .iter()
-        .map(|code| format!("<{code}> +proj=longlat +datum=WGS84 +no_defs <>\n"))
-        .collect();
-    std::fs::write(&table, lines).unwrap();
+    std::fs::write(&table, epsg_table()).unwrap();
 
     let mut found = Vec::new();
     mapfiles(&suite, &mut found);
@@ -137,4 +152,103 @@ fn every_msautotest_mapfile_loads_without_an_error() {
         failures.join("\n")
     );
     eprintln!("{loaded} mapfiles loaded, {skipped} skipped");
+}
+
+/// The suite's files, read inside its directory.
+struct Suite(PathBuf);
+
+impl ResourceLoader for Suite {
+    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        std::fs::read(self.0.join(path.as_str())).map_err(|e| SourceError::new(e.to_string()))
+    }
+}
+
+fn ready<F: Future>(future: F) -> F::Output {
+    let mut future = std::pin::pin!(future);
+    match future
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    {
+        Poll::Ready(output) => output,
+        Poll::Pending => panic!("the suite's loader never waits"),
+    }
+}
+
+/// The JSON Pointer of the first place where `a` and `b` differ.
+fn first_difference(a: &Value, b: &Value, at: String) -> Option<String> {
+    match (a, b) {
+        (Value::Object(x), Value::Object(y)) => {
+            let keys = x.keys().chain(y.keys().filter(|k| !x.contains_key(*k)));
+            keys.into_iter().find_map(|k| match (x.get(k), y.get(k)) {
+                (Some(v), Some(w)) => first_difference(v, w, format!("{at}/{k}")),
+                _ => Some(format!("{at}/{k}")),
+            })
+        }
+        (Value::Array(x), Value::Array(y)) if x.len() == y.len() => x
+            .iter()
+            .zip(y)
+            .enumerate()
+            .find_map(|(i, (v, w))| first_difference(v, w, format!("{at}/{i}"))),
+        _ if a == b => None,
+        _ => Some(if at.is_empty() { "/".to_owned() } else { at }),
+    }
+}
+
+#[test]
+#[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
+fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
+    // Verifies: G-3
+    let suite = suite();
+    let resolver = EpsgTable::with_table(&epsg_table()).unwrap();
+    let loader = Suite(suite.clone());
+    let mut found = Vec::new();
+    mapfiles(&suite, &mut found);
+    let mut checked = 0;
+    let mut failures = Vec::new();
+    for path in &found {
+        let name = path.strip_prefix(&suite).unwrap().to_str().unwrap();
+        if SKIPPED.iter().any(|(skip, _)| *skip == name) {
+            continue;
+        }
+        let path = ResourcePath::new(name).unwrap();
+        let first = ready(forager_mapfile::load(&path, &loader, Some(&resolver)))
+            .document
+            .unwrap_or_else(|| panic!("{name} does not load; see the G-1 test"));
+        let yaml = first.to_yaml().unwrap();
+        let from_yaml = StyleDocument::from_yaml(&yaml).unwrap();
+        let json = from_yaml.to_json().unwrap();
+        let last = StyleDocument::from_json(&json).unwrap();
+        checked += 1;
+        if last != first {
+            let (a, b) = (serde_json::to_value(&first), serde_json::to_value(&last));
+            let at = first_difference(&a.unwrap(), &b.unwrap(), String::new());
+            failures.push(format!(
+                "{name} at {}",
+                at.as_deref().unwrap_or("an unprintable value")
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} of {checked} style IRs changed through YAML and JSON:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+    eprintln!("{checked} style IRs read back equal");
+}
+
+#[test]
+fn the_first_difference_is_named_by_its_json_pointer() {
+    let a = serde_json::json!({"map": {"layers": [{"name": "a", "size": 1.0}], "name": "m"}});
+    let b = serde_json::json!({"map": {"layers": [{"name": "a", "size": 1.5}], "name": "m"}});
+    assert_eq!(
+        first_difference(&a, &b, String::new()).as_deref(),
+        Some("/map/layers/0/size")
+    );
+    let c = serde_json::json!({"map": {"layers": [], "name": "m", "extra": true}});
+    assert_eq!(
+        first_difference(&a, &c, String::new()).as_deref(),
+        Some("/map/layers")
+    );
+    assert_eq!(first_difference(&a, &a, String::new()), None);
 }
