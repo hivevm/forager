@@ -21,7 +21,8 @@ forager-engine = { path = "crates/engine" }
 forager-adapter-geojson = { path = "crates/adapter-geojson" }
 forager-adapter-epsg = { path = "crates/adapter-epsg" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# float_roundtrip: every number of a style document reads back bit for bit (G-3).
+serde_json = { version = "1", features = ["float_roundtrip"] }
 serde-saphyr = "2"
 wasm-bindgen = "0.2.129"
 
