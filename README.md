@@ -63,6 +63,8 @@ tools the checks need, and the Dev Container runs it after creation (ADR-0008, A
   `cargo run -p forager-cli -- render <mapfile> --source <layer>=<file.geojson> -o <image.png>`
 - **Browser example:** `bash scripts/build-web.sh`, then `cargo run -p forager-dev-server` and open
   <http://127.0.0.1:8000/>
+- **Fuzz:** `bash scripts/fuzz.sh [seconds per target]` — the weekly fuzz run of Q-3, locally; it
+  installs its nightly toolchain and cargo-fuzz
 
 ## Usage
 

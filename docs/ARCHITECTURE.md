@@ -58,6 +58,11 @@ golden path and the test pattern an agent copies from are named here.
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend.
 
+Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
+mapfile frontend, the style document readers, the renderer on structured shapes, and the browser
+path on GeoJSON — run weekly by `scripts/fuzz.sh`; it keeps libFuzzer and the nightly toolchain
+out of the product's build.
+
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).
 

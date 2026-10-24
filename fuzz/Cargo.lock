@@ -30,6 +30,9 @@ name = "arbitrary"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
+dependencies = [
+ "derive_arbitrary",
+]
 
 [[package]]
 name = "arraydeque"
@@ -78,6 +81,17 @@ name = "core_detect"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b034bd7d5f032402a2479444dcc6f74e36a03f31854d41680fb240ef682a1ac"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "encoding_rs"
@@ -145,11 +159,15 @@ dependencies = [
 name = "forager-fuzz"
 version = "0.0.0"
 dependencies = [
+ "arbitrary",
  "forager-bindings-wasm",
+ "forager-engine",
  "forager-mapfile",
  "forager-ports",
+ "forager-render-agg",
  "forager-style-ir",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]

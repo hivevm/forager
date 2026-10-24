@@ -22,7 +22,10 @@ fuzz_target!(|data: &[u8]| {
     let path = ResourcePath::new("fuzz.map").unwrap();
     let loader = Echo(data);
     let mut future = std::pin::pin!(forager_mapfile::load(&path, &loader));
-    let Poll::Ready(_) = future.as_mut().poll(&mut Context::from_waker(Waker::noop())) else {
+    let Poll::Ready(_) = future
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()))
+    else {
         panic!("the mapfile frontend waited on a loader that never waits");
     };
 });

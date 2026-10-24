@@ -25,7 +25,15 @@ jobs:
           path: |
             ~/.cargo/bin
             ~/.cargo/registry
-          key: fuzz-${{ runner.os }}-${{ hashFiles('scripts/fuzz.sh', 'fuzz/Cargo.toml') }}
+          key: fuzz-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'scripts/install-tools.sh', 'scripts/fuzz.sh', 'fuzz/Cargo.lock') }}
+      # The corpus grows from run to run: each run saves under its own key and restores the last.
+      - uses: actions/cache@v6
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+      - name: Install the toolchain and the cargo tools
+        run: bash scripts/install-tools.sh
       - name: Fuzz every target for five minutes
         run: bash scripts/fuzz.sh 300
       - name: Keep the inputs that failed
