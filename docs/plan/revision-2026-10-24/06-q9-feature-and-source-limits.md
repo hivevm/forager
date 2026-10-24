@@ -33,7 +33,7 @@ from Q-9's numbers; [ADR-0007](../../adr/0007-harness.md) and
 
 ## Acceptance criteria
 
-- [ ] Given the maintainer's decision, when it lands, then Q-9 names the two limits in a pull
+- [x] Given the maintainer's decision, when it lands, then Q-9 names the two limits in a pull
   request of its own, apart from code.
 - [ ] Given a source that delivers one feature more than the decided feature limit, when the
   engine renders its layer, then the layer is skipped with `layer-skipped` naming the limit
