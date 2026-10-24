@@ -12,7 +12,7 @@ use forager_engine::{MAX_IMAGE_SIDE, Rendered, render};
 use forager_render::RgbaImage;
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span, Style,
+    Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span, Style,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -91,9 +91,9 @@ const SQUARE_WITH_HOLE: &str = r#"{"type": "Polygon", "coordinates": [
 #[test]
 fn a_polygon_layer_is_filled_and_outlined() {
     let style = Style {
-        color: Some(GREEN),
-        outline_color: Some(BLACK),
-        width: Some(2.0),
+        color: Some(Bound::Value(GREEN)),
+        outline_color: Some(Bound::Value(BLACK)),
+        width: Some(Bound::Value(2.0)),
         ..Style::default()
     };
     let rendered = render_with(&map(RenderMode::Polygon, style), Some(SQUARE_WITH_HOLE));
@@ -118,8 +118,8 @@ fn a_polygon_layer_is_filled_and_outlined() {
 #[test]
 fn a_line_layer_strokes_lines_and_outlines_polygons() {
     let style = Style {
-        color: Some(BLUE),
-        width: Some(3.0),
+        color: Some(Bound::Value(BLUE)),
+        width: Some(Bound::Value(3.0)),
         ..Style::default()
     };
     let collection = r#"{"type": "FeatureCollection", "features": [
@@ -177,7 +177,7 @@ fn a_layer_without_status_is_off_as_in_mapserver() {
     let mut no_status = map(
         RenderMode::Polygon,
         Style {
-            color: Some(GREEN),
+            color: Some(Bound::Value(GREEN)),
             ..Style::default()
         },
     );
@@ -199,7 +199,7 @@ fn a_geometry_the_render_mode_cannot_draw_is_reported() {
         &map(
             RenderMode::Polygon,
             Style {
-                color: Some(GREEN),
+                color: Some(Bound::Value(GREEN)),
                 ..Style::default()
             },
         ),
@@ -213,8 +213,8 @@ fn a_geometry_the_render_mode_cannot_draw_is_reported() {
 #[test]
 fn a_point_layer_marks_every_vertex() {
     let style = Style {
-        color: Some(BLUE),
-        size: Some(5.0),
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(5.0)),
         ..Style::default()
     };
     let line = r#"{"type": "LineString", "coordinates": [[20, 20], [80, 80]]}"#;
@@ -233,8 +233,8 @@ fn a_point_layer_marks_every_vertex() {
 #[test]
 fn line_width_is_capped_at_mapservers_maxwidth() {
     let style = Style {
-        color: Some(BLUE),
-        width: Some(1e6),
+        color: Some(Bound::Value(BLUE)),
+        width: Some(Bound::Value(1e6)),
         ..Style::default()
     };
     let line = r#"{"type": "LineString", "coordinates": [[0, 50], [100, 50]]}"#;

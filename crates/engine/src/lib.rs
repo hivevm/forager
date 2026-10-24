@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use forager_ports::{Coord, Feature, FeatureQuery, FeatureSource, Geometry};
 use forager_render::{DisplayItem, DrawOp, Point, Renderer, RgbaImage};
-use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
+use forager_style_ir::{Bound, Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
 
 pub use crate::extent::View;
 
@@ -205,7 +205,9 @@ fn draw_ops(
     style: &Style,
     view: &View,
 ) -> Option<Vec<DrawOp>> {
-    let width = style.width.unwrap_or(1.0).clamp(0.0, MAX_SYMBOL_WIDTH);
+    let width = fixed(&style.width)
+        .unwrap_or(1.0)
+        .clamp(0.0, MAX_SYMBOL_WIDTH);
     let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
     let mut ops = Vec::new();
     match (mode, geometry) {
@@ -238,16 +240,22 @@ fn draw_ops(
             }
         }
         (RenderMode::Line, Geometry::LineString(line)) => {
-            stroke(&mut ops, vec![pixels(line)], false, style.color, width);
+            stroke(
+                &mut ops,
+                vec![pixels(line)],
+                false,
+                fixed(&style.color),
+                width,
+            );
         }
         (RenderMode::Line, Geometry::MultiLineString(lines) | Geometry::Polygon(lines)) => {
             let closed = matches!(geometry, Geometry::Polygon(_));
             let paths = lines.iter().map(|l| pixels(l)).collect();
-            stroke(&mut ops, paths, closed, style.color, width);
+            stroke(&mut ops, paths, closed, fixed(&style.color), width);
         }
         (RenderMode::Line, Geometry::MultiPolygon(polygons)) => {
             let rings = polygons.iter().flatten().map(|r| pixels(r)).collect();
-            stroke(&mut ops, rings, true, style.color, width);
+            stroke(&mut ops, rings, true, fixed(&style.color), width);
         }
         _ => return None,
     }
@@ -277,14 +285,20 @@ fn kind(geometry: &Geometry) -> &'static str {
     }
 }
 
+/// A style property's value where it does not vary by feature. One bound to a property or an
+/// expression is not drawn yet, as if unset.
+fn fixed<T: Copy>(property: &Option<Bound<T>>) -> Option<T> {
+    property.as_ref().and_then(Bound::value)
+}
+
 fn polygon_ops(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style, width: f64) {
-    if let Some(color) = style.color {
+    if let Some(color) = fixed(&style.color) {
         ops.push(DrawOp::Fill {
             rings: rings.clone(),
             color,
         });
     }
-    stroke(ops, rings, true, style.outline_color, width);
+    stroke(ops, rings, true, fixed(&style.outline_color), width);
 }
 
 fn stroke(
@@ -306,7 +320,10 @@ fn stroke(
 
 /// A point as a square of the style's size, centred on it.
 fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, width: f64) {
-    let half = style.size.unwrap_or(1.0).clamp(0.0, MAX_SYMBOL_SIZE) / 2.0;
+    let half = fixed(&style.size)
+        .unwrap_or(1.0)
+        .clamp(0.0, MAX_SYMBOL_SIZE)
+        / 2.0;
     let corner = |dx: f64, dy: f64| Point {
         x: at.x + dx,
         y: at.y + dy,

@@ -90,8 +90,9 @@ stays a "not yet supported" warning.
 - **Expressions** are the CQL2 tree of ADR-0019, in the IR crate; the frontend translates the four
   MapServer kinds into it, typing each attribute explicitly. A construct outside the subset is a
   warning, and the class or filter that carries it is kept and never matches.
-- **Bound values.** A style property that MapServer allows to be bound (`[attr]`) holds either a
-  literal or an expression of the same tree, so one evaluator serves filters, classes, labels, and
+- **Bound values.** A style property that MapServer allows to be bound holds a value, a
+  binding of a property read with MapServer's binding rules, or an expression of the same tree
+  where MapServer takes one, so one evaluator serves filters, classes, labels, and expression
   bindings.
 - **Colours** accept −255…255 per channel as MapServer's `loadColor` does, and fail past it; −1
   stays "no colour". What another negative channel means is what MapServer's renderer makes of

@@ -14,6 +14,9 @@ to invent.
   _Avoid:_ driver, provider, plugin.
 - **Base context** — What the host gives the core to resolve relative paths against: the root
   inside which every resource path must stay.
+- **Binding** — A style property that takes a feature's property, as a mapfile's `[name]` binds
+  an attribute: `{"binding": name}` in the style IR, read with MapServer's rules, not as an
+  expression ([`semantics/binding.md`](semantics/binding.md)).
 - **Core** — The crates that turn a style IR and features into pixels: no I/O, no C code, no
   MapServer syntax, and buildable for `wasm32-unknown-unknown`.
 - **Diagnostic** — A message from loading or rendering, with a severity, a code, a text, and a

@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use forager_ports::ProjectionResolver;
 use forager_style_ir::{
-    Class, Diagnostic, Expr, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span,
-    Style,
+    Bound, Class, Diagnostic, Expr, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef,
+    Span, Style,
 };
 
 use crate::expression;
@@ -191,10 +191,22 @@ impl Translator<'_> {
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
-                    "COLOR" => style.color = self.color(d),
-                    "OUTLINECOLOR" => style.outline_color = self.color(d),
-                    "WIDTH" => style.width = self.numbers(d, 1).map(|n| n[0]),
-                    "SIZE" => style.size = self.numbers(d, 1).map(|n| n[0]),
+                    "COLOR" => style.color = self.bound_color(d),
+                    "OUTLINECOLOR" => style.outline_color = self.bound_color(d),
+                    // The ranges are those loadStyle checks.
+                    "WIDTH" => {
+                        let range = Range::at_least(0.0);
+                        style.width = self.bound_number(d, range, false);
+                    }
+                    "SIZE" => style.size = self.bound_number(d, Range::above(0.0), true),
+                    "ANGLE" if d.values.len() == 1 && d.values[0].is_word("AUTO") => {
+                        let message = "ANGLE AUTO is not yet supported and is ignored";
+                        self.warn("unsupported-value", message, &d.span);
+                    }
+                    "ANGLE" => {
+                        let range = Range::within(-360.0, 360.0);
+                        style.angle = self.bound_number(d, range, false);
+                    }
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
@@ -339,6 +351,9 @@ impl Translator<'_> {
     }
 
     /// `r g b` with each in 0..=255, `-1 -1 -1` for no colour, or `"#rrggbb[aa]"`.
+    /// A colour as `loadColor` reads it: `#rrggbb`, `#rrggbbaa`, or three numbers from -255 to
+    /// 255, each truncated to an integer. A channel of -1 means no colour; MapServer's renderers
+    /// store any other channel in a byte, so a negative one is taken modulo 256.
     fn color(&mut self, d: &Directive) -> Option<Rgba> {
         match d.values.as_slice() {
             [
@@ -350,36 +365,90 @@ impl Translator<'_> {
                 self.invalid(d, "a colour as `#rrggbb` or `#rrggbbaa`");
                 None
             }),
-            [
-                Token {
-                    kind: TokenKind::Binding(_),
-                    ..
-                },
-            ] => {
-                let message = "a colour bound to an attribute is not yet supported";
-                self.warn("unsupported-value", message, &d.span);
-                None
-            }
             _ => {
                 let rgb = self.numbers(d, 3)?;
-                if rgb.iter().all(|&c| c == -1.0) {
+                if rgb.iter().any(|c| !(-255.0..=255.0).contains(c)) {
+                    self.invalid(d, "three numbers from -255 to 255");
                     return None;
                 }
-                if rgb
-                    .iter()
-                    .any(|&c| !(0.0..=255.0).contains(&c) || c.fract() != 0.0)
-                {
-                    self.invalid(d, "three integers from 0 to 255");
+                let rgb: Vec<i32> = rgb.iter().map(|c| c.trunc() as i32).collect();
+                if rgb.contains(&-1) {
                     return None;
                 }
-                Some(Rgba::opaque(rgb[0] as u8, rgb[1] as u8, rgb[2] as u8))
+                let byte = |c: i32| c.rem_euclid(256) as u8;
+                Some(Rgba::opaque(byte(rgb[0]), byte(rgb[1]), byte(rgb[2])))
             }
         }
     }
 
-    /// The expression of an `EXPRESSION` or `FILTER` against `item` (ADR-0019). One that cannot
-    /// be carried over is kept as `false`, never matching, as MapServer never matches one it
-    /// cannot parse; one MapServer would not load fails the load.
+    /// A style's colour, which may also be bound to a property.
+    fn bound_color(&mut self, d: &Directive) -> Option<Bound<Rgba>> {
+        if let [
+            Token {
+                kind: TokenKind::Binding(name),
+                ..
+            },
+        ] = d.values.as_slice()
+        {
+            return Some(Bound::Binding {
+                binding: name.clone(),
+            });
+        }
+        self.color(d).map(Bound::Value)
+    }
+
+    /// A style's number inside `range`, which may also be bound to a property, and, where
+    /// `expression` allows, be an expression. An expression that cannot be carried over is a
+    /// warning and the number 0, what MapServer's evaluation yields for one it cannot parse.
+    fn bound_number(
+        &mut self,
+        d: &Directive,
+        range: Range,
+        expression: bool,
+    ) -> Option<Bound<f64>> {
+        match d.values.as_slice() {
+            [
+                Token {
+                    kind: TokenKind::Number(n),
+                    ..
+                },
+            ] if range.contains(*n) => Some(Bound::Value(*n)),
+            [
+                Token {
+                    kind: TokenKind::Binding(name),
+                    ..
+                },
+            ] => Some(Bound::Binding {
+                binding: name.clone(),
+            }),
+            [
+                Token {
+                    kind: TokenKind::Expression(text),
+                    ..
+                },
+            ] if expression => match expression::number_value(text) {
+                Ok(expr) => Some(Bound::Expr(expr)),
+                Err(problem) if problem.error => {
+                    self.error(problem.code, &problem.message, &d.span);
+                    None
+                }
+                Err(problem) => {
+                    let message = format!("{}; the {} is 0", problem.message, d.keyword);
+                    self.warn(problem.code, &message, &d.span);
+                    Some(Bound::Value(0.0))
+                }
+            },
+            _ => {
+                let what = if expression {
+                    ", an attribute, or an expression"
+                } else {
+                    " or an attribute"
+                };
+                self.invalid(d, &format!("a number {range}{what}"));
+                None
+            }
+        }
+    }
     fn expression(&mut self, d: &Directive, item: Option<&str>) -> Option<Expr> {
         let [token] = d.values.as_slice() else {
             self.invalid(d, "one expression");
@@ -412,5 +481,45 @@ impl Translator<'_> {
     fn error(&mut self, code: &str, message: &str, span: &Span) {
         self.diagnostics
             .push(Diagnostic::error(code, message, Some(span.clone())));
+    }
+}
+
+/// The values a number may take, as MapServer's `msCheckNumber` checks them.
+#[derive(Clone, Copy)]
+enum Range {
+    AtLeast(f64),
+    Above(f64),
+    Within(f64, f64),
+}
+
+impl Range {
+    fn at_least(min: f64) -> Self {
+        Range::AtLeast(min)
+    }
+
+    fn above(min: f64) -> Self {
+        Range::Above(min)
+    }
+
+    fn within(min: f64, max: f64) -> Self {
+        Range::Within(min, max)
+    }
+
+    fn contains(self, n: f64) -> bool {
+        match self {
+            Range::AtLeast(min) => n >= min,
+            Range::Above(min) => n > min,
+            Range::Within(min, max) => (min..=max).contains(&n),
+        }
+    }
+}
+
+impl std::fmt::Display for Range {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Range::AtLeast(min) => write!(f, "of at least {min}"),
+            Range::Above(min) => write!(f, "greater than {min}"),
+            Range::Within(min, max) => write!(f, "from {min} to {max}"),
+        }
     }
 }

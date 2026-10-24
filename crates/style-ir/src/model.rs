@@ -101,17 +101,56 @@ pub struct Class {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Style {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub color: Option<Rgba>,
+    pub color: Option<Bound<Rgba>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub outline_color: Option<Rgba>,
+    pub outline_color: Option<Bound<Rgba>>,
     /// Line width in pixels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub width: Option<f64>,
+    pub width: Option<Bound<f64>>,
     /// Symbol size in pixels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub size: Option<f64>,
+    pub size: Option<Bound<f64>>,
+    /// Rotation in degrees, counter-clockwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub angle: Option<Bound<f64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
+}
+
+/// A style property that may vary by feature: a value, a property bound as MapServer binds an
+/// attribute, or an expression (ADR-0019).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Bound<T> {
+    Value(T),
+    /// The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a
+    /// number with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated
+    /// by spaces. An empty value leaves a number at its default, and a colour that does not read
+    /// leaves no colour.
+    Binding {
+        binding: String,
+    },
+    Expr(Expr),
+}
+
+impl<T: Copy> Bound<T> {
+    /// The value, if it does not vary by feature.
+    pub fn value(&self) -> Option<T> {
+        match self {
+            Bound::Value(value) => Some(*value),
+            _ => None,
+        }
+    }
+}
+
+impl<T> Bound<T> {
+    /// The expression, if the property is one.
+    pub fn expression(&self) -> Option<&Expr> {
+        match self {
+            Bound::Expr(expr) => Some(expr),
+            _ => None,
+        }
+    }
 }
 
 /// A colour with straight alpha. It serializes as `#rrggbb`, or `#rrggbbaa` when not opaque.
