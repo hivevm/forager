@@ -11,6 +11,8 @@ keeps the name and warns. An index past the last symbol is a warning too: MapSer
 for it.
 
 `GEOMTRANSFORM` draws the style on another geometry than the feature's: `start`, `end`,
-`vertices` (every point of a line but its ends), and `centroid` are carried over, written quoted
-or bare. MapServer's other transforms (`bbox`, `labelpoint`, `labelpoly`, …) and its expressions
-are not yet, and are a warning; the style draws the feature's own geometry.
+`vertices` (every point of a line but its ends), `centroid`, and, for a label's style,
+`labelpoint` and `labelpoly` ([`label.md`](label.md)) are carried over, written quoted or bare
+and compared without case (`geom_transform` in `crates/mapfile/src/translate.rs`). MapServer's
+other transforms (`bbox`, …) and its expressions are not yet, and are a warning; the style draws
+the feature's own geometry.
