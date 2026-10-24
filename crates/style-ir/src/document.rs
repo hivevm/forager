@@ -88,6 +88,57 @@ fn read_error<E: std::fmt::Display>(
     Diagnostic::error(code, message, None)
 }
 
+/// The error for a field this reader dropped that what held it cannot do without, a symbol's
+/// kind: `reason` says a field is missing at `path`, and `removed` holds where values were
+/// dropped, with the values.
+fn required_dropped(
+    reason: &str,
+    path: &[Segment],
+    removed: &[(String, String)],
+) -> Option<Diagnostic> {
+    let name = reason.strip_prefix("missing field `")?.split_once('`')?.0;
+    let place = format!("{}/{name}", segments_pointer(path));
+    let (_, shown) = removed.iter().find(|(at, _)| *at == place)?;
+    let message = format!(
+        "{place}: `{shown}` is unknown to format version {FORMAT_VERSION}, and what holds it \
+         cannot be read without it"
+    );
+    Some(Diagnostic::error("unknown-value", message, None))
+}
+
+/// Whether `path` is that of a layer's filter or a class's expression: a condition, which is
+/// kept and never matches when it does not read.
+fn condition(path: &[Segment]) -> bool {
+    match path {
+        [
+            ..,
+            Segment::Key(list),
+            Segment::Index(_),
+            Segment::Key(field),
+        ] => {
+            (list == "layers" && field == "filter") || (list == "classes" && field == "expression")
+        }
+        _ => false,
+    }
+}
+
+/// The depth of an expression's value tree as [`crate::Expr::depth`] counts it, so that one
+/// replaced unread is still held to the limit (Q-9).
+fn value_depth(value: &serde_json::Value) -> usize {
+    let mut deepest = 0;
+    let mut pending = vec![(value, 1)];
+    while let Some((value, depth)) = pending.pop() {
+        deepest = deepest.max(depth);
+        let args = match value {
+            serde_json::Value::Object(object) => object.get("args").and_then(|a| a.as_array()),
+            serde_json::Value::Array(items) => Some(items),
+            _ => None,
+        };
+        pending.extend(args.into_iter().flatten().map(|arg| (arg, depth + 1)));
+    }
+    deepest
+}
+
 /// The first operator in `value` that this build does not know.
 fn unknown_operator(value: &serde_json::Value) -> Option<String> {
     match value {
@@ -226,6 +277,8 @@ impl StyleDocument {
     /// Anything else that does not read is the error `code`, naming its path.
     fn lenient(mut value: serde_json::Value, code: &str) -> Result<Read, Diagnostic> {
         let mut dropped = Vec::new();
+        // Where a value was dropped, and the value, for an error that its absence causes.
+        let mut removed: Vec<(String, String)> = Vec::new();
         loop {
             let mut ignored = Vec::new();
             let read = serde_path_to_error::deserialize(serde_ignored::Deserializer::new(
@@ -242,43 +295,69 @@ impl StyleDocument {
                 Err(error) => error,
             };
             let path = segments(error.path());
+            let reason = error.inner().to_string();
             // The field that holds what did not read: the nearest key on its path.
             let Some(key_at) = path.iter().rposition(|s| matches!(s, Segment::Key(_))) else {
                 return Err(read_error(code, &error));
             };
             let at = segments_pointer(&path[..=key_at]);
-            let Some(field) = value.pointer_mut(&at) else {
+            let Some(failed) = value.pointer(&segments_pointer(&path)).cloned() else {
                 return Err(read_error(code, &error));
             };
-            let warning = if let Some(op) = unknown_operator(field) {
-                let filter =
-                    matches!(&path[key_at], Segment::Key(k) if k == "expression" || k == "filter");
-                if filter {
-                    *field = serde_json::Value::Bool(false);
-                    let message = format!(
-                        "{at}: the operator `{op}` is unknown to format version {FORMAT_VERSION}, \
-                         and the expression never matches"
-                    );
-                    Diagnostic::warning("unknown-operator", message, None)
-                } else {
-                    let message = format!(
-                        "{at}: the operator `{op}` is unknown to format version {FORMAT_VERSION}, \
-                         and the field is ignored"
-                    );
-                    Self::remove(&mut value, &at);
-                    Diagnostic::warning("unknown-operator", message, None)
+            if let Some(error) = required_dropped(&reason, &path, &removed) {
+                return Err(error);
+            }
+            let shown = |value: &serde_json::Value| match value {
+                serde_json::Value::String(text) => text.clone(),
+                other => other.to_string(),
+            };
+            // Only an expression, which serde reads as an untagged enum, holds operators.
+            let untagged = reason.contains("untagged enum");
+            let operator = untagged.then(|| unknown_operator(&failed)).flatten();
+            let warning = if condition(&path[..=key_at]) {
+                // A class or filter that does not read is kept and never matches; dropped, it
+                // would match every feature.
+                let field = value
+                    .pointer_mut(&at)
+                    .expect("the failed place is inside the field");
+                if value_depth(field) > MAX_EXPRESSION_DEPTH {
+                    let message =
+                        format!("{at}: an expression nests deeper than {MAX_EXPRESSION_DEPTH}");
+                    return Err(Diagnostic::error("expression-too-deep", message, None));
                 }
-            } else if error.inner().to_string().starts_with("unknown variant")
-                || error.inner().to_string().contains("untagged enum")
-            {
-                let shown = match field {
-                    serde_json::Value::String(text) => text.clone(),
-                    other => other.to_string(),
-                };
+                *field = serde_json::Value::Bool(false);
+                match operator {
+                    Some(op) => Diagnostic::warning(
+                        "unknown-operator",
+                        format!(
+                            "{at}: the operator `{op}` is unknown to format version \
+                             {FORMAT_VERSION}, and the expression never matches"
+                        ),
+                        None,
+                    ),
+                    None => Diagnostic::warning(
+                        "unknown-value",
+                        format!(
+                            "{at}: the expression does not read in format version \
+                             {FORMAT_VERSION}, and it never matches"
+                        ),
+                        None,
+                    ),
+                }
+            } else if let Some(op) = operator {
+                Self::remove(&mut value, &at);
+                let message = format!(
+                    "{at}: the operator `{op}` is unknown to format version {FORMAT_VERSION}, and \
+                     the field is ignored"
+                );
+                Diagnostic::warning("unknown-operator", message, None)
+            } else if reason.starts_with("unknown variant") || untagged {
+                let shown = shown(&failed);
                 let message = format!(
                     "{at}: `{shown}` is unknown to format version {FORMAT_VERSION} and is ignored"
                 );
                 Self::remove(&mut value, &at);
+                removed.push((at, shown));
                 Diagnostic::warning("unknown-value", message, None)
             } else {
                 return Err(read_error(code, &error));
@@ -873,5 +952,53 @@ mod tests {
         assert_eq!(read.warnings.len(), MAX_DROPPED_VALUES);
         let error = StyleDocument::from_json(&layers(MAX_DROPPED_VALUES + 1)).unwrap_err();
         assert_eq!(error.code, "too-many-unknown-values");
+    }
+
+    #[test]
+    fn a_newer_minor_keeps_a_condition_it_cannot_read_and_loses_nothing_else() {
+        // A filter of a shape this build does not know never matches; dropped, it would match all.
+        let json = r#"{"version":"1.9","map":{"layers":[{"filter":{"op":"=","args":[{"property":"a"},{"interval":["a","b"]}]}}]}}"#;
+        let read = StyleDocument::from_json(json).unwrap();
+        assert_eq!(read.document.map.layers[0].filter, Some(Expr::Bool(false)));
+        assert_eq!(read.warnings[0].code, "unknown-value");
+        // A layer that is no layer is an error, not blamed on another layer's operator.
+        let json = r#"{"version":"1.9","map":{"layers":[5,{"name":"keep","filter":{"op":"s_buffer","args":[]}}]}}"#;
+        let error = StyleDocument::from_json(json).unwrap_err();
+        assert!(
+            error.message.starts_with("/map/layers/0: "),
+            "{}",
+            error.message
+        );
+        // A string property that holds an object is a type error, not an unknown operator.
+        let json = r#"{"version":"1.9","map":{"layers":[{"source":{"kind":"local","props":{"filter":{"op":"s_buffer"}}}}]}}"#;
+        let error = StyleDocument::from_json(json).unwrap_err();
+        assert!(
+            error
+                .message
+                .starts_with("/map/layers/0/source/props/filter: "),
+            "{}",
+            error.message
+        );
+        // A required field cannot be dropped: the error names the value.
+        let json = r#"{"version":"1.9","map":{"symbols":[{"name":"s","kind":"hologram"}]}}"#;
+        let error = StyleDocument::from_json(json).unwrap_err();
+        assert_eq!(error.code, "unknown-value");
+        assert!(
+            error.message.contains("/map/symbols/0/kind: `hologram`"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn a_condition_kept_unread_is_held_to_the_depth_limit() {
+        // Verifies: Q-9
+        let mut filter = r#"{"op":"s_buffer","args":[]}"#.to_owned();
+        for _ in 0..MAX_EXPRESSION_DEPTH {
+            filter = format!(r#"{{"op":"not","args":[{filter}]}}"#);
+        }
+        let json = format!(r#"{{"version":"1.9","map":{{"layers":[{{"filter":{filter}}}]}}}}"#);
+        let error = StyleDocument::from_json(&json).unwrap_err();
+        assert_eq!(error.code, "expression-too-deep");
     }
 }
