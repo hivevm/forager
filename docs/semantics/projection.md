@@ -16,9 +16,12 @@ expansion follows the explicit parameters, which take precedence. An `init=` tha
 a path, such as `init=./data/epsg2:42304`, has its path as the authority and is resolved, or not,
 like any other.
 
-**`AUTO`.** A first parameter `AUTO`, in any case, leaves the projection to the layer's source:
-`msProcessProjection` sets no PROJ object for it, and the source declares one when it opens — a
-shapefile its `.prj` beside it (`msSHPLayerOpen` in `src/mapshape.c`), a raster what GDAL reads
-(`src/mapraster.c`), an OGR layer its spatial reference. A source that declares none leaves the
-layer in the map's projection. The IR holds this as `from_source`. On the map, where no source
+**`AUTO`.** A first parameter that is `AUTO` and nothing else, in any case, leaves the projection to
+the layer's source: `msProcessProjection` sets no PROJ object for it, and the source declares one
+when it opens — a shapefile its `.prj` beside it (`msSHPLayerOpen` in `src/mapshape.c`), a raster
+what GDAL reads (`src/mapraster.c`), an OGR layer its spatial reference. Where the source declares
+none, the layer keeps `AUTO` without a PROJ object, which `msProjectionsDiffer` finds different from
+the map's, and `msProjectCreateReprojector` in `src/mapproject.c` takes its coordinates as longitude
+and latitude in the datum of the map's projection; only a map without a projection, or a geographic
+one, leaves them as they are. The IR holds this as `from_source`. On the map, where no source
 declares one, `AUTO` is a warning and the map has no projection.

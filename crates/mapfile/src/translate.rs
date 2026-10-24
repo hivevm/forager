@@ -828,7 +828,7 @@ impl Translator<'_> {
 
     /// A proj4 string from the parameters of a PROJECTION block. `init=<authority>:<code>` is
     /// resolved by the resolver the host passes in (ADR-0018); without one, or for a code it does
-    /// not know, it is a load error. `AUTO` as the first parameter, in any case, is the
+    /// not know, it is a load error. A first parameter that is `AUTO`, in any case, is the
     /// projection of the source, as `msProcessProjection` leaves it to the source to declare.
     ///
     /// As MapServer hands every parameter to PROJ, `init=` is matched case-sensitively, there is
@@ -849,13 +849,7 @@ impl Translator<'_> {
                     return None;
                 }
             };
-            if params.is_empty()
-                && expansion.is_none()
-                && text
-                    .split_whitespace()
-                    .next()
-                    .is_some_and(|first| first.eq_ignore_ascii_case("AUTO"))
-            {
+            if params.is_empty() && expansion.is_none() && text.eq_ignore_ascii_case("AUTO") {
                 return Some(LayerProjection::FromSource);
             }
             for param in text.split_whitespace() {

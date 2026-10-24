@@ -1112,6 +1112,12 @@ fn a_layers_projection_resolves_as_the_maps_does() {
         loaded.document.unwrap().map.layers[0].projection,
         Some(LayerProjection::FromSource)
     );
+    // MapServer compares the whole first parameter, so this one goes to PROJ.
+    let loaded = load_files(&[("m.map", "MAP LAYER PROJECTION 'auto over' END END END")]);
+    assert_eq!(
+        loaded.document.unwrap().map.layers[0].projection,
+        Some(LayerProjection::Proj4("+auto +over".to_owned()))
+    );
     // A map has no source to declare one.
     let loaded = load_files(&[("m.map", "MAP PROJECTION AUTO END END")]);
     assert_eq!(codes(&loaded), ["unsupported-value"]);

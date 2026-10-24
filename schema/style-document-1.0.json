@@ -789,7 +789,7 @@
           ]
         },
         {
-          "description": "The projection the layer's source declares, read when it opens; where it declares none,\nthe map's.",
+          "description": "The projection the layer's source declares, read when it opens. Where it declares none,\nits coordinates are longitude and latitude in the datum of the map's projection.",
           "type": "string",
           "const": "from_source"
         }

@@ -148,8 +148,8 @@ pub struct Layer {
 pub enum LayerProjection {
     /// A proj4 string.
     Proj4(String),
-    /// The projection the layer's source declares, read when it opens; where it declares none,
-    /// the map's.
+    /// The projection the layer's source declares, read when it opens. Where it declares none,
+    /// its coordinates are longitude and latitude in the datum of the map's projection.
     FromSource,
 }
 
