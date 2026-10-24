@@ -31,6 +31,7 @@ frontend loads round-trips through YAML and JSON to an equal document.
   [ADR-0012](../../adr/0012-crate-supply-chain.md),
   and G-3 and Q-3 of `docs/SPECIFICATION.md`.
 - `crates/style-ir/src/document.rs`, `fuzz/fuzz_targets/mapfile.rs`, `scripts/fuzz.sh`.
+- The spec next to this ticket, `docs/plan/ir-completeness/spec.md` (Testing decisions).
 - The feature is workspace-wide once enabled, so the GeoJSON adapter and the bindings parse
   coordinates exactly too; that is the intended consequence, not a side effect to avoid.
 
