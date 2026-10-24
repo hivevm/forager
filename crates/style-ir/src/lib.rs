@@ -5,11 +5,13 @@
 mod diagnostic;
 mod document;
 mod expression;
+mod migration;
 mod model;
 
 pub use diagnostic::{Diagnostic, Severity, Span};
 pub use document::{FORMAT_VERSION, Read, StyleDocument};
 pub use expression::{Expr, MAX_EXPRESSION_DEPTH, Op};
+pub use migration::{STEPS, Step};
 pub use model::{
     Align, AngleMode, Bound, Class, Extent, Force, GeomTransform, Label, Layer, LayerProjection,
     LayerStatus, LineCap, LineJoin, LineOffset, Map, MinFeatureSize, Position, RenderMode, Rgba,
