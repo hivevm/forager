@@ -17,10 +17,11 @@ What sits outside the system and what crosses its boundary. A diagram earns its 
 than anywhere else, and none beats one that has stopped being true.
 
 A host embeds the core and owns all I/O: the CLI reads files, and the browser bindings take what a
-page passes in. The host hands the mapfile frontend a resource loader rooted at the base context;
-the frontend returns a style document and diagnostics. To render, the host binds a feature source
-to each layer by the layer's name and hands the engine a renderer; the engine returns an RGBA
-image and diagnostics, and the host encodes it or hands it to the page.
+page passes in. The host hands the mapfile frontend a resource loader rooted at the base context
+and a projection resolver; the frontend returns a style document and diagnostics. To render, the
+host binds a feature source to each layer by the layer's name and hands the engine a renderer;
+the engine returns an RGBA image and diagnostics, and the host encodes it or hands it to the
+page.
 
 ## Building blocks
 
@@ -48,11 +49,15 @@ golden path and the test pattern an agent copies from are named here.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
   against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), the
-  symbol file and font set `SYMBOLSET` and `FONTSET` name, read through the resource loader
-  within the same bounds, and the
-  translation into the style IR, which reports every keyword it does not carry over and
-  translates MapServer's expressions with their typing into the CQL2 tree. A load reports at
-  most a thousand diagnostics (Q-9). It is the only crate that knows MapServer syntax.
+  symbol file and font set `SYMBOLSET` and `FONTSET` name and the init files an `init=` names by
+  a path, read through the resource loader against the same directory within the same bounds
+  (`init_file.rs`, [ADR-0023](adr/0023-projection-resolver-and-init-files.md)), and the
+  translation into the style IR (`translate.rs`), which reports every keyword it does not carry
+  over, translates MapServer's expressions with their typing into the CQL2 tree
+  (`expression.rs`), and resolves every other `init=` through the host's projection resolver. A
+  load reports at most a thousand diagnostics (Q-9). It is the only crate that knows MapServer
+  syntax; what each parameter it carries means is described per parameter under
+  `docs/semantics/`.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, and turns each feature and style into display
   items by the layer's render mode. A layer without a source, or whose source fails, is skipped
@@ -70,10 +75,12 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0023](adr/0023-projection-resolver-and-init-files.md)).
 - **`cli`** — the `forager` command, a host with a file loader rooted at the base context — the
   mapfile's directory, or the directory `--base` names — that also refuses symbolic links out of
-  it; `forager render` binds GeoJSON files to layers and writes a PNG.
-- **`bindings-wasm`** — the host for the browser: a mapfile, GeoJSON per layer name, and a
-  viewport in, the RGBA image and the diagnostics out; it keeps a layer's source reference only
-  when that is a `DATA` without credentials, and drops and unbinds every other (Q-7).
+  it, and that hands the frontend an `adapter-epsg` table, extended by the file `--epsg` names;
+  `forager render` binds GeoJSON files to layers and writes a PNG.
+- **`bindings-wasm`** — the host for the browser: a mapfile, GeoJSON per layer name, an optional
+  EPSG table, and a viewport in, the RGBA image and the diagnostics out; it keeps a layer's
+  source reference only when that is a `DATA` without credentials, and drops and unbinds every
+  other (Q-7).
   `scripts/build-web.sh` builds it into `target/web/`.
 - **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out. The
   page shows the image, and a Leaflet map whose tiles each call the bindings with the tile's
@@ -92,8 +99,11 @@ product's build, and `scripts/check-rust.sh` lints it on every push.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
 pins, by tag and commit: a sparse checkout into `target/`, cached in CI, never in the repository.
-`scripts/check-rust.sh` loads every mapfile of it through the CLI on every push (G-1), and
-round-trips the style IR of each through YAML and JSON (G-3).
+`scripts/check-rust.sh` loads every mapfile of it through the CLI on every push (G-1), with the
+suite's directory as the base context and a stand-in table for the EPSG codes beyond the built-in
+ones, and round-trips the style IR of each through YAML and JSON (G-3);
+`crates/cli/tests/msautotest.rs` names the files it skips with a reason each, and loads the one
+mapfile that names the suite's init file bare in-process with a stand-in for it.
 
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).
@@ -112,9 +122,11 @@ lives between them. Only what a newcomer would otherwise reconstruct from code.
 `forager read <mapfile>`: the CLI canonicalizes the mapfile's path and roots a file loader at its
 directory. The frontend reads the mapfile through the loader, lexes it, and splices in each
 `INCLUDE`'s tokens, resolved against that directory as MapServer resolves them. The parser builds
-the `MAP` block; the translation walks it into the style IR and adds a warning for each keyword
-not carried over. With no error, the CLI prints the style document; diagnostics go to standard
-error. No state outlives the call.
+the `MAP` block; the symbol file, the font set, and the init files it names are read next, through
+the same loader and within the same size bound. The translation then walks the block into the
+style IR, resolving each `init=` from an init file or through the CLI's EPSG table, and adds a
+warning for each keyword not carried over. With no error, the CLI prints the style document;
+diagnostics go to standard error. No state outlives the call.
 
 `forager render <mapfile> --source <layer>=<file> -o <png>` loads the mapfile the same way, parses
 each GeoJSON file into a source bound to its layer, and runs the engine with the agg-rust renderer.
