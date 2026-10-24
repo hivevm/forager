@@ -97,7 +97,9 @@ and projections come with later work.
 
 Render in the browser: build the WebAssembly bundle, start the local server, and open
 <http://127.0.0.1:8000/>. The page loads a sample mapfile with GeoJSON for its three layers; edit
-either and press **Render**.
+either and press **Render**. Below the image, a [Leaflet](https://leafletjs.com/) map pans and
+zooms over the same map, each tile rendered by Forager for its extent; Leaflet is a checked copy
+under `examples/web/vendor/` ([ADR-0021](docs/adr/0021-vendored-leaflet.md)).
 
 ```console
 $ bash scripts/build-web.sh
@@ -121,7 +123,7 @@ docs/CONVENTIONS.md   # how this project writes what no check decides, kept curr
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
 docs/plan/            # feature specs and their tickets, deleted as their work lands (ADR-0006)
-examples/web/         # the browser example: a page, a sample mapfile, and its GeoJSON
+examples/web/         # the browser example: a page, a sample mapfile, its GeoJSON, vendored Leaflet
 fuzz/                 # the fuzz targets of Q-3, run weekly by scripts/fuzz.sh (own workspace)
 Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0009)
 crates/               # the crates, one per responsibility: style-ir, mapfile, engine, cli, …
