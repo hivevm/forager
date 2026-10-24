@@ -1,6 +1,6 @@
 # ADR-0018: `init=` projections are resolved through a resolver port the host passes in, with a minimal built-in table and a host-supplied file for the rest
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm`
