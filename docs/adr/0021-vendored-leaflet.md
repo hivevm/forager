@@ -1,4 +1,4 @@
-# ADR-0021: The browser example shows the map in Leaflet, from a copy of Leaflet vendored and checked by checksum
+# ADR-0021: The browser example loads third-party JavaScript only from copies vendored in the tree and checked by checksum
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-10-24
@@ -26,9 +26,14 @@ a base map.
 
 ## Decision
 
-We will show the browser example's map in Leaflet 1.9.4, loaded from a copy of its
-`dist/leaflet.js` and `dist/leaflet.css` with its `LICENSE` under `examples/web/vendor/leaflet/`,
-whose SHA-256 checksums a check compares against a checked-in list on every run.
+We will load every third-party script and stylesheet of the browser example from a copy under
+`examples/web/vendor/`, byte for byte as its release published it and with its licence, whose
+SHA-256 checksums a check compares against the checked-in `examples/web/vendor/SHA256SUMS` on
+every run; the first such copy is Leaflet 1.9.4 (`dist/leaflet.js`, `dist/leaflet.css`, and
+`LICENSE`, under `examples/web/vendor/leaflet/`), which draws the example's tile view.
+
+Replacing or updating a vendored library, Leaflet among them, follows this decision: a new copy and
+new checksums, with the library's licence permissive (Q-6).
 
 **Out of scope:** a JavaScript package manager or build step for the example; a base map from a
 tile server, which waits for reprojection and geographic sample data; Leaflet in the published
@@ -72,6 +77,7 @@ bindings, which stay library-agnostic.
 
 `scripts/check-vendor.sh` runs `sha256sum --check` on `examples/web/vendor/SHA256SUMS`, which
 lists every file under `examples/web/vendor/`, and fails on a mismatch or a file not listed;
-`scripts/check-all.sh` and CI run it, and its self-test cites this ADR with `Verifies:`. That the
-example loads no script or stylesheet from another origin is checked by the same script, which
-fails on an `http` URL in a `src` or `href` of `examples/web/index.html`.
+`scripts/check-all.sh` and CI run it, and its self-test cites this ADR with `Verifies:`. The same
+script fails when a `<script>` or `<link>` of `examples/web/index.html`, or an `import` of its
+module script, names another origin (`http:`, `https:`, or `//`). A `url()` in the page's inline
+style is not read; a reviewer holds that.
