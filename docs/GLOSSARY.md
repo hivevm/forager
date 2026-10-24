@@ -44,6 +44,8 @@ to invent.
 - **Render mode** — What a layer's `TYPE` states: how its features are drawn (point, line,
   polygon, raster, labels only), independent of their geometry type.
   _Avoid:_ layer type, geometry type (for this concept).
+- **Resource loader** — The port through which the host supplies the bytes of files a style refers
+  to — `INCLUDE`s, symbol sets, font sets, fonts, pixmaps — resolved against the base context.
 - **Source reference** — A layer's description of where its data lives — a kind and properties
   taken unparsed from `CONNECTIONTYPE`, `CONNECTION`, `DATA`, and related keywords — which a
   resolver binds to an adapter.
