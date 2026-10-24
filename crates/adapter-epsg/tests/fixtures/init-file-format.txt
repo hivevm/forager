@@ -14,3 +14,7 @@
 <3> +proj=longlat +nadgrids=ntv1_can.dat <>
 # expect 4 refused init=
 <4> +init=epsg:1 <>
+# The first definition holds even when it is empty.
+# expect 5 refused no definition
+<5> <>
+<5> +proj=longlat <>

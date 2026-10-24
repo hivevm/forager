@@ -68,10 +68,12 @@ pub fn named(map: &Block) -> Vec<(String, Span)> {
     named
 }
 
-/// Each code's definition, as PROJ's reader takes it (`get_init_string` in its `src/init.cpp`):
-/// `<code>` and the parameters up to the next `<`, across lines, `#` starting a comment to the
-/// end of its line; the first definition of a code holds. A definition that names a grid file, or
-/// refers on with `init=`, is kept as the reason it cannot be used (ADR-0023).
+/// Each code's definition, as PROJ 9.5.0's reader takes it (`get_init_string` in its
+/// `src/init.cpp`): `<code>` at the start of a line, the code compared as written, and the
+/// parameters up to the next `<`, across lines, `#` starting a comment to the end of its line;
+/// the first definition of a code holds, an empty one too. A `<` whose `>` is not on its line, or
+/// a `<code>` inside a line, is no code. A definition that cannot be used is kept as the reason
+/// (ADR-0023). The host table of `adapter-epsg` is read by the same rules.
 fn parse(text: &str) -> BTreeMap<String, Result<String, String>> {
     let mut definitions = BTreeMap::new();
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -79,29 +81,45 @@ fn parse(text: &str) -> BTreeMap<String, Result<String, String>> {
         .lines()
         .map(|line| line.split('#').next().unwrap_or(""))
         .collect();
-    let joined = lines.join(" ");
-    let mut rest = joined.as_str();
-    while let Some(open) = rest.find('<') {
-        let Some((code, after)) = rest[open + 1..].split_once('>') else {
-            break;
-        };
-        let end = after.find('<').unwrap_or(after.len());
-        let (definition, next) = after.split_at(end);
-        rest = next;
-        let (code, definition) = (code.trim(), definition.trim());
-        // `<>` closes a definition; a code without one is no definition.
-        if code.is_empty() || definition.is_empty() {
-            continue;
+    let joined = lines.join("\n");
+    let mut current: Option<&str> = None;
+    let mut definition = String::new();
+    let mut pos = 0;
+    loop {
+        let open = joined[pos..].find('<').map(|i| pos + i);
+        let end = open.unwrap_or(joined.len());
+        if current.is_some() {
+            definition.push_str(&joined[pos..end]);
+            definition.push(' ');
         }
-        definitions
-            .entry(code.to_owned())
-            .or_insert_with(|| usable(code, definition));
+        if let Some(code) = current.take() {
+            definitions
+                .entry(code.to_owned())
+                .or_insert_with(|| usable(code, definition.trim()));
+        }
+        definition.clear();
+        let Some(open) = open else { break };
+        let line_start = joined[..open].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = joined[open..].find('\n').map_or(joined.len(), |i| open + i);
+        let Some(close) = joined[open..line_end].find('>').map(|i| open + i) else {
+            pos = line_end;
+            continue;
+        };
+        let code = &joined[open + 1..close];
+        let starts_its_line = joined[line_start..open].trim().is_empty();
+        if !code.is_empty() && starts_its_line {
+            current = Some(code);
+        }
+        pos = close + 1;
     }
     definitions
 }
 
 /// The definition, unless the core cannot use it.
 fn usable(code: &str, definition: &str) -> Result<String, String> {
+    if definition.is_empty() {
+        return Err(format!("`{code}` has no definition"));
+    }
     let params = || {
         definition
             .split_whitespace()

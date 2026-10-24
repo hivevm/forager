@@ -1371,3 +1371,26 @@ fn an_init_file_reads_the_format_cases_both_readers_share() {
         }
     }
 }
+
+#[test]
+fn an_init_file_tag_that_is_no_code_is_skipped_as_proj_skips_it() {
+    let file = crate::init_file::InitFile::new(
+        ResourcePath::new("epsg2").unwrap(),
+        "<1 +proj=longlat\n<2> +proj=merc <>\n< 3 > +proj=merc <>\n<4> +proj=longlat <5> +proj=merc <>\n",
+    );
+    assert_eq!(
+        file.definition("2"),
+        Ok("+proj=merc"),
+        "an unclosed tag does not swallow the next"
+    );
+    assert!(file.definition("1").is_err());
+    assert!(
+        file.definition("3").is_err(),
+        "the code is compared as written"
+    );
+    assert_eq!(file.definition("4"), Ok("+proj=longlat"));
+    assert!(
+        file.definition("5").is_err(),
+        "a code inside a line is none"
+    );
+}

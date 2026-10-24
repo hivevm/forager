@@ -63,14 +63,18 @@ impl ProjectionResolver for EpsgTable {
     }
 }
 
-/// A table's definitions and its errors, read as PROJ reads an init file (`get_init_string` in
-/// its `src/init.cpp`): `<code>` and the parameters up to the next `<`, across lines, `#`
-/// starting a comment to the end of its line, the first definition of a code holding. What
-/// follows a `<>` on its own line is ignored, as PROJ ignores it; text on a later line outside a
-/// definition is an error. Each error names the line where its definition starts; at most
-/// [`MAX_TABLE_ERRORS`] are listed, and a last one counts the rest (Q-9).
+/// A table's definitions and its errors, read as the mapfile frontend reads an init file and as
+/// PROJ 9.5.0 reads one (`get_init_string` in its `src/init.cpp`): `<code>` at the start of a
+/// line, the code compared as written, and the parameters up to the next `<`, across lines, `#`
+/// starting a comment to the end of its line; the first definition of a code holds. What follows
+/// a `<>` on its line is ignored, as PROJ ignores it. Stricter than PROJ, which only skips them,
+/// a `<` without its `>` on its line, a `<code>` inside a line, a code that is not an EPSG
+/// number as written, and text on a later line outside a definition are errors. Each error names
+/// the line where it starts; at most [`MAX_TABLE_ERRORS`] are listed, and a last one counts the
+/// rest (Q-9).
 fn parse(text: &str) -> (BTreeMap<u32, String>, Vec<TableError>) {
     let mut entries = BTreeMap::new();
+    let mut seen = std::collections::BTreeSet::new();
     let mut errors = Vec::new();
     let mut dropped = 0usize;
     let mut report = |line: usize, message: String| {
@@ -91,7 +95,7 @@ fn parse(text: &str) -> (BTreeMap<u32, String>, Vec<TableError>) {
         .collect();
     let line_of = |at: usize| starts.partition_point(|&start| start <= at);
     // What the text up to the next `<` is: before the first code or after a `<>`, nothing; after
-    // a code, its definition; after a code that is none, skipped.
+    // a code, its definition; after a tag that is none, skipped.
     enum Body {
         Outside { at_start: bool },
         Definition { code: u32, line: usize },
@@ -119,32 +123,45 @@ fn parse(text: &str) -> (BTreeMap<u32, String>, Vec<TableError>) {
                     at += stray.len() + 1;
                 }
             }
-            Body::Definition { code, line } => match usable(code, text.trim()) {
-                Ok(definition) => {
-                    entries.entry(code).or_insert(definition);
+            Body::Definition { code, line } => {
+                let definition = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                // The first definition holds, as in PROJ, a refused one too.
+                if seen.insert(code) {
+                    match usable(code, &definition) {
+                        Ok(definition) => {
+                            entries.insert(code, definition);
+                        }
+                        Err(message) => report(line, message),
+                    }
                 }
-                Err(message) => report(line, message),
-            },
+            }
             Body::Skipped => {}
         }
         let Some(open) = open else { break };
-        let Some(close) = joined[open..].find('>').map(|i| open + i) else {
-            report(line_of(open), "the code is not closed by >".to_owned());
-            break;
+        let line = line_of(open);
+        let line_end = joined[open..].find('\n').map_or(joined.len(), |i| open + i);
+        let Some(close) = joined[open..line_end].find('>').map(|i| open + i) else {
+            report(line, "the code is not closed by > on its line".to_owned());
+            body = Body::Skipped;
+            pos = line_end;
+            continue;
         };
-        let code = joined[open + 1..close].trim();
+        let code = &joined[open + 1..close];
+        let line_start = starts[line - 1];
         body = if code.is_empty() {
             Body::Outside { at_start: false }
+        } else if !joined[line_start..open].trim().is_empty() {
+            report(line, format!("`<{code}>` does not start its line"));
+            Body::Skipped
         } else if let Some(number) = Some(code)
-            .filter(|c| c.bytes().all(|b| b.is_ascii_digit()))
+            .filter(|c| {
+                c.bytes().all(|b| b.is_ascii_digit()) && !(c.len() > 1 && c.starts_with('0'))
+            })
             .and_then(|c| c.parse().ok())
         {
-            Body::Definition {
-                code: number,
-                line: line_of(open),
-            }
+            Body::Definition { code: number, line }
         } else {
-            report(line_of(open), format!("`{code}` is not an EPSG code"));
+            report(line, format!("`{code}` is not an EPSG code"));
             Body::Skipped
         };
         pos = close + 1;
@@ -363,6 +380,33 @@ mod tests {
         }
         // A refused definition is reported at the line where it starts.
         let lines: Vec<_> = errors.iter().map(|e| e.line).collect();
-        assert_eq!(lines, [14, 16]);
+        assert_eq!(lines, [14, 16, 19]);
+    }
+
+    #[test]
+    fn a_tag_that_is_no_code_is_an_error_on_its_own_line() {
+        // Verifies: ADR-0023
+        let errors = EpsgTable::with_table(
+            "<1 +proj=longlat\n\
+             <2> +proj=merc <>\n\
+             <04326> +proj=merc <>\n\
+             < 3 > +proj=merc <>\n\
+             <4> +proj=longlat <5> +proj=merc <>\n",
+        )
+        .unwrap_err();
+        let found: Vec<_> = errors
+            .iter()
+            .map(|e| (e.line, e.message.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (1, "the code is not closed by > on its line"),
+                (3, "`04326` is not an EPSG code"),
+                (4, "` 3 ` is not an EPSG code"),
+                (5, "`<5>` does not start its line"),
+            ]
+        );
+        assert!(errors.iter().all(|e| !e.message.contains('\n')));
     }
 }
