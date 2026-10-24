@@ -869,6 +869,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_enum_value_is_dropped_with_a_warning() {
+        // Verifies: ADR-0022
         // Verifies: ADR-0020
         let read = StyleDocument::from_yaml(&with_unknowns("1.9", "hologram", "=")).unwrap();
         let layer = &read.document.map.layers[0];
@@ -916,6 +917,7 @@ mod tests {
 
     #[test]
     fn in_the_current_minor_an_unknown_value_or_operator_is_a_load_error_naming_its_path() {
+        // Verifies: ADR-0022
         let error = StyleDocument::from_yaml(&with_unknowns("1.0", "hologram", "=")).unwrap_err();
         assert!(
             error.message.starts_with("/map/layers/0/render_mode: "),
@@ -942,6 +944,7 @@ mod tests {
 
     #[test]
     fn a_newer_minor_drops_a_bounded_number_of_values() {
+        // Verifies: ADR-0022
         // Verifies: Q-9
         let layers = |n: usize| {
             let layer = r#"{"status":"dim"}"#;
@@ -956,6 +959,7 @@ mod tests {
 
     #[test]
     fn a_newer_minor_keeps_a_condition_it_cannot_read_and_loses_nothing_else() {
+        // Verifies: ADR-0022
         // A filter of a shape this build does not know never matches; dropped, it would match all.
         let json = r#"{"version":"1.9","map":{"layers":[{"filter":{"op":"=","args":[{"property":"a"},{"interval":["a","b"]}]}}]}}"#;
         let read = StyleDocument::from_json(json).unwrap();
