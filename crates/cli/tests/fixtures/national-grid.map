@@ -1,0 +1,6 @@
+MAP
+  NAME "national grid"
+  PROJECTION
+    "init=epsg:27700"
+  END
+END

@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use forager_ports::ProjectionResolver;
 use forager_style_ir::{
     Class, Diagnostic, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span, Style,
 };
@@ -23,12 +24,20 @@ const DISCARDED: &[&str] = &[
     "WEB",
 ];
 
-pub fn translate(map: &Block, diagnostics: &mut Vec<Diagnostic>) -> Map {
-    let mut t = Translator { diagnostics };
+pub fn translate(
+    map: &Block,
+    resolver: Option<&dyn ProjectionResolver>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Map {
+    let mut t = Translator {
+        resolver,
+        diagnostics,
+    };
     t.map(map)
 }
 
 struct Translator<'a> {
+    resolver: Option<&'a dyn ProjectionResolver>,
     diagnostics: &'a mut Vec<Diagnostic>,
 }
 
@@ -165,10 +174,16 @@ impl Translator<'_> {
         style
     }
 
-    /// A proj4 string from the parameters of a PROJECTION block. `init=` needs a resolver the
-    /// host injects, which the frontend does not have yet, so it is a load error.
+    /// A proj4 string from the parameters of a PROJECTION block. `init=<authority>:<code>` is
+    /// resolved by the resolver the host passes in (ADR-0018); without one, or for a code it does
+    /// not know, it is a load error.
+    ///
+    /// As MapServer hands every parameter to PROJ, `init=` is matched case-sensitively, there is
+    /// at most one, and its expansion follows the explicit parameters, which PROJ lets take
+    /// precedence (its `pj_expand_init`).
     fn projection(&mut self, block: &Block) -> Option<String> {
         let mut params = Vec::new();
+        let mut expansion: Option<Vec<String>> = None;
         for token in &block.values {
             let text = match &token.kind {
                 TokenKind::Str { value, .. } | TokenKind::Word(value) => value.trim(),
@@ -191,15 +206,37 @@ impl Translator<'_> {
             }
             for param in text.split_whitespace() {
                 let param = param.trim_start_matches('+');
-                if param.to_ascii_lowercase().starts_with("init=") {
-                    let message =
-                        format!("`{param}` needs a projection resolver, and none is given");
-                    self.error("projection-unresolved", &message, &token.span);
-                    return None;
+                if let Some(reference) = param.strip_prefix("init=") {
+                    if expansion.is_some() {
+                        let message = "a PROJECTION has at most one init=";
+                        self.error("invalid-value", message, &token.span);
+                        return None;
+                    }
+                    let resolved = reference
+                        .split_once(':')
+                        .and_then(|(authority, code)| self.resolver?.resolve(authority, code));
+                    let Some(resolved) = resolved else {
+                        let message = match self.resolver {
+                            Some(_) => format!("`{param}` is not a projection the resolver knows"),
+                            None => {
+                                format!("`{param}` needs a projection resolver, and none is given")
+                            }
+                        };
+                        self.error("projection-unresolved", &message, &token.span);
+                        return None;
+                    };
+                    expansion = Some(
+                        resolved
+                            .split_whitespace()
+                            .map(|p| format!("+{}", p.trim_start_matches('+')))
+                            .collect(),
+                    );
+                    continue;
                 }
                 params.push(format!("+{param}"));
             }
         }
+        params.extend(expansion.unwrap_or_default());
         (!params.is_empty()).then(|| params.join(" "))
     }
 

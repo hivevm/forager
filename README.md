@@ -77,6 +77,11 @@ map:
 when it did not, and 2 on wrong arguments. `INCLUDE`s are resolved inside the mapfile's
 directory, and a path that leaves it is refused.
 
+`init=epsg:` projections resolve without further input for EPSG:4326, EPSG:3857, and the WGS84
+UTM zones; for other codes pass a table in the format of PROJ's former `epsg` init file, lines
+`<27700> +proj=tmerc … <>`, with `--epsg <file>` (the browser's `render` takes its text as a last
+argument). Forager ships no EPSG data beyond those built-in codes.
+
 Render a mapfile's layers from GeoJSON files, bound to the layers by name, into a PNG:
 
 ```console
