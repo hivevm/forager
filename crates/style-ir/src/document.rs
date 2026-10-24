@@ -121,6 +121,27 @@ mod tests {
     }
 
     #[test]
+    fn numbers_read_back_from_json_bit_for_bit() {
+        // Verifies: ADR-0014
+        // The first of 15,585 in 200,000 coordinate-like decimals that serde_json's default
+        // float parser read back one unit in the last place off.
+        let x = 27374987.048899982_f64;
+        let document = StyleDocument::new(Map {
+            extent: Some(Extent {
+                min_x: x,
+                min_y: -x,
+                max_x: x,
+                max_y: x,
+            }),
+            ..Map::default()
+        });
+        let read = StyleDocument::from_json(&document.to_json().unwrap()).unwrap();
+        let extent = read.map.extent.unwrap();
+        assert_eq!(extent.min_x.to_bits(), x.to_bits());
+        assert_eq!(extent.min_y.to_bits(), (-x).to_bits());
+    }
+
+    #[test]
     fn a_newer_major_version_is_a_load_error() {
         let error = StyleDocument::from_json(r#"{"version": "2.0", "map": {}}"#).unwrap_err();
         assert_eq!(error.code, "format-version-unsupported");
