@@ -11,6 +11,7 @@ pub const MAX_EXPRESSION_DEPTH: usize = 24;
 /// An expression: a literal, a property of the feature, a list, a time, or an operator or
 /// function applied to its arguments.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum Expr {
     Bool(bool),
@@ -35,6 +36,7 @@ pub enum Expr {
 
 /// The operators of CQL2 an expression uses, and the functions for what CQL2 lacks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum Op {
     #[serde(rename = "=")]
     Eq,

@@ -7,6 +7,7 @@ pub const FORMAT_VERSION: &str = "1.0";
 
 /// The style IR as a document: a format version and the map (ADR-0014).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct StyleDocument {
     pub version: String,
     pub map: Map,
