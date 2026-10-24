@@ -106,8 +106,9 @@ from the threats below.
   diagnostic; a test feeds each and expects it.
 - **Q-9** — Bounded resources: `INCLUDE` depth and cycles, the total size of a mapfile with its
   `INCLUDE`s (16 MiB of text), the number of diagnostics one load reports (1000), image size,
-  feature count, expression nesting, and regular-expression size are limited, and exceeding a
-  limit is a diagnostic. A test per limit feeds an input past it and expects the diagnostic.
+  the features one layer draws (1,000,000), the size of a data file a host reads (256 MiB),
+  expression nesting (24 levels), and regular-expression size are limited, and exceeding a limit
+  is a diagnostic. A test per limit feeds an input past it and expects the diagnostic.
 
 ## Non-Goals
 
