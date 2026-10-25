@@ -52,12 +52,12 @@ golden path and the test pattern an agent copies from are named here.
   symbol file and font set `SYMBOLSET` and `FONTSET` name and the init files an `init=` names by
   a path, read through the resource loader against the same directory within the same bounds
   (`init_file.rs`, [ADR-0023](adr/0023-projection-resolver-and-init-files.md)), and the
-  translation into the style IR (`translate.rs`), which reports every keyword it does not carry
-  over, translates MapServer's expressions with their typing into the CQL2 tree
-  (`expression.rs`), and resolves every other `init=` through the host's projection resolver. A
-  load reports at most a thousand diagnostics (Q-9). It is the only crate that knows MapServer
-  syntax; what each parameter it carries means is described per parameter under
-  `docs/semantics/`.
+  translation into the style IR (`translate/`, a module per block it reads: symbols, font set,
+  labels, styles, projections), which reports every keyword it does not carry over, translates
+  MapServer's expressions with their typing into the CQL2 tree (`expression.rs`), and resolves
+  every other `init=` through the host's projection resolver. A load reports at most a thousand
+  diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
+  carries means is described per parameter under `docs/semantics/`.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, and turns each feature and style into display
   items by the layer's render mode. A layer without a source, or whose source fails, is skipped
@@ -111,8 +111,9 @@ toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).
 **Golden path:** `forager read`, from the CLI's argument through the file loader and the
 frontend's `load` to the style document — `crates/cli/src/main.rs`, `crates/mapfile/src/lib.rs`.
 **Test pattern:** behaviour is tested at the highest seam that decides it — the frontend's `load`
-with files in memory (`crates/mapfile/src/tests.rs`), the binary as a process with fixtures
-(`crates/cli/tests/read.rs`) — each test naming the goal or ADR it verifies with `Verifies:`.
+with files in memory (`crates/mapfile/src/tests.rs`, and beside each module of the translation
+that it tests), the binary as a process with fixtures (`crates/cli/tests/read.rs`) — each test
+naming the goal or ADR it verifies with `Verifies:`.
 
 ## How it runs
 

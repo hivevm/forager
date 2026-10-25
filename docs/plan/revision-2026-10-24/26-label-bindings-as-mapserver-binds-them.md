@@ -7,7 +7,7 @@ Found while revision ticket 22 read `docs/semantics/binding.md` against MapServe
 `bindIntegerAttribute`, `MS_NINT(atof(value))`, and reads `ALIGN` and `POSITION` as an integer
 or, where that is 0, as a keyword compared without case. MapServer binds no `SHADOWCOLOR`:
 `loadLabel` (`src/mapfile.c`, `case (SHADOWCOLOR)`) reads it with `loadColor(…, NULL)`, which
-takes no binding. The frontend (`crates/mapfile/src/translate.rs`, `label`) carries
+takes no binding. The frontend (`crates/mapfile/src/translate/label.rs`, `label`) carries
 `SHADOWCOLOR [attr]` as a binding, where MapServer refuses the mapfile, and the IR's `Bound`
 says a bound number is read with `atof`, without the rounding a label's integer properties get.
 
@@ -30,7 +30,7 @@ frontend's reading as MapServer's.
 ## Read first
 
 - `docs/semantics/binding.md`, `docs/semantics/label.md`; `crates/style-ir/src/model.rs`
-  (`Bound`, `Label`); `crates/mapfile/src/translate.rs` (`label`); the convention on behaviour
+  (`Bound`, `Label`); `crates/mapfile/src/translate/label.rs` (`label`); the convention on behaviour
   ported from MapServer or PROJ in `docs/CONVENTIONS.md`.
 - MapServer `rel-8-6-6`: `bindLabel` and `bindIntegerAttribute` in `src/maputil.c`, `loadLabel`
   in `src/mapfile.c`.

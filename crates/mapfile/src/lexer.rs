@@ -58,6 +58,15 @@ impl Token {
     pub fn is_word(&self, keyword: &str) -> bool {
         matches!(&self.kind, TokenKind::Word(w) if w.eq_ignore_ascii_case(keyword))
     }
+
+    /// The value of a string or of a bare word, which MapServer's lexer reads as a string where
+    /// a string is expected.
+    pub fn string(&self) -> Option<&str> {
+        match &self.kind {
+            TokenKind::Str { value, .. } | TokenKind::Word(value) => Some(value),
+            _ => None,
+        }
+    }
 }
 
 /// Splits mapfile text into tokens. Errors go to `report`, bounded while they are collected

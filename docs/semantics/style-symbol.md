@@ -13,7 +13,7 @@ for it.
 `GEOMTRANSFORM` draws the style on another geometry than the feature's: `start`, `end`,
 `vertices` (every point of a line but its ends), `centroid`, `labelpoint`, and `labelpoly` are
 carried over, written quoted or bare and compared without case (`geom_transform` in
-`crates/mapfile/src/translate.rs`); a label's style draws at its `labelpoint` unless it names
+`crates/mapfile/src/translate/style.rs`); a label's style draws at its `labelpoint` unless it names
 another ([`label.md`](label.md)). MapServer's
 other transforms (`bbox`, …) and its expressions are not yet, and are a warning; the style draws
 the feature's own geometry.
