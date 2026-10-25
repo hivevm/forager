@@ -23,12 +23,16 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 ## Existing behaviour
 
 - The suite is fetched at the pinned release by a sparse checkout of its mapfiles and the files
-  they include; the fetch already checks that the tag still names the pinned commit. The G-1 and
-  G-3 tests run over it and are skipped without the suite. They stay as they are.
+  they include; the fetch checks that the tag still names the pinned commit, sets the sparse
+  patterns again on every run, and the CI cache of the suite is keyed on the fetch script. The G-1
+  and G-3 tests run over it; they are ignored by `cargo test` and run by the Rust checks, which
+  name the suite. They stay as they are.
 - `forager render` binds GeoJSON files to layers named on the command line. That stays; binding a
   layer from its own `DATA` is added next to it.
-- A layer's `DATA` reaches the style IR as a source reference of kind `local`. `SHAPEPATH` is not
-  read yet.
+- A layer's `DATA` reaches the style IR as a source reference of kind `local`. `SHAPEPATH` is a
+  known keyword that nothing reads yet.
+- The engine renders with one source type for all layers; the CLI binds GeoJSON only.
+- Decoding a PNG accepts only 8-bit RGBA, which is what G-12 needs.
 - The engine renders points, lines, and polygons; its tests pin that, with GeoJSON fixtures.
 - No test runs code built for `wasm32-unknown-unknown`; the build for it is checked, and the size
   of the bindings.
@@ -38,8 +42,9 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 - G-6, for the category geometry and symbols.
 - G-9, and Q-2 with it.
 - Q-4.
-- G-8 and Q-8 are touched: a shapefile source that fails is skipped with a diagnostic, and the
-  files it names resolve inside the base context.
+- G-8, Q-3, Q-8, and Q-9 are touched: a shapefile source that fails is skipped with a diagnostic
+  and without a panic, the files it names resolve inside the base context, and a data file past
+  the limit is a diagnostic.
 
 ## User stories
 
@@ -63,30 +68,49 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 ## Implementation decisions
 
 - **Data.** A new adapter reads ESRI shapefiles, the `.shp` with its `.shx` and `.dbf`, through the
-  resource loader. The crate it uses is decided by an ADR before the first ticket starts. The
-  frontend reads `SHAPEPATH`, and a `local` source resolves its `DATA` against it, inside the base
-  context; a `DATA` without an extension names the `.shp`, as in MapServer.
-- **The suite.** The fetch takes, beyond the mapfiles, the data and the reference images of the
-  directories in scope, at the same pinned commit. Nothing of the suite is committed.
+  resource loader. The crate it uses is decided by an ADR of its own, landed before the adapter.
+  The frontend reads `SHAPEPATH` and joins it with a `local` source's `DATA` into that source's
+  `data`, relative to the mapfile's directory, so that the style document's format does not change;
+  a `DATA` without an extension names the `.shp`, as in MapServer. The path resolves inside the
+  base context: a `..` that stays inside it, as `../misc/data` does from the suite's `renderers`,
+  is allowed; one that leaves it is a diagnostic. The CLI binds a layer of kind `local` to the
+  shapefile adapter, beside the GeoJSON files it binds by name, so its sources are of more than one
+  adapter.
+- **The suite.** The fetch takes, beyond the mapfiles, the shapefiles the cases in `misc` and
+  `renderers` read, wherever in the suite they lie (`misc`, `query`, `wxs`), and the non-cairo PNG
+  references of those two directories, at the same pinned commit. Nothing of the suite is
+  committed.
+- **Case.** A case is one `RUN_PARMS` line of a mapfile that runs `[MAP2IMG]` and writes a PNG
+  with the output format `png`, or none; the reference is the file of that name under `expected`.
+  A `[MAPSERV]` line is an OGC or CGI request, a Non-Goal. The options `-l`, `-e`, and `-s` of
+  `map2img` are applied by the harness to the style IR before it renders; any other option puts
+  the case out of scope.
 - **Scope.** A list in the tree names each case the harness renders, its category, and its
-  expected outcome; every other case of the directories it covers is named with the reason it is
-  out of scope (another output format, a raster source, labels, a projection, a feature not built
-  yet). A case moves into scope by an edit of that list in the change that makes it pass.
+  expected outcome; every other case of `misc` and `renderers` is named with the reason it is out
+  of scope (an OGC request, another output format, a `map2img` option not applied, a raster
+  source, labels, a projection, a runtime substitution, a feature not built yet). A case moves into
+  scope by an edit of that list in the change that makes it pass.
 - **Metric.** The rendering and the reference are compared as RGBA buffers of the same size. A
   pixel differs when one of its channels differs by more than the category's channel threshold;
   a case passes when the share of differing pixels is at most the category's tolerance. A
-  reference image of another mode, palette or RGB, is expanded to RGBA first.
+  reference image of another mode, palette or RGB, is expanded to RGBA first, by the `png` crate
+  in the harness; the encoder's own decoding stays as G-12 needs it.
 - **Tolerance.** The threshold and the tolerance of the category are set from a measurement: the
   pinned MapServer renders the in-scope cases on CI, outside the dev container, and the largest
   difference it shows against its own references is its noise. The numbers go into G-6 as a
-  specification change the maintainer signs. How MapServer runs on CI is decided by an ADR.
-- **Fidelity record.** The share of passing cases is recorded in the tree with each release; a
-  check compares the current share against the record of the last release and fails when it is
-  lower.
+  specification change the maintainer signs. How MapServer runs on CI is decided by an ADR. The
+  CI job writes MapServer's renderings into a directory, and the harness compares that directory
+  with the references by the same metric. Until the numbers are signed, the harness runs with
+  provisional ones and cites no criterion, so that G-6 is held only after the noise is measured,
+  as the specification's Assumption asks.
+- **Fidelity record.** A release is a tag `v<semver>` on `main`. The share of passing cases is
+  recorded in the tree with each release; a check, run by the Rust checks after the harness,
+  compares the current share against the record of the last release and fails when it is lower.
 - **The second target.** The engine with the reference renderer is built for
   `wasm32-unknown-unknown` and run from a native test over the in-scope cases; its buffers are
-  compared byte for byte with the native ones. What runs the module is decided by an ADR. The
-  core's freedom from hash-map iteration order, clocks, and random sources (Q-2) gets a check.
+  compared byte for byte with the native ones. What runs the module, and which crate builds it,
+  is decided by an ADR. The core's freedom from hash maps, clocks, and random sources (Q-2) is
+  held by the lint configuration.
 
 ## Testing decisions
 
@@ -96,9 +120,9 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
   share at and above the tolerance, a different size, a palette image.
 - The shapefile adapter is tested at the port with small fixture files: points, lines, polygons
   with holes, multipart shapes, null shapes, attributes of each `.dbf` type, and truncated or
-  inconsistent files, which become diagnostics (Q-3). The CLI tests copy the GeoJSON ones.
-- The fidelity check and the determinism check each have a self-test, as every check under
-  `scripts/` does.
+  inconsistent files, which become errors of the source (Q-3). The CLI tests copy the GeoJSON
+  ones.
+- The fidelity check has a self-test, as every check under `scripts/` does.
 
 ## Out of scope
 
@@ -112,10 +136,13 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 ## ADR impact
 
 - Binding: ADR-0009 (the adapter is an `adapter-<kind>` crate; the harness lives in a host's tests),
-  ADR-0012 (every new crate and tool), ADR-0015 (the reference renderer), ADR-0023 (the base
-  context the data resolves in), ADR-0007 (the resolution of resource paths and the specification
-  stay with the maintainer).
+  ADR-0012 (every new crate and tool), ADR-0015 (the reference renderer), ADR-0017 (the `png`
+  crate, which the harness reuses), ADR-0023 (the base context the data resolves in), ADR-0007
+  (resource paths, the resource limits, `deny.toml`, and the specification stay with the
+  maintainer). ADR-0014 and ADR-0020 are not touched, because `SHAPEPATH` folds into the source's
+  `data` and the format does not change.
 - New `proposed` ADRs before the tickets that need them: the shapefile crate; how the pinned
-  MapServer runs on CI; what runs the `wasm32-unknown-unknown` module in a native test.
+  MapServer runs on CI; what runs the `wasm32-unknown-unknown` module in a native test. Should the
+  module need a host crate of its own, that ADR supersedes ADR-0009 to add it to the table.
 - A specification change: the threshold and the tolerance of the category geometry and symbols in
   G-6, and the metric with them.

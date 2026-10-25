@@ -5,17 +5,17 @@
 The engine with the reference renderer is built for `wasm32-unknown-unknown` as a module that
 takes a style document and features and returns an RGBA buffer; a native test runs it over every
 in-scope case and compares its buffer byte for byte with the native render (G-9). What runs the
-module, a pure-Rust interpreter in the test or a JavaScript runtime on CI, is decided first,
-through `propose-adr`.
+module, a pure-Rust interpreter in the test or a JavaScript runtime on CI, and which crate builds
+it, is decided first, through `propose-adr`, in its own pull request; should the module need a
+host crate of its own, the ADR supersedes ADR-0009 to add it.
 
 ## Acceptance criteria
 
-- [ ] Given a `proposed` ADR on the runner, when the maintainer accepts it, then the test runs the
-      module that way, inside the dev container as on CI.
+- [ ] Given the proposed ADR, when the test runs, then it runs the module as the ADR decides,
+      inside the dev container as on CI.
 - [ ] Given each in-scope case, when it is rendered natively and in the module, then the buffers
       are identical, and a difference names the case and the first differing pixel.
-- [ ] Given the module, then it is built from the same crates as the browser bindings, without the
-      JavaScript glue.
+- [ ] Given the module, then it is built from the same core crates as the browser bindings.
 - [ ] The test cites G-9 and Q-2 with `Verifies:` markers.
 
 ## Read first
@@ -25,9 +25,10 @@ through `propose-adr`.
 
 ## Blocked by
 
-- docs/plan/conformance-harness/05-geometry-cases.md
+- docs/plan/conformance-harness/06-geometry-cases.md
 
 ## Mode
 
-with the human: it decides an ADR, and its module stands beside the public API of the browser
-bindings, which the harness keeps with the maintainer ([ADR-0007](../../adr/0007-harness.md)).
+with the human: it decides an ADR, may supersede ADR-0009, and its module stands beside the public
+API of the browser bindings, which the harness keeps with the maintainer
+([ADR-0007](../../adr/0007-harness.md)).
