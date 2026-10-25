@@ -3,12 +3,12 @@
 **Where:** `STYLE`. **IR:** the style's `symbol` and `geom_transform`.
 
 **Meaning.** `SYMBOL` names the symbol the style draws: by its name, by MapServer's index into the
-[symbols](symbol.md) (at least 0; 0 is the default symbol), or bound to a property. A name
-resolves at import to the index of the first symbol of that name, without regard to case, as
-`msGetSymbolIndex` in `src/mapfile.c` resolves it. MapServer reads a name it does not find as an
-image file and fails the load where there is none; the frontend, which reads no image at load,
-keeps the name and warns. An index past the last symbol is a warning too: MapServer draws nothing
-for it.
+[symbols](symbol.md) (at least 0, a fraction cut as `loadStyle` casts it; 0 is the default symbol),
+or bound to a property. A name resolves at import to the index of the first symbol of that name,
+without regard to case, as `msGetSymbolIndex` in `src/mapfile.c` resolves it. MapServer reads a
+name it does not find as an image file and fails the load where there is none; the frontend, which
+reads no image at load, keeps the name and warns. An index past the last symbol is a warning too:
+MapServer draws nothing for it.
 
 `GEOMTRANSFORM` draws the style on another geometry than the feature's: `start`, `end`,
 `vertices` (every point of a line but its ends), `centroid`, `labelpoint`, and `labelpoly` are
