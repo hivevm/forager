@@ -1468,3 +1468,33 @@ fn an_auto_projection_names_no_init_file() {
     ));
     assert_eq!(*reads.borrow(), ["m.map"]);
 }
+
+#[test]
+fn every_named_file_past_the_size_limit_is_refused_at_what_names_it() {
+    // Verifies: Q-9
+    let big: &'static str = Box::leak("#".repeat(super::MAX_TOTAL_BYTES).into_boxed_str());
+    for (text, file, line, column) in [
+        ("MAP\n  SYMBOLSET 's.sym'\nEND\n", "s.sym", 2, 3),
+        ("MAP\n  FONTSET 'f.lst'\nEND\n", "f.lst", 2, 3),
+        (
+            "MAP\n  PROJECTION 'init=./e/epsg2:1' END\nEND\n",
+            "e/epsg2",
+            2,
+            14,
+        ),
+    ] {
+        let loaded = load_files(&[("m.map", text), (file, big)]);
+        assert_eq!(codes(&loaded), ["mapfile-too-large"], "{file}");
+        let span = loaded.diagnostics[0].span.as_ref().unwrap();
+        assert_eq!((span.line, span.column), (line, column), "{file}");
+    }
+    // Past the bound, a file named later is refused unread: one error, not one per file.
+    let loaded = load_files(&[
+        (
+            "m.map",
+            "MAP\n  SYMBOLSET 's.sym'\n  FONTSET 'missing.lst'\nEND\n",
+        ),
+        ("s.sym", big),
+    ]);
+    assert_eq!(codes(&loaded), ["mapfile-too-large"]);
+}
