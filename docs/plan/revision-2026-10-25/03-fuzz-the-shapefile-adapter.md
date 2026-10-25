@@ -39,8 +39,10 @@ included. The corpus starts from the adapter's test fixtures.
 
 ## Blocked by
 
-- docs/plan/revision-2026-10-24/03-one-poll-once.md: the target polls with the `poll_once` it
-  adds, and its arch test would refuse a target that wrote its own no-op waker.
+<!-- The target polls with the `poll_once` it adds, and its arch test would refuse a target that
+     wrote its own no-op waker. -->
+
+- docs/plan/revision-2026-10-24/03-one-poll-once.md
 
 ## Mode
 
