@@ -16,6 +16,9 @@ use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceErro
 use forager_style_ir::StyleDocument;
 use serde_json::Value;
 
+/// The comparison of a rendering with its reference image, for the harness.
+mod metric;
+
 /// The files of the suite that are not standalone mapfiles, each with its reason.
 const SKIPPED: &[(&str, &str)] = &[
     (

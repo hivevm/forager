@@ -181,8 +181,10 @@ dependencies = [
  "forager-engine",
  "forager-mapfile",
  "forager-ports",
+ "forager-render",
  "forager-render-agg",
  "forager-style-ir",
+ "png",
  "serde_json",
 ]
 
