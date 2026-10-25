@@ -207,6 +207,54 @@ fn every_msautotest_mapfile_loads_without_an_error() {
     );
 }
 
+/// Files the cases of `misc` and `renderers` read, one of each place they lie: a reference image, a
+/// shapefile of `renderers/data` and one of `misc/data`, and one each of `query/data` and
+/// `wxs/data` that a mapfile of those two directories names by a `..` path
+/// (`misc/style_opacity.map`, `renderers/labels-leader.map`). `world_testlines`, which the ticket
+/// placed in `misc/data`, lies in `renderers/data` at the pin.
+const DATA_AND_REFERENCES: &[&str] = &[
+    "renderers/expected/line_simple.png",
+    "renderers/data/world_testlines.shp",
+    "renderers/data/world_testlines.shx",
+    "renderers/data/world_testlines.dbf",
+    "misc/data/testlines.shp",
+    "query/data/bdry_counpy2.shp",
+    "query/data/bdry_counpy2.shx",
+    "query/data/bdry_counpy2.dbf",
+    "wxs/data/province.shp",
+    "wxs/data/province.shx",
+    "wxs/data/province.dbf",
+];
+
+/// Every file under `dir` whose name ends with `suffix`.
+fn files_ending_with(dir: &Path, suffix: &str, found: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files_ending_with(&path, suffix, found);
+        } else if path.to_str().is_some_and(|p| p.ends_with(suffix)) {
+            found.push(path);
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
+fn the_fetched_suite_holds_the_data_and_the_non_cairo_references() {
+    let suite = suite();
+    let missing: Vec<_> = DATA_AND_REFERENCES
+        .iter()
+        .filter(|name| !suite.join(name).is_file())
+        .collect();
+    assert!(missing.is_empty(), "the fetch did not take {missing:?}");
+    let mut cairo = Vec::new();
+    files_ending_with(&suite, ".cairo.png", &mut cairo);
+    assert!(
+        cairo.is_empty(),
+        "the fetch took cairo references: {cairo:?}"
+    );
+}
+
 /// The suite's files, read inside its directory.
 struct Suite(PathBuf);
 
