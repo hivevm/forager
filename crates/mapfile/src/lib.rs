@@ -216,13 +216,11 @@ impl<L: ResourceLoader> Reading<'_, L> {
             _ => None,
         })?;
         let span = Some(directive.span.clone());
-        let [
-            Token {
-                kind: lexer::TokenKind::Str { value, .. } | lexer::TokenKind::Word(value),
-                ..
-            },
-        ] = directive.values.as_slice()
-        else {
+        let value = match directive.values.as_slice() {
+            [token] => token.string(),
+            _ => None,
+        };
+        let Some(value) = value else {
             let message = format!("{keyword} expects a file");
             self.report
                 .push(Diagnostic::error("invalid-value", message, span));
@@ -344,5 +342,7 @@ fn include_target(
     Some(target)
 }
 
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;

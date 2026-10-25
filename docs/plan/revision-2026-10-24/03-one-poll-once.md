@@ -4,8 +4,8 @@
 
 Every caller that runs the frontend or the engine synchronously polls the future with a no-op
 waker, and each has written that itself: `block_on` in `crates/cli/src/files.rs:47-56`, `now` in
-`crates/bindings-wasm/src/lib.rs:141-150`, `block_on` in `crates/mapfile/src/tests.rs:22`, the
-tests of `crates/engine/tests/render.rs:27` and `crates/adapter-geojson/src/lib.rs:140`, and the
+`crates/bindings-wasm/src/lib.rs:141-150`, `block_on` in `crates/mapfile/src/test_support.rs:25`,
+the tests of `crates/engine/tests/render.rs:27` and `crates/adapter-geojson/src/lib.rs:140`, and the
 fuzz targets `fuzz/fuzz_targets/mapfile.rs:48-54` and `fuzz/fuzz_targets/render.rs:159-165`.
 They differ where it matters: the bindings return `None` for a future that waits, which the
 review of #6 asked for because a waiting future spun the tab, while the CLI's `block_on` still

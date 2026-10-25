@@ -3,7 +3,6 @@
 
 use forager_style_ir::Span;
 
-use crate::lexer::TokenKind;
 use crate::syntax::Block;
 
 /// What a `PROJECTION` block's parameters are.
@@ -48,14 +47,11 @@ pub fn read(block: &Block) -> Result<Projection, Invalid> {
     let mut explicit = Vec::new();
     let mut init: Option<Init> = None;
     for token in &block.values {
-        let text = match &token.kind {
-            TokenKind::Str { value, .. } | TokenKind::Word(value) => value.trim(),
-            _ => {
-                return Err(Invalid {
-                    message: "a projection parameter is a string",
-                    span: token.span.clone(),
-                });
-            }
+        let Some(text) = token.string().map(str::trim) else {
+            return Err(Invalid {
+                message: "a projection parameter is a string",
+                span: token.span.clone(),
+            });
         };
         if explicit.is_empty() && init.is_none() && text.eq_ignore_ascii_case("AUTO") {
             return Ok(Projection::Auto);
