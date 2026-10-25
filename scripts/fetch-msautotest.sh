@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Fetches the msautotest suite of the reference release of MapServer: a sparse checkout of its
 # mapfiles and the files they read, into target/msautotest/<commit>/, and prints the suite's
-# directory. The pin below is the one place that names the reference release (specification,
+# directory. Beyond the mapfiles it takes the shapefiles the cases of misc and renderers read, from
+# their own data directories and the two of query and wxs their mapfiles name by a '..' path, and
+# the non-cairo PNG references of those two directories; no other data and no other output format. The pin below is the one place that names the reference release (specification,
 # *Constraints*: "pinned by tag"); the comments that cite MapServer's source refer to it. Moving
 # the pin is a deliberate change with a full conformance run, and changes the key of the CI cache.
 #
@@ -45,5 +47,11 @@ fi
 git -C "$DIR" sparse-checkout set --no-cone \
   '/msautotest/**/*.map' '/msautotest/**/*.MAP' '/msautotest/**/*.inc' \
   '/msautotest/**/*.include' '/msautotest/**/*.sym' '/msautotest/**/*.txt' \
-  '/msautotest/**/*symbolset' '/msautotest/**/*.lst' '/msautotest/**/epsg2' >&2
+  '/msautotest/**/*symbolset' '/msautotest/**/*.lst' '/msautotest/**/epsg2' \
+  '/msautotest/misc/data/**/*.'{shp,shx,dbf,SHP,SHX,DBF} \
+  '/msautotest/renderers/data/*.'{shp,shx,dbf} \
+  '/msautotest/query/data/'{bdry_counpy2,indx_q100kpy4}.{shp,shx,dbf} \
+  '/msautotest/wxs/data/'{popplace,province}.{shp,shx,dbf} \
+  '/msautotest/misc/expected/*.png' '/msautotest/renderers/expected/*.png' \
+  '!/msautotest/**/*.cairo.png' >&2
 echo "$DIR/msautotest"
