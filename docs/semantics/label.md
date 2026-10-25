@@ -5,11 +5,13 @@
 
 **Text.** A label's text is its own `TEXT`, else the class's `TEXT`, else the layer's
 `LABELITEM` as `to_string` of that property, as `msShapeGetLabelAnnotation` in `src/maputil.c`
-picks it; the frontend resolves the choice at import. A `TEXT` is evaluated as
-`msEvalTextExpression` does: a string has each `[name]` in it replaced by the property's value
-(`concat` of the parts); an expression in parentheses is taken as text, a number printed with
-`%g`. A `TEXT` the frontend cannot carry over is a warning and an empty text, which draws no
-label.
+picks it; the frontend resolves the choice at import. A label's own `TEXT ''` is its text, and
+draws no label, without falling back. A `TEXT` is a string or an expression; `loadLabel` and
+`loadClass` refuse a regular expression or a list, a class `TEXT` a later one replaces included.
+A `TEXT` is evaluated as `msEvalTextExpression` does: a string has each `[name]` in it replaced by
+the property's value (`concat` of the parts); an expression in parentheses is taken as text, a
+number printed with `%g`. A `TEXT` the frontend cannot carry over is a warning and an empty text,
+which draws no label.
 
 **Parameters**, as `loadLabel` in `src/mapfile.c` reads them: `FONT`, a font of the
 [font set](fontset.md) or an attribute, a comma-separated list naming fallbacks (`textlayout.c`
@@ -22,8 +24,18 @@ an attribute, or `auto`, `auto2`, `follow`; `ALIGN`; `WRAP`, one character; `MAX
 `BUFFER`, `MINDISTANCE`, `REPEATDISTANCE`, `MINFEATURESIZE` (a number or `auto`),
 `MAXOVERLAPANGLE` (0 to 360); `PARTIALS`; `FORCE` `on`, `off`, or `group`; `PRIORITY`, 1 to 10
 (`MS_MAX_LABEL_PRIORITY`), an attribute, or an expression. MapServer reads the integer ones with
-`getInteger`, so the frontend truncates them. `TYPE` and `ANTIALIAS` are read and discarded, as
-`loadLabel` discards them.
+`getInteger`, which checks the range of the number as written and then casts it, and stores the
+numbers of `OFFSET`, `SHADOWSIZE`, `PRIORITY`, and `MINFEATURESIZE` with a cast to `int`, so the
+frontend truncates them all: `MINSIZE 0.5` is 0. `TYPE`, `truetype` or `bitmap`, and `ANTIALIAS`
+are read and discarded, as `loadLabel` discards them.
+
+**Repeated directives.** The last one holds, but `loadLabel` frees a property's binding only for
+another binding, and `bindLabel` draws the binding over the value: `ANGLE [a] ANGLE 30` is bound
+to `a`, and so are `ALIGN`, `COLOR`, `OUTLINECOLOR` (over `-1 -1 -1` too), `FONT`, `POSITION`,
+and each number of `OFFSET` and `SHADOWSIZE`. `SIZE` frees its binding and its expression, so the
+last `SIZE` holds; `PRIORITY` frees only its expression, so `PRIORITY [p] PRIORITY (e)` is the
+expression, which `bindLabel` evaluates after the binding, and a later `PRIORITY 5` is bound to
+`p` again. `ANGLE auto` sets the mode and leaves the angle.
 
 **Styles.** A label's `STYLE` blocks are [styles](style-symbol.md) drawn with the label; one
 without a `GEOMTRANSFORM` draws at the label's point, `labelpoint`, the default `loadLabel` gives
