@@ -15,13 +15,12 @@ A session in a fresh context reviews, area by area, each rule the frontend ports
 MapServer source at the pinned release, by the function its doc comment or semantics page cites,
 and writes a test for each branch of that function the corpus does not take:
 
-1. expressions, `CLASSITEM`, `FILTER`, `FILTERITEM` (#26): `crates/mapfile/src/expression.rs`
-   against `src/maplexer.l`, `src/mapparser.y`, `msEvalExpression`, `msEvalTextExpression`;
-2. bindings and colours (#28): `loadColor`, `bindStyle`;
-3. styles (#31): `loadStyle`, `msUpdateClassScaleFactor`, `computeSymbolStyle`;
-4. symbols and symbol sets (#32): `loadSymbol`, `loadSymbolSet`, `msGetSymbolIndex`;
-5. labels and the font set (#33): `loadLabel`, `msShapeGetLabelAnnotation`, `msLoadFontSet`;
-6. the base context of `--base` and its file loader (#25): `crates/cli/src/files.rs` against Q-8.
+2. bindings and colours (#28): `loadColor`, `bindStyle`.
+
+Areas 1 (expressions), 3 (styles), 4 (symbols), 5 (labels and the font set), and 6 (the base
+context) were reviewed in #68, #67, #66, #70, and #69; what they found and did not fix is filed as
+tickets 27 to 31. Area 2 shares the readers of `translate/mod.rs` with them, and the helpers that
+keep a binding over a later value, which #67 and #70 each wrote, move there with it.
 
 A deviation the session confirms gets a regression test and its fix in the same change when it
 is small, and a ticket of its own otherwise; a page under `docs/semantics/` that misstates the
