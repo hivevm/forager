@@ -80,6 +80,8 @@ fn a_source_for_no_layer_is_reported_and_a_doubled_one_refused() {
 fn the_cli_and_the_bindings_report_the_same_codes() {
     // The bindings' test of the same inputs reads the same expectation, in
     // `crates/bindings-wasm/src/lib.rs`. The sources are given out of the order of their names.
+    // `unbound` names a layer of square.map whose source does not read (`source-unreadable`);
+    // `area` names no layer (`source-unbound`).
     let broken =
         std::env::temp_dir().join(format!("forager-misbound-{}.geojson", std::process::id()));
     std::fs::write(&broken, "{").unwrap();

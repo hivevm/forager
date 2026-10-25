@@ -29,8 +29,8 @@ to invent.
   tree ([ADR-0019](adr/0019-cql2-expressions.md)) the mapfile frontend translates from an
   `EXPRESSION`, a `FILTER`, a `TEXT`, or an attribute binding. Its semantics per parameter are in
   [`semantics/`](semantics/README.md).
-- **Feature source** — The port through which the host supplies a layer's features: an adapter
-  bound to the layer by its name, which the engine asks for the features in view.
+- **Feature source** — The port through which the host supplies a layer's features, implemented by
+  an adapter the host binds to the layer by its name; the engine asks it for the features in view.
 - **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
   crate versions and of the core's API.
 - **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through
@@ -76,5 +76,5 @@ to invent.
 - **Style IR** — The data model of a map, its layers, classes, styles, symbols, and labels, free
   of MapServer syntax, with expressions as CQL2.
   _Avoid:_ model, AST (for the whole map).
-- **Viewport** — The part of a map a page asks the WASM bindings to draw: an image size and an
-  extent that override the mapfile's `SIZE` and `EXTENT`.
+- **Viewport** — The part of a map that is drawn: an image size and an extent. A page asks the WASM
+  bindings for one, which overrides the mapfile's `SIZE` and `EXTENT`.
