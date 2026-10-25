@@ -197,6 +197,69 @@ fn pointer(path: &serde_ignored::Path) -> String {
     }
 }
 
+/// A text format of the style document, YAML or JSON (ADR-0014): how its text reads into a
+/// value, how it reads typed, and the code of its read errors.
+trait Format {
+    const CODE: &'static str;
+    type Error: std::fmt::Display;
+
+    fn value<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, Self::Error>;
+
+    /// The document, read through `track`, which keeps the path of a failure, and naming in
+    /// `ignored` each field it skips by its JSON Pointer.
+    fn typed(
+        text: &str,
+        track: &mut serde_path_to_error::Track,
+        ignored: &mut Vec<String>,
+    ) -> Result<StyleDocument, Self::Error>;
+}
+
+struct Yaml;
+
+impl Format for Yaml {
+    const CODE: &'static str = "yaml-read";
+    type Error = serde_saphyr::Error;
+
+    fn value<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, Self::Error> {
+        serde_saphyr::from_str(text)
+    }
+
+    fn typed(
+        text: &str,
+        track: &mut serde_path_to_error::Track,
+        ignored: &mut Vec<String>,
+    ) -> Result<StyleDocument, Self::Error> {
+        serde_saphyr::with_deserializer_from_str(text, |de| {
+            let de = serde_path_to_error::Deserializer::new(de, track);
+            serde_ignored::deserialize(de, |path| ignored.push(pointer(&path)))
+        })
+    }
+}
+
+struct Json;
+
+impl Format for Json {
+    const CODE: &'static str = "json-read";
+    type Error = serde_json::Error;
+
+    fn value<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, Self::Error> {
+        serde_json::from_str(text)
+    }
+
+    fn typed(
+        text: &str,
+        track: &mut serde_path_to_error::Track,
+        ignored: &mut Vec<String>,
+    ) -> Result<StyleDocument, Self::Error> {
+        let mut deserializer = serde_json::Deserializer::from_str(text);
+        serde_ignored::deserialize(
+            serde_path_to_error::Deserializer::new(&mut deserializer, track),
+            |path| ignored.push(pointer(&path)),
+        )
+        .and_then(|document: StyleDocument| deserializer.end().map(|()| document))
+    }
+}
+
 /// The style IR as a document: a format version and the map (ADR-0014).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -238,60 +301,35 @@ impl StyleDocument {
     /// target that exercise the chain before a second major exists.
     #[doc(hidden)]
     pub fn from_yaml_with(text: &str, steps: &[migration::Step]) -> Result<Read, Diagnostic> {
-        let versioned: Option<Versioned> = serde_saphyr::from_str(text).ok();
-        let lenient = newer_minor(versioned.as_ref().map(|v| v.version.as_str()));
-        if let Some((theirs, major)) = older_major(versioned) {
-            let value = serde_saphyr::from_str(text)
-                .map_err(|e| Diagnostic::error("yaml-read", e.to_string(), None))?;
-            return Self::migrated(value, &theirs, major, steps);
-        }
-        let mut ignored = Vec::new();
-        let mut track = serde_path_to_error::Track::new();
-        let read = serde_saphyr::with_deserializer_from_str(text, |de| {
-            let de = serde_path_to_error::Deserializer::new(de, &mut track);
-            serde_ignored::deserialize(de, |path| ignored.push(pointer(&path)))
-        });
-        match read {
-            Ok(document) => Self::checked(document, ignored),
-            Err(_) if lenient => {
-                let value = serde_saphyr::from_str(text)
-                    .map_err(|e| Diagnostic::error("yaml-read", e.to_string(), None))?;
-                Self::lenient(value, "yaml-read")
-            }
-            Err(e) => Err(read_error(
-                "yaml-read",
-                &serde_path_to_error::Error::new(track.path(), e),
-            )),
-        }
+        Self::read::<Yaml>(text, steps)
     }
 
     /// [`StyleDocument::from_json`] with the migration steps `steps`.
     #[doc(hidden)]
     pub fn from_json_with(text: &str, steps: &[migration::Step]) -> Result<Read, Diagnostic> {
-        let versioned: Option<Versioned> = serde_json::from_str(text).ok();
+        Self::read::<Json>(text, steps)
+    }
+
+    /// Reads a document of the format `F` (ADR-0020): its version first, an older major
+    /// migrated from the value tree, else a typed read that names the fields it does not know,
+    /// and for a newer minor that does not read so, the lenient read of its value tree.
+    fn read<F: Format>(text: &str, steps: &[migration::Step]) -> Result<Read, Diagnostic> {
+        let tree = || {
+            F::value::<serde_json::Value>(text)
+                .map_err(|e| Diagnostic::error(F::CODE, e.to_string(), None))
+        };
+        let versioned: Option<Versioned> = F::value(text).ok();
         let lenient = newer_minor(versioned.as_ref().map(|v| v.version.as_str()));
         if let Some((theirs, major)) = older_major(versioned) {
-            let value = serde_json::from_str(text)
-                .map_err(|e| Diagnostic::error("json-read", e.to_string(), None))?;
-            return Self::migrated(value, &theirs, major, steps);
+            return Self::migrated(tree()?, &theirs, major, steps);
         }
         let mut ignored = Vec::new();
         let mut track = serde_path_to_error::Track::new();
-        let mut deserializer = serde_json::Deserializer::from_str(text);
-        let read = serde_ignored::deserialize(
-            serde_path_to_error::Deserializer::new(&mut deserializer, &mut track),
-            |path| ignored.push(pointer(&path)),
-        )
-        .and_then(|document: Self| deserializer.end().map(|()| document));
-        match read {
+        match F::typed(text, &mut track, &mut ignored) {
             Ok(document) => Self::checked(document, ignored),
-            Err(_) if lenient => {
-                let value = serde_json::from_str(text)
-                    .map_err(|e| Diagnostic::error("json-read", e.to_string(), None))?;
-                Self::lenient(value, "json-read")
-            }
+            Err(_) if lenient => Self::lenient(tree()?, F::CODE),
             Err(e) => Err(read_error(
-                "json-read",
+                F::CODE,
                 &serde_path_to_error::Error::new(track.path(), e),
             )),
         }
@@ -1122,5 +1160,14 @@ mod tests {
         // In a newer minor, such a property is dropped like any other that does not read.
         let read = StyleDocument::from_json(&json.replace("\"1.0\"", "\"1.9\"")).unwrap();
         assert_eq!(read.document.map.layers[0].classes[0].styles[0].width, None);
+    }
+
+    #[test]
+    fn json_after_the_document_is_a_read_error() {
+        for version in ["1.0", "1.9"] {
+            let json = format!(r#"{{"version":"{version}","map":{{}}}} {{"more":1}}"#);
+            let error = StyleDocument::from_json(&json).unwrap_err();
+            assert_eq!(error.code, "json-read", "{version}");
+        }
     }
 }
