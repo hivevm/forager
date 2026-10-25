@@ -1,6 +1,6 @@
 //! Serves the HTML example under `examples/web/` and the WebAssembly bundle that
 //! `scripts/build-web.sh` writes to `target/web/`, on localhost only. A tool for trying Forager,
-//! not a server to deploy: one request at a time, GET only.
+//! not a server to deploy: a thread per connection, GET only.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};

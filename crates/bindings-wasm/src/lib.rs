@@ -12,7 +12,7 @@ use forager_adapter_geojson::GeoJsonSource;
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
 use forager_render_agg::AggRenderer;
-use forager_style_ir::{Diagnostic, Extent};
+use forager_style_ir::{Diagnostic, Extent, Map};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// The name the mapfile is known by in diagnostics.
@@ -91,7 +91,7 @@ pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &V
     if let Some(extent) = viewport.extent {
         map.extent = Some(extent);
     }
-    let mut bound = bind(sources, &mut diagnostics);
+    let mut bound = bind(&map, sources, &mut diagnostics);
     // A rejected layer gets no data either, so the engine skips it.
     for name in &rejected {
         bound.remove(name);
@@ -108,34 +108,33 @@ pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &V
     }
 }
 
-/// Parses the sources; one that cannot be read is reported and left unbound, so the engine skips
-/// its layer (G-8).
-fn bind(sources: &str, diagnostics: &mut Vec<Diagnostic>) -> BTreeMap<String, GeoJsonSource> {
-    let mut bound = BTreeMap::new();
+/// Binds the sources to the layers of `map` by name, as every host does
+/// ([`forager_engine::bind_sources`]).
+fn bind(
+    map: &Map,
+    sources: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> BTreeMap<String, GeoJsonSource> {
     let entries = match serde_json::from_str::<serde_json::Value>(sources) {
         Ok(serde_json::Value::Object(entries)) => entries,
         _ => {
             let message = "sources are a JSON object from layer name to GeoJSON";
             diagnostics.push(Diagnostic::error("sources-invalid", message, None));
-            return bound;
+            return BTreeMap::new();
         }
     };
-    for (layer, value) in entries {
-        let text = match value {
-            serde_json::Value::String(text) => text,
-            other => other.to_string(),
-        };
-        match GeoJsonSource::parse(&text) {
-            Ok(source) => {
-                bound.insert(layer, source);
-            }
-            Err(e) => {
-                let message = format!("source of layer `{layer}`: {e}");
-                diagnostics.push(Diagnostic::warning("source-unreadable", message, None));
-            }
-        }
-    }
-    bound
+    forager_engine::bind_sources(
+        map,
+        entries,
+        |value| {
+            let text = match value {
+                serde_json::Value::String(text) => text,
+                other => other.to_string(),
+            };
+            GeoJsonSource::parse(&text).map_err(|e| e.to_string())
+        },
+        diagnostics,
+    )
 }
 
 /// The mapfile as the only file of the base context; an `INCLUDE` finds nothing.
@@ -276,6 +275,37 @@ mod tests {
             forager_encode::decode_png(include_bytes!("../../engine/tests/fixtures/polygon.png"))
                 .unwrap();
         assert!(output.image.unwrap() == reference);
+    }
+
+    #[test]
+    fn a_source_for_no_layer_is_reported() {
+        // Verifies: G-8
+        let sources = serde_json::json!({ "areas": AREAS, "area": AREAS }).to_string();
+        let output = render_map(SQUARE_MAP, &sources, None, &Viewport::default());
+        let unbound: Vec<_> = output
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "source-unbound")
+            .collect();
+        assert_eq!(unbound.len(), 1, "{:?}", output.diagnostics);
+        assert!(
+            unbound[0].message.contains("`area`"),
+            "{}",
+            unbound[0].message
+        );
+    }
+
+    #[test]
+    fn the_cli_and_the_bindings_report_the_same_codes() {
+        // The CLI's test of the same inputs reads the same expectation, in
+        // `crates/cli/tests/render.rs`.
+        let expected: Vec<_> = include_str!("../../cli/tests/fixtures/misbound.codes")
+            .lines()
+            .collect();
+        let sources =
+            serde_json::json!({ "unbound": "{", "areas": AREAS, "area": AREAS }).to_string();
+        let output = render_map(SQUARE_MAP, &sources, None, &Viewport::default());
+        assert_eq!(codes(&output), expected);
     }
 
     #[test]

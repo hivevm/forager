@@ -3,6 +3,7 @@
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
+mod bind;
 mod extent;
 
 use std::collections::BTreeMap;
@@ -11,6 +12,7 @@ use forager_ports::{Coord, Feature, FeatureQuery, FeatureSource, Geometry};
 use forager_render::{DisplayItem, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::{Bound, Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
 
+pub use crate::bind::bind_sources;
 pub use crate::extent::View;
 
 /// The largest width or height of an image, MapServer's default `MAXSIZE` (Q-9).
