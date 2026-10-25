@@ -71,6 +71,22 @@ pub struct Files<'a> {
     pub init_files: &'a BTreeMap<String, Result<InitFile, String>>,
 }
 
+/// The `SYMBOL` blocks of a symbol set, appended to `blocks` in the order they stand, those of
+/// the sets nested in it among them, as loadSymbolSet reads them.
+fn set_symbols<'a>(
+    path: &'a ResourcePath,
+    set: &'a Block,
+    blocks: &mut Vec<(&'a ResourcePath, &'a Block)>,
+) {
+    for node in &set.nodes {
+        match node {
+            Node::Block(b) if b.keyword == "SYMBOL" => blocks.push((path, b)),
+            Node::Block(b) if b.keyword == "SYMBOLSET" => set_symbols(path, b, blocks),
+            _ => {}
+        }
+    }
+}
+
 /// Translates the `MAP` block of a mapfile read from `files`.
 pub fn translate(
     map: &Block,
@@ -93,13 +109,10 @@ pub fn translate(
         Node::Block(b) if b.keyword == "SYMBOL" => Some((main, b)),
         _ => None,
     });
-    let from_set = symbol_set.into_iter().flat_map(|(path, set)| {
-        set.nodes.iter().filter_map(move |node| match node {
-            Node::Block(b) if b.keyword == "SYMBOL" => Some((path, b)),
-            _ => None,
-        })
-    });
-    let blocks: Vec<_> = inline.chain(from_set).collect();
+    let mut blocks: Vec<_> = inline.collect();
+    if let Some((path, set)) = symbol_set {
+        set_symbols(path, set, &mut blocks);
+    }
     t.symbols = blocks
         .into_iter()
         .filter_map(|(beside, b)| t.symbol_block(b, beside))
