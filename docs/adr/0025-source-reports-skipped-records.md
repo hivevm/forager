@@ -19,19 +19,28 @@ same way. The map then draws fewer features than the data holds, and nothing say
 Three forces bound the answer. A broken file can hold millions of broken records, and every
 diagnostic costs memory and a line of output, so the channel must not report one per record (Q-9).
 A source knows records, not the mapfile: the span and the layer's name are the engine's, as they
-are for `layer-skipped`. And the port is a public interface that every host and adapter
-implements, which the maintainer keeps ([ADR-0007](0007-harness.md)); the properties a feature
-carries through the port are being decided at the same time, so the signature changes once.
+are for `layer-skipped`. And the port is a public interface, implemented by every adapter and by
+the fuzz target `fuzz/fuzz_targets/render.rs` and called by the engine, which the maintainer
+keeps ([ADR-0007](0007-harness.md)).
 
 ## Decision
 
 We will have a feature source return, beside the features of a query, the number of records it
-skipped and the reason of the first, and the engine report a layer with a nonzero count as one
-warning `source-records-skipped` naming the layer, its source kind, the count, and that reason,
-at the layer's source span.
+skipped for that query and the reason of the first, and the engine report a layer with a nonzero
+count as one warning `source-records-skipped` naming the layer, its source kind, the count, and
+that reason, at the layer's source span.
+
+The count is per query, not per source: it counts the records the query would have considered
+had they been readable. A source that drops records once, when it is opened, reports them with
+every query whose extent they could fall in; one that has no box to test them against, as the
+GeoJSON adapter's features without finite coordinates have none, reports them with every query.
+A source that skips per record visited, as the shapefile adapter does, reports the records the
+query visited, so a query its file's bounds exclude reports none. Each record counts once per
+query, however many passes the source makes over it.
 
 **Out of scope:** what a source counts as a skipped record, which each adapter's ADR and semantics
-page decide; a strict mode that fails the layer instead (a Non-Goal); diagnostics of the resource
+page decide; a strict mode that fails the map on a skipped record, akin to the strict mode for an
+unavailable source that the specification lists among its Non-Goals; diagnostics of the resource
 loader and of the projection resolver; the properties of a feature.
 
 ## Alternatives considered
@@ -63,8 +72,10 @@ loader and of the projection resolver; the properties of a feature.
   to act on (Q-3); the number of diagnostics a render adds stays bounded by its layers (Q-9).
 - Negative / trade-offs: every implementation of `FeatureSource`, the fuzz target's included,
   changes its return type; the reasons after the first are lost; a source must count while it
-  reads, which the shapefile adapter's two passes already do.
-- Follow-ups: the GeoJSON adapter's dropped features counted the same way; whether a render's
+  reads. The shapefile adapter's two passes count the matched features, the first to size the
+  list and the second to fill it; only one of them may count the skips, or each skip counts
+  twice.
+- Follow-ups: whether a render's
   diagnostics as a whole are bounded like a load's.
 
 ## Enforcement
