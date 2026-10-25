@@ -327,7 +327,7 @@ pub(crate) fn read(mut value: Value, code: &str) -> Result<Read, Diagnostic> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Class, Expr, Layer, Map, Op, RenderMode, Symbol};
+    use crate::{Bound, Class, Expr, Label, Layer, Map, Op, RenderMode, Style, Symbol};
 
     /// What serde says when `T` does not read from `json`.
     fn reason<T: serde::de::DeserializeOwned + fmt::Debug>(json: &str) -> String {
@@ -353,11 +353,24 @@ mod tests {
     fn the_conditions_are_the_maps_layer_filters_and_class_expressions() {
         let filter = Expr::Bool(true);
         let expression = Expr::call(Op::Eq, vec![Expr::property("a"), Expr::Number(1.0)]);
+        // Every other place an expression stands is filled too, so that a list naming one of
+        // them, or a typed method reading one, finds it.
+        let property = Some(Bound::Expr(Expr::property("w")));
+        let style = Style {
+            width: property.clone(),
+            ..Style::default()
+        };
         let map = Map {
             layers: vec![Layer {
                 filter: Some(filter.clone()),
                 classes: vec![Class {
                     expression: Some(expression.clone()),
+                    styles: vec![style.clone()],
+                    labels: vec![Label {
+                        text: Some(Expr::property("t")),
+                        styles: vec![style],
+                        ..Label::default()
+                    }],
                     ..Class::default()
                 }],
                 ..Layer::default()
@@ -365,18 +378,22 @@ mod tests {
             ..Map::default()
         };
         assert_eq!(map.conditions(), [&filter, &expression]);
-        // The places CONDITIONS names hold what the typed map gives, and nothing else.
+        // The places CONDITIONS names hold what the typed map gives, each at least once.
         let tree = serde_json::to_value(&map).unwrap();
         let mut found = Vec::new();
+        let mut matched = vec![false; CONDITIONS.len()];
         let mut pending = vec![&tree];
         while let Some(node) = pending.pop() {
             let Value::Object(object) = node else {
                 continue;
             };
-            for condition in &CONDITIONS {
+            for (i, condition) in CONDITIONS.iter().enumerate() {
                 let items = object.get(condition.list).and_then(Value::as_array);
                 for item in items.into_iter().flatten() {
-                    found.extend(item.get(condition.field).cloned());
+                    if let Some(value) = item.get(condition.field) {
+                        found.push(value.clone());
+                        matched[i] = true;
+                    }
                 }
             }
             pending.extend(
@@ -385,6 +402,10 @@ mod tests {
                     .flat_map(|v| v.as_array().into_iter().flatten()),
             );
         }
+        assert!(
+            matched.iter().all(|m| *m),
+            "a condition names no place of the map"
+        );
         let typed: Vec<Value> = map
             .conditions()
             .into_iter()
