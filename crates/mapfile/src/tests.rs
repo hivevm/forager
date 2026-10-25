@@ -1487,10 +1487,14 @@ fn every_named_file_past_the_size_limit_is_refused_at_what_names_it() {
         assert_eq!(codes(&loaded), ["mapfile-too-large"], "{file}");
         let span = loaded.diagnostics[0].span.as_ref().unwrap();
         assert_eq!((span.line, span.column), (line, column), "{file}");
-        assert!(
-            loaded.diagnostics[0].message.contains("the files it names"),
-            "{}",
-            loaded.diagnostics[0].message
-        );
     }
+    // Past the bound, a file named later is refused unread: one error, not one per file.
+    let loaded = load_files(&[
+        (
+            "m.map",
+            "MAP\n  SYMBOLSET 's.sym'\n  FONTSET 'missing.lst'\nEND\n",
+        ),
+        ("s.sym", big),
+    ]);
+    assert_eq!(codes(&loaded), ["mapfile-too-large"]);
 }

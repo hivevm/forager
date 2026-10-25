@@ -171,6 +171,11 @@ impl<L: ResourceLoader> Reading<'_, L> {
         files
     }
 
+    /// Whether what the load has read is past the bound on it (Q-9).
+    fn over_limit(&self) -> bool {
+        self.bytes > MAX_TOTAL_BYTES
+    }
+
     /// The bytes of `path`, within the bound on everything a load reads (Q-9): past it, the load
     /// error `mapfile-too-large` at `span`, what names the file, reported once, and every later
     /// file refused unread. A file that cannot be read is the caller's to report.
@@ -179,8 +184,7 @@ impl<L: ResourceLoader> Reading<'_, L> {
         path: &ResourcePath,
         span: Option<Span>,
     ) -> Result<Vec<u8>, Refused> {
-        let over = |bytes: usize| bytes > MAX_TOTAL_BYTES;
-        if over(self.bytes) {
+        if self.over_limit() {
             return Err(Refused::OverLimit);
         }
         let bytes = self
@@ -189,7 +193,7 @@ impl<L: ResourceLoader> Reading<'_, L> {
             .await
             .map_err(|e| Refused::Unreadable(e.to_string()))?;
         self.bytes += bytes.len();
-        if over(self.bytes) {
+        if self.over_limit() {
             let message =
                 format!("the mapfile with the files it names exceeds {MAX_TOTAL_BYTES} bytes");
             self.report
