@@ -1,5 +1,5 @@
-// The font set follows MapServer's msLoadFontSet, src/maplabel.c, of the release pinned in
-// scripts/fetch-msautotest.sh.
+// The font set follows MapServer's msLoadFontSet, src/maplabel.c, and its hash table,
+// src/maphash.c, of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -36,7 +36,12 @@ impl Translator<'_> {
             let Some((name, file)) = line.split_once([' ', '\t']) else {
                 continue;
             };
-            let file = file.trim();
+            // msLoadFontSet looks for the separator in a copy of the line's first 63 bytes, its
+            // `alias[64]`, and skips a line without a name or a file.
+            if name.is_empty() || name.len() >= ALIAS_SIZE - 1 {
+                continue;
+            }
+            let file = file.trim_matches(is_c_space);
             if file.is_empty() {
                 continue;
             }
@@ -56,14 +61,28 @@ impl Translator<'_> {
     }
 
     /// Warns of each font of a `FONT` list, `a,b` naming fallbacks, that the font set lacks.
+    /// MapServer's font set is a hash table that compares its keys without case
+    /// (msLookupHashTable, src/maphash.c).
     pub(super) fn check_fonts(&mut self, names: &str, span: &Span) {
         for name in names.split(',') {
-            if !self.fonts.contains_key(name) {
+            if !self
+                .fonts
+                .keys()
+                .any(|font| font.eq_ignore_ascii_case(name))
+            {
                 let message = format!("the font set has no font `{name}`");
                 self.warn("font-unknown", &message, span);
             }
         }
     }
+}
+
+/// The size of msLoadFontSet's `alias` buffer, the name and its separator.
+const ALIAS_SIZE: usize = 64;
+
+/// A space as C's `isspace` takes it in the C locale, with which msLoadFontSet trims a file.
+fn is_c_space(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\n' | '\x0b' | '\x0c' | '\r')
 }
 
 #[cfg(test)]
