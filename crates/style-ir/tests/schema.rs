@@ -671,3 +671,124 @@ fn a_clone_without_its_history_is_refused_and_one_without_a_release_passes() {
     assert!(error.contains("git fetch --unshallow --tags"), "{error}");
     assert!(full.unwrap().is_empty());
 }
+
+/// Fixture types in two versions, so that the classifier is tested on what schemars writes, not
+/// on what a test supposes it writes.
+mod derived {
+    #![expect(
+        dead_code,
+        reason = "the fixtures exist for their derived schemas, never read"
+    )]
+
+    use forager_style_ir::Bound;
+    use schemars::JsonSchema;
+    use serde::Deserialize;
+
+    #[derive(Deserialize, JsonSchema)]
+    pub struct V1 {
+        pub size: Option<Bound<f64>>,
+        pub name: String,
+    }
+
+    /// `V1` and an optional field of another `Bound`, which schemars numbers before `size`'s.
+    #[derive(Deserialize, JsonSchema)]
+    pub struct V2Optional {
+        pub glow: Option<Bound<u32>>,
+        pub size: Option<Bound<f64>>,
+        pub name: String,
+    }
+
+    /// `V1` and a required field.
+    #[derive(Deserialize, JsonSchema)]
+    pub struct V2Required {
+        pub size: Option<Bound<f64>>,
+        pub name: String,
+        pub count: u32,
+    }
+
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(rename_all = "lowercase")]
+    pub enum Cap {
+        Butt,
+        Round,
+    }
+
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(rename_all = "lowercase")]
+    pub enum CapDocumented {
+        /// Flat at the end.
+        Butt,
+        Round,
+    }
+
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(rename_all = "lowercase")]
+    pub enum CapWider {
+        Butt,
+        Round,
+        Square,
+    }
+
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(untagged)]
+    pub enum Union {
+        Number(f64),
+    }
+
+    #[derive(Deserialize, JsonSchema)]
+    #[serde(untagged)]
+    pub enum UnionWider {
+        Number(f64),
+        Text(String),
+    }
+}
+
+fn schema<T: schemars::JsonSchema>() -> Value {
+    serde_json::to_value(schemars::schema_for!(T)).unwrap()
+}
+
+#[test]
+fn an_optional_field_of_another_bound_is_minor_in_derived_schemas() {
+    // Verifies: ADR-0020
+    use derived::*;
+    assert_eq!(
+        change(&schema::<V1>(), &schema::<V2Optional>()),
+        Change::Minor
+    );
+    assert_eq!(
+        change(&schema::<V1>(), &schema::<V2Required>()),
+        Change::Major
+    );
+    assert_eq!(
+        change(&schema::<V2Optional>(), &schema::<V1>()),
+        Change::Major
+    );
+}
+
+#[test]
+fn a_documented_variant_is_no_change_and_a_new_one_minor_in_derived_schemas() {
+    // Verifies: ADR-0020
+    use derived::*;
+    assert_eq!(
+        change(&schema::<Cap>(), &schema::<CapDocumented>()),
+        Change::None
+    );
+    assert_eq!(
+        change(&schema::<Cap>(), &schema::<CapWider>()),
+        Change::Minor
+    );
+    assert_eq!(
+        change(&schema::<CapWider>(), &schema::<Cap>()),
+        Change::Major
+    );
+}
+
+#[test]
+fn a_new_alternative_of_an_untagged_union_is_major_in_derived_schemas() {
+    // Verifies: ADR-0020
+    use derived::*;
+    assert_eq!(
+        change(&schema::<Union>(), &schema::<UnionWider>()),
+        Change::Major
+    );
+}
