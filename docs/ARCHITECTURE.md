@@ -61,7 +61,9 @@ golden path and the test pattern an agent copies from are named here.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, and turns each feature and style into display
   items by the layer's render mode. A layer without a source, or whose source fails, is skipped
-  with a diagnostic (G-8). It is the one core crate that awaits the ports.
+  with a diagnostic (G-8). It is the one core crate that awaits the ports. Every host binds its
+  sources to the layers by name through the engine's `bind_sources`, which reports a source no
+  layer is named for and one that cannot be read the same way for each.
 - **`render`** — the display list, the renderer trait, and the RGBA image.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, and is the one crate that may use `unsafe`
@@ -137,7 +139,8 @@ warning for each keyword not carried over. With no error, the CLI prints the sty
 diagnostics go to standard error. No state outlives the call.
 
 `forager render <mapfile> --source <layer>=<file> -o <png>` loads the mapfile the same way, parses
-each GeoJSON file into a source bound to its layer, and runs the engine with the agg-rust renderer.
+the GeoJSON file of each name a layer carries into a source bound to that layer, and runs the
+engine with the agg-rust renderer.
 For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted
 extent and draws every feature in each style of the first class; the image is encoded as PNG.
 

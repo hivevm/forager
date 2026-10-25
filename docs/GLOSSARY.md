@@ -29,6 +29,8 @@ to invent.
   tree ([ADR-0019](adr/0019-cql2-expressions.md)) the mapfile frontend translates from an
   `EXPRESSION`, a `FILTER`, a `TEXT`, or an attribute binding. Its semantics per parameter are in
   [`semantics/`](semantics/README.md).
+- **Feature source** — The port through which the host supplies a layer's features, implemented by
+  an adapter the host binds to the layer by its name; the engine asks it for the features in view.
 - **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
   crate versions and of the core's API.
 - **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through
@@ -53,6 +55,8 @@ to invent.
 - **Render mode** — What a layer's `TYPE` states: how its features are drawn (point, line,
   polygon, raster, labels only), independent of their geometry type.
   _Avoid:_ layer type, geometry type (for this concept).
+- **Renderer** — What turns a display list into an image; the reference renderer draws with
+  agg-rust into an RGBA image.
 - **Resource loader** — The port through which the host supplies the bytes of files a style refers
   to — `INCLUDE`s, symbol sets, font sets, fonts, pixmaps — resolved against the base context.
 - **Scale denominator** — The map's scale as MapServer computes it when drawing, `n` for 1:`n`;
@@ -72,3 +76,5 @@ to invent.
 - **Style IR** — The data model of a map, its layers, classes, styles, symbols, and labels, free
   of MapServer syntax, with expressions as CQL2.
   _Avoid:_ model, AST (for the whole map).
+- **Viewport** — The part of a map that is drawn: an image size and an extent. A page asks the WASM
+  bindings for one, which overrides the mapfile's `SIZE` and `EXTENT`.

@@ -2,7 +2,6 @@
 
 mod files;
 
-use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -210,34 +209,15 @@ fn render(args: &RenderArgs) -> ExitCode {
     let Some(document) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref()) else {
         return ExitCode::FAILURE;
     };
-    let mut sources = BTreeMap::new();
-    for (layer, file) in &args.sources {
-        if !document
-            .map
-            .layers
-            .iter()
-            .any(|l| l.name.as_deref() == Some(layer.as_str()))
-        {
-            let message = format!(
-                "no layer is named `{layer}`; --source {} is unused",
-                file.display()
-            );
-            eprintln!("{}", Diagnostic::warning("source-unbound", message, None));
-            continue;
-        }
-        // A source that cannot be read is not bound, so the engine skips its layer (G-8).
-        match read_source(file) {
-            Ok(source) => {
-                sources.insert(layer.clone(), source);
-            }
-            Err(message) => {
-                let message = format!("{}: {message}", file.display());
-                eprintln!(
-                    "{}",
-                    Diagnostic::warning("source-unreadable", message, None)
-                );
-            }
-        }
+    let mut diagnostics = Vec::new();
+    let sources = forager_engine::bind_sources(
+        &document.map,
+        args.sources.iter().cloned(),
+        |file| read_source(&file).map_err(|message| format!("{}: {message}", file.display())),
+        &mut diagnostics,
+    );
+    for diagnostic in &diagnostics {
+        eprintln!("{diagnostic}");
     }
     let rendered = match now(forager_engine::render(
         &document.map,

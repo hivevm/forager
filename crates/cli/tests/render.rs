@@ -75,3 +75,32 @@ fn a_source_for_no_layer_is_reported_and_a_doubled_one_refused() {
     let (code, _) = render(&["--source".into(), areas.clone(), "--source".into(), areas]);
     assert_eq!(code, Some(2));
 }
+
+#[test]
+fn the_cli_and_the_bindings_report_the_same_codes() {
+    // The bindings' test of the same inputs reads the same expectation, in
+    // `crates/bindings-wasm/src/lib.rs`. The sources are given out of the order of their names.
+    // `unbound` names a layer of square.map whose source does not read (`source-unreadable`);
+    // `area` names no layer (`source-unbound`).
+    let broken =
+        std::env::temp_dir().join(format!("forager-misbound-{}.geojson", std::process::id()));
+    std::fs::write(&broken, "{").unwrap();
+    let areas = fixture("areas.geojson");
+    let (code, stderr) = render(&[
+        "--source".into(),
+        format!("unbound={}", broken.display()),
+        "--source".into(),
+        format!("areas={}", areas.display()),
+        "--source".into(),
+        format!("area={}", areas.display()),
+    ]);
+    std::fs::remove_file(&broken).unwrap();
+    assert_eq!(code, Some(0), "{stderr}");
+    let codes: Vec<_> = stderr
+        .lines()
+        .filter_map(|line| line.split_once(" [")?.1.split_once(']'))
+        .map(|(code, _)| code)
+        .collect();
+    let expected = std::fs::read_to_string(fixture("misbound.codes")).unwrap();
+    assert_eq!(codes, expected.lines().collect::<Vec<_>>(), "{stderr}");
+}
