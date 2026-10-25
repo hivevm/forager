@@ -13,7 +13,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use forager_style_ir::Bound;
+use forager_style_ir::{Bound, Rgba};
 
 use crate::test_support::{binding, codes, first_style, load_files};
 
@@ -451,4 +451,83 @@ fn a_colour_binding_holds_over_a_later_colour_of_none() {
         first_style("MAP LAYER CLASS STYLE COLOR [c] COLOR -1 -1 -1 END END END END");
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     assert_eq!(style.unwrap().color, binding("c"));
+}
+
+/// The colour of `body`'s `COLOR`.
+fn color_of(body: &str) -> Option<Bound<Rgba>> {
+    style_of(&format!("COLOR {body}")).color
+}
+
+fn value(r: u8, g: u8, b: u8, a: u8) -> Option<Bound<Rgba>> {
+    Some(Bound::Value(Rgba { r, g, b, a }))
+}
+
+#[test]
+fn each_colour_channel_is_checked_by_load_color_before_it_is_truncated() {
+    // loadColor checks the first channel's msyynumber, and getInteger the others' through
+    // msCheckNumber, each before the cast to `int`.
+    for body in [
+        "COLOR 255.5 0 0",
+        "COLOR 0 255.5 0",
+        "COLOR 0 0 255.5",
+        "COLOR -255.5 0 0",
+        "COLOR 0 -255.5 0",
+        "COLOR 0 0 -256",
+    ] {
+        refused(body);
+    }
+    assert_eq!(color_of("255 255 255"), value(255, 255, 255, 255));
+    assert_eq!(color_of("0.9 -0.5 255.0"), value(0, 0, 255, 255));
+    // The cast truncates toward 0: -1.5 is -1, which MS_VALID_COLOR refuses, in any channel.
+    for body in ["-1.5 0 0", "0 -1 0", "0 0 -1.9"] {
+        assert_eq!(color_of(body), None, "{body}");
+    }
+    assert_eq!(color_of("-2.5 0 0"), value(254, 0, 0, 255));
+}
+
+#[test]
+fn a_hex_colour_takes_either_case_and_an_optional_alpha() {
+    // msHexToInt, src/mapstring.cpp, folds a letter to upper case; a seventh and eighth digit
+    // are the alpha, else 255.
+    assert_eq!(color_of("'#AbCdEf'"), value(0xab, 0xcd, 0xef, 255));
+    assert_eq!(color_of("\"#aBcDeF80\""), value(0xab, 0xcd, 0xef, 0x80));
+    assert_eq!(color_of("'#00000000'"), value(0, 0, 0, 0));
+    assert_eq!(color_of("'#ffffffFF'"), value(255, 255, 255, 255));
+}
+
+#[test]
+fn a_colour_string_other_than_hash_and_six_or_eight_digits_is_refused() {
+    // loadColor: "Invalid hex color" for a string that is not `#` and 7 or 9 characters long,
+    // a bare word among them, which MapServer's lexer reads as a string.
+    for body in [
+        "COLOR '#fff'",
+        "COLOR '#ff000'",
+        "COLOR '#ff00001'",
+        "COLOR '#ff0000aa1'",
+        "COLOR 'ff0000'",
+        "COLOR 'ff000000'",
+        "COLOR ''",
+        "COLOR red",
+    ] {
+        refused(body);
+    }
+}
+
+#[test]
+fn a_colour_is_three_numbers_one_string_or_one_binding() {
+    // getSymbol(3, MS_NUMBER, MS_BINDING, MS_STRING), then two getInteger: anything else in the
+    // three numbers, or a token after a string or a binding, fails the load.
+    for body in [
+        "COLOR 1 2",
+        "COLOR 1 2 3 4",
+        "COLOR 1 [g] 3",
+        "COLOR 1 'x' 3",
+        "COLOR [c] 1 2",
+        "COLOR '#102030' 4",
+        "COLOR ([c])",
+    ] {
+        refused(body);
+    }
+    assert_eq!(color_of("[c]"), binding("c"));
+    assert_eq!(style_of("OUTLINECOLOR [o]").outline_color, binding("o"));
 }

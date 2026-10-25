@@ -152,7 +152,7 @@ impl Translator<'_> {
                             .numbers(d, 2)
                             .map(|n| [n[0].max(0.0) as u32, n[1].max(0.0) as u32]);
                     }
-                    "IMAGECOLOR" => map.image_color = self.color(d),
+                    "IMAGECOLOR" => map.image_color = self.image_color(d),
                     // MS_RESOLUTION_MIN and MS_RESOLUTION_MAX.
                     "RESOLUTION" => map.resolution = self.number(d, Range::within(10.0, 1000.0)),
                     "DEFRESOLUTION" => {
@@ -393,34 +393,53 @@ impl Translator<'_> {
         })
     }
 
-    /// A colour as `loadColor` reads it: `#rrggbb`, `#rrggbbaa`, or three numbers from -255 to
-    /// 255, each truncated to an integer. A channel of -1 means no colour; MapServer's renderers
-    /// store any other channel in a byte, so a negative one is taken modulo 256.
-    fn color(&mut self, d: &Directive) -> Option<Rgba> {
+    /// A colour as `loadColor` reads it: `#rrggbb` or `#rrggbbaa`, its digits in either case, or
+    /// three numbers from -255 to 255, each checked before it is truncated to an integer. The
+    /// channels come as read, a negative one included, with the alpha, 255 where none is given.
+    fn loaded_color(&mut self, d: &Directive) -> Option<([i32; 3], u8)> {
         match d.values.as_slice() {
             [
                 Token {
                     kind: TokenKind::Str { value, .. },
                     ..
                 },
-            ] => Rgba::from_hex(value).or_else(|| {
-                self.invalid(d, "a colour as `#rrggbb` or `#rrggbbaa`");
-                None
-            }),
+            ] => match Rgba::from_hex(value) {
+                Some(c) => Some(([c.r, c.g, c.b].map(i32::from), c.a)),
+                None => {
+                    self.invalid(d, "a colour as `#rrggbb` or `#rrggbbaa`");
+                    None
+                }
+            },
             _ => {
                 let rgb = self.numbers(d, 3)?;
                 if rgb.iter().any(|c| !(-255.0..=255.0).contains(c)) {
                     self.invalid(d, "three numbers from -255 to 255");
                     return None;
                 }
-                let rgb: Vec<i32> = rgb.iter().map(|c| c.trunc() as i32).collect();
-                if rgb.contains(&-1) {
-                    return None;
-                }
-                let byte = |c: i32| c.rem_euclid(256) as u8;
-                Some(Rgba::opaque(byte(rgb[0]), byte(rgb[1]), byte(rgb[2])))
+                Some(([rgb[0], rgb[1], rgb[2]].map(|c| c.trunc() as i32), 255))
             }
         }
+    }
+
+    /// A colour of a style or a label as [`Self::loaded_color`] reads it. A channel of -1 means
+    /// no colour (`MS_VALID_COLOR`, src/mapserver.h); MapServer's renderers store any other
+    /// channel in a byte, so a negative one is taken modulo 256.
+    fn color(&mut self, d: &Directive) -> Option<Rgba> {
+        let (rgb, alpha) = self.loaded_color(d)?;
+        if rgb.contains(&-1) {
+            return None;
+        }
+        let [r, g, b] = rgb.map(channel_byte);
+        Some(Rgba { r, g, b, a: alpha })
+    }
+
+    /// The map's `IMAGECOLOR` as [`Self::loaded_color`] reads it. `msPrepareImage`
+    /// (src/mapdraw.c) sets its alpha to 255 and hands it to the renderer without checking
+    /// `MS_VALID_COLOR`, so it is opaque, and each channel, -1 included, is taken modulo 256.
+    fn image_color(&mut self, d: &Directive) -> Option<Rgba> {
+        let (rgb, _) = self.loaded_color(d)?;
+        let [r, g, b] = rgb.map(channel_byte);
+        Some(Rgba::opaque(r, g, b))
     }
 
     /// A style's colour, which may also be bound to a property.
@@ -608,6 +627,36 @@ fn binding_of<T>(d: &Directive) -> Option<Bound<T>> {
         [token] => binding(token),
         _ => None,
     }
+}
+
+/// A colour channel as MapServer's renderers store it, in a byte: AGG's `rgba8` keeps an `int8u`.
+fn channel_byte(c: i32) -> u8 {
+    c.rem_euclid(256) as u8
+}
+
+/// What a property holds after a later directive gives it `new`: loadStyle and loadLabel never
+/// free a binding for a value, and bindStyle and bindLabel, src/maputil.c, draw the binding over
+/// the value. A colour of `-1 -1 -1` reads as none, which bindColorAttribute replaces with the
+/// bound one, and keeps the binding too; any other `None` is a value that did not read, which
+/// fails the load anyway.
+fn kept_binding<T>(earlier: Option<Bound<T>>, new: Option<Bound<T>>) -> Option<Bound<T>> {
+    match (earlier, new) {
+        (Some(binding @ Bound::Binding { .. }), Some(Bound::Value(_)) | None) => Some(binding),
+        (_, new) => new,
+    }
+}
+
+/// [`kept_binding`] for each of a pair's numbers.
+fn kept_bindings(
+    earlier: Option<[Bound<f64>; 2]>,
+    new: Option<[Bound<f64>; 2]>,
+) -> Option<[Bound<f64>; 2]> {
+    let [x, y] = new?;
+    let [earlier_x, earlier_y] = earlier.map_or([None, None], |[x, y]| [Some(x), Some(y)]);
+    Some([
+        kept_binding(earlier_x, Some(x))?,
+        kept_binding(earlier_y, Some(y))?,
+    ])
 }
 
 /// The unit keywords of `SIZEUNITS`; a map's `UNITS` takes them without `PIXELS`.

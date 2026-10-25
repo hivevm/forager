@@ -598,8 +598,10 @@ pub enum Bound<T> {
     Value(T),
     /// The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a
     /// number with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated
-    /// by spaces. An empty value leaves a number at its default, and a colour that does not read
-    /// leaves no colour.
+    /// by spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`
+    /// sets before it reads one, which for a size or an outline width is not the value the
+    /// property has without the binding (docs/semantics/binding.md), and a colour that does not
+    /// read leaves no colour.
     Binding {
         binding: String,
     },
