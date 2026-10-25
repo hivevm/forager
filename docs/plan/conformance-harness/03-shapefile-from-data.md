@@ -17,6 +17,10 @@ both adapters.
 - [ ] Given a `DATA` or `SHAPEPATH` whose path leaves the base context, by `..` or as an
       absolute path, when the mapfile is loaded, then it is a diagnostic and no file outside the
       base context is read (Q-8).
+- [ ] Given `DATA "poly"` where only `POLY.SHP`, `POLY.SHX`, and `POLY.DBF` exist, when the
+      mapfile is rendered, then the layer draws, as MapServer's `msSHPOpen` and `msShapefileOpen`
+      fall back to the upper-case names; the sibling paths resolve inside the base context as the
+      `.shp`'s does.
 - [ ] Given a broken shapefile, when the mapfile is rendered, then the layer is skipped with a
       diagnostic naming the layer, the source kind, and the source span (G-8).
 - [ ] Given a `.shp` larger than the data-file limit, when it is read, then it is a diagnostic

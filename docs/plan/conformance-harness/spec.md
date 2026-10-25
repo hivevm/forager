@@ -68,7 +68,7 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 ## Implementation decisions
 
 - **Data.** A new adapter reads ESRI shapefiles, the `.shp` with its `.shx` and `.dbf`, through the
-  resource loader. The crate it uses is decided by an ADR of its own, landed before the adapter.
+  resource loader, with a reader derived from MapServer's, as an ADR of its own decides.
   The frontend reads `SHAPEPATH` and joins it with a `local` source's `DATA` into that source's
   `data`, relative to the mapfile's directory, so that the style document's format does not change;
   a `DATA` without an extension names the `.shp`, as in MapServer. The path resolves inside the
@@ -119,9 +119,10 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 - The metric is tested on small synthetic buffers: equal, one channel over the threshold, a
   share at and above the tolerance, a different size, a palette image.
 - The shapefile adapter is tested at the port with small fixture files: points, lines, polygons
-  with holes, multipart shapes, null shapes, attributes of each `.dbf` type, and truncated or
-  inconsistent files, which become errors of the source (Q-3). The CLI tests copy the GeoJSON
-  ones.
+  with holes, multipart shapes, null shapes, and truncated or inconsistent files: a broken record
+  reads as no shape, a broken header is an error of the source, and nothing panics (Q-3). The
+  memory rules run in a test binary of their own with a counting allocator. The CLI tests copy the
+  GeoJSON ones.
 - The fidelity check has a self-test, as every check under `scripts/` does.
 
 ## Out of scope
@@ -141,8 +142,9 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
   (resource paths, the resource limits, `deny.toml`, and the specification stay with the
   maintainer). ADR-0014 and ADR-0020 are not touched, because `SHAPEPATH` folds into the source's
   `data` and the format does not change.
-- New `proposed` ADRs before the tickets that need them: the shapefile crate; how the pinned
-  MapServer runs on CI; what runs the `wasm32-unknown-unknown` module in a native test. Should the
+- New `proposed` ADRs before the tickets that need them: the shapefile reader; how the pinned
+  MapServer runs on CI; what runs the `wasm32-unknown-unknown` module in a native test; the value
+  types of a feature's properties at the source port. Should the
   module need a host crate of its own, that ADR supersedes ADR-0009 to add it to the table.
 - A specification change: the threshold and the tolerance of the category geometry and symbols in
   G-6, and the metric with them.
