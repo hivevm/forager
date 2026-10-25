@@ -205,9 +205,10 @@ fn every_msautotest_mapfile_loads_without_an_error() {
 }
 
 /// Files the cases of `misc` and `renderers` read, one of each place they lie: a reference image, a
-/// shapefile of `renderers/data`, and one each of `query/data` and `wxs/data` that a mapfile of
-/// those two directories names by a `..` path (`misc/style_opacity.map`,
-/// `renderers/labels-leader.map`).
+/// shapefile of `renderers/data` and one of `misc/data`, and one each of `query/data` and
+/// `wxs/data` that a mapfile of those two directories names by a `..` path
+/// (`misc/style_opacity.map`, `renderers/labels-leader.map`). `world_testlines`, which the ticket
+/// placed in `misc/data`, lies in `renderers/data` at the pin.
 const DATA_AND_REFERENCES: &[&str] = &[
     "renderers/expected/line_simple.png",
     "renderers/data/world_testlines.shp",

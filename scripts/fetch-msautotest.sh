@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Fetches the msautotest suite of the reference release of MapServer: a sparse checkout of its
 # mapfiles and the files they read, into target/msautotest/<commit>/, and prints the suite's
-# directory. Beyond the mapfiles it takes the shapefiles the cases of misc and renderers read, from
-# their own data directories and the two of query and wxs their mapfiles name by a '..' path, and
-# the non-cairo PNG references of those two directories; no other data and no other output format. The pin below is the one place that names the reference release (specification,
-# *Constraints*: "pinned by tag"); the comments that cite MapServer's source refer to it. Moving
+# directory. Beyond the mapfiles it takes the shapefiles of the data directories of misc and
+# renderers, those of query and wxs that their mapfiles name by a '..' path, and the non-cairo PNG
+# references of misc and renderers; no raster, no .cpg or .prj, and no other output format. The
+# pin below is the one place that names the reference release (specification, *Constraints*:
+# "pinned by tag"); the comments that cite MapServer's source refer to it. Moving
 # the pin is a deliberate change with a full conformance run, and changes the key of the CI cache.
 #
 # The tag must still name the pinned commit: the check asks the remote on every run, so a retagged
