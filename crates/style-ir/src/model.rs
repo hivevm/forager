@@ -47,6 +47,52 @@ pub struct Map {
     pub span: Option<Span>,
 }
 
+/// Where a condition of the IR stands: the field of each element of a list whose expression
+/// decides which features that element draws. A reader that cannot read one keeps it as one that
+/// never matches, since dropped it would match every feature (docs/CONVENTIONS.md).
+pub(crate) struct Condition {
+    pub list: &'static str,
+    pub field: &'static str,
+}
+
+/// The conditions of the IR: a layer's filter and a class's expression. [`Map::conditions`]
+/// reads them from the typed map; a test holds the two together.
+pub(crate) const CONDITIONS: [Condition; 2] = [
+    Condition {
+        list: "layers",
+        field: "filter",
+    },
+    Condition {
+        list: "classes",
+        field: "expression",
+    },
+];
+
+impl Map {
+    /// The map's conditions, at the places [`CONDITIONS`] names.
+    pub(crate) fn conditions(&self) -> Vec<&Expr> {
+        let layers = self.layers.iter();
+        layers
+            .flat_map(|layer| {
+                let classes = layer.classes.iter().filter_map(|c| c.expression.as_ref());
+                layer.filter.iter().chain(classes)
+            })
+            .collect()
+    }
+
+    /// Every expression of the map: its conditions, and those of its styles and labels.
+    pub(crate) fn expressions(&self) -> Vec<&Expr> {
+        let classes = self.layers.iter().flat_map(|layer| &layer.classes);
+        let properties = classes.flat_map(|class| {
+            let styles = class.styles.iter().flat_map(Style::expressions);
+            styles.chain(class.labels.iter().flat_map(Label::expressions))
+        });
+        let mut found = self.conditions();
+        found.extend(properties);
+        found
+    }
+}
+
 /// A symbol a style draws.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
