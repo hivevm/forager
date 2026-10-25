@@ -1,0 +1,18 @@
+# What the core may not use (Q-2): hash-map iteration order, a clock, and a random source would make
+# the same input render differently. The lints are allowed in the workspace and warned by each crate
+# of the IR and the core (ADR-0009) at the top of its lib.rs, so hosts and adapters stay free, and
+# so do the integration tests under a core crate's tests/, which reach no output. The fuzz
+# workspace takes no workspace lints, so the bans warn there by default; it renders through the
+# core and is held to them as well.
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "iteration order is random; use BTreeMap (Q-2)" },
+  { path = "std::collections::HashSet", reason = "iteration order is random; use BTreeSet (Q-2)" },
+  { path = "std::hash::RandomState", reason = "a random source (Q-2)" },
+  { path = "std::time::SystemTime", reason = "a clock (Q-2)" },
+  { path = "std::time::Instant", reason = "a clock (Q-2)" },
+]
+disallowed-methods = [
+  { path = "std::hash::RandomState::new", reason = "a random source (Q-2)" },
+  { path = "std::time::SystemTime::now", reason = "a clock (Q-2)" },
+  { path = "std::time::Instant::now", reason = "a clock (Q-2)" },
+]

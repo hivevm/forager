@@ -228,3 +228,89 @@ fn only_render_agg_allows_unsafe_code() {
     }
     assert!(offenders.is_empty(), "{offenders:?}");
 }
+
+/// The crates of the IR and the core groups of ADR-0009.
+const IR_AND_CORE: &[&str] = &[
+    "style-ir",
+    "expr",
+    "proj",
+    "render",
+    "render-agg",
+    "encode",
+    "symbolize",
+    "label",
+    "raster",
+    "engine",
+];
+
+#[test]
+fn the_ir_and_the_core_warn_the_lints_that_ban_hash_maps_clocks_and_randomness() {
+    // Verifies: Q-2
+    // clippy.toml names the banned types and methods and the workspace allows their lints; a crate
+    // of the IR or the core turns them on at the top of its lib.rs, which scripts/check-rust.sh
+    // shows to bite on a fixture. A new core crate without the line would escape the ban.
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let line = "#![warn(clippy::disallowed_types, clippy::disallowed_methods)]";
+    let missing: Vec<_> = IR_AND_CORE
+        .iter()
+        .filter(|name| crates.join(name).is_dir())
+        .filter(|name| {
+            !std::fs::read_to_string(crates.join(name).join("src/lib.rs"))
+                .unwrap_or_default()
+                .lines()
+                .any(|l| l == line)
+        })
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "core crates without `{line}`: {missing:?}"
+    );
+}
+
+/// The one place a core crate lifts the ban, with its reason: a test's time bound.
+const LIFTED: &[(&str, &str)] = &[(
+    "render-agg/src/lib.rs",
+    "    #[expect(
+        clippy::disallowed_types,
+        clippy::disallowed_methods,
+        reason = \"the clock bounds the test's run time and reaches no output (Q-2)\"
+    )]",
+)];
+
+#[test]
+fn no_core_crate_lifts_the_ban_on_hash_maps_clocks_and_randomness() {
+    // Verifies: Q-2
+    // Any other mention of the two lints in a crate of the IR or the core is a way to lift them
+    // (`allow`, `expect`, a lint table), as for `unsafe_code`; the opt-in line and the places named
+    // in LIFTED are the only ones.
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let line = "#![warn(clippy::disallowed_types, clippy::disallowed_methods)]";
+    let mut offenders = Vec::new();
+    for name in IR_AND_CORE.iter().filter(|name| crates.join(name).is_dir()) {
+        let mut stack = vec![crates.join(name)];
+        while let Some(path) = stack.pop() {
+            if path.is_dir() {
+                stack.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
+                continue;
+            }
+            if !path.extension().is_some_and(|e| e == "rs" || e == "toml") {
+                continue;
+            }
+            let relative = path.strip_prefix(&crates).unwrap().display().to_string();
+            let mut text = std::fs::read_to_string(&path).unwrap_or_default();
+            for (file, block) in LIFTED {
+                if relative == *file {
+                    text = text.replacen(block, "", 1);
+                }
+            }
+            for (number, text) in text.lines().enumerate() {
+                if (text.contains("disallowed_types") || text.contains("disallowed_methods"))
+                    && !(relative.ends_with("src/lib.rs") && text == line)
+                {
+                    offenders.push(format!("{relative}:{}", number + 1));
+                }
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "{offenders:?}");
+}

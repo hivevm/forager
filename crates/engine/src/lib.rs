@@ -1,6 +1,8 @@
 //! The engine: renders the map of a style IR from the sources bound to its layers. It is the
 //! one core crate that awaits the ports (ADR-0009).
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 mod extent;
 
 use std::collections::BTreeMap;

@@ -1,5 +1,7 @@
 //! Encodes an RGBA image as PNG, and decodes one back (ADR-0017).
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 use forager_render::RgbaImage;
 
 /// Encodes `image` as an 8-bit RGBA PNG.

@@ -89,7 +89,8 @@ golden path and the test pattern an agent copies from are named here.
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`
-  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)).
+  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)), and requires every crate of the IR and the core
+  to turn on the lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2).
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
