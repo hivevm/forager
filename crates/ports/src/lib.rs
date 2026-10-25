@@ -1,6 +1,7 @@
 //! The ports: the traits at the edge of the core through which a host supplies data and
-//! resources (ADR-0009). They are the only place async appears, and none of them requires
-//! `Send`, because the browser is single-threaded.
+//! resources (ADR-0009), and `poll_once`, which runs a future over them that never waits. They
+//! are the only place async appears, and none of them requires `Send`, because the browser is
+//! single-threaded.
 
 use std::fmt;
 

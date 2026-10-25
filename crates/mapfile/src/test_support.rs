@@ -21,13 +21,13 @@ impl ResourceLoader for Files {
     }
 }
 
-pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
+pub(crate) fn ready<F: Future>(future: F) -> F::Output {
     forager_ports::poll_once(future).expect("the test files never wait")
 }
 
 pub(crate) fn load_files(files: &[(&'static str, &'static str)]) -> Loaded {
     let loader = Files(files.iter().copied().collect());
-    block_on(load(&ResourcePath::new(files[0].0).unwrap(), &loader, None))
+    ready(load(&ResourcePath::new(files[0].0).unwrap(), &loader, None))
 }
 
 pub(crate) fn codes(loaded: &Loaded) -> Vec<&str> {

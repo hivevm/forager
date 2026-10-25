@@ -160,32 +160,31 @@ fn load(mapfile: &Path, epsg: Option<&Path>, base: Option<&Path>) -> Option<Styl
         .map_err(|e| eprintln!("forager: {}: {e}", mapfile.display()))
         .ok()?;
     load_document(&path, &loader, &resolver)
+        .map_err(|diagnostic| eprintln!("{diagnostic}"))
+        .ok()?
 }
 
-/// Loads the mapfile at `path` through `loader` and prints every diagnostic; a loader that waits
-/// is reported as `port-waited`, since nothing here could wake it.
+/// Loads the mapfile at `path` through `loader` and prints the frontend's diagnostics; a loader
+/// that waits is the `port-waited` error, since nothing here could wake it.
 fn load_document(
     path: &ResourcePath,
     loader: &impl ResourceLoader,
     resolver: &impl ProjectionResolver,
-) -> Option<StyleDocument> {
+) -> Result<Option<StyleDocument>, Diagnostic> {
     let loaded = now(forager_mapfile::load(path, loader, Some(resolver)))?;
     for diagnostic in &loaded.diagnostics {
         eprintln!("{diagnostic}");
     }
-    loaded.document
+    Ok(loaded.document)
 }
 
 /// Runs the frontend or the engine in one poll (`forager_ports::poll_once`): the CLI's ports
 /// read local files and never wait. A future that waits is the `port-waited` error the browser
 /// bindings report, rather than a command that hangs.
-fn now<F: Future>(future: F) -> Option<F::Output> {
-    let output = forager_ports::poll_once(future);
-    if output.is_none() {
-        let message = "a port waited, which the CLI cannot";
-        eprintln!("{}", Diagnostic::error("port-waited", message, None));
-    }
-    output
+fn now<F: Future>(future: F) -> Result<F::Output, Diagnostic> {
+    forager_ports::poll_once(future).ok_or_else(|| {
+        Diagnostic::error("port-waited", "a port waited, which the CLI cannot", None)
+    })
 }
 
 /// Prints a mapfile's style document.
@@ -240,12 +239,13 @@ fn render(args: &RenderArgs) -> ExitCode {
             }
         }
     }
-    let Some(rendered) = now(forager_engine::render(
+    let rendered = match now(forager_engine::render(
         &document.map,
         &sources,
         AggRenderer::new(),
-    )) else {
-        return ExitCode::FAILURE;
+    )) {
+        Ok(rendered) => rendered,
+        Err(diagnostic) => return report(&diagnostic),
     };
     for diagnostic in &rendered.diagnostics {
         eprintln!("{diagnostic}");
@@ -333,7 +333,8 @@ mod tests {
     fn a_loader_that_waits_fails_the_load_instead_of_hanging() {
         let loader = WaitingLoader(Cell::new(false));
         let path = ResourcePath::new("m.map").unwrap();
-        assert!(load_document(&path, &loader, &EpsgTable::new()).is_none());
+        let error = load_document(&path, &loader, &EpsgTable::new()).unwrap_err();
+        assert_eq!(error.code, "port-waited");
         assert!(loader.0.get(), "the loader was polled");
     }
 }
