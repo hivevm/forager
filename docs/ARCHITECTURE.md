@@ -69,6 +69,9 @@ golden path and the test pattern an agent copies from are named here.
 - **`encode`** — PNG from and to an RGBA image ([ADR-0017](adr/0017-png-crate.md)).
 - **`adapter-geojson`** — a feature source over a GeoJSON document
   ([ADR-0016](adr/0016-geojson-crate.md)).
+- **`adapter-shapefile`** — a feature source over an ESRI shapefile, its `.shp`, `.shx`, and
+  `.dbf` loaded through the resource loader and read with the records MapServer reads, in memory
+  that follows the files' size ([ADR-0024](adr/0024-shapefile-reader.md)); no host binds it yet.
 - **`adapter-epsg`** — resolves `init=epsg:` projections for the frontend through the
   `ProjectionResolver` port: built in are only EPSG:4326, EPSG:3857, and the WGS84 UTM zones;
   every other code comes from a table the host supplies
