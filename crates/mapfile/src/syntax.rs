@@ -180,7 +180,8 @@ const SCHEMAS: &[(&str, &[&str], &[&str])] = &[
         &["LABEL"],
     ),
     ("SCALETOKEN", &["NAME"], &["VALUES"]),
-    ("SYMBOLSET", &[], &["SYMBOL"]),
+    // loadSymbolSet counts SYMBOLSET and END levels, so a set may nest in a set.
+    ("SYMBOLSET", &[], &["SYMBOL", "SYMBOLSET"]),
     ("SYMBOL",
         &[
             "ANCHORPOINT", "ANTIALIAS", "CHARACTER", "FILLED", "FONT", "IMAGE", "NAME",
@@ -208,7 +209,7 @@ fn schema(block: &str) -> Option<Schema> {
 /// Parses the tokens of a mapfile, its `INCLUDE`s already spliced in, into the `MAP` block, its
 /// diagnostics into `report` (Q-9).
 pub fn parse_into(tokens: &[Token], report: &mut Report) -> Option<Block> {
-    parse_root(tokens, "MAP", "map", "mapfile", report)
+    parse_root(tokens, "MAP", "map", "mapfile", false, report)
 }
 
 /// [`parse_into`] with a report of its own, for the parser's tests.
@@ -220,17 +221,27 @@ pub fn parse(tokens: &[Token]) -> (Option<Block>, Vec<Diagnostic>) {
 }
 
 /// Parses the tokens of a symbol file into its `SYMBOLSET` block, as MapServer's loadSymbolSet
-/// requires it to start.
+/// requires it to start. loadSymbolSet reads to the end of the file, so the sets that follow the
+/// first are read too, their statements appended to its.
 pub fn parse_symbol_set(tokens: &[Token], report: &mut Report) -> Option<Block> {
-    parse_root(tokens, "SYMBOLSET", "symbolset", "symbol file", report)
+    parse_root(
+        tokens,
+        "SYMBOLSET",
+        "symbolset",
+        "symbol file",
+        true,
+        report,
+    )
 }
 
-/// Parses `tokens` into the one block `root` that a file of the kind `file` starts with.
+/// Parses `tokens` into the one block `root` that a file of the kind `file` starts with, and,
+/// where `repeated`, the further `root` blocks that follow it, merged into it.
 fn parse_root(
     tokens: &[Token],
     root: &str,
     code: &str,
     file: &str,
+    repeated: bool,
     report: &mut Report,
 ) -> Option<Block> {
     let mut parser = Parser {
@@ -239,7 +250,7 @@ fn parse_root(
         diagnostics: report,
     };
     let expected = format!("expected-{code}");
-    let block = match tokens.first() {
+    let mut block = match tokens.first() {
         Some(first) if first.is_word(root) => {
             parser.pos = 1;
             parser.block(root.to_owned(), first.span.clone())
@@ -261,6 +272,17 @@ fn parse_root(
             None
         }
     };
+    while repeated
+        && let Some(first) = block.as_mut()
+        && let Some(next) = tokens.get(parser.pos).filter(|t| t.is_word(root))
+    {
+        parser.pos += 1;
+        let more = parser.block(root.to_owned(), next.span.clone());
+        match more {
+            Some(more) => first.nodes.extend(more.nodes),
+            None => block = None,
+        }
+    }
     if block.is_some()
         && let Some(rest) = tokens.get(parser.pos)
     {

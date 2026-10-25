@@ -21,6 +21,7 @@ use forager_style_ir::{
 
 use super::{Range, Translator};
 use crate::expression;
+use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
 
 impl Translator<'_> {
@@ -45,6 +46,19 @@ impl Translator<'_> {
         }
     }
 
+    /// The errors of a `TEXT` whose text is not kept, as a later `TEXT` replaces it.
+    pub(super) fn text_errors(&mut self, d: &Directive) {
+        let [token] = d.values.as_slice() else {
+            self.invalid(d, "one string or expression");
+            return;
+        };
+        if let Err(problem) = expression::text(token)
+            && problem.error
+        {
+            self.error(problem.code, &problem.message, &d.span);
+        }
+    }
+
     /// A `LABEL` as loadLabel reads it, its text falling back on `fallback`.
     pub(super) fn label(&mut self, block: &Block, fallback: Option<&Expr>) -> Label {
         let mut label = Label {
@@ -52,40 +66,20 @@ impl Translator<'_> {
             ..Label::default()
         };
         let mut text = None;
+        // PRIORITY's binding, which a later PRIORITY's expression hides but does not free.
+        let mut priority_binding = None;
         for node in &block.nodes {
             match node {
+                Node::Directive(d) if self.bound_property(d, &mut label, &mut priority_binding) => {
+                }
                 Node::Directive(d) => match d.keyword.as_str() {
                     "TEXT" => text = self.text(d),
-                    "FONT" => {
-                        label.font = self.bound_string(d);
-                        if let Some(Bound::Value(names)) = &label.font {
-                            self.check_fonts(names, &d.span);
-                        }
-                    }
-                    "SIZE" => label.size = self.label_size(d),
                     "MINSCALEDENOM" => label.min_scale_denom = self.scale_denom(d),
                     "MAXSCALEDENOM" => label.max_scale_denom = self.scale_denom(d),
                     "MINSIZE" => label.min_size = self.number(d, Range::above(0.0)).map(f64::trunc),
                     "MAXSIZE" => label.max_size = self.number(d, Range::above(0.0)).map(f64::trunc),
-                    "COLOR" => label.color = self.bound_color(d),
-                    "OUTLINECOLOR" => label.outline_color = self.bound_color(d),
                     "OUTLINEWIDTH" => {
                         label.outline_width = self.number(d, Range::above(0.0)).map(f64::trunc);
-                    }
-                    "SHADOWCOLOR" => label.shadow_color = self.bound_color(d),
-                    "SHADOWSIZE" => label.shadow_size = self.bound_pair(d, Range::any()),
-                    "POSITION" => label.position = self.position(d),
-                    "OFFSET" => label.offset = self.bound_pair(d, Range::any()),
-                    "ANGLE" => self.label_angle(d, &mut label),
-                    "ALIGN" => {
-                        label.align = self.bound_choice(
-                            d,
-                            &[
-                                ("LEFT", Align::Left),
-                                ("CENTER", Align::Center),
-                                ("RIGHT", Align::Right),
-                            ],
-                        );
                     }
                     "WRAP" => {
                         label.wrap = self
@@ -127,11 +121,11 @@ impl Translator<'_> {
                             ],
                         );
                     }
-                    "PRIORITY" => {
-                        label.priority = self.bound_number(d, Range::within(1.0, 10.0), true);
+                    // loadLabel reads and discards them, TYPE as one of its two keywords.
+                    "TYPE" => {
+                        self.choice(d, &[("TRUETYPE", ()), ("BITMAP", ())]);
                     }
-                    // loadLabel reads and discards them.
-                    "TYPE" | "ANTIALIAS" => {}
+                    "ANTIALIAS" => {}
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) if b.keyword == "STYLE" => {
@@ -147,6 +141,62 @@ impl Translator<'_> {
         }
         label.text = text.or_else(|| fallback.cloned());
         label
+    }
+
+    /// A property that may take a binding, `true` once `d` is one; `priority_binding` is the binding
+    /// [`Self::priority`] keeps.
+    fn bound_property(
+        &mut self,
+        d: &Directive,
+        label: &mut Label,
+        priority_binding: &mut Option<Bound<f64>>,
+    ) -> bool {
+        match d.keyword.as_str() {
+            "FONT" => {
+                let font = self.bound_string(d);
+                if let Some(Bound::Value(names)) = &font {
+                    self.check_fonts(names, &d.span);
+                }
+                label.font = kept_binding(label.font.take(), font);
+            }
+            "SIZE" => label.size = self.label_size(d),
+            "COLOR" => {
+                let color = self.bound_color(d);
+                label.color = kept_color_binding(label.color.take(), color);
+            }
+            "OUTLINECOLOR" => {
+                let color = self.bound_color(d);
+                label.outline_color = kept_color_binding(label.outline_color.take(), color);
+            }
+            "SHADOWCOLOR" => label.shadow_color = self.bound_color(d),
+            "SHADOWSIZE" => {
+                let size = self.integer_pair(d);
+                label.shadow_size = kept_bindings(label.shadow_size.take(), size);
+            }
+            "POSITION" => {
+                let position = self.position(d);
+                label.position = kept_binding(label.position.take(), position);
+            }
+            "OFFSET" => {
+                let offset = self.integer_pair(d);
+                label.offset = kept_bindings(label.offset.take(), offset);
+            }
+            "ANGLE" => self.label_angle(d, label),
+            "ALIGN" => {
+                let align = self.bound_choice(
+                    d,
+                    &[
+                        ("LEFT", Align::Left),
+                        ("CENTER", Align::Center),
+                        ("RIGHT", Align::Right),
+                    ],
+                );
+                label.align = kept_binding(label.align.take(), align);
+            }
+            "PRIORITY" => label.priority = self.priority(d, priority_binding),
+            _ => return false,
+        }
+        true
     }
 
     /// A label's `SIZE`: a number above 0, MapServer's bitmap sizes, an attribute, or an
@@ -183,7 +233,31 @@ impl Translator<'_> {
             label.angle_mode = Some(*mode);
             return;
         }
-        label.angle = self.bound_number(d, Range::within(-360.0, 360.0), false);
+        let angle = self.bound_number(d, Range::within(-360.0, 360.0), false);
+        label.angle = kept_binding(label.angle.take(), angle);
+    }
+
+    /// `PRIORITY`, kept to `binding`, the last binding it had: loadLabel frees only the
+    /// expression for a later `PRIORITY`, and bindLabel, src/maputil.c, evaluates an expression
+    /// after the binding. A number is cast to an integer, `(int)msyynumber`.
+    fn priority(&mut self, d: &Directive, binding: &mut Option<Bound<f64>>) -> Option<Bound<f64>> {
+        let priority = self
+            .bound_number(d, Range::within(1.0, 10.0), true)
+            .map(truncated);
+        if matches!(priority, Some(Bound::Binding { .. })) {
+            binding.clone_from(&priority);
+        }
+        match d.values.as_slice() {
+            [token] if matches!(token.kind, TokenKind::Expression(_)) => priority,
+            _ => kept_binding(binding.clone(), priority),
+        }
+    }
+
+    /// `OFFSET` or `SHADOWSIZE`: two numbers or attributes, a number cast to an integer,
+    /// `(int)msyynumber`, as loadLabel stores it.
+    fn integer_pair(&mut self, d: &Directive) -> Option<[Bound<f64>; 2]> {
+        self.bound_pair(d, Range::any())
+            .map(|pair| pair.map(truncated))
     }
 
     fn position(&mut self, d: &Directive) -> Option<Bound<Position>> {
@@ -203,6 +277,45 @@ impl Translator<'_> {
             ],
         )
     }
+}
+
+/// A number truncated toward zero, as C's cast to `int` stores it.
+fn truncated(bound: Bound<f64>) -> Bound<f64> {
+    match bound {
+        Bound::Value(n) => Bound::Value(n.trunc()),
+        bound => bound,
+    }
+}
+
+/// What a property holds after a later directive gives it `new`: loadLabel never frees a
+/// binding for a value, and bindLabel, src/maputil.c, draws the binding over the value.
+fn kept_binding<T>(earlier: Option<Bound<T>>, new: Option<Bound<T>>) -> Option<Bound<T>> {
+    match (earlier, new) {
+        (Some(binding @ Bound::Binding { .. }), Some(Bound::Value(_))) => Some(binding),
+        (_, new) => new,
+    }
+}
+
+/// [`kept_binding`] for a colour, whose binding loadColor also keeps over a later `-1 -1 -1`,
+/// no colour, which bindColorAttribute replaces with the bound one.
+fn kept_color_binding<T>(earlier: Option<Bound<T>>, new: Option<Bound<T>>) -> Option<Bound<T>> {
+    match (earlier, new) {
+        (Some(binding @ Bound::Binding { .. }), None | Some(Bound::Value(_))) => Some(binding),
+        (_, new) => new,
+    }
+}
+
+/// [`kept_binding`] for each of a pair's numbers.
+fn kept_bindings(
+    earlier: Option<[Bound<f64>; 2]>,
+    new: Option<[Bound<f64>; 2]>,
+) -> Option<[Bound<f64>; 2]> {
+    let [x, y] = new?;
+    let [earlier_x, earlier_y] = earlier.map_or([None, None], |[x, y]| [Some(x), Some(y)]);
+    Some([
+        kept_binding(earlier_x, Some(x))?,
+        kept_binding(earlier_y, Some(y))?,
+    ])
 }
 
 #[cfg(test)]
