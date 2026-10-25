@@ -8,16 +8,16 @@ feature source ([ADR-0024](../adr/0024-shapefile-reader.md)).
 `msSHPLayerOpen` joins them; an absolute `DATA`, a drive's included, ignores `SHAPEPATH`
 (`msBuildPath`). Where that shapefile does not open, MapServer tries `DATA` beside the mapfile,
 without `SHAPEPATH`; the frontend keeps one path and the adapter does not try the second, a
-departure no case of the suite meets. The frontend stores the joined path in the source's `data`, normalized
-and relative to the base context. A path that leaves the base context, by `..` or as an absolute
-path, is the warning `data-refused`, and the layer keeps no data, so the engine skips it (Q-8,
-G-8; `a_local_layers_data_lies_beneath_shapepath_in_the_base_context`,
+departure no case of the suite meets. The frontend stores the joined path in the source's `data`,
+normalized and relative to the base context. A path that leaves the base context, by `..` or as an
+absolute path, is the warning `data-refused`, and the layer keeps no data, so the engine skips it
+(Q-8, G-8; `a_local_layers_data_lies_beneath_shapepath_in_the_base_context`,
 `a_data_path_that_leaves_the_base_context_is_refused_and_the_layer_keeps_none`). The CLI binds a
-local layer to this adapter where the base context holds its `.shp` or `.SHP`,
-reading each file within the data-file limit of Q-9; a layer whose file is missing stays unbound,
-as the browser bindings leave it, and a `--source` for the layer wins
-(`crates/cli/tests/shapefile.rs`). A file the CLI may not read, missing or behind a link out of
-the base context, is one and the same error, so that the error tells nothing of the host.
+local layer to this adapter where the base context holds its `.shp` or `.SHP`, reading each file
+within the data-file limit of Q-9; a layer whose file is missing stays unbound, as the browser
+bindings leave it, and a `--source` for the layer wins (`crates/cli/tests/shapefile.rs`). A file the
+CLI may not read, missing or behind a link out of the base context, is one and the same error, so
+that the error tells nothing of the host.
 
 **Meaning.** The features of a shapefile are the records MapServer reads from its `.shp`, `.shx`,
 and `.dbf`, as `src/mapshape.c` and `src/mapxbase.c` read them. Each rule names the function it
