@@ -25,7 +25,9 @@ Draft for the maintainer, in `docs/SPECIFICATION.md`:
 
 Accepted ADRs whose basis it moves, for the maintainer to confirm: ADR-0024 (it is the reason for
 the first change and names the fuzzing as its follow-up); ADR-0016 (the GeoJSON adapter, now a
-named target). The proposed ADR-0025 rests on Q-3's second sentence, which the draft keeps.
+named target); ADR-0008 (its slow-sensor workflow runs Q-3's measure, the weekly fuzz run, whose
+list of targets the second change widens). The proposed ADR-0025 rests on Q-3's second
+sentence, which the draft keeps.
 
 ## Acceptance criteria
 

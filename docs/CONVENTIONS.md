@@ -30,9 +30,10 @@ skimmed. The design revision drops what prevented nothing
 - **A reader of untrusted bytes allocates nothing from a count or a size the bytes state before
   checking it against the bytes present** — a header's record count, a part count, a length
   field: each is compared with what the input holds, in checked arithmetic, before anything is
-  reserved for it, so that memory follows the input's size and Q-9's limit on it means something;
-  a third-party reader is held to the same before it is chosen, as the `shapefile` crate was not
-  ([ADR-0024](adr/0024-shapefile-reader.md)).
+  reserved for it, so that memory follows the input's size and Q-9's limit on it means something.
+  Its test states counts past the bytes present and bounds the peak allocation under a counting
+  allocator, as the shapefile adapter's tests do; the same test, run against a crate's reader,
+  shows whether that reader keeps to it ([ADR-0024](adr/0024-shapefile-reader.md)).
 - **A reader that skips what it cannot read fails closed** — a condition it cannot read becomes
   one that never matches, never one that is absent, and what it skips is still held to the limits
   of Q-9; a lenient path is a second way in, and what it leaves out must not widen what a map
@@ -41,4 +42,6 @@ skimmed. The design revision drops what prevented nothing
   test, a self-test, or a script under `scripts/` that drives git on a repository it names, a
   fixture or a checkout, removes what `git rev-parse --local-env-vars` names from git's
   environment, because a caller that set `GIT_DIR`, such as a hook in a linked worktree, otherwise
-  turns every such command on the real repository; `scripts/test-fixture-git-env.sh` checks it.
+  turns every such command on the real repository. `scripts/test-fixture-git-env.sh` checks the
+  scripts under `scripts/`; a Rust test that drives git, such as `git_in` of
+  `crates/style-ir/tests/schema.rs`, is held by this entry alone.

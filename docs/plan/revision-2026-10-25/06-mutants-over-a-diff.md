@@ -34,6 +34,12 @@ cargo-mutants' option for a diff (`--in-diff` in recent releases; verify it at t
 
 ## Mode
 
-unattended: one script and its self-test, isolated, one revert; the self-test and a run on a
-scratch branch decide it. Stop if the pinned cargo-mutants has no diff option: the version is a
-supply-chain change and goes to the human.
+unattended: the self-test under `scripts/` decides the argument handling and the run without a
+base, and a run on a scratch branch with a planted untested branch decides the first two
+criteria, its output put in the pull request. One script and its self-test, isolated, undone by
+one revert; it touches nothing ADR-0007 keeps with the maintainer, and leaves the weekly
+workflow and the pinned cargo-mutants as they are. It counts against the cap of three open agent
+branches of [ADR-0007](../../adr/0007-harness.md), and is dispatched only while that cap allows.
+A wrong outcome shows as the weekly run changing, which the self-test's no-base case catches, or
+as a scratch-branch run that lists no surviving mutant. Stop if the pinned cargo-mutants has no
+diff option: the version is a supply-chain change and goes to the human.

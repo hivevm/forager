@@ -19,7 +19,8 @@ whether to wait for it or to carry it here first.
 
 - [ ] Given a script with a comment line of 101 columns, when `scripts/check-shell.sh` runs, then
   it fails naming the file and line; `scripts/test-check-shell.sh` decides it with a fixture.
-- [ ] Given a comment line that holds only a URL past 100 columns, then it passes.
+- [ ] Given a comment line that holds only a URL past 100 columns, when
+  `scripts/check-shell.sh` runs, then it passes.
 - [ ] Given the repository, when the check lands, then every existing offender is rewrapped.
 
 ## Read first
