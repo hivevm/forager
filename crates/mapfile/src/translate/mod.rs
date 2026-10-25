@@ -286,7 +286,13 @@ impl Translator<'_> {
                 Node::Directive(d) if d.keyword == "EXPRESSION" => {
                     class.expression = self.expression(d, class_item);
                 }
-                Node::Directive(d) if d.keyword == "TEXT" => {}
+                // loadClass refuses each TEXT that is neither a string nor an expression, the
+                // ones a later TEXT replaces included.
+                Node::Directive(d) if d.keyword == "TEXT" => {
+                    if class_text.is_some_and(|last| !std::ptr::eq(last, d)) {
+                        self.text_errors(d);
+                    }
+                }
                 Node::Directive(d)
                     if matches!(d.keyword.as_str(), "MINSCALE" | "MINSCALEDENOM") =>
                 {
