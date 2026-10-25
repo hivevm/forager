@@ -17,7 +17,7 @@ use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::{Bound, LayerStatus, RenderMode, Rgba, Severity, Span};
 
 use super::{Loaded, load};
-use crate::test_support::{Files, block_on, codes, first_label, first_style, load_files};
+use crate::test_support::{Files, codes, first_label, first_style, load_files, ready};
 
 const WORLD: &str = r##"MAP
   NAME "world"
@@ -323,7 +323,7 @@ impl forager_ports::ProjectionResolver for OneProjection {
 
 fn load_with_resolver(text: &'static str) -> Loaded {
     let loader = Files([("m.map", text)].into_iter().collect());
-    block_on(load(
+    ready(load(
         &ResourcePath::new("m.map").unwrap(),
         &loader,
         Some(&OneProjection),
@@ -1214,7 +1214,7 @@ fn an_init_file_is_read_once_and_counts_toward_the_size_limit() {
             .into_iter()
             .collect(),
     );
-    let loaded = block_on(load(
+    let loaded = ready(load(
         &ResourcePath::new("m.map").unwrap(),
         &Counting(files, &reads),
         None,
@@ -1368,7 +1368,7 @@ fn an_auto_projection_names_no_init_file() {
             .into_iter()
             .collect(),
     );
-    block_on(load(
+    ready(load(
         &ResourcePath::new("m.map").unwrap(),
         &Counting(files, &reads),
         None,

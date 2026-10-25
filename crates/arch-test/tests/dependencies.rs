@@ -318,22 +318,30 @@ fn no_core_crate_lifts_the_ban_on_hash_maps_clocks_and_randomness() {
 #[test]
 fn only_poll_once_polls_with_a_no_op_waker() {
     // A future polled with a waker that wakes nothing is run in one place, `poll_once` of the
-    // ports, so that every host and test treats a port that waits alike.
+    // ports, so that every host and test treats a port that waits alike. The needle is built so
+    // that this file holds none, and the ports hold exactly the one in `poll_once`.
+    let needle = concat!("Waker", "::noop");
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let mut offenders = Vec::new();
-    let mut stack = vec![root.join("crates"), root.join("fuzz/fuzz_targets")];
+    let mut found = Vec::new();
+    let mut stack = vec![root.join("crates"), root.join("fuzz")];
     while let Some(path) = stack.pop() {
         if path.is_dir() {
-            stack.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
-        } else if path.extension().is_some_and(|e| e == "rs")
-            && !path.ends_with("crates/ports/src/lib.rs")
-            && !path.ends_with("crates/arch-test/tests/dependencies.rs")
-            && std::fs::read_to_string(&path)
+            if !path.ends_with("target") {
+                stack.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
+            }
+        } else if path.extension().is_some_and(|e| e == "rs") {
+            let count = std::fs::read_to_string(&path)
                 .unwrap_or_default()
-                .contains("Waker::noop")
-        {
-            offenders.push(path.strip_prefix(&root).unwrap().display().to_string());
+                .matches(needle)
+                .count();
+            for _ in 0..count {
+                found.push(path.strip_prefix(&root).unwrap().display().to_string());
+            }
         }
     }
-    assert!(offenders.is_empty(), "{offenders:?}");
+    assert_eq!(
+        found,
+        ["crates/ports/src/lib.rs"],
+        "{needle} outside poll_once"
+    );
 }
