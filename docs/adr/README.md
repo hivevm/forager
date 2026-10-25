@@ -99,7 +99,7 @@ is the table a session reads.
 | [0021](0021-vendored-leaflet.md) | The browser example loads third-party JavaScript only from copies vendored in the tree and checked by checksum | `examples/web/`, its `vendor/` directory, and every JavaScript library the example loads | 🟢 accepted |
 | [0022](0022-lenient-reader-path-to-error.md) | A newer minor's document that does not read is located with `serde_path_to_error` and read again with the failed value dropped, at most a hundred times | `crates/style-ir` (the lenient reader of the style document in `document.rs`), the `serde_path_to_error` entry of `Cargo.toml`, and every read error of the style document that names a path | 🟢 accepted |
 | [0023](0023-projection-resolver-and-init-files.md) | `init=` projections are resolved through a resolver port the host passes in, and from an init file the mapfile names by a path inside the base context | `crates/ports`, `crates/mapfile`, `crates/adapter-epsg`, and the hosts `crates/cli` and `crates/bindings-wasm` | 🟢 accepted |
-| [0024](0024-shapefile-reader.md) | The shapefile adapter reads shapefiles with a reader derived from MapServer's | `crates/adapter-shapefile` | 🟡 proposed |
+| [0024](0024-shapefile-reader.md) | The shapefile adapter reads shapefiles with a reader derived from MapServer's | `crates/adapter-shapefile`, `docs/semantics/shapefile.md` | 🟡 proposed |
 
 ### Superseded and rejected
 

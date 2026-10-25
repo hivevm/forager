@@ -119,9 +119,10 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 - The metric is tested on small synthetic buffers: equal, one channel over the threshold, a
   share at and above the tolerance, a different size, a palette image.
 - The shapefile adapter is tested at the port with small fixture files: points, lines, polygons
-  with holes, multipart shapes, null shapes, attributes of each `.dbf` type, and truncated or
-  inconsistent files, which become errors of the source (Q-3). The CLI tests copy the GeoJSON
-  ones.
+  with holes, multipart shapes, null shapes, and truncated or inconsistent files: a broken record
+  reads as no shape, a broken header is an error of the source, and nothing panics (Q-3). The
+  memory rules run in a test binary of their own with a counting allocator. The CLI tests copy the
+  GeoJSON ones.
 - The fidelity check has a self-test, as every check under `scripts/` does.
 
 ## Out of scope
