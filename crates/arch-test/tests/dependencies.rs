@@ -314,3 +314,26 @@ fn no_core_crate_lifts_the_ban_on_hash_maps_clocks_and_randomness() {
     }
     assert!(offenders.is_empty(), "{offenders:?}");
 }
+
+#[test]
+fn only_poll_once_polls_with_a_no_op_waker() {
+    // A future polled with a waker that wakes nothing is run in one place, `poll_once` of the
+    // ports, so that every host and test treats a port that waits alike.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut offenders = Vec::new();
+    let mut stack = vec![root.join("crates"), root.join("fuzz/fuzz_targets")];
+    while let Some(path) = stack.pop() {
+        if path.is_dir() {
+            stack.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
+        } else if path.extension().is_some_and(|e| e == "rs")
+            && !path.ends_with("crates/ports/src/lib.rs")
+            && !path.ends_with("crates/arch-test/tests/dependencies.rs")
+            && std::fs::read_to_string(&path)
+                .unwrap_or_default()
+                .contains("Waker::noop")
+        {
+            offenders.push(path.strip_prefix(&root).unwrap().display().to_string());
+        }
+    }
+    assert!(offenders.is_empty(), "{offenders:?}");
+}

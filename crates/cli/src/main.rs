@@ -9,11 +9,11 @@ use std::process::ExitCode;
 
 use forager_adapter_epsg::EpsgTable;
 use forager_adapter_geojson::GeoJsonSource;
-use forager_ports::ResourcePath;
+use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{Diagnostic, StyleDocument};
 
-use crate::files::{FileLoader, block_on};
+use crate::files::FileLoader;
 
 const USAGE: &str =
     "usage: forager read <mapfile> [--format yaml|json] [--epsg <file>] [--base <dir>]
@@ -159,11 +159,33 @@ fn load(mapfile: &Path, epsg: Option<&Path>, base: Option<&Path>) -> Option<Styl
     let path = ResourcePath::new(&name)
         .map_err(|e| eprintln!("forager: {}: {e}", mapfile.display()))
         .ok()?;
-    let loaded = block_on(forager_mapfile::load(&path, &loader, Some(&resolver)));
+    load_document(&path, &loader, &resolver)
+}
+
+/// Loads the mapfile at `path` through `loader` and prints every diagnostic; a loader that waits
+/// is reported as `port-waited`, since nothing here could wake it.
+fn load_document(
+    path: &ResourcePath,
+    loader: &impl ResourceLoader,
+    resolver: &impl ProjectionResolver,
+) -> Option<StyleDocument> {
+    let loaded = now(forager_mapfile::load(path, loader, Some(resolver)))?;
     for diagnostic in &loaded.diagnostics {
         eprintln!("{diagnostic}");
     }
     loaded.document
+}
+
+/// Runs the frontend or the engine in one poll (`forager_ports::poll_once`): the CLI's ports
+/// read local files and never wait. A future that waits is the `port-waited` error the browser
+/// bindings report, rather than a command that hangs.
+fn now<F: Future>(future: F) -> Option<F::Output> {
+    let output = forager_ports::poll_once(future);
+    if output.is_none() {
+        let message = "a port waited, which the CLI cannot";
+        eprintln!("{}", Diagnostic::error("port-waited", message, None));
+    }
+    output
 }
 
 /// Prints a mapfile's style document.
@@ -218,11 +240,13 @@ fn render(args: &RenderArgs) -> ExitCode {
             }
         }
     }
-    let rendered = block_on(forager_engine::render(
+    let Some(rendered) = now(forager_engine::render(
         &document.map,
         &sources,
         AggRenderer::new(),
-    ));
+    )) else {
+        return ExitCode::FAILURE;
+    };
     for diagnostic in &rendered.diagnostics {
         eprintln!("{diagnostic}");
     }
@@ -278,4 +302,38 @@ fn read_bounded(file: &Path) -> Result<String, String> {
         ));
     }
     String::from_utf8(bytes).map_err(|_| "the file is not UTF-8 text".to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use forager_ports::SourceError;
+
+    use super::*;
+
+    /// A loader that waits once on its first load, as one that fetches over a network would.
+    struct WaitingLoader(Cell<bool>);
+
+    impl ResourceLoader for WaitingLoader {
+        async fn load(&self, _: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+            std::future::poll_fn(|_| {
+                if self.0.replace(true) {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            })
+            .await;
+            Ok(b"MAP END".to_vec())
+        }
+    }
+
+    #[test]
+    fn a_loader_that_waits_fails_the_load_instead_of_hanging() {
+        let loader = WaitingLoader(Cell::new(false));
+        let path = ResourcePath::new("m.map").unwrap();
+        assert!(load_document(&path, &loader, &EpsgTable::new()).is_none());
+        assert!(loader.0.get(), "the loader was polled");
+    }
 }
