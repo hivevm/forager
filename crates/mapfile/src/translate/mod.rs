@@ -96,8 +96,19 @@ pub fn translate(
 ) -> Map {
     let main = files.main;
     let symbol_set = files.symbol_set;
+    // MapServer joins SHAPEPATH when it opens a layer's data, so the map's last one holds
+    // wherever it stands (msBuildPath3 in msShapefileOpen).
+    let shape_path = map.nodes.iter().rev().find_map(|node| match node {
+        Node::Directive(d) if d.keyword == "SHAPEPATH" => match d.values.as_slice() {
+            [token] => token.string().map(ToOwned::to_owned),
+            _ => None,
+        },
+        _ => None,
+    });
     let mut t = Translator {
         resolver,
+        main,
+        shape_path,
         init_files: files.init_files,
         diagnostics,
         symbols: Vec::new(),
@@ -128,6 +139,10 @@ pub fn translate(
 
 struct Translator<'a> {
     resolver: Option<&'a dyn ProjectionResolver>,
+    /// The main mapfile, against whose directory a layer's data resolves.
+    main: &'a ResourcePath,
+    /// The map's `SHAPEPATH`, which a local layer's `DATA` is read beneath.
+    shape_path: Option<String>,
     init_files: &'a BTreeMap<String, Result<InitFile, String>>,
     diagnostics: &'a mut Report,
     /// The map's symbols, read before its layers so that a style's reference resolves.
@@ -161,6 +176,10 @@ impl Translator<'_> {
                     "UNITS" => map.units = self.choice(d, &UNITS[1..]),
                     // Read with the map, before translation.
                     "SYMBOLSET" | "FONTSET" => {}
+                    // Read before the layers, whose data it places.
+                    "SHAPEPATH" => {
+                        self.string(d);
+                    }
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) => match b.keyword.as_str() {
@@ -196,6 +215,7 @@ impl Translator<'_> {
         let mut connection_type = None;
         let mut props = BTreeMap::new();
         let mut source_span = None;
+        let mut data_span = None;
         // MapServer reads the items when it evaluates, so they hold wherever they stand.
         let class_item = item(block, "CLASSITEM");
         let label_item = item(block, "LABELITEM");
@@ -248,6 +268,9 @@ impl Translator<'_> {
                         if let Some(value) = self.string(d) {
                             props.insert(d.keyword.to_ascii_lowercase(), value);
                             source_span.get_or_insert_with(|| d.span.clone());
+                            if d.keyword == "DATA" {
+                                data_span = Some(d.span.clone());
+                            }
                         }
                     }
                     _ => self.unhandled_directive(d),
@@ -263,14 +286,47 @@ impl Translator<'_> {
             }
         }
         if let Some(span) = source_span {
+            // Without CONNECTIONTYPE, MapServer reads DATA as a local shapefile.
+            let kind = connection_type.unwrap_or_else(|| "local".to_owned());
+            if kind == "local"
+                && let (Some(data), Some(at)) = (props.remove("data"), data_span)
+            {
+                match self.data_path(&data) {
+                    Ok(path) => {
+                        props.insert("data".to_owned(), path.as_str().to_owned());
+                    }
+                    // The layer keeps no data, so the engine skips it (G-8) and the map renders.
+                    Err(e) => {
+                        let message = format!("DATA `{data}` is refused: {e}");
+                        self.warn("data-refused", &message, &at);
+                    }
+                }
+            }
             layer.source = Some(SourceRef {
-                // Without CONNECTIONTYPE, MapServer reads DATA as a local shapefile.
-                kind: connection_type.unwrap_or_else(|| "local".to_owned()),
+                kind,
                 props,
                 span: Some(span),
             });
         }
         Some(layer)
+    }
+
+    /// A local layer's `DATA` beneath the map's `SHAPEPATH`, against the main mapfile's directory,
+    /// as `msBuildPath3` joins them, and inside the base context (Q-8).
+    fn data_path(&self, data: &str) -> Result<ResourcePath, forager_ports::PathError> {
+        match self.shape_path.as_deref() {
+            Some(shape_path) if !shape_path.is_empty() => {
+                if data.starts_with(['/', '\\']) {
+                    // An absolute DATA ignores SHAPEPATH; the base context refuses it.
+                    return self.main.resolve(data);
+                }
+                self.main.resolve(&format!(
+                    "{}/{data}",
+                    shape_path.trim_end_matches(['/', '\\'])
+                ))
+            }
+            _ => self.main.resolve(data),
+        }
     }
 
     fn class(

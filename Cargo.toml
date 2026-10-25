@@ -20,6 +20,7 @@ forager-encode = { path = "crates/encode" }
 forager-engine = { path = "crates/engine" }
 forager-adapter-geojson = { path = "crates/adapter-geojson" }
 forager-adapter-epsg = { path = "crates/adapter-epsg" }
+forager-adapter-shapefile = { path = "crates/adapter-shapefile" }
 serde = { version = "1", features = ["derive"] }
 # float_roundtrip: every number of a style document reads back bit for bit (G-3).
 serde_json = { version = "1", features = ["float_roundtrip"] }

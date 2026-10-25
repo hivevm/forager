@@ -1305,7 +1305,7 @@ fn an_init_file_tag_that_is_no_code_is_skipped_as_proj_skips_it() {
 #[test]
 fn the_translations_warnings_past_the_limit_are_counted() {
     // Verifies: Q-9
-    let lines = "  SHAPEPATH \"x\"\n".repeat(super::MAX_DIAGNOSTICS + 500);
+    let lines = "  ANGLE 0\n".repeat(super::MAX_DIAGNOSTICS + 500);
     let text: &'static str = Box::leak(format!("MAP\n{lines}END\n").into_boxed_str());
     let loaded = load_files(&[("m.map", text)]);
     assert_eq!(loaded.diagnostics.len(), super::MAX_DIAGNOSTICS + 1);
@@ -1317,7 +1317,7 @@ fn the_translations_warnings_past_the_limit_are_counted() {
 #[test]
 fn an_error_past_the_limit_still_fails_the_load() {
     // Verifies: Q-9
-    let lines = "  SHAPEPATH \"x\"\n".repeat(super::MAX_DIAGNOSTICS + 500);
+    let lines = "  ANGLE 0\n".repeat(super::MAX_DIAGNOSTICS + 500);
     let text = format!("MAP\n{lines}  PROJECTION 'init=epsg:4326' END\nEND\n");
     let text: &'static str = Box::leak(text.into_boxed_str());
     let loaded = load_files(&[("m.map", text)]);
@@ -1404,4 +1404,59 @@ fn every_named_file_past_the_size_limit_is_refused_at_what_names_it() {
         ("s.sym", big),
     ]);
     assert_eq!(codes(&loaded), ["mapfile-too-large"]);
+}
+
+/// The `data` of the map's first layer, as the frontend resolves it.
+fn first_data(loaded: &Loaded) -> Option<String> {
+    let layer = &loaded.document.as_ref().unwrap().map.layers[0];
+    layer.source.as_ref().unwrap().props.get("data").cloned()
+}
+
+#[test]
+fn a_local_layers_data_lies_beneath_shapepath_in_the_base_context() {
+    // msBuildPath3: the main mapfile's directory, then SHAPEPATH, then DATA. The map's last
+    // SHAPEPATH holds, wherever it stands.
+    let text = "MAP SHAPEPATH 'x' LAYER NAME 'l' DATA 'poly' END SHAPEPATH 'data/' END";
+    let loaded = load_files(&[("maps/m.map", text)]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(first_data(&loaded).as_deref(), Some("maps/data/poly"));
+    // Without SHAPEPATH, beside the mapfile; a `..` that stays inside the base context is kept.
+    let loaded = load_files(&[(
+        "renderers/m.map",
+        "MAP SHAPEPATH '../misc/data' LAYER NAME 'l' DATA 'poly.shp' END END",
+    )]);
+    assert_eq!(first_data(&loaded).as_deref(), Some("misc/data/poly.shp"));
+    let loaded = load_files(&[("m.map", "MAP LAYER NAME 'l' DATA 'poly' END END")]);
+    assert_eq!(first_data(&loaded).as_deref(), Some("poly"));
+}
+
+#[test]
+fn a_data_path_that_leaves_the_base_context_is_refused_and_the_layer_keeps_none() {
+    // Verifies: Q-8
+    for text in [
+        "MAP LAYER NAME 'l' DATA '../poly' END END",
+        "MAP SHAPEPATH '..' LAYER NAME 'l' DATA 'poly' END END",
+        "MAP LAYER NAME 'l' DATA '/etc/poly' END END",
+        "MAP SHAPEPATH '/data' LAYER NAME 'l' DATA 'poly' END END",
+        "MAP SHAPEPATH 'x' LAYER NAME 'l' DATA '/etc/poly' END END",
+    ] {
+        let leaked: &'static str = text;
+        let loaded = load_files(&[("m.map", leaked)]);
+        assert_eq!(codes(&loaded), ["data-refused"], "{text}");
+        let refusal = &loaded.diagnostics[0];
+        assert!(
+            refusal.message.contains("is refused"),
+            "{}",
+            refusal.message
+        );
+        assert_eq!(first_data(&loaded), None, "{text}");
+    }
+}
+
+#[test]
+fn the_data_of_a_connection_is_not_a_path() {
+    let text =
+        "MAP SHAPEPATH 'x' LAYER NAME 'l' CONNECTIONTYPE POSTGIS DATA 'the_geom from t' END END";
+    let loaded = load_files(&[("m.map", text)]);
+    assert_eq!(first_data(&loaded).as_deref(), Some("the_geom from t"));
 }

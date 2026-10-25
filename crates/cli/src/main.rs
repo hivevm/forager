@@ -2,13 +2,17 @@
 
 mod files;
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use forager_adapter_epsg::EpsgTable;
 use forager_adapter_geojson::GeoJsonSource;
-use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath};
+use forager_adapter_shapefile::ShapefileSource;
+use forager_ports::{
+    FeatureQuery, FeatureSource, ProjectionResolver, ResourceLoader, ResourcePath, SourceError,
+};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{Diagnostic, StyleDocument};
 
@@ -209,11 +213,25 @@ fn render(args: &RenderArgs) -> ExitCode {
     let Some(document) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref()) else {
         return ExitCode::FAILURE;
     };
+    let data = match FileLoader::for_mapfile(&args.mapfile, args.base.as_deref()) {
+        Ok((loader, _)) => loader.for_data(MAX_SOURCE_BYTES),
+        Err(message) => {
+            eprintln!("forager: {}: {message}", args.mapfile.display());
+            return ExitCode::FAILURE;
+        }
+    };
     let mut diagnostics = Vec::new();
     let sources = forager_engine::bind_sources(
         &document.map,
-        args.sources.iter().cloned(),
-        |file| read_source(&file).map_err(|message| format!("{}: {message}", file.display())),
+        held_sources(&document, &args.sources, &data),
+        |held| match held {
+            Held::GeoJson(file) => read_source(&file)
+                .map(Source::GeoJson)
+                .map_err(|message| format!("{}: {message}", file.display())),
+            Held::Shapefile(path) => open_shapefile(&data, &path)
+                .map(Source::Shapefile)
+                .map_err(|message| format!("{path}: {message}")),
+        },
         &mut diagnostics,
     );
     for diagnostic in &diagnostics {
@@ -249,8 +267,83 @@ fn report(diagnostic: &Diagnostic) -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// The largest GeoJSON file the CLI reads (Q-9).
+/// The largest data file the CLI reads, a GeoJSON file or one of a shapefile's files (Q-9).
 const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// What the CLI holds for a layer before it reads it.
+enum Held {
+    /// A GeoJSON file `--source` names.
+    GeoJson(PathBuf),
+    /// A shapefile a local layer's `DATA` names, inside the base context.
+    Shapefile(String),
+}
+
+/// Each local layer's shapefile, by its `DATA`, and the GeoJSON files `--source` names, which win
+/// for their layer. A raster layer's `DATA` is no shapefile, and a layer whose `.shp` the base
+/// context does not hold is left unbound, so the engine skips it as any layer without a source,
+/// and the CLI reports what the browser bindings report.
+fn held_sources(
+    document: &StyleDocument,
+    named: &[(String, PathBuf)],
+    data: &FileLoader,
+) -> Vec<(String, Held)> {
+    let mut held: BTreeMap<String, Held> = BTreeMap::new();
+    for layer in &document.map.layers {
+        let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
+            continue;
+        };
+        if source.kind == "local"
+            && layer.render_mode != Some(forager_style_ir::RenderMode::Raster)
+            && let Some(path) = source.props.get("data")
+            && shapefile_exists(data, path)
+        {
+            held.insert(name.clone(), Held::Shapefile(path.clone()));
+        }
+    }
+    for (layer, file) in named {
+        held.insert(layer.clone(), Held::GeoJson(file.clone()));
+    }
+    held.into_iter().collect()
+}
+
+/// Whether the base context holds the `.shp` or `.SHP` of `data`, whose extension, if any, the
+/// shapefile adapter replaces as `msShapefileOpen` does.
+fn shapefile_exists(loader: &FileLoader, data: &str) -> bool {
+    let base = match data.rsplit_once('.') {
+        Some((base, extension)) if !extension.contains(['/', '\\']) => base,
+        _ => data,
+    };
+    ["shp", "SHP"].iter().any(|extension| {
+        ResourcePath::new(&format!("{base}.{extension}")).is_ok_and(|path| loader.holds(&path))
+    })
+}
+
+/// The shapefile at `data`, a path the frontend resolved inside the base context.
+fn open_shapefile(loader: &FileLoader, data: &str) -> Result<ShapefileSource, String> {
+    let path = ResourcePath::new(data).map_err(|e| e.to_string())?;
+    match forager_ports::poll_once(ShapefileSource::open(loader, &path)) {
+        Some(opened) => opened.map_err(|e| e.message),
+        None => Err("its loader waited".to_owned()),
+    }
+}
+
+/// A layer's feature source, of whichever adapter the CLI bound to it.
+enum Source {
+    GeoJson(GeoJsonSource),
+    Shapefile(ShapefileSource),
+}
+
+impl FeatureSource for Source {
+    async fn features(
+        &self,
+        query: &FeatureQuery,
+    ) -> Result<Vec<forager_ports::Feature>, SourceError> {
+        match self {
+            Self::GeoJson(source) => source.features(query).await,
+            Self::Shapefile(source) => source.features(query).await,
+        }
+    }
+}
 
 fn read_source(file: &Path) -> Result<GeoJsonSource, String> {
     GeoJsonSource::parse(&read_bounded(file)?).map_err(|e| e.message)

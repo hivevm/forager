@@ -21,6 +21,7 @@ forager-render-agg.workspace = true
 forager-encode.workspace = true
 forager-adapter-geojson.workspace = true
 forager-adapter-epsg.workspace = true
+forager-adapter-shapefile.workspace = true
 
 [dev-dependencies]
 forager-render.workspace = true
