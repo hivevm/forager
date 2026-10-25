@@ -229,3 +229,52 @@ fn a_geojson_source_wins_over_the_layers_shapefile() {
     assert_eq!(image.pixel(75, 25), Some(GREEN));
     assert_eq!(image.pixel(25, 75), Some(WHITE));
 }
+
+/// Standard error with the scratch directory's name taken out, to compare two runs.
+#[cfg(unix)]
+fn quiet(stderr: &str, dir: &Path) -> String {
+    stderr.replace(&dir.display().to_string(), "<dir>")
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_out_of_the_base_context_tells_nothing_of_what_it_points_at() {
+    // Verifies: Q-8
+    // A link to a file outside that exists and one to a file outside that does not report alike,
+    // for the .shp, which is then not bound, and for a sibling the adapter loads.
+    let dir = scratch("links");
+    write_square(&dir, "outside/poly", ["shp", "shx", "dbf"]);
+    let base = dir.join("base");
+    let mut runs = Vec::new();
+    for target in ["poly", "missing"] {
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("m.map"), mapfile("", "a")).unwrap();
+        std::os::unix::fs::symlink(
+            dir.join(format!("outside/{target}.shp")),
+            base.join("a.shp"),
+        )
+        .unwrap();
+        write_square(&base, "b", ["shp", "shx", "dbf"]);
+        std::fs::remove_file(base.join("b.shx")).unwrap();
+        std::os::unix::fs::symlink(
+            dir.join(format!("outside/{target}.shx")),
+            base.join("b.shx"),
+        )
+        .unwrap();
+        let (_, linked_shp, _) = render(&base.join("m.map"), &[]);
+        std::fs::write(base.join("m.map"), mapfile("", "b")).unwrap();
+        let (_, linked_shx, _) = render(&base.join("m.map"), &[]);
+        runs.push((quiet(&linked_shp, &dir), quiet(&linked_shx, &dir)));
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(!runs[0].0.contains("source-unreadable"), "{}", runs[0].0);
+    assert!(
+        runs[0]
+            .1
+            .contains("no such file, or the path leaves the base context"),
+        "{}",
+        runs[0].1
+    );
+    assert_eq!(runs[0], runs[1]);
+}

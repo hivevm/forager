@@ -16,7 +16,7 @@ use forager_ports::{
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{Diagnostic, StyleDocument};
 
-use crate::files::FileLoader;
+use crate::files::{DataLoader, FileLoader};
 
 const USAGE: &str =
     "usage: forager read <mapfile> [--format yaml|json] [--epsg <file>] [--base <dir>]
@@ -279,13 +279,13 @@ enum Held {
 }
 
 /// Each local layer's shapefile, by its `DATA`, and the GeoJSON files `--source` names, which win
-/// for their layer. A raster layer's `DATA` is no shapefile, and a layer whose `.shp` the base
-/// context does not hold is left unbound, so the engine skips it as any layer without a source,
-/// and the CLI reports what the browser bindings report.
+/// for their layer. A layer whose `.shp` the base context does not hold, a raster's among them, is
+/// left unbound, so the engine skips it as any layer without a source, and the CLI reports what
+/// the browser bindings report.
 fn held_sources(
     document: &StyleDocument,
     named: &[(String, PathBuf)],
-    data: &FileLoader,
+    data: &DataLoader,
 ) -> Vec<(String, Held)> {
     let mut held: BTreeMap<String, Held> = BTreeMap::new();
     for layer in &document.map.layers {
@@ -293,7 +293,6 @@ fn held_sources(
             continue;
         };
         if source.kind == "local"
-            && layer.render_mode != Some(forager_style_ir::RenderMode::Raster)
             && let Some(path) = source.props.get("data")
             && shapefile_exists(data, path)
         {
@@ -308,7 +307,7 @@ fn held_sources(
 
 /// Whether the base context holds the `.shp` or `.SHP` of `data`, whose extension, if any, the
 /// shapefile adapter replaces as `msShapefileOpen` does.
-fn shapefile_exists(loader: &FileLoader, data: &str) -> bool {
+fn shapefile_exists(loader: &DataLoader, data: &str) -> bool {
     let base = match data.rsplit_once('.') {
         Some((base, extension)) if !extension.contains(['/', '\\']) => base,
         _ => data,
@@ -319,7 +318,7 @@ fn shapefile_exists(loader: &FileLoader, data: &str) -> bool {
 }
 
 /// The shapefile at `data`, a path the frontend resolved inside the base context.
-fn open_shapefile(loader: &FileLoader, data: &str) -> Result<ShapefileSource, String> {
+fn open_shapefile(loader: &DataLoader, data: &str) -> Result<ShapefileSource, String> {
     let path = ResourcePath::new(data).map_err(|e| e.to_string())?;
     match forager_ports::poll_once(ShapefileSource::open(loader, &path)) {
         Some(opened) => opened.map_err(|e| e.message),

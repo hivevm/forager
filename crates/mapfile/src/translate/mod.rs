@@ -97,7 +97,7 @@ pub fn translate(
     let main = files.main;
     let symbol_set = files.symbol_set;
     // MapServer joins SHAPEPATH when it opens a layer's data, so the map's last one holds
-    // wherever it stands (msBuildPath3 in msShapefileOpen).
+    // wherever it stands (msBuildPath3 in msSHPLayerOpen).
     let shape_path = map.nodes.iter().rev().find_map(|node| match node {
         Node::Directive(d) if d.keyword == "SHAPEPATH" => match d.values.as_slice() {
             [token] => token.string().map(ToOwned::to_owned),
@@ -316,8 +316,12 @@ impl Translator<'_> {
     fn data_path(&self, data: &str) -> Result<ResourcePath, forager_ports::PathError> {
         match self.shape_path.as_deref() {
             Some(shape_path) if !shape_path.is_empty() => {
-                if data.starts_with(['/', '\\']) {
-                    // An absolute DATA ignores SHAPEPATH; the base context refuses it.
+                // An absolute DATA, a drive's included, ignores SHAPEPATH, as `msBuildPath` reads
+                // it; the base context refuses it.
+                let bytes = data.as_bytes();
+                if data.starts_with(['/', '\\'])
+                    || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+                {
                     return self.main.resolve(data);
                 }
                 self.main.resolve(&format!(

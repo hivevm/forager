@@ -1439,6 +1439,7 @@ fn a_data_path_that_leaves_the_base_context_is_refused_and_the_layer_keeps_none(
         "MAP LAYER NAME 'l' DATA '/etc/poly' END END",
         "MAP SHAPEPATH '/data' LAYER NAME 'l' DATA 'poly' END END",
         "MAP SHAPEPATH 'x' LAYER NAME 'l' DATA '/etc/poly' END END",
+        "MAP SHAPEPATH 'x' LAYER NAME 'l' DATA 'C:/etc/poly' END END",
     ] {
         let leaked: &'static str = text;
         let loaded = load_files(&[("m.map", leaked)]);
