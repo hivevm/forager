@@ -20,12 +20,17 @@ CARGO_FUZZ_VERSION="0.13.2"
 SECONDS_PER_TARGET="${1:-300}"
 
 cd "$ROOT"
-# The name of every [[bin]] entry of the fuzz manifest, in order.
-mapfile -t targets < <(awk '
-  /^\[\[bin\]\]/ { bin = 1; next }
-  /^\[/ { bin = 0 }
-  bin && /^name *=/ { gsub(/^name *= *"|" *$/, ""); print }
-' fuzz/Cargo.toml)
+# The name of every binary target of the fuzz manifest, as cargo reads it, so that no way of
+# writing a [[bin]] entry hides a target. The names are read into a variable first, so that a
+# failing cargo or jq stops the run with its own message.
+names="$(
+  cargo metadata --manifest-path fuzz/Cargo.toml --no-deps --format-version 1 --offline |
+    jq -r '.packages[].targets[] | select(.kind | index("bin")) | .name'
+)"
+targets=()
+if [ -n "$names" ]; then
+  mapfile -t targets <<< "$names"
+fi
 if [ "${#targets[@]}" -eq 0 ]; then
   echo "fuzz/Cargo.toml names no [[bin]] target" >&2
   exit 1
