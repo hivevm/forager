@@ -22,7 +22,11 @@ passed=0
 
 NOTICE='// Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-// associated documentation files (the "Software"), to deal in the Software without restriction.'
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.'
+TRUNCATED='// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.'
 
 # repo <name> <text> — a fixture whose one file crates/x/src/lib.rs holds the text, printed as its
 # path.
@@ -55,6 +59,9 @@ expect "a file that cites src/maplexer.l without the notice fails" \
 expect "a file that cites MapServer's source with the notice passes" \
   "$(repo noticed "$NOTICE
 // As loadStyle in src/mapfile.c reads it.")" 0 "Notice check passed (1 files"
+expect "a notice whose disclaimer stops short fails" \
+  "$(repo truncated "$TRUNCATED
+// As loadStyle in src/mapfile.c reads it.")" 1 "does not hold its notice"
 expect "a file that names only a MapServer function is beyond the check's reach" \
   "$(repo function '// As bindLabel reads it.')" 0 "Notice check passed (0 files"
 expect "a file that cites PROJ's source is not MapServer's" \
