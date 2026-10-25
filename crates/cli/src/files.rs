@@ -50,8 +50,27 @@ impl ResourceLoader for FileLoader {
         if !full.starts_with(&self.root) {
             return Err(SourceError::new("the path leaves the base context"));
         }
-        std::fs::read(&full).map_err(|e| SourceError::new(e.to_string()))
+        read_bounded(&full).map_err(|e| SourceError::new(e.to_string()))
     }
+}
+
+/// The bytes of a regular file, at most one past the limit of a load, which then reports it
+/// (Q-9). A pipe or a device is refused unopened, since opening or reading one may wait or never
+/// end; the file opened is checked again.
+fn read_bounded(path: &Path) -> std::io::Result<Vec<u8>> {
+    use std::io::Read;
+    let not_regular = || std::io::Error::other("not a regular file");
+    if !std::fs::metadata(path)?.is_file() {
+        return Err(not_regular());
+    }
+    let file = std::fs::File::open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(not_regular());
+    }
+    let mut bytes = Vec::new();
+    file.take(forager_mapfile::MAX_TOTAL_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 /// Runs a future to completion on this thread. The file loader never waits, so the future is

@@ -854,9 +854,9 @@ fn an_init_file_is_read_as_proj_reads_it() {
     let loaded = layer_projection(&[
         (
             "m.map",
-            "MAP LAYER PROJECTION 'init=./a:b/epsg2:1' END END END",
+            "MAP LAYER PROJECTION 'init=./d/a:b/epsg2:1' END END END",
         ),
-        ("a:b/epsg2", file),
+        ("d/a:b/epsg2", file),
     ]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     assert_eq!(

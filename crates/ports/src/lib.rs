@@ -54,10 +54,12 @@ impl ResourcePath {
                 _ => parts.push(part),
             }
         }
-        if parts.is_empty() {
-            return Err(PathError::Empty);
+        match parts.first() {
+            None => Err(PathError::Empty),
+            // A `..` can drop what preceded a drive prefix, so the normalized path is checked too.
+            Some(first) if has_drive_prefix(first) => Err(PathError::Absolute),
+            Some(_) => Ok(Self(parts.join("/"))),
         }
-        Ok(Self(parts.join("/")))
     }
 
     /// Normalizes `raw`, a path as written in a style, relative to the directory of this path, as
@@ -175,6 +177,70 @@ mod tests {
         let top = ResourcePath::new("world.map").unwrap();
         assert_eq!(top.resolve("a.inc").unwrap().as_str(), "a.inc");
         assert_eq!(top.resolve("../a.inc"), Err(PathError::EscapesBaseContext));
+    }
+
+    #[test]
+    fn a_drive_prefix_that_normalization_uncovers_is_refused() {
+        // Verifies: Q-8
+        assert_eq!(
+            ResourcePath::new("a/../C:/Windows"),
+            Err(PathError::Absolute)
+        );
+        assert_eq!(ResourcePath::new("./c:relative"), Err(PathError::Absolute));
+        assert_eq!(ResourcePath::new("/../C:x"), Err(PathError::Absolute));
+        let main = ResourcePath::new("maps/world.map").unwrap();
+        assert_eq!(main.resolve("x/../../C:x"), Err(PathError::Absolute));
+        assert_eq!(main.resolve("../d:\\secret"), Err(PathError::Absolute));
+        // A colon past the first component names no drive: Windows reads a prefix only first.
+        assert_eq!(ResourcePath::new("a/C:/b").unwrap().as_str(), "a/C:/b");
+    }
+
+    #[test]
+    fn every_spelling_of_an_escape_is_refused() {
+        // Verifies: Q-8
+        for raw in [
+            "..",
+            "../",
+            "..\\secret",
+            "a\\..\\..\\secret",
+            "./../secret",
+            "a//..//..//secret",
+            "a/./../../secret",
+            "a/b/../../../secret",
+        ] {
+            assert_eq!(
+                ResourcePath::new(raw),
+                Err(PathError::EscapesBaseContext),
+                "{raw}"
+            );
+        }
+        for raw in ["\\\\server\\share\\x", "//server/share/x", "\\x", "/"] {
+            assert_eq!(ResourcePath::new(raw), Err(PathError::Absolute), "{raw}");
+        }
+        let main = ResourcePath::new("maps/world.map").unwrap();
+        assert_eq!(main.resolve("\\\\server\\x"), Err(PathError::Absolute));
+        assert_eq!(main.resolve("a\0b"), Err(PathError::InvalidCharacter));
+        assert_eq!(
+            main.resolve("..\\..\\secret"),
+            Err(PathError::EscapesBaseContext)
+        );
+    }
+
+    #[test]
+    fn what_is_no_separator_or_dot_segment_stays_a_name() {
+        // Verifies: Q-8
+        // Percent-encoding is a URL's, not a path's: `%2e%2e` names a file, and a loader that
+        // turns the path into a URL has to encode it so (the URL parser reads `%2e%2e` as `..`).
+        assert_eq!(
+            ResourcePath::new("%2e%2e/secret").unwrap().as_str(),
+            "%2e%2e/secret"
+        );
+        assert_eq!(ResourcePath::new(".../x").unwrap().as_str(), ".../x");
+        assert_eq!(ResourcePath::new("..a/x").unwrap().as_str(), "..a/x");
+        assert_eq!(ResourcePath::new("inc/").unwrap().as_str(), "inc");
+        assert_eq!(ResourcePath::new("a/./b/.//c/").unwrap().as_str(), "a/b/c");
+        let long = "a/".repeat(5000) + "x";
+        assert_eq!(ResourcePath::new(&long).unwrap().as_str(), long);
     }
 
     #[test]
