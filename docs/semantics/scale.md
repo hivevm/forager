@@ -32,8 +32,11 @@ nautical miles 72913.3858, decimal degrees 4374754. The map's `UNITS` defaults t
 each times `RESOLUTION / DEFRESOLUTION` (`computeSymbolStyle` in `src/maprendering.c`); the
 defaults are 0 and 500. A line's width is `width × factor`, bounded by `MINWIDTH` and
 `MAXWIDTH` the same way, defaults 0 and 32; a line's pattern, offset, and initial gap are each
-multiplied by the bounded width over the width as written (`msDrawLineSymbol`), and a symbol's
-gap by the bounded size over the size as written. A bound value or an expression is scaled after
+multiplied by the bounded width over the width as written, or by 1 for a width of 0
+(`msDrawLineSymbol`), and a symbol's gap by the bounded size over the size as written. Where the
+lower bound exceeds the upper, a size takes the upper (`MAXSIZE` applies last) and a width the
+lower (`MINWIDTH` applies last). A symbol's outline is the style's width, scaled and bounded as a
+line's (`computeSymbolStyle`). A bound value or an expression is scaled after
 it is evaluated.
 
 `MINSIZE` and `MAXSIZE` take numbers of at least 0 and above 0, `MINWIDTH` and `MAXWIDTH` the

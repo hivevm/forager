@@ -1,3 +1,18 @@
+// The tests pin the behaviour of MapServer's loadStyle, src/mapfile.c, and the functions they
+// name, of the release pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 use forager_style_ir::Bound;
 
 use crate::test_support::{binding, codes, first_style, load_files};
@@ -155,5 +170,277 @@ fn style_values_outside_loadstyles_checks_are_errors() {
     );
     let (loaded, style) = first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM bbox END END END END");
     assert_eq!(codes(&loaded), ["unsupported-value"]);
+    assert_eq!(style.unwrap().geom_transform, None);
+}
+
+/// The style of `body`, read without a diagnostic.
+fn style_of(body: &str) -> forager_style_ir::Style {
+    let text: &'static str = format!("MAP LAYER CLASS STYLE {body} END END END END").leak();
+    let (loaded, style) = first_style(text);
+    assert_eq!(codes(&loaded), Vec::<&str>::new(), "{body}");
+    style.unwrap()
+}
+
+/// `body` is a load error, `invalid-value`, as loadStyle fails it.
+fn refused(body: &str) {
+    let text: &'static str = format!("MAP LAYER CLASS STYLE {body} END END END END").leak();
+    let loaded = load_files(&[("m.map", text)]);
+    assert!(loaded.document.is_none(), "{body}");
+    assert_eq!(codes(&loaded), ["invalid-value"], "{body}");
+}
+
+#[test]
+fn each_number_takes_the_range_loadstyle_checks_at_its_bounds() {
+    // MS_NUM_CHECK_RANGE -360..360, GT 0, GTE 0, NONE, at and past each bound.
+    let style = style_of("ANGLE -360");
+    assert_eq!(style.angle, Some(Bound::Value(-360.0)));
+    assert_eq!(style_of("ANGLE 360").angle, Some(Bound::Value(360.0)));
+    refused("ANGLE -360.5");
+    refused("ANGLE 360.5");
+    assert_eq!(style_of("SIZE 0.01").size, Some(Bound::Value(0.01)));
+    refused("SIZE -1");
+    assert_eq!(style_of("WIDTH 0").width, Some(Bound::Value(0.0)));
+    assert_eq!(
+        style_of("OUTLINEWIDTH 0").outline_width,
+        Some(Bound::Value(0.0))
+    );
+    refused("OUTLINEWIDTH -0.5");
+    assert_eq!(style_of("INITIALGAP 0").initial_gap, Some(0.0));
+    assert_eq!(style_of("GAP 0").gap, Some(0.0));
+    assert_eq!(
+        (
+            style_of("MINSIZE 0").min_size,
+            style_of("MINWIDTH 0").min_width
+        ),
+        (Some(0.0), Some(0.0))
+    );
+    refused("MINSIZE -1");
+    refused("MINWIDTH -1");
+    assert_eq!(style_of("MINSCALEDENOM 0").min_scale_denom, Some(0.0));
+    refused("MINSCALEDENOM -1");
+    refused("MAXSCALEDENOM -1");
+    assert_eq!(
+        style_of("SYMBOL 0").symbol,
+        Some(Bound::Value(forager_style_ir::SymbolRef::Index(0)))
+    );
+    // DATARANGE's NONE check aside, POLAROFFSET and OFFSET take any number.
+    let style = style_of("OFFSET -1e6 1e6 POLAROFFSET -3 720");
+    assert_eq!(style.offset, Some([Bound::Value(-1e6), Bound::Value(1e6)]));
+    assert_eq!(
+        style.polar_offset,
+        Some([Bound::Value(-3.0), Bound::Value(720.0)])
+    );
+}
+
+#[test]
+fn each_property_takes_the_kinds_of_value_loadstyle_takes() {
+    // getSymbol's lists: SIZE alone takes an expression; ANGLE, WIDTH, OPACITY, OUTLINEWIDTH,
+    // OFFSET, and POLAROFFSET a number or a binding; the plain numbers neither.
+    for body in [
+        "ANGLE ([a])",
+        "OPACITY ([a])",
+        "OUTLINEWIDTH ([a])",
+        "OFFSET ([a]) 1",
+        "POLAROFFSET 1 ([a])",
+        "GAP [a]",
+        "INITIALGAP [a]",
+        "MINSIZE [a]",
+        "MAXWIDTH [a]",
+        "LINEJOINMAXSIZE [a]",
+        "MINSCALEDENOM [a]",
+        "LINECAP [a]",
+        "PATTERN [a] 2 END",
+        "WIDTH 'thick'",
+        "SIZE 'big'",
+    ] {
+        refused(body);
+    }
+    let style = style_of("OPACITY [o] OUTLINEWIDTH [ow] POLAROFFSET [d] [a]");
+    assert_eq!(style.opacity, binding("o"));
+    assert_eq!(style.outline_width, binding("ow"));
+    assert_eq!(
+        style.polar_offset,
+        Some([binding("d").unwrap(), binding("a").unwrap()])
+    );
+    assert_eq!(style_of("SYMBOL [s]").symbol, binding("s"));
+}
+
+#[test]
+fn angle_auto_is_the_bare_keyword_only() {
+    // The lexer's `auto` is the token MS_AUTO; a quoted 'AUTO' is a string, which getSymbol
+    // refuses, and so is the neighbouring keyword `auto2`.
+    assert!(style_of("ANGLE auto").auto_angle);
+    refused("ANGLE 'AUTO'");
+    refused("ANGLE AUTO2");
+    // A later number or binding leaves `autoangle` set, as loadStyle leaves it.
+    let style = style_of("ANGLE AUTO ANGLE 30");
+    assert!(style.auto_angle);
+    assert_eq!(style.angle, Some(Bound::Value(30.0)));
+}
+
+#[test]
+fn opacity_is_truncated_toward_zero_then_clamped() {
+    // MS_MAX(MS_MIN((int)msyynumber, 100), 0): the cast truncates toward zero.
+    assert_eq!(style_of("OPACITY -5").opacity, Some(Bound::Value(0.0)));
+    assert_eq!(style_of("OPACITY -0.9").opacity, Some(Bound::Value(0.0)));
+    assert_eq!(style_of("OPACITY 99.99").opacity, Some(Bound::Value(99.0)));
+    assert_eq!(style_of("OPACITY 0").opacity, Some(Bound::Value(0.0)));
+}
+
+#[test]
+fn line_caps_and_joins_are_loadstyles_keywords() {
+    use forager_style_ir::{LineCap, LineJoin};
+    for (word, cap) in [
+        ("butt", LineCap::Butt),
+        ("round", LineCap::Round),
+        ("square", LineCap::Square),
+        ("triangle", LineCap::Triangle),
+    ] {
+        assert_eq!(style_of(&format!("LINECAP {word}")).line_cap, Some(cap));
+    }
+    for (word, join) in [
+        ("none", LineJoin::None),
+        ("round", LineJoin::Round),
+        ("miter", LineJoin::Miter),
+        ("bevel", LineJoin::Bevel),
+    ] {
+        assert_eq!(style_of(&format!("LINEJOIN {word}")).line_join, Some(join));
+    }
+    // A cap is not a join, nor a join a cap; a quoted keyword is a string, which getSymbol
+    // refuses.
+    refused("LINECAP miter");
+    refused("LINEJOIN butt");
+    refused("LINECAP 'round'");
+}
+
+#[test]
+fn a_pattern_holds_only_numbers() {
+    // loadStyle's PATTERN loop takes MS_NUMBER until END and fails on anything else.
+    refused("PATTERN 1 two END");
+    refused("PATTERN 1 [a] END");
+    assert_eq!(
+        style_of("PATTERN 1 2 3 4 5 6 7 8 9 10 END").pattern.len(),
+        10
+    );
+}
+
+#[test]
+fn a_binding_holds_over_a_later_number() {
+    // loadStyle sets a binding's item and never clears it for a later number (src/mapfile.c,
+    // the cases of loadStyle), and bindStyle (src/maputil.c) draws the binding over the
+    // number; only SIZE frees what it held, and only its expression.
+    let style = style_of(
+        "WIDTH [w] WIDTH 3 COLOR [c] COLOR 1 2 3 OUTLINECOLOR [o] OUTLINECOLOR '#102030'
+         ANGLE [a] ANGLE 30 OPACITY [op] OPACITY 50 OUTLINEWIDTH [ow] OUTLINEWIDTH 2
+         SYMBOL [s] SYMBOL 0",
+    );
+    assert_eq!(style.width, binding("w"));
+    assert_eq!(style.color, binding("c"));
+    assert_eq!(style.outline_color, binding("o"));
+    assert_eq!(style.angle, binding("a"));
+    assert_eq!(style.opacity, binding("op"));
+    assert_eq!(style.outline_width, binding("ow"));
+    assert_eq!(style.symbol, binding("s"));
+    // A later binding replaces the earlier.
+    assert_eq!(style_of("WIDTH [w] WIDTH 3 WIDTH [v]").width, binding("v"));
+
+    // SIZE: an expression is evaluated after the binding and wins over it; a later SIZE frees
+    // the expression, not the binding.
+    assert_eq!(style_of("SIZE [a] SIZE 5").size, binding("a"));
+    assert_eq!(
+        style_of("SIZE [a] SIZE ([b] + 1) SIZE 5").size,
+        binding("a")
+    );
+    assert_eq!(
+        style_of("SIZE ([b] + 1) SIZE 5").size,
+        Some(Bound::Value(5.0))
+    );
+    assert!(matches!(
+        style_of("SIZE [a] SIZE ([b] + 1)").size,
+        Some(Bound::Expr(_))
+    ));
+    assert_eq!(style_of("SIZE ([b] + 1) SIZE [a]").size, binding("a"));
+
+    // OFFSET and POLAROFFSET keep each axis's binding of its own.
+    let style = style_of("OFFSET [x] 2 OFFSET 1 [y] OFFSET 4 5 POLAROFFSET 1 [pa] POLAROFFSET 2 3");
+    assert_eq!(
+        style.offset,
+        Some([binding("x").unwrap(), binding("y").unwrap()])
+    );
+    assert_eq!(
+        style.polar_offset,
+        Some([Bound::Value(2.0), binding("pa").unwrap()])
+    );
+}
+
+#[test]
+fn a_later_offset_replaces_a_line_offset() {
+    use forager_style_ir::LineOffset;
+    // loadStyle keeps one offsetx and one offsety; -99 and -999 are values of offsety
+    // (msDrawLineSymbol, src/maprendering.c), so a later OFFSET replaces a line offset and the
+    // reverse.
+    let style = style_of("OFFSET 3 -99 OFFSET 1 2");
+    assert_eq!(style.line_offset, None);
+    assert_eq!(style.offset, Some([Bound::Value(1.0), Bound::Value(2.0)]));
+    let style = style_of("OFFSET 1 2 OFFSET 3 -999");
+    assert_eq!(style.offset, None);
+    assert_eq!(
+        style.line_offset,
+        Some(LineOffset {
+            distance: Bound::Value(3.0),
+            both_sides: true
+        })
+    );
+    // A bound y is drawn over the -99, so it is a shift, not a line offset.
+    let style = style_of("OFFSET 3 [y] OFFSET 4 -99");
+    assert_eq!(style.line_offset, None);
+    assert_eq!(
+        style.offset,
+        Some([Bound::Value(4.0), binding("y").unwrap()])
+    );
+    // A bound distance keeps its binding over a later number.
+    let style = style_of("OFFSET [d] -99 OFFSET 2 -99");
+    assert_eq!(
+        style.line_offset,
+        Some(LineOffset {
+            distance: binding("d").unwrap(),
+            both_sides: false
+        })
+    );
+}
+
+#[test]
+fn a_geomtransform_name_is_matched_on_its_prefix_as_msstylesetgeomtransform_matches_it() {
+    use forager_style_ir::GeomTransform;
+    // msStyleSetGeomTransform (src/mapgeomtransform.c) compares the first 5, 3, 8, 4, 8, 9, 11,
+    // and 8 characters, without case, with start, end, vertices, bbox, labelpnt, labelpoly,
+    // labelcenter, and centroid, in that order.
+    for (name, transform) in [
+        ("'labelpnt'", GeomTransform::LabelPoint),
+        ("LABELPNT", GeomTransform::LabelPoint),
+        ("'startpoint'", GeomTransform::Start),
+        ("'Ending'", GeomTransform::End),
+        ("'vertices2'", GeomTransform::Vertices),
+        ("'labelpolygon'", GeomTransform::LabelPoly),
+        ("'centroids'", GeomTransform::Centroid),
+    ] {
+        assert_eq!(
+            style_of(&format!("GEOMTRANSFORM {name}")).geom_transform,
+            Some(transform),
+            "{name}"
+        );
+    }
+    // Neither MapServer's name nor a prefix of one: an unknown transform, which
+    // msStyleSetGeomTransform resets to none.
+    for name in ["'labelpoint'", "'cent'", "'st'"] {
+        let text: &'static str =
+            format!("MAP LAYER CLASS STYLE GEOMTRANSFORM {name} END END END END").leak();
+        let (loaded, style) = first_style(text);
+        assert_eq!(codes(&loaded), ["unsupported-value"], "{name}");
+        assert_eq!(style.unwrap().geom_transform, None, "{name}");
+    }
+    // A later unknown transform resets an earlier one.
+    let text = "MAP LAYER CLASS STYLE GEOMTRANSFORM 'start' GEOMTRANSFORM 'bbox' END END END END";
+    let (_, style) = first_style(text);
     assert_eq!(style.unwrap().geom_transform, None);
 }
