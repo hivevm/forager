@@ -1,6 +1,4 @@
-use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::task::{Context, Poll, Waker};
 
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 
@@ -71,17 +69,4 @@ fn read_bounded(path: &Path) -> std::io::Result<Vec<u8>> {
     file.take(forager_mapfile::MAX_TOTAL_BYTES as u64 + 1)
         .read_to_end(&mut bytes)?;
     Ok(bytes)
-}
-
-/// Runs a future to completion on this thread. The file loader never waits, so the future is
-/// ready on its first poll; the loop only guards against a future that is not.
-pub fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = std::pin::pin!(future);
-    let mut context = Context::from_waker(Waker::noop());
-    loop {
-        if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
-            return output;
-        }
-        std::thread::yield_now();
-    }
 }

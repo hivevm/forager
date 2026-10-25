@@ -1,6 +1,7 @@
 //! The ports: the traits at the edge of the core through which a host supplies data and
-//! resources (ADR-0009). They are the only place async appears, and none of them requires
-//! `Send`, because the browser is single-threaded.
+//! resources (ADR-0009), and `poll_once`, which runs a future over them that never waits. They
+//! are the only place async appears, and none of them requires `Send`, because the browser is
+//! single-threaded.
 
 use std::fmt;
 
@@ -121,9 +122,54 @@ pub trait ResourceLoader {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError>;
 }
 
+/// Runs a future whose ports never wait — every port reads from memory or a local file — in one
+/// poll, and returns `None` for a future that waits. Nothing could wake it: a host without an
+/// executor would spin on it, as a browser tab would, or hang. Every host and test that runs the
+/// frontend or the engine synchronously runs it here.
+pub fn poll_once<F: Future>(future: F) -> Option<F::Output> {
+    let mut future = std::pin::pin!(future);
+    match future
+        .as_mut()
+        .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()))
+    {
+        std::task::Poll::Ready(output) => Some(output),
+        std::task::Poll::Pending => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_future_ready_on_its_first_poll_runs_to_its_output() {
+        assert_eq!(poll_once(async { 7 }), Some(7));
+    }
+
+    /// Waits once, counting its polls, and is ready on the next.
+    struct WaitsOnce<'a>(&'a std::cell::Cell<u32>);
+
+    impl Future for WaitsOnce<'_> {
+        type Output = ();
+        fn poll(
+            self: std::pin::Pin<&mut Self>,
+            _: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<()> {
+            self.0.set(self.0.get() + 1);
+            if self.0.get() == 1 {
+                std::task::Poll::Pending
+            } else {
+                std::task::Poll::Ready(())
+            }
+        }
+    }
+
+    #[test]
+    fn a_future_that_waits_is_none_and_polled_once() {
+        let polls = std::cell::Cell::new(0);
+        assert_eq!(poll_once(WaitsOnce(&polls)), None);
+        assert_eq!(polls.get(), 1);
+    }
 
     #[test]
     fn relative_paths_are_normalized() {
