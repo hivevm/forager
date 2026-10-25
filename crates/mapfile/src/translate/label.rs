@@ -19,7 +19,7 @@ use forager_style_ir::{
     Align, AngleMode, Bound, Expr, Force, GeomTransform, Label, MinFeatureSize, Position,
 };
 
-use super::{Range, Translator};
+use super::{Range, Translator, kept_binding, kept_bindings};
 use crate::expression;
 use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
@@ -162,11 +162,11 @@ impl Translator<'_> {
             "SIZE" => label.size = self.label_size(d),
             "COLOR" => {
                 let color = self.bound_color(d);
-                label.color = kept_color_binding(label.color.take(), color);
+                label.color = kept_binding(label.color.take(), color);
             }
             "OUTLINECOLOR" => {
                 let color = self.bound_color(d);
-                label.outline_color = kept_color_binding(label.outline_color.take(), color);
+                label.outline_color = kept_binding(label.outline_color.take(), color);
             }
             "SHADOWCOLOR" => label.shadow_color = self.bound_color(d),
             "SHADOWSIZE" => {
@@ -285,37 +285,6 @@ fn truncated(bound: Bound<f64>) -> Bound<f64> {
         Bound::Value(n) => Bound::Value(n.trunc()),
         bound => bound,
     }
-}
-
-/// What a property holds after a later directive gives it `new`: loadLabel never frees a
-/// binding for a value, and bindLabel, src/maputil.c, draws the binding over the value.
-fn kept_binding<T>(earlier: Option<Bound<T>>, new: Option<Bound<T>>) -> Option<Bound<T>> {
-    match (earlier, new) {
-        (Some(binding @ Bound::Binding { .. }), Some(Bound::Value(_))) => Some(binding),
-        (_, new) => new,
-    }
-}
-
-/// [`kept_binding`] for a colour, whose binding loadColor also keeps over a later `-1 -1 -1`,
-/// no colour, which bindColorAttribute replaces with the bound one.
-fn kept_color_binding<T>(earlier: Option<Bound<T>>, new: Option<Bound<T>>) -> Option<Bound<T>> {
-    match (earlier, new) {
-        (Some(binding @ Bound::Binding { .. }), None | Some(Bound::Value(_))) => Some(binding),
-        (_, new) => new,
-    }
-}
-
-/// [`kept_binding`] for each of a pair's numbers.
-fn kept_bindings(
-    earlier: Option<[Bound<f64>; 2]>,
-    new: Option<[Bound<f64>; 2]>,
-) -> Option<[Bound<f64>; 2]> {
-    let [x, y] = new?;
-    let [earlier_x, earlier_y] = earlier.map_or([None, None], |[x, y]| [Some(x), Some(y)]);
-    Some([
-        kept_binding(earlier_x, Some(x))?,
-        kept_binding(earlier_y, Some(y))?,
-    ])
 }
 
 #[cfg(test)]

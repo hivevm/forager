@@ -17,7 +17,7 @@
 
 use forager_style_ir::{Bound, GeomTransform, LineCap, LineJoin, LineOffset, Style};
 
-use super::{Range, Translator};
+use super::{Range, Translator, kept_binding, kept_bindings};
 use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
 
@@ -219,30 +219,6 @@ impl Translator<'_> {
         }
         transform
     }
-}
-
-/// What a property holds after a later directive gives it `new`: loadStyle never frees a
-/// binding for a number, and bindStyle, src/maputil.c, draws the binding over the number. A
-/// colour of `-1 -1 -1` reads as none, and keeps the binding too; any other `None` is a value
-/// that did not read, which fails the load anyway.
-fn kept_binding<T>(earlier: Option<Bound<T>>, new: Option<Bound<T>>) -> Option<Bound<T>> {
-    match (earlier, new) {
-        (Some(binding @ Bound::Binding { .. }), Some(Bound::Value(_)) | None) => Some(binding),
-        (_, new) => new,
-    }
-}
-
-/// [`kept_binding`] for each of a pair's numbers.
-fn kept_bindings(
-    earlier: Option<[Bound<f64>; 2]>,
-    new: Option<[Bound<f64>; 2]>,
-) -> Option<[Bound<f64>; 2]> {
-    let [x, y] = new?;
-    let [earlier_x, earlier_y] = earlier.map_or([None, None], |[x, y]| [Some(x), Some(y)]);
-    Some([
-        kept_binding(earlier_x, Some(x))?,
-        kept_binding(earlier_y, Some(y))?,
-    ])
 }
 
 #[cfg(test)]
