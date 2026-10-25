@@ -40,7 +40,10 @@ impl Translator<'_> {
             transparent: None,
             span: Some(block.span.clone()),
         };
-        let mut points: Option<Vec<[f64; 2]>> = None;
+        // A POINTS block appends to the points before it and measures the extent anew from its
+        // own: the points from `measured` on.
+        let mut points: Vec<[f64; 2]> = Vec::new();
+        let mut measured = 0;
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -92,7 +95,11 @@ impl Translator<'_> {
                     "ANTIALIAS" => {}
                     _ => self.unhandled_directive(d),
                 },
-                Node::Block(b) if b.keyword == "POINTS" => points = Some(self.points(b)?),
+                Node::Block(b) if b.keyword == "POINTS" => {
+                    let more = self.points(b, points.len())?;
+                    measured = points.len();
+                    points.extend(more);
+                }
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
             }
         }
@@ -104,7 +111,6 @@ impl Translator<'_> {
             self.error("invalid-value", message, &block.span);
             return None;
         }
-        let points = points.unwrap_or_default();
         if needs_points && points.is_empty() {
             let message = "a VECTOR or ELLIPSE symbol needs POINTS";
             self.error("invalid-value", message, &block.span);
@@ -112,15 +118,17 @@ impl Translator<'_> {
         }
         if needs_points {
             let anchor = symbol.anchor_point.unwrap_or([0.5, 0.5]);
-            let (paths, extent) = shape(&points, symbol.kind == SymbolKind::Vector, anchor);
+            let vector = symbol.kind == SymbolKind::Vector;
+            let (paths, extent) = shape(&points, measured, vector, anchor);
             symbol.paths = paths;
             symbol.extent = Some(extent);
         }
         Some(symbol)
     }
 
-    /// The `[x, y]` pairs of a `POINTS` block, at most MapServer's `MS_MAXVECTORPOINTS`.
-    fn points(&mut self, block: &Block) -> Option<Vec<[f64; 2]>> {
+    /// The `[x, y]` pairs of a `POINTS` block, at most MapServer's `MS_MAXVECTORPOINTS` with the
+    /// `before` points of the symbol's earlier blocks.
+    fn points(&mut self, block: &Block, before: usize) -> Option<Vec<[f64; 2]>> {
         let numbers: Option<Vec<f64>> = block
             .values
             .iter()
@@ -130,7 +138,7 @@ impl Translator<'_> {
             })
             .collect();
         match numbers {
-            Some(numbers) if numbers.len() % 2 == 0 && numbers.len() <= 200 => {
+            Some(numbers) if numbers.len() % 2 == 0 && before + numbers.len() / 2 <= 100 => {
                 Some(numbers.chunks(2).map(|p| [p[0], p[1]]).collect())
             }
             _ => {
@@ -191,12 +199,17 @@ impl Translator<'_> {
 }
 
 /// A symbol's points split into lines at MapServer's pen-up `-99 -99`, and its extent, as
-/// loadSymbol computes them: the largest x and y of the points whose x is not -99, and, for a
-/// vector symbol, every point shifted so that none is negative, or so that the smallest is 0
-/// where the anchor point is not the centre.
-fn shape(points: &[[f64; 2]], vector: bool, anchor: [f64; 2]) -> (Vec<Vec<[f64; 2]>>, [f64; 2]) {
+/// loadSymbol computes them: the largest x and y, from 0, of the points from `measured` on whose
+/// x is not -99, and, for a vector symbol, every point with neither coordinate -99 shifted so
+/// that none is negative, or so that the smallest is 0 where the anchor point is not the centre.
+fn shape(
+    points: &[[f64; 2]],
+    measured: usize,
+    vector: bool,
+    anchor: [f64; 2],
+) -> (Vec<Vec<[f64; 2]>>, [f64; 2]) {
     let mut extent = [0.0_f64, 0.0_f64];
-    for p in points.iter().filter(|p| p[0] != -99.0) {
+    for p in points[measured..].iter().filter(|p| p[0] != -99.0) {
         extent = [extent[0].max(p[0]), extent[1].max(p[1])];
     }
     let drawn = |p: &&[f64; 2]| p[0] != -99.0 && p[1] != -99.0;
@@ -223,6 +236,8 @@ fn shape(points: &[[f64; 2]], vector: bool, anchor: [f64; 2]) -> (Vec<Vec<[f64; 
         if p[0] == -99.0 && p[1] == -99.0 {
             paths.push(Vec::new());
         } else if let Some(path) = paths.last_mut() {
+            // loadSymbol leaves a point with one coordinate -99 where it stands.
+            let shift = if drawn(&p) { shift } else { [0.0, 0.0] };
             path.push([p[0] - shift[0], p[1] - shift[1]]);
         }
     }

@@ -63,6 +63,15 @@ pub fn translate(token: &Token, item: Option<&str>) -> Result<Expr, Problem> {
                 Problem::invalid("a string, regular expression, or list needs an item to compare")
             })
     };
+    // msEvalExpression takes an empty expression as always true, before it looks at the item.
+    let empty = match &token.kind {
+        TokenKind::Str { value, .. } => value.is_empty(),
+        TokenKind::List(text) | TokenKind::Expression(text) => text.len() == 2,
+        _ => false,
+    };
+    if empty {
+        return Ok(Expr::Bool(true));
+    }
     match &token.kind {
         TokenKind::Str { value, ignore_case } => {
             let value = Expr::String(value.clone());
@@ -182,9 +191,14 @@ fn substituted(text: &str) -> Expr {
     }
 }
 
-/// The tree of an expression in parentheses and the type of its value.
+/// The tree of an expression in parentheses and the type of its value. The outer parentheses
+/// are the mapfile token's, which loadExpression strips: they bracket nothing in the expression.
 fn parse(text: &str) -> Result<(Expr, Kind), Problem> {
-    let tokens = tokenize(text)?;
+    let inner = text
+        .strip_prefix('(')
+        .and_then(|t| t.strip_suffix(')'))
+        .unwrap_or(text);
+    let tokens = tokenize(inner)?;
     let mut parser = Parser {
         tokens,
         at: 0,
@@ -320,14 +334,20 @@ fn tokenize(text: &str) -> Result<Vec<Tok>, Problem> {
     while i < chars.len() {
         let c = chars[i];
         let rest: String = chars[i..chars.len().min(i + 2)].iter().collect();
-        if matches!(c, ' ' | '\t' | '\r' | '\n') {
+        if matches!(c, ' ' | '\t' | '\r') {
             i += 1;
+        } else if c == '\n' || (c == '|' && chars.get(i + 1) != Some(&'|')) {
+            // The lexer's rule `[\r|\n|\0]` returns 0 on a newline or a single `|`, and
+            // msTokenizeExpression takes 0 as the end of the expression.
+            break;
         } else if let Some(len) = number_len(&chars[i..]) {
             let literal: String = chars[i..i + len].iter().collect();
-            tokens.push(Tok::Number(atof(&literal)));
+            tokens.push(Tok::Number(finite(&literal, atof(&literal))?));
             i += len;
         } else if c == '[' {
-            let (name, next) = delimited(&chars, i + 1, ']')?;
+            let Some((name, next)) = bracketed(&chars, i + 1, ']', &[']']) else {
+                return Err(Problem::invalid("unterminated `[`"));
+            };
             i = next;
             match name.to_ascii_lowercase().as_str() {
                 "shape" | "map_cellsize" | "data_cellsize" => {
@@ -337,11 +357,10 @@ fn tokenize(text: &str) -> Result<Vec<Tok>, Problem> {
             }
         } else if matches!(c, '"' | '\'') {
             if chars.get(i + 1) == Some(&'[')
-                && let Ok((name, next)) = delimited(&chars, i + 2, ']')
-                && chars.get(next) == Some(&c)
+                && let Some((name, next)) = bracketed(&chars, i + 2, c, &[']', c])
             {
                 tokens.push(Tok::StringBinding(name));
-                i = next + 1;
+                i = next;
                 continue;
             }
             let (value, next) = string(&chars, i)?;
@@ -354,30 +373,39 @@ fn tokenize(text: &str) -> Result<Vec<Tok>, Problem> {
             };
         } else if c == '`' {
             if chars.get(i + 1) == Some(&'[')
-                && let Ok((name, next)) = delimited(&chars, i + 2, ']')
-                && chars.get(next) == Some(&'`')
+                && let Some((name, next)) = bracketed(&chars, i + 2, '`', &[']', '`'])
             {
                 tokens.push(Tok::TimeBinding(name));
-                i = next + 1;
+                i = next;
                 continue;
             }
-            let (value, next) = delimited(&chars, i + 1, '`')?;
-            tokens.push(Tok::Time(value));
-            i = next;
+            let Some(close) = (i + 1..chars.len()).find(|&j| chars[j] == '`') else {
+                return Err(Problem::invalid("unterminated '`'"));
+            };
+            tokens.push(Tok::Time(chars[i + 1..close].iter().collect()));
+            i = close + 1;
         } else if c.is_ascii_alphabetic() {
-            let end = (i..chars.len())
-                .find(|&j| !chars[j].is_ascii_alphabetic())
-                .unwrap_or(chars.len());
-            let word: String = chars[i..end]
+            // The lexer has no rule for a word, only one for each keyword: of `andnot` it reads
+            // `and` and then `not`, the longest keyword each time.
+            let ahead = chars[i..].iter().take(16).collect::<String>();
+            let ahead = ahead.to_ascii_lowercase();
+            let keyword = KEYWORDS
                 .iter()
-                .collect::<String>()
-                .to_ascii_lowercase();
-            i = end;
-            match word.as_str() {
+                .chain(&["true", "false"])
+                .filter(|k| ahead.starts_with(**k))
+                .max_by_key(|k| k.len());
+            let Some(&word) = keyword else {
+                let end = (i..chars.len())
+                    .find(|&j| !chars[j].is_ascii_alphabetic())
+                    .unwrap_or(chars.len());
+                let word: String = chars[i..end].iter().collect();
+                return Err(Problem::invalid(format!("unknown word `{word}`")));
+            };
+            i += word.len();
+            match word {
                 "true" => tokens.push(Tok::Bool(true)),
                 "false" => tokens.push(Tok::Bool(false)),
-                w if KEYWORDS.contains(&w) => tokens.push(Tok::Word(word)),
-                _ => return Err(Problem::invalid(format!("unknown word `{word}`"))),
+                _ => tokens.push(Tok::Word(word.to_owned())),
             }
         } else if let Some(symbol) = SYMBOLS.iter().find(|s| rest.starts_with(**s)) {
             tokens.push(Tok::Symbol(symbol));
@@ -430,25 +458,46 @@ pub fn atof(text: &str) -> f64 {
     text[..len].parse().unwrap_or(0.0)
 }
 
-/// The text up to `close`, from `from`, with a doubled `close` standing for one; and the index
-/// past it.
-fn delimited(chars: &[char], from: usize, close: char) -> Result<(String, usize), Problem> {
-    let mut value = String::new();
+/// A number literal, which the IR can hold only when it is finite: JSON has no infinity.
+fn finite(literal: &str, n: f64) -> Result<f64, Problem> {
+    if n.is_finite() {
+        Ok(n)
+    } else {
+        Err(Problem::unsupported(&format!("the number `{literal}`")))
+    }
+}
+
+/// The name of an attribute binding whose name starts at `from`, as the lexer's rules
+/// `\[(?:\]\]|[^\]])*\]`, `"\[(?:""|[^"])*\]"`, and `` `\[(?:``|[^`])*\]` `` match it: a name
+/// of any character but `escape`, which it holds doubled, up to the last `end` flex's longest
+/// match reaches, the doubled `escape` read as one, as msStringUnescape reads it; and the index
+/// past the match.
+fn bracketed(chars: &[char], from: usize, escape: char, end: &[char]) -> Option<(String, usize)> {
+    let mut last = None;
     let mut i = from;
     loop {
+        if chars[i..].starts_with(end) {
+            last = Some(i);
+        }
         match chars.get(i) {
-            None => return Err(Problem::invalid(format!("unterminated `{close}`"))),
-            Some(&c) if c == close && chars.get(i + 1) == Some(&close) && close != '`' => {
-                value.push(c);
+            None => break,
+            Some(&c) if c == escape => {
+                if chars.get(i + 1) != Some(&escape) {
+                    break;
+                }
                 i += 2;
             }
-            Some(&c) if c == close => return Ok((value, i + 1)),
-            Some(&c) => {
-                value.push(c);
-                i += 1;
-            }
+            Some(_) => i += 1,
         }
     }
+    let close = last?;
+    let mut name = String::new();
+    let mut j = from;
+    while j < close {
+        name.push(chars[j]);
+        j += if chars[j] == escape { 2 } else { 1 };
+    }
+    Some((name, close + end.len()))
 }
 
 /// A quoted string starting at `from`: a backslash escapes a quote or a backslash.
@@ -640,12 +689,11 @@ impl Parser {
             }
             Some(Tok::Symbol("-")) => {
                 self.at += 1;
+                // src/mapparser.y reads `'-' math_exp %prec NEG { $$ = $2; }`: the operand
+                // unchanged, not negated.
                 let (operand, kind) = self.expression(NEG)?;
                 number(kind, "-")?;
-                Ok((
-                    Expr::call(Op::Mul, vec![operand, Expr::Number(-1.0)]),
-                    Kind::Number,
-                ))
+                Ok((operand, Kind::Number))
             }
             _ => self.primary(),
         }
@@ -834,13 +882,14 @@ fn compare(cmp: Cmp, (l, lk): (Expr, Kind), (r, rk): (Expr, Kind)) -> Result<Exp
                 return Err(Problem::unsupported("IN against a computed string"));
             };
             let values = list.split(',').map(|v| {
-                if lk == Kind::Number {
-                    Expr::Number(atof(v))
+                Ok(if lk == Kind::Number {
+                    Expr::Number(finite(v, atof(v))?)
                 } else {
                     Expr::String(v.to_owned())
-                }
+                })
             });
-            Ok(Expr::call(Op::In, vec![l, Expr::List(values.collect())]))
+            let values = values.collect::<Result<_, Problem>>()?;
+            Ok(Expr::call(Op::In, vec![l, Expr::List(values)]))
         }
         (Cmp::In, ..) => Err(mismatch()),
         (Cmp::Re | Cmp::Ire, Kind::String, Kind::String) => {

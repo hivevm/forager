@@ -414,7 +414,7 @@ fn operators_bind_as_in_mapserver() {
         format!(
             concat!(
                 r#"{{"op":"or","args":[{{"op":"and","args":["#,
-                r#"{{"op":"<","args":[{{"op":"*","args":[{d},-1.0]}},0.0]}},"#,
+                r#"{{"op":"<","args":[{d},0.0]}},"#,
                 r#"{{"op":"=","args":[{e},2.0]}}]}},{{"op":"not","args":[true]}}]}}"#
             ),
             d = n("d"),
@@ -531,6 +531,332 @@ fn every_expression_reads_back_equal_from_yaml_and_json() {
             .unwrap()
             .document,
         document
+    );
+}
+
+/// The codes and the CQL2-JSON of a class whose `EXPRESSION` is `expression`, in a layer whose
+/// `CLASSITEM` is `k`.
+fn class_expression(expression: &str) -> (Vec<String>, String) {
+    let text = format!(r#"MAP LAYER CLASSITEM "k" CLASS EXPRESSION {expression} END END END"#);
+    let (loaded, classes, _) = expressions(text.leak());
+    let codes = codes(&loaded).into_iter().map(str::to_owned).collect();
+    (codes, classes.join(","))
+}
+
+const A: &str = r#"{"op":"to_number","args":[{"property":"a"}]}"#;
+const K: &str = r#"{"op":"to_string","args":[{"property":"k"}]}"#;
+
+#[test]
+fn an_empty_expression_matches_every_feature() {
+    // msEvalExpression returns true for an empty expression before it reads the item, so an
+    // empty string, list, or expression matches even without a CLASSITEM or FILTERITEM.
+    for expression in [r#""""#, "''", "{}", "()"] {
+        assert_eq!(class_expression(expression), (vec![], "true".to_owned()));
+    }
+    let (loaded, _, filter) = expressions(r#"MAP LAYER FILTER "" END END"#);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(filter, "true");
+}
+
+#[test]
+fn unary_minus_leaves_its_operand_as_mapserver_does() {
+    // MapServer's grammar: `'-' math_exp %prec NEG { $$ = $2; }`; `-1` is a number token.
+    assert_eq!(
+        class_expression("(-[a] = 1)").1,
+        format!(r#"{{"op":"=","args":[{A},1.0]}}"#)
+    );
+    assert_eq!(
+        class_expression("(- 2 ^ [a] > -1)").1,
+        format!(r#"{{"op":">","args":[{{"op":"^","args":[2.0,{A}]}},-1.0]}}"#)
+    );
+    assert_eq!(class_expression(r#"(-"x")"#).0, ["invalid-expression"]);
+}
+
+#[test]
+fn the_outer_parentheses_are_the_tokens_and_not_part_of_the_expression() {
+    // The lexer's rule `\(.*\)` runs to the last `)` on the line and loadExpression keeps what
+    // is between the first `(` and that `)`: of `([a] = 1) OR ([a] = 2)` it parses
+    // `[a] = 1) OR ([a] = 2`, which the grammar does not accept.
+    assert_eq!(
+        class_expression("([a] = 1) OR ([a] = 2)"),
+        (vec!["invalid-expression".to_owned()], "false".to_owned())
+    );
+    assert_eq!(
+        class_expression("(([a] = 1) OR ([a] = 2))").1,
+        format!(
+            r#"{{"op":"or","args":[{{"op":"=","args":[{A},1.0]}},{{"op":"=","args":[{A},2.0]}}]}}"#
+        )
+    );
+}
+
+#[test]
+fn a_single_bar_or_a_newline_ends_the_expression_as_the_lexer_does() {
+    // The lexer's rule `<EXPRESSION_STRING>[\r|\n|\0]` returns 0, the end of the token list.
+    assert_eq!(
+        class_expression(r#"([a] = 1 | ] "unterminated)"#).1,
+        format!(r#"{{"op":"=","args":[{A},1.0]}}"#)
+    );
+    assert_eq!(
+        class_expression("([a] = 1 || [a] = 2)").1,
+        format!(
+            r#"{{"op":"or","args":[{{"op":"=","args":[{A},1.0]}},{{"op":"=","args":[{A},2.0]}}]}}"#
+        )
+    );
+    let text = forager_style_ir::Expr::call(
+        forager_style_ir::Op::ToNumber,
+        vec![forager_style_ir::Expr::call(
+            forager_style_ir::Op::Tostring,
+            vec![
+                forager_style_ir::Expr::Number(1.0),
+                forager_style_ir::Expr::String("%g".to_owned()),
+            ],
+        )],
+    );
+    assert_eq!(crate::expression::number_value("(1\n+ x)"), Ok(text));
+}
+
+#[test]
+fn keywords_are_read_by_the_lexers_longest_match() {
+    // The expression state has a rule for each keyword and none for a word.
+    assert_eq!(
+        class_expression("([a] = 1 AnDnOt [a] = 2)").1,
+        format!(
+            r#"{{"op":"and","args":[{{"op":"=","args":[{A},1.0]}},{{"op":"not","args":[{{"op":"=","args":[{A},2.0]}}]}}]}}"#
+        )
+    );
+    assert_eq!(
+        class_expression("(nottrue)").1,
+        r#"{"op":"not","args":[true]}"#
+    );
+    assert_eq!(
+        class_expression("([a] = 1 xor true)").0,
+        ["invalid-expression"]
+    );
+    for (word, op) in [
+        ("eq", "="),
+        ("ne", "<>"),
+        ("lt", "<"),
+        ("gt", ">"),
+        ("le", "<="),
+        ("ge", ">="),
+    ] {
+        assert_eq!(
+            class_expression(&format!("([a] {word} 1)")).1,
+            format!(r#"{{"op":"{op}","args":[{A},1.0]}}"#),
+            "{word}"
+        );
+    }
+}
+
+#[test]
+fn a_binding_runs_to_the_last_bracket_the_lexers_longest_match_reaches() {
+    // The rules `\[(?:\]\]|[^\]])*\]`, `"\[(?:""|[^"])*\]"`, and `` `\[(?:``|[^`])*\]` ``, the
+    // doubled character read as one by msStringUnescape.
+    let s = |name: &str| format!(r#"{{"op":"to_string","args":[{{"property":"{name}"}}]}}"#);
+    assert_eq!(
+        class_expression(r#"("[a]b]" = "x")"#).1,
+        format!(r#"{{"op":"=","args":[{},"x"]}}"#, s("a]b"))
+    );
+    assert_eq!(
+        class_expression(r#"('[a''b]' = "x")"#).1,
+        format!(r#"{{"op":"=","args":[{},"x"]}}"#, s("a'b"))
+    );
+    assert_eq!(
+        class_expression(r#"('[a]' = "[b] c")"#).1,
+        format!(r#"{{"op":"=","args":[{},"[b] c"]}}"#, s("a"))
+    );
+    assert_eq!(
+        class_expression("([a]]b] = 1)").1,
+        r#"{"op":"=","args":[{"op":"to_number","args":[{"property":"a]b"}]},1.0]}"#
+    );
+    assert_eq!(
+        class_expression("(`[t``x]` = `2010-12-01`)").1,
+        r#"{"op":"t_equals","args":[{"op":"to_timestamp","args":[{"property":"t`x"}]},{"date":"2010-12-01"}]}"#
+    );
+    assert_eq!(
+        class_expression("([a]] = 1 OR [b] = 2)").1,
+        r#"{"op":"=","args":[{"op":"to_number","args":[{"property":"a] = 1 OR [b"}]},2.0]}"#
+    );
+    assert_eq!(
+        class_expression("([SHAPE] = 1)").0,
+        ["unsupported-expression"]
+    );
+}
+
+#[test]
+fn a_number_the_ir_cannot_hold_is_a_warning() {
+    // atof reads `1e999` as infinity, which JSON cannot carry.
+    for expression in ["([a] > 1e999)", r#"([a] IN "1,1e999")"#] {
+        assert_eq!(
+            class_expression(expression),
+            (
+                vec!["unsupported-expression".to_owned()],
+                "false".to_owned()
+            )
+        );
+    }
+}
+
+#[test]
+fn numbers_take_the_lexers_forms_and_lists_split_without_trimming() {
+    // `-?[0-9]+`, `-?[0-9]+\.[0-9]*`, `-?\.[0-9]*`, each with an exponent; `.` is atof's 0.
+    assert_eq!(
+        class_expression("([a] IN '.5, 2x,' AND [a] < 1. AND [a] = -1.e2 AND [a] = .)").1,
+        format!(
+            r#"{{"op":"and","args":[{{"op":"in","args":[{A},[0.5,2.0,0.0]]}},{{"op":"<","args":[{A},1.0]}},{{"op":"=","args":[{A},-100.0]}},{{"op":"=","args":[{A},0.0]}}]}}"#
+        )
+    );
+}
+
+#[test]
+fn a_whole_expression_is_true_by_its_type() {
+    // The grammar's `input` rule: a number is true when not 0, a string always.
+    assert_eq!(
+        class_expression("([a] - 1)").1,
+        format!(r#"{{"op":"<>","args":[{{"op":"-","args":[{A},1.0]}},0.0]}}"#)
+    );
+    assert_eq!(class_expression(r#"("[k]")"#), (vec![], "true".to_owned()));
+    assert_eq!(class_expression("(`2010-12-01`)").0, ["invalid-expression"]);
+    assert_eq!(
+        class_expression("(true = ([a] > 1))").1,
+        format!(r#"{{"op":"=","args":[true,{{"op":">","args":[{A},1.0]}}]}}"#)
+    );
+}
+
+#[test]
+fn each_comparison_takes_the_types_mapserver_has_a_rule_for() {
+    // A comparison of conditions has only `=`; `=*` is `strcasecmp` on strings, `==` on numbers
+    // and times; `~` and `IN` take a string on the left, `IN` a number too.
+    assert_eq!(
+        class_expression("(true != false)").0,
+        ["invalid-expression"]
+    );
+    assert_eq!(
+        class_expression("(true =* false)").0,
+        ["invalid-expression"]
+    );
+    assert_eq!(
+        class_expression("([a] =* 2)").1,
+        format!(r#"{{"op":"=","args":[{A},2.0]}}"#)
+    );
+    let t = r#"{"op":"to_timestamp","args":[{"property":"t"}]}"#;
+    let d = r#"{"date":"2010-12-01"}"#;
+    for (op, cql) in [
+        ("=*", format!(r#"{{"op":"t_equals","args":[{t},{d}]}}"#)),
+        (
+            "!=",
+            format!(r#"{{"op":"not","args":[{{"op":"t_equals","args":[{t},{d}]}}]}}"#),
+        ),
+        (
+            "<=",
+            format!(r#"{{"op":"not","args":[{{"op":"t_after","args":[{t},{d}]}}]}}"#),
+        ),
+        (
+            ">=",
+            format!(r#"{{"op":"not","args":[{{"op":"t_before","args":[{t},{d}]}}]}}"#),
+        ),
+        ("<", format!(r#"{{"op":"t_before","args":[{t},{d}]}}"#)),
+    ] {
+        assert_eq!(
+            class_expression(&format!("(`[t]` {op} `2010-12-01`)")).1,
+            cql,
+            "{op}"
+        );
+    }
+    for expression in [
+        "([a] ~ 'x')",
+        "('x' IN [a])",
+        "(`[t]` IN 'x')",
+        "([a] = '1')",
+    ] {
+        assert_eq!(
+            class_expression(expression).0,
+            ["invalid-expression"],
+            "{expression}"
+        );
+    }
+    assert_eq!(
+        class_expression(r#"("[k]" !~ "x")"#).0,
+        ["invalid-expression"]
+    );
+}
+
+#[test]
+fn strings_in_an_expression_take_the_lexers_escapes() {
+    // MSSTRING: `\'`, `\"`, `\\` escape, any other backslash stays, and `"i` closes a string.
+    assert_eq!(
+        class_expression(r#"('a\'b\q\\' = "x"i)"#).1,
+        r#"{"op":"=","args":["a'b\\q\\","x"]}"#
+    );
+    assert_eq!(
+        class_expression(r#"("a" + 'it''s' = "x")"#).0,
+        ["invalid-expression"]
+    );
+}
+
+#[test]
+fn functions_take_the_arguments_of_their_rules() {
+    assert_eq!(
+        class_expression("(round([a]) = round([a], 5))").1,
+        format!(
+            r#"{{"op":"=","args":[{{"op":"round","args":[{A}]}},{{"op":"round","args":[{A},5.0]}}]}}"#
+        )
+    );
+    for expression in [
+        "(round([a], 1, 2) = 1)",
+        "(length([a]) = 1)",
+        r#"(tostring("x", "%g") = "x")"#,
+        r#"(tostring([a]) = "x")"#,
+        r#"(upper "x" = "x")"#,
+    ] {
+        assert_eq!(
+            class_expression(expression).0,
+            ["invalid-expression"],
+            "{expression}"
+        );
+    }
+    assert_eq!(
+        class_expression("(area([shape]) > 1)").0,
+        ["unsupported-expression"]
+    );
+}
+
+#[test]
+fn the_last_expression_and_the_last_item_hold_wherever_they_stand() {
+    // loadClass and loadLayer overwrite each; msEvalExpression reads the items when it draws.
+    let (loaded, classes, filter) = expressions(
+        r#"MAP LAYER
+             FILTERITEM "f1"
+             FILTER /x/
+             CLASS EXPRESSION "a" EXPRESSION {b,c} END
+             CLASSITEM "k1"
+             CLASSITEM "k2"
+             FILTERITEM "f2"
+           END END"#,
+    );
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        classes,
+        [r#"{"op":"in","args":[{"op":"to_string","args":[{"property":"k2"}]},["b","c"]]}"#]
+    );
+    assert_eq!(
+        filter,
+        r#"{"op":"regexp_like","args":[{"op":"to_string","args":[{"property":"f2"}]},"x",""]}"#
+    );
+    let (loaded, _, filter) = expressions(r#"MAP LAYER CLASSITEM "k" FILTER {a} END END"#);
+    assert_eq!(codes(&loaded), ["invalid-expression"]);
+    assert_eq!(filter, "false");
+    assert_eq!(
+        class_expression("{ a,b }").1,
+        format!(r#"{{"op":"in","args":[{K},[" a","b "]]}}"#)
+    );
+    assert_eq!(
+        class_expression("road").1,
+        format!(r#"{{"op":"=","args":[{K},"road"]}}"#)
+    );
+    assert_eq!(
+        class_expression("5"),
+        (vec!["invalid-value".to_owned()], String::new())
     );
 }
 
