@@ -675,7 +675,7 @@ fn a_clone_without_its_history_is_refused_and_one_without_a_release_passes() {
 /// Fixture types in two versions, so that the classifier is tested on what schemars writes, not
 /// on what a test supposes it writes.
 mod derived {
-    #![allow(dead_code)]
+    #![expect(dead_code, reason = "the fixtures exist for their derived schemas, never read")]
 
     use forager_style_ir::Bound;
     use schemars::JsonSchema;
