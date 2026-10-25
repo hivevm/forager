@@ -143,7 +143,8 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
   maintainer). ADR-0014 and ADR-0020 are not touched, because `SHAPEPATH` folds into the source's
   `data` and the format does not change.
 - New `proposed` ADRs before the tickets that need them: the shapefile reader; how the pinned
-  MapServer runs on CI; what runs the `wasm32-unknown-unknown` module in a native test. Should the
+  MapServer runs on CI; what runs the `wasm32-unknown-unknown` module in a native test; the value
+  types of a feature's properties at the source port. Should the
   module need a host crate of its own, that ADR supersedes ADR-0009 to add it to the table.
 - A specification change: the threshold and the tolerance of the category geometry and symbols in
   G-6, and the metric with them.

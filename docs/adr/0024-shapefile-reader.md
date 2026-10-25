@@ -15,10 +15,10 @@ builds for `wasm32-unknown-unknown` without C code (Q-1), although only the CLI 
 
 Which records MapServer reads decides what the reference images show (Q-4), and its reader,
 `src/mapshape.c` and `src/mapxbase.c`, decides more than the ESRI description does: it takes the
-file's shape type from the `.shx`, selects records for an extent by the bounding box each record
-stores, reads a record that fails one of its guards on counts and sizes as no shape and reads the
-next, and reads only some fields of the `.dbf` header, neither the update date nor the language
-driver.
+file's shape type from the `.shx`; for an extent that cuts through the file's bounds it selects
+records by the bounding box each record stores, by the point itself in a point file; it reads a
+record that fails one of its guards on counts and sizes as no shape and reads the next; and it
+reads only some fields of the `.dbf` header, neither the update date nor the language driver.
 
 Its memory, though, is guarded by reading, drawing, and freeing one shape at a time. It allocates
 a record's buffer to the size the `.shx` claims and a record's part list before it checks the
@@ -35,13 +35,15 @@ checked arithmetic, with `.dbf` text decoded as UTF-8 and an invalid byte replac
 memory that follows the files' size where MapServer's does not: nothing is allocated from a count
 or a size of a header or a record before it is checked against the bytes present, the records read
 from one `.shp` add up to no more bytes than it holds, the records past that read as no shape, and
-a feature's attributes cost no more than its record in the `.dbf` and a field table its layer
-shares.
+a feature's attributes cost memory in proportion to its record in the `.dbf`, beside a field
+table its layer shares.
 
 The reading is written down in `docs/semantics/shapefile.md`, each rule with the MapServer
 function it follows, as the other semantics pages are; where the reader departs from MapServer,
-the page says so and why. One departure is decided here: a record whose bounding box cannot be
-read is no shape, where MapServer fails the layer when it selects records by their boxes.
+the page says so and why. One departure is decided here: where MapServer selects records by
+their boxes and `msSHPReadBounds` fails on one whose `.shx` size is not 4 — a size of 0 to 3, an
+offset of 0 or past the `.shp`, a box cut short by the end of the file, a box whose least x is
+not a number — MapServer fails the layer; the adapter reads that record as no shape and reads on.
 
 **Out of scope:** code pages, `.cpg` files, and a layer's `ENCODING`; the index files `.qix` and
 `.sbn`; the measure and height of a shape beyond what MapServer's guards check; writing
@@ -72,10 +74,11 @@ adapter.
 
 ## Sources / Prior art
 
-- MapServer rel-8-6-6: `src/mapshape.c` — `msSHPOpenVirtualFile`, `msSHXLoadPage`,
-  `msSHXReadSize`, `msSHPReadAllocateBuffer`, `msSHPReadShape`, `msShapefileWhichShapes`,
-  `msSHPLayerOpen`, and `msSHPLayerNextShape`; `src/mapxbase.c` — `msDBFOpenVirtualFile`,
-  `msDBFReadAttribute`, `msDBFOpen`, and `msReadCPGEncoding`.
+- MapServer rel-8-6-6: `src/mapshape.c` — `msSHPOpen`, `msSHPOpenVirtualFile`, `msSHXLoadPage`,
+  `msSHXReadSize`, `msSHPReadAllocateBuffer`, `msSHPReadShape`, `msSHPReadBounds`,
+  `msShapefileOpen`, `msShapefileWhichShapes`, `msSHPLayerOpen`, and `msSHPLayerNextShape`;
+  `src/mapxbase.c` — `msDBFOpenVirtualFile`, `msDBFReadAttribute`, `msDBFOpen`, and
+  `msReadCPGEncoding`.
 - ESRI, *ESRI Shapefile Technical Description*, July 1998,
   <https://www.esri.com/content/dam/esrisites/sitecore-archive/Files/Pdfs/library/whitepapers/pdfs/shapefile.pdf>.
 - `shapefile` 0.9.0 and `dbase` 0.8.0, <https://github.com/tmontaigu/shapefile-rs> and
@@ -94,9 +97,12 @@ adapter.
   is not UTF-8 reads with replacement characters where MapServer would convert it by the `.cpg`.
   A `.shx` that names one record twice reads the second as no shape once the byte total is spent,
   where MapServer draws it again. The source still returns a layer's features before the engine
-  counts them against the feature limit of Q-9; the bound is the files' size, not that limit.
-- Follow-ups: features that carry their attributes through the port; a source that stops at the
-  feature limit, with the Q-9 limits of the sources; the adapter as a target of the weekly fuzz run
+  counts them against the feature limit of Q-9; the bound is the files' size, not that limit. A
+  record read as no shape is dropped without a diagnostic, since the source port has no channel
+  for one; Q-3 asks for one.
+- Follow-ups: features that carry their attributes through the port; a diagnostic channel of the
+  source port, for the records a source drops; a source that stops at the feature limit, with the
+  Q-9 limits of the sources; the adapter as a target of the weekly fuzz run
   (Q-3); code pages and `ENCODING`, when a case or a user needs them; the size of the bundle (Q-5)
   once a browser host binds the adapter.
 
@@ -104,9 +110,9 @@ adapter.
 
 A test of `adapter-shapefile` cites this ADR with `Verifies:`, and so does each rule of
 `docs/semantics/shapefile.md` by a test of its own. Among them, run in a test binary of their own
-with a counting allocator that asserts the peak allocation stays under a stated multiple of the
-files' size: a record with counts under MapServer's guards but past its size; a record whose
+with a counting allocator that asserts the peak allocation stays under four times the files' size
+plus one mebibyte: a record with counts under MapServer's guards but past its size; a record whose
 offset or size lies outside the `.shp`; a `.shx` header whose record count exceeds the entries the
 file holds; a `.shx` that points many entries at one large record, read until the byte total is
-spent; a `.dbf` header of many zero-width fields over many records. And a record whose bounding
-box lies outside the `.shp`, read as no shape while the layer reads on.
+spent; and, once attributes reach the port, a `.dbf` header of many zero-width fields over many
+records. And each case of the departure, read as no shape while the layer reads on.
