@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::task::{Context, Poll, Waker};
 
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::Bound;
@@ -22,19 +21,13 @@ impl ResourceLoader for Files {
     }
 }
 
-pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
-    let mut future = std::pin::pin!(future);
-    let mut context = Context::from_waker(Waker::noop());
-    loop {
-        if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
-            return output;
-        }
-    }
+pub(crate) fn ready<F: Future>(future: F) -> F::Output {
+    forager_ports::poll_once(future).expect("the test files never wait")
 }
 
 pub(crate) fn load_files(files: &[(&'static str, &'static str)]) -> Loaded {
     let loader = Files(files.iter().copied().collect());
-    block_on(load(&ResourcePath::new(files[0].0).unwrap(), &loader, None))
+    ready(load(&ResourcePath::new(files[0].0).unwrap(), &loader, None))
 }
 
 pub(crate) fn codes(loaded: &Loaded) -> Vec<&str> {

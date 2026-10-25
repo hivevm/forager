@@ -129,19 +129,11 @@ fn visit(geometry: &Geometry, f: &mut impl FnMut(Coord)) {
 #[cfg(test)]
 mod tests {
     use std::future::Future;
-    use std::task::{Context, Poll, Waker};
 
     use super::*;
 
     fn ready<F: Future>(future: F) -> F::Output {
-        let mut future = std::pin::pin!(future);
-        match future
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-        {
-            Poll::Ready(output) => output,
-            Poll::Pending => panic!("the GeoJSON source never waits"),
-        }
+        forager_ports::poll_once(future).expect("the GeoJSON source never waits")
     }
 
     fn query(min_x: f64, min_y: f64, max_x: f64, max_y: f64) -> FeatureQuery {
