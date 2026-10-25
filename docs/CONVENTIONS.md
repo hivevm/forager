@@ -27,6 +27,12 @@ skimmed. The design revision drops what prevented nothing
   release, never as a ticket or memory describes it, and each branch of that function the port
   takes over has a test of its own: the msautotest corpus passing says nothing of a branch no
   file of it takes, which is where such a port goes silently wrong.
+- **A reader of untrusted bytes allocates nothing from a count or a size the bytes state before
+  checking it against the bytes present** — a header's record count, a part count, a length
+  field: each is compared with what the input holds, in checked arithmetic, before anything is
+  reserved for it, so that memory follows the input's size and Q-9's limit on it means something;
+  a third-party reader is held to the same before it is chosen, as the `shapefile` crate was not
+  ([ADR-0024](adr/0024-shapefile-reader.md)).
 - **A reader that skips what it cannot read fails closed** — a condition it cannot read becomes
   one that never matches, never one that is absent, and what it skips is still held to the limits
   of Q-9; a lenient path is a second way in, and what it leaves out must not widen what a map

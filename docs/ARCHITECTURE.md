@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-24, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-10-25, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -71,7 +71,9 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0016](adr/0016-geojson-crate.md)).
 - **`adapter-shapefile`** — a feature source over an ESRI shapefile, its `.shp`, `.shx`, and
   `.dbf` loaded through the resource loader and read with the records MapServer reads, in memory
-  that follows the files' size ([ADR-0024](adr/0024-shapefile-reader.md)); no host binds it yet.
+  that follows the files' size ([ADR-0024](adr/0024-shapefile-reader.md)), each rule of the
+  reading written down in `docs/semantics/shapefile.md`; a record it cannot read is dropped
+  without a diagnostic, since the source port has no channel for one. No host binds it yet.
 - **`adapter-epsg`** — resolves `init=epsg:` projections for the frontend through the
   `ProjectionResolver` port: built in are only EPSG:4326, EPSG:3857, and the WGS84 UTM zones;
   every other code comes from a table the host supplies
@@ -93,16 +95,22 @@ golden path and the test pattern an agent copies from are named here.
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`
   ([ADR-0015](adr/0015-agg-rust-rasterizer.md)), and requires every crate of the IR and the core
-  to turn on the lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2).
+  to turn on the lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and
+  to lift them nowhere but the one test time bound it names; the frontend, the ports, the
+  adapters, and the hosts are not held to the ban.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
 structured shapes, and the browser path on GeoJSON — run by `scripts/fuzz.sh`, every Sunday
 through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out of the
-product's build, and `scripts/check-rust.sh` lints it on every push.
+product's build, and `scripts/check-rust.sh` lints it on every push. The shapefile adapter is
+not a target yet. Beside it, `scripts/mutants.sh` runs cargo-mutants over the workspace every
+week through `.github/workflows/mutants.yml` and reports the edits no test notices.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
-pins, by tag and commit: a sparse checkout into `target/`, cached in CI, never in the repository.
+pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles the
+cases of `misc` and `renderers` read, and the non-cairo PNG references of those two directories,
+cached in CI, never in the repository.
 `scripts/check-rust.sh` loads every mapfile of it through the CLI on every push (G-1), with the
 suite's directory as the base context and a stand-in table for the EPSG codes beyond the built-in
 ones, and round-trips the style IR of each through YAML and JSON (G-3);
