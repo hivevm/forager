@@ -5,7 +5,9 @@
 # target/ by scripts/fetch-msautotest.sh), the build of every crate that must run in the browser
 # for wasm32-unknown-unknown (Q-1), the WebAssembly bindings and their size (Q-5) once they
 # exist, and cargo deny (ADR-0012). scripts/check-all.sh and the `rust` job of checks.yml run
-# it; the tools come from scripts/install-tools.sh.
+# it; the tools come from scripts/install-tools.sh. Two fixture workspaces show that cargo deny
+# refuses a non-permissive licence and that clippy bans hash maps, clocks, and randomness in the
+# core alone (Q-2).
 #
 # Usage: bash scripts/check-rust.sh
 set -euo pipefail
@@ -41,6 +43,53 @@ step "msautotest: every mapfile loads without an error (G-1)"
 suite="$(bash scripts/fetch-msautotest.sh)"
 FORAGER_MSAUTOTEST="$suite" cargo test -p forager-cli --locked --test msautotest -- --ignored
 
+step "Clippy bans hash maps, clocks, and randomness in the core alone (Q-2)"
+# Verifies: Q-2
+# A fixture workspace with this clippy.toml and these workspace lints: a crate that carries the line
+# of a core crate's lib.rs must fail on every banned use, and one without it, as a host or an
+# adapter, must pass.
+lints="$(mktemp -d)"
+trap 'rm -rf "$lints"' EXIT
+mkdir -p "$lints/core/src" "$lints/host/src"
+cp clippy.toml rust-toolchain.toml "$lints/"
+{
+  printf '[workspace]\nmembers = ["core", "host"]\nresolver = "3"\n\n'
+  awk '/^\[/ { keep = ($0 ~ /^\[workspace\.lints\./) } keep' Cargo.toml
+} > "$lints/Cargo.toml"
+for member in core host; do
+  printf '[package]\nname = "%s"\nversion = "0.1.0"\nedition = "2024"\npublish = false\n[lints]\nworkspace = true\n' \
+    "$member" > "$lints/$member/Cargo.toml"
+done
+uses='pub fn uses() -> usize {
+    let map = std::collections::HashMap::<u8, u8>::new();
+    let set = std::collections::HashSet::<u8>::new();
+    let _: std::hash::RandomState = std::hash::RandomState::new();
+    let _: std::time::SystemTime = std::time::SystemTime::now();
+    let _: std::time::Instant = std::time::Instant::now();
+    map.len() + set.len()
+}'
+{
+  grep -m 1 '^#!\[warn(clippy::disallowed_types' crates/style-ir/src/lib.rs
+  printf '%s\n' "$uses"
+} > "$lints/core/src/lib.rs"
+printf '%s\n' "$uses" > "$lints/host/src/lib.rs"
+(cd "$lints" && cargo generate-lockfile --offline -q)
+if output="$(cd "$lints" && cargo clippy -p core --offline -- -D warnings 2>&1)"; then
+  echo "check-rust: clippy accepted hash maps, clocks, and randomness in a core crate" >&2
+  exit 1
+fi
+for banned in type:std::collections::HashMap type:std::collections::HashSet \
+  type:std::hash::RandomState method:std::hash::RandomState::new \
+  type:std::time::SystemTime method:std::time::SystemTime::now \
+  type:std::time::Instant method:std::time::Instant::now; do
+  if ! grep -qF "use of a disallowed ${banned%%:*} \`${banned#*:}\`" <<< "$output"; then
+    printf 'check-rust: clippy did not name %s in a core crate:\n%s\n' "${banned#*:}" "$output" >&2
+    exit 1
+  fi
+done
+(cd "$lints" && cargo clippy -p host --offline -q -- -D warnings)
+echo "banned in the core, allowed in a host, as it should be"
+
 step "Fuzz targets: formatting and clippy"
 # The fuzz workspace is not a member of the main one; built here, an API change of the crates it
 # fuzzes breaks the push, not next week's fuzz run.
@@ -74,7 +123,7 @@ step "cargo deny refuses a non-permissive licence"
 # Verifies: ADR-0012, Q-6
 # A fixture workspace whose dependency declares GPL-3.0-only; the licence check must fail on it.
 fixture="$(mktemp -d)"
-trap 'rm -rf "$fixture"' EXIT
+trap 'rm -rf "$lints" "$fixture"' EXIT
 mkdir -p "$fixture/app/src" "$fixture/gpl/src"
 cp deny.toml rust-toolchain.toml "$fixture/"
 printf '[workspace]\nmembers = ["app"]\nresolver = "3"\n' > "$fixture/Cargo.toml"

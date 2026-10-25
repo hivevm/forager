@@ -39,6 +39,10 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 too_many_lines = "warn"
 cognitive_complexity = "warn"
+# The bans of clippy.toml (Q-2) bind the IR and the core alone; each of their crates warns these
+# lints at the top of its lib.rs.
+disallowed_types = "allow"
+disallowed_methods = "allow"
 
 # The browser bundle is downloaded by every map viewer (Q-5): scripts/build-web.sh builds it with
 # this profile, optimized for size; other release builds keep the default.

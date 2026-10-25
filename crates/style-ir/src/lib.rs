@@ -2,6 +2,8 @@
 //! serializes it as YAML or JSON (ADR-0009, ADR-0014); its expressions are a CQL2 tree
 //! (ADR-0019).
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 mod diagnostic;
 mod document;
 mod expression;

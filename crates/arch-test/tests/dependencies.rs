@@ -228,3 +228,41 @@ fn only_render_agg_allows_unsafe_code() {
     }
     assert!(offenders.is_empty(), "{offenders:?}");
 }
+
+/// The crates of the IR and the core groups of ADR-0009.
+const IR_AND_CORE: &[&str] = &[
+    "style-ir",
+    "expr",
+    "proj",
+    "render",
+    "render-agg",
+    "encode",
+    "symbolize",
+    "label",
+    "raster",
+    "engine",
+];
+
+#[test]
+fn the_ir_and_the_core_warn_the_lints_that_ban_hash_maps_clocks_and_randomness() {
+    // Verifies: Q-2
+    // clippy.toml names the banned types and methods and the workspace allows their lints; a crate
+    // of the IR or the core turns them on at the top of its lib.rs, which scripts/check-rust.sh
+    // shows to bite on a fixture. A new core crate without the line would escape the ban.
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let line = "#![warn(clippy::disallowed_types, clippy::disallowed_methods)]";
+    let missing: Vec<_> = IR_AND_CORE
+        .iter()
+        .filter(|name| crates.join(name).is_dir())
+        .filter(|name| {
+            !std::fs::read_to_string(crates.join(name).join("src/lib.rs"))
+                .unwrap_or_default()
+                .lines()
+                .any(|l| l == line)
+        })
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "core crates without `{line}`: {missing:?}"
+    );
+}

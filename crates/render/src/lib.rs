@@ -1,6 +1,8 @@
 //! The display list and the renderer trait: what is drawn, in pixel coordinates, independent of
 //! the backend that rasterizes it (ADR-0009). Only `style-ir` is known here.
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 use forager_style_ir::Rgba;
 
 /// A position in pixels, from the top-left corner of the image.

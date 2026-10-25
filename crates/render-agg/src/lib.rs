@@ -1,5 +1,7 @@
 //! The reference renderer: the display list rasterized with agg-rust (ADR-0015).
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 mod clip;
 
 use agg_rust::basics::FillingRule;
@@ -163,8 +165,6 @@ impl Renderer for AggRenderer {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
     use super::*;
 
     const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -212,9 +212,14 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::disallowed_types,
+        clippy::disallowed_methods,
+        reason = "the clock bounds the test's run time and reaches no output (Q-2)"
+    )]
     fn hostile_coordinates_render_quickly_without_a_panic() {
         // Verifies: ADR-0015, Q-3
-        let started = Instant::now();
+        let started = std::time::Instant::now();
         let huge = vec![p(-1e15, -1e15), p(1e15, 5.0), p(30.0, 1e15)];
         let broken = vec![p(f64::NAN, 1.0), p(f64::INFINITY, 5.0), p(30.0, 3.0)];
         let _ = render(&[
