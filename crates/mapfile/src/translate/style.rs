@@ -222,10 +222,12 @@ impl Translator<'_> {
 }
 
 /// What a property holds after a later directive gives it `new`: loadStyle never frees a
-/// binding for a number, and bindStyle, src/maputil.c, draws the binding over the number.
+/// binding for a number, and bindStyle, src/maputil.c, draws the binding over the number. A
+/// colour of `-1 -1 -1` reads as none, and keeps the binding too; any other `None` is a value
+/// that did not read, which fails the load anyway.
 fn kept_binding<T>(earlier: Option<Bound<T>>, new: Option<Bound<T>>) -> Option<Bound<T>> {
     match (earlier, new) {
-        (Some(binding @ Bound::Binding { .. }), Some(Bound::Value(_))) => Some(binding),
+        (Some(binding @ Bound::Binding { .. }), Some(Bound::Value(_)) | None) => Some(binding),
         (_, new) => new,
     }
 }

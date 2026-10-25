@@ -444,3 +444,11 @@ fn a_geomtransform_name_is_matched_on_its_prefix_as_msstylesetgeomtransform_matc
     let (_, style) = first_style(text);
     assert_eq!(style.unwrap().geom_transform, None);
 }
+
+#[test]
+fn a_colour_binding_holds_over_a_later_colour_of_none() {
+    let (loaded, style) =
+        first_style("MAP LAYER CLASS STYLE COLOR [c] COLOR -1 -1 -1 END END END END");
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(style.unwrap().color, binding("c"));
+}
