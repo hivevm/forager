@@ -1161,4 +1161,13 @@ mod tests {
         let read = StyleDocument::from_json(&json.replace("\"1.0\"", "\"1.9\"")).unwrap();
         assert_eq!(read.document.map.layers[0].classes[0].styles[0].width, None);
     }
+
+    #[test]
+    fn json_after_the_document_is_a_read_error() {
+        for version in ["1.0", "1.9"] {
+            let json = format!(r#"{{"version":"{version}","map":{{}}}} {{"more":1}}"#);
+            let error = StyleDocument::from_json(&json).unwrap_err();
+            assert_eq!(error.code, "json-read", "{version}");
+        }
+    }
 }
