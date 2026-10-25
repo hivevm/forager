@@ -1,6 +1,6 @@
 # ADR-0024: The shapefile adapter reads shapefiles with a reader derived from MapServer's
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-25
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/adapter-shapefile`, `docs/semantics/shapefile.md`
