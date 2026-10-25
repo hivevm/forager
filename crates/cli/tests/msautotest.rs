@@ -9,7 +9,6 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::task::{Context, Poll, Waker};
 
 use forager_adapter_epsg::EpsgTable;
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
@@ -265,14 +264,7 @@ impl ResourceLoader for Suite {
 }
 
 fn ready<F: Future>(future: F) -> F::Output {
-    let mut future = std::pin::pin!(future);
-    match future
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    {
-        Poll::Ready(output) => output,
-        Poll::Pending => panic!("the suite's loader never waits"),
-    }
+    forager_ports::poll_once(future).expect("the suite's loader never waits")
 }
 
 /// The JSON Pointer of the first place where `a` and `b` differ.

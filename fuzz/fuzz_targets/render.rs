@@ -6,8 +6,6 @@
 #![no_main]
 
 use std::collections::BTreeMap;
-use std::future::Future;
-use std::task::{Context, Poll, Waker};
 
 use arbitrary::Arbitrary;
 use forager_ports::{Coord, Feature, FeatureQuery, FeatureSource, Geometry, SourceError};
@@ -101,11 +99,6 @@ fuzz_target!(|input: Input| {
         .into_iter()
         .map(|name| (name.to_owned(), Shapes(features.clone())))
         .collect();
-    let mut future = std::pin::pin!(forager_engine::render(&map, &sources, AggRenderer::new()));
-    let Poll::Ready(_) = future
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    else {
-        panic!("the engine waited on a source that never waits");
-    };
+    let _ = forager_ports::poll_once(forager_engine::render(&map, &sources, AggRenderer::new()))
+        .expect("the engine waited on a source that never waits");
 });

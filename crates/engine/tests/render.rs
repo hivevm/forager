@@ -5,7 +5,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::PathBuf;
-use std::task::{Context, Poll, Waker};
 
 use forager_adapter_geojson::GeoJsonSource;
 use forager_engine::{MAX_IMAGE_SIDE, Rendered, render};
@@ -21,14 +20,7 @@ const BLACK: Rgba = Rgba::opaque(0, 0, 0);
 const BLUE: Rgba = Rgba::opaque(30, 60, 200);
 
 fn ready<F: Future>(future: F) -> F::Output {
-    let mut future = std::pin::pin!(future);
-    match future
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    {
-        Poll::Ready(output) => output,
-        Poll::Pending => panic!("the engine waited on a source that never waits"),
-    }
+    forager_ports::poll_once(future).expect("the engine waited on a source that never waits")
 }
 
 /// A 101 × 101 image of the extent 0..100, so that one map unit is one pixel.

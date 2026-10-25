@@ -6,8 +6,6 @@
 mod credentials;
 
 use std::collections::BTreeMap;
-use std::future::Future;
-use std::task::{Context, Poll, Waker};
 
 use forager_adapter_epsg::EpsgTable;
 use forager_adapter_geojson::GeoJsonSource;
@@ -54,7 +52,7 @@ pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &V
             };
         }
     };
-    let Some(loaded) = now(forager_mapfile::load(
+    let Some(loaded) = forager_ports::poll_once(forager_mapfile::load(
         &ResourcePath::new(MAPFILE_NAME).expect("a plain file name is a resource path"),
         &OneFile(mapfile),
         Some(&resolver),
@@ -98,7 +96,9 @@ pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &V
     for name in &rejected {
         bound.remove(name);
     }
-    let Some(rendered) = now(forager_engine::render(&map, &bound, AggRenderer::new())) else {
+    let Some(rendered) =
+        forager_ports::poll_once(forager_engine::render(&map, &bound, AggRenderer::new()))
+    else {
         return waited();
     };
     diagnostics.extend(rendered.diagnostics);
@@ -150,20 +150,6 @@ impl ResourceLoader for OneFile<'_> {
                 "the browser example has no files besides the mapfile",
             ))
         }
-    }
-}
-
-/// Runs a future whose ports never wait — the mapfile and the GeoJSON are in memory — in one
-/// poll. The browser is single-threaded, so nothing could wake a future that waits; `None` then,
-/// rather than a spinning tab.
-fn now<F: Future>(future: F) -> Option<F::Output> {
-    let mut future = std::pin::pin!(future);
-    match future
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    {
-        Poll::Ready(output) => Some(output),
-        Poll::Pending => None,
     }
 }
 

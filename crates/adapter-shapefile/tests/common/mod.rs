@@ -4,7 +4,6 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::task::{Context, Poll, Waker};
 
 use forager_adapter_shapefile::ShapefileSource;
 use forager_ports::{
@@ -19,14 +18,7 @@ pub const POLYGON: i32 = 5;
 pub const MULTIPOINT: i32 = 8;
 
 pub fn ready<F: Future>(future: F) -> F::Output {
-    let mut future = std::pin::pin!(future);
-    match future
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    {
-        Poll::Ready(output) => output,
-        Poll::Pending => panic!("the shapefile source never waits"),
-    }
+    forager_ports::poll_once(future).expect("the shapefile source never waits")
 }
 
 /// The files of a resource loader, by path.

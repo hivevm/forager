@@ -4,9 +4,6 @@
 // Verifies: Q-3
 #![no_main]
 
-use std::future::Future;
-use std::task::{Context, Poll, Waker};
-
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::StyleDocument;
 use libfuzzer_sys::fuzz_target;
@@ -32,13 +29,9 @@ impl ProjectionResolver for AnyProjection {
 fuzz_target!(|data: &[u8]| {
     let path = ResourcePath::new("fuzz.map").unwrap();
     let loader = Echo(data);
-    let mut future = std::pin::pin!(forager_mapfile::load(&path, &loader, Some(&AnyProjection)));
-    let Poll::Ready(loaded) = future
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    else {
-        panic!("the mapfile frontend waited on a loader that never waits");
-    };
+    let loaded =
+        forager_ports::poll_once(forager_mapfile::load(&path, &loader, Some(&AnyProjection)))
+            .expect("the mapfile frontend waited on a loader that never waits");
     if let Some(document) = loaded.document {
         let yaml = document
             .to_yaml()
