@@ -45,10 +45,9 @@ impl Comparison {
     /// The share of differing pixels, or `None` when the sizes differ.
     pub fn share(&self) -> Option<f64> {
         match *self {
-            Self::Measured { pixels: 0, .. } => Some(0.0),
             Self::Measured {
                 differing, pixels, ..
-            } => Some(differing as f64 / pixels as f64),
+            } => Some(share(differing, pixels)),
             Self::SizesDiffer { .. } => None,
         }
     }
@@ -62,7 +61,7 @@ impl fmt::Display for Comparison {
             } => write!(
                 f,
                 "{differing} of {pixels} pixels differ ({:.4})",
-                self.share().unwrap_or(0.0)
+                share(*differing, *pixels)
             ),
             Self::SizesDiffer {
                 rendering,
@@ -98,12 +97,25 @@ pub fn compare(rendering: &RgbaImage, reference: &RgbaImage, metric: &Metric) ->
     Comparison::Measured {
         differing,
         pixels,
-        passes: differing as f64 <= metric.tolerance * pixels as f64,
+        // The share against the tolerance, not the count against the tolerance times the pixels:
+        // a decimal tolerance such as 0.29 times 100 rounds below 29, where 29 / 100 rounds to
+        // the same double as 0.29 does.
+        passes: share(differing, pixels) <= metric.tolerance,
+    }
+}
+
+/// The share of `differing` among `pixels`; an image without pixels has none differing.
+fn share(differing: u64, pixels: u64) -> f64 {
+    if pixels == 0 {
+        0.0
+    } else {
+        differing as f64 / pixels as f64
     }
 }
 
 /// Compares as [`compare`] does and, when the case fails, writes the rendering as
-/// `<name>.png` and a difference image as `<name>.diff.png` into `dir` for the maintainer.
+/// `<name>.png` and a difference image as `<name>.diff.png` into `dir` for the maintainer. An
+/// image without pixels has nothing to show and is not written, as PNG holds none.
 pub fn compare_and_keep(
     rendering: &RgbaImage,
     reference: &RgbaImage,
@@ -119,6 +131,9 @@ pub fn compare_and_keep(
             (format!("{name}.png"), rendering),
             (format!("{name}.diff.png"), &difference),
         ] {
+            if image.width == 0 || image.height == 0 {
+                continue;
+            }
             let bytes = forager_encode::png(image).map_err(std::io::Error::other)?;
             std::fs::write(dir.join(file), bytes)?;
         }

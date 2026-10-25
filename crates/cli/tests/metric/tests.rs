@@ -38,12 +38,26 @@ fn png_bytes(
     data: &[u8],
     palette: Option<(&[u8], &[u8])>,
 ) -> Vec<u8> {
+    png_bytes_of_depth(width, height, color, png::BitDepth::Eight, data, palette)
+}
+
+fn png_bytes_of_depth(
+    width: u32,
+    height: u32,
+    color: png::ColorType,
+    depth: png::BitDepth,
+    data: &[u8],
+    palette: Option<(&[u8], &[u8])>,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut encoder = png::Encoder::new(&mut bytes, width, height);
     encoder.set_color(color);
-    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_depth(depth);
     if let Some((palette, trns)) = palette {
-        encoder.set_palette(palette.to_vec());
+        // A grey or RGB image has no palette, only the shade its tRNS names transparent.
+        if !palette.is_empty() {
+            encoder.set_palette(palette.to_vec());
+        }
         encoder.set_trns(trns.to_vec());
     }
     let mut writer = encoder.write_header().unwrap();
@@ -101,6 +115,25 @@ fn a_share_at_the_tolerance_passes_and_one_pixel_above_it_fails() {
 }
 
 #[test]
+fn a_decimal_tolerance_passes_the_share_that_equals_it() {
+    // 0.29 × 100 rounds to 28.999…; the case of 29 differing pixels still passes.
+    let metric = Metric {
+        threshold: 10,
+        tolerance: 0.29,
+    };
+    let reference = RgbaImage {
+        width: 10,
+        height: 10,
+        pixels: [10, 20, 30, 255].repeat(100),
+    };
+    let at = (0..29).fold(reference.clone(), |image, i| nudged(image, i, 50));
+    let comparison = compare(&at, &reference, &metric);
+    assert_eq!(comparison.share(), Some(0.29));
+    assert!(comparison.passes());
+    assert!(!compare(&nudged(at, 29, 50), &reference, &metric).passes());
+}
+
+#[test]
 fn images_of_different_sizes_fail_naming_both_sizes() {
     let rendering = plain([0, 0, 0, 255]);
     let reference = RgbaImage {
@@ -151,8 +184,63 @@ fn an_rgb_png_decodes_to_the_opaque_rgba_image_of_its_pixels() {
 }
 
 #[test]
-fn a_broken_png_is_an_error() {
-    assert!(decode(b"not a png").is_err());
+fn a_sixteen_bit_png_decodes_to_its_high_bytes() {
+    // Two RGBA pixels of 16-bit samples, big-endian: the high byte of each is the 8-bit sample.
+    let data = [
+        0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xff, 0xff, //
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x80, 0x00,
+    ];
+    let bytes = png_bytes_of_depth(
+        2,
+        1,
+        png::ColorType::Rgba,
+        png::BitDepth::Sixteen,
+        &data,
+        None,
+    );
+    let decoded = decode(&bytes).unwrap();
+    assert_eq!(
+        decoded.pixels,
+        [0x12, 0x56, 0x9a, 0xff, 0x01, 0x03, 0x05, 0x80]
+    );
+}
+
+#[test]
+fn a_grey_png_with_a_transparent_shade_decodes_that_shade_transparent() {
+    // Grey 8-bit with tRNS naming the shade 7 as transparent.
+    let bytes = png_bytes(
+        2,
+        1,
+        png::ColorType::Grayscale,
+        &[7, 9],
+        Some((&[], &[0, 7])),
+    );
+    let decoded = decode(&bytes).unwrap();
+    assert_eq!(decoded.pixels, [7, 7, 7, 0, 9, 9, 9, 255]);
+}
+
+#[test]
+fn a_broken_png_is_an_error_that_says_why() {
+    let error = decode(b"not a png").unwrap_err();
+    assert!(error.contains("signature"), "{error}");
+}
+
+#[test]
+fn an_empty_failing_rendering_returns_its_comparison_and_writes_nothing() {
+    let dir = out_dir("empty");
+    let rendering = RgbaImage {
+        width: 0,
+        height: 3,
+        pixels: Vec::new(),
+    };
+    let reference = RgbaImage {
+        width: 0,
+        height: 0,
+        pixels: Vec::new(),
+    };
+    let comparison = compare_and_keep(&rendering, &reference, &METRIC, &dir, "empty").unwrap();
+    assert!(matches!(comparison, Comparison::SizesDiffer { .. }));
+    assert!(!dir.join("empty.png").exists());
 }
 
 #[test]

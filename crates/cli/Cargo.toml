@@ -24,7 +24,8 @@ forager-adapter-epsg.workspace = true
 
 [dev-dependencies]
 forager-render.workspace = true
-# Decodes the reference images, palette and RGB ones included, for the metric (ADR-0017).
+# Decodes the reference images, palette and RGB ones included, for the metric, as the
+# conformance-harness spec decides; the same crate and version the encoder uses (ADR-0017).
 png = "0.18.1"
 serde_json.workspace = true
 
