@@ -18,7 +18,9 @@
   in a byte — `rb_cmap` in `src/mapdrawgdal.c` is `unsigned char`, AGG's `rgba8` takes
   `unsigned` and keeps an `int8u` — so it draws as the channel modulo 256: −255 is 1, −2 is 254.
   The frontend stores that byte.
-- `IMAGECOLOR` is drawn as the background without `MS_VALID_COLOR`, and opaque: `msPrepareImage`
-  (`src/mapdraw.c`) sets its alpha to 255. So −1 is a channel there like any other, the byte 255,
-  and the frontend stores the colour opaque.
+- `IMAGECOLOR` is drawn as the background without `MS_VALID_COLOR`: `msPrepareImage`
+  (`src/mapdraw.c`) hands it to the renderer unchecked, so −1 is a channel there like any other,
+  the byte 255. MapServer also sets its alpha to 255. The frontend deliberately keeps the alpha of
+  `#rrggbbaa`, so that a map can ask for a translucent background; three numbers and `#rrggbb`
+  stay opaque, as in MapServer.
 - `[name]` binds the colour in a style; `IMAGECOLOR` takes no binding, and one is a load error.

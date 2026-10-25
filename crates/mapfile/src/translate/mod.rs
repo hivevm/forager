@@ -434,12 +434,14 @@ impl Translator<'_> {
     }
 
     /// The map's `IMAGECOLOR` as [`Self::loaded_color`] reads it. `msPrepareImage`
-    /// (src/mapdraw.c) sets its alpha to 255 and hands it to the renderer without checking
-    /// `MS_VALID_COLOR`, so it is opaque, and each channel, -1 included, is taken modulo 256.
+    /// (src/mapdraw.c) hands it to the renderer without checking `MS_VALID_COLOR`, so each
+    /// channel, -1 included, is taken modulo 256. MapServer also sets its alpha to 255; the
+    /// frontend keeps the alpha of `#rrggbbaa` instead, so that a map can ask for a translucent
+    /// background, and three numbers stay opaque.
     fn image_color(&mut self, d: &Directive) -> Option<Rgba> {
-        let (rgb, _) = self.loaded_color(d)?;
+        let (rgb, alpha) = self.loaded_color(d)?;
         let [r, g, b] = rgb.map(channel_byte);
-        Some(Rgba::opaque(r, g, b))
+        Some(Rgba { r, g, b, a: alpha })
     }
 
     /// A style's colour, which may also be bound to a property.

@@ -206,9 +206,10 @@ fn colours_of_minus_one_mean_no_colour() {
 }
 
 #[test]
-fn the_image_colour_is_opaque_and_takes_every_channel_as_a_byte() {
-    // msPrepareImage, src/mapdraw.c, sets the map's imagecolor alpha to 255 and hands it to the
-    // renderer without MS_VALID_COLOR; AGG's rgba8 keeps each channel in a byte, so -1 is 255.
+fn the_image_colour_keeps_its_alpha_and_takes_every_channel_as_a_byte() {
+    // msPrepareImage, src/mapdraw.c, hands the map's imagecolor to the renderer without
+    // MS_VALID_COLOR; AGG's rgba8 keeps each channel in a byte, so -1 is 255. MapServer forces
+    // the alpha to 255, where the frontend keeps the alpha a hex colour gives.
     let image_color = |text: &'static str| {
         let loaded = load_files(&[("m.map", text)]);
         assert_eq!(codes(&loaded), Vec::<&str>::new(), "{text}");
@@ -228,6 +229,15 @@ fn the_image_colour_is_opaque_and_takes_every_channel_as_a_byte() {
     );
     assert_eq!(
         image_color("MAP IMAGECOLOR '#10203080' END"),
+        Some(Rgba {
+            r: 0x10,
+            g: 0x20,
+            b: 0x30,
+            a: 0x80
+        })
+    );
+    assert_eq!(
+        image_color("MAP IMAGECOLOR '#102030' END"),
         Some(Rgba::opaque(0x10, 0x20, 0x30))
     );
     let loaded = load_files(&[("m.map", "MAP IMAGECOLOR 0 256 0 END")]);
