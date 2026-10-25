@@ -152,6 +152,10 @@ fn an_extent_outside_the_file_bounds_selects_nothing() {
     let files = three_points();
     assert!(files.query([11.0, 11.0, 20.0, 20.0]).is_empty());
     assert!(files.query([-5.0, 0.0, -0.5, 10.0]).is_empty());
+    // A record outside the .shx bounds but inside the extent is not selected either: the file's
+    // bounds decide before any record's box is read.
+    let stray = Files::new(POINT, BOUNDS, &[point(5.0, 5.0), point(50.0, 50.0)]);
+    assert!(stray.query([40.0, 40.0, 60.0, 60.0]).is_empty());
 }
 
 #[test]
@@ -198,6 +202,15 @@ fn a_point_file_is_selected_by_the_point_itself() {
     let files = three_points();
     assert_eq!(ids(&files.query([4.0, 4.0, 11.0, 11.0])), [1, 2]);
     assert_eq!(ids(&files.query([-1.0, -1.0, 5.0, 5.0])), [0, 1]);
+}
+
+#[test]
+fn a_point_whose_x_is_not_a_number_is_selected() {
+    // Verifies: ADR-0024
+    // msSHPReadBounds checks the least x only for files other than points; a NaN point compares
+    // as overlapping any extent across the file's bounds.
+    let files = Files::new(POINT, BOUNDS, &[point(f64::NAN, 5.0), point(9.0, 9.0)]);
+    assert_eq!(ids(&files.query([-1.0, -1.0, 5.0, 5.0])), [0]);
 }
 
 #[test]

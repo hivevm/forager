@@ -38,7 +38,6 @@ const SHX_PAGE: usize = 1024;
 const MAX_RECORDS: i32 = 256_000_000;
 
 /// The shapes of one shapefile, numbered by their record in the `.shx`.
-#[derive(Debug)]
 pub struct ShapefileSource {
     shp: Vec<u8>,
     shx: Vec<u8>,
@@ -49,6 +48,19 @@ pub struct ShapefileSource {
     entries: usize,
     /// The file's bounds, from the `.shx` header.
     bounds: Rect,
+}
+
+/// Names the file's shape, records, and bounds, never its bytes, so that a logged source does not
+/// print whole files.
+impl std::fmt::Debug for ShapefileSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ShapefileSource")
+            .field("shape_type", &self.shape_type)
+            .field("entries", &self.entries)
+            .field("shp_bytes", &self.shp.len())
+            .field("bounds", &self.bounds)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ShapefileSource {

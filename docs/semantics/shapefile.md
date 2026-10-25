@@ -50,11 +50,12 @@ selects every record, and the records' own boxes are not read; one across their 
 record whose stored box overlaps it, edges that touch overlapping. A box is the four doubles at
 byte 12 of the record (`msSHPReadBounds`); in a file of points (types 1, 11, 21) it is the point
 itself, the two doubles at byte 12. Only a comparison that holds separates two boxes, so a NaN
-anywhere but the least x of a record's box overlaps. A record whose box cannot be read is not
-selected (`an_extent_outside_the_file_bounds_selects_nothing`,
+anywhere but the least x of a record's box overlaps; the least x is checked only in files other
+than points, so a point whose x is not a number overlaps too. A record whose box cannot be read is
+not selected (`an_extent_outside_the_file_bounds_selects_nothing`,
 `an_extent_that_contains_the_file_bounds_selects_every_record`,
 `an_extent_across_the_file_bounds_selects_by_each_records_box`,
-`a_point_file_is_selected_by_the_point_itself`,
+`a_point_file_is_selected_by_the_point_itself`, `a_point_whose_x_is_not_a_number_is_selected`,
 `a_nan_in_a_box_beyond_its_least_x_compares_as_overlapping`).
 
 **Records** (`msSHPReadShape`, `msSHPLayerNextShape`). A selected record is read as a shape or as
@@ -67,6 +68,7 @@ content.
 - A size under 4 is no shape; a size of exactly 4 is a null shape, no shape too. An offset of 0 is
   no shape, and so is a record whose header and content run past the end of the `.shp`
   (`an_index_entry_without_a_record_in_the_shp_is_no_shape`).
+- Content too short for its type is no shape (`a_record_too_short_for_its_type_is_no_shape`).
 - **Point** (1, 11, 21): content under 20 bytes is no shape; otherwise the two doubles at content
   byte 4 are a `Point`. A height or measure is not read.
 - **Multipoint** (8, 18, 28): content under 40 bytes is no shape; the count at content byte 36
