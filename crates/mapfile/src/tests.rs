@@ -1,3 +1,18 @@
+// The tests pin the behaviour of MapServer's loader and the functions they name, of the release
+// pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::{Bound, LayerStatus, RenderMode, Rgba, Severity, Span};
 
@@ -188,6 +203,45 @@ fn colours_of_minus_one_mean_no_colour() {
         style.outline_color,
         Some(Bound::Value(Rgba::opaque(1, 2, 3)))
     );
+}
+
+#[test]
+fn the_image_colour_keeps_its_alpha_and_takes_every_channel_as_a_byte() {
+    // msPrepareImage, src/mapdraw.c, hands the map's imagecolor to the renderer without
+    // MS_VALID_COLOR; AGG's rgba8 keeps each channel in a byte, so -1 is 255. MapServer forces
+    // the alpha to 255, where the frontend keeps the alpha a hex colour gives.
+    let image_color = |text: &'static str| {
+        let loaded = load_files(&[("m.map", text)]);
+        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{text}");
+        loaded.document.unwrap().map.image_color
+    };
+    assert_eq!(
+        image_color("MAP IMAGECOLOR 255 -1 0 END"),
+        Some(Rgba::opaque(255, 255, 0))
+    );
+    assert_eq!(
+        image_color("MAP IMAGECOLOR -1 -1 -1 END"),
+        Some(Rgba::opaque(255, 255, 255))
+    );
+    assert_eq!(
+        image_color("MAP IMAGECOLOR -2.5 0 254.9 END"),
+        Some(Rgba::opaque(254, 0, 254))
+    );
+    assert_eq!(
+        image_color("MAP IMAGECOLOR '#10203080' END"),
+        Some(Rgba {
+            r: 0x10,
+            g: 0x20,
+            b: 0x30,
+            a: 0x80
+        })
+    );
+    assert_eq!(
+        image_color("MAP IMAGECOLOR '#102030' END"),
+        Some(Rgba::opaque(0x10, 0x20, 0x30))
+    );
+    let loaded = load_files(&[("m.map", "MAP IMAGECOLOR 0 256 0 END")]);
+    assert_eq!(codes(&loaded), ["invalid-value"]);
 }
 
 #[test]
