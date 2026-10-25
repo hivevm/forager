@@ -104,7 +104,10 @@ pins, by tag and commit: a sparse checkout into `target/`, cached in CI, never i
 suite's directory as the base context and a stand-in table for the EPSG codes beyond the built-in
 ones, and round-trips the style IR of each through YAML and JSON (G-3);
 `crates/cli/tests/msautotest.rs` names the files it skips with a reason each, and loads the one
-mapfile that names the suite's init file bare in-process with a stand-in for it.
+mapfile that names the suite's init file bare in-process with a stand-in for it. Its module
+`metric/` compares a rendering with a reference image as RGBA buffers, decoding the reference by
+the `png` crate whatever its colour type, and writes the rendering and a difference image when
+a case fails.
 
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).
