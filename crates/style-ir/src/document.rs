@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::lenient::{self, Pointer, read_error};
 use crate::migration::{self, STEPS};
 use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, Map};
 
@@ -42,161 +43,6 @@ fn newer_minor(version_text: Option<&str>) -> bool {
     }
 }
 
-/// How many unknown values a newer minor's document may drop before it is refused: each one is
-/// found by reading the document again (Q-9).
-pub const MAX_DROPPED_VALUES: usize = 100;
-
-/// A step of the path to a place in a document.
-enum Segment {
-    Key(String),
-    Index(usize),
-}
-
-/// The segments of the path at which a typed read failed.
-fn segments(path: &serde_path_to_error::Path) -> Vec<Segment> {
-    path.iter()
-        .filter_map(|segment| match segment {
-            serde_path_to_error::Segment::Map { key } => Some(Segment::Key(key.clone())),
-            serde_path_to_error::Segment::Seq { index } => Some(Segment::Index(*index)),
-            _ => None,
-        })
-        .collect()
-}
-
-/// The JSON Pointer (RFC 6901) of `segments`.
-fn segments_pointer(segments: &[Segment]) -> String {
-    segments
-        .iter()
-        .map(|step| match step {
-            Segment::Key(key) => format!("/{}", key.replace('~', "~0").replace('/', "~1")),
-            Segment::Index(index) => format!("/{index}"),
-        })
-        .collect()
-}
-
-/// A read error, prefixed with the JSON Pointer of where it happened.
-fn read_error<E: std::fmt::Display>(
-    code: &str,
-    error: &serde_path_to_error::Error<E>,
-) -> Diagnostic {
-    let at = segments_pointer(&segments(error.path()));
-    let message = if at.is_empty() {
-        error.inner().to_string()
-    } else {
-        format!("{at}: {}", error.inner())
-    };
-    Diagnostic::error(code, message, None)
-}
-
-/// The error for a field this reader dropped that what held it cannot do without, a symbol's
-/// kind: `reason` says a field is missing at `path`, and `removed` holds where values were
-/// dropped, with the values.
-fn required_dropped(
-    reason: &str,
-    path: &[Segment],
-    removed: &[(String, String)],
-) -> Option<Diagnostic> {
-    let name = reason.strip_prefix("missing field `")?.split_once('`')?.0;
-    let place = format!("{}/{name}", segments_pointer(path));
-    let (_, shown) = removed.iter().find(|(at, _)| *at == place)?;
-    let message = format!(
-        "{place}: `{shown}` is unknown to format version {FORMAT_VERSION}, and what holds it \
-         cannot be read without it"
-    );
-    Some(Diagnostic::error("unknown-value", message, None))
-}
-
-/// The keys of an expression's or a binding's object, which no other part of the IR has.
-const EXPRESSION_KEYS: [&str; 6] = ["op", "args", "property", "date", "timestamp", "binding"];
-
-/// Where on `path` the outermost expression or binding it runs into begins: the path without
-/// the keys of expressions and the indices of their arguments, and of the lists among them, at
-/// its end.
-fn expression_start(path: &[Segment]) -> usize {
-    let mut end = path.len();
-    loop {
-        match &path[..end] {
-            [.., Segment::Key(key)] if EXPRESSION_KEYS.contains(&key.as_str()) => end -= 1,
-            [rest @ .., Segment::Index(_)] => {
-                let indices = rest
-                    .iter()
-                    .rev()
-                    .take_while(|s| matches!(s, Segment::Index(_)))
-                    .count();
-                match rest[..rest.len() - indices].last() {
-                    Some(Segment::Key(args)) if args == "args" => end -= 1,
-                    _ => return end,
-                }
-            }
-            _ => return end,
-        }
-    }
-}
-
-/// Whether `path` is that of a layer's filter or a class's expression: a condition, which is
-/// kept and never matches when it does not read.
-fn condition(path: &[Segment]) -> bool {
-    match path {
-        [
-            ..,
-            Segment::Key(list),
-            Segment::Index(_),
-            Segment::Key(field),
-        ] => {
-            (list == "layers" && field == "filter") || (list == "classes" && field == "expression")
-        }
-        _ => false,
-    }
-}
-
-/// The depth of an expression's value tree as [`crate::Expr::depth`] counts it, so that one
-/// replaced unread is still held to the limit (Q-9).
-fn value_depth(value: &serde_json::Value) -> usize {
-    let mut deepest = 0;
-    let mut pending = vec![(value, 1)];
-    while let Some((value, depth)) = pending.pop() {
-        deepest = deepest.max(depth);
-        let args = match value {
-            serde_json::Value::Object(object) => object.get("args").and_then(|a| a.as_array()),
-            serde_json::Value::Array(items) => Some(items),
-            _ => None,
-        };
-        pending.extend(args.into_iter().flatten().map(|arg| (arg, depth + 1)));
-    }
-    deepest
-}
-
-/// The first operator in `value` that this build does not know.
-fn unknown_operator(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::Object(object) => {
-            if let Some(serde_json::Value::String(op)) = object.get("op")
-                && serde_json::from_value::<crate::Op>(op.clone().into()).is_err()
-            {
-                return Some(op.clone());
-            }
-            object.values().find_map(unknown_operator)
-        }
-        serde_json::Value::Array(items) => items.iter().find_map(unknown_operator),
-        _ => None,
-    }
-}
-
-/// The JSON Pointer (RFC 6901) of a place in a document.
-fn pointer(path: &serde_ignored::Path) -> String {
-    match path {
-        serde_ignored::Path::Root => String::new(),
-        serde_ignored::Path::Seq { parent, index } => format!("{}/{index}", pointer(parent)),
-        serde_ignored::Path::Map { parent, key } => {
-            let key = key.replace('~', "~0").replace('/', "~1");
-            format!("{}/{key}", pointer(parent))
-        }
-        serde_ignored::Path::Some { parent }
-        | serde_ignored::Path::NewtypeStruct { parent }
-        | serde_ignored::Path::NewtypeVariant { parent } => pointer(parent),
-    }
-}
-
 /// A text format of the style document, YAML or JSON (ADR-0014): how its text reads into a
 /// value, how it reads typed, and the code of its read errors.
 trait Format {
@@ -231,7 +77,7 @@ impl Format for Yaml {
     ) -> Result<StyleDocument, Self::Error> {
         serde_saphyr::with_deserializer_from_str(text, |de| {
             let de = serde_path_to_error::Deserializer::new(de, track);
-            serde_ignored::deserialize(de, |path| ignored.push(pointer(&path)))
+            serde_ignored::deserialize(de, |path| ignored.push(Pointer::ignored(&path).to_string()))
         })
     }
 }
@@ -254,7 +100,7 @@ impl Format for Json {
         let mut deserializer = serde_json::Deserializer::from_str(text);
         serde_ignored::deserialize(
             serde_path_to_error::Deserializer::new(&mut deserializer, track),
-            |path| ignored.push(pointer(&path)),
+            |path| ignored.push(Pointer::ignored(&path).to_string()),
         )
         .and_then(|document: StyleDocument| deserializer.end().map(|()| document))
     }
@@ -327,126 +173,11 @@ impl StyleDocument {
         let mut track = serde_path_to_error::Track::new();
         match F::typed(text, &mut track, &mut ignored) {
             Ok(document) => Self::checked(document, ignored),
-            Err(_) if lenient => Self::lenient(tree()?, F::CODE),
+            Err(_) if lenient => lenient::read(tree()?, F::CODE),
             Err(e) => Err(read_error(
                 F::CODE,
                 &serde_path_to_error::Error::new(track.path(), e),
             )),
-        }
-    }
-
-    /// Reads `value`, a document of a newer minor that does not read as this build's version,
-    /// dropping each value this build does not know with a warning naming it and its path: an
-    /// enum value unsets its field, and an expression with an unknown operator or function
-    /// becomes one that never matches, so that its class or filter is kept (ADR-0019, ADR-0020).
-    /// Anything else that does not read is the error `code`, naming its path.
-    fn lenient(mut value: serde_json::Value, code: &str) -> Result<Read, Diagnostic> {
-        let mut dropped = Vec::new();
-        // Where a value was dropped, and the value, for an error that its absence causes.
-        let mut removed: Vec<(String, String)> = Vec::new();
-        loop {
-            let mut ignored = Vec::new();
-            let read = serde_path_to_error::deserialize(serde_ignored::Deserializer::new(
-                value.clone(),
-                &mut |path: serde_ignored::Path| ignored.push(pointer(&path)),
-            ));
-            let error = match read {
-                Ok(document) => {
-                    let mut read = Self::checked(document, ignored)?;
-                    dropped.append(&mut read.warnings);
-                    read.warnings = dropped;
-                    return Ok(read);
-                }
-                Err(error) => error,
-            };
-            let path = segments(error.path());
-            let reason = error.inner().to_string();
-            // What failed inside an expression or a binding is the whole one's.
-            let slot = &path[..expression_start(&path)];
-            let inside = slot.len() < path.len();
-            // The field that holds what did not read: the nearest key on its path.
-            let Some(key_at) = slot.iter().rposition(|s| matches!(s, Segment::Key(_))) else {
-                return Err(read_error(code, &error));
-            };
-            let at = segments_pointer(&slot[..=key_at]);
-            let Some(failed) = value.pointer(&segments_pointer(slot)).cloned() else {
-                return Err(read_error(code, &error));
-            };
-            if let Some(error) = required_dropped(&reason, &path, &removed) {
-                return Err(error);
-            }
-            let shown = |value: &serde_json::Value| match value {
-                serde_json::Value::String(text) => text.clone(),
-                other => other.to_string(),
-            };
-            // Only an expression, which serde reads as an untagged enum, holds operators.
-            let untagged = inside || reason.contains("untagged enum");
-            let operator = untagged.then(|| unknown_operator(&failed)).flatten();
-            let warning = if condition(&slot[..=key_at]) {
-                // A class or filter that does not read is kept and never matches; dropped, it
-                // would match every feature.
-                let field = value
-                    .pointer_mut(&at)
-                    .expect("the failed place is inside the field");
-                if value_depth(field) > MAX_EXPRESSION_DEPTH {
-                    let message =
-                        format!("{at}: an expression nests deeper than {MAX_EXPRESSION_DEPTH}");
-                    return Err(Diagnostic::error("expression-too-deep", message, None));
-                }
-                *field = serde_json::Value::Bool(false);
-                match operator {
-                    Some(op) => Diagnostic::warning(
-                        "unknown-operator",
-                        format!(
-                            "{at}: the operator `{op}` is unknown to format version \
-                             {FORMAT_VERSION}, and the expression never matches"
-                        ),
-                        None,
-                    ),
-                    None => Diagnostic::warning(
-                        "unknown-value",
-                        format!(
-                            "{at}: the expression does not read in format version \
-                             {FORMAT_VERSION}, and it never matches"
-                        ),
-                        None,
-                    ),
-                }
-            } else if let Some(op) = operator {
-                Self::remove(&mut value, &at);
-                let message = format!(
-                    "{at}: the operator `{op}` is unknown to format version {FORMAT_VERSION}, and \
-                     the field is ignored"
-                );
-                Diagnostic::warning("unknown-operator", message, None)
-            } else if reason.starts_with("unknown variant") || untagged {
-                let shown = shown(&failed);
-                let message = format!(
-                    "{at}: `{shown}` is unknown to format version {FORMAT_VERSION} and is ignored"
-                );
-                Self::remove(&mut value, &at);
-                removed.push((at, shown));
-                Diagnostic::warning("unknown-value", message, None)
-            } else {
-                return Err(read_error(code, &error));
-            };
-            if dropped.len() == MAX_DROPPED_VALUES {
-                let message = format!(
-                    "the document holds more than {MAX_DROPPED_VALUES} values unknown to format \
-                     version {FORMAT_VERSION}"
-                );
-                return Err(Diagnostic::error("too-many-unknown-values", message, None));
-            }
-            dropped.push(warning);
-        }
-    }
-
-    /// Removes the field at the JSON Pointer `at` from its object.
-    fn remove(value: &mut serde_json::Value, at: &str) {
-        let (parent, key) = at.rsplit_once('/').unwrap_or(("", at));
-        let key = key.replace("~1", "/").replace("~0", "~");
-        if let Some(serde_json::Value::Object(object)) = value.pointer_mut(parent) {
-            object.remove(&key);
         }
     }
 
@@ -462,11 +193,13 @@ impl StyleDocument {
         let current = version(FORMAT_VERSION).map_or(major, |(current, _)| current);
         let value = migration::migrate(value, theirs, major, current, steps)?;
         let mut ignored = Vec::new();
-        let document: Self = serde_ignored::deserialize(value, |path| ignored.push(pointer(&path)))
-            .map_err(|e| {
-                let message = format!("format version {theirs}, migrated: {e}");
-                Diagnostic::error("format-migration-failed", message, None)
-            })?;
+        let document: Self = serde_ignored::deserialize(value, |path| {
+            ignored.push(Pointer::ignored(&path).to_string())
+        })
+        .map_err(|e| {
+            let message = format!("format version {theirs}, migrated: {e}");
+            Diagnostic::error("format-migration-failed", message, None)
+        })?;
         // What the steps leave unknown, the document's own version did not know either.
         if let Some(field) = ignored.first() {
             let message = format!(
@@ -486,7 +219,7 @@ impl StyleDocument {
     /// by their JSON Pointer: a newer minor than this build's may have them, each a warning, and
     /// its document is read without them; in the current or an older minor, no version this
     /// build knows has them, so the first is a load error.
-    fn checked(self, ignored: Vec<String>) -> Result<Read, Diagnostic> {
+    pub(crate) fn checked(self, ignored: Vec<String>) -> Result<Read, Diagnostic> {
         match (version(&self.version), version(FORMAT_VERSION)) {
             (Some(theirs), Some(ours)) if theirs.0 == ours.0 => {
                 let newer_minor = theirs.1 > ours.1;
@@ -534,20 +267,14 @@ impl StyleDocument {
 impl StyleDocument {
     /// Refuses a document with an expression nested deeper than [`MAX_EXPRESSION_DEPTH`] (Q-9).
     fn bounded(self) -> Result<Self, Diagnostic> {
-        let layers = self.map.layers.iter();
-        let expressions = layers.flat_map(|layer| {
-            let classes = layer.classes.iter().flat_map(|class| {
-                let styles = class.styles.iter().flat_map(|style| style.expressions());
-                let labels = class.labels.iter().flat_map(|label| label.expressions());
-                class.expression.iter().chain(styles).chain(labels)
-            });
-            layer.filter.iter().chain(classes)
-        });
-        for expression in expressions {
-            if expression.depth() > MAX_EXPRESSION_DEPTH {
-                let message = format!("an expression nests deeper than {MAX_EXPRESSION_DEPTH}");
-                return Err(Diagnostic::error("expression-too-deep", message, None));
-            }
+        if self
+            .map
+            .expressions()
+            .iter()
+            .any(|expression| expression.depth() > MAX_EXPRESSION_DEPTH)
+        {
+            let message = format!("an expression nests deeper than {MAX_EXPRESSION_DEPTH}");
+            return Err(Diagnostic::error("expression-too-deep", message, None));
         }
         Ok(self)
     }
@@ -556,6 +283,7 @@ impl StyleDocument {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MAX_DROPPED_VALUES;
     use crate::Step;
     use crate::{
         Align, AngleMode, Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer,

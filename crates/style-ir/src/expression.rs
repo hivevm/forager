@@ -129,19 +129,24 @@ impl Expr {
     /// How deep the tree nests: a literal or a property is 1. Iterative, so that measuring a
     /// tree too deep to accept cannot overflow the stack.
     pub fn depth(&self) -> usize {
-        let mut deepest = 0;
-        let mut pending = vec![(self, 1)];
-        while let Some((expr, depth)) = pending.pop() {
-            deepest = deepest.max(depth);
-            match expr {
-                Expr::Call { args, .. } | Expr::List(args) => {
-                    pending.extend(args.iter().map(|arg| (arg, depth + 1)));
-                }
-                _ => {}
-            }
-        }
-        deepest
+        nesting(self, |expr| match expr {
+            Expr::Call { args, .. } | Expr::List(args) => args,
+            _ => &[],
+        })
     }
+}
+
+/// How deep a tree nests whose nodes have the `children` it gives, the root at 1: the depth of
+/// an expression, counted on [`Expr`] and, for one the reader of a newer minor keeps unread, on
+/// its value tree. Iterative, so that a tree too deep to accept cannot overflow the stack.
+pub(crate) fn nesting<'a, T>(root: &'a T, children: impl Fn(&'a T) -> &'a [T]) -> usize {
+    let mut deepest = 0;
+    let mut pending = vec![(root, 1)];
+    while let Some((node, depth)) = pending.pop() {
+        deepest = deepest.max(depth);
+        pending.extend(children(node).iter().map(|child| (child, depth + 1)));
+    }
+    deepest
 }
 
 /// The keys of an expression's object, or of a binding's, read one by one. A key this build
