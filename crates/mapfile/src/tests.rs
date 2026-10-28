@@ -1455,6 +1455,31 @@ fn a_data_path_that_leaves_the_base_context_is_refused_and_the_layer_keeps_none(
 }
 
 #[test]
+fn a_data_path_refused_beneath_shapepath_names_it() {
+    // The SHAPEPATH may be the part that leaves the base context, as here.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP SHAPEPATH '..' LAYER NAME 'l' DATA 'poly' END END",
+    )]);
+    assert_eq!(codes(&loaded), ["data-refused"]);
+    let message = &loaded.diagnostics[0].message;
+    assert!(
+        message.starts_with("DATA `poly` beneath SHAPEPATH `..` is refused: "),
+        "{message}"
+    );
+    // A DATA that ignores SHAPEPATH is refused without it.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP SHAPEPATH 'x' LAYER NAME 'l' DATA '/etc/poly' END END",
+    )]);
+    let message = &loaded.diagnostics[0].message;
+    assert!(
+        message.starts_with("DATA `/etc/poly` is refused: "),
+        "{message}"
+    );
+}
+
+#[test]
 fn the_data_of_a_connection_is_not_a_path() {
     let text =
         "MAP SHAPEPATH 'x' LAYER NAME 'l' CONNECTIONTYPE POSTGIS DATA 'the_geom from t' END END";

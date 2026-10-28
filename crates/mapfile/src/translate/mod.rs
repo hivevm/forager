@@ -296,10 +296,7 @@ impl Translator<'_> {
                         props.insert("data".to_owned(), path.as_str().to_owned());
                     }
                     // The layer keeps no data, so the engine skips it (G-8) and the map renders.
-                    Err(e) => {
-                        let message = format!("DATA `{data}` is refused: {e}");
-                        self.warn("data-refused", &message, &at);
-                    }
+                    Err(message) => self.warn("data-refused", &message, &at),
                 }
             }
             layer.source = Some(SourceRef {
@@ -312,8 +309,10 @@ impl Translator<'_> {
     }
 
     /// A local layer's `DATA` beneath the map's `SHAPEPATH`, against the main mapfile's directory,
-    /// as `msBuildPath3` joins them, and inside the base context (Q-8).
-    fn data_path(&self, data: &str) -> Result<ResourcePath, forager_ports::PathError> {
+    /// as `msBuildPath3` joins them, and inside the base context (Q-8). The refusal names the
+    /// `SHAPEPATH` the path was joined with, which may be the part that leaves.
+    fn data_path(&self, data: &str) -> Result<ResourcePath, String> {
+        let refused = |e: forager_ports::PathError| format!("DATA `{data}` is refused: {e}");
         match self.shape_path.as_deref() {
             Some(shape_path) if !shape_path.is_empty() => {
                 // An absolute DATA, a drive's included, ignores SHAPEPATH, as `msBuildPath` reads
@@ -322,14 +321,18 @@ impl Translator<'_> {
                 if data.starts_with(['/', '\\'])
                     || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
                 {
-                    return self.main.resolve(data);
+                    return self.main.resolve(data).map_err(refused);
                 }
-                self.main.resolve(&format!(
-                    "{}/{data}",
-                    shape_path.trim_end_matches(['/', '\\'])
-                ))
+                self.main
+                    .resolve(&format!(
+                        "{}/{data}",
+                        shape_path.trim_end_matches(['/', '\\'])
+                    ))
+                    .map_err(|e| {
+                        format!("DATA `{data}` beneath SHAPEPATH `{shape_path}` is refused: {e}")
+                    })
             }
-            _ => self.main.resolve(data),
+            _ => self.main.resolve(data).map_err(refused),
         }
     }
 
