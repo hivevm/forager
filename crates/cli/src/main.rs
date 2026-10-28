@@ -144,8 +144,13 @@ fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
 }
 
 /// Loads a mapfile inside `base`, by default its directory, resolving `init=` projections with the
-/// built-in EPSG definitions and those of `epsg` (ADR-0023), and prints every diagnostic.
-fn load(mapfile: &Path, epsg: Option<&Path>, base: Option<&Path>) -> Option<StyleDocument> {
+/// built-in EPSG definitions and those of `epsg` (ADR-0023), and prints every diagnostic. The
+/// loader of the base context comes with the document, for the files its layers read.
+fn load(
+    mapfile: &Path,
+    epsg: Option<&Path>,
+    base: Option<&Path>,
+) -> Option<(StyleDocument, FileLoader)> {
     let resolver = match epsg {
         None => EpsgTable::new(),
         Some(file) => match read_epsg(file) {
@@ -162,9 +167,10 @@ fn load(mapfile: &Path, epsg: Option<&Path>, base: Option<&Path>) -> Option<Styl
     let path = ResourcePath::new(&name)
         .map_err(|e| eprintln!("forager: {}: {e}", mapfile.display()))
         .ok()?;
-    load_document(&path, &loader, &resolver)
+    let document = load_document(&path, &loader, &resolver)
         .map_err(|diagnostic| eprintln!("{diagnostic}"))
-        .ok()?
+        .ok()??;
+    Some((document, loader))
 }
 
 /// Loads the mapfile at `path` through `loader` and prints the frontend's diagnostics; a loader
@@ -192,7 +198,8 @@ fn now<F: Future>(future: F) -> Result<F::Output, Diagnostic> {
 
 /// Prints a mapfile's style document.
 fn read(args: &ReadArgs) -> ExitCode {
-    let Some(document) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref()) else {
+    let Some((document, _)) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref())
+    else {
         return ExitCode::FAILURE;
     };
     let text = match args.format {
@@ -210,16 +217,11 @@ fn read(args: &ReadArgs) -> ExitCode {
 
 /// Renders a mapfile with GeoJSON files bound to its layers by name, and writes a PNG.
 fn render(args: &RenderArgs) -> ExitCode {
-    let Some(document) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref()) else {
+    let Some((document, loader)) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref())
+    else {
         return ExitCode::FAILURE;
     };
-    let data = match FileLoader::for_mapfile(&args.mapfile, args.base.as_deref()) {
-        Ok((loader, _)) => loader.for_data(MAX_SOURCE_BYTES),
-        Err(message) => {
-            eprintln!("forager: {}: {message}", args.mapfile.display());
-            return ExitCode::FAILURE;
-        }
-    };
+    let data = loader.for_data(MAX_SOURCE_BYTES);
     let mut diagnostics = Vec::new();
     let sources = forager_engine::bind_sources(
         &document.map,
