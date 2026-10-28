@@ -147,7 +147,8 @@ warning for each keyword not carried over. With no error, the CLI prints the sty
 diagnostics go to standard error. No state outlives the call.
 
 `forager render <mapfile> --source <layer>=<file> -o <png>` loads the mapfile the same way, binds
-each local layer whose shapefile the base context holds to the shapefile adapter, parses the
+each local layer the engine draws and whose shapefile the base context holds to the shapefile
+adapter, parses the
 GeoJSON file of each name a layer carries into a source bound to that layer instead, and runs the
 engine with the agg-rust renderer.
 For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted

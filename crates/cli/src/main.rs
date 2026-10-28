@@ -281,9 +281,11 @@ enum Held {
 }
 
 /// Each local layer's shapefile, by its `DATA`, and the GeoJSON files `--source` names, which win
-/// for their layer. A layer whose `.shp` the base context does not hold, a raster's among them, is
-/// left unbound, so the engine skips it as any layer without a source, and the CLI reports what
-/// the browser bindings report.
+/// for their layer. A layer whose `.shp` the base context does not hold is left unbound, so the
+/// engine skips it as any layer without a source, and the CLI reports what the browser bindings
+/// report. A layer whose features the engine does not read, one OFF or a raster, is not bound to
+/// its `DATA`: its files would be read into memory for nothing, and a raster's `DATA` is no
+/// shapefile.
 fn held_sources(
     document: &StyleDocument,
     named: &[(String, PathBuf)],
@@ -294,7 +296,8 @@ fn held_sources(
         let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
             continue;
         };
-        if source.kind == "local"
+        if forager_engine::reads_features(layer)
+            && source.kind == "local"
             && let Some(path) = source.props.get("data")
             && shapefile_exists(data, path)
         {

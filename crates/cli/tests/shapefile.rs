@@ -194,6 +194,34 @@ fn a_broken_shapefile_skips_its_layer_naming_layer_kind_and_span() {
 }
 
 #[test]
+fn a_layer_the_engine_does_not_draw_opens_no_shapefile() {
+    // Verifies: Q-9
+    // The .shp is broken, so a layer bound to it would report source-unreadable: an OFF layer,
+    // one without STATUS, and a raster beside a .shp of its DATA's name open nothing.
+    let dir = scratch("undrawn");
+    write_square(&dir, "img", ["shp", "shx", "dbf"]);
+    std::fs::write(dir.join("img.shp"), [0u8; 10]).unwrap();
+    for (kind, status) in [
+        ("POLYGON", "STATUS OFF"),
+        ("POLYGON", ""),
+        ("RASTER", "STATUS ON"),
+    ] {
+        let text = format!(
+            "MAP\n  EXTENT 0 0 100 100\n  SIZE 101 101\n  LAYER\n    NAME 'l'\n    TYPE {kind}\n    \
+             {status}\n    DATA 'img.tif'\n    CLASS STYLE COLOR 200 220 180 END END\n  END\nEND\n"
+        );
+        std::fs::write(dir.join("m.map"), text).unwrap();
+        let (code, stderr, _) = render(&dir.join("m.map"), &[]);
+        assert_eq!(code, Some(0), "{kind} {status}: {stderr}");
+        assert!(
+            !stderr.contains("source-unreadable"),
+            "{kind} {status}: {stderr}"
+        );
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn a_layer_without_its_shapefile_is_skipped_without_a_source_error() {
     // As the browser bindings report a layer they bind nothing to.
     let dir = scratch("missing");
