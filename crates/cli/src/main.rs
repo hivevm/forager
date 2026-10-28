@@ -308,10 +308,7 @@ fn held_sources(
 /// Whether the base context holds the `.shp` or `.SHP` of `data`, whose extension, if any, the
 /// shapefile adapter replaces as `msShapefileOpen` does.
 fn shapefile_exists(loader: &DataLoader, data: &str) -> bool {
-    let base = match data.rsplit_once('.') {
-        Some((base, extension)) if !extension.contains(['/', '\\']) => base,
-        _ => data,
-    };
+    let base = forager_adapter_shapefile::basename(data);
     ["shp", "SHP"].iter().any(|extension| {
         ResourcePath::new(&format!("{base}.{extension}")).is_ok_and(|path| loader.holds(&path))
     })
