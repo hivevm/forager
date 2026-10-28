@@ -247,6 +247,39 @@ fn a_layer_the_engine_does_not_draw_opens_no_shapefile() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The CLI's data-file limit, `MAX_SOURCE_BYTES` (Q-9).
+const DATA_FILE_LIMIT: u64 = 256 * 1024 * 1024;
+
+#[test]
+fn each_file_of_a_shapefile_past_the_data_file_limit_skips_its_layer() {
+    // Verifies: Q-9
+    // Each of the three files in turn is one byte past the limit, sparse so that the fixture
+    // takes no disk space; the files before it in the adapter's order are whole.
+    let dir = scratch("limit");
+    std::fs::write(dir.join("m.map"), mapfile("", "poly")).unwrap();
+    for extension in ["shp", "shx", "dbf"] {
+        write_square(&dir, "poly", ["shp", "shx", "dbf"]);
+        std::fs::File::options()
+            .write(true)
+            .open(dir.join(format!("poly.{extension}")))
+            .unwrap()
+            .set_len(DATA_FILE_LIMIT + 1)
+            .unwrap();
+        let (code, stderr, image) = render(&dir.join("m.map"), &[]);
+        assert_eq!(code, Some(0), "{extension}: {stderr}");
+        assert!(
+            stderr.contains(&format!(
+                "warning [source-unreadable]: source of layer `poly`: poly: the shapefile file \
+                 poly.{extension} cannot be read: the file exceeds the limit of {DATA_FILE_LIMIT} \
+                 bytes"
+            )),
+            "{extension}: {stderr}"
+        );
+        assert_eq!(image.unwrap().pixel(25, 75), Some(WHITE), "{extension}");
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[test]
 fn a_layer_without_its_shapefile_is_skipped_without_a_source_error() {
     // As the browser bindings report a layer they bind nothing to.
