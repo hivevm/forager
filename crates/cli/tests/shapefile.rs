@@ -194,6 +194,32 @@ fn a_broken_shapefile_skips_its_layer_naming_layer_kind_and_span() {
 }
 
 #[test]
+fn layers_that_name_one_shapefile_both_draw() {
+    // The two layers share the shapefile the CLI opened once; each draws it in its own style.
+    let dir = scratch("shared");
+    write_square(&dir, "poly", ["shp", "shx", "dbf"]);
+    let layer = |name: &str, data: &str, color: &str| {
+        format!(
+            "  LAYER\n    NAME '{name}'\n    TYPE POLYGON\n    STATUS ON\n    DATA '{data}'\n    \
+             CLASS STYLE {color} END END\n  END\n"
+        )
+    };
+    let text = format!(
+        "MAP\n  EXTENT 0 0 100 100\n  SIZE 101 101\n  IMAGECOLOR 255 255 255\n{}{}END\n",
+        layer("fill", "poly", "COLOR 200 220 180"),
+        layer("outline", "poly.shp", "OUTLINECOLOR 0 0 0 WIDTH 3"),
+    );
+    std::fs::write(dir.join("m.map"), text).unwrap();
+    let (code, stderr, image) = render(&dir.join("m.map"), &[]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(code, Some(0), "{stderr}");
+    assert_eq!(stderr, "");
+    let image = image.unwrap();
+    assert_eq!(image.pixel(25, 75), Some(GREEN));
+    assert_eq!(image.pixel(50, 75), Some(Rgba::opaque(0, 0, 0)));
+}
+
+#[test]
 fn a_layer_the_engine_does_not_draw_opens_no_shapefile() {
     // Verifies: Q-9
     // The .shp is broken, so a layer bound to it would report source-unreadable: an OFF layer,

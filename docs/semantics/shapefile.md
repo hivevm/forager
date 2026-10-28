@@ -15,10 +15,12 @@ absolute path, is the warning `data-refused`, and the layer keeps no data, so th
 `a_data_path_that_leaves_the_base_context_is_refused_and_the_layer_keeps_none`). The CLI binds a
 local layer to this adapter where the base context holds its `.shp` or `.SHP`, reading each file
 within the data-file limit of Q-9, and only a layer whose features the engine reads, `ON` or
-`DEFAULT` and of a `TYPE` it draws: a layer `OFF` or a raster opens no file; a layer whose file is
-missing stays unbound, as the browser bindings leave it, and a `--source` for the layer wins
-(`crates/cli/tests/shapefile.rs`). A file the CLI may not read, missing or behind a link out of the
-base context, is one and the same error, so that the error tells nothing of the host.
+`DEFAULT` and of a `TYPE` it draws: a layer `OFF` or a raster opens no file. Layers whose `DATA`
+names one shapefile, cut as `msSHPOpen` cuts it, share the source the CLI opened once. A layer
+whose file is missing stays unbound, as the browser bindings leave it, and a `--source` for the
+layer wins (`crates/cli/tests/shapefile.rs`). A file the CLI may not read, missing or behind a
+link out of the base context, is one and the same error, so that the error tells nothing of the
+host.
 
 **Meaning.** The features of a shapefile are the records MapServer reads from its `.shp`, `.shx`,
 and `.dbf`, as `src/mapshape.c` and `src/mapxbase.c` read them. Each rule names the function it

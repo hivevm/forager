@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::rc::Rc;
 
 use forager_adapter_epsg::EpsgTable;
 use forager_adapter_geojson::GeoJsonSource;
@@ -222,6 +223,7 @@ fn render(args: &RenderArgs) -> ExitCode {
         return ExitCode::FAILURE;
     };
     let data = loader.for_data(MAX_SOURCE_BYTES);
+    let mut shapefiles = Shapefiles::new(&data);
     let mut diagnostics = Vec::new();
     let sources = forager_engine::bind_sources(
         &document.map,
@@ -230,7 +232,8 @@ fn render(args: &RenderArgs) -> ExitCode {
             Held::GeoJson(file) => read_source(&file)
                 .map(Source::GeoJson)
                 .map_err(|message| format!("{}: {message}", file.display())),
-            Held::Shapefile(path) => open_shapefile(&data, &path)
+            Held::Shapefile(path) => shapefiles
+                .open(&path)
                 .map(Source::Shapefile)
                 .map_err(|message| format!("{path}: {message}")),
         },
@@ -319,8 +322,35 @@ fn shapefile_exists(loader: &DataLoader, data: &str) -> bool {
     })
 }
 
-/// The shapefile at `data`, a path the frontend resolved inside the base context.
-fn open_shapefile(loader: &DataLoader, data: &str) -> Result<ShapefileSource, String> {
+/// The shapefiles the CLI opened, by the name the adapter cuts from a layer's `DATA`, so that the
+/// layers naming one shapefile share it and its files are read once (ADR-0024: a layer costs
+/// memory in proportion to its files, not to the layers that name them). A shapefile that failed
+/// to open is not tried again.
+struct Shapefiles<'a, L> {
+    loader: &'a L,
+    opened: BTreeMap<String, Result<Rc<ShapefileSource>, String>>,
+}
+
+impl<'a, L: ResourceLoader> Shapefiles<'a, L> {
+    fn new(loader: &'a L) -> Self {
+        Self {
+            loader,
+            opened: BTreeMap::new(),
+        }
+    }
+
+    /// The shapefile at `data`, a path the frontend resolved inside the base context.
+    fn open(&mut self, data: &str) -> Result<Rc<ShapefileSource>, String> {
+        let name = forager_adapter_shapefile::basename(data).to_owned();
+        let loader = self.loader;
+        self.opened
+            .entry(name)
+            .or_insert_with(|| open_shapefile(loader, data).map(Rc::new))
+            .clone()
+    }
+}
+
+fn open_shapefile(loader: &impl ResourceLoader, data: &str) -> Result<ShapefileSource, String> {
     let path = ResourcePath::new(data).map_err(|e| e.to_string())?;
     match forager_ports::poll_once(ShapefileSource::open(loader, &path)) {
         Some(opened) => opened.map_err(|e| e.message),
@@ -328,10 +358,11 @@ fn open_shapefile(loader: &DataLoader, data: &str) -> Result<ShapefileSource, St
     }
 }
 
-/// A layer's feature source, of whichever adapter the CLI bound to it.
+/// A layer's feature source, of whichever adapter the CLI bound to it; layers that name one
+/// shapefile share it.
 enum Source {
     GeoJson(GeoJsonSource),
-    Shapefile(ShapefileSource),
+    Shapefile(Rc<ShapefileSource>),
 }
 
 impl FeatureSource for Source {
@@ -401,6 +432,61 @@ mod tests {
             .await;
             Ok(b"MAP END".to_vec())
         }
+    }
+
+    /// The files of one empty shapefile, loaded from memory, each load counted.
+    struct CountingLoader {
+        files: BTreeMap<&'static str, Vec<u8>>,
+        loads: Cell<usize>,
+    }
+
+    impl CountingLoader {
+        fn new() -> Self {
+            let mut shx = vec![0u8; 100];
+            shx[..4].copy_from_slice(&[0, 0, 0x27, 0x0a]);
+            shx[24..28].copy_from_slice(&50i32.to_be_bytes());
+            let mut dbf = vec![0u8; 33];
+            dbf[8] = 33;
+            let files = [
+                ("poly.shp", vec![0u8; 100]),
+                ("poly.shx", shx),
+                ("poly.dbf", dbf),
+                ("broken.shp", vec![0u8; 10]),
+            ];
+            Self {
+                files: files.into_iter().collect(),
+                loads: Cell::new(0),
+            }
+        }
+    }
+
+    impl ResourceLoader for CountingLoader {
+        async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+            self.loads.set(self.loads.get() + 1);
+            self.files
+                .get(path.as_str())
+                .cloned()
+                .ok_or_else(|| SourceError::new("no such file"))
+        }
+    }
+
+    #[test]
+    fn layers_that_name_one_shapefile_read_its_files_once() {
+        // Verifies: Q-9
+        // ADR-0024: a layer costs memory in proportion to its files, so a shapefile that several
+        // layers name is read, and held, once.
+        let loader = CountingLoader::new();
+        let mut shapefiles = Shapefiles::new(&loader);
+        let first = shapefiles.open("poly").unwrap();
+        assert_eq!(loader.loads.get(), 3, "the .shp, .shx, and .dbf");
+        let second = shapefiles.open("poly.shp").unwrap();
+        assert_eq!(loader.loads.get(), 3, "nothing is read again");
+        assert!(Rc::ptr_eq(&first, &second), "the layers share one source");
+        // A shapefile that fails to open is not read again either.
+        assert!(shapefiles.open("broken").is_err());
+        let loads = loader.loads.get();
+        assert!(shapefiles.open("broken.shp").is_err());
+        assert_eq!(loader.loads.get(), loads);
     }
 
     #[test]
