@@ -30,8 +30,10 @@ are held by `memory_follows_the_files_size` in `tests/memory.rs`.
 **Files.** `msShapefileOpen` and `msSHPOpen` cut the name at its last `.` after the last
 separator, a leading `.` included, and ask the resource loader for `<name>.shp`, `<name>.shx`, and
 `<name>.dbf`, each as `<name>.SHP`, `<name>.SHX`, `<name>.DBF` where the lower-case name cannot be
-loaded; `data/roads.v2` asks for `data/roads.shp`. A file that cannot be loaded under either name is
-an error (`a_missing_file_is_an_error_and_upper_case_names_are_tried`). Neither `.qix`, `.sbn`,
+loaded, the `.dbf` in `msDBFOpen`; `data/roads.v2` asks for `data/roads.shp`. Only the extension
+changes case, never the name: `DATA "poly"` does not find `POLY.SHP`. A file that cannot be
+loaded under either name is an error
+(`a_missing_file_is_an_error_and_upper_case_names_are_tried`). Neither `.qix`, `.sbn`,
 `.cpg`, nor `.prj` is asked for.
 
 **Headers** (`msSHPOpenVirtualFile`, `msDBFOpenVirtualFile`). An error opens no layer:
