@@ -357,9 +357,10 @@ fn the_first_difference_is_named_by_its_json_pointer() {
     assert_eq!(first_difference(&a, &a, String::new()), None);
 }
 
-/// The metric of the category geometry and symbols. Provisional, as `conformance/cases.txt`
-/// says: G-6 takes its numbers from a measurement of MapServer's own noise against its
-/// references, which is not made yet, so the harness cites no criterion.
+/// The metric of the category geometry and symbols, as G-6 states it: a pixel differs when one of
+/// its channels differs by more than 16, and a case passes when at most 0.1 % of its pixels
+/// differ. MapServer at the pin reproduces its own references of the category bit for bit on CI
+/// ([`mapserver_renders_the_cases_in_scope_within_its_noise`]), so the numbers lie above its noise.
 const GEOMETRY: Metric = Metric {
     threshold: 16,
     tolerance: 0.001,
@@ -371,6 +372,7 @@ const CASES: &str = include_str!("conformance/cases.txt");
 #[test]
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_case_in_scope_holds_its_outcome() {
+    // Verifies: G-6
     let suite = suite();
     let cases = conformance::cases(&suite, conformance::DIRECTORIES);
     let entries = conformance::list(CASES).unwrap();
@@ -418,6 +420,203 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
         out.display(),
         failures.join("\n")
     );
+}
+
+/// The thresholds the noise measurement reports the share of differing pixels at.
+const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
+
+/// The noise of G-6: MapServer at the pinned release, which `.github/workflows/noise.yml` builds
+/// (ADR-0027), renders every case the list puts in scope as msautotest's test library runs it, and
+/// each rendering is compared with its reference at each of [`NOISE_THRESHOLDS`]. The report, a
+/// table of the share per case and threshold and its maximum over the category, goes to standard
+/// output and to the job summary; it names apart each case MapServer does not reproduce: `map2img`
+/// fails, writes no PNG, writes one of another size, or differs beyond the category's tolerance
+/// at every threshold of the set. The list moves such a case out of scope, so the test fails when
+/// one is in scope. The renderings stay in `noise/` under the test's target directory.
+#[test]
+#[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test"]
+fn mapserver_renders_the_cases_in_scope_within_its_noise() {
+    let suite = suite();
+    let map2img = PathBuf::from(
+        std::env::var("FORAGER_MAP2IMG")
+            .expect("FORAGER_MAP2IMG names map2img; .github/workflows/noise.yml sets it"),
+    );
+    let cases = conformance::cases(&suite, conformance::DIRECTORIES);
+    let entries = conformance::list(CASES).unwrap();
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("noise");
+    let _ = std::fs::remove_dir_all(&out);
+    let mut measured = Vec::new();
+    let mut unreproduced = Vec::new();
+    for case in &cases {
+        let Some(Entry::InScope { .. }) = entries.get(&case.key()).map(|l| &l.entry) else {
+            continue;
+        };
+        let name = format!("{} {}", case.mapfile, case.result);
+        let rendering = out
+            .join(case.mapfile.trim_end_matches(".map"))
+            .join(&case.result);
+        match measure(&suite, case, &map2img, &rendering) {
+            Ok(shares) => measured.push((name, shares)),
+            Err(reason) => unreproduced.push(format!("{name}: {reason}")),
+        }
+    }
+    let report = noise_report(&measured, &unreproduced);
+    println!("{report}");
+    if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY") {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(summary)
+            .and_then(|mut file| file.write_all(report.as_bytes()))
+            .unwrap();
+    }
+    assert!(
+        unreproduced.is_empty(),
+        "{} cases in scope are not reproduced by MapServer itself; the list moves each out of \
+         scope with its reason:\n{}",
+        unreproduced.len(),
+        unreproduced.join("\n")
+    );
+}
+
+/// Runs `map2img` for `case` in its mapfile's directory, writing `rendering`, and compares the
+/// rendering with the reference at each of [`NOISE_THRESHOLDS`]. The shares are in their order;
+/// the error is why MapServer does not reproduce the case at all.
+fn measure(
+    suite: &Path,
+    case: &Case,
+    map2img: &Path,
+    rendering: &Path,
+) -> Result<Vec<f64>, String> {
+    std::fs::create_dir_all(rendering.parent().unwrap()).map_err(|e| e.to_string())?;
+    let mapfile = suite.join(&case.mapfile);
+    let output = Command::new(map2img)
+        .args(case.map2img_arguments(rendering)?)
+        .current_dir(mapfile.parent().unwrap())
+        .output()
+        .map_err(|e| format!("map2img does not start: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "map2img fails, {}: {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+    let rendering = std::fs::read(rendering)
+        .map_err(|e| format!("map2img writes no image: {e}"))
+        .and_then(|bytes| metric::decode(&bytes).map_err(|e| format!("map2img's image: {e}")))?;
+    let directory = &case.mapfile[..case.mapfile.find('/').unwrap()];
+    let reference = suite.join(directory).join("expected").join(&case.result);
+    let reference = std::fs::read(&reference)
+        .map_err(|e| format!("its reference {}: {e}", reference.display()))
+        .and_then(|bytes| metric::decode(&bytes).map_err(|e| format!("its reference: {e}")))?;
+    let shares = NOISE_THRESHOLDS
+        .iter()
+        .map(|&threshold| {
+            let metric = Metric {
+                threshold,
+                tolerance: 0.0,
+            };
+            let comparison = metric::compare(&rendering, &reference, &metric);
+            comparison.share().ok_or_else(|| comparison.to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    reproduced(shares)
+}
+
+/// The shares of a case MapServer reproduces: one at some threshold of the set within the
+/// category's tolerance. The shares fall as the threshold rises, so the last decides; the error
+/// names a case that differs beyond the tolerance at every threshold.
+fn reproduced(shares: Vec<f64>) -> Result<Vec<f64>, String> {
+    match shares.last() {
+        Some(&share) if share > GEOMETRY.tolerance => Err(format!(
+            "{share:.6} of its pixels differ by more than {}, above the tolerance {}",
+            NOISE_THRESHOLDS[NOISE_THRESHOLDS.len() - 1],
+            GEOMETRY.tolerance
+        )),
+        _ => Ok(shares),
+    }
+}
+
+#[test]
+fn a_case_beyond_the_tolerance_at_every_threshold_is_not_reproduced() {
+    let mut shares = vec![0.5; NOISE_THRESHOLDS.len()];
+    assert!(
+        reproduced(shares.clone())
+            .unwrap_err()
+            .contains("above the tolerance")
+    );
+    *shares.last_mut().unwrap() = GEOMETRY.tolerance;
+    assert_eq!(reproduced(shares.clone()), Ok(shares));
+}
+
+#[test]
+fn the_noise_report_holds_each_share_the_maximum_and_the_cases_not_reproduced() {
+    let mut low = vec![0.0; NOISE_THRESHOLDS.len()];
+    low[0] = 0.25;
+    let mut high = vec![0.0; NOISE_THRESHOLDS.len()];
+    high[0] = 0.5;
+    high[1] = 0.125;
+    let measured = [
+        ("a.map a.png".to_owned(), low),
+        ("b.map b.png".to_owned(), high),
+    ];
+    let report = noise_report(&measured, &["c.map c.png: map2img fails".to_owned()]);
+    assert!(
+        report.contains("| a.map a.png | 0.250000 | 0.000000 |"),
+        "{report}"
+    );
+    assert!(
+        report.contains("| **maximum, geometry and symbols** | **0.500000** | **0.125000** |"),
+        "{report}"
+    );
+    assert!(report.contains("2 of 3 cases measured."), "{report}");
+    assert!(
+        report.contains("### Not reproduced by MapServer\n\n- c.map c.png: map2img fails\n"),
+        "{report}"
+    );
+    let clean = noise_report(&measured, &[]);
+    assert!(!clean.contains("Not reproduced"), "{clean}");
+}
+
+/// The report of the noise measurement, as Markdown: a row per measured case with its share of
+/// differing pixels at each of [`NOISE_THRESHOLDS`], the maximum of each column over the category,
+/// and the cases MapServer does not reproduce, each with its reason.
+fn noise_report(measured: &[(String, Vec<f64>)], unreproduced: &[String]) -> String {
+    let mut report = String::from("## MapServer's noise over the cases in scope\n\n| Case |");
+    for threshold in NOISE_THRESHOLDS {
+        report.push_str(&format!(" > {threshold} |"));
+    }
+    report.push_str("\n| --- |");
+    report.push_str(&" ---: |".repeat(NOISE_THRESHOLDS.len()));
+    report.push('\n');
+    let mut maximum = vec![0.0_f64; NOISE_THRESHOLDS.len()];
+    for (name, shares) in measured {
+        report.push_str(&format!("| {name} |"));
+        for (max, share) in maximum.iter_mut().zip(shares) {
+            *max = max.max(*share);
+            report.push_str(&format!(" {share:.6} |"));
+        }
+        report.push('\n');
+    }
+    report.push_str("| **maximum, geometry and symbols** |");
+    for max in &maximum {
+        report.push_str(&format!(" **{max:.6}** |"));
+    }
+    report.push_str(&format!(
+        "\n\n{} of {} cases measured.\n",
+        measured.len(),
+        measured.len() + unreproduced.len()
+    ));
+    if !unreproduced.is_empty() {
+        report.push_str("\n### Not reproduced by MapServer\n\n");
+        for line in unreproduced {
+            report.push_str(&format!("- {line}\n"));
+        }
+    }
+    report
 }
 
 /// The cases whose `blank` marker in the list disagrees with their reference: a case is blank

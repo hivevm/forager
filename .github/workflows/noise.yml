@@ -1,0 +1,71 @@
+name: Noise
+
+# The noise measurement of G-6 (ADR-0027): MapServer at the pinned release renders the cases the
+# list crates/cli/tests/conformance/cases.txt puts in scope, and the harness compares its
+# renderings with the references by its metric at each threshold of a small set. A sensor: the
+# report goes into the job summary and the renderings are kept as an artifact; the run fails only
+# when it breaks. It runs on demand and when what it measures changes: the harness, its metric, and
+# its list, the pin, the build of MapServer, or this workflow.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "crates/cli/tests/conformance/**"
+      - "crates/cli/tests/metric/**"
+      - "crates/cli/tests/msautotest.rs"
+      - "scripts/fetch-msautotest.sh"
+      - "scripts/build-mapserver.sh"
+      - ".github/workflows/noise.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  noise:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+          key: rust-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'scripts/install-tools.sh') }}
+      - uses: actions/cache@v6
+        with:
+          path: target/msautotest
+          key: msautotest-${{ hashFiles('scripts/fetch-msautotest.sh') }}
+      # The build of MapServer, by the two scripts that decide it: the pin and the build.
+      - uses: actions/cache@v6
+        with:
+          path: target/mapserver
+          key: mapserver-${{ hashFiles('scripts/build-mapserver.sh', 'scripts/fetch-msautotest.sh') }}
+      - name: Build MapServer at the pinned release
+        id: mapserver
+        # Assigned first, so that a failing build fails the step; an echo would hide its status.
+        run: |
+          map2img="$(bash scripts/build-mapserver.sh)"
+          echo "map2img=$map2img" >> "$GITHUB_OUTPUT"
+      - name: Install the toolchain and the cargo tools
+        run: bash scripts/install-tools.sh
+      # The path reaches the shell through the environment, not spliced into the script. The suite
+      # is served on localhost:8000, as MapServer's CI serves it, for the symbols named by a URL.
+      - name: Measure MapServer's noise over the cases in scope
+        env:
+          FORAGER_MAP2IMG: ${{ steps.mapserver.outputs.map2img }}
+        run: |
+          suite="$(bash scripts/fetch-msautotest.sh)"
+          python3 -m http.server 8000 --bind 127.0.0.1 --directory "$suite" >/dev/null 2>&1 &
+          FORAGER_MSAUTOTEST="$suite" \
+            cargo test -p forager-cli --locked --test msautotest -- --ignored --exact \
+            mapserver_renders_the_cases_in_scope_within_its_noise --nocapture
+      - name: Keep the renderings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: noise
+          path: target/tmp/noise/
