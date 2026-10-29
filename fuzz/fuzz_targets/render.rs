@@ -1,7 +1,8 @@
 //! The renderer on structured input: arbitrary points, lines, and polygons with any `f64` —
 //! NaN, infinities, and the extremes included — in an arbitrary view, drawn by the engine with
 //! agg-rust behind its clipping (Q-3, ADR-0015). JSON cannot carry such numbers, so the GeoJSON
-//! target never reaches these paths.
+//! target never reaches these paths. The points carry a label of arbitrary text, size, bounds, and
+//! resolution, in a test font of the label crate, drawn through the text path (ADR-0028).
 // Verifies: Q-3, ADR-0015
 #![no_main]
 
@@ -9,10 +10,13 @@ use std::collections::BTreeMap;
 
 use arbitrary::Arbitrary;
 use forager_ports::{
-    Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
+    Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, ResourceLoader,
+    ResourcePath, SourceError,
 };
 use forager_render_agg::AggRenderer;
-use forager_style_ir::{Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
+use forager_style_ir::{
+    Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, RenderMode, Rgba, Style,
+};
 use libfuzzer_sys::fuzz_target;
 
 #[derive(Arbitrary, Debug)]
@@ -23,6 +27,22 @@ struct Input {
     line_width: f64,
     symbol_size: f64,
     shapes: Vec<Shape>,
+    text: String,
+    label_size: f64,
+    min_size: f64,
+    max_size: f64,
+    resolution: f64,
+}
+
+/// A subset of DejaVu Sans, whose licence lies beside it, as the one font of the font set.
+const SANS: &[u8] = include_bytes!("../../crates/label/tests/fixtures/dejavu-sans-subset.ttf");
+
+struct Font;
+
+impl ResourceLoader for Font {
+    async fn load(&self, _: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        Ok(SANS.to_vec())
+    }
 }
 
 #[derive(Arbitrary, Debug)]
@@ -82,8 +102,20 @@ fuzz_target!(|input: Input| {
         size: Some(Bound::Value(input.symbol_size)),
         ..Style::default()
     };
+    let label = Label {
+        text: Some(Expr::String(input.text)),
+        font: Some(Bound::Value("sans".to_owned())),
+        size: Some(Bound::Value(input.label_size)),
+        min_size: Some(input.min_size),
+        max_size: Some(input.max_size),
+        ..Label::default()
+    };
+    let mut points = layer("points", RenderMode::Point, style.clone());
+    points.classes[0].labels.push(label);
     let [min_x, min_y, max_x, max_y] = input.extent;
     let map = Map {
+        resolution: Some(input.resolution),
+        fonts: [("sans".to_owned(), "sans.ttf".to_owned())].into(),
         extent: Some(Extent {
             min_x,
             min_y,
@@ -94,7 +126,7 @@ fuzz_target!(|input: Input| {
         layers: vec![
             layer("polygons", RenderMode::Polygon, style.clone()),
             layer("lines", RenderMode::Line, style.clone()),
-            layer("points", RenderMode::Point, style),
+            points,
         ],
         ..Map::default()
     };
@@ -102,6 +134,6 @@ fuzz_target!(|input: Input| {
         .into_iter()
         .map(|name| (name.to_owned(), Shapes(features.clone())))
         .collect();
-    let _ = forager_ports::poll_once(forager_engine::render(&map, &sources, AggRenderer::new()))
-        .expect("the engine waited on a source that never waits");
+    let render = forager_engine::render_with_files(&map, &sources, &Font, AggRenderer::new());
+    let _ = forager_ports::poll_once(render).expect("the engine waited on a port that never waits");
 });
