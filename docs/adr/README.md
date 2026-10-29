@@ -102,7 +102,7 @@ is the table a session reads.
 | [0024](0024-shapefile-reader.md) | The shapefile adapter reads shapefiles with a reader derived from MapServer's | `crates/adapter-shapefile`, `docs/semantics/shapefile.md` | 🟢 accepted |
 | [0025](0025-source-reports-skipped-records.md) | A feature source reports the records it skips, and the engine turns them into one warning per layer | the `FeatureSource` port of `crates/ports`, its call in `crates/engine`, and every `adapter-<kind>` crate that implements it | 🟢 accepted |
 | [0026](0026-feature-properties-at-the-port.md) | A feature carries its properties as typed values, a shapefile's as its record in a `.dbf` its layer shares | the `Feature` type of `crates/ports`, `crates/adapter-geojson`, `crates/adapter-shapefile`, and every `adapter-<kind>` crate that delivers features | 🟢 accepted |
-| [0027](0027-mapserver-built-from-the-pin.md) | CI builds MapServer from the pinned tag to measure its noise | `scripts/build-mapserver.sh`, `.github/workflows/noise.yml`, and every run of MapServer itself | 🟡 proposed |
+| [0027](0027-mapserver-built-from-the-pin.md) | CI builds MapServer from the pinned tag to measure its noise | `scripts/build-mapserver.sh`, `.github/workflows/noise.yml`, and every run of MapServer itself | 🟢 accepted |
 
 ### Superseded and rejected
 
