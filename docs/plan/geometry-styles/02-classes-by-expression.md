@@ -2,7 +2,7 @@
 
 ## What to build
 
-The `expr` crate evaluates the IR's tree as the ADR of ticket 01 decides, and the engine draws
+The `expr` crate evaluates the IR's tree as ADR-0031 decides, and the engine draws
 each feature with the first class whose `EXPRESSION` matches it, after the layer's `FILTER`, as
 MapServer's `msShapeGetClass` and `msLayerWhichShapes` select. Bound and computed style
 properties are evaluated per feature.
@@ -18,7 +18,7 @@ properties are evaluated per feature.
 
 ## Read first
 
-- The ADR of ticket 01; ADR-0009, ADR-0019, ADR-0026; the engine's render tests.
+- ADR-0031; ADR-0009, ADR-0030, ADR-0026; the engine's render tests.
 - MapServer at the pin: `msShapeGetClass` (`src/maputil.c`).
 
 ## Blocked by

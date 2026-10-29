@@ -25,7 +25,7 @@ function and where it applies, and cites it on a semantics page.
 
 ## Read first
 
-- `docs/SPECIFICATION.md` (Non-Goals), [ADR-0019](../../adr/0019-cql2-expressions.md); the
+- `docs/SPECIFICATION.md` (Non-Goals), [ADR-0030](../../adr/0030-cql2-expressions.md); the
   convention on behaviour ported from MapServer or PROJ in `docs/CONVENTIONS.md`.
 - `docs/semantics/filter.md`, `docs/semantics/expression.md`, `crates/mapfile/src/expression.rs`,
   `crates/mapfile/src/syntax.rs` (`VALIDATION`).

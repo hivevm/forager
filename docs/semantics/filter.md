@@ -1,7 +1,7 @@
 # `FILTER` and `FILTERITEM`
 
 **Where:** `LAYER`. **IR:** the layer's `filter`, a CQL2 tree
-([ADR-0019](../adr/0019-cql2-expressions.md)).
+([ADR-0030](../adr/0030-cql2-expressions.md)).
 
 **Meaning.** Which of the source's features the layer reads at all, before any class is tried. A
 layer without one reads every feature. `FILTER` takes the same four kinds of expression as

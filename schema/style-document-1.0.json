@@ -44,7 +44,7 @@
       ]
     },
     "Bound": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0030). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "type": "string"
@@ -67,7 +67,7 @@
       ]
     },
     "Bound2": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0030). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "type": "number",
@@ -91,7 +91,7 @@
       ]
     },
     "Bound3": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0030). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "$ref": "#/$defs/Rgba"
@@ -114,7 +114,7 @@
       ]
     },
     "Bound4": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0030). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "$ref": "#/$defs/Position"
@@ -137,7 +137,7 @@
       ]
     },
     "Bound5": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0030). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "$ref": "#/$defs/Align"
@@ -160,7 +160,7 @@
       ]
     },
     "Bound6": {
-      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
+      "description": "A style property that may vary by feature: a value, a property bound as MapServer binds an\nattribute, or an expression (ADR-0030). It is read as an untagged enum would read it, a value\nbefore an expression, but an object by its keys, so that a key it does not know is named.",
       "anyOf": [
         {
           "$ref": "#/$defs/SymbolRef"
@@ -1031,7 +1031,7 @@
           "const": "to_timestamp"
         },
         {
-          "description": "`regexp_like(value, pattern, flags)`: the pattern in POSIX extended syntax, the flag `i`.",
+          "description": "`regexp_like(value, pattern, flags)`: the pattern in PCRE2's syntax, byte mode (ADR-0030), the flag `i`.",
           "type": "string",
           "const": "regexp_like"
         },
@@ -1196,7 +1196,7 @@
           "format": "double"
         },
         "line_offset": {
-          "description": "A line drawn parallel to the feature's line at this distance, positive to its left in\nthe direction of drawing; MapServer writes it as `OFFSET d -99`, or `-999` for both sides.",
+          "description": "A line drawn parallel to the feature's line at this distance, positive to its right in\nthe direction of drawing on the image, as MapServer's offset curve places it; MapServer\nwrites it as `OFFSET d -99`, or `-999` for both sides.",
           "anyOf": [
             {
               "$ref": "#/$defs/LineOffset"
