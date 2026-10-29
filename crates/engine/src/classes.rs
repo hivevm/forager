@@ -293,6 +293,29 @@ pub(crate) fn in_scale(scale: f64, min: Option<f64>, max: Option<f64>) -> bool {
     !(scale > 0.0 && (max.is_some_and(|max| scale >= max) || min.is_some_and(|min| scale < min)))
 }
 
+/// msLayerIsVisible's scale checks: a layer is drawn at a scale at most its `MAXSCALEDENOM`
+/// where that is above 0 and above its `MINSCALEDENOM`, and only where a class might draw: one
+/// at a scale at most its own `MAXSCALEDENOM` and above its own `MINSCALEDENOM`, each where above
+/// 0. Bounds that differ from msScaleInBounds' at their ends, as MapServer's do. Any scale where
+/// it is not above 0.
+pub(crate) fn layer_in_scale(layer: &Layer, scale: f64) -> bool {
+    if scale <= 0.0 {
+        return true;
+    }
+    let above = |max: Option<f64>| max.is_some_and(|max| max > 0.0 && scale > max);
+    // An unset MINSCALEDENOM is -1, which no scale above 0 reaches.
+    if above(layer.max_scale_denom) || layer.min_scale_denom.is_some_and(|min| scale <= min) {
+        return false;
+    }
+    layer.classes.is_empty()
+        || layer.classes.iter().any(|class| {
+            !above(class.max_scale_denom)
+                && !class
+                    .min_scale_denom
+                    .is_some_and(|min| min > 0.0 && scale <= min)
+        })
+}
+
 /// msCalculateScale: the scale denominator of the view at the map's resolution, by the inches
 /// of its unit, as src/mapscale.c computes it without `ENABLE_VARIABLE_INCHES_PER_DEGREE`, which
 /// the build at the pin leaves off; -1, which bounds nothing, for pixels.
@@ -438,6 +461,48 @@ fn color(text: &[u8]) -> Option<Rgba> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_scale_is_the_one_ms_calculate_scale_gives() {
+        use forager_style_ir::Extent;
+        // 100 units over 100 pixel steps at 72 dpi: the scale is 72 times the inches of a unit.
+        let extent = Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 100.0,
+            max_y: 100.0,
+        };
+        let view = View::for_image(extent, 101, 101).unwrap();
+        let scale = |units| {
+            let map = Map {
+                units,
+                ..Map::default()
+            };
+            scale_denom(&map, &view, 101)
+        };
+        assert!((scale(None) - 72.0 * 39.3701).abs() < 1e-9);
+        assert!((scale(Some(Units::Meters)) - 72.0 * 39.3701).abs() < 1e-9);
+        assert!((scale(Some(Units::Degrees)) - 72.0 * 4_374_754.0).abs() < 1e-6);
+        assert!((scale(Some(Units::Feet)) - 72.0 * 12.0).abs() < 1e-9);
+        assert_eq!(scale(Some(Units::Pixels)), -1.0);
+        // At a resolution of 96 dpi, a third more.
+        let map = Map {
+            resolution: Some(96.0),
+            ..Map::default()
+        };
+        assert!((scale_denom(&map, &view, 101) - 96.0 * 39.3701).abs() < 1e-9);
+    }
+
+    #[test]
+    fn no_scale_bounds_a_map_in_pixels() {
+        assert!(in_scale(-1.0, Some(10.0), Some(20.0)));
+        let layer = Layer {
+            max_scale_denom: Some(1.0),
+            ..Layer::default()
+        };
+        assert!(layer_in_scale(&layer, -1.0));
+        assert!(!layer_in_scale(&layer, 2.0));
+    }
 
     #[test]
     fn colours_read_as_bind_color_attribute_reads_them() {

@@ -13,7 +13,7 @@ mod offset;
 mod symbol;
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use forager_ports::{
     Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
@@ -96,7 +96,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut reports = Reports::default();
     let scale = classes::scale_denom(map, &view, width);
     for (layer_index, layer) in map.layers.iter().enumerate() {
-        if !shown(layer) {
+        if !shown(layer) || !classes::layer_in_scale(layer, scale) {
             continue;
         }
         let Some(mode) = drawable_mode(layer, &mut diagnostics) else {
@@ -146,24 +146,15 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                 layer.span.clone(),
             ));
         }
-        // Each class labels the features it draws.
+        // Each feature is labelled by the class that draws it, in the order it is drawn.
         let point_layer = mode == RenderMode::Point;
-        let classes_drawn: BTreeSet<usize> = selected.iter().map(|(_, class, _)| *class).collect();
-        for class in classes_drawn {
-            let features: Vec<&Feature> = selected
-                .iter()
-                .filter(|(_, c, _)| *c == class)
-                .map(|(feature, _, _)| *feature)
-                .collect();
-            labels
-                .collect(
-                    (layer_index, class),
-                    point_layer,
-                    &features,
-                    &mut diagnostics,
-                )
-                .await;
-        }
+        let drawn: Vec<(&Feature, usize)> = selected
+            .iter()
+            .map(|(feature, class, _)| (*feature, *class))
+            .collect();
+        labels
+            .collect(layer_index, point_layer, &drawn, &mut diagnostics)
+            .await;
     }
     // The labels are drawn after every layer, as MapServer's label cache draws them.
     labels.finish(&mut renderer, &mut diagnostics);

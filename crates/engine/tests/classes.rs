@@ -348,6 +348,58 @@ fn a_class_outside_its_scale_range_draws_no_feature() {
 }
 
 #[test]
+fn a_class_range_holds_its_minimum_and_not_its_maximum() {
+    // msScaleInBounds: excluded at MAXSCALEDENOM, included at MINSCALEDENOM.
+    let ranged = |min: Option<f64>, max: Option<f64>, color| Class {
+        min_scale_denom: min,
+        max_scale_denom: max,
+        ..class(None, vec![filled(color, 2.0)])
+    };
+    let classes = vec![
+        ranged(None, Some(SCALE), RED),
+        ranged(Some(SCALE), None, GREEN),
+    ];
+    let (items, _) = draw(layer(RenderMode::Point, None, classes), &points(&["{}"]));
+    assert_eq!(fills(&items), vec![(1, GREEN, 2.0)]);
+}
+
+#[test]
+fn a_layer_outside_its_scale_range_draws_nothing() {
+    // msLayerIsVisible: a layer past its MAXSCALEDENOM, or at its MINSCALEDENOM, is skipped.
+    let one = || vec![class(None, vec![filled(RED, 2.0)])];
+    for (min, max) in [(None, Some(SCALE - 1.0)), (Some(SCALE), None)] {
+        let layer = Layer {
+            min_scale_denom: min,
+            max_scale_denom: max,
+            ..layer(RenderMode::Point, None, one())
+        };
+        let (items, _) = draw(layer, &points(&["{}"]));
+        assert!(items.is_empty(), "{min:?} {max:?}");
+    }
+    // At its MAXSCALEDENOM a layer draws.
+    let at_max = Layer {
+        max_scale_denom: Some(SCALE),
+        ..layer(RenderMode::Point, None, one())
+    };
+    assert_eq!(
+        fills(&draw(at_max, &points(&["{}"])).0),
+        vec![(1, RED, 2.0)]
+    );
+}
+
+#[test]
+fn a_layer_whose_only_class_is_out_of_scale_is_skipped() {
+    // msLayerIsVisible skips a layer when no class passes its own check: the scale on the only
+    // class's MINSCALEDENOM fails it, where msScaleInBounds would admit it.
+    let classes = vec![Class {
+        min_scale_denom: Some(SCALE),
+        ..class(None, vec![filled(RED, 2.0)])
+    }];
+    let (items, _) = draw(layer(RenderMode::Point, None, classes), &points(&["{}"]));
+    assert!(items.is_empty());
+}
+
+#[test]
 fn a_style_outside_its_scale_range_draws_nothing() {
     let out = Style {
         max_scale_denom: Some(SCALE - 1.0),

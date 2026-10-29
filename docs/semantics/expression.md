@@ -87,7 +87,11 @@ The core crate `expr` evaluates the tree as `msEvalExpression` (`src/maputil.c`)
 `src/mapparser.y` evaluate MapServer's ([ADR-0031](../adr/0031-expression-evaluator.md)). The engine
 tries a layer's `FILTER` first; a feature that fails it is not drawn. It then draws the feature
 with the first class in the map's scale whose expression matches, a class without one matching
-every feature; a feature no class matches is not drawn (`msShapeGetClass`). A class is in scale as
+every feature; a feature no class matches is not drawn (`msShapeGetClass`). Before it reads a
+layer's features, it skips the layer outside its own scale range, and one none of whose classes
+might draw at the scale, as `msLayerIsVisible` does with the bounds [scale-range.md](scale-range.md)
+states. Each feature is labelled by the class that draws it, in the order the features are
+drawn. A class is in scale as
 `msScaleInBounds` decides, from its `MINSCALEDENOM` up to below its `MAXSCALEDENOM`, against the
 scale `msCalculateScale` (`src/mapscale.c`) gives: the extent fitted to the image, over the image's
 width less one pixel at the map's `RESOLUTION` in the inches of its `UNITS`, a degree 4374754
@@ -150,22 +154,22 @@ time zones.
 ([ADR-0030](../adr/0030-cql2-expressions.md)) and matches it with the `regex` crate's byte matcher,
 its Unicode features off: `.` is one byte, `\d \w \s \b` and the flag `i` are ASCII. An empty value
 never matches, before the pattern is read. A pattern PCRE2 refuses makes the term false where it
-stands. A brace is a quantifier only as `{n}`, `{n,}`, or `{n,m}`, up to 65535, as PCRE2 10.42
-reads it; any other brace is a literal one (`a{,3}`). Option settings are read as PCRE2 reads
-them, `(?-)`, `(?i-)`, and `(?ii)` included; groups nest at most 250 deep, PCRE2's
-`PARENS_NEST_LIMIT`, and a group left open or a `)` without one is refused. A pattern with a
-construct PCRE2 reads and the crate cannot match as PCRE2 does — a back-reference, a look-around,
-an atomic group, recursion or a subroutine call, `\Q…\E`, `\K`, a possessive quantifier, a
-branch reset, a comment group, the option `x`, `\h`, `\v`, `\R`, `\e`, `\cX`, `\N`, `\p`, `\Z`,
-`\G`, an octal escape, a verb `(*…)`, a range with a class as an end, `^` under the option `m`,
-which PCRE2 does not match after a newline that ends the value, groups and repetitions nested
-deeper than the crate's limit of 250, which counts both, and any other the crate refuses where
-PCRE2 does not — and a pattern compiled past 1 MiB (Q-9) make the whole expression not match,
-and the engine reports each once per render with the class, style, or filter that holds it
-(`pattern-unsupported`). `$` matches at the very end only, where PCRE2's matches before a final
-newline too. A pattern written in the tree is compiled once per render; one computed per
-feature, from a property say, is compiled each time it is used, as `mapparser.y` compiles and
-frees one for each `~`.
+stands. A brace is a quantifier only as `{n}`, `{n,}`, or `{n,m}`, up to 65535, as PCRE2 10.42 reads
+it; any other brace is a literal one (`a{,3}`). Option settings are read as PCRE2 reads them, `(?)`,
+`(?-)`, `(?i-)`, `(?ii)`, and `(?i-i)`, which turns `i` off, included; groups nest at most 250 deep,
+PCRE2's `PARENS_NEST_LIMIT`, and a group left open or a `)` without one is refused. A pattern with a
+construct PCRE2 reads and the crate cannot match as PCRE2 does — a back-reference, a look-around, an
+atomic group, recursion or a subroutine call, `\Q…\E`, `\K`, a possessive quantifier, a branch
+reset, a comment group, the option `x`, `\h`, `\v`, `\R`, `\e`, `\cX`, `\N`, `\p`, `\Z`, `\G`, an
+octal escape, a verb `(*…)`, a range with a class as an end, `^` under the option `m`, which PCRE2
+does not match after a newline that ends the value, groups and repetitions nested deeper than the
+crate's limit of 250, which counts both, and any other the crate refuses where PCRE2 does not — a
+pattern longer than 64 KiB, which is not read at all, and a pattern compiled past 1 MiB (Q-9) make
+the whole expression not match, and the engine reports each once per render with the class, style,
+or filter that holds it (`pattern-unsupported`). `$` matches at the very end only, where PCRE2's
+matches before a final newline too. A pattern written in the tree is compiled once per render; one
+computed per feature, from a property say, is compiled each time it is used, as `mapparser.y`
+compiles and frees one for each `~`.
 
 **Bound and computed style properties.** For each feature the engine binds `COLOR`,
 `OUTLINECOLOR`, `SIZE`, `WIDTH`, `OUTLINEWIDTH`, `ANGLE`, `OFFSET`, and a `SYMBOL` bound by name as

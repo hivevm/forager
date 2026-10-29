@@ -96,43 +96,59 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
     }
 
-    /// Collects the labels of class `class` of layer `index` for each of `features`, those the
-    /// class draws: on a point layer at each vertex inside the map's extent, as
+    /// Collects the labels of layer `index` for each of `drawn`, a feature and the class that
+    /// draws it, in the order the layer draws them, as msDrawShape adds each feature's labels to
+    /// the cache: on a point layer at each vertex inside the map's extent, as
     /// `pointLayerDrawShape` places them; a label of any other layer is not drawn yet.
     pub(crate) async fn collect(
         &mut self,
-        (index, class_index): (usize, usize),
+        index: usize,
         point_layer: bool,
-        features: &[&Feature],
+        drawn: &[(&Feature, usize)],
         diagnostics: &mut Vec<Diagnostic>,
     ) {
         let map = self.map;
         let layer = &map.layers[index];
-        let class = &layer.classes[class_index];
-        for (n, label) in class.labels.iter().enumerate() {
-            let Some(text) = &label.text else {
-                // No text and no style to draw in its place: MapServer skips the label.
-                continue;
-            };
-            if features.is_empty() {
-                continue;
-            }
-            let fixed = if !point_layer {
-                Err("labels of line and polygon layers are not drawn yet".to_owned())
-            } else if class.labels.len() > 1 {
-                Err("its class has several labels, which MapServer places as a group".to_owned())
-            } else {
-                fixed(map, layer, label, text)
-            };
-            match fixed {
-                Ok(fixed) => {
-                    for feature in features {
-                        self.feature((index, class_index, n), &fixed, feature, diagnostics)
-                            .await;
+        // What of each label of the classes drawn does not vary, or why it is not drawn.
+        let mut fixed_labels = BTreeMap::new();
+        for &(_, class_index) in drawn {
+            let class = &layer.classes[class_index];
+            for (n, label) in class.labels.iter().enumerate() {
+                let at = (index, class_index, n);
+                if fixed_labels.contains_key(&at) {
+                    continue;
+                }
+                let Some(text) = &label.text else {
+                    // No text and no style to draw in its place: MapServer skips the label.
+                    fixed_labels.insert(at, None);
+                    continue;
+                };
+                let fixed = if !point_layer {
+                    Err("labels of line and polygon layers are not drawn yet".to_owned())
+                } else if class.labels.len() > 1 {
+                    Err(
+                        "its class has several labels, which MapServer places as a group"
+                            .to_owned(),
+                    )
+                } else {
+                    fixed(map, layer, label, text)
+                };
+                match fixed {
+                    Ok(fixed) => {
+                        fixed_labels.insert(at, Some(fixed));
+                    }
+                    Err(why) => {
+                        self.report(diagnostics, at, "label-not-drawn", why);
+                        fixed_labels.insert(at, None);
                     }
                 }
-                Err(why) => {
-                    self.report(diagnostics, (index, class_index, n), "label-not-drawn", why);
+            }
+        }
+        for &(feature, class_index) in drawn {
+            for n in 0..layer.classes[class_index].labels.len() {
+                let at = (index, class_index, n);
+                if let Some(Some(fixed)) = fixed_labels.get(&at) {
+                    self.feature(at, fixed, feature, diagnostics).await;
                 }
             }
         }
