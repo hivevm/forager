@@ -60,13 +60,14 @@ golden path and the test pattern an agent copies from are named here.
   diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
   carries means is described per parameter under `docs/semantics/`.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
-  bound feature source for the features in view, and turns each feature and style into display
-  items by the layer's render mode. A layer without a source, or whose source fails, is skipped
-  with a diagnostic (G-8); a source that skips records yields one warning for its layer
-  ([ADR-0025](adr/0025-source-reports-skipped-records.md)). It is the one core crate that awaits
-  the ports. Every host binds its sources to the layers by name through the engine's
-  `bind_sources`, which reports a source no layer is named for and one that cannot be read the
-  same way for each.
+  bound feature source for the features in view, and turns each feature and style into display items
+  by the layer's render mode. A layer without a source, or whose source fails, is skipped with a
+  diagnostic (G-8); a source that skips records yields one warning for its layer
+  ([ADR-0025](adr/0025-source-reports-skipped-records.md)); the fonts a label names it loads once
+  per render through the host's resource loader, each bounded (ADR-0028). It is the one core crate
+  that awaits the ports. Every host binds its sources to the layers by name through the engine's
+  `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
+  way for each.
 - **`render`** — the display list, the renderer trait, and the RGBA image.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, and is the one crate that may use `unsafe`
@@ -89,9 +90,9 @@ golden path and the test pattern an agent copies from are named here.
   it, and that hands the frontend an `adapter-epsg` table, extended by the file `--epsg` names;
   `forager render` binds GeoJSON files to layers and writes a PNG.
 - **`bindings-wasm`** — the host for the browser: a mapfile, GeoJSON per layer name, an optional
-  EPSG table, and a viewport in, the RGBA image and the diagnostics out; it keeps a layer's
-  source reference only when that is a `DATA` without credentials, and drops and unbinds every
-  other (Q-7).
+  EPSG table, a viewport, and the files the mapfile names, such as its font set and fonts, in, the
+  RGBA image and the diagnostics out; it keeps a layer's source reference only when that is a
+  `DATA` without credentials, and drops and unbinds every other (Q-7).
   `scripts/build-web.sh` builds it into `target/web/`.
 - **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out. The
   page shows the image, and a Leaflet map whose tiles each call the bindings with the tile's
@@ -170,10 +171,10 @@ engine with the agg-rust renderer.
 For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted
 extent and draws every feature in each style of the first class; the image is encoded as PNG.
 
-In the browser, the page calls the bundle's `render` with the mapfile text, a JSON object of
-GeoJSON by layer name, and an optional viewport. The bindings hand the frontend a loader that
-holds the mapfile alone, so an `INCLUDE` finds nothing; they drop every source reference the
-credential filter does not admit, apply the viewport over `SIZE` and `EXTENT`, parse the GeoJSON,
-and run the engine with the agg-rust renderer. Every port answers from memory, so each future
-is polled once; one that waits ends the call with a diagnostic instead of a spinning tab. The
-page puts the pixels on a canvas and lists the diagnostics.
+In the browser, the page calls the bundle's `render`, or `renderWith`, with the mapfile text, a JSON
+object of GeoJSON by layer name, an optional viewport, and the files the mapfile names. The bindings
+hand the frontend a loader that holds the mapfile and the files the page handed in, and nothing
+else; they drop every source reference the credential filter does not admit, apply the viewport over
+`SIZE` and `EXTENT`, parse the GeoJSON, and run the engine with the agg-rust renderer. Every port
+answers from memory, so each future is polled once; one that waits ends the call with a diagnostic
+instead of a spinning tab. The page puts the pixels on a canvas and lists the diagnostics.

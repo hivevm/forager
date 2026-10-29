@@ -1,5 +1,6 @@
 //! The WebAssembly bindings: a host for the browser. A page hands in a mapfile, GeoJSON per layer
-//! name, and a viewport, and gets back the RGBA image and the diagnostics (G-5).
+//! name, a viewport, and the files the mapfile names, such as its font set and fonts, and gets
+//! back the RGBA image and the diagnostics (G-5).
 //!
 //! [`render_map`] holds the logic and is tested natively; [`render`] is its JavaScript face.
 
@@ -35,8 +36,23 @@ pub struct Output {
 /// Renders `mapfile` with the GeoJSON in `sources`, a JSON object from layer name to a GeoJSON
 /// object or to GeoJSON text. Source references that carry credentials are dropped (Q-7).
 /// `init=` projections resolve with the built-in EPSG codes and those of `epsg`, a table in the
-/// format of PROJ's former `epsg` init file (ADR-0023).
+/// format of PROJ's former `epsg` init file (ADR-0023). The mapfile is the only file of its base
+/// context.
 pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &Viewport) -> Output {
+    render_map_with_files(mapfile, sources, epsg, viewport, &BTreeMap::new())
+}
+
+/// Renders as [`render_map`] does, with `files` beside the mapfile in its base context, by the
+/// path the mapfile names them: a font set and its fonts, an `INCLUDE`, a symbol set (ADR-0028).
+/// Nothing else is read; a font past [`forager_engine::MAX_FONT_BYTES`] is refused by the engine.
+pub fn render_map_with_files(
+    mapfile: &str,
+    sources: &str,
+    epsg: Option<&str>,
+    viewport: &Viewport,
+    files: &BTreeMap<String, Vec<u8>>,
+) -> Output {
+    let base = PageFiles { mapfile, files };
     let mut diagnostics = Vec::new();
     let resolver = match epsg.map(EpsgTable::with_table) {
         None => EpsgTable::new(),
@@ -54,7 +70,7 @@ pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &V
     };
     let Some(loaded) = forager_ports::poll_once(forager_mapfile::load(
         &ResourcePath::new(MAPFILE_NAME).expect("a plain file name is a resource path"),
-        &OneFile(mapfile),
+        &base,
         Some(&resolver),
     )) else {
         return waited();
@@ -96,9 +112,12 @@ pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &V
     for name in &rejected {
         bound.remove(name);
     }
-    let Some(rendered) =
-        forager_ports::poll_once(forager_engine::render(&map, &bound, AggRenderer::new()))
-    else {
+    let Some(rendered) = forager_ports::poll_once(forager_engine::render_with_files(
+        &map,
+        &bound,
+        &base,
+        AggRenderer::new(),
+    )) else {
         return waited();
     };
     diagnostics.extend(rendered.diagnostics);
@@ -137,17 +156,49 @@ fn bind(
     )
 }
 
-/// The mapfile as the only file of the base context; an `INCLUDE` finds nothing.
-struct OneFile<'a>(&'a str);
+/// The base context of a render in the browser: the mapfile, and the files the page hands in by
+/// their paths; nothing else exists in it.
+struct PageFiles<'a> {
+    mapfile: &'a str,
+    files: &'a BTreeMap<String, Vec<u8>>,
+}
 
-impl ResourceLoader for OneFile<'_> {
+impl ResourceLoader for PageFiles<'_> {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
         if path.as_str() == MAPFILE_NAME {
-            Ok(self.0.as_bytes().to_vec())
-        } else {
-            Err(SourceError::new(
-                "the browser example has no files besides the mapfile",
-            ))
+            return Ok(self.mapfile.as_bytes().to_vec());
+        }
+        self.files
+            .get(path.as_str())
+            .cloned()
+            .ok_or_else(|| SourceError::new("the page handed in no file of this path"))
+    }
+}
+
+/// The files a page hands in beside the mapfile, each by the path the mapfile names it.
+#[wasm_bindgen]
+#[derive(Default)]
+pub struct Files {
+    files: BTreeMap<String, Vec<u8>>,
+}
+
+#[wasm_bindgen]
+impl Files {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Files {
+        Files::default()
+    }
+
+    /// Adds the file at `path`, a path relative to the base context as the mapfile names it, with
+    /// its bytes; a later one of the same path replaces it. A path that is no resource path, such
+    /// as one that climbs out of the base context, is not added, and the call returns `false`.
+    pub fn add(&mut self, path: &str, bytes: Vec<u8>) -> bool {
+        match ResourcePath::new(path) {
+            Ok(path) => {
+                self.files.insert(path.as_str().to_owned(), bytes);
+                true
+            }
+            Err(_) => false,
         }
     }
 }
@@ -198,7 +249,7 @@ impl RenderResult {
 /// Renders a mapfile in the browser. `sources` is a JSON object from layer name to GeoJSON (an
 /// object or its text). `width`, `height`, and `extent` (`[minx, miny, maxx, maxy]`) override
 /// the mapfile's SIZE and EXTENT when given. `epsg` is a table of further EPSG definitions
-/// (ADR-0023).
+/// (ADR-0023). The mapfile is the only file of its base context; [`render_with`] adds others.
 #[wasm_bindgen]
 pub fn render(
     mapfile: &str,
@@ -207,6 +258,29 @@ pub fn render(
     height: Option<u32>,
     extent: Option<Vec<f64>>,
     epsg: Option<String>,
+) -> RenderResult {
+    render_with(
+        mapfile,
+        sources,
+        width,
+        height,
+        extent,
+        epsg,
+        &Files::default(),
+    )
+}
+
+/// Renders as [`render`] does, with `files` beside the mapfile, such as its font set and fonts.
+/// The page keeps `files` and may hand it to every render, of every tile.
+#[wasm_bindgen(js_name = renderWith)]
+pub fn render_with(
+    mapfile: &str,
+    sources: &str,
+    width: Option<u32>,
+    height: Option<u32>,
+    extent: Option<Vec<f64>>,
+    epsg: Option<String>,
+    files: &Files,
 ) -> RenderResult {
     let mut diagnostics = Vec::new();
     let extent = match extent.as_deref() {
@@ -235,7 +309,7 @@ pub fn render(
         },
         extent,
     };
-    let output = render_map(mapfile, sources, epsg.as_deref(), &viewport);
+    let output = render_map_with_files(mapfile, sources, epsg.as_deref(), &viewport, &files.files);
     diagnostics.extend(output.diagnostics);
     let image = output.image.unwrap_or(RgbaImage {
         width: 0,
@@ -259,6 +333,46 @@ mod tests {
 
     fn codes(output: &Output) -> Vec<&str> {
         output.diagnostics.iter().map(|d| d.code.as_str()).collect()
+    }
+
+    /// A page hands in the font set and the fonts the mapfile names; the engine reads them from
+    /// there, and from nowhere else.
+    #[test]
+    fn the_fonts_a_page_hands_in_reach_the_engine() {
+        // Verifies: ADR-0028
+        let mapfile = |font: &str| {
+            format!(
+                "MAP SIZE 10 10 EXTENT 0 0 10 10 FONTSET 'fonts.lst'\n\
+                 LAYER NAME 'p' TYPE POINT STATUS ON\n\
+                 CLASS LABEL FONT '{font}' TEXT 'x' END END END END\n"
+            )
+        };
+        let sources = serde_json::json!({ "p": {"type": "Point", "coordinates": [5, 5]} });
+        let sources = sources.to_string();
+        let mut page = Files::new();
+        assert!(page.add(
+            "fonts.lst",
+            b"sans fonts/sans.ttf\ngone fonts/gone.ttf\n".to_vec()
+        ));
+        // A path is normalized as the mapfile's paths are; one out of the base context is refused.
+        assert!(page.add("./fonts/sans.ttf", b"font".to_vec()));
+        assert!(!page.add("../escape.ttf", b"font".to_vec()));
+        let render = |font: &str| {
+            render_map_with_files(
+                &mapfile(font),
+                &sources,
+                None,
+                &Viewport::default(),
+                &page.files,
+            )
+        };
+        assert_eq!(codes(&render("sans")), Vec::<&str>::new());
+        let output = render("gone");
+        assert_eq!(codes(&output), ["label-font-unusable"]);
+        assert!(output.diagnostics[0].message.contains("fonts/gone.ttf"));
+        // Without the files, the font set itself is not found.
+        let without = render_map(&mapfile("sans"), &sources, None, &Viewport::default());
+        assert_eq!(codes(&without), ["resource-unreadable"]);
     }
 
     #[test]
