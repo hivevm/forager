@@ -75,6 +75,14 @@ impl Fonts {
                 Ok(None) => why = format!("the font `{name}` ({path}) lacks a glyph of the text"),
                 Err(unusable) => {
                     let what = match unusable {
+                        Unusable::NoUnicodeCharacterMap => {
+                            "has no Unicode character map; FreeType would read it through one \
+                             built from its glyph names, which is not built here"
+                        }
+                        Unusable::UnreadCharacterMapFormat => {
+                            "has a character map of format 2 or 8, which is not read"
+                        }
+                        Unusable::SymbolCharacterMap => "has only a Symbol character map",
                         Unusable::AppleRomanCharacterMap => "has only an Apple Roman character map",
                         Unusable::NoGlyfOutlines => "has no TrueType (glyf) outlines",
                     };

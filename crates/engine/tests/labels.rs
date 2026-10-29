@@ -339,10 +339,11 @@ fn a_null_property_draws_no_label_as_an_empty_one_does() {
 #[test]
 fn a_glyph_reaching_too_far_from_the_image_is_left_out_with_a_diagnostic() {
     // Verifies: ADR-0028
-    // The `1` of this test font, at 6000 points, stands about 15,000,000 pixels tall.
+    // The `1` of this test font, a square around its origin with no advance, stands 16,000,000
+    // pixels wide at 6000 points; the `2` beside it, about 650,000 pixels, is drawn.
     let label = Label {
         font: Some(Bound::Value("huge".to_owned())),
-        text: Some(Expr::String("1".to_owned())),
+        text: Some(Expr::String("21".to_owned())),
         size: Some(Bound::Value(6000.0)),
         max_size: Some(6000.0),
         ..label_item()
@@ -354,7 +355,18 @@ fn a_glyph_reaching_too_far_from_the_image_is_left_out_with_a_diagnostic() {
         .map(|d| d.code.as_str())
         .collect();
     assert_eq!(codes, ["label-glyph-out-of-reach"]);
-    assert_eq!(rendered.diagnostics[0].span, Some(Span::new("m.map", 9, 7)));
+    let d = &rendered.diagnostics[0];
+    assert_eq!(d.span, Some(Span::new("m.map", 9, 7)));
+    assert!(
+        d.message.contains("1 of its glyphs") && d.message.ends_with("those glyphs are left out"),
+        "{}",
+        d.message
+    );
+    let image = rendered.image.unwrap();
+    assert!(
+        image.pixels.chunks(4).any(|p| p != [255, 255, 255, 255]),
+        "the `2` is drawn"
+    );
 }
 
 #[test]

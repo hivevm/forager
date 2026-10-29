@@ -2,7 +2,8 @@
 // glyph index msGetGlyphIndex and the character map msGetFontFace selects, src/fontcache.c, of
 // MapServer at the release pinned in scripts/fetch-msautotest.sh, for a line MapServer gives its
 // basic shaper; the character map FreeType 2.13.3 selects first, find_unicode_charmap,
-// src/base/ftobjs.c, with the encodings of sfnt_find_encoding, src/sfnt/sfobjs.c.
+// src/base/ftobjs.c, with the encodings of sfnt_find_encoding and the Unicode map it builds from
+// glyph names, sfnt_load_face, src/sfnt/sfobjs.c.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2013 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
@@ -20,6 +21,7 @@
 use skrifa::outline::OutlineGlyphFormat;
 use skrifa::raw::TableProvider;
 use skrifa::raw::tables::cmap::{CmapSubtable, PlatformId};
+use skrifa::raw::types::Version16Dot16;
 use skrifa::{FontRef, MetadataProvider};
 
 /// The encoding FreeType gives a character map, of those MapServer reads a label through.
@@ -35,13 +37,22 @@ pub struct Font<'a> {
     pub(crate) font: FontRef<'a>,
     charmap: Option<(Encoding, CmapSubtable<'a>)>,
     num_glyphs: u32,
+    /// Why no line can be read in the font, decided when it opens.
+    unreadable: Option<Unusable>,
 }
 
 /// Why a font that opens cannot draw a label's line (ADR-0028).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unusable {
+    /// The font has no Unicode character map, and FreeType would read it through one it builds
+    /// from the font's glyph names, which this crate does not build.
+    NoUnicodeCharacterMap,
+    /// The font's character map is of format 2 or 8, which this crate does not read.
+    UnreadCharacterMapFormat,
+    /// The font is read through its Symbol character map, out of the scope of ADR-0028.
+    SymbolCharacterMap,
     /// The font is read through its Apple Roman character map, as it has neither a Unicode nor a
-    /// Symbol one.
+    /// Symbol one, out of the scope of ADR-0028.
     AppleRomanCharacterMap,
     /// The font's outlines are not TrueType's `glyf`.
     NoGlyfOutlines,
@@ -53,10 +64,26 @@ impl<'a> Font<'a> {
         let font = FontRef::from_index(data, 0).map_err(|e| e.to_string())?;
         let num_glyphs = font.maxp().map_err(|e| e.to_string())?.num_glyphs();
         let charmap = charmap(&font);
+        // sfnt_load_face builds a Unicode map from the glyph names of a face with neither a
+        // Unicode nor a Symbol map whose `post` table names its glyphs, any version but 3.0.
+        let named = font
+            .post()
+            .is_ok_and(|post| post.version() != Version16Dot16::VERSION_3_0);
+        let unreadable = match &charmap {
+            Some((_, CmapSubtable::Format2(_) | CmapSubtable::Format8(_))) => {
+                Some(Unusable::UnreadCharacterMapFormat)
+            }
+            Some((Encoding::Unicode | Encoding::Symbol, _)) => None,
+            Some((Encoding::AppleRoman, _)) | None if named => {
+                Some(Unusable::NoUnicodeCharacterMap)
+            }
+            _ => None,
+        };
         Ok(Self {
             font,
             charmap,
             num_glyphs: u32::from(num_glyphs),
+            unreadable,
         })
     }
 
@@ -80,8 +107,12 @@ impl<'a> Font<'a> {
     /// The glyphs of `line` as `check_single_font` finds them: `None` when the font lacks one
     /// and is not the `last` entry of the list, which takes its `?`, or glyph 0 where it has none,
     /// for each it lacks. A font that would draw the line but that this crate cannot draw it in
-    /// is an error: one read through its Apple Roman map, and one without `glyf` outlines.
+    /// is an error: one read through its Symbol or its Apple Roman map, and one without `glyf`
+    /// outlines; a font whose glyphs cannot be found at all is an error at once.
     pub fn glyphs(&self, line: &[char], last: bool) -> Result<Option<Vec<u32>>, Unusable> {
+        if let Some(unusable) = self.unreadable {
+            return Err(unusable);
+        }
         let mut glyphs = Vec::with_capacity(line.len());
         for &c in line {
             match self.glyph_index(c) {
@@ -90,8 +121,10 @@ impl<'a> Font<'a> {
                 glyph => glyphs.push(glyph),
             }
         }
-        if matches!(self.charmap, Some((Encoding::AppleRoman, _))) {
-            return Err(Unusable::AppleRomanCharacterMap);
+        match self.charmap {
+            Some((Encoding::Symbol, _)) => return Err(Unusable::SymbolCharacterMap),
+            Some((Encoding::AppleRoman, _)) => return Err(Unusable::AppleRomanCharacterMap),
+            _ => {}
         }
         if self.font.outline_glyphs().format() != Some(OutlineGlyphFormat::Glyf) {
             return Err(Unusable::NoGlyfOutlines);

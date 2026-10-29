@@ -238,7 +238,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     drawn.out_of_reach,
                     forager_render::MAX_GLYPH_REACH
                 );
-                self.report(diagnostics, label.label, "label-glyph-out-of-reach", why);
+                let outcome = "those glyphs are left out";
+                self.report_with(
+                    diagnostics,
+                    label.label,
+                    "label-glyph-out-of-reach",
+                    why,
+                    outcome,
+                );
             }
             if !drawn.path.is_empty() {
                 renderer.draw(&DisplayItem {
@@ -252,6 +259,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
     }
 
+    /// Reports why `at` is not drawn, once per label and code.
     fn report(
         &mut self,
         diagnostics: &mut Vec<Diagnostic>,
@@ -259,9 +267,21 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         code: &'static str,
         why: String,
     ) {
+        self.report_with(diagnostics, at, code, why, "the label is not drawn");
+    }
+
+    /// Reports `why` with what follows from it, once per label and code.
+    fn report_with(
+        &mut self,
+        diagnostics: &mut Vec<Diagnostic>,
+        at: LabelAt,
+        code: &'static str,
+        why: String,
+        outcome: &str,
+    ) {
         if self.reported.insert((at, code)) {
             let span = self.span(at);
-            let message = format!("{why}; the label is not drawn");
+            let message = format!("{why}; {outcome}");
             diagnostics.push(Diagnostic::warning(code, message, span));
         }
     }

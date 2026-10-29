@@ -176,9 +176,9 @@ fn a_glyph_wholly_outside_the_visible_area_is_left_out() {
 #[test]
 fn a_glyph_reaching_too_far_from_the_visible_area_is_left_out_and_counted() {
     // Verifies: ADR-0028
-    // A font of 16 units per em whose `1` stands 29,860 units tall: at a glyph size of 6000
-    // points it is about 15,000,000 pixels tall, so that drawn into the image it reaches past the
-    // reach.
+    // A font of 16 units per em whose `1` is a square of 32,000 units around its origin: at a
+    // glyph size of 6000 points it is 16,000,000 pixels wide, so that drawn into the image it
+    // reaches past the reach.
     let data = fixture("dejavu-sans-huge.ttf");
     let font = Font::new(&data).unwrap();
     let huge = laid(&font, "1", 6000.0);
@@ -281,22 +281,45 @@ fn a_font_is_read_through_the_character_map_freetype_and_mapserver_select() {
     let font = Font::new(&both).unwrap();
     assert_eq!(font.glyph_index('1'), plain.glyph_index('1'));
     assert_eq!(font.glyph_index('9'), 0);
-    // A font with only a Symbol map is read through it at the code point | 0xF000.
+    // A font with only a Symbol map is looked up at the code point | 0xF000, as
+    // msGetGlyphIndex looks it up, so that lacking a glyph it gives way to the next font; one
+    // that would be used cannot be drawn (ADR-0028).
     let symbol = fixture("dejavu-sans-symbol.ttf");
     let font = Font::new(&symbol).unwrap();
     assert_eq!(font.glyph_index('1'), plain.glyph_index('1'));
+    assert_eq!(font.glyphs(&['1', 'a'], false), Ok(None));
     assert_eq!(
         font.glyphs(&['1', '2'], false),
-        Ok(Some(vec![plain.glyph_index('1'), plain.glyph_index('2')]))
+        Err(Unusable::SymbolCharacterMap)
     );
-    assert_eq!(font.glyphs(&['1', 'a'], false), Ok(None));
+}
+
+#[test]
+fn a_font_whose_glyphs_cannot_be_found_is_unusable_at_once() {
+    // Verifies: ADR-0028
+    // Without a Unicode or a Symbol map, FreeType reads a font whose `post` table names its
+    // glyphs through a Unicode map it builds from the names.
+    let named = fixture("dejavu-sans-mac-names.ttf");
+    let font = Font::new(&named).unwrap();
+    assert_eq!(
+        font.glyphs(&['a'], false),
+        Err(Unusable::NoUnicodeCharacterMap)
+    );
+    // A map of format 2 or 8, which this crate does not read.
+    let format2 = fixture("dejavu-sans-format2.ttf");
+    let font = Font::new(&format2).unwrap();
+    assert_eq!(
+        font.glyphs(&['a'], false),
+        Err(Unusable::UnreadCharacterMapFormat)
+    );
 }
 
 #[test]
 fn a_font_this_crate_cannot_draw_in_is_unusable_only_once_it_would_be_used() {
     // Verifies: ADR-0028
-    // An Apple Roman map is looked up as FreeType looks it up, so that a font lacking a glyph is
-    // passed over as any other; one that has them all cannot be drawn.
+    // An Apple Roman map, read where the `post` table names no glyph, is looked up as FreeType
+    // looks it up, so that a font lacking a glyph is passed over as any other; one that has them
+    // all cannot be drawn.
     let mac = fixture("dejavu-sans-mac.ttf");
     let font = Font::new(&mac).unwrap();
     assert_eq!(font.glyphs(&['1', 'a'], false), Ok(None));

@@ -285,16 +285,20 @@ fn a_font_this_renderer_cannot_read_ends_the_search_with_a_diagnostic() {
 }
 
 #[test]
-fn a_font_with_only_a_symbol_map_is_read_through_it() {
+fn a_font_with_only_a_symbol_map_gives_way_lacking_a_glyph_and_is_not_drawn_with() {
     // Verifies: ADR-0028
     let fonts = [("symbol", "symbol.ttf"), ("sans", "sans.ttf")];
     let files = files(&[
         ("symbol.ttf", font("dejavu-sans-symbol.ttf")),
         ("sans.ttf", sans()),
     ]);
-    let rendered = render(&map("symbol", &fonts), &files);
-    assert_eq!(codes(&rendered), Vec::<&str>::new());
-    assert_eq!(*files.asked.borrow(), ["symbol.ttf"]);
+    // It has every glyph of `1`, looked up at U+F031, so it would be used: out of scope.
+    let rendered = render(&map("symbol,sans", &fonts), &files);
+    assert_eq!(
+        codes(&rendered),
+        ["label-font-unusable", "label-font-unusable"]
+    );
+    assert!(rendered.diagnostics[0].message.contains("Symbol"));
     // Lacking a glyph, it gives way to the next font.
     let mut map = map("symbol,sans", &fonts);
     for layer in &mut map.layers {
@@ -304,4 +308,22 @@ fn a_font_with_only_a_symbol_map_is_read_through_it() {
     let rendered = render(&map, &files);
     assert_eq!(codes(&rendered), Vec::<&str>::new());
     assert_eq!(*files.asked.borrow(), ["symbol.ttf", "sans.ttf"]);
+}
+
+#[test]
+fn a_font_whose_glyph_names_freetype_would_read_is_not_drawn_with() {
+    // Verifies: ADR-0028
+    // Only an Apple Roman map, and a `post` table that names the glyphs: FreeType builds a Unicode
+    // map from the names, which is not built here, so the search ends with a diagnostic.
+    let fonts = [("named", "named.ttf"), ("sans", "sans.ttf")];
+    let files = files(&[
+        ("named.ttf", font("dejavu-sans-mac-names.ttf")),
+        ("sans.ttf", sans()),
+    ]);
+    let rendered = render(&map("named,sans", &fonts), &files);
+    assert_eq!(
+        codes(&rendered),
+        ["label-font-unusable", "label-font-unusable"]
+    );
+    assert!(rendered.diagnostics[0].message.contains("glyph names"));
 }

@@ -12,11 +12,16 @@ below, whose names contain neither "Bitstream", "Vera", nor "Arev":
 - dejavu-sans-symbol.ttf: the digits and the space, with only a Windows Symbol character map.
 - dejavu-sans-both.ttf: dejavu-sans-digits.ttf with a Windows Symbol map that maps each digit to
   the next one and a Windows Unicode map that maps `9` to glyph 500, past the font's glyphs.
-- dejavu-sans-mac.ttf: dejavu-sans-digits.ttf with only an Apple Roman character map.
+- dejavu-sans-mac.ttf: dejavu-sans-digits.ttf with only an Apple Roman character map, and a
+  `post` table of version 3.0, which names no glyph.
+- dejavu-sans-mac-names.ttf: the same with a `post` table of version 2.0, which names its glyphs.
+- dejavu-sans-format2.ttf: dejavu-sans-digits.ttf whose one character map, Windows Unicode, is of
+  format 2.
 - dejavu-sans-broken.ttf: dejavu-sans-digits.ttf whose `1` and glyph 0 are replaced by a glyph
   that names 1000 points and holds none.
-- dejavu-sans-huge.ttf: dejavu-sans-digits.ttf with 16 units per em, and its `1` and the
-  advance of `1` 20 times as large, so that the glyph can reach millions of pixels.
+- dejavu-sans-huge.ttf: dejavu-sans-digits.ttf with 16 units per em, and its `1` a square of
+  32,000 units centred on its origin with no advance, so that the glyph can reach millions of
+  pixels.
 
 boxes-cff.otf is drawn for these tests with fontTools' FontBuilder: a box for each digit, in CFF
 outlines; it carries no third-party work and stands under the repository's licence.
