@@ -26,8 +26,8 @@ use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
 
 use crate::lexer::{Token, TokenKind};
 
-/// Why an expression was not carried over. A warning keeps its class or filter as one that never
-/// matches, as MapServer, which parses an expression only when it evaluates it, never matches
+/// Why an expression was not carried over. A warning keeps its class, label, or filter as one that
+/// never matches, as MapServer, which parses an expression only when it evaluates it, never matches
 /// one it cannot parse; an error fails the load.
 #[derive(Debug, PartialEq)]
 pub struct Problem {

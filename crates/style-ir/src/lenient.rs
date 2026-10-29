@@ -217,7 +217,7 @@ fn remove(value: &mut Value, at: &Pointer) {
 /// Reads `value`, a document of a newer minor that does not read as this build's version,
 /// dropping each value this build does not know with a warning naming it and its path: an enum
 /// value unsets its field, and an expression with an unknown operator or function becomes one
-/// that never matches, so that its class or filter is kept (ADR-0019, ADR-0020). Anything else
+/// that never matches, so that its class, label, or filter is kept (ADR-0019, ADR-0020). Anything else
 /// that does not read is the error `code`, naming its path.
 pub(crate) fn read(mut value: Value, code: &str) -> Result<Read, Diagnostic> {
     let mut dropped = Vec::new();
@@ -266,8 +266,8 @@ pub(crate) fn read(mut value: Value, code: &str) -> Result<Read, Diagnostic> {
         let untagged = inside || is_untagged_failure(&reason);
         let operator = untagged.then(|| unknown_operator(&failed)).flatten();
         let warning = if condition(at.segments()) {
-            // A class or filter that does not read is kept and never matches; dropped, it would
-            // match every feature.
+            // A class, label, or filter that does not read is kept and never matches; dropped, it
+            // would match every feature.
             let field = value
                 .pointer_mut(&at.to_string())
                 .expect("the failed place is inside the field");

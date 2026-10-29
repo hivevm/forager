@@ -567,8 +567,8 @@ impl Translator<'_> {
 
     /// A class's or a label's `EXPRESSION` or a layer's `FILTER`; a string, regular expression, or
     /// list in it compares the attribute `item` names, the layer's `CLASSITEM`, `LABELITEM`, or
-    /// `FILTERITEM`. One that
-    /// cannot be carried over is a warning and a condition that never matches.
+    /// `FILTERITEM`. One that cannot be carried over is a warning and a condition that never
+    /// matches.
     fn expression(&mut self, d: &Directive, item: Option<&str>) -> Option<Expr> {
         let [token] = d.values.as_slice() else {
             self.invalid(d, "one expression");

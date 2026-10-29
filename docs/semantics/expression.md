@@ -1,10 +1,12 @@
 # `EXPRESSION`
 
-**Where:** `CLASS`. **IR:** the class's `expression`, a CQL2 tree
+**Where:** `CLASS`, `LABEL`. **IR:** the class's or the label's `expression`, a CQL2 tree
 ([ADR-0019](../adr/0019-cql2-expressions.md)).
 
 **Meaning.** Which features the class draws. A class without one draws every feature that reaches
-it; MapServer tries a layer's classes in order and draws a feature with the first that matches.
+it; MapServer tries a layer's classes in order and draws a feature with the first that matches. A
+label's decides whether the label is drawn for a feature, and its string, regular expression, or
+list compares `LABELITEM` where the table below shows `CLASSITEM` ([label.md](label.md)).
 
 ## The four kinds
 
