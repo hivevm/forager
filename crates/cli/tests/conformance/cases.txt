@@ -63,7 +63,7 @@ misc/geopdf.map geopdf-ogc.pdf out: another output format, pdf
 misc/grid_without_label.map grid_without_label.png geometry fails  # not built yet: the GRID of a layer
 misc/issue5558.map issue5581-1.png blank out: labels
 misc/issue5558.map issue5581-2.png blank out: a map2img option not applied, -c
-misc/line_offset_clipped_to_multiline.map line_offset_clipped_to_multiline.png geometry fails  # not built yet: inline FEATURE shapes and the OFFSET of a style
+misc/line_offset_clipped_to_multiline.map line_offset_clipped_to_multiline.png geometry fails  # not built yet: inline FEATURE shapes
 misc/listexpression.map listexpression.png out: labels
 misc/map2img-argparse.map map2img-argparse-s.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-e.txt out: another output format, txt
@@ -130,9 +130,9 @@ misc/scaletoken.map scaletoken_filteritem_192k.png out: SCALETOKEN, a runtime su
 misc/scaletoken.map scaletoken_filteritem_424k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_192k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_424k.png out: SCALETOKEN, a runtime substitution by scale
-misc/style_opacity.map style_opacity_test001.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY and OFFSET of a style
-misc/style_opacity.map style_opacity_test002.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY and OFFSET of a style
-misc/style_opacity.map style_opacity_test003.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY and OFFSET of a style
+misc/style_opacity.map style_opacity_test001.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY of a style
+misc/style_opacity.map style_opacity_test002.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY of a style
+misc/style_opacity.map style_opacity_test003.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY of a style
 misc/testuppercase.map testuppercase.png blank geometry passes
 misc/tiles_scales_z2.map tile_scale_z2.png blank out: an OGC or CGI request
 misc/tiles_scales_z3.map tile_scale_z3.png out: an OGC or CGI request
@@ -354,21 +354,21 @@ renderers/line_marker_vector.map line_marker_vector.png geometry fails  # not bu
 renderers/line_marker_vector.map line_marker_vector.pdf out: another output format, pdf
 renderers/line_marker_vector.map line_marker_vector.svg out: another output format, svg
 renderers/line_marker_vector.map line_marker_vector.cairo.png out: another output format, cairopng
-renderers/line_offset.map line_offset.png geometry fails  # not built yet: the OFFSET of a style
+renderers/line_offset.map line_offset.png geometry fails  # not built yet: inline FEATURE shapes
 renderers/line_offset.map line_offset.pdf out: another output format, pdf
 renderers/line_offset.map line_offset.svg out: another output format, svg
 renderers/line_offset.map line_offset.cairo.png out: another output format, cairopng
-renderers/line_outlines.map outlines1.png geometry fails  # not built yet: the OUTLINEWIDTH of a line style
+renderers/line_outlines.map outlines1.png geometry passes
 renderers/line_outlines.map outlines2.png out: a data source other than shapefiles, OGR
 renderers/line_outlines.map outlines3.png out: a data source other than shapefiles, OGR
 renderers/line_outlines.map outlines4.png out: a data source other than shapefiles, OGR
 renderers/line_outlines.map outlines5.png out: a data source other than shapefiles, OGR
 renderers/line_outlines.map outlines6.png out: a data source other than shapefiles, OGR
-renderers/line_pattern.map line_pattern.png geometry fails  # not built yet: the PATTERN and LINECAP of a style
+renderers/line_pattern.map line_pattern.png geometry passes
 renderers/line_pattern.map line_pattern.pdf out: another output format, pdf
 renderers/line_pattern.map line_pattern.svg out: another output format, svg
 renderers/line_pattern.map line_pattern.cairo.png out: another output format, cairopng
-renderers/line_pattern_offset.map line_pattern_offset.png geometry fails  # not built yet: inline FEATURE shapes and the PATTERN and OFFSET of a style
+renderers/line_pattern_offset.map line_pattern_offset.png geometry fails  # not built yet: inline FEATURE shapes
 renderers/line_pattern_offset.map line_pattern_offset.pdf out: another output format, pdf
 renderers/line_pattern_offset.map line_pattern_offset.svg out: another output format, svg
 renderers/line_pattern_offset.map line_pattern_offset.cairo.png out: another output format, cairopng
@@ -551,8 +551,8 @@ renderers/rgba_overlay_res.map rgba_overlay_res.cairo.png out: another output fo
 renderers/style-size.map style_size_binding.png geometry fails  # not built yet: ellipse symbols and a SIZE bound to an attribute
 renderers/style-size.map style_size_fixed.png geometry fails  # not built yet: ellipse symbols
 renderers/style-size.map style_size_expression.png geometry fails  # not built yet: ellipse symbols and a SIZE given by an expression
-renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes, rotated vector symbols, and PATTERN
-renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes, rotated vector symbols, and PATTERN
+renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes and rotated vector symbols
+renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes and rotated vector symbols
 renderers/text-shaping.map text_shaping_1.png out: labels
 renderers/text-shaping.map text_shaping_1.cairo.png out: another output format, cairopng
 renderers/text-shaping.map text_shaping_1.pdf out: another output format, pdf

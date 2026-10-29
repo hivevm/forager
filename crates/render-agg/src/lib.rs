@@ -1,13 +1,30 @@
 //! The reference renderer: the display list rasterized with agg-rust (ADR-0015).
 
+// How a stroke's width, cap, join, and dashes are handed to the stroker follows MapServer's
+// agg2RenderLine() and applyCJC(), src/mapagg.cpp of the release pinned in
+// scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2007 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod clip;
 
-use agg_rust::basics::FillingRule;
+use agg_rust::basics::{FillingRule, VertexSource};
 use agg_rust::color::Rgba8;
+use agg_rust::conv_dash::ConvDash;
 use agg_rust::conv_stroke::ConvStroke;
-use agg_rust::math_stroke::{LineCap, LineJoin};
+use agg_rust::math_stroke::{InnerJoin, LineCap as AggCap, LineJoin as AggJoin};
 use agg_rust::path_storage::PathStorage;
 use agg_rust::pixfmt_rgba::PixfmtRgba32;
 use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
@@ -15,7 +32,7 @@ use agg_rust::renderer_base::RendererBase;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::rendering_buffer::RowAccessor;
 use agg_rust::scanline_u::ScanlineU8;
-use forager_render::{DisplayItem, DrawOp, Point, Renderer, RgbaImage};
+use forager_render::{Dashes, DisplayItem, DrawOp, LineCap, LineJoin, Point, Renderer, RgbaImage};
 use forager_style_ir::Rgba;
 
 use crate::clip::{Rect, clip_line, clip_ring};
@@ -59,7 +76,7 @@ impl AggRenderer {
         f(&mut renderer);
     }
 
-    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, stroke: Option<f64>) {
+    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, stroke: Option<&Stroke<'_>>) {
         let color = Rgba8::new(
             u32::from(color.r),
             u32::from(color.g),
@@ -70,15 +87,16 @@ impl AggRenderer {
             let mut rasterizer = RasterizerScanlineAa::new();
             let mut scanline = ScanlineU8::new();
             match stroke {
-                Some(width) => {
+                Some(stroke) if stroke.dashes.pattern.len() >= 2 => {
+                    let mut dashed = ConvDash::new(path);
+                    add_dashes(&mut dashed, stroke.dashes);
+                    let mut outline = ConvStroke::new(dashed);
+                    stroke.apply(&mut outline);
+                    rasterizer.add_path(&mut outline, 0);
+                }
+                Some(stroke) => {
                     let mut outline = ConvStroke::new(path);
-                    outline.set_width(width);
-                    // MapServer: round caps and bevel joins by default, and for lines no wider
-                    // than a pixel bevel joins with AGG.s butt caps (mapagg.cpp, applyCJC).
-                    if width > 1.0 {
-                        outline.set_line_cap(LineCap::Round);
-                    }
-                    outline.set_line_join(LineJoin::Bevel);
+                    stroke.apply(&mut outline);
                     rasterizer.add_path(&mut outline, 0);
                 }
                 None => {
@@ -88,6 +106,55 @@ impl AggRenderer {
             }
             render_scanlines_aa_solid(&mut rasterizer, &mut scanline, renderer, &color);
         });
+    }
+}
+
+/// What a stroke hands to agg-rust's stroker.
+struct Stroke<'a> {
+    width: f64,
+    cap: LineCap,
+    join: LineJoin,
+    dashes: &'a Dashes,
+}
+
+impl Stroke<'_> {
+    /// Sets the stroker as agg2RenderLine() does: the cap and the join of the style for a line
+    /// wider than a pixel (applyCJC()), bevel joins for any other. A cap MapServer does not map,
+    /// `triangle`, and the cap of a line no wider than a pixel stay AGG's default, butt.
+    fn apply<VS: VertexSource>(&self, stroke: &mut ConvStroke<VS>) {
+        stroke.set_width(self.width);
+        if self.width > 1.0 {
+            stroke.set_line_join(match self.join {
+                LineJoin::Round => AggJoin::Round,
+                LineJoin::Miter => AggJoin::Miter,
+                LineJoin::Bevel | LineJoin::None => AggJoin::Bevel,
+            });
+            match self.cap {
+                LineCap::Butt => stroke.set_line_cap(AggCap::Butt),
+                LineCap::Round => stroke.set_line_cap(AggCap::Round),
+                LineCap::Square => stroke.set_line_cap(AggCap::Square),
+                LineCap::Triangle => {}
+            }
+        } else {
+            stroke.set_inner_join(InnerJoin::Bevel);
+            stroke.set_line_join(AggJoin::Bevel);
+        }
+    }
+}
+
+/// Adds the dashes as agg2RenderLine() does: each length rounded to whole pixels, half to even
+/// as `lrint`, and at least 1; an odd last length dropped; and the start moved back by the
+/// pattern's offset.
+fn add_dashes<VS: VertexSource>(dashed: &mut ConvDash<VS>, dashes: &Dashes) {
+    let pixels = |length: f64| length.round_ties_even().max(1.0);
+    let mut length = 0.0;
+    for [dash, gap] in dashes.pattern.as_chunks::<2>().0 {
+        let (dash, gap) = (pixels(*dash), pixels(*gap));
+        dashed.add_dash(dash, gap);
+        length += dash + gap;
+    }
+    if dashes.offset > 0.0 {
+        dashed.dash_start(length - dashes.offset);
     }
 }
 
@@ -131,6 +198,9 @@ impl Renderer for AggRenderer {
                 closed,
                 color,
                 width,
+                cap,
+                join,
+                dashes,
             } => {
                 if !(width.is_finite() && *width > 0.0) {
                     return;
@@ -149,7 +219,13 @@ impl Renderer for AggRenderer {
                         }
                     }
                 }
-                self.rasterize(&mut path, *color, Some(width));
+                let stroke = Stroke {
+                    width,
+                    cap: *cap,
+                    join: *join,
+                    dashes,
+                };
+                self.rasterize(&mut path, *color, Some(&stroke));
             }
         }
     }
@@ -206,9 +282,46 @@ mod tests {
             closed: false,
             color: RED,
             width: 3.0,
+            cap: LineCap::Round,
+            join: LineJoin::None,
+            dashes: Dashes::default(),
         }]);
         assert_eq!(image.pixel(32, 32), Some(RED));
         assert_eq!(image.pixel(32, 20), Some(WHITE));
+    }
+
+    fn line(width: f64, cap: LineCap, pattern: Vec<f64>) -> DrawOp {
+        DrawOp::Stroke {
+            paths: vec![vec![p(10.0, 32.5), p(50.0, 32.5)]],
+            closed: false,
+            color: RED,
+            width,
+            cap,
+            join: LineJoin::None,
+            dashes: Dashes {
+                pattern,
+                offset: 0.0,
+            },
+        }
+    }
+
+    #[test]
+    fn a_line_no_wider_than_a_pixel_keeps_butt_caps() {
+        // agg2RenderLine applies the style's cap only to a line wider than a pixel.
+        let thin = render(&[line(1.0, LineCap::Square, vec![])]);
+        assert_eq!(thin.pixel(8, 32), Some(WHITE));
+        let wide = render(&[line(4.0, LineCap::Square, vec![])]);
+        assert_eq!(wide.pixel(8, 32), Some(RED));
+    }
+
+    #[test]
+    fn dash_lengths_round_half_to_even_and_to_at_least_a_pixel() {
+        // 2.5 rounds to 2 and 0.2 to 1: dashes of 2 pixels, gaps of 1, from x = 10.
+        let image = render(&[line(3.0, LineCap::Butt, vec![2.5, 0.2, 7.0])]);
+        assert_eq!(image.pixel(10, 32), Some(RED));
+        assert_eq!(image.pixel(11, 32), Some(RED));
+        assert_eq!(image.pixel(12, 32), Some(WHITE));
+        assert_eq!(image.pixel(13, 32), Some(RED));
     }
 
     #[test]
@@ -232,6 +345,12 @@ mod tests {
                 closed: false,
                 color: RED,
                 width: 1e9,
+                cap: LineCap::Round,
+                join: LineJoin::Miter,
+                dashes: Dashes {
+                    pattern: vec![1e-300, 1e300, 3.0],
+                    offset: 1e300,
+                },
             },
         ]);
         assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
