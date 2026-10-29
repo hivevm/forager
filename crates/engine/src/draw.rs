@@ -16,6 +16,8 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+use std::borrow::Borrow;
+
 use forager_ports::{Coord, Geometry};
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol};
@@ -51,13 +53,16 @@ pub enum Pass {
 /// first style, as its outline when it has an `OUTLINEWIDTH`, then that first style itself, then
 /// each further style with its outline before it, feature by feature. Any other layer draws
 /// every style of a feature before the next feature.
-pub fn passes(mode: RenderMode, styles: &[Style]) -> Vec<(&Style, Vec<Pass>)> {
+pub fn passes<S: Borrow<Style>>(mode: RenderMode, styles: &[S]) -> Vec<(&Style, Vec<Pass>)> {
     if mode != RenderMode::Line {
-        return styles.iter().map(|s| (s, vec![Pass::Plain])).collect();
+        return styles
+            .iter()
+            .map(|s| (s.borrow(), vec![Pass::Plain]))
+            .collect();
     }
     let mut passes = Vec::new();
-    for (i, style) in styles.iter().enumerate() {
-        let outlined = outline_width(style) > 0.0;
+    for (i, style) in styles.iter().map(Borrow::borrow).enumerate() {
+        let outlined = outlined(style);
         if i == 0 {
             passes.push((
                 style,
@@ -168,10 +173,15 @@ pub fn kind(geometry: &Geometry) -> &'static str {
     }
 }
 
-/// A style property's value where it does not vary by feature. One bound to a property or an
-/// expression is not drawn yet, as if unset.
+/// A style property's value. The engine binds each style to the feature it draws before it draws
+/// it, so a property bound to a property or an expression is a value here, or unset.
 pub(crate) fn fixed<T: Copy>(property: &Option<Bound<T>>) -> Option<T> {
     property.as_ref().and_then(Bound::value)
+}
+
+/// Whether the style has an outline, an `OUTLINEWIDTH` above 0.
+pub fn outlined(style: &Style) -> bool {
+    outline_width(style) > 0.0
 }
 
 /// The style's `OUTLINEWIDTH` in pixels; 0 without one.
@@ -190,7 +200,6 @@ fn bounded_width(style: &Style, grow: f64) -> (f64, f64) {
 }
 
 /// The offset of the style, its numbers multiplied by `factor`; `None` when it moves nothing.
-/// An offset bound to a property or an expression is not drawn yet, as if unset.
 fn style_offset(style: &Style, factor: f64) -> Option<Offset> {
     if let Some(line) = &style.line_offset {
         let distance = line.distance.value()? * factor;

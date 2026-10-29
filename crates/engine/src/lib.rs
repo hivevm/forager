@@ -4,21 +4,26 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod bind;
+mod classes;
 mod draw;
 mod extent;
 mod fonts;
 mod offset;
 mod symbol;
 
-use std::collections::BTreeMap;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 
 use forager_ports::{
     Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Renderer, RgbaImage};
-use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba};
+use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol};
 
-use crate::draw::{can_draw, draw_ops, kind, passes};
+use forager_expr::Evaluator;
+
+use crate::classes::{Reports, Selector};
+use crate::draw::{Pass, can_draw, draw_ops, kind, outlined, passes};
 
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
@@ -84,7 +89,9 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         };
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    for layer in &map.layers {
+    let mut evaluator = Evaluator::new();
+    let mut reports = Reports::default();
+    for (layer_index, layer) in map.layers.iter().enumerate() {
         if !shown(layer) {
             continue;
         }
@@ -94,15 +101,21 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let Some(features) = features(layer, sources, &view, &mut diagnostics).await else {
             continue;
         };
-        // Classes are not yet selected by expression, so the first class draws every feature.
-        let Some(class) = layer.classes.first() else {
+        if layer.classes.is_empty() {
             continue;
-        };
-        // A label needs its fonts once its layer has features; drawing them is still to come.
-        if !features.is_empty() {
-            for label in &class.labels {
-                fonts.for_label(map, label, files, &mut diagnostics).await;
-            }
+        }
+        if let Some(property) = classes::missing_property(layer, &features) {
+            let message = format!(
+                "layer {} is skipped: it reads the property `{property}`, which none of its \
+                 features has",
+                name(layer)
+            );
+            diagnostics.push(Diagnostic::warning(
+                "property-missing",
+                message,
+                layer.span.clone(),
+            ));
+            continue;
         }
         let mut undrawn = BTreeMap::new();
         let mut drawable = Vec::with_capacity(features.len());
@@ -113,30 +126,36 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                 *undrawn.entry(kind(&feature.geometry)).or_insert(0usize) += 1;
             }
         }
-        let passes = passes(mode, &class.styles);
-        let mut draw = |feature: &Feature, style, passes: &[_]| {
-            for &pass in passes {
-                for op in draw_ops(mode, &feature.geometry, style, pass, &view, &map.symbols) {
-                    renderer.draw(&DisplayItem {
-                        op,
-                        feature_id: Some(feature.id),
-                    });
-                }
-            }
+        let mut selector = Selector {
+            layer,
+            layer_index,
+            evaluator: &mut evaluator,
+            reports: &mut reports,
+            diagnostics: &mut diagnostics,
         };
-        if mode == RenderMode::Line {
-            for (style, passes) in &passes {
-                for feature in &drawable {
-                    draw(feature, style, passes);
-                }
-            }
-        } else {
-            for feature in &drawable {
-                for (style, passes) in &passes {
-                    draw(feature, style, passes);
-                }
+        // Each feature drawn, with its class and its styles bound to it, in the source's order.
+        let mut selected = Vec::with_capacity(drawable.len());
+        for feature in drawable {
+            let Some(index) = selector.class(feature) else {
+                continue;
+            };
+            let class = &layer.classes[index];
+            let styles: Vec<_> = class
+                .styles
+                .iter()
+                .map(|style| selector.bind(style, feature, &map.symbols))
+                .collect();
+            selected.push((feature, index, styles));
+        }
+        // A label needs its fonts once a feature of its class is drawn; drawing them is still to
+        // come.
+        let classes_drawn: BTreeSet<usize> = selected.iter().map(|(_, index, _)| *index).collect();
+        for index in classes_drawn {
+            for label in &layer.classes[index].labels {
+                fonts.for_label(map, label, files, &mut diagnostics).await;
             }
         }
+        draw_selected(&mut renderer, mode, &selected, &view, &map.symbols);
         for (kind, count) in undrawn {
             let message = format!(
                 "layer {} cannot draw {count} {kind} geometr{} in its render mode",
@@ -153,6 +172,67 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     Rendered {
         image: Some(renderer.finish()),
         diagnostics,
+    }
+}
+
+/// A feature drawn: it, the place of its class, and its styles bound to it.
+type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
+
+/// Draws a layer's selected features in the order msDrawVectorLayer draws them: a feature of a
+/// line layer whose class has several styles, or an outline, draws its first pass at once and the
+/// rest from its cache, style by style, after every feature; any other draws all its styles at
+/// once.
+fn draw_selected<R: Renderer>(
+    renderer: &mut R,
+    mode: RenderMode,
+    selected: &[Selected<'_>],
+    view: &View,
+    symbols: &[Symbol],
+) {
+    let mut draw = |feature: &Feature, style: &Style, passes: &[Pass]| {
+        for &pass in passes {
+            for op in draw_ops(mode, &feature.geometry, style, pass, view, symbols) {
+                renderer.draw(&DisplayItem {
+                    op,
+                    feature_id: Some(feature.id),
+                });
+            }
+        }
+    };
+    let mut cached = Vec::new();
+    let mut most_styles = 0;
+    for (feature, _, styles) in selected {
+        let passes = passes(mode, styles);
+        let cache = mode == RenderMode::Line
+            && (styles.len() > 1 || styles.first().is_some_and(|s| outlined(s)));
+        if cache {
+            let (style, first) = &passes[0];
+            draw(feature, style, first);
+            most_styles = most_styles.max(styles.len());
+            // The style each later pass draws, by its place in the class.
+            let later: Vec<_> = passes[1..]
+                .iter()
+                .map(|(style, passes)| {
+                    let place = styles
+                        .iter()
+                        .position(|s| std::ptr::eq(&**s, *style))
+                        .expect("a style of the class");
+                    (place, *style, passes.clone())
+                })
+                .collect();
+            cached.push((*feature, later));
+        } else {
+            for (style, passes) in &passes {
+                draw(feature, style, passes);
+            }
+        }
+    }
+    for place in 0..most_styles {
+        for (feature, later) in &cached {
+            for (_, style, passes) in later.iter().filter(|(p, _, _)| *p == place) {
+                draw(feature, style, passes);
+            }
+        }
     }
 }
 
