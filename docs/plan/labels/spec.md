@@ -10,12 +10,12 @@ place a label, nor which labels it would leave out where they collide, which is 
 ## Solution
 
 The maintainer and a user see the labels of point features drawn as MapServer draws them: the text
-of each label, in the font its `FONTSET` names, shaped as MapServer shapes it, at the position and
-offset the label asks for, in its colour with its outline, and left out where it would collide
+of each label, in the font its `FONTSET` names, laid out as MapServer lays it out, at the position
+and offset the label asks for, in its colour with its outline, and left out where it would collide
 with a label already placed, by MapServer's label cache and its priorities. The harness measures
-each case of the category text against its reference image, and each label's position and whether
-it was placed against MapServer's own, so that a label in the wrong place is named, not only a
-patch of differing pixels.
+each case of the category text against its reference image, and each label's position and whether it
+was placed against MapServer's own, so that a label in the wrong place is named, not only a patch of
+differing pixels.
 
 This spec covers labels of point features with TrueType fonts and Latin script. Labels along lines
 and in polygons, right-to-left and complex scripts, and bitmap fonts are later specs on the same
@@ -52,8 +52,8 @@ text path.
    my mapfile asks for.
 2. As a user, I want a label's text taken from its `TEXT`, its class, or the layer's `LABELITEM`,
    so that each feature shows its own name.
-3. As a user, I want the font my `FONTSET` names used, with its kerning, so that the text looks as
-   it does in MapServer.
+3. As a user, I want the font my `FONTSET` names used, laid out as MapServer lays it out, so that
+   the text looks as it does in MapServer.
 4. As a user, I want `POSITION`, `OFFSET`, `ANGLE`, `ALIGN`, `WRAP`, `COLOR`, `OUTLINECOLOR`, and
    `OUTLINEWIDTH` honoured, so that a label sits and looks where MapServer puts it.
 5. As a user, I want labels that would overlap left out by `PRIORITY` and `BUFFER`, with `FORCE`
@@ -69,11 +69,10 @@ text path.
 
 ## Implementation decisions
 
-- **Text stack.** Shaping by rustybuzz, glyph outlines and metrics by skrifa, rasterized as paths
-  by the reference renderer, as MapServer's AGG renderer draws FreeType's outlines. Whether hinting
-  is applied, and how, follows what MapServer does at the pin. The crates and their versions are
-  an ADR (the specification's Assumption asks one per crate); it weighs them for
-  `wasm32-unknown-unknown`, licence, and maintenance.
+- **Text stack.** Glyph outlines and advances by skrifa, unhinted with FreeType's arithmetic, a
+  line whose code points lie below U+02B0 laid out unshaped as MapServer lays it out, rasterized
+  as paths by the reference renderer, as MapServer's AGG renderer draws FreeType's outlines
+  (ADR-0028). A line with a code point at or above U+02B0 is left to the spec of complex scripts.
 - **Fonts through the loader.** A host hands font files through the resource loader, as it hands
   every other file the mapfile names; the font set maps a font name to a path inside the base
   context. The CLI reads them from disk; the browser bindings take them from the page, by the
@@ -111,7 +110,8 @@ text path.
 ## Out of scope
 
 - Labels along lines (`ANGLE FOLLOW`, `AUTO`, repetition) and in polygons, and leader lines.
-- Right-to-left and complex scripts (FriBiDi's part); the shaping engine is in from the start.
+- Right-to-left and complex scripts, which MapServer shapes with HarfBuzz and FriBiDi, and the
+  shaper for them.
 - Bitmap fonts (`TYPE BITMAP`), and `ENCODING` other than UTF-8.
 - A label's `STYLE`s, shadows, and `MAXOVERLAPANGLE`.
 - A font bundled with Forager.
@@ -123,7 +123,8 @@ text path.
   ADR-0015 (the reference renderer draws the glyphs), ADR-0023 (the base context the fonts resolve
   in), ADR-0027 (the MapServer build the positions come from), ADR-0007 (the specification and the
   resource limits stay with the maintainer).
-- New `proposed` ADRs before the tickets that need them: the text stack (shaping, glyphs, hinting,
-  and how fonts reach the engine); the label positions out of MapServer, revising ADR-0027.
+- New `proposed` ADRs before the tickets that need them: the text stack (ADR-0028: glyphs,
+  scaling, layout, drawing, and how fonts reach the engine); the label positions out of MapServer,
+  revising ADR-0027.
 - A specification change: the threshold and the tolerance of the category text in G-13, set from
   the noise measurement.
