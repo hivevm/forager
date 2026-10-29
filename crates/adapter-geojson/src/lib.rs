@@ -2,7 +2,8 @@
 //! features that touch a query's extent.
 
 use forager_ports::{
-    Coord, Feature, FeatureQuery, FeatureSource, Geometry, Properties, SourceError, Stored,
+    Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
+    Stored,
 };
 use forager_style_ir::Extent;
 use geojson::{GeoJson, GeometryValue, JsonObject, JsonValue, Position};
@@ -50,16 +51,19 @@ impl GeoJsonSource {
 }
 
 impl FeatureSource for GeoJsonSource {
-    async fn features(&self, query: &FeatureQuery) -> Result<Vec<Feature>, SourceError> {
+    async fn features(&self, query: &FeatureQuery) -> Result<Features, SourceError> {
         let q = &query.extent;
-        Ok(self
+        let features: Vec<Feature> = self
             .features
             .iter()
             .filter(|(_, b)| {
                 b.min_x <= q.max_x && b.max_x >= q.min_x && b.min_y <= q.max_y && b.max_y >= q.min_y
             })
             .map(|(feature, _)| feature.clone())
-            .collect())
+            .collect();
+        // JSON holds no number that is not finite, and an empty geometry, which RFC 7946 allows,
+        // is a feature with nothing to draw, not a skipped record (ADR-0025).
+        Ok(features.into())
     }
 }
 
@@ -195,7 +199,9 @@ mod tests {
     fn every_geometry_type_is_read_in_document_order() {
         // Verifies: ADR-0016
         let source = GeoJsonSource::parse(ALL_TYPES).unwrap();
-        let features = ready(source.features(&query(-100.0, -100.0, 100.0, 100.0))).unwrap();
+        let features = ready(source.features(&query(-100.0, -100.0, 100.0, 100.0)))
+            .unwrap()
+            .features;
         assert_eq!(features.len(), 7);
         // The feature without a geometry keeps its index: ids skip 1 and 8.
         assert_eq!(
@@ -224,7 +230,9 @@ mod tests {
             ]}"#,
         )
         .unwrap();
-        let features = ready(source.features(&query(0.0, 0.0, 5.0, 5.0))).unwrap();
+        let features = ready(source.features(&query(0.0, 0.0, 5.0, 5.0)))
+            .unwrap()
+            .features;
         let p = &features[0].properties;
         assert_eq!(p.get("name"), Some(Value::String("Wien".into())));
         assert_eq!(p.get("Name"), Some(Value::String("other".into())));
@@ -238,9 +246,31 @@ mod tests {
     }
 
     #[test]
+    fn a_feature_with_an_empty_geometry_is_left_out_and_not_reported() {
+        // Verifies: ADR-0025
+        let source = GeoJsonSource::parse(
+            r#"{"type": "FeatureCollection", "features": [
+                {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [1, 2]}},
+                {"type": "Feature", "properties": {}, "geometry": {"type": "MultiPoint", "coordinates": []}}
+            ]}"#,
+        )
+        .unwrap();
+        for extent in [query(0.0, 0.0, 5.0, 5.0), query(-1e9, -1e9, 1e9, 1e9)] {
+            let delivered = ready(source.features(&extent)).unwrap();
+            assert_eq!(
+                delivered.features.iter().map(|f| f.id).collect::<Vec<_>>(),
+                [0]
+            );
+            assert_eq!(delivered.skipped.count, 0);
+        }
+    }
+
+    #[test]
     fn only_features_touching_the_extent_are_delivered() {
         let source = GeoJsonSource::parse(ALL_TYPES).unwrap();
-        let features = ready(source.features(&query(9.0, 9.0, 11.0, 11.0))).unwrap();
+        let features = ready(source.features(&query(9.0, 9.0, 11.0, 11.0)))
+            .unwrap()
+            .features;
         assert_eq!(features.iter().map(|f| f.id).collect::<Vec<_>>(), [6]);
     }
 

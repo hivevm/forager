@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use arbitrary::Arbitrary;
 use forager_ports::{
-    Coord, Feature, FeatureQuery, FeatureSource, Geometry, Properties, SourceError,
+    Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
 };
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
@@ -36,8 +36,8 @@ enum Shape {
 struct Shapes(Vec<Feature>);
 
 impl FeatureSource for Shapes {
-    async fn features(&self, _: &FeatureQuery) -> Result<Vec<Feature>, SourceError> {
-        Ok(self.0.clone())
+    async fn features(&self, _: &FeatureQuery) -> Result<Features, SourceError> {
+        Ok(self.0.clone().into())
     }
 }
 

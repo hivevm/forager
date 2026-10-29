@@ -236,3 +236,67 @@ fn line_width_is_capped_at_mapservers_maxwidth() {
     assert_eq!(image.pixel(50, 50 + 14), Some(BLUE), "inside 32 px");
     assert_eq!(image.pixel(50, 50 + 18), Some(WHITE), "outside 32 px");
 }
+
+/// A source that delivers one square and reports `count` records skipped.
+struct Skipping {
+    count: u64,
+}
+
+impl forager_ports::FeatureSource for Skipping {
+    async fn features(
+        &self,
+        query: &forager_ports::FeatureQuery,
+    ) -> Result<forager_ports::Features, forager_ports::SourceError> {
+        let square = GeoJsonSource::parse(SQUARE_WITH_HOLE).unwrap();
+        let mut delivered = square.features(query).await?;
+        for i in 0..self.count {
+            delivered.skipped.add(|| format!("record {i} is broken"));
+        }
+        Ok(delivered)
+    }
+}
+
+fn render_skipping(count: u64) -> Rendered {
+    let sources = BTreeMap::from([("data".to_owned(), Skipping { count })]);
+    let map = map(RenderMode::Polygon, Style::default());
+    ready(render(&map, &sources, AggRenderer::new()))
+}
+
+#[test]
+fn a_source_that_skips_records_yields_one_warning_for_its_layer() {
+    // Verifies: ADR-0025
+    let rendered = render_skipping(3);
+    let skipped: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "source-records-skipped")
+        .collect();
+    assert_eq!(skipped.len(), 1, "{:?}", rendered.diagnostics);
+    let d = skipped[0];
+    for part in ["`data`", "local", "3 records", "record 0 is broken"] {
+        assert!(d.message.contains(part), "{part}: {}", d.message);
+    }
+    assert!(!d.message.contains("record 1 is broken"), "{}", d.message);
+    assert_eq!(d.span, Some(Span::new("m.map", 5, 3)));
+    // The layer is not skipped for it.
+    assert!(
+        rendered
+            .diagnostics
+            .iter()
+            .all(|d| d.code != "layer-skipped")
+    );
+}
+
+#[test]
+fn a_source_that_skips_none_yields_no_such_warning() {
+    // Verifies: ADR-0025
+    let rendered = render_skipping(0);
+    assert!(
+        rendered
+            .diagnostics
+            .iter()
+            .all(|d| d.code != "source-records-skipped"),
+        "{:?}",
+        rendered.diagnostics
+    );
+}

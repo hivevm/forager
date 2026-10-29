@@ -471,11 +471,46 @@ pub struct FeatureQuery {
     pub extent: Extent,
 }
 
+/// What a source delivers for a query: its features, and the records it skipped (ADR-0025).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Features {
+    pub features: Vec<Feature>,
+    pub skipped: Skipped,
+}
+
+impl From<Vec<Feature>> for Features {
+    /// Features of a query that skipped no record.
+    fn from(features: Vec<Feature>) -> Self {
+        Self {
+            features,
+            skipped: Skipped::default(),
+        }
+    }
+}
+
+/// The records a query would have considered had they been readable: how many, and why the first
+/// was skipped. Each record counts once per query (ADR-0025).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Skipped {
+    pub count: u64,
+    pub first: Option<String>,
+}
+
+impl Skipped {
+    /// Counts one more skipped record; `reason` is asked for only of the first.
+    pub fn add(&mut self, reason: impl FnOnce() -> String) {
+        if self.first.is_none() {
+            self.first = Some(reason());
+        }
+        self.count = self.count.saturating_add(1);
+    }
+}
+
 /// Delivers the features of one layer's source.
 // Not `Send`, for the reason given at `ResourceLoader`.
 #[allow(async_fn_in_trait)]
 pub trait FeatureSource {
-    async fn features(&self, query: &FeatureQuery) -> Result<Vec<Feature>, SourceError>;
+    async fn features(&self, query: &FeatureQuery) -> Result<Features, SourceError>;
 }
 
 /// Resolves a projection a style names by authority and code, as `init=epsg:4326` does, to a

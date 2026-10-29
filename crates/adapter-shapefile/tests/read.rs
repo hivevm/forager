@@ -733,3 +733,56 @@ fn a_record_count_whose_last_byte_is_128_or_more_counts_no_records() {
     let features = points_with(dbf);
     assert!(features.iter().all(|f| f.properties.get("NAME").is_none()));
 }
+
+// --- Skipped records -----------------------------------------------------------------------
+
+/// A polygon file of a record whose box cannot be read, one whose part count fails MapServer's
+/// guards, and two that read.
+fn two_broken() -> Files {
+    let mut nan = lines(POLYGON, &[OTHER]);
+    nan[4..12].copy_from_slice(&f64::NAN.to_le_bytes());
+    let mut parts = lines(POLYGON, &[SQUARE]);
+    parts[36..40].copy_from_slice(&(-1i32).to_le_bytes());
+    Files::new(
+        POLYGON,
+        BOUNDS,
+        &[
+            nan,
+            parts,
+            lines(POLYGON, &[SQUARE]),
+            lines(POLYGON, &[OTHER]),
+        ],
+    )
+}
+
+#[test]
+fn a_query_reports_each_broken_record_it_visits_once() {
+    // Verifies: ADR-0025
+    let source = two_broken().open().unwrap();
+    let across = [0.0, 0.0, 7.0, 7.0];
+    for _ in 0..2 {
+        let delivered = deliver(&source, across);
+        assert_eq!(ids(&delivered.features), [2, 3]);
+        assert_eq!(delivered.skipped.count, 2);
+        assert_eq!(
+            delivered.skipped.first.as_deref(),
+            Some("record 0: its box cannot be read")
+        );
+    }
+    // A query outside the file's bounds visits no record.
+    let outside = deliver(&source, [20.0, 20.0, 30.0, 30.0]);
+    assert_eq!(outside.skipped.count, 0);
+    assert_eq!(outside.skipped.first, None);
+}
+
+#[test]
+fn a_null_shape_is_not_a_skipped_record() {
+    // Verifies: ADR-0025
+    let files = Files::new(POLYGON, BOUNDS, &[null(), lines(POLYGON, &[SQUARE])]);
+    let source = files.open().unwrap();
+    for extent in [EVERYWHERE, [0.0, 0.0, 7.0, 7.0]] {
+        let delivered = deliver(&source, extent);
+        assert_eq!(ids(&delivered.features), [1], "{extent:?}");
+        assert_eq!(delivered.skipped.count, 0, "{extent:?}");
+    }
+}

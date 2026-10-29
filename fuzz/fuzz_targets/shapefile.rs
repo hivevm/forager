@@ -80,7 +80,7 @@ fuzz_target!(|data: &[u8]| {
             .expect("the shapefile source waited although it never waits");
         // Every property of every feature is read, by its name as well, so that the reading of
         // the .dbf's records is fuzzed with the rest (ADR-0026).
-        for feature in features.iter().flatten() {
+        for feature in features.iter().flat_map(|f| &f.features) {
             feature.properties.each(|name, _| {
                 let _ = feature.properties.get(name);
             });
