@@ -103,31 +103,64 @@ fn a_font_is_loaded_once_per_render_through_the_loader() {
 }
 
 #[test]
-fn the_font_list_skips_an_entry_but_its_last_that_cannot_be_used() {
+fn the_first_usable_entry_of_the_font_list_is_taken_as_get_face_for_run_tries_them() {
     // Verifies: ADR-0028
-    // An `xx:` prefix is stripped first; an entry the font set lacks is skipped.
+    // An entry the font set lacks is skipped; an `xx:` prefix is stripped; a later entry is not
+    // loaded once one is usable.
     let files = files(&[("serif.ttf", b"font".to_vec())]);
-    let rendered = render(&map("missing,en:serif", &[("serif", "serif.ttf")]), &files);
+    let rendered = render(
+        &map("missing,de:serif,gone", &[("serif", "serif.ttf")]),
+        &files,
+    );
     assert_eq!(codes(&rendered), Vec::<&str>::new());
-    // The last entry that cannot be used leaves the label undrawn, with a word for each label.
+    assert_eq!(*files.asked.borrow(), ["serif.ttf"]);
+    // An entry prefixed `en:` is tried before the list; a name matches without regard to case.
+    let files = self::files(&[("a.ttf", b"a".to_vec()), ("b.ttf", b"b".to_vec())]);
+    let rendered = render(&map("a,en:B", &[("a", "a.ttf"), ("b", "b.ttf")]), &files);
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+    assert_eq!(*files.asked.borrow(), ["b.ttf"]);
+    // A name with a colon that the font set holds as written is found after its stripped form.
+    let files = self::files(&[("xy.ttf", b"font".to_vec())]);
+    let rendered = render(&map("x:y", &[("x:y", "xy.ttf")]), &files);
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+}
+
+#[test]
+fn a_label_none_of_whose_fonts_can_be_used_is_not_drawn_with_a_diagnostic() {
+    // Verifies: ADR-0028
+    let files = files(&[]);
     let rendered = render(
         &map(
-            "serif,gone",
-            &[("serif", "serif.ttf"), ("gone", "gone.ttf")],
+            "gone1,gone2",
+            &[("gone1", "gone1.ttf"), ("gone2", "gone2.ttf")],
         ),
         &files,
     );
+    // One for each label; each font is asked for once in the render, its failure kept.
     assert_eq!(
         codes(&rendered),
         ["label-font-unusable", "label-font-unusable"]
     );
     let d = &rendered.diagnostics[0];
     assert!(
-        d.message.contains("`gone`") && d.message.contains("gone.ttf"),
+        d.message.contains("`gone2`") && d.message.contains("gone2.ttf"),
         "{}",
         d.message
     );
     assert_eq!(d.span, Some(Span::new("m.map", 7, 5)));
+    assert_eq!(*files.asked.borrow(), ["gone1.ttf", "gone2.ttf"]);
+}
+
+#[test]
+fn a_file_the_font_set_names_twice_is_loaded_once() {
+    // Verifies: ADR-0028
+    let files = files(&[("same.ttf", b"font".to_vec())]);
+    let fonts = [("one", "same.ttf"), ("two", "same.ttf")];
+    let mut map = map("one", &fonts);
+    map.layers[1].classes[0].labels[0].font = Some(Bound::Value("two".to_owned()));
+    let rendered = render(&map, &files);
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+    assert_eq!(*files.asked.borrow(), ["same.ttf"]);
 }
 
 #[test]
@@ -144,6 +177,11 @@ fn a_font_past_the_size_bound_or_outside_the_base_context_is_not_used() {
         rendered.diagnostics[0]
             .message
             .contains("exceeds the limit")
+    );
+    assert_eq!(
+        *files.asked.borrow(),
+        ["big.ttf"],
+        "the failure is kept for the render"
     );
     let rendered = render(&map("out", &[("out", "../out.ttf")]), &files);
     assert_eq!(codes(&rendered)[0], "label-font-unusable");

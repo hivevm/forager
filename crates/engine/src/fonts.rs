@@ -10,68 +10,68 @@ use forager_style_ir::{Bound, Diagnostic, Label, Map};
 /// The largest font file a render loads (Q-9).
 pub const MAX_FONT_BYTES: usize = 32 * 1024 * 1024;
 
-/// The fonts loaded during one render, by the name the font set gives them, each its bytes or why
-/// it is not usable.
+/// The fonts loaded during one render, by their path, each its bytes or why it is not usable.
 #[derive(Default)]
 pub(crate) struct Fonts {
     loaded: BTreeMap<String, Result<Rc<[u8]>, String>>,
 }
 
 impl Fonts {
-    /// The usable fonts of `label`'s `FONT` list, in the order `get_face_for_run` tries them: each
-    /// entry with its `xx:` prefix stripped first, then as written, one the font set lacks or that
-    /// does not load skipped. A label whose last entry cannot be used gets a diagnostic naming
-    /// the font, its path, and the label, as it cannot be drawn. A font bound to an attribute is
-    /// known only per feature and is not loaded here.
+    /// The font `label` is drawn with: the first usable entry of its `FONT` list in the order
+    /// `get_face_for_run` tries them for a Latin line, those prefixed `en:` first, then every
+    /// entry in turn, each with its `xx:` prefix stripped first and then as written, and a name
+    /// matched without regard to case, as `msLookupHashTable` matches it. An entry the font set
+    /// lacks or that does not load is skipped; whether a font has every glyph of the text decides
+    /// among the usable ones once labels are drawn. A label with no usable font gets a diagnostic
+    /// naming the last entry, its path, and the label, as it cannot be drawn. A font bound to an
+    /// attribute is known only per feature and is not loaded here.
     pub(crate) async fn for_label<L: ResourceLoader>(
         &mut self,
         map: &Map,
         label: &Label,
         loader: &L,
         diagnostics: &mut Vec<Diagnostic>,
-    ) -> Vec<Rc<[u8]>> {
+    ) -> Option<Rc<[u8]>> {
         let Some(Bound::Value(list)) = &label.font else {
-            return Vec::new();
+            return None;
         };
         let entries: Vec<&str> = list.split(',').collect();
-        let mut usable = Vec::new();
-        for (i, entry) in entries.iter().enumerate() {
-            let stripped = entry.split_once(':').map(|(_, name)| name);
-            let mut found = None;
-            let mut why = format!("the font set has no font `{entry}`");
-            for name in stripped.into_iter().chain([*entry]) {
-                let Some(path) = map.fonts.get(name) else {
-                    continue;
-                };
-                match self.load(name, path, loader).await {
-                    Ok(bytes) => {
-                        found = Some(bytes);
-                        break;
-                    }
-                    Err(reason) => why = format!("the font `{name}` ({path}) {reason}"),
-                }
-            }
-            match found {
-                Some(bytes) => usable.push(bytes),
-                None if i + 1 == entries.len() => diagnostics.push(Diagnostic::warning(
-                    "label-font-unusable",
-                    format!("{why}; the label is not drawn"),
-                    label.span.clone(),
-                )),
-                None => {}
+        let english = entries.iter().filter_map(|e| e.strip_prefix("en:"));
+        let mut why = String::new();
+        for name in english.chain(entries.iter().flat_map(|e| {
+            let stripped = e.split_once(':').map(|(_, name)| name);
+            stripped.into_iter().chain([*e])
+        })) {
+            let Some(path) = map
+                .fonts
+                .iter()
+                .find_map(|(key, path)| key.eq_ignore_ascii_case(name).then_some(path))
+            else {
+                why = format!("the font set has no font `{name}`");
+                continue;
+            };
+            match self.load(path, loader).await {
+                Ok(bytes) => return Some(bytes),
+                Err(reason) => why = format!("the font `{name}` ({path}) {reason}"),
             }
         }
-        usable
+        diagnostics.push(Diagnostic::warning(
+            "label-font-unusable",
+            format!(
+                "{why}, and no other font of the label's list can be used; the label is not drawn"
+            ),
+            label.span.clone(),
+        ));
+        None
     }
 
-    /// The font `name` at `path`, loaded once per render.
+    /// The font at `path`, loaded once per render whatever names the font set gives it.
     async fn load<L: ResourceLoader>(
         &mut self,
-        name: &str,
         path: &str,
         loader: &L,
     ) -> Result<Rc<[u8]>, String> {
-        if let Some(loaded) = self.loaded.get(name) {
+        if let Some(loaded) = self.loaded.get(path) {
             return loaded.clone();
         }
         let loaded = match ResourcePath::new(path) {
@@ -84,7 +84,7 @@ impl Fonts {
                 Ok(bytes) => Ok(Rc::from(bytes)),
             },
         };
-        self.loaded.insert(name.to_owned(), loaded.clone());
+        self.loaded.insert(path.to_owned(), loaded.clone());
         loaded
     }
 }

@@ -189,10 +189,17 @@ impl Files {
         Files::default()
     }
 
-    /// Adds the file at `path`, relative to the mapfile, with its bytes; a later one of the same
-    /// path replaces it.
-    pub fn add(&mut self, path: String, bytes: Vec<u8>) {
-        self.files.insert(path, bytes);
+    /// Adds the file at `path`, a path relative to the base context as the mapfile names it, with
+    /// its bytes; a later one of the same path replaces it. A path that is no resource path, such
+    /// as one that climbs out of the base context, is not added, and the call returns `false`.
+    pub fn add(&mut self, path: &str, bytes: Vec<u8>) -> bool {
+        match ResourcePath::new(path) {
+            Ok(path) => {
+                self.files.insert(path.as_str().to_owned(), bytes);
+                true
+            }
+            Err(_) => false,
+        }
     }
 }
 
@@ -242,7 +249,7 @@ impl RenderResult {
 /// Renders a mapfile in the browser. `sources` is a JSON object from layer name to GeoJSON (an
 /// object or its text). `width`, `height`, and `extent` (`[minx, miny, maxx, maxy]`) override
 /// the mapfile's SIZE and EXTENT when given. `epsg` is a table of further EPSG definitions
-/// (ADR-0023). `files` holds the files the mapfile names, such as its font set and fonts.
+/// (ADR-0023). The mapfile is the only file of its base context; [`render_with`] adds others.
 #[wasm_bindgen]
 pub fn render(
     mapfile: &str,
@@ -251,7 +258,29 @@ pub fn render(
     height: Option<u32>,
     extent: Option<Vec<f64>>,
     epsg: Option<String>,
-    files: Option<Files>,
+) -> RenderResult {
+    render_with(
+        mapfile,
+        sources,
+        width,
+        height,
+        extent,
+        epsg,
+        &Files::default(),
+    )
+}
+
+/// Renders as [`render`] does, with `files` beside the mapfile, such as its font set and fonts.
+/// The page keeps `files` and may hand it to every render, of every tile.
+#[wasm_bindgen(js_name = renderWith)]
+pub fn render_with(
+    mapfile: &str,
+    sources: &str,
+    width: Option<u32>,
+    height: Option<u32>,
+    extent: Option<Vec<f64>>,
+    epsg: Option<String>,
+    files: &Files,
 ) -> RenderResult {
     let mut diagnostics = Vec::new();
     let extent = match extent.as_deref() {
@@ -280,8 +309,7 @@ pub fn render(
         },
         extent,
     };
-    let files = files.map(|f| f.files).unwrap_or_default();
-    let output = render_map_with_files(mapfile, sources, epsg.as_deref(), &viewport, &files);
+    let output = render_map_with_files(mapfile, sources, epsg.as_deref(), &viewport, &files.files);
     diagnostics.extend(output.diagnostics);
     let image = output.image.unwrap_or(RgbaImage {
         width: 0,
@@ -322,11 +350,13 @@ mod tests {
         let sources = serde_json::json!({ "p": {"type": "Point", "coordinates": [5, 5]} });
         let sources = sources.to_string();
         let mut page = Files::new();
-        page.add(
-            "fonts.lst".into(),
-            b"sans fonts/sans.ttf\ngone fonts/gone.ttf\n".to_vec(),
-        );
-        page.add("fonts/sans.ttf".into(), b"font".to_vec());
+        assert!(page.add(
+            "fonts.lst",
+            b"sans fonts/sans.ttf\ngone fonts/gone.ttf\n".to_vec()
+        ));
+        // A path is normalized as the mapfile's paths are; one out of the base context is refused.
+        assert!(page.add("./fonts/sans.ttf", b"font".to_vec()));
+        assert!(!page.add("../escape.ttf", b"font".to_vec()));
         let render = |font: &str| {
             render_map_with_files(
                 &mapfile(font),
@@ -445,10 +475,10 @@ mod tests {
         assert_eq!(output.diagnostics[0].code, "sources-invalid");
         let output = render_map(SQUARE_MAP, r#"{"areas": "{"}"#, None, &Viewport::default());
         assert_eq!(output.diagnostics[0].code, "source-unreadable");
-        let result = render("MAP END", "{}", None, None, Some(vec![1.0]), None, None);
+        let result = render("MAP END", "{}", None, None, Some(vec![1.0]), None);
         assert!(result.diagnostics().contains("viewport-invalid"));
         assert_eq!(result.width(), 0);
-        let result = render(SQUARE_MAP, "{}", Some(10), None, None, None, None);
+        let result = render(SQUARE_MAP, "{}", Some(10), None, None, None);
         assert!(result.diagnostics().contains("viewport-invalid"));
     }
 }

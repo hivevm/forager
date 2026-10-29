@@ -171,10 +171,10 @@ engine with the agg-rust renderer.
 For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted
 extent and draws every feature in each style of the first class; the image is encoded as PNG.
 
-In the browser, the page calls the bundle's `render` with the mapfile text, a JSON object of GeoJSON
-by layer name, an optional viewport, and the files the mapfile names. The bindings hand the frontend
-a loader that holds the mapfile and the files the page handed in, and nothing else; they drop every
-source reference the credential filter does not admit, apply the viewport over `SIZE` and `EXTENT`,
-parse the GeoJSON, and run the engine with the agg-rust renderer. Every port answers from memory, so
-each future is polled once; one that waits ends the call with a diagnostic instead of a spinning
-tab. The page puts the pixels on a canvas and lists the diagnostics.
+In the browser, the page calls the bundle's `render`, or `renderWith`, with the mapfile text, a JSON
+object of GeoJSON by layer name, an optional viewport, and the files the mapfile names. The bindings
+hand the frontend a loader that holds the mapfile and the files the page handed in, and nothing
+else; they drop every source reference the credential filter does not admit, apply the viewport over
+`SIZE` and `EXTENT`, parse the GeoJSON, and run the engine with the agg-rust renderer. Every port
+answers from memory, so each future is polled once; one that waits ends the call with a diagnostic
+instead of a spinning tab. The page puts the pixels on a canvas and lists the diagnostics.
