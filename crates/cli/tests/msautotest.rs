@@ -2,19 +2,30 @@
 //! through the CLI, with the suite's directory as the base context, without a diagnostic of
 //! severity error, or, where its only errors are the suite's init file named bare, in-process
 //! with a stand-in for that file. G-3: the style IR of every one survives YAML and JSON unchanged.
+//! The conformance harness: every case of `misc` and `renderers` that `conformance/cases.txt`
+//! puts in scope is rendered in-process and compared with its reference image.
 //! `scripts/check-rust.sh` fetches the suite with `scripts/fetch-msautotest.sh`, which holds the
 //! pin, and runs these tests with `FORAGER_MSAUTOTEST` naming it; `cargo test` alone skips them,
 //! as they need the network once.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use forager_adapter_epsg::EpsgTable;
+use forager_adapter_shapefile::ShapefileSource;
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
+use forager_render::RgbaImage;
+use forager_render_agg::AggRenderer;
 use forager_style_ir::StyleDocument;
 use serde_json::Value;
 
+use crate::conformance::{Case, Entry, Listed, Verdict};
+use crate::metric::Metric;
+
+/// The cases of the suite and the list that scopes them, for the harness.
+mod conformance;
 /// The comparison of a rendering with its reference image, for the harness.
 mod metric;
 
@@ -344,4 +355,167 @@ fn the_first_difference_is_named_by_its_json_pointer() {
         Some("/map/layers")
     );
     assert_eq!(first_difference(&a, &a, String::new()), None);
+}
+
+/// The metric of the category geometry and symbols. Provisional, as `conformance/cases.txt`
+/// says: G-6 takes its numbers from a measurement of MapServer's own noise against its
+/// references, which is not made yet, so the harness cites no criterion.
+const GEOMETRY: Metric = Metric {
+    threshold: 16,
+    tolerance: 0.001,
+};
+
+/// The list of the cases of `misc` and `renderers`, in scope or out of it.
+const CASES: &str = include_str!("conformance/cases.txt");
+
+#[test]
+#[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
+fn every_msautotest_case_in_scope_holds_its_outcome() {
+    let suite = suite();
+    let cases = conformance::cases(&suite, conformance::DIRECTORIES);
+    let entries = conformance::list(CASES).unwrap();
+    let mut problems = conformance::unlisted(&cases, &entries);
+    problems.extend(blank_markers(&suite, &entries));
+    assert!(
+        problems.is_empty(),
+        "the list conformance/cases.txt does not hold the suite's cases:\n{}",
+        problems.join("\n")
+    );
+
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("msautotest");
+    let _ = std::fs::remove_dir_all(&out);
+    let resolver = stand_in();
+    let loader = Suite(suite.clone());
+    let mut in_scope = 0;
+    let mut failures = Vec::new();
+    let mut broken = Vec::new();
+    for case in &cases {
+        let Some(Entry::InScope { passes, .. }) = entries.get(&case.key()).map(|l| &l.entry) else {
+            continue;
+        };
+        in_scope += 1;
+        let dir = out.join(case.mapfile.trim_end_matches(".map"));
+        let name = case.result.trim_end_matches(".png");
+        let outcome = render_and_compare(&suite, case, &loader, &resolver, &dir, name);
+        match conformance::verdict(case, *passes, outcome) {
+            Some(Verdict::Broken(problem)) => broken.push(problem),
+            Some(Verdict::Differs(failure)) => failures.push(failure),
+            None => {}
+        }
+    }
+    assert!(
+        broken.is_empty(),
+        "{} of {in_scope} cases in scope cannot be rendered or compared, whatever outcome the \
+         list expects:\n{}",
+        broken.len(),
+        broken.join("\n")
+    );
+    assert!(
+        failures.is_empty(),
+        "{} of {in_scope} cases in scope do not hold their outcome; the renderings and \
+         difference images of those that fail are in {}:\n{}",
+        failures.len(),
+        out.display(),
+        failures.join("\n")
+    );
+}
+
+/// The cases whose `blank` marker in the list disagrees with their reference: a case is blank
+/// when its reference is a PNG that [`metric::blank`] finds nearly one colour by [`GEOMETRY`],
+/// an image of its most common colour passing against it. A reference that is no PNG, or that
+/// the suite does not hold, is not blank. A list line whose mapfile names no directory is
+/// reported, as it can name no reference.
+fn blank_markers(suite: &Path, entries: &BTreeMap<(String, String), Listed>) -> Vec<String> {
+    let mut problems = Vec::new();
+    for ((mapfile, result), listed) in entries {
+        let Some((directory, _)) = mapfile.split_once('/') else {
+            problems.push(format!(
+                "{mapfile} {result}: the mapfile names no directory of the suite"
+            ));
+            continue;
+        };
+        let blank = result.ends_with(".png")
+            && std::fs::read(suite.join(directory).join("expected").join(result))
+                .ok()
+                .and_then(|bytes| metric::decode(&bytes).ok())
+                .is_some_and(|reference| metric::blank(&reference, &GEOMETRY));
+        if blank != listed.blank {
+            let is = if blank { "is" } else { "is not" };
+            let marks = if listed.blank {
+                "marks"
+            } else {
+                "does not mark"
+            };
+            problems.push(format!(
+                "{mapfile} {result}: its reference {is} blank, but the list {marks} it so"
+            ));
+        }
+    }
+    problems
+}
+
+/// Renders `case` in-process and compares it with its reference by [`GEOMETRY`], leaving the
+/// rendering and a difference image in `dir` as `<name>.png` and `<name>.diff.png` when it
+/// fails. The outcome is whether it passes, and the comparison; an error is a case that cannot
+/// be rendered or compared, which fails.
+fn render_and_compare(
+    suite: &Path,
+    case: &Case,
+    loader: &Suite,
+    resolver: &StandIn,
+    dir: &Path,
+    name: &str,
+) -> Result<(bool, String), String> {
+    let directory = &case.mapfile[..case.mapfile.find('/').unwrap()];
+    let reference = suite.join(directory).join("expected").join(&case.result);
+    let reference = std::fs::read(&reference)
+        .map_err(|e| format!("its reference {}: {e}", reference.display()))
+        .and_then(|bytes| metric::decode(&bytes).map_err(|e| format!("its reference: {e}")))?;
+    let rendering = render(case, loader, resolver)?;
+    let comparison = metric::compare_and_keep(&rendering, &reference, &GEOMETRY, dir, name)
+        .map_err(|e| format!("{}: {e}", dir.display()))?;
+    Ok((comparison.passes(), comparison.to_string()))
+}
+
+/// The rendering of `case`, its sources bound as `forager render` binds them as far as a test can:
+/// the CLI's binding lives in its binary, which a test cannot call. As there, each local layer
+/// the engine reads is bound to the shapefile its `DATA` names, and a layer whose shapefile does
+/// not open is left unbound, so that the engine skips it. Unlike there, the files are read
+/// through the suite's loader without the CLI's limit on a data file, each layer opens its
+/// shapefile anew instead of sharing it, a shapefile that does not open gives no diagnostic, and
+/// the projections resolve through the stand-in table of the G-1 test.
+fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, String> {
+    let path = ResourcePath::new(&case.mapfile).map_err(|e| e.to_string())?;
+    let loaded = ready(forager_mapfile::load(&path, loader, Some(resolver)));
+    let document = loaded.document.ok_or_else(|| {
+        let errors: Vec<_> = loaded.diagnostics.iter().map(ToString::to_string).collect();
+        format!("it does not load: {}", errors.join("; "))
+    })?;
+    let mut sources = BTreeMap::new();
+    for layer in &document.map.layers {
+        let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
+            continue;
+        };
+        if forager_engine::reads_features(layer)
+            && source.kind == "local"
+            && let Some(data) = source.props.get("data")
+            && let Ok(data) = ResourcePath::new(data)
+            && let Ok(shapefile) = ready(ShapefileSource::open(loader, &data))
+        {
+            sources.insert(name.clone(), shapefile);
+        }
+    }
+    let rendered = ready(forager_engine::render(
+        &document.map,
+        &sources,
+        AggRenderer::new(),
+    ));
+    rendered.image.ok_or_else(|| {
+        let errors: Vec<_> = rendered
+            .diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        format!("it renders no image: {}", errors.join("; "))
+    })
 }

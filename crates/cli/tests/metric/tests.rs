@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use forager_render::RgbaImage;
 
-use super::{Comparison, Metric, compare, compare_and_keep, decode};
+use super::{Comparison, Metric, blank, compare, compare_and_keep, decode};
 
 const METRIC: Metric = Metric {
     threshold: 10,
@@ -284,4 +284,54 @@ fn a_passing_comparison_leaves_nothing() {
     let comparison = compare_and_keep(&image, &image.clone(), &METRIC, &dir, "case").unwrap();
     assert!(comparison.passes());
     assert!(!dir.exists());
+}
+
+#[test]
+fn an_image_of_one_colour_is_blank() {
+    assert!(blank(&plain([10, 20, 30, 255]), &METRIC));
+    let empty = RgbaImage {
+        width: 0,
+        height: 0,
+        pixels: Vec::new(),
+    };
+    assert!(
+        blank(&empty, &METRIC),
+        "nothing is drawn in an image without pixels"
+    );
+}
+
+#[test]
+fn an_image_is_blank_while_its_other_pixels_stay_within_the_metric() {
+    // METRIC passes up to 4 of the 16 pixels differing, by more than 10 in a channel.
+    let image = (0..4).fold(plain([10, 20, 30, 255]), |image, i| nudged(image, i, 200));
+    assert!(
+        blank(&image, &METRIC),
+        "4 of 16 pixels drawn is within the tolerance"
+    );
+    let image = nudged(image, 4, 200);
+    assert!(!blank(&image, &METRIC), "5 of 16 is not");
+    let faint = (0..8).fold(plain([10, 20, 30, 255]), |image, i| nudged(image, i, 10));
+    assert!(
+        blank(&faint, &METRIC),
+        "half the pixels a shade within the threshold apart is blank"
+    );
+}
+
+#[test]
+fn of_colours_equally_common_the_least_is_taken() {
+    // Four colours, four pixels each. The greatest, first in the image, has every other pixel
+    // farther than the threshold from it, 12 of 16; the least has only the greatest's 4, which is
+    // within the tolerance. So the image is blank because the least is taken, not the first.
+    let colours: [[u8; 4]; 4] = [
+        [100, 0, 0, 255],
+        [0, 0, 0, 255],
+        [3, 0, 0, 255],
+        [6, 0, 0, 255],
+    ];
+    let image = RgbaImage {
+        width: 4,
+        height: 4,
+        pixels: colours.iter().flat_map(|c| c.repeat(4)).collect(),
+    };
+    assert!(blank(&image, &METRIC));
 }

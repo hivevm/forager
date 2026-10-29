@@ -126,6 +126,12 @@ mapfile that names the suite's init file bare in-process with a stand-in for it.
 `metric/` compares a rendering with a reference image as RGBA buffers, decoding the reference by
 the `png` crate whatever its colour type, and writes the rendering and a difference image when
 a case fails.
+The conformance harness there reads the cases of `misc` and `renderers`, their `RUN_PARMS` lines,
+in its module `conformance/`, whose list `cases.txt` names each in scope with its category and
+expected outcome, passing or failing, or out of scope with its reason, and marks those whose
+reference is blank; it renders each case in scope in-process, binding shapefiles as
+`forager render` does, and holds its outcome, leaving the renderings of failing cases under
+Cargo's `target/tmp/msautotest/`.
 
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).
