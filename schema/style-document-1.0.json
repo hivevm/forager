@@ -445,6 +445,17 @@
             }
           ]
         },
+        "expression": {
+          "description": "Whether the label is drawn for a feature: its `EXPRESSION`, read as a class's is, with the\nlayer's `LABELITEM` as the attribute a string, regular expression, or list compares.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "font": {
           "description": "A font of the map's fonts, by name.",
           "anyOf": [

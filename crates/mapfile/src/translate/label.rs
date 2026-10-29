@@ -60,7 +60,12 @@ impl Translator<'_> {
     }
 
     /// A `LABEL` as loadLabel reads it, its text falling back on `fallback`.
-    pub(super) fn label(&mut self, block: &Block, fallback: Option<&Expr>) -> Label {
+    pub(super) fn label(
+        &mut self,
+        block: &Block,
+        fallback: Option<&Expr>,
+        label_item: Option<&str>,
+    ) -> Label {
         let mut label = Label {
             span: Some(block.span.clone()),
             ..Label::default()
@@ -74,6 +79,9 @@ impl Translator<'_> {
                 }
                 Node::Directive(d) => match d.keyword.as_str() {
                     "TEXT" => text = self.text(d),
+                    // msGetLabelStatus, src/maputil.c, evaluates it against the layer's
+                    // LABELITEM; a label whose expression does not match is not drawn.
+                    "EXPRESSION" => label.expression = self.expression(d, label_item),
                     "MINSCALEDENOM" => label.min_scale_denom = self.scale_denom(d),
                     "MAXSCALEDENOM" => label.max_scale_denom = self.scale_denom(d),
                     "MINSIZE" => label.min_size = self.number(d, Range::above(0.0)).map(f64::trunc),

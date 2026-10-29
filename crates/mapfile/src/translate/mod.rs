@@ -381,7 +381,9 @@ impl Translator<'_> {
                 }
                 Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b)),
                 Node::Block(b) if b.keyword == "LABEL" => {
-                    class.labels.push(self.label(b, fallback.as_ref()));
+                    class
+                        .labels
+                        .push(self.label(b, fallback.as_ref(), label_item));
                 }
                 Node::Directive(d) => self.unhandled_directive(d),
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
@@ -563,9 +565,10 @@ impl Translator<'_> {
         }
     }
 
-    /// A class's `EXPRESSION` or a layer's `FILTER`; a string, regular expression, or list in it
-    /// compares the attribute `item` names, the layer's `CLASSITEM` or `FILTERITEM`. One that
-    /// cannot be carried over is a warning and a condition that never matches.
+    /// A class's or a label's `EXPRESSION` or a layer's `FILTER`; a string, regular expression, or
+    /// list in it compares the attribute `item` names, the layer's `CLASSITEM`, `LABELITEM`, or
+    /// `FILTERITEM`. One that cannot be carried over is a warning and a condition that never
+    /// matches.
     fn expression(&mut self, d: &Directive, item: Option<&str>) -> Option<Expr> {
         let [token] = d.values.as_slice() else {
             self.invalid(d, "one expression");

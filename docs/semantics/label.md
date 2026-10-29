@@ -1,7 +1,7 @@
 # `LABEL`, `TEXT`, and `LABELITEM`
 
 **Where:** `LABEL` blocks and `TEXT` in `CLASS`, `LABELITEM` in `LAYER`. **IR:** the class's
-`labels`.
+`labels`, each with its `text` and its `expression`.
 
 **Text.** A label's text is its own `TEXT`, else the class's `TEXT`, else the layer's
 `LABELITEM` as `to_string` of that property, as `msShapeGetLabelAnnotation` in `src/maputil.c`
@@ -12,6 +12,14 @@ A `TEXT` is evaluated as `msEvalTextExpression` does: a string has each `[name]`
 the property's value (`concat` of the parts); an expression in parentheses is taken as text, a
 number printed with `%g`. A `TEXT` the frontend cannot carry over is a warning and an empty text,
 which draws no label.
+
+**Condition.** A label's `EXPRESSION` decides whether it is drawn for a feature:
+`msGetLabelStatus` in `src/maputil.c` evaluates it against the layer's `LABELITEM`, and a label
+whose expression does not match is not drawn. The frontend reads it as a class's
+[`EXPRESSION`](expression.md), with `LABELITEM` where a class's takes [`CLASSITEM`](classitem.md),
+into the label's `expression`, one of the IR's conditions: one it cannot carry over is a warning
+and a condition that never matches, and a reader of a newer minor keeps one it cannot read the
+same way, since dropped it would draw the label for every feature.
 
 **Parameters**, as `loadLabel` in `src/mapfile.c` reads them: `FONT`, a font of the
 [font set](fontset.md) or an attribute, a comma-separated list naming fallbacks (`textlayout.c`
