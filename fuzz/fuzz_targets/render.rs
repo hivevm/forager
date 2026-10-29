@@ -8,7 +8,9 @@
 use std::collections::BTreeMap;
 
 use arbitrary::Arbitrary;
-use forager_ports::{Coord, Feature, FeatureQuery, FeatureSource, Geometry, SourceError};
+use forager_ports::{
+    Coord, Feature, FeatureQuery, FeatureSource, Geometry, Properties, SourceError,
+};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
 use libfuzzer_sys::fuzz_target;
@@ -70,6 +72,7 @@ fuzz_target!(|input: Input| {
                     Geometry::Polygon(rings.iter().map(|r| coords(r)).collect())
                 }
             },
+            properties: Properties::default(),
         })
         .collect();
     let style = Style {

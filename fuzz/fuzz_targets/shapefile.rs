@@ -76,7 +76,14 @@ fuzz_target!(|data: &[u8]| {
     let opened = forager_ports::poll_once(ShapefileSource::open(&files, &path))
         .expect("the shapefile adapter waited on a loader that never waits");
     if let Ok(source) = opened {
-        let _ = forager_ports::poll_once(source.features(&FeatureQuery { extent }))
+        let features = forager_ports::poll_once(source.features(&FeatureQuery { extent }))
             .expect("the shapefile source waited although it never waits");
+        // Every property of every feature is read, by its name as well, so that the reading of
+        // the .dbf's records is fuzzed with the rest (ADR-0026).
+        for feature in features.iter().flatten() {
+            feature.properties.each(|name, _| {
+                let _ = feature.properties.get(name);
+            });
+        }
     }
 });

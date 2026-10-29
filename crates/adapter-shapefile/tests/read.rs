@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use forager_ports::{Coord, Geometry};
+use forager_ports::{Coord, Feature, Geometry, Stored, Value};
 
 const SQUARE: &[(f64, f64)] = &[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 0.0)];
 const HOLE: &[(f64, f64)] = &[(1.0, 1.0), (2.0, 1.0), (2.0, 2.0), (1.0, 1.0)];
@@ -613,4 +613,123 @@ fn no_mutation_of_a_shapefile_panics() {
             check(&m);
         }
     }
+}
+
+/// Three points, of which the `.dbf` holds records for the first two.
+fn points_with(dbf: Vec<u8>) -> Vec<Feature> {
+    let mut files = Files::new(
+        POINT,
+        BOUNDS,
+        &[point(1.0, 1.0), point(2.0, 2.0), point(3.0, 3.0)],
+    );
+    files.dbf = dbf;
+    files.query(EVERYWHERE)
+}
+
+fn text(value: &str) -> Option<Value<'_>> {
+    Some(Value::String(value.into()))
+}
+
+#[test]
+fn each_field_reads_as_msdbfreadattribute_reads_it() {
+    // Verifies: ADR-0026
+    let fields: &[(&[u8], u8, u8)] = &[
+        (b"NAME", b'C', 8),
+        (b"POP", b'N', 8),
+        (b"AREA", b'F', 6),
+        (b"WHEN", b'D', 8),
+        (b"OK", b'L', 1),
+        (b"NOTE", b'M', 6),
+    ];
+    let first: &[&[u8]] = &[
+        b"  Wien  ",
+        b"   1.50 ",
+        b" 41.5 ",
+        b"  202610",
+        b"T",
+        b"ab\0cd ",
+    ];
+    let null: &[&[u8]] = &[
+        b"        ",
+        b"********",
+        b"******",
+        b"00000000",
+        b"?",
+        b"      ",
+    ];
+    let features = points_with(table(fields, &[&first.concat(), &null.concat()]));
+    let first = &features[0].properties;
+    // Trailing blanks are cut from every field, leading ones only from N, F, and D.
+    assert_eq!(first.get("NAME"), text("  Wien"));
+    assert_eq!(first.get("POP"), text("1.50"));
+    assert_eq!(first.get("AREA"), text("41.5"));
+    // A D field's leading blanks are cut as well.
+    assert_eq!(first.get("WHEN"), text("202610"));
+    assert_eq!(first.get("OK"), text("T"));
+    // A field ends at its first NUL.
+    assert_eq!(first.get("NOTE"), text("ab"));
+    // A null N, F, or D field reads as 0; a null L as it stands; a blank C as empty.
+    let second = &features[1].properties;
+    assert_eq!(second.get("NAME"), text(""));
+    assert_eq!(second.get("POP"), text("0"));
+    assert_eq!(second.get("AREA"), text("0"));
+    assert_eq!(second.get("WHEN"), text("0"));
+    assert_eq!(second.get("OK"), text("?"));
+    assert_eq!(second.get("NOTE"), text(""));
+    // A shape past the .dbf's records carries no properties.
+    assert_eq!(features[2].properties.get("NAME"), None);
+    let mut names = Vec::new();
+    features[2]
+        .properties
+        .each(|name, _| names.push(name.to_owned()));
+    assert!(names.is_empty());
+}
+
+#[test]
+fn a_field_is_found_by_its_name_as_msdbfgetitemindex_finds_it() {
+    // Verifies: ADR-0026
+    let fields: &[(&[u8], u8, u8)] = &[
+        (b"Name", b'C', 2),
+        (b"NAME", b'C', 2),
+        (b"WIDE       ", b'C', 2),
+        (b"SHORT  ", b'C', 2),
+        (b"BAD\xff", b'C', 2),
+    ];
+    let features = points_with(table(fields, &[b"a1a2a3a4\xffx", b"b1b2b3b4b5"]));
+    let p = &features[0].properties;
+    // Without regard to ASCII case, the first field of the name winning.
+    assert_eq!(p.get("name"), text("a1"));
+    assert_eq!(p.get("NAME"), text("a1"));
+    // Blanks that fill the name to its 11th byte are cut; blanks before a NUL are kept.
+    assert_eq!(p.get("WIDE"), text("a3"));
+    assert_eq!(p.get("SHORT"), None);
+    assert_eq!(p.get("SHORT  "), text("a4"));
+    // A byte that is not UTF-8 is replaced in the value.
+    assert_eq!(p.get("NAME "), None);
+    let mut seen = Vec::new();
+    p.each(|name, value| seen.push((name.to_owned(), Stored::from(value))));
+    assert_eq!(seen.len(), 5);
+    assert_eq!(
+        seen[4],
+        ("BAD\u{fffd}".to_owned(), Stored::String("\u{fffd}x".into()))
+    );
+}
+
+#[test]
+fn a_record_the_file_cuts_short_carries_no_properties() {
+    // Verifies: ADR-0026
+    let mut dbf = table(&[(b"NAME", b'C', 4)], &[b"aaaa", b"bbbb"]);
+    dbf.truncate(dbf.len() - 1);
+    let features = points_with(dbf);
+    assert_eq!(features[0].properties.get("NAME"), text("aaaa"));
+    assert_eq!(features[1].properties.get("NAME"), None);
+}
+
+#[test]
+fn a_record_count_whose_last_byte_is_128_or_more_counts_no_records() {
+    // Verifies: ADR-0026
+    let mut dbf = table(&[(b"NAME", b'C', 4)], &[b"aaaa", b"bbbb"]);
+    dbf[7] = 0x80;
+    let features = points_with(dbf);
+    assert!(features.iter().all(|f| f.properties.get("NAME").is_none()));
 }

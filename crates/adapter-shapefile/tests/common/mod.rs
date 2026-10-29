@@ -257,3 +257,37 @@ pub fn raw_lines(
     }
     r
 }
+
+/// A `.dbf` of these fields — the 11 bytes of the name, NUL-padded, the type, and the size — and
+/// these records, each the bytes after its deletion flag.
+pub fn table(fields: &[(&[u8], u8, u8)], records: &[&[u8]]) -> Vec<u8> {
+    let header_length = u16::try_from(32 + 32 * fields.len() + 1).unwrap();
+    let record_length: u16 = 1 + fields
+        .iter()
+        .map(|&(_, _, size)| u16::from(size))
+        .sum::<u16>();
+    let count = u32::try_from(records.len()).unwrap();
+    let mut d = vec![0x03, 126, 1, 1];
+    d.extend(count.to_le_bytes());
+    d.extend(header_length.to_le_bytes());
+    d.extend(record_length.to_le_bytes());
+    d.extend([0; 20]);
+    for &(name, kind, size) in fields {
+        let mut field = [0u8; 32];
+        field[..name.len()].copy_from_slice(name);
+        field[11] = kind;
+        field[16] = size;
+        d.extend(field);
+    }
+    d.push(0x0d);
+    for record in records {
+        assert_eq!(
+            record.len() + 1,
+            usize::from(record_length),
+            "a record of the table"
+        );
+        d.push(b' ');
+        d.extend(*record);
+    }
+    d
+}

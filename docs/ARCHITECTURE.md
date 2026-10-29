@@ -44,7 +44,8 @@ golden path and the test pattern an agent copies from are named here.
   change since the last release needs. The browser bindings never enable the feature. It
   depends on no other crate of the workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
-  resolver — with the features and geometries a source delivers, and the resource path that
+  resolver — with the features a source delivers, their geometries and properties
+  ([ADR-0026](adr/0026-feature-properties-at-the-port.md)), and the resource path that
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing

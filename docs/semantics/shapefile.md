@@ -54,8 +54,23 @@ loaded under either name is an error
   bytes 16–17 as its size. Fields may be zero wide. The record starts with a deletion byte, so
   fields that end past the record length (bytes 10–11), counted from 1, are an error. The version,
   the update date, the record count, and the language driver are not checked
-  (`a_dbf_header_mapserver_refuses_is_an_error`, `a_dbf_header_mapserver_accepts_opens`). The
-  `.dbf` is checked and nothing of it reaches the port yet.
+  (`a_dbf_header_mapserver_refuses_is_an_error`, `a_dbf_header_mapserver_accepts_opens`).
+
+**Properties** (`msDBFReadAttribute`, `msDBFGetFieldInfo`, `msDBFGetItemIndex`; ADR-0026). Record
+*i* of the `.dbf` holds the properties of the shape of entry *i*; it lies at the header length plus
+*i* times the record length. A shape whose record lies past the record count (bytes 4–7, read as 0
+where byte 7 is 128 or more) or past the end of the file carries no properties, as MapServer's shape
+carries no values there (`a_record_the_file_cuts_short_carries_no_properties`,
+`a_record_count_whose_last_byte_is_128_or_more_counts_no_records`). A field's name is the first 11
+bytes of its descriptor up to a NUL; where none of them is NUL, blanks at byte 10 and down to byte 1
+are cut, and blanks before a NUL are kept. A property is found by its name without regard to ASCII
+case, byte for byte, the first of several fields of that name winning
+(`a_field_is_found_by_its_name_as_msdbfgetitemindex_finds_it`). Every value is a string: the field's
+bytes up to the first NUL, trailing blanks cut, leading blanks cut too in an `N`, `F`, or `D` field;
+a null `N` or `F` field (a first `*`) and a null `D` field (`00000000`) read as `0`, a null `L`
+field (`?`) as it stands, and a blank field as the empty string. Names and values are decoded as
+UTF-8, an invalid byte replaced (`each_field_reads_as_msdbfreadattribute_reads_it`). The features
+share the `.dbf` and its fields and copy nothing per field; a value is read when a property is read.
 
 **The index** (`msSHXLoadPage`, `msSHXReadOffset`, `msSHXReadSize`). Entry *i* of the `.shx` is two
 big-endian `int`s at byte 100 + 8*i*, the record's offset and content length in 16-bit words; each
