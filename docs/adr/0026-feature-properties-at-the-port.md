@@ -1,6 +1,6 @@
 # ADR-0026: A feature carries its properties as typed values, a shapefile's as its record in a `.dbf` its layer shares
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-29
 - **Deciders:** Markus Brigl
 - **Applies to:** the `Feature` type of `crates/ports`, `crates/adapter-geojson`, `crates/adapter-shapefile`, and every `adapter-<kind>` crate that delivers features
