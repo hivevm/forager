@@ -60,6 +60,59 @@ fn a_labels_expression_is_its_condition_against_the_labelitem() {
     );
 }
 
+/// A condition as TEXT is "true" or "false", as mapparser.y gives a logical value where a string
+/// is asked for.
+#[test]
+fn a_condition_as_text_is_true_or_false() {
+    // Verifies: ADR-0019
+    let (loaded, label) = first_label(&[(
+        "m.map",
+        "MAP LAYER CLASS LABEL TEXT ([a] > 1) END END END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        json(&label.unwrap().text),
+        r#"{"op":"to_string","args":[{"op":">","args":[{"op":"to_number","args":[{"property":"a"}]},1.0]}]}"#
+    );
+}
+
+/// The text of a label whose `TEXT` is `text`, which loads without a diagnostic.
+fn plain_text(text: &str) -> String {
+    let (codes, label) = label_of(&format!("TEXT {text}"));
+    assert_eq!(codes, Vec::<String>::new(), "{text}");
+    json(&label.unwrap().text)
+}
+
+/// msEvalTextExpression replaces only the bindings msTokenizeExpression finds, reading the text
+/// with the expression lexer: a quote opens a string, and what it holds is no binding.
+#[test]
+fn a_plain_text_replaces_only_the_bindings_the_lexer_finds() {
+    let name = r#"{"op":"to_string","args":[{"property":"name"}]}"#;
+    // An apostrophe that never closes holds the rest.
+    assert_eq!(plain_text(r#""it's [name]""#), r#""it's [name]""#);
+    // A quoted binding is a binding; a quoted text with one inside is a string.
+    assert_eq!(
+        plain_text(r#""'[name]'""#),
+        format!(r#"{{"op":"concat","args":["'",{name},"'"]}}"#)
+    );
+    assert_eq!(plain_text(r#""'x [name]'""#), r#""'x [name]'""#);
+    // Every occurrence of a binding found is replaced, the one inside a string too.
+    assert_eq!(
+        plain_text(r#""[name] '[name] x'""#),
+        format!(r#"{{"op":"concat","args":[{name}," '",{name}," x'"]}}"#)
+    );
+    // [shape] and the cell sizes are no attribute, in any case.
+    assert_eq!(plain_text(r#""[shape] [SHAPE]""#), r#""[shape] [SHAPE]""#);
+    // A single | ends the tokens, as a newline does; || is an operator.
+    assert_eq!(plain_text(r#""a | [name]""#), r#""a | [name]""#);
+    assert_eq!(
+        plain_text(r#""a || [name]""#),
+        format!(r#"{{"op":"concat","args":["a || ",{name}]}}"#)
+    );
+    // A doubled ]] inside a binding is one ], and the binding's text, unescaped, must stand.
+    assert_eq!(plain_text(r#""[a]]b]""#), r#""[a]]b]""#);
+}
+
 #[test]
 fn a_text_is_evaluated_as_mapserver_evaluates_it() {
     // Verifies: ADR-0019

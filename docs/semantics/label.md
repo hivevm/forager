@@ -8,10 +8,17 @@
 picks it; the frontend resolves the choice at import. A label's own `TEXT ''` is its text, and
 draws no label, without falling back. A `TEXT` is a string or an expression; `loadLabel` and
 `loadClass` refuse a regular expression or a list, a class `TEXT` a later one replaces included.
-A `TEXT` is evaluated as `msEvalTextExpression` does: a string has each `[name]` in it replaced by
-the property's value (`concat` of the parts); an expression in parentheses is taken as text, a
-number printed with `%g`. A `TEXT` the frontend cannot carry over is a warning and an empty text,
-which draws no label.
+A `TEXT` is evaluated as `msEvalTextExpression` does. A string has replaced by the property's value
+each binding `msTokenizeExpression` finds when it reads the string with the expression lexer of
+`src/maplexer.l`, every occurrence of it (`concat` of the parts): a `[name]`, or one quoted as
+`'[name]'`, `"[name]"`, or `` `[name]` ``; `[shape]`, `[map_cellsize]`, and `[data_cellsize]` are
+none. A quote that opens no such binding opens a string, which the same quote closes and in which
+no binding is found; one that never closes holds the rest of the text, so `it's [name]` keeps
+`[name]` as written. A carriage return, a newline, and a single `|` end the lexer's reading too.
+An expression in parentheses is taken as text, a number printed with `%g`, a condition as `true`
+or `false`, as `src/mapparser.y` gives a logical value where a string is asked for. A `TEXT` the
+frontend cannot carry over, a time among them, is a warning and an empty text, which draws no
+label.
 
 **Condition.** A label's `EXPRESSION` decides whether it is drawn for a feature:
 `msGetLabelStatus` in `src/maputil.c` evaluates it against the layer's `LABELITEM`, and a label
