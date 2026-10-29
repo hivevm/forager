@@ -3,7 +3,7 @@
 ## What to build
 
 The tracer bullet through the text path: the engine draws a point layer's label, its text from
-`TEXT`, the class, or the layer's `LABELITEM`, shaped and drawn in its font, size, and colour,
+`TEXT`, the class, or the layer's `LABELITEM`, laid out and drawn in its font, size, and colour,
 centred on the point, through the reference renderer. Forager's own reference image pins it.
 
 ## Acceptance criteria
