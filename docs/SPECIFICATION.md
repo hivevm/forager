@@ -176,7 +176,7 @@ maintained.
 
 - There is demand for rendering existing mapfiles in the browser; no evidence for it is recorded
   yet (see *Problem*).
-- The pure-Rust crates the work leans on — agg-rust, proj4rs, rustybuzz, unicode-bidi, skrifa,
+- The pure-Rust crates the work leans on — agg-rust, proj4rs, harfrust, unicode-bidi, skrifa,
   i_overlay, shapefile, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and
   stay maintained. The ADR that picks each one verifies it.
 - The msautotest reference images are reproducible enough that the tolerances of G-6 and G-13 lie
