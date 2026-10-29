@@ -69,7 +69,7 @@ text path.
 
 ## Implementation decisions
 
-- **Text stack.** Shaping by rustybuzz, glyph outlines and metrics by skrifa, rasterized as paths
+- **Text stack.** Shaping by harfrust, glyph outlines and metrics by skrifa, rasterized as paths
   by the reference renderer, as MapServer's AGG renderer draws FreeType's outlines. Whether hinting
   is applied, and how, follows what MapServer does at the pin. The crates and their versions are
   an ADR (the specification's Assumption asks one per crate); it weighs them for
