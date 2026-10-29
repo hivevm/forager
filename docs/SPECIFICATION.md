@@ -115,8 +115,9 @@ from the threats below.
   (1000), image size, the features one layer draws (1,000,000), the size of a data file a host reads
   (256 MiB), the size of a font file (32 MiB, apart from that total), expression nesting (24
   levels), the length of a text an expression reads or computes (16 MiB), the values a style
-  document of a newer minor drops (100), and regular-expression size are limited, and exceeding a
-  limit is a diagnostic. A test per limit feeds an input past it and expects the diagnostic.
+  document of a newer minor drops (100), and regular-expression length (64 KiB) and size are
+  limited, and exceeding a limit is a diagnostic. A test per limit feeds an input past it and
+  expects the diagnostic.
 
 ## Non-Goals
 
