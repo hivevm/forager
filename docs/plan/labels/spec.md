@@ -69,9 +69,10 @@ text path.
 
 ## Implementation decisions
 
-- **Text stack.** Glyph outlines and metrics by skrifa, scaled as FreeType scales them unhinted,
-  Latin text laid out unshaped as MapServer lays it out, rasterized as paths by the reference
-  renderer, as MapServer's AGG renderer draws FreeType's outlines (ADR-0028).
+- **Text stack.** Glyph outlines and advances by skrifa, unhinted with FreeType's arithmetic, a
+  line whose code points lie below U+02B0 laid out unshaped as MapServer lays it out, rasterized
+  as paths by the reference renderer, as MapServer's AGG renderer draws FreeType's outlines
+  (ADR-0028). A line with a code point at or above U+02B0 is left to the spec of complex scripts.
 - **Fonts through the loader.** A host hands font files through the resource loader, as it hands
   every other file the mapfile names; the font set maps a font name to a path inside the base
   context. The CLI reads them from disk; the browser bindings take them from the page, by the
