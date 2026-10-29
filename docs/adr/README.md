@@ -104,7 +104,7 @@ is the table a session reads.
 | [0026](0026-feature-properties-at-the-port.md) | A feature carries its properties as typed values, a shapefile's as its record in a `.dbf` its layer shares | the `Feature` type of `crates/ports`, `crates/adapter-geojson`, `crates/adapter-shapefile`, and every `adapter-<kind>` crate that delivers features | 🟢 accepted |
 | [0027](0027-mapserver-built-from-the-pin.md) | CI builds MapServer from the pinned tag to measure its noise | `scripts/build-mapserver.sh`, `.github/workflows/noise.yml`, and every run of MapServer itself | 🟢 accepted |
 | [0028](0028-text-stack.md) | Label glyphs are drawn from skrifa's unhinted FreeType outlines, laid out unshaped as MapServer lays out its Latin lines | `crates/label`, the text of `crates/engine` and `crates/render-agg`, the glyph operation of `crates/render`, the resource loader each host hands the engine, and every crate that lays out, measures, or draws text | 🟡 proposed |
-| [0029](0029-label-positions-from-mapservers-label-cache.md) | The noise measurement reads MapServer's label cache with a C reader linked to its library | `scripts/mapserver-labels.c`, `scripts/build-mapserver.sh`, `.github/workflows/noise.yml`, and every comparison of label positions with MapServer's | 🟡 proposed |
+| [0029](0029-label-positions-from-mapservers-label-cache.md) | The noise measurement reads MapServer's label cache with a C reader linked to its library | `crates/cli/tests/conformance/mapserver_labels.c`, `scripts/build-mapserver.sh`, `scripts/check-notice.sh`, and every comparison of label positions with MapServer's | 🟡 proposed |
 
 ### Superseded and rejected
 
