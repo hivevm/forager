@@ -57,14 +57,22 @@ polygon's outline is drawn as a line in the `OUTLINECOLOR`, as for any polygon s
 stand `SIZE` apart, 1 without one, bounded by `MAXSIZE` and then `MINSIZE`; they are `WIDTH`
 wide, 1 without one or for one not above 0, bounded by `MAXWIDTH` and then `MINWIDTH`; they turn
 counter-clockwise from the horizontal by `ANGLE`, and are counted from the pixel of the map's
-origin, so that the hatches of neighbouring polygons line up. Each line runs across the
-polygon's bounding box grown by 0.7072 widths, is dashed by `PATTERN` from its first point, the
-lengths scaled by the factor the bounds applied to the width, and is stroked with butt caps; the
-stroke is cut to the polygon, both read under the even-odd rule, so that where stroked lines
-overlap, at a `SIZE` below the `WIDTH`, the hatch is empty. A `WIDTH` of 0 makes MapServer divide
-the pattern by 0, and AGG draws its infinite dashes as solid lines. `OFFSET` moves the polygon
-first. The hatch, as a polygon's fill, is filled through the AGG output format's default gamma
-of 0.75, which MapServer applies to polygons and hatches and not to symbols.
+origin, so that the hatches of neighbouring polygons line up. The polygon is the feature's whole
+shape, all of its parts at once; where it reaches beyond the map's extent, it is first clipped,
+as `msDrawShape` in `src/mapdraw.c` clips it with `msClipPolygonRect` in `src/mapprimitive.cpp`,
+to the extent grown by the class's clip buffer: per style, the largest of its symbol's default
+size, its `SIZE`, and its `WIDTH`, grown by its larger `OFFSET` unless that is a line offset, or
+its `MINSIZE` or `MINWIDTH` where larger, plus 1, rounded half to even; the largest of the
+styles, plus 2. It is clipped in map units, or, where a style of the class has a `GEOMTRANSFORM`,
+in pixels after the transformation, to the image so grown. Each line runs across the clipped
+polygon's bounding box grown by 0.7072 widths, so that the box sets where its dashes fall, is
+dashed by `PATTERN` from its first point, the lengths scaled by the factor the bounds applied to
+the width, and is stroked with butt caps; the stroke is cut to the polygon, both read under the
+even-odd rule, so that where stroked lines overlap, at a `SIZE` below the `WIDTH`, and where the
+polygon's rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the pattern
+by 0, and AGG draws its infinite dashes as solid lines. `OFFSET` moves the polygon after the
+clip. The hatch, as a polygon's fill, is filled through the AGG output format's gamma
+([`style-symbol.md`](style-symbol.md)).
 
 A hatch that would not end or that costs past its bounds is not drawn, and the layer warns with
 `hatch-not-drawn` (Q-9): a spacing not above 0; a pattern with a length below 0 or not finite,
@@ -74,11 +82,13 @@ dashes over the image. MapServer loops forever on the first three and for as lon
 on the last. Only the lines that cross the image are laid; the others draw nothing.
 
 **Not yet as MapServer draws a hatch.** A size, width, or angle bound to a property or given by
-an expression is drawn as if unset, and the scale factor is 1. A `GAMMA` of the output format or
-of the layer is not carried. MapServer's polygon clipper rounds the cut to a hundredth of a
-pixel; Forager cuts in floating point, and where cutting the polygon to every dash would take
-more than 2^25 vertex steps, it intersects the coverage of the stroke and of the polygon, which
-lightens the pixels on the polygon's edge.
+an expression is drawn as if unset, and the scale factor is 1; both count so in the clip buffer
+too. MapServer's polygon clipper rounds the cut of the stroke to the polygon to a hundredth of a
+pixel; Forager cuts in floating point, a band of 256 rows at a time. Where the polygon's rings
+cross or overlap, or one crosses itself, or where getting the rings ready or cutting them for a
+band would take more than 2^25 steps, it intersects the coverage of the stroke and of the
+polygon instead, which matches inside the polygon and lightens the pixels on its edge. The
+polygon of any other style is not clipped, which draws the same.
 
 **Not yet as MapServer draws it at a point.** A point style without a symbol it draws — none, 0,
 a pixmap, TrueType, SVG, hatch, or simple symbol, a symbol bound to a property, or a name no
