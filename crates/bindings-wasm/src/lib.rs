@@ -355,7 +355,9 @@ mod tests {
             b"sans fonts/sans.ttf\ngone fonts/gone.ttf\n".to_vec()
         ));
         // A path is normalized as the mapfile's paths are; one out of the base context is refused.
-        assert!(page.add("./fonts/sans.ttf", b"font".to_vec()));
+        // A test font of the label crate, a subset of DejaVu Sans whose licence lies beside it.
+        let sans = include_bytes!("../../label/tests/fixtures/dejavu-sans-subset.ttf");
+        assert!(page.add("./fonts/sans.ttf", sans.to_vec()));
         assert!(!page.add("../escape.ttf", b"font".to_vec()));
         let render = |font: &str| {
             render_map_with_files(

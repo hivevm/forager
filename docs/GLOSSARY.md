@@ -76,5 +76,7 @@ to invent.
 - **Style IR** — The data model of a map, its layers, classes, styles, symbols, and labels, free
   of MapServer syntax, with expressions as CQL2.
   _Avoid:_ model, AST (for the whole map).
+- **Text path** — A label's glyphs laid out from its point on the baseline, each at its pen
+  position, with the box they span, as MapServer's `textPathObj` holds them.
 - **Viewport** — The part of a map that is drawn: an image size and an extent. A page asks the WASM
   bindings for one, which overrides the mapfile's `SIZE` and `EXTENT`.
