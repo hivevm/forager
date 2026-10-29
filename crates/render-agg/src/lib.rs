@@ -122,14 +122,14 @@ fn add(path: &mut PathStorage, points: &[Point], close: bool) {
 }
 
 impl AggRenderer {
-    /// Strokes `paths` as a line, or as a symbol's outline with AGG's default caps and joins.
+    /// Strokes `paths` as `paint` gives it for the width, [`Paint::Line`] or [`Paint::Outline`].
     fn stroke(
         &mut self,
         paths: &[Vec<Point>],
         closed: bool,
         color: Rgba,
         width: f64,
-        outline: bool,
+        paint: fn(f64) -> Paint,
     ) {
         if !(width.is_finite() && width > 0.0) {
             return;
@@ -139,7 +139,11 @@ impl AggRenderer {
         let width = width.min(2.0 * f64::from(self.width + self.height));
         // A miter join reaches up to its limit of 4 half widths past the path, a line's bevel
         // join and round cap no more than one.
-        let reach = if outline { 2.0 * width } else { width / 2.0 };
+        let paint = paint(width);
+        let reach = match paint {
+            Paint::Outline(_) => 2.0 * width,
+            Paint::Line(_) | Paint::Fill => width / 2.0,
+        };
         let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN + reach);
         let mut path = PathStorage::new();
         for points in paths {
@@ -151,11 +155,6 @@ impl AggRenderer {
                 }
             }
         }
-        let paint = if outline {
-            Paint::Outline(width)
-        } else {
-            Paint::Line(width)
-        };
         self.rasterize(&mut path, color, paint);
     }
 }
@@ -188,13 +187,13 @@ impl Renderer for AggRenderer {
                 closed,
                 color,
                 width,
-            } => self.stroke(paths, *closed, *color, *width, false),
+            } => self.stroke(paths, *closed, *color, *width, Paint::Line),
             DrawOp::Outline {
                 paths,
                 closed,
                 color,
                 width,
-            } => self.stroke(paths, *closed, *color, *width, true),
+            } => self.stroke(paths, *closed, *color, *width, Paint::Outline),
         }
     }
 
