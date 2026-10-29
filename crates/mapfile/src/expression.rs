@@ -135,20 +135,22 @@ pub fn number_value(text: &str) -> Result<Expr, Problem> {
 }
 
 /// The text of a label's or class's `TEXT`, as msEvalTextExpression evaluates it: a string with
-/// each `[name]` in it replaced by the property's value, or an expression in parentheses taken as
-/// text, a number printed with `%g`.
+/// each `[name]` the expression lexer finds in it replaced by the property's value, or an
+/// expression in parentheses taken as text, a number printed with `%g`, a condition as `true` or
+/// `false`.
 pub fn text(token: &Token) -> Result<Expr, Problem> {
     let expr = match &token.kind {
-        TokenKind::Str { value, .. } | TokenKind::Word(value) => substituted(value),
+        TokenKind::Str { value, .. } | TokenKind::Word(value) => substituted(value)?,
         TokenKind::Expression(text) => {
             let (expr, kind) = parse(text)?;
             match kind {
                 Kind::String => expr,
                 Kind::Number => Expr::call(Op::Tostring, vec![expr, Expr::String("%g".to_owned())]),
-                Kind::Logical | Kind::Time => {
-                    return Err(Problem::unsupported(
-                        "a condition or a time as a label's text",
-                    ));
+                // mapparser.y gives a logical expression's value as the string "true" or "false"
+                // where a string is asked for; to_string of a condition reads the same.
+                Kind::Logical => Expr::call(Op::ToString, vec![expr]),
+                Kind::Time => {
+                    return Err(Problem::unsupported("a time as a label's text"));
                 }
             }
         }
@@ -166,29 +168,195 @@ pub fn text(token: &Token) -> Result<Expr, Problem> {
     Ok(expr)
 }
 
-/// `text` with every `[name]` in it as the property's value: a literal, or a `concat`.
-fn substituted(text: &str) -> Expr {
-    let mut parts = Vec::new();
-    let mut rest = text;
-    while let Some(open) = rest.find('[') {
-        let Some(close) = rest[open..].find(']').map(|c| open + c) else {
-            break;
-        };
-        if open > 0 {
-            parts.push(Expr::String(rest[..open].to_owned()));
+/// `text` with the bindings [`text_bindings`] finds replaced by the property's values, as
+/// msEvalTextExpression replaces them: for each binding in the lexer's order, every occurrence of
+/// `[name]` in the text left so far, left to right, so that a later pass sees what an earlier one
+/// left. A value that holds a later binding's `[name]` is not searched again, as it is in
+/// MapServer. A literal, or a `concat`.
+fn substituted(text: &str) -> Result<Expr, Problem> {
+    enum Part {
+        Literal(String),
+        Value(String),
+    }
+    let mut parts = vec![Part::Literal(text.to_owned())];
+    for name in text_bindings(text)? {
+        let target = format!("[{name}]");
+        parts = parts
+            .into_iter()
+            .flat_map(|part| match part {
+                Part::Literal(literal) if literal.contains(&target) => {
+                    let mut split = Vec::new();
+                    for (i, piece) in literal.split(target.as_str()).enumerate() {
+                        if i > 0 {
+                            split.push(Part::Value(name.clone()));
+                        }
+                        split.push(Part::Literal(piece.to_owned()));
+                    }
+                    split
+                }
+                part => vec![part],
+            })
+            .collect();
+    }
+    let mut exprs: Vec<Expr> = parts
+        .into_iter()
+        .filter_map(|part| match part {
+            Part::Literal(literal) if literal.is_empty() => None,
+            Part::Literal(literal) => Some(Expr::String(literal)),
+            Part::Value(name) => Some(Expr::call(Op::ToString, vec![Expr::property(&name)])),
+        })
+        .collect();
+    Ok(match exprs.len() {
+        0 => Expr::String(String::new()),
+        1 => exprs.pop().expect("one part"),
+        _ => Expr::call(Op::Concat, exprs),
+    })
+}
+
+/// The attributes msTokenizeExpression finds in a plain `TEXT`, in order: it reads the text with
+/// the EXPRESSION_STRING rules of maplexer.l, matched case-insensitively and longest first, and
+/// msEvalTextExpression replaces only the bindings among its tokens. A `[name]`, a quoted
+/// `'[name]'` or `"[name]"`, and a `` `[name]` `` are bindings, `]]` and doubled quotes inside
+/// them read as one; `[shape]`, `[map_cellsize]`, and `[data_cellsize]` are not. A `'` or `"`
+/// that opens none opens a string the next same quote closes, `\` escaping, and what it holds is
+/// no binding; one that does not close ends the text. A pair of backticks is a time literal, and
+/// a lone backtick is one character. A newline and a `|` that is no `||` end the tokens too.
+///
+/// MapServer also stops at a token it cannot read: a time literal `msParseTime` rejects, or
+/// `fromtext` not followed by a WKT string. An empty time literal is one; where the frontend
+/// cannot tell, before a `[` that could be a binding, the text is not carried over.
+fn text_bindings(text: &str) -> Result<Vec<String>, Problem> {
+    let bytes = text.as_bytes();
+    // A `[` past the last `]` opens no binding; knowing it keeps many `[` linear.
+    let last_close = bytes.iter().rposition(|&b| b == b']');
+    let undecidable = |what: &str, at: usize| {
+        if bytes[at..].contains(&b'[') {
+            Err(Problem::unsupported(&format!(
+                "{what} before a binding in a plain TEXT, where MapServer may stop reading,"
+            )))
+        } else {
+            Ok(())
         }
-        let name = &rest[open + 1..close];
-        parts.push(Expr::call(Op::ToString, vec![Expr::property(name)]));
-        rest = &rest[close + 1..];
+    };
+    let mut names = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' | 0 => break,
+            b'|' if bytes.get(i + 1) == Some(&b'|') => i += 2,
+            b'|' => break,
+            b'[' => match binding_end(bytes, i, last_close) {
+                Some(end) => {
+                    let token = &text[i..=end];
+                    if !["[shape]", "[map_cellsize]", "[data_cellsize]"]
+                        .iter()
+                        .any(|special| token.eq_ignore_ascii_case(special))
+                    {
+                        names.push(text[i + 1..end].replace("]]", "]"));
+                    }
+                    i = end + 1;
+                }
+                None => i += 1,
+            },
+            quote @ (b'\'' | b'"' | b'`') => {
+                if let Some(end) = quoted_binding(bytes, i, quote) {
+                    let doubled = String::from_utf8(vec![quote, quote]).expect("ASCII");
+                    let single = String::from_utf8(vec![quote]).expect("ASCII");
+                    names.push(text[i + 2..end - 1].replace(&doubled, &single));
+                    i = end + 1;
+                } else if quote == b'`' {
+                    match bytes[i + 1..].iter().position(|&b| b == b'`') {
+                        // An empty time literal, which msParseTime rejects.
+                        Some(0) => break,
+                        Some(close) => {
+                            i += 1 + close + 1;
+                            undecidable("a time literal", i)?;
+                        }
+                        None => i += 1,
+                    }
+                } else {
+                    match string_end(bytes, i + 1, quote) {
+                        Some(next) => i = next,
+                        None => break,
+                    }
+                }
+            }
+            b'f' | b'F'
+                if text[i..].len() >= 8 && text[i..i + 8].eq_ignore_ascii_case("fromtext") =>
+            {
+                undecidable("`fromtext`", i + 8)?;
+                i += 8;
+            }
+            _ => i += 1,
+        }
     }
-    if !rest.is_empty() || parts.is_empty() {
-        parts.push(Expr::String(rest.to_owned()));
+    Ok(names)
+}
+
+/// The end of the longest `[(?:]]|[^]])*]` at `start`: the binding rule of maplexer.l. None past
+/// `last_close`, the last `]` of the text.
+fn binding_end(bytes: &[u8], start: usize, last_close: Option<usize>) -> Option<usize> {
+    if last_close.is_none_or(|last| last <= start) {
+        return None;
     }
-    if parts.len() == 1 {
-        parts.pop().expect("one part")
-    } else {
-        Expr::call(Op::Concat, parts)
+    let mut longest = None;
+    let mut j = start + 1;
+    while j < bytes.len() {
+        if bytes[j] == b']' {
+            longest = Some(j);
+            if bytes.get(j + 1) == Some(&b']') {
+                j += 2;
+                continue;
+            }
+            break;
+        }
+        j += 1;
     }
+    longest
+}
+
+/// The end of the longest `q[(?:qq|[^q])*]q` at `start`, `q` the quote there: the rules of a
+/// string or time binding in maplexer.l.
+fn quoted_binding(bytes: &[u8], start: usize, quote: u8) -> Option<usize> {
+    if bytes.get(start + 1) != Some(&b'[') {
+        return None;
+    }
+    let mut longest = None;
+    let mut j = start + 2;
+    while j < bytes.len() {
+        if bytes[j] == quote {
+            if bytes[j - 1] == b']' && j > start + 2 {
+                longest = Some(j);
+            }
+            if bytes.get(j + 1) == Some(&quote) {
+                j += 2;
+                continue;
+            }
+            break;
+        }
+        j += 1;
+    }
+    longest
+}
+
+/// Where the lexer goes on after a string opened by `quote` before `start`, as the MSSTRING rules
+/// of maplexer.l read it: a backslash escapes a quote or itself, the other quote is held, and the
+/// same quote, with an `i` after it or not, closes it. `None` when it does not close.
+fn string_end(bytes: &[u8], start: usize, quote: u8) -> Option<usize> {
+    let mut j = start;
+    while j < bytes.len() {
+        match bytes[j] {
+            b'\\' if matches!(bytes.get(j + 1), Some(b'\'' | b'"' | b'\\')) => j += 2,
+            b if b == quote => {
+                let icase = bytes
+                    .get(j + 1)
+                    .is_some_and(|c| c.eq_ignore_ascii_case(&b'i'));
+                return Some(j + 1 + usize::from(icase));
+            }
+            _ => j += 1,
+        }
+    }
+    None
 }
 
 /// The tree of an expression in parentheses and the type of its value. The outer parentheses

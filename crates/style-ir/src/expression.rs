@@ -85,6 +85,8 @@ pub enum Op {
     /// A property's value as a number, as C's `atof` reads it: its longest numeric prefix, or 0.
     #[serde(rename = "to_number")]
     ToNumber,
+    /// A value as text: a property's value as it stands, a condition's as `true` or `false`, as
+    /// MapServer's parser gives a logical value where a string is asked for.
     #[serde(rename = "to_string")]
     ToString,
     /// A property's value as a time, as MapServer's `msParseTime` reads it.
