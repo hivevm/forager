@@ -1,8 +1,26 @@
 # Shapefiles
 
 **Where:** a layer whose `DATA` names an ESRI shapefile. **Adapter:** `adapter-shapefile`, a
-feature source ([ADR-0024](../adr/0024-shapefile-reader.md)); how a host finds the files a `DATA`
-names is not this page's.
+feature source ([ADR-0024](../adr/0024-shapefile-reader.md)).
+
+**Path.** A layer without `CONNECTIONTYPE` is local, and its `DATA` lies beneath the map's last
+`SHAPEPATH`, wherever it stands, against the main mapfile's directory, as `msBuildPath3` in
+`msSHPLayerOpen` joins them; an absolute `DATA`, a drive's included, ignores `SHAPEPATH`
+(`msBuildPath`). Where that shapefile does not open, MapServer tries `DATA` beside the mapfile,
+without `SHAPEPATH`; the frontend keeps one path and the adapter does not try the second, a
+departure no case of the suite meets. The frontend stores the joined path in the source's `data`,
+normalized and relative to the base context. A path that leaves the base context, by `..` or as an
+absolute path, is the warning `data-refused`, and the layer keeps no data, so the engine skips it
+(Q-8, G-8; `a_local_layers_data_lies_beneath_shapepath_in_the_base_context`,
+`a_data_path_that_leaves_the_base_context_is_refused_and_the_layer_keeps_none`). The CLI binds a
+local layer to this adapter where the base context holds its `.shp` or `.SHP`, reading each file
+within the data-file limit of Q-9, and only a layer whose features the engine reads, `ON` or
+`DEFAULT` and of a `TYPE` it draws: a layer `OFF` or a raster opens no file. Layers whose `DATA`
+names one shapefile, cut as `msSHPOpen` cuts it, share the source the CLI opened once. A layer
+whose file is missing stays unbound, as the browser bindings leave it, and a `--source` for the
+layer wins (`crates/cli/tests/shapefile.rs`). A file the CLI may not read, missing or behind a
+link out of the base context, is one and the same error, so that the error tells nothing of the
+host.
 
 **Meaning.** The features of a shapefile are the records MapServer reads from its `.shp`, `.shx`,
 and `.dbf`, as `src/mapshape.c` and `src/mapxbase.c` read them. Each rule names the function it
@@ -12,8 +30,10 @@ are held by `memory_follows_the_files_size` in `tests/memory.rs`.
 **Files.** `msShapefileOpen` and `msSHPOpen` cut the name at its last `.` after the last
 separator, a leading `.` included, and ask the resource loader for `<name>.shp`, `<name>.shx`, and
 `<name>.dbf`, each as `<name>.SHP`, `<name>.SHX`, `<name>.DBF` where the lower-case name cannot be
-loaded; `data/roads.v2` asks for `data/roads.shp`. A file that cannot be loaded under either name is
-an error (`a_missing_file_is_an_error_and_upper_case_names_are_tried`). Neither `.qix`, `.sbn`,
+loaded, the `.dbf` in `msDBFOpen`; `data/roads.v2` asks for `data/roads.shp`. Only the extension
+changes case, never the name: `DATA "poly"` does not find `POLY.SHP`. A file that cannot be
+loaded under either name is an error
+(`a_missing_file_is_an_error_and_upper_case_names_are_tried`). Neither `.qix`, `.sbn`,
 `.cpg`, nor `.prj` is asked for.
 
 **Headers** (`msSHPOpenVirtualFile`, `msDBFOpenVirtualFile`). An error opens no layer:

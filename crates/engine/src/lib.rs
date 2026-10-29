@@ -55,8 +55,7 @@ pub async fn render<S: FeatureSource, R: Renderer>(
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
     for layer in &map.layers {
-        // As in MapServer, a layer without STATUS is OFF; ON and DEFAULT layers are drawn.
-        if !matches!(layer.status, Some(LayerStatus::On | LayerStatus::Default)) {
+        if !shown(layer) {
             continue;
         }
         let Some(mode) = drawable_mode(layer, &mut diagnostics) else {
@@ -136,9 +135,28 @@ fn view(map: &Map, diagnostics: &mut Vec<Diagnostic>) -> Option<(u32, u32, View)
     Some((width, height, view))
 }
 
+/// Whether [`render`] reads the features of `layer`: one shown, of a TYPE it draws. A host need
+/// open no source for any other layer, whose source would cost memory and draw nothing.
+pub fn reads_features(layer: &Layer) -> bool {
+    shown(layer) && layer.render_mode.is_some_and(drawn)
+}
+
+/// As in MapServer, a layer without STATUS is OFF; ON and DEFAULT layers are drawn.
+fn shown(layer: &Layer) -> bool {
+    matches!(layer.status, Some(LayerStatus::On | LayerStatus::Default))
+}
+
+/// The render modes whose geometry the engine draws.
+fn drawn(mode: RenderMode) -> bool {
+    matches!(
+        mode,
+        RenderMode::Point | RenderMode::Line | RenderMode::Polygon
+    )
+}
+
 fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<RenderMode> {
     match layer.render_mode {
-        Some(mode @ (RenderMode::Point | RenderMode::Line | RenderMode::Polygon)) => Some(mode),
+        Some(mode) if drawn(mode) => Some(mode),
         other => {
             let what = other.map_or("no TYPE".to_owned(), |m| format!("{m:?}").to_lowercase());
             let message = format!("layer {} is not drawn: {what}", name(layer));
