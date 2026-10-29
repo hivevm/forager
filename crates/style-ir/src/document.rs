@@ -709,6 +709,12 @@ mod tests {
         let json = r#"{"version":"1.2","map":{"layers":[{"filter":{"op":"s_buffer","args":[]}}]}}"#;
         let read = StyleDocument::from_json(json).unwrap();
         assert_eq!(read.document.map.layers[0].filter, Some(Expr::Bool(false)));
+        // And a label's: dropped, the label would be drawn for every feature.
+        let json = r#"{"version":"1.2","map":{"layers":[{"classes":[{"labels":[{"expression":{"op":"s_buffer","args":[]}}]}]}]}}"#;
+        let read = StyleDocument::from_json(json).unwrap();
+        let label = &read.document.map.layers[0].classes[0].labels[0];
+        assert_eq!(label.expression, Some(Expr::Bool(false)));
+        assert_eq!(read.warnings[0].code, "unknown-operator");
     }
 
     #[test]

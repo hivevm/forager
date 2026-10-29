@@ -55,15 +55,19 @@ pub(crate) struct Condition {
     pub field: &'static str,
 }
 
-/// The conditions of the IR: a layer's filter and a class's expression. [`Map::conditions`]
-/// reads them from the typed map; a test holds the two together.
-pub(crate) const CONDITIONS: [Condition; 2] = [
+/// The conditions of the IR: a layer's filter, a class's expression, and a label's expression.
+/// [`Map::conditions`] reads them from the typed map; a test holds the two together.
+pub(crate) const CONDITIONS: [Condition; 3] = [
     Condition {
         list: "layers",
         field: "filter",
     },
     Condition {
         list: "classes",
+        field: "expression",
+    },
+    Condition {
+        list: "labels",
         field: "expression",
     },
 ];
@@ -74,8 +78,13 @@ impl Map {
         let layers = self.layers.iter();
         layers
             .flat_map(|layer| {
-                let classes = layer.classes.iter().filter_map(|c| c.expression.as_ref());
-                layer.filter.iter().chain(classes)
+                let classes = layer.classes.iter();
+                let labels = classes
+                    .clone()
+                    .flat_map(|c| &c.labels)
+                    .filter_map(|l| l.expression.as_ref());
+                let classes = classes.filter_map(|c| c.expression.as_ref());
+                layer.filter.iter().chain(classes).chain(labels)
             })
             .collect()
     }
@@ -447,6 +456,10 @@ pub struct Label {
     /// The text: the label's `TEXT`, else the class's, else the layer's `LABELITEM`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<Expr>,
+    /// Whether the label is drawn for a feature: its `EXPRESSION`, read as a class's is, with the
+    /// layer's `LABELITEM` as the attribute a string, regular expression, or list compares.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression: Option<Expr>,
     /// A font of the map's fonts, by name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<Bound<String>>,

@@ -350,9 +350,10 @@ mod tests {
     }
 
     #[test]
-    fn the_conditions_are_the_maps_layer_filters_and_class_expressions() {
+    fn the_conditions_are_the_maps_layer_filters_and_class_and_label_expressions() {
         let filter = Expr::Bool(true);
         let expression = Expr::call(Op::Eq, vec![Expr::property("a"), Expr::Number(1.0)]);
+        let shown = Expr::call(Op::Eq, vec![Expr::property("b"), Expr::Number(2.0)]);
         // Every other place an expression stands is filled too, so that a list naming one of
         // them, or a typed method reading one, finds it.
         let property = Some(Bound::Expr(Expr::property("w")));
@@ -368,6 +369,7 @@ mod tests {
                     styles: vec![style.clone()],
                     labels: vec![Label {
                         text: Some(Expr::property("t")),
+                        expression: Some(shown.clone()),
                         styles: vec![style],
                         ..Label::default()
                     }],
@@ -377,7 +379,7 @@ mod tests {
             }],
             ..Map::default()
         };
-        assert_eq!(map.conditions(), [&filter, &expression]);
+        assert_eq!(map.conditions(), [&filter, &expression, &shown]);
         // The places CONDITIONS names hold what the typed map gives, each at least once.
         let tree = serde_json::to_value(&map).unwrap();
         let mut found = Vec::new();

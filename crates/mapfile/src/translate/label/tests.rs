@@ -1,5 +1,6 @@
-// The tests pin MapServer's loadLabel and loadClass, src/mapfile.c, msShapeGetLabelAnnotation
-// and bindLabel, src/maputil.c, of the release pinned in scripts/fetch-msautotest.sh.
+// The tests pin MapServer's loadLabel and loadClass, src/mapfile.c, msShapeGetLabelAnnotation,
+// bindLabel, and msGetLabelStatus, src/maputil.c, of the release pinned in
+// scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -33,6 +34,30 @@ fn a_labels_text_falls_back_on_the_class_then_the_labelitem() {
         "MAP LAYER LABELITEM 'name' CLASS LABEL END TEXT 'k' END END END",
     )]);
     assert_eq!(json(&label.unwrap().text), r#""k""#);
+}
+
+/// msGetLabelStatus evaluates a label's EXPRESSION against the layer's LABELITEM, and a label whose
+/// expression does not match is not drawn; one that cannot be carried over never matches.
+#[test]
+fn a_labels_expression_is_its_condition_against_the_labelitem() {
+    // Verifies: ADR-0019
+    let (loaded, label) = first_label(&[(
+        "m.map",
+        r#"MAP LAYER LABELITEM "n" CLASS LABEL EXPRESSION "x" END END END END"#,
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        json(&label.unwrap().expression),
+        r#"{"op":"=","args":[{"op":"to_string","args":[{"property":"n"}]},"x"]}"#
+    );
+    let (_, label) = first_label(&[(
+        "m.map",
+        "MAP LAYER CLASS LABEL EXPRESSION ([pop] > 10) END END END END",
+    )]);
+    assert_eq!(
+        json(&label.unwrap().expression),
+        r#"{"op":">","args":[{"op":"to_number","args":[{"property":"pop"}]},10.0]}"#
+    );
 }
 
 #[test]
