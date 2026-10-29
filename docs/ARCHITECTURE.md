@@ -65,8 +65,10 @@ golden path and the test pattern an agent copies from are named here.
   diagnostic (G-8); a source that skips records yields one warning for its layer
   ([ADR-0025](adr/0025-source-reports-skipped-records.md)); the fonts a label names it loads once
   per render through the host's resource loader, each bounded, and it draws the labels of point
-  layers after every layer, as MapServer's label cache does, through `label` (ADR-0028); a label it
-  cannot draw yet is left out with a diagnostic. It is the one core crate
+  layers after every layer, as MapServer's label cache does, through `label` (ADR-0028): it holds
+  each label as its glyphs' indices and its point, draws each glyph once per font and size, and
+  builds a label's path only as it draws it; a label it cannot draw yet is left out with a
+  diagnostic. It is the one core crate
   that awaits the ports. Every host binds its sources to the layers by name through the engine's
   `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
   way for each.
@@ -115,8 +117,9 @@ golden path and the test pattern an agent copies from are named here.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
-structured shapes, the browser path on GeoJSON, and the shapefile adapter on arbitrary `.shp`,
-`.shx`, and `.dbf` files — run by `scripts/fuzz.sh`, which reads them from the manifest, every
+structured shapes with a label of arbitrary text and size, the browser path on GeoJSON, the
+shapefile adapter on arbitrary `.shp`, `.shx`, and `.dbf` files, and the text path on an arbitrary
+font file — run by `scripts/fuzz.sh`, which reads them from the manifest, every
 Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out of
 the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
 `scripts/mutants.sh` runs cargo-mutants over the workspace every week through

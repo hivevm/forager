@@ -20,19 +20,17 @@ use agg_rust::path_storage::PathStorage;
 use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::scanline_u::ScanlineU8;
-use forager_render::PathCommand;
+use forager_render::{MAX_GLYPH_REACH, PathCommand};
 use forager_style_ir::Rgba;
 
 use crate::AggRenderer;
 
-/// The largest distance from the image, in pixels, a glyph's point may lie at: agg-rust's
-/// rasterizer holds coordinates in 24.8 fixed point, which a farther point would overflow.
-const MAX_GLYPH_REACH: f64 = (1 << 22) as f64;
-
 impl AggRenderer {
     /// Fills `path` in `color` as `agg2RenderGlyphsPath` fills a text path: its curves flattened
     /// by `conv_curve`, under the non-zero rule, with no gamma. A path with a point past
-    /// [`MAX_GLYPH_REACH`], or one that is no number, is not drawn.
+    /// [`MAX_GLYPH_REACH`], or one that is no number, is not drawn: the engine leaves out and
+    /// reports such a glyph before it reaches the display list, so this guards the renderer
+    /// against any other display list.
     pub(crate) fn glyphs(&mut self, path: &[PathCommand], color: Rgba) {
         let reach = f64::from(self.width.max(self.height)) + MAX_GLYPH_REACH;
         let mut storage = PathStorage::new();

@@ -3,6 +3,7 @@
 // POSITION CC get_metrics, src/maplabel.c, with msDrawTextSymbol, src/maprendering.c, of MapServer
 // at the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Copyright (c) 1996-2013 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -19,7 +20,7 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
-use forager_render::{PathCommand, Point};
+use forager_render::{MAX_GLYPH_REACH, PathCommand, Point};
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::DrawSettings;
 use skrifa::outline::pen::{OutlinePen, PathStyle};
@@ -64,48 +65,93 @@ struct Glyph {
     advance: f64,
 }
 
+/// The glyphs of one font drawn at one pixel size, each once, as `msGetGlyphByIndex` caches them
+/// per face and size; a render keeps one for each font and size its labels use.
+#[derive(Debug)]
+pub struct Glyphs {
+    ppem: u16,
+    drawn: BTreeMap<u32, Glyph>,
+}
+
+impl Glyphs {
+    /// An empty cache for the glyphs of one font at `glyph_size`.
+    pub fn new(glyph_size: f64) -> Self {
+        Self {
+            ppem: pixel_size(glyph_size),
+            drawn: BTreeMap::new(),
+        }
+    }
+
+    /// Glyph `id` of `font`, drawn on first use; a glyph that cannot be drawn takes the font's
+    /// `?`, or glyph 0, as `msGetGlyphByIndex` falls back, and `None` names one that cannot be
+    /// drawn either way.
+    fn get(&mut self, font: &Font<'_>, id: u32) -> Option<&Glyph> {
+        match self.drawn.entry(id) {
+            Entry::Occupied(drawn) => Some(drawn.into_mut()),
+            Entry::Vacant(slot) => {
+                let glyph = draw(font, id, self.ppem)
+                    .or_else(|| draw(font, font.glyph_index('?'), self.ppem))?;
+                Some(slot.insert(glyph))
+            }
+        }
+    }
+}
+
 /// A line of glyphs laid out from its origin on the baseline, with its bounding box, as
-/// MapServer's `textPathObj` holds it: x to the right, y down.
+/// MapServer's `textPathObj` holds it: x to the right, y down. It holds the glyphs by their
+/// index; their outlines stay in the [`Glyphs`] it was laid out with.
 #[derive(Debug)]
 pub struct TextPath {
-    /// Each glyph's pen position along the baseline, and the glyph.
-    placed: Vec<(f64, u32)>,
-    glyphs: BTreeMap<u32, Glyph>,
+    glyphs: Box<[u32]>,
     pub min_x: f64,
     pub min_y: f64,
     pub max_x: f64,
     pub max_y: f64,
+    /// The box of the glyphs' outlines, which may reach past the advances.
+    ink: [f64; 4],
+}
+
+/// The outlines of a text path drawn at a point, and how many of its glyphs were left out for
+/// reaching farther from the visible area than [`MAX_GLYPH_REACH`].
+#[derive(Debug, Default, PartialEq)]
+pub struct Drawn {
+    pub path: Vec<PathCommand>,
+    pub out_of_reach: usize,
 }
 
 impl TextPath {
-    /// Lays out `glyphs` of `font` at `glyph_size` as the basic shaper does: each at the pen,
-    /// which moves by the glyph's advance, with no kerning. A glyph that cannot be drawn takes
-    /// the font's `?`, or glyph 0, as `msGetGlyphByIndex` falls back; the error names one that
-    /// cannot be drawn either way.
-    pub fn new(font: &Font<'_>, glyphs: &[u32], glyph_size: f64) -> Result<Self, u32> {
-        let ppem = pixel_size(glyph_size);
+    /// Lays out `glyphs` of `font`, whose glyphs `cache` holds at the label's size, as the basic
+    /// shaper does: each at the pen, which moves by the glyph's advance, with no kerning. The
+    /// error names a glyph the font cannot draw, nor its fallback.
+    pub fn new(font: &Font<'_>, cache: &mut Glyphs, glyphs: &[u32]) -> Result<Self, u32> {
         let mut path = TextPath {
-            placed: Vec::with_capacity(glyphs.len()),
-            glyphs: BTreeMap::new(),
+            glyphs: glyphs.into(),
             min_x: 0.0,
             // FLT_MAX, as initialised in msLayoutTextSymbol.
             min_y: f64::from(f32::MAX),
             max_x: -f64::from(f32::MAX),
             max_y: -f64::from(f32::MAX),
+            ink: [
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ],
         };
         let mut pen_x = 0.0;
-        // The one line's pen height, (1 - numlines + line_number) * line_height.
+        // The pen's height on the one line, (1 - numlines + line_number) * line_height.
         let pen_y = 0.0;
         for &id in glyphs {
-            let glyph = match path.glyphs.entry(id) {
-                Entry::Occupied(drawn) => drawn.into_mut(),
-                Entry::Vacant(slot) => slot.insert(
-                    draw(font, id, ppem)
-                        .or_else(|| draw(font, font.glyph_index('?'), ppem))
-                        .ok_or(id)?,
-                ),
-            };
-            path.placed.push((pen_x, id));
+            let glyph = cache.get(font, id).ok_or(id)?;
+            if !glyph.path.is_empty() {
+                let ink = &mut path.ink;
+                *ink = [
+                    ink[0].min(pen_x + glyph.min_x),
+                    ink[1].min(pen_y - glyph.max_y),
+                    ink[2].max(pen_x + glyph.max_x),
+                    ink[3].max(pen_y - glyph.min_y),
+                ];
+            }
             pen_x += glyph.advance;
             if pen_y - glyph.max_y < path.min_y {
                 path.min_y = pen_y - glyph.max_y;
@@ -125,46 +171,78 @@ impl TextPath {
     pub fn centred_on(&self, at: Point) -> Point {
         let w = self.max_x - self.min_x;
         let h = self.max_y - self.min_y;
-        let x1 = -(w / 2.0) + 0.0;
-        let y1 = (h / 2.0) + 0.0;
         Point {
-            x: at.x + x1 - self.min_x,
-            y: at.y + y1 - self.max_y,
+            x: at.x - (w / 2.0) - self.min_x,
+            y: at.y + (h / 2.0) - self.max_y,
         }
     }
 
-    /// The outlines of the glyphs drawn from `origin`, in pixels, as `agg2RenderGlyphsPath` turns
-    /// them into one path: each glyph's y flipped and moved to its point. A glyph whose box lies
-    /// wholly outside `visible`, `[min x, min y, max x, max y]`, adds nothing, so that what a
-    /// line costs to draw follows what of it can be seen.
-    pub fn draw(&self, origin: Point, visible: [f64; 4]) -> Vec<PathCommand> {
-        let mut out = Vec::new();
-        for &(pen_x, id) in &self.placed {
-            let glyph = &self.glyphs[&id];
+    /// The outlines of the glyphs drawn from `origin`, in pixels, out of `cache`, the glyphs the
+    /// path was laid out with, as `agg2RenderGlyphsPath` turns them into one path: each glyph's y
+    /// flipped and moved to its point. A line whose outlines lie wholly outside `visible`,
+    /// `[min x, min y, max x, max y]`, draws nothing, and of one that reaches into it each glyph
+    /// that lies wholly outside is left out, so that what a label costs to draw follows what of
+    /// it can be seen; a glyph reaching farther than [`MAX_GLYPH_REACH`] from it is left out and
+    /// counted.
+    pub fn draw(&self, cache: &Glyphs, origin: Point, visible: [f64; 4]) -> Drawn {
+        let mut drawn = Drawn::default();
+        let ink = self.ink;
+        if !(origin.x + ink[2] >= visible[0]
+            && origin.x + ink[0] <= visible[2]
+            && origin.y + ink[3] >= visible[1]
+            && origin.y + ink[1] <= visible[3])
+        {
+            return drawn;
+        }
+        let reach = [
+            visible[0] - MAX_GLYPH_REACH,
+            visible[1] - MAX_GLYPH_REACH,
+            visible[2] + MAX_GLYPH_REACH,
+            visible[3] + MAX_GLYPH_REACH,
+        ];
+        let mut pen_x = 0.0;
+        for id in &self.glyphs {
+            let Some(glyph) = cache.drawn.get(id) else {
+                continue;
+            };
             // msDrawTextSymbol moves each glyph's point by the label's; agg2RenderGlyphsPath
             // then translates the flipped outline to it.
             let gx = pen_x + origin.x;
-            let gy = 0.0 + origin.y;
-            let seen = gx + glyph.max_x >= visible[0]
-                && gx + glyph.min_x <= visible[2]
-                && gy - glyph.min_y >= visible[1]
-                && gy - glyph.max_y <= visible[3];
-            if !seen {
+            let gy = origin.y;
+            pen_x += glyph.advance;
+            let [x0, y0, x1, y1] = [
+                gx + glyph.min_x,
+                gy - glyph.max_y,
+                gx + glyph.max_x,
+                gy - glyph.min_y,
+            ];
+            if glyph.path.is_empty()
+                || x1 < visible[0]
+                || x0 > visible[2]
+                || y1 < visible[1]
+                || y0 > visible[3]
+            {
+                continue;
+            }
+            if !(x0 >= reach[0] && y0 >= reach[1] && x1 <= reach[2] && y1 <= reach[3]) {
+                drawn.out_of_reach += 1;
                 continue;
             }
             let at = |p: Point| Point {
                 x: p.x + gx,
                 y: -p.y + gy,
             };
-            out.extend(glyph.path.iter().map(|&command| match command {
-                PathCommand::MoveTo(p) => PathCommand::MoveTo(at(p)),
-                PathCommand::LineTo(p) => PathCommand::LineTo(at(p)),
-                PathCommand::QuadTo(c, p) => PathCommand::QuadTo(at(c), at(p)),
-                PathCommand::CubicTo(c0, c1, p) => PathCommand::CubicTo(at(c0), at(c1), at(p)),
-                PathCommand::Close => PathCommand::Close,
-            }));
+            drawn
+                .path
+                .extend(glyph.path.iter().map(|&command| match command {
+                    PathCommand::MoveTo(p) => PathCommand::MoveTo(at(p)),
+                    PathCommand::LineTo(p) => PathCommand::LineTo(at(p)),
+                    PathCommand::QuadTo(c, p) => PathCommand::QuadTo(at(c), at(p)),
+                    PathCommand::CubicTo(c0, c1, p) => PathCommand::CubicTo(at(c0), at(c1), at(p)),
+                    PathCommand::Close => PathCommand::Close,
+                }));
         }
-        out
+        drawn
     }
 }
 

@@ -1,7 +1,7 @@
 Test fonts of the label crate
 =============================
 
-dejavu-sans-subset.ttf, dejavu-sans-digits.ttf, and dejavu-sans-symbol.ttf are subsets of
+The dejavu-sans-*.ttf files are subsets of
 DejaVu Sans 2.37 (DejaVuSans.ttf), made with fontTools 4.55.3 (`fontTools.subset`, hinting and
 the layout tables dropped). They are modified versions of the Font Software under the licence
 below, whose names contain neither "Bitstream", "Vera", nor "Arev":
@@ -10,6 +10,13 @@ below, whose names contain neither "Bitstream", "Vera", nor "Arev":
   from 193 to 93, so that it differs from the glyph's xMin, for the tests of ADR-0028.
 - dejavu-sans-digits.ttf: the digits and the space; it has no `?`.
 - dejavu-sans-symbol.ttf: the digits and the space, with only a Windows Symbol character map.
+- dejavu-sans-both.ttf: dejavu-sans-digits.ttf with a Windows Symbol map that maps each digit to
+  the next one and a Windows Unicode map that maps `9` to glyph 500, past the font's glyphs.
+- dejavu-sans-mac.ttf: dejavu-sans-digits.ttf with only an Apple Roman character map.
+- dejavu-sans-broken.ttf: dejavu-sans-digits.ttf whose `1` and glyph 0 are replaced by a glyph
+  that names 1000 points and holds none.
+- dejavu-sans-huge.ttf: dejavu-sans-digits.ttf with 16 units per em, and its `1` and the
+  advance of `1` 20 times as large, so that the glyph can reach millions of pixels.
 
 boxes-cff.otf is drawn for these tests with fontTools' FontBuilder: a box for each digit, in CFF
 outlines; it carries no third-party work and stands under the repository's licence.

@@ -2,7 +2,9 @@
 //! unhinted, and its line laid out and centred as MapServer lays it out. The fonts are subsets of
 //! DejaVu Sans under `fixtures/`, whose licence and changes `fixtures/LICENSE` records.
 
-use forager_label::{Attempt, Font, LineError, TextPath, Unusable, attempts, glyph_size, line};
+use forager_label::{
+    Attempt, Font, Glyphs, LineError, TextPath, Unusable, attempts, glyph_size, line,
+};
 use forager_render::{PathCommand, Point};
 
 fn fixture(name: &str) -> Vec<u8> {
@@ -41,12 +43,32 @@ fn points(path: &[PathCommand]) -> Vec<(i64, i64)> {
         .collect()
 }
 
-fn path_of(font: &Font<'_>, text: &str, size: f64) -> (TextPath, Vec<PathCommand>) {
+/// A text laid out with its glyphs at `size`, and drawn from (0, 0).
+struct Laid {
+    path: TextPath,
+    glyphs: Glyphs,
+}
+
+impl Laid {
+    fn draw(&self, origin: Point, visible: [f64; 4]) -> Vec<PathCommand> {
+        let drawn = self.path.draw(&self.glyphs, origin, visible);
+        assert_eq!(drawn.out_of_reach, 0);
+        drawn.path
+    }
+}
+
+fn laid(font: &Font<'_>, text: &str, size: f64) -> Laid {
     let chars = line(text).unwrap();
-    let glyphs = font.glyphs(&chars, true).unwrap().unwrap();
-    let path = TextPath::new(font, &glyphs, size).unwrap();
-    let drawn = path.draw(Point { x: 0.0, y: 0.0 }, [-1e6, -1e6, 1e6, 1e6]);
-    (path, drawn)
+    let ids = font.glyphs(&chars, true).unwrap().unwrap();
+    let mut glyphs = Glyphs::new(size);
+    let path = TextPath::new(font, &mut glyphs, &ids).unwrap();
+    Laid { path, glyphs }
+}
+
+fn path_of(font: &Font<'_>, text: &str, size: f64) -> (TextPath, Vec<PathCommand>) {
+    let laid = laid(font, text, size);
+    let drawn = laid.draw(Point { x: 0.0, y: 0.0 }, EVERYWHERE);
+    (laid.path, drawn)
 }
 
 const EVERYWHERE: [f64; 4] = [-1e6, -1e6, 1e6, 1e6];
@@ -105,19 +127,22 @@ fn a_line_is_laid_out_by_advances_and_centred_on_its_point_by_its_box() {
     // Verifies: ADR-0028
     let data = fixture("dejavu-sans-subset.ttf");
     let font = Font::new(&data).unwrap();
-    let (fl, _) = path_of(&font, "Fl", 10.0);
-    let (f, _) = path_of(&font, "F", 10.0);
-    let (l, _) = path_of(&font, "l", 10.0);
+    let fl = laid(&font, "Fl", 10.0);
+    let (f, l) = (laid(&font, "F", 10.0), laid(&font, "l", 10.0));
+    let (f, l, fl_path) = (&f.path, l, &fl.path);
     // No kerning: the width is the sum of the advances.
-    assert_eq!(fl.max_x, f.max_x + l.max_x);
-    assert_eq!(fl.min_x, 0.0);
+    assert_eq!(fl_path.max_x, f.max_x + l.path.max_x);
+    assert_eq!(fl_path.min_x, 0.0);
     // The box runs from the highest top to the lowest bottom, y down from the baseline.
-    assert_eq!(fl.min_y, f.min_y.min(l.min_y));
-    assert_eq!(fl.max_y, 0.0, "neither glyph reaches below the baseline");
-    let at = fl.centred_on(Point { x: 50.0, y: 40.0 });
-    let (w, h) = (fl.max_x - fl.min_x, fl.max_y - fl.min_y);
+    assert_eq!(fl_path.min_y, f.min_y.min(l.path.min_y));
+    assert_eq!(
+        fl_path.max_y, 0.0,
+        "neither glyph reaches below the baseline"
+    );
+    let at = fl_path.centred_on(Point { x: 50.0, y: 40.0 });
+    let (w, h) = (fl_path.max_x - fl_path.min_x, fl_path.max_y - fl_path.min_y);
     assert_eq!(at.x, 50.0 - w / 2.0);
-    assert_eq!(at.y, 40.0 + h / 2.0 - fl.max_y);
+    assert_eq!(at.y, 40.0 + h / 2.0 - fl_path.max_y);
     // A glyph's outline moves to its pen position from the line's point.
     let drawn = fl.draw(at, EVERYWHERE);
     let first_l = drawn
@@ -139,16 +164,46 @@ fn a_line_is_laid_out_by_advances_and_centred_on_its_point_by_its_box() {
 fn a_glyph_wholly_outside_the_visible_area_is_left_out() {
     let data = fixture("dejavu-sans-subset.ttf");
     let font = Font::new(&data).unwrap();
-    let (fl, _) = path_of(&font, "Fl", 10.0);
-    let all = fl.draw(Point { x: 0.0, y: 20.0 }, EVERYWHERE);
-    let only_f = fl.draw(Point { x: 0.0, y: 20.0 }, [0.0, 0.0, 5.0, 40.0]);
-    let (f, _) = path_of(&font, "F", 10.0);
-    assert_eq!(only_f, f.draw(Point { x: 0.0, y: 20.0 }, EVERYWHERE));
+    let fl = laid(&font, "Fl", 10.0);
+    let at = Point { x: 0.0, y: 20.0 };
+    let all = fl.draw(at, EVERYWHERE);
+    let only_f = fl.draw(at, [0.0, 0.0, 5.0, 40.0]);
+    assert_eq!(only_f, laid(&font, "F", 10.0).draw(at, EVERYWHERE));
     assert!(only_f.len() < all.len());
-    assert!(
-        fl.draw(Point { x: 0.0, y: 20.0 }, [100.0, 0.0, 200.0, 40.0])
-            .is_empty()
+    assert!(fl.draw(at, [100.0, 0.0, 200.0, 40.0]).is_empty());
+}
+
+#[test]
+fn a_glyph_reaching_too_far_from_the_visible_area_is_left_out_and_counted() {
+    // Verifies: ADR-0028
+    // A font of 16 units per em whose `1` stands 29,860 units tall: at a glyph size of 6000
+    // points it is about 15,000,000 pixels tall, so that drawn into the image it reaches past the
+    // reach.
+    let data = fixture("dejavu-sans-huge.ttf");
+    let font = Font::new(&data).unwrap();
+    let huge = laid(&font, "1", 6000.0);
+    let visible = [0.0, 0.0, 100.0, 100.0];
+    let into_the_image = Point {
+        x: -5_000_000.0,
+        y: 100.0,
+    };
+    let drawn = huge.path.draw(&huge.glyphs, into_the_image, visible);
+    assert_eq!(
+        drawn,
+        forager_label::Drawn {
+            path: vec![],
+            out_of_reach: 1
+        }
     );
+    // A glyph of the same font at a pixel size that keeps within reach is drawn.
+    let large = laid(&font, "1", 50.0);
+    let into_the_image = Point {
+        x: -20_000.0,
+        y: 100.0,
+    };
+    let drawn = large.path.draw(&large.glyphs, into_the_image, visible);
+    assert_eq!(drawn.out_of_reach, 0);
+    assert!(!drawn.path.is_empty());
 }
 
 #[test]
@@ -210,22 +265,45 @@ fn only_the_last_font_takes_its_question_mark_or_glyph_0_for_a_glyph_it_lacks() 
     // A font without `?` takes glyph 0, which is drawn as any other.
     let digits = fixture("dejavu-sans-digits.ttf");
     let font = Font::new(&digits).unwrap();
-    let glyphs = font.glyphs(&line("1a").unwrap(), true).unwrap().unwrap();
-    assert_eq!(glyphs, [font.glyph_index('1'), 0]);
-    assert!(TextPath::new(&font, &glyphs, 10.0).is_ok());
+    let ids = font.glyphs(&line("1a").unwrap(), true).unwrap().unwrap();
+    assert_eq!(ids, [font.glyph_index('1'), 0]);
+    assert!(TextPath::new(&font, &mut Glyphs::new(10.0), &ids).is_ok());
 }
 
 #[test]
-fn a_font_without_a_unicode_map_or_glyf_outlines_cannot_draw_a_line() {
+fn a_font_is_read_through_the_character_map_freetype_and_mapserver_select() {
     // Verifies: ADR-0028
+    let digits = fixture("dejavu-sans-digits.ttf");
+    let plain = Font::new(&digits).unwrap();
+    // Unicode before Symbol, whatever the order of the records; a glyph past the font's glyphs
+    // is none, as FT_Get_Char_Index holds it.
+    let both = fixture("dejavu-sans-both.ttf");
+    let font = Font::new(&both).unwrap();
+    assert_eq!(font.glyph_index('1'), plain.glyph_index('1'));
+    assert_eq!(font.glyph_index('9'), 0);
+    // A font with only a Symbol map is read through it at the code point | 0xF000.
     let symbol = fixture("dejavu-sans-symbol.ttf");
     let font = Font::new(&symbol).unwrap();
+    assert_eq!(font.glyph_index('1'), plain.glyph_index('1'));
     assert_eq!(
-        font.glyphs(&['1'], true),
-        Err(Unusable::NoUnicodeCharacterMap)
+        font.glyphs(&['1', '2'], false),
+        Ok(Some(vec![plain.glyph_index('1'), plain.glyph_index('2')]))
     );
-    // A font of CFF outlines that lacks a glyph is passed over as any other; one that has them
-    // all cannot be drawn.
+    assert_eq!(font.glyphs(&['1', 'a'], false), Ok(None));
+}
+
+#[test]
+fn a_font_this_crate_cannot_draw_in_is_unusable_only_once_it_would_be_used() {
+    // Verifies: ADR-0028
+    // An Apple Roman map is looked up as FreeType looks it up, so that a font lacking a glyph is
+    // passed over as any other; one that has them all cannot be drawn.
+    let mac = fixture("dejavu-sans-mac.ttf");
+    let font = Font::new(&mac).unwrap();
+    assert_eq!(font.glyphs(&['1', 'a'], false), Ok(None));
+    assert_eq!(
+        font.glyphs(&['1'], false),
+        Err(Unusable::AppleRomanCharacterMap)
+    );
     let cff = fixture("boxes-cff.otf");
     let font = Font::new(&cff).unwrap();
     assert_eq!(font.glyphs(&['1', 'a'], false), Ok(None));
@@ -238,4 +316,19 @@ fn glyph_sizes_follow_ms_compute_text_path() {
     // Verifies: ADR-0028
     assert_eq!(glyph_size(8.5, 1.0, 4.0, 256.0, 1.0), 8.0);
     assert_eq!(glyph_size(9.5, 1.0, 4.0, 256.0, 1.0), 10.0);
+}
+
+#[test]
+fn a_glyph_that_cannot_be_drawn_takes_the_fonts_question_mark_or_fails() {
+    // `1` and glyph 0 of this font cannot be read, and it has no `?`.
+    let data = fixture("dejavu-sans-broken.ttf");
+    let font = Font::new(&data).unwrap();
+    let ids = font.glyphs(&['2', '1'], true).unwrap().unwrap();
+    let one = font.glyph_index('1');
+    assert_eq!(
+        TextPath::new(&font, &mut Glyphs::new(10.0), &ids).err(),
+        Some(one)
+    );
+    let two = font.glyphs(&['2'], true).unwrap().unwrap();
+    assert!(TextPath::new(&font, &mut Glyphs::new(10.0), &two).is_ok());
 }

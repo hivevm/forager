@@ -86,7 +86,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         };
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    let mut labels = Labels::new(width, height);
+    let mut labels = Labels::new(map, &view, files, (width, height));
     for (index, layer) in map.layers.iter().enumerate() {
         if !shown(layer) {
             continue;
@@ -130,23 +130,11 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         }
         let point_layer = mode == RenderMode::Point;
         labels
-            .collect(
-                map,
-                index,
-                layer,
-                &class.labels,
-                point_layer,
-                &features,
-                &view,
-                files,
-                &mut diagnostics,
-            )
+            .collect(index, point_layer, &features, &mut diagnostics)
             .await;
     }
     // The labels are drawn after every layer, as MapServer's label cache draws them.
-    for item in labels.finish() {
-        renderer.draw(&item);
-    }
+    labels.finish(&mut renderer, &mut diagnostics);
     Rendered {
         image: Some(renderer.finish()),
         diagnostics,

@@ -10,5 +10,5 @@ mod layout;
 mod size;
 
 pub use crate::font::{Attempt, Font, Unusable, attempts};
-pub use crate::layout::{LineError, TextPath, line};
+pub use crate::layout::{Drawn, Glyphs, LineError, TextPath, line};
 pub use crate::size::{glyph_size, pixel_size};

@@ -12,8 +12,8 @@ use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, Op, Position, RenderMode, Rgba,
-    SourceRef, Span,
+    AngleMode, Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, Op, Position,
+    RenderMode, Rgba, SourceRef, Span, Style, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -23,17 +23,24 @@ fn ready<F: Future>(future: F) -> F::Output {
     forager_ports::poll_once(future).expect("the engine waited on a port that never waits")
 }
 
-/// The font set's one file, a subset of DejaVu Sans whose licence lies beside it.
+/// The font set's files, test fonts of the label crate whose licence lies beside them:
+/// `fonts/sans.ttf` a subset of DejaVu Sans, and `fonts/<name>.ttf` its variant
+/// `dejavu-sans-<name>.ttf`.
 struct Files;
 
 impl ResourceLoader for Files {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
-        if path.as_str() != "fonts/sans.ttf" {
-            return Err(SourceError::new("no such file"));
-        }
+        let fixture = match path.as_str() {
+            "fonts/sans.ttf" => "dejavu-sans-subset.ttf".to_owned(),
+            other => match other.strip_prefix("fonts/") {
+                Some(name) => format!("dejavu-sans-{name}"),
+                None => return Err(SourceError::new("no such file")),
+            },
+        };
         let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
-        Ok(std::fs::read(file).unwrap())
+            .join("../label/tests/fixtures")
+            .join(fixture);
+        std::fs::read(file).map_err(|e| SourceError::new(e.to_string()))
     }
 }
 
@@ -49,7 +56,10 @@ fn map(label: Label) -> Map {
         }),
         size: Some([160, 60]),
         image_color: Some(WHITE),
-        fonts: [("sans".to_owned(), "fonts/sans.ttf".to_owned())].into(),
+        fonts: ["sans", "broken", "huge"]
+            .into_iter()
+            .map(|name| (name.to_owned(), format!("fonts/{name}.ttf")))
+            .collect(),
         layers: vec![Layer {
             name: Some("places".into()),
             render_mode: Some(RenderMode::Point),
@@ -85,7 +95,7 @@ const PLACES: &str = r#"{"type": "FeatureCollection", "features": [
      "geometry": {"type": "Point", "coordinates": [40, 30]}},
     {"type": "Feature", "properties": {"name": "Fen"},
      "geometry": {"type": "Point", "coordinates": [125, 45]}},
-    {"type": "Feature", "properties": {"kind": "unnamed"},
+    {"type": "Feature", "properties": {"kind": "unnamed", "capital": true},
      "geometry": {"type": "Point", "coordinates": [125, 12]}}
 ]}"#;
 
@@ -191,54 +201,78 @@ fn a_label_is_drawn_from_its_text_its_class_text_or_its_labelitem_alike() {
 #[test]
 fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
     // Verifies: ADR-0028
-    let cases = [
+    let with = |change: fn(&mut Label)| {
+        let mut label = label_item();
+        change(&mut label);
+        label
+    };
+    let not_drawn: [fn(&mut Label); 18] = [
+        |l| l.position = Some(Bound::Value(Position::Ul)),
+        |l| l.offset = Some([Bound::Value(2.0), Bound::Value(0.0)]),
+        |l| l.angle = Some(Bound::Value(30.0)),
+        |l| l.angle_mode = Some(AngleMode::Follow),
+        |l| l.wrap = Some(" ".to_owned()),
+        |l| l.max_length = Some(4.0),
+        |l| l.priority = Some(Bound::Value(5.0)),
+        |l| l.expression = Some(Expr::Bool(true)),
+        |l| l.outline_color = Some(Bound::Value(WHITE)),
+        |l| l.shadow_color = Some(Bound::Value(WHITE)),
+        |l| l.styles = vec![Style::default()],
+        |l| l.min_scale_denom = Some(1000.0),
+        |l| l.max_scale_denom = Some(1000.0),
+        |l| {
+            l.font = Some(Bound::Binding {
+                binding: "font".to_owned(),
+            });
+        },
+        |l| {
+            l.size = Some(Bound::Binding {
+                binding: "size".to_owned(),
+            });
+        },
+        |l| {
+            l.color = Some(Bound::Binding {
+                binding: "colour".to_owned(),
+            });
+        },
+        |l| l.font = None,
+        |l| l.priority = Some(Bound::Value(0.5)),
+    ];
+    let mut cases: Vec<(Label, &str)> = not_drawn
+        .into_iter()
+        .map(|change| (with(change), "label-not-drawn"))
+        .collect();
+    cases.extend([
         (
-            Label {
-                font: Some(Bound::Value("gone".to_owned())),
-                ..label_item()
-            },
+            with(|l| l.font = Some(Bound::Value("gone".to_owned()))),
             "label-font-unusable",
         ),
         (
-            Label {
-                text: Some(Expr::String("it\u{2019}s".to_owned())),
-                ..label_item()
-            },
+            with(|l| l.text = Some(Expr::String("it\u{2019}s".to_owned()))),
             "label-line-unsupported",
         ),
         (
-            Label {
-                text: Some(Expr::String("two\nlines".to_owned())),
-                ..label_item()
-            },
+            with(|l| l.text = Some(Expr::String("two\nlines".to_owned()))),
             "label-line-unsupported",
         ),
         (
-            Label {
-                text: Some(Expr::call(Op::Upper, vec![Expr::property("name")])),
-                ..label_item()
-            },
+            with(|l| l.text = Some(Expr::call(Op::Upper, vec![Expr::property("name")]))),
             "label-text-unsupported",
         ),
         (
-            Label {
-                position: Some(Bound::Value(Position::Ul)),
-                ..label_item()
-            },
-            "label-not-drawn",
+            with(|l| l.text = Some(Expr::call(Op::ToString, vec![Expr::property("capital")]))),
+            "label-text-unsupported",
         ),
         (
-            Label {
-                color: Some(Bound::Binding {
-                    binding: "colour".to_owned(),
-                }),
-                ..label_item()
-            },
-            "label-not-drawn",
+            with(|l| {
+                l.font = Some(Bound::Value("broken".to_owned()));
+                l.text = Some(Expr::String("1".to_owned()));
+            }),
+            "label-glyph-unreadable",
         ),
-    ];
+    ]);
     for (label, code) in cases {
-        let rendered = render(&map(label), PLACES);
+        let rendered = render(&map(label.clone()), PLACES);
         let codes: Vec<&str> = rendered
             .diagnostics
             .iter()
@@ -247,7 +281,7 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
         assert_eq!(
             codes,
             [code],
-            "one diagnostic for the label, whatever its features"
+            "one diagnostic for the label, whatever its features: {label:?}"
         );
         assert_eq!(rendered.diagnostics[0].span, Some(Span::new("m.map", 9, 7)));
         let image = rendered.image.unwrap();
@@ -256,6 +290,71 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
             "{code}"
         );
     }
+}
+
+#[test]
+fn a_layer_whose_sizes_are_not_pixels_or_whose_class_has_several_labels_is_not_drawn_yet() {
+    let mut sized = map(label_item());
+    sized.layers[0].size_units = Some(Units::Meters);
+    let mut several = map(label_item());
+    several.layers[0].classes[0].labels.push(label_item());
+    let mut symbol_scaled = map(label_item());
+    symbol_scaled.layers[0].symbol_scale_denom = Some(10_000.0);
+    for (map, count) in [(sized, 1), (several, 2), (symbol_scaled, 1)] {
+        let rendered = render(&map, PLACES);
+        let codes: Vec<&str> = rendered
+            .diagnostics
+            .iter()
+            .map(|d| d.code.as_str())
+            .collect();
+        assert_eq!(codes, vec!["label-not-drawn"; count]);
+    }
+    // A layer of pixels, and a PRIORITY of 1, the default, draw as without them.
+    let mut pixels = map(label_item());
+    pixels.layers[0].size_units = Some(Units::Pixels);
+    pixels.layers[0].classes[0].labels[0].priority = Some(Bound::Value(1.0));
+    let rendered = render(&pixels, PLACES);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image, render(&map(label_item()), PLACES).image);
+}
+
+#[test]
+fn a_null_property_draws_no_label_as_an_empty_one_does() {
+    let null = r#"{"type": "Feature", "properties": {"name": null},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let rendered = render(&map(label_item()), null);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
+
+#[test]
+fn a_glyph_reaching_too_far_from_the_image_is_left_out_with_a_diagnostic() {
+    // Verifies: ADR-0028
+    // The `1` of this test font, at 6000 points, stands about 15,000,000 pixels tall.
+    let label = Label {
+        font: Some(Bound::Value("huge".to_owned())),
+        text: Some(Expr::String("1".to_owned())),
+        size: Some(Bound::Value(6000.0)),
+        max_size: Some(6000.0),
+        ..label_item()
+    };
+    let rendered = render(&map(label), PLACES);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["label-glyph-out-of-reach"]);
+    assert_eq!(rendered.diagnostics[0].span, Some(Span::new("m.map", 9, 7)));
 }
 
 #[test]

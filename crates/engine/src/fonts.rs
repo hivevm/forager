@@ -20,6 +20,8 @@ pub(crate) struct Fonts {
 
 /// The font a line is drawn in, and its glyphs there.
 pub(crate) struct Face {
+    /// The font's path, which names it in the render.
+    pub(crate) path: String,
     pub(crate) bytes: Rc<[u8]>,
     pub(crate) glyphs: Vec<u32>,
 }
@@ -63,11 +65,17 @@ impl Fonts {
             };
             let font = Font::new(&bytes).map_err(|e| format!("the font `{name}` ({path}): {e}"))?;
             match font.glyphs(line, attempt.last) {
-                Ok(Some(glyphs)) => return Ok(Face { bytes, glyphs }),
+                Ok(Some(glyphs)) => {
+                    return Ok(Face {
+                        path: path.clone(),
+                        bytes,
+                        glyphs,
+                    });
+                }
                 Ok(None) => why = format!("the font `{name}` ({path}) lacks a glyph of the text"),
                 Err(unusable) => {
                     let what = match unusable {
-                        Unusable::NoUnicodeCharacterMap => "has no Unicode character map",
+                        Unusable::AppleRomanCharacterMap => "has only an Apple Roman character map",
                         Unusable::NoGlyfOutlines => "has no TrueType (glyf) outlines",
                     };
                     return Err(format!("the font `{name}` ({path}) {what}"));

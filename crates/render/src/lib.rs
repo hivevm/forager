@@ -30,6 +30,11 @@ pub enum DrawOp {
     Glyphs { path: Vec<PathCommand>, color: Rgba },
 }
 
+/// How far, in pixels, a point of a glyph path may lie outside the image: agg-rust holds
+/// coordinates in 24.8 fixed point, which a farther point would overflow. The text path leaves out
+/// a glyph that reaches farther, and the reference renderer draws no path that does.
+pub const MAX_GLYPH_REACH: f64 = 4_194_304.0;
+
 /// A step of a glyph outline, in pixels; a quadratic curve names its control point and its end,
 /// a cubic its two control points and its end.
 #[derive(Clone, Copy, Debug, PartialEq)]

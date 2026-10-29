@@ -261,17 +261,13 @@ fn a_font_that_lacks_a_glyph_gives_way_to_the_next_unless_it_is_the_last() {
 #[test]
 fn a_font_this_renderer_cannot_read_ends_the_search_with_a_diagnostic() {
     // Verifies: ADR-0028
-    let fonts = [
-        ("symbol", "symbol.ttf"),
-        ("cff", "cff.otf"),
-        ("sans", "sans.ttf"),
-    ];
+    let fonts = [("mac", "mac.ttf"), ("cff", "cff.otf"), ("sans", "sans.ttf")];
     let files = files(&[
-        ("symbol.ttf", font("dejavu-sans-symbol.ttf")),
+        ("mac.ttf", font("dejavu-sans-mac.ttf")),
         ("cff.otf", font("boxes-cff.otf")),
         ("sans.ttf", sans()),
     ]);
-    for (list, what) in [("symbol,sans", "Unicode"), ("cff,sans", "glyf")] {
+    for (list, what) in [("mac,sans", "Apple Roman"), ("cff,sans", "glyf")] {
         let rendered = render(&map(list, &fonts), &files);
         assert_eq!(
             codes(&rendered),
@@ -279,4 +275,33 @@ fn a_font_this_renderer_cannot_read_ends_the_search_with_a_diagnostic() {
         );
         assert!(rendered.diagnostics[0].message.contains(what), "{list}");
     }
+    // Such a font that lacks a glyph of the text is passed over as any other.
+    let mut map = map("mac,cff,sans", &fonts);
+    for layer in &mut map.layers {
+        layer.classes[0].labels[0].text = Some(Expr::String("1a".to_owned()));
+    }
+    let rendered = render(&map, &files);
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+}
+
+#[test]
+fn a_font_with_only_a_symbol_map_is_read_through_it() {
+    // Verifies: ADR-0028
+    let fonts = [("symbol", "symbol.ttf"), ("sans", "sans.ttf")];
+    let files = files(&[
+        ("symbol.ttf", font("dejavu-sans-symbol.ttf")),
+        ("sans.ttf", sans()),
+    ]);
+    let rendered = render(&map("symbol", &fonts), &files);
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+    assert_eq!(*files.asked.borrow(), ["symbol.ttf"]);
+    // Lacking a glyph, it gives way to the next font.
+    let mut map = map("symbol,sans", &fonts);
+    for layer in &mut map.layers {
+        layer.classes[0].labels[0].text = Some(Expr::String("1a".to_owned()));
+    }
+    files.asked.borrow_mut().clear();
+    let rendered = render(&map, &files);
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+    assert_eq!(*files.asked.borrow(), ["symbol.ttf", "sans.ttf"]);
 }

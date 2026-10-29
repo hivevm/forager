@@ -18,6 +18,8 @@ forager-label.workspace = true
 forager-adapter-geojson.workspace = true
 forager-render-agg.workspace = true
 forager-encode.workspace = true
+# Counts the bytes a render allocates, in the memory test of the labels (Q-9).
+peak_alloc = "0.3.0"
 
 [lints]
 workspace = true
