@@ -34,6 +34,10 @@ serde_path_to_error = "0.1.20"
 # Derives the JSON Schema of the style document, behind style-ir's `schema` feature (ADR-0020).
 schemars = "1.2.3"
 wasm-bindgen = "0.2.129"
+# The same pure-Rust sin, cos, and acos on every target, where std's call the platform's libm and
+# may differ in the last bit between the native and the browser build (Q-2). Without `arch`, its
+# default, every target runs the same generic code.
+libm = { version = "0.2.16", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

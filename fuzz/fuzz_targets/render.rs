@@ -1,21 +1,26 @@
-//! The renderer on structured input: arbitrary points, lines, and polygons with any `f64` —
+//! The renderer on structured input: arbitrary points, lines, and polygons, and an arbitrary
+//! vector or ellipse symbol at the points, with any `f64` —
 //! NaN, infinities, and the extremes included — in an arbitrary view, drawn by the engine with
 //! agg-rust behind its clipping (Q-3, ADR-0015). JSON cannot carry such numbers, so the GeoJSON
-//! target never reaches these paths. The points carry a label of arbitrary text, size, bounds, and
-//! resolution, in a test font of the label crate, drawn through the text path (ADR-0028).
+//! target never reaches these paths. Further styles of a line's dashes, caps, joins, offsets,
+//! outlines, and width bounds are read from the same bytes back to front, so that they leave how
+//! an input decodes to its view, its symbol, and its shapes as it was. The points carry a label of
+//! arbitrary text, size, bounds, and resolution, in a test font of the label crate, drawn through
+//! the text path (ADR-0028).
 // Verifies: Q-3, ADR-0015
 #![no_main]
 
 use std::collections::BTreeMap;
 
-use arbitrary::Arbitrary;
+use arbitrary::{Arbitrary, Unstructured};
 use forager_ports::{
     Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, ResourceLoader,
     ResourcePath, SourceError,
 };
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, RenderMode, Rgba, Style,
+    Bound, Class, Expr, Extent, Label, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
+    RenderMode, Rgba, Style, Symbol, SymbolKind, SymbolRef,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -26,6 +31,7 @@ struct Input {
     extent: [f64; 4],
     line_width: f64,
     symbol_size: f64,
+    symbol: SymbolInput,
     shapes: Vec<Shape>,
     text: String,
     label_size: f64,
@@ -43,6 +49,77 @@ impl ResourceLoader for Font {
     async fn load(&self, _: &ResourcePath) -> Result<Vec<u8>, SourceError> {
         Ok(SANS.to_vec())
     }
+}
+
+/// The further styles of every layer's class.
+#[derive(Arbitrary, Debug)]
+struct Styles(Vec<LineStyle>);
+
+#[derive(Arbitrary, Debug)]
+struct LineStyle {
+    color: bool,
+    outline_color: bool,
+    width: f64,
+    pattern: Vec<f64>,
+    initial_gap: Option<f64>,
+    cap: u8,
+    join: u8,
+    line_join_max_size: Option<f64>,
+    offset: Option<(f64, f64)>,
+    line_offset: Option<(f64, bool)>,
+    outline_width: Option<f64>,
+    min_width: Option<f64>,
+    max_width: Option<f64>,
+}
+
+impl LineStyle {
+    fn style(&self) -> Style {
+        let caps = [
+            LineCap::Butt,
+            LineCap::Round,
+            LineCap::Square,
+            LineCap::Triangle,
+        ];
+        let joins = [
+            LineJoin::None,
+            LineJoin::Round,
+            LineJoin::Miter,
+            LineJoin::Bevel,
+        ];
+        Style {
+            color: self
+                .color
+                .then_some(Bound::Value(Rgba::opaque(30, 60, 200))),
+            outline_color: self
+                .outline_color
+                .then_some(Bound::Value(Rgba::opaque(0, 0, 0))),
+            width: Some(Bound::Value(self.width)),
+            pattern: self.pattern.clone(),
+            initial_gap: self.initial_gap,
+            line_cap: Some(caps[usize::from(self.cap) % caps.len()]),
+            line_join: Some(joins[usize::from(self.join) % joins.len()]),
+            line_join_max_size: self.line_join_max_size,
+            offset: self.offset.map(|(x, y)| [Bound::Value(x), Bound::Value(y)]),
+            line_offset: self.line_offset.map(|(distance, both_sides)| LineOffset {
+                distance: Bound::Value(distance),
+                both_sides,
+            }),
+            outline_width: self.outline_width.map(Bound::Value),
+            min_width: self.min_width,
+            max_width: self.max_width,
+            ..Style::default()
+        }
+    }
+}
+
+#[derive(Arbitrary, Debug)]
+struct SymbolInput {
+    ellipse: bool,
+    filled: bool,
+    paths: Vec<Vec<(f64, f64)>>,
+    extent: (f64, f64),
+    anchor_point: Option<(f64, f64)>,
+    angle: f64,
 }
 
 #[derive(Arbitrary, Debug)]
@@ -65,20 +142,26 @@ fn coords(points: &[(f64, f64)]) -> Vec<Coord> {
     points.iter().map(|&(x, y)| Coord { x, y }).collect()
 }
 
-fn layer(name: &str, mode: RenderMode, style: Style) -> Layer {
+fn layer(name: &str, mode: RenderMode, styles: Vec<Style>) -> Layer {
     Layer {
         name: Some(name.into()),
         render_mode: Some(mode),
         status: Some(LayerStatus::On),
         classes: vec![Class {
-            styles: vec![style],
+            styles,
             ..Class::default()
         }],
         ..Layer::default()
     }
 }
 
-fuzz_target!(|input: Input| {
+fuzz_target!(|data: &[u8]| {
+    let Ok(input) = Input::arbitrary_take_rest(Unstructured::new(data)) else {
+        return;
+    };
+    let reversed: Vec<u8> = data.iter().rev().copied().collect();
+    let further = Styles::arbitrary_take_rest(Unstructured::new(&reversed))
+        .map_or_else(|_| Vec::new(), |styles| styles.0);
     let features: Vec<Feature> = input
         .shapes
         .iter()
@@ -110,7 +193,37 @@ fuzz_target!(|input: Input| {
         max_size: Some(input.max_size),
         ..Label::default()
     };
-    let mut points = layer("points", RenderMode::Point, style.clone());
+    let symbol = &input.symbol;
+    let symbols = vec![Symbol {
+        name: None,
+        kind: if symbol.ellipse {
+            SymbolKind::Ellipse
+        } else {
+            SymbolKind::Vector
+        },
+        paths: symbol
+            .paths
+            .iter()
+            .map(|path| path.iter().map(|&(x, y)| [x, y]).collect())
+            .collect(),
+        extent: Some([symbol.extent.0, symbol.extent.1]),
+        filled: symbol.filled,
+        anchor_point: symbol.anchor_point.map(|(x, y)| [x, y]),
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    }];
+    let symbol_style = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        angle: Some(Bound::Value(symbol.angle)),
+        ..style.clone()
+    };
+    let styles: Vec<Style> = std::iter::once(style)
+        .chain(further.iter().map(LineStyle::style))
+        .collect();
+    let mut points = layer("points", RenderMode::Point, styles.clone());
     points.classes[0].labels.push(label);
     let [min_x, min_y, max_x, max_y] = input.extent;
     let map = Map {
@@ -124,13 +237,15 @@ fuzz_target!(|input: Input| {
         }),
         size: Some([u32::from(input.width), u32::from(input.height)]),
         layers: vec![
-            layer("polygons", RenderMode::Polygon, style.clone()),
-            layer("lines", RenderMode::Line, style.clone()),
+            layer("polygons", RenderMode::Polygon, styles.clone()),
+            layer("lines", RenderMode::Line, styles.clone()),
             points,
+            layer("symbols", RenderMode::Point, vec![symbol_style]),
         ],
+        symbols,
         ..Map::default()
     };
-    let sources: BTreeMap<String, Shapes> = ["polygons", "lines", "points"]
+    let sources: BTreeMap<String, Shapes> = ["polygons", "lines", "points", "symbols"]
         .into_iter()
         .map(|name| (name.to_owned(), Shapes(features.clone())))
         .collect();

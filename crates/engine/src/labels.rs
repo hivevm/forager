@@ -26,9 +26,9 @@ use forager_style_ir::{
     Bound, Diagnostic, Expr, Label, Layer, Map, Op, Position, Rgba, Span, Units,
 };
 
+use crate::draw::vertices;
 use crate::extent::View;
 use crate::fonts::Fonts;
-use crate::vertices;
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
 const DEFAULT_SIZE: f64 = 10.0;

@@ -40,7 +40,7 @@ fn a_labels_text_falls_back_on_the_class_then_the_labelitem() {
 /// expression does not match is not drawn; one that cannot be carried over never matches.
 #[test]
 fn a_labels_expression_is_its_condition_against_the_labelitem() {
-    // Verifies: ADR-0019
+    // Verifies: ADR-0030
     let (loaded, label) = first_label(&[(
         "m.map",
         r#"MAP LAYER LABELITEM "n" CLASS LABEL EXPRESSION "x" END END END END"#,
@@ -64,7 +64,7 @@ fn a_labels_expression_is_its_condition_against_the_labelitem() {
 /// is asked for.
 #[test]
 fn a_condition_as_text_is_true_or_false() {
-    // Verifies: ADR-0019
+    // Verifies: ADR-0030
     let (loaded, label) = first_label(&[(
         "m.map",
         "MAP LAYER CLASS LABEL TEXT ([a] > 1) END END END END",
@@ -145,7 +145,7 @@ fn a_plain_text_whose_reading_the_frontend_cannot_judge_is_not_carried_over() {
 
 #[test]
 fn a_text_is_evaluated_as_mapserver_evaluates_it() {
-    // Verifies: ADR-0019
+    // Verifies: ADR-0030
     let (loaded, label) = first_label(&[(
         "m.map",
         r#"MAP LAYER CLASS LABEL TEXT ("Area: " + tostring([area],"%.2f")) END END END END"#,

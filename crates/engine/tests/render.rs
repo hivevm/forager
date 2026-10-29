@@ -11,7 +11,8 @@ use forager_engine::{MAX_IMAGE_SIDE, Rendered, render};
 use forager_render::RgbaImage;
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span, Style,
+    Bound, Class, Extent, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map, RenderMode, Rgba,
+    SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -25,6 +26,11 @@ fn ready<F: Future>(future: F) -> F::Output {
 
 /// A 101 × 101 image of the extent 0..100, so that one map unit is one pixel.
 fn map(mode: RenderMode, style: Style) -> Map {
+    map_with(mode, vec![style])
+}
+
+/// [`map`] with a class of several styles.
+fn map_with(mode: RenderMode, styles: Vec<Style>) -> Map {
     Map {
         extent: Some(Extent {
             min_x: 0.0,
@@ -44,7 +50,7 @@ fn map(mode: RenderMode, style: Style) -> Map {
                 ..SourceRef::default()
             }),
             classes: vec![Class {
-                styles: vec![style],
+                styles,
                 ..Class::default()
             }],
             span: Some(Span::new("m.map", 2, 1)),
@@ -237,6 +243,209 @@ fn line_width_is_capped_at_mapservers_maxwidth() {
     assert_eq!(image.pixel(50, 50 + 18), Some(WHITE), "outside 32 px");
 }
 
+const RED: Rgba = Rgba::opaque(220, 30, 30);
+
+fn line_style(color: Rgba, width: f64) -> Style {
+    Style {
+        color: Some(Bound::Value(color)),
+        width: Some(Bound::Value(width)),
+        ..Style::default()
+    }
+}
+
+fn render_lines(styles: Vec<Style>, geojson: &str) -> RgbaImage {
+    let rendered = render_with(&map_with(RenderMode::Line, styles), Some(geojson));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    rendered.image.unwrap()
+}
+
+const HORIZONTAL: &str = r#"{"type": "LineString", "coordinates": [[10, 50], [90, 50]]}"#;
+
+#[test]
+fn a_pattern_dashes_a_line_with_its_cap() {
+    let style = Style {
+        pattern: vec![12.0, 6.0, 6.0, 6.0],
+        line_cap: Some(LineCap::Butt),
+        ..line_style(BLUE, 3.0)
+    };
+    let image = render_lines(vec![style], HORIZONTAL);
+    // From x = 10: a dash to 22, a gap to 28, a dash to 34, a gap to 40, a dash to 52.
+    assert_eq!(image.pixel(15, 50), Some(BLUE), "the first dash");
+    assert_eq!(image.pixel(25, 50), Some(WHITE), "the first gap");
+    assert_eq!(image.pixel(31, 50), Some(BLUE), "the second dash");
+    assert_eq!(image.pixel(37, 50), Some(WHITE), "the second gap");
+    assert_eq!(
+        image.pixel(8, 50),
+        Some(WHITE),
+        "a butt cap ends at the line"
+    );
+    assert_matches_reference(&image, "line_pattern.png");
+}
+
+#[test]
+fn an_initial_gap_starts_the_pattern_that_far_before_its_end() {
+    let style = Style {
+        pattern: vec![10.0, 10.0],
+        initial_gap: Some(5.0),
+        line_cap: Some(LineCap::Butt),
+        ..line_style(BLUE, 3.0)
+    };
+    let image = render_lines(vec![style], HORIZONTAL);
+    // The line starts 5 pixels into the gap: blank to 15, a dash to 25, blank to 35.
+    assert_eq!(image.pixel(12, 50), Some(WHITE));
+    assert_eq!(image.pixel(20, 50), Some(BLUE));
+    assert_eq!(image.pixel(30, 50), Some(WHITE));
+}
+
+#[test]
+fn the_cap_and_the_join_of_a_style_shape_a_wide_line() {
+    let corner = r#"{"type": "LineString", "coordinates": [[20, 80], [80, 80], [80, 20]]}"#;
+    let style = |cap, join| Style {
+        line_cap: Some(cap),
+        line_join: Some(join),
+        ..line_style(BLUE, 10.0)
+    };
+    let square = render_lines(vec![style(LineCap::Square, LineJoin::Miter)], corner);
+    // The corner is pixel (80, 20); the outer corner of a miter join is (85, 15).
+    assert_eq!(square.pixel(84, 16), Some(BLUE), "a miter join");
+    assert_eq!(square.pixel(17, 20), Some(BLUE), "a square cap");
+    let butt = render_lines(vec![style(LineCap::Butt, LineJoin::Bevel)], corner);
+    assert_eq!(butt.pixel(84, 16), Some(WHITE), "a bevel join");
+    assert_eq!(butt.pixel(17, 20), Some(WHITE), "a butt cap");
+    assert_matches_reference(&square, "line_cap_join.png");
+}
+
+#[test]
+fn offsets_shift_a_line_or_draw_it_parallel() {
+    let parallel = |distance, both_sides| Style {
+        line_offset: Some(LineOffset {
+            distance: Bound::Value(distance),
+            both_sides,
+        }),
+        ..line_style(RED, 2.0)
+    };
+    let shifted = Style {
+        offset: Some([Bound::Value(0.0), Bound::Value(-30.0)]),
+        ..line_style(GREEN, 2.0)
+    };
+    let styles = vec![
+        line_style(BLUE, 2.0),
+        parallel(10.0, false),
+        parallel(-40.0, true),
+        shifted,
+    ];
+    let image = render_lines(styles, HORIZONTAL);
+    // The line runs rightwards at pixel row 50: the parallel at +10 lies below it, at row 60.
+    assert_eq!(image.pixel(50, 50), Some(BLUE));
+    assert_eq!(image.pixel(50, 60), Some(RED), "parallel at 10");
+    assert_eq!(image.pixel(50, 30), Some(RED), "both sides at 20 above");
+    assert_eq!(image.pixel(50, 70), Some(RED), "both sides at 20 below");
+    assert_eq!(image.pixel(50, 20), Some(GREEN), "shifted 30 up");
+    assert_matches_reference(&image, "line_offset.png");
+}
+
+#[test]
+fn an_outline_is_drawn_under_the_lines_of_every_feature() {
+    // A line layer draws every feature's outline before any feature's line, as MapServer does.
+    let crossing = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry":
+            {"type": "LineString", "coordinates": [[10, 50], [90, 50]]}},
+        {"type": "Feature", "properties": {}, "geometry":
+            {"type": "LineString", "coordinates": [[50, 10], [50, 90]]}}
+    ]}"#;
+    let style = Style {
+        outline_color: Some(Bound::Value(BLACK)),
+        outline_width: Some(Bound::Value(2.0)),
+        line_cap: Some(LineCap::Butt),
+        ..line_style(GREEN, 6.0)
+    };
+    let image = render_lines(vec![style], crossing);
+    assert_eq!(image.pixel(30, 50), Some(GREEN), "the line");
+    assert_eq!(
+        image.pixel(30, 46),
+        Some(BLACK),
+        "its outline, 2 pixels beyond"
+    );
+    assert_eq!(image.pixel(30, 43), Some(WHITE));
+    assert_eq!(
+        image.pixel(50, 46),
+        Some(GREEN),
+        "the second line's outline stays under the first line"
+    );
+    assert_matches_reference(&image, "line_outline.png");
+}
+
+#[test]
+fn a_polygon_style_with_an_offset_moves_its_fill() {
+    let style = Style {
+        color: Some(Bound::Value(GREEN)),
+        offset: Some([Bound::Value(5.0), Bound::Value(5.0)]),
+        ..Style::default()
+    };
+    let image = render_with(&map(RenderMode::Polygon, style), Some(SQUARE_WITH_HOLE))
+        .image
+        .unwrap();
+    // The square spans pixels 10..90; moved 5 right and 5 down.
+    assert_eq!(image.pixel(12, 50), Some(WHITE));
+    assert_eq!(image.pixel(93, 50), Some(GREEN));
+    assert_eq!(image.pixel(50, 93), Some(GREEN));
+}
+
+#[test]
+fn a_polygon_without_a_color_draws_its_outline_as_a_styled_line() {
+    let style = Style {
+        outline_color: Some(Bound::Value(BLACK)),
+        width: Some(Bound::Value(3.0)),
+        pattern: vec![10.0, 10.0],
+        line_cap: Some(LineCap::Butt),
+        ..Style::default()
+    };
+    let image = render_with(&map(RenderMode::Polygon, style), Some(SQUARE_WITH_HOLE))
+        .image
+        .unwrap();
+    // The outer ring starts at pixel (10, 90) and runs rightwards: a dash, then a gap.
+    assert_eq!(image.pixel(15, 90), Some(BLACK));
+    assert_eq!(image.pixel(25, 90), Some(WHITE));
+}
+
+#[test]
+fn a_ring_in_a_line_layer_is_stroked_open_at_its_first_vertex() {
+    // MapServer strokes a ring as a line back to its first point: caps there, no join.
+    let square = r#"{"type": "Polygon", "coordinates":
+        [[[20, 20], [80, 20], [80, 80], [20, 80], [20, 20]]]}"#;
+    let style = Style {
+        line_cap: Some(LineCap::Butt),
+        line_join: Some(LineJoin::Miter),
+        ..line_style(BLUE, 10.0)
+    };
+    let image = render_lines(vec![style], square);
+    // The first vertex, map (20, 20), is pixel (20, 80); the next corner is pixel (80, 80).
+    assert_eq!(
+        image.pixel(17, 83),
+        Some(WHITE),
+        "no join at the first vertex"
+    );
+    assert_eq!(image.pixel(83, 83), Some(BLUE), "a miter join at the next");
+}
+
+#[test]
+fn a_geometry_a_layer_cannot_draw_counts_once_whatever_its_styles() {
+    let collection = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [5, 5]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "LineString",
+            "coordinates": [[0, 50], [100, 50]]}}
+    ]}"#;
+    let styles = vec![line_style(BLUE, 1.0), line_style(RED, 1.0)];
+    let rendered = render_with(&map_with(RenderMode::Line, styles), Some(collection));
+    assert_eq!(rendered.diagnostics.len(), 1, "{:?}", rendered.diagnostics);
+    let message = &rendered.diagnostics[0].message;
+    assert!(message.contains("1 point geometry"), "{message}");
+}
+
 /// A source that delivers one square and reports `count` records skipped.
 struct Skipping {
     count: u64,
@@ -299,4 +508,176 @@ fn a_source_that_skips_none_yields_no_such_warning() {
         "{:?}",
         rendered.diagnostics
     );
+}
+
+/// An arrow 4 wide and 6 high, pointing up, with its pen lifted between shaft and head; and a
+/// circle and an ellipse twice as wide as high.
+fn symbols() -> Vec<Symbol> {
+    let symbol = |kind, paths, extent, filled| Symbol {
+        name: None,
+        kind,
+        paths,
+        extent: Some(extent),
+        filled,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    };
+    let arrow = vec![
+        vec![[0.0, 2.0], [2.0, 0.0], [4.0, 2.0]],
+        vec![[2.0, 0.0], [2.0, 6.0]],
+    ];
+    let head = vec![vec![[0.0, 3.0], [2.0, 0.0], [4.0, 3.0], [2.0, 2.0]]];
+    vec![
+        symbol(SymbolKind::Vector, arrow, [4.0, 6.0], false),
+        symbol(SymbolKind::Vector, head, [4.0, 3.0], true),
+        symbol(
+            SymbolKind::Ellipse,
+            vec![vec![[1.0, 1.0]]],
+            [1.0, 1.0],
+            true,
+        ),
+        symbol(
+            SymbolKind::Ellipse,
+            vec![vec![[2.0, 1.0]]],
+            [2.0, 1.0],
+            false,
+        ),
+    ]
+}
+
+/// Draws `style` of symbol `index` at three points, at the angles 0, 45, and 90 by a layer each:
+/// at the pixels (25, 25), (50, 50), and (75, 75).
+fn render_symbol(index: u32, style: Style) -> RgbaImage {
+    let mut map = map(RenderMode::Point, Style::default());
+    map.symbols = symbols();
+    let layer = map.layers.remove(0);
+    for (i, angle) in [0.0, 45.0, 90.0].into_iter().enumerate() {
+        let mut layer = layer.clone();
+        layer.name = Some(format!("data{i}"));
+        layer.classes[0].styles = vec![Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(index))),
+            angle: Some(Bound::Value(angle)),
+            ..style.clone()
+        }];
+        map.layers.push(layer);
+    }
+    let points = [(25, 75), (50, 50), (75, 25)];
+    let sources: BTreeMap<String, GeoJsonSource> = points
+        .iter()
+        .enumerate()
+        .map(|(i, (x, y))| {
+            let point = format!(r#"{{"type": "Point", "coordinates": [{x}, {y}]}}"#);
+            (format!("data{i}"), GeoJsonSource::parse(&point).unwrap())
+        })
+        .collect();
+    let rendered = ready(render(&map, &sources, AggRenderer::new()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    rendered.image.unwrap()
+}
+
+#[test]
+fn a_vector_symbol_not_filled_is_stroked_at_its_size_and_angle() {
+    let style = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(24.0)),
+        width: Some(Bound::Value(2.0)),
+        ..Style::default()
+    };
+    let image = render_symbol(1, style);
+    assert_eq!(image.pixel(25, 30), Some(BLUE), "the upright shaft");
+    assert_eq!(image.pixel(20, 30), Some(WHITE), "beside the shaft");
+    assert_matches_reference(&image, "symbol_vector.png");
+}
+
+#[test]
+fn a_filled_vector_symbol_is_filled_and_outlined_at_its_size_and_angle() {
+    let style = Style {
+        color: Some(Bound::Value(GREEN)),
+        outline_color: Some(Bound::Value(BLACK)),
+        size: Some(Bound::Value(20.0)),
+        width: Some(Bound::Value(1.5)),
+        ..Style::default()
+    };
+    let image = render_symbol(2, style);
+    assert_eq!(image.pixel(25, 25), Some(GREEN), "inside the upright head");
+    assert_matches_reference(&image, "symbol_vector_filled.png");
+}
+
+#[test]
+fn an_ellipse_is_drawn_at_its_size_and_angle() {
+    let circle = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(12.0)),
+        ..Style::default()
+    };
+    let image = render_symbol(3, circle);
+    assert_eq!(image.pixel(50, 50), Some(BLUE));
+    assert_eq!(image.pixel(50, 57), Some(WHITE), "a radius of 6");
+    assert_matches_reference(&image, "symbol_circle.png");
+    let ellipse = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(10.0)),
+        width: Some(Bound::Value(2.0)),
+        ..Style::default()
+    };
+    let image = render_symbol(4, ellipse);
+    assert_eq!(image.pixel(25, 25), Some(WHITE), "not filled");
+    assert_eq!(image.pixel(75, 65), Some(BLUE), "turned by 90°, 20 wide");
+    assert_matches_reference(&image, "symbol_ellipse.png");
+}
+
+#[test]
+fn a_point_outside_the_extent_draws_no_symbol() {
+    let mut map = map(
+        RenderMode::Point,
+        Style {
+            color: Some(Bound::Value(BLUE)),
+            size: Some(Bound::Value(40.0)),
+            symbol: Some(Bound::Value(SymbolRef::Index(3))),
+            ..Style::default()
+        },
+    );
+    map.symbols = symbols();
+    let outside = r#"{"type": "Point", "coordinates": [101, 50]}"#;
+    let image = render_with(&map, Some(outside)).image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
+
+#[test]
+fn a_symbol_index_past_the_last_draws_nothing() {
+    let mut map = map(
+        RenderMode::Point,
+        Style {
+            color: Some(Bound::Value(BLUE)),
+            size: Some(Bound::Value(40.0)),
+            symbol: Some(Bound::Value(SymbolRef::Index(9))),
+            ..Style::default()
+        },
+    );
+    map.symbols = symbols();
+    let inside = r#"{"type": "Point", "coordinates": [50, 50]}"#;
+    let image = render_with(&map, Some(inside)).image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
+
+#[test]
+fn a_point_outside_the_extent_draws_no_square() {
+    let style = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(40.0)),
+        ..Style::default()
+    };
+    let outside = r#"{"type": "Point", "coordinates": [100.5, 50]}"#;
+    let image = render_with(&map(RenderMode::Point, style), Some(outside))
+        .image
+        .unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }

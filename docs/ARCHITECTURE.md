@@ -30,7 +30,7 @@ The parts the system is made of, each with one responsibility, named in the voca
 golden path and the test pattern an agent copies from are named here.
 
 - **`style-ir`** — the data model of a map, its expressions a CQL2 tree
-  ([ADR-0019](adr/0019-cql2-expressions.md)), the diagnostics with their source spans, and the
+  ([ADR-0030](adr/0030-cql2-expressions.md)), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0014](adr/0014-style-document-serde.md)). Its readers
   ([ADR-0020](adr/0020-style-document-compatibility.md)) name each field they do not know by its
@@ -179,8 +179,10 @@ adapter, opening each shapefile once for all the layers that name it, parses the
 GeoJSON file of each name a layer carries into a source bound to that layer instead, and runs the
 engine with the agg-rust renderer.
 For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted
-extent and draws every feature in each style of the first class; the labels of point layers are
-drawn after the last layer; the image is encoded as PNG.
+extent and draws its features in the styles of the first class: a point or polygon layer each
+feature in every style before the next feature, a line layer style by style over all its
+features, with each style's outline in a pass before the style, as MapServer's line layers do.
+The labels of point layers are drawn after the last layer. The image is encoded as PNG.
 
 In the browser, the page calls the bundle's `render`, or `renderWith`, with the mapfile text, a JSON
 object of GeoJSON by layer name, an optional viewport, and the files the mapfile names. The bindings
