@@ -429,7 +429,7 @@ renderers/point_ellipse.map gd_fallback.png out: another output format, gdpng
 renderers/point_ellipse.map gd_fallback_gif.png out: another output format, gif
 renderers/point_ellipse.map gd_fallback_pc256.png out: another output format, gdpc256
 renderers/point_ellipse.map gd_fallback_jpeg.png out: another output format, gdjpg
-renderers/point_pixmap.map point_pixmap.png out: a case MapServer itself does not reproduce, a symbol by URL from a local HTTP server
+renderers/point_pixmap.map point_pixmap.png geometry fails  # not built yet: pixmap symbols
 renderers/point_pixmap.map point_pixmap.pdf out: another output format, pdf
 renderers/point_pixmap.map point_pixmap.svg out: another output format, svg
 renderers/point_pixmap.map point_pixmap.json out: another output format, json
