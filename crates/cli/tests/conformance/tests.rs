@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use forager_style_ir::{Extent, Layer, LayerStatus, Map};
+
 use super::{Case, Category, Entry, Verdict, directives, list, unlisted, verdict};
 
 fn case(mapfile: &str, result: &str, command: &str) -> Case {
@@ -80,8 +82,15 @@ fn only_a_plain_map2img_line_of_a_png_is_renderable() {
         Ok(())
     );
     assert_eq!(
-        renderable("a.png", "[MAP2IMG] -m [MAPFILE] -l lines -o [RESULT]"),
-        Err("the options -l lines".to_owned())
+        renderable(
+            "a.png",
+            "[MAP2IMG] -e 0 0 1 1 -s 10 20 -m [MAPFILE] -l lines -o [RESULT]"
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        renderable("a.png", "[MAP2IMG] -m [MAPFILE] -c 2 -o [RESULT]"),
+        Err("the options -c 2".to_owned())
     );
     assert_eq!(
         renderable("a.png", "[MAP2IMG] -m [MAPFILE] -i cairopng -o [RESULT]"),
@@ -234,16 +243,187 @@ fn a_listed_case_the_suite_does_not_hold_or_cannot_render_is_named() {
     let cases = [case(
         "m/a.map",
         "a.png",
-        "[MAP2IMG] -m [MAPFILE] -e 0 0 1 1 -o [RESULT]",
+        "[MAP2IMG] -m [MAPFILE] -d a b.shp -o [RESULT]",
     )];
     let entries = list("m/a.map a.png geometry passes\nm/gone.map gone.png out: x\n").unwrap();
     let problems = unlisted(&cases, &entries);
     assert_eq!(
         problems,
         [
-            "m/a.map a.png is in scope but cannot be rendered: the options -e 0 0 1 1",
+            "m/a.map a.png is in scope but cannot be rendered: the options -d a b.shp",
             "m/gone.map gone.png is in the list but is no case of the suite",
         ]
     );
     assert_eq!(unlisted(&[], &BTreeMap::new()), Vec::<String>::new());
+}
+
+fn layer(name: &str, status: Option<LayerStatus>) -> Layer {
+    Layer {
+        name: Some(name.to_owned()),
+        status,
+        ..Layer::default()
+    }
+}
+
+fn statuses(map: &Map) -> Vec<Option<LayerStatus>> {
+    map.layers.iter().map(|l| l.status).collect()
+}
+
+/// The command is split into words as the shell `os.system` hands it to splits it, quotes and
+/// all, so that `-l "a b"` is one argument naming two layers.
+#[test]
+fn a_quoted_argument_is_one_word_as_the_shell_reads_it() {
+    let options = case(
+        "m.map",
+        "a.png",
+        "[MAP2IMG] -m [MAPFILE] -i png -l \"centroid vertex1\" -o [RESULT]",
+    )
+    .options()
+    .unwrap();
+    assert_eq!(options.len(), 1);
+    let mut map = Map {
+        layers: vec![
+            layer("vertex1", Some(LayerStatus::On)),
+            layer("vertex2", Some(LayerStatus::On)),
+            layer("centroid", Some(LayerStatus::On)),
+        ],
+        ..Map::default()
+    };
+    super::apply(&options, &mut map).unwrap();
+    assert_eq!(
+        statuses(&map),
+        [
+            Some(LayerStatus::On),
+            Some(LayerStatus::Off),
+            Some(LayerStatus::On)
+        ]
+    );
+}
+
+/// map2img.c at the pin: `-l` turns every layer off that is not DEFAULT, then on each whose name
+/// is one of the list's, compared without regard to case; a DEFAULT layer stays drawn.
+#[test]
+fn the_layers_option_turns_on_the_named_layers_and_off_the_others_but_default_ones() {
+    let mut map = Map {
+        layers: vec![
+            layer("base", Some(LayerStatus::Default)),
+            layer("Outlines1", Some(LayerStatus::Off)),
+            layer("outlines3", Some(LayerStatus::On)),
+            layer("unset", None),
+        ],
+        ..Map::default()
+    };
+    let options = case(
+        "m.map",
+        "a.png",
+        "[MAP2IMG] -m [MAPFILE] -o [RESULT] -l outlines1",
+    )
+    .options()
+    .unwrap();
+    super::apply(&options, &mut map).unwrap();
+    assert_eq!(
+        statuses(&map),
+        [
+            Some(LayerStatus::Default),
+            Some(LayerStatus::On),
+            Some(LayerStatus::Off),
+            Some(LayerStatus::Off)
+        ]
+    );
+}
+
+/// map2img exits without an image when a name of `-l` is no layer's or group's; the style IR
+/// holds no group, so a name that is no layer's is an error the harness reports.
+#[test]
+fn a_layers_option_naming_no_layer_is_an_error() {
+    let mut map = Map {
+        layers: vec![layer("a", Some(LayerStatus::On))],
+        ..Map::default()
+    };
+    let options = case(
+        "m.map",
+        "a.png",
+        "[MAP2IMG] -m [MAPFILE] -l \"a  grp\" -o [RESULT]",
+    )
+    .options()
+    .unwrap();
+    let error = super::apply(&options, &mut map).unwrap_err();
+    assert!(error.contains("`grp`"), "{error}");
+}
+
+/// The names of `-l` are split at spaces as `msStringSplit` splits them: a run of spaces is one
+/// separator, a space at either end leaves an empty name.
+#[test]
+fn the_layer_names_are_split_as_mapserver_splits_them() {
+    assert_eq!(super::split_names("a  b"), ["a", "b"]);
+    assert_eq!(super::split_names("a"), ["a"]);
+    assert_eq!(super::split_names(" a"), ["", "a"]);
+    assert_eq!(super::split_names("a "), ["a", ""]);
+}
+
+#[test]
+fn the_extent_and_the_size_options_set_those_of_the_map() {
+    let mut map = Map {
+        extent: Some(Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        }),
+        size: Some([400, 300]),
+        ..Map::default()
+    };
+    let options = case(
+        "m.map",
+        "a.png",
+        "[MAP2IMG] -m [MAPFILE] -i png -e -7 -17.5 -4 -14 -s 50 60 -o [RESULT]",
+    )
+    .options()
+    .unwrap();
+    super::apply(&options, &mut map).unwrap();
+    assert_eq!(
+        map.extent,
+        Some(Extent {
+            min_x: -7.0,
+            min_y: -17.5,
+            max_x: -4.0,
+            max_y: -14.0
+        })
+    );
+    assert_eq!(map.size, Some([50, 60]));
+}
+
+#[test]
+fn an_option_short_of_its_arguments_is_not_renderable() {
+    for (command, reason) in [
+        (
+            "[MAP2IMG] -m [MAPFILE] -o [RESULT] -e 0 1",
+            "-e takes four numbers",
+        ),
+        (
+            "[MAP2IMG] -m [MAPFILE] -s 640 -o [RESULT]",
+            "-s takes two sizes",
+        ),
+        (
+            "[MAP2IMG] -m [MAPFILE] -o [RESULT] -l",
+            "-l takes a list of layers",
+        ),
+    ] {
+        let error = case("m.map", "a.png", command).renderable().unwrap_err();
+        assert!(error.contains(reason), "{command}: {error}");
+    }
+}
+
+#[test]
+fn the_words_of_a_line_are_split_as_the_shell_splits_them() {
+    assert_eq!(
+        super::shell_words(r#"a "b c" 'd "e"' f\ g "h\"i" x>y"#).unwrap(),
+        ["a", "b c", "d \"e\"", "f g", "h\"i", "x>y"]
+    );
+    assert_eq!(
+        super::shell_words(r#"-l "a b"#).unwrap_err(),
+        "the line leaves a quote open"
+    );
+    assert_eq!(super::shell_words("  ").unwrap(), Vec::<String>::new());
+    assert_eq!(super::shell_words(r#"-l """#).unwrap(), ["-l", ""]);
 }

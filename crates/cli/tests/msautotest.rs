@@ -477,13 +477,14 @@ fn render_and_compare(
     Ok((comparison.passes(), comparison.to_string()))
 }
 
-/// The rendering of `case`, its sources bound as `forager render` binds them as far as a test can:
-/// the CLI's binding lives in its binary, which a test cannot call. As there, each local layer
-/// the engine reads is bound to the shapefile its `DATA` names, and a layer whose shapefile does
-/// not open is left unbound, so that the engine skips it. Unlike there, the files are read
-/// through the suite's loader without the CLI's limit on a data file, each layer opens its
-/// shapefile anew instead of sharing it, a shapefile that does not open gives no diagnostic, and
-/// the projections resolve through the stand-in table of the G-1 test.
+/// The rendering of `case`, the options of its `map2img` line applied to its style IR, its sources
+/// bound as `forager render` binds them as far as a test can: the CLI's binding lives in its
+/// binary, which a test cannot call. As there, each local layer the engine reads is bound to the
+/// shapefile its `DATA` names, and a layer whose shapefile does not open is left unbound, so that
+/// the engine skips it. Unlike there, the files are read through the suite's loader without the
+/// CLI's limit on a data file, each layer opens its shapefile anew instead of sharing it, a
+/// shapefile that does not open gives no diagnostic, and the projections resolve through the
+/// stand-in table of the G-1 test.
 fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, String> {
     let path = ResourcePath::new(&case.mapfile).map_err(|e| e.to_string())?;
     let loaded = ready(forager_mapfile::load(&path, loader, Some(resolver)));
@@ -491,8 +492,10 @@ fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, 
         let errors: Vec<_> = loaded.diagnostics.iter().map(ToString::to_string).collect();
         format!("it does not load: {}", errors.join("; "))
     })?;
+    let mut map = document.map;
+    conformance::apply(&case.options()?, &mut map)?;
     let mut sources = BTreeMap::new();
-    for layer in &document.map.layers {
+    for layer in &map.layers {
         let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
             continue;
         };
@@ -505,11 +508,7 @@ fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, 
             sources.insert(name.clone(), shapefile);
         }
     }
-    let rendered = ready(forager_engine::render(
-        &document.map,
-        &sources,
-        AggRenderer::new(),
-    ));
+    let rendered = ready(forager_engine::render(&map, &sources, AggRenderer::new()));
     rendered.image.ok_or_else(|| {
         let errors: Vec<_> = rendered
             .diagnostics

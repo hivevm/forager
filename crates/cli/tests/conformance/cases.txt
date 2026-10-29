@@ -3,6 +3,8 @@
 # line msautotest supplies for a mapfile without one. The list names a case by its mapfile and
 # its result: two lines of one mapfile that write the same result are two runs that msautotest
 # compares with the same expected file, and they share one line here.
+# The harness applies a line's map2img options -l, -e, and -s to the style IR, as map2img does,
+# before it renders; any other option leaves the case out.
 #
 #   <mapfile> <result> [blank] geometry passes|fails   in scope: rendered, compared, outcome held
 #   <mapfile> <result> [blank] out: <reason>           out of scope, with its reason
@@ -22,8 +24,8 @@
 # in msautotest.rs): they are not yet set from MapServer's noise against its own references, so
 # no case here holds G-6.
 
-misc/attrbind.map attrbind_test001.png out: a map2img option not applied yet, -l
-misc/attrbind.map attrbind_test002.png out: a map2img option not applied yet, -l
+misc/attrbind.map attrbind_test001.png out: labels
+misc/attrbind.map attrbind_test002.png out: a data source other than shapefiles, OGR
 misc/autostyle.map autostyle.png out: a data source other than shapefiles, OGR
 misc/autostyle_quoted.map autostyle_quoted.png out: a data source other than shapefiles, OGR
 misc/bug1526.map bug1526.png blank out: a projection, ortho
@@ -33,7 +35,7 @@ misc/centerline.map centerline3_exception.txt out: an OGC or CGI request
 misc/centerline.map centerline4_exception.txt out: an OGC or CGI request
 misc/centerline.map centerline5_exception.txt out: an OGC or CGI request
 misc/clip_polygon_corners.map clip_polygon_corners.png geometry fails  # not built yet: inline FEATURE shapes
-misc/cluster.map cluster.png out: a map2img option not applied yet, -l
+misc/cluster.map cluster.png out: a data source other than shapefiles, POSTGIS
 misc/cluster.map wms_cluster_cap_latestversion.xml out: an OGC or CGI request
 misc/cluster.map wms_cluster_cap.xml out: an OGC or CGI request
 misc/cluster.map wms_get_map_cluster.png out: an OGC or CGI request
@@ -46,11 +48,11 @@ misc/encoding.map encodings.xml out: an OGC or CGI request
 misc/encoding_from_cpg.map shp_encodings.png out: labels
 misc/encrypted_connection.map encrypted_connection_postgis_hits.xml out: an OGC or CGI request
 misc/flatgeobuf-invalid.map flatgeobuf-invalid-wfs-get-feature.xml out: an OGC or CGI request
-misc/flatgeobuf-shapepath.map flatgeobuf-shapepath-continent.png out: a map2img option not applied yet, -l
-misc/flatgeobuf-shapepath.map flatgeobuf-shapepath-classes.png out: a map2img option not applied yet, -l
-misc/flatgeobuf.map flatgeobuf-continent.png out: a map2img option not applied yet, -l
-misc/flatgeobuf.map flatgeobuf-classes.png out: a map2img option not applied yet, -l
-misc/flatgeobuf.map flatgeobuf-ocean.png blank out: a map2img option not applied yet, -e -s -l
+misc/flatgeobuf-shapepath.map flatgeobuf-shapepath-continent.png out: a data source other than shapefiles, FlatGeobuf
+misc/flatgeobuf-shapepath.map flatgeobuf-shapepath-classes.png out: a data source other than shapefiles, FlatGeobuf
+misc/flatgeobuf.map flatgeobuf-continent.png out: a data source other than shapefiles, FlatGeobuf
+misc/flatgeobuf.map flatgeobuf-classes.png out: a data source other than shapefiles, FlatGeobuf
+misc/flatgeobuf.map flatgeobuf-ocean.png blank out: a data source other than shapefiles, FlatGeobuf
 misc/flatgeobuf.map flatgeobuf-wfs-cap.xml out: an OGC or CGI request
 misc/flatgeobuf.map flatgeobuf-wfs-describe.xml out: an OGC or CGI request
 misc/flatgeobuf.map flatgeobuf-wfs-get-feature.xml out: an OGC or CGI request
@@ -70,7 +72,7 @@ misc/map2img-argparse.map map2img-argparse-o.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-c.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-d.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-layer_debug.txt out: another output format, txt
-misc/map2img-size.map map2img-size.png out: a map2img option not applied yet, -s
+misc/map2img-size.map map2img-size.png out: labels
 misc/maxfeatures.map maxfeatures.png geometry fails  # not built yet: inline FEATURE points, ellipse symbols, and MAXFEATURES
 misc/maxfeatures.map maxfeatures-of.png out: another output format, pngmf
 misc/mode_tile.map mode_tile_output.png out: an OGC or CGI request
@@ -119,19 +121,19 @@ misc/runtime_sub.map runtime_sub_test012.png out: an OGC or CGI request
 misc/runtime_sub.map runtime_sub_test013.png out: an OGC or CGI request, with an environment variable set
 misc/runtime_sub.map runtime_sub_test_caps.xml out: an OGC or CGI request
 misc/scale_factor_inheritance.map scale_factor_inheritance.png out: an OGC or CGI request
-misc/scaletoken.map scaletoken_data_200k.png out: a map2img option not applied yet, -l -e; and SCALETOKEN, a runtime substitution by scale
-misc/scaletoken.map scaletoken_data_29m.png out: a map2img option not applied yet, -l -e; and SCALETOKEN, a runtime substitution by scale
-misc/scaletoken.map scaletoken_data_40m.png out: a map2img option not applied yet, -l; and SCALETOKEN, a runtime substitution by scale
-misc/scaletoken.map scaletoken_filter_192k.png out: a map2img option not applied yet, -l -e; and SCALETOKEN, a runtime substitution by scale
-misc/scaletoken.map scaletoken_filter_424k.png out: a map2img option not applied yet, -l -e; and SCALETOKEN, a runtime substitution by scale
-misc/scaletoken.map scaletoken_filter_655k.png out: a map2img option not applied yet, -l -e; and SCALETOKEN, a runtime substitution by scale
-misc/scaletoken.map scaletoken_filteritem_192k.png out: a map2img option not applied yet, -l -e; and SCALETOKEN, a runtime substitution by scale
-misc/scaletoken.map scaletoken_filteritem_424k.png out: a map2img option not applied yet, -l -e; and SCALETOKEN, a runtime substitution by scale
-misc/scaletoken.map scaletoken_filterexpression_192k.png out: a map2img option not applied yet, -l -e; and SCALETOKEN, a runtime substitution by scale
-misc/scaletoken.map scaletoken_filterexpression_424k.png out: a map2img option not applied yet, -l -e; and SCALETOKEN, a runtime substitution by scale
-misc/style_opacity.map style_opacity_test001.png out: a map2img option not applied yet, -l
-misc/style_opacity.map style_opacity_test002.png out: a map2img option not applied yet, -l
-misc/style_opacity.map style_opacity_test003.png out: a map2img option not applied yet, -l
+misc/scaletoken.map scaletoken_data_200k.png out: SCALETOKEN, a runtime substitution by scale
+misc/scaletoken.map scaletoken_data_29m.png out: SCALETOKEN, a runtime substitution by scale
+misc/scaletoken.map scaletoken_data_40m.png out: SCALETOKEN, a runtime substitution by scale
+misc/scaletoken.map scaletoken_filter_192k.png out: SCALETOKEN, a runtime substitution by scale
+misc/scaletoken.map scaletoken_filter_424k.png out: SCALETOKEN, a runtime substitution by scale
+misc/scaletoken.map scaletoken_filter_655k.png out: SCALETOKEN, a runtime substitution by scale
+misc/scaletoken.map scaletoken_filteritem_192k.png out: SCALETOKEN, a runtime substitution by scale
+misc/scaletoken.map scaletoken_filteritem_424k.png out: SCALETOKEN, a runtime substitution by scale
+misc/scaletoken.map scaletoken_filterexpression_192k.png out: SCALETOKEN, a runtime substitution by scale
+misc/scaletoken.map scaletoken_filterexpression_424k.png out: SCALETOKEN, a runtime substitution by scale
+misc/style_opacity.map style_opacity_test001.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY and OFFSET of a style
+misc/style_opacity.map style_opacity_test002.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY and OFFSET of a style
+misc/style_opacity.map style_opacity_test003.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY and OFFSET of a style
 misc/testuppercase.map testuppercase.png blank geometry passes
 misc/tiles_scales_z2.map tile_scale_z2.png blank out: an OGC or CGI request
 misc/tiles_scales_z3.map tile_scale_z3.png out: an OGC or CGI request
@@ -211,7 +213,7 @@ renderers/entity_encoded_follow_text.map entity_encoded_follow_text.svg out: ano
 renderers/entity_encoded_follow_text.map entity_encoded_follow_text.cairo.png out: another output format, cairopng
 renderers/font-fail.map font-fail-key.txt out: an OGC or CGI request
 renderers/font-fail.map font-fail-file.txt out: an OGC or CGI request
-renderers/font-fail.map font-fail-missing-glyph.png out: a map2img option not applied yet, -l
+renderers/font-fail.map font-fail-missing-glyph.png out: labels
 renderers/force_palette.map force_palette.png out: a raster source
 renderers/force_palette.map force_palette.cairo.png out: another output format, cairopng
 renderers/force_palette_rgba.map force_palette_rgba.png out: a raster source
@@ -220,11 +222,11 @@ renderers/force_pc256.map force_pc256.png out: a raster source
 renderers/force_pc256.map force_pc256.cairo.png out: another output format, cairopng
 renderers/force_pc256_rgba.map force_pc256_rgba.png out: a raster source
 renderers/force_pc256_rgba.map force_pc256_rgba.cairo.png out: another output format, cairopng
-renderers/geomtransform-vertex.map geomtransform-vertex.png out: a map2img option not applied yet, -l
+renderers/geomtransform-vertex.map geomtransform-vertex.png geometry fails  # not built yet: the GEOMTRANSFORM of a style, TrueType and ellipse symbols, and inline FEATURE shapes
 renderers/geomtransform-vertex.map geomtransform-vertex.pdf out: another output format, pdf
 renderers/geomtransform-vertex.map geomtransform-vertex.svg out: another output format, svg
 renderers/geomtransform-vertex.map geomtransform-vertex.cairo.png out: another output format, cairopng
-renderers/geomtransform-vertex.map geomtransform-vertex-layer.png out: a map2img option not applied yet, -l
+renderers/geomtransform-vertex.map geomtransform-vertex-layer.png geometry fails  # not built yet: the GEOMTRANSFORM of a layer
 renderers/geomtransform-vertex.map geomtransform-vertex-layer.pdf out: another output format, pdf
 renderers/geomtransform-vertex.map geomtransform-vertex-layer.svg out: another output format, svg
 renderers/geomtransform-vertex.map geomtransform-vertex-layer.cairo.png out: another output format, cairopng
@@ -254,32 +256,32 @@ renderers/labelrot.map labelrot.png out: labels
 renderers/labelrot.map labelrot.pdf out: another output format, pdf
 renderers/labelrot.map labelrot.svg out: another output format, svg
 renderers/labelrot.map labelrot.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_ar-align-center.png out: a map2img option not applied yet, -l
+renderers/labels-alignment.map label_ar-align-center.png out: labels
 renderers/labels-alignment.map label_ar-align-center.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label-align-center.png out: a map2img option not applied yet, -l
+renderers/labels-alignment.map label-align-center.png out: labels
 renderers/labels-alignment.map label-align-center.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_ar-align-left.png out: a map2img option not applied yet, -l
+renderers/labels-alignment.map label_ar-align-left.png out: labels
 renderers/labels-alignment.map label_ar-align-left.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label-align-left.png out: a map2img option not applied yet, -l
+renderers/labels-alignment.map label-align-left.png out: labels
 renderers/labels-alignment.map label-align-left.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_ar-align-right.png out: a map2img option not applied yet, -l
+renderers/labels-alignment.map label_ar-align-right.png out: labels
 renderers/labels-alignment.map label_ar-align-right.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label-align-right.png out: a map2img option not applied yet, -l
+renderers/labels-alignment.map label-align-right.png out: labels
 renderers/labels-alignment.map label-align-right.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_ar-align-default.png out: a map2img option not applied yet, -l
+renderers/labels-alignment.map label_ar-align-default.png out: labels
 renderers/labels-alignment.map label_ar-align-default.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label-align-default.png out: a map2img option not applied yet, -l
+renderers/labels-alignment.map label-align-default.png out: labels
 renderers/labels-alignment.map label-align-default.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_latin_align_left.png out: a map2img option not applied yet, -e -l
-renderers/labels-alignment.map label_latin_align_right.png out: a map2img option not applied yet, -e -l
-renderers/labels-alignment.map label_latin_align_center.png out: a map2img option not applied yet, -e -l
-renderers/labels-alignment.map label_latin_align_default.png out: a map2img option not applied yet, -e -l
+renderers/labels-alignment.map label_latin_align_left.png out: labels
+renderers/labels-alignment.map label_latin_align_right.png out: labels
+renderers/labels-alignment.map label_latin_align_center.png out: labels
+renderers/labels-alignment.map label_latin_align_default.png out: labels
 renderers/labels-anno.map labels-anno.png out: labels
 renderers/labels-anno.map labels-anno.pdf out: another output format, pdf
 renderers/labels-anno.map labels-anno.svg out: another output format, svg
 renderers/labels-anno.map labels-anno.cairo.png out: another output format, cairopng
-renderers/labels-attribute-alignment-offset.map label_align_attribute.png out: a map2img option not applied yet, -e -s -l
-renderers/labels-attribute-alignment-offset.map label_offset_attribute.png out: a map2img option not applied yet, -e -s -l
+renderers/labels-attribute-alignment-offset.map label_align_attribute.png out: labels
+renderers/labels-attribute-alignment-offset.map label_offset_attribute.png out: labels
 renderers/labels-bitmap-multiline.map labels-bitmap-multiline.png out: labels
 renderers/labels-bitmap.map labels-bitmap.png out: labels
 renderers/labels-leader.map labels-leader.png out: labels
@@ -290,9 +292,9 @@ renderers/labels-min-distance.map labels-min-distance.png out: labels
 renderers/labels-min-distance.map labels-min-distance.pdf out: another output format, pdf
 renderers/labels-min-distance.map labels-min-distance.svg out: another output format, svg
 renderers/labels-min-distance.map labels-min-distance.cairo.png out: another output format, cairopng
-renderers/labels-priority.map label_priority_binding.png out: a map2img option not applied yet, -l
-renderers/labels-priority.map label_priority_fixed.png out: a map2img option not applied yet, -l
-renderers/labels-priority.map label_priority_expression.png out: a map2img option not applied yet, -l
+renderers/labels-priority.map label_priority_binding.png out: labels
+renderers/labels-priority.map label_priority_fixed.png out: labels
+renderers/labels-priority.map label_priority_expression.png out: labels
 renderers/labels-wrap.map labels-wrap.png out: labels
 renderers/labels.map labels.png out: labels
 renderers/labels.map labels.pdf out: another output format, pdf
@@ -357,12 +359,12 @@ renderers/line_offset.map line_offset.png geometry fails  # not built yet: the O
 renderers/line_offset.map line_offset.pdf out: another output format, pdf
 renderers/line_offset.map line_offset.svg out: another output format, svg
 renderers/line_offset.map line_offset.cairo.png out: another output format, cairopng
-renderers/line_outlines.map outlines1.png out: a map2img option not applied yet, -l
-renderers/line_outlines.map outlines2.png out: a map2img option not applied yet, -l
-renderers/line_outlines.map outlines3.png out: a map2img option not applied yet, -l
-renderers/line_outlines.map outlines4.png out: a map2img option not applied yet, -l
-renderers/line_outlines.map outlines5.png out: a map2img option not applied yet, -l
-renderers/line_outlines.map outlines6.png out: a map2img option not applied yet, -l
+renderers/line_outlines.map outlines1.png geometry fails  # not built yet: the OUTLINEWIDTH of a line style
+renderers/line_outlines.map outlines2.png out: a data source other than shapefiles, OGR
+renderers/line_outlines.map outlines3.png out: a data source other than shapefiles, OGR
+renderers/line_outlines.map outlines4.png out: a data source other than shapefiles, OGR
+renderers/line_outlines.map outlines5.png out: a data source other than shapefiles, OGR
+renderers/line_outlines.map outlines6.png out: a data source other than shapefiles, OGR
 renderers/line_pattern.map line_pattern.png geometry fails  # not built yet: the PATTERN and LINECAP of a style
 renderers/line_pattern.map line_pattern.pdf out: another output format, pdf
 renderers/line_pattern.map line_pattern.svg out: another output format, svg
@@ -506,8 +508,8 @@ renderers/raster_simple_opacity.map raster_simple_opacity.pdf out: another outpu
 renderers/raster_simple_opacity.map raster_simple_opacity.svg out: another output format, svg
 renderers/raster_simple_opacity.map raster_simple_opacity.cairo.png out: another output format, cairopng
 renderers/rasterlabel.map rasterlabel.png out: a raster source, RASTERLABEL
-renderers/rasterlabel_datatypes.map rasterlabel_int32.png out: a map2img option not applied yet, -l
-renderers/rasterlabel_datatypes.map rasterlabel_float64.png out: a map2img option not applied yet, -l
+renderers/rasterlabel_datatypes.map rasterlabel_int32.png out: a raster source
+renderers/rasterlabel_datatypes.map rasterlabel_float64.png out: a raster source
 renderers/reproj.map reproj.png out: a raster source
 renderers/reproj.map reproj.pdf out: another output format, pdf
 renderers/reproj.map reproj.svg out: another output format, svg
@@ -547,12 +549,12 @@ renderers/rgba_overlay_res.map rgba_overlay_res.png out: a raster source
 renderers/rgba_overlay_res.map rgba_overlay_res.pdf out: another output format, pdf
 renderers/rgba_overlay_res.map rgba_overlay_res.svg out: another output format, svg
 renderers/rgba_overlay_res.map rgba_overlay_res.cairo.png out: another output format, cairopng
-renderers/style-size.map style_size_binding.png out: a map2img option not applied yet, -l
-renderers/style-size.map style_size_fixed.png out: a map2img option not applied yet, -l
-renderers/style-size.map style_size_expression.png out: a map2img option not applied yet, -l
+renderers/style-size.map style_size_binding.png geometry fails  # not built yet: ellipse symbols and a SIZE bound to an attribute
+renderers/style-size.map style_size_fixed.png geometry fails  # not built yet: ellipse symbols
+renderers/style-size.map style_size_expression.png geometry fails  # not built yet: ellipse symbols and a SIZE given by an expression
 renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes, rotated vector symbols, and PATTERN
 renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes, rotated vector symbols, and PATTERN
-renderers/text-shaping.map text_shaping_1.png out: a map2img option not applied yet, -e -l
+renderers/text-shaping.map text_shaping_1.png out: labels
 renderers/text-shaping.map text_shaping_1.cairo.png out: another output format, cairopng
 renderers/text-shaping.map text_shaping_1.pdf out: another output format, pdf
 renderers/text-shaping.map text_shaping_1.svg out: another output format, svg
