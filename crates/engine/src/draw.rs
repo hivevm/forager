@@ -21,6 +21,7 @@ use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol};
 
 use crate::extent::View;
+use crate::hatch::{self, Hatched};
 use crate::offset::{self, Offset};
 use crate::symbol;
 
@@ -88,7 +89,8 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
     }
 }
 
-/// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts.
+/// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts; a hatch
+/// fill it refuses to draw counts in `refused` (Q-9).
 pub fn draw_ops(
     mode: RenderMode,
     geometry: &Geometry,
@@ -96,13 +98,14 @@ pub fn draw_ops(
     pass: Pass,
     view: &View,
     symbols: &[Symbol],
+    refused: &mut usize,
 ) -> Vec<DrawOp> {
     let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
     let mut ops = Vec::new();
     match (mode, geometry) {
         (_, Geometry::Collection(geometries)) => {
             for g in geometries {
-                ops.extend(draw_ops(mode, g, style, pass, view, symbols));
+                ops.extend(draw_ops(mode, g, style, pass, view, symbols, refused));
             }
         }
         (RenderMode::Point, _) => {
@@ -118,11 +121,13 @@ pub fn draw_ops(
             }
         }
         (RenderMode::Polygon, Geometry::Polygon(rings)) => {
-            shade(&mut ops, rings.iter().map(|r| pixels(r)).collect(), style);
+            let rings = rings.iter().map(|r| pixels(r)).collect();
+            *refused += usize::from(!shade(&mut ops, rings, style, symbols, view));
         }
         (RenderMode::Polygon, Geometry::MultiPolygon(polygons)) => {
             for rings in polygons {
-                shade(&mut ops, rings.iter().map(|r| pixels(r)).collect(), style);
+                let rings = rings.iter().map(|r| pixels(r)).collect();
+                *refused += usize::from(!shade(&mut ops, rings, style, symbols, view));
             }
         }
         (RenderMode::Line, Geometry::LineString(line)) => {
@@ -285,16 +290,40 @@ fn line_symbol(ops: &mut Vec<DrawOp>, paths: Vec<Vec<Point>>, style: &Style, pas
     });
 }
 
-/// A polygon drawn in a style, as msDrawShadeSymbol() draws one of a simple symbol: without a
-/// `COLOR`, its outline as a line in the `OUTLINECOLOR`; with one, moved by the offset, filled,
-/// and outlined in the `OUTLINECOLOR` at the colour's alpha, with round caps and joins.
-fn shade(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style) {
+/// A polygon drawn in a style, as msDrawShadeSymbol() draws one: without a `COLOR`, its
+/// outline as a line in the `OUTLINECOLOR`; with one, moved by the offset, and with a hatch
+/// symbol hatched (see [`hatch::hatch`]), with any other filled, and outlined in the
+/// `OUTLINECOLOR` at the colour's alpha, with round caps and joins. False where a hatch is
+/// refused (Q-9).
+fn shade(
+    ops: &mut Vec<DrawOp>,
+    rings: Vec<Vec<Point>>,
+    style: &Style,
+    symbols: &[Symbol],
+    view: &View,
+) -> bool {
     let Some(color) = fixed(&style.color) else {
         line_symbol(ops, open_rings(rings), style, Pass::Plain);
-        return;
+        return true;
     };
     let rings = moved(rings, style_offset(style, 1.0));
-    ops.push(DrawOp::Fill {
+    if symbol::is_hatch(style, symbols) {
+        return match hatch::hatch(
+            rings,
+            style,
+            color,
+            view.image_size(),
+            view.point_to_pixel(Coord { x: 0.0, y: 0.0 }),
+        ) {
+            Hatched::Drawn(hatch) => {
+                ops.push(DrawOp::Hatch(hatch));
+                true
+            }
+            Hatched::Nothing => true,
+            Hatched::Refused => false,
+        };
+    }
+    ops.push(DrawOp::Polygon {
         rings: rings.clone(),
         color,
     });
@@ -318,6 +347,7 @@ fn shade(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style) {
             dashes: Dashes::default(),
         });
     }
+    true
 }
 
 /// A point as a square of the style's size, centred on it, filled in the `COLOR` and outlined
@@ -398,7 +428,9 @@ mod tests {
                     paths,
                     ..
                 } => (color, width, dashes, paths),
-                DrawOp::Fill { .. } => panic!("a line is not filled"),
+                DrawOp::Fill { .. } | DrawOp::Polygon { .. } | DrawOp::Hatch(_) => {
+                    panic!("a line is not filled")
+                }
             })
             .collect()
     }
@@ -503,7 +535,9 @@ mod tests {
             line_symbol(&mut ops, line(), &style(width), Pass::Plain);
             match &ops[0] {
                 DrawOp::Stroke { cap, join, .. } => (*cap, *join),
-                DrawOp::Fill { .. } => panic!("a line is not filled"),
+                DrawOp::Fill { .. } | DrawOp::Polygon { .. } | DrawOp::Hatch(_) => {
+                    panic!("a line is not filled")
+                }
             }
         };
         assert_eq!(ends(1.0), (LineCap::Butt, LineJoin::Bevel));
@@ -521,7 +555,18 @@ mod tests {
             width: Some(Bound::Value(2.0)),
             ..colored(Some(fill), Some(BLACK))
         };
-        shade(&mut ops, line(), &style);
+        let view = View::for_image(
+            forager_style_ir::Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 10.0,
+                max_y: 10.0,
+            },
+            11,
+            11,
+        )
+        .unwrap();
+        assert!(shade(&mut ops, line(), &style, &[], &view));
         match &ops[1] {
             DrawOp::Stroke {
                 color, cap, join, ..
@@ -529,7 +574,9 @@ mod tests {
                 assert_eq!(*color, Rgba { a: 100, ..BLACK });
                 assert_eq!((*cap, *join), (LineCap::Round, LineJoin::Round));
             }
-            DrawOp::Fill { .. } => panic!("the outline is a stroke"),
+            DrawOp::Fill { .. } | DrawOp::Polygon { .. } | DrawOp::Hatch(_) => {
+                panic!("the outline is a stroke")
+            }
         }
     }
 }

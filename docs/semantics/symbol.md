@@ -50,6 +50,36 @@ than the centre moves the symbol so that the anchor, turned with it, lies on the
 at the size cut to whole pixels (`msAdjustMarkerPos`, `msGetMarkerSize` in `src/mapsymbol.c`).
 A style whose symbol index lies past the last symbol draws nothing.
 
+**A hatch over a polygon.** A polygon layer's style whose symbol is a hatch fills the polygon
+with parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprendering.c` and
+`msHatchPolygon` and `createHatch` in `src/mapagg.cpp` draw it, in the `COLOR`; without one, the
+polygon's outline is drawn as a line in the `OUTLINECOLOR`, as for any polygon style. The lines
+stand `SIZE` apart, 1 without one, bounded by `MAXSIZE` and then `MINSIZE`; they are `WIDTH`
+wide, 1 without one or for one not above 0, bounded by `MAXWIDTH` and then `MINWIDTH`; they turn
+counter-clockwise from the horizontal by `ANGLE`, and are counted from the pixel of the map's
+origin, so that the hatches of neighbouring polygons line up. Each line runs across the
+polygon's bounding box grown by 0.7072 widths, is dashed by `PATTERN` from its first point, the
+lengths scaled by the factor the bounds applied to the width, and is stroked with butt caps; the
+stroke is cut to the polygon, both read under the even-odd rule, so that where stroked lines
+overlap, at a `SIZE` below the `WIDTH`, the hatch is empty. A `WIDTH` of 0 makes MapServer divide
+the pattern by 0, and AGG draws its infinite dashes as solid lines. `OFFSET` moves the polygon
+first. The hatch, as a polygon's fill, is filled through the AGG output format's default gamma
+of 0.75, which MapServer applies to polygons and hatches and not to symbols.
+
+A hatch that would not end or that costs past its bounds is not drawn, and the layer warns with
+`hatch-not-drawn` (Q-9): a spacing not above 0; a pattern with a length below 0 or not finite,
+or whose lengths add up to 0; a spacing that no longer moves the lines where they cross the
+image, so far from the map's origin; more than 1 048 576 lines, 2^25 pixels of lines, or 2^22
+dashes over the image. MapServer loops forever on the first three and for as long as it takes
+on the last. Only the lines that cross the image are laid; the others draw nothing.
+
+**Not yet as MapServer draws a hatch.** A size, width, or angle bound to a property or given by
+an expression is drawn as if unset, and the scale factor is 1. A `GAMMA` of the output format or
+of the layer is not carried. MapServer's polygon clipper rounds the cut to a hundredth of a
+pixel; Forager cuts in floating point, and where cutting the polygon to every dash would take
+more than 2^25 vertex steps, it intersects the coverage of the stroke and of the polygon, which
+lightens the pixels on the polygon's edge.
+
 **Not yet as MapServer draws it at a point.** A point style without a symbol it draws — none, 0,
 a pixmap, TrueType, SVG, hatch, or simple symbol, a symbol bound to a property, or a name no
 symbol carries — draws a square of its size, where MapServer draws nothing for none and 0 and the

@@ -77,6 +77,17 @@ pub(crate) fn mark<'a>(style: &Style, symbols: &'a [Symbol]) -> Mark<'a> {
     }
 }
 
+/// Whether the style's symbol among `symbols` is a hatch.
+pub(crate) fn is_hatch(style: &Style, symbols: &[Symbol]) -> bool {
+    let Some(Bound::Value(SymbolRef::Index(index))) = &style.symbol else {
+        return false;
+    };
+    (*index as usize)
+        .checked_sub(1)
+        .and_then(|position| symbols.get(position))
+        .is_some_and(|symbol| symbol.kind == SymbolKind::Hatch)
+}
+
 /// How a symbol is drawn, computeSymbolStyle's `symbolStyleObj` at a scale factor of 1.
 #[derive(Debug, PartialEq)]
 struct SymbolStyle {
@@ -98,11 +109,11 @@ fn default_size(symbol: &Symbol) -> f64 {
 }
 
 /// MapServer's `MS_MAX(a, b)` and `MS_MIN(a, b)`, which keep `b` where they cannot compare.
-fn ms_max(a: f64, b: f64) -> f64 {
+pub(crate) fn ms_max(a: f64, b: f64) -> f64 {
     if a > b { a } else { b }
 }
 
-fn ms_min(a: f64, b: f64) -> f64 {
+pub(crate) fn ms_min(a: f64, b: f64) -> f64 {
     if a < b { a } else { b }
 }
 

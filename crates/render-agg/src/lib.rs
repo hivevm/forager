@@ -2,7 +2,8 @@
 
 // How a stroke's width, cap, join, and dashes are handed to the stroker follows MapServer's
 // agg2RenderLine() and applyCJC(), src/mapagg.cpp of the release pinned in
-// scripts/fetch-msautotest.sh.
+// scripts/fetch-msautotest.sh; how a hatch is stroked and clipped to its polygon follows
+// msHatchPolygon(), src/mapagg.cpp, there.
 // Copyright (c) 1996-2007 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -19,6 +20,7 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod clip;
+mod hatch;
 
 use agg_rust::basics::{FillingRule, VertexSource};
 use agg_rust::color::Rgba8;
@@ -27,12 +29,16 @@ use agg_rust::conv_stroke::ConvStroke;
 use agg_rust::math_stroke::{LineCap as AggCap, LineJoin as AggJoin};
 use agg_rust::path_storage::PathStorage;
 use agg_rust::pixfmt_rgba::PixfmtRgba32;
-use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
+use agg_rust::rasterizer_scanline_aa::{RasterizerScanlineAa, Scanline};
 use agg_rust::renderer_base::RendererBase;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::rendering_buffer::RowAccessor;
+use agg_rust::scanline_boolean_algebra::{ScanlineGenerator, sbool_intersect_shapes_aa};
+use agg_rust::scanline_storage_aa::ScanlineStorageAa;
 use agg_rust::scanline_u::ScanlineU8;
-use forager_render::{Dashes, DisplayItem, DrawOp, LineCap, LineJoin, Point, Renderer, RgbaImage};
+use forager_render::{
+    Dashes, DisplayItem, DrawOp, Hatch, LineCap, LineJoin, Point, Renderer, RgbaImage,
+};
 use forager_style_ir::Rgba;
 
 use crate::clip::{Rect, clip_line, clip_ring};
@@ -77,12 +83,7 @@ impl AggRenderer {
     }
 
     fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, stroke: Option<&Stroke<'_>>) {
-        let color = Rgba8::new(
-            u32::from(color.r),
-            u32::from(color.g),
-            u32::from(color.b),
-            u32::from(color.a),
-        );
+        let color = rgba8(color);
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
             let mut scanline = ScanlineU8::new();
@@ -210,6 +211,129 @@ impl AggRenderer {
     }
 }
 
+impl AggRenderer {
+    /// The rings as a path, each clipped to the image enlarged by the margin.
+    fn area(&self, rings: &[Vec<Point>]) -> PathStorage {
+        let mut path = PathStorage::new();
+        let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
+        for ring in rings {
+            add(&mut path, &clip_ring(ring, &rect), true);
+        }
+        path
+    }
+
+    /// Blends the scanlines of `shape` in `color`, each coverage looked up in `gamma`.
+    fn paint<G: ScanlineGenerator>(&mut self, shape: &mut G, color: Rgba, gamma: &[u8; 256]) {
+        let color = rgba8(color);
+        self.with_agg(|renderer| {
+            if !shape.rewind_scanlines() {
+                return;
+            }
+            let mut scanline = ScanlineU8::new();
+            scanline.reset(shape.min_x(), shape.max_x());
+            let mut covers = Vec::new();
+            while shape.sweep_scanline(&mut scanline) {
+                for span in scanline.begin() {
+                    if let Ok(len) = usize::try_from(span.len)
+                        && len > 0
+                    {
+                        covers.clear();
+                        covers.extend(
+                            scanline.covers()[span.cover_offset..span.cover_offset + len]
+                                .iter()
+                                .map(|&c| gamma[usize::from(c)]),
+                        );
+                        renderer.blend_solid_hspan(span.x, scanline.y(), span.len, &color, &covers);
+                    }
+                }
+            }
+        });
+    }
+
+    /// Fills a hatch as msHatchPolygon() does: the lines stroked with butt caps, each dashed
+    /// from its first point with the pattern as given, and the stroke intersected with the
+    /// polygon, both under the even-odd rule, then filled through MapServer's default gamma. The
+    /// lines are clipped to the image grown by the stroke before agg-rust sees them, a dashed line
+    /// keeping the phase its dashes had at its first point. Where cutting the polygon to every
+    /// dash would take more than [`HATCH_CUT_BUDGET`] steps, the stroke and the polygon are
+    /// rasterized apart and their anti-aliased scanlines intersected instead, which gives the
+    /// same pixels inside and multiplies the coverage on the polygon's edge. A hatch beyond the
+    /// bounds of [`Hatch::is_bounded`] draws nothing (Q-9).
+    fn hatch(&mut self, hatch: &Hatch) {
+        if !(hatch.width.is_finite() && hatch.width > 0.0)
+            || !hatch.is_bounded(self.width, self.height)
+        {
+            return;
+        }
+        let width = hatch.width.min(2.0 * f64::from(self.width + self.height));
+        let fill_rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
+        let rings: Vec<Vec<Point>> = hatch
+            .rings
+            .iter()
+            .map(|ring| clip_ring(ring, &fill_rect))
+            .filter(|ring| ring.len() >= 3)
+            .collect();
+        let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN + width / 2.0);
+        let pieces = hatch::pieces(&hatch.lines, &rect, hatch.dashes(), width);
+        let even_odd = |shapes: &mut dyn Iterator<Item = &[Point]>| {
+            let mut path = PathStorage::new();
+            for shape in shapes {
+                add(&mut path, shape, true);
+            }
+            let mut rasterizer = RasterizerScanlineAa::new();
+            rasterizer.filling_rule(FillingRule::EvenOdd);
+            rasterizer.add_path(&mut path, 0);
+            rasterizer
+        };
+        let gamma = gamma_table();
+        if let Some(cut) = hatch::intersect(&rings, &pieces, HATCH_CUT_BUDGET) {
+            let mut area = even_odd(&mut cut.iter().map(Vec::as_slice));
+            self.paint(&mut area, hatch.color, &gamma);
+            return;
+        }
+        let mut polygon = even_odd(&mut rings.iter().map(Vec::as_slice));
+        let mut strokes = even_odd(&mut pieces.iter().map(<[Point; 4]>::as_slice));
+        let mut hatched = ScanlineStorageAa::new();
+        sbool_intersect_shapes_aa(
+            &mut polygon,
+            &mut strokes,
+            &mut ScanlineU8::new(),
+            &mut ScanlineU8::new(),
+            &mut ScanlineU8::new(),
+            &mut hatched,
+        );
+        self.paint(&mut hatched, hatch.color, &gamma);
+    }
+}
+
+/// The most vertex steps a hatch spends cutting its polygon to its dashes, some 0.1 s.
+const HATCH_CUT_BUDGET: usize = 1 << 25;
+
+/// MapServer's default `GAMMA` of its AGG output formats, `src/mapagg.cpp`.
+const GAMMA: f64 = 0.75;
+
+/// The coverage table of AGG's `gamma_linear(0, GAMMA)`, as a rasterizer builds it from the
+/// function: a coverage at or past the gamma is full, one below it grows in proportion. MapServer
+/// fills polygon shapes and hatches through it; a `GAMMA` of the output format or of the layer
+/// is not carried yet.
+fn gamma_table() -> [u8; 256] {
+    std::array::from_fn(|cover| {
+        let x = cover as f64 / 255.0;
+        let y = if x >= GAMMA { 1.0 } else { x / GAMMA };
+        // AGG's uround, which stays within 0 to 255 here.
+        (y * 255.0 + 0.5) as u8
+    })
+}
+
+fn rgba8(color: Rgba) -> Rgba8 {
+    Rgba8::new(
+        u32::from(color.r),
+        u32::from(color.g),
+        u32::from(color.b),
+        u32::from(color.a),
+    )
+}
+
 impl Renderer for AggRenderer {
     fn begin(&mut self, width: u32, height: u32, background: Rgba) {
         // An image whose size overflows is drawn as no image at all; the engine never asks for one.
@@ -226,12 +350,14 @@ impl Renderer for AggRenderer {
     fn draw(&mut self, item: &DisplayItem) {
         match &item.op {
             DrawOp::Fill { rings, color } => {
-                let mut path = PathStorage::new();
-                let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
-                for ring in rings {
-                    add(&mut path, &clip_ring(ring, &rect), true);
-                }
+                let mut path = self.area(rings);
                 self.rasterize(&mut path, *color, None);
+            }
+            DrawOp::Polygon { rings, color } => {
+                let mut area = RasterizerScanlineAa::new();
+                area.filling_rule(FillingRule::EvenOdd);
+                area.add_path(&mut self.area(rings), 0);
+                self.paint(&mut area, *color, &gamma_table());
             }
             DrawOp::Stroke {
                 paths,
@@ -250,6 +376,7 @@ impl Renderer for AggRenderer {
                 };
                 self.stroke(paths, *closed, *color, stroke);
             }
+            DrawOp::Hatch(hatch) => self.hatch(hatch),
         }
     }
 
@@ -296,6 +423,60 @@ mod tests {
         assert_eq!(image.pixel(12, 12), Some(RED));
         assert_eq!(image.pixel(32, 32), Some(WHITE));
         assert_eq!(image.pixel(2, 2), Some(WHITE));
+    }
+
+    #[test]
+    fn a_polygon_shape_is_filled_through_the_gamma_and_a_fill_is_not() {
+        // A square edge at x = 8.5 covers column 8 by half: 0.5 / 0.75 of the colour through
+        // MapServer's default gamma of 0.75, half of it without.
+        let square = vec![p(8.5, 8.0), p(56.0, 8.0), p(56.0, 56.0), p(8.5, 56.0)];
+        let green = |op: DrawOp| render(&[op]).pixel(8, 30).unwrap().g;
+        let polygon = green(DrawOp::Polygon {
+            rings: vec![square.clone()],
+            color: RED,
+        });
+        let fill = green(DrawOp::Fill {
+            rings: vec![square],
+            color: RED,
+        });
+        assert_eq!((polygon, fill), (138, 167));
+    }
+
+    #[test]
+    fn a_hatch_strokes_its_lines_inside_its_polygon_only() {
+        // Two lines 2 wide across a square with a hole, dashed 10 on, 10 off from their first
+        // points, the second's 20 left of the image; the odd last length is dropped.
+        let outer = vec![p(8.0, 8.0), p(56.0, 8.0), p(56.0, 56.0), p(8.0, 56.0)];
+        let hole = vec![p(24.0, 24.0), p(40.0, 24.0), p(40.0, 40.0), p(24.0, 40.0)];
+        let image = render(&[DrawOp::Hatch(Hatch {
+            rings: vec![outer, hole],
+            lines: vec![
+                [p(0.0, 16.0), p(64.0, 16.0)],
+                [p(-20.0, 32.0), p(64.0, 32.0)],
+            ],
+            color: RED,
+            width: 2.0,
+            pattern: vec![10.0, 10.0, 99.0],
+        })]);
+        assert_eq!(
+            image.pixel(25, 15),
+            Some(RED),
+            "a dash, 20 to 30, inside the polygon"
+        );
+        assert_eq!(
+            image.pixel(4, 15),
+            Some(WHITE),
+            "a dash, 0 to 10, outside it"
+        );
+        assert_eq!(image.pixel(25, 18), Some(WHITE), "beside the line");
+        assert_eq!(
+            image.pixel(12, 31),
+            Some(WHITE),
+            "a gap, 30 to 40 from the start"
+        );
+        assert_eq!(image.pixel(22, 31), Some(RED), "a dash, 40 to 50");
+        assert_eq!(image.pixel(32, 31), Some(WHITE), "the hole");
+        assert_eq!(image.pixel(50, 31), Some(WHITE), "a gap, 70 to 80");
     }
 
     #[test]
@@ -454,7 +635,7 @@ mod tests {
                 },
             },
             DrawOp::Stroke {
-                paths: vec![huge, broken],
+                paths: vec![huge.clone(), broken.clone()],
                 closed: true,
                 color: RED,
                 width: 1e9,
@@ -462,6 +643,49 @@ mod tests {
                 join: LineJoin::Miter,
                 dashes: Dashes::default(),
             },
+        ]);
+        // A hatch's dashes walked one by one, and its polygon cut to each, stay bounded: tiny
+        // or empty dashes over long lines, and a ring of 40 000 vertices under 2 000 lines,
+        // past the budget of the cut.
+        let circle: Vec<Point> = (0..40_000)
+            .map(|i| {
+                let t = f64::from(i) / 40_000.0 * std::f64::consts::TAU;
+                p(32.0 + 30.0 * t.cos(), 32.0 + 30.0 * t.sin())
+            })
+            .collect();
+        let dense: Vec<[Point; 2]> = (0..2_000)
+            .map(|i| {
+                let y = f64::from(i) * 0.032;
+                [p(-1e15, y), p(1e15, y)]
+            })
+            .collect();
+        let hatch = |rings: Vec<Vec<Point>>, lines, width, pattern| {
+            DrawOp::Hatch(Hatch {
+                rings,
+                lines,
+                color: RED,
+                width,
+                pattern,
+            })
+        };
+        let _ = render(&[
+            hatch(vec![circle.clone()], dense.clone(), 1.0, vec![]),
+            hatch(vec![circle.clone()], dense, 1e9, vec![1e-300, 1e300, 3.0]),
+            hatch(
+                vec![huge.clone(), broken.clone()],
+                vec![
+                    [p(-1e15, -1e15), p(1e15, 1e15)],
+                    [p(f64::NAN, 0.0), p(5.0, 5.0)],
+                ],
+                3.0,
+                vec![0.0, 0.0],
+            ),
+            hatch(
+                vec![huge, broken],
+                vec![[p(-1e15, 0.5), p(1e15, 0.5)]],
+                f64::INFINITY,
+                vec![f64::NAN, 1.0],
+            ),
         ]);
         assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
     }

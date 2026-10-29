@@ -7,6 +7,7 @@ mod bind;
 mod draw;
 mod extent;
 mod fonts;
+mod hatch;
 mod offset;
 mod symbol;
 
@@ -114,9 +115,19 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             }
         }
         let passes = passes(mode, &class.styles);
+        let mut refused = 0usize;
         let mut draw = |feature: &Feature, style, passes: &[_]| {
             for &pass in passes {
-                for op in draw_ops(mode, &feature.geometry, style, pass, &view, &map.symbols) {
+                let ops = draw_ops(
+                    mode,
+                    &feature.geometry,
+                    style,
+                    pass,
+                    &view,
+                    &map.symbols,
+                    &mut refused,
+                );
+                for op in ops {
                     renderer.draw(&DisplayItem {
                         op,
                         feature_id: Some(feature.id),
@@ -137,6 +148,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                 }
             }
         }
+        diagnostics.extend(refused_hatches(layer, refused));
         for (kind, count) in undrawn {
             let message = format!(
                 "layer {} cannot draw {count} {kind} geometr{} in its render mode",
@@ -286,6 +298,20 @@ async fn features<S: FeatureSource>(
             None
         }
     }
+}
+
+/// The warning for the hatch fills of a layer refused to be drawn (Q-9), if any.
+fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnostic> {
+    (refused > 0).then(|| {
+        let message = format!(
+            "layer {}: {refused} hatch fill{} not drawn (Q-9): its spacing or its dash pattern \
+             would never end the hatch, or it would lay more lines or dashes over the image than \
+             a hatch may",
+            name(layer),
+            if refused == 1 { " is" } else { "s are" }
+        );
+        Diagnostic::warning("hatch-not-drawn", message, layer.span.clone())
+    })
 }
 
 fn name(layer: &Layer) -> String {
