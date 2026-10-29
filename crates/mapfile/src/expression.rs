@@ -13,7 +13,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! Translates MapServer's expressions into the CQL2 tree of the style IR (ADR-0019).
+//! Translates MapServer's expressions into the CQL2 tree of the style IR (ADR-0030).
 //!
 // The tokens follow the EXPRESSION_STRING rules of src/maplexer.l, which MapServer builds with
 // `flex -i`, so its keywords match in any case; the grammar, its precedence, and its typing

@@ -1,5 +1,5 @@
 //! Expressions of the style IR: a lean CQL2 tree, serialized in the shape of CQL2-JSON
-//! (ADR-0019). What CQL2 lacks is written as functions in the same `{"op", "args"}` shape.
+//! (ADR-0030). What CQL2 lacks is written as functions in the same `{"op", "args"}` shape.
 
 use std::fmt;
 
@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn expressions_serialize_in_the_shape_of_cql2_json() {
-        // Verifies: ADR-0019
+        // Verifies: ADR-0030
         let expr = Expr::call(
             Op::And,
             vec![

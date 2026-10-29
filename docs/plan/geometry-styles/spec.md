@@ -20,7 +20,7 @@ lands.
 ## Existing behaviour
 
 - The frontend translates `EXPRESSION`, `FILTER`, and every style property listed above into the
-  style IR, with MapServer's typing made explicit (ADR-0019); its tests pin that.
+  style IR, with MapServer's typing made explicit (ADR-0030); its tests pin that.
 - The engine fits the extent, queries each layer's source, and draws every feature with each
   style of the first class by the layer's render mode; its render tests pin points, lines,
   polygons, holes, and the line width cap with Forager's own reference images. Those stay.
@@ -95,7 +95,7 @@ lands.
 ## ADR impact
 
 - Binding: ADR-0009 (the `expr` crate and its edges), ADR-0012 (every new crate), ADR-0015 (the
-  reference renderer), ADR-0019 (the tree the evaluator reads), ADR-0020 (the format change for
+  reference renderer), ADR-0030 (the tree the evaluator reads), ADR-0020 (the format change for
   inline features and layer opacity), ADR-0026 (the properties the evaluator reads), ADR-0007 (the
   format and the specification stay with the maintainer).
 - New `proposed` ADRs before the tickets that need them: the evaluator and its regular

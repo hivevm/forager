@@ -11,13 +11,13 @@ its divergence from POSIX, or an implementation of its own.
 
 ## Acceptance criteria
 
-- [ ] Given the proposed ADR, then it names how each operator and function of ADR-0019 evaluates,
+- [ ] Given the proposed ADR, then it names how each operator and function of ADR-0030 evaluates,
       from MapServer's source, and the regular-expression engine with its alternatives.
 - [ ] Given the ADR, then its Enforcement names the tests that hold it.
 
 ## Read first
 
-- ADR-0009, ADR-0012, ADR-0019, ADR-0026; `docs/semantics/expression.md`.
+- ADR-0009, ADR-0012, ADR-0030, ADR-0026; `docs/semantics/expression.md`.
 - MapServer at the pin: `msEvalExpression` (`src/maputil.c`), `src/mapparser.y`.
 
 ## Blocked by

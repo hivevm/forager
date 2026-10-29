@@ -18,7 +18,7 @@ properties are evaluated per feature.
 
 ## Read first
 
-- The ADR of ticket 01; ADR-0009, ADR-0019, ADR-0026; the engine's render tests.
+- The ADR of ticket 01; ADR-0009, ADR-0030, ADR-0026; the engine's render tests.
 - MapServer at the pin: `msShapeGetClass` (`src/maputil.c`).
 
 ## Blocked by

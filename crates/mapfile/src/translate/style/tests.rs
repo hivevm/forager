@@ -19,7 +19,7 @@ use crate::test_support::{binding, codes, first_style, load_files};
 
 #[test]
 fn style_properties_bind_to_attributes() {
-    // Verifies: ADR-0019
+    // Verifies: ADR-0030
     let (loaded, style) = first_style(
         "MAP LAYER CLASS STYLE
            SIZE [VAL] WIDTH [w] ANGLE [a] COLOR [c] OUTLINECOLOR [o]
@@ -36,7 +36,7 @@ fn style_properties_bind_to_attributes() {
 
 #[test]
 fn a_size_expression_is_evaluated_as_mapserver_evaluates_it() {
-    // Verifies: ADR-0019
+    // Verifies: ADR-0030
     let (loaded, style) = first_style("MAP LAYER CLASS STYLE SIZE ([a] * 2) END END END END");
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     assert_eq!(
@@ -53,7 +53,7 @@ fn a_size_expression_is_evaluated_as_mapserver_evaluates_it() {
 
 #[test]
 fn bound_style_properties_read_back_equal_from_yaml_and_json() {
-    // Verifies: ADR-0019
+    // Verifies: ADR-0030
     let loaded = load_files(&[(
         "m.map",
         "MAP LAYER CLASS STYLE

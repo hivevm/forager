@@ -602,7 +602,7 @@ pub enum Units {
 }
 
 /// A style property that may vary by feature: a value, a property bound as MapServer binds an
-/// attribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value
+/// attribute, or an expression (ADR-0030). It is read as an untagged enum would read it, a value
 /// before an expression, but an object by its keys, so that a key it does not know is named.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

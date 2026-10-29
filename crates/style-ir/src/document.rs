@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn an_expression_past_the_nesting_limit_is_refused_and_one_at_it_reads() {
-        // Verifies: Q-9, ADR-0019
+        // Verifies: Q-9, ADR-0030
         let nested = |depth: usize| {
             let mut expr = Expr::Bool(true);
             for _ in 1..depth {
@@ -689,7 +689,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_operator_keeps_its_class_which_never_matches() {
-        // Verifies: ADR-0019
+        // Verifies: ADR-0030
         let read = StyleDocument::from_yaml(&with_unknowns("1.9", "polygon", "s_buffer")).unwrap();
         let class = &read.document.map.layers[0].classes[0];
         assert_eq!(class.name.as_deref(), Some("c"));

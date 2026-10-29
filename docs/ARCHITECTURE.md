@@ -30,7 +30,7 @@ The parts the system is made of, each with one responsibility, named in the voca
 golden path and the test pattern an agent copies from are named here.
 
 - **`style-ir`** — the data model of a map, its expressions a CQL2 tree
-  ([ADR-0019](adr/0019-cql2-expressions.md)), the diagnostics with their source spans, and the
+  ([ADR-0030](adr/0030-cql2-expressions.md)), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0014](adr/0014-style-document-serde.md)). Its readers
   ([ADR-0020](adr/0020-style-document-compatibility.md)) name each field they do not know by its

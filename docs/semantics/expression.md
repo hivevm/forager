@@ -1,7 +1,7 @@
 # `EXPRESSION`
 
 **Where:** `CLASS`, `LABEL`. **IR:** the class's or the label's `expression`, a CQL2 tree
-([ADR-0019](../adr/0019-cql2-expressions.md)).
+([ADR-0030](../adr/0030-cql2-expressions.md)).
 
 **Meaning.** Which features the class draws. A class without one draws every feature that reaches
 it; MapServer tries a layer's classes in order and draws a feature with the first that matches. A
