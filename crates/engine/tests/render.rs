@@ -12,6 +12,7 @@ use forager_render::RgbaImage;
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span, Style,
+    Symbol, SymbolKind, SymbolRef,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -299,4 +300,176 @@ fn a_source_that_skips_none_yields_no_such_warning() {
         "{:?}",
         rendered.diagnostics
     );
+}
+
+/// An arrow 4 wide and 6 high, pointing up, with its pen lifted between shaft and head; and a
+/// circle and an ellipse twice as wide as high.
+fn symbols() -> Vec<Symbol> {
+    let symbol = |kind, paths, extent, filled| Symbol {
+        name: None,
+        kind,
+        paths,
+        extent: Some(extent),
+        filled,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    };
+    let arrow = vec![
+        vec![[0.0, 2.0], [2.0, 0.0], [4.0, 2.0]],
+        vec![[2.0, 0.0], [2.0, 6.0]],
+    ];
+    let head = vec![vec![[0.0, 3.0], [2.0, 0.0], [4.0, 3.0], [2.0, 2.0]]];
+    vec![
+        symbol(SymbolKind::Vector, arrow, [4.0, 6.0], false),
+        symbol(SymbolKind::Vector, head, [4.0, 3.0], true),
+        symbol(
+            SymbolKind::Ellipse,
+            vec![vec![[1.0, 1.0]]],
+            [1.0, 1.0],
+            true,
+        ),
+        symbol(
+            SymbolKind::Ellipse,
+            vec![vec![[2.0, 1.0]]],
+            [2.0, 1.0],
+            false,
+        ),
+    ]
+}
+
+/// Draws `style` of symbol `index` at three points, at the angles 0, 45, and 90 by a layer each:
+/// at the pixels (25, 25), (50, 50), and (75, 75).
+fn render_symbol(index: u32, style: Style) -> RgbaImage {
+    let mut map = map(RenderMode::Point, Style::default());
+    map.symbols = symbols();
+    let layer = map.layers.remove(0);
+    for (i, angle) in [0.0, 45.0, 90.0].into_iter().enumerate() {
+        let mut layer = layer.clone();
+        layer.name = Some(format!("data{i}"));
+        layer.classes[0].styles = vec![Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(index))),
+            angle: Some(Bound::Value(angle)),
+            ..style.clone()
+        }];
+        map.layers.push(layer);
+    }
+    let points = [(25, 75), (50, 50), (75, 25)];
+    let sources: BTreeMap<String, GeoJsonSource> = points
+        .iter()
+        .enumerate()
+        .map(|(i, (x, y))| {
+            let point = format!(r#"{{"type": "Point", "coordinates": [{x}, {y}]}}"#);
+            (format!("data{i}"), GeoJsonSource::parse(&point).unwrap())
+        })
+        .collect();
+    let rendered = ready(render(&map, &sources, AggRenderer::new()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    rendered.image.unwrap()
+}
+
+#[test]
+fn a_vector_symbol_not_filled_is_stroked_at_its_size_and_angle() {
+    let style = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(24.0)),
+        width: Some(Bound::Value(2.0)),
+        ..Style::default()
+    };
+    let image = render_symbol(1, style);
+    assert_eq!(image.pixel(25, 30), Some(BLUE), "the upright shaft");
+    assert_eq!(image.pixel(20, 30), Some(WHITE), "beside the shaft");
+    assert_matches_reference(&image, "symbol_vector.png");
+}
+
+#[test]
+fn a_filled_vector_symbol_is_filled_and_outlined_at_its_size_and_angle() {
+    let style = Style {
+        color: Some(Bound::Value(GREEN)),
+        outline_color: Some(Bound::Value(BLACK)),
+        size: Some(Bound::Value(20.0)),
+        width: Some(Bound::Value(1.5)),
+        ..Style::default()
+    };
+    let image = render_symbol(2, style);
+    assert_eq!(image.pixel(25, 25), Some(GREEN), "inside the upright head");
+    assert_matches_reference(&image, "symbol_vector_filled.png");
+}
+
+#[test]
+fn an_ellipse_is_drawn_at_its_size_and_angle() {
+    let circle = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(12.0)),
+        ..Style::default()
+    };
+    let image = render_symbol(3, circle);
+    assert_eq!(image.pixel(50, 50), Some(BLUE));
+    assert_eq!(image.pixel(50, 57), Some(WHITE), "a radius of 6");
+    assert_matches_reference(&image, "symbol_circle.png");
+    let ellipse = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(10.0)),
+        width: Some(Bound::Value(2.0)),
+        ..Style::default()
+    };
+    let image = render_symbol(4, ellipse);
+    assert_eq!(image.pixel(25, 25), Some(WHITE), "not filled");
+    assert_eq!(image.pixel(75, 65), Some(BLUE), "turned by 90°, 20 wide");
+    assert_matches_reference(&image, "symbol_ellipse.png");
+}
+
+#[test]
+fn a_point_outside_the_extent_draws_no_symbol() {
+    let mut map = map(
+        RenderMode::Point,
+        Style {
+            color: Some(Bound::Value(BLUE)),
+            size: Some(Bound::Value(40.0)),
+            symbol: Some(Bound::Value(SymbolRef::Index(3))),
+            ..Style::default()
+        },
+    );
+    map.symbols = symbols();
+    let outside = r#"{"type": "Point", "coordinates": [101, 50]}"#;
+    let image = render_with(&map, Some(outside)).image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
+
+#[test]
+fn a_symbol_index_past_the_last_draws_nothing() {
+    let mut map = map(
+        RenderMode::Point,
+        Style {
+            color: Some(Bound::Value(BLUE)),
+            size: Some(Bound::Value(40.0)),
+            symbol: Some(Bound::Value(SymbolRef::Index(9))),
+            ..Style::default()
+        },
+    );
+    map.symbols = symbols();
+    let inside = r#"{"type": "Point", "coordinates": [50, 50]}"#;
+    let image = render_with(&map, Some(inside)).image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
+
+#[test]
+fn a_point_outside_the_extent_draws_no_square() {
+    let style = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(40.0)),
+        ..Style::default()
+    };
+    let outside = r#"{"type": "Point", "coordinates": [100.5, 50]}"#;
+    let image = render_with(&map(RenderMode::Point, style), Some(outside))
+        .image
+        .unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
