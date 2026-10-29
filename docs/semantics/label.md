@@ -8,10 +8,23 @@
 picks it; the frontend resolves the choice at import. A label's own `TEXT ''` is its text, and
 draws no label, without falling back. A `TEXT` is a string or an expression; `loadLabel` and
 `loadClass` refuse a regular expression or a list, a class `TEXT` a later one replaces included.
-A `TEXT` is evaluated as `msEvalTextExpression` does: a string has each `[name]` in it replaced by
-the property's value (`concat` of the parts); an expression in parentheses is taken as text, a
-number printed with `%g`. A `TEXT` the frontend cannot carry over is a warning and an empty text,
-which draws no label.
+A `TEXT` is evaluated as `msEvalTextExpression` does. A string has replaced by the property's value
+each binding `msTokenizeExpression` finds when it reads the string with the expression lexer of
+`src/maplexer.l`, every occurrence of it (`concat` of the parts): a `[name]`, or one quoted as
+`'[name]'`, `"[name]"`, or `` `[name]` ``; `[shape]`, `[map_cellsize]`, and `[data_cellsize]` are
+none. Each binding replaces every occurrence of itself in what the earlier ones left, in the
+lexer's order; a value holding a later binding's `[name]` is not searched again, as it is in
+MapServer. A `'` or `"` that opens no such binding opens a string, which the same quote closes and
+in which no binding is found; one that never closes holds the rest of the text, so `it's [name]`
+keeps `[name]` as written. A pair of backticks is a time literal, a lone backtick one character. A
+newline and a single `|` end the lexer's reading; a carriage return is white space to it. It stops
+too at a token it cannot read: an empty time literal, which the frontend follows, and one
+`msParseTime` rejects, or `fromtext` without a WKT string, which the frontend cannot judge, so a
+text with one before a `[` is a warning and not carried over.
+An expression in parentheses is taken as text, a number printed with `%g`, a condition as `true`
+or `false`, as `src/mapparser.y` gives a logical value where a string is asked for. A `TEXT` the
+frontend cannot carry over, a time among them, is a warning and an empty text, which draws no
+label.
 
 **Condition.** A label's `EXPRESSION` decides whether it is drawn for a feature:
 `msGetLabelStatus` in `src/maputil.c` evaluates it against the layer's `LABELITEM`, and a label
