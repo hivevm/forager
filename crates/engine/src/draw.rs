@@ -319,3 +319,152 @@ fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use forager_style_ir::LineOffset;
+
+    use super::*;
+
+    const BLUE: Rgba = Rgba::opaque(30, 60, 200);
+    const BLACK: Rgba = Rgba::opaque(0, 0, 0);
+
+    fn p(x: f64, y: f64) -> Point {
+        Point { x, y }
+    }
+
+    fn line() -> Vec<Vec<Point>> {
+        vec![vec![p(0.0, 0.0), p(10.0, 0.0)]]
+    }
+
+    fn colored(color: Option<Rgba>, outline: Option<Rgba>) -> Style {
+        Style {
+            color: color.map(Bound::Value),
+            outline_color: outline.map(Bound::Value),
+            ..Style::default()
+        }
+    }
+
+    /// The strokes of one pass of a style on [`line`]: color, width, dashes, and paths.
+    fn strokes(style: &Style, pass: Pass) -> Vec<(Rgba, f64, Dashes, Vec<Vec<Point>>)> {
+        let mut ops = Vec::new();
+        line_symbol(&mut ops, line(), false, style, pass);
+        ops.into_iter()
+            .map(|op| match op {
+                DrawOp::Stroke {
+                    color,
+                    width,
+                    dashes,
+                    paths,
+                    ..
+                } => (color, width, dashes, paths),
+                DrawOp::Fill { .. } => panic!("a line is not filled"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_bound_on_the_width_scales_the_pattern_the_initial_gap_and_the_offset() {
+        // WIDTH 10 bounded by MAXWIDTH 5: msDrawLineSymbol's finalscalefactor is 0.5.
+        let style = Style {
+            width: Some(Bound::Value(10.0)),
+            max_width: Some(5.0),
+            pattern: vec![20.0, 8.0],
+            initial_gap: Some(6.0),
+            line_offset: Some(LineOffset {
+                distance: Bound::Value(4.0),
+                both_sides: false,
+            }),
+            ..colored(Some(BLUE), None)
+        };
+        let drawn = strokes(&style, Pass::Plain);
+        let (_, width, dashes, paths) = &drawn[0];
+        assert_eq!(*width, 5.0);
+        assert_eq!(dashes.pattern, vec![10.0, 4.0]);
+        assert_eq!(dashes.offset, 3.0);
+        assert_eq!(paths[0], vec![p(0.0, 2.0), p(10.0, 2.0)]);
+        // MINWIDTH raises the width and scales alike.
+        let raised = Style {
+            width: Some(Bound::Value(2.0)),
+            min_width: Some(4.0),
+            pattern: vec![3.0, 1.0],
+            ..colored(Some(BLUE), None)
+        };
+        assert_eq!(strokes(&raised, Pass::Plain)[0].2.pattern, vec![6.0, 2.0]);
+    }
+
+    #[test]
+    fn a_line_without_a_color_is_drawn_in_its_outline_color() {
+        let drawn = strokes(&colored(None, Some(BLACK)), Pass::Plain);
+        assert_eq!(drawn[0].0, BLACK);
+        assert!(strokes(&colored(None, None), Pass::Plain).is_empty());
+    }
+
+    #[test]
+    fn an_outline_pass_widens_the_line_and_swaps_its_colors() {
+        let style = Style {
+            width: Some(Bound::Value(6.0)),
+            outline_width: Some(Bound::Value(2.0)),
+            ..colored(Some(BLUE), Some(BLACK))
+        };
+        let drawn = strokes(&style, Pass::Outline);
+        assert_eq!((drawn[0].0, drawn[0].1), (BLACK, 10.0));
+        // The first style's outline falls back to its colour, as the swapped style does.
+        let uncolored_outline = Style {
+            outline_width: Some(Bound::Value(2.0)),
+            ..colored(Some(BLUE), None)
+        };
+        assert_eq!(strokes(&uncolored_outline, Pass::Outline)[0].0, BLUE);
+        // A later style draws its outline only with an OUTLINECOLOR, itself only with a COLOR.
+        assert!(strokes(&uncolored_outline, Pass::OutlineIfOutlined).is_empty());
+        assert!(strokes(&colored(None, Some(BLACK)), Pass::PlainIfColored).is_empty());
+    }
+
+    #[test]
+    fn a_line_layer_draws_outlines_in_passes_before_the_lines() {
+        let outlined = Style {
+            outline_width: Some(Bound::Value(1.0)),
+            ..colored(Some(BLUE), Some(BLACK))
+        };
+        let plain = colored(Some(BLUE), None);
+        let styles = [outlined.clone(), plain.clone(), outlined];
+        let kinds: Vec<Vec<Pass>> = passes(RenderMode::Line, &styles)
+            .into_iter()
+            .map(|(_, p)| p)
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                vec![Pass::Outline],
+                vec![Pass::PlainIfColored],
+                vec![Pass::PlainIfColored],
+                vec![Pass::OutlineIfOutlined, Pass::PlainIfColored],
+            ]
+        );
+        let plain_first = [plain.clone(), plain];
+        let kinds: Vec<Vec<Pass>> = passes(RenderMode::Line, &plain_first)
+            .into_iter()
+            .map(|(_, p)| p)
+            .collect();
+        assert_eq!(kinds, vec![vec![Pass::Plain], vec![Pass::PlainIfColored]]);
+    }
+
+    #[test]
+    fn a_filled_polygon_is_outlined_at_its_fill_s_alpha() {
+        let fill = Rgba {
+            a: 100,
+            ..Rgba::opaque(200, 80, 80)
+        };
+        let mut ops = Vec::new();
+        shade(&mut ops, line(), &colored(Some(fill), Some(BLACK)));
+        match &ops[1] {
+            DrawOp::Stroke {
+                color, cap, join, ..
+            } => {
+                assert_eq!(*color, Rgba { a: 100, ..BLACK });
+                assert_eq!((*cap, *join), (LineCap::Round, LineJoin::Round));
+            }
+            DrawOp::Fill { .. } => panic!("the outline is a stroke"),
+        }
+    }
+}

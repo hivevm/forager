@@ -112,9 +112,12 @@ fn scale(a: Point, by: f64) -> Point {
     }
 }
 
-/// The vector of length 1 along `a`; a vector of length 0 gives NaN, as in MapServer, and the
-/// renderer drops the point.
+/// The vector of length 1 along `a`; the vector of length 0 stays as it is, as point_norm()
+/// leaves it, so that a repeated vertex has no direction.
 fn norm(a: Point) -> Point {
+    if a.x == 0.0 && a.y == 0.0 {
+        return a;
+    }
     scale(a, 1.0 / (a.x * a.x + a.y * a.y).sqrt())
 }
 
@@ -179,6 +182,23 @@ mod tests {
         assert_eq!(moved.len(), 2);
         assert!(close(&moved[0], &[p(0.0, 3.0), p(10.0, 3.0)]));
         assert!(close(&moved[1], &[p(0.0, -3.0), p(10.0, -3.0)]));
+    }
+
+    #[test]
+    fn a_repeated_vertex_puts_its_corners_at_half_the_distance() {
+        // The segment of length 0 has no direction: the corners on either side of it average
+        // a normal with the zero vector, msOffsetCurve's approximation, so each lies at half the
+        // distance along the other segment's normal.
+        let path = vec![p(0.0, 0.0), p(10.0, 0.0), p(10.0, 0.0), p(10.0, 10.0)];
+        let moved = apply(&[path], Offset::Parallel(2.0));
+        assert!(
+            close(
+                &moved[0],
+                &[p(0.0, 2.0), p(10.0, 1.0), p(9.0, 0.0), p(8.0, 10.0)]
+            ),
+            "{:?}",
+            moved
+        );
     }
 
     #[test]
