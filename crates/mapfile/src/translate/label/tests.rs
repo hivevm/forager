@@ -111,6 +111,36 @@ fn a_plain_text_replaces_only_the_bindings_the_lexer_finds() {
     );
     // A doubled ]] inside a binding is one ], and the binding's text, unescaped, must stand.
     assert_eq!(plain_text(r#""[a]]b]""#), r#""[a]]b]""#);
+    // A carriage return is white space to the lexer; a newline ends its reading.
+    assert_eq!(
+        plain_text("\"a\r[name]\""),
+        format!(r#"{{"op":"concat","args":["a\r",{name}]}}"#)
+    );
+    // Each binding replaces every occurrence of itself in what earlier ones left, in turn.
+    let a = r#"{"op":"to_string","args":[{"property":"a"}]}"#;
+    assert_eq!(
+        plain_text(r#""x [a] [[a]""#),
+        format!(r#"{{"op":"concat","args":["x ",{a}," [",{a}]}}"#)
+    );
+    // An empty time literal is one msParseTime rejects: the reading stops there.
+    assert_eq!(plain_text(r#""`` [name]""#), r#""`` [name]""#);
+}
+
+/// Where MapServer may stop reading at a token the frontend cannot judge, a time literal or
+/// `fromtext`, before a `[` that could be a binding, the text is not carried over.
+#[test]
+fn a_plain_text_whose_reading_the_frontend_cannot_judge_is_not_carried_over() {
+    for text in [
+        r#""`2020` [name]""#,
+        r#""fromtext [name]""#,
+        r#""FromText('POINT(1 1)') [n]""#,
+    ] {
+        let (codes, label) = label_of(&format!("TEXT {text}"));
+        assert_eq!(codes, ["unsupported-expression"], "{text}");
+        assert_eq!(json(&label.unwrap().text), r#""""#, "{text}");
+    }
+    // With no `[` after it, nothing could be replaced, and the text stands.
+    assert_eq!(plain_text(r#""`2020` x""#), r#""`2020` x""#);
 }
 
 #[test]
