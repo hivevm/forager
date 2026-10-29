@@ -115,30 +115,47 @@ from the threats below.
   (1000), image size, the features one layer draws (1,000,000), the size of a data file a host reads
   (256 MiB), the size of a font file (32 MiB), expression nesting (24 levels), the values a style
   document of a newer minor drops (100), and regular-expression size are limited, and exceeding a
-  limit is a diagnostic. A test per limit feeds an input past it and expects the diagnostic.  ##
-  Non-Goals  What this project explicitly does not try to do.  - Data queries: `TYPE QUERY`,
-  `TEMPLATE`, `QUERYMAP`, hilite, GetFeatureInfo. - CGI/FastCGI, MapScript, and OGC services (WMS,
-  WFS, WCS). - Runtime substitution of `%var%`, beyond the default from `VALIDATION` applied at load
-  time. - Vector output (SVG, PDF). - An EPSG database in the core; `init=epsg:` is resolved only by
-  a resolver the host injects. - A strict mode that fails a map when one layer's source is
-  unavailable. - Pixel-identical output to MapServer: fidelity is a tolerance (Q-4), not equality.
-  ## Constraints  What the solution has to live with regardless of the better choice: platforms,
-  standards, systems to interoperate with, limits of time, budget, and team. A constraint not
-  written here is rediscovered as a rejected alternative in an ADR.  - Core crates do no I/O — no
-  file system, no network — link no C code, need no threads, and build for `wasm32-unknown-unknown`.
-  - Async exists only at the ports, and no async trait requires `Send`: the browser is
-  single-threaded. - Only the mapfile frontend knows MapServer syntax; the core sees the style IR
-  alone. - The core accepts projections only as proj4 strings. - The licence is `MIT OR Apache-2.0`,
-  and dependencies carry permissive licences only. Where logic is ported from MapServer's C code,
-  the affected file keeps MapServer's copyright notice. - `cargo fmt`, `cargo clippy -D warnings`,
-  and all tests are green; identifiers and comments are in English. - The reference is the MapServer
-  source and its msautotest suite at the latest 8.x release, pinned by tag; moving the pin is a
-  deliberate change with a full conformance run. Older mapfile syntax is read as far as that release
-  accepts it. - The team is one maintainer working with coding agents, without a fixed deadline or
-  budget.  ## Threats & Forbidden Actions  The assets, the actors who threaten them, and the trust
-  boundaries between the parts. Then what the system must never do, regardless of what a task asks.
-  A prohibition not written here does not exist for an agent. One a test can decide is restated as a
-  `Q-n`, so that it is verified.
+  limit is a diagnostic. A test per limit feeds an input past it and expects the diagnostic.
+
+## Non-Goals
+
+What this project explicitly does not try to do.
+
+- Data queries: `TYPE QUERY`, `TEMPLATE`, `QUERYMAP`, hilite, GetFeatureInfo.
+- CGI/FastCGI, MapScript, and OGC services (WMS, WFS, WCS).
+- Runtime substitution of `%var%`, beyond the default from `VALIDATION` applied at load time.
+- Vector output (SVG, PDF).
+- An EPSG database in the core; `init=epsg:` is resolved only by a resolver the host injects.
+- A strict mode that fails a map when one layer's source is unavailable.
+- Pixel-identical output to MapServer: fidelity is a tolerance (Q-4), not equality.
+
+## Constraints
+
+What the solution has to live with regardless of the better choice: platforms, standards,
+systems to interoperate with, limits of time, budget, and team. A constraint not written here is
+rediscovered as a rejected alternative in an ADR.
+
+- Core crates do no I/O — no file system, no network — link no C code, need no threads, and build
+  for `wasm32-unknown-unknown`.
+- Async exists only at the ports, and no async trait requires `Send`: the browser is
+  single-threaded.
+- Only the mapfile frontend knows MapServer syntax; the core sees the style IR alone.
+- The core accepts projections only as proj4 strings.
+- The licence is `MIT OR Apache-2.0`, and dependencies carry permissive licences only. Where logic
+  is ported from MapServer's C code, the affected file keeps MapServer's copyright notice.
+- `cargo fmt`, `cargo clippy -D warnings`, and all tests are green; identifiers and comments are
+  in English.
+- The reference is the MapServer source and its msautotest suite at the latest 8.x release,
+  pinned by tag; moving the pin is a deliberate change with a full conformance run. Older mapfile
+  syntax is read as far as that release accepts it.
+- The team is one maintainer working with coding agents, without a fixed deadline or budget.
+
+## Threats & Forbidden Actions
+
+The assets, the actors who threaten them, and the trust boundaries between the parts. Then what
+the system must never do, regardless of what a task asks. A prohibition not written here does not
+exist for an agent. One a test can decide is restated as a `Q-n`, so that it is verified.
+
 - **Assets:** credentials in connection strings (`CONNECTION`); the host's files behind the
   resource loader; the availability of the server and of the user's browser tab.
 - **Actors and trust boundaries:** the authors of mapfiles and style documents and the providers
