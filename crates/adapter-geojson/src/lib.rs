@@ -1,9 +1,11 @@
 //! The GeoJSON feature source (ADR-0016): an RFC 7946 document, parsed once, delivered as the
 //! features that touch a query's extent.
 
-use forager_ports::{Coord, Feature, FeatureQuery, FeatureSource, Geometry, SourceError};
+use forager_ports::{
+    Coord, Feature, FeatureQuery, FeatureSource, Geometry, Properties, SourceError, Stored,
+};
 use forager_style_ir::Extent;
-use geojson::{GeoJson, GeometryValue, Position};
+use geojson::{GeoJson, GeometryValue, JsonObject, JsonValue, Position};
 
 /// The features of one GeoJSON document, numbered in document order.
 pub struct GeoJsonSource {
@@ -18,21 +20,29 @@ impl GeoJsonSource {
             .parse()
             .map_err(|e: geojson::Error| SourceError::new(format!("invalid GeoJSON: {e}")))?;
         // A feature's id is its index in the document, features without a geometry counted.
-        let geometries: Vec<Option<geojson::Geometry>> = match document {
+        let parts: Vec<(Option<geojson::Geometry>, Option<JsonObject>)> = match document {
             GeoJson::FeatureCollection(collection) => collection
                 .features
                 .into_iter()
-                .map(|f| f.geometry)
+                .map(|f| (f.geometry, f.properties))
                 .collect(),
-            GeoJson::Feature(feature) => vec![feature.geometry],
-            GeoJson::Geometry(geometry) => vec![Some(geometry)],
+            GeoJson::Feature(feature) => vec![(feature.geometry, feature.properties)],
+            GeoJson::Geometry(geometry) => vec![(Some(geometry), None)],
         };
-        let mut features = Vec::with_capacity(geometries.len());
-        for (id, geometry) in (0u64..).zip(geometries) {
+        let mut features = Vec::with_capacity(parts.len());
+        for (id, (geometry, object)) in (0u64..).zip(parts) {
             let Some(geometry) = geometry else { continue };
             let geometry = convert(&geometry.value)?;
             if let Some(bounds) = bounds(&geometry) {
-                features.push((Feature { id, geometry }, bounds));
+                let properties = object.map_or_else(Properties::default, properties);
+                features.push((
+                    Feature {
+                        id,
+                        geometry,
+                        properties,
+                    },
+                    bounds,
+                ));
             }
         }
         Ok(Self { features })
@@ -51,6 +61,26 @@ impl FeatureSource for GeoJsonSource {
             .map(|(feature, _)| feature.clone())
             .collect())
     }
+}
+
+/// A feature's `properties` as values of the port (ADR-0026), sorted by name as the parser keeps
+/// them, of two of one name the last: a number as the text `serde_json` prints for it, an array or
+/// object as its JSON text.
+fn properties(object: JsonObject) -> Properties {
+    let list = object
+        .into_iter()
+        .map(|(name, value)| {
+            let value = match value {
+                JsonValue::Null => Stored::Null,
+                JsonValue::Bool(b) => Stored::Bool(b),
+                JsonValue::Number(n) => Stored::Number(n.to_string().into()),
+                JsonValue::String(text) => Stored::String(text.into()),
+                nested => Stored::String(nested.to_string().into()),
+            };
+            (name.into(), value)
+        })
+        .collect();
+    Properties::list(list)
 }
 
 fn coord(position: &Position) -> Result<Coord, SourceError> {
@@ -130,6 +160,8 @@ fn visit(geometry: &Geometry, f: &mut impl FnMut(Coord)) {
 mod tests {
     use std::future::Future;
 
+    use forager_ports::Value;
+
     use super::*;
 
     fn ready<F: Future>(future: F) -> F::Output {
@@ -176,6 +208,33 @@ mod tests {
         );
         assert!(matches!(&features[4].geometry, Geometry::Polygon(rings) if rings[0].len() == 4));
         assert!(matches!(&features[6].geometry, Geometry::Collection(g) if g.len() == 1));
+    }
+
+    #[test]
+    fn a_feature_carries_each_property_of_its_kind() {
+        // Verifies: ADR-0026
+        let source = GeoJsonSource::parse(
+            r#"{"type": "FeatureCollection", "features": [
+                {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2]},
+                 "properties": {"name": "Wien", "pop": 1.50, "big": 12345678901234567890,
+                                "capital": true, "note": null, "tags": [1, "a"],
+                                "Name": "other"}},
+                {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2]},
+                 "properties": null}
+            ]}"#,
+        )
+        .unwrap();
+        let features = ready(source.features(&query(0.0, 0.0, 5.0, 5.0))).unwrap();
+        let p = &features[0].properties;
+        assert_eq!(p.get("name"), Some(Value::String("Wien".into())));
+        assert_eq!(p.get("Name"), Some(Value::String("other".into())));
+        assert_eq!(p.get("pop"), Some(Value::Number("1.5")));
+        assert_eq!(p.get("big"), Some(Value::Number("12345678901234567890")));
+        assert_eq!(p.get("capital"), Some(Value::Bool(true)));
+        assert_eq!(p.get("note"), Some(Value::Null));
+        assert_eq!(p.get("tags"), Some(Value::String(r#"[1,"a"]"#.into())));
+        assert_eq!(p.get("NAME"), None);
+        assert_eq!(features[1].properties.get("name"), None);
     }
 
     #[test]

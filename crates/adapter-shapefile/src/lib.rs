@@ -23,11 +23,14 @@
 mod dbf;
 mod record;
 
+use std::rc::Rc;
+
 use forager_ports::{
-    Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
+    Feature, FeatureQuery, FeatureSource, Properties, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_style_ir::Extent;
 
+use dbf::Dbf;
 use record::{Rect, Shape};
 
 /// The length of the `.shp` and `.shx` headers.
@@ -48,6 +51,8 @@ pub struct ShapefileSource {
     entries: usize,
     /// The file's bounds, from the `.shx` header.
     bounds: Rect,
+    /// The `.dbf`, whose records the features share as their properties (ADR-0026).
+    dbf: Rc<Dbf>,
 }
 
 /// Names the file's shape, records, and bounds, never its bytes, so that a logged source does not
@@ -59,6 +64,7 @@ impl std::fmt::Debug for ShapefileSource {
             .field("entries", &self.entries)
             .field("shp_bytes", &self.shp.len())
             .field("bounds", &self.bounds)
+            .field("dbf", &self.dbf)
             .finish_non_exhaustive()
     }
 }
@@ -74,13 +80,21 @@ impl ShapefileSource {
         let base = basename(data.as_str());
         let shp = load(loader, base, "shp", "SHP").await?;
         let shx = load(loader, base, "shx", "SHX").await?;
-        let source = Self::from_files(shp, shx)?;
-        dbf::check(&load(loader, base, "dbf", "DBF").await?)?;
-        Ok(source)
+        let (shape_type, entries, bounds) = Self::headers(&shp, &shx)?;
+        let dbf = Rc::new(Dbf::open(load(loader, base, "dbf", "DBF").await?)?);
+        Ok(Self {
+            shp,
+            shx,
+            shape_type,
+            entries,
+            bounds,
+            dbf,
+        })
     }
 
-    /// Reads the headers of the `.shp` and the `.shx` (`msSHPOpenVirtualFile`).
-    fn from_files(shp: Vec<u8>, shx: Vec<u8>) -> Result<Self, SourceError> {
+    /// Reads the headers of the `.shp` and the `.shx` (`msSHPOpenVirtualFile`): the shape type,
+    /// the entries that can be read, and the bounds.
+    fn headers(shp: &[u8], shx: &[u8]) -> Result<(u8, usize, Rect), SourceError> {
         // Only the length of the .shp header is checked; its file code, its file length, and its
         // shape type are not read.
         if shp.len() < HEADER {
@@ -105,13 +119,7 @@ impl ShapefileSource {
         let records = usize::try_from(records).unwrap_or(0);
         let bounds = Rect::read(header, 36).unwrap_or(Rect::EMPTY);
         let entries = readable_entries(shx.len(), records);
-        Ok(Self {
-            shape_type: header[32],
-            shp,
-            shx,
-            entries,
-            bounds,
-        })
+        Ok((header[32], entries, bounds))
     }
 
     /// The offset and the size in bytes of entry `i` of the `.shx`, each 0 where the entry holds
@@ -197,9 +205,18 @@ impl FeatureSource for ShapefileSource {
         self.each_shape(&extent, |_, _| count += 1);
         let mut features = Vec::with_capacity(count);
         self.each_shape(&extent, |i, shape| {
+            // A shape past the .dbf's records carries no properties, as MapServer's carries no
+            // values there (msSHPLayerNextShape).
+            let record = i as u64;
+            let properties = if self.dbf.has(record) {
+                Properties::record(self.dbf.clone(), record)
+            } else {
+                Properties::default()
+            };
             features.push(Feature {
-                id: i as u64,
+                id: record,
                 geometry: shape.geometry(),
+                properties,
             });
         });
         Ok(features)

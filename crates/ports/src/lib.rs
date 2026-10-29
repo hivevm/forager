@@ -3,7 +3,9 @@
 //! are the only place async appears, and none of them requires `Send`, because the browser is
 //! single-threaded.
 
+use std::borrow::Cow;
 use std::fmt;
+use std::rc::Rc;
 
 use forager_style_ir::Extent;
 
@@ -322,6 +324,144 @@ pub enum Geometry {
 pub struct Feature {
     pub id: u64,
     pub geometry: Geometry,
+    pub properties: Properties,
+}
+
+/// The value of a property as a reader gets it (ADR-0026). A number keeps the text its source
+/// gives it, so that a reader that wants a string gets those digits and one that wants a number
+/// parses them.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Value<'a> {
+    Null,
+    Bool(bool),
+    Number(&'a str),
+    String(Cow<'a, str>),
+}
+
+/// A property's value as a list of properties keeps it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Stored {
+    Null,
+    Bool(bool),
+    Number(Box<str>),
+    String(Box<str>),
+}
+
+impl Stored {
+    fn value(&self) -> Value<'_> {
+        match self {
+            Stored::Null => Value::Null,
+            Stored::Bool(b) => Value::Bool(*b),
+            Stored::Number(text) => Value::Number(text),
+            Stored::String(text) => Value::String(Cow::Borrowed(text)),
+        }
+    }
+}
+
+/// The properties of the records of one source, read where a property is read: a source whose
+/// records lie in a file the layer shares implements it once, and each feature names its record.
+pub trait Table: fmt::Debug {
+    /// The value of the property `name` of record `record`, found as the source finds a name, or
+    /// `None` where the record has none of that name.
+    fn get(&self, record: u64, name: &str) -> Option<Value<'_>>;
+
+    /// Calls `f` with each property of record `record`, in the order of the source's fields.
+    fn each(&self, record: u64, f: &mut dyn FnMut(&str, Value<'_>));
+}
+
+/// The properties of a feature (ADR-0026): none, a list of its own, or a record of a table its
+/// source shares.
+#[derive(Clone, Default)]
+pub struct Properties(Held);
+
+#[derive(Clone, Default)]
+enum Held {
+    #[default]
+    None,
+    List(Rc<[(Box<str>, Stored)]>),
+    Record(Rc<dyn Table>, u64),
+}
+
+impl Properties {
+    /// Properties of the feature's own, in this order, found by their exact names; of two of one
+    /// name, the first.
+    pub fn list(properties: Vec<(Box<str>, Stored)>) -> Self {
+        Self(Held::List(properties.into()))
+    }
+
+    /// The properties of record `record` of `table`.
+    pub fn record(table: Rc<dyn Table>, record: u64) -> Self {
+        Self(Held::Record(table, record))
+    }
+
+    /// The value of the property `name`, or `None` where the feature has none of that name, which
+    /// is not a property whose value is null.
+    pub fn get(&self, name: &str) -> Option<Value<'_>> {
+        match &self.0 {
+            Held::None => None,
+            Held::List(list) => list
+                .iter()
+                .find(|(n, _)| &**n == name)
+                .map(|(_, v)| v.value()),
+            Held::Record(table, record) => table.get(*record, name),
+        }
+    }
+
+    /// Calls `f` with each property: a list's in its order, a table's in the order of its fields.
+    pub fn each(&self, mut f: impl FnMut(&str, Value<'_>)) {
+        match &self.0 {
+            Held::None => {}
+            Held::List(list) => list.iter().for_each(|(n, v)| f(n, v.value())),
+            Held::Record(table, record) => table.each(*record, &mut f),
+        }
+    }
+
+    /// The properties as owned pairs, in the source's order.
+    fn pairs(&self) -> Vec<(Box<str>, Stored)> {
+        let mut pairs = Vec::new();
+        self.each(|name, value| pairs.push((name.into(), Stored::from(value))));
+        pairs
+    }
+}
+
+impl From<Value<'_>> for Stored {
+    fn from(value: Value<'_>) -> Self {
+        match value {
+            Value::Null => Stored::Null,
+            Value::Bool(b) => Stored::Bool(b),
+            Value::Number(text) => Stored::Number(text.into()),
+            Value::String(text) => Stored::String(text.into()),
+        }
+    }
+}
+
+/// Two features' properties are equal where they hold the same names and values in one order.
+impl PartialEq for Properties {
+    fn eq(&self, other: &Self) -> bool {
+        self.pairs() == other.pairs()
+    }
+}
+
+/// A list prints its properties; a record names itself and its table, which prints no values, so
+/// that a logged feature does not print a whole file's fields.
+impl fmt::Debug for Properties {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Held::None => f.write_str("{}"),
+            Held::List(_) => {
+                let mut map = f.debug_map();
+                self.each(|name, value| {
+                    map.entry(&name, &value);
+                });
+                map.finish()
+            }
+            Held::Record(table, record) => f
+                .debug_struct("Record")
+                .field("record", record)
+                .field("table", table)
+                .finish(),
+        }
+    }
 }
 
 /// What the core asks a feature source for.
