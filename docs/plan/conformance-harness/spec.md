@@ -17,8 +17,9 @@ is out of scope where it is. The share of passing cases is recorded at each rele
 fall from one release to the next. Every case in scope is also rendered on
 `wasm32-unknown-unknown` and must give the same bytes as the native render.
 
-This spec covers the category *geometry and symbols* only. The other categories of G-6, raster and
-text, and the criteria G-7, G-10, and G-11, are later specs that use this harness as their measure.
+This spec covers the category *geometry and symbols* only, G-6. The other categories, raster and
+text of G-13, and the criteria G-7, G-10, and G-11, are later specs that use this harness as their
+measure.
 
 ## Existing behaviour
 
@@ -39,7 +40,7 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 
 ## Goals served
 
-- G-6, for the category geometry and symbols.
+- G-6, the category geometry and symbols.
 - G-9, and Q-2 with it.
 - Q-4.
 - G-8, Q-3, Q-8, and Q-9 are touched: a shapefile source that fails is skipped with a diagnostic
@@ -130,7 +131,7 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 
 ## Out of scope
 
-- The categories raster and text of G-6; labels (G-10); reprojection (G-11); pushdown (G-7).
+- The categories raster and text (G-13); labels (G-10); reprojection (G-11); pushdown (G-7).
 - Output formats other than PNG, and the cairo references.
 - FlatGeobuf, GeoTIFF, and any data source other than shapefiles.
 - Shapefile index files (`.qix`, `.sbn`), tile indexes, and `.cpg` code pages other than the
@@ -150,4 +151,4 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
   types of a feature's properties at the source port. Should the
   module need a host crate of its own, that ADR supersedes ADR-0009 to add it to the table.
 - A specification change: the threshold and the tolerance of the category geometry and symbols in
-  G-6, and the metric with them.
+  G-6, and the metric with them; the other categories in a criterion of their own.

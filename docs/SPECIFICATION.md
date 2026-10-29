@@ -60,10 +60,9 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
    version shall be a load error, and an older major version shall be migrated to the current one.
 5. **G-5** — When the WASM bindings receive a style, GeoJSON features, and a viewport, they shall
    return the rendered RGBA image, and the HTML example shall display it.
-6. **G-6** — When a msautotest case is rendered, its RGBA buffer shall match the reference image
-   within the tolerance of its category: geometry and symbols, raster nearest neighbour, raster
-   bilinear or average, text. For geometry and symbols, a pixel differs when one of its channels
-   differs by more than 16, and a case passes when at most 0.1 % of its pixels differ.
+6. **G-6** — When a msautotest case of the category geometry and symbols is rendered, its RGBA
+   buffer shall match the reference image: a pixel differs when one of its channels differs by more
+   than 16, and the case passes when at most 0.1 % of its pixels differ.
 7. **G-7** — When a filter is evaluated with and without pushdown, the system shall return
    identical feature sets.
 8. **G-8** — When a layer's source has no bound adapter or its adapter fails, the system shall
@@ -76,6 +75,9 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
     with PROJ within a tolerance stated in metres.
 12. **G-12** — When an RGBA buffer is encoded as PNG and decoded again, the system shall yield the
     identical buffer.
+13. **G-13** — When a msautotest case of the categories raster nearest neighbour, raster bilinear
+    or average, or text is rendered, its RGBA buffer shall match the reference image within the
+    tolerance of its category.
 
 ## Quality Goals
 
@@ -96,7 +98,7 @@ from the threats below.
   diagnostics. Measured by a weekly scheduled fuzz run of 5 minutes per target — the mapfile
   parser, the YAML/JSON loader, and the renderer — that ends without a panic.
 - **Q-4** — Fidelity: the point of Forager is MapServer's semantics. The share of in-scope
-  msautotest cases that pass G-6 does not fall from one release to the next.
+  msautotest cases that pass G-6 and G-13 does not fall from one release to the next.
 - **Q-5** — Bundle size: the core is downloaded by every browser that shows a map. The gzipped
   `.wasm` of the browser bindings stays under 3 MB; CI fails above it.
 - **Q-6** — Licence hygiene: Forager is released as `MIT OR Apache-2.0` and must stay
@@ -177,10 +179,10 @@ maintained.
 - The pure-Rust crates the work leans on — agg-rust, proj4rs, rustybuzz, unicode-bidi, skrifa,
   i_overlay, shapefile, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and
   stay maintained. The ADR that picks each one verifies it.
-- The msautotest reference images are reproducible enough that the tolerances of G-6 lie above
-  their platform noise; the noise is measured before the first rendering criterion of a category
-  is held. For geometry and symbols, MapServer at the pin, built on CI, reproduces its references
-  bit for bit.
+- The msautotest reference images are reproducible enough that the tolerances of G-6 and G-13 lie
+  above their platform noise; the noise is measured before the first rendering criterion of a
+  category is held. For geometry and symbols, MapServer at the pin, built on CI, reproduces the
+  references of the cases in scope bit for bit.
 - proj4 strings cover the projections that client-side maps need.
 - Browser hosts can serve HTTP range requests for COG and FlatGeobuf.
 - The expected scale — features per viewport, image size, layer count — is not known yet; the
