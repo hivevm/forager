@@ -62,7 +62,8 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
    return the rendered RGBA image, and the HTML example shall display it.
 6. **G-6** — When a msautotest case is rendered, its RGBA buffer shall match the reference image
    within the tolerance of its category: geometry and symbols, raster nearest neighbour, raster
-   bilinear or average, text.
+   bilinear or average, text. For geometry and symbols, a pixel differs when one of its channels
+   differs by more than 16, and a case passes when at most 0.1 % of its pixels differ.
 7. **G-7** — When a filter is evaluated with and without pushdown, the system shall return
    identical feature sets.
 8. **G-8** — When a layer's source has no bound adapter or its adapter fails, the system shall
@@ -177,7 +178,9 @@ maintained.
   i_overlay, shapefile, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and
   stay maintained. The ADR that picks each one verifies it.
 - The msautotest reference images are reproducible enough that the tolerances of G-6 lie above
-  their platform noise; the noise is measured before the first rendering criterion is held.
+  their platform noise; the noise is measured before the first rendering criterion of a category
+  is held. For geometry and symbols, MapServer at the pin, built on CI, reproduces its references
+  bit for bit.
 - proj4 strings cover the projections that client-side maps need.
 - Browser hosts can serve HTTP range requests for COG and FlatGeobuf.
 - The expected scale — features per viewport, image size, layer count — is not known yet; the

@@ -20,9 +20,8 @@
 # `blank` marks a case whose reference is nearly one colour: an image of its most common colour
 # passes against it by the metric. The harness checks every mark against the reference.
 #
-# The threshold and the tolerance of the category geometry and symbols are provisional (GEOMETRY
-# in msautotest.rs): they are not yet set from MapServer's noise against its own references, so
-# no case here holds G-6.
+# The threshold and the tolerance of the category geometry and symbols are those of G-6 (GEOMETRY
+# in msautotest.rs), above the noise MapServer shows against its own references on CI.
 
 misc/attrbind.map attrbind_test001.png out: labels
 misc/attrbind.map attrbind_test002.png out: a data source other than shapefiles, OGR

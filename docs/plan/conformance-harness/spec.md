@@ -104,9 +104,8 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
   difference it shows against its own references is its noise. The numbers go into G-6 as a
   specification change the maintainer signs. How MapServer runs on CI is decided by an ADR. The
   CI job writes MapServer's renderings into a directory, and the harness compares that directory
-  with the references by the same metric. Until the numbers are signed, the harness runs with
-  provisional ones and cites no criterion, so that G-6 is held only after the noise is measured,
-  as the specification's Assumption asks.
+  with the references by the same metric. The harness holds G-6 with the numbers the
+  specification states.
 - **Fidelity record.** A release is a tag `v<semver>` on `main`. The share of passing cases is
   recorded in the tree with each release; a check, run by the Rust checks after the harness,
   compares the current share against the record of the last release and fails when it is lower.

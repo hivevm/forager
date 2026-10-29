@@ -357,9 +357,10 @@ fn the_first_difference_is_named_by_its_json_pointer() {
     assert_eq!(first_difference(&a, &a, String::new()), None);
 }
 
-/// The metric of the category geometry and symbols. Provisional, as `conformance/cases.txt`
-/// says: G-6 takes its numbers from a measurement of MapServer's own noise against its
-/// references, which is not made yet, so the harness cites no criterion.
+/// The metric of the category geometry and symbols, as G-6 states it: a pixel differs when one of
+/// its channels differs by more than 16, and a case passes when at most 0.1 % of its pixels
+/// differ. MapServer at the pin reproduces its own references of the category bit for bit on CI
+/// ([`mapserver_renders_the_cases_in_scope_within_its_noise`]), so the numbers lie above its noise.
 const GEOMETRY: Metric = Metric {
     threshold: 16,
     tolerance: 0.001,
@@ -371,6 +372,7 @@ const CASES: &str = include_str!("conformance/cases.txt");
 #[test]
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_case_in_scope_holds_its_outcome() {
+    // Verifies: G-6
     let suite = suite();
     let cases = conformance::cases(&suite, conformance::DIRECTORIES);
     let entries = conformance::list(CASES).unwrap();
