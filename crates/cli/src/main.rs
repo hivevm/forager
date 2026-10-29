@@ -366,10 +366,7 @@ enum Source {
 }
 
 impl FeatureSource for Source {
-    async fn features(
-        &self,
-        query: &FeatureQuery,
-    ) -> Result<Vec<forager_ports::Feature>, SourceError> {
+    async fn features(&self, query: &FeatureQuery) -> Result<forager_ports::Features, SourceError> {
         match self {
             Self::GeoJson(source) => source.features(query).await,
             Self::Shapefile(source) => source.features(query).await,

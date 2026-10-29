@@ -26,7 +26,8 @@ mod record;
 use std::rc::Rc;
 
 use forager_ports::{
-    Feature, FeatureQuery, FeatureSource, Properties, ResourceLoader, ResourcePath, SourceError,
+    Feature, FeatureQuery, FeatureSource, Features, Properties, ResourceLoader, ResourcePath,
+    Skipped, SourceError,
 };
 use forager_style_ir::Extent;
 
@@ -136,37 +137,57 @@ impl ShapefileSource {
     }
 
     /// Calls `f` with each record the extent selects and its shape, in record order, the records
-    /// read as no shape skipped (`msShapefileWhichShapes`, `msSHPLayerNextShape`).
-    fn each_shape<'a>(&'a self, extent: &Rect, mut f: impl FnMut(usize, Shape<'a>)) {
+    /// read as no shape skipped (`msShapefileWhichShapes`, `msSHPLayerNextShape`), and returns the
+    /// records skipped as broken: each one the query visits once, a null shape not among them
+    /// (ADR-0025).
+    fn each_shape<'a>(&'a self, extent: &Rect, mut f: impl FnMut(usize, Shape<'a>)) -> Skipped {
+        let mut skipped = Skipped::default();
         // The file's bounds outside the extent select none; inside it, all; across its edge,
         // each record by its own box.
         if !self.bounds.overlaps(extent) {
-            return;
+            return skipped;
         }
         let by_box = !self.bounds.contained_in(extent);
         // The records read from the .shp add up to no more bytes than it holds (ADR-0024).
         let mut budget = self.shp.len() as u64;
         for i in 0..self.entries {
-            if by_box && !self.box_overlaps(i, extent) {
-                continue;
+            if by_box {
+                match self.stored_box(i) {
+                    Ok(Some(stored)) if stored.overlaps(extent) => {}
+                    Ok(_) => continue,
+                    Err(reason) => {
+                        skipped.add(|| format!("record {i}: {reason}"));
+                        continue;
+                    }
+                }
             }
-            if let Some(shape) = self.shape(i, &mut budget) {
-                f(i, shape);
+            match self.shape(i, &mut budget) {
+                Ok(Some(shape)) => f(i, shape),
+                Ok(None) => {}
+                Err(reason) => skipped.add(|| format!("record {i}: {reason}")),
             }
         }
+        skipped
     }
 
-    /// Whether record `i`'s stored box overlaps the extent (`msSHPReadBounds`). A record whose
-    /// box cannot be read is no shape: MapServer skips it where the `.shx` size is 4, and fails
-    /// the layer otherwise, where the adapter reads on (ADR-0024).
-    fn box_overlaps(&self, i: usize, extent: &Rect) -> bool {
+    /// Record `i`'s stored box (`msSHPReadBounds`), `None` for a null shape. A record whose box
+    /// cannot be read is no shape: MapServer skips it where the `.shx` size is 4, a null shape,
+    /// and fails the layer otherwise, where the adapter reads on (ADR-0024) and counts it.
+    fn stored_box(&self, i: usize) -> Result<Option<Rect>, &'static str> {
         let (offset, size) = self.entry(i);
-        if size <= 4 || offset == 0 || offset >= (i32::MAX - 12) as u64 {
-            return false;
+        if size == 4 {
+            return Ok(None);
         }
-        let Ok(at) = usize::try_from(offset + 12) else {
-            return false;
-        };
+        if size < 4 {
+            return Err(SIZE_UNDER_4);
+        }
+        if offset == 0 {
+            return Err(NO_OFFSET);
+        }
+        let at = (offset < (i32::MAX - 12) as u64)
+            .then(|| usize::try_from(offset + 12).ok())
+            .flatten()
+            .ok_or("its offset lies past what MapServer reads")?;
         let stored = if record::is_point(self.shape_type) {
             record::coord(&self.shp, at).map(|c| Rect {
                 min_x: c.x,
@@ -177,34 +198,55 @@ impl ShapefileSource {
         } else {
             Rect::read(&self.shp, at).filter(|r| !r.min_x.is_nan())
         };
-        stored.is_some_and(|r| r.overlaps(extent))
+        stored.map(Some).ok_or("its box cannot be read")
     }
 
-    /// Record `i` as `msSHPReadShape` reads it, or `None` for no shape.
-    fn shape(&self, i: usize, budget: &mut u64) -> Option<Shape<'_>> {
+    /// Record `i` as `msSHPReadShape` reads it: its shape, `None` for a null shape, or why it is
+    /// no shape.
+    fn shape(&self, i: usize, budget: &mut u64) -> Result<Option<Shape<'_>>, &'static str> {
         let (offset, size) = self.entry(i);
         // A size of 4 is a null shape; under 4, a broken one.
-        if size <= 4 || offset == 0 {
-            return None;
+        if size == 4 {
+            return Ok(None);
+        }
+        if size < 4 {
+            return Err(SIZE_UNDER_4);
+        }
+        if offset == 0 {
+            return Err(NO_OFFSET);
         }
         // The record's 8-byte header is read with it, though nothing of it is used.
         let length = size + 8;
-        let start = usize::try_from(offset).ok()?;
-        let end = usize::try_from(offset.checked_add(length)?).ok()?;
-        let bytes = self.shp.get(start..end)?;
-        *budget = budget.checked_sub(length)?;
+        let bytes = usize::try_from(offset)
+            .ok()
+            .zip(
+                offset
+                    .checked_add(length)
+                    .and_then(|e| usize::try_from(e).ok()),
+            )
+            .and_then(|(start, end)| self.shp.get(start..end))
+            .ok_or("it lies past the end of the .shp")?;
+        *budget = budget
+            .checked_sub(length)
+            .ok_or("it takes bytes past the total the .shp holds")?;
         record::parse(self.shape_type, bytes)
+            .map(Some)
+            .ok_or("its counts or sizes fail MapServer's checks")
     }
 }
 
+const SIZE_UNDER_4: &str = "its .shx entry gives a size under 4 bytes";
+const NO_OFFSET: &str = "its .shx entry gives no offset";
+
 impl FeatureSource for ShapefileSource {
-    async fn features(&self, query: &FeatureQuery) -> Result<Vec<Feature>, SourceError> {
+    async fn features(&self, query: &FeatureQuery) -> Result<Features, SourceError> {
         let extent = Rect::from(&query.extent);
         // Counted first, so that the list takes no more memory than its features.
+        // Only the second pass counts the records it skips, so that each counts once.
         let mut count = 0;
-        self.each_shape(&extent, |_, _| count += 1);
+        let _ = self.each_shape(&extent, |_, _| count += 1);
         let mut features = Vec::with_capacity(count);
-        self.each_shape(&extent, |i, shape| {
+        let skipped = self.each_shape(&extent, |i, shape| {
             // A shape past the .dbf's records carries no properties, as MapServer's carries no
             // values there (msSHPLayerNextShape).
             let record = i as u64;
@@ -219,7 +261,7 @@ impl FeatureSource for ShapefileSource {
                 properties,
             });
         });
-        Ok(features)
+        Ok(Features { features, skipped })
     }
 }
 

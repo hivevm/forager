@@ -193,7 +193,31 @@ async fn features<S: FeatureSource>(
     let query = FeatureQuery {
         extent: view.extent,
     };
-    match source.features(&query).await {
+    let delivered = source.features(&query).await.map(|delivered| {
+        // The records the source skipped, one warning for the layer however many (ADR-0025).
+        let skipped = &delivered.skipped;
+        if skipped.count > 0 {
+            let first = skipped.first.as_deref().unwrap_or("no reason given");
+            let records = if skipped.count == 1 {
+                "record"
+            } else {
+                "records"
+            };
+            let message = format!(
+                "layer {} (source {kind}): {} {records} of its source cannot be read and \
+                 are skipped; the first: {first}",
+                name(layer),
+                skipped.count
+            );
+            diagnostics.push(Diagnostic::warning(
+                "source-records-skipped",
+                message,
+                span.clone(),
+            ));
+        }
+        delivered.features
+    });
+    match delivered {
         Ok(features) if features.len() > MAX_FEATURES_PER_LAYER => {
             let reason = format!(
                 "{} features exceed the limit of {MAX_FEATURES_PER_LAYER}",

@@ -7,7 +7,7 @@ use std::future::Future;
 
 use forager_adapter_shapefile::ShapefileSource;
 use forager_ports::{
-    Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
+    Feature, FeatureQuery, FeatureSource, Features, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_style_ir::Extent;
 
@@ -128,7 +128,12 @@ pub fn open(loader: &Loader) -> Result<ShapefileSource, SourceError> {
     ))
 }
 
-pub fn query(source: &ShapefileSource, [min_x, min_y, max_x, max_y]: [f64; 4]) -> Vec<Feature> {
+pub fn query(source: &ShapefileSource, extent: [f64; 4]) -> Vec<Feature> {
+    deliver(source, extent).features
+}
+
+/// What the source delivers for `extent`: its features and the records it skipped.
+pub fn deliver(source: &ShapefileSource, [min_x, min_y, max_x, max_y]: [f64; 4]) -> Features {
     let query = FeatureQuery {
         extent: Extent {
             min_x,

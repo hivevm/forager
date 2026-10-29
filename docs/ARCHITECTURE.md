@@ -62,9 +62,11 @@ golden path and the test pattern an agent copies from are named here.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, and turns each feature and style into display
   items by the layer's render mode. A layer without a source, or whose source fails, is skipped
-  with a diagnostic (G-8). It is the one core crate that awaits the ports. Every host binds its
-  sources to the layers by name through the engine's `bind_sources`, which reports a source no
-  layer is named for and one that cannot be read the same way for each.
+  with a diagnostic (G-8); a source that skips records yields one warning for its layer
+  ([ADR-0025](adr/0025-source-reports-skipped-records.md)). It is the one core crate that awaits
+  the ports. Every host binds its sources to the layers by name through the engine's
+  `bind_sources`, which reports a source no layer is named for and one that cannot be read the
+  same way for each.
 - **`render`** — the display list, the renderer trait, and the RGBA image.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, and is the one crate that may use `unsafe`
@@ -75,8 +77,9 @@ golden path and the test pattern an agent copies from are named here.
 - **`adapter-shapefile`** — a feature source over an ESRI shapefile, its `.shp`, `.shx`, and
   `.dbf` loaded through the resource loader and read with the records MapServer reads, in memory
   that follows the files' size ([ADR-0024](adr/0024-shapefile-reader.md)), each rule of the
-  reading written down in `docs/semantics/shapefile.md`; a record it cannot read is dropped
-  without a diagnostic, since the source port has no channel for one. No host binds it yet.
+  reading written down in `docs/semantics/shapefile.md`; a record it cannot read is skipped and
+  counted, and the engine reports it per layer
+  ([ADR-0025](adr/0025-source-reports-skipped-records.md)).
 - **`adapter-epsg`** — resolves `init=epsg:` projections for the frontend through the
   `ProjectionResolver` port: built in are only EPSG:4326, EPSG:3857, and the WGS84 UTM zones;
   every other code comes from a table the host supplies

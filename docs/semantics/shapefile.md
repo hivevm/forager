@@ -79,23 +79,28 @@ are read in pages of 1024: a page the file cuts short is lost as a whole, its en
 entries the file holds are lost with it, and so is every page after it
 (`a_shx_page_the_file_cuts_short_is_lost_as_a_whole`).
 
-**Selection** (`msShapefileWhichShapes`, `msRectOverlap`, `msRectContained` in `src/mapsearch.c`).
-A query's extent that does not overlap the file's bounds selects no record; one that contains them
+**Selection** (`msShapefileWhichShapes`, `msRectOverlap`, `msRectContained` in `src/mapsearch.c`). A
+query's extent that does not overlap the file's bounds selects no record; one that contains them
 selects every record, and the records' own boxes are not read; one across their edge selects each
-record whose stored box overlaps it, edges that touch overlapping. A box is the four doubles at
-byte 12 of the record (`msSHPReadBounds`); in a file of points (types 1, 11, 21) it is the point
-itself, the two doubles at byte 12. Only a comparison that holds separates two boxes, so a NaN
-anywhere but the least x of a record's box overlaps; the least x is checked only in files other
-than points, so a point whose x is not a number overlaps too. A record whose box cannot be read is
-not selected (`an_extent_outside_the_file_bounds_selects_nothing`,
+record whose stored box overlaps it, edges that touch overlapping. A box is the four doubles at byte
+12 of the record (`msSHPReadBounds`); in a file of points (types 1, 11, 21) it is the point itself,
+the two doubles at byte 12. Only a comparison that holds separates two boxes, so a NaN anywhere but
+the least x of a record's box overlaps; the least x is checked only in files other than points, so a
+point whose x is not a number overlaps too. A record whose box cannot be read is not selected, and
+is counted as a skipped record (ADR-0025) where its `.shx` size is not 4
+(`an_extent_outside_the_file_bounds_selects_nothing`,
 `an_extent_that_contains_the_file_bounds_selects_every_record`,
 `an_extent_across_the_file_bounds_selects_by_each_records_box`,
 `a_point_file_is_selected_by_the_point_itself`, `a_point_whose_x_is_not_a_number_is_selected`,
 `a_nan_in_a_box_beyond_its_least_x_compares_as_overlapping`).
 
 **Records** (`msSHPReadShape`, `msSHPLayerNextShape`). A selected record is read as a shape or as
-no shape; no shape is skipped and the next record read. A feature's id is its record's number in
-the `.shx`, from 0. The record's 8-byte header and its own shape type are never read: the file's
+no shape; no shape is skipped and the next record read. A record that is no shape, a null shape
+apart, is reported, as MapServer does not report it: each query counts the records it visits so,
+and why the first is no shape, and the engine warns once for the layer with
+`source-records-skipped` (ADR-0025; `a_query_reports_each_broken_record_it_visits_once`,
+`a_null_shape_is_not_a_skipped_record`). A feature's id is its record's number in the `.shx`,
+from 0. The record's 8-byte header and its own shape type are never read: the file's
 shape type decides (`the_record_header_and_type_are_not_read`). The size below is the content
 length of the `.shx` entry, which does not count the record header; the offsets are into the
 content.
