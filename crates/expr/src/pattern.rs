@@ -18,6 +18,25 @@ const MAX_REPEAT: u32 = 65_535;
 /// PCRE2's longest group name.
 const MAX_NAME: usize = 32;
 
+/// PCRE2's `PARENS_NEST_LIMIT`: how deep groups may nest.
+const MAX_GROUP_DEPTH: usize = 250;
+
+/// The lazy DFA's cache of one pattern, in bytes (Q-9).
+const DFA_SIZE_LIMIT: usize = 1 << 20;
+
+/// What the translation knows of the pattern so far.
+#[derive(Default)]
+struct State {
+    /// The groups open.
+    depth: usize,
+    /// The groups' names, which PCRE2 refuses twice.
+    names: std::collections::BTreeSet<Vec<u8>>,
+    /// Whether an option setting turns on `m`.
+    multiline: bool,
+    /// Whether `^` stands outside a class.
+    caret: bool,
+}
+
 /// A pattern compiled for matching.
 #[derive(Clone, Debug)]
 pub enum Compiled {
@@ -38,13 +57,17 @@ pub fn compile(pattern: &[u8], caseless: bool) -> Compiled {
         .unicode(false)
         .case_insensitive(caseless)
         .size_limit(SIZE_LIMIT)
+        .dfa_size_limit(DFA_SIZE_LIMIT)
         .build()
     {
         Ok(regex) => Compiled::Matcher(regex),
         Err(regex::Error::CompiledTooBig(_)) => {
             Compiled::Unsupported("a pattern past the size limit of 1 MiB")
         }
-        Err(_) => Compiled::Refused,
+        // The translation has refused what PCRE2 refuses; what the crate refuses beyond that,
+        // PCRE2 reads: among it, groups and repetitions nested past the crate's limit of 250,
+        // which counts both and which keeps its parser's stack bounded (Q-3).
+        Err(_) => Compiled::Unsupported("a construct the regex crate does not read"),
     }
 }
 
@@ -140,6 +163,7 @@ pub fn translate(p: &[u8]) -> Result<String, Compiled> {
     // Whether what precedes is an item a quantifier repeats: PCRE2 refuses one at the start, after
     // `(` or `|`, after an assertion, and after another quantifier.
     let mut repeatable = false;
+    let mut state = State::default();
     while i < p.len() {
         let b = p[i];
         let quantifier = matches!(b, b'*' | b'+' | b'?') || (b == b'{' && counted(p, i)?.is_some());
@@ -175,7 +199,24 @@ pub fn translate(p: &[u8]) -> Result<String, Compiled> {
                 }
             }
             b'[' => i = class(p, i + 1, &mut out)?,
-            b'(' => i = group(p, i, &mut out)?,
+            b'(' => {
+                let (next, opened) = group(p, i, &mut out, &mut state)?;
+                if opened {
+                    state.depth += 1;
+                    if state.depth > MAX_GROUP_DEPTH {
+                        return refused();
+                    }
+                } else {
+                    // An option setting of its own is no item to repeat.
+                    repeatable = false;
+                }
+                i = next;
+            }
+            b')' => {
+                state.depth = state.depth.checked_sub(1).ok_or(Compiled::Refused)?;
+                out.push(')');
+                i += 1;
+            }
             b'*' | b'+' | b'?' => {
                 out.push(b as char);
                 i = quantifier_suffix(p, i + 1, &mut out)?;
@@ -190,7 +231,8 @@ pub fn translate(p: &[u8]) -> Result<String, Compiled> {
                     i += 1;
                 }
             },
-            b')' | b'|' | b'.' | b'^' | b'$' => {
+            b'|' | b'.' | b'^' | b'$' => {
+                state.caret |= b == b'^';
                 out.push(b as char);
                 i += 1;
             }
@@ -203,6 +245,14 @@ pub fn translate(p: &[u8]) -> Result<String, Compiled> {
                 i += 1;
             }
         }
+    }
+    if state.depth > 0 {
+        return refused();
+    }
+    // Under `m`, PCRE2's `^` does not match after a newline that ends the subject; the crate's
+    // does.
+    if state.multiline && state.caret {
+        return unsupported("`^` under the option m");
     }
     Ok(out)
 }
@@ -262,29 +312,35 @@ fn counted(p: &[u8], i: usize) -> Result<Option<(String, usize)>, Compiled> {
     Ok(Some((text, end)))
 }
 
-/// A group opened at `i`, its opening written; the index past the opening.
-fn group(p: &[u8], i: usize, out: &mut String) -> Result<usize, Compiled> {
+/// A group opened at `i`, its opening written; the index past the opening, and whether it
+/// opens a group, which an option setting without `:` does not.
+fn group(
+    p: &[u8],
+    i: usize,
+    out: &mut String,
+    state: &mut State,
+) -> Result<(usize, bool), Compiled> {
     match p.get(i + 1) {
         Some(b'*') => return unsupported("a verb (*…)"),
         Some(b'?') => {}
         _ => {
             out.push('(');
-            return Ok(i + 1);
+            return Ok((i + 1, true));
         }
     }
     let at = i + 2;
     match p.get(at) {
         Some(b':') => {
             out.push_str("(?:");
-            Ok(at + 1)
+            Ok((at + 1, true))
         }
         Some(b'=' | b'!') => unsupported("a look-ahead assertion"),
         Some(b'<') if matches!(p.get(at + 1), Some(b'=' | b'!')) => {
             unsupported("a look-behind assertion")
         }
-        Some(b'<') => named(p, at + 1, b'>', out),
+        Some(b'<') => named(p, at + 1, out, state),
         Some(b'P') => match p.get(at + 1) {
-            Some(b'<') => named(p, at + 2, b'>', out),
+            Some(b'<') => named(p, at + 2, out, state),
             Some(b'=') => unsupported("a back-reference"),
             Some(b'>') => unsupported("a subroutine call"),
             _ => refused(),
@@ -299,15 +355,20 @@ fn group(p: &[u8], i: usize, out: &mut String) -> Result<usize, Compiled> {
         Some(b'-') if p.get(at + 1).is_some_and(u8::is_ascii_digit) => {
             unsupported("recursion or a subroutine call")
         }
-        _ => flags(p, at, out),
+        _ => flags(p, at, out, state),
     }
 }
 
-/// A group's name up to `close`, written as a named group.
-fn named(p: &[u8], from: usize, close: u8, out: &mut String) -> Result<usize, Compiled> {
+/// A group's name up to its `>`, written as a named group.
+fn named(
+    p: &[u8],
+    from: usize,
+    out: &mut String,
+    state: &mut State,
+) -> Result<(usize, bool), Compiled> {
     let end = p[from..]
         .iter()
-        .position(|&b| b == close)
+        .position(|&b| b == b'>')
         .map(|n| from + n)
         .ok_or(Compiled::Refused)?;
     let name = &p[from..end];
@@ -315,17 +376,24 @@ fn named(p: &[u8], from: usize, close: u8, out: &mut String) -> Result<usize, Co
         && name.len() <= MAX_NAME
         && !name[0].is_ascii_digit()
         && name.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'_');
-    if !valid {
+    if !valid || !state.names.insert(name.to_vec()) {
         return refused();
     }
     out.push_str("(?P<");
     out.push_str(std::str::from_utf8(name).expect("ASCII"));
     out.push('>');
-    Ok(end + 1)
+    Ok((end + 1, true))
 }
 
-/// An option setting `(?imsU-imsU)` or `(?imsU-imsU:`, at the letters after `(?`.
-fn flags(p: &[u8], from: usize, out: &mut String) -> Result<usize, Compiled> {
+/// An option setting `(?imsU-imsU)` or `(?imsU-imsU:`, at the letters after `(?`, written as
+/// the crate reads it: each letter once, an empty side left out, as PCRE2 takes `(?-)`, `(?i-)`,
+/// and `(?ii)`.
+fn flags(
+    p: &[u8],
+    from: usize,
+    out: &mut String,
+    state: &mut State,
+) -> Result<(usize, bool), Compiled> {
     let end = p[from..]
         .iter()
         .position(|&b| b == b')' || b == b':')
@@ -335,21 +403,41 @@ fn flags(p: &[u8], from: usize, out: &mut String) -> Result<usize, Compiled> {
     if letters.is_empty() {
         return unsupported("an empty option setting");
     }
+    let mut on = String::new();
+    let mut off = String::new();
+    let mut negated = false;
     for &letter in letters {
         match letter {
-            b'i' | b'm' | b's' | b'U' | b'-' => {}
+            b'-' if !negated => negated = true,
+            b'-' => return refused(),
+            b'i' | b'm' | b's' | b'U' => {
+                let side = if negated { &mut off } else { &mut on };
+                if !side.contains(letter as char) {
+                    side.push(letter as char);
+                }
+            }
             b'x' => return unsupported("the option x"),
             b'n' | b'J' | b'^' => return unsupported("an option the crate does not have"),
             _ => return refused(),
         }
     }
-    if letters.iter().filter(|&&b| b == b'-').count() > 1 {
-        return refused();
+    state.multiline |= on.contains('m');
+    let opens = p[end] == b':';
+    let setting = if off.is_empty() {
+        on
+    } else {
+        format!("{on}-{off}")
+    };
+    match (setting.is_empty(), opens) {
+        (true, true) => out.push_str("(?:"),
+        (true, false) => {}
+        (false, _) => {
+            out.push_str("(?");
+            out.push_str(&setting);
+            out.push(p[end] as char);
+        }
     }
-    out.push_str("(?");
-    out.push_str(std::str::from_utf8(letters).expect("ASCII"));
-    out.push(p[end] as char);
-    Ok(end + 1)
+    Ok((end + 1, opens))
 }
 
 /// One item of a class.
@@ -508,6 +596,43 @@ mod tests {
     }
 
     #[test]
+    fn option_settings_pcre2_reads_are_read() {
+        assert_eq!(reads("(?-)a"), "a");
+        assert_eq!(reads("(?i-)a"), "(?i)a");
+        assert_eq!(reads("(?ii)a"), "(?i)a");
+        assert_eq!(reads("(?-:a)"), "(?:a)");
+        assert!(matches!(compile(b"(?-)a", false), Compiled::Matcher(_)));
+        assert!(unsupported_in("(?m)^a"));
+        assert!(unsupported_in("(?s-m)x(?m)^"));
+        assert!(matches!(compile(b"(?m)a$", false), Compiled::Matcher(_)));
+    }
+
+    #[test]
+    fn groups_nested_deeper_than_the_crate_reads_are_unsupported_and_past_pcre2_refused() {
+        // Verifies: ADR-0031
+        let nested = |depth: usize, open: &str, close: &str| {
+            format!("{}a{}", open.repeat(depth), close.repeat(depth))
+        };
+        for (open, close) in [("(", ")*"), ("(?:", ")+")] {
+            assert!(
+                matches!(
+                    compile(nested(100, open, close).as_bytes(), false),
+                    Compiled::Matcher(_)
+                ),
+                "{open} at 100"
+            );
+            // PCRE2 reads 126 such groups; the crate counts each group and its repetition.
+            let deep = nested(126, open, close);
+            assert!(
+                matches!(compile(deep.as_bytes(), false), Compiled::Unsupported(_)),
+                "{open} at 126"
+            );
+            let deeper = nested(MAX_GROUP_DEPTH + 1, open, close);
+            assert!(refused_in(&deeper), "{open} past {MAX_GROUP_DEPTH}");
+        }
+    }
+
+    #[test]
     fn what_pcre2_refuses_is_refused() {
         for pattern in [
             "(",
@@ -521,6 +646,9 @@ mod tests {
             "[z-a]",
             "[[:foo:]]",
             r"\x{100}",
+            "(?<n>a)(?<n>b)",
+            "(?--i)a",
+            "a)(",
         ] {
             assert!(refused_in(pattern), "{pattern}");
         }

@@ -341,3 +341,37 @@ fn a_nul_ends_a_string_as_in_c() {
         Ok(true)
     );
 }
+
+#[test]
+fn only_patterns_written_in_the_tree_are_kept() {
+    // Verifies: ADR-0031, Q-9
+    let mut evaluator = Evaluator::new();
+    let literal = like(prop_str("a"), "^x", "");
+    let computed = call(Op::RegexpLike, vec![prop_str("a"), prop_str("p"), s("")]);
+    for pattern in ["^a", "^b", "^c"] {
+        let feature = Props([("a", "abc"), ("p", pattern)].into_iter().collect());
+        evaluator.matches(&literal, &feature).unwrap();
+        evaluator.matches(&computed, &feature).unwrap();
+    }
+    assert_eq!(evaluator.cached(), 1);
+    let feature = props(&[("a", "abc"), ("p", "^a")]);
+    assert_eq!(evaluator.matches(&computed, &feature), Ok(true));
+}
+
+#[test]
+fn a_text_past_the_limit_fails_the_expression() {
+    // Verifies: Q-9
+    let long: &'static str = Box::leak("x".repeat(MAX_TEXT_BYTES / 4 + 1).into_boxed_str());
+    let feature = props(&[("a", long)]);
+    let four = call(
+        Op::Concat,
+        vec![prop_str("a"), prop_str("a"), prop_str("a"), prop_str("a")],
+    );
+    let expr = call(Op::Eq, vec![four, s("")]);
+    assert_eq!(eval(&expr, &feature), Err(Failure::TooLong));
+    let three = call(
+        Op::Concat,
+        vec![prop_str("a"), prop_str("a"), prop_str("a")],
+    );
+    assert_eq!(eval(&call(Op::Eq, vec![three, s("")]), &feature), Ok(false));
+}

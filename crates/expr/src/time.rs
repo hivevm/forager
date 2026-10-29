@@ -14,8 +14,9 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-/// The fields of a `struct tm` msTimeCompare compares, in its order: year, month, day, hour,
-/// minute, second. A field strptime did not reach stays 0.
+/// The fields of a `struct tm` msTimeCompare compares, in its order and as `struct tm` holds them:
+/// the year less 1900, the month less 1, the day, hour, minute, and second. A field strptime did
+/// not reach stays 0, as msStrptime clears the struct first: a month not read is January.
 pub type Time = [i32; 6];
 
 /// The formats of msParseTime, in its order: a pattern its regular expression matches at the
@@ -68,19 +69,19 @@ fn strptime(text: &[u8], format: &[u8], time: &mut Time) {
             f += 1;
             continue;
         }
-        let (field, from, to, digits) = match format[f + 1] {
-            b'Y' => (0, 0, 9999, 4),
-            b'm' => (1, 1, 12, 2),
-            b'd' => (2, 1, 31, 2),
-            b'H' => (3, 0, 23, 2),
-            b'M' => (4, 0, 59, 2),
-            _ => (5, 0, 61, 2),
+        // The field, its range, its digits, and what struct tm holds less.
+        let (field, from, to, digits, base) = match format[f + 1] {
+            b'Y' => (0, 0, 9999, 4, 1900),
+            b'm' => (1, 1, 12, 2, 1),
+            b'd' => (2, 1, 31, 2, 0),
+            b'H' => (3, 0, 23, 2, 0),
+            b'M' => (4, 0, 59, 2, 0),
+            _ => (5, 0, 61, 2, 0),
         };
         let Some(value) = number(text, &mut at, from, to, digits) else {
             return;
         };
-        // tm_mon counts from 0; the comparison is the same either way.
-        time[field] = value;
+        time[field] = value - base;
         f += 2;
     }
 }
@@ -117,19 +118,21 @@ mod tests {
     #[test]
     fn times_read_as_ms_parse_time_reads_them() {
         // Verifies: ADR-0031
-        assert_eq!(parse(b"2010-12-01"), Some([2010, 12, 1, 0, 0, 0]));
+        assert_eq!(parse(b"2010-12-01"), Some([110, 11, 1, 0, 0, 0]));
         assert_eq!(
             parse(b"2010-12-01T10:20:30Z"),
-            Some([2010, 12, 1, 10, 20, 30])
+            Some([110, 11, 1, 10, 20, 30])
         );
-        assert_eq!(parse(b"20101201"), Some([2010, 12, 1, 0, 0, 0]));
-        assert_eq!(parse(b"2010-12"), Some([2010, 12, 0, 0, 0, 0]));
+        assert_eq!(parse(b"20101201"), Some([110, 11, 1, 0, 0, 0]));
+        assert_eq!(parse(b"2010-12"), Some([110, 11, 0, 0, 0, 0]));
         assert_eq!(parse(b"10:20:30"), Some([0, 0, 0, 10, 20, 30]));
-        assert_eq!(parse(b"1999 and more"), Some([1999, 0, 0, 0, 0, 0]));
-        // strptime stops at a month past 12 and keeps the year.
-        assert_eq!(parse(b"2010-13-01"), Some([2010, 0, 0, 0, 0, 0]));
+        assert_eq!(parse(b"1999 and more"), Some([99, 0, 0, 0, 0, 0]));
+        // strptime stops at a month past 12 and keeps the year; the month left is January.
+        assert_eq!(parse(b"2010-13-01"), Some([110, 0, 0, 0, 0, 0]));
+        assert_eq!(parse(b"2010-13"), parse(b"2010-01"));
+        assert_eq!(parse(b"2010"), parse(b"2010-01"));
         // A day of 45 reads its first digit, as a second would pass 31.
-        assert_eq!(parse(b"2010-12-45"), Some([2010, 12, 4, 0, 0, 0]));
+        assert_eq!(parse(b"2010-12-45"), Some([110, 11, 4, 0, 0, 0]));
         assert_eq!(parse(b""), None);
         assert_eq!(parse(b"yesterday"), None);
         assert_eq!(parse(b"201"), None);

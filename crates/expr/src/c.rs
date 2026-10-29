@@ -295,11 +295,17 @@ fn convert(spec: &[u8], value: f64, limit: usize) -> Option<Vec<u8>> {
         }
         i += 1;
     }
-    let mut width = 0usize;
+    // printf fails with EOVERFLOW on a width past an int, which msToString's check, an `atoi`
+    // that wraps, lets through.
+    let mut width: u64 = 0;
     while let Some(d) = spec.get(i).filter(|b| b.is_ascii_digit()) {
-        width = width * 10 + usize::from(d - b'0');
+        width = width * 10 + u64::from(d - b'0');
+        if width > i32::MAX as u64 {
+            return None;
+        }
         i += 1;
     }
+    let width = width as usize;
     let mut precision = None;
     if spec.get(i) == Some(&b'.') {
         i += 1;
@@ -349,7 +355,8 @@ fn convert(spec: &[u8], value: f64, limit: usize) -> Option<Vec<u8>> {
         }
     };
     let length = sign.len() + body.len();
-    let pad = width.saturating_sub(length);
+    // Past `limit` the result is cut anyway.
+    let pad = width.saturating_sub(length).min(limit);
     let mut out = Vec::with_capacity(length + pad);
     if left {
         out.extend_from_slice(sign);
@@ -619,6 +626,10 @@ mod tests {
             assert_eq!(to_string(format.as_bytes(), 1.0), None, "{format}");
         }
         assert!(to_string(b"%1024f", 1.0).is_some());
+        // A width atoi wraps below 1024 passes msToString's check; printf refuses it past an int.
+        assert_eq!(to_string(b"%4294968000f", 1.0), None);
+        assert_eq!(to_string(b"%99999999999999999999f", 1.0), None);
+        assert_eq!(to_string(b"%8000000000f", 1.0), None);
     }
 
     #[test]

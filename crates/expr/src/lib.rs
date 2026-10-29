@@ -55,13 +55,31 @@ pub enum Failure {
         pattern: String,
         construct: &'static str,
     },
+    /// A text past [`MAX_TEXT_BYTES`] (Q-9), to be reported once per render with what carries
+    /// it.
+    TooLong,
 }
 
-/// How many compiled patterns a render keeps; one computed per feature beyond them is compiled
-/// each time, so that the cache stays bounded (Q-9).
+/// The longest text an expression reads or computes, in bytes (Q-9); one longer fails the
+/// expression.
+pub const MAX_TEXT_BYTES: usize = 16 << 20;
+
+/// `value`, or [`Failure::TooLong`] for a text past [`MAX_TEXT_BYTES`].
+fn bounded(value: Val) -> Result<Val, Failure> {
+    match &value {
+        Val::Str(s) if s.len() > MAX_TEXT_BYTES => Err(Failure::TooLong),
+        _ => Ok(value),
+    }
+}
+
+/// How many compiled patterns a render keeps, beyond which one is compiled each time it is used,
+/// so that the cache stays bounded (Q-9).
 const MAX_CACHED_PATTERNS: usize = 1024;
 
-/// An evaluator for one render: it compiles each pattern once and keeps it.
+/// An evaluator for one render: it compiles each pattern a tree holds as a literal once and keeps
+/// it; a pattern computed per feature, from a property say, is compiled where it is used and
+/// dropped, as mapparser.y compiles and frees one for each `~`, so that features cannot fill the
+/// cache (Q-9).
 #[derive(Debug, Default)]
 pub struct Evaluator {
     patterns: BTreeMap<(Vec<u8>, bool), pattern::Compiled>,
@@ -91,6 +109,12 @@ fn g(number: f64) -> Vec<u8> {
 impl Evaluator {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// How many compiled patterns the evaluator keeps.
+    #[cfg(test)]
+    fn cached(&self) -> usize {
+        self.patterns.len()
     }
 
     /// Whether `expr` matches the feature, as msEvalExpression decides for a class or a filter:
@@ -129,12 +153,12 @@ impl Evaluator {
             Expr::Bool(b) => Val::Bool(*b),
             Expr::Number(n) => Val::Num(*n),
             Expr::String(s) => Val::Str(c_string(s)),
-            Expr::Property { property } => Val::Str(
+            Expr::Property { property } => bounded(Val::Str(
                 feature
                     .text(property)
                     .map(|text| c_string(&text))
                     .unwrap_or_default(),
-            ),
+            ))?,
             Expr::Date { date: text } | Expr::Timestamp { timestamp: text } => {
                 Val::Time(time::parse(&c_string(text)).ok_or(Failure::Undefined)?)
             }
@@ -149,12 +173,14 @@ impl Evaluator {
                     .iter()
                     .map(|arg| self.eval(arg, feature, depth + 1))
                     .collect::<Result<Vec<_>, _>>()?;
-                self.apply(*op, args)?
+                let literal_pattern = matches!(args_of(expr).get(1), Some(Expr::String(_)));
+                bounded(self.apply(*op, args, literal_pattern)?)?
             }
         })
     }
 
-    fn apply(&mut self, op: Op, args: Vec<Val>) -> Result<Val, Failure> {
+    /// `op` over `args`; `literal_pattern` tells that a pattern is a literal of the tree.
+    fn apply(&mut self, op: Op, args: Vec<Val>, literal_pattern: bool) -> Result<Val, Failure> {
         use Val::{Bool, List, Num, Str, Time};
         let undefined = Err(Failure::Undefined);
         Ok(match (op, args.as_slice()) {
@@ -210,10 +236,20 @@ impl Evaluator {
                     b"i" => true,
                     _ => return undefined,
                 };
-                Bool(self.regexp_like(value, pattern, caseless)?)
+                Bool(self.regexp_like(value, pattern, caseless, literal_pattern)?)
             }
             (Op::Concat, args) => {
-                let mut joined = Vec::new();
+                let length = args
+                    .iter()
+                    .map(|arg| match arg {
+                        Str(s) => s.len(),
+                        _ => 0,
+                    })
+                    .fold(0usize, usize::saturating_add);
+                if length > MAX_TEXT_BYTES {
+                    return Err(Failure::TooLong);
+                }
+                let mut joined = Vec::with_capacity(length);
                 for arg in args {
                     match arg {
                         Str(s) => joined.extend_from_slice(s),
@@ -252,6 +288,7 @@ impl Evaluator {
         value: &[u8],
         pattern: &[u8],
         caseless: bool,
+        literal: bool,
     ) -> Result<bool, Failure> {
         if value.is_empty() {
             return Ok(false);
@@ -262,7 +299,7 @@ impl Evaluator {
             Some(compiled) => compiled,
             None => {
                 fresh = pattern::compile(pattern, caseless);
-                if self.patterns.len() < MAX_CACHED_PATTERNS {
+                if literal && self.patterns.len() < MAX_CACHED_PATTERNS {
                     self.patterns.insert(key.clone(), fresh.clone());
                 }
                 &fresh
@@ -276,6 +313,17 @@ impl Evaluator {
                 construct,
             }),
         }
+    }
+}
+
+/// The arguments of a call, none for any other node.
+fn args_of(expr: &Expr) -> &[Expr] {
+    match expr {
+        Expr::Call {
+            op: Op::RegexpLike,
+            args,
+        } => args,
+        _ => &[],
     }
 }
 
