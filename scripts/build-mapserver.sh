@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds map2img of the reference release of MapServer, the instrument of the noise measurement
 # of G-6 (ADR-0027): from the commit scripts/fetch-msautotest.sh pins, which this script reads and
-# never names itself, with MapServer's default build options and the Ubuntu archive's packages
-# below, into target/mapserver/<commit>/, and prints the path of map2img. It adds no apt source.
+# never names itself, with MapServer's default build options and SVG symbols through librsvg, as
+# MapServer's own CI builds the references, and the Ubuntu archive's packages below, into
+# target/mapserver/<commit>/, and prints the path of map2img. It adds no apt source.
 # It runs on a GitHub-hosted runner only, where .github/workflows/noise.yml calls it, and refuses
 # anywhere else, the dev container included.
 #
@@ -33,12 +34,13 @@ if [[ -z "$TAG" || -z "$COMMIT" || -z "$REMOTE" ]]; then
   exit 1
 fi
 
-# What the default options of MapServer's CMakeLists.txt need, and the tools of its build.
+# What the default options of MapServer's CMakeLists.txt and WITH_RSVG need, and the tools of its
+# build.
 PACKAGES=(
   bison cmake flex g++ make
   libcairo2-dev libfcgi-dev libfreetype-dev libfribidi-dev libgdal-dev libgeos-dev libgif-dev
   libharfbuzz-dev libjpeg-dev libpcre2-dev libpng-dev libpq-dev libproj-dev libprotobuf-c-dev
-  libxml2-dev protobuf-c-compiler
+  librsvg2-dev libxml2-dev protobuf-c-compiler
 )
 sudo apt-get update -q >&2
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends "${PACKAGES[@]}" >&2
@@ -54,7 +56,7 @@ if [[ ! -f "$DIR/.complete" ]]; then
     rm -rf "$DIR"
     exit 1
   fi
-  cmake -S "$DIR/src" -B "$DIR/build" -DCMAKE_BUILD_TYPE=Release >&2
+  cmake -S "$DIR/src" -B "$DIR/build" -DCMAKE_BUILD_TYPE=Release -DWITH_RSVG=ON >&2
   cmake --build "$DIR/build" --target map2img --parallel "$(nproc)" >&2
   touch "$DIR/.complete"
 fi

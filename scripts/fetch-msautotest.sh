@@ -2,8 +2,10 @@
 # Fetches the msautotest suite of the reference release of MapServer: a sparse checkout of its
 # mapfiles and the files they read, into target/msautotest/<commit>/, and prints the suite's
 # directory. Beyond the mapfiles it takes the shapefiles of the data directories of misc and
-# renderers, those of query and wxs that their mapfiles name by a '..' path, and the non-cairo PNG
-# references of misc and renderers; no raster, no .cpg or .prj, and no other output format. The
+# renderers, those of query and wxs that their mapfiles name by a '..' path, the TrueType fonts
+# and the pixmap and SVG symbols of misc/data that the font set and the symbols name, and the
+# non-cairo PNG references of misc and renderers; no raster source, no .cpg or .prj, and no other
+# output format. The
 # pin below is the one place that names the reference release (specification, *Constraints*:
 # "pinned by tag"); the comments that cite MapServer's source refer to it. Moving
 # the pin is a deliberate change with a full conformance run, and changes the key of the CI cache.
@@ -53,6 +55,8 @@ git -C "$DIR" sparse-checkout set --no-cone \
   '/msautotest/renderers/data/*.'{shp,shx,dbf} \
   '/msautotest/query/data/'{bdry_counpy2,indx_q100kpy4}.{shp,shx,dbf} \
   '/msautotest/wxs/data/'{popplace,province}.{shp,shx,dbf} \
+  '/msautotest/misc/data/*.ttf' '/msautotest/misc/data/*.svg' '/msautotest/misc/data/gdalicon*' \
+  '/msautotest/misc/data/gif_*.gif' \
   '/msautotest/misc/expected/*.png' '/msautotest/renderers/expected/*.png' \
   '!/msautotest/**/*.cairo.png' >&2
 echo "$DIR/msautotest"

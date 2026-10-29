@@ -25,7 +25,8 @@ repository, and runs the suite there.
 ## Decision
 
 We will build MapServer from the commit `scripts/fetch-msautotest.sh` names, with its default
-build options and the Ubuntu archive's packages that `scripts/build-mapserver.sh` names, on a
+build options and SVG symbols through librsvg, as its own CI builds the references, and the
+Ubuntu archive's packages that `scripts/build-mapserver.sh` names, on a
 GitHub-hosted `ubuntu-24.04` runner in the workflow `.github/workflows/noise.yml`, run on demand
 and on a push that changes `crates/cli/tests/conformance/`, `scripts/fetch-msautotest.sh`,
 `scripts/build-mapserver.sh`, or the workflow, and nowhere else.
@@ -60,6 +61,9 @@ MapServer on another platform; other categories than geometry and symbols.
 - **A build with only what `map2img` and AGG need** — a smaller build, but an option off that a
   case reaches, such as GEOS for a geometry transform, would count as noise what is a
   configuration difference.
+- **The default options alone** — `WITH_RSVG` is off by default, while MapServer's CI builds the
+  references with it, so the cases with SVG symbols would fail on the configuration, not on
+  noise.
 - **Building in the dev container** — the change ADR-0010 would have to take, for a job that runs
   rarely.
 - **On every push** — a build and a run per push for a result that only the pin, the scope, and
@@ -70,7 +74,8 @@ MapServer on another platform; other categories than geometry and symbols.
 - MapServer at `rel-8-6-6`: `.github/workflows/build.yml` (runs `start.sh` in `ubuntu:24.04`),
   `.github/workflows/start.sh`, `ci/ubuntu/setup.sh` (Ubuntu packages, the ubuntugis-unstable
   PPA, and Kitware's repository), `ci/ubuntu/build.sh`, the `cmakebuild_nocoverage` target of
-  its `Makefile`, and the option defaults of `CMakeLists.txt`; read 2026-10-29.
+  its `Makefile` with `-DWITH_RSVG=1`, and the option defaults of `CMakeLists.txt`; read
+  2026-10-29.
 - conda-forge `mapserver`, latest 8.6.6 (anaconda.org API, checked 2026-10-29).
 - Docker Hub `camptocamp/mapserver` tags `8.6`, `8.6-gdal3.12`, `8.6-gdal3.13`, `8.6.0`, no
   `8.6.6` (checked 2026-10-29).
@@ -103,6 +108,7 @@ workflow runs on another runner than `ubuntu-24.04`, uses `container:` or `docke
 anything but `workflow_dispatch` and a push filtered to the paths of the Decision, or keys its
 cache on anything but the hash of the two scripts.
 
-**Not mechanically decidable:** that the build keeps MapServer's default options and that the
+**Not mechanically decidable:** that the build keeps MapServer's default options with
+`WITH_RSVG` on, and that the
 job summary lists the packages with their origins, short of a run; a reviewer reads the script
 and the first run's summary.
