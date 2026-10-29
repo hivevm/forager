@@ -25,6 +25,20 @@ pub enum DrawOp {
         color: Rgba,
         width: f64,
     },
+    /// Fills a label's glyph outlines under the non-zero rule, their curves flattened, as
+    /// MapServer's AGG renderer draws text (ADR-0028).
+    Glyphs { path: Vec<PathCommand>, color: Rgba },
+}
+
+/// A step of a glyph outline, in pixels; a quadratic curve names its control point and its end,
+/// a cubic its two control points and its end.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PathCommand {
+    MoveTo(Point),
+    LineTo(Point),
+    QuadTo(Point, Point),
+    CubicTo(Point, Point, Point),
+    Close,
 }
 
 /// A drawing operation and the feature it came from.

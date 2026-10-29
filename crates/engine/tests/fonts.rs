@@ -9,8 +9,20 @@ use forager_engine::{MAX_FONT_BYTES, Rendered, render_with_files};
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Extent, Label, Layer, LayerStatus, Map, RenderMode, SourceRef, Span,
+    Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, RenderMode, SourceRef, Span,
 };
+
+/// A test font of the label crate, subsets of DejaVu Sans whose licence lies beside them.
+fn font(name: &str) -> Vec<u8> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../label/tests/fixtures")
+        .join(name);
+    std::fs::read(path).unwrap()
+}
+
+fn sans() -> Vec<u8> {
+    font("dejavu-sans-subset.ttf")
+}
 
 fn ready<F: Future>(future: F) -> F::Output {
     forager_ports::poll_once(future).expect("the engine waited on a port that never waits")
@@ -32,7 +44,7 @@ impl ResourceLoader for Files {
     }
 }
 
-/// A map of two point layers whose labels name `font`, with the font set `fonts`.
+/// A map of two point layers whose labels draw `1` in `font`, with the font set `fonts`.
 fn map(font: &str, fonts: &[(&str, &str)]) -> Map {
     let layer = |name: &str| Layer {
         name: Some(name.into()),
@@ -44,6 +56,7 @@ fn map(font: &str, fonts: &[(&str, &str)]) -> Map {
         }),
         classes: vec![Class {
             labels: vec![Label {
+                text: Some(Expr::String("1".to_owned())),
                 font: Some(Bound::Value(font.to_owned())),
                 span: Some(Span::new("m.map", 7, 5)),
                 ..Label::default()
@@ -96,7 +109,7 @@ fn codes(rendered: &Rendered) -> Vec<&str> {
 #[test]
 fn a_font_is_loaded_once_per_render_through_the_loader() {
     // Verifies: ADR-0028
-    let files = files(&[("fonts/sans.ttf", b"font".to_vec())]);
+    let files = files(&[("fonts/sans.ttf", sans())]);
     let rendered = render(&map("sans", &[("sans", "fonts/sans.ttf")]), &files);
     assert_eq!(codes(&rendered), Vec::<&str>::new());
     assert_eq!(*files.asked.borrow(), ["fonts/sans.ttf"]);
@@ -107,7 +120,7 @@ fn the_first_usable_entry_of_the_font_list_is_taken_as_get_face_for_run_tries_th
     // Verifies: ADR-0028
     // An entry the font set lacks is skipped; an `xx:` prefix is stripped; a later entry is not
     // loaded once one is usable.
-    let files = files(&[("serif.ttf", b"font".to_vec())]);
+    let files = files(&[("serif.ttf", sans())]);
     let rendered = render(
         &map("missing,de:serif,gone", &[("serif", "serif.ttf")]),
         &files,
@@ -115,12 +128,12 @@ fn the_first_usable_entry_of_the_font_list_is_taken_as_get_face_for_run_tries_th
     assert_eq!(codes(&rendered), Vec::<&str>::new());
     assert_eq!(*files.asked.borrow(), ["serif.ttf"]);
     // An entry prefixed `en:` is tried before the list; a name matches without regard to case.
-    let files = self::files(&[("a.ttf", b"a".to_vec()), ("b.ttf", b"b".to_vec())]);
+    let files = self::files(&[("a.ttf", sans()), ("b.ttf", sans())]);
     let rendered = render(&map("a,en:B", &[("a", "a.ttf"), ("b", "b.ttf")]), &files);
     assert_eq!(codes(&rendered), Vec::<&str>::new());
     assert_eq!(*files.asked.borrow(), ["b.ttf"]);
     // A name with a colon that the font set holds as written is found after its stripped form.
-    let files = self::files(&[("xy.ttf", b"font".to_vec())]);
+    let files = self::files(&[("xy.ttf", sans())]);
     let rendered = render(&map("x:y", &[("x:y", "xy.ttf")]), &files);
     assert_eq!(codes(&rendered), Vec::<&str>::new());
 }
@@ -154,7 +167,7 @@ fn a_label_none_of_whose_fonts_can_be_used_is_not_drawn_with_a_diagnostic() {
 #[test]
 fn a_file_the_font_set_names_twice_is_loaded_once() {
     // Verifies: ADR-0028
-    let files = files(&[("same.ttf", b"font".to_vec())]);
+    let files = files(&[("same.ttf", sans())]);
     let fonts = [("one", "same.ttf"), ("two", "same.ttf")];
     let mut map = map("one", &fonts);
     map.layers[1].classes[0].labels[0].font = Some(Bound::Value("two".to_owned()));
@@ -190,4 +203,80 @@ fn a_font_past_the_size_bound_or_outside_the_base_context_is_not_used() {
         "{}",
         rendered.diagnostics[0].message
     );
+}
+
+#[test]
+fn a_label_without_text_loads_no_font() {
+    let files = files(&[("sans.ttf", sans())]);
+    let mut map = map("sans", &[("sans", "sans.ttf")]);
+    for layer in &mut map.layers {
+        layer.classes[0].labels[0].text = None;
+    }
+    let rendered = render(&map, &files);
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+    assert!(files.asked.borrow().is_empty());
+}
+
+#[test]
+fn a_file_that_is_no_font_is_passed_over_as_one_that_does_not_load() {
+    // Verifies: ADR-0028
+    let files = files(&[("junk.ttf", b"font".to_vec()), ("sans.ttf", sans())]);
+    let rendered = render(
+        &map("junk,sans", &[("junk", "junk.ttf"), ("sans", "sans.ttf")]),
+        &files,
+    );
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+    assert_eq!(*files.asked.borrow(), ["junk.ttf", "sans.ttf"]);
+    let rendered = render(&map("junk", &[("junk", "junk.ttf")]), &files);
+    assert_eq!(
+        codes(&rendered),
+        ["label-font-unusable", "label-font-unusable"]
+    );
+    assert!(rendered.diagnostics[0].message.contains("is no font"));
+}
+
+#[test]
+fn a_font_that_lacks_a_glyph_gives_way_to_the_next_unless_it_is_the_last() {
+    // Verifies: ADR-0028
+    let fonts = [("digits", "digits.ttf"), ("sans", "sans.ttf")];
+    let files = files(&[
+        ("digits.ttf", font("dejavu-sans-digits.ttf")),
+        ("sans.ttf", sans()),
+    ]);
+    let mut map = map("digits,sans", &fonts);
+    for layer in &mut map.layers {
+        layer.classes[0].labels[0].text = Some(Expr::String("1a".to_owned()));
+    }
+    let rendered = render(&map, &files);
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+    assert_eq!(*files.asked.borrow(), ["digits.ttf", "sans.ttf"]);
+    // The last font draws what it has, and glyph 0 for the rest, with no diagnostic.
+    for layer in &mut map.layers {
+        layer.classes[0].labels[0].font = Some(Bound::Value("digits".to_owned()));
+    }
+    let rendered = render(&map, &files);
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+}
+
+#[test]
+fn a_font_this_renderer_cannot_read_ends_the_search_with_a_diagnostic() {
+    // Verifies: ADR-0028
+    let fonts = [
+        ("symbol", "symbol.ttf"),
+        ("cff", "cff.otf"),
+        ("sans", "sans.ttf"),
+    ];
+    let files = files(&[
+        ("symbol.ttf", font("dejavu-sans-symbol.ttf")),
+        ("cff.otf", font("boxes-cff.otf")),
+        ("sans.ttf", sans()),
+    ]);
+    for (list, what) in [("symbol,sans", "Unicode"), ("cff,sans", "glyf")] {
+        let rendered = render(&map(list, &fonts), &files);
+        assert_eq!(
+            codes(&rendered),
+            ["label-font-unusable", "label-font-unusable"]
+        );
+        assert!(rendered.diagnostics[0].message.contains(what), "{list}");
+    }
 }

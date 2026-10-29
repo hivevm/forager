@@ -12,6 +12,7 @@ publish.workspace = true
 forager-style-ir.workspace = true
 forager-ports.workspace = true
 forager-render.workspace = true
+forager-label.workspace = true
 
 [dev-dependencies]
 forager-adapter-geojson.workspace = true

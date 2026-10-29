@@ -16,6 +16,7 @@ forager-ports = { path = "crates/ports" }
 forager-mapfile = { path = "crates/mapfile" }
 forager-render = { path = "crates/render" }
 forager-render-agg = { path = "crates/render-agg" }
+forager-label = { path = "crates/label" }
 forager-encode = { path = "crates/encode" }
 forager-engine = { path = "crates/engine" }
 forager-adapter-geojson = { path = "crates/adapter-geojson" }

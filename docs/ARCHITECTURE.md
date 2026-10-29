@@ -64,13 +64,20 @@ golden path and the test pattern an agent copies from are named here.
   by the layer's render mode. A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer
   ([ADR-0025](adr/0025-source-reports-skipped-records.md)); the fonts a label names it loads once
-  per render through the host's resource loader, each bounded (ADR-0028). It is the one core crate
+  per render through the host's resource loader, each bounded, and it draws the labels of point
+  layers after every layer, as MapServer's label cache does, through `label` (ADR-0028); a label it
+  cannot draw yet is left out with a diagnostic. It is the one core crate
   that awaits the ports. Every host binds its sources to the layers by name through the engine's
   `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
   way for each.
+- **`label`** — a label's text as MapServer lays out a Latin line: its sizes, the fonts of its
+  font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
+  FreeType's arithmetic, laid out by their advances and centred on the label's point; it is the
+  one crate that depends on skrifa, and does no I/O (ADR-0028).
 - **`render`** — the display list, the renderer trait, and the RGBA image.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
-  before rasterizing, and is the one crate that may use `unsafe`
+  before rasterizing, fills glyphs as MapServer's AGG renderer does, and is the one crate that may
+  use `unsafe`
   ([ADR-0015](adr/0015-agg-rust-rasterizer.md)).
 - **`encode`** — PNG from and to an RGBA image ([ADR-0017](adr/0017-png-crate.md)).
 - **`adapter-geojson`** — a feature source over a GeoJSON document
@@ -101,10 +108,10 @@ golden path and the test pattern an agent copies from are named here.
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`
-  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)), and requires every crate of the IR and the core
-  to turn on the lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and
-  to lift them nowhere but the one test time bound it names; the frontend, the ports, the
-  adapters, and the hosts are not held to the ban.
+  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)) and skrifa outside `label` (ADR-0028), and
+  requires every crate of the IR and the core to turn on the lints of `clippy.toml` that ban hash
+  maps, clocks, and random sources (Q-2) and to lift them nowhere but the one test time bound it
+  names; the frontend, the ports, the adapters, and the hosts are not held to the ban.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
@@ -169,7 +176,8 @@ adapter, opening each shapefile once for all the layers that name it, parses the
 GeoJSON file of each name a layer carries into a source bound to that layer instead, and runs the
 engine with the agg-rust renderer.
 For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted
-extent and draws every feature in each style of the first class; the image is encoded as PNG.
+extent and draws every feature in each style of the first class; the labels of point layers are
+drawn after the last layer; the image is encoded as PNG.
 
 In the browser, the page calls the bundle's `render`, or `renderWith`, with the mapfile text, a JSON
 object of GeoJSON by layer name, an optional viewport, and the files the mapfile names. The bindings
