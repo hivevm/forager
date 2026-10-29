@@ -18,6 +18,12 @@ const MAX_REPEAT: u32 = 65_535;
 /// PCRE2's longest group name.
 const MAX_NAME: usize = 32;
 
+/// The longest pattern read, in bytes (Q-9). PCRE2 built with its default `LINK_SIZE` of 2, as
+/// Debian and Ubuntu build the library MapServer's CI links, refuses a compiled pattern past 64K
+/// code units; a longer pattern is not read at all, so that one computed from a long value costs
+/// no translation and no syntax tree of its size.
+pub const MAX_PATTERN_BYTES: usize = 1 << 16;
+
 /// PCRE2's `PARENS_NEST_LIMIT`: how deep groups may nest.
 const MAX_GROUP_DEPTH: usize = 250;
 
@@ -49,6 +55,9 @@ pub enum Compiled {
 
 /// Compiles `pattern`, ASCII case-insensitive where `caseless`.
 pub fn compile(pattern: &[u8], caseless: bool) -> Compiled {
+    if pattern.len() > MAX_PATTERN_BYTES {
+        return Compiled::Unsupported("a pattern past 65536 bytes");
+    }
     let translated = match translate(pattern) {
         Ok(translated) => translated,
         Err(read) => return read,
@@ -386,8 +395,8 @@ fn named(
 }
 
 /// An option setting `(?imsU-imsU)` or `(?imsU-imsU:`, at the letters after `(?`, written as
-/// the crate reads it: each letter once, an empty side left out, as PCRE2 takes `(?-)`, `(?i-)`,
-/// and `(?ii)`.
+/// the crate reads it: each letter once, a letter turned off not turned on, an empty side left
+/// out, as PCRE2 takes `(?)`, `(?-)`, `(?i-)`, `(?ii)`, and `(?i-i)`.
 fn flags(
     p: &[u8],
     from: usize,
@@ -400,9 +409,6 @@ fn flags(
         .map(|n| from + n)
         .ok_or(Compiled::Refused)?;
     let letters = &p[from..end];
-    if letters.is_empty() {
-        return unsupported("an empty option setting");
-    }
     let mut on = String::new();
     let mut off = String::new();
     let mut negated = false;
@@ -421,6 +427,8 @@ fn flags(
             _ => return refused(),
         }
     }
+    // A letter turned off after it is turned on is off: `(?i-i)` sets nothing.
+    on.retain(|letter| !off.contains(letter));
     state.multiline |= on.contains('m');
     let opens = p[end] == b':';
     let setting = if off.is_empty() {
@@ -605,6 +613,29 @@ mod tests {
         assert!(unsupported_in("(?m)^a"));
         assert!(unsupported_in("(?s-m)x(?m)^"));
         assert!(matches!(compile(b"(?m)a$", false), Compiled::Matcher(_)));
+        assert_eq!(reads("(?)a"), "a");
+        assert_eq!(reads("(?i-i)A"), "(?-i)A");
+        assert_eq!(reads("(?m-m)^a"), "(?-m)^a");
+        let Compiled::Matcher(regex) = compile(b"(?i-i)A", false) else {
+            panic!("(?i-i)A is read");
+        };
+        assert!(!regex.is_match(b"a"));
+    }
+
+    #[test]
+    fn a_pattern_past_the_length_bound_is_unsupported() {
+        // Verifies: ADR-0031, Q-9
+        let long = "a".repeat(MAX_PATTERN_BYTES + 1);
+        assert!(matches!(
+            compile(long.as_bytes(), false),
+            Compiled::Unsupported("a pattern past 65536 bytes")
+        ));
+        // At the bound, the length refuses nothing; the compiled size decides.
+        let bound = "a".repeat(MAX_PATTERN_BYTES);
+        assert!(!matches!(
+            compile(bound.as_bytes(), false),
+            Compiled::Unsupported("a pattern past 65536 bytes")
+        ));
     }
 
     #[test]

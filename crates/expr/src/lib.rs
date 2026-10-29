@@ -32,7 +32,7 @@ use std::collections::BTreeMap;
 use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
 
 pub use crate::c::{atof, atoi};
-pub use crate::pattern::SIZE_LIMIT;
+pub use crate::pattern::{MAX_PATTERN_BYTES, SIZE_LIMIT};
 
 /// The properties of one feature, as the evaluator reads them.
 pub trait Lookup {

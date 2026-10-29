@@ -375,3 +375,13 @@ fn a_text_past_the_limit_fails_the_expression() {
     );
     assert_eq!(eval(&call(Op::Eq, vec![three, s("")]), &feature), Ok(false));
 }
+
+#[test]
+fn a_computed_pattern_past_the_length_bound_does_not_match() {
+    // Verifies: Q-9
+    let pattern: &'static str = Box::leak("a".repeat(MAX_PATTERN_BYTES + 1).into_boxed_str());
+    let feature = props(&[("a", "a"), ("p", pattern)]);
+    let computed = call(Op::RegexpLike, vec![prop_str("a"), prop_str("p"), s("")]);
+    let result = Evaluator::new().matches(&computed, &feature);
+    assert!(matches!(result, Err(Failure::Pattern { .. })), "{result:?}");
+}
