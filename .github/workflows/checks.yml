@@ -134,6 +134,10 @@ jobs:
       # decided here, without cargo-mutants.
       - name: Self-test the mutation sensor's arguments
         run: bash scripts/test-mutants.sh
+      # How MapServer runs on CI for the noise measurement (noise.yml), decided without building it.
+      # Verifies: ADR-0027
+      - name: Self-test how MapServer is built and run on CI
+        run: bash scripts/test-build-mapserver.sh
       - name: Self-test the vendor check
         run: bash scripts/test-check-vendor.sh
       - name: Check the vendored JavaScript of the browser example against its checksums
