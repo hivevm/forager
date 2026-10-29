@@ -26,7 +26,7 @@ to invent.
 - **Display list** — The ordered sequence of drawing operations the core hands a renderer, each
   tagged with the feature it came from.
 - **Expression** — A condition or value over a feature's properties in the style IR: a CQL2
-  tree ([ADR-0019](adr/0019-cql2-expressions.md)) the mapfile frontend translates from an
+  tree ([ADR-0030](adr/0030-cql2-expressions.md)) the mapfile frontend translates from an
   `EXPRESSION`, a `FILTER`, a `TEXT`, or an attribute binding. Its semantics per parameter are in
   [`semantics/`](semantics/README.md).
 - **Feature source** — The port through which the host supplies a layer's features, implemented by
