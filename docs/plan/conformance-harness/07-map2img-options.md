@@ -4,7 +4,8 @@
 
 The harness applies the `map2img` options of a case's `RUN_PARMS` line to the style IR before
 it renders, as `map2img` applies them: `-l` turns the named layers on, `-e` sets the extent, `-s`
-sets the image size. The cases that need only these options move from out of scope into the list.
+sets the image size. The cases that need only these options and are of the category geometry
+and symbols move into scope, each listed as passing or failing.
 
 ## Acceptance criteria
 

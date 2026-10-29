@@ -2,10 +2,12 @@
 
 ## What to build
 
-The harness writes the number of in-scope cases and of passing ones; a record in the tree holds
-that share for each release tag `v<semver>`, and a check, run by the Rust checks after the
-harness, fails when the current share is below the record of the last release (Q-4). A release
-adds its line to the record. No required check or repository setting changes.
+The harness writes the number of in-scope cases and of passing ones, and of the cases among
+them that the list marks blank; the share leaves the blank cases out, and they are reported
+apart from it, so that they do not inflate it. A record in the tree holds that share for each
+release tag `v<semver>`, and a check, run by the Rust checks after the harness, fails when the
+current share is below the record of the last release (Q-4). A release adds its line to the
+record. No required check or repository setting changes.
 
 ## Acceptance criteria
 

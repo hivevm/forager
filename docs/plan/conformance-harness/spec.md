@@ -88,8 +88,12 @@ text, and the criteria G-7, G-10, and G-11, are later specs that use this harnes
 - **Scope.** A list in the tree names each case the harness renders, its category, and its
   expected outcome; every other case of `misc` and `renderers` is named with the reason it is out
   of scope (an OGC request, another output format, a `map2img` option not applied, a raster
-  source, labels, a projection, a runtime substitution, a feature not built yet). A case moves into
-  scope by an edit of that list in the change that makes it pass.
+  source, labels, a projection, a runtime substitution, a data source other than shapefiles, a
+  case MapServer itself does not reproduce within any threshold of the noise measurement).
+  A case of the category is in scope whether Forager draws it right or not: one it draws wrong is
+  listed as failing, and its outcome flips to passing in the change that makes it pass. The list
+  marks a case whose reference is blank: nearly one colour, in that an image of its most common
+  colour passes against it by the metric.
 - **Metric.** The rendering and the reference are compared as RGBA buffers of the same size. A
   pixel differs when one of its channels differs by more than the category's channel threshold;
   a case passes when the share of differing pixels is at most the category's tolerance. A

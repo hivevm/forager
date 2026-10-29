@@ -141,6 +141,28 @@ pub fn compare_and_keep(
     Ok(comparison)
 }
 
+/// Whether `reference` is blank by `metric`: nearly one colour, in that an image of its most
+/// common colour passes against it. Of the colours equally common, the least by its channels is
+/// taken, so that the answer does not depend on the order of the pixels.
+pub fn blank(reference: &RgbaImage, metric: &Metric) -> bool {
+    let mut counts = std::collections::BTreeMap::new();
+    for pixel in reference.pixels.as_chunks::<4>().0 {
+        *counts.entry(*pixel).or_insert(0usize) += 1;
+    }
+    let Some((&colour, _)) = counts
+        .iter()
+        .max_by(|(a, m), (b, n)| m.cmp(n).then_with(|| b.cmp(a)))
+    else {
+        return true;
+    };
+    let plain = RgbaImage {
+        width: reference.width,
+        height: reference.height,
+        pixels: colour.repeat(reference.pixels.len() / 4),
+    };
+    compare(&plain, reference, metric).passes()
+}
+
 /// Decodes a PNG of any colour type and bit depth into 8-bit RGBA.
 pub fn decode(bytes: &[u8]) -> Result<RgbaImage, String> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
