@@ -168,7 +168,10 @@ adapter, opening each shapefile once for all the layers that name it, parses the
 GeoJSON file of each name a layer carries into a source bound to that layer instead, and runs the
 engine with the agg-rust renderer.
 For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted
-extent and draws every feature in each style of the first class; the image is encoded as PNG.
+extent and draws its features in the styles of the first class: a point or polygon layer each
+feature in every style before the next feature, a line layer style by style over all its
+features, with each style's outline in a pass before the style, as MapServer's line layers do. The
+image is encoded as PNG.
 
 In the browser, the page calls the bundle's `render` with the mapfile text, a JSON object of
 GeoJSON by layer name, and an optional viewport. The bindings hand the frontend a loader that
