@@ -23,7 +23,7 @@ use agg_rust::scanline_u::ScanlineU8;
 use forager_render::{MAX_GLYPH_REACH, PathCommand};
 use forager_style_ir::Rgba;
 
-use crate::AggRenderer;
+use crate::{AggRenderer, CLIP_MARGIN};
 
 impl AggRenderer {
     /// Fills `path` in `color` as `agg2RenderGlyphsPath` fills a text path: its curves flattened
@@ -70,10 +70,20 @@ impl AggRenderer {
             u32::from(color.b),
             u32::from(color.a),
         );
+        let (width, height) = (f64::from(self.width), f64::from(self.height));
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
             let mut scanline = ScanlineU8::new();
             rasterizer.filling_rule(FillingRule::NonZero);
+            // A glyph's curves cannot be clipped as a polygon is, so the rasterizer clips its
+            // flattened lines to the image enlarged by the margin, as ADR-0015 clips every path;
+            // the cells of a glyph far larger than the image then stay within it.
+            rasterizer.clip_box(
+                -CLIP_MARGIN,
+                -CLIP_MARGIN,
+                width + CLIP_MARGIN,
+                height + CLIP_MARGIN,
+            );
             let mut curves = ConvCurve::new(&mut storage);
             rasterizer.add_path(&mut curves, 0);
             render_scanlines_aa_solid(&mut rasterizer, &mut scanline, renderer, &color);

@@ -294,6 +294,24 @@ mod tests {
     }
 
     #[test]
+    fn a_glyph_far_larger_than_the_image_is_clipped_to_it() {
+        // Verifies: ADR-0015
+        // Six million pixels a side: without the rasterizer's clip box its cells would span the
+        // whole square, and the render would take minutes.
+        use forager_render::PathCommand::{Close, LineTo, MoveTo};
+        let (a, b) = (-3e6, 3e6);
+        let path = vec![
+            MoveTo(p(a, a)),
+            LineTo(p(b, a)),
+            LineTo(p(b, b)),
+            LineTo(p(a, b)),
+            Close,
+        ];
+        let image = render(&[DrawOp::Glyphs { path, color: RED }]);
+        assert!(image.pixels.chunks(4).all(|px| px == [200, 80, 80, 255]));
+    }
+
+    #[test]
     fn a_glyph_path_out_of_reach_is_not_drawn() {
         use forager_render::PathCommand::{Close, LineTo, MoveTo};
         let path = vec![
