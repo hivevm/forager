@@ -217,7 +217,7 @@ fn remove(value: &mut Value, at: &Pointer) {
 /// Reads `value`, a document of a newer minor that does not read as this build's version,
 /// dropping each value this build does not know with a warning naming it and its path: an enum
 /// value unsets its field, and an expression with an unknown operator or function becomes one
-/// that never matches, so that its class, label, or filter is kept (ADR-0019, ADR-0020). Anything else
+/// that never matches, so that its class, label, or filter is kept (ADR-0030, ADR-0020). Anything else
 /// that does not read is the error `code`, naming its path.
 pub(crate) fn read(mut value: Value, code: &str) -> Result<Read, Diagnostic> {
     let mut dropped = Vec::new();

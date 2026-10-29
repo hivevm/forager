@@ -1,5 +1,5 @@
 //! Expressions of the style IR: a lean CQL2 tree, serialized in the shape of CQL2-JSON
-//! (ADR-0019). What CQL2 lacks is written as functions in the same `{"op", "args"}` shape.
+//! (ADR-0030). What CQL2 lacks is written as functions in the same `{"op", "args"}` shape.
 
 use std::fmt;
 
@@ -92,7 +92,7 @@ pub enum Op {
     /// A property's value as a time, as MapServer's `msParseTime` reads it.
     #[serde(rename = "to_timestamp")]
     ToTimestamp,
-    /// `regexp_like(value, pattern, flags)`: the pattern in POSIX extended syntax, the flag `i`.
+    /// `regexp_like(value, pattern, flags)`: the pattern in PCRE2's syntax, byte mode (ADR-0030), the flag `i`.
     #[serde(rename = "regexp_like")]
     RegexpLike,
     #[serde(rename = "concat")]
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn expressions_serialize_in_the_shape_of_cql2_json() {
-        // Verifies: ADR-0019
+        // Verifies: ADR-0030
         let expr = Expr::call(
             Op::And,
             vec![
