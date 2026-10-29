@@ -24,8 +24,12 @@ Draft for the maintainer, in Q-9 of `docs/SPECIFICATION.md`:
 >   diagnostic. A test per limit feeds an input past it and expects the diagnostic.
 
 The numbers are the ones in the code; the maintainer may set others from the measurement above.
-Whether a feature source should stop at the limit while it reads, rather than the engine after
-it, is the question the draft leaves open; answering yes changes the `FeatureSource` port.
+The draft leaves two questions open. Whether a feature source should stop at the limit while it
+reads, rather than the engine after it; answering yes changes the `FeatureSource` port. And
+whether Q-9 adds a budget of bytes across one render: the file limit bounds one file, not a
+render. The CLI reads a shapefile layer's `.shp`, `.shx`, and `.dbf` within it, each, and opens a
+shapefile that several layers name once, but a mapfile can still name many distinct files, sparse
+copies or hard links inside the base context among them, each read and held in full.
 
 Accepted ADRs whose basis it moves, for the maintainer to confirm: none derive their decision
 from Q-9's numbers; [ADR-0007](../../adr/0007-harness.md) and

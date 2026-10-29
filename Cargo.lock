@@ -186,6 +186,7 @@ version = "0.1.0"
 dependencies = [
  "forager-adapter-epsg",
  "forager-adapter-geojson",
+ "forager-adapter-shapefile",
  "forager-encode",
  "forager-engine",
  "forager-mapfile",

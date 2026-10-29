@@ -552,6 +552,9 @@ fn a_missing_file_is_an_error_and_upper_case_names_are_tried() {
     }
     let upper = files.loader_named("data/layer", "SHP", "SHX", "DBF");
     assert!(open(&upper).is_ok());
+    // Only the extension changes case, as msSHPOpen and msDBFOpen try it, never the name.
+    let upper_name = files.loader_named("data/LAYER", "SHP", "SHX", "DBF");
+    assert!(open(&upper_name).is_err());
     // Any extension of the name is replaced.
     let renamed = files.loader_named("data/my.layer", "shp", "shx", "dbf");
     let path = forager_ports::ResourcePath::new("data/my.layer.v2").unwrap();

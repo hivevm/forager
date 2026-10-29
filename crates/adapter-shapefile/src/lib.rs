@@ -230,8 +230,10 @@ fn readable_entries(len: usize, records: usize) -> usize {
 }
 
 /// The name without its extension, as `msSHPOpen` cuts it: from the last `.` after the last
-/// separator, a `.` that starts the name included.
-fn basename(name: &str) -> &str {
+/// separator, a `.` that starts the name included. [`ShapefileSource::open`] asks for the files
+/// of this name, so a host that looks for them first, or that opens one shapefile once for every
+/// layer naming it, cuts the name here.
+pub fn basename(name: &str) -> &str {
     let bytes = name.as_bytes();
     let mut i = bytes.len().saturating_sub(1);
     while i > 0 && !matches!(bytes[i], b'.' | b'/' | b'\\') {
