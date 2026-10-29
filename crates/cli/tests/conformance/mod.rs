@@ -49,12 +49,32 @@ impl Case {
         self.options().map(drop)
     }
 
+    /// The arguments `map2img` is run with for the case, as msautotest's test library hands them
+    /// over (`run_tests` in `mstestlib.py` at the pin): the line's words without `[MAP2IMG]`,
+    /// `[RENDERER]` dropped as for a run without a renderer, `[MAPFILE]` the mapfile's file name,
+    /// as the library runs `map2img` in the mapfile's directory, and `[RESULT]` the path given.
+    /// The error is why the harness does not render the case, as [`Case::options`] reads it.
+    pub fn map2img_arguments(&self, result: &Path) -> Result<Vec<String>, String> {
+        self.options()?;
+        let mapfile = self.mapfile.rsplit('/').next().unwrap_or(&self.mapfile);
+        Ok(shell_words(&self.command)?
+            .into_iter()
+            .skip(1)
+            .filter(|word| word != "[RENDERER]")
+            .map(|word| match word.as_str() {
+                "[MAPFILE]" => mapfile.to_owned(),
+                "[RESULT]" => result.display().to_string(),
+                _ => word,
+            })
+            .collect())
+    }
+
     /// The options of the case's `map2img` line that the harness applies to the style IR, in the
     /// order of the line: `-l`, `-e`, and `-s`, read as `map2img.c` at the pin reads them, except
     /// that a number `atof` or `atoi` would read leniently, such as `1abc` or a negative size, is
-    /// refused. The line is split into words as the shell that `os.system` runs it in splits it. The error is
-    /// why the case cannot be rendered: no `map2img` line, no PNG, another output format, an
-    /// option short of its arguments, or any other option.
+    /// refused. The line is split into words as the shell that `os.system` runs it in splits it.
+    /// The error is why the case cannot be rendered: no `map2img` line, no PNG, another output
+    /// format, an option short of its arguments, or any other option.
     pub fn options(&self) -> Result<Vec<Applied>, String> {
         let words = shell_words(&self.command)?;
         let mut words = words.iter().map(String::as_str);

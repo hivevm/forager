@@ -115,9 +115,9 @@ the product's build, and `scripts/check-rust.sh` lints it on every push. Beside 
 `.github/workflows/mutants.yml` and reports the edits no test notices.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
-pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles the
-cases of `misc` and `renderers` read, and the non-cairo PNG references of those two directories,
-cached in CI, never in the repository.
+pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles, fonts,
+and symbol images the cases of `misc` and `renderers` read, and the non-cairo PNG references of
+those two directories, cached in CI, never in the repository.
 `scripts/check-rust.sh` loads every mapfile of it through the CLI on every push (G-1), with the
 suite's directory as the base context and a stand-in table for the EPSG codes beyond the built-in
 ones, and round-trips the style IR of each through YAML and JSON (G-3);
@@ -126,6 +126,11 @@ mapfile that names the suite's init file bare in-process with a stand-in for it.
 `metric/` compares a rendering with a reference image as RGBA buffers, decoding the reference by
 the `png` crate whatever its colour type, and writes the rendering and a difference image when
 a case fails.
+Beside them, `.github/workflows/noise.yml` measures MapServer's own noise against the same
+references: `scripts/build-mapserver.sh` builds `map2img` from the pinned commit on the runner
+([ADR-0027](adr/0027-mapserver-built-from-the-pin.md)), and the harness's ignored test
+`mapserver_renders_the_cases_in_scope_within_its_noise` runs it over the cases in scope and
+reports the share of differing pixels per case at each threshold of a set.
 The conformance harness there reads the cases of `misc` and `renderers`, their `RUN_PARMS` lines,
 in its module `conformance/`, whose list `cases.txt` names each in scope with its category and
 expected outcome, passing or failing, or out of scope with its reason, and marks those whose
