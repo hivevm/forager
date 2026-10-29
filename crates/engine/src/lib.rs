@@ -6,11 +6,14 @@
 mod bind;
 mod draw;
 mod extent;
+mod fonts;
 mod offset;
 
 use std::collections::BTreeMap;
 
-use forager_ports::{Feature, FeatureQuery, FeatureSource};
+use forager_ports::{
+    Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
+};
 use forager_render::{DisplayItem, Renderer, RgbaImage};
 use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba};
 
@@ -18,6 +21,9 @@ use crate::draw::{can_draw, draw_ops, kind, passes};
 
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
+pub use crate::fonts::MAX_FONT_BYTES;
+
+use crate::fonts::Fonts;
 
 /// The largest width or height of an image, MapServer's default `MAXSIZE` (Q-9).
 pub const MAX_IMAGE_SIDE: u32 = 4096;
@@ -38,12 +44,37 @@ pub struct Rendered {
 
 /// Renders `map` with `renderer`, reading each layer's features from the source bound to the
 /// layer's name in `sources`. A layer without a source, or whose source fails, is skipped with a
-/// diagnostic (G-8).
+/// diagnostic (G-8). It reads no other file, so a label's font does not load; a host that has the
+/// files the mapfile names renders with [`render_with_files`].
 pub async fn render<S: FeatureSource, R: Renderer>(
     map: &Map,
     sources: &BTreeMap<String, S>,
+    renderer: R,
+) -> Rendered {
+    render_with_files(map, sources, &NoFiles, renderer).await
+}
+
+/// A loader that holds no file.
+struct NoFiles;
+
+impl ResourceLoader for NoFiles {
+    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        Err(SourceError::new(format!(
+            "{path} is not given to this render"
+        )))
+    }
+}
+
+/// Renders as [`render`] does, and reads the files the map names beyond its sources, the fonts
+/// of its labels, through `files`, the host's resource loader rooted at the base context
+/// (ADR-0028).
+pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>(
+    map: &Map,
+    sources: &BTreeMap<String, S>,
+    files: &L,
     mut renderer: R,
 ) -> Rendered {
+    let mut fonts = Fonts::default();
     let mut diagnostics = Vec::new();
     let Some((width, height, view)) = view(map, &mut diagnostics) else {
         return Rendered {
@@ -66,6 +97,12 @@ pub async fn render<S: FeatureSource, R: Renderer>(
         let Some(class) = layer.classes.first() else {
             continue;
         };
+        // A label needs its fonts once its layer has features; drawing them is still to come.
+        if !features.is_empty() {
+            for label in &class.labels {
+                fonts.for_label(map, label, files, &mut diagnostics).await;
+            }
+        }
         let mut undrawn = BTreeMap::new();
         let mut drawable = Vec::with_capacity(features.len());
         for feature in &features {
