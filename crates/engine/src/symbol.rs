@@ -108,6 +108,23 @@ fn default_size(symbol: &Symbol) -> f64 {
     if size > 0.0 { size } else { 1.0 }
 }
 
+/// msSymbolGetDefaultSize of the style's symbol: of a vector or an ellipse its height, or its
+/// width; 1 for MapServer's default symbol, for any other kind, and where none is found.
+pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol]) -> f64 {
+    let Some(Bound::Value(SymbolRef::Index(index))) = &style.symbol else {
+        return 1.0;
+    };
+    match (*index as usize)
+        .checked_sub(1)
+        .and_then(|i| symbols.get(i))
+    {
+        Some(symbol) if matches!(symbol.kind, SymbolKind::Vector | SymbolKind::Ellipse) => {
+            default_size(symbol)
+        }
+        _ => 1.0,
+    }
+}
+
 /// MapServer's `MS_MAX(a, b)` and `MS_MIN(a, b)`, which keep `b` where they cannot compare.
 pub(crate) fn ms_max(a: f64, b: f64) -> f64 {
     if a > b { a } else { b }

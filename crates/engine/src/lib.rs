@@ -110,7 +110,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             }
         }
         let passes = passes(mode, &class.styles);
-        let mut refused = 0usize;
+        let mut hatching = hatch::Hatching::for_class(&class.styles, &map.symbols);
         let mut draw = |feature: &Feature, style, passes: &[_]| {
             for &pass in passes {
                 let ops = draw_ops(
@@ -120,7 +120,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                     pass,
                     &view,
                     &map.symbols,
-                    &mut refused,
+                    &mut hatching,
                 );
                 for op in ops {
                     renderer.draw(&DisplayItem {
@@ -143,7 +143,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                 }
             }
         }
-        diagnostics.extend(refused_hatches(layer, refused));
+        diagnostics.extend(refused_hatches(layer, hatching.refused));
         for (kind, count) in undrawn {
             let message = format!(
                 "layer {} cannot draw {count} {kind} geometr{} in its render mode",

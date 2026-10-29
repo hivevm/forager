@@ -21,7 +21,7 @@ use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol};
 
 use crate::extent::View;
-use crate::hatch::{self, Hatched};
+use crate::hatch::{self, Hatched, Hatching};
 use crate::offset::{self, Offset};
 use crate::symbol;
 
@@ -89,8 +89,8 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
     }
 }
 
-/// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts; a hatch
-/// fill it refuses to draw counts in `refused` (Q-9).
+/// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts, a hatch
+/// drawn as `hatching` says, a hatch it refuses to draw counted there (Q-9).
 pub fn draw_ops(
     mode: RenderMode,
     geometry: &Geometry,
@@ -98,14 +98,14 @@ pub fn draw_ops(
     pass: Pass,
     view: &View,
     symbols: &[Symbol],
-    refused: &mut usize,
+    hatching: &mut Hatching,
 ) -> Vec<DrawOp> {
     let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
     let mut ops = Vec::new();
     match (mode, geometry) {
         (_, Geometry::Collection(geometries)) => {
             for g in geometries {
-                ops.extend(draw_ops(mode, g, style, pass, view, symbols, refused));
+                ops.extend(draw_ops(mode, g, style, pass, view, symbols, hatching));
             }
         }
         (RenderMode::Point, _) => {
@@ -120,14 +120,25 @@ pub fn draw_ops(
                 }
             }
         }
+        (RenderMode::Polygon, Geometry::Polygon(_) | Geometry::MultiPolygon(_))
+            if symbol::is_hatch(style, symbols) =>
+        {
+            let rings: Vec<Vec<Coord>> = match geometry {
+                Geometry::Polygon(rings) => rings.clone(),
+                Geometry::MultiPolygon(polygons) => polygons.concat(),
+                _ => Vec::new(),
+            };
+            let rings = hatch_rings(&rings, view, hatching);
+            hatching.refused += usize::from(!shade(&mut ops, rings, style, symbols, view));
+        }
         (RenderMode::Polygon, Geometry::Polygon(rings)) => {
             let rings = rings.iter().map(|r| pixels(r)).collect();
-            *refused += usize::from(!shade(&mut ops, rings, style, symbols, view));
+            shade(&mut ops, rings, style, symbols, view);
         }
         (RenderMode::Polygon, Geometry::MultiPolygon(polygons)) => {
             for rings in polygons {
                 let rings = rings.iter().map(|r| pixels(r)).collect();
-                *refused += usize::from(!shade(&mut ops, rings, style, symbols, view));
+                shade(&mut ops, rings, style, symbols, view);
             }
         }
         (RenderMode::Line, Geometry::LineString(line)) => {
@@ -148,6 +159,60 @@ pub fn draw_ops(
         _ => {}
     }
     ops
+}
+
+/// The rings of a feature in pixels as msDrawShape() hands them to a hatch: all of its polygons
+/// as one shape, and, where the shape reaches beyond the map's extent, clipped first to the
+/// extent grown by the class's clip buffer (see [`Hatching::for_class`]) with
+/// msClipPolygonRect(); in map units before the transformation to pixels, or, where a style of
+/// the class has a `GEOMTRANSFORM`, to the image so grown after it. The hatch's box, and so where
+/// its dashes fall, is the clipped shape's.
+fn hatch_rings(rings: &[Vec<Coord>], view: &View, hatching: &Hatching) -> Vec<Vec<Point>> {
+    let e = view.extent;
+    let beyond = rings
+        .iter()
+        .flatten()
+        .any(|c| c.x < e.min_x || c.y < e.min_y || c.x > e.max_x || c.y > e.max_y);
+    let to_pixels = |rings: &[Vec<Point>]| -> Vec<Vec<Point>> {
+        rings
+            .iter()
+            .map(|r| {
+                r.iter()
+                    .map(|p| view.to_pixel(Coord { x: p.x, y: p.y }))
+                    .collect()
+            })
+            .collect()
+    };
+    let points: Vec<Vec<Point>> = rings
+        .iter()
+        .map(|r| r.iter().map(|c| Point { x: c.x, y: c.y }).collect())
+        .collect();
+    let buffer = hatching.clip_buffer;
+    if !beyond {
+        return to_pixels(&points);
+    }
+    if hatching.clip_in_pixels {
+        let (width, height) = view.image_size();
+        let min = Point {
+            x: -buffer,
+            y: -buffer,
+        };
+        let max = Point {
+            x: width + buffer,
+            y: height + buffer,
+        };
+        return hatch::clip_polygon_rect(&to_pixels(&points), min, max);
+    }
+    let grow = buffer * view.cellsize;
+    let min = Point {
+        x: e.min_x - grow,
+        y: e.min_y - grow,
+    };
+    let max = Point {
+        x: e.max_x + grow,
+        y: e.max_y + grow,
+    };
+    to_pixels(&hatch::clip_polygon_rect(&points, min, max))
 }
 
 /// Every vertex of a geometry, in order.
@@ -587,5 +652,100 @@ mod tests {
                 panic!("the outline is a stroke")
             }
         }
+    }
+
+    fn hatch_symbol() -> Symbol {
+        Symbol {
+            name: None,
+            kind: forager_style_ir::SymbolKind::Hatch,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }
+    }
+
+    /// The hatch ops of `geometry` in a hatch style of SIZE 10 and WIDTH 1 on a view of the map
+    /// from 0 to 100 at a pixel a unit, y downwards from 100.
+    fn hatches(geometry: &Geometry) -> Vec<forager_render::Hatch> {
+        let view = View::for_image(
+            forager_style_ir::Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 100.0,
+                max_y: 100.0,
+            },
+            101,
+            101,
+        )
+        .unwrap();
+        let style = Style {
+            symbol: Some(Bound::Value(forager_style_ir::SymbolRef::Index(1))),
+            size: Some(Bound::Value(10.0)),
+            ..colored(Some(BLUE), None)
+        };
+        let symbols = [hatch_symbol()];
+        let mut hatching = Hatching::for_class(std::slice::from_ref(&style), &symbols);
+        let ops = draw_ops(
+            RenderMode::Polygon,
+            geometry,
+            &style,
+            Pass::Plain,
+            &view,
+            &symbols,
+            &mut hatching,
+        );
+        ops.into_iter()
+            .map(|op| match op {
+                DrawOp::Hatch(hatch) => hatch,
+                other => panic!("{other:?}"),
+            })
+            .collect()
+    }
+
+    fn square(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<Coord> {
+        [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
+            .map(|(x, y)| Coord { x, y })
+            .to_vec()
+    }
+
+    #[test]
+    fn a_hatch_s_box_is_that_of_the_polygon_clipped_beyond_the_extent() {
+        // The class's clip buffer is max(1, max(10, 1)) + 1 + 2 = 13 pixels: the polygon from
+        // x = -1000 is clipped at -13, and the box of the hatch, grown by 0.7072, starts there.
+        let reaching = Geometry::Polygon(vec![square(-1000.0, 10.0, 50.0, 60.0)]);
+        let hatch = &hatches(&reaching)[0];
+        assert!(
+            (hatch.lines[0][0].x - (-13.7072)).abs() < 1e-9,
+            "{:?}",
+            hatch.lines[0]
+        );
+        // Inside the extent the polygon is not clipped.
+        let inside = Geometry::Polygon(vec![square(5.0, 10.0, 50.0, 60.0)]);
+        let hatch = &hatches(&inside)[0];
+        assert!(
+            (hatch.lines[0][0].x - 4.2928).abs() < 1e-9,
+            "{:?}",
+            hatch.lines[0]
+        );
+    }
+
+    #[test]
+    fn a_multipolygon_is_hatched_as_one_shape() {
+        // msDrawShadeSymbol hatches the whole shape: one box over both squares.
+        let two = Geometry::MultiPolygon(vec![
+            vec![square(5.0, 10.0, 20.0, 20.0)],
+            vec![square(60.0, 70.0, 90.0, 90.0)],
+        ]);
+        let drawn = hatches(&two);
+        assert_eq!(drawn.len(), 1);
+        assert_eq!(drawn[0].rings.len(), 2);
+        let first = drawn[0].lines[0];
+        assert!((first[0].x - 4.2928).abs() < 1e-9 && (first[1].x - 91.2928).abs() < 1e-9);
     }
 }

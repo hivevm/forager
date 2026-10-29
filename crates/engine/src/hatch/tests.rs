@@ -240,3 +240,58 @@ fn a_hatch_whose_steps_no_longer_move_is_refused() {
     };
     assert_eq!(hatch(far, &style, BLACK, IMAGE, ORIGIN), Hatched::Refused);
 }
+
+#[test]
+fn the_clip_buffer_is_msdrawshape_s() {
+    // A plain style: max(1, max(-1, 1)) + 1 = 2. A hatch of SIZE 10 and WIDTH 3 offset by
+    // (4, 5): max(1, max(10, 3)) + 5 + 1 = 16. The class: 16, and 2 more for a polygon.
+    let plain = style(None, None);
+    let hatched = Style {
+        offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
+        ..style(Some(10.0), Some(3.0))
+    };
+    let hatching = Hatching::for_class(&[plain, hatched], &[]);
+    assert_eq!(hatching.clip_buffer, 18.0);
+    assert!(!hatching.clip_in_pixels);
+    // MINSIZE above the rest counts as it is: 12.5 + 1 rounds half to even, to 14, and 16 with
+    // the 2.
+    let small = Style {
+        min_size: Some(12.5),
+        ..style(None, None)
+    };
+    assert_eq!(Hatching::for_class(&[small], &[]).clip_buffer, 16.0);
+}
+
+#[test]
+fn a_polygon_is_clipped_as_msclippolygonrect_clips_it() {
+    // A square from -10 to 10 cut to the rectangle from 0 to 20: msClipPolygonRect's walk adds,
+    // edge by edge, the corner the bottom edge enters by, (0, 0), where the right edge enters,
+    // (10, 0), and the ends inside, and closes the ring.
+    let square = vec![
+        p(-10.0, -10.0),
+        p(10.0, -10.0),
+        p(10.0, 10.0),
+        p(-10.0, 10.0),
+        p(-10.0, -10.0),
+    ];
+    let clipped = clip_polygon_rect(&[square], p(0.0, 0.0), p(20.0, 20.0));
+    assert_eq!(
+        clipped,
+        vec![vec![
+            p(0.0, 0.0),
+            p(10.0, 0.0),
+            p(10.0, 10.0),
+            p(0.0, 10.0),
+            p(0.0, 0.0),
+        ]]
+    );
+    // Rings wholly inside are kept as they are, and a ring wholly outside is dropped.
+    let inside = vec![p(1.0, 1.0), p(5.0, 1.0), p(5.0, 5.0)];
+    assert_eq!(
+        clip_polygon_rect(std::slice::from_ref(&inside), p(0.0, 0.0), p(20.0, 20.0)),
+        vec![inside.clone()]
+    );
+    let outside = vec![p(30.0, 30.0), p(40.0, 30.0), p(40.0, 40.0)];
+    let kept = clip_polygon_rect(&[inside, outside], p(0.0, 0.0), p(20.0, 20.0));
+    assert_eq!(kept.len(), 1);
+}

@@ -1,6 +1,7 @@
 // The hatch of a polygon follows the hatch branch of MapServer's msDrawShadeSymbol(),
-// src/maprendering.c, and createHatch() and msHatchPolygon(), src/mapagg.cpp, of the release
-// pinned in scripts/fetch-msautotest.sh.
+// src/maprendering.c, createHatch() and msHatchPolygon(), src/mapagg.cpp, and the clipping of
+// a polygon before it is drawn, msDrawShape(), src/mapdraw.c, and msClipPolygonRect(),
+// src/mapprimitive.cpp, of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2007 Regents of the University of Minnesota (src/mapagg.cpp).
 // Copyright (c) 1996-2011 Regents of the University of Minnesota (src/maprendering.c).
@@ -21,10 +22,10 @@
 //! trigonometry is libm's, the same code on every target (Q-2).
 
 use forager_render::{Hatch, Point};
-use forager_style_ir::{Rgba, Style};
+use forager_style_ir::{Rgba, Style, Symbol};
 
 use crate::draw::fixed;
-use crate::symbol::{ms_max, ms_min};
+use crate::symbol::{self, ms_max, ms_min};
 
 /// MapServer's `MS_DEG_TO_RAD`, `src/mapserver.h`.
 const DEG_TO_RAD: f64 = 0.017_453_292_519_943_295;
@@ -38,6 +39,152 @@ const MAX_WIDTH: f64 = 32.0;
 /// The most lines one hatch lays over the image (Q-9): a hatch a pixel apart over the largest
 /// image has some 5800.
 const MAX_LINES: f64 = 1_048_576.0;
+
+/// What the drawing of a class's hatches needs and counts: how far beyond the image MapServer
+/// clips a polygon before it draws it, and how many hatches were refused (Q-9).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Hatching {
+    /// msDrawShape()'s `clip_buf` of the class, in pixels.
+    pub clip_buffer: f64,
+    /// Whether a style of the class has a `GEOMTRANSFORM`, which makes MapServer clip the polygon
+    /// in pixels, after the transformation to the image, instead of in map units before it.
+    pub clip_in_pixels: bool,
+    pub refused: usize,
+}
+
+impl Hatching {
+    /// msDrawShape()'s clip buffer of a polygon drawn in the styles of a class: per style, the
+    /// largest of its symbol's default size, its `SIZE`, and its `WIDTH`, grown by its larger
+    /// `OFFSET` unless that is a line offset, or its `MINSIZE` or `MINWIDTH` where larger, plus
+    /// 1, rounded as `lrint`; the largest of the styles, plus 2 for a polygon. A size or width
+    /// bound to a property or an expression counts as unset, MapServer's -1 and 1.
+    pub fn for_class(styles: &[Style], symbols: &[Symbol]) -> Self {
+        let mut buffer = 0.0_f64;
+        for style in styles {
+            let default_size = symbol::default_size_of(style, symbols);
+            let size = fixed(&style.size).unwrap_or(-1.0);
+            let width = fixed(&style.width).unwrap_or(1.0);
+            let mut largest = ms_max(default_size, ms_max(size, width));
+            let unscaled = ms_max(
+                style.min_size.unwrap_or(MIN_SIZE),
+                style.min_width.unwrap_or(MIN_WIDTH),
+            );
+            if style.line_offset.is_none()
+                && let Some([x, y]) = &style.offset
+            {
+                let (x, y) = (x.value().unwrap_or(0.0), y.value().unwrap_or(0.0));
+                largest += ms_max(y.abs(), x.abs());
+            }
+            buffer = ms_max(buffer, (ms_max(largest, unscaled) + 1.0).round_ties_even());
+        }
+        Self {
+            clip_buffer: buffer + 2.0,
+            clip_in_pixels: styles.iter().any(|s| s.geom_transform.is_some()),
+            refused: 0,
+        }
+    }
+}
+
+/// MapServer's `NEARZERO`, `src/mapprimitive.cpp`.
+const NEARZERO: f64 = 1.0e-30;
+
+/// msClipPolygonRect(): every ring cut to the rectangle from `min` to `max` by MapServer's
+/// variant of Liang–Barsky, which keeps a ring's way around a corner it cuts off as that corner;
+/// rings wholly inside, by the bounds of all of them, are kept as they are. A ring is read closed;
+/// one wholly outside is dropped.
+pub(crate) fn clip_polygon_rect(rings: &[Vec<Point>], min: Point, max: Point) -> Vec<Vec<Point>> {
+    let all = rings.iter().flatten();
+    let inside = all
+        .clone()
+        .all(|p| p.x <= max.x && p.x >= min.x && p.y <= max.y && p.y >= min.y);
+    if inside {
+        return rings.to_vec();
+    }
+    let mut clipped = Vec::new();
+    for ring in rings {
+        let mut ring = ring.clone();
+        if let (Some(&first), Some(&last)) = (ring.first(), ring.last())
+            && first != last
+        {
+            ring.push(first);
+        }
+        let mut line: Vec<Point> = Vec::new();
+        for edge in ring.windows(2) {
+            clip_edge(&mut line, edge[0], edge[1], min, max);
+        }
+        if let Some(&first) = line.first() {
+            line.push(first);
+            clipped.push(line);
+        }
+    }
+    clipped
+}
+
+/// One edge of msClipPolygonRect(), the points it adds to the clipped ring.
+fn clip_edge(line: &mut Vec<Point>, a: Point, b: Point, min: Point, max: Point) {
+    let p = |x, y| Point { x, y };
+    let (x1, y1, x2, y2) = (a.x, a.y, b.x, b.y);
+    let mut dx = x2 - x1;
+    if dx == 0.0 {
+        dx = if x1 > min.x { -NEARZERO } else { NEARZERO };
+    }
+    let mut dy = y2 - y1;
+    if dy == 0.0 {
+        dy = if y1 > min.y { -NEARZERO } else { NEARZERO };
+    }
+    let (x_in, x_out) = if dx > 0.0 {
+        (min.x, max.x)
+    } else {
+        (max.x, min.x)
+    };
+    let (y_in, y_out) = if dy > 0.0 {
+        (min.y, max.y)
+    } else {
+        (max.y, min.y)
+    };
+    let t_in_x = (x_in - x1) / dx;
+    let t_in_y = (y_in - y1) / dy;
+    let (t_in1, t_in2) = if t_in_x < t_in_y {
+        (t_in_x, t_in_y)
+    } else {
+        (t_in_y, t_in_x)
+    };
+    // The comparisons as MapServer writes them, so that a NaN takes the same way.
+    if 1.0 >= t_in1 {
+        if 0.0 < t_in1 {
+            line.push(p(x_in, y_in));
+        }
+        if 1.0 >= t_in2 {
+            let t_out_x = (x_out - x1) / dx;
+            let t_out_y = (y_out - y1) / dy;
+            let t_out = if t_out_x < t_out_y { t_out_x } else { t_out_y };
+            if 0.0 < t_in2 || 0.0 < t_out {
+                if t_in2 <= t_out {
+                    if 0.0 < t_in2 {
+                        if t_in_x > t_in_y {
+                            line.push(p(x_in, y1 + t_in_x * dy));
+                        } else {
+                            line.push(p(x1 + t_in_y * dx, y_in));
+                        }
+                    }
+                    if 1.0 > t_out {
+                        if t_out_x < t_out_y {
+                            line.push(p(x_out, y1 + t_out_x * dy));
+                        } else {
+                            line.push(p(x1 + t_out_y * dx, y_out));
+                        }
+                    } else {
+                        line.push(p(x2, y2));
+                    }
+                } else if t_in_x > t_in_y {
+                    line.push(p(x_in, y_out));
+                } else {
+                    line.push(p(x_out, y_in));
+                }
+            }
+        }
+    }
+}
 
 /// What a hatch style draws on a polygon.
 #[derive(Debug, PartialEq)]
