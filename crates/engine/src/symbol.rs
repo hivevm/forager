@@ -25,7 +25,8 @@
 // implied warranty, and with no claim as to its suitability for any purpose.
 
 //! The marks a point style draws: a vector or an ellipse symbol, sized, rotated, and anchored as
-//! MapServer's AGG renderer draws it at a point.
+//! MapServer's AGG renderer draws it at a point. Its trigonometry is libm's, the same code on
+//! every target, so that the native and the browser build draw the same bytes (Q-2).
 
 use forager_render::{DrawOp, Point};
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
@@ -43,9 +44,9 @@ const MAX_SIZE: f64 = 500.0;
 const MIN_WIDTH: f64 = 0.0;
 const MAX_WIDTH: f64 = 32.0;
 
-/// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√(4r);
-/// this many reach a radius of some 100 000 pixels, far past any image, and bound what a
-/// hostile symbol costs (Q-9).
+/// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16
+/// for a radius of 6, some 2000 for 100 000 pixels; this many are reached at a radius of some
+/// 425 000 pixels, far past any image, and bound what a hostile symbol costs (Q-9).
 const MAX_ELLIPSE_STEPS: u32 = 4096;
 
 /// What a point style draws at each point.
@@ -167,7 +168,7 @@ fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64) -> Point {
             y: at.y + oy,
         };
     }
-    let (sin, cos) = ((-rotation).sin(), (-rotation).cos());
+    let (sin, cos) = (libm::sin(-rotation), libm::cos(-rotation));
     Point {
         x: at.x + (ox * cos - oy * sin),
         y: at.y + (ox * sin + oy * cos),
@@ -243,15 +244,15 @@ fn ellipse(symbol: &Symbol, at: Point, s: &SymbolStyle) -> Vec<Point> {
 fn agg_ellipse(x: f64, y: f64, rx: f64, ry: f64) -> Vec<Point> {
     use std::f64::consts::PI;
     let ra = (rx.abs() + ry.abs()) / 2.0;
-    let da = (ra / (ra + 0.125)).acos() * 2.0;
+    let da = libm::acos(ra / (ra + 0.125)) * 2.0;
     // AGG's uround: `unsigned(v + 0.5)`; Rust's cast saturates where C's would not be defined.
     let num = ((2.0 * PI / da + 0.5) as u32).min(MAX_ELLIPSE_STEPS);
     (0..num)
         .map(|step| {
             let angle = f64::from(step) / f64::from(num) * 2.0 * PI;
             Point {
-                x: x + angle.cos() * rx,
-                y: y + angle.sin() * ry,
+                x: x + libm::cos(angle) * rx,
+                y: y + libm::sin(angle) * ry,
             }
         })
         .collect()
@@ -296,10 +297,10 @@ impl Affine {
 
     fn rotation(a: f64) -> Self {
         Self {
-            sx: a.cos(),
-            shy: a.sin(),
-            shx: -a.sin(),
-            sy: a.cos(),
+            sx: libm::cos(a),
+            shy: libm::sin(a),
+            shx: -libm::sin(a),
+            sy: libm::cos(a),
             tx: 0.0,
             ty: 0.0,
         }
