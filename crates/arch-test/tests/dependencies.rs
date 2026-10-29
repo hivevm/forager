@@ -6,62 +6,126 @@ use std::process::Command;
 
 use serde_json::Value;
 
-/// The hosts, which may depend on every crate but hosts and tooling, adapters included.
-const HOSTS: &[&str] = &["cli", "bindings-wasm", "dev-server", "bindings-wit"];
-
-/// Whether `from` may depend on `to`, by crate name without the `forager-` prefix; `None` when
-/// ADR-0009 does not name `from`.
-fn may_depend(from: &str, to: &str) -> Option<bool> {
-    if HOSTS.contains(&from) {
-        return Some(!HOSTS.contains(&to) && to != "arch-test");
-    }
-    Some(allowed(from)?.contains(&to))
+/// The groups of ADR-0009's table.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Group {
+    Ir,
+    Core,
+    Ports,
+    Frontend,
+    Adapters,
+    Hosts,
+    Tooling,
 }
 
-/// What a crate other than a host may depend on.
-fn allowed(from: &str) -> Option<&'static [&'static str]> {
-    const CORE: &[&str] = &[
-        "style-ir",
-        "expr",
-        "proj",
-        "render",
+/// What a crate may depend on: the crates its row names, or for `engine` the IR, every other core
+/// crate, and the ports. The groups of hosts and tooling decide over their rows, `OfItsGroup`: a
+/// host may depend on every crate outside the hosts and the tooling, the tooling on none; so a
+/// crate moved to the hosts needs no second edit.
+#[derive(Clone, Copy)]
+enum Edges {
+    To(&'static [&'static str]),
+    TheIrTheCoreAndThePorts,
+    OfItsGroup,
+}
+
+/// A row of ADR-0009's table: a crate by name without the `forager-` prefix, where a name ending
+/// in `*` stands for every crate it prefixes, its group, and its edges.
+type Row = (&'static str, Group, Edges);
+
+/// ADR-0009's table, the one place a crate is named; crates not yet created are named too.
+const TABLE: &[Row] = &[
+    ("style-ir", Group::Ir, Edges::To(&[])),
+    ("expr", Group::Core, Edges::To(&["style-ir"])),
+    ("proj", Group::Core, Edges::To(&["style-ir"])),
+    ("render", Group::Core, Edges::To(&["style-ir"])),
+    (
         "render-agg",
-        "encode",
+        Group::Core,
+        Edges::To(&["style-ir", "render"]),
+    ),
+    ("encode", Group::Core, Edges::To(&["render"])),
+    (
         "symbolize",
+        Group::Core,
+        Edges::To(&["style-ir", "expr", "proj", "render"]),
+    ),
+    (
         "label",
+        Group::Core,
+        Edges::To(&["style-ir", "expr", "proj", "render"]),
+    ),
+    (
         "raster",
-        "ports",
-    ];
-    Some(match from {
-        "style-ir" | "arch-test" => &[],
-        "expr" | "proj" | "render" | "ports" => &["style-ir"],
-        "render-agg" => &["style-ir", "render"],
-        "encode" => &["render"],
-        "symbolize" | "label" | "raster" => &["style-ir", "expr", "proj", "render"],
-        "engine" => CORE,
-        "mapfile" => &["style-ir", "ports"],
-        adapter if adapter.starts_with("adapter-") => &["style-ir", "ports"],
-        _ => return None,
+        Group::Core,
+        Edges::To(&["style-ir", "expr", "proj", "render"]),
+    ),
+    ("engine", Group::Core, Edges::TheIrTheCoreAndThePorts),
+    ("ports", Group::Ports, Edges::To(&["style-ir"])),
+    (
+        "mapfile",
+        Group::Frontend,
+        Edges::To(&["style-ir", "ports"]),
+    ),
+    (
+        "adapter-*",
+        Group::Adapters,
+        Edges::To(&["style-ir", "ports"]),
+    ),
+    ("cli", Group::Hosts, Edges::OfItsGroup),
+    ("bindings-wasm", Group::Hosts, Edges::OfItsGroup),
+    ("dev-server", Group::Hosts, Edges::OfItsGroup),
+    ("bindings-wit", Group::Hosts, Edges::OfItsGroup),
+    ("arch-test", Group::Tooling, Edges::OfItsGroup),
+];
+
+/// Whether a row's name names the crate `name`.
+fn names(pattern: &str, name: &str) -> bool {
+    match pattern.strip_suffix('*') {
+        Some(prefix) => name.starts_with(prefix),
+        None => name == pattern,
+    }
+}
+
+/// The row that names `name`, if one does.
+fn row<'t>(table: &'t [Row], name: &str) -> Option<&'t Row> {
+    table.iter().find(|(pattern, _, _)| names(pattern, name))
+}
+
+/// The group of the crate `name`, if the table names it.
+fn group(table: &[Row], name: &str) -> Option<Group> {
+    row(table, name).map(|&(_, group, _)| group)
+}
+
+/// Whether `from` may depend on `to`; `None` when the table does not name `from`.
+fn may_depend(table: &[Row], from: &str, to: &str) -> Option<bool> {
+    let &(_, from_group, edges) = row(table, from)?;
+    let to_group = group(table, to);
+    Some(match (from_group, edges) {
+        (Group::Hosts, _) => !matches!(to_group, Some(Group::Hosts | Group::Tooling)),
+        (Group::Tooling, _) | (_, Edges::OfItsGroup) => false,
+        (_, Edges::To(crates)) => crates.contains(&to),
+        (_, Edges::TheIrTheCoreAndThePorts) => {
+            from != to && matches!(to_group, Some(Group::Ir | Group::Core | Group::Ports))
+        }
     })
 }
 
-/// The crates that must link no C code, directly or transitively.
-fn must_be_pure_rust(name: &str) -> bool {
+/// Whether a crate must link no C code, directly or transitively: the IR, the core, the ports,
+/// and the frontend (ADR-0009, Q-1).
+fn must_be_pure_rust(table: &[Row], name: &str) -> bool {
     matches!(
-        name,
-        "style-ir"
-            | "expr"
-            | "proj"
-            | "render"
-            | "render-agg"
-            | "encode"
-            | "symbolize"
-            | "label"
-            | "raster"
-            | "engine"
-            | "ports"
-            | "mapfile"
+        group(table, name),
+        Some(Group::Ir | Group::Core | Group::Ports | Group::Frontend)
     )
+}
+
+/// The crates of the IR and the core, held to the ban on hash maps, clocks, and randomness (Q-2).
+fn ir_and_core(table: &[Row]) -> impl Iterator<Item = &'static str> + '_ {
+    table
+        .iter()
+        .filter(|(_, group, _)| matches!(group, Group::Ir | Group::Core))
+        .map(|&(name, _, _)| name)
 }
 
 struct Workspace {
@@ -138,13 +202,13 @@ fn workspace_crates_depend_only_along_the_allowed_edges() {
     let ws = workspace();
     let mut violations = Vec::new();
     for (id, from) in &ws.members {
-        if may_depend(from, "style-ir").is_none() {
+        if may_depend(TABLE, from, "style-ir").is_none() {
             violations.push(format!("{from} is not a crate ADR-0009 names"));
             continue;
         }
         for dep in &ws.deps[id] {
             if let Some(to) = ws.members.get(dep)
-                && may_depend(from, to) != Some(true)
+                && may_depend(TABLE, from, to) != Some(true)
             {
                 violations.push(format!("{from} -> {to}"));
             }
@@ -161,7 +225,11 @@ fn the_ir_core_ports_and_frontend_link_no_c_code() {
     // Verifies: ADR-0009, Q-1
     let ws = workspace();
     let mut violations = BTreeSet::new();
-    for (id, name) in ws.members.iter().filter(|(_, n)| must_be_pure_rust(n)) {
+    for (id, name) in ws
+        .members
+        .iter()
+        .filter(|(_, n)| must_be_pure_rust(TABLE, n))
+    {
         let mut stack = vec![id.clone()];
         let mut seen = BTreeSet::new();
         while let Some(current) = stack.pop() {
@@ -183,16 +251,45 @@ fn the_ir_core_ports_and_frontend_link_no_c_code() {
 #[test]
 fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
     // The table itself, so that a test that never fails cannot pass for a check.
-    assert!(!allowed("style-ir").unwrap().contains(&"ports"));
-    assert!(!allowed("render").unwrap().contains(&"expr"));
-    assert!(!allowed("mapfile").unwrap().contains(&"engine"));
-    assert!(!allowed("adapter-geojson").unwrap().contains(&"engine"));
-    assert!(allowed("engine").unwrap().contains(&"ports"));
-    assert!(allowed("server").is_none());
-    assert_eq!(may_depend("cli", "adapter-geojson"), Some(true));
-    assert_eq!(may_depend("cli", "bindings-wasm"), Some(false));
-    assert_eq!(may_depend("bindings-wasm", "arch-test"), Some(false));
-    assert!(must_be_pure_rust("mapfile") && !must_be_pure_rust("bindings-wasm"));
+    let t = TABLE;
+    assert_eq!(may_depend(t, "style-ir", "ports"), Some(false));
+    assert_eq!(may_depend(t, "render", "expr"), Some(false));
+    assert_eq!(may_depend(t, "mapfile", "engine"), Some(false));
+    assert_eq!(may_depend(t, "adapter-geojson", "engine"), Some(false));
+    assert_eq!(may_depend(t, "engine", "ports"), Some(true));
+    assert_eq!(may_depend(t, "server", "style-ir"), None);
+    assert_eq!(may_depend(t, "cli", "adapter-geojson"), Some(true));
+    assert_eq!(may_depend(t, "cli", "bindings-wasm"), Some(false));
+    assert_eq!(may_depend(t, "bindings-wasm", "arch-test"), Some(false));
+    assert!(must_be_pure_rust(t, "mapfile") && !must_be_pure_rust(t, "bindings-wasm"));
+    assert!(must_be_pure_rust(t, "render") && ir_and_core(t).any(|c| c == "render"));
+    assert!(must_be_pure_rust(t, "ports") && !ir_and_core(t).any(|c| c == "ports"));
+
+    // Every crate directory has exactly one row, so each rule above reaches it.
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    for entry in std::fs::read_dir(&crates).unwrap() {
+        let path = entry.unwrap().path();
+        if !path.join("Cargo.toml").is_file() {
+            continue;
+        }
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let rows = TABLE.iter().filter(|(p, _, _)| names(p, &name)).count();
+        assert_eq!(rows, 1, "{name} has {rows} rows in the table");
+    }
+
+    // A core crate moved to the hosts by its row alone leaves the pure-Rust and the Q-2 sets and
+    // may depend on an adapter.
+    let moved: Vec<Row> = TABLE
+        .iter()
+        .map(|&(name, group, edges)| match name {
+            "render" => (name, Group::Hosts, edges),
+            _ => (name, group, edges),
+        })
+        .collect();
+    assert!(!must_be_pure_rust(&moved, "render"));
+    assert!(!ir_and_core(&moved).any(|c| c == "render"));
+    assert_eq!(may_depend(&moved, "render", "adapter-geojson"), Some(true));
+    assert_eq!(may_depend(&moved, "engine", "render"), Some(false));
 }
 
 #[test]
@@ -229,20 +326,6 @@ fn only_render_agg_allows_unsafe_code() {
     assert!(offenders.is_empty(), "{offenders:?}");
 }
 
-/// The crates of the IR and the core groups of ADR-0009.
-const IR_AND_CORE: &[&str] = &[
-    "style-ir",
-    "expr",
-    "proj",
-    "render",
-    "render-agg",
-    "encode",
-    "symbolize",
-    "label",
-    "raster",
-    "engine",
-];
-
 #[test]
 fn the_ir_and_the_core_warn_the_lints_that_ban_hash_maps_clocks_and_randomness() {
     // Verifies: Q-2
@@ -251,8 +334,7 @@ fn the_ir_and_the_core_warn_the_lints_that_ban_hash_maps_clocks_and_randomness()
     // shows to bite on a fixture. A new core crate without the line would escape the ban.
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let line = "#![warn(clippy::disallowed_types, clippy::disallowed_methods)]";
-    let missing: Vec<_> = IR_AND_CORE
-        .iter()
+    let missing: Vec<_> = ir_and_core(TABLE)
         .filter(|name| crates.join(name).is_dir())
         .filter(|name| {
             !std::fs::read_to_string(crates.join(name).join("src/lib.rs"))
@@ -286,7 +368,7 @@ fn no_core_crate_lifts_the_ban_on_hash_maps_clocks_and_randomness() {
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let line = "#![warn(clippy::disallowed_types, clippy::disallowed_methods)]";
     let mut offenders = Vec::new();
-    for name in IR_AND_CORE.iter().filter(|name| crates.join(name).is_dir()) {
+    for name in ir_and_core(TABLE).filter(|name| crates.join(name).is_dir()) {
         let mut stack = vec![crates.join(name)];
         while let Some(path) = stack.pop() {
             if path.is_dir() {
