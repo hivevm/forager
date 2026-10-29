@@ -1,6 +1,6 @@
 # ADR-0030: Expressions in the style IR are a lean CQL2 tree of Forager's own types, serialized as CQL2-JSON, with MapServer's typing made explicit at import and its patterns read as PCRE2 reads them
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-29
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/style-ir`, the translation of expressions in `crates/mapfile`, and every crate that evaluates an expression of the style IR
