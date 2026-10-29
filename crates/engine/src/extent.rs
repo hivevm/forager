@@ -112,6 +112,35 @@ mod tests {
     }
 
     #[test]
+    fn a_mark_is_placed_by_the_inverse_of_the_cellsize() {
+        // msTransformPoint multiplies by 1 / cellsize: 0.3 × 10 is 3, where 0.3 / 0.1 is
+        // 2.9999999999999996.
+        let view = View::for_image(extent(0.0, 0.0, 10.0, 10.0), 101, 101).unwrap();
+        assert_eq!(view.cellsize, 0.1);
+        let c = Coord { x: 0.3, y: 9.7 };
+        assert_eq!(view.point_to_pixel(c).x, 3.0);
+        assert_eq!(view.to_pixel(c).x, 0.3 / 0.1);
+    }
+
+    #[test]
+    fn the_extent_contains_its_edges_and_nothing_past_them() {
+        // msPointInRect.
+        let view = View::for_image(extent(0.0, 0.0, 100.0, 100.0), 101, 101).unwrap();
+        for (x, y) in [(0.0, 0.0), (100.0, 100.0), (0.0, 100.0), (50.0, 50.0)] {
+            assert!(view.contains(Coord { x, y }), "{x} {y}");
+        }
+        let past = 1e-9;
+        for (x, y) in [
+            (-past, 50.0),
+            (100.0 + past, 50.0),
+            (50.0, -past),
+            (50.0, 100.0 + past),
+        ] {
+            assert!(!view.contains(Coord { x, y }), "{x} {y}");
+        }
+    }
+
+    #[test]
     fn degenerate_images_and_extents_have_no_view() {
         assert_eq!(View::for_image(extent(0.0, 0.0, 1.0, 1.0), 1, 100), None);
         assert_eq!(View::for_image(extent(0.0, 0.0, 0.0, 0.0), 100, 100), None);

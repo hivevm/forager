@@ -170,6 +170,17 @@ fn the_size_is_the_symbols_height_and_bounded() {
 }
 
 #[test]
+fn minsize_raises_the_size_and_minwidth_the_outline() {
+    // computeSymbolStyle: MS_MAX with the lower bound before MS_MIN with the upper.
+    let mut small = style(Some(2.0), None);
+    small.min_size = Some(6.0);
+    small.width = Some(Bound::Value(0.5));
+    small.min_width = Some(2.0);
+    let s = symbol_style(&small, &triangle(false));
+    assert_eq!((s.scale, s.outline_width), (3.0, 2.0));
+}
+
+#[test]
 fn a_vector_symbol_is_centred_scaled_and_turned_counter_clockwise() {
     // agg2RenderVectorSymbol: translate by half the extent, scale by 10 / 2, turn by -90° in
     // AGG's y-down sense, move to the point. The apex, below the centre, turns to its right.
@@ -244,6 +255,10 @@ fn the_marker_size_cuts_the_size_to_whole_pixels() {
     );
     assert_eq!(marker_size(&style(Some(10.7), None), &wide), (20.0, 10.0));
     assert_eq!(marker_size(&style(None, None), &wide), (4.0, 2.0));
+    // The bounds cut again: MINSIZE 4.5 raises 3 to 4.
+    let mut raised = style(Some(3.0), None);
+    raised.min_size = Some(4.5);
+    assert_eq!(marker_size(&raised, &wide), (8.0, 4.0));
 }
 
 #[test]

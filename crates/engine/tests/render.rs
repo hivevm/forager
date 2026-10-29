@@ -459,3 +459,17 @@ fn a_symbol_index_past_the_last_draws_nothing() {
     let image = render_with(&map, Some(inside)).image.unwrap();
     assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
+
+#[test]
+fn a_point_outside_the_extent_draws_no_square() {
+    let style = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(40.0)),
+        ..Style::default()
+    };
+    let outside = r#"{"type": "Point", "coordinates": [100.5, 50]}"#;
+    let image = render_with(&map(RenderMode::Point, style), Some(outside))
+        .image
+        .unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
