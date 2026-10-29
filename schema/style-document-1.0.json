@@ -1031,7 +1031,7 @@
           "const": "to_timestamp"
         },
         {
-          "description": "`regexp_like(value, pattern, flags)`: the pattern in POSIX extended syntax, the flag `i`.",
+          "description": "`regexp_like(value, pattern, flags)`: the pattern in PCRE2's syntax, byte mode (ADR-0030), the flag `i`.",
           "type": "string",
           "const": "regexp_like"
         },

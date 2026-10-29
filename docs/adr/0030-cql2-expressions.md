@@ -1,7 +1,7 @@
 # ADR-0030: Expressions in the style IR are a lean CQL2 tree of Forager's own types, serialized as CQL2-JSON, with MapServer's typing made explicit at import and its patterns read as PCRE2 reads them
 
 - **Status:** 🟡 proposed
-- **Date:** 2026-10-30
+- **Date:** 2026-10-29
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/style-ir`, the translation of expressions in `crates/mapfile`, and every crate that evaluates an expression of the style IR
 - **Supersedes:** [ADR-0019](0019-cql2-expressions.md)
@@ -40,7 +40,8 @@ no regular expression, no concatenation, and none of MapServer's string function
 MapServer compiles every regular expression with `ms_regcomp` (`src/mapregex.c`), which calls
 the POSIX interface of PCRE2 where it is built with it (`USE_PCRE2`), as its own CI builds the
 references (`-DWITH_PCRE2=ON` in `ci/ubuntu/build.sh`) and as the build of ADR-0027 finds PCRE2;
-that interface reads the pattern in PCRE2's syntax whatever `REG_EXTENDED` says.
+that interface reads the pattern in PCRE2's syntax whatever `REG_EXTENDED` says, and, called
+without `REG_UTF`, in byte mode.
 
 The maintainer decided the AST is the project's own lean, serializable types in `style-ir`
 rather than a dependency, and chose the encoding, the extension mechanism, and the typing below.
@@ -61,9 +62,9 @@ types made explicit by the frontend as conversion functions around each attribut
   `msParseTime` semantics. The IR therefore means the same whatever type a feature source
   delivers.
 - **Functions** for what CQL2 lacks: `regexp_like(value, pattern, flags)` with the pattern kept
-  verbatim, read in PCRE2's syntax as MapServer at the pin reads it, and the flag `i`; `concat`; and
-  MapServer's string functions under their own lower-case names. Each function's semantics is
-  MapServer's and is written down where the IR's semantics are specified.
+  verbatim, read in PCRE2's syntax in byte mode as MapServer at the pin reads it, and the flag `i`;
+  `concat`; and MapServer's string functions under their own lower-case names. Each function's
+  semantics is MapServer's and is written down where the IR's semantics are specified.
 - **Import.** The frontend translates each kind into this tree: a string, regular expression, or
   list against the `CLASSITEM`, or the `FILTERITEM` for a layer's filter, becomes `=`,
   `regexp_like`, or `in` on that property, `"value"i` and `=*` become `=` over `casei`, `IN`
@@ -105,7 +106,7 @@ validating documents against the OGC JSON Schema, which is the style document's 
   `MS_TOKEN_BINDING_DOUBLE`, `ms_regcomp` with `MS_REG_EXTENDED`), `src/maputil.c`
   (`msEvalExpression`: `MS_STRING`, `MS_LIST`, `MS_REGEX`, the `i` flag as `strcasecmp`),
   `src/mapregex.c` (`USE_PCRE2`, `pcre2posix.h`), `ci/ubuntu/build.sh` (`-DWITH_PCRE2=ON`); read
-  2026-10-30.
+  2026-10-29.
 - OGC 21-065r2, *Common Query Language (CQL2)*, <https://docs.ogc.org/is/21-065r2/21-065r2.html>,
   and its JSON Schema <https://schemas.opengis.net/cql2/1.0/cql2.json> (`functionRef`, `casei`,
   `arithmeticExpression`), read 2026-10-24.

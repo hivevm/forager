@@ -58,9 +58,9 @@ lands.
 
 - **Evaluation.** The core crate `expr` of ADR-0009 evaluates the IR's CQL2 tree against a
   feature's properties as MapServer evaluates its expressions: `atof` for `to_number`, string
-  comparison as `strcmp`, `casei`, `in`, the arithmetic, and the string functions. Its POSIX
-  extended regular expressions, for `regexp_like`, need a crate or an implementation of their
-  own, which an ADR decides with the evaluator. The engine selects the first class whose
+  comparison as `strcmp`, `casei`, `in`, the arithmetic, and the string functions. Its regular
+  expressions, for `regexp_like`, are read in PCRE2's syntax in byte mode (ADR-0030) and matched
+  as ADR-0031 decides. The engine selects the first class whose
   expression matches, after the layer's filter, and evaluates bound and computed style
   properties per feature.
 - **Inline features.** A layer's `FEATURE` blocks (`POINTS`, `WKT`, `ITEMS`) reach the engine as a

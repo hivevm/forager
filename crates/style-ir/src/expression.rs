@@ -92,7 +92,7 @@ pub enum Op {
     /// A property's value as a time, as MapServer's `msParseTime` reads it.
     #[serde(rename = "to_timestamp")]
     ToTimestamp,
-    /// `regexp_like(value, pattern, flags)`: the pattern in POSIX extended syntax, the flag `i`.
+    /// `regexp_like(value, pattern, flags)`: the pattern in PCRE2's syntax, byte mode (ADR-0030), the flag `i`.
     #[serde(rename = "regexp_like")]
     RegexpLike,
     #[serde(rename = "concat")]
