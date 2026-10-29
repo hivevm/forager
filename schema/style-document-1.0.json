@@ -1196,7 +1196,7 @@
           "format": "double"
         },
         "line_offset": {
-          "description": "A line drawn parallel to the feature's line at this distance, positive to its left in\nthe direction of drawing; MapServer writes it as `OFFSET d -99`, or `-999` for both sides.",
+          "description": "A line drawn parallel to the feature's line at this distance, positive to its right in\nthe direction of drawing on the image, as MapServer's offset curve places it; MapServer\nwrites it as `OFFSET d -99`, or `-999` for both sides.",
           "anyOf": [
             {
               "$ref": "#/$defs/LineOffset"
