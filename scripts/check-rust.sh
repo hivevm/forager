@@ -2,12 +2,12 @@
 # Builds, tests, and lints the Rust workspace (ADR-0008): formatting, clippy with warnings as
 # errors, the tests, the style document's JSON Schema against its checked-in file (ADR-0020),
 # the load of the msautotest suite at the pinned MapServer release (G-1, fetched once into
-# target/ by scripts/fetch-msautotest.sh), the build of every crate that must run in the browser
-# for wasm32-unknown-unknown (Q-1), the WebAssembly bindings and their size (Q-5) once they
-# exist, and cargo deny (ADR-0012). scripts/check-all.sh and the `rust` job of checks.yml run
-# it; the tools come from scripts/install-tools.sh. Two fixture workspaces show that cargo deny
-# refuses a non-permissive licence and that clippy bans hash maps, clocks, and randomness in the
-# core alone (Q-2).
+# target/ by scripts/fetch-msautotest.sh) and the conformance harness over its cases, the build
+# of every crate that must run in the browser for wasm32-unknown-unknown (Q-1), the WebAssembly
+# bindings and their size (Q-5) once they exist, and cargo deny (ADR-0012). scripts/check-all.sh
+# and the `rust` job of checks.yml run it; the tools come from scripts/install-tools.sh. Two
+# fixture workspaces show that cargo deny refuses a non-permissive licence and that clippy bans
+# hash maps, clocks, and randomness in the core alone (Q-2).
 #
 # Usage: bash scripts/check-rust.sh
 set -euo pipefail
@@ -39,7 +39,7 @@ if cargo tree -p forager-bindings-wasm --locked -e normal | grep -q '^.*schemars
   echo "check-rust: the browser bindings depend on schemars; the schema feature is enabled" >&2
   exit 1
 fi
-step "msautotest: every mapfile loads without an error (G-1)"
+step "msautotest: every mapfile loads (G-1), and the cases in scope hold their outcome"
 suite="$(bash scripts/fetch-msautotest.sh)"
 FORAGER_MSAUTOTEST="$suite" cargo test -p forager-cli --locked --test msautotest -- --ignored
 
