@@ -104,3 +104,55 @@ fn the_cli_and_the_bindings_report_the_same_codes() {
     let expected = std::fs::read_to_string(fixture("misbound.codes")).unwrap();
     assert_eq!(codes, expected.lines().collect::<Vec<_>>(), "{stderr}");
 }
+
+/// A mapfile in a directory of its own whose point layer is labelled in `font`, with a font set
+/// naming `sans`, which lies beside it, and `gone`, which does not.
+fn labelled(font: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("forager-fonts-{}-{font}", std::process::id()));
+    std::fs::create_dir_all(dir.join("fonts")).unwrap();
+    std::fs::write(dir.join("fonts/sans.ttf"), b"font").unwrap();
+    std::fs::write(
+        dir.join("fonts.lst"),
+        "sans fonts/sans.ttf\ngone fonts/gone.ttf\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("points.geojson"),
+        r#"{"type": "Point", "coordinates": [5, 5]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("m.map"),
+        format!(
+            "MAP SIZE 10 10 EXTENT 0 0 10 10 FONTSET 'fonts.lst'\n\
+             LAYER NAME 'p' TYPE POINT STATUS ON\n\
+             CLASS LABEL FONT '{font}' TEXT 'x' END END END END\n"
+        ),
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn the_fonts_a_label_names_are_read_from_the_base_context() {
+    // Verifies: ADR-0028
+    for (font, unusable) in [("sans", false), ("gone", true)] {
+        let dir = labelled(font);
+        let output = Command::new(env!("CARGO_BIN_EXE_forager"))
+            .arg("render")
+            .arg(dir.join("m.map"))
+            .arg("--source")
+            .arg(format!("p={}", dir.join("points.geojson").display()))
+            .args(["-o", "/dev/null"])
+            .output()
+            .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(output.status.success(), "{stderr}");
+        assert_eq!(
+            stderr.contains("label-font-unusable") && stderr.contains("fonts/gone.ttf"),
+            unusable,
+            "{font}: {stderr}"
+        );
+    }
+}

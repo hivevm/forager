@@ -222,6 +222,11 @@ fn render(args: &RenderArgs) -> ExitCode {
     else {
         return ExitCode::FAILURE;
     };
+    // The fonts of the labels come from the same base context, each bounded by the engine's
+    // limit for a font, read no further than that (Q-9).
+    let fonts = loader
+        .clone()
+        .for_data(forager_engine::MAX_FONT_BYTES as u64);
     let data = loader.for_data(MAX_SOURCE_BYTES);
     let mut shapefiles = Shapefiles::new(&data);
     let mut diagnostics = Vec::new();
@@ -242,9 +247,10 @@ fn render(args: &RenderArgs) -> ExitCode {
     for diagnostic in &diagnostics {
         eprintln!("{diagnostic}");
     }
-    let rendered = match now(forager_engine::render(
+    let rendered = match now(forager_engine::render_with_files(
         &document.map,
         &sources,
+        &fonts,
         AggRenderer::new(),
     )) {
         Ok(rendered) => rendered,

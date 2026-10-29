@@ -113,9 +113,10 @@ from the threats below.
 - **Q-9** — Bounded resources: `INCLUDE` depth and cycles, the total size of a mapfile with its
   `INCLUDE`s and the files it names (16 MiB of text), the number of diagnostics one load reports
   (1000), image size, the features one layer draws (1,000,000), the size of a data file a host reads
-  (256 MiB), expression nesting (24 levels), the values a style document of a newer minor drops
-  (100), and regular-expression size are limited, and exceeding a limit is a diagnostic. A test per
-  limit feeds an input past it and expects the diagnostic.
+  (256 MiB), the size of a font file (32 MiB, apart from that total), expression nesting (24
+  levels), the values a style document of a newer minor drops (100), and regular-expression size are
+  limited, and exceeding a limit is a diagnostic. A test per limit feeds an input past it and
+  expects the diagnostic.
 
 ## Non-Goals
 

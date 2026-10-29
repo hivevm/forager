@@ -6,6 +6,7 @@ use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 /// it; the canonical path is checked as well, so a symbolic link cannot lead out either (Q-8).
 /// A file it cannot read, missing or outside, is one and the same error, so that a link in the
 /// base context cannot tell whether a path outside it exists.
+#[derive(Clone)]
 pub struct FileLoader {
     root: PathBuf,
 }
