@@ -255,12 +255,18 @@ impl AggRenderer {
     /// from its first point with the pattern as given, and the stroke intersected with the
     /// polygon, both under the even-odd rule, then filled through MapServer's default gamma. The
     /// lines are clipped to the image grown by the stroke before agg-rust sees them, a dashed line
-    /// keeping the phase its dashes had at its first point. Where cutting the polygon to every
-    /// dash would take more than [`HATCH_CUT_BUDGET`] steps, the stroke and the polygon are
-    /// rasterized apart and their anti-aliased scanlines intersected instead, which gives the
-    /// same pixels inside and multiplies the coverage on the polygon's edge. A hatch beyond the
-    /// bounds of [`Hatch::is_bounded`] draws nothing (Q-9).
+    /// keeping the phase its dashes had at its first point. The hatch is drawn a band of
+    /// [`BAND_ROWS`] rows at a time, the polygon cut to each dash that reaches into the band (see
+    /// [`hatch::Cutter`]); where the polygon's rings cross or overlap, or where getting them
+    /// ready or cutting them for a band would take more than [`HATCH_CUT_BUDGET`] steps, the
+    /// stroke and the polygon are rasterized apart there and their anti-aliased scanlines
+    /// intersected instead, which gives the same pixels inside and multiplies the coverage on the
+    /// polygon's edge. A hatch beyond the bounds of [`Hatch::is_bounded`] draws nothing (Q-9).
     fn hatch(&mut self, hatch: &Hatch) {
+        self.hatch_within(hatch, HATCH_CUT_BUDGET);
+    }
+
+    fn hatch_within(&mut self, hatch: &Hatch, budget: usize) {
         if !(hatch.width.is_finite() && hatch.width > 0.0)
             || !hatch.is_bounded(self.width, self.height)
         {
@@ -276,38 +282,93 @@ impl AggRenderer {
             .collect();
         let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN + width / 2.0);
         let pieces = hatch::pieces(&hatch.lines, &rect, hatch.dashes(), width);
-        let even_odd = |shapes: &mut dyn Iterator<Item = &[Point]>| {
-            let mut path = PathStorage::new();
-            for shape in shapes {
-                add(&mut path, shape, true);
-            }
-            let mut rasterizer = RasterizerScanlineAa::new();
-            rasterizer.filling_rule(FillingRule::EvenOdd);
-            rasterizer.add_path(&mut path, 0);
-            rasterizer
-        };
         let gamma = gamma_table();
-        if let Some(cut) = hatch::intersect(&rings, &pieces, HATCH_CUT_BUDGET) {
-            let mut area = even_odd(&mut cut.iter().map(Vec::as_slice));
-            self.paint(&mut area, hatch.color, &gamma);
-            return;
+        let cutter = hatch::Cutter::new(&rings, budget);
+        let polygon = Shapes::new(rings);
+        // The pieces that reach into each band, by their index.
+        let bands: Vec<(u32, u32)> = self.bands().collect();
+        let mut in_band: Vec<Vec<u32>> = vec![Vec::new(); bands.len()];
+        for (index, piece) in (0u32..).zip(&pieces) {
+            let bounds = hatch::bounds_of(piece.corners().into_iter());
+            for (band, &(top, bottom)) in in_band.iter_mut().zip(&bands) {
+                if bounds.max_y >= f64::from(top) && bounds.min_y <= f64::from(bottom) {
+                    band.push(index);
+                }
+            }
         }
-        let mut polygon = even_odd(&mut rings.iter().map(Vec::as_slice));
-        let mut strokes = even_odd(&mut pieces.iter().map(<[Point; 4]>::as_slice));
-        let mut hatched = ScanlineStorageAa::new();
-        sbool_intersect_shapes_aa(
-            &mut polygon,
-            &mut strokes,
-            &mut ScanlineU8::new(),
-            &mut ScanlineU8::new(),
-            &mut ScanlineU8::new(),
-            &mut hatched,
-        );
-        self.paint(&mut hatched, hatch.color, &gamma);
+        for (band, indices) in bands.into_iter().zip(in_band) {
+            let reaching = || indices.iter().map(|&i| &pieces[i as usize]);
+            let cut = cutter.as_ref().and_then(|c| c.cut(reaching(), budget));
+            if let Some(cut) = cut {
+                let mut area = Shapes::new(cut).even_odd(band, self.width);
+                self.paint(&mut area, hatch.color, &gamma);
+                continue;
+            }
+            let strokes = Shapes::new(reaching().map(|p| p.corners().to_vec()).collect());
+            let mut hatched = ScanlineStorageAa::new();
+            sbool_intersect_shapes_aa(
+                &mut polygon.even_odd(band, self.width),
+                &mut strokes.even_odd(band, self.width),
+                &mut ScanlineU8::new(),
+                &mut ScanlineU8::new(),
+                &mut ScanlineU8::new(),
+                &mut hatched,
+            );
+            self.paint(&mut hatched, hatch.color, &gamma);
+        }
+    }
+
+    /// The image's rows in bands of [`BAND_ROWS`], each from its top to its bottom.
+    fn bands(&self) -> impl Iterator<Item = (u32, u32)> + use<> {
+        let height = self.height;
+        (0..height)
+            .step_by(BAND_ROWS as usize)
+            .map(move |top| (top, (top + BAND_ROWS).min(height)))
     }
 }
 
-/// The most vertex steps a hatch spends cutting its polygon to its dashes, some 0.1 s.
+/// Closed shapes and their bounds, rasterized a band of rows at a time.
+struct Shapes {
+    shapes: Vec<(Vec<Point>, Rect)>,
+}
+
+impl Shapes {
+    fn new(shapes: Vec<Vec<Point>>) -> Self {
+        let shapes = shapes
+            .into_iter()
+            .map(|s| {
+                let bounds = hatch::bounds_of(s.iter().copied());
+                (s, bounds)
+            })
+            .collect();
+        Self { shapes }
+    }
+
+    /// The shapes that reach into the rows from `top` to `bottom`, under the even-odd rule,
+    /// clipped by the rasterizer to those rows: it holds the cells of the band alone, and the
+    /// pixels of the band come out as from the whole.
+    fn even_odd(&self, (top, bottom): (u32, u32), width: u32) -> RasterizerScanlineAa {
+        let (top, bottom) = (f64::from(top), f64::from(bottom));
+        let mut path = PathStorage::new();
+        for (shape, bounds) in &self.shapes {
+            if bounds.max_y >= top && bounds.min_y <= bottom {
+                add(&mut path, shape, true);
+            }
+        }
+        let mut rasterizer = RasterizerScanlineAa::new();
+        rasterizer.clip_box(0.0, top, f64::from(width), bottom);
+        rasterizer.filling_rule(FillingRule::EvenOdd);
+        rasterizer.add_path(&mut path, 0);
+        rasterizer
+    }
+}
+
+/// The rows of the image a hatch is cut and rasterized in at a time, so that the cut rings and the
+/// rasterizer's cells of one band only are held.
+const BAND_ROWS: u32 = 256;
+
+/// The most steps a hatch spends finding whether its rings cross and winding them, and then
+/// cutting them to the dashes of one band.
 const HATCH_CUT_BUDGET: usize = 1 << 25;
 
 /// MapServer's default `GAMMA` of its AGG output formats, `src/mapagg.cpp`.
@@ -479,6 +540,71 @@ mod tests {
         assert_eq!(image.pixel(22, 31), Some(RED), "a dash, 40 to 50");
         assert_eq!(image.pixel(32, 31), Some(WHITE), "the hole");
         assert_eq!(image.pixel(50, 31), Some(WHITE), "a gap, 70 to 80");
+    }
+
+    fn hatched(rings: Vec<Vec<Point>>, lines: Vec<[Point; 2]>, budget: usize) -> RgbaImage {
+        let mut renderer = AggRenderer::new();
+        renderer.begin(64, 64, WHITE);
+        renderer.hatch_within(
+            &Hatch {
+                rings,
+                lines,
+                color: RED,
+                width: 3.0,
+                pattern: vec![],
+            },
+            budget,
+        );
+        renderer.finish()
+    }
+
+    fn rectangle(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<Point> {
+        vec![p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1)]
+    }
+
+    #[test]
+    fn where_rings_overlap_or_repeat_the_hatch_there_is_empty() {
+        // Two rings that overlap from x = 20 to 40, and one ring given twice, under a line 3 wide
+        // at y = 30.25: under the even-odd rule the part covered twice is outside the polygon,
+        // on the line's edge rows 28 and 31 too.
+        let line = vec![[p(0.0, 30.25), p(64.0, 30.25)]];
+        let a = rectangle(0.0, 0.0, 40.0, 62.0);
+        let b = rectangle(20.0, 0.0, 60.0, 62.0);
+        let overlapping = hatched(vec![a.clone(), b], line.clone(), HATCH_CUT_BUDGET);
+        let twice = hatched(vec![a.clone(), a], line, HATCH_CUT_BUDGET);
+        for y in [28, 29, 30, 31] {
+            assert_eq!(overlapping.pixel(30, y), Some(WHITE), "overlap, row {y}");
+            assert_eq!(twice.pixel(10, y), Some(WHITE), "twice, row {y}");
+        }
+        assert_eq!(overlapping.pixel(10, 30), Some(RED));
+        assert_eq!(overlapping.pixel(50, 30), Some(RED));
+    }
+
+    #[test]
+    fn the_coverage_intersection_differs_from_the_cut_on_the_polygon_s_edge_only() {
+        // A triangle under lines 3 wide every 6 rows, cut exactly and, with no budget, by the
+        // coverage intersection: the pixels agree but on the slanted edge.
+        let triangle = vec![p(4.0, 4.0), p(60.0, 4.0), p(4.0, 60.0)];
+        let lines: Vec<[Point; 2]> = (0..10)
+            .map(|i| {
+                let y = 5.25 + 6.0 * f64::from(i);
+                [p(0.0, y), p(64.0, y)]
+            })
+            .collect();
+        let exact = hatched(vec![triangle.clone()], lines.clone(), HATCH_CUT_BUDGET);
+        let fallback = hatched(vec![triangle], lines, 0);
+        let mut differing = 0;
+        for y in 0..64 {
+            for x in 0..64 {
+                if exact.pixel(x, y) != fallback.pixel(x, y) {
+                    differing += 1;
+                    // The edge x + y = 64 crosses the pixels with x + y from 63 to 64.
+                    let reach = f64::from(x + y) + 1.0 - 64.0;
+                    assert!((-1.0..=1.0).contains(&reach), "({x}, {y}) off the edge");
+                }
+            }
+        }
+        assert!(differing > 0, "the edge pixels are lighter in the fallback");
     }
 
     #[test]

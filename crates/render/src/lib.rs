@@ -59,10 +59,15 @@ pub struct Hatch {
 }
 
 impl Hatch {
-    /// The longest the lines of a hatch may be in all, in pixels: a hatch a pixel apart over the
-    /// largest image stays below it (Q-9).
+    /// The longest the lines of a hatch may be in all, in pixels (Q-9). A hatch a pixel apart,
+    /// a pixel wide, at 45° over the largest image, 4096 × 4096, lays some 1.7e7 pixels of lines
+    /// and stays below it: the reference renderer draws it in some 1.9 s at a peak of 130 MB, the
+    /// image's 64 MB included (a release build on one core); the most this allows takes about
+    /// twice as long.
     pub const MAX_LENGTH: f64 = 33_554_432.0;
-    /// The most dashes and gaps the lines of a hatch may be cut into (Q-9).
+    /// The most dashes and gaps the lines of a hatch may be cut into (Q-9). That hatch dashed 5 on,
+    /// 5 off, some 3.4e6 dashes and gaps, takes some 1.9 s at a peak of 270 MB; the most this
+    /// allows, some 330 MB.
     pub const MAX_DASHES: f64 = 4_194_304.0;
 
     /// The dash and gap lengths drawn: pairs of the pattern, its odd last length dropped.
@@ -122,7 +127,8 @@ fn visible_length(a: Point, b: Point, min_x: f64, min_y: f64, max_x: f64, max_y:
         }
     }
     if t1 > t0 {
-        (t1 - t0) * dx.hypot(dy)
+        // IEEE's square root, exact on every target, where `hypot` is the platform's (Q-2).
+        (t1 - t0) * (dx * dx + dy * dy).sqrt()
     } else {
         0.0
     }
