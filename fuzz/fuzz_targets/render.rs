@@ -1,4 +1,5 @@
-//! The renderer on structured input: arbitrary points, lines, and polygons with any `f64` —
+//! The renderer on structured input: arbitrary points, lines, and polygons, and an arbitrary
+//! vector or ellipse symbol at the points, with any `f64` —
 //! NaN, infinities, and the extremes included — in an arbitrary view, drawn by the engine with
 //! agg-rust behind its clipping (Q-3, ADR-0015). JSON cannot carry such numbers, so the GeoJSON
 //! target never reaches these paths.
@@ -12,7 +13,10 @@ use forager_ports::{
     Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
 };
 use forager_render_agg::AggRenderer;
-use forager_style_ir::{Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
+use forager_style_ir::{
+    Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol, SymbolKind,
+    SymbolRef,
+};
 use libfuzzer_sys::fuzz_target;
 
 #[derive(Arbitrary, Debug)]
@@ -22,7 +26,18 @@ struct Input {
     extent: [f64; 4],
     line_width: f64,
     symbol_size: f64,
+    symbol: SymbolInput,
     shapes: Vec<Shape>,
+}
+
+#[derive(Arbitrary, Debug)]
+struct SymbolInput {
+    ellipse: bool,
+    filled: bool,
+    paths: Vec<Vec<(f64, f64)>>,
+    extent: (f64, f64),
+    anchor_point: Option<(f64, f64)>,
+    angle: f64,
 }
 
 #[derive(Arbitrary, Debug)]
@@ -82,6 +97,33 @@ fuzz_target!(|input: Input| {
         size: Some(Bound::Value(input.symbol_size)),
         ..Style::default()
     };
+    let symbol = &input.symbol;
+    let symbols = vec![Symbol {
+        name: None,
+        kind: if symbol.ellipse {
+            SymbolKind::Ellipse
+        } else {
+            SymbolKind::Vector
+        },
+        paths: symbol
+            .paths
+            .iter()
+            .map(|path| path.iter().map(|&(x, y)| [x, y]).collect())
+            .collect(),
+        extent: Some([symbol.extent.0, symbol.extent.1]),
+        filled: symbol.filled,
+        anchor_point: symbol.anchor_point.map(|(x, y)| [x, y]),
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    }];
+    let symbol_style = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        angle: Some(Bound::Value(symbol.angle)),
+        ..style.clone()
+    };
     let [min_x, min_y, max_x, max_y] = input.extent;
     let map = Map {
         extent: Some(Extent {
@@ -95,10 +137,12 @@ fuzz_target!(|input: Input| {
             layer("polygons", RenderMode::Polygon, style.clone()),
             layer("lines", RenderMode::Line, style.clone()),
             layer("points", RenderMode::Point, style),
+            layer("symbols", RenderMode::Point, symbol_style),
         ],
+        symbols,
         ..Map::default()
     };
-    let sources: BTreeMap<String, Shapes> = ["polygons", "lines", "points"]
+    let sources: BTreeMap<String, Shapes> = ["polygons", "lines", "points", "symbols"]
         .into_iter()
         .map(|name| (name.to_owned(), Shapes(features.clone())))
         .collect();

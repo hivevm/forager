@@ -25,6 +25,15 @@ pub enum DrawOp {
         color: Rgba,
         width: f64,
     },
+    /// Strokes each path as AGG's stroker does by default, with butt caps and miter joins, as
+    /// MapServer's AGG renderer strokes the outline of a vector or ellipse symbol; a closed path
+    /// joins its last point to its first.
+    Outline {
+        paths: Vec<Vec<Point>>,
+        closed: bool,
+        color: Rgba,
+        width: f64,
+    },
 }
 
 /// A drawing operation and the feature it came from.

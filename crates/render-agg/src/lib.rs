@@ -59,7 +59,7 @@ impl AggRenderer {
         f(&mut renderer);
     }
 
-    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, stroke: Option<f64>) {
+    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, paint: Paint) {
         let color = Rgba8::new(
             u32::from(color.r),
             u32::from(color.g),
@@ -69,8 +69,8 @@ impl AggRenderer {
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
             let mut scanline = ScanlineU8::new();
-            match stroke {
-                Some(width) => {
+            match paint {
+                Paint::Line(width) => {
                     let mut outline = ConvStroke::new(path);
                     outline.set_width(width);
                     // MapServer: round caps and bevel joins by default, and for lines no wider
@@ -81,7 +81,14 @@ impl AggRenderer {
                     outline.set_line_join(LineJoin::Bevel);
                     rasterizer.add_path(&mut outline, 0);
                 }
-                None => {
+                Paint::Outline(width) => {
+                    // AGG's defaults, which agg2RenderVectorSymbol and agg2RenderEllipseSymbol
+                    // leave as they are: butt caps, miter joins, a miter limit of 4.
+                    let mut outline = ConvStroke::new(path);
+                    outline.set_width(width);
+                    rasterizer.add_path(&mut outline, 0);
+                }
+                Paint::Fill => {
                     rasterizer.filling_rule(FillingRule::EvenOdd);
                     rasterizer.add_path(path, 0);
                 }
@@ -89,6 +96,17 @@ impl AggRenderer {
             render_scanlines_aa_solid(&mut rasterizer, &mut scanline, renderer, &color);
         });
     }
+}
+
+/// How a path is painted.
+#[derive(Clone, Copy)]
+enum Paint {
+    /// Filled under the even-odd rule.
+    Fill,
+    /// Stroked as MapServer strokes a line, at this width.
+    Line(f64),
+    /// Stroked with AGG's default caps and joins, at this width.
+    Outline(f64),
 }
 
 fn add(path: &mut PathStorage, points: &[Point], close: bool) {
@@ -100,6 +118,45 @@ fn add(path: &mut PathStorage, points: &[Point], close: bool) {
     }
     if close {
         path.close_polygon(0);
+    }
+}
+
+impl AggRenderer {
+    /// Strokes `paths` as a line, or as a symbol's outline with AGG's default caps and joins.
+    fn stroke(
+        &mut self,
+        paths: &[Vec<Point>],
+        closed: bool,
+        color: Rgba,
+        width: f64,
+        outline: bool,
+    ) {
+        if !(width.is_finite() && width > 0.0) {
+            return;
+        }
+        // A wider stroke covers the image all the same, and the margin stays small enough for
+        // agg-rust's fixed-point coordinates.
+        let width = width.min(2.0 * f64::from(self.width + self.height));
+        // A miter join reaches up to its limit of 4 half widths past the path, a line's bevel
+        // join and round cap no more than one.
+        let reach = if outline { 2.0 * width } else { width / 2.0 };
+        let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN + reach);
+        let mut path = PathStorage::new();
+        for points in paths {
+            if closed {
+                add(&mut path, &clip_ring(points, &rect), true);
+            } else {
+                for run in clip_line(points, &rect) {
+                    add(&mut path, &run, false);
+                }
+            }
+        }
+        let paint = if outline {
+            Paint::Outline(width)
+        } else {
+            Paint::Line(width)
+        };
+        self.rasterize(&mut path, color, paint);
     }
 }
 
@@ -117,40 +174,27 @@ impl Renderer for AggRenderer {
     }
 
     fn draw(&mut self, item: &DisplayItem) {
-        let mut path = PathStorage::new();
         match &item.op {
             DrawOp::Fill { rings, color } => {
+                let mut path = PathStorage::new();
                 let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
                 for ring in rings {
                     add(&mut path, &clip_ring(ring, &rect), true);
                 }
-                self.rasterize(&mut path, *color, None);
+                self.rasterize(&mut path, *color, Paint::Fill);
             }
             DrawOp::Stroke {
                 paths,
                 closed,
                 color,
                 width,
-            } => {
-                if !(width.is_finite() && *width > 0.0) {
-                    return;
-                }
-                // A wider stroke covers the image all the same, and the margin stays small
-                // enough for agg-rust's fixed-point coordinates.
-                let width = width.min(2.0 * f64::from(self.width + self.height));
-                let margin = CLIP_MARGIN + width / 2.0;
-                let rect = Rect::around_image(self.width, self.height, margin);
-                for points in paths {
-                    if *closed {
-                        add(&mut path, &clip_ring(points, &rect), true);
-                    } else {
-                        for run in clip_line(points, &rect) {
-                            add(&mut path, &run, false);
-                        }
-                    }
-                }
-                self.rasterize(&mut path, *color, Some(width));
-            }
+            } => self.stroke(paths, *closed, *color, *width, false),
+            DrawOp::Outline {
+                paths,
+                closed,
+                color,
+                width,
+            } => self.stroke(paths, *closed, *color, *width, true),
         }
     }
 
@@ -212,6 +256,36 @@ mod tests {
     }
 
     #[test]
+    fn an_outline_has_butt_caps_and_miter_joins_where_a_line_has_round_caps_and_bevels() {
+        // A right angle at (32, 32), 8 wide: the miter fills the outer corner, the bevel cuts
+        // it; the round cap reaches past the end, the butt cap stops at it.
+        let corner = vec![p(10.0, 32.0), p(32.0, 32.0), p(32.0, 54.0)];
+        let draw = |outline: bool| {
+            let (paths, closed, color, width) = (vec![corner.clone()], false, RED, 8.0);
+            render(&[if outline {
+                DrawOp::Outline {
+                    paths,
+                    closed,
+                    color,
+                    width,
+                }
+            } else {
+                DrawOp::Stroke {
+                    paths,
+                    closed,
+                    color,
+                    width,
+                }
+            }])
+        };
+        let (outline, line) = (draw(true), draw(false));
+        assert_eq!(outline.pixel(35, 29), Some(RED), "the miter");
+        assert_eq!(line.pixel(35, 29), Some(WHITE), "the bevel");
+        assert_eq!(outline.pixel(8, 32), Some(WHITE), "the butt cap");
+        assert_eq!(line.pixel(8, 32), Some(RED), "the round cap");
+    }
+
+    #[test]
     #[expect(
         clippy::disallowed_types,
         clippy::disallowed_methods,
@@ -228,8 +302,14 @@ mod tests {
                 color: RED,
             },
             DrawOp::Stroke {
-                paths: vec![huge, broken],
+                paths: vec![huge.clone(), broken.clone()],
                 closed: false,
+                color: RED,
+                width: 1e9,
+            },
+            DrawOp::Outline {
+                paths: vec![huge, broken],
+                closed: true,
                 color: RED,
                 width: 1e9,
             },

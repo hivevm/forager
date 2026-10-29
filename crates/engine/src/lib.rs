@@ -5,12 +5,15 @@
 
 mod bind;
 mod extent;
+mod symbol;
 
 use std::collections::BTreeMap;
 
 use forager_ports::{Coord, Feature, FeatureQuery, FeatureSource, Geometry};
 use forager_render::{DisplayItem, DrawOp, Point, Renderer, RgbaImage};
-use forager_style_ir::{Bound, Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
+use forager_style_ir::{
+    Bound, Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
+};
 
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
@@ -71,7 +74,8 @@ pub async fn render<S: FeatureSource, R: Renderer>(
         let mut undrawn = BTreeMap::new();
         for feature in &features {
             for style in &class.styles {
-                let Some(ops) = draw_ops(mode, &feature.geometry, style, &view) else {
+                let Some(ops) = draw_ops(mode, &feature.geometry, style, &view, &map.symbols)
+                else {
                     *undrawn.entry(kind(&feature.geometry)).or_insert(0usize) += 1;
                     continue;
                 };
@@ -250,6 +254,7 @@ fn draw_ops(
     geometry: &Geometry,
     style: &Style,
     view: &View,
+    symbols: &[Symbol],
 ) -> Option<Vec<DrawOp>> {
     let width = fixed(&style.width)
         .unwrap_or(1.0)
@@ -259,12 +264,19 @@ fn draw_ops(
     match (mode, geometry) {
         (_, Geometry::Collection(geometries)) => {
             for g in geometries {
-                ops.extend(draw_ops(mode, g, style, view)?);
+                ops.extend(draw_ops(mode, g, style, view, symbols)?);
             }
         }
         (RenderMode::Point, _) => {
-            for c in vertices(geometry) {
-                point_ops(&mut ops, view.to_pixel(c), style, width);
+            let mark = symbol::mark(style, symbols);
+            // pointLayerDrawShape: a point outside the map's extent draws nothing.
+            for c in vertices(geometry).into_iter().filter(|&c| view.contains(c)) {
+                let at = view.point_to_pixel(c);
+                match mark {
+                    symbol::Mark::Square => point_ops(&mut ops, at, style, width),
+                    symbol::Mark::Symbol(s) => symbol::symbol_ops(&mut ops, at, style, s),
+                    symbol::Mark::Nothing => {}
+                }
             }
         }
         (RenderMode::Polygon, Geometry::Polygon(rings)) => {

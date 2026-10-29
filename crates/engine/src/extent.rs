@@ -1,6 +1,7 @@
 // The fitting of the extent to the image follows MapServer's msAdjustExtent(), src/maputil.c of
 // the release pinned in scripts/fetch-msautotest.sh, and its MS_CELLSIZE and MS_MAP2IMAGE
-// macros, src/mapserver.h.
+// macros, src/mapserver.h; the pixel of a mark follows msTransformPoint, src/maputil.c, and
+// whether it is drawn msPointInRect, src/mapsearch.c.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -53,6 +54,25 @@ impl View {
             },
             cellsize,
         })
+    }
+
+    /// The pixel of a point drawn as a mark, as msTransformPoint in `src/maputil.c` computes it:
+    /// by the inverse of the cellsize.
+    pub fn point_to_pixel(&self, c: Coord) -> Point {
+        let inverse = 1.0 / self.cellsize;
+        Point {
+            x: (c.x - self.extent.min_x) * inverse,
+            y: (self.extent.max_y - c.y) * inverse,
+        }
+    }
+
+    /// Whether `c` lies in the extent, its edges included, as msPointInRect in
+    /// `src/mapsearch.c` decides it.
+    pub fn contains(&self, c: Coord) -> bool {
+        !(c.x < self.extent.min_x
+            || c.x > self.extent.max_x
+            || c.y < self.extent.min_y
+            || c.y > self.extent.max_y)
     }
 
     pub fn to_pixel(&self, c: Coord) -> Point {
