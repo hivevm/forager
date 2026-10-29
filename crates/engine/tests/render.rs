@@ -412,6 +412,40 @@ fn a_polygon_without_a_color_draws_its_outline_as_a_styled_line() {
     assert_eq!(image.pixel(25, 90), Some(WHITE));
 }
 
+#[test]
+fn a_ring_in_a_line_layer_is_stroked_open_at_its_first_vertex() {
+    // MapServer strokes a ring as a line back to its first point: caps there, no join.
+    let square = r#"{"type": "Polygon", "coordinates":
+        [[[20, 20], [80, 20], [80, 80], [20, 80], [20, 20]]]}"#;
+    let style = Style {
+        line_cap: Some(LineCap::Butt),
+        line_join: Some(LineJoin::Miter),
+        ..line_style(BLUE, 10.0)
+    };
+    let image = render_lines(vec![style], square);
+    // The first vertex, map (20, 20), is pixel (20, 80); the next corner is pixel (80, 80).
+    assert_eq!(
+        image.pixel(17, 83),
+        Some(WHITE),
+        "no join at the first vertex"
+    );
+    assert_eq!(image.pixel(83, 83), Some(BLUE), "a miter join at the next");
+}
+
+#[test]
+fn a_geometry_a_layer_cannot_draw_counts_once_whatever_its_styles() {
+    let collection = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [5, 5]}},
+        {"type": "Feature", "properties": {}, "geometry": {"type": "LineString",
+            "coordinates": [[0, 50], [100, 50]]}}
+    ]}"#;
+    let styles = vec![line_style(BLUE, 1.0), line_style(RED, 1.0)];
+    let rendered = render_with(&map_with(RenderMode::Line, styles), Some(collection));
+    assert_eq!(rendered.diagnostics.len(), 1, "{:?}", rendered.diagnostics);
+    let message = &rendered.diagnostics[0].message;
+    assert!(message.contains("1 point geometry"), "{message}");
+}
+
 /// A source that delivers one square and reports `count` records skipped.
 struct Skipping {
     count: u64,

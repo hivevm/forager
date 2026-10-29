@@ -119,8 +119,11 @@ struct Stroke<'a> {
 
 impl Stroke<'_> {
     /// Sets the stroker as agg2RenderLine() does: the cap and the join of the style for a line
-    /// wider than a pixel (applyCJC()), bevel joins for any other. A cap MapServer does not map,
-    /// `triangle`, and the cap of a line no wider than a pixel stay AGG's default, butt.
+    /// wider than a pixel (applyCJC()), bevel joins and inner joins for any other. Forager sets up
+    /// a fresh stroker for every line, so a cap MapServer does not map, `triangle`, and the cap of
+    /// a line no wider than a pixel are AGG's default, butt. MapServer keeps one stroker per
+    /// image and carries its state from line to line: there a thin line after a wide round-capped
+    /// one is round-capped, and a wide line after a thin one keeps the thin one's inner bevel.
     fn apply<VS: VertexSource>(&self, stroke: &mut ConvStroke<VS>) {
         stroke.set_width(self.width);
         if self.width > 1.0 {
@@ -143,18 +146,30 @@ impl Stroke<'_> {
 }
 
 /// Adds the dashes as agg2RenderLine() does: each length rounded to whole pixels, half to even
-/// as `lrint`, and at least 1; an odd last length dropped; and the start moved back by the
-/// pattern's offset.
+/// as `lrint`, and at least 1, one that is not finite 1; an odd last length dropped; and the start moved back by the
+/// pattern's offset. AGG walks a start dash by dash, so the start is first reduced to one period
+/// of the pattern, which draws the same, and each length is bounded by the largest `int`, the
+/// type MapServer sums the pattern's length in, so that the length stays finite; a huge
+/// INITIALGAP or PATTERN then costs no more than any other (Q-3, Q-9). A start before the
+/// pattern keeps its sign, which AGG reads as a start for the first path only.
 fn add_dashes<VS: VertexSource>(dashed: &mut ConvDash<VS>, dashes: &Dashes) {
-    let pixels = |length: f64| length.round_ties_even().max(1.0);
+    // lrint of a length that is not finite gives no number, which MapServer's bound turns to 1.
+    let pixels = |length: f64| {
+        if length.is_finite() {
+            length.round_ties_even().clamp(1.0, f64::from(i32::MAX))
+        } else {
+            1.0
+        }
+    };
     let mut length = 0.0;
     for [dash, gap] in dashes.pattern.as_chunks::<2>().0 {
         let (dash, gap) = (pixels(*dash), pixels(*gap));
         dashed.add_dash(dash, gap);
         length += dash + gap;
     }
-    if dashes.offset > 0.0 {
-        dashed.dash_start(length - dashes.offset);
+    let start = length - dashes.offset;
+    if dashes.offset > 0.0 && start.is_finite() && length > 0.0 {
+        dashed.dash_start(start.signum() * (start.abs() % length));
     }
 }
 
@@ -212,7 +227,15 @@ impl Renderer for AggRenderer {
                 let rect = Rect::around_image(self.width, self.height, margin);
                 for points in paths {
                     if *closed {
-                        add(&mut path, &clip_ring(points, &rect), true);
+                        // MapServer's line_adaptor never closes a path: a ring is stroked as a
+                        // line that returns to its first point, with caps there and no join.
+                        let mut ring = clip_ring(points, &rect);
+                        if let (Some(&first), Some(&last)) = (ring.first(), ring.last())
+                            && first != last
+                        {
+                            ring.push(first);
+                        }
+                        add(&mut path, &ring, false);
                     } else {
                         for run in clip_line(points, &rect) {
                             add(&mut path, &run, false);
@@ -291,6 +314,10 @@ mod tests {
     }
 
     fn line(width: f64, cap: LineCap, pattern: Vec<f64>) -> DrawOp {
+        dashed(width, cap, pattern, 0.0)
+    }
+
+    fn dashed(width: f64, cap: LineCap, pattern: Vec<f64>, offset: f64) -> DrawOp {
         DrawOp::Stroke {
             paths: vec![vec![p(10.0, 32.5), p(50.0, 32.5)]],
             closed: false,
@@ -298,10 +325,7 @@ mod tests {
             width,
             cap,
             join: LineJoin::None,
-            dashes: Dashes {
-                pattern,
-                offset: 0.0,
-            },
+            dashes: Dashes { pattern, offset },
         }
     }
 
@@ -325,14 +349,74 @@ mod tests {
     }
 
     #[test]
+    fn a_triangle_cap_is_drawn_as_agg_s_butt_cap() {
+        // applyCJC() maps no AGG cap to MapServer's triangle.
+        let image = render(&[line(4.0, LineCap::Triangle, vec![])]);
+        assert_eq!(image.pixel(8, 32), Some(WHITE));
+        assert_eq!(image.pixel(12, 32), Some(RED));
+    }
+
+    #[test]
+    fn a_line_of_a_pixel_is_dashed_too() {
+        let image = render(&[line(1.0, LineCap::Round, vec![4.0, 4.0])]);
+        // A 1-pixel line on row 32.5 covers rows 32 and 33 by half each.
+        let ink = |x| image.pixel(x, 32).is_some_and(|c| c != WHITE);
+        assert!(ink(12), "a dash from 10 to 14");
+        assert!(!ink(16), "a gap from 14 to 18");
+        assert!(ink(20), "a dash from 18 to 22");
+    }
+
+    #[test]
+    fn an_offset_beyond_the_pattern_starts_the_first_dash_that_far_into_it() {
+        // A pattern of 20 and an offset of 25: the start, -5, makes AGG begin 5 into the dash.
+        let image = render(&[dashed(3.0, LineCap::Butt, vec![10.0, 10.0], 25.0)]);
+        assert_eq!(
+            image.pixel(12, 32),
+            Some(RED),
+            "the rest of the dash, to 15"
+        );
+        assert_eq!(image.pixel(20, 32), Some(WHITE), "the gap, to 25");
+        assert_eq!(image.pixel(30, 32), Some(RED), "the next dash, to 35");
+    }
+
+    #[test]
+    fn a_start_many_periods_long_draws_as_its_rest_within_one() {
+        let near = render(&[dashed(3.0, LineCap::Butt, vec![10.0, 10.0], 5.0)]);
+        let far = render(&[dashed(
+            3.0,
+            LineCap::Butt,
+            vec![10.0, 10.0],
+            5.0 + 20.0 * 1e6,
+        )]);
+        assert_eq!(near.pixel(12, 32), Some(WHITE), "5 into the gap first");
+        assert_eq!(near.pixel(20, 32), Some(RED));
+        // The start, 20 - (20e6 + 5), lies before the pattern; AGG walks its length, 5 into a
+        // period, as it walks the reduced one.
+        assert_eq!(far.pixel(12, 32), Some(RED), "5 into the dash");
+        assert_eq!(far.pixel(20, 32), Some(WHITE));
+    }
+
+    #[test]
     #[expect(
         clippy::disallowed_types,
         clippy::disallowed_methods,
         reason = "the clock bounds the test's run time and reaches no output (Q-2)"
     )]
     fn hostile_coordinates_render_quickly_without_a_panic() {
-        // Verifies: ADR-0015, Q-3
+        // Verifies: ADR-0015, Q-3, Q-9
         let started = std::time::Instant::now();
+        // AGG walks a dash start dash by dash: a huge INITIALGAP or PATTERN costs no more.
+        let _ = render(&[
+            dashed(3.0, LineCap::Butt, vec![2.0, 2.0], 1e300),
+            dashed(3.0, LineCap::Butt, vec![2.0, 2.0], 1e9),
+            dashed(3.0, LineCap::Butt, vec![1e308, 1e308], 1.0),
+            dashed(
+                3.0,
+                LineCap::Butt,
+                vec![f64::NAN, f64::INFINITY],
+                f64::INFINITY,
+            ),
+        ]);
         let huge = vec![p(-1e15, -1e15), p(1e15, 5.0), p(30.0, 1e15)];
         let broken = vec![p(f64::NAN, 1.0), p(f64::INFINITY, 5.0), p(30.0, 3.0)];
         let _ = render(&[
