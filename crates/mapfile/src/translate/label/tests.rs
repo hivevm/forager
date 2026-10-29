@@ -64,7 +64,7 @@ fn a_labels_expression_is_its_condition_against_the_labelitem() {
 /// is asked for.
 #[test]
 fn a_condition_as_text_is_true_or_false() {
-    // Verifies: ADR-0019
+    // Verifies: ADR-0030
     let (loaded, label) = first_label(&[(
         "m.map",
         "MAP LAYER CLASS LABEL TEXT ([a] > 1) END END END END",
