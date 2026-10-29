@@ -4,20 +4,21 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod bind;
+mod draw;
 mod extent;
 mod fonts;
+mod offset;
 mod symbol;
 
 use std::collections::BTreeMap;
 
 use forager_ports::{
-    Coord, Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath,
-    SourceError,
+    Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
 };
-use forager_render::{DisplayItem, DrawOp, Point, Renderer, RgbaImage};
-use forager_style_ir::{
-    Bound, Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
-};
+use forager_render::{DisplayItem, Renderer, RgbaImage};
+use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba};
+
+use crate::draw::{can_draw, draw_ops, kind, passes};
 
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
@@ -27,12 +28,6 @@ use crate::fonts::Fonts;
 
 /// The largest width or height of an image, MapServer's default `MAXSIZE` (Q-9).
 pub const MAX_IMAGE_SIDE: u32 = 4096;
-
-/// The widest line, MapServer's default `MAXWIDTH` (`MS_MAXSYMBOLWIDTH`).
-const MAX_SYMBOL_WIDTH: f64 = 32.0;
-
-/// The largest symbol, MapServer's default `MAXSIZE` of a style (`MS_MAXSYMBOLSIZE`).
-const MAX_SYMBOL_SIZE: f64 = 500.0;
 
 /// The most features one layer draws (Q-9); a layer with more is skipped with a diagnostic.
 pub const MAX_FEATURES_PER_LAYER: usize = 1_000_000;
@@ -110,18 +105,35 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             }
         }
         let mut undrawn = BTreeMap::new();
+        let mut drawable = Vec::with_capacity(features.len());
         for feature in &features {
-            for style in &class.styles {
-                let Some(ops) = draw_ops(mode, &feature.geometry, style, &view, &map.symbols)
-                else {
-                    *undrawn.entry(kind(&feature.geometry)).or_insert(0usize) += 1;
-                    continue;
-                };
-                for op in ops {
+            if can_draw(mode, &feature.geometry) {
+                drawable.push(feature);
+            } else {
+                *undrawn.entry(kind(&feature.geometry)).or_insert(0usize) += 1;
+            }
+        }
+        let passes = passes(mode, &class.styles);
+        let mut draw = |feature: &Feature, style, passes: &[_]| {
+            for &pass in passes {
+                for op in draw_ops(mode, &feature.geometry, style, pass, &view, &map.symbols) {
                     renderer.draw(&DisplayItem {
                         op,
                         feature_id: Some(feature.id),
                     });
+                }
+            }
+        };
+        if mode == RenderMode::Line {
+            for (style, passes) in &passes {
+                for feature in &drawable {
+                    draw(feature, style, passes);
+                }
+            }
+        } else {
+            for feature in &drawable {
+                for (style, passes) in &passes {
+                    draw(feature, style, passes);
                 }
             }
         }
@@ -281,154 +293,4 @@ fn name(layer: &Layer) -> String {
         .name
         .as_deref()
         .map_or("without NAME".to_owned(), |n| format!("`{n}`"))
-}
-
-/// The drawing operations of one feature in one style, by the layer's render mode, or `None`
-/// when the mode cannot draw the geometry. As in MapServer, a line layer draws polygons as their
-/// outlines and a point layer draws a marker at every vertex; a polygon layer draws no lines or
-/// points, and a line layer no points.
-fn draw_ops(
-    mode: RenderMode,
-    geometry: &Geometry,
-    style: &Style,
-    view: &View,
-    symbols: &[Symbol],
-) -> Option<Vec<DrawOp>> {
-    let width = fixed(&style.width)
-        .unwrap_or(1.0)
-        .clamp(0.0, MAX_SYMBOL_WIDTH);
-    let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
-    let mut ops = Vec::new();
-    match (mode, geometry) {
-        (_, Geometry::Collection(geometries)) => {
-            for g in geometries {
-                ops.extend(draw_ops(mode, g, style, view, symbols)?);
-            }
-        }
-        (RenderMode::Point, _) => {
-            let mark = symbol::mark(style, symbols);
-            // pointLayerDrawShape: a point outside the map's extent draws nothing.
-            for c in vertices(geometry).into_iter().filter(|&c| view.contains(c)) {
-                let at = view.point_to_pixel(c);
-                match mark {
-                    symbol::Mark::Square => point_ops(&mut ops, at, style, width),
-                    symbol::Mark::Symbol(s) => symbol::symbol_ops(&mut ops, at, style, s),
-                    symbol::Mark::Nothing => {}
-                }
-            }
-        }
-        (RenderMode::Polygon, Geometry::Polygon(rings)) => {
-            polygon_ops(
-                &mut ops,
-                rings.iter().map(|r| pixels(r)).collect(),
-                style,
-                width,
-            );
-        }
-        (RenderMode::Polygon, Geometry::MultiPolygon(polygons)) => {
-            for rings in polygons {
-                polygon_ops(
-                    &mut ops,
-                    rings.iter().map(|r| pixels(r)).collect(),
-                    style,
-                    width,
-                );
-            }
-        }
-        (RenderMode::Line, Geometry::LineString(line)) => {
-            stroke(
-                &mut ops,
-                vec![pixels(line)],
-                false,
-                fixed(&style.color),
-                width,
-            );
-        }
-        (RenderMode::Line, Geometry::MultiLineString(lines) | Geometry::Polygon(lines)) => {
-            let closed = matches!(geometry, Geometry::Polygon(_));
-            let paths = lines.iter().map(|l| pixels(l)).collect();
-            stroke(&mut ops, paths, closed, fixed(&style.color), width);
-        }
-        (RenderMode::Line, Geometry::MultiPolygon(polygons)) => {
-            let rings = polygons.iter().flatten().map(|r| pixels(r)).collect();
-            stroke(&mut ops, rings, true, fixed(&style.color), width);
-        }
-        _ => return None,
-    }
-    Some(ops)
-}
-
-/// Every vertex of a geometry, in order.
-fn vertices(geometry: &Geometry) -> Vec<Coord> {
-    match geometry {
-        Geometry::Point(c) => vec![*c],
-        Geometry::MultiPoint(cs) | Geometry::LineString(cs) => cs.clone(),
-        Geometry::MultiLineString(lines) | Geometry::Polygon(lines) => lines.concat(),
-        Geometry::MultiPolygon(polygons) => polygons.iter().flatten().flatten().copied().collect(),
-        Geometry::Collection(geometries) => geometries.iter().flat_map(vertices).collect(),
-    }
-}
-
-fn kind(geometry: &Geometry) -> &'static str {
-    match geometry {
-        Geometry::Point(_) => "point",
-        Geometry::MultiPoint(_) => "multipoint",
-        Geometry::LineString(_) => "line",
-        Geometry::MultiLineString(_) => "multiline",
-        Geometry::Polygon(_) => "polygon",
-        Geometry::MultiPolygon(_) => "multipolygon",
-        Geometry::Collection(_) => "collection",
-    }
-}
-
-/// A style property's value where it does not vary by feature. One bound to a property or an
-/// expression is not drawn yet, as if unset.
-fn fixed<T: Copy>(property: &Option<Bound<T>>) -> Option<T> {
-    property.as_ref().and_then(Bound::value)
-}
-
-fn polygon_ops(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style, width: f64) {
-    if let Some(color) = fixed(&style.color) {
-        ops.push(DrawOp::Fill {
-            rings: rings.clone(),
-            color,
-        });
-    }
-    stroke(ops, rings, true, fixed(&style.outline_color), width);
-}
-
-fn stroke(
-    ops: &mut Vec<DrawOp>,
-    paths: Vec<Vec<Point>>,
-    closed: bool,
-    color: Option<Rgba>,
-    width: f64,
-) {
-    if let Some(color) = color {
-        ops.push(DrawOp::Stroke {
-            paths,
-            closed,
-            color,
-            width,
-        });
-    }
-}
-
-/// A point as a square of the style's size, centred on it.
-fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, width: f64) {
-    let half = fixed(&style.size)
-        .unwrap_or(1.0)
-        .clamp(0.0, MAX_SYMBOL_SIZE)
-        / 2.0;
-    let corner = |dx: f64, dy: f64| Point {
-        x: at.x + dx,
-        y: at.y + dy,
-    };
-    let square = vec![
-        corner(-half, -half),
-        corner(half, -half),
-        corner(half, half),
-        corner(-half, half),
-    ];
-    polygon_ops(ops, vec![square], style, width);
 }

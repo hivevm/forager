@@ -4,6 +4,7 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 use forager_style_ir::Rgba;
+pub use forager_style_ir::{LineCap, LineJoin};
 
 /// A position in pixels, from the top-left corner of the image.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18,22 +19,28 @@ pub enum DrawOp {
     /// Fills the area the rings enclose under the even-odd rule, so holes stay empty whatever
     /// their winding.
     Fill { rings: Vec<Vec<Point>>, color: Rgba },
-    /// Strokes each path; a closed path joins its last point to its first.
+    /// Strokes each path; a closed path joins its last point to its first, an open one ends
+    /// in caps at both. The cap, the join, and the dashes are those of MapServer's stroke style,
+    /// its `strokeStyleObj`; how they map onto the rasterizer is the renderer's.
     Stroke {
         paths: Vec<Vec<Point>>,
         closed: bool,
         color: Rgba,
         width: f64,
+        cap: LineCap,
+        join: LineJoin,
+        dashes: Dashes,
     },
-    /// Strokes each path as AGG's stroker does by default, with butt caps and miter joins, as
-    /// MapServer's AGG renderer strokes the outline of a vector or ellipse symbol; a closed path
-    /// joins its last point to its first.
-    Outline {
-        paths: Vec<Vec<Point>>,
-        closed: bool,
-        color: Rgba,
-        width: f64,
-    },
+}
+
+/// The dash pattern of a stroke, MapServer's `pattern` and `patternoffset`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Dashes {
+    /// Dash and gap lengths in pixels, alternating; fewer than two draw a solid line.
+    pub pattern: Vec<f64>,
+    /// How far before the end of the pattern each path starts, in pixels; 0 starts it at its
+    /// first dash.
+    pub offset: f64,
 }
 
 /// A drawing operation and the feature it came from.

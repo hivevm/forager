@@ -28,10 +28,10 @@
 //! MapServer's AGG renderer draws it at a point. Its trigonometry is libm's, the same code on
 //! every target, so that the native and the browser build draw the same bytes (Q-2).
 
-use forager_render::{DrawOp, Point};
+use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
-use crate::fixed;
+use crate::draw::fixed;
 
 /// MapServer's `MS_DEG_TO_RAD`, `src/mapserver.h`.
 const DEG_TO_RAD: f64 = 0.017_453_292_519_943_295;
@@ -199,11 +199,16 @@ pub(crate) fn symbol_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbol
     if let Some(color) = s.outline
         && s.outline_width != 0.0
     {
-        ops.push(DrawOp::Outline {
+        // AGG's defaults, which agg2RenderVectorSymbol and agg2RenderEllipseSymbol leave as they
+        // are: butt caps and miter joins. A vector symbol's path is open, an ellipse closed.
+        ops.push(DrawOp::Stroke {
             paths,
             closed,
             color,
             width: s.outline_width,
+            cap: LineCap::Butt,
+            join: LineJoin::Miter,
+            dashes: Dashes::default(),
         });
     }
 }

@@ -196,17 +196,22 @@ fn a_vector_symbol_is_centred_scaled_and_turned_counter_clockwise() {
 fn a_vector_symbol_not_filled_is_an_open_outline() {
     let ops = ops(&style(Some(10.0), None), &triangle(false));
     let [
-        DrawOp::Outline {
+        DrawOp::Stroke {
             paths,
             closed,
             color,
             width,
+            cap,
+            join,
+            ..
         },
     ] = ops.as_slice()
     else {
         panic!("{ops:?}");
     };
     assert_eq!((*closed, *color, *width), (false, RED, 1.0));
+    // AGG's defaults, which agg2RenderVectorSymbol leaves as they are.
+    assert_eq!((*cap, *join), (LineCap::Butt, LineJoin::Miter));
     close(&paths[0], &[(45.0, 45.0), (55.0, 45.0), (50.0, 55.0)]);
 }
 
@@ -219,7 +224,7 @@ fn a_vector_symbols_pen_ups_start_new_paths() {
         false,
     );
     let ops = ops(&style(Some(2.0), None), &cross);
-    let [DrawOp::Outline { paths, .. }] = ops.as_slice() else {
+    let [DrawOp::Stroke { paths, .. }] = ops.as_slice() else {
         panic!("{ops:?}");
     };
     close(&paths[0], &[(49.0, 50.0), (51.0, 50.0)]);
@@ -285,7 +290,7 @@ fn an_ellipse_turns_about_its_centre_and_its_outline_is_closed() {
     );
     let ops = ops(&style(Some(10.0), Some(90.0)), &wide);
     let [
-        DrawOp::Outline {
+        DrawOp::Stroke {
             paths,
             closed,
             width,
