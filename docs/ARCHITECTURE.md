@@ -103,11 +103,12 @@ golden path and the test pattern an agent copies from are named here.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
-structured shapes, and the browser path on GeoJSON — run by `scripts/fuzz.sh`, every Sunday
-through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out of the
-product's build, and `scripts/check-rust.sh` lints it on every push. The shapefile adapter is
-not a target yet. Beside it, `scripts/mutants.sh` runs cargo-mutants over the workspace every
-week through `.github/workflows/mutants.yml` and reports the edits no test notices.
+structured shapes, the browser path on GeoJSON, and the shapefile adapter on arbitrary `.shp`,
+`.shx`, and `.dbf` files — run by `scripts/fuzz.sh`, which reads them from the manifest, every
+Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out of
+the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
+`scripts/mutants.sh` runs cargo-mutants over the workspace every week through
+`.github/workflows/mutants.yml` and reports the edits no test notices.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
 pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles the

@@ -24,6 +24,7 @@ forager-style-ir = { path = "../crates/style-ir" }
 forager-bindings-wasm = { path = "../crates/bindings-wasm" }
 forager-engine = { path = "../crates/engine" }
 forager-render-agg = { path = "../crates/render-agg" }
+forager-adapter-shapefile = { path = "../crates/adapter-shapefile" }
 
 [[bin]]
 name = "mapfile"
@@ -49,6 +50,13 @@ bench = false
 [[bin]]
 name = "geojson"
 path = "fuzz_targets/geojson.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "shapefile"
+path = "fuzz_targets/shapefile.rs"
 test = false
 doc = false
 bench = false

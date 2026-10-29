@@ -139,6 +139,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "forager-adapter-shapefile"
+version = "0.1.0"
+dependencies = [
+ "forager-ports",
+ "forager-style-ir",
+]
+
+[[package]]
 name = "forager-bindings-wasm"
 version = "0.1.0"
 dependencies = [
@@ -168,6 +176,7 @@ name = "forager-fuzz"
 version = "0.0.0"
 dependencies = [
  "arbitrary",
+ "forager-adapter-shapefile",
  "forager-bindings-wasm",
  "forager-engine",
  "forager-mapfile",
