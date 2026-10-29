@@ -126,6 +126,11 @@ mapfile that names the suite's init file bare in-process with a stand-in for it.
 `metric/` compares a rendering with a reference image as RGBA buffers, decoding the reference by
 the `png` crate whatever its colour type, and writes the rendering and a difference image when
 a case fails.
+Beside them, `.github/workflows/noise.yml` measures MapServer's own noise against the same
+references: `scripts/build-mapserver.sh` builds `map2img` from the pinned commit on the runner
+([ADR-0027](adr/0027-mapserver-built-from-the-pin.md)), and the harness's ignored test
+`mapserver_renders_the_cases_in_scope_within_its_noise` runs it over the cases in scope and
+reports the share of differing pixels per case at each threshold of a set.
 The conformance harness there reads the cases of `misc` and `renderers`, their `RUN_PARMS` lines,
 in its module `conformance/`, whose list `cases.txt` names each in scope with its category and
 expected outcome, passing or failing, or out of scope with its reason, and marks those whose

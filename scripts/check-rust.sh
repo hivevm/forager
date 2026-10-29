@@ -41,7 +41,9 @@ if cargo tree -p forager-bindings-wasm --locked -e normal | grep -q '^.*schemars
 fi
 step "msautotest: every mapfile loads (G-1), and the cases in scope hold their outcome"
 suite="$(bash scripts/fetch-msautotest.sh)"
-FORAGER_MSAUTOTEST="$suite" cargo test -p forager-cli --locked --test msautotest -- --ignored
+# The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (ADR-0027).
+FORAGER_MSAUTOTEST="$suite" cargo test -p forager-cli --locked --test msautotest -- --ignored \
+  --skip mapserver_renders_the_cases_in_scope_within_its_noise
 
 step "Clippy bans hash maps, clocks, and randomness in the core alone (Q-2)"
 # Verifies: Q-2

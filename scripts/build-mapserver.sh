@@ -13,6 +13,10 @@
 #
 # Usage: bash scripts/build-mapserver.sh    (prints the path of map2img)
 set -euo pipefail
+# A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
+# repository instead of the one it names (docs/CONVENTIONS.md).
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
 
 if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
   echo "build-mapserver: runs on a GitHub-hosted runner only, never in the dev container (ADR-0027)" >&2
