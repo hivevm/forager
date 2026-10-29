@@ -1,6 +1,6 @@
 # ADR-0025: A feature source reports the records it skips, and the engine turns them into one warning per layer
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-25
 - **Deciders:** Markus Brigl
 - **Applies to:** the `FeatureSource` port of `crates/ports`, its call in `crates/engine`, and every `adapter-<kind>` crate that implements it
