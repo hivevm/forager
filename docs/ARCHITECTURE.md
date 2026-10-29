@@ -115,8 +115,9 @@ the product's build, and `scripts/check-rust.sh` lints it on every push. Beside 
 `.github/workflows/mutants.yml` and reports the edits no test notices.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
-pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles the
-cases of `misc` and `renderers` read, and the non-cairo PNG references of those two directories,
+pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles, fonts,
+and symbol images the cases of `misc` and `renderers` read, and the non-cairo PNG references of
+those two directories,
 cached in CI, never in the repository.
 `scripts/check-rust.sh` loads every mapfile of it through the CLI on every push (G-1), with the
 suite's directory as the base context and a stand-in table for the EPSG codes beyond the built-in

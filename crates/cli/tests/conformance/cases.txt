@@ -338,7 +338,7 @@ renderers/line_label_follow_retry.map line_label_follow_retry.png out: labels
 renderers/line_label_follow_retry.map line_label_follow_retry.pdf out: another output format, pdf
 renderers/line_label_follow_retry.map line_label_follow_retry.svg out: another output format, svg
 renderers/line_label_follow_retry.map line_label_follow_retry.cairo.png out: another output format, cairopng
-renderers/line_marker_pixmap.map line_marker_pixmap.png geometry fails  # not built yet: pixmap symbols; their images are not fetched either
+renderers/line_marker_pixmap.map line_marker_pixmap.png geometry fails  # not built yet: pixmap symbols
 renderers/line_marker_pixmap.map line_marker_pixmap.pdf out: another output format, pdf
 renderers/line_marker_pixmap.map line_marker_pixmap.svg out: another output format, svg
 renderers/line_marker_pixmap.map line_marker_pixmap.cairo.png out: another output format, cairopng
@@ -384,7 +384,7 @@ renderers/line_simple.map line_simple.cairo.png out: another output format, cair
 renderers/line_simple.map line_simple.cairo.jpg out: another output format, jpg
 renderers/lots_of_text.map lots_of_text.png out: labels
 renderers/lots_of_text.map lots_of_text.cairo.png out: another output format, cairopng
-renderers/marker_anchorpoint.map marker_anchorpoint.png geometry fails  # not built yet: pixmap symbols; their images are not fetched either
+renderers/marker_anchorpoint.map marker_anchorpoint.png geometry fails  # not built yet: pixmap symbols
 renderers/marker_anchorpoint.map marker_anchorpoint.pdf out: another output format, pdf
 renderers/marker_anchorpoint.map marker_anchorpoint.svg out: another output format, svg
 renderers/marker_anchorpoint.map marker_anchorpoint.cairo.png out: another output format, cairopng
@@ -429,12 +429,12 @@ renderers/point_ellipse.map gd_fallback.png out: another output format, gdpng
 renderers/point_ellipse.map gd_fallback_gif.png out: another output format, gif
 renderers/point_ellipse.map gd_fallback_pc256.png out: another output format, gdpc256
 renderers/point_ellipse.map gd_fallback_jpeg.png out: another output format, gdjpg
-renderers/point_pixmap.map point_pixmap.png geometry fails  # not built yet: pixmap symbols; their images are not fetched either
+renderers/point_pixmap.map point_pixmap.png out: a case MapServer itself does not reproduce, a symbol by URL from a local HTTP server
 renderers/point_pixmap.map point_pixmap.pdf out: another output format, pdf
 renderers/point_pixmap.map point_pixmap.svg out: another output format, svg
 renderers/point_pixmap.map point_pixmap.json out: another output format, json
 renderers/point_pixmap.map point_pixmap.cairo.png out: another output format, cairopng
-renderers/point_pixmap_gif.map point_pixmap_gif.png geometry fails  # not built yet: pixmap symbols; their images are not fetched either
+renderers/point_pixmap_gif.map point_pixmap_gif.png geometry fails  # not built yet: pixmap symbols
 renderers/point_pixmap_gif.map point_pixmap_gif.pdf out: another output format, pdf
 renderers/point_pixmap_gif.map point_pixmap_gif.svg out: another output format, svg
 renderers/point_pixmap_gif.map point_pixmap_gif.cairo.png out: another output format, cairopng
@@ -459,7 +459,7 @@ renderers/poly-label-pos-auto.map poly-label-pos-auto.png out: labels
 renderers/poly-label-pos-auto.map poly-label-pos-auto.pdf out: another output format, pdf
 renderers/poly-label-pos-auto.map poly-label-pos-auto.svg out: another output format, svg
 renderers/poly-label-pos-auto.map poly-label-pos-auto.cairo.png out: another output format, cairopng
-renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.png geometry fails  # not built yet: pixmap symbols; their images are not fetched either
+renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.png geometry fails  # not built yet: pixmap symbols
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.pdf out: another output format, pdf
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.svg out: another output format, svg
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.cairo.png out: another output format, cairopng
@@ -480,7 +480,7 @@ renderers/polygon-hatch.map polygon-hatch.pdf out: another output format, pdf
 renderers/polygon-hatch.map polygon-hatch.svg out: another output format, svg
 renderers/polygon-hatch.map polygon-hatch.cairo.png out: another output format, cairopng
 renderers/polygon-hex-alpha.map polygon-hex-alpha.png geometry passes
-renderers/polygon-pixmap.map polygon-pixmap.png geometry fails  # not built yet: pixmap symbols; their images are not fetched either
+renderers/polygon-pixmap.map polygon-pixmap.png geometry fails  # not built yet: pixmap symbols
 renderers/polygon-pixmap.map polygon-pixmap.pdf out: another output format, pdf
 renderers/polygon-pixmap.map polygon-pixmap.svg out: another output format, svg
 renderers/polygon-pixmap.map polygon-pixmap.cairo.png out: another output format, cairopng
