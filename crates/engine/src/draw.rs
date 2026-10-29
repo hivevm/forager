@@ -151,7 +151,7 @@ pub fn draw_ops(
 }
 
 /// Every vertex of a geometry, in order.
-fn vertices(geometry: &Geometry) -> Vec<Coord> {
+pub(crate) fn vertices(geometry: &Geometry) -> Vec<Coord> {
     match geometry {
         Geometry::Point(c) => vec![*c],
         Geometry::MultiPoint(cs) | Geometry::LineString(cs) => cs.clone(),
@@ -407,7 +407,7 @@ mod tests {
                     paths,
                     ..
                 } => (color, width, dashes, paths),
-                DrawOp::Fill { .. } => panic!("a line is not filled"),
+                DrawOp::Fill { .. } | DrawOp::Glyphs { .. } => panic!("a line is not filled"),
             })
             .collect()
     }
@@ -512,7 +512,7 @@ mod tests {
             line_symbol(&mut ops, line(), &style(width), Pass::Plain);
             match &ops[0] {
                 DrawOp::Stroke { cap, join, .. } => (*cap, *join),
-                DrawOp::Fill { .. } => panic!("a line is not filled"),
+                DrawOp::Fill { .. } | DrawOp::Glyphs { .. } => panic!("a line is not filled"),
             }
         };
         assert_eq!(ends(1.0), (LineCap::Butt, LineJoin::Bevel));
@@ -538,7 +538,7 @@ mod tests {
                 assert_eq!(*color, Rgba { a: 100, ..BLACK });
                 assert_eq!((*cap, *join), (LineCap::Round, LineJoin::Round));
             }
-            DrawOp::Fill { .. } => panic!("the outline is a stroke"),
+            DrawOp::Fill { .. } | DrawOp::Glyphs { .. } => panic!("the outline is a stroke"),
         }
     }
 }

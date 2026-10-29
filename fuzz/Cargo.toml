@@ -68,3 +68,10 @@ path = "fuzz_targets/shapefile.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "font"
+path = "fuzz_targets/font.rs"
+test = false
+doc = false
+bench = false

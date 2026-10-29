@@ -248,6 +248,24 @@ fn the_ir_core_ports_and_frontend_link_no_c_code() {
     );
 }
 
+/// The workspace crates that depend on the crate named `dependency` directly, by short name.
+fn dependents(ws: &Workspace, dependency: &str) -> Vec<String> {
+    ws.members
+        .iter()
+        .filter(|(id, _)| ws.deps[*id].iter().any(|dep| ws.names[dep] == dependency))
+        .map(|(_, name)| name.clone())
+        .collect()
+}
+
+#[test]
+fn only_label_reads_fonts_with_skrifa() {
+    // Verifies: ADR-0028
+    let ws = workspace();
+    assert_eq!(dependents(&ws, "skrifa"), ["label"]);
+    // The check itself sees a dependency: label depends on forager-render.
+    assert!(dependents(&ws, "forager-render").contains(&"label".to_owned()));
+}
+
 #[test]
 fn only_expr_depends_on_the_regex_crates() {
     // Verifies: ADR-0031

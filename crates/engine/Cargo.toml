@@ -13,12 +13,15 @@ forager-style-ir.workspace = true
 forager-ports.workspace = true
 forager-expr.workspace = true
 forager-render.workspace = true
+forager-label.workspace = true
 libm.workspace = true
 
 [dev-dependencies]
 forager-adapter-geojson.workspace = true
 forager-render-agg.workspace = true
 forager-encode.workspace = true
+# Counts the bytes a render allocates, in the memory test of the labels (Q-9).
+peak_alloc = "0.3.0"
 
 [lints]
 workspace = true

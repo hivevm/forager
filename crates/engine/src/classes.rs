@@ -197,15 +197,15 @@ impl Reports {
 }
 
 /// The selection of one layer's classes for its features.
-pub(crate) struct Selector<'a> {
+pub(crate) struct Selector<'a, 'm> {
     pub layer: &'a Layer,
     pub layer_index: usize,
-    pub evaluator: &'a mut Evaluator,
-    pub reports: &'a mut Reports,
-    pub diagnostics: &'a mut Vec<Diagnostic>,
+    pub evaluator: &'m mut Evaluator,
+    pub reports: &'m mut Reports,
+    pub diagnostics: &'m mut Vec<Diagnostic>,
 }
 
-impl Selector<'_> {
+impl<'a> Selector<'a, '_> {
     fn matches(&mut self, expr: &Expr, feature: &Feature, carrier: Carrier) -> bool {
         match self
             .evaluator
@@ -238,6 +238,32 @@ impl Selector<'_> {
             None => true,
             Some(expression) => self.matches(expression, feature, Carrier::Class(i)),
         })
+    }
+
+    /// Each of `features` the layer draws, with the place of its class and its styles bound to
+    /// it, in the source's order.
+    pub fn select<'f>(
+        &mut self,
+        features: Vec<&'f Feature>,
+        symbols: &[Symbol],
+    ) -> Vec<crate::Selected<'f>>
+    where
+        'a: 'f,
+    {
+        let mut selected = Vec::with_capacity(features.len());
+        for feature in features {
+            let Some(index) = self.class(feature) else {
+                continue;
+            };
+            let layer: &'a Layer = self.layer;
+            let styles = layer.classes[index]
+                .styles
+                .iter()
+                .map(|style| self.bind(style, feature, symbols))
+                .collect();
+            selected.push((feature, index, styles));
+        }
+        selected
     }
 
     /// `style` with each property bound to a property or computed by an expression given its

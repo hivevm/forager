@@ -8,6 +8,7 @@ mod classes;
 mod draw;
 mod extent;
 mod fonts;
+mod labels;
 mod offset;
 mod symbol;
 
@@ -29,7 +30,7 @@ pub use crate::bind::bind_sources;
 pub use crate::extent::View;
 pub use crate::fonts::MAX_FONT_BYTES;
 
-use crate::fonts::Fonts;
+use crate::labels::Labels;
 
 /// The largest width or height of an image, MapServer's default `MAXSIZE` (Q-9).
 pub const MAX_IMAGE_SIDE: u32 = 4096;
@@ -80,7 +81,6 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     files: &L,
     mut renderer: R,
 ) -> Rendered {
-    let mut fonts = Fonts::default();
     let mut diagnostics = Vec::new();
     let Some((width, height, view)) = view(map, &mut diagnostics) else {
         return Rendered {
@@ -89,6 +89,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         };
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
+    let mut labels = Labels::new(map, &view, files, (width, height));
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
     for (layer_index, layer) in map.layers.iter().enumerate() {
@@ -133,28 +134,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             reports: &mut reports,
             diagnostics: &mut diagnostics,
         };
-        // Each feature drawn, with its class and its styles bound to it, in the source's order.
-        let mut selected = Vec::with_capacity(drawable.len());
-        for feature in drawable {
-            let Some(index) = selector.class(feature) else {
-                continue;
-            };
-            let class = &layer.classes[index];
-            let styles: Vec<_> = class
-                .styles
-                .iter()
-                .map(|style| selector.bind(style, feature, &map.symbols))
-                .collect();
-            selected.push((feature, index, styles));
-        }
-        // A label needs its fonts once a feature of its class is drawn; drawing them is still to
-        // come.
-        let classes_drawn: BTreeSet<usize> = selected.iter().map(|(_, index, _)| *index).collect();
-        for index in classes_drawn {
-            for label in &layer.classes[index].labels {
-                fonts.for_label(map, label, files, &mut diagnostics).await;
-            }
-        }
+        let selected = selector.select(drawable, &map.symbols);
         draw_selected(&mut renderer, mode, &selected, &view, &map.symbols);
         for (kind, count) in undrawn {
             let message = format!(
@@ -168,7 +148,27 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                 layer.span.clone(),
             ));
         }
+        // Each class labels the features it draws.
+        let point_layer = mode == RenderMode::Point;
+        let classes_drawn: BTreeSet<usize> = selected.iter().map(|(_, class, _)| *class).collect();
+        for class in classes_drawn {
+            let features: Vec<&Feature> = selected
+                .iter()
+                .filter(|(_, c, _)| *c == class)
+                .map(|(feature, _, _)| *feature)
+                .collect();
+            labels
+                .collect(
+                    (layer_index, class),
+                    point_layer,
+                    &features,
+                    &mut diagnostics,
+                )
+                .await;
+        }
     }
+    // The labels are drawn after every layer, as MapServer's label cache draws them.
+    labels.finish(&mut renderer, &mut diagnostics);
     Rendered {
         image: Some(renderer.finish()),
         diagnostics,
@@ -176,7 +176,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
 }
 
 /// A feature drawn: it, the place of its class, and its styles bound to it.
-type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
+pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
 
 /// Draws a layer's selected features in the order msDrawVectorLayer draws them: a feature of a
 /// line layer whose class has several styles, or an outline, draws its first pass at once and the

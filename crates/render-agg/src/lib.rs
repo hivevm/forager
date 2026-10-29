@@ -19,6 +19,7 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod clip;
+mod glyphs;
 
 use agg_rust::basics::{FillingRule, VertexSource};
 use agg_rust::color::Rgba8;
@@ -250,6 +251,7 @@ impl Renderer for AggRenderer {
                 };
                 self.stroke(paths, *closed, *color, stroke);
             }
+            DrawOp::Glyphs { path, color } => self.glyphs(path, *color),
         }
     }
 
@@ -480,6 +482,75 @@ mod tests {
                 "{big}"
             );
         }
+    }
+
+    #[test]
+    fn glyphs_are_filled_under_the_non_zero_rule_with_their_curves_flattened() {
+        // Verifies: ADR-0028
+        use forager_render::PathCommand::{Close, LineTo, MoveTo, QuadTo};
+        // Two squares of the same winding, one inside the other: the inner one stays filled,
+        // which the even-odd rule of a Fill would leave empty.
+        let square = |a: f64, b: f64| {
+            vec![
+                MoveTo(p(a, a)),
+                LineTo(p(b, a)),
+                LineTo(p(b, b)),
+                LineTo(p(a, b)),
+                Close,
+            ]
+        };
+        let mut path = square(8.0, 56.0);
+        path.extend(square(24.0, 40.0));
+        // A quadratic bulge to the right of x = 60, bounded by its control point at x = 64.
+        path.extend([
+            MoveTo(p(58.0, 20.0)),
+            QuadTo(p(70.0, 32.0), p(58.0, 44.0)),
+            Close,
+        ]);
+        let image = render(&[DrawOp::Glyphs { path, color: RED }]);
+        assert_eq!(image.pixel(12, 12), Some(RED));
+        assert_eq!(
+            image.pixel(32, 32),
+            Some(RED),
+            "the inner square stays filled"
+        );
+        assert_eq!(image.pixel(62, 32), Some(RED), "the curve is filled");
+        assert_eq!(
+            image.pixel(62, 22),
+            Some(WHITE),
+            "the curve, not its control polygon"
+        );
+    }
+
+    #[test]
+    fn a_glyph_far_larger_than_the_image_is_clipped_to_it() {
+        // Verifies: ADR-0015
+        // Six million pixels a side: without the rasterizer's clip box its cells would span the
+        // whole square, and the render would take minutes.
+        use forager_render::PathCommand::{Close, LineTo, MoveTo};
+        let (a, b) = (-3e6, 3e6);
+        let path = vec![
+            MoveTo(p(a, a)),
+            LineTo(p(b, a)),
+            LineTo(p(b, b)),
+            LineTo(p(a, b)),
+            Close,
+        ];
+        let image = render(&[DrawOp::Glyphs { path, color: RED }]);
+        assert!(image.pixels.chunks(4).all(|px| px == [200, 80, 80, 255]));
+    }
+
+    #[test]
+    fn a_glyph_path_out_of_reach_is_not_drawn() {
+        use forager_render::PathCommand::{Close, LineTo, MoveTo};
+        let path = vec![
+            MoveTo(p(-1e12, -1e12)),
+            LineTo(p(1e12, -1e12)),
+            LineTo(p(0.0, f64::NAN)),
+            Close,
+        ];
+        let image = render(&[DrawOp::Glyphs { path, color: RED }]);
+        assert!(image.pixels.chunks(4).all(|px| px == [255, 255, 255, 255]));
     }
 
     #[test]

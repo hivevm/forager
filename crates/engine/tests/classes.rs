@@ -112,7 +112,7 @@ fn fills(items: &[DisplayItem]) -> Vec<(u64, Rgba, f64)> {
                 let width = xs.clone().fold(f64::MIN, f64::max) - xs.fold(f64::MAX, f64::min);
                 Some((item.feature_id.unwrap() + 1, *color, width))
             }
-            DrawOp::Stroke { .. } => None,
+            DrawOp::Stroke { .. } | DrawOp::Glyphs { .. } => None,
         })
         .collect()
 }
@@ -271,7 +271,7 @@ fn a_line_layer_draws_cached_styles_after_every_feature_whatever_its_class() {
         .iter()
         .filter_map(|item| match &item.op {
             DrawOp::Stroke { color, .. } => Some((item.feature_id.unwrap() + 1, *color)),
-            DrawOp::Fill { .. } => None,
+            DrawOp::Fill { .. } | DrawOp::Glyphs { .. } => None,
         })
         .collect();
     assert_eq!(strokes, vec![(1, RED), (2, BLUE), (1, GREEN)]);
