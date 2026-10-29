@@ -5,7 +5,9 @@
 //! agg-rust behind its clipping (Q-3, ADR-0015). JSON cannot carry such numbers, so the GeoJSON
 //! target never reaches these paths. Further styles of a line's dashes, caps, joins, offsets,
 //! outlines, and width bounds are read from the same bytes back to front, so that they leave how
-//! an input decodes to its view, its symbol, and its shapes as it was.
+//! an input decodes to its view, its symbol, and its shapes as it was. The points carry a label of
+//! arbitrary text, size, bounds, and resolution, in a test font of the label crate, drawn through
+//! the text path (ADR-0028).
 // Verifies: Q-3, ADR-0015
 #![no_main]
 
@@ -13,12 +15,13 @@ use std::collections::BTreeMap;
 
 use arbitrary::{Arbitrary, Unstructured};
 use forager_ports::{
-    Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
+    Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, ResourceLoader,
+    ResourcePath, SourceError,
 };
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Extent, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map, RenderMode, Rgba,
-    Style, Symbol, SymbolKind, SymbolRef,
+    Bound, Class, Expr, Extent, Label, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
+    RenderMode, Rgba, Style, Symbol, SymbolKind, SymbolRef,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -31,6 +34,22 @@ struct Input {
     symbol_size: f64,
     symbol: SymbolInput,
     shapes: Vec<Shape>,
+    text: String,
+    label_size: f64,
+    min_size: f64,
+    max_size: f64,
+    resolution: f64,
+}
+
+/// A subset of DejaVu Sans, whose licence lies beside it, as the one font of the font set.
+const SANS: &[u8] = include_bytes!("../../crates/label/tests/fixtures/dejavu-sans-subset.ttf");
+
+struct Font;
+
+impl ResourceLoader for Font {
+    async fn load(&self, _: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        Ok(SANS.to_vec())
+    }
 }
 
 /// The further styles of every layer's class.
@@ -167,6 +186,14 @@ fuzz_target!(|data: &[u8]| {
         size: Some(Bound::Value(input.symbol_size)),
         ..Style::default()
     };
+    let label = Label {
+        text: Some(Expr::String(input.text)),
+        font: Some(Bound::Value("sans".to_owned())),
+        size: Some(Bound::Value(input.label_size)),
+        min_size: Some(input.min_size),
+        max_size: Some(input.max_size),
+        ..Label::default()
+    };
     let symbol = &input.symbol;
     let mut symbols = vec![Symbol {
         name: None,
@@ -211,8 +238,12 @@ fuzz_target!(|data: &[u8]| {
     let styles: Vec<Style> = std::iter::once(style)
         .chain(further.iter().map(LineStyle::style))
         .collect();
+    let mut points = layer("points", RenderMode::Point, styles.clone());
+    points.classes[0].labels.push(label);
     let [min_x, min_y, max_x, max_y] = input.extent;
     let map = Map {
+        resolution: Some(input.resolution),
+        fonts: [("sans".to_owned(), "sans.ttf".to_owned())].into(),
         extent: Some(Extent {
             min_x,
             min_y,
@@ -223,7 +254,7 @@ fuzz_target!(|data: &[u8]| {
         layers: vec![
             layer("polygons", RenderMode::Polygon, styles.clone()),
             layer("lines", RenderMode::Line, styles.clone()),
-            layer("points", RenderMode::Point, styles),
+            points,
             layer("symbols", RenderMode::Point, vec![symbol_style]),
             layer("hatches", RenderMode::Polygon, vec![hatch_style]),
         ],
@@ -234,6 +265,6 @@ fuzz_target!(|data: &[u8]| {
         .into_iter()
         .map(|name| (name.to_owned(), Shapes(features.clone())))
         .collect();
-    let _ = forager_ports::poll_once(forager_engine::render(&map, &sources, AggRenderer::new()))
-        .expect("the engine waited on a source that never waits");
+    let render = forager_engine::render_with_files(&map, &sources, &Font, AggRenderer::new());
+    let _ = forager_ports::poll_once(render).expect("the engine waited on a port that never waits");
 });

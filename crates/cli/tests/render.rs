@@ -110,7 +110,10 @@ fn the_cli_and_the_bindings_report_the_same_codes() {
 fn labelled(font: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("forager-fonts-{}-{font}", std::process::id()));
     std::fs::create_dir_all(dir.join("fonts")).unwrap();
-    std::fs::write(dir.join("fonts/sans.ttf"), b"font").unwrap();
+    // A test font of the label crate, a subset of DejaVu Sans whose licence lies beside it.
+    let sans = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+    std::fs::copy(sans, dir.join("fonts/sans.ttf")).unwrap();
     std::fs::write(
         dir.join("fonts.lst"),
         "sans fonts/sans.ttf\ngone fonts/gone.ttf\n",

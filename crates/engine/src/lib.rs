@@ -8,6 +8,7 @@ mod draw;
 mod extent;
 mod fonts;
 mod hatch;
+mod labels;
 mod offset;
 mod symbol;
 
@@ -25,7 +26,7 @@ pub use crate::bind::bind_sources;
 pub use crate::extent::View;
 pub use crate::fonts::MAX_FONT_BYTES;
 
-use crate::fonts::Fonts;
+use crate::labels::Labels;
 
 /// The largest width or height of an image, MapServer's default `MAXSIZE` (Q-9).
 pub const MAX_IMAGE_SIDE: u32 = 4096;
@@ -76,7 +77,6 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     files: &L,
     mut renderer: R,
 ) -> Rendered {
-    let mut fonts = Fonts::default();
     let mut diagnostics = Vec::new();
     let Some((width, height, view)) = view(map, &mut diagnostics) else {
         return Rendered {
@@ -85,7 +85,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         };
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    for layer in &map.layers {
+    let mut labels = Labels::new(map, &view, files, (width, height));
+    for (index, layer) in map.layers.iter().enumerate() {
         if !shown(layer) {
             continue;
         }
@@ -99,12 +100,6 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let Some(class) = layer.classes.first() else {
             continue;
         };
-        // A label needs its fonts once its layer has features; drawing them is still to come.
-        if !features.is_empty() {
-            for label in &class.labels {
-                fonts.for_label(map, label, files, &mut diagnostics).await;
-            }
-        }
         let mut undrawn = BTreeMap::new();
         let mut drawable = Vec::with_capacity(features.len());
         for feature in &features {
@@ -161,7 +156,13 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                 layer.span.clone(),
             ));
         }
+        let point_layer = mode == RenderMode::Point;
+        labels
+            .collect(index, point_layer, &features, &mut diagnostics)
+            .await;
     }
+    // The labels are drawn after every layer, as MapServer's label cache draws them.
+    labels.finish(&mut renderer, &mut diagnostics);
     Rendered {
         image: Some(renderer.finish()),
         diagnostics,
