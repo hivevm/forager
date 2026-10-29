@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use forager_style_ir::{Extent, Layer, LayerStatus, Map};
+use forager_style_ir::{Diagnostic, Extent, Layer, LayerStatus, Map};
 
 #[cfg(test)]
 mod tests;
@@ -50,8 +50,9 @@ impl Case {
     }
 
     /// The options of the case's `map2img` line that the harness applies to the style IR, in the
-    /// order of the line: `-l`, `-e`, and `-s`, read as `map2img.c` at the pin reads them. The
-    /// line is split into words as the shell that `os.system` runs it in splits it. The error is
+    /// order of the line: `-l`, `-e`, and `-s`, read as `map2img.c` at the pin reads them, except
+    /// that a number `atof` or `atoi` would read leniently, such as `1abc` or a negative size, is
+    /// refused. The line is split into words as the shell that `os.system` runs it in splits it. The error is
     /// why the case cannot be rendered: no `map2img` line, no PNG, another output format, an
     /// option short of its arguments, or any other option.
     pub fn options(&self) -> Result<Vec<Applied>, String> {
@@ -134,12 +135,23 @@ pub enum Applied {
 /// `-l` turns every layer whose status is not DEFAULT off, and on again each whose name is one of
 /// the list's, compared without regard to ASCII case as `strcasecmp` compares it. `map2img` also
 /// turns on the layers whose `GROUP` is one of the list's, and exits without an image when a name
-/// is neither a layer's nor a group's; the style IR holds no group, so a name that is no layer's
-/// is the error.
-pub fn apply(options: &[Applied], map: &mut Map) -> Result<(), String> {
+/// is neither a layer's nor a group's. The style IR holds no group, so a name that is no layer's
+/// is the error, and so is `-l` on a mapfile whose load reported a `GROUP` it did not carry over
+/// (`diagnostics`): a name could be one layer's and another's group, and map2img would draw both.
+pub fn apply(options: &[Applied], map: &mut Map, diagnostics: &[Diagnostic]) -> Result<(), String> {
     for option in options {
         match option {
             Applied::Layers(names) => {
+                if diagnostics
+                    .iter()
+                    .any(|d| d.code == "unsupported-keyword" && d.message.starts_with("GROUP "))
+                {
+                    return Err(
+                        "the option -l on a mapfile with a layer GROUP, which the style IR does \
+                         not hold"
+                            .to_owned(),
+                    );
+                }
                 let named = |layer: &Layer, name: &str| {
                     layer
                         .name

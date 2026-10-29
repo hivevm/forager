@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use forager_style_ir::{Extent, Layer, LayerStatus, Map};
+use forager_style_ir::{Diagnostic, Extent, Layer, LayerStatus, Map};
 
 use super::{Case, Category, Entry, Verdict, directives, list, unlisted, verdict};
 
@@ -289,7 +289,7 @@ fn a_quoted_argument_is_one_word_as_the_shell_reads_it() {
         ],
         ..Map::default()
     };
-    super::apply(&options, &mut map).unwrap();
+    super::apply(&options, &mut map, &[]).unwrap();
     assert_eq!(
         statuses(&map),
         [
@@ -310,6 +310,10 @@ fn the_layers_option_turns_on_the_named_layers_and_off_the_others_but_default_on
             layer("Outlines1", Some(LayerStatus::Off)),
             layer("outlines3", Some(LayerStatus::On)),
             layer("unset", None),
+            Layer {
+                status: Some(LayerStatus::On),
+                ..Layer::default()
+            },
         ],
         ..Map::default()
     };
@@ -320,16 +324,51 @@ fn the_layers_option_turns_on_the_named_layers_and_off_the_others_but_default_on
     )
     .options()
     .unwrap();
-    super::apply(&options, &mut map).unwrap();
+    super::apply(&options, &mut map, &[]).unwrap();
     assert_eq!(
         statuses(&map),
         [
             Some(LayerStatus::Default),
             Some(LayerStatus::On),
             Some(LayerStatus::Off),
-            Some(LayerStatus::Off)
-        ]
+            Some(LayerStatus::Off),
+            Some(LayerStatus::Off),
+        ],
+        "a layer without a name is turned off, as map2img skips a NULL name"
     );
+}
+
+/// The style IR holds no `GROUP`, so `-l` on a mapfile whose load did not carry a group over is
+/// an error rather than a drawing that leaves out the layers of the group.
+#[test]
+fn a_layers_option_on_a_mapfile_with_a_group_is_an_error() {
+    let mut map = Map {
+        layers: vec![layer("a", Some(LayerStatus::On))],
+        ..Map::default()
+    };
+    let options = case("m.map", "a.png", "[MAP2IMG] -m [MAPFILE] -l a -o [RESULT]")
+        .options()
+        .unwrap();
+    let group = Diagnostic::warning(
+        "unsupported-keyword",
+        "GROUP is not yet supported and is ignored",
+        None,
+    );
+    let error = super::apply(&options, &mut map, &[group]).unwrap_err();
+    assert!(error.contains("GROUP"), "{error}");
+    let size = case(
+        "m.map",
+        "a.png",
+        "[MAP2IMG] -m [MAPFILE] -s 10 10 -o [RESULT]",
+    )
+    .options()
+    .unwrap();
+    let group = Diagnostic::warning(
+        "unsupported-keyword",
+        "GROUP is not yet supported and is ignored",
+        None,
+    );
+    super::apply(&size, &mut map, &[group]).expect("without -l a group changes nothing");
 }
 
 /// map2img exits without an image when a name of `-l` is no layer's or group's; the style IR
@@ -347,7 +386,7 @@ fn a_layers_option_naming_no_layer_is_an_error() {
     )
     .options()
     .unwrap();
-    let error = super::apply(&options, &mut map).unwrap_err();
+    let error = super::apply(&options, &mut map, &[]).unwrap_err();
     assert!(error.contains("`grp`"), "{error}");
 }
 
@@ -380,7 +419,7 @@ fn the_extent_and_the_size_options_set_those_of_the_map() {
     )
     .options()
     .unwrap();
-    super::apply(&options, &mut map).unwrap();
+    super::apply(&options, &mut map, &[]).unwrap();
     assert_eq!(
         map.extent,
         Some(Extent {

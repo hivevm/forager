@@ -493,7 +493,7 @@ fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, 
         format!("it does not load: {}", errors.join("; "))
     })?;
     let mut map = document.map;
-    conformance::apply(&case.options()?, &mut map)?;
+    conformance::apply(&case.options()?, &mut map, &loaded.diagnostics)?;
     let mut sources = BTreeMap::new();
     for layer in &map.layers {
         let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
