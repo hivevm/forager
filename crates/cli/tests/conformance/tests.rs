@@ -466,3 +466,29 @@ fn the_words_of_a_line_are_split_as_the_shell_splits_them() {
     assert_eq!(super::shell_words("  ").unwrap(), Vec::<String>::new());
     assert_eq!(super::shell_words(r#"-l """#).unwrap(), ["-l", ""]);
 }
+
+/// MapServer is run as the test library runs it: in the mapfile's directory, without a renderer,
+/// and writing where the measurement asks.
+#[test]
+fn map2img_is_handed_the_line_as_the_test_library_hands_it_over() {
+    let case = case(
+        "renderers/sub/m.map",
+        "a.png",
+        "[MAP2IMG] [RENDERER] -m [MAPFILE] -l \"a b\" -o [RESULT]",
+    );
+    assert_eq!(
+        case.map2img_arguments(std::path::Path::new("/out/a.png"))
+            .unwrap(),
+        ["-m", "m.map", "-l", "a b", "-o", "/out/a.png"]
+    );
+    let other = super::Case {
+        command: "[MAP2IMG] -m [MAPFILE] -c 2 -o [RESULT]".to_owned(),
+        ..case
+    };
+    assert!(
+        other
+            .map2img_arguments(std::path::Path::new("/out/a.png"))
+            .is_err(),
+        "a case the harness does not render is not run either"
+    );
+}

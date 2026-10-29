@@ -7,40 +7,44 @@
 
 ## Context
 
-G-6 holds a rendering to its msautotest reference within the tolerance of its category, and the
-specification assumes that the references are reproducible enough for those tolerances to lie
-above their platform noise, measured before the first rendering criterion is held. The noise is
-how far MapServer itself, run off the platform that produced the references, lands from them; so
-the measurement needs MapServer at the release the suite is pinned to, `rel-8-6-6` at the commit
-`scripts/fetch-msautotest.sh` names. Nothing of the product links it: it is a measuring
-instrument, run over the in-scope cases, whose renderings the harness compares by its metric.
+G-6 and G-13 hold a rendering to its msautotest reference within the tolerance of its category, and
+the specification assumes that the references are reproducible enough for those tolerances to lie
+above their platform noise, measured before the first rendering criterion is held. The noise is how
+far MapServer itself, run off the platform that produced the references, lands from them; so the
+measurement needs MapServer at the release the suite is pinned to, `rel-8-6-6` at the commit
+`scripts/fetch-msautotest.sh` names. Nothing of the product links it: it is a measuring instrument,
+run over the in-scope cases, whose renderings the harness compares by its metric.
 
 MapServer is C with C dependencies (PROJ, GDAL, FreeType, libpng, Cairo), which the dev container
 does not carry; adding them would grow the container of every session for a job that runs only
 when its inputs change. The run depends on MapServer, the scope list, and the harness that
 compares, not on the rest of Forager's code. MapServer's own CI builds the tag from source in an
 `ubuntu:24.04` container, with Ubuntu's packages, the ubuntugis-unstable PPA, and Kitware's CMake
-repository, and runs the suite there.
+repository, and runs the suite there, with the suite served by a local HTTP server for the
+symbols a case names by a URL.
 
 ## Decision
 
 We will build MapServer from the commit `scripts/fetch-msautotest.sh` names, with its default
-build options and the Ubuntu archive's packages that `scripts/build-mapserver.sh` names, on a
-GitHub-hosted `ubuntu-24.04` runner in the workflow `.github/workflows/noise.yml`, run on demand
-and on a push that changes `crates/cli/tests/conformance/`, `scripts/fetch-msautotest.sh`,
-`scripts/build-mapserver.sh`, or the workflow, and nowhere else.
+build options, SVG symbols through librsvg, and curl, as its own CI builds the references, and
+the Ubuntu archive's packages that `scripts/build-mapserver.sh` names, on a GitHub-hosted
+`ubuntu-24.04` runner in the workflow `.github/workflows/noise.yml`, run on demand and on a push
+that changes `crates/cli/tests/conformance/`, `crates/cli/tests/metric/`,
+`crates/cli/tests/msautotest.rs`, `scripts/fetch-msautotest.sh`, `scripts/build-mapserver.sh`, or
+the workflow, and nowhere else.
 
 The build script reads the tag and the commit from the two assignments in
 `scripts/fetch-msautotest.sh`, the one place that names the pin, checks out that commit and
 refuses to build when its checkout is another, adds no apt source, and refuses to run outside
 GitHub Actions, so it never runs in the dev container. The run writes into its job summary the
-CMake options of the build and, for each package it installed, the version and the origin
-`apt-cache policy` reports. The workflow caches the build by the hash of the build script and of
-`scripts/fetch-msautotest.sh`, and compares the renderings in the same run.
+CMake options of the build and, for each package whose library `map2img` links, the version and
+the origin `apt-cache policy` reports. The workflow caches the build by the hash of the build
+script and of `scripts/fetch-msautotest.sh`, serves the suite on `localhost:8000` as MapServer's
+CI does, and compares the renderings in the same run.
 
 **Out of scope:** the set of thresholds, the report, and the margin that sets G-6's numbers, which
 ticket 08 of the conformance harness and the maintainer's specification change decide; running
-MapServer on another platform; other categories than geometry and symbols.
+MapServer on another platform; the categories of G-13.
 
 ## Alternatives considered
 
@@ -60,6 +64,9 @@ MapServer on another platform; other categories than geometry and symbols.
 - **A build with only what `map2img` and AGG need** — a smaller build, but an option off that a
   case reaches, such as GEOS for a geometry transform, would count as noise what is a
   configuration difference.
+- **The default options alone** — `WITH_RSVG` and `WITH_CURL` are off by default, while
+  MapServer's CI builds the references with both, so the cases with SVG symbols or a symbol named
+  by a URL would fail on the configuration, not on noise.
 - **Building in the dev container** — the change ADR-0010 would have to take, for a job that runs
   rarely.
 - **On every push** — a build and a run per push for a result that only the pin, the scope, and
@@ -70,7 +77,9 @@ MapServer on another platform; other categories than geometry and symbols.
 - MapServer at `rel-8-6-6`: `.github/workflows/build.yml` (runs `start.sh` in `ubuntu:24.04`),
   `.github/workflows/start.sh`, `ci/ubuntu/setup.sh` (Ubuntu packages, the ubuntugis-unstable
   PPA, and Kitware's repository), `ci/ubuntu/build.sh`, the `cmakebuild_nocoverage` target of
-  its `Makefile`, and the option defaults of `CMakeLists.txt`; read 2026-10-29.
+  its `Makefile` with `-DWITH_RSVG=1` and `-DWITH_CURL=1`, the `python -m http.server` that
+  `ci/ubuntu/build.sh` starts in `msautotest/`, and the option defaults of `CMakeLists.txt`; read
+  2026-10-29.
 - conda-forge `mapserver`, latest 8.6.6 (anaconda.org API, checked 2026-10-29).
 - Docker Hub `camptocamp/mapserver` tags `8.6`, `8.6-gdal3.12`, `8.6-gdal3.13`, `8.6.0`, no
   `8.6.6` (checked 2026-10-29).
@@ -99,10 +108,10 @@ MapServer on another platform; other categories than geometry and symbols.
 instead of reading the assignments of `scripts/fetch-msautotest.sh`; when the script, run without
 `GITHUB_ACTIONS=true`, does not refuse; when the script or the workflow adds an apt source
 (`add-apt-repository`, `apt-add-repository`, or a write under `/etc/apt/sources.list`); when the
-workflow runs on another runner than `ubuntu-24.04`, uses `container:` or `docker`, triggers on
-anything but `workflow_dispatch` and a push filtered to the paths of the Decision, or keys its
-cache on anything but the hash of the two scripts.
+workflow runs on another runner than `ubuntu-24.04`, uses a container (`container:`, `services:`,
+`docker`, or `podman`), triggers on anything but `workflow_dispatch` and a push filtered to the
+paths of the Decision, or caches the build under a key other than the hash of the two scripts.
 
-**Not mechanically decidable:** that the build keeps MapServer's default options and that the
-job summary lists the packages with their origins, short of a run; a reviewer reads the script
-and the first run's summary.
+**Not mechanically decidable:** that the build keeps MapServer's default options with `WITH_RSVG`
+and `WITH_CURL` on, and that the job summary lists the linked packages with their origins, short
+of a run; a reviewer reads the script and the first run's summary.

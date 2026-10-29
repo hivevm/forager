@@ -57,6 +57,9 @@ run "Action references sensor self-test" scripts/test-sensor-action-refs.sh
 # Verifies: ADR-0011
 run "Action references" scripts/sensor-action-refs.sh --require major-tag
 run "Mutation sensor self-test" scripts/test-mutants.sh
+# How MapServer runs on CI for the noise measurement of G-6.
+# Verifies: ADR-0027
+run "MapServer build self-test" scripts/test-build-mapserver.sh
 run "Vendor check self-test" scripts/test-check-vendor.sh
 run "Vendor check" scripts/check-vendor.sh
 run "Notice check self-test" scripts/test-check-notice.sh
