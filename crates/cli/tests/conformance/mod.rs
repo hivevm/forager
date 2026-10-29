@@ -4,12 +4,16 @@
 //! the files whose name ends in `.map`, in that case; the line may stand anywhere in the file, its
 //! first word, cut to its file name, is the result, and the rest the command; a line of a result
 //! alone runs `map2img` plainly, and a mapfile without a line runs that plain command for
-//! `<name>.png`, unless it says `SKIP_WHOLE_FILE:`. The list, `cases.txt` beside this module,
-//! names every case of the directories it covers: in scope with its category and expected
-//! outcome, or out of scope with its reason, and marks the cases whose reference is blank.
+//! `<name>.png`, unless it says `SKIP_WHOLE_FILE:`. The options `-l`, `-e`, and `-s` of a line are
+//! applied to the style IR as `map2img` applies them; any other keeps the case out. The list,
+//! `cases.txt` beside this module, names every case of the directories it covers: in scope with its
+//! category and expected outcome, or out of scope with its reason, and marks the cases whose
+//! reference is blank.
 
 use std::collections::BTreeMap;
 use std::path::Path;
+
+use forager_style_ir::{Diagnostic, Extent, Layer, LayerStatus, Map};
 
 #[cfg(test)]
 mod tests;
@@ -39,15 +43,28 @@ impl Case {
     }
 
     /// Whether the harness can render the case: a `map2img` line that writes a PNG with the
-    /// output format `png`, or none, and no other option. The error is the reason it cannot.
+    /// output format `png`, or none, and no option but those [`Case::options`] applies. The error
+    /// is the reason it cannot.
     pub fn renderable(&self) -> Result<(), String> {
-        let mut words = self.command.split_whitespace();
+        self.options().map(drop)
+    }
+
+    /// The options of the case's `map2img` line that the harness applies to the style IR, in the
+    /// order of the line: `-l`, `-e`, and `-s`, read as `map2img.c` at the pin reads them, except
+    /// that a number `atof` or `atoi` would read leniently, such as `1abc` or a negative size, is
+    /// refused. The line is split into words as the shell that `os.system` runs it in splits it. The error is
+    /// why the case cannot be rendered: no `map2img` line, no PNG, another output format, an
+    /// option short of its arguments, or any other option.
+    pub fn options(&self) -> Result<Vec<Applied>, String> {
+        let words = shell_words(&self.command)?;
+        let mut words = words.iter().map(String::as_str);
         if words.next() != Some("[MAP2IMG]") {
             return Err("not a map2img line".to_owned());
         }
         if !self.result.ends_with(".png") {
             return Err("its result is no PNG".to_owned());
         }
+        let mut applied = Vec::new();
         let mut options = Vec::new();
         while let Some(word) = words.next() {
             match word {
@@ -67,15 +84,174 @@ impl Case {
                     Some("png") => {}
                     other => return Err(format!("the output format {}", other.unwrap_or(""))),
                 },
+                "-l" => {
+                    let names = words.next().ok_or("the option -l takes a list of layers")?;
+                    applied.push(Applied::Layers(split_names(names)));
+                }
+                "-e" => {
+                    let mut bound = [0.0; 4];
+                    for b in &mut bound {
+                        *b = words
+                            .next()
+                            .and_then(|w| w.parse().ok())
+                            .ok_or("the option -e takes four numbers")?;
+                    }
+                    applied.push(Applied::Extent(bound));
+                }
+                "-s" => {
+                    let mut size = [0; 2];
+                    for s in &mut size {
+                        *s = words
+                            .next()
+                            .and_then(|w| w.parse().ok())
+                            .ok_or("the option -s takes two sizes in pixels")?;
+                    }
+                    applied.push(Applied::Size(size));
+                }
                 other => options.push(other),
             }
         }
         if options.is_empty() {
-            Ok(())
+            Ok(applied)
         } else {
             Err(format!("the options {}", options.join(" ")))
         }
     }
+}
+
+/// An option of a `map2img` line that the harness applies to the style IR before it renders.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Applied {
+    /// `-l`: the layers to draw, by name.
+    Layers(Vec<String>),
+    /// `-e`: the extent, as `minx miny maxx maxy`.
+    Extent([f64; 4]),
+    /// `-s`: the width and height of the image.
+    Size([u32; 2]),
+}
+
+/// Applies `options` to `map` in their order, as `map2img.c` at the pin applies them to the
+/// `mapObj` before `msDrawMap`. `-e` sets the map's extent and `-s` its size (`msMapSetSize`).
+/// `-l` turns every layer whose status is not DEFAULT off, and on again each whose name is one of
+/// the list's, compared without regard to ASCII case as `strcasecmp` compares it. `map2img` also
+/// turns on the layers whose `GROUP` is one of the list's, and exits without an image when a name
+/// is neither a layer's nor a group's. The style IR holds no group, so a name that is no layer's
+/// is the error, and so is `-l` on a mapfile whose load reported a `GROUP` it did not carry over
+/// (`diagnostics`): a name could be one layer's and another's group, and map2img would draw both.
+pub fn apply(options: &[Applied], map: &mut Map, diagnostics: &[Diagnostic]) -> Result<(), String> {
+    for option in options {
+        match option {
+            Applied::Layers(names) => {
+                if diagnostics
+                    .iter()
+                    .any(|d| d.code == "unsupported-keyword" && d.message.starts_with("GROUP "))
+                {
+                    return Err(
+                        "the option -l on a mapfile with a layer GROUP, which the style IR does \
+                         not hold"
+                            .to_owned(),
+                    );
+                }
+                let named = |layer: &Layer, name: &str| {
+                    layer
+                        .name
+                        .as_deref()
+                        .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                };
+                if let Some(name) = names
+                    .iter()
+                    .find(|name| !map.layers.iter().any(|layer| named(layer, name)))
+                {
+                    return Err(format!(
+                        "the option -l names `{name}`, which is no layer's name; map2img would \
+                         look for a GROUP of that name, which the style IR does not hold"
+                    ));
+                }
+                for layer in &mut map.layers {
+                    if layer.status != Some(LayerStatus::Default) {
+                        let on = names.iter().any(|name| named(layer, name));
+                        layer.status = Some(if on {
+                            LayerStatus::On
+                        } else {
+                            LayerStatus::Off
+                        });
+                    }
+                }
+            }
+            Applied::Extent([min_x, min_y, max_x, max_y]) => {
+                map.extent = Some(Extent {
+                    min_x: *min_x,
+                    min_y: *min_y,
+                    max_x: *max_x,
+                    max_y: *max_y,
+                });
+            }
+            Applied::Size(size) => map.size = Some(*size),
+        }
+    }
+    Ok(())
+}
+
+/// The names of a `-l` argument, split at spaces as `msStringSplit` splits them: a run of spaces
+/// separates two names, and a space at either end leaves an empty name there.
+fn split_names(names: &str) -> Vec<String> {
+    let mut split = vec![String::new()];
+    let mut last = None;
+    for c in names.chars() {
+        if c == ' ' {
+            if last != Some(' ') {
+                split.push(String::new());
+            }
+        } else if let Some(name) = split.last_mut() {
+            name.push(c);
+        }
+        last = Some(c);
+    }
+    split
+}
+
+/// The words of `command` as a POSIX shell splits them: at unquoted blanks, with single quotes
+/// taking what they enclose literally, double quotes and a backslash outside quotes escaping
+/// the next character. Nothing else of the shell is read: a redirection or a substitution stays
+/// a word, which no option of the harness accepts. An unclosed quote is an error.
+fn shell_words(command: &str) -> Result<Vec<String>, String> {
+    let mut words = Vec::new();
+    let mut word: Option<String> = None;
+    let mut chars = command.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            ' ' | '\t' | '\n' => words.extend(word.take()),
+            '\'' => {
+                let w = word.get_or_insert_with(String::new);
+                loop {
+                    match chars.next() {
+                        Some('\'') => break,
+                        Some(c) => w.push(c),
+                        None => return Err("the line leaves a quote open".to_owned()),
+                    }
+                }
+            }
+            '"' => {
+                let w = word.get_or_insert_with(String::new);
+                loop {
+                    match chars.next() {
+                        Some('"') => break,
+                        Some('\\') => match chars.next() {
+                            Some(c @ ('"' | '\\' | '$' | '`')) => w.push(c),
+                            Some(c) => w.extend(['\\', c]),
+                            None => return Err("the line leaves a quote open".to_owned()),
+                        },
+                        Some(c) => w.push(c),
+                        None => return Err("the line leaves a quote open".to_owned()),
+                    }
+                }
+            }
+            '\\' => word.get_or_insert_with(String::new).extend(chars.next()),
+            c => word.get_or_insert_with(String::new).push(c),
+        }
+    }
+    words.extend(word);
+    Ok(words)
 }
 
 /// The cases of the mapfiles in `dirs` of the suite, in the order of their mapfiles' names and,
