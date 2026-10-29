@@ -1,6 +1,6 @@
 # ADR-0027: CI builds MapServer from the pinned tag to measure its noise
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-29
 - **Deciders:** Markus Brigl
 - **Applies to:** `scripts/build-mapserver.sh`, `.github/workflows/noise.yml`, and every run of MapServer itself
