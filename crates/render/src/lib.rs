@@ -19,9 +19,9 @@ pub enum DrawOp {
     /// Fills the area the rings enclose under the even-odd rule, so holes stay empty whatever
     /// their winding.
     Fill { rings: Vec<Vec<Point>>, color: Rgba },
-    /// Strokes each path; a closed path joins its last point to its first. The cap, the join,
-    /// and the dashes are those of MapServer's stroke style, its `strokeStyleObj`; how they map
-    /// onto the rasterizer is the renderer's.
+    /// Strokes each path; a closed path joins its last point to its first, an open one ends
+    /// in caps at both. The cap, the join, and the dashes are those of MapServer's stroke style,
+    /// its `strokeStyleObj`; how they map onto the rasterizer is the renderer's.
     Stroke {
         paths: Vec<Vec<Point>>,
         closed: bool,

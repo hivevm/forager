@@ -24,7 +24,7 @@ use agg_rust::basics::{FillingRule, VertexSource};
 use agg_rust::color::Rgba8;
 use agg_rust::conv_dash::ConvDash;
 use agg_rust::conv_stroke::ConvStroke;
-use agg_rust::math_stroke::{InnerJoin, LineCap as AggCap, LineJoin as AggJoin};
+use agg_rust::math_stroke::{LineCap as AggCap, LineJoin as AggJoin};
 use agg_rust::path_storage::PathStorage;
 use agg_rust::pixfmt_rgba::PixfmtRgba32;
 use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
@@ -118,36 +118,30 @@ struct Stroke<'a> {
 }
 
 impl Stroke<'_> {
-    /// Sets the stroker as agg2RenderLine() does: the cap and the join of the style for a line
-    /// wider than a pixel (applyCJC()), bevel joins and inner joins for any other. Forager sets up
-    /// a fresh stroker for every line, so a cap MapServer does not map, `triangle`, and the cap of
-    /// a line no wider than a pixel are AGG's default, butt. MapServer keeps one stroker per
-    /// image and carries its state from line to line: there a thin line after a wide round-capped
-    /// one is round-capped, and a wide line after a thin one keeps the thin one's inner bevel.
+    /// Sets the stroker's width, cap, and join as applyCJC() does: a join of `none` is a bevel,
+    /// and a cap MapServer does not map, `triangle`, stays AGG's default, butt. The inner join
+    /// and the miter limit stay AGG's defaults, a miter and 4. Forager sets up a fresh stroker for
+    /// every path; MapServer keeps one per image and carries its state from line to line, so
+    /// there a thin line after a wide round-capped one is round-capped.
     fn apply<VS: VertexSource>(&self, stroke: &mut ConvStroke<VS>) {
         stroke.set_width(self.width);
-        if self.width > 1.0 {
-            stroke.set_line_join(match self.join {
-                LineJoin::Round => AggJoin::Round,
-                LineJoin::Miter => AggJoin::Miter,
-                LineJoin::Bevel | LineJoin::None => AggJoin::Bevel,
-            });
-            match self.cap {
-                LineCap::Butt => stroke.set_line_cap(AggCap::Butt),
-                LineCap::Round => stroke.set_line_cap(AggCap::Round),
-                LineCap::Square => stroke.set_line_cap(AggCap::Square),
-                LineCap::Triangle => {}
-            }
-        } else {
-            stroke.set_inner_join(InnerJoin::Bevel);
-            stroke.set_line_join(AggJoin::Bevel);
+        stroke.set_line_join(match self.join {
+            LineJoin::Round => AggJoin::Round,
+            LineJoin::Miter => AggJoin::Miter,
+            LineJoin::Bevel | LineJoin::None => AggJoin::Bevel,
+        });
+        match self.cap {
+            LineCap::Butt => stroke.set_line_cap(AggCap::Butt),
+            LineCap::Round => stroke.set_line_cap(AggCap::Round),
+            LineCap::Square => stroke.set_line_cap(AggCap::Square),
+            LineCap::Triangle => {}
         }
     }
 }
 
 /// Adds the dashes as agg2RenderLine() does: each length rounded to whole pixels, half to even
-/// as `lrint`, and at least 1, one that is not finite 1; an odd last length dropped; and the start moved back by the
-/// pattern's offset. AGG walks a start dash by dash, so the start is first reduced to one period
+/// as `lrint`, and at least 1, one that is not finite 1; an odd last length dropped; and the
+/// start moved back by the pattern's offset. AGG walks a start dash by dash, so the start is first reduced to one period
 /// of the pattern, which draws the same, and each length is bounded by the largest `int`, the
 /// type MapServer sums the pattern's length in, so that the length stays finite; a huge
 /// INITIALGAP or PATTERN then costs no more than any other (Q-3, Q-9). A start before the
@@ -185,6 +179,37 @@ fn add(path: &mut PathStorage, points: &[Point], close: bool) {
     }
 }
 
+impl AggRenderer {
+    /// Strokes `paths`, clipped first to the image grown by the reach of the stroke.
+    fn stroke(&mut self, paths: &[Vec<Point>], closed: bool, color: Rgba, stroke: Stroke<'_>) {
+        if !(stroke.width.is_finite() && stroke.width > 0.0) {
+            return;
+        }
+        // A wider stroke covers the image all the same, and the margin stays small enough for
+        // agg-rust's fixed-point coordinates.
+        let width = stroke.width.min(2.0 * f64::from(self.width + self.height));
+        let stroke = Stroke { width, ..stroke };
+        // A miter join reaches up to its limit of 4 half widths past the path, a bevel or round
+        // join and a cap no more than about one.
+        let reach = match stroke.join {
+            LineJoin::Miter => 2.0 * width,
+            LineJoin::Round | LineJoin::Bevel | LineJoin::None => width / 2.0,
+        };
+        let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN + reach);
+        let mut path = PathStorage::new();
+        for points in paths {
+            if closed {
+                add(&mut path, &clip_ring(points, &rect), true);
+            } else {
+                for run in clip_line(points, &rect) {
+                    add(&mut path, &run, false);
+                }
+            }
+        }
+        self.rasterize(&mut path, color, Some(&stroke));
+    }
+}
+
 impl Renderer for AggRenderer {
     fn begin(&mut self, width: u32, height: u32, background: Rgba) {
         // An image whose size overflows is drawn as no image at all; the engine never asks for one.
@@ -199,9 +224,9 @@ impl Renderer for AggRenderer {
     }
 
     fn draw(&mut self, item: &DisplayItem) {
-        let mut path = PathStorage::new();
         match &item.op {
             DrawOp::Fill { rings, color } => {
+                let mut path = PathStorage::new();
                 let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
                 for ring in rings {
                     add(&mut path, &clip_ring(ring, &rect), true);
@@ -217,38 +242,13 @@ impl Renderer for AggRenderer {
                 join,
                 dashes,
             } => {
-                if !(width.is_finite() && *width > 0.0) {
-                    return;
-                }
-                // A wider stroke covers the image all the same, and the margin stays small
-                // enough for agg-rust's fixed-point coordinates.
-                let width = width.min(2.0 * f64::from(self.width + self.height));
-                let margin = CLIP_MARGIN + width / 2.0;
-                let rect = Rect::around_image(self.width, self.height, margin);
-                for points in paths {
-                    if *closed {
-                        // MapServer's line_adaptor never closes a path: a ring is stroked as a
-                        // line that returns to its first point, with caps there and no join.
-                        let mut ring = clip_ring(points, &rect);
-                        if let (Some(&first), Some(&last)) = (ring.first(), ring.last())
-                            && first != last
-                        {
-                            ring.push(first);
-                        }
-                        add(&mut path, &ring, false);
-                    } else {
-                        for run in clip_line(points, &rect) {
-                            add(&mut path, &run, false);
-                        }
-                    }
-                }
                 let stroke = Stroke {
-                    width,
+                    width: *width,
                     cap: *cap,
                     join: *join,
                     dashes,
                 };
-                self.rasterize(&mut path, *color, Some(&stroke));
+                self.stroke(paths, *closed, *color, stroke);
             }
         }
     }
@@ -330,12 +330,29 @@ mod tests {
     }
 
     #[test]
-    fn a_line_no_wider_than_a_pixel_keeps_butt_caps() {
-        // agg2RenderLine applies the style's cap only to a line wider than a pixel.
-        let thin = render(&[line(1.0, LineCap::Square, vec![])]);
-        assert_eq!(thin.pixel(8, 32), Some(WHITE));
-        let wide = render(&[line(4.0, LineCap::Square, vec![])]);
-        assert_eq!(wide.pixel(8, 32), Some(RED));
+    fn an_outline_has_butt_caps_and_miter_joins_where_a_line_has_round_caps_and_bevels() {
+        // A right angle at (32, 32), 8 wide: the miter fills the outer corner, the bevel cuts
+        // it; the round cap reaches past the end, the butt cap stops at it. A symbol's outline is
+        // stroked with AGG's defaults, butt caps and miter joins; a line by default with round
+        // caps and the bevel of a join of `none`.
+        let corner = vec![p(10.0, 32.0), p(32.0, 32.0), p(32.0, 54.0)];
+        let draw = |cap, join| {
+            render(&[DrawOp::Stroke {
+                paths: vec![corner.clone()],
+                closed: false,
+                color: RED,
+                width: 8.0,
+                cap,
+                join,
+                dashes: Dashes::default(),
+            }])
+        };
+        let outline = draw(LineCap::Butt, LineJoin::Miter);
+        let line = draw(LineCap::Round, LineJoin::None);
+        assert_eq!(outline.pixel(35, 29), Some(RED), "the miter");
+        assert_eq!(line.pixel(35, 29), Some(WHITE), "the bevel");
+        assert_eq!(outline.pixel(8, 32), Some(WHITE), "the butt cap");
+        assert_eq!(line.pixel(8, 32), Some(RED), "the round cap");
     }
 
     #[test]
@@ -425,7 +442,7 @@ mod tests {
                 color: RED,
             },
             DrawOp::Stroke {
-                paths: vec![huge, broken],
+                paths: vec![huge.clone(), broken.clone()],
                 closed: false,
                 color: RED,
                 width: 1e9,
@@ -435,6 +452,15 @@ mod tests {
                     pattern: vec![1e-300, 1e300, 3.0],
                     offset: 1e300,
                 },
+            },
+            DrawOp::Stroke {
+                paths: vec![huge, broken],
+                closed: true,
+                color: RED,
+                width: 1e9,
+                cap: LineCap::Butt,
+                join: LineJoin::Miter,
+                dashes: Dashes::default(),
             },
         ]);
         assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());

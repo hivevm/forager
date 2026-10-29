@@ -18,10 +18,11 @@
 
 use forager_ports::{Coord, Geometry};
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
-use forager_style_ir::{Bound, RenderMode, Rgba, Style};
+use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol};
 
 use crate::extent::View;
 use crate::offset::{self, Offset};
+use crate::symbol;
 
 /// The widest line, MapServer's default `MAXWIDTH` (`MS_MAXSYMBOLWIDTH`).
 const MAX_SYMBOL_WIDTH: f64 = 32.0;
@@ -94,18 +95,26 @@ pub fn draw_ops(
     style: &Style,
     pass: Pass,
     view: &View,
+    symbols: &[Symbol],
 ) -> Vec<DrawOp> {
     let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
     let mut ops = Vec::new();
     match (mode, geometry) {
         (_, Geometry::Collection(geometries)) => {
             for g in geometries {
-                ops.extend(draw_ops(mode, g, style, pass, view));
+                ops.extend(draw_ops(mode, g, style, pass, view, symbols));
             }
         }
         (RenderMode::Point, _) => {
-            for c in vertices(geometry) {
-                point_ops(&mut ops, view.to_pixel(c), style);
+            let mark = symbol::mark(style, symbols);
+            // pointLayerDrawShape: a point outside the map's extent draws nothing.
+            for c in vertices(geometry).into_iter().filter(|&c| view.contains(c)) {
+                let at = view.point_to_pixel(c);
+                match mark {
+                    symbol::Mark::Square => point_ops(&mut ops, at, style),
+                    symbol::Mark::Symbol(s) => symbol::symbol_ops(&mut ops, at, style, s),
+                    symbol::Mark::Nothing => {}
+                }
             }
         }
         (RenderMode::Polygon, Geometry::Polygon(rings)) => {
@@ -117,16 +126,19 @@ pub fn draw_ops(
             }
         }
         (RenderMode::Line, Geometry::LineString(line)) => {
-            line_symbol(&mut ops, vec![pixels(line)], false, style, pass);
+            line_symbol(&mut ops, vec![pixels(line)], style, pass);
         }
         (RenderMode::Line, Geometry::MultiLineString(lines) | Geometry::Polygon(lines)) => {
-            let closed = matches!(geometry, Geometry::Polygon(_));
-            let paths = lines.iter().map(|l| pixels(l)).collect();
-            line_symbol(&mut ops, paths, closed, style, pass);
+            let paths: Vec<_> = lines.iter().map(|l| pixels(l)).collect();
+            let paths = match geometry {
+                Geometry::Polygon(_) => open_rings(paths),
+                _ => paths,
+            };
+            line_symbol(&mut ops, paths, style, pass);
         }
         (RenderMode::Line, Geometry::MultiPolygon(polygons)) => {
             let rings = polygons.iter().flatten().map(|r| pixels(r)).collect();
-            line_symbol(&mut ops, rings, true, style, pass);
+            line_symbol(&mut ops, open_rings(rings), style, pass);
         }
         _ => {}
     }
@@ -158,7 +170,7 @@ pub fn kind(geometry: &Geometry) -> &'static str {
 
 /// A style property's value where it does not vary by feature. One bound to a property or an
 /// expression is not drawn yet, as if unset.
-fn fixed<T: Copy>(property: &Option<Bound<T>>) -> Option<T> {
+pub(crate) fn fixed<T: Copy>(property: &Option<Bound<T>>) -> Option<T> {
     property.as_ref().and_then(Bound::value)
 }
 
@@ -203,18 +215,37 @@ fn moved(paths: Vec<Vec<Point>>, offset: Option<Offset>) -> Vec<Vec<Point>> {
     }
 }
 
+/// The cap and the join agg2RenderLine() strokes a line of `width` with: those given for a line
+/// wider than a pixel, and for any other bevel joins and AGG's default cap, butt. (It also bevels
+/// the inner joins of such a line, which the display list does not carry; they lie within a
+/// pixel of the path.)
+fn line_ends(width: f64, cap: LineCap, join: LineJoin) -> (LineCap, LineJoin) {
+    if width > 1.0 {
+        (cap, join)
+    } else {
+        (LineCap::Butt, LineJoin::Bevel)
+    }
+}
+
+/// Rings as MapServer's line_adaptor strokes them: open lines that end on their first point,
+/// with caps there and no join.
+fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
+    for ring in &mut rings {
+        if let (Some(&first), Some(&last)) = (ring.first(), ring.last())
+            && first != last
+        {
+            ring.push(first);
+        }
+    }
+    rings
+}
+
 /// A line drawn in a style, as msDrawLineSymbol() draws one of a simple symbol: in the `COLOR`,
 /// or the `OUTLINECOLOR` without one; the width bounded; the offset, the dash pattern, and the
 /// initial gap scaled by the factor the bounds applied to the width; and the style's cap and
 /// join, by default `round` and `none`. An outline pass draws the style widened by twice its
 /// outline width with its colours swapped, as msOutlineRenderingPrepareStyle() prepares it.
-fn line_symbol(
-    ops: &mut Vec<DrawOp>,
-    paths: Vec<Vec<Point>>,
-    closed: bool,
-    style: &Style,
-    pass: Pass,
-) {
+fn line_symbol(ops: &mut Vec<DrawOp>, paths: Vec<Vec<Point>>, style: &Style, pass: Pass) {
     let (outline, first, second) = match pass {
         Pass::Plain | Pass::PlainIfColored => (0.0, &style.color, &style.outline_color),
         Pass::Outline | Pass::OutlineIfOutlined => {
@@ -231,13 +262,18 @@ fn line_symbol(
     let (width, written) = bounded_width(style, 2.0 * outline);
     let factor = if written != 0.0 { width / written } else { 1.0 };
     let initial_gap = style.initial_gap.unwrap_or(-1.0);
+    let (cap, join) = line_ends(
+        width,
+        style.line_cap.unwrap_or(LineCap::Round),
+        style.line_join.unwrap_or(LineJoin::None),
+    );
     ops.push(DrawOp::Stroke {
         paths: moved(paths, style_offset(style, factor)),
-        closed,
+        closed: false,
         color,
         width,
-        cap: style.line_cap.unwrap_or(LineCap::Round),
-        join: style.line_join.unwrap_or(LineJoin::None),
+        cap,
+        join,
         dashes: Dashes {
             pattern: style.pattern.iter().map(|p| p * factor).collect(),
             offset: if initial_gap <= 0.0 {
@@ -254,7 +290,7 @@ fn line_symbol(
 /// and outlined in the `OUTLINECOLOR` at the colour's alpha, with round caps and joins.
 fn shade(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style) {
     let Some(color) = fixed(&style.color) else {
-        line_symbol(ops, rings, true, style, Pass::Plain);
+        line_symbol(ops, open_rings(rings), style, Pass::Plain);
         return;
     };
     let rings = moved(rings, style_offset(style, 1.0));
@@ -267,16 +303,18 @@ fn shade(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style) {
         let width = if width == 0.0 { 1.0 } else { width };
         let max = style.max_width.unwrap_or(MAX_SYMBOL_WIDTH);
         let min = style.min_width.unwrap_or(MIN_SYMBOL_WIDTH);
+        let width = width.min(max).max(min);
+        let (cap, join) = line_ends(width, LineCap::Round, LineJoin::Round);
         ops.push(DrawOp::Stroke {
-            paths: rings,
-            closed: true,
+            paths: open_rings(rings),
+            closed: false,
             color: Rgba {
                 a: color.a,
                 ..outline
             },
-            width: width.min(max).max(min),
-            cap: LineCap::Round,
-            join: LineJoin::Round,
+            width,
+            cap,
+            join,
             dashes: Dashes::default(),
         });
     }
@@ -306,15 +344,17 @@ fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
         });
     }
     if let Some(color) = fixed(&style.outline_color) {
+        let width = fixed(&style.width)
+            .unwrap_or(1.0)
+            .clamp(0.0, MAX_SYMBOL_WIDTH);
+        let (cap, join) = line_ends(width, LineCap::Round, LineJoin::None);
         ops.push(DrawOp::Stroke {
             paths: vec![square],
             closed: true,
             color,
-            width: fixed(&style.width)
-                .unwrap_or(1.0)
-                .clamp(0.0, MAX_SYMBOL_WIDTH),
-            cap: LineCap::Round,
-            join: LineJoin::None,
+            width,
+            cap,
+            join,
             dashes: Dashes::default(),
         });
     }
@@ -348,7 +388,7 @@ mod tests {
     /// The strokes of one pass of a style on [`line`]: color, width, dashes, and paths.
     fn strokes(style: &Style, pass: Pass) -> Vec<(Rgba, f64, Dashes, Vec<Vec<Point>>)> {
         let mut ops = Vec::new();
-        line_symbol(&mut ops, line(), false, style, pass);
+        line_symbol(&mut ops, line(), style, pass);
         ops.into_iter()
             .map(|op| match op {
                 DrawOp::Stroke {
@@ -450,13 +490,38 @@ mod tests {
     }
 
     #[test]
+    fn a_line_no_wider_than_a_pixel_has_butt_caps_and_bevel_joins() {
+        // agg2RenderLine applies the style's cap and join only to a line wider than a pixel.
+        let style = |width| Style {
+            width: Some(Bound::Value(width)),
+            line_cap: Some(LineCap::Square),
+            line_join: Some(LineJoin::Miter),
+            ..colored(Some(BLUE), None)
+        };
+        let ends = |width| {
+            let mut ops = Vec::new();
+            line_symbol(&mut ops, line(), &style(width), Pass::Plain);
+            match &ops[0] {
+                DrawOp::Stroke { cap, join, .. } => (*cap, *join),
+                DrawOp::Fill { .. } => panic!("a line is not filled"),
+            }
+        };
+        assert_eq!(ends(1.0), (LineCap::Butt, LineJoin::Bevel));
+        assert_eq!(ends(1.5), (LineCap::Square, LineJoin::Miter));
+    }
+
+    #[test]
     fn a_filled_polygon_is_outlined_at_its_fill_s_alpha() {
         let fill = Rgba {
             a: 100,
             ..Rgba::opaque(200, 80, 80)
         };
         let mut ops = Vec::new();
-        shade(&mut ops, line(), &colored(Some(fill), Some(BLACK)));
+        let style = Style {
+            width: Some(Bound::Value(2.0)),
+            ..colored(Some(fill), Some(BLACK))
+        };
+        shade(&mut ops, line(), &style);
         match &ops[1] {
             DrawOp::Stroke {
                 color, cap, join, ..

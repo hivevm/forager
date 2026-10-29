@@ -8,6 +8,7 @@ mod draw;
 mod extent;
 mod fonts;
 mod offset;
+mod symbol;
 
 use std::collections::BTreeMap;
 
@@ -115,7 +116,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let passes = passes(mode, &class.styles);
         let mut draw = |feature: &Feature, style, passes: &[_]| {
             for &pass in passes {
-                for op in draw_ops(mode, &feature.geometry, style, pass, &view) {
+                for op in draw_ops(mode, &feature.geometry, style, pass, &view, &map.symbols) {
                     renderer.draw(&DisplayItem {
                         op,
                         feature_id: Some(feature.id),

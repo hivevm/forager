@@ -291,8 +291,9 @@ pub struct Style {
     /// A shift of what is drawn, `[x, y]`, y downwards.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<[Bound<f64>; 2]>,
-    /// A line drawn parallel to the feature's line at this distance, positive to its left in
-    /// the direction of drawing; MapServer writes it as `OFFSET d -99`, or `-999` for both sides.
+    /// A line drawn parallel to the feature's line at this distance, positive to its right in
+    /// the direction of drawing on the image, as MapServer's offset curve places it; MapServer
+    /// writes it as `OFFSET d -99`, or `-999` for both sides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_offset: Option<LineOffset>,
     /// A shift by distance and angle in degrees, `[distance, angle]`.
@@ -602,7 +603,7 @@ pub enum Units {
 }
 
 /// A style property that may vary by feature: a value, a property bound as MapServer binds an
-/// attribute, or an expression (ADR-0019). It is read as an untagged enum would read it, a value
+/// attribute, or an expression (ADR-0030). It is read as an untagged enum would read it, a value
 /// before an expression, but an object by its keys, so that a key it does not know is named.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

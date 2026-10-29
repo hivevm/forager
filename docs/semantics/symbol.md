@@ -35,3 +35,25 @@ coordinate -99 is drawn where it stands. A style's size is the symbol's height d
 (`msSymbolGetDefaultSize`: its extent's height, or its width where the height is 0), so a symbol 2
 wide and 4 high drawn at size 8 is 4 wide and 8 high. An ellipse is measured the same way and never
 shifted; its extent is its width and height.
+
+**Drawing at a point.** A point layer's style draws its vector or ellipse symbol at each point
+inside the map's extent, as `msDrawMarkerSymbol` and `computeSymbolStyle` in
+`src/maprendering.c` and the AGG renderer's `agg2RenderVectorSymbol` and
+`agg2RenderEllipseSymbol` in `src/mapagg.cpp` draw it. Its scale is the style's size, bounded by
+`MINSIZE` and `MAXSIZE`, over its default size; without a size it is drawn at its own. A filled
+symbol is filled with `COLOR`, its lines closed, and outlined with `OUTLINECOLOR`; one not
+filled is only outlined, with `COLOR`, or `OUTLINECOLOR` where there is none. The outline is the
+style's `WIDTH`, 1 by default, with AGG's butt caps and miter joins; a vector symbol's lines stay
+open, an ellipse's closes. A vector symbol is drawn about the centre of its extent, an ellipse is
+AGG's polygon of its extent scaled; both turn counter-clockwise by `ANGLE`. An anchor point other
+than the centre moves the symbol so that the anchor, turned with it, lies on the point, measured
+at the size cut to whole pixels (`msAdjustMarkerPos`, `msGetMarkerSize` in `src/mapsymbol.c`).
+A style whose symbol index lies past the last symbol draws nothing.
+
+**Not yet as MapServer draws it at a point.** A point style without a symbol it draws — none, 0,
+a pixmap, TrueType, SVG, hatch, or simple symbol, a symbol bound to a property, or a name no
+symbol carries — draws a square of its size, where MapServer draws nothing for none and 0 and the
+symbol or image otherwise. `OFFSET` and `POLAROFFSET` do not move a symbol at a point. The scale
+factor is 1: `RESOLUTION`, `SIZEUNITS`, and `SYMBOLSCALEDENOM` do not scale a symbol yet
+([`scale.md`](scale.md)). A size, angle, or width bound to a property or given by an expression
+is drawn as if unset.

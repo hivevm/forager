@@ -1,7 +1,7 @@
 # `EXPRESSION`
 
 **Where:** `CLASS`, `LABEL`. **IR:** the class's or the label's `expression`, a CQL2 tree
-([ADR-0019](../adr/0019-cql2-expressions.md)).
+([ADR-0030](../adr/0030-cql2-expressions.md)).
 
 **Meaning.** Which features the class draws. A class without one draws every feature that reaches
 it; MapServer tries a layer's classes in order and draws a feature with the first that matches. A
@@ -17,7 +17,7 @@ MapServer decides the kind by the token that follows the keyword (`loadExpressio
 |---|---|---|
 | `"road"` or `road` | `=` of `to_string(CLASSITEM)` and `"road"` | `strcmp` |
 | `"road"i` | `=` of `casei` of both | `strcasecmp` |
-| `/re/`, `/re/i` | `regexp_like(to_string(CLASSITEM), "re", "" or "i")` | `regcomp` with `REG_EXTENDED`, `REG_ICASE` for `i` |
+| `/re/`, `/re/i` | `regexp_like(to_string(CLASSITEM), "re", "" or "i")` | `regcomp` with `REG_EXTENDED`, `REG_ICASE` for `i`, through PCRE2's POSIX interface, which ignores `REG_EXTENDED` and reads in byte mode |
 | `{a,b,c}` | `in(to_string(CLASSITEM), ["a","b","c"])` | split at commas, `strcmp` each, no trimming |
 | `( … )` | the translated expression | `yyparse` of `src/mapparser.y` |
 

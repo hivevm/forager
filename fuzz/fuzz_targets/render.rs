@@ -1,9 +1,10 @@
-//! The renderer on structured input: arbitrary points, lines, and polygons with any `f64` —
+//! The renderer on structured input: arbitrary points, lines, and polygons, and an arbitrary
+//! vector or ellipse symbol at the points, with any `f64` —
 //! NaN, infinities, and the extremes included — in an arbitrary view, drawn by the engine with
 //! agg-rust behind its clipping (Q-3, ADR-0015). JSON cannot carry such numbers, so the GeoJSON
 //! target never reaches these paths. Further styles of a line's dashes, caps, joins, offsets,
-//! outlines, and width bounds are read from the same bytes back to front, so that the seeds keep
-//! decoding to the shapes and the view they were kept for.
+//! outlines, and width bounds are read from the same bytes back to front, so that they leave how
+//! an input decodes to its view, its symbol, and its shapes as it was.
 // Verifies: Q-3, ADR-0015
 #![no_main]
 
@@ -16,7 +17,7 @@ use forager_ports::{
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Extent, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map, RenderMode, Rgba,
-    Style,
+    Style, Symbol, SymbolKind, SymbolRef,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -27,6 +28,7 @@ struct Input {
     extent: [f64; 4],
     line_width: f64,
     symbol_size: f64,
+    symbol: SymbolInput,
     shapes: Vec<Shape>,
 }
 
@@ -92,6 +94,16 @@ impl LineStyle {
 }
 
 #[derive(Arbitrary, Debug)]
+struct SymbolInput {
+    ellipse: bool,
+    filled: bool,
+    paths: Vec<Vec<(f64, f64)>>,
+    extent: (f64, f64),
+    anchor_point: Option<(f64, f64)>,
+    angle: f64,
+}
+
+#[derive(Arbitrary, Debug)]
 enum Shape {
     Point(f64, f64),
     Line(Vec<(f64, f64)>),
@@ -154,6 +166,33 @@ fuzz_target!(|data: &[u8]| {
         size: Some(Bound::Value(input.symbol_size)),
         ..Style::default()
     };
+    let symbol = &input.symbol;
+    let symbols = vec![Symbol {
+        name: None,
+        kind: if symbol.ellipse {
+            SymbolKind::Ellipse
+        } else {
+            SymbolKind::Vector
+        },
+        paths: symbol
+            .paths
+            .iter()
+            .map(|path| path.iter().map(|&(x, y)| [x, y]).collect())
+            .collect(),
+        extent: Some([symbol.extent.0, symbol.extent.1]),
+        filled: symbol.filled,
+        anchor_point: symbol.anchor_point.map(|(x, y)| [x, y]),
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    }];
+    let symbol_style = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        angle: Some(Bound::Value(symbol.angle)),
+        ..style.clone()
+    };
     let styles: Vec<Style> = std::iter::once(style)
         .chain(further.iter().map(LineStyle::style))
         .collect();
@@ -170,10 +209,12 @@ fuzz_target!(|data: &[u8]| {
             layer("polygons", RenderMode::Polygon, styles.clone()),
             layer("lines", RenderMode::Line, styles.clone()),
             layer("points", RenderMode::Point, styles),
+            layer("symbols", RenderMode::Point, vec![symbol_style]),
         ],
+        symbols,
         ..Map::default()
     };
-    let sources: BTreeMap<String, Shapes> = ["polygons", "lines", "points"]
+    let sources: BTreeMap<String, Shapes> = ["polygons", "lines", "points", "symbols"]
         .into_iter()
         .map(|name| (name.to_owned(), Shapes(features.clone())))
         .collect();
