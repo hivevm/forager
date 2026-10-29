@@ -52,8 +52,14 @@ pub enum Pass {
 /// every feature in one style before the next (MapServer's shape cache of a line layer): the
 /// first style, as its outline when it has an `OUTLINEWIDTH`, then that first style itself, then
 /// each further style with its outline before it, feature by feature. Any other layer draws
-/// every style of a feature before the next feature.
-pub fn passes<S: Borrow<Style>>(mode: RenderMode, styles: &[S]) -> Vec<(&Style, Vec<Pass>)> {
+/// every style of a feature before the next feature. `bound_outline` tells, style by style, that
+/// the class binds its `OUTLINEWIDTH` to a feature: msDrawVectorLayer's cache then draws the
+/// passes after the first as for an outline, whatever width the feature binds.
+pub fn passes<'s, S: Borrow<Style>>(
+    mode: RenderMode,
+    styles: &'s [S],
+    bound_outline: &[bool],
+) -> Vec<(&'s Style, Vec<Pass>)> {
     if mode != RenderMode::Line {
         return styles
             .iter()
@@ -62,11 +68,16 @@ pub fn passes<S: Borrow<Style>>(mode: RenderMode, styles: &[S]) -> Vec<(&Style, 
     }
     let mut passes = Vec::new();
     for (i, style) in styles.iter().map(Borrow::borrow).enumerate() {
-        let outlined = outlined(style);
+        let drawn_outlined = outlined(style);
+        let outlined = drawn_outlined || bound_outline.get(i).copied().unwrap_or(false);
         if i == 0 {
             passes.push((
                 style,
-                vec![if outlined { Pass::Outline } else { Pass::Plain }],
+                vec![if drawn_outlined {
+                    Pass::Outline
+                } else {
+                    Pass::Plain
+                }],
             ));
             if outlined {
                 passes.push((style, vec![Pass::PlainIfColored]));
@@ -477,7 +488,7 @@ mod tests {
         };
         let plain = colored(Some(BLUE), None);
         let styles = [outlined.clone(), plain.clone(), outlined];
-        let kinds: Vec<Vec<Pass>> = passes(RenderMode::Line, &styles)
+        let kinds: Vec<Vec<Pass>> = passes(RenderMode::Line, &styles, &[])
             .into_iter()
             .map(|(_, p)| p)
             .collect();
@@ -491,7 +502,7 @@ mod tests {
             ]
         );
         let plain_first = [plain.clone(), plain];
-        let kinds: Vec<Vec<Pass>> = passes(RenderMode::Line, &plain_first)
+        let kinds: Vec<Vec<Pass>> = passes(RenderMode::Line, &plain_first, &[])
             .into_iter()
             .map(|(_, p)| p)
             .collect();

@@ -19,12 +19,14 @@ use forager_ports::{
     Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Renderer, RgbaImage};
-use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol};
+use forager_style_ir::{
+    Bound, Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
+};
 
 use forager_expr::Evaluator;
 
 use crate::classes::{Reports, Selector};
-use crate::draw::{Pass, can_draw, draw_ops, kind, outlined, passes};
+use crate::draw::{Pass, can_draw, draw_ops, kind, passes};
 
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
@@ -92,6 +94,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut labels = Labels::new(map, &view, files, (width, height));
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
+    let scale = classes::scale_denom(map, &view, width);
     for (layer_index, layer) in map.layers.iter().enumerate() {
         if !shown(layer) {
             continue;
@@ -103,19 +106,6 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             continue;
         };
         if layer.classes.is_empty() {
-            continue;
-        }
-        if let Some(property) = classes::missing_property(layer, &features) {
-            let message = format!(
-                "layer {} is skipped: it reads the property `{property}`, which none of its \
-                 features has",
-                name(layer)
-            );
-            diagnostics.push(Diagnostic::warning(
-                "property-missing",
-                message,
-                layer.span.clone(),
-            ));
             continue;
         }
         let mut undrawn = BTreeMap::new();
@@ -130,12 +120,20 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let mut selector = Selector {
             layer,
             layer_index,
+            scale,
             evaluator: &mut evaluator,
             reports: &mut reports,
             diagnostics: &mut diagnostics,
         };
         let selected = selector.select(drawable, &map.symbols);
-        draw_selected(&mut renderer, mode, &selected, &view, &map.symbols);
+        let drawing = Drawing {
+            mode,
+            layer,
+            scale,
+            view: &view,
+            symbols: &map.symbols,
+        };
+        drawing.draw(&mut renderer, &selected);
         for (kind, count) in undrawn {
             let message = format!(
                 "layer {} cannot draw {count} {kind} geometr{} in its render mode",
@@ -178,61 +176,98 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
 /// A feature drawn: it, the place of its class, and its styles bound to it.
 pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
 
-/// Draws a layer's selected features in the order msDrawVectorLayer draws them: a feature of a
-/// line layer whose class has several styles, or an outline, draws its first pass at once and the
-/// rest from its cache, style by style, after every feature; any other draws all its styles at
-/// once.
-fn draw_selected<R: Renderer>(
-    renderer: &mut R,
+/// What a layer's features are drawn with.
+struct Drawing<'a> {
     mode: RenderMode,
-    selected: &[Selected<'_>],
-    view: &View,
-    symbols: &[Symbol],
-) {
-    let mut draw = |feature: &Feature, style: &Style, passes: &[Pass]| {
-        for &pass in passes {
-            for op in draw_ops(mode, &feature.geometry, style, pass, view, symbols) {
-                renderer.draw(&DisplayItem {
-                    op,
-                    feature_id: Some(feature.id),
-                });
+    layer: &'a Layer,
+    /// The map's scale, which a style's scale range is compared to.
+    scale: f64,
+    view: &'a View,
+    symbols: &'a [Symbol],
+}
+
+impl Drawing<'_> {
+    /// Draws a layer's selected features in the order msDrawVectorLayer draws them: a feature of
+    /// a line layer whose class has several styles, or an outline, draws its first pass at once
+    /// and the rest from its cache, style by style, after every feature; any other draws all its
+    /// styles at once. A style outside its scale range draws nothing, where msDrawShape and the
+    /// cache's pass skip it.
+    fn draw<R: Renderer>(&self, renderer: &mut R, selected: &[Selected<'_>]) {
+        let mode = self.mode;
+        let mut draw = |feature: &Feature, style: &Style, passes: &[Pass]| {
+            if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
+                return;
+            }
+            for &pass in passes {
+                for op in draw_ops(
+                    mode,
+                    &feature.geometry,
+                    style,
+                    pass,
+                    self.view,
+                    self.symbols,
+                ) {
+                    renderer.draw(&DisplayItem {
+                        op,
+                        feature_id: Some(feature.id),
+                    });
+                }
+            }
+        };
+        let mut cached = Vec::new();
+        let mut most_styles = 0;
+        for (feature, class, styles) in selected {
+            let bound_outline: Vec<bool> = self.layer.classes[*class]
+                .styles
+                .iter()
+                .map(|s| matches!(s.outline_width, Some(Bound::Binding { .. })))
+                .collect();
+            let passes = passes(mode, styles, &bound_outline);
+            if mode == RenderMode::Line && self.cached(*class) {
+                let (style, first) = &passes[0];
+                draw(feature, style, first);
+                most_styles = most_styles.max(styles.len());
+                // The style each later pass draws, by its place in the class.
+                let later: Vec<_> = passes[1..]
+                    .iter()
+                    .map(|(style, passes)| {
+                        let place = styles
+                            .iter()
+                            .position(|s| std::ptr::eq(&**s, *style))
+                            .expect("a style of the class");
+                        (place, *style, passes.clone())
+                    })
+                    .collect();
+                cached.push((*feature, later));
+            } else {
+                for (style, passes) in &passes {
+                    draw(feature, style, passes);
+                }
             }
         }
-    };
-    let mut cached = Vec::new();
-    let mut most_styles = 0;
-    for (feature, _, styles) in selected {
-        let passes = passes(mode, styles);
-        let cache = mode == RenderMode::Line
-            && (styles.len() > 1 || styles.first().is_some_and(|s| outlined(s)));
-        if cache {
-            let (style, first) = &passes[0];
-            draw(feature, style, first);
-            most_styles = most_styles.max(styles.len());
-            // The style each later pass draws, by its place in the class.
-            let later: Vec<_> = passes[1..]
-                .iter()
-                .map(|(style, passes)| {
-                    let place = styles
-                        .iter()
-                        .position(|s| std::ptr::eq(&**s, *style))
-                        .expect("a style of the class");
-                    (place, *style, passes.clone())
-                })
-                .collect();
-            cached.push((*feature, later));
-        } else {
-            for (style, passes) in &passes {
-                draw(feature, style, passes);
+        for place in 0..most_styles {
+            for (feature, later) in &cached {
+                for (_, style, passes) in later.iter().filter(|(p, _, _)| *p == place) {
+                    draw(feature, style, passes);
+                }
             }
         }
     }
-    for place in 0..most_styles {
-        for (feature, later) in &cached {
-            for (_, style, passes) in later.iter().filter(|(p, _, _)| *p == place) {
-                draw(feature, style, passes);
-            }
-        }
+
+    /// Whether msDrawVectorLayer caches the features of class `class` of a line layer: those of
+    /// a class of several styles, or of one whose style has an outline width above 0 or bound to
+    /// a feature's property, decided on the style as written, whatever a feature binds. An
+    /// outline width computed by an expression is 0 there, as bindStyle computes none.
+    fn cached(&self, class: usize) -> bool {
+        let styles = &self.layer.classes[class].styles;
+        styles.len() > 1
+            || styles
+                .first()
+                .is_some_and(|style| match &style.outline_width {
+                    Some(Bound::Value(width)) => *width > 0.0,
+                    Some(Bound::Binding { .. }) => true,
+                    Some(Bound::Expr(_)) | None => false,
+                })
     }
 }
 

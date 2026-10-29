@@ -24,8 +24,10 @@ use std::collections::BTreeSet;
 use forager_expr::{Evaluator, Failure, Lookup, atof, atoi};
 use forager_ports::{Feature, Properties, Value};
 use forager_style_ir::{
-    Bound, Diagnostic, Expr, Layer, LineOffset, Rgba, Span, Style, Symbol, SymbolRef,
+    Bound, Diagnostic, Expr, Layer, LineOffset, Map, Rgba, Span, Style, Symbol, SymbolRef, Units,
 };
+
+use crate::extent::View;
 
 /// A feature's properties as the evaluator reads them. A name is found without regard to ASCII
 /// case, as MapServer finds an attribute in a shapefile's `.dbf` or an OGR source: by the
@@ -58,104 +60,20 @@ impl Lookup for FeatureProperties<'_> {
     }
 }
 
-/// Whether `feature` holds a property of the name, null or not, without regard to case.
-fn holds(properties: &Properties, name: &str) -> bool {
-    if properties.get(name).is_some() {
-        return true;
-    }
-    let mut found = false;
-    properties.each(|key, _| found |= key.eq_ignore_ascii_case(name));
-    found
-}
-
-/// The properties of a tree.
-fn expr_names(expr: &Expr, names: &mut BTreeSet<String>) {
-    match expr {
-        Expr::Property { property } => {
-            names.insert(property.clone());
-        }
-        Expr::Call { args: items, .. } | Expr::List(items) => {
-            for item in items {
-                expr_names(item, names);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn bound_names<T>(bound: &Bound<T>, names: &mut BTreeSet<String>) {
-    match bound {
-        Bound::Binding { binding } => {
-            names.insert(binding.clone());
-        }
-        Bound::Expr(expr) => expr_names(expr, names),
-        Bound::Value(_) => {}
-    }
-}
-
-/// The properties the engine reads of a layer's features: its filter's, its classes'
-/// expressions', and its styles' bound and computed properties'. msLayerWhichItems asks the
-/// source for each, labels' too, which are read with the labels.
-fn layer_names(layer: &Layer) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
-    if let Some(filter) = &layer.filter {
-        expr_names(filter, &mut names);
-    }
-    for class in &layer.classes {
-        if let Some(expression) = &class.expression {
-            expr_names(expression, &mut names);
-        }
-        for style in &class.styles {
-            for color in [&style.color, &style.outline_color].into_iter().flatten() {
-                bound_names(color, &mut names);
-            }
-            let numbers = [
-                &style.width,
-                &style.size,
-                &style.angle,
-                &style.opacity,
-                &style.outline_width,
-            ];
-            for number in numbers.into_iter().flatten() {
-                bound_names(number, &mut names);
-            }
-            for pair in [&style.offset, &style.polar_offset].into_iter().flatten() {
-                pair.iter().for_each(|b| bound_names(b, &mut names));
-            }
-            if let Some(line) = &style.line_offset {
-                bound_names(&line.distance, &mut names);
-            }
-            if let Some(symbol) = &style.symbol {
-                bound_names(symbol, &mut names);
-            }
-        }
-    }
-    names
-}
-
-/// The first property the layer reads that none of its features holds. MapServer asks the source
-/// for each attribute it reads before it draws, and a source without one fails the layer.
-pub(crate) fn missing_property(layer: &Layer, features: &[Feature]) -> Option<String> {
-    if features.is_empty() {
-        return None;
-    }
-    layer_names(layer)
-        .into_iter()
-        .find(|name| !features.iter().any(|f| holds(&f.properties, name)))
-}
-
 /// What carries an expression, for a report.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Carrier {
     Filter,
     Class(usize),
+    /// A style of a class, by their places.
+    Style(usize, usize),
 }
 
-/// The patterns a render cannot match as MapServer does, each reported once per layer and
-/// carrier.
+/// The patterns a render cannot match as MapServer does, and the texts past the limit, each
+/// reported once per layer, carrier, and kind.
 #[derive(Default)]
 pub(crate) struct Reports {
-    reported: BTreeSet<(usize, Carrier)>,
+    reported: BTreeSet<(usize, Carrier, &'static str)>,
 }
 
 impl Reports {
@@ -167,32 +85,46 @@ impl Reports {
         carrier: Carrier,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
-        let Failure::Pattern { pattern, construct } = failure else {
-            return;
+        let code = match failure {
+            Failure::Pattern { .. } => "pattern-unsupported",
+            Failure::TooLong => "text-too-long",
+            Failure::Undefined => return,
         };
-        if !self.reported.insert((layer_index, carrier)) {
+        if !self.reported.insert((layer_index, carrier, code)) {
             return;
         }
         let (what, span): (String, Option<Span>) = match carrier {
             Carrier::Filter => ("its filter".to_owned(), layer.span.clone()),
-            Carrier::Class(i) => {
+            Carrier::Class(i) | Carrier::Style(i, _) => {
                 let class = &layer.classes[i];
                 let name = class
                     .name
                     .as_deref()
                     .map_or(String::new(), |n| format!(" `{n}`"));
-                (
-                    format!("its class {}{name}", i + 1),
-                    class.span.clone().or_else(|| layer.span.clone()),
-                )
+                let class_span = class.span.clone().or_else(|| layer.span.clone());
+                match carrier {
+                    Carrier::Style(_, s) => (
+                        format!("style {} of its class {}{name}", s + 1, i + 1),
+                        class.styles[s].span.clone().or(class_span),
+                    ),
+                    _ => (format!("its class {}{name}", i + 1), class_span),
+                }
             }
         };
-        let message = format!(
-            "layer {}: the pattern `{pattern}` of {what} uses {construct}, which Forager cannot \
-             match as MapServer does; the expression that holds it never matches",
-            crate::name(layer)
-        );
-        diagnostics.push(Diagnostic::warning("pattern-unsupported", message, span));
+        let layer_name = crate::name(layer);
+        let message = match failure {
+            Failure::Pattern { pattern, construct } => format!(
+                "layer {layer_name}: the pattern `{pattern}` of {what} uses {construct}, which \
+                 Forager cannot match as MapServer does; the expression that holds it never \
+                 matches"
+            ),
+            _ => format!(
+                "layer {layer_name}: an expression of {what} reads or computes a text past {} \
+                 bytes; the expression fails where it does",
+                forager_expr::MAX_TEXT_BYTES
+            ),
+        };
+        diagnostics.push(Diagnostic::warning(code, message, span));
     }
 }
 
@@ -200,6 +132,8 @@ impl Reports {
 pub(crate) struct Selector<'a, 'm> {
     pub layer: &'a Layer,
     pub layer_index: usize,
+    /// The map's scale, as msCalculateScale computes it.
+    pub scale: f64,
     pub evaluator: &'m mut Evaluator,
     pub reports: &'m mut Reports,
     pub diagnostics: &'m mut Vec<Diagnostic>,
@@ -226,17 +160,21 @@ impl<'a> Selector<'a, '_> {
     }
 
     /// The class that draws `feature`: none where it fails the layer's filter, else the first
-    /// whose expression matches it, a class without one matching every feature; none where no
-    /// class matches.
+    /// in the map's scale whose expression matches it, a class without one matching every
+    /// feature; none where no class matches.
     pub fn class(&mut self, feature: &Feature) -> Option<usize> {
         if let Some(filter) = &self.layer.filter
             && !self.matches(filter, feature, Carrier::Filter)
         {
             return None;
         }
-        (0..self.layer.classes.len()).find(|&i| match &self.layer.classes[i].expression {
-            None => true,
-            Some(expression) => self.matches(expression, feature, Carrier::Class(i)),
+        (0..self.layer.classes.len()).find(|&i| {
+            let class = &self.layer.classes[i];
+            in_scale(self.scale, class.min_scale_denom, class.max_scale_denom)
+                && match &class.expression {
+                    None => true,
+                    Some(expression) => self.matches(expression, feature, Carrier::Class(i)),
+                }
         })
     }
 
@@ -259,20 +197,23 @@ impl<'a> Selector<'a, '_> {
             let styles = layer.classes[index]
                 .styles
                 .iter()
-                .map(|style| self.bind(style, feature, symbols))
+                .enumerate()
+                .map(|(s, style)| self.bind(style, feature, symbols, (index, s)))
                 .collect();
             selected.push((feature, index, styles));
         }
         selected
     }
 
-    /// `style` with each property bound to a property or computed by an expression given its
-    /// value for `feature`, as bindStyle binds it; the style itself where none is.
-    pub fn bind<'s>(
+    /// `style`, style `place` of its class, with each property bound to a property or computed
+    /// by an expression given its value for `feature`, as bindStyle binds it; the style itself
+    /// where none is.
+    fn bind<'s>(
         &mut self,
         style: &'s Style,
         feature: &Feature,
         symbols: &[Symbol],
+        (class, place): (usize, usize),
     ) -> Cow<'s, Style> {
         if !varies(style) {
             return Cow::Borrowed(style);
@@ -281,6 +222,7 @@ impl<'a> Selector<'a, '_> {
         let mut bind = Binder {
             properties: &properties,
             evaluator: self.evaluator,
+            failures: Vec::new(),
         };
         let mut bound = style.clone();
         bound.color = bind.color(&style.color);
@@ -288,7 +230,11 @@ impl<'a> Selector<'a, '_> {
         bound.angle = bind.number(&style.angle, 360.0);
         bound.size = bind.number(&style.size, 1.0);
         bound.width = bind.number(&style.width, 1.0);
-        bound.outline_width = bind.number(&style.outline_width, 1.0);
+        // bindStyle computes no OUTLINEWIDTH from an expression: the style keeps its 0.
+        bound.outline_width = match &style.outline_width {
+            Some(Bound::Expr(_)) => Some(Bound::Value(0.0)),
+            other => bind.number(other, 1.0),
+        };
         bound.offset = style.offset.as_ref().map(|[x, y]| {
             [
                 bind.number(&Some(x.clone()), 0.0).expect("a value"),
@@ -304,6 +250,15 @@ impl<'a> Selector<'a, '_> {
         if let Some(Bound::Binding { binding }) = &style.symbol {
             let name = properties.text(binding).unwrap_or_default();
             bound.symbol = Some(Bound::Value(symbol_index(&name, symbols)));
+        }
+        for failure in std::mem::take(&mut bind.failures) {
+            self.reports.report(
+                &failure,
+                self.layer_index,
+                self.layer,
+                Carrier::Style(class, place),
+                self.diagnostics,
+            );
         }
         Cow::Owned(bound)
     }
@@ -333,6 +288,30 @@ fn varies(style: &Style) -> bool {
         || matches!(style.symbol, Some(Bound::Binding { .. }))
 }
 
+/// msScaleInBounds: whether `scale` lies in `[min, max)`; any scale where it is not above 0.
+pub(crate) fn in_scale(scale: f64, min: Option<f64>, max: Option<f64>) -> bool {
+    !(scale > 0.0 && (max.is_some_and(|max| scale >= max) || min.is_some_and(|min| scale < min)))
+}
+
+/// msCalculateScale: the scale denominator of the view at the map's resolution, by the inches
+/// of its unit, as src/mapscale.c computes it without `ENABLE_VARIABLE_INCHES_PER_DEGREE`, which
+/// the build at the pin leaves off; -1, which bounds nothing, for pixels.
+pub(crate) fn scale_denom(map: &Map, view: &View, width: u32) -> f64 {
+    let inches_per_unit = match map.units.unwrap_or(Units::Meters) {
+        Units::Inches => 1.0,
+        Units::Feet => 12.0,
+        Units::Miles => 63360.0,
+        Units::Meters => 39.3701,
+        Units::Kilometers => 39370.1,
+        Units::Degrees => 4_374_754.0,
+        Units::NauticalMiles => 72913.3858,
+        Units::Pixels => return -1.0,
+    };
+    let resolution = map.resolution.unwrap_or(72.0);
+    let md = f64::from(width - 1) / (resolution * inches_per_unit);
+    (view.extent.max_x - view.extent.min_x) / md
+}
+
 /// A symbol by its name, as msGetSymbolIndex finds it, without regard to case; 0, the default
 /// symbol, for a name the symbol set does not hold, which MapServer would next read as an image
 /// file, not drawn yet.
@@ -348,6 +327,8 @@ fn symbol_index(name: &str, symbols: &[Symbol]) -> SymbolRef {
 struct Binder<'a> {
     properties: &'a FeatureProperties<'a>,
     evaluator: &'a mut Evaluator,
+    /// The failures of the style's expressions, to be reported.
+    failures: Vec<Failure>,
 }
 
 /// A C string's bytes: up to the first NUL.
@@ -367,7 +348,13 @@ impl Binder<'_> {
                 let bytes = c_bytes(&text);
                 if bytes.is_empty() { unset } else { atof(bytes) }
             }
-            Bound::Expr(expr) => self.evaluator.number(expr, self.properties).unwrap_or(0.0),
+            Bound::Expr(expr) => match self.evaluator.number(expr, self.properties) {
+                Ok(value) => value,
+                Err(failure) => {
+                    self.failures.push(failure);
+                    0.0
+                }
+            },
         };
         Some(Bound::Value(value))
     }
@@ -382,7 +369,13 @@ impl Binder<'_> {
                 .text(binding)
                 .map(|t| c_bytes(&t).to_vec())
                 .unwrap_or_default(),
-            Bound::Expr(expr) => self.evaluator.text(expr, self.properties).ok()?,
+            Bound::Expr(expr) => match self.evaluator.text(expr, self.properties) {
+                Ok(text) => text,
+                Err(failure) => {
+                    self.failures.push(failure);
+                    return None;
+                }
+            },
         };
         color(&text).map(Bound::Value)
     }
@@ -480,7 +473,5 @@ mod tests {
         assert_eq!(lookup.text("flag").as_deref(), Some("1"));
         assert_eq!(lookup.text("none"), None);
         assert_eq!(lookup.text("other"), None);
-        assert!(holds(&properties, "NONE"));
-        assert!(!holds(&properties, "other"));
     }
 }

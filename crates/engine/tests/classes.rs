@@ -305,21 +305,163 @@ fn a_pattern_the_crate_cannot_match_is_reported_once_per_render() {
 }
 
 #[test]
-fn a_layer_that_reads_a_property_no_feature_has_is_skipped() {
-    let classes = vec![class(
-        Some(Expr::call(Op::Eq, vec![text("nowhere"), "x".into()])),
-        vec![filled(RED, 2.0)],
-    )];
+fn a_property_no_feature_has_reads_as_empty_and_the_layer_draws() {
+    // MapServer reads "" for a field of the source's schema a feature has no value for; without a
+    // schema, Forager reads every name a feature lacks so, whatever the features in view hold.
+    let classes = vec![
+        class(
+            Some(Expr::call(Op::Eq, vec![text("nowhere"), "x".into()])),
+            vec![filled(RED, 2.0)],
+        ),
+        class(None, vec![filled(GREEN, 2.0)]),
+    ];
     let (items, rendered) = draw(
         layer(RenderMode::Point, None, classes),
         &points(&[r#"{"name": "a"}"#]),
     );
-    assert!(items.is_empty());
+    assert_eq!(fills(&items), vec![(1, GREEN, 2.0)]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+}
+
+/// The scale of [`draw`]'s map: 100 metres over 100 pixel steps at 72 dpi.
+const SCALE: f64 = 100.0 / (100.0 / (72.0 * 39.3701));
+
+#[test]
+fn a_class_outside_its_scale_range_draws_no_feature() {
+    // msShapeGetNextClass skips a class msScaleInBounds puts out of the map's scale.
+    let ranged = |min: Option<f64>, max: Option<f64>, color| Class {
+        min_scale_denom: min,
+        max_scale_denom: max,
+        ..class(None, vec![filled(color, 2.0)])
+    };
+    let classes = vec![
+        ranged(None, Some(SCALE - 1.0), RED),
+        ranged(Some(SCALE + 1.0), None, BLUE),
+        ranged(Some(SCALE - 1.0), Some(SCALE + 1.0), GREEN),
+    ];
+    let (items, _) = draw(layer(RenderMode::Point, None, classes), &points(&["{}"]));
+    assert_eq!(fills(&items), vec![(1, GREEN, 2.0)]);
+}
+
+#[test]
+fn a_style_outside_its_scale_range_draws_nothing() {
+    let out = Style {
+        max_scale_denom: Some(SCALE - 1.0),
+        ..filled(RED, 2.0)
+    };
+    let classes = vec![class(None, vec![out, filled(GREEN, 2.0)])];
+    let (items, _) = draw(layer(RenderMode::Point, None, classes), &points(&["{}"]));
+    assert_eq!(fills(&items), vec![(1, GREEN, 2.0)]);
+}
+
+#[test]
+fn a_line_class_whose_outline_width_is_bound_is_cached_whatever_its_value() {
+    // msDrawVectorLayer caches a class whose one style binds OUTLINEWIDTH, even where a feature
+    // binds 0: the second feature's line of the first layer then draws after the third's.
+    let bound = Style {
+        color: Some(Bound::Value(RED)),
+        outline_width: Some(Bound::Binding {
+            binding: "w".into(),
+        }),
+        ..Style::default()
+    };
+    let classes = vec![
+        class(
+            Some(Expr::call(Op::Eq, vec![text("k"), "a".into()])),
+            vec![bound],
+        ),
+        class(
+            None,
+            vec![Style {
+                color: Some(Bound::Value(BLUE)),
+                ..Style::default()
+            }],
+        ),
+    ];
+    let geojson = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"k": "a", "w": "0"},
+         "geometry": {"type": "LineString", "coordinates": [[0, 10], [100, 10]]}},
+        {"type": "Feature", "properties": {"k": "b"},
+         "geometry": {"type": "LineString", "coordinates": [[0, 20], [100, 20]]}}]}"#;
+    let (items, _) = draw(layer(RenderMode::Line, None, classes), geojson);
+    let strokes: Vec<(u64, Rgba)> = items
+        .iter()
+        .filter_map(|item| match &item.op {
+            DrawOp::Stroke { color, .. } => Some((item.feature_id.unwrap() + 1, *color)),
+            DrawOp::Fill { .. } | DrawOp::Glyphs { .. } => None,
+        })
+        .collect();
+    // The cached feature draws its first pass at once, then its line after every feature.
+    assert_eq!(strokes, vec![(1, RED), (2, BLUE), (1, RED)]);
+}
+
+#[test]
+fn a_pattern_of_a_style_s_expression_is_reported_once_per_render() {
+    // Verifies: ADR-0031
+    let size = Expr::call(
+        Op::ToNumber,
+        vec![Expr::call(
+            Op::Concat,
+            vec![
+                Expr::call(
+                    Op::ToString,
+                    vec![Expr::call(
+                        Op::RegexpLike,
+                        vec![text("name"), "a++".into(), "".into()],
+                    )],
+                ),
+                "".into(),
+            ],
+        )],
+    );
+    let style = Style {
+        size: Some(Bound::Expr(size)),
+        ..filled(RED, 2.0)
+    };
+    let classes = vec![class(None, vec![style])];
+    let geojson = points(&[r#"{"name": "a"}"#, r#"{"name": "b"}"#]);
+    let (items, rendered) = draw(layer(RenderMode::Point, None, classes), &geojson);
+    // The size that fails is 0, as msEvalDoubleExpression gives it.
+    assert_eq!(fills(&items), vec![(1, RED, 0.0), (2, RED, 0.0)]);
     let codes: Vec<_> = rendered
         .diagnostics
         .iter()
         .map(|d| d.code.as_str())
         .collect();
-    assert_eq!(codes, ["property-missing"]);
-    assert!(rendered.diagnostics[0].message.contains("`nowhere`"));
+    assert_eq!(codes, ["pattern-unsupported"]);
+    assert!(
+        rendered.diagnostics[0]
+            .message
+            .contains("style 1 of its class 1")
+    );
+}
+
+#[test]
+fn a_text_past_the_limit_is_reported_and_its_class_never_matches() {
+    // Verifies: Q-9
+    let long = "x".repeat(forager_expr::MAX_TEXT_BYTES / 4 + 1);
+    let four = Expr::call(Op::Concat, vec![text("a"), text("a"), text("a"), text("a")]);
+    let classes = vec![
+        class(
+            Some(Expr::call(Op::Eq, vec![four, "".into()])),
+            vec![filled(RED, 2.0)],
+        ),
+        class(None, vec![filled(GREEN, 2.0)]),
+    ];
+    let geojson = points(&[
+        &format!(r#"{{"a": "{long}"}}"#),
+        &format!(r#"{{"a": "{long}"}}"#),
+    ]);
+    let (items, rendered) = draw(layer(RenderMode::Point, None, classes), &geojson);
+    assert_eq!(fills(&items), vec![(1, GREEN, 2.0), (2, GREEN, 2.0)]);
+    let codes: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["text-too-long"]);
 }
