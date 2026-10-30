@@ -59,8 +59,16 @@ golden path and the test pattern an agent copies from are named here.
   every other `init=` through the host's projection resolver. A load reports at most a thousand
   diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
   carries means is described per parameter under `docs/semantics/`.
+- **`expr`** — evaluates the style IR's expressions against a feature's properties, which it
+  reads through a trait of its own, as MapServer's parser evaluates its expressions, and matches
+  `regexp_like` with the `regex` crate in byte mode, each pattern compiled once per render
+  ([ADR-0031](adr/0031-expression-evaluator.md)); C's `atof`, `printf`, and `strptime` it needs
+  are ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax in `pattern.rs`. Synchronous,
+  without I/O; the only crate that uses `regex`.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
-  bound feature source for the features in view, and turns each feature and style into display items
+  bound feature source for the features in view, draws each feature that passes the layer's
+  filter with the first class whose expression matches it, its styles' bound and computed
+  properties bound to it (`classes.rs`), and turns each feature and style into display items
   by the layer's render mode. A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer
   ([ADR-0025](adr/0025-source-reports-skipped-records.md)); the fonts a label names it loads once
@@ -111,16 +119,18 @@ golden path and the test pattern an agent copies from are named here.
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`
-  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)) and skrifa outside `label` (ADR-0028), and
-  requires every crate of the IR and the core to turn on the lints of `clippy.toml` that ban hash
-  maps, clocks, and random sources (Q-2) and to lift them nowhere but the one test time bound it
-  names; the frontend, the ports, the adapters, and the hosts are not held to the ban.
+  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)), skrifa outside `label` (ADR-0028), and `regex`
+  outside `expr` ([ADR-0031](adr/0031-expression-evaluator.md)), and requires every crate of the
+  IR and the core to turn on the lints of `clippy.toml` that ban hash maps, clocks, and random
+  sources (Q-2) and to lift them nowhere but the one test time bound it names; the frontend, the
+  ports, the adapters, and the hosts are not held to the ban.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
-structured shapes with a label of arbitrary text and size, the browser path on GeoJSON, the
-shapefile adapter on arbitrary `.shp`, `.shx`, and `.dbf` files, and the text path on an arbitrary
-font file — run by `scripts/fuzz.sh`, which reads them from the manifest, every
+structured shapes with a label of arbitrary text and size and with expressions built from the same
+bytes, the expression evaluator on arbitrary trees, patterns, and properties, the browser path on
+GeoJSON, the shapefile adapter on arbitrary `.shp`, `.shx`, and `.dbf` files, and the text path on
+an arbitrary font file — run by `scripts/fuzz.sh`, which reads them from the manifest, every
 Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out of
 the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
 `scripts/mutants.sh` runs cargo-mutants over the workspace every week through

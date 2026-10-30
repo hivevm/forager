@@ -42,7 +42,7 @@ misc/contour.map contour.png blank out: a raster source, CONTOUR
 misc/contour_with_expr.map contour_with_expr.png blank out: a raster source, CONTOUR
 misc/dateline.map dateline.png out: a projection, merc to latlong with +over
 misc/dbf-invalid.map dbf-invalid-wfs-get-feature.xml out: an OGC or CGI request
-misc/encoding.map encodings.png geometry fails  # not built yet: class selection by EXPRESSION
+misc/encoding.map encodings.png geometry fails  # not built yet: the ENCODING of a layer
 misc/encoding.map encodings.xml out: an OGC or CGI request
 misc/encoding_from_cpg.map shp_encodings.png out: labels
 misc/encrypted_connection.map encrypted_connection_postgis_hits.xml out: an OGC or CGI request
@@ -130,9 +130,9 @@ misc/scaletoken.map scaletoken_filteritem_192k.png out: SCALETOKEN, a runtime su
 misc/scaletoken.map scaletoken_filteritem_424k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_192k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_424k.png out: SCALETOKEN, a runtime substitution by scale
-misc/style_opacity.map style_opacity_test001.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY of a style
-misc/style_opacity.map style_opacity_test002.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY of a style
-misc/style_opacity.map style_opacity_test003.png geometry fails  # not built yet: the FILTER of a layer and the OPACITY of a style
+misc/style_opacity.map style_opacity_test001.png geometry fails  # not built yet: the OPACITY of a style
+misc/style_opacity.map style_opacity_test002.png geometry fails  # not built yet: the OPACITY of a style
+misc/style_opacity.map style_opacity_test003.png geometry fails  # not built yet: the OPACITY of a style
 misc/testuppercase.map testuppercase.png blank geometry passes
 misc/tiles_scales_z2.map tile_scale_z2.png blank out: an OGC or CGI request
 misc/tiles_scales_z3.map tile_scale_z3.png out: an OGC or CGI request
@@ -342,15 +342,15 @@ renderers/line_marker_pixmap.map line_marker_pixmap.png geometry fails  # not bu
 renderers/line_marker_pixmap.map line_marker_pixmap.pdf out: another output format, pdf
 renderers/line_marker_pixmap.map line_marker_pixmap.svg out: another output format, svg
 renderers/line_marker_pixmap.map line_marker_pixmap.cairo.png out: another output format, cairopng
-renderers/line_marker_svg.map line_marker_svg.png geometry fails  # not built yet: SVG symbols along a line and class selection by EXPRESSION
+renderers/line_marker_svg.map line_marker_svg.png geometry fails  # not built yet: SVG symbols along a line
 renderers/line_marker_svg.map line_marker_svg.pdf out: another output format, pdf
 renderers/line_marker_svg.map line_marker_svg.svg out: another output format, svg
 renderers/line_marker_svg.map line_marker_svg.cairo.png out: another output format, cairopng
-renderers/line_marker_truetype.map line_marker_truetype.png geometry fails  # not built yet: TrueType symbols along a line and class selection by EXPRESSION
+renderers/line_marker_truetype.map line_marker_truetype.png geometry fails  # not built yet: TrueType symbols along a line
 renderers/line_marker_truetype.map line_marker_truetype.pdf out: another output format, pdf
 renderers/line_marker_truetype.map line_marker_truetype.svg out: another output format, svg
 renderers/line_marker_truetype.map line_marker_truetype.cairo.png out: another output format, cairopng
-renderers/line_marker_vector.map line_marker_vector.png geometry fails  # not built yet: class selection by EXPRESSION
+renderers/line_marker_vector.map line_marker_vector.png geometry passes
 renderers/line_marker_vector.map line_marker_vector.pdf out: another output format, pdf
 renderers/line_marker_vector.map line_marker_vector.svg out: another output format, svg
 renderers/line_marker_vector.map line_marker_vector.cairo.png out: another output format, cairopng
@@ -416,7 +416,7 @@ renderers/plb_embed_legend_rgba_tr.map plb_embed_legend_rgba_tr.png out: labels,
 renderers/plb_embed_legend_rgba_tr.map plb_embed_legend_rgba_tr.cairo.png out: another output format, cairopng
 renderers/plb_embed_legend_tr.map plb_embed_legend_tr.png out: labels, in the embedded legend
 renderers/plb_embed_legend_tr.map plb_embed_legend_tr.cairo.png out: another output format, cairopng
-renderers/point-polaroffset.map point-polaroffset.png geometry fails  # not built yet: inline FEATURE points, a SIZE and an ANGLE bound to an attribute, and POLAROFFSET
+renderers/point-polaroffset.map point-polaroffset.png geometry fails  # not built yet: inline FEATURE points and POLAROFFSET
 renderers/point-polaroffset.map point-polaroffset.pdf out: another output format, pdf
 renderers/point-polaroffset.map point-polaroffset.svg out: another output format, svg
 renderers/point-polaroffset.map point-polaroffset.cairo.png out: another output format, cairopng
@@ -489,11 +489,11 @@ renderers/polygon-simple.map polygon-simple.pdf out: another output format, pdf
 renderers/polygon-simple.map polygon-simple.svg out: another output format, svg
 renderers/polygon-simple.map polygon-simple.json out: another output format, json
 renderers/polygon-simple.map polygon-simple.cairo.png out: another output format, cairopng
-renderers/polygon-ttf.map polygon-ttf.png geometry fails  # not built yet: TrueType symbols and class selection by EXPRESSION
+renderers/polygon-ttf.map polygon-ttf.png geometry fails  # not built yet: TrueType symbols
 renderers/polygon-ttf.map polygon-ttf.pdf out: another output format, pdf
 renderers/polygon-ttf.map polygon-ttf.svg out: another output format, svg
 renderers/polygon-ttf.map polygon-ttf.cairo.png out: another output format, cairopng
-renderers/polygon-vector.map polygon-vector.png geometry fails  # not built yet: vector symbols and class selection by EXPRESSION
+renderers/polygon-vector.map polygon-vector.png geometry fails  # not built yet: vector symbols
 renderers/polygon-vector.map polygon-vector.pdf out: another output format, pdf
 renderers/polygon-vector.map polygon-vector.svg out: another output format, svg
 renderers/polygon-vector.map polygon-vector.cairo.png out: another output format, cairopng
@@ -548,9 +548,9 @@ renderers/rgba_overlay_res.map rgba_overlay_res.png out: a raster source
 renderers/rgba_overlay_res.map rgba_overlay_res.pdf out: another output format, pdf
 renderers/rgba_overlay_res.map rgba_overlay_res.svg out: another output format, svg
 renderers/rgba_overlay_res.map rgba_overlay_res.cairo.png out: another output format, cairopng
-renderers/style-size.map style_size_binding.png geometry fails  # not built yet: a SIZE bound to an attribute
+renderers/style-size.map style_size_binding.png geometry passes
 renderers/style-size.map style_size_fixed.png geometry passes
-renderers/style-size.map style_size_expression.png geometry fails  # not built yet: a SIZE given by an expression
+renderers/style-size.map style_size_expression.png geometry passes
 renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes and the ANGLE of the map
 renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes and the ANGLE of the map
 renderers/text-shaping.map text_shaping_1.png out: labels
