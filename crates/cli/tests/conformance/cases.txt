@@ -463,19 +463,19 @@ renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.png geometry f
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.pdf out: another output format, pdf
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.svg out: another output format, svg
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.cairo.png out: another output format, cairopng
-renderers/polygon-as-line-offset.map polygon-as-line-offset.png geometry fails  # not built yet: GEOMTRANSFORM buffer and hatch symbols
+renderers/polygon-as-line-offset.map polygon-as-line-offset.png geometry fails  # not built yet: GEOMTRANSFORM buffer
 renderers/polygon-as-line-offset.map polygon-as-line-offset.pdf out: another output format, pdf
 renderers/polygon-as-line-offset.map polygon-as-line-offset.svg out: another output format, svg
 renderers/polygon-as-line-offset.map polygon-as-line-offset.cairo.png out: another output format, cairopng
-renderers/polygon-as-line.map polygon-as-line.png geometry fails  # not built yet: hatch and vector symbols
+renderers/polygon-as-line.map polygon-as-line.png geometry fails  # not built yet: a polygon filled with a tiled vector symbol
 renderers/polygon-as-line.map polygon-as-line.pdf out: another output format, pdf
 renderers/polygon-as-line.map polygon-as-line.svg out: another output format, svg
 renderers/polygon-as-line.map polygon-as-line.cairo.png out: another output format, cairopng
-renderers/polygon-hatch-dashed.map polygon-hatch-dashed.png geometry fails  # not built yet: hatch symbols
+renderers/polygon-hatch-dashed.map polygon-hatch-dashed.png geometry passes
 renderers/polygon-hatch-dashed.map polygon-hatch-dashed.pdf out: another output format, pdf
 renderers/polygon-hatch-dashed.map polygon-hatch-dashed.svg out: another output format, svg
 renderers/polygon-hatch-dashed.map polygon-hatch-dashed.cairo.png out: another output format, cairopng
-renderers/polygon-hatch.map polygon-hatch.png geometry fails  # not built yet: hatch symbols
+renderers/polygon-hatch.map polygon-hatch.png geometry passes
 renderers/polygon-hatch.map polygon-hatch.pdf out: another output format, pdf
 renderers/polygon-hatch.map polygon-hatch.svg out: another output format, svg
 renderers/polygon-hatch.map polygon-hatch.cairo.png out: another output format, cairopng
@@ -557,7 +557,7 @@ renderers/text-shaping.map text_shaping_1.png out: labels
 renderers/text-shaping.map text_shaping_1.cairo.png out: another output format, cairopng
 renderers/text-shaping.map text_shaping_1.pdf out: another output format, pdf
 renderers/text-shaping.map text_shaping_1.svg out: another output format, svg
-renderers/transparent_layer.map transparent_layer.png geometry fails  # not built yet: hatch symbols and the OPACITY of a layer
+renderers/transparent_layer.map transparent_layer.png geometry fails  # not built yet: the OPACITY of a layer
 renderers/transparent_layer.map transparent_layer.pdf out: another output format, pdf
 renderers/transparent_layer.map transparent_layer.svg out: another output format, svg
 renderers/transparent_layer.map transparent_layer.cairo.png out: another output format, cairopng

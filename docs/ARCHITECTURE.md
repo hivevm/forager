@@ -89,7 +89,8 @@ golden path and the test pattern an agent copies from are named here.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, fills glyphs as MapServer's AGG renderer does, and is the one crate that may
   use `unsafe`
-  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)).
+  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)); it cuts a hatch from its polygon with
+  i_overlay, the one crate that depends on it (ADR-0032).
 - **`encode`** — PNG from and to an RGBA image ([ADR-0017](adr/0017-png-crate.md)).
 - **`adapter-geojson`** — a feature source over a GeoJSON document
   ([ADR-0016](adr/0016-geojson-crate.md)).
@@ -119,11 +120,12 @@ golden path and the test pattern an agent copies from are named here.
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`
-  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)), skrifa outside `label` (ADR-0028), and `regex`
-  outside `expr` ([ADR-0031](adr/0031-expression-evaluator.md)), and requires every crate of the
-  IR and the core to turn on the lints of `clippy.toml` that ban hash maps, clocks, and random
-  sources (Q-2) and to lift them nowhere but the one test time bound it names; the frontend, the
-  ports, the adapters, and the hosts are not held to the ban.
+  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)), skrifa outside `label` (ADR-0028), `regex`
+  outside `expr` ([ADR-0031](adr/0031-expression-evaluator.md)), and i_overlay outside
+  `render-agg` (ADR-0032), and requires every crate of the IR and the core to turn on the lints of
+  `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them nowhere but
+  the one test time bound it names; the frontend, the ports, the adapters, and the hosts are not
+  held to the ban.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on

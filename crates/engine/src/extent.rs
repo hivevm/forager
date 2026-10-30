@@ -75,6 +75,15 @@ impl View {
             || c.y > self.extent.max_y)
     }
 
+    /// The width and height of the image in pixels, as [`View::for_image`] fitted them.
+    pub fn image_size(&self) -> (f64, f64) {
+        let side = |span: f64| (span / self.cellsize).round() + 1.0;
+        (
+            side(self.extent.max_x - self.extent.min_x),
+            side(self.extent.max_y - self.extent.min_y),
+        )
+    }
+
     pub fn to_pixel(&self, c: Coord) -> Point {
         Point {
             x: (c.x - self.extent.min_x) / self.cellsize,

@@ -794,3 +794,128 @@ fn a_tiny_gap_draws_no_markers_and_says_so() {
     let image = rendered.image.unwrap();
     assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
+
+/// A polygon layer of [`SQUARE_WITH_HOLE`] whose class draws `styles`, with a hatch symbol at
+/// index 1.
+fn render_hatched(styles: Vec<Style>) -> Rendered {
+    render_hatched_on(styles, SQUARE_WITH_HOLE)
+}
+
+/// [`render_hatched`] on the polygon of a GeoJSON geometry.
+fn render_hatched_on(styles: Vec<Style>, geojson: &str) -> Rendered {
+    let mut map = map_with(RenderMode::Polygon, styles);
+    map.symbols = vec![Symbol {
+        name: Some("hatch".into()),
+        kind: SymbolKind::Hatch,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    }];
+    render_with(&map, Some(geojson))
+}
+
+fn hatch_style(color: Rgba, size: f64, width: f64, angle: f64, pattern: Vec<f64>) -> Style {
+    Style {
+        color: Some(Bound::Value(color)),
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: Some(Bound::Value(size)),
+        width: Some(Bound::Value(width)),
+        angle: Some(Bound::Value(angle)),
+        pattern,
+        ..Style::default()
+    }
+}
+
+#[test]
+fn a_hatch_fills_a_polygon_with_lines_at_its_angles_and_pattern() {
+    let styles = vec![
+        Style {
+            color: Some(Bound::Value(GREEN)),
+            ..Style::default()
+        },
+        hatch_style(BLUE, 10.0, 3.0, 45.0, vec![6.0, 3.0]),
+        hatch_style(BLACK, 8.0, 2.0, 0.0, vec![]),
+    ];
+    let rendered = render_hatched(styles);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    // The lines are counted from the map's origin, pixel (0, 100): ANGLE 0 lays one at y = 84,
+    // 2 wide, over rows 83 and 84, inside the square only.
+    assert_eq!(image.pixel(15, 84), Some(BLACK));
+    assert_eq!(image.pixel(15, 83), Some(BLACK));
+    assert_eq!(image.pixel(5, 84), Some(WHITE), "clipped to the polygon");
+    for y in 40..60 {
+        for x in 40..60 {
+            assert_eq!(image.pixel(x, y), Some(WHITE), "({x}, {y}) in the hole");
+        }
+    }
+    assert!(
+        (11..89).any(|x| image.pixel(x, 30) == Some(BLUE)),
+        "the diagonal dashes"
+    );
+    assert_matches_reference(&image, "polygon_hatch.png");
+}
+
+#[test]
+fn a_hatch_past_its_bound_is_not_drawn_and_reported() {
+    // Verifies: Q-9
+    // A spacing of a billionth of a pixel would lay some 1e11 lines, dashes of a billionth of a
+    // pixel cut the lines into some 1e11 pieces: neither is drawn, and the layer says so.
+    let styles = vec![
+        Style {
+            color: Some(Bound::Value(GREEN)),
+            ..Style::default()
+        },
+        Style {
+            min_size: Some(1e-9),
+            ..hatch_style(BLACK, 1e-9, 1.0, 30.0, vec![])
+        },
+        hatch_style(BLACK, 10.0, 1.0, 0.0, vec![1e-9, 1e-9]),
+    ];
+    let rendered = render_hatched(styles);
+    assert_eq!(rendered.diagnostics.len(), 1, "{:?}", rendered.diagnostics);
+    let diagnostic = &rendered.diagnostics[0];
+    assert_eq!(diagnostic.code, "hatch-not-drawn");
+    assert!(
+        diagnostic.message.contains("2 hatch fills are not drawn"),
+        "{}",
+        diagnostic.message
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(15, 84), Some(GREEN));
+}
+
+#[test]
+fn a_hatch_of_a_polygon_past_its_bound_on_vertices_is_not_drawn_and_reported() {
+    // Verifies: Q-9
+    // A circle of 17 000 vertices, past the bound of 16 384, under a hatch 10 apart.
+    let points: Vec<String> = (0..=17_000)
+        .map(|i| {
+            let t = f64::from(i % 17_000) / 17_000.0 * std::f64::consts::TAU;
+            format!("[{}, {}]", 50.0 + 40.0 * t.cos(), 50.0 + 40.0 * t.sin())
+        })
+        .collect();
+    let circle = format!(
+        r#"{{"type": "Polygon", "coordinates": [[{}]]}}"#,
+        points.join(", ")
+    );
+    let rendered = render_hatched_on(vec![hatch_style(BLACK, 10.0, 1.0, 45.0, vec![])], &circle);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["hatch-not-drawn"]);
+    let image = rendered.image.unwrap();
+    assert!(image.pixels.chunks(4).all(|px| px == [255, 255, 255, 255]));
+}

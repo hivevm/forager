@@ -21,6 +21,15 @@ the frontend warns. A label's style draws at its `labelpnt` unless it names anot
 expressions are not yet carried over, and are a warning; the style draws the feature's own
 geometry.
 
+**A polygon's fill.** A polygon layer's style with a `COLOR` and without a symbol, or with a
+simple one, fills the polygon under the even-odd rule, as `msDrawShadeSymbol` in
+`src/maprendering.c` and `agg2RenderPolygon` in `src/mapagg.cpp` fill it, and a hatch symbol
+hatches it ([`symbol.md`](symbol.md)). Both go through the gamma of MapServer's AGG output format:
+a pixel covered by at least 0.75 of the polygon is filled fully, one covered less in proportion,
+so that edges come out darker than their coverage; a symbol's fill and a line do not. The gamma
+is MapServer's default of 0.75: `FORMATOPTION "GAMMA=…"` of the output format and `PROCESSING
+"GAMMA=…"` of a layer are not carried yet.
+
 **Repeated directives.** A later directive replaces an earlier one, but for a binding:
 `loadStyle` never frees a property's binding when a later directive gives it a number, and
 `bindStyle` in `src/maputil.c` draws the binding, so `WIDTH [w] WIDTH 3` is bound to `w`. Of

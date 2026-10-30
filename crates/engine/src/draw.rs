@@ -23,6 +23,7 @@ use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol};
 
 use crate::extent::View;
+use crate::hatch::{self, Hatched, Hatching};
 use crate::line_marker::{self, MarkerBudget};
 use crate::offset::{self, Offset};
 use crate::symbol;
@@ -106,11 +107,13 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
 }
 
 /// What a layer draws its features on beside the view: the map's symbols, the image's width and
-/// height in pixels, and what is left to the layer of [`line_marker::MAX_MARKER_POINTS`].
+/// height in pixels, what is left to the layer of [`line_marker::MAX_MARKER_POINTS`], and the
+/// hatching of the class drawn, which counts the hatches refused (Q-9).
 pub struct Canvas<'a> {
     symbols: &'a [Symbol],
     image: (f64, f64),
     markers: MarkerBudget,
+    hatching: Hatching,
 }
 
 impl<'a> Canvas<'a> {
@@ -120,16 +123,32 @@ impl<'a> Canvas<'a> {
             symbols,
             image: (f64::from(width), f64::from(height)),
             markers: MarkerBudget::new(),
+            hatching: Hatching::default(),
         }
+    }
+
+    /// Sets the class whose styles the next features are drawn in, for the clip of its hatches
+    /// (see [`Hatching::for_class`]).
+    pub fn class(&mut self, styles: &[Style]) {
+        self.hatching = Hatching {
+            refused: self.hatching.refused,
+            ..Hatching::for_class(styles, self.symbols)
+        };
     }
 
     /// Whether symbols along the layer's lines were left out, their points past the budget.
     pub fn markers_spent(&self) -> bool {
         self.markers.spent()
     }
+
+    /// How many hatches of the layer were refused (Q-9).
+    pub fn hatches_refused(&self) -> usize {
+        self.hatching.refused
+    }
 }
 
-/// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts.
+/// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts, a hatch
+/// drawn as the canvas's hatching says, a hatch it refuses to draw counted there (Q-9).
 pub fn draw_ops(
     mode: RenderMode,
     geometry: &Geometry,
@@ -158,14 +177,26 @@ pub fn draw_ops(
                 }
             }
         }
+        (RenderMode::Polygon, Geometry::Polygon(_) | Geometry::MultiPolygon(_))
+            if symbol::is_hatch(style, canvas.symbols) =>
+        {
+            let rings: Vec<Vec<Coord>> = match geometry {
+                Geometry::Polygon(rings) => rings.clone(),
+                Geometry::MultiPolygon(polygons) => polygons.concat(),
+                _ => Vec::new(),
+            };
+            let rings = hatch_rings(&rings, view, &canvas.hatching);
+            let drawn = shade(&mut ops, rings, style, view, canvas);
+            canvas.hatching.refused += usize::from(!drawn);
+        }
         (RenderMode::Polygon, Geometry::Polygon(rings)) => {
             let rings = rings.iter().map(|r| pixels(r)).collect();
-            shade(&mut ops, rings, style, canvas);
+            shade(&mut ops, rings, style, view, canvas);
         }
         (RenderMode::Polygon, Geometry::MultiPolygon(polygons)) => {
             for rings in polygons {
                 let rings = rings.iter().map(|r| pixels(r)).collect();
-                shade(&mut ops, rings, style, canvas);
+                shade(&mut ops, rings, style, view, canvas);
             }
         }
         (RenderMode::Line, Geometry::LineString(points)) => {
@@ -186,6 +217,60 @@ pub fn draw_ops(
         _ => {}
     }
     ops
+}
+
+/// The rings of a feature in pixels as msDrawShape() hands them to a hatch: all of its polygons
+/// as one shape, and, where the shape reaches beyond the map's extent, clipped first to the
+/// extent grown by the class's clip buffer (see [`Hatching::for_class`]) with
+/// msClipPolygonRect(); in map units before the transformation to pixels, or, where a style of
+/// the class has a `GEOMTRANSFORM`, to the image so grown after it. The hatch's box, and so where
+/// its dashes fall, is the clipped shape's.
+fn hatch_rings(rings: &[Vec<Coord>], view: &View, hatching: &Hatching) -> Vec<Vec<Point>> {
+    let e = view.extent;
+    let beyond = rings
+        .iter()
+        .flatten()
+        .any(|c| c.x < e.min_x || c.y < e.min_y || c.x > e.max_x || c.y > e.max_y);
+    let to_pixels = |rings: &[Vec<Point>]| -> Vec<Vec<Point>> {
+        rings
+            .iter()
+            .map(|r| {
+                r.iter()
+                    .map(|p| view.to_pixel(Coord { x: p.x, y: p.y }))
+                    .collect()
+            })
+            .collect()
+    };
+    let points: Vec<Vec<Point>> = rings
+        .iter()
+        .map(|r| r.iter().map(|c| Point { x: c.x, y: c.y }).collect())
+        .collect();
+    let buffer = hatching.clip_buffer;
+    if !beyond {
+        return to_pixels(&points);
+    }
+    if hatching.clip_in_pixels {
+        let (width, height) = view.image_size();
+        let min = Point {
+            x: -buffer,
+            y: -buffer,
+        };
+        let max = Point {
+            x: width + buffer,
+            y: height + buffer,
+        };
+        return hatch::clip_polygon_rect(&to_pixels(&points), min, max);
+    }
+    let grow = buffer * view.cellsize;
+    let min = Point {
+        x: e.min_x - grow,
+        y: e.min_y - grow,
+    };
+    let max = Point {
+        x: e.max_x + grow,
+        y: e.max_y + grow,
+    };
+    to_pixels(&hatch::clip_polygon_rect(&points, min, max))
 }
 
 /// Every vertex of a geometry, in order.
@@ -381,16 +466,40 @@ fn outline_style(style: &Style) -> Style {
     }
 }
 
-/// A polygon drawn in a style, as msDrawShadeSymbol() draws one of a simple symbol: without a
-/// `COLOR`, its outline as a line in the `OUTLINECOLOR`; with one, moved by the offset, filled,
-/// and outlined in the `OUTLINECOLOR` at the colour's alpha, with round caps and joins.
-fn shade(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style, canvas: &mut Canvas) {
+/// A polygon drawn in a style, as msDrawShadeSymbol() draws one: without a `COLOR`, its
+/// outline as a line in the `OUTLINECOLOR`; with one, moved by the offset, and with a hatch
+/// symbol hatched (see [`hatch::hatch`]), with any other filled, and outlined in the
+/// `OUTLINECOLOR` at the colour's alpha, with round caps and joins. False where a hatch is
+/// refused (Q-9).
+fn shade(
+    ops: &mut Vec<DrawOp>,
+    rings: Vec<Vec<Point>>,
+    style: &Style,
+    view: &View,
+    canvas: &mut Canvas,
+) -> bool {
     let Some(color) = fixed(&style.color) else {
         line_symbol(ops, open_rings(rings), style, Pass::Plain, canvas);
-        return;
+        return true;
     };
     let rings = moved(rings, style_offset(style, 1.0));
-    ops.push(DrawOp::Fill {
+    if symbol::is_hatch(style, canvas.symbols) {
+        return match hatch::hatch(
+            rings,
+            style,
+            color,
+            view.image_size(),
+            view.point_to_pixel(Coord { x: 0.0, y: 0.0 }),
+        ) {
+            Hatched::Drawn(hatch) => {
+                ops.push(DrawOp::Hatch(hatch));
+                true
+            }
+            Hatched::Nothing => true,
+            Hatched::Refused => false,
+        };
+    }
+    ops.push(DrawOp::Polygon {
         rings: rings.clone(),
         color,
     });
@@ -414,6 +523,7 @@ fn shade(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style, canvas: &
             dashes: Dashes::default(),
         });
     }
+    true
 }
 
 /// A point as a square of the style's size, centred on it, filled in the `COLOR` and outlined
@@ -499,7 +609,12 @@ mod tests {
                     paths,
                     ..
                 } => (color, width, dashes, paths),
-                DrawOp::Fill { .. } | DrawOp::Glyphs { .. } => panic!("a line is not filled"),
+                DrawOp::Fill { .. }
+                | DrawOp::Polygon { .. }
+                | DrawOp::Hatch(_)
+                | DrawOp::Glyphs { .. } => {
+                    panic!("a line is not filled")
+                }
             })
             .collect()
     }
@@ -567,8 +682,10 @@ mod tests {
         ops.iter()
             .map(|op| match op {
                 DrawOp::Stroke { paths, .. } => paths.iter().map(Vec::len).sum(),
-                DrawOp::Fill { rings, .. } => rings.iter().map(Vec::len).sum(),
-                DrawOp::Glyphs { .. } => 0,
+                DrawOp::Fill { rings, .. } | DrawOp::Polygon { rings, .. } => {
+                    rings.iter().map(Vec::len).sum()
+                }
+                DrawOp::Hatch(_) | DrawOp::Glyphs { .. } => 0,
             })
             .sum()
     }
@@ -722,7 +839,12 @@ mod tests {
             line_symbol(&mut ops, line(), &style(width), Pass::Plain, &mut plain());
             match &ops[0] {
                 DrawOp::Stroke { cap, join, .. } => (*cap, *join),
-                DrawOp::Fill { .. } | DrawOp::Glyphs { .. } => panic!("a line is not filled"),
+                DrawOp::Fill { .. }
+                | DrawOp::Polygon { .. }
+                | DrawOp::Hatch(_)
+                | DrawOp::Glyphs { .. } => {
+                    panic!("a line is not filled")
+                }
             }
         };
         assert_eq!(ends(1.0), (LineCap::Butt, LineJoin::Bevel));
@@ -740,7 +862,18 @@ mod tests {
             width: Some(Bound::Value(2.0)),
             ..colored(Some(fill), Some(BLACK))
         };
-        shade(&mut ops, line(), &style, &mut plain());
+        let view = View::for_image(
+            forager_style_ir::Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 10.0,
+                max_y: 10.0,
+            },
+            11,
+            11,
+        )
+        .unwrap();
+        assert!(shade(&mut ops, line(), &style, &view, &mut plain()));
         match &ops[1] {
             DrawOp::Stroke {
                 color, cap, join, ..
@@ -748,7 +881,107 @@ mod tests {
                 assert_eq!(*color, Rgba { a: 100, ..BLACK });
                 assert_eq!((*cap, *join), (LineCap::Round, LineJoin::Round));
             }
-            DrawOp::Fill { .. } | DrawOp::Glyphs { .. } => panic!("the outline is a stroke"),
+            DrawOp::Fill { .. }
+            | DrawOp::Polygon { .. }
+            | DrawOp::Hatch(_)
+            | DrawOp::Glyphs { .. } => {
+                panic!("the outline is a stroke")
+            }
         }
+    }
+
+    fn hatch_symbol() -> Symbol {
+        Symbol {
+            name: None,
+            kind: forager_style_ir::SymbolKind::Hatch,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }
+    }
+
+    /// The hatch ops of `geometry` in a hatch style of SIZE 10 and WIDTH 1 on a view of the map
+    /// from 0 to 100 at a pixel a unit, y downwards from 100.
+    fn hatches(geometry: &Geometry) -> Vec<forager_render::Hatch> {
+        let view = View::for_image(
+            forager_style_ir::Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 100.0,
+                max_y: 100.0,
+            },
+            101,
+            101,
+        )
+        .unwrap();
+        let style = Style {
+            symbol: Some(Bound::Value(forager_style_ir::SymbolRef::Index(1))),
+            size: Some(Bound::Value(10.0)),
+            ..colored(Some(BLUE), None)
+        };
+        let symbols = [hatch_symbol()];
+        let mut canvas = Canvas::new(&symbols, 101, 101);
+        canvas.class(std::slice::from_ref(&style));
+        let ops = draw_ops(
+            RenderMode::Polygon,
+            geometry,
+            &style,
+            Pass::Plain,
+            &view,
+            &mut canvas,
+        );
+        ops.into_iter()
+            .map(|op| match op {
+                DrawOp::Hatch(hatch) => hatch,
+                other => panic!("{other:?}"),
+            })
+            .collect()
+    }
+
+    fn square(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<Coord> {
+        [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
+            .map(|(x, y)| Coord { x, y })
+            .to_vec()
+    }
+
+    #[test]
+    fn a_hatch_s_box_is_that_of_the_polygon_clipped_beyond_the_extent() {
+        // The class's clip buffer is max(1, max(10, 1)) + 1 + 2 = 13 pixels: the polygon from
+        // x = -1000 is clipped at -13, and the box of the hatch, grown by 0.7072, starts there.
+        let reaching = Geometry::Polygon(vec![square(-1000.0, 10.0, 50.0, 60.0)]);
+        let hatch = &hatches(&reaching)[0];
+        assert!(
+            (hatch.lines[0][0].x - (-13.7072)).abs() < 1e-9,
+            "{:?}",
+            hatch.lines[0]
+        );
+        // Inside the extent the polygon is not clipped.
+        let inside = Geometry::Polygon(vec![square(5.0, 10.0, 50.0, 60.0)]);
+        let hatch = &hatches(&inside)[0];
+        assert!(
+            (hatch.lines[0][0].x - 4.2928).abs() < 1e-9,
+            "{:?}",
+            hatch.lines[0]
+        );
+    }
+
+    #[test]
+    fn a_multipolygon_is_hatched_as_one_shape() {
+        // msDrawShadeSymbol hatches the whole shape: one box over both squares.
+        let two = Geometry::MultiPolygon(vec![
+            vec![square(5.0, 10.0, 20.0, 20.0)],
+            vec![square(60.0, 70.0, 90.0, 90.0)],
+        ]);
+        let drawn = hatches(&two);
+        assert_eq!(drawn.len(), 1);
+        assert_eq!(drawn[0].rings.len(), 2);
+        let first = drawn[0].lines[0];
+        assert!((first[0].x - 4.2928).abs() < 1e-9 && (first[1].x - 91.2928).abs() < 1e-9);
     }
 }

@@ -8,6 +8,7 @@ mod classes;
 mod draw;
 mod extent;
 mod fonts;
+mod hatch;
 mod labels;
 mod line_marker;
 mod offset;
@@ -146,6 +147,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                 layer.span.clone(),
             ));
         }
+        diagnostics.extend(refused_hatches(layer, canvas.hatches_refused()));
         for (kind, count) in undrawn {
             let message = format!(
                 "layer {} cannot draw {count} {kind} geometr{} in its render mode",
@@ -196,7 +198,7 @@ impl Drawing<'_> {
     /// cache's pass skip it.
     fn draw<R: Renderer>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
         let mode = self.mode;
-        let mut draw = |feature: &Feature, style: &Style, passes: &[Pass]| {
+        let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {
             if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
                 return;
             }
@@ -212,6 +214,7 @@ impl Drawing<'_> {
         let mut cached = Vec::new();
         let mut most_styles = 0;
         for (feature, class, styles) in selected {
+            canvas.class(&self.layer.classes[*class].styles);
             let bound_outline: Vec<bool> = self.layer.classes[*class]
                 .styles
                 .iter()
@@ -220,7 +223,7 @@ impl Drawing<'_> {
             let passes = passes(mode, styles, &bound_outline);
             if mode == RenderMode::Line && self.cached(*class) {
                 let (style, first) = &passes[0];
-                draw(feature, style, first);
+                draw(canvas, feature, style, first);
                 most_styles = most_styles.max(styles.len());
                 // The style each later pass draws, by its place in the class.
                 let later: Vec<_> = passes[1..]
@@ -236,14 +239,14 @@ impl Drawing<'_> {
                 cached.push((*feature, later));
             } else {
                 for (style, passes) in &passes {
-                    draw(feature, style, passes);
+                    draw(canvas, feature, style, passes);
                 }
             }
         }
         for place in 0..most_styles {
             for (feature, later) in &cached {
                 for (_, style, passes) in later.iter().filter(|(p, _, _)| *p == place) {
-                    draw(feature, style, passes);
+                    draw(canvas, feature, style, passes);
                 }
             }
         }
@@ -396,6 +399,20 @@ async fn features<S: FeatureSource>(
             None
         }
     }
+}
+
+/// The warning for the hatch fills of a layer refused to be drawn (Q-9), if any.
+fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnostic> {
+    (refused > 0).then(|| {
+        let message = format!(
+            "layer {}: {refused} hatch fill{} not drawn (Q-9): its spacing or its dash pattern \
+             would never end the hatch, or it would lay more lines or dashes over the image, or \
+             cut them from a polygon of more vertices or crossings, than a hatch may",
+            name(layer),
+            if refused == 1 { " is" } else { "s are" }
+        );
+        Diagnostic::warning("hatch-not-drawn", message, layer.span.clone())
+    })
 }
 
 fn name(layer: &Layer) -> String {

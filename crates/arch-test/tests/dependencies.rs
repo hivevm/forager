@@ -267,6 +267,13 @@ fn only_label_reads_fonts_with_skrifa() {
 }
 
 #[test]
+fn only_render_agg_cuts_polygons_with_i_overlay() {
+    // Verifies: ADR-0032
+    let ws = workspace();
+    assert_eq!(dependents(&ws, "i_overlay"), ["render-agg"]);
+}
+
+#[test]
 fn only_expr_depends_on_the_regex_crates() {
     // Verifies: ADR-0031
     // The patterns of the style IR are read as PCRE2 reads them and matched in one place; a crate

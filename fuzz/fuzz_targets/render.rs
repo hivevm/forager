@@ -1,14 +1,15 @@
-//! The renderer on structured input: arbitrary points, lines, and polygons, and an arbitrary
-//! vector or ellipse symbol at the points, with any `f64` — NaN, infinities, and the extremes
-//! included — in an arbitrary view, drawn by the engine with agg-rust behind its clipping (Q-3,
-//! ADR-0015). JSON cannot carry such numbers, so the GeoJSON target never reaches these paths.
-//! Further styles of a line's dashes, caps, joins, offsets, outlines, width bounds, and the
-//! symbol placed along it by a gap are read from the same bytes back to front, so that they leave
-//! how an input decodes to its view, its symbol, and its shapes as it was. The points carry a
-//! label of arbitrary text, size, bounds, and resolution, in a test font of the label crate, drawn
-//! through the text path (ADR-0028). The second half of the bytes is read once more for the
-//! features' properties, a filter, a class expression, and a computed size and colour, as
-//! arbitrary trees (ADR-0031), which every layer evaluates.
+//! The renderer on structured input: arbitrary points, lines, and polygons, an arbitrary
+//! vector or ellipse symbol at the points, and a hatch over the polygons at the symbol's size,
+//! the line width, the symbol's angle, and the first further style's pattern, with any `f64` —
+//! NaN, infinities, and the extremes included — in an arbitrary view, drawn by the engine with
+//! agg-rust behind its clipping (Q-3, ADR-0015). JSON cannot carry such numbers, so the GeoJSON
+//! target never reaches these paths. Further styles of a line's dashes, caps, joins, offsets,
+//! outlines, width bounds, and the symbol placed along it by a gap are read from the same bytes
+//! back to front, so that they leave how an input decodes to its view, its symbol, and its shapes
+//! as it was. The points carry a label of arbitrary text, size, bounds, and resolution, in a test
+//! font of the label crate, drawn through the text path (ADR-0028). The second half of the bytes
+//! is read once more for the features' properties, a filter, a class expression, and a computed
+//! size and colour, as arbitrary trees (ADR-0031), which every layer evaluates.
 // Verifies: Q-3, ADR-0015, ADR-0031
 #![no_main]
 
@@ -240,7 +241,7 @@ fuzz_target!(|data: &[u8]| {
         ..Label::default()
     };
     let symbol = &input.symbol;
-    let symbols = vec![Symbol {
+    let mut symbols = vec![Symbol {
         name: None,
         kind: if symbol.ellipse {
             SymbolKind::Ellipse
@@ -261,10 +262,24 @@ fuzz_target!(|data: &[u8]| {
         transparent: None,
         span: None,
     }];
+    symbols.push(Symbol {
+        kind: SymbolKind::Hatch,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        ..symbols[0].clone()
+    });
     let symbol_style = Style {
         symbol: Some(Bound::Value(SymbolRef::Index(1))),
         angle: Some(Bound::Value(symbol.angle)),
         ..style.clone()
+    };
+    let hatch_style = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        pattern: further.first().map_or_else(Vec::new, |s| s.pattern.clone()),
+        min_size: further.first().and_then(|s| s.min_width),
+        ..symbol_style.clone()
     };
     let styles: Vec<Style> = std::iter::once(style)
         .chain(further.iter().map(LineStyle::style))
@@ -289,11 +304,12 @@ fuzz_target!(|data: &[u8]| {
             layer("lines", RenderMode::Line, styles.clone(), &exprs),
             points,
             layer("symbols", RenderMode::Point, vec![symbol_style], &exprs),
+            layer("hatches", RenderMode::Polygon, vec![hatch_style], &exprs),
         ],
         symbols,
         ..Map::default()
     };
-    let sources: BTreeMap<String, Shapes> = ["polygons", "lines", "points", "symbols"]
+    let sources: BTreeMap<String, Shapes> = ["polygons", "lines", "points", "symbols", "hatches"]
         .into_iter()
         .map(|name| (name.to_owned(), Shapes(features.clone())))
         .collect();

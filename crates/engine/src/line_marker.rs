@@ -145,7 +145,12 @@ pub(crate) fn draw(
 fn points(op: &DrawOp) -> usize {
     match op {
         DrawOp::Stroke { paths, .. } => paths.iter().map(Vec::len).sum(),
-        DrawOp::Fill { rings, .. } => rings.iter().map(Vec::len).sum(),
+        DrawOp::Fill { rings, .. } | DrawOp::Polygon { rings, .. } => {
+            rings.iter().map(Vec::len).sum()
+        }
+        DrawOp::Hatch(hatch) => {
+            hatch.rings.iter().map(Vec::len).sum::<usize>() + 2 * hatch.lines.len()
+        }
         DrawOp::Glyphs { .. } => 1,
     }
 }

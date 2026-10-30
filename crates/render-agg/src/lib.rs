@@ -2,7 +2,8 @@
 
 // How a stroke's width, cap, join, and dashes are handed to the stroker follows MapServer's
 // agg2RenderLine() and applyCJC(), src/mapagg.cpp of the release pinned in
-// scripts/fetch-msautotest.sh.
+// scripts/fetch-msautotest.sh; how a hatch is stroked and clipped to its polygon follows
+// msHatchPolygon(), src/mapagg.cpp, there.
 // Copyright (c) 1996-2007 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -20,6 +21,7 @@
 
 mod clip;
 mod glyphs;
+mod hatch;
 
 use agg_rust::basics::{FillingRule, VertexSource};
 use agg_rust::color::Rgba8;
@@ -28,12 +30,15 @@ use agg_rust::conv_stroke::ConvStroke;
 use agg_rust::math_stroke::{LineCap as AggCap, LineJoin as AggJoin};
 use agg_rust::path_storage::PathStorage;
 use agg_rust::pixfmt_rgba::PixfmtRgba32;
-use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
+use agg_rust::rasterizer_scanline_aa::{RasterizerScanlineAa, Scanline};
 use agg_rust::renderer_base::RendererBase;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::rendering_buffer::RowAccessor;
+use agg_rust::scanline_boolean_algebra::ScanlineGenerator;
 use agg_rust::scanline_u::ScanlineU8;
-use forager_render::{Dashes, DisplayItem, DrawOp, LineCap, LineJoin, Point, Renderer, RgbaImage};
+use forager_render::{
+    Dashes, DisplayItem, DrawOp, Hatch, LineCap, LineJoin, Point, Renderer, RgbaImage,
+};
 use forager_style_ir::Rgba;
 
 use crate::clip::{Rect, clip_line, clip_ring};
@@ -78,12 +83,7 @@ impl AggRenderer {
     }
 
     fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, stroke: Option<&Stroke<'_>>) {
-        let color = Rgba8::new(
-            u32::from(color.r),
-            u32::from(color.g),
-            u32::from(color.b),
-            u32::from(color.a),
-        );
+        let color = rgba8(color);
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
             let mut scanline = ScanlineU8::new();
@@ -211,6 +211,112 @@ impl AggRenderer {
     }
 }
 
+impl AggRenderer {
+    /// The rings as a path, each clipped to the image enlarged by the margin.
+    fn area(&self, rings: &[Vec<Point>]) -> PathStorage {
+        let mut path = PathStorage::new();
+        let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
+        for ring in rings {
+            add(&mut path, &clip_ring(ring, &rect), true);
+        }
+        path
+    }
+
+    /// Blends the scanlines of `shape` in `color`, each coverage looked up in `gamma`.
+    fn paint<G: ScanlineGenerator>(&mut self, shape: &mut G, color: Rgba, gamma: &[u8; 256]) {
+        let color = rgba8(color);
+        self.with_agg(|renderer| {
+            if !shape.rewind_scanlines() {
+                return;
+            }
+            let mut scanline = ScanlineU8::new();
+            scanline.reset(shape.min_x(), shape.max_x());
+            let mut covers = Vec::new();
+            while shape.sweep_scanline(&mut scanline) {
+                for span in scanline.begin() {
+                    if let Ok(len) = usize::try_from(span.len)
+                        && len > 0
+                    {
+                        covers.clear();
+                        covers.extend(
+                            scanline.covers()[span.cover_offset..span.cover_offset + len]
+                                .iter()
+                                .map(|&c| gamma[usize::from(c)]),
+                        );
+                        renderer.blend_solid_hspan(span.x, scanline.y(), span.len, &color, &covers);
+                    }
+                }
+            }
+        });
+    }
+
+    /// Fills a hatch as msHatchPolygon() does: the lines stroked with butt caps, each dashed
+    /// from its first point with the pattern as given, the stroke intersected with the polygon
+    /// as MapServer's Clipper intersects them (see [`hatch::intersect`]), and the intersection
+    /// filled under the non-zero rule through MapServer's default gamma, as
+    /// renderPolygonHatches() fills it. The polygon is clipped to the image grown by a margin and
+    /// the lines to the image grown by the stroke before they are cut, a dashed line keeping the
+    /// phase its dashes had at its first point. A hatch beyond the bounds of
+    /// [`Hatch::is_bounded`] draws nothing (Q-9).
+    fn hatch(&mut self, hatch: &Hatch) {
+        if !(hatch.width.is_finite() && hatch.width > 0.0)
+            || !hatch.is_bounded(self.width, self.height)
+        {
+            return;
+        }
+        let width = hatch.width.min(2.0 * f64::from(self.width + self.height));
+        let fill_rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
+        let rings: Vec<Vec<Point>> = hatch
+            .rings
+            .iter()
+            .map(|ring| clip_ring(ring, &fill_rect))
+            .collect();
+        let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN + width / 2.0);
+        let Some(pieces) = hatch::pieces(
+            &hatch.lines,
+            &rect,
+            hatch.dashes(),
+            width,
+            Hatch::MAX_DASHES,
+        ) else {
+            return;
+        };
+        let mut path = PathStorage::new();
+        for contour in hatch::intersect(&rings, &pieces) {
+            add(&mut path, &contour, true);
+        }
+        let mut area = RasterizerScanlineAa::new();
+        area.filling_rule(FillingRule::NonZero);
+        area.add_path(&mut path, 0);
+        self.paint(&mut area, hatch.color, &gamma_table());
+    }
+}
+
+/// MapServer's default `GAMMA` of its AGG output formats, `src/mapagg.cpp`.
+const GAMMA: f64 = 0.75;
+
+/// The coverage table of AGG's `gamma_linear(0, GAMMA)`, as a rasterizer builds it from the
+/// function: a coverage at or past the gamma is full, one below it grows in proportion. MapServer
+/// fills polygon shapes and hatches through it; a `GAMMA` of the output format or of the layer
+/// is not carried yet.
+fn gamma_table() -> [u8; 256] {
+    std::array::from_fn(|cover| {
+        let x = cover as f64 / 255.0;
+        let y = if x >= GAMMA { 1.0 } else { x / GAMMA };
+        // AGG's uround, which stays within 0 to 255 here.
+        (y * 255.0 + 0.5) as u8
+    })
+}
+
+fn rgba8(color: Rgba) -> Rgba8 {
+    Rgba8::new(
+        u32::from(color.r),
+        u32::from(color.g),
+        u32::from(color.b),
+        u32::from(color.a),
+    )
+}
+
 impl Renderer for AggRenderer {
     fn begin(&mut self, width: u32, height: u32, background: Rgba) {
         // An image whose size overflows is drawn as no image at all; the engine never asks for one.
@@ -227,12 +333,14 @@ impl Renderer for AggRenderer {
     fn draw(&mut self, item: &DisplayItem) {
         match &item.op {
             DrawOp::Fill { rings, color } => {
-                let mut path = PathStorage::new();
-                let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
-                for ring in rings {
-                    add(&mut path, &clip_ring(ring, &rect), true);
-                }
+                let mut path = self.area(rings);
                 self.rasterize(&mut path, *color, None);
+            }
+            DrawOp::Polygon { rings, color } => {
+                let mut area = RasterizerScanlineAa::new();
+                area.filling_rule(FillingRule::EvenOdd);
+                area.add_path(&mut self.area(rings), 0);
+                self.paint(&mut area, *color, &gamma_table());
             }
             DrawOp::Stroke {
                 paths,
@@ -251,6 +359,7 @@ impl Renderer for AggRenderer {
                 };
                 self.stroke(paths, *closed, *color, stroke);
             }
+            DrawOp::Hatch(hatch) => self.hatch(hatch),
             DrawOp::Glyphs { path, color } => self.glyphs(path, *color),
         }
     }
@@ -298,6 +407,173 @@ mod tests {
         assert_eq!(image.pixel(12, 12), Some(RED));
         assert_eq!(image.pixel(32, 32), Some(WHITE));
         assert_eq!(image.pixel(2, 2), Some(WHITE));
+    }
+
+    #[test]
+    fn a_polygon_shape_is_filled_through_the_gamma_and_a_fill_is_not() {
+        // A square edge at x = 8.5 covers column 8 by half: 0.5 / 0.75 of the colour through
+        // MapServer's default gamma of 0.75, half of it without.
+        let square = vec![p(8.5, 8.0), p(56.0, 8.0), p(56.0, 56.0), p(8.5, 56.0)];
+        let green = |op: DrawOp| render(&[op]).pixel(8, 30).unwrap().g;
+        let polygon = green(DrawOp::Polygon {
+            rings: vec![square.clone()],
+            color: RED,
+        });
+        let fill = green(DrawOp::Fill {
+            rings: vec![square],
+            color: RED,
+        });
+        assert_eq!((polygon, fill), (138, 167));
+    }
+
+    #[test]
+    fn a_hatch_strokes_its_lines_inside_its_polygon_only() {
+        // Two lines 2 wide across a square with a hole, dashed 10 on, 10 off from their first
+        // points, the second's 20 left of the image; the odd last length is dropped.
+        let outer = vec![p(8.0, 8.0), p(56.0, 8.0), p(56.0, 56.0), p(8.0, 56.0)];
+        let hole = vec![p(24.0, 24.0), p(40.0, 24.0), p(40.0, 40.0), p(24.0, 40.0)];
+        let image = render(&[DrawOp::Hatch(Hatch {
+            rings: vec![outer, hole],
+            lines: vec![
+                [p(0.0, 16.0), p(64.0, 16.0)],
+                [p(-20.0, 32.0), p(64.0, 32.0)],
+            ],
+            color: RED,
+            width: 2.0,
+            pattern: vec![10.0, 10.0, 99.0],
+        })]);
+        assert_eq!(
+            image.pixel(25, 15),
+            Some(RED),
+            "a dash, 20 to 30, inside the polygon"
+        );
+        assert_eq!(
+            image.pixel(4, 15),
+            Some(WHITE),
+            "a dash, 0 to 10, outside it"
+        );
+        assert_eq!(image.pixel(25, 18), Some(WHITE), "beside the line");
+        assert_eq!(
+            image.pixel(12, 31),
+            Some(WHITE),
+            "a gap, 30 to 40 from the start"
+        );
+        assert_eq!(image.pixel(22, 31), Some(RED), "a dash, 40 to 50");
+        assert_eq!(image.pixel(32, 31), Some(WHITE), "the hole");
+        assert_eq!(image.pixel(50, 31), Some(WHITE), "a gap, 70 to 80");
+    }
+
+    fn hatched(rings: Vec<Vec<Point>>, lines: Vec<[Point; 2]>, pattern: Vec<f64>) -> RgbaImage {
+        render(&[DrawOp::Hatch(Hatch {
+            rings,
+            lines,
+            color: RED,
+            width: 3.0,
+            pattern,
+        })])
+    }
+
+    fn rectangle(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<Point> {
+        vec![p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1)]
+    }
+
+    #[test]
+    fn where_rings_overlap_or_repeat_the_hatch_there_is_empty() {
+        // Verifies: ADR-0032
+        // Two rings that overlap from x = 20 to 40, and one ring given twice, under a line 3 wide
+        // at y = 30.25: under the even-odd rule the part covered twice is outside the polygon,
+        // on the line's edge rows 28 and 31 too.
+        let line = vec![[p(0.0, 30.25), p(64.0, 30.25)]];
+        let a = rectangle(0.0, 0.0, 40.0, 62.0);
+        let b = rectangle(20.0, 0.0, 60.0, 62.0);
+        let overlapping = hatched(vec![a.clone(), b], line.clone(), vec![]);
+        let twice = hatched(vec![a.clone(), a], line, vec![]);
+        for y in [28, 29, 30, 31] {
+            assert_eq!(overlapping.pixel(30, y), Some(WHITE), "overlap, row {y}");
+            assert_eq!(twice.pixel(10, y), Some(WHITE), "twice, row {y}");
+        }
+        assert_eq!(overlapping.pixel(10, 30), Some(RED));
+        assert_eq!(overlapping.pixel(50, 30), Some(RED));
+    }
+
+    #[test]
+    fn a_hole_stays_white_under_rotated_dashes() {
+        // Verifies: ADR-0032
+        // A square with a hole, its hole wound as the square is and touching nothing, under
+        // dashed lines 3 wide at 30°, 4 apart: no pixel inside the hole is touched.
+        let outer = rectangle(4.0, 4.0, 60.0, 60.0);
+        let hole = rectangle(20.5, 18.25, 43.75, 41.5);
+        let (cos, sin) = (0.866_025_403_784_438_6, 0.5);
+        let lines: Vec<[Point; 2]> = (-20..20)
+            .map(|k| {
+                let o = 4.0 * f64::from(k);
+                let (cx, cy) = (32.0 - sin * o, 32.0 + cos * o);
+                [
+                    p(cx - 60.0 * cos, cy - 60.0 * sin),
+                    p(cx + 60.0 * cos, cy + 60.0 * sin),
+                ]
+            })
+            .collect();
+        let image = hatched(vec![outer, hole], lines, vec![7.0, 2.5, 1.0, 2.5]);
+        for y in 19..41 {
+            for x in 21..43 {
+                assert_eq!(image.pixel(x, y), Some(WHITE), "({x}, {y}) in the hole");
+            }
+        }
+        assert!(
+            (5..59).any(|x| image.pixel(x, 10) == Some(RED)),
+            "the hatch around it"
+        );
+    }
+
+    /// A comb of 2000 teeth across `side` pixels, its 8003 vertices, and the lines at 45° a
+    /// pixel apart across a square image of that side.
+    fn comb(side: f64) -> (Vec<Point>, Vec<[Point; 2]>) {
+        let tooth = side / 2000.0;
+        let mut comb = vec![p(0.0, side), p(side, side)];
+        for i in (0..2000).rev() {
+            let x = f64::from(i) * tooth;
+            comb.extend([
+                p(x + tooth, 2.0),
+                p(x + tooth / 2.0, 2.0),
+                p(x + tooth / 2.0, side - 2.0),
+                p(x, side - 2.0),
+            ]);
+        }
+        comb.push(p(0.0, side));
+        #[expect(clippy::cast_possible_truncation, reason = "a small whole number")]
+        let reach = side as i32;
+        let lines = (-reach..reach)
+            .map(|k| {
+                let o = f64::from(k);
+                [p(o - 1.0, -1.0), p(o + side + 1.0, side + 1.0)]
+            })
+            .collect();
+        (comb, lines)
+    }
+
+    #[test]
+    fn a_comb_under_a_dense_hatch_is_cut_within_the_bounds_or_not_at_all() {
+        // Verifies: Q-9
+        // Over 4096 × 4096 the comb's teeth cross some 1.1e7 stroke bands, past the bound on
+        // the crossings; cutting them takes some 21.6 GB.
+        let (teeth, lines) = comb(4096.0);
+        let dense = Hatch {
+            rings: vec![teeth],
+            lines,
+            color: RED,
+            width: 1.0,
+            pattern: vec![],
+        };
+        assert!(!dense.is_bounded(4096, 4096));
+        // Over 64 × 64, some 5e5 crossings, it is cut, and only inside the comb.
+        let (teeth, lines) = comb(64.0);
+        let image = hatched(vec![teeth], lines, vec![]);
+        assert!(
+            image.pixels.chunks(4).any(|px| px != [255, 255, 255, 255]),
+            "the comb is cut"
+        );
+        assert_eq!(image.pixel(32, 0), Some(WHITE), "above the teeth");
     }
 
     #[test]
@@ -456,7 +732,7 @@ mod tests {
                 },
             },
             DrawOp::Stroke {
-                paths: vec![huge, broken],
+                paths: vec![huge.clone(), broken.clone()],
                 closed: true,
                 color: RED,
                 width: 1e9,
@@ -464,6 +740,49 @@ mod tests {
                 join: LineJoin::Miter,
                 dashes: Dashes::default(),
             },
+        ]);
+        // A hatch's dashes walked one by one, and its polygon cut, stay bounded: tiny or empty
+        // dashes over long lines, and a ring of 40 000 vertices, past the bound on the polygon,
+        // under 2 000 lines.
+        let circle: Vec<Point> = (0..40_000)
+            .map(|i| {
+                let t = f64::from(i) / 40_000.0 * std::f64::consts::TAU;
+                p(32.0 + 30.0 * t.cos(), 32.0 + 30.0 * t.sin())
+            })
+            .collect();
+        let dense: Vec<[Point; 2]> = (0..2_000)
+            .map(|i| {
+                let y = f64::from(i) * 0.032;
+                [p(-1e15, y), p(1e15, y)]
+            })
+            .collect();
+        let hatch = |rings: Vec<Vec<Point>>, lines, width, pattern| {
+            DrawOp::Hatch(Hatch {
+                rings,
+                lines,
+                color: RED,
+                width,
+                pattern,
+            })
+        };
+        let _ = render(&[
+            hatch(vec![circle.clone()], dense.clone(), 1.0, vec![]),
+            hatch(vec![circle.clone()], dense, 1e9, vec![1e-300, 1e300, 3.0]),
+            hatch(
+                vec![huge.clone(), broken.clone()],
+                vec![
+                    [p(-1e15, -1e15), p(1e15, 1e15)],
+                    [p(f64::NAN, 0.0), p(5.0, 5.0)],
+                ],
+                3.0,
+                vec![0.0, 0.0],
+            ),
+            hatch(
+                vec![huge, broken],
+                vec![[p(-1e15, 0.5), p(1e15, 0.5)]],
+                f64::INFINITY,
+                vec![f64::NAN, 1.0],
+            ),
         ]);
         assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
     }
