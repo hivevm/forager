@@ -341,6 +341,22 @@
         "max_y"
       ]
     },
+    "FeatureProperty": {
+      "description": "A property of an inline feature.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ]
+    },
     "Force": {
       "oneOf": [
         {
@@ -390,6 +406,57 @@
           "type": "string",
           "const": "labelpoly"
         }
+      ]
+    },
+    "InlineFeature": {
+      "description": "A feature written into a layer, a shape as MapServer holds one (ADR-0033).",
+      "type": "object",
+      "properties": {
+        "parts": {
+          "description": "Its parts, each a list of `[x, y]` in the layer's coordinates: a point shape's points, a\nline shape's lines, a polygon shape's rings, an outer ring not told from an inner one.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              },
+              "maxItems": 2,
+              "minItems": 2
+            }
+          }
+        },
+        "properties": {
+          "description": "Its properties, each a string, in order; a reader finds a name without regard to ASCII\ncase, the first of two that match.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FeatureProperty"
+          }
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "$ref": "#/$defs/ShapeType"
+        }
+      },
+      "required": [
+        "type"
       ]
     },
     "Label": {
@@ -681,6 +748,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/Class"
+          }
+        },
+        "features": {
+          "description": "The features written into the layer (ADR-0033). A layer with any is read from them alone,\nwhatever source it names or a host binds to it.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InlineFeature"
           }
         },
         "filter": {
@@ -1091,6 +1165,15 @@
     "Rgba": {
       "type": "string",
       "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"
+    },
+    "ShapeType": {
+      "description": "The type of an inline feature's shape.",
+      "type": "string",
+      "enum": [
+        "point",
+        "line",
+        "polygon"
+      ]
     },
     "SourceRef": {
       "description": "Where a layer's data lives, kept unparsed for a resolver to bind to an adapter.",

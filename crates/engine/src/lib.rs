@@ -10,6 +10,7 @@ mod extent;
 mod fonts;
 mod geom_transform;
 mod hatch;
+mod inline;
 mod labels;
 mod line_marker;
 mod offset;
@@ -404,26 +405,64 @@ fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<Ren
     }
 }
 
+/// The features of a layer in view: those of its inline features where it has any (ADR-0033),
+/// whatever source is bound to it, which is not read and is reported; otherwise those of the
+/// source bound to its name.
 async fn features<S: FeatureSource>(
     layer: &Layer,
     sources: &BTreeMap<String, S>,
     view: &View,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Vec<Feature>> {
+    let bound = layer.name.as_ref().and_then(|n| sources.get(n));
+    if !layer.features.is_empty() {
+        if bound.is_some() {
+            let message = format!(
+                "layer {} has inline features, which it draws; the source bound to it is not read",
+                name(layer)
+            );
+            diagnostics.push(Diagnostic::warning(
+                "source-ignored",
+                message,
+                layer.span.clone(),
+            ));
+        }
+        let source = inline::InlineSource::new(&layer.features);
+        return query(layer, "inline", &source, view, diagnostics).await;
+    }
     let kind = layer.source.as_ref().map_or("none", |s| s.kind.as_str());
+    let Some(source) = bound else {
+        diagnostics.push(skipped(layer, kind, "no source is bound to it".to_owned()));
+        return None;
+    };
+    query(layer, kind, source, view, diagnostics).await
+}
+
+/// The warning that a layer whose source is of `kind` is skipped for `reason`.
+fn skipped(layer: &Layer, kind: &str, reason: String) -> Diagnostic {
     let span = layer
         .source
         .as_ref()
         .and_then(|s| s.span.clone())
         .or_else(|| layer.span.clone());
-    let skip = |reason: String| {
-        let message = format!("layer {} (source {kind}) is skipped: {reason}", name(layer));
-        Diagnostic::warning("layer-skipped", message, span.clone())
-    };
-    let Some(source) = layer.name.as_ref().and_then(|n| sources.get(n)) else {
-        diagnostics.push(skip("no source is bound to it".to_owned()));
-        return None;
-    };
+    let message = format!("layer {} (source {kind}) is skipped: {reason}", name(layer));
+    Diagnostic::warning("layer-skipped", message, span)
+}
+
+/// The features `source`, of `kind`, delivers for the view, bounded in number (Q-9).
+async fn query<S: FeatureSource>(
+    layer: &Layer,
+    kind: &str,
+    source: &S,
+    view: &View,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Vec<Feature>> {
+    let span = layer
+        .source
+        .as_ref()
+        .and_then(|s| s.span.clone())
+        .or_else(|| layer.span.clone());
+    let skip = |reason: String| skipped(layer, kind, reason);
     let query = FeatureQuery {
         extent: view.extent,
     };

@@ -23,4 +23,5 @@ describe and decide nothing: the decisions are the ADRs they cite.
   bounds](scale.md)
 - [Scale ranges: `MINSCALEDENOM` and `MAXSCALEDENOM`](scale-range.md)
 - [`PROJECTION`](projection.md) of the map and of a layer
+- [`FEATURE` and `PROCESSING "ITEMS=…"`](feature.md): a layer's inline features
 - [Shapefiles](shapefile.md) a layer's `DATA` names: the records a shapefile source reads
