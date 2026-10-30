@@ -207,3 +207,19 @@ fn an_unreadable_wkt_is_quoted_in_part() {
     assert!(message.contains(&format!("`{}…`", &wkt[..80])), "{message}");
     assert!(message.len() < 200, "{message}");
 }
+
+#[test]
+fn a_wkt_polygons_inner_ring_that_crosses_itself_is_left_out() {
+    // Verifies: ADR-0033
+    let features = features(
+        r#"TYPE POLYGON
+           FEATURE WKT "POLYGON((0 0,9 0,9 9,0 0),(5 5,7 7,7 5,5 7,5 5),(6 1,8 1,8 3,6 1))" END
+           FEATURE WKT "MULTIPOLYGON(((5 5,7 7,7 5,5 7,5 5)),((0 0,9 0,9 9,0 0),(5 5,7 7,7 5,5 7,5 5)))" END"#,
+    );
+    let exterior = vec![[0.0, 0.0], [9.0, 0.0], [9.0, 9.0], [0.0, 0.0]];
+    let bow_tie = vec![[5.0, 5.0], [7.0, 7.0], [7.0, 5.0], [5.0, 7.0], [5.0, 5.0]];
+    let hole = vec![[6.0, 1.0], [8.0, 1.0], [8.0, 3.0], [6.0, 1.0]];
+    assert_eq!(features[0].parts, [exterior.clone(), hole]);
+    // An exterior that crosses itself is kept, as msGEOSGeometry2Shape tests only inner rings.
+    assert_eq!(features[1].parts, [bow_tie, exterior]);
+}
