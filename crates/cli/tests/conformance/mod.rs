@@ -536,3 +536,34 @@ pub fn unlisted(cases: &[Case], entries: &BTreeMap<(String, String), Listed>) ->
     }
     problems
 }
+
+/// The counts of the cases in scope that `scripts/check-fidelity.sh` holds against the record of
+/// the last release (Q-4): those in scope and those that pass, and of each the cases whose
+/// reference the list marks blank, which the check leaves out of the share.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Tally {
+    pub in_scope: usize,
+    pub passing: usize,
+    pub blank: usize,
+    pub blank_passing: usize,
+}
+
+impl Tally {
+    /// Counts one case in scope, `blank` as the list marks it, which `passed` or not.
+    pub fn count(&mut self, blank: bool, passed: bool) {
+        self.in_scope += 1;
+        self.passing += usize::from(passed);
+        self.blank += usize::from(blank);
+        self.blank_passing += usize::from(blank && passed);
+    }
+}
+
+/// The counts as the check reads them, one `<name> <number>` line each.
+impl std::fmt::Display for Tally {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "in-scope {}", self.in_scope)?;
+        writeln!(f, "passing {}", self.passing)?;
+        writeln!(f, "blank {}", self.blank)?;
+        writeln!(f, "blank-passing {}", self.blank_passing)
+    }
+}

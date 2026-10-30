@@ -2,7 +2,8 @@
 # Builds, tests, and lints the Rust workspace (ADR-0008): formatting, clippy with warnings as
 # errors, the tests, the style document's JSON Schema against its checked-in file (ADR-0020),
 # the load of the msautotest suite at the pinned MapServer release (G-1, fetched once into
-# target/ by scripts/fetch-msautotest.sh) and the conformance harness over its cases, the build
+# target/ by scripts/fetch-msautotest.sh) and the conformance harness over its cases, whose share
+# of passing cases scripts/check-fidelity.sh holds against the last release (Q-4), the build
 # of every crate that must run in the browser for wasm32-unknown-unknown (Q-1), the WebAssembly
 # bindings and their size (Q-5) once they exist, and cargo deny (ADR-0012). scripts/check-all.sh
 # and the `rust` job of checks.yml run it; the tools come from scripts/install-tools.sh. Two
@@ -41,9 +42,15 @@ if cargo tree -p forager-bindings-wasm --locked -e normal | grep -q '^.*schemars
 fi
 step "msautotest: every mapfile loads (G-1), and the cases in scope hold their outcome"
 suite="$(bash scripts/fetch-msautotest.sh)"
+fidelity="$ROOT/target/fidelity-counts.txt"
+rm -f "$fidelity"
 # The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (ADR-0027).
-FORAGER_MSAUTOTEST="$suite" cargo test -p forager-cli --locked --test msautotest -- --ignored \
-  --skip mapserver_renders_the_cases_in_scope_within_its_noise
+FORAGER_MSAUTOTEST="$suite" FORAGER_FIDELITY="$fidelity" cargo test -p forager-cli --locked \
+  --test msautotest -- --ignored --skip mapserver_renders_the_cases_in_scope_within_its_noise
+
+step "The share of the cases in scope that pass does not fall below the last release's (Q-4)"
+# Verifies: Q-4
+bash scripts/check-fidelity.sh "$fidelity"
 
 step "Clippy bans hash maps, clocks, and randomness in the core alone (Q-2)"
 # Verifies: Q-2
