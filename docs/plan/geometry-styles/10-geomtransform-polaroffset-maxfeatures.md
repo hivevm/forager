@@ -28,3 +28,42 @@ the bounding box), a layer's `GEOMTRANSFORM` where it needs no geometry library,
 unattended: the engine's tests and the harness decide every criterion; undone by one revert;
 nothing ADR-0007 keeps with the maintainer. It counts against the cap of three open agent branches
 of ADR-0007. Stop when a transform needs a change of the style IR, and hand off.
+
+## Where it stands
+
+The session stopped at the stop of its *Mode*. On this branch the engine draws, without a change
+of the style IR, what the IR already carries:
+
+- A style's `GEOMTRANSFORM` `start`, `end`, `vertices`, and `centroid` on a line or a polygon
+  layer, with `ANGLE AUTO`, as `msDrawTransformedShape`, `calcOrientation`, `calcMidAngle`
+  (`src/mapgeomtransform.c`), `msTransformShapeSimplify`, and `msGetPolygonCentroid`
+  (`src/mapprimitive.cpp`) place them; the transformed styles of a cached line layer drawn with
+  its first pass; `labelpnt` and `labelpoly` drawing nothing on a shape; a point layer drawing
+  every style at its points whatever its transform.
+- A style's `POLAROFFSET`, bound or written, and its `OFFSET`, moving a symbol at a point as
+  `msAdjustMarkerPos` (`src/maprendering.c`) moves it.
+
+What is left needs the IR's format to change (ADR-0020), which the maintainer decides (ADR-0007):
+
+- **`bbox`.** `GeomTransform` has no variant for it; the frontend warns and the style draws the
+  feature's own geometry. MapServer shades the shape's box, clipped to the image grown by
+  `MS_MAX(width, size) + 3` (`MS_GEOMTRANSFORM_BBOX`). Used by
+  `renderers/poly_geomtransform_anchor.map`, which also needs pixmap symbols.
+- **A transform that needs a geometry library** (`buffer`, `simplify`, `simplifypt`,
+  `centerline`, …). The second criterion asks for a diagnostic and nothing drawn; the IR has no
+  way to say "this style draws nothing", and the frontend can only drop the transform, so the
+  style draws the feature's own geometry. Dropping the style from the class would change the
+  count of styles, which decides whether a line layer caches its features, and the place of each
+  pass; a variant of `GeomTransform` for an expression the engine does not draw (with the
+  expression's text, for the diagnostic) would serve it.
+- **A layer's `GEOMTRANSFORM`.** `Layer` has no field for it. MapServer reads only an expression
+  there (`msGeomTransformShape`, RFC 89). Of those in the suite, `simplify` and `centerline` need
+  GEOS; `generalize`, `smoothsia`, `densify`, `outer`, and `inner` do not. The one in-scope case,
+  `geomtransform-vertex-layer.png`, uses `simplify`.
+- **`MAXFEATURES`** of a layer, and the metadata `maxfeaturestodraw` and the output format's
+  `MAXFEATURESTODRAW` that `misc/maxfeatures.map` also exercises: `Layer` has no field for them.
+  That case also needs inline `FEATURE` points (ticket 04).
+
+No case of the harness flips with this branch: `geomtransform-vertex.png` still needs the
+transform expressions, TrueType symbols, and inline features; `point-polaroffset.png` inline
+features. Their reasons in `cases.txt` are updated to what they still lack.

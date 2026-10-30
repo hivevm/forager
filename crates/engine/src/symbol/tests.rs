@@ -249,6 +249,33 @@ fn the_anchor_point_lies_on_the_point_turned_with_the_symbol() {
 }
 
 #[test]
+fn the_polar_offset_then_the_offset_move_the_symbol_before_its_anchor() {
+    // msAdjustMarkerPos: POLAROFFSET 10 90 moves up the image by 10 (counter-clockwise from
+    // rightwards), OFFSET 2 3 by 2 right and 3 down; the anchor point then lies on that point.
+    let mut moved = style(Some(10.0), None);
+    moved.polar_offset = Some([Bound::Value(10.0), Bound::Value(90.0)]);
+    moved.offset = Some([Bound::Value(2.0), Bound::Value(3.0)]);
+    let mut anchored_triangle = triangle(true);
+    anchored_triangle.anchor_point = Some([0.0, 0.0]);
+    let ops = ops(&moved, &anchored_triangle);
+    let [DrawOp::Fill { rings, .. }] = ops.as_slice() else {
+        panic!("{ops:?}");
+    };
+    close(&rings[0], &[(52.0, 43.0), (62.0, 43.0), (57.0, 53.0)]);
+    // A polar offset of distance 0 at an angle other than 0 moves nothing.
+    let mut turned_only = style(None, None);
+    turned_only.polar_offset = Some([Bound::Value(0.0), Bound::Value(30.0)]);
+    assert_eq!(shifted(AT, &turned_only), AT);
+    // A line offset moves a symbol by the OFFSET it was written as: its y is −99.
+    let mut line_offset = style(None, None);
+    line_offset.line_offset = Some(forager_style_ir::LineOffset {
+        distance: Bound::Value(4.0),
+        both_sides: false,
+    });
+    assert_eq!(shifted(AT, &line_offset), Point { x: 54.0, y: -49.0 });
+}
+
+#[test]
 fn the_marker_size_cuts_the_size_to_whole_pixels() {
     // msGetMarkerSize: `size` is an int; with SIZE, the width follows the height; without, the
     // symbol's own extent.

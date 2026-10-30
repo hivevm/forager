@@ -221,11 +221,11 @@ renderers/force_pc256.map force_pc256.png out: a raster source
 renderers/force_pc256.map force_pc256.cairo.png out: another output format, cairopng
 renderers/force_pc256_rgba.map force_pc256_rgba.png out: a raster source
 renderers/force_pc256_rgba.map force_pc256_rgba.cairo.png out: another output format, cairopng
-renderers/geomtransform-vertex.map geomtransform-vertex.png geometry fails  # not built yet: the GEOMTRANSFORM of a style, TrueType and ellipse symbols, and inline FEATURE shapes
+renderers/geomtransform-vertex.map geomtransform-vertex.png geometry fails  # not built yet: the GEOMTRANSFORM expressions of a style, TrueType symbols, and inline FEATURE shapes
 renderers/geomtransform-vertex.map geomtransform-vertex.pdf out: another output format, pdf
 renderers/geomtransform-vertex.map geomtransform-vertex.svg out: another output format, svg
 renderers/geomtransform-vertex.map geomtransform-vertex.cairo.png out: another output format, cairopng
-renderers/geomtransform-vertex.map geomtransform-vertex-layer.png geometry fails  # not built yet: the GEOMTRANSFORM of a layer
+renderers/geomtransform-vertex.map geomtransform-vertex-layer.png geometry fails  # not built yet: the GEOMTRANSFORM of a layer, simplify, which needs a geometry library
 renderers/geomtransform-vertex.map geomtransform-vertex-layer.pdf out: another output format, pdf
 renderers/geomtransform-vertex.map geomtransform-vertex-layer.svg out: another output format, svg
 renderers/geomtransform-vertex.map geomtransform-vertex-layer.cairo.png out: another output format, cairopng
@@ -416,7 +416,7 @@ renderers/plb_embed_legend_rgba_tr.map plb_embed_legend_rgba_tr.png out: labels,
 renderers/plb_embed_legend_rgba_tr.map plb_embed_legend_rgba_tr.cairo.png out: another output format, cairopng
 renderers/plb_embed_legend_tr.map plb_embed_legend_tr.png out: labels, in the embedded legend
 renderers/plb_embed_legend_tr.map plb_embed_legend_tr.cairo.png out: another output format, cairopng
-renderers/point-polaroffset.map point-polaroffset.png geometry fails  # not built yet: inline FEATURE points and POLAROFFSET
+renderers/point-polaroffset.map point-polaroffset.png geometry fails  # not built yet: inline FEATURE points
 renderers/point-polaroffset.map point-polaroffset.pdf out: another output format, pdf
 renderers/point-polaroffset.map point-polaroffset.svg out: another output format, svg
 renderers/point-polaroffset.map point-polaroffset.cairo.png out: another output format, cairopng
@@ -459,7 +459,7 @@ renderers/poly-label-pos-auto.map poly-label-pos-auto.png out: labels
 renderers/poly-label-pos-auto.map poly-label-pos-auto.pdf out: another output format, pdf
 renderers/poly-label-pos-auto.map poly-label-pos-auto.svg out: another output format, svg
 renderers/poly-label-pos-auto.map poly-label-pos-auto.cairo.png out: another output format, cairopng
-renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.png geometry fails  # not built yet: pixmap symbols
+renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.png geometry fails  # not built yet: pixmap symbols and GEOMTRANSFORM bbox
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.pdf out: another output format, pdf
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.svg out: another output format, svg
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.cairo.png out: another output format, cairopng

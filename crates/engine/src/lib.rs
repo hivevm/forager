@@ -8,6 +8,7 @@ mod classes;
 mod draw;
 mod extent;
 mod fonts;
+mod geom_transform;
 mod hatch;
 mod labels;
 mod line_marker;
@@ -137,8 +138,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         drawing.draw(&mut renderer, &mut canvas, &selected);
         if canvas.markers_spent() {
             let message = format!(
-                "layer {}: its symbols along lines exceed {MAX_MARKER_POINTS} points; those \
-                 past the limit are not drawn",
+                "layer {}: its symbols along lines or placed by a GEOMTRANSFORM exceed \
+                 {MAX_MARKER_POINTS} points; those past the limit are not drawn",
                 name(layer)
             );
             diagnostics.push(Diagnostic::warning(
@@ -192,10 +193,10 @@ struct Drawing<'a> {
 
 impl Drawing<'_> {
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them: a feature of
-    /// a line layer whose class has several styles, or an outline, draws its first pass at once
-    /// and the rest from its cache, style by style, after every feature; any other draws all its
-    /// styles at once. A style outside its scale range draws nothing, where msDrawShape and the
-    /// cache's pass skip it.
+    /// a line layer whose class has several styles, or an outline, draws its first pass and its
+    /// styles with a `GEOMTRANSFORM` at once, and the rest from its cache, style by style, after
+    /// every feature; any other draws all its styles at once. A style outside its scale range
+    /// draws nothing, where msDrawShape and the cache's pass skip it.
     fn draw<R: Renderer>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
         let mode = self.mode;
         let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {
@@ -222,12 +223,20 @@ impl Drawing<'_> {
                 .collect();
             let passes = passes(mode, styles, &bound_outline);
             if mode == RenderMode::Line && self.cached(*class) {
-                let (style, first) = &passes[0];
-                draw(canvas, feature, style, first);
+                let (first_style, first) = &passes[0];
+                draw(canvas, feature, first_style, first);
+                // lineLayerDrawShape draws every style with a GEOMTRANSFORM in the first pass,
+                // and the cache's passes skip them.
+                for (style, _) in &passes[1..] {
+                    if style.geom_transform.is_some() && !std::ptr::eq(*style, *first_style) {
+                        draw(canvas, feature, style, &[Pass::Plain]);
+                    }
+                }
                 most_styles = most_styles.max(styles.len());
                 // The style each later pass draws, by its place in the class.
                 let later: Vec<_> = passes[1..]
                     .iter()
+                    .filter(|(style, _)| style.geom_transform.is_none())
                     .map(|(style, passes)| {
                         let place = styles
                             .iter()

@@ -95,10 +95,10 @@ buffer at a default size of 1, where MapServer takes its image's height. i_overl
 that come within a hundredth of a pixel of an edge, which Clipper does not. The polygon of any
 other style is not clipped, which draws the same.
 
-**Not yet as MapServer draws it at a point.** A point style without a symbol it draws — none, 0,
-a pixmap, TrueType, SVG, hatch, or simple symbol, a symbol bound to a property, or a name no
-symbol carries — draws a square of its size, where MapServer draws nothing for none and 0 and the
-symbol or image otherwise. `OFFSET` and `POLAROFFSET` do not move a symbol at a point. The scale
-factor is 1: `RESOLUTION`, `SIZEUNITS`, and `SYMBOLSCALEDENOM` do not scale a symbol yet
-([`scale.md`](scale.md)). A size, angle, or width bound to a property or given by an expression
-is drawn as if unset.
+**Not yet as MapServer draws it at a point.** A point layer's style without a symbol it draws —
+none, 0, a pixmap, TrueType, SVG, hatch, or simple symbol, or a name no symbol carries — draws a
+square of its size, where MapServer draws nothing for none and 0 and the symbol or image
+otherwise. A style a `GEOMTRANSFORM` places ([`style-symbol.md`](style-symbol.md)) draws nothing
+for none and 0, as MapServer does, and the square for the others. The scale factor is 1:
+`RESOLUTION`, `SIZEUNITS`, and `SYMBOLSCALEDENOM` do not scale a symbol yet
+([`scale.md`](scale.md)).
