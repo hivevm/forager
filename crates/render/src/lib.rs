@@ -84,8 +84,10 @@ impl Hatch {
     /// the stroke and a sixteenth of the polygon's own counts (Q-9). At the bound, a comb of 2000
     /// teeth, 8003 vertices, under a hatch 11 apart takes 0.8 s at a peak of 470 MB, and a star
     /// of 500 points, each edge crossing nearly every other, some 1.2e5 times, under one line,
-    /// 0.8 s at a peak of 110 MB. Lines 0.0005 pixels apart under a stroke a pixel wide, which
-    /// i_overlay would take minutes to cut, count their stroke crossing itself past the bound.
+    /// 0.8 s at a peak of 110 MB. Lines closer than their width cost the most for their count:
+    /// 1287 pieces of lines 0.013 pixels apart under a stroke a pixel wide take 1.1 s, at some
+    /// 3.5e6 by their weight of 32 past the bound; lines 0.0005 pixels apart, which i_overlay
+    /// would take minutes to cut, far past it.
     pub const MAX_CROSSINGS: f64 = 2_097_152.0;
 
     /// The dash and gap lengths drawn: pairs of the pattern, its odd last length dropped.
@@ -139,10 +141,10 @@ impl Hatch {
     /// An estimate of the crossings the cut has to find, of the polygon's edges with the stroked
     /// lines and of the stroke with itself: where the lines run parallel, the stroke bands each
     /// edge reaches across, found among the lines sorted by their distance from the origin, twice
-    /// each; four for every piece, and sixteen for every piece and every other line whose band
+    /// each; four for every piece, and 32 for every piece and every other line whose band
     /// overlaps its own, at most, where the lines lie closer than their width and the ends of
     /// their pieces, along the edge of the image, run over each other, which costs i_overlay
-    /// some four times a crossing; and two for every piece and every vertex besides. Where they
+    /// some eight times a crossing; and two for every piece and every vertex besides. Where they
     /// do not run parallel, four for every piece and edge and for every two pieces. Lines and
     /// points that are not finite count nothing; the renderer draws none.
     pub fn crossings(&self, pieces: f64, vertices: f64) -> f64 {
@@ -196,7 +198,7 @@ impl Hatch {
             }
         }
         let others = overlap.saturating_sub(1) as f64;
-        2.0 * bands + 4.0 * pieces + 16.0 * pieces * others + 2.0 * pieces + 2.0 * vertices
+        2.0 * bands + 4.0 * pieces + 32.0 * pieces * others + 2.0 * pieces + 2.0 * vertices
     }
 }
 
