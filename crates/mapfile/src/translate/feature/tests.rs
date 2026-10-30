@@ -197,3 +197,13 @@ fn a_layer_without_features_carries_none() {
     assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
     assert!(layer.unwrap().features.is_empty());
 }
+
+#[test]
+fn an_unreadable_wkt_is_quoted_in_part() {
+    let wkt = format!("LINESTRING({})", "1 2 3, ".repeat(100));
+    let (loaded, _) = load_layer(&format!(r#"TYPE LINE FEATURE WKT "{wkt}" END"#));
+    assert_eq!(codes(&loaded), ["invalid-wkt"]);
+    let message = &loaded.diagnostics[0].message;
+    assert!(message.contains(&format!("`{}…`", &wkt[..80])), "{message}");
+    assert!(message.len() < 200, "{message}");
+}

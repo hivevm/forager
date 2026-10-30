@@ -139,3 +139,29 @@ fn a_feature_without_points_draws_nothing() {
     let image = rendered.image.unwrap();
     assert!((0..101).all(|y| (0..101).all(|x| image.pixel(x, y) == Some(WHITE))));
 }
+
+#[test]
+fn a_graticule_layer_is_not_read_from_its_features() {
+    // msInitializeVirtualTable exempts a GRATICULE layer from being inline.
+    let mut map = map(vec![feature(vec![square(10.0, 30.0)], "a")]);
+    map.layers[0].source = Some(forager_style_ir::SourceRef {
+        kind: "graticule".into(),
+        ..forager_style_ir::SourceRef::default()
+    });
+    assert!(!forager_engine::is_inline(&map.layers[0]));
+    let rendered = render_with(&map, None);
+    let codes: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["layer-skipped"]);
+    assert_eq!(rendered.image.unwrap().pixel(20, 80), Some(WHITE));
+}
+
+#[test]
+fn a_host_need_bind_no_source_to_an_inline_layer() {
+    let map = map(vec![feature(vec![square(10.0, 30.0)], "a")]);
+    assert!(forager_engine::reads_features(&map.layers[0]));
+    assert!(!forager_engine::reads_bound_source(&map.layers[0]));
+}

@@ -114,7 +114,8 @@ impl Translator<'_> {
                             values.clear();
                         }
                         Err(reason) => {
-                            let message = format!("WKT `{text}` cannot be read: {reason}");
+                            let message =
+                                format!("WKT `{}` cannot be read: {reason}", wkt::excerpt(&text));
                             self.error("invalid-wkt", &message, &d.span);
                             return None;
                         }

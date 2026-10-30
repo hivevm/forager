@@ -365,3 +365,27 @@ fn a_link_out_of_the_base_context_tells_nothing_of_what_it_points_at() {
     );
     assert_eq!(runs[0], runs[1]);
 }
+
+#[test]
+fn a_layer_with_inline_features_draws_them_and_leaves_its_data_unread() {
+    // ADR-0033: an inline layer's DATA is not bound, so nothing is read and nothing reported,
+    // as MapServer ignores it (msInitializeVirtualTable).
+    let dir = scratch("inline");
+    write_square(&dir, "poly", ["shp", "shx", "dbf"]);
+    let map = mapfile("", "poly").replace(
+        "    CLASS",
+        "    FEATURE POINTS 60 60 90 60 90 90 60 90 60 60 END END\n    CLASS",
+    );
+    std::fs::write(dir.join("m.map"), map).unwrap();
+    let (code, stderr, image) = render(&dir.join("m.map"), &[]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(code, Some(0), "{stderr}");
+    assert_eq!(stderr, "");
+    let image = image.unwrap();
+    assert_eq!(image.pixel(75, 25), Some(GREEN), "the inline feature");
+    assert_eq!(
+        image.pixel(25, 75),
+        Some(WHITE),
+        "the shapefile is not drawn"
+    );
+}

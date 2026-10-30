@@ -1,5 +1,6 @@
-// The reading follows GEOS's WKTReader and StringTokenizer, and the conversion MapServer's
-// msGEOSGeometry2Shape (src/mapgeos.c) of the release pinned in scripts/fetch-msautotest.sh.
+// The reader re-implements the grammar GEOS's WKTReader accepts, no GEOS code. The conversion
+// follows MapServer's msGEOSGeometry2Shape (src/mapgeos.c) of the release pinned in
+// scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -13,12 +14,15 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The frontend's own reader of the WKT of an inline feature (ADR-0033): it reads what GEOS's
-//! `WKTReader` reads of two-dimensional points, lines, polygons, their multi forms, and
-//! collections, and converts it into a shape as `msGEOSGeometry2Shape` does. An empty geometry,
+//! The frontend's own reader of the WKT of an inline feature (ADR-0033): it re-implements the
+//! grammar GEOS's `WKTReader` accepts for two-dimensional points, lines, polygons, their multi
+//! forms, and collections, no GEOS code, and converts what it reads into a shape as
+//! `msGEOSGeometry2Shape` does. An empty geometry,
 //! one with Z or M coordinates, and a `LINEARRING`, which `msGEOSGeometry2Shape` does not
 //! convert, are refused. Collections nest at most [`MAX_NESTING`] deep, so that the reader's
 //! recursion is bounded whatever the text (Q-9); its memory follows the text's length.
+
+use std::borrow::Cow;
 
 use forager_style_ir::ShapeType;
 
@@ -65,8 +69,8 @@ impl Token<'_> {
             Token::Close => "`)`".to_owned(),
             Token::Comma => "`,`".to_owned(),
             Token::Number(n) => format!("the number {n}"),
-            Token::Word(w) => format!("`{w}`"),
-            Token::Unread(t) => format!("`{t}`"),
+            Token::Word(w) => format!("`{}`", excerpt(w)),
+            Token::Unread(t) => format!("`{}`", excerpt(t)),
             Token::End => "the end of the text".to_owned(),
         }
     }
@@ -77,14 +81,15 @@ struct Reader<'a> {
     at: usize,
 }
 
-/// The characters that end a word or a number, as `StringTokenizer` delimits them.
+/// The characters that end a word or a number in the grammar GEOS accepts.
 fn delimits(c: char) -> bool {
     matches!(c, '\n' | '\r' | '\t' | ' ' | '(' | ')' | ',')
 }
 
 impl<'a> Reader<'a> {
-    /// The next token, as `StringTokenizer::nextToken` reads it: a token `strtod` reads whole is a
-    /// number, any other a word. A number that is not finite, or that only `strtod` reads, such
+    /// The next token of the grammar GEOS accepts: `(`, `)`, `,`, or a run of other characters up
+    /// to one of them or a space, tab, or line break, a number where `strtod` reads it whole and a
+    /// word otherwise. A number that is not finite, or that only `strtod` reads, such
     /// as a hexadecimal one, is refused where it is read.
     fn next(&mut self) -> Result<Token<'a>, String> {
         let rest = &self.text[self.at..];
@@ -124,12 +129,12 @@ impl<'a> Reader<'a> {
     fn number(&mut self) -> Result<f64, String> {
         match self.next()? {
             Token::Number(n) => Ok(n),
-            Token::Unread(raw) => Err(format!("the number `{raw}` is not read")),
+            Token::Unread(raw) => Err(format!("the number `{}` is not read", excerpt(raw))),
             token => Err(format!("expected a number, found {}", token.name())),
         }
     }
 
-    /// `getNextEmptyOrOpener`: the `(` that opens a geometry's text. `EMPTY`, `Z`, `M`, and
+    /// The `(` that opens a geometry's text. `EMPTY`, `Z`, `M`, and
     /// `ZM` are refused.
     fn open(&mut self) -> Result<(), String> {
         match self.next()? {
@@ -142,7 +147,7 @@ impl<'a> Reader<'a> {
         }
     }
 
-    /// `getNextCloserOrComma`: whether another element follows.
+    /// Whether another element follows: `,`, or `)` to end the list.
     fn more(&mut self) -> Result<bool, String> {
         match self.next()? {
             Token::Comma => Ok(true),
@@ -160,7 +165,7 @@ impl<'a> Reader<'a> {
         Ok(xy)
     }
 
-    /// `getCoordinates`: a parenthesized list of coordinates.
+    /// A parenthesized list of coordinates.
     fn coordinates(&mut self) -> Result<Vec<[f64; 2]>, String> {
         self.open()?;
         let mut coords = vec![self.coordinate()?];
@@ -193,7 +198,7 @@ impl<'a> Reader<'a> {
 
     /// A polygon's rings, its exterior first, as `msGEOSGeometry2Shape_polygon` adds them. It
     /// skips an inner ring GEOS does not call a ring, one that crosses itself; this reader keeps
-    /// it, as testing it would cost the square of its vertices.
+    /// it, as it does not test whether a ring crosses itself.
     fn polygon(&mut self, parts: &mut Vec<Vec<[f64; 2]>>) -> Result<(), String> {
         self.open()?;
         parts.push(self.ring()?);
@@ -203,8 +208,8 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
-    /// A tagged geometry, as `readGeometryTaggedText` reads it, converted as
-    /// `msGEOSGeometry2Shape` converts it; `depth` collections enclose it.
+    /// A geometry with its type name, converted as `msGEOSGeometry2Shape` converts it; `depth`
+    /// collections enclose it.
     fn tagged(&mut self, depth: usize) -> Result<Shape, String> {
         let tag = match self.next()? {
             Token::Word(w) => w,
@@ -259,7 +264,7 @@ impl<'a> Reader<'a> {
         } else if tag.starts_with("LINEARRING") {
             return Err("a LINEARRING is not converted into a shape".to_owned());
         } else {
-            return Err(format!("unknown geometry type `{tag}`"));
+            return Err(format!("unknown geometry type `{}`", excerpt(&tag)));
         };
         Ok(Shape { shape_type, parts })
     }
@@ -273,7 +278,7 @@ impl<'a> Reader<'a> {
         Ok(coords)
     }
 
-    /// `readMultiPointText`: its points bare, `(0 0, 1 1)`, or each in parentheses,
+    /// A multipoint's text: its points bare, `(0 0, 1 1)`, or each in parentheses,
     /// `((0 0), (1 1))`.
     fn multipoint(&mut self) -> Result<Vec<[f64; 2]>, String> {
         self.open()?;
@@ -292,6 +297,18 @@ impl<'a> Reader<'a> {
         Ok(points)
     }
 }
+
+/// The first [`EXCERPT_CHARS`] characters of `text` a message quotes, with `…` where it goes on,
+/// so that a message stays short whatever the text.
+pub fn excerpt(text: &str) -> Cow<'_, str> {
+    match text.char_indices().nth(EXCERPT_CHARS) {
+        Some((at, _)) => Cow::Owned(format!("{}…", &text[..at])),
+        None => Cow::Borrowed(text),
+    }
+}
+
+/// The most characters of a text a message quotes.
+pub const EXCERPT_CHARS: usize = 80;
 
 /// Whether C's `strtod` reads `raw` whole where Rust's parser does not: a hexadecimal number,
 /// or `nan` with its parenthesized tag.
@@ -404,6 +421,14 @@ mod tests {
         ] {
             assert!(read(text).is_err(), "{text:?} was read");
         }
+    }
+
+    #[test]
+    fn a_message_quotes_a_long_token_in_part() {
+        let long = "X".repeat(1000);
+        let message = read(&format!("{long}(1 2)")).unwrap_err();
+        assert!(message.len() < 200, "{message}");
+        assert!(message.contains(&format!("{}…", "X".repeat(EXCERPT_CHARS))));
     }
 
     #[test]

@@ -22,7 +22,17 @@ use forager_ports::{
     Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
     Table, Value,
 };
-use forager_style_ir::{Extent, InlineFeature, ShapeType};
+use forager_style_ir::{Extent, InlineFeature, Layer, ShapeType};
+
+/// Whether `layer` is read from its inline features (ADR-0033): it has some, and its source is
+/// not a graticule, which `msInitializeVirtualTable` (src/maplayer.c) exempts.
+pub fn is_inline(layer: &Layer) -> bool {
+    !layer.features.is_empty()
+        && layer
+            .source
+            .as_ref()
+            .is_none_or(|source| !source.kind.eq_ignore_ascii_case("graticule"))
+}
 
 /// The features of one layer, read from the style IR.
 pub struct InlineSource<'a> {

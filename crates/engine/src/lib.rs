@@ -33,6 +33,7 @@ use crate::draw::{Canvas, Pass, can_draw, draw_ops, kind, passes};
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
 pub use crate::fonts::MAX_FONT_BYTES;
+pub use crate::inline::is_inline;
 pub use crate::line_marker::MAX_MARKER_POINTS;
 
 use crate::labels::Labels;
@@ -370,10 +371,17 @@ fn view(map: &Map, diagnostics: &mut Vec<Diagnostic>) -> Option<(u32, u32, View)
     Some((width, height, view))
 }
 
-/// Whether [`render`] reads the features of `layer`: one shown, of a TYPE it draws. A host need
-/// open no source for any other layer, whose source would cost memory and draw nothing.
+/// Whether [`render`] reads the features of `layer`: one shown, of a TYPE it draws, from its
+/// inline features or from the source bound to it.
 pub fn reads_features(layer: &Layer) -> bool {
     shown(layer) && layer.render_mode.is_some_and(drawn)
+}
+
+/// Whether [`render`] reads the source a host binds to `layer`: one whose features it reads
+/// ([`reads_features`]) and that has no inline features it reads instead ([`is_inline`]). A host
+/// need open no source for any other layer, whose source would cost memory and draw nothing.
+pub fn reads_bound_source(layer: &Layer) -> bool {
+    reads_features(layer) && !is_inline(layer)
 }
 
 /// As in MapServer, a layer without STATUS is OFF; ON and DEFAULT layers are drawn.
@@ -405,9 +413,9 @@ fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<Ren
     }
 }
 
-/// The features of a layer in view: those of its inline features where it has any (ADR-0033),
-/// whatever source is bound to it, which is not read and is reported; otherwise those of the
-/// source bound to its name.
+/// The features of a layer in view: those of its inline features where it is read from them
+/// ([`is_inline`], ADR-0033), whatever source is bound to it, which is not read and is reported;
+/// otherwise those of the source bound to its name.
 async fn features<S: FeatureSource>(
     layer: &Layer,
     sources: &BTreeMap<String, S>,
@@ -415,7 +423,7 @@ async fn features<S: FeatureSource>(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Vec<Feature>> {
     let bound = layer.name.as_ref().and_then(|n| sources.get(n));
-    if !layer.features.is_empty() {
+    if is_inline(layer) {
         if bound.is_some() {
             let message = format!(
                 "layer {} has inline features, which it draws; the source bound to it is not read",
