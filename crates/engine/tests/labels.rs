@@ -383,3 +383,60 @@ fn a_label_of_a_line_layer_is_not_drawn_yet_and_says_so() {
         .collect();
     assert_eq!(codes, ["label-not-drawn"]);
 }
+
+/// A renderer that keeps the colour and the feature of each label it draws.
+#[derive(Clone, Default)]
+struct LabelRecorder(std::rc::Rc<std::cell::RefCell<Vec<(u64, Rgba)>>>);
+
+impl forager_render::Renderer for LabelRecorder {
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+
+    fn draw(&mut self, item: &forager_render::DisplayItem) {
+        if let forager_render::DrawOp::Glyphs { color, .. } = &item.op {
+            self.0.borrow_mut().push((item.feature_id.unwrap(), *color));
+        }
+    }
+
+    fn finish(self) -> RgbaImage {
+        RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        }
+    }
+}
+
+#[test]
+fn each_feature_is_labelled_by_the_class_that_draws_it() {
+    // Verifies: ADR-0031
+    // The first feature takes the second class, the second the first, and the third no class:
+    // it is not labelled. The labels are added in the order of the features, not of the classes,
+    // as msDrawShape adds them, and draw last added first, as the label cache draws them.
+    const RED: Rgba = Rgba::opaque(200, 30, 30);
+    let named = |name: &str, color: Rgba| Class {
+        expression: Some(Expr::call(
+            Op::Eq,
+            vec![
+                Expr::call(Op::ToString, vec![Expr::property("name")]),
+                name.into(),
+            ],
+        )),
+        labels: vec![Label {
+            color: Some(Bound::Value(color)),
+            ..label_item()
+        }],
+        ..Class::default()
+    };
+    let mut map = map(label_item());
+    map.layers[0].classes = vec![named("Fen", RED), named("Forager", BLUE)];
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(PLACES).unwrap())].into();
+    let recorder = LabelRecorder::default();
+    let rendered = ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(*recorder.0.borrow(), vec![(1, RED), (0, BLUE)]);
+}

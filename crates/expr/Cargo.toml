@@ -1,0 +1,19 @@
+[package]
+name = "forager-expr"
+description = "Evaluates the expressions of the style IR as MapServer evaluates its own."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+forager-style-ir.workspace = true
+# Patterns of `regexp_like`, matched in byte mode with Unicode off (ADR-0031); only this crate
+# may use it. Its Unicode tables are left out: no pattern is compiled with Unicode on.
+regex = { version = "1.13.1", default-features = false, features = ["std", "perf"] }
+libm.workspace = true
+
+[lints]
+workspace = true
