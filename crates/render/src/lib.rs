@@ -39,9 +39,22 @@ pub enum DrawOp {
     },
     /// Fills the part of the hatch's stroked lines that lies inside its rings.
     Hatch(Hatch),
-    /// Fills a label's glyph outlines under the non-zero rule, their curves flattened, as
-    /// MapServer's AGG renderer draws text (ADR-0028).
-    Glyphs { path: Vec<PathCommand>, color: Rgba },
+    /// Draws a label's glyph outlines as MapServer's AGG renderer draws text (ADR-0028), their
+    /// curves flattened: first its outline, where it has one, then its fill under the non-zero
+    /// rule, where it has a colour.
+    Glyphs {
+        path: Vec<PathCommand>,
+        color: Option<Rgba>,
+        outline: Option<GlyphOutline>,
+    },
+}
+
+/// The outline of a label's glyphs: the contour of their path at `width` pixels, filled in
+/// `color`, `agg2RenderGlyphsPath`'s `conv_contour` of width `ow + 1`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GlyphOutline {
+    pub color: Rgba,
+    pub width: f64,
 }
 
 /// Straight lines stroked with butt caps, each dashed from its first point, and their stroke

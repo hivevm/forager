@@ -383,7 +383,11 @@ impl Renderer for AggRenderer {
                 self.stroke(paths, *closed, *color, stroke);
             }
             DrawOp::Hatch(hatch) => self.hatch(hatch),
-            DrawOp::Glyphs { path, color } => self.glyphs(path, *color),
+            DrawOp::Glyphs {
+                path,
+                color,
+                outline,
+            } => self.glyphs(path, *color, *outline),
         }
     }
 
@@ -907,7 +911,11 @@ mod tests {
             QuadTo(p(70.0, 32.0), p(58.0, 44.0)),
             Close,
         ]);
-        let image = render(&[DrawOp::Glyphs { path, color: RED }]);
+        let image = render(&[DrawOp::Glyphs {
+            path,
+            color: Some(RED),
+            outline: None,
+        }]);
         assert_eq!(image.pixel(12, 12), Some(RED));
         assert_eq!(
             image.pixel(32, 32),
@@ -920,6 +928,39 @@ mod tests {
             Some(WHITE),
             "the curve, not its control polygon"
         );
+    }
+
+    #[test]
+    fn a_glyph_outline_is_drawn_before_its_fill_as_the_contour_of_its_width() {
+        // Verifies: ADR-0028
+        use forager_render::GlyphOutline;
+        use forager_render::PathCommand::{Close, LineTo, MoveTo};
+        const BLUE: Rgba = Rgba::opaque(30, 60, 200);
+        let square = vec![
+            MoveTo(p(20.0, 20.0)),
+            LineTo(p(44.0, 20.0)),
+            LineTo(p(44.0, 44.0)),
+            LineTo(p(20.0, 44.0)),
+            Close,
+        ];
+        let glyphs = |color, width| DrawOp::Glyphs {
+            path: square.clone(),
+            color,
+            outline: Some(GlyphOutline { color: BLUE, width }),
+        };
+        // The contour of width 4 is the square grown by 2 pixels, filled; the fill, drawn after
+        // it, covers the square.
+        let image = render(&[glyphs(Some(RED), 4.0)]);
+        assert_eq!(image.pixel(18, 32), Some(BLUE), "the outline outside");
+        assert_eq!(image.pixel(21, 32), Some(RED), "the fill over the outline");
+        assert_eq!(image.pixel(16, 32), Some(WHITE), "nothing past the contour");
+        // Without a colour, the grown square alone.
+        let image = render(&[glyphs(None, 4.0)]);
+        assert_eq!(image.pixel(32, 32), Some(BLUE));
+        assert_eq!(image.pixel(16, 32), Some(WHITE));
+        // A wider contour reaches farther.
+        let image = render(&[glyphs(Some(RED), 8.0)]);
+        assert_eq!(image.pixel(16, 32), Some(BLUE));
     }
 
     #[test]
@@ -936,7 +977,11 @@ mod tests {
             LineTo(p(a, b)),
             Close,
         ];
-        let image = render(&[DrawOp::Glyphs { path, color: RED }]);
+        let image = render(&[DrawOp::Glyphs {
+            path,
+            color: Some(RED),
+            outline: None,
+        }]);
         assert!(image.pixels.chunks(4).all(|px| px == [200, 80, 80, 255]));
     }
 
@@ -949,7 +994,11 @@ mod tests {
             LineTo(p(0.0, f64::NAN)),
             Close,
         ];
-        let image = render(&[DrawOp::Glyphs { path, color: RED }]);
+        let image = render(&[DrawOp::Glyphs {
+            path,
+            color: Some(RED),
+            outline: None,
+        }]);
         assert!(image.pixels.chunks(4).all(|px| px == [255, 255, 255, 255]));
     }
 

@@ -127,8 +127,8 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
     let (without, none) = peak(&map(false), &sources);
     let (with, drawn) = peak(&map(true), &sources);
     assert_eq!((none, drawn), (0, POINTS), "every label is drawn");
-    // About 290 bytes: the label's glyph indices, its box, and its point; its path, of thousands
-    // of bytes, is built only as it is drawn.
+    // About 360 bytes: the label's glyph indices, its line, its box, and its point; its path, of
+    // thousands of bytes, is built only as it is drawn.
     let per_label = with.saturating_sub(without) / POINTS;
     assert!(
         per_label < 400,

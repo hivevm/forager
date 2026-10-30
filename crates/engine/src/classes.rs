@@ -396,7 +396,7 @@ struct Binder<'a> {
 }
 
 /// A C string's bytes: up to the first NUL.
-fn c_bytes(text: &str) -> &[u8] {
+pub(crate) fn c_bytes(text: &str) -> &[u8] {
     let bytes = text.as_bytes();
     &bytes[..bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len())]
 }
@@ -480,7 +480,7 @@ fn split_spaces(text: &[u8]) -> Vec<&[u8]> {
 /// bindColorAttribute: `#rrggbb` or `#rrggbbaa` by msHexToInt, or three integers parted by
 /// spaces by `atoi`; none for anything else, or for a channel of -1, which MS_VALID_COLOR refuses.
 /// Each channel is kept in a byte, as AGG keeps it.
-fn color(text: &[u8]) -> Option<Rgba> {
+pub(crate) fn color(text: &[u8]) -> Option<Rgba> {
     let channels = if text.first() == Some(&b'#') && (text.len() == 7 || text.len() == 9) {
         let pair = |i: usize| hex_to_int([text[i], text[i + 1]]);
         let alpha = if text.len() == 9 { pair(7) } else { 255 };

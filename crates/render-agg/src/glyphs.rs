@@ -13,24 +13,31 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use agg_rust::basics::{FillingRule, PATH_FLAGS_NONE};
+use agg_rust::basics::{FillingRule, PATH_FLAGS_NONE, VertexSource};
+use agg_rust::conv_contour::ConvContour;
 use agg_rust::conv_curve::ConvCurve;
 use agg_rust::path_storage::PathStorage;
 use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::scanline_u::ScanlineU8;
-use forager_render::{MAX_GLYPH_REACH, PathCommand};
+use forager_render::{GlyphOutline, MAX_GLYPH_REACH, PathCommand};
 use forager_style_ir::Rgba;
 
 use crate::{AggRenderer, CLIP_MARGIN};
 
 impl AggRenderer {
-    /// Fills `path` in `color` as `agg2RenderGlyphsPath` fills a text path: its curves flattened
-    /// by `conv_curve`, under the non-zero rule, with no gamma. A path with a point past
-    /// [`MAX_GLYPH_REACH`], or one that is no number, is not drawn: the engine leaves out and
-    /// reports such a glyph before it reaches the display list, so this guards the renderer
-    /// against any other display list.
-    pub(crate) fn glyphs(&mut self, path: &[PathCommand], color: Rgba) {
+    /// Draws `path` as `agg2RenderGlyphsPath` draws a text path, its curves flattened by
+    /// `conv_curve`, under the non-zero rule, with no gamma: first its outline, the
+    /// `conv_contour` of the curves at the outline's width, then its fill in `color`. A path with
+    /// a point past [`MAX_GLYPH_REACH`], or one that is no number, is not drawn: the engine
+    /// leaves out and reports such a glyph before it reaches the display list, so this guards
+    /// the renderer against any other display list.
+    pub(crate) fn glyphs(
+        &mut self,
+        path: &[PathCommand],
+        color: Option<Rgba>,
+        outline: Option<GlyphOutline>,
+    ) {
         let reach = f64::from(self.width.max(self.height)) + MAX_GLYPH_REACH;
         let mut storage = PathStorage::new();
         for command in path {
@@ -63,6 +70,22 @@ impl AggRenderer {
                 return;
             }
         }
+        if let Some(outline) = outline
+            && outline.width.is_finite()
+        {
+            let curves = ConvCurve::new(&mut storage);
+            let mut contour = ConvContour::new(curves);
+            contour.set_width(outline.width);
+            self.fill_glyphs(&mut contour, outline.color);
+        }
+        if let Some(color) = color {
+            let mut curves = ConvCurve::new(&mut storage);
+            self.fill_glyphs(&mut curves, color);
+        }
+    }
+
+    /// Fills `source` in `color` under the non-zero rule.
+    fn fill_glyphs<VS: VertexSource>(&mut self, source: &mut VS, color: Rgba) {
         let color = crate::rgba8(color);
         let (width, height) = (f64::from(self.width), f64::from(self.height));
         self.with_agg(|renderer| {
@@ -78,8 +101,7 @@ impl AggRenderer {
                 width + CLIP_MARGIN,
                 height + CLIP_MARGIN,
             );
-            let mut curves = ConvCurve::new(&mut storage);
-            rasterizer.add_path(&mut curves, 0);
+            rasterizer.add_path(source, 0);
             render_scanlines_aa_solid(&mut rasterizer, &mut scanline, renderer, &color);
         });
     }

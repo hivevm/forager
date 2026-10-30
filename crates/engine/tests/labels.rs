@@ -8,12 +8,14 @@ use std::path::PathBuf;
 
 use forager_adapter_geojson::GeoJsonSource;
 use forager_engine::{Rendered, render_with_files};
+use forager_label::{Anchor, Font, Glyphs, TextPath, metrics};
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
+use forager_render::{PathCommand, Point};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     AngleMode, Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, Op, Position,
-    RenderMode, Rgba, SourceRef, Span, Style, Units,
+    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -207,15 +209,10 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
         label
     };
     let not_drawn: [fn(&mut Label); 18] = [
-        |l| l.position = Some(Bound::Value(Position::Ul)),
-        |l| l.offset = Some([Bound::Value(2.0), Bound::Value(0.0)]),
-        |l| l.angle = Some(Bound::Value(30.0)),
         |l| l.angle_mode = Some(AngleMode::Follow),
-        |l| l.wrap = Some(" ".to_owned()),
         |l| l.max_length = Some(4.0),
         |l| l.priority = Some(Bound::Value(5.0)),
         |l| l.expression = Some(Expr::Bool(true)),
-        |l| l.outline_color = Some(Bound::Value(WHITE)),
         |l| l.shadow_color = Some(Bound::Value(WHITE)),
         |l| l.styles = vec![Style::default()],
         |l| l.min_scale_denom = Some(1000.0),
@@ -225,18 +222,15 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
                 binding: "font".to_owned(),
             });
         },
-        |l| {
-            l.size = Some(Bound::Binding {
-                binding: "size".to_owned(),
-            });
-        },
-        |l| {
-            l.color = Some(Bound::Binding {
-                binding: "colour".to_owned(),
-            });
-        },
         |l| l.font = None,
         |l| l.priority = Some(Bound::Value(0.5)),
+        |l| l.size = Some(Bound::Expr(Expr::property("x"))),
+        |l| l.color = Some(Bound::Expr(Expr::property("x"))),
+        |l| l.outline_color = Some(Bound::Expr(Expr::property("x"))),
+        |l| l.angle = Some(Bound::Expr(Expr::property("x"))),
+        |l| l.position = Some(Bound::Expr(Expr::property("x"))),
+        |l| l.align = Some(Bound::Expr(Expr::property("x"))),
+        |l| l.offset = Some([Bound::Value(1.0), Bound::Expr(Expr::property("x"))]),
     ];
     let mut cases: Vec<(Label, &str)> = not_drawn
         .into_iter()
@@ -252,7 +246,7 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
             "label-line-unsupported",
         ),
         (
-            with(|l| l.text = Some(Expr::String("two\nlines".to_owned()))),
+            with(|l| l.text = Some(Expr::String("two\nlin\u{2019}s".to_owned()))),
             "label-line-unsupported",
         ),
         (
@@ -393,7 +387,9 @@ impl forager_render::Renderer for LabelRecorder {
 
     fn draw(&mut self, item: &forager_render::DisplayItem) {
         if let forager_render::DrawOp::Glyphs { color, .. } = &item.op {
-            self.0.borrow_mut().push((item.feature_id.unwrap(), *color));
+            self.0
+                .borrow_mut()
+                .push((item.feature_id.unwrap(), color.unwrap()));
         }
     }
 
@@ -441,4 +437,402 @@ fn each_feature_is_labelled_by_the_class_that_draws_it() {
         rendered.diagnostics
     );
     assert_eq!(*recorder.0.borrow(), vec![(1, RED), (0, BLUE)]);
+}
+
+/// A renderer that keeps each label's display operation.
+#[derive(Clone, Default)]
+struct GlyphRecorder(std::rc::Rc<std::cell::RefCell<Vec<forager_render::DrawOp>>>);
+
+impl forager_render::Renderer for GlyphRecorder {
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+
+    fn draw(&mut self, item: &forager_render::DisplayItem) {
+        if matches!(item.op, forager_render::DrawOp::Glyphs { .. }) {
+            self.0.borrow_mut().push(item.op.clone());
+        }
+    }
+
+    fn begin_layer(&mut self) {}
+    fn end_layer(&mut self, _: u8) {}
+    fn finish(self) -> RgbaImage {
+        RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        }
+    }
+}
+
+/// The display operations of the labels of `map` over `geojson`, with no diagnostic.
+fn recorded(map: &Map, geojson: &str) -> Vec<forager_render::DrawOp> {
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(geojson).unwrap())].into();
+    let recorder = GlyphRecorder::default();
+    let rendered = ready(render_with_files(map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    recorder.0.take()
+}
+
+/// One feature named "Fen" at the pixel (80, 29).
+const FEN: &str = r#"{"type": "Feature", "properties": {"name": "Fen", "pos": "ul",
+    "x": "2.5", "y": "-3.5", "size": "14", "angle": "30", "outline": "255 255 0",
+    "align": "right", "bad": "zz"},
+    "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+
+/// The path of `text` in the test font at a glyph size of `size`, laid out on one line and drawn
+/// where the label crate places it at `anchor` of the pixel (80, 29), `ox` and `oy` away, turned
+/// by `degrees`.
+fn expected(
+    text: &str,
+    size: f64,
+    anchor: Anchor,
+    (ox, oy): (i32, i32),
+    degrees: f64,
+) -> Vec<PathCommand> {
+    let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+    let data = std::fs::read(file).unwrap();
+    let font = Font::new(&data).unwrap();
+    let chars: Vec<char> = text.chars().collect();
+    let ids = font.glyphs(&chars, true).unwrap().unwrap();
+    let mut glyphs = Glyphs::new(size);
+    let path = TextPath::new(&font, &mut glyphs, &ids).unwrap();
+    let rotation = degrees * 0.017_453_292_519_943_295;
+    let (origin, _) = metrics(
+        Point { x: 80.0, y: 29.0 },
+        anchor,
+        &path.text_box(),
+        ox,
+        oy,
+        rotation,
+        0,
+    );
+    let visible = [0.0, 0.0, 160.0, 60.0];
+    path.draw(std::slice::from_ref(&glyphs), origin, rotation, visible)
+        .path
+}
+
+fn glyph_path(op: &forager_render::DrawOp) -> &[PathCommand] {
+    match op {
+        forager_render::DrawOp::Glyphs { path, .. } => path,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_label_stands_at_its_position_offset_and_angle_as_the_placement_puts_it() {
+    // Verifies: ADR-0028
+    let fen = || Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        ..label_item()
+    };
+    for (position, anchor) in [
+        (Position::Ul, Anchor::Ul),
+        (Position::Uc, Anchor::Uc),
+        (Position::Ur, Anchor::Ur),
+        (Position::Cl, Anchor::Cl),
+        (Position::Cc, Anchor::Cc),
+        (Position::Cr, Anchor::Cr),
+        (Position::Ll, Anchor::Ll),
+        (Position::Lc, Anchor::Lc),
+        (Position::Lr, Anchor::Lr),
+        // Without the label cache every box fits: AUTO takes its first position, UL.
+        (Position::Auto, Anchor::Ul),
+    ] {
+        let label = Label {
+            position: Some(Bound::Value(position)),
+            offset: Some([Bound::Value(3.0), Bound::Value(-2.0)]),
+            angle: Some(Bound::Value(20.0)),
+            ..fen()
+        };
+        let ops = recorded(&map(label), FEN);
+        assert_eq!(ops.len(), 1);
+        assert_eq!(
+            glyph_path(&ops[0]),
+            expected("Fen", 12.0, anchor, (3, -2), 20.0),
+            "{position:?}"
+        );
+    }
+}
+
+#[test]
+fn a_label_moves_away_from_the_marker_its_class_draws_first() {
+    // Verifies: ADR-0028
+    // A circle 9 pixels across: its box in the marker cache spans 8, so the label at UR stands
+    // 4 + 3 = 7 across and 4 + 2 = 6 up; at CC the marker does not count. An outline adds half
+    // its width, 2 / 2.
+    let with_marker = |position, outline: Option<Rgba>| {
+        let mut map = map(Label {
+            text: Some(Expr::String("Fen".to_owned())),
+            position: Some(Bound::Value(position)),
+            offset: Some([Bound::Value(3.0), Bound::Value(2.0)]),
+            outline_color: outline.map(Bound::Value),
+            outline_width: Some(2.0),
+            ..label_item()
+        });
+        map.symbols = vec![Symbol {
+            name: Some("circle".to_owned()),
+            kind: SymbolKind::Ellipse,
+            paths: vec![vec![[1.0, 1.0]]],
+            extent: Some([1.0, 1.0]),
+            filled: true,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }];
+        map.layers[0].classes[0].styles = vec![Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            size: Some(Bound::Value(9.0)),
+            color: Some(Bound::Value(BLUE)),
+            ..Style::default()
+        }];
+        recorded(&map, FEN)
+    };
+    let ur = with_marker(Position::Ur, None);
+    assert_eq!(
+        glyph_path(&ur[0]),
+        expected("Fen", 12.0, Anchor::Ur, (7, 6), 0.0)
+    );
+    let cc = with_marker(Position::Cc, None);
+    assert_eq!(
+        glyph_path(&cc[0]),
+        expected("Fen", 12.0, Anchor::Cc, (3, 2), 0.0)
+    );
+    let outlined = with_marker(Position::Ur, Some(WHITE));
+    assert_eq!(
+        glyph_path(&outlined[0]),
+        expected("Fen", 12.0, Anchor::Ur, (8, 7), 0.0)
+    );
+}
+
+#[test]
+fn bound_properties_draw_as_their_values_do_once_bound_label_reads_them() {
+    // Verifies: ADR-0028
+    let fen = || Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        ..label_item()
+    };
+    let bound = Label {
+        position: Some(binding("pos")),
+        // 2.5 and -3.5 rounded half to even: 2 and -4.
+        offset: Some([binding("x"), binding("y")]),
+        size: Some(binding("size")),
+        angle: Some(binding("angle")),
+        outline_color: Some(binding("outline")),
+        align: Some(binding("align")),
+        ..fen()
+    };
+    let literal = Label {
+        position: Some(Bound::Value(Position::Ul)),
+        offset: Some([Bound::Value(2.0), Bound::Value(-4.0)]),
+        size: Some(Bound::Value(14.0)),
+        angle: Some(Bound::Value(30.0)),
+        outline_color: Some(Bound::Value(Rgba::opaque(255, 255, 0))),
+        align: Some(Bound::Value(forager_style_ir::Align::Right)),
+        ..fen()
+    };
+    assert_eq!(recorded(&map(bound), FEN), recorded(&map(literal), FEN));
+    // MapServer's position constant, 101 for UL, reads as its name does.
+    let numbered = r#"{"type": "Feature", "properties": {"pos": "101"},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let by_number = Label {
+        position: Some(binding("pos")),
+        ..fen()
+    };
+    let ul = Label {
+        position: Some(Bound::Value(Position::Ul)),
+        ..fen()
+    };
+    assert_eq!(
+        recorded(&map(by_number), numbered),
+        recorded(&map(ul), numbered)
+    );
+}
+
+#[test]
+fn a_bound_position_or_alignment_that_names_none_is_not_drawn_yet() {
+    // MapServer keeps the value an earlier feature or the mapfile left, which the style IR does
+    // not carry; an alignment matters only to several lines.
+    let codes = |label: Label| {
+        let rendered = render(&map(label), FEN);
+        rendered
+            .diagnostics
+            .iter()
+            .map(|d| d.code.clone())
+            .collect::<Vec<_>>()
+    };
+    let fen = |text: &str| Label {
+        text: Some(Expr::String(text.to_owned())),
+        ..label_item()
+    };
+    assert_eq!(
+        codes(Label {
+            position: Some(binding("bad")),
+            ..fen("Fen")
+        }),
+        ["label-binding-unsettled"]
+    );
+    assert!(
+        codes(Label {
+            align: Some(binding("bad")),
+            ..fen("Fen")
+        })
+        .is_empty()
+    );
+    assert_eq!(
+        codes(Label {
+            align: Some(binding("bad")),
+            ..fen("F\nen")
+        }),
+        ["label-binding-unsettled"]
+    );
+}
+
+#[test]
+fn a_wrapped_turned_and_outlined_label_matches_its_reference() {
+    // Verifies: ADR-0028
+    // Three lines centred, turned by 15 degrees, at LR with an offset, outlined 2 pixels wide in
+    // yellow: the outline is drawn first, as the contour of the glyphs, then the fill.
+    let label = Label {
+        text: Some(Expr::String("Fen Forager l".to_owned())),
+        wrap: Some(" ".to_owned()),
+        align: Some(Bound::Value(forager_style_ir::Align::Center)),
+        position: Some(Bound::Value(Position::Lr)),
+        offset: Some([Bound::Value(4.0), Bound::Value(-20.0)]),
+        angle: Some(Bound::Value(15.0)),
+        outline_color: Some(Bound::Value(Rgba::opaque(240, 200, 0))),
+        outline_width: Some(2.0),
+        ..label_item()
+    };
+    let one = r#"{"type": "Feature", "properties": {},
+        "geometry": {"type": "Point", "coordinates": [30, 30]}}"#;
+    let rendered = render(&map(label), one);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert!(
+        image.pixels.chunks(4).any(|p| p == [240, 200, 0, 255]),
+        "the outline"
+    );
+    assert!(
+        image.pixels.chunks(4).any(|p| p == [30, 60, 200, 255]),
+        "the fill"
+    );
+    assert_matches_reference(&image, "label_wrapped_outlined.png");
+}
+
+/// A property bound to the feature's property `name`.
+fn binding<T>(name: &str) -> Bound<T> {
+    Bound::Binding {
+        binding: name.to_owned(),
+    }
+}
+
+#[test]
+fn the_outline_of_a_glyph_just_outside_the_image_still_paints_its_edge() {
+    // Verifies: ADR-0028
+    // An `l` left of the image's left edge, at CL of the pixel (0, 29), its box ending a pixel
+    // left of the image: its glyph lies wholly outside, yet its outline, 7 wide, reaches
+    // 3.5 pixels beyond it, into column 0.
+    let mut map = map(Label {
+        text: Some(Expr::String("l".to_owned())),
+        position: Some(Bound::Value(Position::Cl)),
+        offset: Some([Bound::Value(-1.0), Bound::Value(0.0)]),
+        outline_color: Some(Bound::Value(Rgba::opaque(240, 200, 0))),
+        outline_width: Some(6.0),
+        ..label_item()
+    });
+    map.layers[0].classes[0].labels[0].size = Some(Bound::Value(10.0));
+    let one = r#"{"type": "Feature", "properties": {},
+        "geometry": {"type": "Point", "coordinates": [0, 30]}}"#;
+    let rendered = render(&map, one);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert!(
+        ink(&image, (0, 1), (0, 60)).is_some(),
+        "the outline paints column 0"
+    );
+    let unoutlined = render(
+        &{
+            let mut m = map.clone();
+            m.layers[0].classes[0].labels[0].outline_color = None;
+            m
+        },
+        one,
+    );
+    assert_eq!(
+        ink(&unoutlined.image.unwrap(), (0, 160), (0, 60)),
+        None,
+        "the glyph alone lies outside"
+    );
+}
+
+#[test]
+fn the_outline_width_is_scaled_by_the_glyph_size_over_the_size_and_rounded_half_to_even() {
+    // Verifies: ADR-0028
+    // SIZE 10 held at MINSIZE 15: 3 × (15 / 10) = 4.5, MS_NINT gives 4, AGG's contour 5.
+    let label = Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        size: Some(Bound::Value(10.0)),
+        min_size: Some(15.0),
+        outline_color: Some(Bound::Value(WHITE)),
+        outline_width: Some(3.0),
+        ..label_item()
+    };
+    let ops = recorded(&map(label), FEN);
+    let forager_render::DrawOp::Glyphs { outline, .. } = &ops[0] else {
+        panic!("{:?}", ops[0]);
+    };
+    assert_eq!(outline.map(|o| o.width), Some(5.0));
+}
+
+#[test]
+fn a_label_moves_away_from_a_simple_marker_without_points_as_from_one_pixel_a_size() {
+    // Verifies: ADR-0028
+    // initSymbol sizes a symbol without POINTS 1 by 1: SIZE 10 draws it 10 by 10, so the label
+    // at UR stands (10 - 1) / 2 + 3 = 7.5, cut to 7, across and up.
+    let mut map = map(Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        position: Some(Bound::Value(Position::Ur)),
+        offset: Some([Bound::Value(3.0), Bound::Value(3.0)]),
+        ..label_item()
+    });
+    map.symbols = vec![Symbol {
+        name: Some("simple".to_owned()),
+        kind: SymbolKind::Simple,
+        paths: vec![],
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    }];
+    map.layers[0].classes[0].styles = vec![Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: Some(Bound::Value(10.0)),
+        color: Some(Bound::Value(BLUE)),
+        ..Style::default()
+    }];
+    let ops = recorded(&map, FEN);
+    assert_eq!(
+        glyph_path(&ops[0]),
+        expected("Fen", 12.0, Anchor::Ur, (7, 7), 0.0)
+    );
 }
