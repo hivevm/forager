@@ -19,7 +19,7 @@ use forager_style_ir::{
     Align, AngleMode, Bound, Expr, Force, GeomTransform, Label, MinFeatureSize, Position,
 };
 
-use super::{Range, Translator, kept_binding, kept_bindings};
+use super::{Range, Translator, binding_of, kept_binding, kept_bindings};
 use crate::expression;
 use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
@@ -87,6 +87,10 @@ impl Translator<'_> {
                     "MINSIZE" => label.min_size = self.number(d, Range::above(0.0)).map(f64::trunc),
                     "MAXSIZE" => label.max_size = self.number(d, Range::above(0.0)).map(f64::trunc),
                     // loadLabel reads it with loadColor(…, NULL), which takes no binding.
+                    "SHADOWCOLOR" if binding_of::<()>(d).is_some() => {
+                        let message = "SHADOWCOLOR takes a colour, not an attribute";
+                        self.error("invalid-value", message, &d.span);
+                    }
                     "SHADOWCOLOR" => label.shadow_color = self.color(d).map(Bound::Value),
                     "OUTLINEWIDTH" => {
                         label.outline_width = self.number(d, Range::above(0.0)).map(f64::trunc);

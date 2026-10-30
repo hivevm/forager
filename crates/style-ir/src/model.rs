@@ -466,8 +466,8 @@ pub struct Label {
     pub font: Option<Bound<String>>,
     /// The size in points; MapServer's bitmap sizes `tiny` to `giant` stand as 5, 7, 10, 13, 16.
     /// A bound value is rounded to an integer, as MapServer's `bindLabel` reads it with
-    /// `bindIntegerAttribute`: `MS_NINT(atof(value))`, `lrint` at the pin, half to even. An empty
-    /// value is 1.
+    /// `bindIntegerAttribute`: `MS_NINT(atof(value))`, `lrint` at the pin, half to even, undefined
+    /// past a `long`, and the `long` narrowed to an `int`. An empty value is 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<Bound<f64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -480,8 +480,8 @@ pub struct Label {
     pub outline_color: Option<Bound<Rgba>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outline_width: Option<f64>,
-    /// Takes no binding: MapServer's `loadLabel` reads it with `loadColor` and no binding, and
-    /// refuses a mapfile that binds it.
+    /// The mapfile frontend gives a value only, never a binding or an expression: MapServer's
+    /// `loadLabel` reads it with `loadColor` and no binding, and refuses a mapfile that binds it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_color: Option<Bound<Rgba>>,
     /// The shadow's offset, `[x, y]`. A bound value is rounded to an integer as a bound `size`
@@ -492,7 +492,11 @@ pub struct Label {
     /// bound `size` is, which where it is not 0 is taken as MapServer's position constant without
     /// a range check (`MS_UL` 101, `MS_LR`, `MS_UR`, `MS_LL`, `MS_CR`, `MS_CL`, `MS_UC`, `MS_LC`,
     /// `MS_CC`, `MS_AUTO` 110); where it is 0, a value of exactly two characters that is one of
-    /// `ul` … `lr` and `cc`, compared without case.
+    /// `ul` … `lr` and `cc`, compared without case. A value that reads as 0 and matches none, an
+    /// empty one among them, leaves the position as it stood: the previous feature's, or on the
+    /// first feature the one the load left, `MS_BINDING` (2007) where the binding is the last
+    /// `POSITION`, else the last keyword. What is drawn there is not settled until the engine
+    /// draws bound label values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<Bound<Position>>,
     /// `[x, y]`. A bound value is rounded to an integer as a bound `size` is; an empty one is 0.
@@ -507,7 +511,10 @@ pub struct Label {
     /// bound `size` is, which where it is not 0 is taken as MapServer's alignment constant
     /// without a range check (`MS_ALIGN_LEFT` 1, `MS_ALIGN_CENTER` 2, `MS_ALIGN_RIGHT` 3); where
     /// it is 0, a value of at least four characters that begins with `left`, `cente`, or `right`,
-    /// compared without case.
+    /// compared without case. A value that reads as 0 and matches none, an empty one among them,
+    /// leaves the alignment as it stood: the previous feature's, or on the first feature the one
+    /// the load left, a keyword `ALIGN` before or after the binding, else `MS_ALIGN_DEFAULT` 0.
+    /// What is drawn there is not settled until the engine draws bound label values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub align: Option<Bound<Align>>,
     /// The character at which the text wraps.
@@ -629,11 +636,11 @@ pub enum Units {
 pub enum Bound<T> {
     Value(T),
     /// The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a
-    /// number with C's `atof`, a label's as its property says (`bindLabel`), a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated
-    /// by spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`
-    /// sets before it reads one, which for a size, an outline width, or an angle is not the value
-    /// the property has without the binding (docs/semantics/binding.md), and a colour that does not
-    /// read leaves no colour.
+    /// number with C's `atof`, a label's integer properties as the property says (`bindLabel`), a
+    /// colour as `#rrggbb`, `#rrggbbaa`, or three integers separated by spaces, each with C's
+    /// `atoi`. An empty value leaves a number at the value `bindStyle` sets before it reads one,
+    /// which for a size, an outline width, or an angle is not the value the property has without
+    /// the binding (docs/semantics/binding.md), and a colour that does not read leaves no colour.
     Binding {
         binding: String,
     },

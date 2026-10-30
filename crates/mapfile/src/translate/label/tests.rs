@@ -486,6 +486,10 @@ fn a_shadow_colour_takes_no_attribute() {
     )]);
     assert_eq!(codes(&loaded), ["invalid-value"]);
     assert_eq!(
+        loaded.diagnostics[0].message,
+        "SHADOWCOLOR takes a colour, not an attribute"
+    );
+    assert_eq!(
         loaded.diagnostics[0].span,
         Some(forager_style_ir::Span::new("m.map", 2, 3)),
         "at the directive"
