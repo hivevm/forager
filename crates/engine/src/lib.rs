@@ -9,6 +9,7 @@ mod draw;
 mod extent;
 mod fonts;
 mod labels;
+mod line_marker;
 mod offset;
 mod symbol;
 
@@ -19,18 +20,17 @@ use forager_ports::{
     Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Renderer, RgbaImage};
-use forager_style_ir::{
-    Bound, Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
-};
+use forager_style_ir::{Bound, Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
 
 use forager_expr::Evaluator;
 
 use crate::classes::{Reports, Selector};
-use crate::draw::{Pass, can_draw, draw_ops, kind, passes};
+use crate::draw::{Canvas, Pass, can_draw, draw_ops, kind, passes};
 
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
 pub use crate::fonts::MAX_FONT_BYTES;
+pub use crate::line_marker::MAX_MARKER_POINTS;
 
 use crate::labels::Labels;
 
@@ -131,9 +131,21 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             layer,
             scale,
             view: &view,
-            symbols: &map.symbols,
         };
-        drawing.draw(&mut renderer, &selected);
+        let mut canvas = Canvas::new(&map.symbols, width, height);
+        drawing.draw(&mut renderer, &mut canvas, &selected);
+        if canvas.markers_spent() {
+            let message = format!(
+                "layer {}: its symbols along lines exceed {MAX_MARKER_POINTS} points; those \
+                 past the limit are not drawn",
+                name(layer)
+            );
+            diagnostics.push(Diagnostic::warning(
+                "line-markers-over-limit",
+                message,
+                layer.span.clone(),
+            ));
+        }
         for (kind, count) in undrawn {
             let message = format!(
                 "layer {} cannot draw {count} {kind} geometr{} in its render mode",
@@ -174,7 +186,6 @@ struct Drawing<'a> {
     /// The map's scale, which a style's scale range is compared to.
     scale: f64,
     view: &'a View,
-    symbols: &'a [Symbol],
 }
 
 impl Drawing<'_> {
@@ -183,21 +194,14 @@ impl Drawing<'_> {
     /// and the rest from its cache, style by style, after every feature; any other draws all its
     /// styles at once. A style outside its scale range draws nothing, where msDrawShape and the
     /// cache's pass skip it.
-    fn draw<R: Renderer>(&self, renderer: &mut R, selected: &[Selected<'_>]) {
+    fn draw<R: Renderer>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
         let mode = self.mode;
         let mut draw = |feature: &Feature, style: &Style, passes: &[Pass]| {
             if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
                 return;
             }
             for &pass in passes {
-                for op in draw_ops(
-                    mode,
-                    &feature.geometry,
-                    style,
-                    pass,
-                    self.view,
-                    self.symbols,
-                ) {
+                for op in draw_ops(mode, &feature.geometry, style, pass, self.view, canvas) {
                     renderer.draw(&DisplayItem {
                         op,
                         feature_id: Some(feature.id),

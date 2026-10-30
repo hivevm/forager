@@ -314,7 +314,7 @@ renderers/legend_sizeunits_meters.map legend_sizeunits_meters.cairo.png out: an 
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.svg out: an OGC or CGI request
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.pdf out: an OGC or CGI request
 renderers/line_aliased.map line_aliased.png geometry fails  # not built yet: the transparent background of IMAGEMODE RGBA
-renderers/line_anchorpoint.map line_anchorpoint.png geometry fails  # not built yet: inline FEATURE shapes and vector symbols along a line
+renderers/line_anchorpoint.map line_anchorpoint.png geometry fails  # not built yet: inline FEATURE shapes
 renderers/line_anchorpoint.map line_anchorpoint.cairo.png out: another output format, cairopng
 renderers/line_antialiased.map line_anti_aliased.png geometry fails  # not built yet: the transparent background of IMAGEMODE RGBA
 renderers/line_label_auto.map line_label_auto.png out: labels
@@ -342,15 +342,15 @@ renderers/line_marker_pixmap.map line_marker_pixmap.png geometry fails  # not bu
 renderers/line_marker_pixmap.map line_marker_pixmap.pdf out: another output format, pdf
 renderers/line_marker_pixmap.map line_marker_pixmap.svg out: another output format, svg
 renderers/line_marker_pixmap.map line_marker_pixmap.cairo.png out: another output format, cairopng
-renderers/line_marker_svg.map line_marker_svg.png geometry fails  # not built yet: SVG and vector symbols along a line
+renderers/line_marker_svg.map line_marker_svg.png geometry fails  # not built yet: SVG symbols along a line
 renderers/line_marker_svg.map line_marker_svg.pdf out: another output format, pdf
 renderers/line_marker_svg.map line_marker_svg.svg out: another output format, svg
 renderers/line_marker_svg.map line_marker_svg.cairo.png out: another output format, cairopng
-renderers/line_marker_truetype.map line_marker_truetype.png geometry fails  # not built yet: TrueType and vector symbols along a line
+renderers/line_marker_truetype.map line_marker_truetype.png geometry fails  # not built yet: TrueType symbols along a line
 renderers/line_marker_truetype.map line_marker_truetype.pdf out: another output format, pdf
 renderers/line_marker_truetype.map line_marker_truetype.svg out: another output format, svg
 renderers/line_marker_truetype.map line_marker_truetype.cairo.png out: another output format, cairopng
-renderers/line_marker_vector.map line_marker_vector.png geometry fails  # not built yet: vector symbols along a line
+renderers/line_marker_vector.map line_marker_vector.png geometry passes
 renderers/line_marker_vector.map line_marker_vector.pdf out: another output format, pdf
 renderers/line_marker_vector.map line_marker_vector.svg out: another output format, svg
 renderers/line_marker_vector.map line_marker_vector.cairo.png out: another output format, cairopng
@@ -372,7 +372,7 @@ renderers/line_pattern_offset.map line_pattern_offset.png geometry fails  # not 
 renderers/line_pattern_offset.map line_pattern_offset.pdf out: another output format, pdf
 renderers/line_pattern_offset.map line_pattern_offset.svg out: another output format, svg
 renderers/line_pattern_offset.map line_pattern_offset.cairo.png out: another output format, cairopng
-renderers/line_short_gap.map line_short_gap.png geometry fails  # not built yet: inline FEATURE shapes and vector symbols along a line
+renderers/line_short_gap.map line_short_gap.png geometry fails  # not built yet: inline FEATURE shapes
 renderers/line_short_gap.map line_short_gap.pdf out: another output format, pdf
 renderers/line_short_gap.map line_short_gap.svg out: another output format, svg
 renderers/line_short_gap.map line_short_gap.cairo.png out: another output format, cairopng
@@ -497,7 +497,7 @@ renderers/polygon-vector.map polygon-vector.png geometry fails  # not built yet:
 renderers/polygon-vector.map polygon-vector.pdf out: another output format, pdf
 renderers/polygon-vector.map polygon-vector.svg out: another output format, svg
 renderers/polygon-vector.map polygon-vector.cairo.png out: another output format, cairopng
-renderers/polyline_no_clip.map polyline_no_clip.png geometry fails  # not built yet: inline FEATURE shapes and vector symbols along a line
+renderers/polyline_no_clip.map polyline_no_clip.png geometry fails  # not built yet: inline FEATURE shapes
 renderers/raster_simple.map raster_simple.png out: a raster source
 renderers/raster_simple.map raster_simple.pdf out: another output format, pdf
 renderers/raster_simple.map raster_simple.svg out: another output format, svg

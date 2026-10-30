@@ -681,3 +681,116 @@ fn a_point_outside_the_extent_draws_no_square() {
         .unwrap();
     assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
+
+/// An L from pixel (10, 20) right to (90, 20), then down to (90, 90).
+const ELL: &str = r#"{"type": "LineString", "coordinates": [[10, 80], [90, 80], [90, 10]]}"#;
+
+/// A line layer of [`symbols`] drawing `styles` along [`ELL`].
+fn render_markers(styles: Vec<Style>) -> Rendered {
+    let mut map = map_with(RenderMode::Line, styles);
+    map.symbols = symbols();
+    render_with(&map, Some(ELL))
+}
+
+#[test]
+fn symbols_stand_along_a_line_by_gap_and_initial_gap() {
+    // The filled head, SIZE 9: a negative GAP of 20 from the INITIALGAP 10 places it at 10, 30,
+    // 50, and 70 along the first segment, pixels (20, 20) to (80, 20), and carries 10 into the
+    // second, (90, 30) to (90, 90), each head turned with its segment. The circle, SIZE 4, a
+    // positive GAP of 25 without INITIALGAP: from 12.5, at x = 22.5, 47.5, 72.5, upright.
+    let heads = Style {
+        color: Some(Bound::Value(BLUE)),
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        size: Some(Bound::Value(9.0)),
+        gap: Some(-20.0),
+        initial_gap: Some(10.0),
+        ..Style::default()
+    };
+    let circles = Style {
+        color: Some(Bound::Value(GREEN)),
+        symbol: Some(Bound::Value(SymbolRef::Index(3))),
+        size: Some(Bound::Value(4.0)),
+        gap: Some(25.0),
+        ..Style::default()
+    };
+    let rendered = render_markers(vec![line_style(BLACK, 1.0), heads, circles]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    // A head points up on the first segment: its apex above the line, its notch below.
+    for x in [40, 60] {
+        assert_eq!(image.pixel(x, 20), Some(BLUE), "a head at ({x}, 20)");
+        assert_eq!(
+            image.pixel(x, 18),
+            Some(BLUE),
+            "towards the apex at ({x}, 20)"
+        );
+        assert_eq!(image.pixel(x, 22), Some(WHITE), "in the notch at ({x}, 20)");
+    }
+    assert_ne!(
+        image.pixel(30, 20),
+        Some(WHITE),
+        "the line between two heads"
+    );
+    assert_eq!(
+        image.pixel(72, 20),
+        Some(GREEN),
+        "a circle, drawn over the line"
+    );
+    // On the second the heads turn by -90°, clockwise on the image: their apex to the right.
+    for y in [50, 70] {
+        assert_eq!(
+            image.pixel(92, y),
+            Some(BLUE),
+            "towards the apex of the head at (90, {y})"
+        );
+        assert_eq!(
+            image.pixel(90, y - 2),
+            Some(BLUE),
+            "an arm of the head at (90, {y})"
+        );
+    }
+    assert_matches_reference(&image, "line_markers.png");
+}
+
+#[test]
+fn a_polygon_outlined_with_a_symbol_and_a_gap_marks_its_rings() {
+    // msDrawShadeSymbol hands a polygon without a COLOR to msDrawLineSymbol: the circles stand
+    // along the outer ring from pixel (10, 90) rightwards, from 10 every 20. A filled symbol of
+    // a style with only an OUTLINECOLOR is outlined, not filled (computeSymbolStyle).
+    let style = Style {
+        outline_color: Some(Bound::Value(BLUE)),
+        symbol: Some(Bound::Value(SymbolRef::Index(3))),
+        size: Some(Bound::Value(6.0)),
+        gap: Some(20.0),
+        ..Style::default()
+    };
+    let mut map = map(RenderMode::Polygon, style);
+    map.symbols = symbols();
+    let image = render_with(&map, Some(SQUARE_WITH_HOLE)).image.unwrap();
+    assert_matches_reference(&image, "polygon_markers.png");
+}
+
+#[test]
+fn a_tiny_gap_draws_no_markers_and_says_so() {
+    // Verifies: Q-9
+    let heads = Style {
+        color: Some(Bound::Value(BLUE)),
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        size: Some(Bound::Value(9.0)),
+        gap: Some(-0.0001),
+        ..Style::default()
+    };
+    let rendered = render_markers(vec![heads]);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, vec!["line-markers-over-limit"]);
+    let image = rendered.image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
