@@ -737,3 +737,102 @@ fn binding<T>(name: &str) -> Bound<T> {
         binding: name.to_owned(),
     }
 }
+
+#[test]
+fn the_outline_of_a_glyph_just_outside_the_image_still_paints_its_edge() {
+    // Verifies: ADR-0028
+    // An `l` left of the image's left edge, at CL of the pixel (0, 29), its box ending a pixel
+    // left of the image: its glyph lies wholly outside, yet its outline, 7 wide, reaches
+    // 3.5 pixels beyond it, into column 0.
+    let mut map = map(Label {
+        text: Some(Expr::String("l".to_owned())),
+        position: Some(Bound::Value(Position::Cl)),
+        offset: Some([Bound::Value(-1.0), Bound::Value(0.0)]),
+        outline_color: Some(Bound::Value(Rgba::opaque(240, 200, 0))),
+        outline_width: Some(6.0),
+        ..label_item()
+    });
+    map.layers[0].classes[0].labels[0].size = Some(Bound::Value(10.0));
+    let one = r#"{"type": "Feature", "properties": {},
+        "geometry": {"type": "Point", "coordinates": [0, 30]}}"#;
+    let rendered = render(&map, one);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert!(
+        ink(&image, (0, 1), (0, 60)).is_some(),
+        "the outline paints column 0"
+    );
+    let unoutlined = render(
+        &{
+            let mut m = map.clone();
+            m.layers[0].classes[0].labels[0].outline_color = None;
+            m
+        },
+        one,
+    );
+    assert_eq!(
+        ink(&unoutlined.image.unwrap(), (0, 160), (0, 60)),
+        None,
+        "the glyph alone lies outside"
+    );
+}
+
+#[test]
+fn the_outline_width_is_scaled_by_the_glyph_size_over_the_size_and_rounded_half_to_even() {
+    // Verifies: ADR-0028
+    // SIZE 10 held at MINSIZE 15: 3 × (15 / 10) = 4.5, MS_NINT gives 4, AGG's contour 5.
+    let label = Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        size: Some(Bound::Value(10.0)),
+        min_size: Some(15.0),
+        outline_color: Some(Bound::Value(WHITE)),
+        outline_width: Some(3.0),
+        ..label_item()
+    };
+    let ops = recorded(&map(label), FEN);
+    let forager_render::DrawOp::Glyphs { outline, .. } = &ops[0] else {
+        panic!("{:?}", ops[0]);
+    };
+    assert_eq!(outline.map(|o| o.width), Some(5.0));
+}
+
+#[test]
+fn a_label_moves_away_from_a_simple_marker_without_points_as_from_one_pixel_a_size() {
+    // Verifies: ADR-0028
+    // initSymbol sizes a symbol without POINTS 1 by 1: SIZE 10 draws it 10 by 10, so the label
+    // at UR stands (10 - 1) / 2 + 3 = 7.5, cut to 7, across and up.
+    let mut map = map(Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        position: Some(Bound::Value(Position::Ur)),
+        offset: Some([Bound::Value(3.0), Bound::Value(3.0)]),
+        ..label_item()
+    });
+    map.symbols = vec![Symbol {
+        name: Some("simple".to_owned()),
+        kind: SymbolKind::Simple,
+        paths: vec![],
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    }];
+    map.layers[0].classes[0].styles = vec![Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: Some(Bound::Value(10.0)),
+        color: Some(Bound::Value(BLUE)),
+        ..Style::default()
+    }];
+    let ops = recorded(&map, FEN);
+    assert_eq!(
+        glyph_path(&ops[0]),
+        expected("Fen", 12.0, Anchor::Ur, (7, 7), 0.0)
+    );
+}

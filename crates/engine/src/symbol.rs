@@ -171,7 +171,8 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol) -> SymbolStyle {
 /// msGetMarkerSize for a vector or ellipse symbol at `scale_factor`: the width and height it is
 /// drawn at, from a size cut to whole pixels, or its own extent for a style without a size.
 fn marker_size(style: &Style, symbol: &Symbol, scale_factor: f64) -> (f64, f64) {
-    let [size_x, size_y] = symbol.extent.unwrap_or([0.0, 0.0]);
+    // initSymbol's 1 by 1 for a symbol without points.
+    let [size_x, size_y] = symbol.extent.unwrap_or([1.0, 1.0]);
     let size = fixed(&style.size);
     // `size` is an int there: each assignment cuts the fraction.
     let pixels = (size.unwrap_or_else(|| default_size(symbol)) * scale_factor).trunc();

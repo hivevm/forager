@@ -212,8 +212,8 @@ impl Translator<'_> {
         true
     }
 
-    /// A label's `SIZE`: a number above 0, MapServer's bitmap sizes, an attribute, or an
-    /// expression.
+    /// A label's `SIZE`: a number above 0, cut to an integer as loadLabel stores it in the
+    /// label's `int`, MapServer's bitmap sizes, an attribute, or an expression.
     fn label_size(&mut self, d: &Directive) -> Option<Bound<f64>> {
         // MS_TINY to MS_GIANT, src/mapserver.h.
         let bitmap = [
@@ -229,7 +229,7 @@ impl Translator<'_> {
         {
             return Some(Bound::Value(*size));
         }
-        self.bound_number(d, Range::above(0.0), true)
+        self.bound_number(d, Range::above(0.0), true).map(truncated)
     }
 
     /// A label's `ANGLE`: a number from -360 to 360, an attribute, or `AUTO`, `AUTO2`, `FOLLOW`.

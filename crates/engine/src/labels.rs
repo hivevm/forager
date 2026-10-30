@@ -377,11 +377,18 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             }
             let at = label.label.map(|i| i as usize);
             let at = (at[0], at[1], at[2]);
+            // An outline reaches past its glyphs: half its width, and at a sharp corner a miter
+            // up to its whole width, so a glyph that close outside the image is drawn for it.
+            let reach = label
+                .outline
+                .map_or(0.0, |(_, width)| 2.0 * f64::from(width).abs());
+            let [x0, y0, x1, y1] = self.image;
+            let visible = [x0 - reach, y0 - reach, x1 + reach, y1 + reach];
             let drawn = self.paths[label.path as usize].draw(
                 &self.glyphs,
                 label.origin,
                 label.rotation,
-                self.image,
+                visible,
             );
             if drawn.out_of_reach > 0 {
                 let why = format!(

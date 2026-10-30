@@ -274,7 +274,12 @@ fn each_number_is_checked_as_load_label_checks_it() {
     assert_eq!(label.min_size, Some(0.0), "cast after the check");
     assert_eq!(label.buffer, Some(2.0));
     assert_eq!(label.min_feature_size, Some(MinFeatureSize::Pixels(0.0)));
-    assert_eq!(label.size, Some(Bound::Value(7.5)), "SIZE is a double");
+    // labelObj's size is an int at the pin (src/mapserver.h): the double is cut as it is stored.
+    assert_eq!(
+        label.size,
+        Some(Bound::Value(7.0)),
+        "SIZE is cut after the check"
+    );
 }
 
 #[test]
@@ -289,6 +294,12 @@ fn offset_shadow_size_and_priority_are_cast_to_integers() {
         Some([Bound::Value(2.0), binding("s").unwrap()])
     );
     assert_eq!(label.priority, Some(Bound::Value(9.0)));
+    // SIZE too, `label->size = (double)msyynumber` into an int after the check above 0.
+    for (size, held) in [("SIZE 10.7", 10.0), ("SIZE 0.5", 0.0)] {
+        let (codes, label) = label_of(size);
+        assert!(codes.is_empty(), "{codes:?}");
+        assert_eq!(label.unwrap().size, Some(Bound::Value(held)), "{size}");
+    }
 }
 
 #[test]
