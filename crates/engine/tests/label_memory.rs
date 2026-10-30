@@ -12,7 +12,8 @@ use forager_engine::render_with_files;
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::{DisplayItem, Renderer, RgbaImage};
 use forager_style_ir::{
-    Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, Op, RenderMode, Rgba, SourceRef,
+    Bound, Class, Expr, Extent, Force, Label, Layer, LayerStatus, Map, Op, RenderMode, Rgba,
+    SourceRef,
 };
 use peak_alloc::PeakAlloc;
 
@@ -58,6 +59,8 @@ fn map(labelled: bool) -> Map {
     let label = Label {
         text: labelled.then(|| Expr::call(Op::ToString, vec![Expr::property("name")])),
         font: Some(Bound::Value("sans".to_owned())),
+        // Forced, so that every label is drawn and held by the label cache, though they overlap.
+        force: Some(Force::On),
         ..Label::default()
     };
     Map {
@@ -127,8 +130,8 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
     let (without, none) = peak(&map(false), &sources);
     let (with, drawn) = peak(&map(true), &sources);
     assert_eq!((none, drawn), (0, POINTS), "every label is drawn");
-    // About 360 bytes: the label's glyph indices, its line, its box, and its point; its path, of
-    // thousands of bytes, is built only as it is drawn.
+    // About 360 bytes: the label's glyph indices, its line, its box, its point, and its place in
+    // the label cache; its path, of thousands of bytes, is built only as it is drawn.
     let per_label = with.saturating_sub(without) / POINTS;
     assert!(
         per_label < 400,

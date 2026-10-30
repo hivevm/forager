@@ -2,8 +2,7 @@
 // point label's position and offsets, src/mapdraw.c, msAddLabelGroup and msComputeTextPath,
 // src/maplabel.c, bindLabel and bindIntegerAttribute, src/maputil.c, msGetMarkerSize,
 // src/mapsymbol.c, and msDrawTextSymbol, src/maprendering.c, of MapServer at the release pinned
-// in scripts/fetch-msautotest.sh, for labels without the collisions of the label cache
-// (ADR-0028).
+// in scripts/fetch-msautotest.sh, with the label cache of the label crate (ADR-0028).
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Copyright (c) 1996-2013 Regents of the University of Minnesota.
@@ -23,8 +22,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use forager_expr::atof;
 use forager_label::{
-    Align, Anchor, Font, Glyphs, Layout, LineError, Offsets, PointLabel, Position, TextPath,
-    glyph_size, lines, pixel_size, place,
+    Align, Anchor, Font, Glyphs, Layout, LineError, MAX_LABELS, MAX_PRIORITY, Member, Members,
+    Offsets, PointLabel, Position, TextPath, draw_label_cache, glyph_size, lines, pixel_size,
 };
 use forager_ports::{Feature, Properties, ResourceLoader, Value};
 use forager_render::{DisplayItem, DrawOp, GlyphOutline, Point, Renderer};
@@ -33,7 +32,7 @@ use forager_style_ir::{
     Position as IrPosition, Rgba, Span, Style, Units,
 };
 
-use crate::classes::{FeatureProperties, c_bytes, color};
+use crate::classes::{FeatureProperties, Selector, c_bytes, color};
 use crate::draw::vertices;
 use crate::extent::View;
 use crate::fonts::Fonts;
@@ -73,10 +72,13 @@ struct Fixed<'a> {
     angle: Prop<'a, f64>,
     position: Prop<'a, Position>,
     align: Prop<'a, Align>,
+    priority: Prop<'a, f64>,
     /// The layer's scale factor and the image's resolution factor, which are one here.
     factor: f64,
     buffer: f64,
     force: bool,
+    partials: bool,
+    min_distance: f64,
 }
 
 /// A label's properties for one feature, as `bindLabel` leaves them.
@@ -89,6 +91,8 @@ struct BoundLabel {
     /// `None` where a bound value names no position or alignment.
     position: Option<Position>,
     align: Option<Align>,
+    /// From 1 to [`MAX_PRIORITY`].
+    priority: u8,
 }
 
 /// Why a label's text is not laid out: no font of its list draws a line, or its font cannot draw
@@ -101,26 +105,48 @@ enum Unlaid {
 /// A label of the render by its layer's index, its class's, and its index in the class.
 type LabelAt = (usize, usize, usize);
 
-/// [`LabelAt`] as a placed label holds it.
-type HeldAt = [u32; 3];
+/// What of a label is the same for all its features, as the label cache reads it.
+struct Def {
+    at: LabelAt,
+    /// The buffer in whole pixels.
+    buffer: i32,
+    force: bool,
+    partials: bool,
+    /// `MINDISTANCE` in pixels.
+    min_distance: f64,
+    /// What an outline adds to the offset from a marker: half its width, scaled.
+    outline_grow: f64,
+}
 
-/// One label placed at one point, held until the labels are drawn: its text path, and where and
-/// how it is drawn.
-struct Placed {
-    origin: Point,
+/// A path that stands for a text of line breaks only, which has no box.
+const NO_PATH: u32 = u32::MAX;
+
+/// One label at one point, held in the label cache until the labels are drawn: its text path,
+/// and where and how it is drawn.
+#[derive(Clone, Copy)]
+struct Cached {
+    point: Point,
     rotation: f64,
     feature_id: u64,
+    /// Into the paths, or [`NO_PATH`].
     path: u32,
-    label: HeldAt,
+    /// Into the label definitions.
+    def: u32,
+    /// The label's `OFFSET`, scaled, in whole pixels.
+    offset: [i32; 2],
     color: Option<Rgba>,
     /// The outline's colour and its width in whole pixels.
     outline: Option<(Rgba, i32)>,
+    position: Position,
+    priority: u8,
+    /// The point is tested first: the label is neither forced nor offset.
+    test_point: bool,
 }
 
-/// The labels of one render, collected over its layers and drawn after them, as MapServer's label
-/// cache draws them, with each problem of a label reported once. A label is held as its glyphs'
-/// indices and its point; the glyphs' outlines are drawn once per font and size, and a label's
-/// path is built only when it is drawn.
+/// The labels of one render, collected over its layers and drawn after them by MapServer's label
+/// cache, with each problem of a label reported once. A label is held as its glyphs' indices and
+/// its point; the glyphs' outlines are drawn once per font and size, and a label's path and its
+/// box are built only when it is placed and drawn.
 pub(crate) struct Labels<'r, L> {
     map: &'r Map,
     view: &'r View,
@@ -130,11 +156,19 @@ pub(crate) struct Labels<'r, L> {
     glyphs: Vec<Glyphs>,
     caches: BTreeMap<(String, u16), usize>,
     paths: Vec<TextPath>,
-    placed: Vec<Placed>,
+    defs: Vec<Def>,
+    def_index: BTreeMap<LabelAt, u32>,
+    cached: Vec<Cached>,
+    /// The box of the marker beneath each label that has one, by the label's index, ascending.
+    markers: Vec<(u32, [f64; 4])>,
+    /// Each label's text, held only where a label of the map has a `MINDISTANCE`.
+    texts: Option<Vec<Box<[u8]>>>,
     /// The labels already reported, with the diagnostic's code.
     reported: BTreeSet<(LabelAt, &'static str)>,
-    /// The image the labels are drawn in, `[min x, min y, max x, max y]`.
-    image: [f64; 4],
+    /// The labels left out past [`MAX_LABELS`], and the first of them.
+    over_limit: (usize, Option<LabelAt>),
+    /// The image the labels are drawn in, its width and height.
+    size: (u32, u32),
 }
 
 /// A feature the layer draws, the class that draws it, and the class's first style bound to it,
@@ -151,22 +185,34 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             glyphs: Vec::new(),
             caches: BTreeMap::new(),
             paths: Vec::new(),
-            placed: Vec::new(),
+            defs: Vec::new(),
+            def_index: BTreeMap::new(),
+            cached: Vec::new(),
+            markers: Vec::new(),
+            texts: map
+                .layers
+                .iter()
+                .flat_map(|layer| &layer.classes)
+                .flat_map(|class| &class.labels)
+                .any(|label| label.min_distance.is_some_and(|d| d > 0.0))
+                .then(Vec::new),
             reported: BTreeSet::new(),
-            image: [0.0, 0.0, f64::from(size.0), f64::from(size.1)],
+            over_limit: (0, None),
+            size,
         }
     }
 
     /// Collects the labels of layer `index` for each of `drawn`, in the order the layer draws
     /// them, as msDrawShape adds each feature's labels to the cache: on a point layer at each
     /// vertex inside the map's extent, as `pointLayerDrawShape` places them; a label of any other
-    /// layer is not drawn yet.
+    /// layer is not drawn yet. A label whose `EXPRESSION` does not match a feature is not
+    /// collected for it, as `msGetLabelStatus` decides.
     pub(crate) async fn collect(
         &mut self,
         index: usize,
         point_layer: bool,
         drawn: &[Labelled<'_>],
-        diagnostics: &mut Vec<Diagnostic>,
+        selector: &mut Selector<'_, '_>,
     ) {
         let map = self.map;
         let layer = &map.layers[index];
@@ -199,7 +245,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                         fixed_labels.insert(at, Some(fixed));
                     }
                     Err(why) => {
-                        self.report(diagnostics, at, "label-not-drawn", why);
+                        self.report(selector.diagnostics, at, "label-not-drawn", why);
                         fixed_labels.insert(at, None);
                     }
                 }
@@ -208,8 +254,11 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         for &(feature, class_index, style) in drawn {
             for n in 0..layer.classes[class_index].labels.len() {
                 let at = (index, class_index, n);
-                if let Some(Some(fixed)) = fixed_labels.get(&at) {
-                    self.feature(at, fixed, feature, style, diagnostics).await;
+                if let Some(Some(fixed)) = fixed_labels.get(&at)
+                    && selector.label_matches(feature, class_index, n)
+                {
+                    self.feature(at, fixed, feature, style, selector.diagnostics)
+                        .await;
                 }
             }
         }
@@ -242,9 +291,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 return;
             }
         };
-        if lines.iter().all(Vec::is_empty) {
+        // A text that is empty draws nothing; one of line breaks only is cached, its marker
+        // with it, but takes no box.
+        if text.is_empty() {
             return;
         }
+        let blank = lines.iter().all(Vec::is_empty);
         let bound = bind(fixed, &feature.properties);
         let (position, align, marker) = match settle(fixed, &bound, lines.len(), style, self.map) {
             Ok(settled) => settled,
@@ -260,16 +312,20 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             fixed.max_size,
             fixed.factor,
         );
-        let path = match self.layout(fixed, &lines, glyph_size, align).await {
-            Ok(path) => path,
-            Err(Unlaid::Font(why)) => {
-                self.report(diagnostics, at, "label-font-unusable", why);
-                return;
-            }
-            Err(Unlaid::Glyph(glyph)) => {
-                let why = format!("its font cannot draw glyph {glyph} of `{text}`");
-                self.report(diagnostics, at, "label-glyph-unreadable", why);
-                return;
+        let path = if blank {
+            None
+        } else {
+            match self.layout(fixed, &lines, glyph_size, align).await {
+                Ok(path) => Some(path),
+                Err(Unlaid::Font(why)) => {
+                    self.report(diagnostics, at, "label-font-unusable", why);
+                    return;
+                }
+                Err(Unlaid::Glyph(glyph)) => {
+                    let why = format!("its font cannot draw glyph {glyph} of `{text}`");
+                    self.report(diagnostics, at, "label-glyph-unreadable", why);
+                    return;
+                }
             }
         };
         // msDrawTextSymbol's outline width, `MS_NINT(outlinewidth * (glyph_size / size))`, and
@@ -278,13 +334,43 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let ow = lrint_int(fixed.outline_width * (glyph_size / bound.size));
             (color, ow.wrapping_add(1))
         });
-        let text_box = path.text_box();
-        let rotation = bound.angle * DEG_TO_RAD;
-        // The offset and the buffer scaled into an int.
-        let label_offset = bound.offset.map(|o| (f64::from(o) * fixed.factor) as i32);
-        let buffer = (fixed.buffer * fixed.factor) as i32;
+        let template = Cached {
+            point: Point { x: 0.0, y: 0.0 },
+            rotation: bound.angle * DEG_TO_RAD,
+            feature_id: feature.id,
+            path: if path.is_some() {
+                self.paths.len() as u32
+            } else {
+                NO_PATH
+            },
+            def: self.def(at, fixed),
+            // The offset scaled into an int.
+            offset: bound.offset.map(|o| (f64::from(o) * fixed.factor) as i32),
+            color: bound.color,
+            outline,
+            position,
+            priority: bound.priority,
+            test_point: !fixed.force && bound.offset == [0, 0],
+        };
+        if self.cache(feature, &template, marker, &text)
+            && let Some(path) = path
+        {
+            self.paths.push(path);
+        }
+    }
+
+    /// Caches `template` at each point of `feature` inside the map's extent, as
+    /// `pointLayerDrawShape` adds a label at each, with the marker of `marker`'s size beneath;
+    /// whether any was cached.
+    fn cache(
+        &mut self,
+        feature: &Feature,
+        template: &Cached,
+        marker: Option<(f64, f64)>,
+        text: &str,
+    ) -> bool {
         let extent = self.view.extent;
-        let mut placed = false;
+        let mut cached = false;
         for c in vertices(&feature.geometry) {
             // pointLayerDrawShape skips a point outside the map's extent.
             if !(c.x >= extent.min_x && c.x <= extent.max_x)
@@ -293,37 +379,47 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 continue;
             }
             let point = self.view.to_pixel(c);
-            let label = PointLabel {
-                position,
-                text: text_box,
-                offsets: Offsets {
-                    marker: marker.map_or([0.0, 0.0], |(w, h)| {
-                        marker_offset(point, w, h, fixed, &bound)
-                    }),
-                    label: label_offset,
-                },
-                rotation,
-                buffer,
-                force: fixed.force,
-            };
-            // Without the label cache, every box fits.
-            let Some(placement) = place(point, &label, |_| true) else {
+            // The label cache holds at most MAX_LABELS labels a render (Q-9, ADR-0035).
+            if self.cached.len() >= MAX_LABELS {
+                let first = self
+                    .over_limit
+                    .1
+                    .unwrap_or(self.defs[template.def as usize].at);
+                self.over_limit = (self.over_limit.0 + 1, Some(first));
                 continue;
-            };
-            self.placed.push(Placed {
-                origin: placement.origin,
-                rotation,
-                feature_id: feature.id,
-                path: self.paths.len() as u32,
-                label: [at.0, at.1, at.2].map(|i| i as u32),
-                color: bound.color,
-                outline,
+            }
+            let index = self.cached.len() as u32;
+            // msAddLabelGroup caches the marker of the class's first style: its box, whose far
+            // corner lies `w - 1` and `h - 1` from its near one.
+            if let Some((w, h)) = marker {
+                let (min_x, min_y) = (point.x - 0.5 * w, point.y - 0.5 * h);
+                let bounds = [min_x, min_y, min_x + (w - 1.0), min_y + (h - 1.0)];
+                self.markers.push((index, bounds));
+            }
+            self.cached.push(Cached { point, ..*template });
+            if let Some(texts) = &mut self.texts {
+                texts.push(c_bytes(text).into());
+            }
+            cached = true;
+        }
+        cached
+    }
+
+    /// The index of the definition of label `at`, added on its first feature.
+    fn def(&mut self, at: LabelAt, fixed: &Fixed<'_>) -> u32 {
+        let defs = &mut self.defs;
+        *self.def_index.entry(at).or_insert_with(|| {
+            defs.push(Def {
+                at,
+                // The buffer scaled into an int.
+                buffer: (fixed.buffer * fixed.factor) as i32,
+                force: fixed.force,
+                partials: fixed.partials,
+                min_distance: fixed.min_distance * fixed.factor,
+                outline_grow: fixed.outline_width / 2.0 * fixed.factor,
             });
-            placed = true;
-        }
-        if placed {
-            self.paths.push(path);
-        }
+            (defs.len() - 1) as u32
+        })
     }
 
     /// Lays out `lines` at `glyph_size`, each in the font of the label's list that draws it, or
@@ -362,34 +458,52 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         Ok(layout.finish(align))
     }
 
-    /// Draws the labels, last collected first, as `msDrawLabelCache` walks a slot of its cache,
-    /// each label's path built just before it is drawn. A glyph left out for reaching too far
-    /// from the image is reported once for its label.
+    /// Draws the labels the label cache places, in the order it places them, each label's path
+    /// built just before it is drawn. A glyph left out for reaching too far from the image is
+    /// reported once for its label, and the labels left out past [`MAX_LABELS`] once.
     pub(crate) fn finish<R: Renderer>(
         mut self,
         renderer: &mut R,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
-        let placed = std::mem::take(&mut self.placed);
-        for label in placed.iter().rev() {
+        if let (left_out, Some(first)) = self.over_limit {
+            let message = format!(
+                "the label cache of a render holds at most {MAX_LABELS} labels; {left_out} \
+                 labels past it, this one the first, are left out untested"
+            );
+            let span = self.span(first);
+            diagnostics.push(Diagnostic::warning("labels-over-limit", message, span));
+        }
+        let cached = std::mem::take(&mut self.cached);
+        let markers = std::mem::take(&mut self.markers);
+        let texts = self.texts.take();
+        let defs = std::mem::take(&mut self.defs);
+        let paths = std::mem::take(&mut self.paths);
+        let glyphs = std::mem::take(&mut self.glyphs);
+        let cache = Cache {
+            cached: &cached,
+            paths: &paths,
+            defs: &defs,
+            markers: &markers,
+            texts: texts.as_deref(),
+        };
+        let (width, height) = self.size;
+        let image = [0.0, 0.0, f64::from(width), f64::from(height)];
+        draw_label_cache(&cache, self.size, |i, placement| {
+            let label = &cached[i];
             if label.color.is_none() && label.outline.is_none() {
-                continue;
+                return;
             }
-            let at = label.label.map(|i| i as usize);
-            let at = (at[0], at[1], at[2]);
+            let at = defs[label.def as usize].at;
             // An outline reaches past its glyphs: half its width, and at a sharp corner a miter
             // up to its whole width, so a glyph that close outside the image is drawn for it.
             let reach = label
                 .outline
                 .map_or(0.0, |(_, width)| 2.0 * f64::from(width).abs());
-            let [x0, y0, x1, y1] = self.image;
+            let [x0, y0, x1, y1] = image;
             let visible = [x0 - reach, y0 - reach, x1 + reach, y1 + reach];
-            let drawn = self.paths[label.path as usize].draw(
-                &self.glyphs,
-                label.origin,
-                label.rotation,
-                visible,
-            );
+            let drawn =
+                paths[label.path as usize].draw(&glyphs, placement.origin, label.rotation, visible);
             if drawn.out_of_reach > 0 {
                 let why = format!(
                     "{} of its glyphs reach farther than {} pixels from the image",
@@ -412,7 +526,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     feature_id: Some(label.feature_id),
                 });
             }
-        }
+        });
     }
 
     /// Reports why `at` is not drawn, once per label and code.
@@ -449,6 +563,66 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 }
 
+/// The labels of a render as the label cache reads them.
+struct Cache<'c> {
+    cached: &'c [Cached],
+    paths: &'c [TextPath],
+    defs: &'c [Def],
+    markers: &'c [(u32, [f64; 4])],
+    texts: Option<&'c [Box<[u8]>]>,
+}
+
+impl Members for Cache<'_> {
+    fn count(&self) -> usize {
+        self.cached.len()
+    }
+
+    fn priority(&self, index: usize) -> u8 {
+        self.cached[index].priority
+    }
+
+    fn member(&self, index: usize) -> Member {
+        let label = &self.cached[index];
+        let def = &self.defs[label.def as usize];
+        let marker = self
+            .markers
+            .binary_search_by_key(&(index as u32), |(i, _)| *i)
+            .ok()
+            .map(|i| self.markers[i].1);
+        // msDrawLabelCache's offset from the marker: half the size of its box, grown by half the
+        // label's outline where it has one.
+        let mut from_marker = marker.map_or([0.0, 0.0], |[min_x, min_y, max_x, max_y]| {
+            [(max_x - min_x) / 2.0, (max_y - min_y) / 2.0]
+        });
+        if from_marker[0] != 0.0 && label.outline.is_some() {
+            from_marker = from_marker.map(|o| o + def.outline_grow);
+        }
+        Member {
+            priority: label.priority,
+            point: label.point,
+            label: (label.path != NO_PATH).then(|| PointLabel {
+                position: label.position,
+                text: self.paths[label.path as usize].text_box(),
+                offsets: Offsets {
+                    marker: from_marker,
+                    label: label.offset,
+                },
+                rotation: label.rotation,
+                buffer: def.buffer,
+                force: def.force,
+            }),
+            partials: def.partials,
+            test_point: label.test_point,
+            marker,
+            min_distance: def.min_distance,
+        }
+    }
+
+    fn same_text(&self, a: usize, b: usize) -> bool {
+        self.texts.is_some_and(|texts| texts[a] == texts[b])
+    }
+}
+
 /// A label's position, its alignment, and the width and height of the marker it moves away from.
 type Settled = (Position, Align, Option<(f64, f64)>);
 
@@ -476,33 +650,20 @@ fn settle(
             return Err(("label-binding-unsettled", why.to_owned()));
         }
     };
-    // The marker a label away from its point moves away from.
-    let marker = match (position, style) {
-        (Position::At(Anchor::Cc), _) | (_, None) => None,
-        (_, Some(style)) => match marker_size_of(style, &map.symbols, fixed.factor) {
+    // The marker the label cache holds beneath the label, which a label away from its point
+    // moves away from.
+    let marker = match style {
+        None => None,
+        Some(style) => match marker_size_of(style, &map.symbols, fixed.factor) {
             Ok(size) => Some(size),
             Err(what) => {
                 let why =
-                    format!("its class's first style draws {what}, and the label stands beside it");
+                    format!("its class's first style draws {what}, which the label cache holds");
                 return Err(("label-not-drawn", why));
             }
         },
     };
     Ok((position, align, marker))
-}
-
-/// msDrawLabelCache's offset of a label from the marker at `point`, `w` by `h` pixels: half the
-/// size of its box in the marker cache, whose far corner lies `w - 1` and `h - 1` from its near
-/// one, grown by half the label's outline where it has one.
-fn marker_offset(point: Point, w: f64, h: f64, fixed: &Fixed<'_>, bound: &BoundLabel) -> [f64; 2] {
-    let (min_x, min_y) = (point.x - 0.5 * w, point.y - 0.5 * h);
-    let (max_x, max_y) = (min_x + (w - 1.0), min_y + (h - 1.0));
-    let mut offset = [(max_x - min_x) / 2.0, (max_y - min_y) / 2.0];
-    if offset[0] != 0.0 && bound.outline_color.is_some() {
-        let grow = fixed.outline_width / 2.0 * fixed.factor;
-        offset = [offset[0] + grow, offset[1] + grow];
-    }
-    offset
 }
 
 /// `MS_NINT` into an `int`, as the x86-64 build at the pin computes it: `lrint`, half to even,
@@ -568,6 +729,11 @@ fn bind(fixed: &Fixed<'_>, properties: &Properties) -> BoundLabel {
         },
         position,
         align,
+        // bindIntegerAttribute after the priority is set to 1, and msAddLabelGroup's bounds.
+        priority: match fixed.priority {
+            Prop::Value(p) => p as u8,
+            Prop::Binding(b) => bound_integer(&read(b), 1).clamp(1, i32::from(MAX_PRIORITY)) as u8,
+        },
     }
 }
 
@@ -674,10 +840,10 @@ fn fixed<'a>(
         ),
         (label.max_length.is_some_and(|m| m > 0.0), "a MAXLENGTH"),
         (
-            !matches!(label.priority, None | Some(Bound::Value(1.0))),
-            "a PRIORITY",
+            matches!(label.priority, Some(Bound::Value(p))
+                if !(p.fract() == 0.0 && (1.0..=f64::from(MAX_PRIORITY)).contains(&p))),
+            "a PRIORITY that is not a whole number from 1 to 10, which a mapfile cannot give",
         ),
-        (label.expression.is_some(), "an EXPRESSION"),
         (label.shadow_color.is_some(), "a SHADOWCOLOR"),
         (!label.styles.is_empty(), "a STYLE"),
         (
@@ -734,9 +900,12 @@ fn fixed<'a>(
             IrAlign::Center => Align::Center,
             IrAlign::Right => Align::Right,
         })?,
+        priority: prop(label.priority.as_ref(), "PRIORITY", 1.0, |v| *v)?,
         factor,
         buffer: label.buffer.unwrap_or(0.0),
         force: label.force == Some(Force::On),
+        partials: label.partials.unwrap_or(false),
+        min_distance: label.min_distance.unwrap_or(-1.0),
     })
 }
 

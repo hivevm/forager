@@ -67,6 +67,8 @@ pub(crate) enum Carrier {
     Class(usize),
     /// A style of a class, by their places.
     Style(usize, usize),
+    /// A label of a class, by their places.
+    Label(usize, usize),
 }
 
 /// The patterns a render cannot match as MapServer does, and the texts past the limit, each
@@ -95,7 +97,7 @@ impl Reports {
         }
         let (what, span): (String, Option<Span>) = match carrier {
             Carrier::Filter => ("its filter".to_owned(), layer.span.clone()),
-            Carrier::Class(i) | Carrier::Style(i, _) => {
+            Carrier::Class(i) | Carrier::Style(i, _) | Carrier::Label(i, _) => {
                 let class = &layer.classes[i];
                 let name = class
                     .name
@@ -106,6 +108,10 @@ impl Reports {
                     Carrier::Style(_, s) => (
                         format!("style {} of its class {}{name}", s + 1, i + 1),
                         class.styles[s].span.clone().or(class_span),
+                    ),
+                    Carrier::Label(_, l) => (
+                        format!("label {} of its class {}{name}", l + 1, i + 1),
+                        class.labels[l].span.clone().or(class_span),
                     ),
                     _ => (format!("its class {}{name}", i + 1), class_span),
                 }
@@ -176,6 +182,15 @@ impl<'a> Selector<'a, '_> {
                     Some(expression) => self.matches(expression, feature, Carrier::Class(i)),
                 }
         })
+    }
+
+    /// Whether label `label` of class `class` is drawn for `feature`, as `msGetLabelStatus`
+    /// evaluates its `EXPRESSION`: one that fails does not match.
+    pub fn label_matches(&mut self, feature: &Feature, class: usize, label: usize) -> bool {
+        match &self.layer.classes[class].labels[label].expression {
+            None => true,
+            Some(expression) => self.matches(expression, feature, Carrier::Label(class, label)),
+        }
     }
 
     /// Each of `features` the layer draws, with the place of its class and its styles bound to
