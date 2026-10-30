@@ -81,10 +81,12 @@ golden path and the test pattern an agent copies from are named here.
   `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
   way for each. A line style's symbol with a `GAP` it places along the line, the markers of one
   layer bounded with a diagnostic (Q-9).
-- **`label`** — a label's text as MapServer lays out a Latin line: its sizes, the fonts of its
+- **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
-  FreeType's arithmetic, laid out by their advances and centred on the label's point; it is the
-  one crate that depends on skrifa, and does no I/O (ADR-0028).
+  FreeType's arithmetic, laid out by their advances, wrapped and aligned line by line, and turned
+  by the label's angle; and where a label stands, its point and its box placed by its position,
+  its offset, and its marker's, as a pure function of the text's box (`place.rs`). It is the one
+  crate that depends on skrifa, and does no I/O (ADR-0028).
 - **`render`** — the display list, the renderer trait, and the RGBA image.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, blends premultiplied colours in a pixel format of its own as MapServer's

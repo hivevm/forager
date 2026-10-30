@@ -3,7 +3,8 @@
 //! DejaVu Sans under `fixtures/`, whose licence and changes `fixtures/LICENSE` records.
 
 use forager_label::{
-    Attempt, Font, Glyphs, LineError, TextPath, Unusable, attempts, glyph_size, line,
+    Align, Anchor, Attempt, Font, Glyphs, Layout, LineError, TextPath, Unusable, attempts,
+    glyph_size, lines, metrics,
 };
 use forager_render::{PathCommand, Point};
 
@@ -51,14 +52,23 @@ struct Laid {
 
 impl Laid {
     fn draw(&self, origin: Point, visible: [f64; 4]) -> Vec<PathCommand> {
-        let drawn = self.path.draw(&self.glyphs, origin, visible);
+        let drawn = self
+            .path
+            .draw(std::slice::from_ref(&self.glyphs), origin, 0.0, visible);
         assert_eq!(drawn.out_of_reach, 0);
         drawn.path
     }
 }
 
+/// The one line of `text`.
+fn line(text: &str) -> Vec<char> {
+    let mut lines = lines(text, None).unwrap();
+    assert_eq!(lines.len(), 1);
+    lines.remove(0)
+}
+
 fn laid(font: &Font<'_>, text: &str, size: f64) -> Laid {
-    let chars = line(text).unwrap();
+    let chars = line(text);
     let ids = font.glyphs(&chars, true).unwrap().unwrap();
     let mut glyphs = Glyphs::new(size);
     let path = TextPath::new(font, &mut glyphs, &ids).unwrap();
@@ -139,7 +149,8 @@ fn a_line_is_laid_out_by_advances_and_centred_on_its_point_by_its_box() {
         fl_path.max_y, 0.0,
         "neither glyph reaches below the baseline"
     );
-    let at = fl_path.centred_on(Point { x: 50.0, y: 40.0 });
+    let text = fl_path.text_box();
+    let (at, _) = metrics(Point { x: 50.0, y: 40.0 }, Anchor::Cc, &text, 0, 0, 0.0, 0);
     let (w, h) = (fl_path.max_x - fl_path.min_x, fl_path.max_y - fl_path.min_y);
     assert_eq!(at.x, 50.0 - w / 2.0);
     assert_eq!(at.y, 40.0 + h / 2.0 - fl_path.max_y);
@@ -187,7 +198,12 @@ fn a_glyph_reaching_too_far_from_the_visible_area_is_left_out_and_counted() {
         x: -5_000_000.0,
         y: 100.0,
     };
-    let drawn = huge.path.draw(&huge.glyphs, into_the_image, visible);
+    let drawn = huge.path.draw(
+        std::slice::from_ref(&huge.glyphs),
+        into_the_image,
+        0.0,
+        visible,
+    );
     assert_eq!(
         drawn,
         forager_label::Drawn {
@@ -201,7 +217,12 @@ fn a_glyph_reaching_too_far_from_the_visible_area_is_left_out_and_counted() {
         x: -20_000.0,
         y: 100.0,
     };
-    let drawn = large.path.draw(&large.glyphs, into_the_image, visible);
+    let drawn = large.path.draw(
+        std::slice::from_ref(&large.glyphs),
+        into_the_image,
+        0.0,
+        visible,
+    );
     assert_eq!(drawn.out_of_reach, 0);
     assert!(!drawn.path.is_empty());
 }
@@ -209,13 +230,21 @@ fn a_glyph_reaching_too_far_from_the_visible_area_is_left_out_and_counted() {
 #[test]
 fn only_a_line_below_u_02b0_is_laid_out() {
     // Verifies: ADR-0028
-    assert_eq!(line("a\u{2AF}"), Ok(vec!['a', '\u{2AF}']));
-    assert_eq!(line("a\u{2B0}"), Err(LineError::NotLatin('\u{2B0}')));
-    assert_eq!(line("it\u{2019}s"), Err(LineError::NotLatin('\u{2019}')));
+    assert_eq!(lines("a\u{2AF}", None), Ok(vec![vec!['a', '\u{2AF}']]));
+    assert_eq!(lines("a\u{2B0}", None), Err(LineError::NotLatin('\u{2B0}')));
+    assert_eq!(
+        lines("ok\nit\u{2019}s", None),
+        Err(LineError::NotLatin('\u{2019}'))
+    );
     // `\r` is skipped, a last `\n` closes the line, any other starts a second one.
-    assert_eq!(line("a\r\nb\r"), Err(LineError::SeveralLines));
-    assert_eq!(line("ab\r\n"), Ok(vec!['a', 'b']));
-    assert_eq!(line("\r"), Ok(vec![]));
+    assert_eq!(lines("a\r\nb\r", None), Ok(vec![vec!['a'], vec!['b']]));
+    assert_eq!(lines("ab\r\n", None), Ok(vec![vec!['a', 'b']]));
+    assert_eq!(
+        lines("a\n\nb", None),
+        Ok(vec![vec!['a'], vec![], vec!['b']])
+    );
+    assert_eq!(lines("\n", None), Ok(vec![vec![]]));
+    assert_eq!(lines("\r", None), Ok(vec![]));
 }
 
 #[test]
@@ -254,7 +283,7 @@ fn only_the_last_font_takes_its_question_mark_or_glyph_0_for_a_glyph_it_lacks() 
     // Verifies: ADR-0028
     let data = fixture("dejavu-sans-subset.ttf");
     let font = Font::new(&data).unwrap();
-    let chars = line("aé").unwrap();
+    let chars = line("aé");
     assert_eq!(font.glyphs(&chars, false), Ok(None));
     let question = font.glyph_index('?');
     assert_ne!(question, 0);
@@ -265,7 +294,7 @@ fn only_the_last_font_takes_its_question_mark_or_glyph_0_for_a_glyph_it_lacks() 
     // A font without `?` takes glyph 0, which is drawn as any other.
     let digits = fixture("dejavu-sans-digits.ttf");
     let font = Font::new(&digits).unwrap();
-    let ids = font.glyphs(&line("1a").unwrap(), true).unwrap().unwrap();
+    let ids = font.glyphs(&line("1a"), true).unwrap().unwrap();
     assert_eq!(ids, [font.glyph_index('1'), 0]);
     assert!(TextPath::new(&font, &mut Glyphs::new(10.0), &ids).is_ok());
 }
@@ -354,4 +383,165 @@ fn a_glyph_that_cannot_be_drawn_takes_the_fonts_question_mark_or_fails() {
     );
     let two = font.glyphs(&['2'], true).unwrap().unwrap();
     assert!(TextPath::new(&font, &mut Glyphs::new(10.0), &two).is_ok());
+}
+
+/// The text of `lines` in `font` at a glyph size of 10, aligned by `align`, its glyphs in one
+/// cache.
+fn laid_lines(font: &Font<'_>, text: &[&str], align: Align) -> Laid {
+    let mut glyphs = Glyphs::new(10.0);
+    let mut layout = Layout::new(10.0, text.len());
+    for line in text {
+        let chars: Vec<char> = line.chars().collect();
+        if chars.is_empty() {
+            layout.empty_line();
+        } else {
+            let ids = font.glyphs(&chars, true).unwrap().unwrap();
+            layout.line(font, &mut glyphs, 0, &ids).unwrap();
+        }
+    }
+    Laid {
+        path: layout.finish(align),
+        glyphs,
+    }
+}
+
+/// The first point of a path.
+fn first(path: &[PathCommand]) -> Point {
+    match path.first() {
+        Some(PathCommand::MoveTo(p)) => *p,
+        other => panic!("no first point: {other:?}"),
+    }
+}
+
+#[test]
+fn lines_stand_a_line_height_apart_and_are_aligned_by_their_lengths_cut_to_whole_pixels() {
+    let data = fixture("dejavu-sans-subset.ttf");
+    let font = Font::new(&data).unwrap();
+    let (fl, f) = (laid(&font, "Fl", 10.0), laid(&font, "F", 10.0));
+    let origin = Point { x: 20.0, y: 40.0 };
+    for (align, shift) in [
+        (Align::Left, 0.0),
+        // (int lengths) / 2.0 and their difference, as line_desc holds a length in an int.
+        (
+            Align::Center,
+            f64::from(fl.path.max_x as i32 - f.path.max_x as i32) / 2.0,
+        ),
+        (
+            Align::Right,
+            f64::from(fl.path.max_x as i32 - f.path.max_x as i32),
+        ),
+    ] {
+        let two = laid_lines(&font, &["Fl", "F"], align);
+        assert_eq!(two.path.num_lines, 2);
+        assert_eq!(two.path.max_x, fl.path.max_x, "the longest line's length");
+        // The first line's top, ceil(10 × 1.33) = 14 above the last line's baseline, and the
+        // last line's bottom.
+        assert_eq!(two.path.min_y, fl.path.min_y - 14.0);
+        assert_eq!(two.path.max_y, f.path.max_y);
+        let drawn = two.draw(origin, EVERYWHERE);
+        // The first line stands a line height above the origin, the second on it.
+        assert_eq!(
+            first(&drawn),
+            first(&fl.draw(Point { x: 20.0, y: 26.0 }, EVERYWHERE))
+        );
+        let second = drawn.len() - f.draw(origin, EVERYWHERE).len();
+        assert_eq!(
+            drawn[second..],
+            f.draw(
+                Point {
+                    x: 20.0 + shift,
+                    y: 40.0
+                },
+                EVERYWHERE
+            )[..],
+            "{align:?}"
+        );
+    }
+}
+
+#[test]
+fn an_empty_line_takes_its_height_and_shifts_the_alignment_of_the_lines_after_it() {
+    // msLayoutTextSymbol counts the lines as the glyphs' height changes: the empty second line
+    // is skipped, so that the third takes the second's length, 0, and stands right of all.
+    let data = fixture("dejavu-sans-subset.ttf");
+    let font = Font::new(&data).unwrap();
+    let f = laid(&font, "F", 10.0);
+    let three = laid_lines(&font, &["Fl", "", "F"], Align::Right);
+    assert_eq!(three.path.num_lines, 3);
+    let longest = laid(&font, "Fl", 10.0).path.max_x as i32;
+    let drawn = three.draw(Point { x: 0.0, y: 50.0 }, EVERYWHERE);
+    let last = drawn.len() - f.draw(Point { x: 0.0, y: 0.0 }, EVERYWHERE).len();
+    assert_eq!(
+        drawn[last..],
+        f.draw(
+            Point {
+                x: f64::from(longest),
+                y: 50.0
+            },
+            EVERYWHERE
+        )[..]
+    );
+    // Its first line stands two line heights above.
+    assert_eq!(three.path.min_y, laid(&font, "Fl", 10.0).path.min_y - 28.0);
+}
+
+#[test]
+fn a_wrap_character_breaks_the_text_into_lines_only_where_it_is_ascii() {
+    assert_eq!(
+        lines("a b\nc", Some(' ')),
+        Ok(vec![vec!['a'], vec!['b'], vec!['c']])
+    );
+    // A last wrap closes the line as a last line break does.
+    assert_eq!(lines("ab ", Some(' ')), Ok(vec![vec!['a', 'b']]));
+    // MapServer holds WRAP in a C char: a character outside ASCII never matches, NUL wraps
+    // nothing.
+    assert_eq!(
+        lines("a\u{e9}b", Some('\u{e9}')),
+        Ok(vec![vec!['a', '\u{e9}', 'b']])
+    );
+    assert_eq!(lines("a\0b", Some('\0')), Ok(vec![vec!['a', '\0', 'b']]));
+}
+
+#[test]
+fn a_turned_text_turns_its_glyphs_points_and_outlines_about_the_label_point() {
+    let data = fixture("dejavu-sans-subset.ttf");
+    let font = Font::new(&data).unwrap();
+    let fl = laid(&font, "Fl", 10.0);
+    let origin = Point { x: 50.0, y: 50.0 };
+    let flat = fl.draw(origin, EVERYWHERE);
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let turned = fl.path.draw(
+        std::slice::from_ref(&fl.glyphs),
+        origin,
+        quarter,
+        EVERYWHERE,
+    );
+    assert_eq!(turned.out_of_reach, 0);
+    assert_eq!(turned.path.len(), flat.len());
+    // A quarter turn counter-clockwise, y down: (x, y) from the point goes to (y, -x).
+    let near = |a: Point, b: Point| (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9;
+    for (t, f) in turned.path.iter().zip(&flat) {
+        let (
+            PathCommand::MoveTo(t) | PathCommand::LineTo(t),
+            PathCommand::MoveTo(f) | PathCommand::LineTo(f),
+        ) = (t, f)
+        else {
+            continue;
+        };
+        let expected = Point {
+            x: origin.x + (f.y - origin.y),
+            y: origin.y - (f.x - origin.x),
+        };
+        assert!(near(*t, expected), "{t:?} for {expected:?}");
+    }
+    // Turned out of the visible area, nothing is drawn: the turn, not the flat text, decides.
+    let above = [0.0, 0.0, 100.0, 49.0];
+    assert!(!fl.draw(origin, above).is_empty());
+    let left = [0.0, 0.0, 49.0, 100.0];
+    assert!(
+        fl.path
+            .draw(std::slice::from_ref(&fl.glyphs), origin, -quarter, left)
+            .path
+            .is_empty()
+    );
 }

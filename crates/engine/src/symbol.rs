@@ -168,18 +168,53 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol) -> SymbolStyle {
     }
 }
 
-/// msGetMarkerSize for a vector or ellipse symbol: the width and height it is drawn at, from a
-/// size cut to whole pixels, or its own extent for a style without a size.
-fn marker_size(style: &Style, symbol: &Symbol) -> (f64, f64) {
+/// msGetMarkerSize for a vector or ellipse symbol at `scale_factor`: the width and height it is
+/// drawn at, from a size cut to whole pixels, or its own extent for a style without a size.
+fn marker_size(style: &Style, symbol: &Symbol, scale_factor: f64) -> (f64, f64) {
     let [size_x, size_y] = symbol.extent.unwrap_or([0.0, 0.0]);
     let size = fixed(&style.size);
     // `size` is an int there: each assignment cuts the fraction.
-    let pixels = size.unwrap_or_else(|| default_size(symbol)).trunc();
+    let pixels = (size.unwrap_or_else(|| default_size(symbol)) * scale_factor).trunc();
     let pixels = ms_max(pixels, style.min_size.unwrap_or(MIN_SIZE)).trunc();
     let pixels = ms_min(pixels, style.max_size.unwrap_or(MAX_SIZE)).trunc();
     match size {
         Some(size) if size > 0.0 => (pixels / size_y * size_x, pixels),
         _ => (size_x, size_y),
+    }
+}
+
+/// msGetMarkerSize of `style` among `symbols` at `scale_factor`, the size of the marker a label
+/// of a point moves away from: 1 by 1 for MapServer's default symbol, a vector's, an ellipse's,
+/// or any other symbol's MapServer sizes by its extent as it sizes them; the error names a symbol
+/// whose size needs its image or its font, which is not read for it yet, or one the symbol set
+/// does not hold, for which MapServer fails the map.
+pub(crate) fn marker_size_of(
+    style: &Style,
+    symbols: &[Symbol],
+    scale_factor: f64,
+) -> Result<(f64, f64), String> {
+    let index = match &style.symbol {
+        None => 0,
+        Some(Bound::Value(SymbolRef::Index(index))) => *index as usize,
+        Some(_) => return Err("a symbol by a name that is not resolved".to_owned()),
+    };
+    let Some(position) = index.checked_sub(1) else {
+        return Ok((1.0, 1.0));
+    };
+    match symbols.get(position) {
+        None => Err(format!(
+            "symbol {index}, which the symbol set does not hold"
+        )),
+        Some(symbol) => match symbol.kind {
+            SymbolKind::Pixmap | SymbolKind::Svg | SymbolKind::Truetype => Err(format!(
+                "a {:?} symbol, whose size is not computed yet",
+                symbol.kind
+            )
+            .to_lowercase()),
+            SymbolKind::Vector | SymbolKind::Ellipse | SymbolKind::Simple | SymbolKind::Hatch => {
+                Ok(marker_size(style, symbol, scale_factor))
+            }
+        },
     }
 }
 
@@ -190,7 +225,7 @@ fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64) -> Point {
     if anchor_x == 0.5 && anchor_y == 0.5 {
         return at;
     }
-    let (width, height) = marker_size(style, symbol);
+    let (width, height) = marker_size(style, symbol, 1.0);
     let ox = (0.5 - anchor_x) * width;
     let oy = (0.5 - anchor_y) * height;
     if rotation == 0.0 {

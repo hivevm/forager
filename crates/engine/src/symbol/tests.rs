@@ -285,12 +285,51 @@ fn the_marker_size_cuts_the_size_to_whole_pixels() {
         [4.0, 2.0],
         true,
     );
-    assert_eq!(marker_size(&style(Some(10.7), None), &wide), (20.0, 10.0));
-    assert_eq!(marker_size(&style(None, None), &wide), (4.0, 2.0));
+    assert_eq!(
+        marker_size(&style(Some(10.7), None), &wide, 1.0),
+        (20.0, 10.0)
+    );
+    assert_eq!(marker_size(&style(None, None), &wide, 1.0), (4.0, 2.0));
     // The bounds cut again: MINSIZE 4.5 raises 3 to 4.
     let mut raised = style(Some(3.0), None);
     raised.min_size = Some(4.5);
-    assert_eq!(marker_size(&raised, &wide), (8.0, 4.0));
+    assert_eq!(marker_size(&raised, &wide, 1.0), (8.0, 4.0));
+    // The size is scaled before it is cut: 10.7 × 1.5 is 16; without SIZE, the extent stands.
+    assert_eq!(
+        marker_size(&style(Some(10.7), None), &wide, 1.5),
+        (32.0, 16.0)
+    );
+    assert_eq!(marker_size(&style(None, None), &wide, 1.5), (4.0, 2.0));
+}
+
+#[test]
+fn a_label_moves_away_from_a_marker_of_the_size_ms_get_marker_size_gives() {
+    let wide = symbol(
+        SymbolKind::Vector,
+        vec![vec![[0.0, 0.0], [4.0, 2.0]]],
+        [4.0, 2.0],
+        true,
+    );
+    let symbols = [wide];
+    let mut drawn = style(Some(10.0), None);
+    drawn.symbol = Some(Bound::Value(SymbolRef::Index(1)));
+    assert_eq!(marker_size_of(&drawn, &symbols, 1.0), Ok((20.0, 10.0)));
+    // MapServer's default symbol, a point.
+    assert_eq!(
+        marker_size_of(&style(Some(10.0), None), &symbols, 1.0),
+        Ok((1.0, 1.0))
+    );
+    drawn.symbol = Some(Bound::Value(SymbolRef::Index(2)));
+    assert!(
+        marker_size_of(&drawn, &symbols, 1.0).is_err(),
+        "no such symbol"
+    );
+    let pixmap = symbol(SymbolKind::Pixmap, vec![], [0.0, 0.0], false);
+    drawn.symbol = Some(Bound::Value(SymbolRef::Index(1)));
+    assert!(
+        marker_size_of(&drawn, &[pixmap], 1.0).is_err(),
+        "its image is not read"
+    );
 }
 
 #[test]

@@ -167,9 +167,9 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         }
         // Each feature is labelled by the class that draws it, in the order it is drawn.
         let point_layer = mode == RenderMode::Point;
-        let drawn: Vec<(&Feature, usize)> = selected
+        let drawn: Vec<labels::Labelled<'_>> = selected
             .iter()
-            .map(|(feature, class, _)| (*feature, *class))
+            .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
             .collect();
         labels
             .collect(layer_index, point_layer, &drawn, &mut diagnostics)
