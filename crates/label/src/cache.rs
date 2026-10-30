@@ -35,6 +35,10 @@ use crate::place::{Anchor, Bounds, Placement, PointLabel, place, placed_at};
 /// MapServer's `MS_MAX_LABEL_PRIORITY`: priorities run from 1 to it.
 pub const MAX_PRIORITY: u8 = 10;
 
+/// The most labels the label cache of one render holds (Q-9); MapServer holds any
+/// number. A label added past it is left out, untested.
+pub const MAX_LABELS: usize = 100_000;
+
 /// The side of a cell of the finest level of the grids that bound the tests, in pixels.
 const CELL: f64 = 64.0;
 
@@ -69,7 +73,8 @@ pub trait Members {
 }
 
 /// Walks `members` as `msDrawLabelCache` walks its slots, and hands `draw` each label drawn with
-/// its placement, in the order MapServer draws them, into an image of `size` pixels.
+/// its placement, in the order MapServer draws them, into an image of `size` pixels. The caller
+/// holds at most [`MAX_LABELS`] members.
 pub fn draw_label_cache<M: Members + ?Sized>(
     members: &M,
     size: (u32, u32),

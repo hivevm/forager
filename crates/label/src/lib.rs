@@ -12,7 +12,7 @@ mod layout;
 mod place;
 mod size;
 
-pub use crate::cache::{MAX_PRIORITY, Member, Members, draw_label_cache};
+pub use crate::cache::{MAX_LABELS, MAX_PRIORITY, Member, Members, draw_label_cache};
 pub use crate::font::{Attempt, Font, Unusable, attempts};
 pub use crate::layout::{Align, Drawn, Glyphs, Layout, LineError, TextPath, lines};
 pub use crate::place::{

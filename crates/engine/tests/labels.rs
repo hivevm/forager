@@ -1073,3 +1073,64 @@ fn a_label_over_a_marker_whose_size_is_not_computed_yet_is_not_drawn() {
         );
     }
 }
+
+#[test]
+fn the_label_cache_holds_at_most_100000_labels_and_reports_those_past_it_once() {
+    // Verifies: Q-9
+    // One feature of 100,001 points: the first 100,000 at one point, where all but one collide,
+    // and the last alone, where it would be drawn first. Past the limit it is left out untested.
+    let mut points = vec!["[40, 30]"; forager_label::MAX_LABELS];
+    points.push("[130, 30]");
+    let geojson = format!(
+        r#"{{"type": "Feature", "properties": {{"name": "Fen"}},
+            "geometry": {{"type": "MultiPoint", "coordinates": [{}]}}}}"#,
+        points.join(",")
+    );
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
+    let recorder = GlyphRecorder::default();
+    let rendered = ready(render_with_files(
+        &map(label_item()),
+        &sources,
+        &Files,
+        recorder.clone(),
+    ));
+    assert_eq!(
+        recorder.0.take().len(),
+        1,
+        "the point past the limit is not drawn"
+    );
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["labels-over-limit"]);
+    let d = &rendered.diagnostics[0];
+    assert!(
+        d.message.contains("100000") && d.message.contains("1 labels past it"),
+        "{}",
+        d.message
+    );
+    assert_eq!(d.span, Some(Span::new("m.map", 9, 7)));
+    // At the limit, nothing is left out: the lone point is drawn.
+    let at_limit = geojson.replace("[40, 30],[130, 30]", "[130, 30]");
+    let sources: BTreeMap<String, GeoJsonSource> = [(
+        "places".to_owned(),
+        GeoJsonSource::parse(&at_limit).unwrap(),
+    )]
+    .into();
+    let recorder = GlyphRecorder::default();
+    let rendered = ready(render_with_files(
+        &map(label_item()),
+        &sources,
+        &Files,
+        recorder.clone(),
+    ));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(recorder.0.take().len(), 2);
+}

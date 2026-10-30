@@ -22,8 +22,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use forager_expr::atof;
 use forager_label::{
-    Align, Anchor, Font, Glyphs, Layout, LineError, MAX_PRIORITY, Member, Members, Offsets,
-    PointLabel, Position, TextPath, draw_label_cache, glyph_size, lines, pixel_size,
+    Align, Anchor, Font, Glyphs, Layout, LineError, MAX_LABELS, MAX_PRIORITY, Member, Members,
+    Offsets, PointLabel, Position, TextPath, draw_label_cache, glyph_size, lines, pixel_size,
 };
 use forager_ports::{Feature, Properties, ResourceLoader, Value};
 use forager_render::{DisplayItem, DrawOp, GlyphOutline, Point, Renderer};
@@ -165,6 +165,8 @@ pub(crate) struct Labels<'r, L> {
     texts: Option<Vec<Box<[u8]>>>,
     /// The labels already reported, with the diagnostic's code.
     reported: BTreeSet<(LabelAt, &'static str)>,
+    /// The labels left out past [`MAX_LABELS`], and the first of them.
+    over_limit: (usize, Option<LabelAt>),
     /// The image the labels are drawn in, its width and height.
     size: (u32, u32),
 }
@@ -195,6 +197,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 .any(|label| label.min_distance.is_some_and(|d| d > 0.0))
                 .then(Vec::new),
             reported: BTreeSet::new(),
+            over_limit: (0, None),
             size,
         }
     }
@@ -376,6 +379,15 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 continue;
             }
             let point = self.view.to_pixel(c);
+            // The label cache holds at most MAX_LABELS labels a render (Q-9).
+            if self.cached.len() >= MAX_LABELS {
+                let first = self
+                    .over_limit
+                    .1
+                    .unwrap_or(self.defs[template.def as usize].at);
+                self.over_limit = (self.over_limit.0 + 1, Some(first));
+                continue;
+            }
             let index = self.cached.len() as u32;
             // msAddLabelGroup caches the marker of the class's first style: its box, whose far
             // corner lies `w - 1` and `h - 1` from its near one.
@@ -448,12 +460,20 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
 
     /// Draws the labels the label cache places, in the order it places them, each label's path
     /// built just before it is drawn. A glyph left out for reaching too far from the image is
-    /// reported once for its label.
+    /// reported once for its label, and the labels left out past [`MAX_LABELS`] once.
     pub(crate) fn finish<R: Renderer>(
         mut self,
         renderer: &mut R,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
+        if let (left_out, Some(first)) = self.over_limit {
+            let message = format!(
+                "the label cache of a render holds at most {MAX_LABELS} labels; {left_out} \
+                 labels past it, this one the first, are left out untested"
+            );
+            let span = self.span(first);
+            diagnostics.push(Diagnostic::warning("labels-over-limit", message, span));
+        }
         let cached = std::mem::take(&mut self.cached);
         let markers = std::mem::take(&mut self.markers);
         let texts = self.texts.take();
