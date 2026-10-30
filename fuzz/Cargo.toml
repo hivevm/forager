@@ -23,6 +23,7 @@ forager-mapfile = { path = "../crates/mapfile" }
 forager-style-ir = { path = "../crates/style-ir" }
 forager-bindings-wasm = { path = "../crates/bindings-wasm" }
 forager-engine = { path = "../crates/engine" }
+forager-expr = { path = "../crates/expr" }
 forager-render-agg = { path = "../crates/render-agg" }
 forager-adapter-shapefile = { path = "../crates/adapter-shapefile" }
 
@@ -43,6 +44,13 @@ bench = false
 [[bin]]
 name = "render"
 path = "fuzz_targets/render.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "expr"
+path = "fuzz_targets/expr.rs"
 test = false
 doc = false
 bench = false

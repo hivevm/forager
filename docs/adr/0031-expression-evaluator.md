@@ -123,6 +123,18 @@ the engine's lookup decides with ticket 02 of the geometry spec.
 - Negative: `$` before a value's final newline does not match, where PCRE2's does; a value ending
   in a newline is rare in a feature's attributes.
 - Negative: `%` and `/` by zero never match, where MapServer may crash or fail.
+- Negative: `^` under the option `m` is reported and never matches, as the crate matches it after
+  a value's final newline where PCRE2 does not.
+- Negative: the cached second pass of a line layer draws each feature with its own bound values,
+  where MapServer draws every feature with those it bound last; and a colour expression that gives
+  no colour draws none, where MapServer keeps the previous feature's colour, since it binds into
+  the style itself.
+- Negative: an attribute is read without regard to case, and one a feature does not hold reads as
+  the empty text whether or not the source has such a field: no source states its fields to the
+  engine, and MapServer, which fails the layer and the map for a field its source lacks, reads
+  `""` for one a feature leaves unset.
+- Negative: a text an expression reads or computes past 16 MiB fails the expression, where
+  MapServer bounds none (Q-9).
 - Follow-ups: pushdown (G-7); geometry functions when a case needs them.
 
 ## Enforcement

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Runs the fuzz targets under fuzz/ (Q-3; ADR-0008, ADR-0015): the mapfile frontend, the style
-# document readers, the renderer on structured shapes, the browser path on GeoJSON text, and the
-# shapefile adapter on arbitrary files, each for a number of seconds, on the nightly toolchain
-# cargo-fuzz needs. Both are pinned here. The targets are the [[bin]] entries of fuzz/Cargo.toml,
-# read from there, so that no target the manifest builds is skipped; a target without seeds under
-# fuzz/seeds/<target> fails the run before anything is fuzzed. A crash, a panic, a hang longer
-# than 10 s, or more than 2 GiB of memory fails the run, and the input lands in fuzz/artifacts/.
+# document readers, the renderer on structured shapes, the expression evaluator, the browser path
+# on GeoJSON text, and the shapefile adapter on arbitrary files, each for a number of seconds, on
+# the nightly toolchain cargo-fuzz needs. Both are pinned here. The targets are the [[bin]] entries
+# of fuzz/Cargo.toml, read from there, so that no target the manifest builds is skipped; a target
+# without seeds under fuzz/seeds/<target> fails the run before anything is fuzzed. A crash, a
+# panic, a hang longer than 10 s, or more than 2 GiB of memory fails the run, and the input lands
+# in fuzz/artifacts/.
 # Before fuzzing, cargo deny checks the advisories and sources of the fuzz workspace, which the
 # main check does not see; its licences are not checked, since the harness is never distributed.
 # The weekly workflow fuzz.yml runs it, after install-tools.sh.

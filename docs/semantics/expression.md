@@ -81,9 +81,104 @@ when it evaluates it.
 **Limit.** An expression nests at most 24 deep (Q-9); a deeper one, or parentheses nested past
 four times that, fail the load. A chain of `AND` or `OR` counts once.
 
-**Open for the evaluator.** MapServer finds an attribute by name without regard to case, and an
-attribute the layer does not have is an error when it is drawn; the IR keeps the name as written.
-`src/mapparser.y` also decides what the operators mean when evaluated: `%` truncates both
-operands to integers; `/` by 0 fails the expression, which then never matches; `~`, `~*`, and a
-`/re/` expression never match an empty value, nor with a pattern `regcomp` refuses; `round`
-rounds half away from zero (`MS_NINT`), with two arguments to a multiple of the second.
+## Evaluation
+
+The core crate `expr` evaluates the tree as `msEvalExpression` (`src/maputil.c`) and the grammar of
+`src/mapparser.y` evaluate MapServer's ([ADR-0031](../adr/0031-expression-evaluator.md)). The engine
+tries a layer's `FILTER` first; a feature that fails it is not drawn. It then draws the feature
+with the first class in the map's scale whose expression matches, a class without one matching
+every feature; a feature no class matches is not drawn (`msShapeGetClass`). Before it reads a
+layer's features, it skips the layer outside its own scale range, and one none of whose classes
+might draw at the scale, as `msLayerIsVisible` does with the bounds [scale-range.md](scale-range.md)
+states. Each feature is labelled by the class that draws it, in the order the features are
+drawn. A class is in scale as
+`msScaleInBounds` decides, from its `MINSCALEDENOM` up to below its `MAXSCALEDENOM`, against the
+scale `msCalculateScale` (`src/mapscale.c`) gives: the extent fitted to the image, over the image's
+width less one pixel at the map's `RESOLUTION` in the inches of its `UNITS`, a degree 4374754
+inches whatever the latitude, as the build at the pin leaves `ENABLE_VARIABLE_INCHES_PER_DEGREE`
+off; in pixels no scale bounds anything. A style outside its own range draws nothing.
+
+**Attributes.** A name is found without regard to ASCII case, as MapServer finds an item in a
+shapefile's `.dbf` (`msDBFGetItemIndex`, `strcasecmp`) and in an OGR source
+(`OGR_FD_GetFieldIndex`): by the source's own lookup, then the first property whose name equals it
+in ASCII case. A feature that has no value for it, or a null one, reads as the empty text, as a
+shape whose source has the field but no value for it gives `""`. A boolean reads as `1` or `0`, as
+OGR gives one; a number as the text its source gives (ADR-0026). A value ends at its first NUL
+byte, as a C string does.
+
+**A missing attribute.** MapServer asks the source for every attribute a layer's classes, styles,
+labels, and filter read before it draws (`msLayerWhichItems`, which collects them with
+`string2list`, again without regard to case), and a source whose schema has no such field fails
+the layer with an error, and with it the map; a field of the schema a feature has no value for
+reads as `""`. No source states its fields to the engine (ADR-0026), so Forager cannot tell a
+field the schema lacks from one a feature leaves unset: it reads every name a feature does not
+hold as the empty text and draws the layer, whatever the features in view hold. Where MapServer
+fails the map for a name no field has, Forager draws it as if the field were empty.
+
+**Values.** A number is a C `double`; `to_number` is `atof` of the text — `strtod` in the C
+locale, so `0x10` is 16 and `inf` and `nan` read as such. Strings compare as `strcmp`, by unsigned
+bytes; `casei` lowers ASCII letters only, so `=` over `casei` is `strcasecmp`. `to_string` gives a
+condition as `true` or `false` and a number as `%g`. A whole expression that is a number matches
+when it is not 0, one that is a string always.
+
+**Operators.** `in` compares the value to each item as it stands, untrimmed, by `strcmp` or as
+doubles. `%` is `(int)a % (int)b`; `/` and `%` by zero, a `%` operand past an `int`, and `round`
+past a `long` are undefined in C, and fail the expression. `^` is `pow`. `AND`, `OR`, and `NOT`
+take conditions; the grammar evaluates every operand before an operator, so a failure anywhere in
+the tree, `false AND 1/0 <> 0` included, fails the whole expression, which then does not match.
+
+**Functions.** `length` counts bytes. `round(x)` is `MS_NINT`, `lrint` at the pin, half to even;
+`round(x, n)` is `MS_NINT(x / n) * n`. `upper`, `lower`, `initcap`, and `firstcap` change ASCII
+letters byte by byte, `initcap` starting a word after each space. `commify` places a comma before
+every third character left of the decimal point as `msCommifyString` does, a sign counted as a
+digit (`-123456` is `-,123,456`), and leaves a text with two points, or none before its point, as
+it is. `tostring(x, format)` is `msToString`: one conversion `%e`, `%E`, `%f`, `%F`, `%g`, or
+`%G` with the flags `+ - space ' 0`, a width up to 1024, and a precision, and `%%`; any other
+format fails the expression, and the result is cut to the buffer `msToString` sizes. A width past
+an `int`, which `msToString`'s check lets through as its `atoi` wraps, fails `printf` and the
+expression.
+
+**Length.** A text an expression reads or computes holds at most 16 MiB (Q-9); a longer one, a
+`concat` of many long properties say, fails the expression, and the engine reports it once per
+render with what carries it (`text-too-long`). MapServer bounds none.
+
+**Times.** `to_timestamp`, a `date`, and a `timestamp` read as `msParseTime`: the first of its
+formats whose pattern matches the start of the text, read by glibc's `strptime`, which stops at
+the first field it cannot read and keeps the fields before it, a field not read left 0 as
+`struct tm` holds it: a month of 0 is January, so `2010-13-01` is January 2010 with a day of 0
+and compares equal to `2010-01`. Text no format matches, an empty one included, fails the
+expression. Times compare as `msTimeCompare`, field by field from the year to the second, without
+time zones.
+
+**Patterns.** `regexp_like` reads its pattern in PCRE2's syntax in byte mode
+([ADR-0030](../adr/0030-cql2-expressions.md)) and matches it with the `regex` crate's byte matcher,
+its Unicode features off: `.` is one byte, `\d \w \s \b` and the flag `i` are ASCII. An empty value
+never matches, before the pattern is read. A pattern PCRE2 refuses makes the term false where it
+stands. A brace is a quantifier only as `{n}`, `{n,}`, or `{n,m}`, up to 65535, as PCRE2 10.42 reads
+it; any other brace is a literal one (`a{,3}`). Option settings are read as PCRE2 reads them, `(?)`,
+`(?-)`, `(?i-)`, `(?ii)`, and `(?i-i)`, which turns `i` off, included; groups nest at most 250 deep,
+PCRE2's `PARENS_NEST_LIMIT`, and a group left open or a `)` without one is refused. A pattern with a
+construct PCRE2 reads and the crate cannot match as PCRE2 does — a back-reference, a look-around, an
+atomic group, recursion or a subroutine call, `\Q…\E`, `\K`, a possessive quantifier, a branch
+reset, a comment group, the option `x`, `\h`, `\v`, `\R`, `\e`, `\cX`, `\N`, `\p`, `\Z`, `\G`, an
+octal escape, a verb `(*…)`, a range with a class as an end, `^` under the option `m`, which PCRE2
+does not match after a newline that ends the value, groups and repetitions nested deeper than the
+crate's limit of 250, which counts both, and any other the crate refuses where PCRE2 does not — a
+pattern longer than 64 KiB, which is not read at all, and a pattern compiled past 1 MiB (Q-9) make
+the whole expression not match, and the engine reports each once per render with the class, style,
+or filter that holds it (`pattern-unsupported`). `$` matches at the very end only, where PCRE2's
+matches before a final newline too. A pattern written in the tree is compiled once per render; one
+computed per feature, from a property say, is compiled each time it is used, as `mapparser.y`
+compiles and frees one for each `~`.
+
+**Bound and computed style properties.** For each feature the engine binds `COLOR`,
+`OUTLINECOLOR`, `SIZE`, `WIDTH`, `OUTLINEWIDTH`, `ANGLE`, `OFFSET`, and a `SYMBOL` bound by name as
+`bindStyle` does: a binding as [binding.md](binding.md) states; an expression's number as
+`msEvalDoubleExpression` reads it, 0 where it fails, and an `OUTLINEWIDTH` expression 0, as
+`bindStyle` computes none; an expression's colour from its text as
+`bindColorAttribute` reads it, none where it fails or gives no colour. Two differences: MapServer
+binds into the style itself, so where a colour expression gives none it keeps the previous
+feature's colour, and the cached second pass of a line layer draws every feature with the values
+bound for the last; Forager binds each feature's own values each time. A line layer caches a
+class, and draws the later passes of its first style, by the style as written: one that binds
+`OUTLINEWIDTH` to a property is cached and drawn as outlined whatever width a feature binds.
