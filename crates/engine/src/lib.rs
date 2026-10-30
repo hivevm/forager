@@ -306,8 +306,8 @@ fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnostic> {
     (refused > 0).then(|| {
         let message = format!(
             "layer {}: {refused} hatch fill{} not drawn (Q-9): its spacing or its dash pattern \
-             would never end the hatch, or it would lay more lines or dashes over the image than \
-             a hatch may",
+             would never end the hatch, or it would lay more lines or dashes over the image, or \
+             cut them from a polygon of more vertices or crossings, than a hatch may",
             name(layer),
             if refused == 1 { " is" } else { "s are" }
         );

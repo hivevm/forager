@@ -736,7 +736,11 @@ fn a_hatch_fills_a_polygon_with_lines_at_its_angles_and_pattern() {
     assert_eq!(image.pixel(15, 84), Some(BLACK));
     assert_eq!(image.pixel(15, 83), Some(BLACK));
     assert_eq!(image.pixel(5, 84), Some(WHITE), "clipped to the polygon");
-    assert_eq!(image.pixel(50, 50), Some(WHITE), "the hole stays empty");
+    for y in 40..60 {
+        for x in 40..60 {
+            assert_eq!(image.pixel(x, y), Some(WHITE), "({x}, {y}) in the hole");
+        }
+    }
     assert!(
         (11..89).any(|x| image.pixel(x, 30) == Some(BLUE)),
         "the diagonal dashes"

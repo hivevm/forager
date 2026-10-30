@@ -21,20 +21,33 @@
 // copyright notice appears in all copies. This software is provided "as is" without express or
 // implied warranty, and with no claim as to its suitability for any purpose.
 
-//! The geometry of a hatch (ADR-0015): its lines cut into dashes and stroked as rectangles, and
-//! the polygon cut to each rectangle. MapServer's msHatchPolygon strokes the dashed lines with
-//! butt caps and intersects the stroke with the polygon by its polygon clipper, both read under
-//! the even-odd rule. A stroked dash of a straight line is a rectangle; each ring is cut to it by
-//! moving every point of the ring onto the rectangle's nearest point, which keeps how often the
-//! ring winds around every point inside. Filled together, the cut rings give the intersection
-//! where no two rings cross or overlap and no ring crosses itself: then a ring and a hole cut to
-//! the same rectangle, wound opposite ways, cancel along its edges in the rasterizer's cells.
-//! Where rings cross or overlap, their edges along a rectangle would add up instead, and the
-//! renderer intersects the coverage of the stroke and of the polygon.
+//! The geometry of a hatch (ADR-0015, ADR-0032): its lines cut into dashes, each stroked with
+//! butt caps as a rectangle, and the rectangles intersected with the polygon by i_overlay, as
+//! msHatchPolygon intersects them by MapServer's Clipper: the polygon the subject, the stroke the
+//! clip, both read under the even-odd rule, and every coordinate rounded to a hundredth of a
+//! pixel, Clipper's scaling in `agg_conv_clipper`.
 
 use forager_render::Point;
+use i_overlay::core::fill_rule::FillRule;
+use i_overlay::core::overlay::Overlay;
+use i_overlay::core::overlay_rule::OverlayRule;
+use i_overlay::core::solver::{Precision, Solver, Strategy};
+use i_overlay::i_float::int::point::IntPoint;
 
 use crate::clip::{Rect, clip_line};
+
+/// agg_conv_clipper's default scaling: 10 to the power of 2.
+const SCALE: f64 = 100.0;
+
+/// How i_overlay solves: its fragment strategy, some six times faster than its default on a
+/// polygon of many long edges; points snapped only within one unit, a hundredth of a pixel, as
+/// near as it comes to Clipper, which snaps none; and on one thread, so that every target
+/// computes the same (Q-2).
+const SOLVER: Solver = Solver {
+    strategy: Strategy::Frag,
+    precision: Precision::ABSOLUTE,
+    multithreading: None,
+};
 
 /// A dash of a line stroked with butt caps: the rectangle from `from` to `to` along the line
 /// from `start` in the direction `along`, a unit vector, `half` to either side.
@@ -56,15 +69,6 @@ impl Piece {
         }
     }
 
-    /// How far along the line and across it `p` lies.
-    fn frame(&self, p: Point) -> (f64, f64) {
-        let (dx, dy) = (p.x - self.start.x, p.y - self.start.y);
-        (
-            dx * self.along.x + dy * self.along.y,
-            dy * self.along.x - dx * self.along.y,
-        )
-    }
-
     pub fn corners(&self) -> [Point; 4] {
         [
             self.at(self.from, self.half),
@@ -72,11 +76,6 @@ impl Piece {
             self.at(self.to, -self.half),
             self.at(self.from, -self.half),
         ]
-    }
-
-    /// The point of the rectangle nearest to the point `u`, `v` of its frame.
-    fn clamp(&self, u: f64, v: f64) -> Point {
-        self.at(u.clamp(self.from, self.to), v.clamp(-self.half, self.half))
     }
 }
 
@@ -88,9 +87,18 @@ fn length(dx: f64, dy: f64) -> f64 {
 
 /// The dashes of the hatch's lines stroked `width` wide with butt caps, each line clipped to
 /// `rect` and dashed by `dashes` from its first point on, as AGG's dasher walks the pattern: the
-/// dashes of a clipped line keep the phase they had where the line began.
-pub fn pieces(lines: &[[Point; 2]], rect: &Rect, dashes: &[f64], width: f64) -> Vec<Piece> {
+/// dashes of a clipped line keep the phase they had where the line began. `None` once the walk
+/// takes more than `steps` dashes and gaps (Q-9): a dash too short to move the walk along, so far
+/// from the image, would never end it.
+pub fn pieces(
+    lines: &[[Point; 2]],
+    rect: &Rect,
+    dashes: &[f64],
+    width: f64,
+    steps: f64,
+) -> Option<Vec<Piece>> {
     let period: f64 = dashes.iter().sum();
+    let mut walked = 0.0;
     let mut pieces = Vec::new();
     for &[a, b] in lines {
         for run in clip_line(&[a, b], rect) {
@@ -128,6 +136,10 @@ pub fn pieces(lines: &[[Point; 2]], rect: &Rect, dashes: &[f64], width: f64) -> 
             let mut at = 0.0;
             let mut rest = dashes[dash] - phase;
             while at < run_length {
+                walked += 1.0;
+                if walked > steps {
+                    return None;
+                }
                 let next = (at + rest).min(run_length);
                 if dash % 2 == 0 {
                     piece(at, next);
@@ -138,374 +150,60 @@ pub fn pieces(lines: &[[Point; 2]], rect: &Rect, dashes: &[f64], width: f64) -> 
             }
         }
     }
-    pieces
+    Some(pieces)
 }
 
-/// The edges of a ring a chunk holds together, from point `first` to point `last` of the ring
-/// read round, and their bounds.
-struct Chunk {
-    first: usize,
-    last: usize,
-    bounds: Rect,
-}
-
-/// How many edges a chunk holds, and how many chunks a group.
-const CHUNK: usize = 16;
-const GROUP: usize = 16;
-
-/// A ring without repeated consecutive points, its closing point included, its chunks, and its
-/// chunks in groups, each the chunks from `first` to `last`, and their bounds.
-struct Ring {
-    points: Vec<Point>,
-    chunks: Vec<Chunk>,
-    groups: Vec<Chunk>,
-    bounds: Rect,
-}
-
-impl Ring {
-    fn new(points: &[Point]) -> Self {
-        let mut kept: Vec<Point> = Vec::with_capacity(points.len());
-        for &p in points {
-            if kept.last() != Some(&p) {
-                kept.push(p);
+/// The intersection of the rings, the subject, with the pieces, the clip, both under the
+/// even-odd rule, as Clipper's `ctIntersection` with `pftEvenOdd` for both computes it in
+/// agg_conv_clipper: each coordinate scaled by 100 and rounded half away from zero, as its
+/// `Round` does, and the result scaled back. The contours come out with their holes wound
+/// against their outer contours, for the non-zero rule MapServer fills them with.
+pub fn intersect(rings: &[Vec<Point>], pieces: &[Piece]) -> Vec<Vec<Point>> {
+    let scaled = |points: &mut dyn Iterator<Item = Point>| -> Vec<IntPoint<i32>> {
+        let mut contour: Vec<IntPoint<i32>> = Vec::new();
+        for p in points {
+            // The coordinates lie within the image grown by a margin: far inside i32.
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "rounded, within the margin"
+            )]
+            let q = IntPoint::new((p.x * SCALE).round() as i32, (p.y * SCALE).round() as i32);
+            if contour.last() != Some(&q) {
+                contour.push(q);
             }
         }
-        while kept.len() > 1 && kept.first() == kept.last() {
-            kept.pop();
+        while contour.len() > 1 && contour.first() == contour.last() {
+            contour.pop();
         }
-        let n = kept.len();
-        let chunks = (0..n)
-            .step_by(CHUNK)
-            .map(|first| {
-                let last = (first + CHUNK).min(n);
-                let bounds = bounds_of((first..=last).map(|k| kept[k % n]));
-                Chunk {
-                    first,
-                    last,
-                    bounds,
-                }
-            })
-            .collect::<Vec<Chunk>>();
-        let groups = (0..chunks.len())
-            .step_by(GROUP)
-            .map(|first| {
-                let last = (first + GROUP).min(chunks.len());
-                let bounds = chunks[first..last]
-                    .iter()
-                    .map(|c| c.bounds)
-                    .reduce(|a, b| Rect {
-                        min_x: a.min_x.min(b.min_x),
-                        min_y: a.min_y.min(b.min_y),
-                        max_x: a.max_x.max(b.max_x),
-                        max_y: a.max_y.max(b.max_y),
-                    })
-                    .unwrap_or(chunks[first].bounds);
-                Chunk {
-                    first,
-                    last,
-                    bounds,
-                }
-            })
-            .collect();
-        let bounds = bounds_of(kept.iter().copied());
-        Self {
-            points: kept,
-            chunks,
-            groups,
-            bounds,
-        }
-    }
-
-    fn point(&self, k: usize) -> Point {
-        self.points[k % self.points.len()]
-    }
-}
-
-/// The polygon's rings, ready to be cut to pieces: checked for crossings and wound by depth.
-pub struct Cutter {
-    rings: Vec<Ring>,
-}
-
-impl Cutter {
-    /// The rings ready to be cut; `None` where two rings cross or overlap or one crosses
-    /// itself, or where finding that out or winding them takes more than `budget` steps.
-    pub fn new(rings: &[Vec<Point>], budget: usize) -> Option<Self> {
-        let mut spent = 0usize;
-        let rings: Vec<Ring> = rings
-            .iter()
-            .map(|r| Ring::new(r))
-            .filter(|r| r.points.len() >= 3)
-            .collect();
-        if crossing(&rings, budget, &mut spent)? {
-            return None;
-        }
-        let rings = oriented(rings, budget, &mut spent)?;
-        Some(Self { rings })
-    }
-
-    /// The rings cut to each piece, all to be filled under the even-odd rule; `None` when that
-    /// takes more than `budget` steps.
-    pub fn cut<'a>(
-        &self,
-        pieces: impl Iterator<Item = &'a Piece>,
-        budget: usize,
-    ) -> Option<Vec<Vec<Point>>> {
-        let mut spent = 0usize;
-        let mut cut = Vec::new();
-        for piece in pieces {
-            let reach = bounds_of(piece.corners().into_iter());
-            for ring in self.rings.iter().filter(|r| overlaps(&reach, &r.bounds)) {
-                let inside = cut_ring(ring, piece, &mut spent);
-                if spent > budget {
-                    return None;
-                }
-                if inside.len() >= 3 {
-                    cut.push(inside);
-                }
-            }
-        }
-        Some(cut)
-    }
-}
-
-/// The ring cut to the piece: every point moved onto the piece's nearest point. A group or a
-/// chunk wholly beyond one side of the piece moves onto that side's line, where its edges add up
-/// to the edge from its first point to its last; any other edge is moved piece by piece between
-/// the lines of the piece's sides it crosses.
-fn cut_ring(ring: &Ring, piece: &Piece, spent: &mut usize) -> Vec<Point> {
-    let mut out = Vec::new();
-    for group in &ring.groups {
-        *spent += 1;
-        let first = ring.chunks[group.first].first;
-        if beyond(piece, &group.bounds) {
-            let (u, v) = piece.frame(ring.point(first));
-            out.push(piece.clamp(u, v));
-            continue;
-        }
-        for chunk in &ring.chunks[group.first..group.last] {
-            *spent += 1;
-            let first = piece.frame(ring.point(chunk.first));
-            if beyond(piece, &chunk.bounds) {
-                out.push(piece.clamp(first.0, first.1));
-                continue;
-            }
-            *spent += chunk.last - chunk.first;
-            let mut a = first;
-            for k in chunk.first..chunk.last {
-                let b = piece.frame(ring.point(k + 1));
-                cut_edge(&mut out, piece, a, b);
-                a = b;
-            }
-        }
-    }
-    out
-}
-
-/// Whether the bounds lie wholly beyond one side of the piece, on or past the line of that side.
-fn beyond(piece: &Piece, b: &Rect) -> bool {
-    let (mut u_min, mut u_max, mut v_min, mut v_max) = (
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-    );
-    for (x, y) in [
-        (b.min_x, b.min_y),
-        (b.max_x, b.min_y),
-        (b.min_x, b.max_y),
-        (b.max_x, b.max_y),
-    ] {
-        let (u, v) = piece.frame(Point { x, y });
-        u_min = u_min.min(u);
-        u_max = u_max.max(u);
-        v_min = v_min.min(v);
-        v_max = v_max.max(v);
-    }
-    u_max <= piece.from || u_min >= piece.to || v_max <= -piece.half || v_min >= piece.half
-}
-
-/// The edge from `a` to `b`, in the piece's frame, moved onto the piece: its first point, and
-/// where it crosses the line of a side, without its last point.
-fn cut_edge(out: &mut Vec<Point>, piece: &Piece, (ua, va): (f64, f64), (ub, vb): (f64, f64)) {
-    out.push(piece.clamp(ua, va));
-    let mut crossings: Vec<f64> = Vec::with_capacity(4);
-    for (c, a, b) in [
-        (piece.from, ua, ub),
-        (piece.to, ua, ub),
-        (-piece.half, va, vb),
-        (piece.half, va, vb),
-    ] {
-        if (a - c) * (b - c) < 0.0 {
-            crossings.push((c - a) / (b - a));
-        }
-    }
-    crossings.sort_by(f64::total_cmp);
-    for t in crossings {
-        out.push(piece.clamp(ua + (ub - ua) * t, va + (vb - va) * t));
-    }
-}
-
-/// Whether two edges of the rings cross or touch, other than an edge and the next of its own
-/// ring; `None` when finding out takes more than `budget` steps. Chunks are swept in the order of
-/// their left edges, and only the edges of chunks whose bounds overlap are compared.
-fn crossing(rings: &[Ring], budget: usize, spent: &mut usize) -> Option<bool> {
-    let mut chunks: Vec<(usize, &Chunk)> = rings
-        .iter()
-        .enumerate()
-        .flat_map(|(i, r)| r.chunks.iter().map(move |c| (i, c)))
-        .collect();
-    chunks.sort_by(|a, b| a.1.bounds.min_x.total_cmp(&b.1.bounds.min_x));
-    for (n, &(i, c)) in chunks.iter().enumerate() {
-        for &(j, d) in &chunks[n..] {
-            *spent += 1;
-            if *spent > budget {
-                return None;
-            }
-            if d.bounds.min_x > c.bounds.max_x {
-                break;
-            }
-            if !overlaps(&c.bounds, &d.bounds) {
-                continue;
-            }
-            *spent += (c.last - c.first) * (d.last - d.first);
-            if *spent > budget {
-                return None;
-            }
-            if chunks_cross(&rings[i], c, &rings[j], d, i == j) {
-                return Some(true);
-            }
-        }
-    }
-    Some(false)
-}
-
-fn chunks_cross(r: &Ring, c: &Chunk, s: &Ring, d: &Chunk, same: bool) -> bool {
-    let n = r.points.len();
-    for k in c.first..c.last {
-        for l in d.first..d.last {
-            if same && (k == l || (k + 1) % n == l % n || (l + 1) % n == k % n) {
-                continue;
-            }
-            if same && l < k && d.first == c.first {
-                // Each pair within one chunk once.
-                continue;
-            }
-            let (a, b) = (r.point(k), r.point(k + 1));
-            let (p, q) = (s.point(l), s.point(l + 1));
-            if segments_meet(a, b, p, q) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// The side of the line through `a` and `b` that `p` lies on: 1 left, -1 right, 0 on it.
-fn side(a: Point, b: Point, p: Point) -> i8 {
-    let cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
-    if cross > 0.0 {
-        1
-    } else if cross < 0.0 {
-        -1
-    } else {
-        0
-    }
-}
-
-/// Whether `p` lies within the bounds of the segment from `a` to `b`.
-fn within(a: Point, b: Point, p: Point) -> bool {
-    a.x.min(b.x) <= p.x && p.x <= a.x.max(b.x) && a.y.min(b.y) <= p.y && p.y <= a.y.max(b.y)
-}
-
-/// Whether the segments from `a` to `b` and from `p` to `q` cross, touch, or overlap.
-fn segments_meet(a: Point, b: Point, p: Point, q: Point) -> bool {
-    let (d1, d2) = (side(p, q, a), side(p, q, b));
-    let (d3, d4) = (side(a, b, p), side(a, b, q));
-    if d1 * d2 < 0 && d3 * d4 < 0 {
-        return true;
-    }
-    (d1 == 0 && within(p, q, a))
-        || (d2 == 0 && within(p, q, b))
-        || (d3 == 0 && within(a, b, p))
-        || (d4 == 0 && within(a, b, q))
-}
-
-/// The rings wound by how deep each lies among the others, those at an even depth one way and
-/// those at an odd depth the other, which leaves the even-odd area as it is: a ring and the hole
-/// it holds, cut to the same piece, then have coincident edges that run opposite ways and cancel
-/// in the rasterizer's cells; run the same way, they would add up to a cell half covered.
-fn oriented(rings: Vec<Ring>, budget: usize, spent: &mut usize) -> Option<Vec<Ring>> {
-    let total: usize = rings.iter().map(|r| r.points.len()).sum();
-    let mut depths = Vec::with_capacity(rings.len());
-    for (i, ring) in rings.iter().enumerate() {
-        *spent += total;
-        if *spent > budget {
-            return None;
-        }
-        let depth = rings
-            .iter()
-            .enumerate()
-            .filter(|&(j, other)| j != i && contains(&other.points, ring.points[0]))
-            .count();
-        depths.push(depth);
-    }
-    Some(
-        rings
-            .into_iter()
-            .zip(depths)
-            .map(|(mut ring, depth)| {
-                if (signed_area(&ring.points) < 0.0) != (depth % 2 == 1) {
-                    ring.points.reverse();
-                    ring = Ring::new(&ring.points);
-                }
-                ring
-            })
-            .collect(),
-    )
-}
-
-/// Twice the ring's area, positive where it winds from x towards y.
-fn signed_area(ring: &[Point]) -> f64 {
-    let n = ring.len();
-    (0..n)
-        .map(|i| {
-            let (a, b) = (ring[i], ring[(i + 1) % n]);
-            a.x * b.y - b.x * a.y
-        })
-        .sum()
-}
-
-/// Whether the point lies inside the ring under the even-odd rule.
-fn contains(ring: &[Point], p: Point) -> bool {
-    let n = ring.len();
-    let mut inside = false;
-    for i in 0..n {
-        let (a, b) = (ring[i], ring[(i + 1) % n]);
-        if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x) {
-            inside = !inside;
-        }
-    }
-    inside
-}
-
-pub fn bounds_of(points: impl Iterator<Item = Point>) -> Rect {
-    let mut r = Rect {
-        min_x: f64::INFINITY,
-        min_y: f64::INFINITY,
-        max_x: f64::NEG_INFINITY,
-        max_y: f64::NEG_INFINITY,
+        contour
     };
-    for p in points {
-        r.min_x = r.min_x.min(p.x);
-        r.min_y = r.min_y.min(p.y);
-        r.max_x = r.max_x.max(p.x);
-        r.max_y = r.max_y.max(p.y);
+    let subject: Vec<Vec<IntPoint<i32>>> = rings
+        .iter()
+        .map(|r| scaled(&mut r.iter().copied()))
+        .filter(|c| c.len() >= 3)
+        .collect();
+    let clip: Vec<Vec<IntPoint<i32>>> = pieces
+        .iter()
+        .map(|p| scaled(&mut p.corners().into_iter()))
+        .filter(|c| c.len() >= 3)
+        .collect();
+    if subject.is_empty() || clip.is_empty() {
+        return Vec::new();
     }
-    r
-}
-
-fn overlaps(a: &Rect, b: &Rect) -> bool {
-    a.min_x <= b.max_x && b.min_x <= a.max_x && a.min_y <= b.max_y && b.min_y <= a.max_y
+    Overlay::from_subj_and_clip_custom(&subject, &clip, Default::default(), SOLVER)
+        .overlay(OverlayRule::Intersect, FillRule::EvenOdd)
+        .into_iter()
+        .flatten()
+        .map(|contour| {
+            contour
+                .into_iter()
+                .map(|q| Point {
+                    x: f64::from(q.x) / SCALE,
+                    y: f64::from(q.y) / SCALE,
+                })
+                .collect()
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -516,8 +214,20 @@ mod tests {
         Point { x, y }
     }
 
-    fn area(ring: &[Point]) -> f64 {
-        signed_area(ring).abs() / 2.0
+    /// Twice the area of a contour, positive where it winds from x towards y.
+    fn signed_area(ring: &[Point]) -> f64 {
+        let n = ring.len();
+        (0..n)
+            .map(|i| {
+                let (a, b) = (ring[i], ring[(i + 1) % n]);
+                a.x * b.y - b.x * a.y
+            })
+            .sum()
+    }
+
+    /// The even-odd area of contours wound as i_overlay winds them.
+    fn area(contours: &[Vec<Point>]) -> f64 {
+        contours.iter().map(|c| signed_area(c)).sum::<f64>().abs() / 2.0
     }
 
     /// The band from y = 4 to y = 6 across x = -5 to 15.
@@ -529,11 +239,6 @@ mod tests {
             to: 20.0,
             half: 1.0,
         }
-    }
-
-    /// The rings cut to the pieces, within `budget` steps to get ready and as many to cut.
-    fn intersect(rings: &[Vec<Point>], pieces: &[Piece], budget: usize) -> Option<Vec<Vec<Point>>> {
-        Cutter::new(rings, budget)?.cut(pieces.iter(), budget)
     }
 
     fn square(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<Point> {
@@ -550,7 +255,14 @@ mod tests {
             max_x: 40.0,
             max_y: 10.0,
         };
-        let pieces = pieces(&[[p(-25.0, 0.0), p(40.0, 0.0)]], &rect, &[10.0, 10.0], 2.0);
+        let pieces = pieces(
+            &[[p(-25.0, 0.0), p(40.0, 0.0)]],
+            &rect,
+            &[10.0, 10.0],
+            2.0,
+            9.0,
+        )
+        .unwrap();
         let spans: Vec<(f64, f64)> = pieces
             .iter()
             .map(|q| (q.corners()[0].x, q.corners()[1].x))
@@ -561,71 +273,64 @@ mod tests {
     }
 
     #[test]
-    fn a_ring_cut_to_a_piece_is_their_intersection() {
-        // A 10 × 10 square cut to a band 2 high across it, and a square with a hole: the cut
-        // ring and hole, filled even-odd, leave the band without the hole.
+    fn a_walk_of_dashes_past_its_steps_gives_none() {
+        // Verifies: Q-9
+        // A line from 3e125 pixels away, dashed in lengths of 1e-277: its phase is reduced to a
+        // period, but no step moves the walk along a pixel.
+        let rect = Rect {
+            min_x: -3.0,
+            min_y: -3.0,
+            max_x: 99.0,
+            max_y: 6.0,
+        };
+        let far = [[p(-3.4e125, 2.1e125), p(0.0, 1.29)]];
+        assert_eq!(pieces(&far, &rect, &[1.8e-278, 5.8e-277], 1.0, 1e6), None);
+        // The line of 65 pixels above walks 7 dashes and gaps.
+        let near = [[p(-25.0, 0.0), p(40.0, 0.0)]];
+        let wide = Rect {
+            min_x: -30.0,
+            min_y: -10.0,
+            max_x: 40.0,
+            max_y: 10.0,
+        };
+        assert!(pieces(&near, &wide, &[10.0, 10.0], 2.0, 7.0).is_some());
+        assert_eq!(pieces(&near, &wide, &[10.0, 10.0], 2.0, 6.0), None);
+    }
+
+    #[test]
+    fn the_rings_and_the_pieces_intersect_under_the_even_odd_rule() {
+        // Verifies: ADR-0032
+        // A square with a hole, cut to a band 2 high across both: the band less the hole.
         let outer = square(0.0, 0.0, 10.0, 10.0);
-        assert_eq!(area(&cut_ring(&Ring::new(&outer), &band(), &mut 0)), 20.0);
         let hole = square(3.0, 3.0, 5.0, 7.0);
-        let cut = intersect(&[outer, hole], &[band()], usize::MAX).unwrap();
-        assert_eq!(cut.len(), 2);
-        assert_eq!(area(&cut[0]) - area(&cut[1]), 16.0);
-        // The hole, wound as the square is, is cut wound the other way.
-        assert!(signed_area(&cut[0]) * signed_area(&cut[1]) < 0.0);
+        assert_eq!(
+            area(&intersect(&[outer.clone(), hole.clone()], &[band()])),
+            16.0
+        );
+        // Two rings over each other and a ring given twice: the part covered twice is outside.
+        let other = square(5.0, 0.0, 15.0, 10.0);
+        assert_eq!(area(&intersect(&[outer.clone(), other], &[band()])), 20.0);
+        assert_eq!(
+            area(&intersect(&[outer.clone(), outer.clone()], &[band()])),
+            0.0
+        );
+        // Two pieces over each other: there the stroke is empty.
+        let half = Piece { to: 10.0, ..band() };
+        assert_eq!(area(&intersect(&[outer], &[band(), half])), 10.0);
     }
 
     #[test]
-    fn a_ring_of_many_vertices_is_cut_chunk_by_chunk_to_the_same_area() {
-        // A circle of 4000 vertices, radius 10 about (5, 5): the band through its middle.
-        let circle: Vec<Point> = (0..4000)
-            .map(|i| {
-                let t = f64::from(i) / 4000.0 * std::f64::consts::TAU;
-                p(5.0 + 10.0 * t.cos(), 5.0 + 10.0 * t.sin())
-            })
-            .collect();
-        let mut spent = 0;
-        let cut = cut_ring(&Ring::new(&circle), &band(), &mut spent);
-        // Both chords at y = 4 and 6 lie 1 from the centre: the band is near 2 × 2 × 10.
-        assert!((area(&cut) - 39.93).abs() < 0.01, "{}", area(&cut));
-        // The groups and chunks beyond the band each cost one step.
-        assert!(spent < 600, "{spent}");
-    }
-
-    #[test]
-    fn crossing_or_overlapping_rings_are_found() {
-        let a = square(0.0, 0.0, 40.0, 62.0);
-        let b = square(20.0, 0.0, 60.0, 62.0);
-        let hole = square(10.0, 10.0, 20.0, 20.0);
-        fn found(rs: &[&Vec<Point>]) -> Option<bool> {
-            let rings: Vec<Ring> = rs.iter().map(|r| Ring::new(r)).collect();
-            crossing(&rings, usize::MAX, &mut 0)
-        }
-        assert_eq!(found(&[&a, &hole]), Some(false));
-        assert_eq!(found(&[&a, &b]), Some(true), "two rings that overlap");
-        assert_eq!(found(&[&a, &a]), Some(true), "a ring given twice");
-        let twice = [a.clone(), a.clone()].concat();
-        assert_eq!(found(&[&twice]), Some(true), "a ring wound twice");
-        let bow = vec![p(0.0, 0.0), p(10.0, 10.0), p(10.0, 0.0), p(0.0, 10.0)];
-        assert_eq!(found(&[&bow]), Some(true), "a ring that crosses itself");
-        // The closing point, repeated, is no crossing.
-        let closed = [a.clone(), vec![a[0]]].concat();
-        assert_eq!(found(&[&closed]), Some(false));
-        assert_eq!(intersect(&[a, b], &[band()], usize::MAX), None);
-    }
-
-    #[test]
-    fn a_ring_far_from_a_piece_costs_nothing_and_a_spent_budget_gives_none() {
-        let far = vec![p(100.0, 100.0), p(110.0, 100.0), p(110.0, 110.0)];
-        // Looking for crossings costs a step for the one chunk and 3 × 3 for its edges against
-        // themselves, winding the ring its 3 vertices: 13 in all.
-        assert!(Cutter::new(std::slice::from_ref(&far), 12).is_none());
-        let cutter = Cutter::new(&[far], 13).unwrap();
-        // Cutting the ring to a far piece costs nothing.
-        assert_eq!(cutter.cut([band()].iter(), 0), Some(Vec::new()));
-        // Cutting a near ring costs a step for its group, one for its chunk, and one for each of
-        // its 3 edges.
-        let near = Cutter::new(&[vec![p(0.0, 0.0), p(5.0, 0.0), p(5.0, 5.0)]], 13).unwrap();
-        assert_eq!(near.cut([band()].iter(), 4), None);
-        assert!(near.cut([band()].iter(), 5).is_some());
+    fn coordinates_round_to_a_hundredth_of_a_pixel_half_away_from_zero() {
+        // Verifies: ADR-0032
+        // A band from y = 4.004 to 5.996 and a square from x = 0.125 to 9.875, exact in binary:
+        // Clipper's Round makes them 4.00 to 6.00, and 12.5 and 987.5 hundredths 0.13 to 9.88.
+        let thin = Piece {
+            start: p(-5.0, 5.0),
+            half: 0.996,
+            ..band()
+        };
+        let square = square(0.125, 0.0, 9.875, 10.0);
+        let cut = intersect(&[square], &[thin]);
+        assert!((area(&cut) - 2.0 * 9.75).abs() < 1e-9, "{}", area(&cut));
     }
 }

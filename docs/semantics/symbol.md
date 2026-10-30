@@ -67,28 +67,31 @@ styles, plus 2. It is clipped in map units, or, where a style of the class has a
 in pixels after the transformation, to the image so grown. Each line runs across the clipped
 polygon's bounding box grown by 0.7072 widths, so that the box sets where its dashes fall, is
 dashed by `PATTERN` from its first point, the lengths scaled by the factor the bounds applied to
-the width, and is stroked with butt caps; the stroke is cut to the polygon, both read under the
-even-odd rule, so that where stroked lines overlap, at a `SIZE` below the `WIDTH`, and where the
-polygon's rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the pattern
-by 0, and AGG draws its infinite dashes as solid lines. `OFFSET` moves the polygon after the
-clip. The hatch, as a polygon's fill, is filled through the AGG output format's gamma
+the width, and is stroked with butt caps. The stroke is cut from the polygon as MapServer's
+Clipper cuts it ([ADR-0032](../adr/0032-hatch-cut-by-i-overlay.md)): the intersection of the
+polygon with the stroke's rectangles, both read under the even-odd rule, every coordinate rounded
+to a hundredth of a pixel; so where stroked lines overlap, at a `SIZE` below the `WIDTH`, and
+where the polygon's rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the
+pattern by 0, and AGG draws its infinite dashes as solid lines. `OFFSET` moves the polygon after
+the clip. The cut is filled under the non-zero rule through the AGG output format's gamma
 ([`style-symbol.md`](style-symbol.md)).
 
 A hatch that would not end or that costs past its bounds is not drawn, and the layer warns with
 `hatch-not-drawn` (Q-9): a spacing not above 0; a pattern with a length below 0 or not finite,
 or whose lengths add up to 0; a spacing that no longer moves the lines where they cross the
-image, so far from the map's origin; more than 1 048 576 lines, 2^25 pixels of lines, or 2^22
-dashes over the image. MapServer loops forever on the first three and for as long as it takes
-on the last. Only the lines that cross the image are laid; the others draw nothing.
+image, so far from the map's origin; more than 1 048 576 lines, 2^23 pixels of lines, or 2^20
+dashes and gaps over the image; a polygon of more than 16 384 vertices; or more than 2^21
+crossings of its edges with the stroke, as estimated from the bands of the lines each edge
+reaches across. MapServer loops forever on the first three and for as long as it takes on the
+rest. Only the lines that cross the image are laid; the others draw nothing.
 
 **Not yet as MapServer draws a hatch.** A size, width, or angle bound to a property or given by
 an expression is drawn as if unset, and the scale factor is 1; both count so in the clip buffer
-too. MapServer's polygon clipper rounds the cut of the stroke to the polygon to a hundredth of a
-pixel; Forager cuts in floating point, a band of 256 rows at a time. Where the polygon's rings
-cross or overlap, or one crosses itself, or where getting the rings ready or cutting them for a
-band would take more than 2^25 steps, it intersects the coverage of the stroke and of the
-polygon instead, which matches inside the polygon and lightens the pixels on its edge. The
-polygon of any other style is not clipped, which draws the same.
+too, where MapServer counts the values bound for the feature drawn before, since it computes the
+buffer before it binds the feature's. A pixmap or SVG symbol of the class counts in the clip
+buffer at a default size of 1, where MapServer takes its image's height. i_overlay snaps points
+that come within a hundredth of a pixel of an edge, which Clipper does not. The polygon of any
+other style is not clipped, which draws the same.
 
 **Not yet as MapServer draws it at a point.** A point style without a symbol it draws — none, 0,
 a pixmap, TrueType, SVG, hatch, or simple symbol, a symbol bound to a property, or a name no

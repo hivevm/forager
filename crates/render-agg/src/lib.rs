@@ -34,8 +34,7 @@ use agg_rust::rasterizer_scanline_aa::{RasterizerScanlineAa, Scanline};
 use agg_rust::renderer_base::RendererBase;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::rendering_buffer::RowAccessor;
-use agg_rust::scanline_boolean_algebra::{ScanlineGenerator, sbool_intersect_shapes_aa};
-use agg_rust::scanline_storage_aa::ScanlineStorageAa;
+use agg_rust::scanline_boolean_algebra::ScanlineGenerator;
 use agg_rust::scanline_u::ScanlineU8;
 use forager_render::{
     Dashes, DisplayItem, DrawOp, Hatch, LineCap, LineJoin, Point, Renderer, RgbaImage,
@@ -252,21 +251,14 @@ impl AggRenderer {
     }
 
     /// Fills a hatch as msHatchPolygon() does: the lines stroked with butt caps, each dashed
-    /// from its first point with the pattern as given, and the stroke intersected with the
-    /// polygon, both under the even-odd rule, then filled through MapServer's default gamma. The
-    /// lines are clipped to the image grown by the stroke before agg-rust sees them, a dashed line
-    /// keeping the phase its dashes had at its first point. The hatch is drawn a band of
-    /// [`BAND_ROWS`] rows at a time, the polygon cut to each dash that reaches into the band (see
-    /// [`hatch::Cutter`]); where the polygon's rings cross or overlap, or where getting them
-    /// ready or cutting them for a band would take more than [`HATCH_CUT_BUDGET`] steps, the
-    /// stroke and the polygon are rasterized apart there and their anti-aliased scanlines
-    /// intersected instead, which gives the same pixels inside and multiplies the coverage on the
-    /// polygon's edge. A hatch beyond the bounds of [`Hatch::is_bounded`] draws nothing (Q-9).
+    /// from its first point with the pattern as given, the stroke intersected with the polygon
+    /// as MapServer's Clipper intersects them (see [`hatch::intersect`]), and the intersection
+    /// filled under the non-zero rule through MapServer's default gamma, as
+    /// renderPolygonHatches() fills it. The polygon is clipped to the image grown by a margin and
+    /// the lines to the image grown by the stroke before they are cut, a dashed line keeping the
+    /// phase its dashes had at its first point. A hatch beyond the bounds of
+    /// [`Hatch::is_bounded`] draws nothing (Q-9).
     fn hatch(&mut self, hatch: &Hatch) {
-        self.hatch_within(hatch, HATCH_CUT_BUDGET);
-    }
-
-    fn hatch_within(&mut self, hatch: &Hatch, budget: usize) {
         if !(hatch.width.is_finite() && hatch.width > 0.0)
             || !hatch.is_bounded(self.width, self.height)
         {
@@ -278,98 +270,27 @@ impl AggRenderer {
             .rings
             .iter()
             .map(|ring| clip_ring(ring, &fill_rect))
-            .filter(|ring| ring.len() >= 3)
             .collect();
         let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN + width / 2.0);
-        let pieces = hatch::pieces(&hatch.lines, &rect, hatch.dashes(), width);
-        let gamma = gamma_table();
-        let cutter = hatch::Cutter::new(&rings, budget);
-        let polygon = Shapes::new(rings);
-        // The pieces that reach into each band, by their index.
-        let bands: Vec<(u32, u32)> = self.bands().collect();
-        let mut in_band: Vec<Vec<u32>> = vec![Vec::new(); bands.len()];
-        for (index, piece) in (0u32..).zip(&pieces) {
-            let bounds = hatch::bounds_of(piece.corners().into_iter());
-            for (band, &(top, bottom)) in in_band.iter_mut().zip(&bands) {
-                if bounds.max_y >= f64::from(top) && bounds.min_y <= f64::from(bottom) {
-                    band.push(index);
-                }
-            }
-        }
-        for (band, indices) in bands.into_iter().zip(in_band) {
-            let reaching = || indices.iter().map(|&i| &pieces[i as usize]);
-            let cut = cutter.as_ref().and_then(|c| c.cut(reaching(), budget));
-            if let Some(cut) = cut {
-                let mut area = Shapes::new(cut).even_odd(band, self.width);
-                self.paint(&mut area, hatch.color, &gamma);
-                continue;
-            }
-            let strokes = Shapes::new(reaching().map(|p| p.corners().to_vec()).collect());
-            let mut hatched = ScanlineStorageAa::new();
-            sbool_intersect_shapes_aa(
-                &mut polygon.even_odd(band, self.width),
-                &mut strokes.even_odd(band, self.width),
-                &mut ScanlineU8::new(),
-                &mut ScanlineU8::new(),
-                &mut ScanlineU8::new(),
-                &mut hatched,
-            );
-            self.paint(&mut hatched, hatch.color, &gamma);
-        }
-    }
-
-    /// The image's rows in bands of [`BAND_ROWS`], each from its top to its bottom.
-    fn bands(&self) -> impl Iterator<Item = (u32, u32)> + use<> {
-        let height = self.height;
-        (0..height)
-            .step_by(BAND_ROWS as usize)
-            .map(move |top| (top, (top + BAND_ROWS).min(height)))
-    }
-}
-
-/// Closed shapes and their bounds, rasterized a band of rows at a time.
-struct Shapes {
-    shapes: Vec<(Vec<Point>, Rect)>,
-}
-
-impl Shapes {
-    fn new(shapes: Vec<Vec<Point>>) -> Self {
-        let shapes = shapes
-            .into_iter()
-            .map(|s| {
-                let bounds = hatch::bounds_of(s.iter().copied());
-                (s, bounds)
-            })
-            .collect();
-        Self { shapes }
-    }
-
-    /// The shapes that reach into the rows from `top` to `bottom`, under the even-odd rule,
-    /// clipped by the rasterizer to those rows: it holds the cells of the band alone, and the
-    /// pixels of the band come out as from the whole.
-    fn even_odd(&self, (top, bottom): (u32, u32), width: u32) -> RasterizerScanlineAa {
-        let (top, bottom) = (f64::from(top), f64::from(bottom));
+        let Some(pieces) = hatch::pieces(
+            &hatch.lines,
+            &rect,
+            hatch.dashes(),
+            width,
+            Hatch::MAX_DASHES,
+        ) else {
+            return;
+        };
         let mut path = PathStorage::new();
-        for (shape, bounds) in &self.shapes {
-            if bounds.max_y >= top && bounds.min_y <= bottom {
-                add(&mut path, shape, true);
-            }
+        for contour in hatch::intersect(&rings, &pieces) {
+            add(&mut path, &contour, true);
         }
-        let mut rasterizer = RasterizerScanlineAa::new();
-        rasterizer.clip_box(0.0, top, f64::from(width), bottom);
-        rasterizer.filling_rule(FillingRule::EvenOdd);
-        rasterizer.add_path(&mut path, 0);
-        rasterizer
+        let mut area = RasterizerScanlineAa::new();
+        area.filling_rule(FillingRule::NonZero);
+        area.add_path(&mut path, 0);
+        self.paint(&mut area, hatch.color, &gamma_table());
     }
 }
-
-/// The rows of the image a hatch is cut and rasterized in at a time, so that the cut rings and the
-/// rasterizer's cells of one band only are held.
-const BAND_ROWS: u32 = 256;
-
-/// The most steps a hatch spends finding whether its rings cross and winding them, and then
-/// cutting them to the dashes of one band.
-const HATCH_CUT_BUDGET: usize = 1 << 25;
 
 /// MapServer's default `GAMMA` of its AGG output formats, `src/mapagg.cpp`.
 const GAMMA: f64 = 0.75;
@@ -542,20 +463,14 @@ mod tests {
         assert_eq!(image.pixel(50, 31), Some(WHITE), "a gap, 70 to 80");
     }
 
-    fn hatched(rings: Vec<Vec<Point>>, lines: Vec<[Point; 2]>, budget: usize) -> RgbaImage {
-        let mut renderer = AggRenderer::new();
-        renderer.begin(64, 64, WHITE);
-        renderer.hatch_within(
-            &Hatch {
-                rings,
-                lines,
-                color: RED,
-                width: 3.0,
-                pattern: vec![],
-            },
-            budget,
-        );
-        renderer.finish()
+    fn hatched(rings: Vec<Vec<Point>>, lines: Vec<[Point; 2]>, pattern: Vec<f64>) -> RgbaImage {
+        render(&[DrawOp::Hatch(Hatch {
+            rings,
+            lines,
+            color: RED,
+            width: 3.0,
+            pattern,
+        })])
     }
 
     fn rectangle(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<Point> {
@@ -564,14 +479,15 @@ mod tests {
 
     #[test]
     fn where_rings_overlap_or_repeat_the_hatch_there_is_empty() {
+        // Verifies: ADR-0032
         // Two rings that overlap from x = 20 to 40, and one ring given twice, under a line 3 wide
         // at y = 30.25: under the even-odd rule the part covered twice is outside the polygon,
         // on the line's edge rows 28 and 31 too.
         let line = vec![[p(0.0, 30.25), p(64.0, 30.25)]];
         let a = rectangle(0.0, 0.0, 40.0, 62.0);
         let b = rectangle(20.0, 0.0, 60.0, 62.0);
-        let overlapping = hatched(vec![a.clone(), b], line.clone(), HATCH_CUT_BUDGET);
-        let twice = hatched(vec![a.clone(), a], line, HATCH_CUT_BUDGET);
+        let overlapping = hatched(vec![a.clone(), b], line.clone(), vec![]);
+        let twice = hatched(vec![a.clone(), a], line, vec![]);
         for y in [28, 29, 30, 31] {
             assert_eq!(overlapping.pixel(30, y), Some(WHITE), "overlap, row {y}");
             assert_eq!(twice.pixel(10, y), Some(WHITE), "twice, row {y}");
@@ -581,30 +497,83 @@ mod tests {
     }
 
     #[test]
-    fn the_coverage_intersection_differs_from_the_cut_on_the_polygon_s_edge_only() {
-        // A triangle under lines 3 wide every 6 rows, cut exactly and, with no budget, by the
-        // coverage intersection: the pixels agree but on the slanted edge.
-        let triangle = vec![p(4.0, 4.0), p(60.0, 4.0), p(4.0, 60.0)];
-        let lines: Vec<[Point; 2]> = (0..10)
-            .map(|i| {
-                let y = 5.25 + 6.0 * f64::from(i);
-                [p(0.0, y), p(64.0, y)]
+    fn a_hole_stays_white_under_rotated_dashes() {
+        // Verifies: ADR-0032
+        // A square with a hole, its hole wound as the square is and touching nothing, under
+        // dashed lines 3 wide at 30°, 4 apart: no pixel inside the hole is touched.
+        let outer = rectangle(4.0, 4.0, 60.0, 60.0);
+        let hole = rectangle(20.5, 18.25, 43.75, 41.5);
+        let (cos, sin) = (0.866_025_403_784_438_6, 0.5);
+        let lines: Vec<[Point; 2]> = (-20..20)
+            .map(|k| {
+                let o = 4.0 * f64::from(k);
+                let (cx, cy) = (32.0 - sin * o, 32.0 + cos * o);
+                [
+                    p(cx - 60.0 * cos, cy - 60.0 * sin),
+                    p(cx + 60.0 * cos, cy + 60.0 * sin),
+                ]
             })
             .collect();
-        let exact = hatched(vec![triangle.clone()], lines.clone(), HATCH_CUT_BUDGET);
-        let fallback = hatched(vec![triangle], lines, 0);
-        let mut differing = 0;
-        for y in 0..64 {
-            for x in 0..64 {
-                if exact.pixel(x, y) != fallback.pixel(x, y) {
-                    differing += 1;
-                    // The edge x + y = 64 crosses the pixels with x + y from 63 to 64.
-                    let reach = f64::from(x + y) + 1.0 - 64.0;
-                    assert!((-1.0..=1.0).contains(&reach), "({x}, {y}) off the edge");
-                }
+        let image = hatched(vec![outer, hole], lines, vec![7.0, 2.5, 1.0, 2.5]);
+        for y in 19..41 {
+            for x in 21..43 {
+                assert_eq!(image.pixel(x, y), Some(WHITE), "({x}, {y}) in the hole");
             }
         }
-        assert!(differing > 0, "the edge pixels are lighter in the fallback");
+        assert!(
+            (5..59).any(|x| image.pixel(x, 10) == Some(RED)),
+            "the hatch around it"
+        );
+    }
+
+    /// A comb of 2000 teeth across `side` pixels, its 8003 vertices, and the lines at 45° a
+    /// pixel apart across a square image of that side.
+    fn comb(side: f64) -> (Vec<Point>, Vec<[Point; 2]>) {
+        let tooth = side / 2000.0;
+        let mut comb = vec![p(0.0, side), p(side, side)];
+        for i in (0..2000).rev() {
+            let x = f64::from(i) * tooth;
+            comb.extend([
+                p(x + tooth, 2.0),
+                p(x + tooth / 2.0, 2.0),
+                p(x + tooth / 2.0, side - 2.0),
+                p(x, side - 2.0),
+            ]);
+        }
+        comb.push(p(0.0, side));
+        #[expect(clippy::cast_possible_truncation, reason = "a small whole number")]
+        let reach = side as i32;
+        let lines = (-reach..reach)
+            .map(|k| {
+                let o = f64::from(k);
+                [p(o - 1.0, -1.0), p(o + side + 1.0, side + 1.0)]
+            })
+            .collect();
+        (comb, lines)
+    }
+
+    #[test]
+    fn a_comb_under_a_dense_hatch_is_cut_within_the_bounds_or_not_at_all() {
+        // Verifies: Q-9
+        // Over 4096 × 4096 the comb's teeth cross some 1.1e7 stroke bands, past the bound on
+        // the crossings; cut, they took 21.6 GB.
+        let (teeth, lines) = comb(4096.0);
+        let dense = Hatch {
+            rings: vec![teeth],
+            lines,
+            color: RED,
+            width: 1.0,
+            pattern: vec![],
+        };
+        assert!(!dense.is_bounded(4096, 4096));
+        // Over 64 × 64, some 5e5 crossings, it is cut, and only inside the comb.
+        let (teeth, lines) = comb(64.0);
+        let image = hatched(vec![teeth], lines, vec![]);
+        assert!(
+            image.pixels.chunks(4).any(|px| px != [255, 255, 255, 255]),
+            "the comb is cut"
+        );
+        assert_eq!(image.pixel(32, 0), Some(WHITE), "above the teeth");
     }
 
     #[test]
@@ -772,9 +741,9 @@ mod tests {
                 dashes: Dashes::default(),
             },
         ]);
-        // A hatch's dashes walked one by one, and its polygon cut to each, stay bounded: tiny
-        // or empty dashes over long lines, and a ring of 40 000 vertices under 2 000 lines,
-        // past the budget of the cut.
+        // A hatch's dashes walked one by one, and its polygon cut, stay bounded: tiny or empty
+        // dashes over long lines, and a ring of 40 000 vertices, past the bound on the polygon,
+        // under 2 000 lines.
         let circle: Vec<Point> = (0..40_000)
             .map(|i| {
                 let t = f64::from(i) / 40_000.0 * std::f64::consts::TAU;

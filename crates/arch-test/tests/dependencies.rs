@@ -267,6 +267,13 @@ fn only_label_reads_fonts_with_skrifa() {
 }
 
 #[test]
+fn only_render_agg_cuts_polygons_with_i_overlay() {
+    // Verifies: ADR-0032
+    let ws = workspace();
+    assert_eq!(dependents(&ws, "i_overlay"), ["render-agg"]);
+}
+
+#[test]
 fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
     // The table itself, so that a test that never fails cannot pass for a check.
     let t = TABLE;
