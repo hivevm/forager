@@ -9,6 +9,7 @@ mod projection;
 mod report;
 mod syntax;
 mod translate;
+mod wkt;
 
 use std::collections::BTreeMap;
 use std::future::Future;

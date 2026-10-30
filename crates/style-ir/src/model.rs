@@ -198,8 +198,50 @@ pub struct Layer {
     pub opacity: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
+    /// The features written into the layer (ADR-0033). A layer with any is read from them alone,
+    /// whatever source it names or a host binds to it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub features: Vec<InlineFeature>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
+}
+
+/// A feature written into a layer, a shape as MapServer holds one (ADR-0033).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct InlineFeature {
+    #[serde(rename = "type")]
+    pub shape_type: ShapeType,
+    /// Its parts, each a list of `[x, y]` in the layer's coordinates: a point shape's points, a
+    /// line shape's lines, a polygon shape's rings, an outer ring not told from an inner one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<Vec<[f64; 2]>>,
+    /// Its properties, each a string, in order; a reader finds a name without regard to ASCII
+    /// case, the first of two that match.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub properties: Vec<FeatureProperty>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span: Option<Span>,
+}
+
+/// The type of an inline feature's shape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum ShapeType {
+    Point,
+    Line,
+    Polygon,
+}
+
+/// A property of an inline feature.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct FeatureProperty {
+    pub name: String,
+    pub value: String,
 }
 
 /// The projection of a layer.

@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::{
     Bound, Class, Diagnostic, Expr, Extent, Layer, LayerProjection, LayerStatus, Map, Op,
-    RenderMode, Rgba, SourceRef, Span, Symbol, Units,
+    RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol, Units,
 };
 
 use crate::expression;
@@ -30,6 +30,7 @@ use crate::lexer::{Token, TokenKind};
 use crate::report::Report;
 use crate::syntax::{Block, Directive, Node};
 
+mod feature;
 mod fonts;
 mod label;
 mod output;
@@ -243,26 +244,24 @@ impl Translator<'_> {
         let label_item = item(block, "LABELITEM");
         let filter_item = item(block, "FILTERITEM");
         let mut composites = Vec::new();
+        // A layer with features is an inline layer (msInitializeVirtualTable), whose item names
+        // its PROCESSING "ITEMS=…" gives (msLayerGetItems).
+        let inline = block
+            .nodes
+            .iter()
+            .any(|node| matches!(node, Node::Block(b) if b.keyword == "FEATURE"));
+        let item_names = feature::item_names(block);
+        // The shape type of the features the TYPE read so far gives (loadLayer); none before one.
+        let mut shape_type = None;
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
                     "NAME" => layer.name = self.string(d),
-                    "TYPE" => match self.word(d).as_deref() {
-                        Some("POINT") => layer.render_mode = Some(RenderMode::Point),
-                        Some("LINE") => layer.render_mode = Some(RenderMode::Line),
-                        Some("POLYGON" | "CIRCLE") => layer.render_mode = Some(RenderMode::Polygon),
-                        Some("RASTER") => layer.render_mode = Some(RenderMode::Raster),
-                        Some("ANNOTATION") => layer.render_mode = Some(RenderMode::Annotation),
-                        Some("QUERY") => {
-                            self.warn("discarded-layer", "a QUERY layer is discarded", &d.span);
-                            return None;
+                    "TYPE" => {
+                        if let Some(read) = self.layer_type(&mut layer, d)? {
+                            shape_type = Some(read);
                         }
-                        Some(other) => {
-                            let message = format!("layer type {other} is not yet supported");
-                            self.warn("unsupported-value", &message, &d.span);
-                        }
-                        None => {}
-                    },
+                    }
                     "STATUS" => {
                         layer.status = self.choice(
                             d,
@@ -287,6 +286,9 @@ impl Translator<'_> {
                     "SYMBOLSCALE" | "SYMBOLSCALEDENOM" => {
                         layer.symbol_scale_denom = self.number(d, Range::at_least(1.0));
                     }
+                    "PROCESSING" if inline && feature::items_value(d).is_some() => {
+                        self.string(d);
+                    }
                     "CONNECTION" | "DATA" => {
                         if let Some(value) = self.string(d) {
                             props.insert(d.keyword.to_ascii_lowercase(), value);
@@ -305,6 +307,10 @@ impl Translator<'_> {
                     }
                     "PROJECTION" => layer.projection = self.projection(b),
                     "COMPOSITE" => composites.push(b),
+                    "FEATURE" => {
+                        let feature = self.feature(b, shape_type, &item_names);
+                        layer.features.extend(feature);
+                    }
                     _ => self.unhandled(&b.keyword, &b.span),
                 },
             }
@@ -331,6 +337,35 @@ impl Translator<'_> {
             });
         }
         Some(layer)
+    }
+
+    /// Sets the render mode of a layer's `TYPE`, and gives the shape type of the features after it
+    /// (loadLayer): polygon for `POLYGON`, line for `LINE`, point for every other. `None` for a
+    /// `QUERY` layer, which is discarded.
+    fn layer_type(&mut self, layer: &mut Layer, d: &Directive) -> Option<Option<ShapeType>> {
+        let word = self.word(d);
+        let shape_type = word.as_deref().map(|w| match w {
+            "POLYGON" => ShapeType::Polygon,
+            "LINE" => ShapeType::Line,
+            _ => ShapeType::Point,
+        });
+        match word.as_deref() {
+            Some("POINT") => layer.render_mode = Some(RenderMode::Point),
+            Some("LINE") => layer.render_mode = Some(RenderMode::Line),
+            Some("POLYGON" | "CIRCLE") => layer.render_mode = Some(RenderMode::Polygon),
+            Some("RASTER") => layer.render_mode = Some(RenderMode::Raster),
+            Some("ANNOTATION") => layer.render_mode = Some(RenderMode::Annotation),
+            Some("QUERY") => {
+                self.warn("discarded-layer", "a QUERY layer is discarded", &d.span);
+                return None;
+            }
+            Some(other) => {
+                let message = format!("layer type {other} is not yet supported");
+                self.warn("unsupported-value", &message, &d.span);
+            }
+            None => {}
+        }
+        Some(shape_type)
     }
 
     /// A layer's opacity from its `COMPOSITE` blocks. msDrawLayer draws a layer that has one into

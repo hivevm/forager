@@ -286,9 +286,10 @@ mod tests {
     use crate::MAX_DROPPED_VALUES;
     use crate::Step;
     use crate::{
-        Align, AngleMode, Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer,
-        LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset, MinFeatureSize, Op, Position,
-        RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
+        Align, AngleMode, Bound, Class, Expr, Extent, FeatureProperty, Force, GeomTransform,
+        InlineFeature, Label, Layer, LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset,
+        MinFeatureSize, Op, Position, RenderMode, Rgba, ShapeType, SourceRef, Span, Style, Symbol,
+        SymbolKind, SymbolRef, Units,
     };
     use serde_json::Value;
 
@@ -358,6 +359,16 @@ mod tests {
                     styles: vec![sample_style()],
                     labels: vec![sample_label()],
                     span: Some(Span::new("world.map", 12, 7)),
+                }],
+                features: vec![InlineFeature {
+                    shape_type: ShapeType::Polygon,
+                    parts: vec![vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0]]],
+                    properties: vec![FeatureProperty {
+                        name: "iso".into(),
+                        value: "AT".into(),
+                    }],
+                    text: Some("Austria".into()),
+                    span: Some(Span::new("world.map", 30, 5)),
                 }],
                 span: Some(Span::new("world.map", 6, 3)),
             }],

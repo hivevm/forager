@@ -738,7 +738,7 @@ fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, 
         let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
             continue;
         };
-        if forager_engine::reads_features(layer)
+        if forager_engine::reads_bound_source(layer)
             && source.kind == "local"
             && let Some(data) = source.props.get("data")
             && let Ok(data) = ResourcePath::new(data)

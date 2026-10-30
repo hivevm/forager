@@ -19,7 +19,8 @@ than anywhere else, and none beats one that has stopped being true.
 A host embeds the core and owns all I/O: the CLI reads files, and the browser bindings take what a
 page passes in. The host hands the mapfile frontend a resource loader rooted at the base context
 and a projection resolver; the frontend returns a style document and diagnostics. To render, the
-host binds a feature source to each layer by the layer's name and hands the engine a renderer;
+host binds a feature source to each layer by the layer's name, which a layer that holds its
+features inline does not need, and hands the engine a renderer;
 the engine returns an RGBA image and diagnostics, and the host encodes it or hands it to the
 page.
 
@@ -54,7 +55,9 @@ golden path and the test pattern an agent copies from are named here.
   a path, read through the resource loader against the same directory within the same bounds
   (`init_file.rs`, [ADR-0023](adr/0023-projection-resolver-and-init-files.md)), and the
   translation into the style IR (`translate/`, a module per block it reads: symbols, font set,
-  labels, styles, projections), which reports every keyword it does not carry over, translates
+  labels, styles, projections, inline features), which reports every keyword it does not carry
+  over, reads the WKT of an inline feature with a reader of its own, bounded in nesting (`wkt.rs`,
+  [ADR-0033](adr/0033-inline-features-in-the-style-ir.md)), translates
   MapServer's expressions with their typing into the CQL2 tree (`expression.rs`), and resolves
   every other `init=` through the host's projection resolver. A load reports at most a thousand
   diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
@@ -66,7 +69,9 @@ golden path and the test pattern an agent copies from are named here.
   are ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax in `pattern.rs`. Synchronous,
   without I/O; the only crate that uses `regex`.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
-  bound feature source for the features in view, draws each feature that passes the layer's
+  bound feature source for the features in view, or, for a layer with inline features, a source
+  in memory of its own over them, which reports a bound source as not read (`inline.rs`,
+  ADR-0033), draws each feature that passes the layer's
   filter with the first class whose expression matches it, its styles' bound and computed
   properties bound to it (`classes.rs`), and turns each feature and style into display items
   by the layer's render mode. A layer without a source, or whose source fails, is skipped with a
