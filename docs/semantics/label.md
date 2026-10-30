@@ -39,7 +39,8 @@ same way, since dropped it would draw the label for every feature.
 splits it); `SIZE`, a number above 0, an attribute, an expression, or a bitmap size `tiny`,
 `small`, `medium`, `large`, `giant`, which MapServer stores as 5, 7, 10, 13, 16 (`MS_TINY` to
 `MS_GIANT`); `MINSIZE`, `MAXSIZE`; `COLOR`, `OUTLINECOLOR`, `SHADOWCOLOR`, as
-[colours](color.md); `OUTLINEWIDTH`; `SHADOWSIZE` and `OFFSET`, two numbers or attributes;
+[colours](color.md), all but `SHADOWCOLOR` also an attribute; `OUTLINEWIDTH`; `SHADOWSIZE` and
+`OFFSET`, two numbers or attributes;
 `POSITION`, one of `ul` … `lr` or `auto`, or an attribute; `ANGLE`, a number from −360 to 360,
 an attribute, or `auto`, `auto2`, `follow`; `ALIGN`; `WRAP`, one character; `MAXLENGTH`,
 `BUFFER`, `MINDISTANCE`, `REPEATDISTANCE`, `MINFEATURESIZE` (a number or `auto`),
