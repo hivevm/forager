@@ -1,6 +1,6 @@
 # ADR-0032: The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-30
 - **Deciders:** Markus Brigl
 - **Applies to:** the cut of a hatch in `crates/render-agg`, the `i_overlay` entry of its `Cargo.toml`, and the bounds of a hatch in `crates/render`
