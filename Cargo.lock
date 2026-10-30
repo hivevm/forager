@@ -288,6 +288,7 @@ version = "0.1.0"
 dependencies = [
  "forager-render",
  "libm",
+ "peak_alloc",
  "skrifa",
 ]
 

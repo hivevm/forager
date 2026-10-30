@@ -24,9 +24,9 @@
 //! before it; it is drawn where it fits, or where it is forced, and left out where a drawn label
 //! of the same text lies within its minimum distance.
 //!
-//! The tests are MapServer's, pair by pair; which pairs are tested is bounded by a grid over the
-//! image (Q-9): a box meets only the boxes held in the cells it covers, so a test visits those
-//! and no other, and every pair that can overlap shares a cell.
+//! The tests are MapServer's, pair by pair; which pairs are tested is bounded by a loose grid
+//! over the image (Q-9): every label and marker is held once, and a test visits each entry near
+//! its box at most once, and none that cannot meet it by lying inside out along the same axis.
 
 use forager_render::Point;
 
@@ -35,7 +35,7 @@ use crate::place::{Anchor, Bounds, Placement, PointLabel, place, placed_at};
 /// MapServer's `MS_MAX_LABEL_PRIORITY`: priorities run from 1 to it.
 pub const MAX_PRIORITY: u8 = 10;
 
-/// The side of a cell of the grids that bound the tests, in pixels.
+/// The side of a cell of the finest level of the grids that bound the tests, in pixels.
 const CELL: f64 = 64.0;
 
 /// A label of the cache as it is placed.
@@ -319,91 +319,171 @@ fn intersect_segments(a: &Point, b: &Point, c: &Point, d: &Point) -> bool {
     !(s < 0.0 || s > 1.0)
 }
 
-/// Entries by the cells of the image their boxes cover, so that a test visits only the entries a
-/// box can meet. A box past the image's edge is held in the cells along it; a box with a
-/// coordinate that is no number, which `msRectOverlap` finds to meet every box, is held apart and
-/// visited by every test, and a test of such a box visits every entry.
+/// The extent of a box along one axis as a grid files or looks it up: `[lo, hi]`, or for an
+/// inside-out box, whose minimum exceeds its maximum, its smaller edge alone, with `true`. A box
+/// `msRectOverlap` finds to meet an inside-out one spans it, its smaller edge among it; two boxes
+/// inside out along the same axis never meet.
+fn extent(min: f64, max: f64) -> (f64, f64, bool) {
+    if min <= max {
+        (min, max, false)
+    } else {
+        (max, max, true)
+    }
+}
+
+/// Entries by where their boxes lie, so that a test visits only the entries that can meet its
+/// box, each once, and each entry is held once (Q-9).
+///
+/// It is a loose grid of levels over the image: level `k` has square cells of side `64 · 2^k`,
+/// up to the level of one cell over the image. An entry is held once, at the finest level whose
+/// side its box, held to the image, does not exceed, in the cell of its lower corner, so it lies
+/// within that cell and the next one along each axis; a box that meets it starts at most a cell
+/// before. Coordinates past the image are held to its edge, which keeps every pair that meets.
+/// Entries inside out along an axis are held apart and not visited by a box inside out along the
+/// same axis, which they cannot meet. An entry with a coordinate that is no number, which
+/// `msRectOverlap` finds to meet every box, is held apart and visited by every test, and a test
+/// of such a box visits every entry. Nothing is allocated until the first entry.
 struct Grid<E> {
+    /// The image's width and height, at least a pixel.
+    size: [f64; 2],
+    /// By whether the box is inside out along x and along y: `x + 2 · y`.
+    stores: [Option<Levels<E>>; 4],
+    anywhere: Vec<E>,
+}
+
+struct Levels<E> {
+    levels: Vec<Level<E>>,
+}
+
+struct Level<E> {
+    side: f64,
     columns: usize,
     rows: usize,
+    /// The entries held at this level, so that an empty level is passed over.
+    count: usize,
     cells: Vec<Vec<E>>,
-    anywhere: Vec<E>,
 }
 
 impl<E: Copy> Grid<E> {
     fn new((width, height): (u32, u32)) -> Self {
-        let count = |pixels: u32| (f64::from(pixels) / CELL).ceil().max(1.0) as usize;
-        let (columns, rows) = (count(width), count(height));
         Self {
-            columns,
-            rows,
-            cells: (0..columns * rows).map(|_| Vec::new()).collect(),
+            size: [f64::from(width).max(1.0), f64::from(height).max(1.0)],
+            stores: [None, None, None, None],
             anywhere: Vec::new(),
         }
     }
 
-    /// The cells from the one of `a` to the one of `b`, whichever is smaller, along an axis of
-    /// `n` cells.
-    fn span(a: f64, b: f64, n: usize) -> std::ops::RangeInclusive<usize> {
-        let cell = |v: f64| (v / CELL).floor().clamp(0.0, (n - 1) as f64) as usize;
-        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-        cell(lo)..=cell(hi)
-    }
-
-    /// The cells `bbox` covers, grown to `point`; `None` where a coordinate is no number. A box
-    /// whose minimum exceeds its maximum covers the cells between the two: `msRectOverlap` finds
-    /// it to meet only a box that spans them.
-    fn cells(
-        &self,
-        bbox: &[f64; 4],
-        point: Option<Point>,
-    ) -> Option<(
-        std::ops::RangeInclusive<usize>,
-        std::ops::RangeInclusive<usize>,
-    )> {
-        let mut b = *bbox;
-        if let Some(p) = point {
-            b = [
-                b[0].min(b[2]).min(p.x),
-                b[1].min(b[3]).min(p.y),
-                b[0].max(b[2]).max(p.x),
-                b[1].max(b[3]).max(p.y),
-            ];
-        }
-        if b.iter().any(|v| v.is_nan()) || point.is_some_and(|p| p.x.is_nan() || p.y.is_nan()) {
+    /// The box's extents held to the image, `[x0, y0, x1, y1]`, and the store it belongs to;
+    /// `None` where a coordinate is no number.
+    fn place(&self, bbox: &[f64; 4]) -> Option<([f64; 4], usize)> {
+        if bbox.iter().any(|v| v.is_nan()) {
             return None;
         }
-        Some((
-            Self::span(b[0], b[2], self.columns),
-            Self::span(b[1], b[3], self.rows),
-        ))
+        let (x0, x1, x_out) = extent(bbox[0], bbox[2]);
+        let (y0, y1, y_out) = extent(bbox[1], bbox[3]);
+        let [w, h] = self.size;
+        let held = [
+            x0.clamp(0.0, w),
+            y0.clamp(0.0, h),
+            x1.clamp(0.0, w),
+            y1.clamp(0.0, h),
+        ];
+        Some((held, usize::from(x_out) + 2 * usize::from(y_out)))
     }
 
-    /// Holds `entry` in the cells of `bbox`, grown to `point`.
+    /// Holds `entry` for `bbox`, grown to `point` where one is given.
     fn insert(&mut self, bbox: &[f64; 4], point: Option<Point>, entry: E) {
-        match self.cells(bbox, point) {
-            Some((xs, ys)) => {
-                for y in ys {
-                    for x in xs.clone() {
-                        self.cells[y * self.columns + x].push(entry);
-                    }
-                }
-            }
-            None => self.anywhere.push(entry),
+        let placed = self
+            .place(bbox)
+            .filter(|_| point.is_none_or(|p| !p.x.is_nan() && !p.y.is_nan()));
+        let Some((mut b, store)) = placed else {
+            self.anywhere.push(entry);
+            return;
+        };
+        if let Some(p) = point {
+            let [w, h] = self.size;
+            let (px, py) = (p.x.clamp(0.0, w), p.y.clamp(0.0, h));
+            b = [b[0].min(px), b[1].min(py), b[2].max(px), b[3].max(py)];
         }
+        let size = self.size;
+        let levels = self.stores[store].get_or_insert_with(|| Levels::new(size));
+        let level = levels
+            .levels
+            .iter_mut()
+            .find(|l| b[2] - b[0] <= l.side && b[3] - b[1] <= l.side)
+            .expect("the last level spans the image");
+        let (x, y) = (
+            level.cell(b[0], level.columns),
+            level.cell(b[1], level.rows),
+        );
+        level.cells[y * level.columns + x].push(entry);
+        level.count += 1;
     }
 
-    /// Whether `hit` holds for an entry whose cells `bbox` meets.
+    /// Whether `hit` holds for an entry that can meet `bbox`.
     fn any(&self, bbox: &[f64; 4], mut hit: impl FnMut(&E) -> bool) -> bool {
         if self.anywhere.iter().any(&mut hit) {
             return true;
         }
-        match self.cells(bbox, None) {
-            Some((xs, ys)) => ys.into_iter().any(|y| {
-                xs.clone()
-                    .any(|x| self.cells[y * self.columns + x].iter().any(&mut hit))
-            }),
-            None => self.cells.iter().flatten().any(hit),
+        let Some((b, query)) = self.place(bbox) else {
+            return self
+                .stores
+                .iter()
+                .flatten()
+                .flat_map(|levels| &levels.levels)
+                .flat_map(|level| &level.cells)
+                .flatten()
+                .any(hit);
+        };
+        self.stores.iter().enumerate().any(|(store, levels)| {
+            // Inside out along an axis, an entry meets no box inside out along it.
+            if store & query != 0 {
+                return false;
+            }
+            let Some(levels) = levels else {
+                return false;
+            };
+            levels.levels.iter().filter(|l| l.count > 0).any(|level| {
+                let xs = level.cell(b[0], level.columns).saturating_sub(1)
+                    ..=level.cell(b[2], level.columns);
+                let ys =
+                    level.cell(b[1], level.rows).saturating_sub(1)..=level.cell(b[3], level.rows);
+                ys.into_iter().any(|y| {
+                    xs.clone()
+                        .any(|x| level.cells[y * level.columns + x].iter().any(&mut hit))
+                })
+            })
+        })
+    }
+}
+
+impl<E> Levels<E> {
+    fn new([width, height]: [f64; 2]) -> Self {
+        let mut levels = Vec::new();
+        let mut side = CELL;
+        loop {
+            // Coordinates run from 0 to the image's edge, that edge included.
+            let count = |extent: f64| (extent / side).floor() as usize + 1;
+            let (columns, rows) = (count(width), count(height));
+            levels.push(Level {
+                side,
+                columns,
+                rows,
+                count: 0,
+                cells: (0..columns * rows).map(|_| Vec::new()).collect(),
+            });
+            if side >= width && side >= height {
+                break;
+            }
+            side *= 2.0;
         }
+        Self { levels }
+    }
+}
+
+impl<E> Level<E> {
+    /// The cell of a coordinate held to the image, along an axis of `n` cells.
+    fn cell(&self, v: f64, n: usize) -> usize {
+        ((v / self.side).floor() as usize).min(n - 1)
     }
 }

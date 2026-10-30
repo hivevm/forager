@@ -264,7 +264,8 @@ fn a_text_of_line_breaks_only_draws_nothing_but_keeps_its_marker() {
 #[test]
 fn labels_far_apart_and_far_outside_the_image_meet_as_near_ones_do() {
     // The grid that bounds the tests must not hide a pair that meets: a forced label far past
-    // the image's edge meets a partial one there, and one whose x is no number meets every box its y meets.
+    // the image's edge meets a partial one there, and one whose x is no number meets every box
+    // its y meets.
     let out = |x, force| {
         with(at(x, 50.0), |m, l| {
             m.partials = true;
@@ -284,4 +285,25 @@ fn labels_far_apart_and_far_outside_the_image_meet_as_near_ones_do() {
     // A wide box covers many cells.
     let wide = with(at(100.0, 50.0), |_, l| l.text.max_x = 190.0);
     assert_eq!(drawn(vec![at(170.0, 52.0), wide]), [(1, Anchor::Cc)]);
+}
+
+#[test]
+fn a_turned_label_whose_box_is_no_number_meets_a_label_in_another_cell() {
+    // An ANGLE bound to `nan` turns the box into no numbers at a finite point. msRectOverlap and
+    // msIntersectSegments find it to meet any box, so a label far from its point, in another
+    // cell of the grid, is left out.
+    let nan = with(at(20.0, 20.0), |m, l| {
+        m.partials = true;
+        l.force = true;
+        l.rotation = f64::NAN;
+    });
+    assert_eq!(drawn(vec![at(150.0, 80.0), nan]), [(1, Anchor::Cc)]);
+    let far = with(at(1900.0, 1900.0), |m, _| m.partials = true);
+    let mut cache = Vec::new();
+    draw_label_cache(
+        &Cache(vec![(far, "a"), (nan, "b")]),
+        (2000, 2000),
+        |i, _| cache.push(i),
+    );
+    assert_eq!(cache, [1]);
 }

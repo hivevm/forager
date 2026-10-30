@@ -871,7 +871,7 @@ fn labelled(map: &Map, points: &[(&str, f64, f64, &str)]) -> Vec<u64> {
 
 #[test]
 fn of_two_labels_that_overlap_the_label_cache_keeps_the_one_added_last() {
-    // Verifies: ADR-0028
+    // Verifies: G-10
     let points = [("Forager", 60.0, 30.0, ""), ("Fen", 75.0, 32.0, "")];
     assert_eq!(labelled(&map(label_item()), &points), [1]);
     // Far enough apart, both, the last added first.
@@ -912,7 +912,7 @@ fn collection(points: &[(&str, f64, f64, &str)]) -> String {
 
 #[test]
 fn a_higher_priority_is_placed_first_and_a_bound_one_is_held_from_1_to_10() {
-    // Verifies: ADR-0028
+    // Verifies: G-10
     let points = [
         ("Forager", 60.0, 30.0, r#", "p": "7""#),
         ("Fen", 75.0, 32.0, r#", "p": "3""#),
@@ -953,7 +953,7 @@ fn a_higher_priority_is_placed_first_and_a_bound_one_is_held_from_1_to_10() {
 
 #[test]
 fn a_label_leaving_the_image_is_left_out_unless_partials_or_force_allow_it() {
-    // Verifies: ADR-0028
+    // Verifies: G-10
     let edge = [("Forager", 2.0, 30.0, "")];
     assert_eq!(labelled(&map(label_item()), &edge), Vec::<u64>::new());
     for label in [
@@ -972,7 +972,7 @@ fn a_label_leaving_the_image_is_left_out_unless_partials_or_force_allow_it() {
 
 #[test]
 fn a_label_is_left_out_where_it_meets_the_marker_of_another_feature() {
-    // Verifies: ADR-0028
+    // Verifies: G-10
     // A square marker 9 pixels across under each point; a label at CC lies over its own.
     let mut map = map(label_item());
     map.layers[0].classes[0].styles = vec![Style {
@@ -993,7 +993,7 @@ fn a_label_is_left_out_where_it_meets_the_marker_of_another_feature() {
 
 #[test]
 fn a_labels_expression_decides_for_which_features_it_is_drawn() {
-    // Verifies: ADR-0028
+    // Verifies: G-10
     let label = Label {
         expression: Some(Expr::call(
             Op::Eq,
@@ -1013,7 +1013,7 @@ fn a_labels_expression_decides_for_which_features_it_is_drawn() {
 
 #[test]
 fn min_distance_leaves_out_a_label_near_one_of_the_same_text() {
-    // Verifies: ADR-0028
+    // Verifies: G-10
     let spaced = Label {
         min_distance: Some(40.0),
         ..label_item()
@@ -1025,4 +1025,51 @@ fn min_distance_leaves_out_a_label_near_one_of_the_same_text() {
     ];
     assert_eq!(labelled(&map(spaced.clone()), &points), [2, 1]);
     assert_eq!(labelled(&map(label_item()), &points), [2, 1, 0]);
+}
+
+#[test]
+fn a_label_over_a_marker_whose_size_is_not_computed_yet_is_not_drawn() {
+    // Verifies: G-10
+    // The label cache holds the box of the marker of the class's first style beneath every
+    // label of a point layer, at CC too; a pixmap, SVG, or TrueType symbol has no size yet, so
+    // the label is left out rather than placed without that box.
+    for kind in [SymbolKind::Pixmap, SymbolKind::Svg, SymbolKind::Truetype] {
+        let mut map = map(label_item());
+        map.symbols = vec![Symbol {
+            name: Some("unsized".to_owned()),
+            kind,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }];
+        map.layers[0].classes[0].styles = vec![Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            size: Some(Bound::Value(9.0)),
+            ..Style::default()
+        }];
+        let sources: BTreeMap<String, GeoJsonSource> = [(
+            "places".to_owned(),
+            GeoJsonSource::parse(&collection(&[("Fen", 80.0, 30.0, "")])).unwrap(),
+        )]
+        .into();
+        let recorder = GlyphRecorder::default();
+        let rendered = ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+        assert!(recorder.0.take().is_empty(), "{kind:?}");
+        let label = rendered
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "label-not-drawn")
+            .unwrap_or_else(|| panic!("{kind:?}: {:?}", rendered.diagnostics));
+        assert!(
+            label.message.contains("which the label cache holds"),
+            "{}",
+            label.message
+        );
+    }
 }
