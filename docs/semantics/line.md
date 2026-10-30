@@ -11,6 +11,10 @@
 - `GAP`: the distance between symbols drawn along a line, any number. A positive one keeps the
   symbols upright; a negative one turns them with the line, its size the distance
   (`msImagePolylineMarkers` with `auto_angle` 1). 0 draws the symbol as a brush along the line.
+  Each line of a shape counts from its start, a segment carrying on what the one before left over;
+  a line on which no symbol falls, without `INITIALGAP`, and longer than the symbol is wide takes
+  one at half its length. Forager draws the symbols of one line up to a million points of their
+  outlines and fills, and none of that line's beyond, with a warning (Q-9).
 - `INITIALGAP`: the distance before the first dash or symbol, at least 0; without it a pattern
   starts at 0, and symbols at half the gap (`msImagePolylineMarkers`).
 - `LINECAP`: `butt`, `round` (the default), `square`, `triangle`. `LINEJOIN`: `none` (the

@@ -8,6 +8,7 @@ mod draw;
 mod extent;
 mod fonts;
 mod labels;
+mod line_marker;
 mod offset;
 mod symbol;
 
@@ -24,6 +25,7 @@ use crate::draw::{can_draw, draw_ops, kind, passes};
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
 pub use crate::fonts::MAX_FONT_BYTES;
+pub use crate::line_marker::MAX_MARKER_POINTS;
 
 use crate::labels::Labels;
 
@@ -109,9 +111,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             }
         }
         let passes = passes(mode, &class.styles);
+        let mut over_limit = 0;
         let mut draw = |feature: &Feature, style, passes: &[_]| {
             for &pass in passes {
-                for op in draw_ops(mode, &feature.geometry, style, pass, &view, &map.symbols) {
+                let geometry = &feature.geometry;
+                let symbols = &map.symbols;
+                for op in draw_ops(mode, geometry, style, pass, &view, symbols, &mut over_limit) {
                     renderer.draw(&DisplayItem {
                         op,
                         feature_id: Some(feature.id),
@@ -131,6 +136,19 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                     draw(feature, style, passes);
                 }
             }
+        }
+        if over_limit > 0 {
+            let message = format!(
+                "layer {}: the symbols along {over_limit} line{} are not drawn, each line's \
+                 exceeding {MAX_MARKER_POINTS} points",
+                name(layer),
+                if over_limit == 1 { "" } else { "s" }
+            );
+            diagnostics.push(Diagnostic::warning(
+                "line-markers-over-limit",
+                message,
+                layer.span.clone(),
+            ));
         }
         for (kind, count) in undrawn {
             let message = format!(

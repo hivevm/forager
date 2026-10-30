@@ -3,8 +3,9 @@
 //! NaN, infinities, and the extremes included — in an arbitrary view, drawn by the engine with
 //! agg-rust behind its clipping (Q-3, ADR-0015). JSON cannot carry such numbers, so the GeoJSON
 //! target never reaches these paths. Further styles of a line's dashes, caps, joins, offsets,
-//! outlines, and width bounds are read from the same bytes back to front, so that they leave how
-//! an input decodes to its view, its symbol, and its shapes as it was. The points carry a label of
+//! outlines, width bounds, and the symbol placed along it by a gap are read from the same bytes
+//! back to front, so that they leave how an input decodes to its view, its symbol, and its shapes
+//! as it was. The points carry a label of
 //! arbitrary text, size, bounds, and resolution, in a test font of the label crate, drawn through
 //! the text path (ADR-0028).
 // Verifies: Q-3, ADR-0015
@@ -70,6 +71,8 @@ struct LineStyle {
     outline_width: Option<f64>,
     min_width: Option<f64>,
     max_width: Option<f64>,
+    /// The symbol along the line, its `GAP`, `SIZE`, and `ANGLE`.
+    marker: Option<(f64, f64, f64)>,
 }
 
 impl LineStyle {
@@ -107,6 +110,10 @@ impl LineStyle {
             outline_width: self.outline_width.map(Bound::Value),
             min_width: self.min_width,
             max_width: self.max_width,
+            symbol: self.marker.map(|_| Bound::Value(SymbolRef::Index(1))),
+            gap: self.marker.map(|(gap, _, _)| gap),
+            size: self.marker.map(|(_, size, _)| Bound::Value(size)),
+            angle: self.marker.map(|(_, _, angle)| Bound::Value(angle)),
             ..Style::default()
         }
     }
