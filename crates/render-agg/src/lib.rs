@@ -556,7 +556,7 @@ mod tests {
     fn a_comb_under_a_dense_hatch_is_cut_within_the_bounds_or_not_at_all() {
         // Verifies: Q-9
         // Over 4096 × 4096 the comb's teeth cross some 1.1e7 stroke bands, past the bound on
-        // the crossings; cut, they took 21.6 GB.
+        // the crossings; cutting them takes some 21.6 GB.
         let (teeth, lines) = comb(4096.0);
         let dense = Hatch {
             rings: vec![teeth],

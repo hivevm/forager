@@ -685,6 +685,11 @@ fn a_point_outside_the_extent_draws_no_square() {
 /// A polygon layer of [`SQUARE_WITH_HOLE`] whose class draws `styles`, with a hatch symbol at
 /// index 1.
 fn render_hatched(styles: Vec<Style>) -> Rendered {
+    render_hatched_on(styles, SQUARE_WITH_HOLE)
+}
+
+/// [`render_hatched`] on the polygon of a GeoJSON geometry.
+fn render_hatched_on(styles: Vec<Style>, geojson: &str) -> Rendered {
     let mut map = map_with(RenderMode::Polygon, styles);
     map.symbols = vec![Symbol {
         name: Some("hatch".into()),
@@ -699,7 +704,7 @@ fn render_hatched(styles: Vec<Style>) -> Rendered {
         transparent: None,
         span: None,
     }];
-    render_with(&map, Some(SQUARE_WITH_HOLE))
+    render_with(&map, Some(geojson))
 }
 
 fn hatch_style(color: Rgba, size: f64, width: f64, angle: f64, pattern: Vec<f64>) -> Style {
@@ -775,4 +780,29 @@ fn a_hatch_past_its_bound_is_not_drawn_and_reported() {
     );
     let image = rendered.image.unwrap();
     assert_eq!(image.pixel(15, 84), Some(GREEN));
+}
+
+#[test]
+fn a_hatch_of_a_polygon_past_its_bound_on_vertices_is_not_drawn_and_reported() {
+    // Verifies: Q-9
+    // A circle of 17 000 vertices, past the bound of 16 384, under a hatch 10 apart.
+    let points: Vec<String> = (0..=17_000)
+        .map(|i| {
+            let t = f64::from(i % 17_000) / 17_000.0 * std::f64::consts::TAU;
+            format!("[{}, {}]", 50.0 + 40.0 * t.cos(), 50.0 + 40.0 * t.sin())
+        })
+        .collect();
+    let circle = format!(
+        r#"{{"type": "Polygon", "coordinates": [[{}]]}}"#,
+        points.join(", ")
+    );
+    let rendered = render_hatched_on(vec![hatch_style(BLACK, 10.0, 1.0, 45.0, vec![])], &circle);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["hatch-not-drawn"]);
+    let image = rendered.image.unwrap();
+    assert!(image.pixels.chunks(4).all(|px| px == [255, 255, 255, 255]));
 }

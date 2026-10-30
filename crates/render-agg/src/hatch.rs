@@ -329,8 +329,14 @@ mod tests {
             half: 0.996,
             ..band()
         };
-        let square = square(0.125, 0.0, 9.875, 10.0);
-        let cut = intersect(&[square], &[thin]);
+        let right = square(0.125, 0.0, 9.875, 10.0);
+        let cut = intersect(&[right], &[thin]);
         assert!((area(&cut) - 2.0 * 9.75).abs() < 1e-9, "{}", area(&cut));
+        // A square from x = -0.125: -12.5 hundredths round away from zero to -13, so it runs
+        // from -0.13 to 9.88, 10.01 wide, and the cut is 2 × 10.01; rounded half up, -12 would
+        // make it 10.00 wide.
+        let left = square(-0.125, 0.0, 9.875, 10.0);
+        let cut = intersect(&[left], &[thin]);
+        assert!((area(&cut) - 2.0 * 10.01).abs() < 1e-9, "{}", area(&cut));
     }
 }
