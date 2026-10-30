@@ -106,7 +106,7 @@ is the table a session reads.
 | [0029](0029-label-positions-from-mapservers-label-cache.md) | The noise measurement reads MapServer's label cache with a C reader linked to its library | `crates/cli/tests/conformance/mapserver_labels.c`, `scripts/build-mapserver.sh`, `scripts/check-notice.sh`, and every comparison of label positions with MapServer's | 🟡 proposed |
 | [0030](0030-cql2-expressions.md) | Expressions in the style IR are a lean CQL2 tree of Forager's own types, serialized as CQL2-JSON, with MapServer's typing made explicit at import and its patterns read as PCRE2 reads them | `crates/style-ir`, the translation of expressions in `crates/mapfile`, and every crate that evaluates an expression of the style IR | 🟢 accepted |
 | [0031](0031-expression-evaluator.md) | The core crate `expr` evaluates the IR's expressions as MapServer's parser does, with patterns matched by the `regex` crate in byte mode | `crates/expr`, the selection of classes and the per-feature properties of `crates/engine`, and every crate that evaluates an expression of the style IR | 🟡 proposed |
-| [0032](0032-hatch-cut-by-i-overlay.md) | The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it | the hatch of `crates/render-agg`, the `i_overlay` entry of its `Cargo.toml`, the bounds of a hatch in `crates/render`, and every crate that intersects polygons | 🟡 proposed |
+| [0032](0032-hatch-cut-by-i-overlay.md) | The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it | the cut of a hatch in `crates/render-agg`, the `i_overlay` entry of its `Cargo.toml`, and the bounds of a hatch in `crates/render` | 🟡 proposed |
 
 ### Superseded and rejected
 

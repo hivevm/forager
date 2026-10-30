@@ -3,7 +3,7 @@
 - **Status:** 🟡 proposed
 - **Date:** 2026-10-30
 - **Deciders:** Markus Brigl
-- **Applies to:** the hatch of `crates/render-agg`, the `i_overlay` entry of its `Cargo.toml`, the bounds of a hatch in `crates/render`, and every crate that intersects polygons
+- **Applies to:** the cut of a hatch in `crates/render-agg`, the `i_overlay` entry of its `Cargo.toml`, and the bounds of a hatch in `crates/render`
 
 ## Context
 
@@ -18,15 +18,6 @@ and the result scaled back. `renderPolygonHatches` fills the result under the no
 the rasterizer that carries the output format's gamma, `gamma_linear(0, 0.75)` by default. So a
 pixel of the hatch is the area of an exact polygon intersection, and where two stroked lines or
 two rings overlap the hatch is empty.
-
-The first implementation cut the polygon itself: each ring moved onto each dash rectangle, with a
-check for crossing rings and, where they crossed, an intersection of anti-aliased coverage instead,
-drawn in bands of rows. Two reviews found it unsound: a comb of 2000 teeth under a dense hatch took
-21.6 GB, since the moved points form long edges that cancel and that the rasterizer still walks;
-a ring and its hole did not cancel exactly, leaving 4495 non-white pixels inside holes over 200
-random cases; the crossing check sent ordinary clipped concave polygons, holes touching their
-shell, and shared edges to the fallback, which differs along every dash edge; banding changed
-pixels; and the budget per band multiplied the bound on time.
 
 Q-2 asks for the same bytes natively and in the browser; Q-9 for a bound on memory and time; the
 specification's *Assumptions* name i_overlay among the pure-Rust crates the work leans on, to be
@@ -51,9 +42,14 @@ is not carried yet.
 
 ## Alternatives considered
 
-- **The own cut, as tried** — the review findings above: unbounded memory on combs, slivers
-  inside holes, a fallback that differs from MapServer along every dash, and banding that changes
-  pixels. Fixing each is writing a polygon clipper.
+- **A cut of Forager's own** — each ring moved onto each dash rectangle, rings that cross each
+  other handed to an intersection of anti-aliased coverage, the hatch drawn in bands of rows: a
+  comb of 2000 teeth under a dense hatch takes 21.6 GB, since the moved points form long edges
+  that cancel and that the rasterizer still walks; a ring and its hole do not cancel exactly,
+  leaving 4495 non-white pixels inside holes over 200 random cases; ordinary clipped concave
+  polygons, holes touching their shell, and shared edges go to the coverage intersection, which
+  differs along every dash edge; the bands change pixels, and a budget per band multiplies the
+  bound on time. Making each sound is writing a polygon clipper.
 - **geo's `BooleanOps`** — runs i_overlay underneath, through its floating-point adapter whose
   scale follows the input's bounds, so the rounding to a hundredth of a pixel that Clipper applies
   is not reproduced; and it brings the whole of geo for one operation.
@@ -81,20 +77,24 @@ is not carried yet.
   target (Q-2). Its fill rules include `EvenOdd`; its solver snaps points within a squared radius
   of `2^start`, 1 unit at `Precision::ABSOLUTE`, a hundredth of a pixel, where Clipper snaps none.
 - Measured on a release build, one core, a 4096 × 4096 image at 45°: on a star of 10 000 spikes
-  under 141 lines the fragment solver took 1.9 s and the default 11.8 s; a star of 16 384 spikes
-  alone took 2.4 s, its cost growing with the square of the vertices where many long edges overlap.
-  The bounds in `crates/render/src/lib.rs` state what the most costly accepted hatch takes, some
-  2 s at a peak of 430 MB.
+  under 141 lines the fragment solver takes 1.9 s and the default 11.8 s; a star of 16 384 spikes
+  alone takes 2.4 s, the cost growing with the square of the vertices where many long edges lie
+  close; a crossing of the polygon with itself costs some ten times one with the stroke, a star of
+  500 points whose edges cross nearly every other, some 1.2e5 times, 0.8 s under one line. At
+  each bound in `crates/render/src/lib.rs`, whose docs state the figures: the lines' length,
+  a hatch 2.01 pixels apart over the image, 1.0 s at a peak of 530 MB, the image's 64 MB
+  included; the crossings, a comb of 2000 teeth under a hatch 11 apart, 0.8 s at 470 MB; the
+  dashes, 0.5 s at 320 MB.
 
 ## Consequences
 
 - Positive: the cut is the intersection MapServer computes, holes stay white, overlapping rings
   and stroked lines cancel exactly as under Clipper, and `renderers/polygon-hatch.map` and
-  `renderers/polygon-hatch-dashed.map` pass; the own clipper and its fallback go away.
-- Negative / trade-offs: a dependency of five crates of one project; a hatch whose polygon has more
-  than 16 384 vertices, or whose stroke crosses its edges too often by the estimate, is not drawn,
-  where MapServer draws it however long it takes; i_overlay snaps within a hundredth of a pixel
-  where Clipper does not.
+  `renderers/polygon-hatch-dashed.map` pass; Forager keeps no clipper of its own.
+- Negative / trade-offs: a dependency of five crates of one project; a hatch is not drawn whose
+  polygon has more than 16 384 vertices or crosses itself too often, or whose stroke crosses the
+  polygon's edges too often by the estimate, where MapServer draws it however long it takes;
+  i_overlay snaps within a hundredth of a pixel where Clipper does not.
 - Follow-ups: a `GEOMTRANSFORM` `buffer` and other polygon operations may build on the same crate
   under an ADR of their own; the bounds of Q-9 follow the first measurement of the expected scale.
 
