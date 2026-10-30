@@ -90,8 +90,10 @@ golden path and the test pattern an agent copies from are named here.
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
   FreeType's arithmetic, laid out by their advances, wrapped and aligned line by line, and turned
   by the label's angle; and where a label stands, its point and its box placed by its position,
-  its offset, and its marker's, as a pure function of the text's box (`place.rs`). It is the one
-  crate that depends on skrifa, and does no I/O (ADR-0028).
+  its offset, and its marker's, as a pure function of the text's box (`place.rs`); and which
+  labels MapServer's label cache draws, by priority, collisions with the labels drawn and the
+  markers cached, the image's edge, and `MINDISTANCE`, each test bounded by a grid over the image
+  (`cache.rs`). It is the one crate that depends on skrifa, and does no I/O (ADR-0028).
 - **`render`** — the display list, the renderer trait, and the RGBA image.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, blends premultiplied colours in a pixel format of its own as MapServer's
@@ -207,7 +209,8 @@ For each layer that is ON or DEFAULT, in order, the engine queries the source wi
 extent and draws its features in the styles of the first class: a point or polygon layer each
 feature in every style before the next feature, a line layer style by style over all its
 features, with each style's outline in a pass before the style, as MapServer's line layers do.
-The labels of point layers are drawn after the last layer. The image is encoded as PNG.
+The labels of point layers are placed by the label cache and drawn after the last layer. The image
+is encoded as PNG.
 
 In the browser, the page calls the bundle's `render`, or `renderWith`, with the mapfile text, a JSON
 object of GeoJSON by layer name, an optional viewport, and the files the mapfile names. The bindings

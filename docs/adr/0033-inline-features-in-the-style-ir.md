@@ -1,6 +1,6 @@
 # ADR-0033: A layer's inline features are a field of the layer in the style IR, read by the engine as the layer's source
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-30
 - **Deciders:** Markus Brigl
 - **Applies to:** the inline features of a layer in `crates/style-ir`, the reading of `FEATURE` in `crates/mapfile`, and the source the engine makes of them in `crates/engine`
