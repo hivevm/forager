@@ -90,14 +90,16 @@ pub(crate) fn is_hatch(style: &Style, symbols: &[Symbol]) -> bool {
 
 /// How a symbol is drawn, computeSymbolStyle's `symbolStyleObj` at a scale factor of 1.
 #[derive(Debug, PartialEq)]
-struct SymbolStyle {
+pub(crate) struct SymbolStyle {
     fill: Option<Rgba>,
     outline: Option<Rgba>,
     outline_width: f64,
     /// Of the symbol's extent to pixels.
-    scale: f64,
+    pub(crate) scale: f64,
     /// Radians, counter-clockwise.
-    rotation: f64,
+    pub(crate) rotation: f64,
+    /// The style's `GAP` scaled as its size is, in pixels; negative as the `GAP` is.
+    pub(crate) gap: f64,
 }
 
 /// msSymbolGetDefaultSize for a vector or ellipse symbol: its height, or its width where it has
@@ -137,7 +139,7 @@ pub(crate) fn ms_min(a: f64, b: f64) -> f64 {
 /// computeSymbolStyle for a vector or ellipse symbol. A filled symbol is filled with the style's
 /// colour and outlined with its outline colour; one not filled is outlined with its colour, or
 /// its outline colour where it has none. The outline is the style's width.
-fn symbol_style(style: &Style, symbol: &Symbol) -> SymbolStyle {
+pub(crate) fn symbol_style(style: &Style, symbol: &Symbol) -> SymbolStyle {
     let default_size = default_size(symbol);
     let style_size = fixed(&style.size).unwrap_or(default_size);
     let color = fixed(&style.color);
@@ -162,6 +164,7 @@ fn symbol_style(style: &Style, symbol: &Symbol) -> SymbolStyle {
         outline_width,
         scale: target / default_size,
         rotation: fixed(&style.angle).unwrap_or(0.0) * DEG_TO_RAD,
+        gap: style.gap.unwrap_or(0.0) * target / style_size,
     }
 }
 
@@ -207,13 +210,19 @@ fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64) -> Point {
 /// the AGG renderer draw a vector or an ellipse symbol: filled first, then outlined.
 pub(crate) fn symbol_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbol: &Symbol) {
     let s = symbol_style(style, symbol);
+    let at = anchored(at, style, symbol, s.rotation);
+    render(ops, at, symbol, &s);
+}
+
+/// The drawing operations of `symbol` centred on the pixel `at` in `s`, as the AGG renderer
+/// draws a vector or an ellipse symbol: filled first, then outlined.
+pub(crate) fn render(ops: &mut Vec<DrawOp>, at: Point, symbol: &Symbol, s: &SymbolStyle) {
     if (s.fill.is_none() && s.outline.is_none()) || s.scale == 0.0 {
         return;
     }
-    let at = anchored(at, style, symbol, s.rotation);
     let (paths, closed) = match symbol.kind {
-        SymbolKind::Vector => (vector(symbol, at, &s), false),
-        SymbolKind::Ellipse => (vec![ellipse(symbol, at, &s)], true),
+        SymbolKind::Vector => (vector(symbol, at, s), false),
+        SymbolKind::Ellipse => (vec![ellipse(symbol, at, s)], true),
         _ => return,
     };
     if let Some(color) = s.fill {

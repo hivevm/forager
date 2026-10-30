@@ -4,12 +4,16 @@
 //! NaN, infinities, and the extremes included — in an arbitrary view, drawn by the engine with
 //! agg-rust behind its clipping (Q-3, ADR-0015). JSON cannot carry such numbers, so the GeoJSON
 //! target never reaches these paths. Further styles of a line's dashes, caps, joins, offsets,
-//! outlines, and width bounds are read from the same bytes back to front, so that they leave how
-//! an input decodes to its view, its symbol, and its shapes as it was. The points carry a label of
-//! arbitrary text, size, bounds, and resolution, in a test font of the label crate, drawn through
-//! the text path (ADR-0028).
-// Verifies: Q-3, ADR-0015
+//! outlines, width bounds, and the symbol placed along it by a gap are read from the same bytes
+//! back to front, so that they leave how an input decodes to its view, its symbol, and its shapes
+//! as it was. The points carry a label of arbitrary text, size, bounds, and resolution, in a test
+//! font of the label crate, drawn through the text path (ADR-0028). The second half of the bytes
+//! is read once more for the features' properties, a filter, a class expression, and a computed
+//! size and colour, as arbitrary trees (ADR-0031), which every layer evaluates.
+// Verifies: Q-3, ADR-0015, ADR-0031
 #![no_main]
+
+mod expr_input;
 
 use std::collections::BTreeMap;
 
@@ -71,6 +75,8 @@ struct LineStyle {
     outline_width: Option<f64>,
     min_width: Option<f64>,
     max_width: Option<f64>,
+    /// The symbol along the line, its `GAP`, `SIZE`, and `ANGLE`.
+    marker: Option<(f64, f64, f64)>,
 }
 
 impl LineStyle {
@@ -108,9 +114,25 @@ impl LineStyle {
             outline_width: self.outline_width.map(Bound::Value),
             min_width: self.min_width,
             max_width: self.max_width,
+            symbol: self.marker.map(|_| Bound::Value(SymbolRef::Index(1))),
+            gap: self.marker.map(|(gap, _, _)| gap),
+            size: self.marker.map(|(_, size, _)| Bound::Value(size)),
+            angle: self.marker.map(|(_, _, angle)| Bound::Value(angle)),
             ..Style::default()
         }
     }
+}
+
+/// The expressions of every layer, and the properties of its features in turn; none where the
+/// bytes do not read as them.
+#[derive(Arbitrary, Debug, Default)]
+struct Expressions {
+    filter: Option<expr_input::Tree>,
+    class: Option<expr_input::Tree>,
+    size: Option<expr_input::Tree>,
+    color: Option<expr_input::Tree>,
+    bound_width: bool,
+    values: Vec<Vec<expr_input::Value>>,
 }
 
 #[derive(Arbitrary, Debug)]
@@ -143,15 +165,25 @@ fn coords(points: &[(f64, f64)]) -> Vec<Coord> {
     points.iter().map(|&(x, y)| Coord { x, y }).collect()
 }
 
-fn layer(name: &str, mode: RenderMode, styles: Vec<Style>) -> Layer {
+/// A layer whose first class takes the features its expression selects and whose second takes
+/// the rest, past its filter.
+fn layer(name: &str, mode: RenderMode, styles: Vec<Style>, exprs: &Expressions) -> Layer {
     Layer {
         name: Some(name.into()),
         render_mode: Some(mode),
         status: Some(LayerStatus::On),
-        classes: vec![Class {
-            styles,
-            ..Class::default()
-        }],
+        filter: exprs.filter.as_ref().and_then(expr_input::Tree::expr),
+        classes: vec![
+            Class {
+                expression: exprs.class.as_ref().and_then(expr_input::Tree::expr),
+                styles: styles.clone(),
+                ..Class::default()
+            },
+            Class {
+                styles: styles.into_iter().rev().collect(),
+                ..Class::default()
+            },
+        ],
         ..Layer::default()
     }
 }
@@ -163,6 +195,8 @@ fuzz_target!(|data: &[u8]| {
     let reversed: Vec<u8> = data.iter().rev().copied().collect();
     let further = Styles::arbitrary_take_rest(Unstructured::new(&reversed))
         .map_or_else(|_| Vec::new(), |styles| styles.0);
+    let exprs = Expressions::arbitrary_take_rest(Unstructured::new(&data[data.len() / 2..]))
+        .unwrap_or_default();
     let features: Vec<Feature> = input
         .shapes
         .iter()
@@ -176,14 +210,26 @@ fuzz_target!(|data: &[u8]| {
                     Geometry::Polygon(rings.iter().map(|r| coords(r)).collect())
                 }
             },
-            properties: Properties::default(),
+            properties: match exprs.values.len() {
+                0 => Properties::default(),
+                n => expr_input::properties(&exprs.values[id as usize % n]),
+            },
         })
         .collect();
+    let computed = |tree: &Option<expr_input::Tree>| tree.as_ref().and_then(expr_input::Tree::expr);
     let style = Style {
-        color: Some(Bound::Value(Rgba::opaque(200, 80, 80))),
+        color: Some(
+            computed(&exprs.color).map_or(Bound::Value(Rgba::opaque(200, 80, 80)), Bound::Expr),
+        ),
         outline_color: Some(Bound::Value(Rgba::opaque(0, 0, 0))),
-        width: Some(Bound::Value(input.line_width)),
-        size: Some(Bound::Value(input.symbol_size)),
+        width: Some(if exprs.bound_width {
+            Bound::Binding {
+                binding: expr_input::NAMES[0].into(),
+            }
+        } else {
+            Bound::Value(input.line_width)
+        }),
+        size: Some(computed(&exprs.size).map_or(Bound::Value(input.symbol_size), Bound::Expr)),
         ..Style::default()
     };
     let label = Label {
@@ -238,8 +284,10 @@ fuzz_target!(|data: &[u8]| {
     let styles: Vec<Style> = std::iter::once(style)
         .chain(further.iter().map(LineStyle::style))
         .collect();
-    let mut points = layer("points", RenderMode::Point, styles.clone());
-    points.classes[0].labels.push(label);
+    let mut points = layer("points", RenderMode::Point, styles.clone(), &exprs);
+    for class in &mut points.classes {
+        class.labels.push(label.clone());
+    }
     let [min_x, min_y, max_x, max_y] = input.extent;
     let map = Map {
         resolution: Some(input.resolution),
@@ -252,11 +300,11 @@ fuzz_target!(|data: &[u8]| {
         }),
         size: Some([u32::from(input.width), u32::from(input.height)]),
         layers: vec![
-            layer("polygons", RenderMode::Polygon, styles.clone()),
-            layer("lines", RenderMode::Line, styles.clone()),
+            layer("polygons", RenderMode::Polygon, styles.clone(), &exprs),
+            layer("lines", RenderMode::Line, styles.clone(), &exprs),
             points,
-            layer("symbols", RenderMode::Point, vec![symbol_style]),
-            layer("hatches", RenderMode::Polygon, vec![hatch_style]),
+            layer("symbols", RenderMode::Point, vec![symbol_style], &exprs),
+            layer("hatches", RenderMode::Polygon, vec![hatch_style], &exprs),
         ],
         symbols,
         ..Map::default()

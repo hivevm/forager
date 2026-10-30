@@ -274,6 +274,27 @@ fn only_render_agg_cuts_polygons_with_i_overlay() {
 }
 
 #[test]
+fn only_expr_depends_on_the_regex_crates() {
+    // Verifies: ADR-0031
+    // The patterns of the style IR are read as PCRE2 reads them and matched in one place; a crate
+    // that reached for `regex` itself would match them otherwise.
+    let ws = workspace();
+    let mut violations = Vec::new();
+    for (id, name) in ws.members.iter().filter(|(_, n)| n.as_str() != "expr") {
+        for dep in &ws.deps[id] {
+            let dep = &ws.names[dep];
+            if dep == "regex" || dep.starts_with("regex-") {
+                violations.push(format!("{name} -> {dep}"));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "crates other than expr that use regex: {violations:?}"
+    );
+}
+
+#[test]
 fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
     // The table itself, so that a test that never fails cannot pass for a check.
     let t = TABLE;
