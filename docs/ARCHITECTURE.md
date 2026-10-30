@@ -72,7 +72,7 @@ golden path and the test pattern an agent copies from are named here.
   that awaits the ports. Every host binds its sources to the layers by name through the engine's
   `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
   way for each. A line style's symbol with a `GAP` it places along the line, the markers of one
-  line bounded with a diagnostic (Q-9).
+  layer bounded with a diagnostic (Q-9).
 - **`label`** — a label's text as MapServer lays out a Latin line: its sizes, the fonts of its
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
   FreeType's arithmetic, laid out by their advances and centred on the label's point; it is the
