@@ -21,7 +21,7 @@ use forager_render_agg::AggRenderer;
 use forager_style_ir::StyleDocument;
 use serde_json::Value;
 
-use crate::conformance::{Case, Entry, Listed, Verdict};
+use crate::conformance::{Case, Entry, Listed, Tally, Verdict};
 use crate::metric::Metric;
 
 /// The cases of the suite and the list that scopes them, for the harness.
@@ -405,22 +405,31 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
     let _ = std::fs::remove_dir_all(&out);
     let resolver = stand_in();
     let loader = Suite(suite.clone());
-    let mut in_scope = 0;
+    let mut tally = Tally::default();
     let mut failures = Vec::new();
     let mut broken = Vec::new();
     for case in &cases {
-        let Some(Entry::InScope { passes, .. }) = entries.get(&case.key()).map(|l| &l.entry) else {
+        let Some(Listed {
+            entry: Entry::InScope { passes, .. },
+            blank,
+        }) = entries.get(&case.key())
+        else {
             continue;
         };
-        in_scope += 1;
         let dir = out.join(case.mapfile.trim_end_matches(".map"));
         let name = case.result.trim_end_matches(".png");
         let outcome = render_and_compare(&suite, case, &loader, &resolver, &dir, name);
+        tally.count(*blank, matches!(outcome, Ok((true, _))));
         match conformance::verdict(case, *passes, outcome) {
             Some(Verdict::Broken(problem)) => broken.push(problem),
             Some(Verdict::Differs(failure)) => failures.push(failure),
             None => {}
         }
+    }
+    let in_scope = tally.in_scope;
+    // The counts for scripts/check-fidelity.sh, which scripts/check-rust.sh runs after this test.
+    if let Some(counts) = std::env::var_os("FORAGER_FIDELITY") {
+        std::fs::write(&counts, tally.to_string()).unwrap();
     }
     assert!(
         broken.is_empty(),

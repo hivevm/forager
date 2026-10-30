@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use forager_style_ir::{Diagnostic, Extent, Layer, LayerStatus, Map};
 
-use super::{Case, Category, Entry, Verdict, directives, list, unlisted, verdict};
+use super::{Case, Category, Entry, Tally, Verdict, directives, list, unlisted, verdict};
 
 fn case(mapfile: &str, result: &str, command: &str) -> Case {
     Case {
@@ -506,4 +506,19 @@ fn the_imagetype_of_i_goes_before_the_end_of_the_map() {
         "map IMAGETYPE \"png\" end\n"
     );
     assert!(super::with_image_type("MAP # END", "png").is_err());
+}
+
+#[test]
+fn the_tally_counts_the_blank_cases_apart_as_the_fidelity_check_reads_them() {
+    // Verifies: Q-4
+    let mut tally = Tally::default();
+    tally.count(false, true);
+    tally.count(false, false);
+    tally.count(true, true);
+    tally.count(true, false);
+    tally.count(false, true);
+    assert_eq!(
+        tally.to_string(),
+        "in-scope 5\npassing 3\nblank 2\nblank-passing 1\n"
+    );
 }
