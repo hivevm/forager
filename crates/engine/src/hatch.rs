@@ -57,7 +57,10 @@ impl Hatching {
     /// largest of its symbol's default size, its `SIZE`, and its `WIDTH`, grown by its larger
     /// `OFFSET` unless that is a line offset, or its `MINSIZE` or `MINWIDTH` where larger, plus
     /// 1, rounded as `lrint`; the largest of the styles, plus 2 for a polygon. A size or width
-    /// bound to a property or an expression counts as unset, MapServer's -1 and 1.
+    /// bound to a property or an expression counts as unset, MapServer's -1 and 1; MapServer
+    /// computes the buffer before msBindLayerToShape() binds the feature's values, so it counts
+    /// the values bound for the feature drawn before. The default size of a pixmap or SVG symbol
+    /// counts as 1, where MapServer takes its image's height, which is not read.
     pub fn for_class(styles: &[Style], symbols: &[Symbol]) -> Self {
         let mut buffer = 0.0_f64;
         for style in styles {
@@ -90,8 +93,10 @@ const NEARZERO: f64 = 1.0e-30;
 
 /// msClipPolygonRect(): every ring cut to the rectangle from `min` to `max` by MapServer's
 /// variant of Liang–Barsky, which keeps a ring's way around a corner it cuts off as that corner;
-/// rings wholly inside, by the bounds of all of them, are kept as they are. A ring is read closed;
-/// one wholly outside is dropped.
+/// rings wholly inside, by the bounds of all of them, are kept as they are. A ring whose last
+/// point is not its first is closed with its first point appended before it is cut, where
+/// MapServer, whose rings are closed, cuts only the edges written; one wholly outside is
+/// dropped.
 pub(crate) fn clip_polygon_rect(rings: &[Vec<Point>], min: Point, max: Point) -> Vec<Vec<Point>> {
     let all = rings.iter().flatten();
     let inside = all
