@@ -289,6 +289,7 @@ fn labels_far_apart_and_far_outside_the_image_meet_as_near_ones_do() {
 
 #[test]
 fn a_turned_label_whose_box_is_no_number_meets_a_label_in_another_cell() {
+    // Verifies: ADR-0035
     // An ANGLE bound to `nan` turns the box into no numbers at a finite point. msRectOverlap and
     // msIntersectSegments find it to meet any box, so a label far from its point, in another
     // cell of the grid, is left out.

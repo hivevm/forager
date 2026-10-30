@@ -93,7 +93,7 @@ fn run(cache: &Counted) -> (usize, usize, usize) {
 
 #[test]
 fn large_and_inside_out_boxes_cost_the_cache_little_per_label() {
-    // Verifies: Q-9
+    // Verifies: Q-9, ADR-0035
     // Forced boxes wider and taller than the image, each held once, not in every cell.
     let (drawn, _, bytes) = run(&labels(10_000.0, 3000, true, true));
     assert_eq!(drawn, LABELS);

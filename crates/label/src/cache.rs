@@ -35,7 +35,7 @@ use crate::place::{Anchor, Bounds, Placement, PointLabel, place, placed_at};
 /// MapServer's `MS_MAX_LABEL_PRIORITY`: priorities run from 1 to it.
 pub const MAX_PRIORITY: u8 = 10;
 
-/// The most labels the label cache of one render holds (Q-9); MapServer holds any
+/// The most labels the label cache of one render holds (Q-9, ADR-0035); MapServer holds any
 /// number. A label added past it is left out, untested.
 pub const MAX_LABELS: usize = 100_000;
 

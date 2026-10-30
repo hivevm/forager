@@ -1076,7 +1076,7 @@ fn a_label_over_a_marker_whose_size_is_not_computed_yet_is_not_drawn() {
 
 #[test]
 fn the_label_cache_holds_at_most_100000_labels_and_reports_those_past_it_once() {
-    // Verifies: Q-9
+    // Verifies: Q-9, ADR-0035
     // One feature of 100,001 points: the first 100,000 at one point, where all but one collide,
     // and the last alone, where it would be drawn first. Past the limit it is left out untested.
     let mut points = vec!["[40, 30]"; forager_label::MAX_LABELS];
