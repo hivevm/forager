@@ -16,19 +16,20 @@ leaves it as it was read. `loadFeature` reads the block's statements in order:
   between two separators and after the last, and none of an empty string
   (`msStringSplitComplex` with `MS_ALLOWEMPTYTOKENS`).
 - `TEXT "…"` replaces the feature's text. The labels do not read it yet.
-- `WKT "…"` replaces the whole shape, its values and text included, with what `msShapeFromWKT`
-  makes of the text through GEOS: a point shape of one point for a `POINT`, one part of all the
-  points for a `MULTIPOINT`, one part per line for a `LINESTRING` or a `MULTILINESTRING`, one part
-  per ring, the exterior first, for a `POLYGON` or a `MULTIPOLYGON`, and a line shape of the parts
-  of every member for a `GEOMETRYCOLLECTION` (`msGEOSGeometry2Shape` in `src/mapgeos.c`). An
-  inner ring that GEOS does not call a ring (`GEOSisRing`) is left out, the exterior kept whatever
-  it is: one that is not simple, that passes through a point twice on its way back to its start,
-  a point repeated in a row counting once. Its edges in a row meet only at the vertex they share,
-  without doubling back, and no other two meet at all; a ring that collapses to a point or to one
-  edge is not simple. The frontend decides it exactly, with a sweep of the ring's edges in
-  O(n log n) of its vertices. The frontend reads the WKT with a reader of its own that
-  re-implements the grammar GEOS's `WKTReader` accepts, no GEOS code: type names and `EMPTY` in
-  any case, a type matched by its start, numbers as `strtod` reads a whole token, a
+- `WKT "…"` replaces the whole shape, its values and text included, with what `msShapeFromWKT` makes
+  of the text through GEOS: a point shape of one point for a `POINT`, one part of all the points for
+  a `MULTIPOINT`, one part per line for a `LINESTRING` or a `MULTILINESTRING`, one part per ring,
+  the exterior first, for a `POLYGON` or a `MULTIPOLYGON`, and a line shape of the parts of every
+  member for a `GEOMETRYCOLLECTION` (`msGEOSGeometry2Shape` in `src/mapgeos.c`). An inner ring that
+  GEOS does not call a ring (`GEOSisRing`) is left out, the exterior kept whatever it is: one that
+  is not simple, that passes through a point twice on its way back to its start, a point repeated in
+  a row counting once. Its edges in a row meet only at the vertex they share, without doubling back,
+  and no other two meet at all; a ring that collapses to one edge walked there and back is not
+  simple. A ring of one point repeated, such as `(1 1,1 1,1 1,1 1)`, is taken as not simple and left
+  out; what GEOS answers for it is not verified. The frontend decides it exactly, with a sweep of
+  the ring's edges in O(n log n) of its vertices. The frontend reads the WKT with a reader of its
+  own that re-implements the grammar GEOS's `WKTReader` accepts, no GEOS code: type names and
+  `EMPTY` in any case, a type matched by its start, numbers as `strtod` reads a whole token, a
   `MULTIPOINT`'s points with or without their parentheses, a line of at least two points, a ring
   closed and of at least four, and nothing after the geometry. It refuses, as a load error at the
   `WKT`, what that reader does not read, an empty geometry or member, Z and M coordinates, a

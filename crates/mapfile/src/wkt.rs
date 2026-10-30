@@ -329,7 +329,8 @@ fn strtod_reads(raw: &str) -> bool {
 /// one vertex, not a second pass. So, of the ring's distinct edges, two in a row meet only at
 /// the vertex they share, without doubling back along each other, and any other two do not meet
 /// at all, not even at an end. A ring that collapses to fewer than three vertices, a point or
-/// one edge walked there and back, is not simple.
+/// one edge walked there and back, is taken as not simple; for a ring of one point repeated,
+/// what GEOS answers is not verified.
 ///
 /// The test is a sweep of the edges in the lexicographic order of their points that keeps the
 /// edges the sweep line cuts in a tree ordered from bottom to top and tests each edge, as it is
@@ -388,9 +389,9 @@ fn is_simple_ring(ring: &[[f64; 2]]) -> bool {
         let incident = [edge((v + k - 1) % k), edge(v)];
         // The edges that start here are inserted before those that end here leave.
         for e in incident.iter().filter(|e| e.l == point) {
-            if !line.insert(*e) {
-                return false;
-            }
+            // Edges compare equal only to themselves, and each is inserted once.
+            let inserted = line.insert(*e);
+            debug_assert!(inserted);
             let below = line.range(..*e).next_back();
             let above = line.range((Excluded(*e), Unbounded)).next();
             for n in [below, above].into_iter().flatten() {
@@ -726,11 +727,6 @@ mod tests {
         assert!(read(&nested(100_000)).is_err());
     }
 
-    fn ring(points: &[(f64, f64)]) -> String {
-        let coords: Vec<String> = points.iter().map(|(x, y)| format!("{x} {y}")).collect();
-        format!("({})", coords.join(","))
-    }
-
     fn parts_of(text: &str) -> Vec<Vec<[f64; 2]>> {
         shape(text).1
     }
@@ -987,19 +983,23 @@ mod tests {
     }
 
     #[test]
-    fn a_hostile_ring_of_a_million_vertices_costs_n_log_n() {
-        let n = 1_000_000;
-        for crossing in [false, true] {
-            let hole: Vec<(f64, f64)> = zigzag(n, crossing).iter().map(|p| (p[0], p[1])).collect();
-            let text = format!("POLYGON({EXTERIOR},{})", ring(&hole));
+    fn a_hostile_ring_costs_n_log_n() {
+        // Verifies: Q-9
+        let spent = |n: usize, crossing: bool| {
+            let hole = zigzag(n, crossing);
             ORIENTATIONS.with(|c| c.set(0));
-            let parts = parts_of(&text);
-            assert_eq!(parts.len(), if crossing { 1 } else { 2 });
-            let spent = ORIENTATIONS.with(Cell::get);
-            // Testing every pair of edges would compute n² / 2 of them, 5 * 10^11; the sweep
-            // computes a bounded number for each of its n log n steps.
-            let bound = 64 * n as u64 * 20;
-            assert!(spent < bound, "{spent} orientations, more than {bound}");
+            assert_eq!(is_simple_ring(&hole), !crossing, "{n} teeth");
+            ORIENTATIONS.with(Cell::get)
+        };
+        for crossing in [false, true] {
+            let (small, large) = (spent(20_000, crossing), spent(80_000, crossing));
+            // Four times the vertices: n log n spends about 4.7 times the orientations, n^1.5
+            // eight times, and every pair of edges sixteen times.
+            let ratio = large as f64 / small as f64;
+            assert!(
+                ratio < 6.0,
+                "{small} then {large} orientations, {ratio} times"
+            );
         }
     }
 }
