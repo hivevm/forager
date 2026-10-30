@@ -3,8 +3,11 @@
 // How a stroke's width, cap, join, and dashes are handed to the stroker follows MapServer's
 // agg2RenderLine() and applyCJC(), src/mapagg.cpp of the release pinned in
 // scripts/fetch-msautotest.sh; how a hatch is stroked and clipped to its polygon follows
-// msHatchPolygon(), src/mapagg.cpp, there.
-// Copyright (c) 1996-2007 Regents of the University of Minnesota.
+// msHatchPolygon(), src/mapagg.cpp, there; how the alpha is divided out follows saveAsPNG(),
+// src/mapimageio.c.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Copyright (c) 1996-2007 Regents of the University of Minnesota (src/mapagg.cpp).
+// Copyright (c) 2009 Thomas Bonfort (src/mapimageio.c).
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
 // including without limitation the rights to use, copy, modify, merge, publish, distribute,
@@ -16,12 +19,19 @@
 // AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// Anti-Grain Geometry - Version 2.4
+// Copyright (C) 2002-2005 Maxim Shemanarev (http://www.antigrain.com)
+// Permission to copy, use, modify, sell and distribute this software is granted provided this
+// copyright notice appears in all copies. This software is provided "as is" without express or
+// implied warranty, and with no claim as to its suitability for any purpose.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod clip;
 mod glyphs;
 mod hatch;
+mod pixfmt;
 
 use agg_rust::basics::{FillingRule, VertexSource};
 use agg_rust::color::Rgba8;
@@ -29,11 +39,9 @@ use agg_rust::conv_dash::ConvDash;
 use agg_rust::conv_stroke::ConvStroke;
 use agg_rust::math_stroke::{LineCap as AggCap, LineJoin as AggJoin};
 use agg_rust::path_storage::PathStorage;
-use agg_rust::pixfmt_rgba::PixfmtRgba32;
 use agg_rust::rasterizer_scanline_aa::{RasterizerScanlineAa, Scanline};
 use agg_rust::renderer_base::RendererBase;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
-use agg_rust::rendering_buffer::RowAccessor;
 use agg_rust::scanline_boolean_algebra::ScanlineGenerator;
 use agg_rust::scanline_u::ScanlineU8;
 use forager_render::{
@@ -42,11 +50,15 @@ use forager_render::{
 use forager_style_ir::Rgba;
 
 use crate::clip::{Rect, clip_line, clip_ring};
+use crate::pixfmt::{PixfmtMapserver, premultiplied};
 
 /// Pixels beyond the image that a clipped path may reach, besides half the stroke width.
 const CLIP_MARGIN: f64 = 2.0;
 
-/// Rasterizes into a straight-alpha RGBA buffer it owns.
+/// Rasterizes into an RGBA buffer it owns. The buffer holds its colours premultiplied by their
+/// alpha and blends them through [`PixfmtMapserver`], as MapServer's AGG buffer does;
+/// [`Renderer::finish`] divides the alpha out, as MapServer's `saveAsPNG` does for an RGBA
+/// image.
 #[derive(Default)]
 pub struct AggRenderer {
     width: u32,
@@ -59,26 +71,19 @@ impl AggRenderer {
         Self::default()
     }
 
-    /// Runs `f` on an agg-rust renderer attached to the pixel buffer.
-    #[allow(unsafe_code)]
-    fn with_agg(&mut self, f: impl FnOnce(&mut RendererBase<PixfmtRgba32<'_>>)) {
-        let Some(stride) = i32::try_from(self.width)
-            .ok()
-            .and_then(|w| w.checked_mul(4))
-        else {
-            return;
-        };
-        if self.pixels.is_empty() || self.pixels.len() != stride as usize * self.height as usize {
+    /// Runs `f` on an agg-rust renderer attached to the pixel buffer through MapServer's pixel
+    /// format.
+    fn with_agg(&mut self, f: impl FnOnce(&mut RendererBase<PixfmtMapserver<'_>>)) {
+        if self.pixels.is_empty()
+            || self.pixels.len() != self.width as usize * self.height as usize * 4
+        {
             return;
         }
-        // SAFETY: `pixels` holds exactly `stride` × height bytes, checked just above, and the
-        // accessor, the pixel format, and the renderer built on it are
-        // dropped at the end of this function, while `self.pixels` is mutably borrowed and
-        // cannot move or be read elsewhere.
-        let mut buffer = unsafe {
-            RowAccessor::new_with_buf(self.pixels.as_mut_ptr(), self.width, self.height, stride)
-        };
-        let mut renderer = RendererBase::new(PixfmtRgba32::new(&mut buffer));
+        let mut renderer = RendererBase::new(PixfmtMapserver::new(
+            &mut self.pixels,
+            self.width,
+            self.height,
+        ));
         f(&mut renderer);
     }
 
@@ -308,13 +313,9 @@ fn gamma_table() -> [u8; 256] {
     })
 }
 
+/// A colour as aggColor() hands it to AGG: premultiplied by its alpha.
 fn rgba8(color: Rgba) -> Rgba8 {
-    Rgba8::new(
-        u32::from(color.r),
-        u32::from(color.g),
-        u32::from(color.b),
-        u32::from(color.a),
-    )
+    premultiplied(color.r, color.g, color.b, color.a)
 }
 
 impl Renderer for AggRenderer {
@@ -326,8 +327,10 @@ impl Renderer for AggRenderer {
         let (width, height) = if fits { (width, height) } else { (0, 0) };
         self.width = width;
         self.height = height;
-        self.pixels = [background.r, background.g, background.b, background.a]
-            .repeat(width as usize * height as usize);
+        // aggColor() premultiplies the background, as every colour, by its alpha.
+        let c = rgba8(background);
+        let background = [c.r, c.g, c.b, c.a];
+        self.pixels = background.repeat(width as usize * height as usize);
     }
 
     fn draw(&mut self, item: &DisplayItem) {
@@ -364,7 +367,10 @@ impl Renderer for AggRenderer {
         }
     }
 
-    fn finish(self) -> RgbaImage {
+    fn finish(mut self) -> RgbaImage {
+        for p in self.pixels.as_chunks_mut::<4>().0.iter_mut() {
+            unpremultiply(p);
+        }
         RgbaImage {
             width: self.width,
             height: self.height,
@@ -373,9 +379,46 @@ impl Renderer for AggRenderer {
     }
 }
 
+/// A premultiplied pixel made straight as `saveAsPNG` (src/mapimageio.c) makes it for an RGBA
+/// image: each colour divided by the alpha over 255 and truncated, a pixel of no alpha all 0. A
+/// colour above its alpha, which rounding can leave, stays at 255.
+fn unpremultiply(p: &mut [u8]) {
+    let a = p[3];
+    if a == 255 {
+        return;
+    }
+    if a == 0 {
+        p.fill(0);
+        return;
+    }
+    let da = f64::from(a) / 255.0;
+    for c in &mut p[..3] {
+        *c = (f64::from(*c) / da).min(255.0) as u8;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_alpha_is_divided_out_as_save_as_png_divides_it() {
+        // Verifies: ADR-0034
+        // 3 / (6 / 255) = 127.5, truncated.
+        let mut p = [3, 3, 3, 6];
+        unpremultiply(&mut p);
+        assert_eq!(p, [127, 127, 127, 6]);
+        let mut none = [5, 5, 5, 0];
+        unpremultiply(&mut none);
+        assert_eq!(none, [0, 0, 0, 0]);
+        let mut opaque = [9, 8, 7, 255];
+        unpremultiply(&mut opaque);
+        assert_eq!(opaque, [9, 8, 7, 255]);
+        // A colour above its alpha stays at 255.
+        let mut over = [9, 0, 0, 8];
+        unpremultiply(&mut over);
+        assert_eq!(over, [255, 0, 0, 8]);
+    }
 
     const WHITE: Rgba = Rgba::opaque(255, 255, 255);
     const RED: Rgba = Rgba::opaque(200, 80, 80);
@@ -411,8 +454,11 @@ mod tests {
 
     #[test]
     fn a_polygon_shape_is_filled_through_the_gamma_and_a_fill_is_not() {
+        // Verifies: ADR-0034
         // A square edge at x = 8.5 covers column 8 by half: 0.5 / 0.75 of the colour through
-        // MapServer's default gamma of 0.75, half of it without.
+        // MapServer's default gamma of 0.75, half of it without. The cover 171 blends green 80
+        // over 255 as blender_rgba_pre does: alpha (255 × 172) >> 8 = 171, and
+        // (255 × 84 + 80 × 172) >> 8 = 137; the cover 128: (255 × 127 + 80 × 129) >> 8 = 166.
         let square = vec![p(8.5, 8.0), p(56.0, 8.0), p(56.0, 56.0), p(8.5, 56.0)];
         let green = |op: DrawOp| render(&[op]).pixel(8, 30).unwrap().g;
         let polygon = green(DrawOp::Polygon {
@@ -423,7 +469,7 @@ mod tests {
             rings: vec![square],
             color: RED,
         });
-        assert_eq!((polygon, fill), (138, 167));
+        assert_eq!((polygon, fill), (137, 166));
     }
 
     #[test]
