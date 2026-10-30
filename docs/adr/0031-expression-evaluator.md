@@ -1,6 +1,6 @@
 # ADR-0031: The core crate `expr` evaluates the IR's expressions as MapServer's parser does, with patterns matched by the `regex` crate in byte mode
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-29
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/expr`, the selection of classes and the per-feature properties of `crates/engine`, and every crate that evaluates an expression of the style IR
