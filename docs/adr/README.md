@@ -108,6 +108,7 @@ is the table a session reads.
 | [0031](0031-expression-evaluator.md) | The core crate `expr` evaluates the IR's expressions as MapServer's parser does, with patterns matched by the `regex` crate in byte mode | `crates/expr`, the selection of classes and the per-feature properties of `crates/engine`, and every crate that evaluates an expression of the style IR | 🟢 accepted |
 | [0032](0032-hatch-cut-by-i-overlay.md) | The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it | the cut of a hatch in `crates/render-agg`, the `i_overlay` entry of its `Cargo.toml`, and the bounds of a hatch in `crates/render` | 🟢 accepted |
 | [0033](0033-inline-features-in-the-style-ir.md) | A layer's inline features are a field of the layer in the style IR, read by the engine as the layer's source | the inline features of a layer in `crates/style-ir`, the reading of `FEATURE` in `crates/mapfile`, and the source the engine makes of them in `crates/engine` | 🟡 proposed |
+| [0034](0034-render-agg-blends-as-agg-2-4.md) | `render-agg` blends with a port of AGG 2.4's premultiplied blender, as MapServer bundles it | the pixel format of `crates/render-agg`: how a covered pixel is blended, how a layer's image is laid over the map, and how the alpha is divided out of the finished image | 🟡 proposed |
 
 ### Superseded and rejected
 
