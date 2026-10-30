@@ -81,9 +81,11 @@ A hatch that would not end or that costs past its bounds is not drawn, and the l
 or whose lengths add up to 0; a spacing that no longer moves the lines where they cross the
 image, so far from the map's origin; more than 1 048 576 lines, 2^23 pixels of lines, or 2^20
 dashes and gaps over the image; a polygon of more than 16 384 vertices; or more than 2^21
-crossings of its edges with the stroke, as estimated from the bands of the lines each edge
-reaches across. MapServer loops forever on the first three and for as long as it takes on the
-rest. Only the lines that cross the image are laid; the others draw nothing.
+crossings for the cut to find: those of the polygon's edges with the stroke, estimated from the
+bands of the lines each edge reaches across, and of the stroke with itself where lines lie closer
+than their width, and sixteen for each crossing of the polygon with itself, counted on a grid
+that gives up past the bound. MapServer loops forever on the first three and for as long as it
+takes on the rest. Only the lines that cross the image are laid; the others draw nothing.
 
 **Not yet as MapServer draws a hatch.** A size, width, or angle bound to a property or given by
 an expression is drawn as if unset, and the scale factor is 1; both count so in the clip buffer
