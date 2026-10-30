@@ -1,13 +1,12 @@
 //! The renderer on structured input: arbitrary points, lines, and polygons, and an arbitrary
-//! vector or ellipse symbol at the points, with any `f64` —
-//! NaN, infinities, and the extremes included — in an arbitrary view, drawn by the engine with
-//! agg-rust behind its clipping (Q-3, ADR-0015). JSON cannot carry such numbers, so the GeoJSON
-//! target never reaches these paths. Further styles of a line's dashes, caps, joins, offsets,
-//! outlines, width bounds, and the symbol placed along it by a gap are read from the same bytes
-//! back to front, so that they leave how an input decodes to its view, its symbol, and its shapes
-//! as it was. The points carry a label of
-//! arbitrary text, size, bounds, and resolution, in a test font of the label crate, drawn through
-//! the text path (ADR-0028).
+//! vector or ellipse symbol at the points, with any `f64` — NaN, infinities, and the extremes
+//! included — in an arbitrary view, drawn by the engine with agg-rust behind its clipping (Q-3,
+//! ADR-0015). JSON cannot carry such numbers, so the GeoJSON target never reaches these paths.
+//! Further styles of a line's dashes, caps, joins, offsets, outlines, width bounds, and the
+//! symbol placed along it by a gap are read from the same bytes back to front, so that they leave
+//! how an input decodes to its view, its symbol, and its shapes as it was. The points carry a
+//! label of arbitrary text, size, bounds, and resolution, in a test font of the label crate, drawn
+//! through the text path (ADR-0028).
 // Verifies: Q-3, ADR-0015
 #![no_main]
 

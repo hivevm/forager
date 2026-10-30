@@ -21,7 +21,7 @@ use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol};
 
 use crate::extent::View;
-use crate::line_marker;
+use crate::line_marker::{self, MarkerBudget};
 use crate::offset::{self, Offset};
 use crate::symbol;
 
@@ -89,32 +89,49 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
     }
 }
 
-/// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts. Each line
-/// whose symbols along it exceed [`line_marker::MAX_MARKER_POINTS`] draws none of them and counts
-/// in `over_limit`.
+/// What a layer draws its features on beside the view: the map's symbols, the image's width and
+/// height in pixels, and what is left to the layer of [`line_marker::MAX_MARKER_POINTS`].
+pub struct Canvas<'a> {
+    symbols: &'a [Symbol],
+    image: (f64, f64),
+    markers: MarkerBudget,
+}
+
+impl<'a> Canvas<'a> {
+    /// A canvas for one layer, its budget of markers whole.
+    pub fn new(symbols: &'a [Symbol], width: u32, height: u32) -> Self {
+        Self {
+            symbols,
+            image: (f64::from(width), f64::from(height)),
+            markers: MarkerBudget::new(),
+        }
+    }
+
+    /// Whether symbols along the layer's lines were left out, their points past the budget.
+    pub fn markers_spent(&self) -> bool {
+        self.markers.spent()
+    }
+}
+
+/// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts.
 pub fn draw_ops(
     mode: RenderMode,
     geometry: &Geometry,
     style: &Style,
     pass: Pass,
     view: &View,
-    symbols: &[Symbol],
-    over_limit: &mut usize,
+    canvas: &mut Canvas,
 ) -> Vec<DrawOp> {
     let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
     let mut ops = Vec::new();
-    let line = Line {
-        symbols,
-        image: view.image_size(),
-    };
     match (mode, geometry) {
         (_, Geometry::Collection(geometries)) => {
             for g in geometries {
-                ops.extend(draw_ops(mode, g, style, pass, view, symbols, over_limit));
+                ops.extend(draw_ops(mode, g, style, pass, view, canvas));
             }
         }
         (RenderMode::Point, _) => {
-            let mark = symbol::mark(style, symbols);
+            let mark = symbol::mark(style, canvas.symbols);
             // pointLayerDrawShape: a point outside the map's extent draws nothing.
             for c in vertices(geometry).into_iter().filter(|&c| view.contains(c)) {
                 let at = view.point_to_pixel(c);
@@ -127,17 +144,16 @@ pub fn draw_ops(
         }
         (RenderMode::Polygon, Geometry::Polygon(rings)) => {
             let rings = rings.iter().map(|r| pixels(r)).collect();
-            *over_limit += usize::from(!shade(&mut ops, rings, style, &line));
+            shade(&mut ops, rings, style, canvas);
         }
         (RenderMode::Polygon, Geometry::MultiPolygon(polygons)) => {
             for rings in polygons {
                 let rings = rings.iter().map(|r| pixels(r)).collect();
-                *over_limit += usize::from(!shade(&mut ops, rings, style, &line));
+                shade(&mut ops, rings, style, canvas);
             }
         }
         (RenderMode::Line, Geometry::LineString(points)) => {
-            let paths = vec![pixels(points)];
-            *over_limit += usize::from(!line_symbol(&mut ops, paths, style, pass, &line));
+            line_symbol(&mut ops, vec![pixels(points)], style, pass, canvas);
         }
         (RenderMode::Line, Geometry::MultiLineString(lines) | Geometry::Polygon(lines)) => {
             let paths: Vec<_> = lines.iter().map(|l| pixels(l)).collect();
@@ -145,12 +161,11 @@ pub fn draw_ops(
                 Geometry::Polygon(_) => open_rings(paths),
                 _ => paths,
             };
-            *over_limit += usize::from(!line_symbol(&mut ops, paths, style, pass, &line));
+            line_symbol(&mut ops, paths, style, pass, canvas);
         }
         (RenderMode::Line, Geometry::MultiPolygon(polygons)) => {
             let rings = polygons.iter().flatten().map(|r| pixels(r)).collect();
-            let paths = open_rings(rings);
-            *over_limit += usize::from(!line_symbol(&mut ops, paths, style, pass, &line));
+            line_symbol(&mut ops, open_rings(rings), style, pass, canvas);
         }
         _ => {}
     }
@@ -191,13 +206,12 @@ fn outline_width(style: &Style) -> f64 {
     fixed(&style.outline_width).unwrap_or(0.0)
 }
 
-/// The style's `WIDTH` bounded by its `MINWIDTH` and `MAXWIDTH`, each grown by `grow`, as
-/// msDrawLineSymbol() bounds it: the maximum first, then the minimum. With the width as written,
-/// grown alike.
-fn bounded_width(style: &Style, grow: f64) -> (f64, f64) {
-    let written = fixed(&style.width).unwrap_or(1.0) + grow;
-    let max = style.max_width.unwrap_or(MAX_SYMBOL_WIDTH) + grow;
-    let min = style.min_width.unwrap_or(MIN_SYMBOL_WIDTH) + grow;
+/// The style's `WIDTH` bounded by its `MINWIDTH` and `MAXWIDTH`, as msDrawLineSymbol() bounds
+/// it: the maximum first, then the minimum. With the width as written.
+fn bounded_width(style: &Style) -> (f64, f64) {
+    let written = fixed(&style.width).unwrap_or(1.0);
+    let max = style.max_width.unwrap_or(MAX_SYMBOL_WIDTH);
+    let min = style.min_width.unwrap_or(MIN_SYMBOL_WIDTH);
     (written.min(max).max(min), written)
 }
 
@@ -252,55 +266,59 @@ fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
     rings
 }
 
-/// What a line drawn in a style needs beside it: the map's symbols, and the image's width and
-/// height in pixels.
-struct Line<'a> {
-    symbols: &'a [Symbol],
-    image: (f64, f64),
-}
-
 /// A line drawn in a style, as msDrawLineSymbol() draws one of a simple symbol: in the `COLOR`,
 /// or the `OUTLINECOLOR` without one; the width bounded; the offset, the dash pattern, and the
 /// initial gap scaled by the factor the bounds applied to the width; and the style's cap and
 /// join, by default `round` and `none`. An outline pass draws the style widened by twice its
 /// outline width with its colours swapped, as msOutlineRenderingPrepareStyle() prepares it.
-/// A style with a vector or ellipse symbol and a `GAP` draws the symbol along the line instead;
-/// `false` when those markers exceed their limit and none is drawn.
+/// A style with a vector or ellipse symbol and a `GAP` draws the symbol along the line instead,
+/// its markers' points taken from the canvas's budget; one whose symbol index is past the last
+/// draws nothing.
 fn line_symbol(
     ops: &mut Vec<DrawOp>,
     paths: Vec<Vec<Point>>,
     style: &Style,
     pass: Pass,
-    line: &Line,
-) -> bool {
-    let (outline, first, second) = match pass {
-        Pass::Plain | Pass::PlainIfColored => (0.0, &style.color, &style.outline_color),
+    canvas: &mut Canvas,
+) {
+    let prepared;
+    let style = match pass {
+        Pass::Plain | Pass::PlainIfColored => style,
         Pass::Outline | Pass::OutlineIfOutlined => {
-            (outline_width(style), &style.outline_color, &style.color)
+            prepared = outline_style(style);
+            &prepared
         }
     };
-    let (first, second) = (fixed(first), fixed(second));
+    let (first, second) = (fixed(&style.color), fixed(&style.outline_color));
     if matches!(pass, Pass::PlainIfColored | Pass::OutlineIfOutlined) && first.is_none() {
-        return true;
+        return;
     }
     let Some(color) = first.or(second) else {
-        return true;
+        return;
     };
-    let (width, written) = bounded_width(style, 2.0 * outline);
+    let (width, written) = bounded_width(style);
     let factor = if written != 0.0 { width / written } else { 1.0 };
     let initial_gap = style.initial_gap.unwrap_or(-1.0);
     // msDrawLineSymbol's `gap < 0` or `gap > 0`: a gap that is not a number brushes the line.
     let gapped = matches!(style.gap, Some(gap) if gap.abs() > 0.0);
-    if let symbol::Mark::Symbol(symbol) = symbol::mark(style, line.symbols)
-        && gapped
-    {
-        let paths = moved(paths, style_offset(style, factor));
-        let style = match pass {
-            Pass::Plain | Pass::PlainIfColored => style.clone(),
-            Pass::Outline | Pass::OutlineIfOutlined => outline_style(style),
-        };
-        let initial_gap = initial_gap * factor;
-        return line_marker::draw(ops, &paths, &style, symbol, initial_gap, line.image);
+    match symbol::mark(style, canvas.symbols) {
+        symbol::Mark::Nothing => return,
+        symbol::Mark::Symbol(symbol) if gapped => {
+            let paths = moved(paths, style_offset(style, factor));
+            let initial_gap = initial_gap * factor;
+            let image = canvas.image;
+            line_marker::draw(
+                ops,
+                &paths,
+                style,
+                symbol,
+                initial_gap,
+                image,
+                &mut canvas.markers,
+            );
+            return;
+        }
+        symbol::Mark::Symbol(_) | symbol::Mark::Square => {}
     }
     let (cap, join) = line_ends(
         width,
@@ -323,7 +341,6 @@ fn line_symbol(
             },
         },
     });
-    true
 }
 
 /// The style of an outline pass as msOutlineRenderingPrepareStyle() prepares it, at a scale
@@ -345,12 +362,12 @@ fn outline_style(style: &Style) -> Style {
 }
 
 /// A polygon drawn in a style, as msDrawShadeSymbol() draws one of a simple symbol: without a
-/// `COLOR`, its outline as a line in the `OUTLINECOLOR`, `false` as [`line_symbol`] returns it;
-/// with one, moved by the offset, filled, and outlined in the `OUTLINECOLOR` at the colour's
-/// alpha, with round caps and joins.
-fn shade(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style, line: &Line) -> bool {
+/// `COLOR`, its outline as a line in the `OUTLINECOLOR`; with one, moved by the offset, filled,
+/// and outlined in the `OUTLINECOLOR` at the colour's alpha, with round caps and joins.
+fn shade(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style, canvas: &mut Canvas) {
     let Some(color) = fixed(&style.color) else {
-        return line_symbol(ops, open_rings(rings), style, Pass::Plain, line);
+        line_symbol(ops, open_rings(rings), style, Pass::Plain, canvas);
+        return;
     };
     let rings = moved(rings, style_offset(style, 1.0));
     ops.push(DrawOp::Fill {
@@ -377,7 +394,6 @@ fn shade(ops: &mut Vec<DrawOp>, rings: Vec<Vec<Point>>, style: &Style, line: &Li
             dashes: Dashes::default(),
         });
     }
-    true
 }
 
 /// A point as a square of the style's size, centred on it, filled in the `COLOR` and outlined
@@ -422,7 +438,7 @@ fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
 
 #[cfg(test)]
 mod tests {
-    use forager_style_ir::LineOffset;
+    use forager_style_ir::{Extent, LineOffset, SymbolKind, SymbolRef};
 
     use super::*;
 
@@ -433,11 +449,10 @@ mod tests {
         Point { x, y }
     }
 
-    /// A line drawn without symbols on an image of 100 × 100.
-    const PLAIN: Line = Line {
-        symbols: &[],
-        image: (100.0, 100.0),
-    };
+    /// A canvas without symbols, of 100 × 100.
+    fn plain() -> Canvas<'static> {
+        Canvas::new(&[], 100, 100)
+    }
 
     fn line() -> Vec<Vec<Point>> {
         vec![vec![p(0.0, 0.0), p(10.0, 0.0)]]
@@ -454,7 +469,7 @@ mod tests {
     /// The strokes of one pass of a style on [`line`]: color, width, dashes, and paths.
     fn strokes(style: &Style, pass: Pass) -> Vec<(Rgba, f64, Dashes, Vec<Vec<Point>>)> {
         let mut ops = Vec::new();
-        line_symbol(&mut ops, line(), style, pass, &PLAIN);
+        line_symbol(&mut ops, line(), style, pass, &mut plain());
         ops.into_iter()
             .map(|op| match op {
                 DrawOp::Stroke {
@@ -527,6 +542,96 @@ mod tests {
         assert_eq!(fixed(&outline_style(&without_size).size), Some(0.5));
     }
 
+    /// The points of drawing operations.
+    fn points(ops: &[DrawOp]) -> usize {
+        ops.iter()
+            .map(|op| match op {
+                DrawOp::Stroke { paths, .. } => paths.iter().map(Vec::len).sum(),
+                DrawOp::Fill { rings, .. } => rings.iter().map(Vec::len).sum(),
+                DrawOp::Glyphs { .. } => 0,
+            })
+            .sum()
+    }
+
+    #[test]
+    fn the_symbols_along_the_lines_of_a_layer_share_one_budget() {
+        // Verifies: Q-9
+        // A filled triangle of 3 points every 0.01 pixels from 0.005 along lines 100 pixels long:
+        // 10 000 markers, 30 000 points, each line far under the limit. A feature of 20 such lines
+        // takes 600 000 points and one of 10 another 300 000; a third of 20 would pass the
+        // million and draws nothing, nor does any feature after it.
+        let view = View::for_image(
+            Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 100.0,
+                max_y: 100.0,
+            },
+            101,
+            101,
+        )
+        .unwrap();
+        let triangle = Symbol {
+            name: None,
+            kind: SymbolKind::Vector,
+            paths: vec![vec![[0.0, 0.0], [2.0, 0.0], [1.0, 2.0]]],
+            extent: Some([2.0, 2.0]),
+            filled: true,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        };
+        let symbols = [triangle];
+        let style = Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            gap: Some(-0.01),
+            ..colored(Some(BLUE), None)
+        };
+        let lines = |count: i32| {
+            Geometry::MultiLineString(
+                (0..count)
+                    .map(|i| {
+                        let y = f64::from(i) * 5.0;
+                        vec![Coord { x: 0.0, y }, Coord { x: 100.0, y }]
+                    })
+                    .collect(),
+            )
+        };
+        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let mut draw = |geometry: &Geometry| {
+            let ops = draw_ops(
+                RenderMode::Line,
+                geometry,
+                &style,
+                Pass::Plain,
+                &view,
+                &mut canvas,
+            );
+            (points(&ops), canvas.markers_spent())
+        };
+        assert_eq!(draw(&lines(20)), (600_000, false));
+        assert_eq!(draw(&lines(10)), (300_000, false));
+        assert_eq!(draw(&lines(20)), (0, true));
+        assert_eq!(
+            draw(&lines(1)),
+            (0, true),
+            "nothing once the budget is spent"
+        );
+    }
+
+    #[test]
+    fn a_symbol_index_past_the_last_draws_no_line() {
+        // msDrawLineSymbol returns at once for a symbol it does not have.
+        let style = Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(9))),
+            ..colored(Some(BLUE), None)
+        };
+        assert!(strokes(&style, Pass::Plain).is_empty());
+    }
+
     #[test]
     fn a_line_without_a_color_is_drawn_in_its_outline_color() {
         let drawn = strokes(&colored(None, Some(BLACK)), Pass::Plain);
@@ -594,7 +699,7 @@ mod tests {
         };
         let ends = |width| {
             let mut ops = Vec::new();
-            line_symbol(&mut ops, line(), &style(width), Pass::Plain, &PLAIN);
+            line_symbol(&mut ops, line(), &style(width), Pass::Plain, &mut plain());
             match &ops[0] {
                 DrawOp::Stroke { cap, join, .. } => (*cap, *join),
                 DrawOp::Fill { .. } | DrawOp::Glyphs { .. } => panic!("a line is not filled"),
@@ -615,7 +720,7 @@ mod tests {
             width: Some(Bound::Value(2.0)),
             ..colored(Some(fill), Some(BLACK))
         };
-        shade(&mut ops, line(), &style, &PLAIN);
+        shade(&mut ops, line(), &style, &mut plain());
         match &ops[1] {
             DrawOp::Stroke {
                 color, cap, join, ..

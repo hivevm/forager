@@ -246,8 +246,36 @@ fn the_gap_scales_with_the_size_as_computesymbolstyle_scales_it() {
     assert_eq!(symbol::symbol_style(&style, &arrow()).gap, -10.0);
     let mut ops = Vec::new();
     let line = [vec![p(0.0, 50.0), p(40.0, 50.0)]];
-    assert!(draw(&mut ops, &line, &style, &arrow(), 0.0, (100.0, 100.0)));
+    let mut budget = MarkerBudget::new();
+    draw(&mut ops, &line, &style, &arrow(), 0.0, IMAGE, &mut budget);
     assert_eq!(ops.len(), 5, "at 0, 10, 20, 30, and 40");
+    assert!(!budget.spent());
+}
+
+const IMAGE: (f64, f64) = (100.0, 100.0);
+
+#[test]
+fn the_markers_of_a_layer_share_one_budget_of_points() {
+    // Verifies: Q-9
+    // Five arrows a line, each an outline of 3 points: 15 points a line. Of a budget of 20, the
+    // first line takes 15; the second, 15 more, would pass it and draws nothing, and nor does any
+    // line after, however few its markers.
+    let style = Style {
+        color: Some(Bound::Value(Rgba::opaque(0, 0, 0))),
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        gap: Some(10.0),
+        ..Style::default()
+    };
+    let line = [vec![p(0.0, 50.0), p(40.0, 50.0)]];
+    let mut budget = MarkerBudget::of(20);
+    let mut ops = Vec::new();
+    draw(&mut ops, &line, &style, &arrow(), 0.0, IMAGE, &mut budget);
+    assert_eq!((ops.len(), budget.spent()), (5, false));
+    draw(&mut ops, &line, &style, &arrow(), 0.0, IMAGE, &mut budget);
+    assert_eq!((ops.len(), budget.spent()), (5, true));
+    let short = [vec![p(0.0, 50.0), p(1.0, 50.0)]];
+    draw(&mut ops, &short, &style, &arrow(), 0.0, IMAGE, &mut budget);
+    assert_eq!(ops.len(), 5, "nothing once the budget is spent");
 }
 
 #[test]
@@ -259,6 +287,8 @@ fn a_symbol_that_draws_nothing_places_nothing() {
     };
     let mut ops = Vec::new();
     let line = [vec![p(0.0, 50.0), p(100.0, 50.0)]];
-    assert!(draw(&mut ops, &line, &style, &arrow(), 0.0, (100.0, 100.0)));
+    let mut budget = MarkerBudget::new();
+    draw(&mut ops, &line, &style, &arrow(), 0.0, IMAGE, &mut budget);
     assert!(ops.is_empty());
+    assert!(!budget.spent());
 }

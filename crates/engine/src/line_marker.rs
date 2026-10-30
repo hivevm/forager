@@ -18,19 +18,47 @@
 //! Symbols along a line: a vector or an ellipse symbol repeated every `GAP` pixels from the
 //! `INITIALGAP`, upright for a positive gap and turned with each segment for a negative one, as
 //! MapServer places them. The positions of the markers outside the image are not visited one by
-//! one but skipped, and the markers of one line amount to at most [`MAX_MARKER_POINTS`] points
-//! (Q-9).
+//! one but skipped, and the markers along the lines of one layer amount to at most
+//! [`MAX_MARKER_POINTS`] points (Q-9).
 
 use forager_render::{DrawOp, Point};
 use forager_style_ir::{Style, Symbol};
 
 use crate::symbol;
 
-/// The most points the markers along one line of a feature amount to, in one style (Q-9). Beyond
-/// it none of that line's markers is drawn and the render reports it. MapServer places markers
-/// without a bound, so that a tiny `GAP` on a long line draws them by the billion; a million
-/// points are some 10 000 markers of an ellipse of 30 pixels, or 200 000 of a five-point arrow.
+/// The most points the markers along the lines of one layer amount to, over all its features and
+/// styles (Q-9). The markers of a line that would pass it are not drawn, nor any of the layer's
+/// after them, and the render reports it. MapServer places markers without a bound, so that a
+/// tiny `GAP` on a long line, or a feature of many small rings, draws them by the billion; a
+/// million points are some 10 000 markers of an ellipse of 30 pixels, or 200 000 of a five-point
+/// arrow.
 pub const MAX_MARKER_POINTS: usize = 1_000_000;
+
+/// What is left to one layer of [`MAX_MARKER_POINTS`].
+#[derive(Debug)]
+pub(crate) struct MarkerBudget {
+    remaining: usize,
+    spent: bool,
+}
+
+impl MarkerBudget {
+    pub(crate) fn new() -> Self {
+        Self::of(MAX_MARKER_POINTS)
+    }
+
+    /// A budget of `points`.
+    pub(crate) fn of(points: usize) -> Self {
+        Self {
+            remaining: points,
+            spent: false,
+        }
+    }
+
+    /// Whether markers were left out for want of points.
+    pub(crate) fn spent(&self) -> bool {
+        self.spent
+    }
+}
 
 /// MapServer's `MS_PI`, `src/mapserver.h`.
 const MS_PI: f64 = std::f64::consts::PI;
@@ -64,8 +92,8 @@ pub(crate) struct Placement {
 
 /// The markers of `style` with its vector or ellipse `symbol` along `paths`, in pixels already
 /// offset, as msDrawLineSymbol draws a symbol with a `GAP`: `initial_gap` is the `INITIALGAP`
-/// scaled as the width is. `false` when the markers would exceed [`MAX_MARKER_POINTS`]; then none
-/// is drawn.
+/// scaled as the width is. The markers' points are taken from `budget`; where they would exceed
+/// what is left, none is drawn, and none after them once it is spent.
 pub(crate) fn draw(
     ops: &mut Vec<DrawOp>,
     paths: &[Vec<Point>],
@@ -73,13 +101,17 @@ pub(crate) fn draw(
     symbol: &Symbol,
     initial_gap: f64,
     image: (f64, f64),
-) -> bool {
+    budget: &mut MarkerBudget,
+) {
+    if budget.spent {
+        return;
+    }
     let s = symbol::symbol_style(style, symbol);
     // What one marker costs; a symbol that draws nothing has no markers to place.
     let mut probe = Vec::new();
     symbol::render(&mut probe, Point { x: 0.0, y: 0.0 }, symbol, &s);
     if probe.is_empty() {
-        return true;
+        return;
     }
     let cost = probe.iter().map(points).sum::<usize>().max(1);
     let gap = style.gap.unwrap_or(0.0);
@@ -96,15 +128,17 @@ pub(crate) fn draw(
         anchor: symbol.anchor_point.unwrap_or([0.5, 0.5]),
         image,
     };
-    let Some(markers) = place(paths, &placement, MAX_MARKER_POINTS / cost) else {
-        return false;
+    let Some(markers) = place(paths, &placement, budget.remaining / cost) else {
+        budget.remaining = 0;
+        budget.spent = true;
+        return;
     };
+    budget.remaining -= markers.len() * cost;
     let mut turned = s;
     for marker in markers {
         turned.rotation = marker.rotation;
         symbol::render(ops, marker.at, symbol, &turned);
     }
-    true
 }
 
 /// The points of a drawing operation.

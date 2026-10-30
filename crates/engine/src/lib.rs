@@ -20,7 +20,7 @@ use forager_ports::{
 use forager_render::{DisplayItem, Renderer, RgbaImage};
 use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba};
 
-use crate::draw::{can_draw, draw_ops, kind, passes};
+use crate::draw::{Canvas, can_draw, draw_ops, kind, passes};
 
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
@@ -111,12 +111,10 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             }
         }
         let passes = passes(mode, &class.styles);
-        let mut over_limit = 0;
+        let mut canvas = Canvas::new(&map.symbols, width, height);
         let mut draw = |feature: &Feature, style, passes: &[_]| {
             for &pass in passes {
-                let geometry = &feature.geometry;
-                let symbols = &map.symbols;
-                for op in draw_ops(mode, geometry, style, pass, &view, symbols, &mut over_limit) {
+                for op in draw_ops(mode, &feature.geometry, style, pass, &view, &mut canvas) {
                     renderer.draw(&DisplayItem {
                         op,
                         feature_id: Some(feature.id),
@@ -137,12 +135,11 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                 }
             }
         }
-        if over_limit > 0 {
+        if canvas.markers_spent() {
             let message = format!(
-                "layer {}: the symbols along {over_limit} line{} are not drawn, each line's \
-                 exceeding {MAX_MARKER_POINTS} points",
-                name(layer),
-                if over_limit == 1 { "" } else { "s" }
+                "layer {}: its symbols along lines exceed {MAX_MARKER_POINTS} points; those \
+                 past the limit are not drawn",
+                name(layer)
             );
             diagnostics.push(Diagnostic::warning(
                 "line-markers-over-limit",
