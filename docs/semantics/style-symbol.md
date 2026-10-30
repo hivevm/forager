@@ -21,6 +21,19 @@ the frontend warns. A label's style draws at its `labelpnt` unless it names anot
 expressions are not yet carried over, and are a warning; the style draws the feature's own
 geometry.
 
+**Drawing a transform.** On a line or a polygon layer, `msDrawTransformedShape` in
+`src/mapgeomtransform.c` draws the style's symbol, as at a point, on the feature's unclipped
+shape in pixels, its vertices simplified as `msTransformShapeSimplify` in `src/mapprimitive.cpp`
+simplifies them (a vertex less than a pixel from the one kept before it is dropped, and a
+polygon's first two and last two are kept): `start` at the first point of each line or ring,
+`end` at the last, `vertices` at every other, each only inside the image, and `centroid` once, at
+the centre of the shape's segments weighted by their lengths (`msGetPolygonCentroid`), wherever it
+falls. With `ANGLE AUTO` the symbol turns with the segment at `start` and `end`, and at a vertex
+halfway between its two segments (`calcOrientation` and `calcMidAngle`). `labelpnt` and
+`labelpoly` draw nothing there. A line layer that draws its features style by style draws the
+transformed styles with its first style, before the rest. A point layer draws every style at its
+points, whatever its transform.
+
 **A polygon's fill.** A polygon layer's style with a `COLOR` and without a symbol, or with a
 simple one, fills the polygon under the even-odd rule, as `msDrawShadeSymbol` in
 `src/maprendering.c` and `agg2RenderPolygon` in `src/mapagg.cpp` fill it, and a hatch symbol

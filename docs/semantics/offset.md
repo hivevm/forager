@@ -9,7 +9,11 @@ MapServer gives `y` two values a meaning of their own (`MS_STYLE_SINGLE_SIDED_OF
 `src/maprendering.c`): with `y` of −99 a line is drawn parallel to the feature's at the distance
 `x`, with −999 on both sides of it. The frontend writes these as the `line_offset` they mean, its
 `distance` the `x`, and keeps `offset` for a true shift. `POLAROFFSET d a` shifts by `d` pixels
-in the direction `a` degrees. All of them scale as [`scale.md`](scale.md) states.
+in the direction `a` degrees, counter-clockwise from rightwards on the image, and moves only a
+symbol drawn at a point: `msAdjustMarkerPos` in `src/maprendering.c` moves the point by the polar
+offset, where its distance or its angle is not 0, then by the `OFFSET`, whose `y` of −99 or −999
+counts as a number there, before it places the symbol's anchor point. All of them scale as
+[`scale.md`](scale.md) states.
 
 **The offset curve.** `msOffsetPolyline` in `src/maputil.c` draws `-99` and `-999` with
 `msOffsetCurve`. That function first asks GEOS (`msGEOSOffsetCurve` in `src/mapgeos.c`:

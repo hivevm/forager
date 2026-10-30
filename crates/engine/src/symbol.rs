@@ -183,8 +183,8 @@ fn marker_size(style: &Style, symbol: &Symbol) -> (f64, f64) {
     }
 }
 
-/// msAdjustMarkerPos without the offsets: the point moved so that the symbol's anchor point,
-/// turned with the symbol, lies on `at`.
+/// The rest of msAdjustMarkerPos after [`shifted`]: the point moved so that the symbol's anchor
+/// point, turned with the symbol, lies on `at`.
 fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64) -> Point {
     let [anchor_x, anchor_y] = symbol.anchor_point.unwrap_or([0.5, 0.5]);
     if anchor_x == 0.5 && anchor_y == 0.5 {
@@ -206,11 +206,41 @@ fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64) -> Point {
     }
 }
 
+/// msAdjustMarkerPos before the anchor point, at a scale factor of 1: `at` moved by the style's
+/// `POLAROFFSET`, where its distance or its angle is not 0, then by its `OFFSET`. A line offset is
+/// the `OFFSET` it was written as, its `y` MapServer's −99 or −999.
+pub(crate) fn shifted(at: Point, style: &Style) -> Point {
+    let mut at = at;
+    if let Some([distance, angle]) = &style.polar_offset {
+        let (distance, angle) = (
+            distance.value().unwrap_or(0.0),
+            angle.value().unwrap_or(0.0),
+        );
+        if distance != 0.0 || angle != 0.0 {
+            let angle = angle * DEG_TO_RAD;
+            at.x += distance * libm::cos(-angle);
+            at.y += distance * libm::sin(-angle);
+        }
+    }
+    let (x, y) = match (&style.offset, &style.line_offset) {
+        (_, Some(line)) => (
+            line.distance.value().unwrap_or(0.0),
+            if line.both_sides { -999.0 } else { -99.0 },
+        ),
+        (Some([x, y]), None) => (x.value().unwrap_or(0.0), y.value().unwrap_or(0.0)),
+        (None, None) => (0.0, 0.0),
+    };
+    at.x += x;
+    at.y += y;
+    at
+}
+
 /// The drawing operations of `symbol` at the pixel `at` in `style`, as msDrawMarkerSymbol and
-/// the AGG renderer draw a vector or an ellipse symbol: filled first, then outlined.
+/// the AGG renderer draw a vector or an ellipse symbol: moved by msAdjustMarkerPos, filled first,
+/// then outlined.
 pub(crate) fn symbol_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbol: &Symbol) {
     let s = symbol_style(style, symbol);
-    let at = anchored(at, style, symbol, s.rotation);
+    let at = anchored(shifted(at, style), style, symbol, s.rotation);
     render(ops, at, symbol, &s);
 }
 

@@ -23,6 +23,7 @@ use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol};
 
 use crate::extent::View;
+use crate::geom_transform;
 use crate::hatch::{self, Hatched, Hatching};
 use crate::line_marker::{self, MarkerBudget};
 use crate::offset::{self, Offset};
@@ -166,16 +167,14 @@ pub fn draw_ops(
             }
         }
         (RenderMode::Point, _) => {
-            let mark = symbol::mark(style, canvas.symbols);
-            // pointLayerDrawShape: a point outside the map's extent draws nothing.
+            // pointLayerDrawShape: a point outside the map's extent draws nothing. It draws every
+            // style at every point, whatever its GEOMTRANSFORM.
             for c in vertices(geometry).into_iter().filter(|&c| view.contains(c)) {
-                let at = view.point_to_pixel(c);
-                match mark {
-                    symbol::Mark::Square => point_ops(&mut ops, at, style),
-                    symbol::Mark::Symbol(s) => symbol::symbol_ops(&mut ops, at, style, s),
-                    symbol::Mark::Nothing => {}
-                }
+                marker_ops(&mut ops, view.point_to_pixel(c), style, canvas.symbols);
             }
+        }
+        (_, _) if style.geom_transform.is_some() => {
+            transformed(&mut ops, geometry, style, pass, view, canvas);
         }
         (RenderMode::Polygon, Geometry::Polygon(_) | Geometry::MultiPolygon(_))
             if symbol::is_hatch(style, canvas.symbols) =>
@@ -524,6 +523,54 @@ fn shade(
         });
     }
     true
+}
+
+/// What msDrawMarkerSymbol draws of `style` at the pixel `at`: its symbol, or the square that
+/// stands for a symbol not drawn yet, moved as msAdjustMarkerPos moves it.
+fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbols: &[Symbol]) {
+    match symbol::mark(style, symbols) {
+        symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style), style),
+        symbol::Mark::Symbol(s) => symbol::symbol_ops(ops, at, style, s),
+        symbol::Mark::Nothing => {}
+    }
+}
+
+/// A style with a `GEOMTRANSFORM` on a shape of a line or a polygon layer, as
+/// msDrawTransformedShape draws it: its symbol at each point the transform places, turned there
+/// where the style's angle is `AUTO` and the transform gives one. The outline pass of a line
+/// layer's first style draws the style its outline prepares, as msDrawVectorLayer prepares the
+/// style before msDrawShape draws the transform.
+fn transformed(
+    ops: &mut Vec<DrawOp>,
+    geometry: &Geometry,
+    style: &Style,
+    pass: Pass,
+    view: &View,
+    canvas: &Canvas,
+) {
+    let Some(transform) = style.geom_transform else {
+        return;
+    };
+    let prepared;
+    let style = match pass {
+        Pass::Plain | Pass::PlainIfColored => style,
+        Pass::Outline | Pass::OutlineIfOutlined => {
+            prepared = outline_style(style);
+            &prepared
+        }
+    };
+    for (at, angle) in geom_transform::placed(transform, geometry, view, canvas.image) {
+        match angle {
+            Some(angle) if style.auto_angle => {
+                let turned = Style {
+                    angle: Some(Bound::Value(angle)),
+                    ..style.clone()
+                };
+                marker_ops(ops, at, &turned, canvas.symbols);
+            }
+            _ => marker_ops(ops, at, style, canvas.symbols),
+        }
+    }
 }
 
 /// A point as a square of the style's size, centred on it, filled in the `COLOR` and outlined
