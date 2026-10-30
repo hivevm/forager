@@ -138,8 +138,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         drawing.draw(&mut renderer, &mut canvas, &selected);
         if canvas.markers_spent() {
             let message = format!(
-                "layer {}: its symbols along lines exceed {MAX_MARKER_POINTS} points; those \
-                 past the limit are not drawn",
+                "layer {}: its symbols along lines or placed by a GEOMTRANSFORM exceed \
+                 {MAX_MARKER_POINTS} points; those past the limit are not drawn",
                 name(layer)
             );
             diagnostics.push(Diagnostic::warning(

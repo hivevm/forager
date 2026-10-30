@@ -936,10 +936,10 @@ fn transformed(transform: GeomTransform, index: u32, color: Rgba, size: f64) -> 
 #[test]
 fn transforms_draw_symbols_at_the_start_the_end_and_the_vertices_of_a_line() {
     // On ELL, pixels (10, 20) to (90, 20) to (90, 90): the circle at the start, the arrow at the
-    // end turned with the last segment, the filled head at the corner turned by -45°. They are drawn with
-    // the first pass of the line layer's cache, so the wide line of the last style, drawn from
-    // the cache after them, covers the circle where it runs. A style transformed to the label
-    // point draws nothing on a line.
+    // end turned with the last segment, the filled head at the corner turned by -45°. They are
+    // drawn with the first pass of the line layer's cache, so the wide line of the last style,
+    // drawn from the cache after them, covers the circle where it runs. A style transformed to
+    // the label point draws nothing on a line.
     let red_square = Style {
         color: Some(Bound::Value(Rgba::opaque(255, 0, 0))),
         size: Some(Bound::Value(30.0)),
@@ -1041,4 +1041,37 @@ fn a_polar_offset_moves_a_symbol_at_a_point_by_distance_and_angle() {
     assert_eq!(image.pixel(50, 30), Some(BLUE));
     assert_eq!(image.pixel(50, 50), Some(WHITE));
     assert_matches_reference(&image, "symbol_polar_offset.png");
+}
+
+#[test]
+fn a_transformed_first_style_with_an_outline_draws_once_as_its_outline_prepares_it() {
+    // msDrawVectorLayer prepares the first style of a cached line layer for its outline before
+    // msDrawShape draws its transform: the circle at the start in its OUTLINECOLOR, red, outlined
+    // in its COLOR, blue, at a width of 1 + 2 × 2 and a size of 8 + 2. The cache's later pass of
+    // that style skips it, so it is not drawn again in blue.
+    let red = Rgba::opaque(255, 0, 0);
+    let start = Style {
+        outline_color: Some(Bound::Value(red)),
+        outline_width: Some(Bound::Value(2.0)),
+        ..transformed(GeomTransform::Start, 3, BLUE, 8.0)
+    };
+    let rendered = render_markers(vec![start, line_style(BLACK, 1.0)]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(
+        image.pixel(10, 18),
+        Some(red),
+        "the fill, in the outline colour"
+    );
+    assert_eq!(
+        image.pixel(10, 25),
+        Some(BLUE),
+        "the outline, in the colour"
+    );
+    assert_eq!(image.pixel(10, 30), Some(WHITE), "past the outline");
+    assert_matches_reference(&image, "geomtransform_outline.png");
 }

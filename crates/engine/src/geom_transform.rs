@@ -90,13 +90,19 @@ pub(crate) fn placed(
 
 /// The parts of a line or a polygon shape in pixels, as msTransformShapeSimplify gives them, the
 /// parts it leaves without points dropped: a polygon's rings when the geometry is a polygon, its
-/// lines otherwise.
+/// lines otherwise, and the parts of each member of a collection, as the one shape they make.
 fn shape_in_pixels(geometry: &Geometry, view: &View) -> Vec<Vec<Point>> {
     let parts: Vec<&Vec<Coord>> = match geometry {
         Geometry::LineString(line) => vec![line],
         Geometry::MultiLineString(lines) | Geometry::Polygon(lines) => lines.iter().collect(),
         Geometry::MultiPolygon(polygons) => polygons.iter().flatten().collect(),
-        Geometry::Point(_) | Geometry::MultiPoint(_) | Geometry::Collection(_) => Vec::new(),
+        Geometry::Collection(geometries) => {
+            return geometries
+                .iter()
+                .flat_map(|g| shape_in_pixels(g, view))
+                .collect();
+        }
+        Geometry::Point(_) | Geometry::MultiPoint(_) => Vec::new(),
     };
     let polygon = matches!(geometry, Geometry::Polygon(_) | Geometry::MultiPolygon(_));
     parts
@@ -249,6 +255,26 @@ mod tests {
         assert_eq!(end.len(), 1);
         assert_eq!(end[0].0, p(90.0, 90.0));
         assert!((end[0].1.unwrap() - (-90.0)).abs() < 1e-6, "{end:?}");
+    }
+
+    #[test]
+    fn start_draws_at_the_first_point_of_every_part() {
+        let two = Geometry::MultiLineString(vec![
+            [(10.0, 80.0), (50.0, 80.0)]
+                .map(|(x, y)| Coord { x, y })
+                .to_vec(),
+            [(60.0, 10.0), (60.0, 50.0)]
+                .map(|(x, y)| Coord { x, y })
+                .to_vec(),
+        ]);
+        let drawn = placed(GeomTransform::Start, &two, &view(), IMAGE);
+        assert_eq!(drawn.len(), 2);
+        assert_eq!(drawn[0], (p(10.0, 20.0), Some(0.0)));
+        assert_eq!(drawn[1].0, p(60.0, 90.0));
+        assert!(
+            (drawn[1].1.unwrap() - 90.0).abs() < 1e-6,
+            "upwards: {drawn:?}"
+        );
     }
 
     #[test]
