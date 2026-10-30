@@ -197,54 +197,61 @@ pub struct PointLabel {
     pub force: bool,
 }
 
-/// Places `label` at `at`, as `msDrawLabelCache` places a label without a leader: at `CC` by its
-/// offset alone, at another position by its offset and the marker's, and at `AUTO` at the first
-/// of [`AUTO_POSITIONS`] whose box `fits`, or at the last where it is forced. A label at a fixed
-/// position is placed where its box fits, or where it is forced; `None` names a label that is not
-/// placed. `fits` is the label cache's test of a box.
+/// Where `label` stands at `anchor` of `at`, as `msDrawLabelCache` calls `get_metrics`: at a fixed
+/// `CC` by its offset alone, at any other position, and at every position `AUTO` tries, by its
+/// offset and the marker's.
+pub fn placed_at(at: Point, label: &PointLabel, anchor: Anchor) -> (Point, Bounds) {
+    let [lx, ly] = label.offsets.label;
+    let (ox, oy) = if label.position == Position::At(Anchor::Cc) {
+        (lx, ly)
+    } else {
+        // The sum is a double passed as get_metrics' int: the fraction is cut.
+        (
+            (label.offsets.marker[0] + f64::from(lx)) as i32,
+            (label.offsets.marker[1] + f64::from(ly)) as i32,
+        )
+    };
+    metrics(
+        at,
+        anchor,
+        &label.text,
+        ox,
+        oy,
+        label.rotation,
+        label.buffer,
+    )
+}
+
+/// Places `label` at `at`, as `msDrawLabelCache` places a label without a leader: at `AUTO` at
+/// the first of [`AUTO_POSITIONS`] whose box `fits`, or at the last where it is forced; at a fixed
+/// position where its box fits, or where it is forced. `None` names a label that is not placed.
+/// `fits` is the label cache's test of a box.
 pub fn place(
     at: Point,
     label: &PointLabel,
     mut fits: impl FnMut(&Bounds) -> bool,
 ) -> Option<Placement> {
-    let PointLabel {
-        position,
-        ref text,
-        offsets,
-        rotation,
-        buffer,
-        force,
-    } = *label;
-    let [lx, ly] = offsets.label;
-    // The sum is a double passed as get_metrics' int: the fraction is cut.
-    let ox = (offsets.marker[0] + f64::from(lx)) as i32;
-    let oy = (offsets.marker[1] + f64::from(ly)) as i32;
-    match position {
+    let placement = |anchor| {
+        let (origin, bounds) = placed_at(at, label, anchor);
+        Placement {
+            origin,
+            bounds,
+            anchor,
+        }
+    };
+    match label.position {
         Position::Auto => {
             let last = AUTO_POSITIONS.len() - 1;
-            for (i, anchor) in AUTO_POSITIONS.into_iter().enumerate() {
-                let (origin, bounds) = metrics(at, anchor, text, ox, oy, rotation, buffer);
-                if fits(&bounds) || (i == last && force) {
-                    return Some(Placement {
-                        origin,
-                        bounds,
-                        anchor,
-                    });
-                }
-            }
-            None
+            AUTO_POSITIONS
+                .into_iter()
+                .enumerate()
+                .map(|(i, anchor)| (i, placement(anchor)))
+                .find(|(i, p)| fits(&p.bounds) || (*i == last && label.force))
+                .map(|(_, p)| p)
         }
         Position::At(anchor) => {
-            let (origin, bounds) = if anchor == Anchor::Cc {
-                metrics(at, anchor, text, lx, ly, rotation, buffer)
-            } else {
-                metrics(at, anchor, text, ox, oy, rotation, buffer)
-            };
-            (force || fits(&bounds)).then_some(Placement {
-                origin,
-                bounds,
-                anchor,
-            })
+            let p = placement(anchor);
+            (label.force || fits(&p.bounds)).then_some(p)
         }
     }
 }

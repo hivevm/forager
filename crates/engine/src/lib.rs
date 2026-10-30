@@ -148,20 +148,22 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                  {MAX_MARKER_POINTS} points; those past the limit are not drawn",
                 name(layer)
             );
-            diagnostics.push(Diagnostic::warning(
+            selector.diagnostics.push(Diagnostic::warning(
                 "line-markers-over-limit",
                 message,
                 layer.span.clone(),
             ));
         }
-        diagnostics.extend(refused_hatches(layer, canvas.hatches_refused()));
+        selector
+            .diagnostics
+            .extend(refused_hatches(layer, canvas.hatches_refused()));
         for (kind, count) in undrawn {
             let message = format!(
                 "layer {} cannot draw {count} {kind} geometr{} in its render mode",
                 name(layer),
                 if count == 1 { "y" } else { "ies" }
             );
-            diagnostics.push(Diagnostic::warning(
+            selector.diagnostics.push(Diagnostic::warning(
                 "geometry-not-drawn",
                 message,
                 layer.span.clone(),
@@ -174,7 +176,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
             .collect();
         labels
-            .collect(layer_index, point_layer, &drawn, &mut diagnostics)
+            .collect(layer_index, point_layer, &drawn, &mut selector)
             .await;
     }
     // The labels are drawn after every layer, as MapServer's label cache draws them.

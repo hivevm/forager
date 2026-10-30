@@ -208,11 +208,9 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
         change(&mut label);
         label
     };
-    let not_drawn: [fn(&mut Label); 18] = [
+    let not_drawn: [fn(&mut Label); 16] = [
         |l| l.angle_mode = Some(AngleMode::Follow),
         |l| l.max_length = Some(4.0),
-        |l| l.priority = Some(Bound::Value(5.0)),
-        |l| l.expression = Some(Expr::Bool(true)),
         |l| l.shadow_color = Some(Bound::Value(WHITE)),
         |l| l.styles = vec![Style::default()],
         |l| l.min_scale_denom = Some(1000.0),
@@ -340,6 +338,8 @@ fn a_glyph_reaching_too_far_from_the_image_is_left_out_with_a_diagnostic() {
         text: Some(Expr::String("21".to_owned())),
         size: Some(Bound::Value(6000.0)),
         max_size: Some(6000.0),
+        // Partial, so that the label cache keeps it though it leaves the image.
+        partials: Some(true),
         ..label_item()
     };
     let rendered = render(&map(label), PLACES);
@@ -540,7 +540,7 @@ fn a_label_stands_at_its_position_offset_and_angle_as_the_placement_puts_it() {
         (Position::Ll, Anchor::Ll),
         (Position::Lc, Anchor::Lc),
         (Position::Lr, Anchor::Lr),
-        // Without the label cache every box fits: AUTO takes its first position, UL.
+        // Nothing else is in the way: AUTO takes its first position, UL.
         (Position::Auto, Anchor::Ul),
     ] {
         let label = Label {
@@ -709,6 +709,8 @@ fn a_wrapped_turned_and_outlined_label_matches_its_reference() {
         angle: Some(Bound::Value(15.0)),
         outline_color: Some(Bound::Value(Rgba::opaque(240, 200, 0))),
         outline_width: Some(2.0),
+        // Partial, so that the label cache keeps it though its box leaves the image at the top.
+        partials: Some(true),
         ..label_item()
     };
     let one = r#"{"type": "Feature", "properties": {},
@@ -750,6 +752,8 @@ fn the_outline_of_a_glyph_just_outside_the_image_still_paints_its_edge() {
         offset: Some([Bound::Value(-1.0), Bound::Value(0.0)]),
         outline_color: Some(Bound::Value(Rgba::opaque(240, 200, 0))),
         outline_width: Some(6.0),
+        // Partial, so that the label cache keeps it outside the image.
+        partials: Some(true),
         ..label_item()
     });
     map.layers[0].classes[0].labels[0].size = Some(Bound::Value(10.0));
@@ -835,4 +839,190 @@ fn a_label_moves_away_from_a_simple_marker_without_points_as_from_one_pixel_a_si
         glyph_path(&ops[0]),
         expected("Fen", 12.0, Anchor::Ur, (7, 7), 0.0)
     );
+}
+
+/// The features labelled, in the order their labels are drawn, of `map` over points named by
+/// `name` at `(x, y)` each, with properties `extra`.
+fn labelled(map: &Map, points: &[(&str, f64, f64, &str)]) -> Vec<u64> {
+    let features: Vec<String> = points
+        .iter()
+        .map(|(name, x, y, extra)| {
+            format!(
+                r#"{{"type": "Feature", "properties": {{"name": "{name}"{extra}}},
+                    "geometry": {{"type": "Point", "coordinates": [{x}, {y}]}}}}"#
+            )
+        })
+        .collect();
+    let geojson = format!(
+        r#"{{"type": "FeatureCollection", "features": [{}]}}"#,
+        features.join(",")
+    );
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
+    let recorder = LabelRecorder::default();
+    let rendered = ready(render_with_files(map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    recorder.0.take().into_iter().map(|(id, _)| id).collect()
+}
+
+#[test]
+fn of_two_labels_that_overlap_the_label_cache_keeps_the_one_added_last() {
+    // Verifies: ADR-0028
+    let points = [("Forager", 60.0, 30.0, ""), ("Fen", 75.0, 32.0, "")];
+    assert_eq!(labelled(&map(label_item()), &points), [1]);
+    // Far enough apart, both, the last added first.
+    let apart = [("Forager", 50.0, 30.0, ""), ("Fen", 120.0, 30.0, "")];
+    assert_eq!(labelled(&map(label_item()), &apart), [1, 0]);
+    // A buffer grows the boxes until they meet.
+    let buffered = Label {
+        buffer: Some(14.0),
+        ..label_item()
+    };
+    assert_eq!(labelled(&map(buffered), &apart), [1]);
+    // Forced, both are drawn.
+    let forced = Label {
+        force: Some(forager_style_ir::Force::On),
+        ..label_item()
+    };
+    assert_eq!(labelled(&map(forced), &points), [1, 0]);
+    let rendered = render(&map(label_item()), &collection(&points));
+    assert_matches_reference(&rendered.image.unwrap(), "label_collision.png");
+}
+
+/// The points as a feature collection.
+fn collection(points: &[(&str, f64, f64, &str)]) -> String {
+    let features: Vec<String> = points
+        .iter()
+        .map(|(name, x, y, _)| {
+            format!(
+                r#"{{"type": "Feature", "properties": {{"name": "{name}"}},
+                    "geometry": {{"type": "Point", "coordinates": [{x}, {y}]}}}}"#
+            )
+        })
+        .collect();
+    format!(
+        r#"{{"type": "FeatureCollection", "features": [{}]}}"#,
+        features.join(",")
+    )
+}
+
+#[test]
+fn a_higher_priority_is_placed_first_and_a_bound_one_is_held_from_1_to_10() {
+    // Verifies: ADR-0028
+    let points = [
+        ("Forager", 60.0, 30.0, r#", "p": "7""#),
+        ("Fen", 75.0, 32.0, r#", "p": "3""#),
+    ];
+    let bound = Label {
+        priority: Some(binding("p")),
+        ..label_item()
+    };
+    assert_eq!(labelled(&map(bound.clone()), &points), [0]);
+    // 30 is held at 10, an empty value is 1.
+    let held = [
+        ("Forager", 60.0, 30.0, r#", "p": "30""#),
+        ("Fen", 75.0, 32.0, r#", "p": "9""#),
+    ];
+    assert_eq!(labelled(&map(bound.clone()), &held), [0]);
+    let empty = [
+        ("Forager", 60.0, 30.0, r#", "p": "2""#),
+        ("Fen", 75.0, 32.0, r#", "p": """#),
+    ];
+    assert_eq!(labelled(&map(bound), &empty), [0]);
+    // A literal priority places the label among those of other layers' priorities.
+    let mut two = map(Label {
+        priority: Some(Bound::Value(4.0)),
+        ..label_item()
+    });
+    let mut second = two.layers[0].clone();
+    second.classes[0].labels[0].priority = None;
+    two.layers.push(second);
+    let sources: BTreeMap<String, GeoJsonSource> = [(
+        "places".to_owned(),
+        GeoJsonSource::parse(&collection(&[("Forager", 60.0, 30.0, "")])).unwrap(),
+    )]
+    .into();
+    let recorder = LabelRecorder::default();
+    ready(render_with_files(&two, &sources, &Files, recorder.clone()));
+    assert_eq!(recorder.0.take().len(), 1, "the label of priority 4 only");
+}
+
+#[test]
+fn a_label_leaving_the_image_is_left_out_unless_partials_or_force_allow_it() {
+    // Verifies: ADR-0028
+    let edge = [("Forager", 2.0, 30.0, "")];
+    assert_eq!(labelled(&map(label_item()), &edge), Vec::<u64>::new());
+    for label in [
+        Label {
+            partials: Some(true),
+            ..label_item()
+        },
+        Label {
+            force: Some(forager_style_ir::Force::On),
+            ..label_item()
+        },
+    ] {
+        assert_eq!(labelled(&map(label), &edge), [0]);
+    }
+}
+
+#[test]
+fn a_label_is_left_out_where_it_meets_the_marker_of_another_feature() {
+    // Verifies: ADR-0028
+    // A square marker 9 pixels across under each point; a label at CC lies over its own.
+    let mut map = map(label_item());
+    map.layers[0].classes[0].styles = vec![Style {
+        size: Some(Bound::Value(9.0)),
+        color: Some(Bound::Value(BLUE)),
+        ..Style::default()
+    }];
+    let points = [("Fen", 60.0, 30.0, ""), ("Forager", 110.0, 30.0, "")];
+    assert_eq!(labelled(&map, &points), [1, 0], "each over its own marker");
+    // Without the markers, the label of Fen, added last, would be drawn; with them, each label
+    // meets the other's marker.
+    let near = [("Forager", 60.0, 30.0, ""), ("Fen", 70.0, 30.0, "")];
+    assert_eq!(labelled(&map, &near), Vec::<u64>::new());
+    // A text of line breaks only draws nothing, yet its marker is cached.
+    let blank = [("Forager", 60.0, 30.0, ""), (r"\n", 80.0, 30.0, "")];
+    assert_eq!(labelled(&map, &blank), Vec::<u64>::new());
+}
+
+#[test]
+fn a_labels_expression_decides_for_which_features_it_is_drawn() {
+    // Verifies: ADR-0028
+    let label = Label {
+        expression: Some(Expr::call(
+            Op::Eq,
+            vec![
+                Expr::call(Op::ToString, vec![Expr::property("name")]),
+                "Fen".into(),
+            ],
+        )),
+        ..label_item()
+    };
+    let apart = [("Forager", 40.0, 30.0, ""), ("Fen", 120.0, 30.0, "")];
+    assert_eq!(labelled(&map(label.clone()), &apart), [1]);
+    // A label left out by its expression takes no place in the cache.
+    let overlapping = [("Fen", 60.0, 30.0, ""), ("Forager", 75.0, 32.0, "")];
+    assert_eq!(labelled(&map(label), &overlapping), [0]);
+}
+
+#[test]
+fn min_distance_leaves_out_a_label_near_one_of_the_same_text() {
+    // Verifies: ADR-0028
+    let spaced = Label {
+        min_distance: Some(40.0),
+        ..label_item()
+    };
+    let points = [
+        ("Fen", 30.0, 30.0, ""),
+        ("Fen", 90.0, 30.0, ""),
+        ("Fan", 130.0, 30.0, ""),
+    ];
+    assert_eq!(labelled(&map(spaced.clone()), &points), [2, 1]);
+    assert_eq!(labelled(&map(label_item()), &points), [2, 1, 0]);
 }
