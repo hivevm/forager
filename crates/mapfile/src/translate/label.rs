@@ -86,6 +86,8 @@ impl Translator<'_> {
                     "MAXSCALEDENOM" => label.max_scale_denom = self.scale_denom(d),
                     "MINSIZE" => label.min_size = self.number(d, Range::above(0.0)).map(f64::trunc),
                     "MAXSIZE" => label.max_size = self.number(d, Range::above(0.0)).map(f64::trunc),
+                    // loadLabel reads it with loadColor(…, NULL), which takes no binding.
+                    "SHADOWCOLOR" => label.shadow_color = self.color(d).map(Bound::Value),
                     "OUTLINEWIDTH" => {
                         label.outline_width = self.number(d, Range::above(0.0)).map(f64::trunc);
                     }
@@ -176,7 +178,6 @@ impl Translator<'_> {
                 let color = self.bound_color(d);
                 label.outline_color = kept_binding(label.outline_color.take(), color);
             }
-            "SHADOWCOLOR" => label.shadow_color = self.bound_color(d),
             "SHADOWSIZE" => {
                 let size = self.integer_pair(d);
                 label.shadow_size = kept_bindings(label.shadow_size.take(), size);

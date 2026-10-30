@@ -465,6 +465,9 @@ pub struct Label {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub font: Option<Bound<String>>,
     /// The size in points; MapServer's bitmap sizes `tiny` to `giant` stand as 5, 7, 10, 13, 16.
+    /// A bound value is rounded to an integer, as MapServer's `bindLabel` reads it with
+    /// `bindIntegerAttribute`: `MS_NINT(atof(value))`, `lrint` at the pin, half to even. An empty
+    /// value is 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<Bound<f64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -477,13 +480,22 @@ pub struct Label {
     pub outline_color: Option<Bound<Rgba>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outline_width: Option<f64>,
+    /// Takes no binding: MapServer's `loadLabel` reads it with `loadColor` and no binding, and
+    /// refuses a mapfile that binds it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_color: Option<Bound<Rgba>>,
-    /// The shadow's offset, `[x, y]`.
+    /// The shadow's offset, `[x, y]`. A bound value is rounded to an integer as a bound `size`
+    /// is; an empty one is 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_size: Option<[Bound<f64>; 2]>,
+    /// A bound value is read as MapServer's `bindLabel` reads it: rounded to an integer as a
+    /// bound `size` is, which where it is not 0 is taken as MapServer's position constant without
+    /// a range check (`MS_UL` 101, `MS_LR`, `MS_UR`, `MS_LL`, `MS_CR`, `MS_CL`, `MS_UC`, `MS_LC`,
+    /// `MS_CC`, `MS_AUTO` 110); where it is 0, a value of exactly two characters that is one of
+    /// `ul` … `lr` and `cc`, compared without case.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub position: Option<Bound<Position>>,
+    /// `[x, y]`. A bound value is rounded to an integer as a bound `size` is; an empty one is 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<[Bound<f64>; 2]>,
     /// Degrees counter-clockwise.
@@ -491,6 +503,11 @@ pub struct Label {
     pub angle: Option<Bound<f64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub angle_mode: Option<AngleMode>,
+    /// A bound value is read as MapServer's `bindLabel` reads it: rounded to an integer as a
+    /// bound `size` is, which where it is not 0 is taken as MapServer's alignment constant
+    /// without a range check (`MS_ALIGN_LEFT` 1, `MS_ALIGN_CENTER` 2, `MS_ALIGN_RIGHT` 3); where
+    /// it is 0, a value of at least four characters that begins with `left`, `cente`, or `right`,
+    /// compared without case.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub align: Option<Bound<Align>>,
     /// The character at which the text wraps.
@@ -514,7 +531,8 @@ pub struct Label {
     pub partials: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub force: Option<Force>,
-    /// 1 to 10; a higher one is placed first.
+    /// 1 to 10; a higher one is placed first. A bound value is rounded to an integer as a bound
+    /// `size` is; an empty one is 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<Bound<f64>>,
     /// The label is placed at a scale from `min_scale_denom` up to below `max_scale_denom`.
@@ -611,7 +629,7 @@ pub enum Units {
 pub enum Bound<T> {
     Value(T),
     /// The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a
-    /// number with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated
+    /// number with C's `atof`, a label's as its property says (`bindLabel`), a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated
     /// by spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`
     /// sets before it reads one, which for a size, an outline width, or an angle is not the value
     /// the property has without the binding (docs/semantics/binding.md), and a colour that does not

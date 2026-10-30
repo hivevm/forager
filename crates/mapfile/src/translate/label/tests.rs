@@ -475,3 +475,19 @@ fn a_label_colour_is_read_by_load_color() {
     assert_eq!(label.shadow_color, None, "a channel of -1 is no colour");
     assert_eq!(label_codes("COLOR 256 0 0"), ["invalid-value"]);
 }
+
+#[test]
+fn a_shadow_colour_takes_no_attribute() {
+    // loadLabel reads SHADOWCOLOR with loadColor(…, NULL), whose getSymbol takes a number or a
+    // string and no binding, so MapServer refuses the mapfile.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER CLASS LABEL\n  SHADOWCOLOR [c]\nEND END END END",
+    )]);
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+    assert_eq!(
+        loaded.diagnostics[0].span,
+        Some(forager_style_ir::Span::new("m.map", 2, 3)),
+        "at the directive"
+    );
+}

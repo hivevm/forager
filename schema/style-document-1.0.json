@@ -50,7 +50,7 @@
           "type": "string"
         },
         {
-          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a label's as its property says (`bindLabel`), a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
           "type": "object",
           "properties": {
             "binding": {
@@ -74,7 +74,7 @@
           "format": "double"
         },
         {
-          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a label's as its property says (`bindLabel`), a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
           "type": "object",
           "properties": {
             "binding": {
@@ -97,7 +97,7 @@
           "$ref": "#/$defs/Rgba"
         },
         {
-          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a label's as its property says (`bindLabel`), a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
           "type": "object",
           "properties": {
             "binding": {
@@ -120,7 +120,7 @@
           "$ref": "#/$defs/Position"
         },
         {
-          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a label's as its property says (`bindLabel`), a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
           "type": "object",
           "properties": {
             "binding": {
@@ -143,7 +143,7 @@
           "$ref": "#/$defs/Align"
         },
         {
-          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a label's as its property says (`bindLabel`), a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
           "type": "object",
           "properties": {
             "binding": {
@@ -166,7 +166,7 @@
           "$ref": "#/$defs/SymbolRef"
         },
         {
-          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
+          "description": "The feature's property `binding`, read as MapServer's `bindStyle` reads an attribute: a\nnumber with C's `atof`, a label's as its property says (`bindLabel`), a colour as `#rrggbb`, `#rrggbbaa`, or three integers separated\nby spaces, each with C's `atoi`. An empty value leaves a number at the value `bindStyle`\nsets before it reads one, which for a size, an outline width, or an angle is not the value\nthe property has without the binding (docs/semantics/binding.md), and a colour that does not\nread leaves no colour.",
           "type": "object",
           "properties": {
             "binding": {
@@ -397,6 +397,7 @@
       "type": "object",
       "properties": {
         "align": {
+          "description": "A bound value is read as MapServer's `bindLabel` reads it: rounded to an integer as a\nbound `size` is, which where it is not 0 is taken as MapServer's alignment constant\nwithout a range check (`MS_ALIGN_LEFT` 1, `MS_ALIGN_CENTER` 2, `MS_ALIGN_RIGHT` 3); where\nit is 0, a value of at least four characters that begins with `left`, `cente`, or `right`,\ncompared without case.",
           "anyOf": [
             {
               "$ref": "#/$defs/Bound5"
@@ -539,6 +540,7 @@
           "format": "double"
         },
         "offset": {
+          "description": "`[x, y]`. A bound value is rounded to an integer as a bound `size` is; an empty one is 0.",
           "type": [
             "array",
             "null"
@@ -573,6 +575,7 @@
           ]
         },
         "position": {
+          "description": "A bound value is read as MapServer's `bindLabel` reads it: rounded to an integer as a\nbound `size` is, which where it is not 0 is taken as MapServer's position constant without\na range check (`MS_UL` 101, `MS_LR`, `MS_UR`, `MS_LL`, `MS_CR`, `MS_CL`, `MS_UC`, `MS_LC`,\n`MS_CC`, `MS_AUTO` 110); where it is 0, a value of exactly two characters that is one of\n`ul` … `lr` and `cc`, compared without case.",
           "anyOf": [
             {
               "$ref": "#/$defs/Bound4"
@@ -583,7 +586,7 @@
           ]
         },
         "priority": {
-          "description": "1 to 10; a higher one is placed first.",
+          "description": "1 to 10; a higher one is placed first. A bound value is rounded to an integer as a bound\n`size` is; an empty one is 1.",
           "anyOf": [
             {
               "$ref": "#/$defs/Bound2"
@@ -601,6 +604,7 @@
           "format": "double"
         },
         "shadow_color": {
+          "description": "Takes no binding: MapServer's `loadLabel` reads it with `loadColor` and no binding, and\nrefuses a mapfile that binds it.",
           "anyOf": [
             {
               "$ref": "#/$defs/Bound3"
@@ -611,7 +615,7 @@
           ]
         },
         "shadow_size": {
-          "description": "The shadow's offset, `[x, y]`.",
+          "description": "The shadow's offset, `[x, y]`. A bound value is rounded to an integer as a bound `size`\nis; an empty one is 1.",
           "type": [
             "array",
             "null"
@@ -623,7 +627,7 @@
           "minItems": 2
         },
         "size": {
-          "description": "The size in points; MapServer's bitmap sizes `tiny` to `giant` stand as 5, 7, 10, 13, 16.",
+          "description": "The size in points; MapServer's bitmap sizes `tiny` to `giant` stand as 5, 7, 10, 13, 16.\nA bound value is rounded to an integer, as MapServer's `bindLabel` reads it with\n`bindIntegerAttribute`: `MS_NINT(atof(value))`, `lrint` at the pin, half to even. An empty\nvalue is 1.",
           "anyOf": [
             {
               "$ref": "#/$defs/Bound2"
