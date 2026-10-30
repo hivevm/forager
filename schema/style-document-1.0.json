@@ -711,6 +711,14 @@
             "null"
           ]
         },
+        "opacity": {
+          "description": "With an opacity, in percent from 0 to 100, the layer is drawn into a transparent image of\nits own, which is laid over the map at that opacity; at 0 the layer is not drawn. Without\none, it is drawn straight onto the map.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
         "projection": {
           "description": "The projection of the layer's features; without one, the map's.",
           "anyOf": [

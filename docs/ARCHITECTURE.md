@@ -88,7 +88,8 @@ golden path and the test pattern an agent copies from are named here.
 - **`render`** — the display list, the renderer trait, and the RGBA image.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, blends premultiplied colours in a pixel format of its own as MapServer's
-  AGG 2.4 does, fills glyphs as MapServer's AGG renderer does, and is the one crate that may
+  AGG 2.4 does, draws a layer with an opacity into an image of its own and lays it over, fills
+  glyphs as MapServer's AGG renderer does, and is the one crate that may
   use `unsafe`
   ([ADR-0015](adr/0015-agg-rust-rasterizer.md)); it cuts a hatch from its polygon with
   i_overlay, the one crate that depends on it (ADR-0032).

@@ -280,7 +280,8 @@ fn a_quoted_argument_is_one_word_as_the_shell_reads_it() {
     )
     .options()
     .unwrap();
-    assert_eq!(options.len(), 1);
+    assert_eq!(options.len(), 2);
+    assert_eq!(super::image_type(&options), Some("png"));
     let mut map = Map {
         layers: vec![
             layer("vertex1", Some(LayerStatus::On)),
@@ -491,4 +492,18 @@ fn map2img_is_handed_the_line_as_the_test_library_hands_it_over() {
             .is_err(),
         "a case the harness does not render is not run either"
     );
+}
+
+#[test]
+fn the_imagetype_of_i_goes_before_the_end_of_the_map() {
+    let text = "MAP\n  IMAGETYPE png24\n  LAYER NAME 'end' END\nEND # the END of MAP\n# END\n";
+    assert_eq!(
+        super::with_image_type(text, "png").unwrap(),
+        "MAP\n  IMAGETYPE png24\n  LAYER NAME 'end' END\nIMAGETYPE \"png\" END # the END of MAP\n# END\n"
+    );
+    assert_eq!(
+        super::with_image_type("map end", "png").unwrap(),
+        "map IMAGETYPE \"png\" end\n"
+    );
+    assert!(super::with_image_type("MAP # END", "png").is_err());
 }

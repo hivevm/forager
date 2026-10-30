@@ -216,7 +216,7 @@ impl<'a> Selector<'a, '_> {
         (class, place): (usize, usize),
     ) -> Cow<'s, Style> {
         if !varies(style) {
-            return Cow::Borrowed(style);
+            return with_opacity(Cow::Borrowed(style));
         }
         let properties = FeatureProperties(&feature.properties);
         let mut bind = Binder {
@@ -227,6 +227,8 @@ impl<'a> Selector<'a, '_> {
         let mut bound = style.clone();
         bound.color = bind.color(&style.color);
         bound.outline_color = bind.color(&style.outline_color);
+        // bindStyle sets an OPACITY bound to an empty value to 100.
+        bound.opacity = bind.number(&style.opacity, 100.0);
         bound.angle = bind.number(&style.angle, 360.0);
         bound.size = bind.number(&style.size, 1.0);
         bound.width = bind.number(&style.width, 1.0);
@@ -260,8 +262,36 @@ impl<'a> Selector<'a, '_> {
                 self.diagnostics,
             );
         }
-        Cow::Owned(bound)
+        with_opacity(Cow::Owned(bound))
     }
+}
+
+/// `style` with its opacity applied to its colours, as loadStyle at its `END` (src/mapfile.c)
+/// and bindStyle (src/maputil.c) apply it: an opacity below 100 replaces the alpha of its colour
+/// and its outline colour with `opacity × 2.55` rounded as `MS_NINT` rounds, kept in a byte as
+/// AGG keeps it. The opacity is rounded first, as bindIntegerAttribute rounds a bound one, and is
+/// not bounded to 0 to 100.
+fn with_opacity(style: Cow<'_, Style>) -> Cow<'_, Style> {
+    let Some(opacity) = style.opacity.as_ref().and_then(Bound::value) else {
+        return style;
+    };
+    let opacity = ms_nint(opacity);
+    if opacity >= 100 {
+        return style;
+    }
+    let alpha = ms_nint(f64::from(opacity) * 2.55).rem_euclid(256) as u8;
+    let mut style = style.into_owned();
+    for color in [&mut style.color, &mut style.outline_color] {
+        if let Some(Bound::Value(c)) = color {
+            c.a = alpha;
+        }
+    }
+    Cow::Owned(style)
+}
+
+/// `MS_NINT`, which is `lrint` in the build at the pin: the nearest integer, half to even.
+pub(crate) fn ms_nint(x: f64) -> i32 {
+    x.round_ties_even() as i32
 }
 
 /// Whether a property the engine draws varies by feature.
@@ -273,6 +303,7 @@ fn varies(style: &Style) -> bool {
     }
     bound(&style.color)
         || bound(&style.outline_color)
+        || bound(&style.opacity)
         || bound(&style.angle)
         || bound(&style.size)
         || bound(&style.width)

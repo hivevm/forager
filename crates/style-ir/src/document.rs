@@ -321,6 +321,7 @@ mod tests {
                 projection: Some(LayerProjection::FromSource),
                 min_scale_denom: Some(1000.0),
                 max_scale_denom: None,
+                opacity: Some(50.0),
                 filter: Some(Expr::call(
                     Op::In,
                     vec![

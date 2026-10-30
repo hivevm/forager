@@ -3,8 +3,9 @@
 // How a stroke's width, cap, join, and dashes are handed to the stroker follows MapServer's
 // agg2RenderLine() and applyCJC(), src/mapagg.cpp of the release pinned in
 // scripts/fetch-msautotest.sh; how a hatch is stroked and clipped to its polygon follows
-// msHatchPolygon(), src/mapagg.cpp, there; how the alpha is divided out follows saveAsPNG(),
-// src/mapimageio.c.
+// msHatchPolygon(), src/mapagg.cpp, there; how a layer's image is laid over the map follows
+// aggCompositeRasterBufferNoPixman(), src/mapagg.cpp, and the blend_from() of the AGG it bundles;
+// how the alpha is divided out follows saveAsPNG(), src/mapimageio.c.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2007 Regents of the University of Minnesota (src/mapagg.cpp).
 // Copyright (c) 2009 Thomas Bonfort (src/mapimageio.c).
@@ -50,7 +51,7 @@ use forager_render::{
 use forager_style_ir::Rgba;
 
 use crate::clip::{Rect, clip_line, clip_ring};
-use crate::pixfmt::{PixfmtMapserver, premultiplied};
+use crate::pixfmt::{PixfmtMapserver, copy_or_blend_pix, premultiplied};
 
 /// Pixels beyond the image that a clipped path may reach, besides half the stroke width.
 const CLIP_MARGIN: f64 = 2.0;
@@ -64,6 +65,9 @@ pub struct AggRenderer {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
+    /// The image beneath the layer being drawn into `pixels`, between
+    /// [`Renderer::begin_layer`] and [`Renderer::end_layer`].
+    beneath: Option<Vec<u8>>,
 }
 
 impl AggRenderer {
@@ -331,6 +335,22 @@ impl Renderer for AggRenderer {
         let c = rgba8(background);
         let background = [c.r, c.g, c.b, c.a];
         self.pixels = background.repeat(width as usize * height as usize);
+        self.beneath = None;
+    }
+
+    fn begin_layer(&mut self) {
+        debug_assert!(self.beneath.is_none(), "layers do not nest");
+        // msDrawLayer's temporary image, created without a background: cleared to no colour.
+        let layer = vec![0; self.pixels.len()];
+        self.beneath = Some(std::mem::replace(&mut self.pixels, layer));
+    }
+
+    fn end_layer(&mut self, opacity: u8) {
+        let Some(beneath) = self.beneath.take() else {
+            return;
+        };
+        let layer = std::mem::replace(&mut self.pixels, beneath);
+        lay_over(&mut self.pixels, &layer, opacity);
     }
 
     fn draw(&mut self, item: &DisplayItem) {
@@ -376,6 +396,21 @@ impl Renderer for AggRenderer {
             height: self.height,
             pixels: self.pixels,
         }
+    }
+}
+
+/// Lays the premultiplied image `layer` over `pixels` at `cover`, as AGG's `blend_from` does
+/// it pixel by pixel through `copy_or_blend_pix`; aggCompositeRasterBufferNoPixman,
+/// src/mapagg.cpp, composites a layer of `COMPOP src-over` so.
+fn lay_over(pixels: &mut [u8], layer: &[u8], cover: u8) {
+    for (p, c) in pixels
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(layer.as_chunks::<4>().0.iter())
+    {
+        let c = Rgba8::new(c[0].into(), c[1].into(), c[2].into(), c[3].into());
+        copy_or_blend_pix(p, &c, cover);
     }
 }
 

@@ -32,6 +32,7 @@ use crate::syntax::{Block, Directive, Node};
 
 mod fonts;
 mod label;
+mod output;
 mod projection;
 mod style;
 mod symbol;
@@ -168,6 +169,7 @@ impl Translator<'_> {
                             .map(|n| [n[0].max(0.0) as u32, n[1].max(0.0) as u32]);
                     }
                     "IMAGECOLOR" => map.image_color = self.image_color(d),
+                    "IMAGETYPE" => self.output_format(&d.keyword, &d.span),
                     // MS_RESOLUTION_MIN and MS_RESOLUTION_MAX.
                     "RESOLUTION" => map.resolution = self.number(d, Range::within(10.0, 1000.0)),
                     "DEFRESOLUTION" => {
@@ -184,6 +186,7 @@ impl Translator<'_> {
                 },
                 Node::Block(b) => match b.keyword.as_str() {
                     "SYMBOL" => {}
+                    "OUTPUTFORMAT" => self.output_format(&b.keyword, &b.span),
                     "LAYER" => {
                         if let Some(layer) = self.layer(b) {
                             map.layers.push(layer);
@@ -204,7 +207,26 @@ impl Translator<'_> {
                 },
             }
         }
+        if output::transparent(block) {
+            // agg2CreateImage clears the image of a transparent format to no colour.
+            map.image_color = Some(Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            });
+        }
         map
+    }
+
+    /// `IMAGETYPE` and `OUTPUTFORMAT`, of which only whether the selected format is transparent
+    /// is carried, as the map's background ([`output::transparent`]).
+    fn output_format(&mut self, keyword: &str, span: &Span) {
+        let message = format!(
+            "{keyword} is read only for whether the image starts transparent; the output format \
+             is not yet supported otherwise"
+        );
+        self.warn("unsupported-keyword", &message, span);
     }
 
     fn layer(&mut self, block: &Block) -> Option<Layer> {
@@ -220,6 +242,7 @@ impl Translator<'_> {
         let class_item = item(block, "CLASSITEM");
         let label_item = item(block, "LABELITEM");
         let filter_item = item(block, "FILTERITEM");
+        let mut composites = Vec::new();
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -281,10 +304,12 @@ impl Translator<'_> {
                         layer.classes.push(class);
                     }
                     "PROJECTION" => layer.projection = self.projection(b),
+                    "COMPOSITE" => composites.push(b),
                     _ => self.unhandled(&b.keyword, &b.span),
                 },
             }
         }
+        layer.opacity = self.composite(&composites);
         if let Some(span) = source_span {
             // Without CONNECTIONTYPE, MapServer reads DATA as a local shapefile.
             let kind = connection_type.unwrap_or_else(|| "local".to_owned());
@@ -306,6 +331,45 @@ impl Translator<'_> {
             });
         }
         Some(layer)
+    }
+
+    /// A layer's opacity from its `COMPOSITE` blocks. msDrawLayer draws a layer that has one into
+    /// a transparent image of its own and lays it over the map once for each block, with the
+    /// block's `COMPOP` and `COMPFILTER`, at its `OPACITY` (msCompositeRasterBuffer,
+    /// src/mapdraw.c). The IR carries one block that draws `src-over`, MapServer's default
+    /// `COMPOP`, without a `COMPFILTER`: its `OPACITY`, as `loadLayerCompositer` reads it, a number
+    /// from 0 to 100 truncated to an integer, and 100 without one. Any other block is not yet
+    /// supported and is ignored, every block of a layer that has several.
+    fn composite(&mut self, blocks: &[&Block]) -> Option<f64> {
+        let carried = |b: &Block| {
+            b.nodes.iter().all(|node| match node {
+                Node::Directive(d) if d.keyword == "OPACITY" => true,
+                Node::Directive(d) if d.keyword == "COMPOP" => {
+                    matches!(d.values.as_slice(), [t] if t.string() == Some("src-over"))
+                }
+                _ => false,
+            })
+        };
+        match blocks {
+            [] => None,
+            [block] if carried(block) => {
+                let mut opacity = Some(100.0);
+                for node in &block.nodes {
+                    if let Node::Directive(d) = node
+                        && d.keyword == "OPACITY"
+                    {
+                        opacity = self.number(d, Range::within(0.0, 100.0)).map(f64::trunc);
+                    }
+                }
+                opacity
+            }
+            _ => {
+                for block in blocks {
+                    self.unhandled(&block.keyword, &block.span);
+                }
+                None
+            }
+        }
     }
 
     /// A local layer's `DATA` beneath the map's `SHAPEPATH`, against the main mapfile's directory,

@@ -4,7 +4,7 @@
 # its result: two lines of one mapfile that write the same result are two runs that msautotest
 # compares with the same expected file, and they share one line here.
 # The harness applies a line's map2img options -l, -e, and -s to the style IR, as map2img does,
-# before it renders; any other option leaves the case out.
+# before it renders, and -i png as the map's last IMAGETYPE; any other option leaves the case out.
 #
 #   <mapfile> <result> [blank] geometry passes|fails   in scope: rendered, compared, outcome held
 #   <mapfile> <result> [blank] out: <reason>           out of scope, with its reason
@@ -130,9 +130,9 @@ misc/scaletoken.map scaletoken_filteritem_192k.png out: SCALETOKEN, a runtime su
 misc/scaletoken.map scaletoken_filteritem_424k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_192k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_424k.png out: SCALETOKEN, a runtime substitution by scale
-misc/style_opacity.map style_opacity_test001.png geometry fails  # not built yet: the OPACITY of a style
-misc/style_opacity.map style_opacity_test002.png geometry fails  # not built yet: the OPACITY of a style
-misc/style_opacity.map style_opacity_test003.png geometry fails  # not built yet: the OPACITY of a style
+misc/style_opacity.map style_opacity_test001.png geometry fails  # the outlines of the base layer differ along the county borders, cause not yet found
+misc/style_opacity.map style_opacity_test002.png geometry fails  # the outlines of the base layer differ along the county borders, cause not yet found
+misc/style_opacity.map style_opacity_test003.png geometry fails  # the outlines of the base layer differ along the county borders, cause not yet found
 misc/testuppercase.map testuppercase.png blank geometry passes
 misc/tiles_scales_z2.map tile_scale_z2.png blank out: an OGC or CGI request
 misc/tiles_scales_z3.map tile_scale_z3.png out: an OGC or CGI request
@@ -313,10 +313,10 @@ renderers/legend_sizeunits_meters.map legend_sizeunits_meters.png out: an OGC or
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.cairo.png out: an OGC or CGI request
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.svg out: an OGC or CGI request
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.pdf out: an OGC or CGI request
-renderers/line_aliased.map line_aliased.png geometry fails  # not built yet: the transparent background of IMAGEMODE RGBA
+renderers/line_aliased.map line_aliased.png geometry fails  # not built yet: the ANTIALIAS FALSE of a style
 renderers/line_anchorpoint.map line_anchorpoint.png geometry fails  # not built yet: inline FEATURE shapes
 renderers/line_anchorpoint.map line_anchorpoint.cairo.png out: another output format, cairopng
-renderers/line_antialiased.map line_anti_aliased.png geometry fails  # not built yet: the transparent background of IMAGEMODE RGBA
+renderers/line_antialiased.map line_anti_aliased.png geometry passes
 renderers/line_label_auto.map line_label_auto.png out: labels
 renderers/line_label_auto.map line_label_auto.pdf out: another output format, pdf
 renderers/line_label_auto.map line_label_auto.svg out: another output format, svg
@@ -557,7 +557,7 @@ renderers/text-shaping.map text_shaping_1.png out: labels
 renderers/text-shaping.map text_shaping_1.cairo.png out: another output format, cairopng
 renderers/text-shaping.map text_shaping_1.pdf out: another output format, pdf
 renderers/text-shaping.map text_shaping_1.svg out: another output format, svg
-renderers/transparent_layer.map transparent_layer.png geometry fails  # not built yet: the OPACITY of a layer
+renderers/transparent_layer.map transparent_layer.png geometry passes
 renderers/transparent_layer.map transparent_layer.pdf out: another output format, pdf
 renderers/transparent_layer.map transparent_layer.svg out: another output format, svg
 renderers/transparent_layer.map transparent_layer.cairo.png out: another output format, cairopng

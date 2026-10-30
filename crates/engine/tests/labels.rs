@@ -397,6 +397,8 @@ impl forager_render::Renderer for LabelRecorder {
         }
     }
 
+    fn begin_layer(&mut self) {}
+    fn end_layer(&mut self, _: u8) {}
     fn finish(self) -> RgbaImage {
         RgbaImage {
             width: 0,

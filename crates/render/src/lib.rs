@@ -454,6 +454,11 @@ impl RgbaImage {
 pub trait Renderer {
     fn begin(&mut self, width: u32, height: u32, background: Rgba);
     fn draw(&mut self, item: &DisplayItem);
+    /// Draws what follows, up to [`Renderer::end_layer`], into a transparent image of its own.
+    fn begin_layer(&mut self);
+    /// Lays the image begun by [`Renderer::begin_layer`] over the image beneath it, its alpha
+    /// scaled by `opacity`, 0 to 255.
+    fn end_layer(&mut self, opacity: u8);
     fn finish(self) -> RgbaImage;
 }
 

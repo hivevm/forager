@@ -1486,3 +1486,84 @@ fn the_data_of_a_connection_is_not_a_path() {
     let loaded = load_files(&[("m.map", text)]);
     assert_eq!(first_data(&loaded).as_deref(), Some("the_geom from t"));
 }
+
+#[test]
+fn a_composite_block_of_src_over_gives_the_layer_its_opacity() {
+    // loadLayerCompositer reads OPACITY as getInteger does, 0 to 100 and truncated, and
+    // initLayerCompositer gives a block without one 100. The layer itself takes no OPACITY.
+    let opacity = |composite: &str| {
+        // The loader of the tests reads static text.
+        let text = format!("MAP LAYER NAME 'a' {composite} END END").leak();
+        let loaded = load_files(&[("m.map", text)]);
+        let codes: Vec<String> = codes(&loaded).into_iter().map(str::to_owned).collect();
+        (loaded.document.map(|d| d.map.layers[0].opacity), codes)
+    };
+    let none: Vec<String> = Vec::new();
+    assert_eq!(opacity(""), (Some(None), none.clone()));
+    assert_eq!(
+        opacity("COMPOSITE OPACITY 50.7 END"),
+        (Some(Some(50.0)), none.clone())
+    );
+    assert_eq!(opacity("COMPOSITE END"), (Some(Some(100.0)), none.clone()));
+    assert_eq!(
+        opacity("COMPOSITE COMPOP 'src-over' OPACITY 0 END"),
+        (Some(Some(0.0)), none.clone())
+    );
+    assert_eq!(opacity("COMPOSITE OPACITY 101 END").1, ["invalid-value"]);
+    // Another COMPOP, a COMPFILTER, or a second block is not carried, as before.
+    for ignored in [
+        "COMPOSITE COMPOP 'multiply' OPACITY 50 END",
+        "COMPOSITE COMPFILTER 'blur(5)' OPACITY 50 END",
+    ] {
+        assert_eq!(
+            opacity(ignored),
+            (Some(None), vec!["unsupported-keyword".to_owned()]),
+            "{ignored}"
+        );
+    }
+    assert_eq!(
+        opacity("COMPOSITE OPACITY 50 END COMPOSITE OPACITY 50 END"),
+        (Some(None), vec!["unsupported-keyword".to_owned(); 2])
+    );
+}
+
+#[test]
+fn the_image_starts_transparent_where_the_selected_output_format_is() {
+    // loadOutputFormat makes a format of IMAGEMODE RGBA transparent unless TRANSPARENT says
+    // otherwise; msSelectOutputFormat finds IMAGETYPE by MIME type, then by name, and without
+    // an IMAGETYPE the first OUTPUTFORMAT is selected; agg2CreateImage clears a transparent image
+    // to no colour, whatever IMAGECOLOR.
+    let image_color = |text: &str| {
+        let loaded = load_files(&[("m.map", text.to_owned().leak())]);
+        loaded.document.unwrap().map.image_color
+    };
+    let clear = Some(Rgba {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    });
+    let rgba = "OUTPUTFORMAT NAME 'png' DRIVER AGG/PNG IMAGEMODE RGBA END";
+    assert_eq!(image_color(&format!("MAP IMAGETYPE png {rgba} END")), clear);
+    assert_eq!(image_color(&format!("MAP {rgba} END")), clear);
+    assert_eq!(
+        image_color(&format!(
+            "MAP IMAGECOLOR 1 2 3 IMAGETYPE 'IMAGE/PNG' {rgba} END"
+        )),
+        clear
+    );
+    assert_eq!(
+        image_color(&format!("MAP IMAGECOLOR 1 2 3 IMAGETYPE png24 {rgba} END")),
+        Some(Rgba::opaque(1, 2, 3))
+    );
+    let rgb_transparent = "OUTPUTFORMAT NAME 'a' DRIVER AGG/PNG TRANSPARENT ON END";
+    assert_eq!(
+        image_color(&format!("MAP IMAGETYPE a {rgb_transparent} END")),
+        clear
+    );
+    let opaque = "OUTPUTFORMAT NAME 'a' DRIVER AGG/PNG IMAGEMODE RGBA TRANSPARENT OFF END";
+    assert_eq!(image_color(&format!("MAP IMAGETYPE a {opaque} END")), None);
+    let jpeg = "OUTPUTFORMAT NAME 'a' DRIVER AGG/JPEG TRANSPARENT ON END";
+    assert_eq!(image_color(&format!("MAP IMAGETYPE a {jpeg} END")), None);
+    assert_eq!(image_color("MAP IMAGETYPE png END"), None);
+}

@@ -191,6 +191,11 @@ pub struct Layer {
     pub min_scale_denom: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_scale_denom: Option<f64>,
+    /// With an opacity, in percent from 0 to 100, the layer is drawn into a transparent image of
+    /// its own, which is laid over the map at that opacity; at 0 the layer is not drawn. Without
+    /// one, it is drawn straight onto the map.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
