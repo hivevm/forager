@@ -1,6 +1,6 @@
 # ADR-0034: `render-agg` blends with a port of AGG 2.4's premultiplied blender, as MapServer bundles it
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-30
 - **Deciders:** Markus Brigl
 - **Applies to:** the pixel format of `crates/render-agg`: how a covered pixel is blended, how a layer's image is laid over the map, and how the alpha is divided out of the finished image
