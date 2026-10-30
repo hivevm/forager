@@ -107,6 +107,7 @@ is the table a session reads.
 | [0030](0030-cql2-expressions.md) | Expressions in the style IR are a lean CQL2 tree of Forager's own types, serialized as CQL2-JSON, with MapServer's typing made explicit at import and its patterns read as PCRE2 reads them | `crates/style-ir`, the translation of expressions in `crates/mapfile`, and every crate that evaluates an expression of the style IR | 🟢 accepted |
 | [0031](0031-expression-evaluator.md) | The core crate `expr` evaluates the IR's expressions as MapServer's parser does, with patterns matched by the `regex` crate in byte mode | `crates/expr`, the selection of classes and the per-feature properties of `crates/engine`, and every crate that evaluates an expression of the style IR | 🟡 proposed |
 | [0032](0032-hatch-cut-by-i-overlay.md) | The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it | the cut of a hatch in `crates/render-agg`, the `i_overlay` entry of its `Cargo.toml`, and the bounds of a hatch in `crates/render` | 🟡 proposed |
+| [0033](0033-inline-features-in-the-style-ir.md) | A layer's inline features are a field of the layer in the style IR, read by the engine as the layer's source | the inline features of a layer in `crates/style-ir`, the reading of `FEATURE` in `crates/mapfile`, and the source the engine makes of them in `crates/engine` | 🟡 proposed |
 
 ### Superseded and rejected
 
