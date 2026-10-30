@@ -243,6 +243,12 @@ impl<'a> Selector<'a, '_> {
                 bind.number(&Some(y.clone()), 0.0).expect("a value"),
             ]
         });
+        bound.polar_offset = style.polar_offset.as_ref().map(|[d, a]| {
+            [
+                bind.number(&Some(d.clone()), 0.0).expect("a value"),
+                bind.number(&Some(a.clone()), 0.0).expect("a value"),
+            ]
+        });
         bound.line_offset = style.line_offset.as_ref().map(|line| LineOffset {
             distance: bind
                 .number(&Some(line.distance.clone()), 0.0)
@@ -310,6 +316,10 @@ fn varies(style: &Style) -> bool {
         || bound(&style.outline_width)
         || style
             .offset
+            .as_ref()
+            .is_some_and(|pair| pair.iter().any(|p| !matches!(p, Bound::Value(_))))
+        || style
+            .polar_offset
             .as_ref()
             .is_some_and(|pair| pair.iter().any(|p| !matches!(p, Bound::Value(_))))
         || style

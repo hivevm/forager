@@ -11,8 +11,8 @@ use forager_engine::{MAX_IMAGE_SIDE, Rendered, render};
 use forager_render::RgbaImage;
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Extent, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map, RenderMode, Rgba,
-    SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
+    Bound, Class, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
+    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -1115,4 +1115,160 @@ fn a_layer_opacity_outside_0_to_100_is_bounded_and_one_not_finite_is_none() {
         .image
         .unwrap();
     assert_eq!(image.pixel(25, 75), Some(BLACK), "drawn without an opacity");
+}
+
+/// A style drawing symbol `index` of [`symbols`] in `color` at `size` where `transform` places
+/// it, turned there by `ANGLE AUTO`.
+fn transformed(transform: GeomTransform, index: u32, color: Rgba, size: f64) -> Style {
+    Style {
+        color: Some(Bound::Value(color)),
+        symbol: Some(Bound::Value(SymbolRef::Index(index))),
+        size: Some(Bound::Value(size)),
+        auto_angle: true,
+        geom_transform: Some(transform),
+        ..Style::default()
+    }
+}
+
+#[test]
+fn transforms_draw_symbols_at_the_start_the_end_and_the_vertices_of_a_line() {
+    // On ELL, pixels (10, 20) to (90, 20) to (90, 90): the circle at the start, the arrow at the
+    // end turned with the last segment, the filled head at the corner turned by -45°. They are
+    // drawn with the first pass of the line layer's cache, so the wide line of the last style,
+    // drawn from the cache after them, covers the circle where it runs. A style transformed to
+    // the label point draws nothing on a line.
+    let red_square = Style {
+        color: Some(Bound::Value(Rgba::opaque(255, 0, 0))),
+        size: Some(Bound::Value(30.0)),
+        geom_transform: Some(GeomTransform::LabelPoint),
+        ..Style::default()
+    };
+    let rendered = render_markers(vec![
+        line_style(BLACK, 1.0),
+        transformed(GeomTransform::Start, 3, BLACK, 9.0),
+        transformed(GeomTransform::End, 1, BLUE, 12.0),
+        transformed(GeomTransform::Vertices, 2, BLUE, 12.0),
+        red_square,
+        line_style(GREEN, 3.0),
+    ]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(
+        image.pixel(10, 20),
+        Some(GREEN),
+        "the wide line over the circle"
+    );
+    assert_eq!(
+        image.pixel(10, 23),
+        Some(BLACK),
+        "the circle beside the line"
+    );
+    assert_eq!(image.pixel(10, 26), Some(WHITE), "past the circle's radius");
+    // The arrow, upright at the angle 0, is turned by -90° on the downward segment, clockwise on
+    // the image: its shaft lies across the end, its apex to the right.
+    assert_ne!(
+        image.pixel(95, 90),
+        Some(WHITE),
+        "the end's arrow towards its apex"
+    );
+    assert_eq!(image.pixel(90, 96), Some(WHITE), "nothing past the end");
+    assert!(
+        image.pixels.chunks(4).all(|p| p != [255, 0, 0, 255]),
+        "the label point transform draws nothing"
+    );
+    assert_matches_reference(&image, "geomtransform_line.png");
+}
+
+#[test]
+fn a_centroid_transform_draws_at_the_centre_of_a_polygon_s_rings() {
+    // msGetPolygonCentroid: the square and its hole, both centred on (50, 50).
+    let fill = Style {
+        color: Some(Bound::Value(GREEN)),
+        ..Style::default()
+    };
+    let mut map = map_with(
+        RenderMode::Polygon,
+        vec![fill, transformed(GeomTransform::Centroid, 3, BLACK, 10.0)],
+    );
+    map.symbols = symbols();
+    let rendered = render_with(&map, Some(SQUARE_WITH_HOLE));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 50), Some(BLACK), "the centroid in the hole");
+    assert_eq!(image.pixel(50, 57), Some(WHITE), "the hole past the circle");
+    assert_eq!(image.pixel(20, 20), Some(GREEN));
+    assert_matches_reference(&image, "geomtransform_centroid.png");
+}
+
+#[test]
+fn a_polar_offset_moves_a_symbol_at_a_point_by_distance_and_angle() {
+    // POLAROFFSET [d] [a] bound to 20 and 90: the circle 20 pixels up from the point, counter-
+    // clockwise from rightwards. A point layer draws its symbol at the point whatever its
+    // GEOMTRANSFORM, as pointLayerDrawShape does.
+    let style = Style {
+        polar_offset: Some([
+            Bound::Binding {
+                binding: "d".into(),
+            },
+            Bound::Binding {
+                binding: "a".into(),
+            },
+        ]),
+        ..transformed(GeomTransform::End, 3, BLUE, 8.0)
+    };
+    let mut map = map(RenderMode::Point, style);
+    map.symbols = symbols();
+    let point = r#"{"type": "Feature", "properties": {"d": 20, "a": 90},
+        "geometry": {"type": "Point", "coordinates": [50, 50]}}"#;
+    let rendered = render_with(&map, Some(point));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 30), Some(BLUE));
+    assert_eq!(image.pixel(50, 50), Some(WHITE));
+    assert_matches_reference(&image, "symbol_polar_offset.png");
+}
+
+#[test]
+fn a_transformed_first_style_with_an_outline_draws_once_as_its_outline_prepares_it() {
+    // msDrawVectorLayer prepares the first style of a cached line layer for its outline before
+    // msDrawShape draws its transform: the circle at the start in its OUTLINECOLOR, red, outlined
+    // in its COLOR, blue, at a width of 1 + 2 × 2 and a size of 8 + 2. The cache's later pass of
+    // that style skips it, so it is not drawn again in blue.
+    let red = Rgba::opaque(255, 0, 0);
+    let start = Style {
+        outline_color: Some(Bound::Value(red)),
+        outline_width: Some(Bound::Value(2.0)),
+        ..transformed(GeomTransform::Start, 3, BLUE, 8.0)
+    };
+    let rendered = render_markers(vec![start, line_style(BLACK, 1.0)]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(
+        image.pixel(10, 18),
+        Some(red),
+        "the fill, in the outline colour"
+    );
+    assert_eq!(
+        image.pixel(10, 25),
+        Some(BLUE),
+        "the outline, in the colour"
+    );
+    assert_eq!(image.pixel(10, 30), Some(WHITE), "past the outline");
+    assert_matches_reference(&image, "geomtransform_outline.png");
 }

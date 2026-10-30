@@ -21,6 +21,28 @@ the frontend warns. A label's style draws at its `labelpnt` unless it names anot
 expressions are not yet carried over, and are a warning; the style draws the feature's own
 geometry.
 
+**Drawing a transform.** On a line or a polygon layer, `msDrawTransformedShape` in
+`src/mapgeomtransform.c` draws the style's symbol, as at a point, on the feature's unclipped
+shape in pixels, its vertices simplified as `msTransformShapeSimplify` in `src/mapprimitive.cpp`
+simplifies them (a vertex less than a pixel from the one kept before it is dropped, and a
+polygon's first two and last two are kept): `start` at the first point of each line or ring,
+`end` at the last, `vertices` at every other, each only inside the image, and `centroid` once, at
+the centre of the shape's segments weighted by their lengths (`msGetPolygonCentroid`), wherever it
+falls. A collection's members are one shape. With `ANGLE AUTO` the symbol turns with the segment
+at `start` and `end`, and at a vertex halfway between its two segments (`calcOrientation` and
+`calcMidAngle`). `labelpnt` and `labelpoly` draw nothing there, nor does a style without a symbol
+or with symbol 0, as `msDrawMarkerSymbol` draws none. A line layer that draws its features style
+by style draws the transformed styles with its first style, before the rest, and its first style,
+when it has an outline, as its outline prepares it. A point layer draws every style at its points,
+whatever its transform. The symbols a transform places count towards a layer's bound on the
+points of its markers ([`line.md`](line.md), Q-9).
+
+A part the simplification empties draws nothing in Forager: a line of fewer than two points, or
+one simplified to fewer, and a ring of fewer than four. MapServer keeps such a part with no points
+and still reads its first point for `start` — in pixels where the simplification began on it, in
+map units where it skipped a part too short to begin — and for `end` the point before its first,
+outside the part.
+
 **A polygon's fill.** A polygon layer's style with a `COLOR` and without a symbol, or with a
 simple one, fills the polygon under the even-odd rule, as `msDrawShadeSymbol` in
 `src/maprendering.c` and `agg2RenderPolygon` in `src/mapagg.cpp` fill it, and a hatch symbol

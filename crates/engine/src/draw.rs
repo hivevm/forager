@@ -20,9 +20,10 @@ use std::borrow::Borrow;
 
 use forager_ports::{Coord, Geometry};
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
-use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol};
+use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol, SymbolRef};
 
 use crate::extent::View;
+use crate::geom_transform;
 use crate::hatch::{self, Hatched, Hatching};
 use crate::line_marker::{self, MarkerBudget};
 use crate::offset::{self, Offset};
@@ -180,21 +181,20 @@ pub fn draw_ops(
     let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
     let mut ops = Vec::new();
     match (mode, geometry) {
+        // The whole shape, a collection's parts together, as msDrawTransformedShape takes it.
+        (RenderMode::Line | RenderMode::Polygon, _) if style.geom_transform.is_some() => {
+            transformed(&mut ops, geometry, style, pass, view, canvas);
+        }
         (_, Geometry::Collection(geometries)) => {
             for g in geometries {
                 ops.extend(draw_ops(mode, g, style, pass, view, canvas));
             }
         }
         (RenderMode::Point, _) => {
-            let mark = symbol::mark(style, canvas.symbols);
-            // pointLayerDrawShape: a point outside the map's extent draws nothing.
+            // pointLayerDrawShape: a point outside the map's extent draws nothing. It draws every
+            // style at every point, whatever its GEOMTRANSFORM.
             for c in vertices(geometry).into_iter().filter(|&c| view.contains(c)) {
-                let at = view.point_to_pixel(c);
-                match mark {
-                    symbol::Mark::Square => point_ops(&mut ops, at, style),
-                    symbol::Mark::Symbol(s) => symbol::symbol_ops(&mut ops, at, style, s),
-                    symbol::Mark::Nothing => {}
-                }
+                marker_ops(&mut ops, view.point_to_pixel(c), style, canvas.symbols);
             }
         }
         (RenderMode::Polygon, Geometry::Polygon(_) | Geometry::MultiPolygon(_))
@@ -546,6 +546,69 @@ fn shade(
     true
 }
 
+/// What msDrawMarkerSymbol draws of `style` at the pixel `at`: its symbol, or the square that
+/// stands for a symbol not drawn yet, moved as msAdjustMarkerPos moves it.
+fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbols: &[Symbol]) {
+    match symbol::mark(style, symbols) {
+        symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style), style),
+        symbol::Mark::Symbol(s) => symbol::symbol_ops(ops, at, style, s),
+        symbol::Mark::Nothing => {}
+    }
+}
+
+/// A style with a `GEOMTRANSFORM` on a shape of a line or a polygon layer, as
+/// msDrawTransformedShape draws it: its symbol at each point the transform places, turned there
+/// where the style's angle is `AUTO` and the transform gives one; nothing for a style without a
+/// symbol or with symbol 0, as msDrawMarkerSymbol draws none. The outline pass of a line layer's
+/// first style draws the style its outline prepares, as msDrawVectorLayer prepares the style
+/// before msDrawShape draws the transform. The symbols' points are taken from the canvas's
+/// budget of markers (Q-9): where they would exceed what is left, none of the shape's is drawn,
+/// nor any after them.
+fn transformed(
+    ops: &mut Vec<DrawOp>,
+    geometry: &Geometry,
+    style: &Style,
+    pass: Pass,
+    view: &View,
+    canvas: &mut Canvas,
+) {
+    let Some(transform) = style.geom_transform else {
+        return;
+    };
+    if matches!(style.symbol, None | Some(Bound::Value(SymbolRef::Index(0)))) {
+        return;
+    }
+    let prepared;
+    let style = match pass {
+        Pass::Plain | Pass::PlainIfColored => style,
+        Pass::Outline | Pass::OutlineIfOutlined => {
+            prepared = outline_style(style);
+            &prepared
+        }
+    };
+    let placed = geom_transform::placed(transform, geometry, view, canvas.image);
+    if placed.is_empty() {
+        return;
+    }
+    // What one symbol costs, the same at every point and angle.
+    let mut probe = Vec::new();
+    marker_ops(&mut probe, Point { x: 0.0, y: 0.0 }, style, canvas.symbols);
+    let cost: usize = probe.iter().map(line_marker::points).sum();
+    if !canvas.markers.take(placed.len().saturating_mul(cost)) {
+        return;
+    }
+    let mut turned = style.auto_angle.then(|| style.clone());
+    for (at, angle) in placed {
+        match (&mut turned, angle) {
+            (Some(turned), Some(angle)) => {
+                turned.angle = Some(Bound::Value(angle));
+                marker_ops(ops, at, turned, canvas.symbols);
+            }
+            _ => marker_ops(ops, at, style, canvas.symbols),
+        }
+    }
+}
+
 /// A point as a square of the style's size, centred on it, filled in the `COLOR` and outlined
 /// in the `OUTLINECOLOR`.
 fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
@@ -588,7 +651,7 @@ fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
 
 #[cfg(test)]
 mod tests {
-    use forager_style_ir::{Extent, LineOffset, SymbolKind, SymbolRef};
+    use forager_style_ir::{Extent, GeomTransform, LineOffset, SymbolKind};
 
     use super::*;
 
@@ -908,6 +971,178 @@ mod tests {
                 panic!("the outline is a stroke")
             }
         }
+    }
+
+    /// A view of 0..100 on 101 × 101 pixels: a map unit is a pixel, y downwards from 100.
+    fn unit_view() -> View {
+        View::for_image(
+            Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 100.0,
+                max_y: 100.0,
+            },
+            101,
+            101,
+        )
+        .unwrap()
+    }
+
+    /// A filled circle, symbol 1.
+    fn circle() -> Symbol {
+        Symbol {
+            name: None,
+            kind: SymbolKind::Ellipse,
+            paths: vec![vec![[1.0, 1.0]]],
+            extent: Some([1.0, 1.0]),
+            filled: true,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }
+    }
+
+    fn coords(points: &[(f64, f64)]) -> Vec<Coord> {
+        points.iter().map(|&(x, y)| Coord { x, y }).collect()
+    }
+
+    /// An L from pixel (10, 20) right to (90, 20), then down to (90, 90).
+    fn ell() -> Geometry {
+        Geometry::LineString(coords(&[(10.0, 80.0), (90.0, 80.0), (90.0, 10.0)]))
+    }
+
+    fn transformed_style(transform: GeomTransform, symbol: Option<u32>) -> Style {
+        Style {
+            symbol: symbol.map(|i| Bound::Value(SymbolRef::Index(i))),
+            size: Some(Bound::Value(6.0)),
+            geom_transform: Some(transform),
+            ..colored(Some(BLUE), None)
+        }
+    }
+
+    fn transformed_ops(geometry: &Geometry, style: &Style, canvas: &mut Canvas) -> Vec<DrawOp> {
+        draw_ops(
+            RenderMode::Line,
+            geometry,
+            style,
+            Pass::Plain,
+            &unit_view(),
+            canvas,
+        )
+    }
+
+    #[test]
+    fn a_transformed_style_without_a_symbol_or_with_symbol_0_draws_nothing() {
+        // msDrawMarkerSymbolInternal returns at a symbol of 0 or below, where a point layer draws
+        // its stand-in square.
+        let symbols = [circle()];
+        for symbol in [None, Some(0)] {
+            let style = transformed_style(GeomTransform::Start, symbol);
+            let mut canvas = Canvas::new(&symbols, 101, 101);
+            assert!(transformed_ops(&ell(), &style, &mut canvas).is_empty());
+        }
+        let style = transformed_style(GeomTransform::Start, Some(1));
+        let mut canvas = Canvas::new(&symbols, 101, 101);
+        assert!(!transformed_ops(&ell(), &style, &mut canvas).is_empty());
+    }
+
+    #[test]
+    fn without_angle_auto_a_transformed_symbol_keeps_its_angle() {
+        // The arrow at the corner of the L: at its own ANGLE 30 without AUTO, turned by -45°, as
+        // calcMidAngle gives it, with.
+        let arrow = Symbol {
+            kind: SymbolKind::Vector,
+            paths: vec![vec![[0.0, 2.0], [2.0, 0.0], [4.0, 2.0]]],
+            extent: Some([4.0, 2.0]),
+            filled: false,
+            ..circle()
+        };
+        let symbols = [arrow.clone()];
+        let style = Style {
+            angle: Some(Bound::Value(30.0)),
+            ..transformed_style(GeomTransform::Vertices, Some(1))
+        };
+        let at_corner = |style: &Style| {
+            let mut ops = Vec::new();
+            symbol::symbol_ops(&mut ops, p(90.0, 20.0), style, &arrow);
+            ops
+        };
+        let mut canvas = Canvas::new(&symbols, 101, 101);
+        assert_eq!(
+            transformed_ops(&ell(), &style, &mut canvas),
+            at_corner(&style)
+        );
+        let auto = Style {
+            auto_angle: true,
+            ..style.clone()
+        };
+        let turned = Style {
+            angle: Some(Bound::Value(-45.0)),
+            ..style
+        };
+        let drawn = transformed_ops(&ell(), &auto, &mut canvas);
+        let expected = at_corner(&turned);
+        let (DrawOp::Stroke { paths: a, .. }, DrawOp::Stroke { paths: b, .. }) =
+            (&drawn[0], &expected[0])
+        else {
+            panic!("{drawn:?}");
+        };
+        for (a, b) in a[0].iter().zip(&b[0]) {
+            assert!(
+                (a.x - b.x).abs() < 1e-6 && (a.y - b.y).abs() < 1e-6,
+                "{a:?} {b:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_symbols_a_transform_places_share_the_layer_s_budget() {
+        // Verifies: Q-9
+        // Four inner vertices take four circles; a budget one circle short of them draws none
+        // of the shape's, nor anything after it.
+        let symbols = [circle()];
+        let style = transformed_style(GeomTransform::Vertices, Some(1));
+        let zigzag = Geometry::LineString(coords(&[
+            (10.0, 50.0),
+            (20.0, 60.0),
+            (30.0, 50.0),
+            (40.0, 60.0),
+            (50.0, 50.0),
+            (60.0, 60.0),
+        ]));
+        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let drawn = transformed_ops(&zigzag, &style, &mut canvas);
+        assert_eq!(drawn.len(), 4);
+        let cost = points(&drawn);
+        let mut canvas = Canvas::new(&symbols, 101, 101);
+        canvas.markers = MarkerBudget::of(cost - 1);
+        assert!(transformed_ops(&zigzag, &style, &mut canvas).is_empty());
+        assert!(canvas.markers_spent());
+        assert!(transformed_ops(&ell(), &style, &mut canvas).is_empty());
+        let mut canvas = Canvas::new(&symbols, 101, 101);
+        canvas.markers = MarkerBudget::of(cost);
+        assert_eq!(transformed_ops(&zigzag, &style, &mut canvas).len(), 4);
+        assert!(!canvas.markers_spent());
+    }
+
+    #[test]
+    fn a_centroid_of_a_collection_is_that_of_all_its_parts() {
+        // Two lines of a collection, (10, 50)–(30, 50) and (70, 50)–(90, 50): one centroid, at
+        // (50, 50), not one for each.
+        let symbols = [circle()];
+        let style = transformed_style(GeomTransform::Centroid, Some(1));
+        let collection = Geometry::Collection(vec![
+            Geometry::LineString(coords(&[(10.0, 50.0), (30.0, 50.0)])),
+            Geometry::LineString(coords(&[(70.0, 50.0), (90.0, 50.0)])),
+        ]);
+        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let drawn = transformed_ops(&collection, &style, &mut canvas);
+        let mut expected = Vec::new();
+        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &symbols[0]);
+        assert_eq!(drawn, expected);
     }
 
     fn hatch_symbol() -> Symbol {

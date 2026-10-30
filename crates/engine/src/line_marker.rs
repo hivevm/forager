@@ -18,17 +18,18 @@
 //! Symbols along a line: a vector or an ellipse symbol repeated every `GAP` pixels from the
 //! `INITIALGAP`, upright for a positive gap and turned with each segment for a negative one, as
 //! MapServer places them. The positions of the markers outside the image are not visited one by
-//! one but skipped, and the markers along the lines of one layer amount to at most
-//! [`MAX_MARKER_POINTS`] points (Q-9).
+//! one but skipped, and the markers along the lines of one layer, with the symbols its
+//! `GEOMTRANSFORM`s place, amount to at most [`MAX_MARKER_POINTS`] points (Q-9).
 
 use forager_render::{DrawOp, Point};
 use forager_style_ir::{Style, Symbol};
 
 use crate::symbol;
 
-/// The most points the markers along the lines of one layer amount to, over all its features and
-/// styles (Q-9). The markers of a line that would pass it are not drawn, nor any of the layer's
-/// after them, and the render reports it. MapServer places markers without a bound, so that a
+/// The most points the markers along the lines of one layer, and the symbols a `GEOMTRANSFORM`
+/// places on its lines and polygons, amount to, over all its features and styles (Q-9). The
+/// markers of a line, or of a transformed shape, that would pass it are not drawn, nor any of the
+/// layer's after them, and the render reports it. MapServer places markers without a bound, so that a
 /// tiny `GAP` on a long line, or a feature of many small rings, draws them by the billion; a
 /// million points are some 10 000 markers of an ellipse of 30 pixels, or 200 000 of a five-point
 /// arrow.
@@ -57,6 +58,18 @@ impl MarkerBudget {
     /// Whether markers were left out for want of points.
     pub(crate) fn spent(&self) -> bool {
         self.spent
+    }
+
+    /// Takes `points` from what is left: false, and spent, where they exceed it or it is spent
+    /// already, and then nothing is taken.
+    pub(crate) fn take(&mut self, points: usize) -> bool {
+        if self.spent || points > self.remaining {
+            self.remaining = 0;
+            self.spent = true;
+            return false;
+        }
+        self.remaining -= points;
+        true
     }
 }
 
@@ -142,7 +155,7 @@ pub(crate) fn draw(
 }
 
 /// The points of a drawing operation.
-fn points(op: &DrawOp) -> usize {
+pub(crate) fn points(op: &DrawOp) -> usize {
     match op {
         DrawOp::Stroke { paths, .. } => paths.iter().map(Vec::len).sum(),
         DrawOp::Fill { rings, .. } | DrawOp::Polygon { rings, .. } => {
