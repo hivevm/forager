@@ -108,13 +108,15 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
 }
 
 /// What a layer draws its features on beside the view: the map's symbols, the image's width and
-/// height in pixels, what is left to the layer of [`line_marker::MAX_MARKER_POINTS`], and the
-/// hatching of the class drawn, which counts the hatches refused (Q-9).
+/// height in pixels, what is left to the layer of [`line_marker::MAX_MARKER_POINTS`], the
+/// hatching of the class drawn, which counts the hatches refused (Q-9), and whether the layer is
+/// drawn into an image of its own.
 pub struct Canvas<'a> {
     symbols: &'a [Symbol],
     image: (f64, f64),
     markers: MarkerBudget,
     hatching: Hatching,
+    own_image: bool,
 }
 
 impl<'a> Canvas<'a> {
@@ -125,6 +127,24 @@ impl<'a> Canvas<'a> {
             image: (f64::from(width), f64::from(height)),
             markers: MarkerBudget::new(),
             hatching: Hatching::default(),
+            own_image: false,
+        }
+    }
+
+    /// Marks the layer as drawn into an image of its own, which msDrawLayer creates with
+    /// msImageCreate: that image's `refpt` stays at its top left corner, where agg2CreateImage's
+    /// `calloc` leaves it, and a hatch counts its lines from there.
+    pub fn in_own_image(&mut self) {
+        self.own_image = true;
+    }
+
+    /// The pixel a hatch counts its lines from, the image's `refpt`: the map's origin on the
+    /// map's image, where msPrepareImage() puts it, and the corner on a layer's own image.
+    fn reference(&self, view: &View) -> Point {
+        if self.own_image {
+            Point { x: 0.0, y: 0.0 }
+        } else {
+            view.point_to_pixel(Coord { x: 0.0, y: 0.0 })
         }
     }
 
@@ -489,7 +509,7 @@ fn shade(
             style,
             color,
             view.image_size(),
-            view.point_to_pixel(Coord { x: 0.0, y: 0.0 }),
+            canvas.reference(view),
         ) {
             Hatched::Drawn(hatch) => {
                 ops.push(DrawOp::Hatch(hatch));

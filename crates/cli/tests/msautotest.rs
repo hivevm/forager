@@ -274,6 +274,23 @@ impl ResourceLoader for Suite {
     }
 }
 
+/// The suite with the text of its main mapfile replaced, to which `-i` has been applied.
+struct MainReplaced<'a> {
+    suite: &'a Suite,
+    path: &'a ResourcePath,
+    main: String,
+}
+
+impl ResourceLoader for MainReplaced<'_> {
+    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        if path == self.path {
+            Ok(self.main.clone().into_bytes())
+        } else {
+            self.suite.load(path).await
+        }
+    }
+}
+
 fn ready<F: Future>(future: F) -> F::Output {
     forager_ports::poll_once(future).expect("the suite's loader never waits")
 }
@@ -686,13 +703,27 @@ fn render_and_compare(
 /// stand-in table of the G-1 test.
 fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, String> {
     let path = ResourcePath::new(&case.mapfile).map_err(|e| e.to_string())?;
-    let loaded = ready(forager_mapfile::load(&path, loader, Some(resolver)));
+    let options = case.options()?;
+    let loaded = match conformance::image_type(&options) {
+        Some(image_type) => {
+            let text = std::fs::read_to_string(loader.0.join(&case.mapfile))
+                .map_err(|e| format!("its mapfile: {e}"))?;
+            let main = conformance::with_image_type(&text, image_type)?;
+            let loader = MainReplaced {
+                suite: loader,
+                path: &path,
+                main,
+            };
+            ready(forager_mapfile::load(&path, &loader, Some(resolver)))
+        }
+        None => ready(forager_mapfile::load(&path, loader, Some(resolver))),
+    };
     let document = loaded.document.ok_or_else(|| {
         let errors: Vec<_> = loaded.diagnostics.iter().map(ToString::to_string).collect();
         format!("it does not load: {}", errors.join("; "))
     })?;
     let mut map = document.map;
-    conformance::apply(&case.options()?, &mut map, &loaded.diagnostics)?;
+    conformance::apply(&options, &mut map, &loaded.diagnostics)?;
     let mut sources = BTreeMap::new();
     for layer in &map.layers {
         let (Some(name), Some(source)) = (&layer.name, &layer.source) else {

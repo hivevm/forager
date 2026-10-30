@@ -14,7 +14,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use agg_rust::basics::{FillingRule, PATH_FLAGS_NONE};
-use agg_rust::color::Rgba8;
 use agg_rust::conv_curve::ConvCurve;
 use agg_rust::path_storage::PathStorage;
 use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
@@ -64,12 +63,7 @@ impl AggRenderer {
                 return;
             }
         }
-        let color = Rgba8::new(
-            u32::from(color.r),
-            u32::from(color.g),
-            u32::from(color.b),
-            u32::from(color.a),
-        );
+        let color = crate::rgba8(color);
         let (width, height) = (f64::from(self.width), f64::from(self.height));
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();

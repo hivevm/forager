@@ -101,6 +101,10 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         if !shown(layer) || !classes::layer_in_scale(layer, scale) {
             continue;
         }
+        // msDrawLayer skips a layer of no opacity, its labels too.
+        if checked_opacity(layer, &mut diagnostics) == Some(0) {
+            continue;
+        }
         let Some(mode) = drawable_mode(layer, &mut diagnostics) else {
             continue;
         };
@@ -135,7 +139,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             view: &view,
         };
         let mut canvas = Canvas::new(&map.symbols, width, height);
-        drawing.draw(&mut renderer, &mut canvas, &selected);
+        drawing.draw_layer(&mut renderer, &mut canvas, &selected);
         if canvas.markers_spent() {
             let message = format!(
                 "layer {}: its symbols along lines or placed by a GEOMTRANSFORM exceed \
@@ -179,6 +183,40 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     }
 }
 
+/// A layer's opacity as MapServer holds it, an integer percent from 0 to 100: the IR's number
+/// truncated, as `loadLayerCompositer` truncates it, and bounded, as it checks it; none for a
+/// number that is not finite.
+fn layer_opacity(layer: &Layer) -> Option<i32> {
+    let opacity = layer.opacity.filter(|o| o.is_finite())?;
+    Some((opacity as i32).clamp(0, 100))
+}
+
+/// [`layer_opacity`], with a warning for an opacity outside 0 to 100, which a mapfile cannot give
+/// (`loadLayerCompositer` refuses it) but a style document can.
+fn checked_opacity(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<i32> {
+    let opacity = layer_opacity(layer);
+    if let Some(written) = layer.opacity
+        && !(0.0..=100.0).contains(&written)
+    {
+        let message = match opacity {
+            Some(drawn) => format!(
+                "layer {}: its opacity {written} lies outside 0 to 100; it is drawn at {drawn}",
+                name(layer)
+            ),
+            None => format!(
+                "layer {}: its opacity {written} is no number; it is drawn without one",
+                name(layer)
+            ),
+        };
+        diagnostics.push(Diagnostic::warning(
+            "opacity-out-of-range",
+            message,
+            layer.span.clone(),
+        ));
+    }
+    opacity
+}
+
 /// A feature drawn: it, the place of its class, and its styles bound to it.
 pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
 
@@ -192,6 +230,26 @@ struct Drawing<'a> {
 }
 
 impl Drawing<'_> {
+    /// Draws the layer's selected features, into an image of their own that is laid over the
+    /// map where the layer has an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block.
+    fn draw_layer<R: Renderer>(
+        &self,
+        renderer: &mut R,
+        canvas: &mut Canvas,
+        selected: &[Selected<'_>],
+    ) {
+        let Some(opacity) = layer_opacity(self.layer) else {
+            self.draw(renderer, canvas, selected);
+            return;
+        };
+        canvas.in_own_image();
+        renderer.begin_layer();
+        self.draw(renderer, canvas, selected);
+        // aggCompositeRasterBufferNoPixman lays the layer over at MS_NINT(opacity × 2.55).
+        let alpha = classes::ms_nint(f64::from(opacity) * 2.55);
+        renderer.end_layer(alpha.clamp(0, 255) as u8);
+    }
+
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them: a feature of
     /// a line layer whose class has several styles, or an outline, draws its first pass and its
     /// styles with a `GEOMTRANSFORM` at once, and the rest from its cache, style by style, after

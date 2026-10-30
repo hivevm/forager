@@ -101,7 +101,7 @@ impl Case {
                     }
                 }
                 "-i" => match words.next() {
-                    Some("png") => {}
+                    Some("png") => applied.push(Applied::ImageType("png".to_owned())),
                     other => return Err(format!("the output format {}", other.unwrap_or(""))),
                 },
                 "-l" => {
@@ -148,6 +148,63 @@ pub enum Applied {
     Extent([f64; 4]),
     /// `-s`: the width and height of the image.
     Size([u32; 2]),
+    /// `-i`: the `IMAGETYPE` map2img sets after the load, selecting the output format anew with
+    /// msSelectOutputFormat. The frontend reads the format's transparency at the load, so the
+    /// harness applies it to the mapfile's text before ([`with_image_type`]), not to the IR.
+    ImageType(String),
+}
+
+/// The `IMAGETYPE` of `options`' `-i`, if any.
+pub fn image_type(options: &[Applied]) -> Option<&str> {
+    options.iter().find_map(|o| match o {
+        Applied::ImageType(t) => Some(t.as_str()),
+        _ => None,
+    })
+}
+
+/// `text`, a mapfile, with `IMAGETYPE "<image_type>"` before the `END` of its `MAP`, the last
+/// `END` of the file outside a comment, where it is the map's last `IMAGETYPE` and holds as
+/// map2img's `-i` holds over the mapfile's.
+pub fn with_image_type(text: &str, image_type: &str) -> Result<String, String> {
+    let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    // The start of the last whole word END before a comment on `line`.
+    let last_end = |line: &str| {
+        let code = line.split('#').next().unwrap_or("").as_bytes();
+        let (mut i, mut found) = (0, None);
+        while i < code.len() {
+            if word(code[i]) {
+                let start = i;
+                while i < code.len() && word(code[i]) {
+                    i += 1;
+                }
+                if code[start..i].eq_ignore_ascii_case(b"END") {
+                    found = Some(start);
+                }
+            } else {
+                i += 1;
+            }
+        }
+        found
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let (line, at) = lines
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, line)| last_end(line).map(|at| (i, at)))
+        .ok_or("the mapfile has no END")?;
+    let mut out = String::with_capacity(text.len() + 32);
+    for (i, l) in lines.iter().enumerate() {
+        if i == line {
+            out.push_str(&l[..at]);
+            out.push_str(&format!("IMAGETYPE \"{image_type}\" "));
+            out.push_str(&l[at..]);
+        } else {
+            out.push_str(l);
+        }
+        out.push('\n');
+    }
+    Ok(out)
 }
 
 /// Applies `options` to `map` in their order, as `map2img.c` at the pin applies them to the
@@ -207,6 +264,7 @@ pub fn apply(options: &[Applied], map: &mut Map, diagnostics: &[Diagnostic]) -> 
                 });
             }
             Applied::Size(size) => map.size = Some(*size),
+            Applied::ImageType(_) => {}
         }
     }
     Ok(())

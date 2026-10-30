@@ -18,7 +18,7 @@ describe and decide nothing: the decisions are the ADRs they cite.
 - [`SYMBOL` and `GEOMTRANSFORM`](style-symbol.md) of a style
 - [`OFFSET` and `POLAROFFSET`](offset.md)
 - [`PATTERN`, `GAP`, `INITIALGAP`, `LINECAP`, `LINEJOIN`](line.md)
-- [`OPACITY` and `OUTLINEWIDTH`](opacity.md)
+- [`OPACITY`, `COMPOSITE`, `OUTLINEWIDTH`, and the transparent image](opacity.md)
 - [Scaling: `RESOLUTION`, `DEFRESOLUTION`, `UNITS`, `SIZEUNITS`, `SYMBOLSCALEDENOM`, and the
   bounds](scale.md)
 - [Scale ranges: `MINSCALEDENOM` and `MAXSCALEDENOM`](scale-range.md)

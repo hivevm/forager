@@ -43,6 +43,8 @@ impl Renderer for Discard {
     fn draw(&mut self, item: &DisplayItem) {
         self.0 += usize::from(matches!(item.op, forager_render::DrawOp::Glyphs { .. }));
     }
+    fn begin_layer(&mut self) {}
+    fn end_layer(&mut self, _: u8) {}
     fn finish(self) -> RgbaImage {
         RgbaImage {
             width: 0,

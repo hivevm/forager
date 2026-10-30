@@ -920,6 +920,203 @@ fn a_hatch_of_a_polygon_past_its_bound_on_vertices_is_not_drawn_and_reported() {
     assert!(image.pixels.chunks(4).all(|px| px == [255, 255, 255, 255]));
 }
 
+/// Two squares, the second over the first from (40, 40) to (80, 80); `o` of the second is 25.
+const OVERLAPPING_SQUARES: &str = r#"{"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {"o": "100"}, "geometry": {"type": "Polygon",
+     "coordinates": [[[10, 10], [60, 10], [60, 60], [10, 60], [10, 10]]]}},
+    {"type": "Feature", "properties": {"o": "25"}, "geometry": {"type": "Polygon",
+     "coordinates": [[[40, 40], [80, 40], [80, 80], [40, 80], [40, 40]]]}}
+]}"#;
+
+#[test]
+fn a_style_s_opacity_replaces_the_alpha_of_its_colours() {
+    // Verifies: G-6
+    // loadStyle gives an OPACITY of 50 the alpha MS_NINT(50 × 2.55) = 127, the product lying
+    // just below 127.5 in binary, its `#rrggbbaa` alpha replaced; AGG premultiplies red to 126
+    // and blends it over white at a cover of 255: (255 × 128 + 126 × 256) >> 8 = 253, and
+    // (255 × 128) >> 8 = 127.
+    let style = Style {
+        color: Some(Bound::Value(Rgba {
+            a: 10,
+            ..Rgba::opaque(255, 0, 0)
+        })),
+        opacity: Some(Bound::Value(50.0)),
+        ..Style::default()
+    };
+    let image = render_with(&map(RenderMode::Polygon, style), Some(OVERLAPPING_SQUARES))
+        .image
+        .unwrap();
+    assert_eq!(image.pixel(20, 80), Some(Rgba::opaque(253, 127, 127)));
+    // Where the squares overlap, each blends on its own: (253 × 128 + 126 × 256) >> 8 = 252,
+    // (127 × 128) >> 8 = 63.
+    assert_eq!(image.pixel(50, 50), Some(Rgba::opaque(252, 63, 63)));
+    assert_matches_reference(&image, "style_opacity.png");
+
+    // A bound opacity is applied per feature: the second square at 25.
+    let bound = Style {
+        color: Some(Bound::Value(Rgba::opaque(255, 0, 0))),
+        opacity: Some(Bound::Binding {
+            binding: "o".into(),
+        }),
+        ..Style::default()
+    };
+    let image = render_with(&map(RenderMode::Polygon, bound), Some(OVERLAPPING_SQUARES))
+        .image
+        .unwrap();
+    assert_eq!(image.pixel(20, 80), Some(Rgba::opaque(255, 0, 0)));
+    // MS_NINT(25 × 2.55) = 64; red premultiplied to 63: (255 × 191 + 63 × 256) >> 8 = 253,
+    // (255 × 191) >> 8 = 190.
+    assert_eq!(image.pixel(70, 30), Some(Rgba::opaque(253, 190, 190)));
+}
+
+#[test]
+fn a_layer_with_an_opacity_is_drawn_apart_and_laid_over_at_it() {
+    // Verifies: G-6
+    // The layer's squares are drawn opaque into an image of their own, which is laid over the
+    // map at MS_NINT(50 × 2.55) = 127: the overlap is as light as the rest, unlike a style's
+    // opacity. Black at alpha 255 over white at a cover of 127: alpha (255 × 128) >> 8 = 127,
+    // (255 × 128) >> 8 = 127.
+    let style = Style {
+        color: Some(Bound::Value(BLACK)),
+        ..Style::default()
+    };
+    let mut half = map(RenderMode::Polygon, style);
+    half.layers[0].opacity = Some(50.0);
+    let image = render_with(&half, Some(OVERLAPPING_SQUARES)).image.unwrap();
+    assert_eq!(image.pixel(20, 80), Some(Rgba::opaque(127, 127, 127)));
+    assert_eq!(image.pixel(50, 50), Some(Rgba::opaque(127, 127, 127)));
+    assert_eq!(image.pixel(5, 5), Some(WHITE));
+    assert_matches_reference(&image, "layer_opacity.png");
+
+    // At 0 msDrawLayer skips the layer.
+    half.layers[0].opacity = Some(0.0);
+    let image = render_with(&half, Some(OVERLAPPING_SQUARES)).image.unwrap();
+    assert_eq!(image.pixel(50, 50), Some(WHITE));
+}
+
+#[test]
+fn a_transparent_background_keeps_the_colour_of_what_is_drawn_on_it() {
+    // Verifies: G-6
+    // The image of a transparent output format starts with no colour, and the alpha is divided
+    // out of its premultiplied colours as saveAsPNG divides it: an edge of the line is the
+    // line's grey at a lower alpha, not a darker grey.
+    let mut lines = map(
+        RenderMode::Line,
+        line_style(Rgba::opaque(128, 128, 128), 5.0),
+    );
+    lines.image_color = Some(Rgba {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    });
+    let line = r#"{"type": "LineString", "coordinates": [[10, 20], [90, 60]]}"#;
+    let image = render_with(&lines, Some(line)).image.unwrap();
+    assert_eq!(
+        image.pixel(5, 5),
+        Some(Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0
+        })
+    );
+    assert_eq!(image.pixel(50, 60), Some(Rgba::opaque(128, 128, 128)));
+    // Down the column x = 50, across the line: each edge keeps the grey, divided out of its
+    // premultiplied colour and truncated. At the top a cover of 22 gives alpha
+    // (255 × 23) >> 8 = 22, the colour (128 × 23) >> 8 = 11 and the alpha
+    // 255 - ((233 × 255) >> 8) = 23 in the buffer, and 11 / (23 / 255) = 121 in the image.
+    let grey = |c: u8, a: u8| {
+        Some(Rgba {
+            r: c,
+            g: c,
+            b: c,
+            a,
+        })
+    };
+    let column: Vec<_> = (55..64).map(|y| image.pixel(50, y)).collect();
+    assert_eq!(
+        column,
+        [
+            grey(0, 0),
+            grey(121, 23),
+            grey(126, 247),
+            grey(128, 255),
+            grey(128, 255),
+            grey(128, 255),
+            grey(128, 255),
+            grey(127, 140),
+            grey(0, 0),
+        ]
+    );
+    assert_matches_reference(&image, "transparent_background.png");
+}
+
+#[test]
+fn a_hatch_in_a_layer_of_its_own_counts_its_lines_from_that_image_s_corner() {
+    // Verifies: G-6
+    // msDrawLayer draws a layer with a COMPOSITE block into an image msImageCreate makes, whose
+    // refpt stays at (0, 0): ANGLE 0 lays the lines of SIZE 8 at y = 0, 8, …, 80, not at
+    // y = 100, 92, …, 84 from the map's origin as on the map's own image.
+    let hatch = hatch_style(BLACK, 8.0, 2.0, 0.0, vec![]);
+    let on_map = render_hatched(vec![hatch.clone()]).image.unwrap();
+    assert_eq!(on_map.pixel(15, 84), Some(BLACK));
+    assert_eq!(on_map.pixel(15, 80), Some(WHITE));
+
+    let mut map = map_with(RenderMode::Polygon, vec![hatch]);
+    map.layers[0].opacity = Some(100.0);
+    map.symbols = vec![Symbol {
+        name: Some("hatch".into()),
+        kind: SymbolKind::Hatch,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    }];
+    let apart = render_with(&map, Some(SQUARE_WITH_HOLE)).image.unwrap();
+    assert_eq!(apart.pixel(15, 80), Some(BLACK));
+    assert_eq!(apart.pixel(15, 84), Some(WHITE));
+}
+
+#[test]
+fn a_layer_opacity_outside_0_to_100_is_bounded_and_one_not_finite_is_none() {
+    let style = Style {
+        color: Some(Bound::Value(BLACK)),
+        ..Style::default()
+    };
+    let mut layer_map = map(RenderMode::Polygon, style);
+    let codes = |m: &Map| -> Vec<String> {
+        render_with(m, Some(SQUARE_WITH_HOLE))
+            .diagnostics
+            .iter()
+            .map(|d| d.code.clone())
+            .collect()
+    };
+    layer_map.layers[0].opacity = Some(150.0);
+    assert_eq!(codes(&layer_map), ["opacity-out-of-range"]);
+    let image = render_with(&layer_map, Some(SQUARE_WITH_HOLE))
+        .image
+        .unwrap();
+    assert_eq!(image.pixel(25, 75), Some(BLACK), "drawn at 100");
+    layer_map.layers[0].opacity = Some(-3.0);
+    assert_eq!(codes(&layer_map), ["opacity-out-of-range"]);
+    let image = render_with(&layer_map, Some(SQUARE_WITH_HOLE))
+        .image
+        .unwrap();
+    assert_eq!(image.pixel(25, 75), Some(WHITE), "drawn at 0: skipped");
+    layer_map.layers[0].opacity = Some(f64::NAN);
+    assert_eq!(codes(&layer_map), ["opacity-out-of-range"]);
+    let image = render_with(&layer_map, Some(SQUARE_WITH_HOLE))
+        .image
+        .unwrap();
+    assert_eq!(image.pixel(25, 75), Some(BLACK), "drawn without an opacity");
+}
+
 /// A style drawing symbol `index` of [`symbols`] in `color` at `size` where `transform` places
 /// it, turned there by `ANGLE AUTO`.
 fn transformed(transform: GeomTransform, index: u32, color: Rgba, size: f64) -> Style {
