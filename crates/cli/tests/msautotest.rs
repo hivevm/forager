@@ -427,7 +427,6 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
         }
     }
     let in_scope = tally.in_scope;
-    eprint!("{tally}");
     // The counts for scripts/check-fidelity.sh, which scripts/check-rust.sh runs after this test.
     if let Some(counts) = std::env::var_os("FORAGER_FIDELITY") {
         std::fs::write(&counts, tally.to_string()).unwrap();

@@ -14,13 +14,15 @@
 #
 # The record, crates/cli/tests/conformance/fidelity.txt, holds one line per release tag
 # `v<semver>`, `v<semver> <passing>/<in-scope>`, the cases without a blank reference; `#` begins
-# a comment. The last release is the highest version of the record. A release adds its line.
+# a comment; a tag may appear once. The last release is the highest version of the record. A
+# release adds its line, which the check prints from the current counts.
 #
 # Pure bash + coreutils. scripts/check-rust.sh runs it after the harness. Usage:
 #     scripts/check-fidelity.sh <counts> [record]
 # The record defaults to this repository's; scripts/test-check-fidelity.sh passes fixtures.
-# Exit code 0 when the share holds or no release is recorded yet, 1 when it falls, 2 on a counts
-# file or a record that cannot be read.
+# Exit code 0 when the share holds or no release is recorded yet, 1 when it falls or, with a
+# release recorded, when no case without a blank reference is in scope and the share is undefined,
+# 2 on a counts file or a record that cannot be read.
 
 set -uo pipefail
 
@@ -53,28 +55,48 @@ done
   && count[blank-passing] <= count[blank] && count[blank-passing] <= count[passing])) \
   || fail "'$COUNTS': the counts contradict each other"
 
-passing=$((count[passing] - count[blank-passing]))
-in_scope=$((count[in-scope] - count[blank]))
-((in_scope > 0)) || { echo "Fidelity check FAILED: no case without a blank reference is in scope; the share is undefined." >&2; exit 1; }
-echo "Fidelity: $passing of $in_scope cases pass ($(percent "$passing" "$in_scope")); apart from the share, $((count[blank-passing])) of $((count[blank])) cases with a blank reference pass."
+# newer <a1> <a2> <a3> <b1> <b2> <b3> — whether version a is above version b.
+newer() {
+  (($1 != $4)) && { (($1 > $4)); return; }
+  (($2 != $5)) && { (($2 > $5)); return; }
+  (($3 > $6))
+}
 
-last="" last_passing=0 last_in_scope=0 number=0
+declare -A recorded=()
+last="" last_version=(0 0 0) last_passing=0 last_in_scope=0 number=0
 while IFS= read -r line || [[ -n "$line" ]]; do
   number=$((number + 1))
   line="${line%%#*}"
   read -r tag share rest <<< "$line"
   [[ -z "${tag:-}" ]] && continue
-  [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ \
-     && "${share:-}" =~ ^([0-9]+)/([0-9]+)$ && -z "${rest:-}" ]] \
+  [[ "${share:-}" =~ ^([0-9]+)/([0-9]+)$ && -z "${rest:-}" ]] \
     || fail "'$RECORD' line $number: '$line' is no 'v<semver> <passing>/<in-scope>'"
   p=$((10#${BASH_REMATCH[1]})) n=$((10#${BASH_REMATCH[2]}))
+  [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] \
+    || fail "'$RECORD' line $number: '$line' is no 'v<semver> <passing>/<in-scope>'"
+  version=("${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}")
   ((n > 0 && p <= n)) || fail "'$RECORD' line $number: $share is no share"
-  if [[ -n "$last" && "$(printf '%s\n%s\n' "${last#v}" "${tag#v}" | sort -V | tail -n 1)" == "${last#v}" ]]; then
-    [[ "$tag" != "$last" ]] || fail "'$RECORD' line $number: $tag is recorded twice"
-    continue
+  [[ -z "${recorded[$tag]:-}" ]] || fail "'$RECORD' line $number: $tag is recorded twice"
+  recorded[$tag]=1
+  if [[ -z "$last" ]] || newer "${version[@]}" "${last_version[@]}"; then
+    last="$tag" last_version=("${version[@]}") last_passing=$p last_in_scope=$n
   fi
-  last="$tag" last_passing=$p last_in_scope=$n
 done < "$RECORD"
+
+passing=$((count[passing] - count[blank-passing]))
+in_scope=$((count[in-scope] - count[blank]))
+blanks="apart from the share, $((count[blank-passing])) of $((count[blank])) cases with a blank reference pass"
+if ((in_scope == 0)); then
+  if [[ -z "$last" ]]; then
+    echo "Fidelity: no case without a blank reference is in scope, so the share is undefined; $blanks."
+    echo "Fidelity check passed: no release is recorded yet, so there is no share to hold."
+    exit 0
+  fi
+  echo "Fidelity check FAILED: no case without a blank reference is in scope; the share is undefined, and $last recorded $last_passing/$last_in_scope (Q-4)." >&2
+  exit 1
+fi
+echo "Fidelity: $passing of $in_scope cases pass ($(percent "$passing" "$in_scope")); $blanks."
+echo "Record line for a release: v<semver> $passing/$in_scope"
 
 if [[ -z "$last" ]]; then
   echo "Fidelity check passed: no release is recorded yet, so there is no share to hold."

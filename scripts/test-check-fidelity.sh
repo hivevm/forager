@@ -91,7 +91,18 @@ passing 40
 blank 0
 ')" "$RECORD"
 expect "counts that contradict each other are an error" 2 "contradict" "$(counts 50 51)" "$RECORD"
-expect "no case beyond the blank ones fails" 1 "the share is undefined" "$(counts 2 2 2 2)" "$RECORD"
+expect "an undefined share fails once a release is recorded" 1 "the share is undefined" \
+  "$(counts 2 2 2 2)" "$RECORD"
+expect "an undefined share passes with no release recorded" 0 "no release is recorded yet" \
+  "$(counts 2 2 2 2)" "$(fixture '# no release yet')"
+expect "an equal share with another number of cases passes" 0 "40/50 (80.0%) holds 48/60 (80.0%)" \
+  "$(counts 50 40)" "$(fixture 'v0.1.0 48/60')"
+expect "a release recorded twice below the last one is an error" 2 "line 3: v0.1.0 is recorded twice" \
+  "$(counts 50 40)" "$(fixture 'v0.2.0 40/50
+v0.1.0 30/50
+v0.1.0 31/50')"
+expect "the check prints the line a release adds" 0 "Record line for a release: v<semver> 40/50" \
+  "$(counts 52 42 2 2)" "$RECORD"
 expect "missing counts are an error" 2 "did the harness run?" "$work/none" "$RECORD"
 
 if ((failed)); then
