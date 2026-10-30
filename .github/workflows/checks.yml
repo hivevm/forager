@@ -147,6 +147,9 @@ jobs:
       # The licence constraint: a file that follows MapServer's source keeps its notice.
       - name: Check that every file following MapServer's source keeps its notice
         run: bash scripts/check-notice.sh
+      # The fidelity check itself runs in the rust job, after the harness that counts the cases.
+      - name: Self-test the fidelity check
+        run: bash scripts/test-check-fidelity.sh
 
   shell:
     runs-on: ubuntu-latest

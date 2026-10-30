@@ -162,7 +162,10 @@ in its module `conformance/`, whose list `cases.txt` names each in scope with it
 expected outcome, passing or failing, or out of scope with its reason, and marks those whose
 reference is blank; it renders each case in scope in-process, binding shapefiles as
 `forager render` does, and holds its outcome, leaving the renderings of failing cases under
-Cargo's `target/tmp/msautotest/`.
+Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that pass, the blank
+ones apart, and `scripts/check-fidelity.sh` holds the share of passing cases without a blank
+reference against that of the last release tag `v<semver>` in the record
+`crates/cli/tests/conformance/fidelity.txt`, to which each release adds its line (Q-4).
 
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).
