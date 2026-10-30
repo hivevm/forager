@@ -17,7 +17,7 @@ pub use expression::{Expr, MAX_EXPRESSION_DEPTH, Op};
 pub use lenient::MAX_DROPPED_VALUES;
 pub use migration::{STEPS, Step};
 pub use model::{
-    Align, AngleMode, Bound, Class, Extent, Force, GeomTransform, Label, Layer, LayerProjection,
-    LayerStatus, LineCap, LineJoin, LineOffset, Map, MinFeatureSize, Position, RenderMode, Rgba,
-    SourceRef, Style, Symbol, SymbolKind, SymbolRef, Units,
+    Align, AngleMode, Bound, Class, Extent, FeatureProperty, Force, GeomTransform, InlineFeature,
+    Label, Layer, LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset, Map, MinFeatureSize,
+    Position, RenderMode, Rgba, ShapeType, SourceRef, Style, Symbol, SymbolKind, SymbolRef, Units,
 };

@@ -1,0 +1,9 @@
+# The share of the in-scope msautotest cases that pass at each release, as the conformance
+# harness (crates/cli/tests/msautotest.rs) counts them; scripts/check-fidelity.sh fails when the
+# current share is below that of the highest release here (Q-4). A release, a tag v<semver> on
+# main, adds its line with the counts of the harness at that commit:
+#
+#   v<semver> <passing>/<in-scope>
+#
+# Both counts leave out the cases whose reference the list cases.txt marks blank: a blank
+# reference passes against nearly any rendering of one colour, so it would inflate the share.

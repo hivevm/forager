@@ -1,0 +1,22 @@
+MAP
+  EXTENT 0 0 100 100
+  SIZE 100 100
+  LAYER
+    NAME "shapes"
+    TYPE POLYGON
+    STATUS ON
+    PROCESSING "ITEMS=name,kind"
+    FEATURE
+      POINTS 10 10 90 10 90 90 10 10 END
+      ITEMS "a;1"
+      TEXT "first"
+    END
+    FEATURE
+      WKT "GEOMETRYCOLLECTION(POINT(1 2),MULTIPOLYGON(((0 0,1 0,1 1,0 0))),MULTIPOINT((1 1),(2 2)),MULTILINESTRING((0 0,1 1)))"
+    END
+    CLASS
+      EXPRESSION ("[kind]" = "1")
+      STYLE COLOR 0 0 0 END
+    END
+  END
+END

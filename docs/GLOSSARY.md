@@ -31,10 +31,14 @@ to invent.
   [`semantics/`](semantics/README.md).
 - **Feature source** — The port through which the host supplies a layer's features, implemented by
   an adapter the host binds to the layer by its name; the engine asks it for the features in view.
+  A layer with inline features is read from those instead.
 - **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
   crate versions and of the core's API.
 - **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through
   the WASM bindings, or a server.
+- **Inline feature** — A feature written into a layer of the style IR, a mapfile's `FEATURE`: a
+  shape's type and parts, its properties, and its text
+  ([ADR-0033](adr/0033-inline-features-in-the-style-ir.md)).
 - **Label cache** — MapServer's deferred placement of labels: labels are collected over all layers
   and placed in a separate pass, after the geometry.
 - **Mapfile** — A map definition in UMN MapServer's text syntax, read only by the mapfile

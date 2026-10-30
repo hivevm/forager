@@ -33,7 +33,7 @@ misc/centerline.map centerline2.png out: an OGC or CGI request
 misc/centerline.map centerline3_exception.txt out: an OGC or CGI request
 misc/centerline.map centerline4_exception.txt out: an OGC or CGI request
 misc/centerline.map centerline5_exception.txt out: an OGC or CGI request
-misc/clip_polygon_corners.map clip_polygon_corners.png geometry fails  # not built yet: inline FEATURE shapes
+misc/clip_polygon_corners.map clip_polygon_corners.png geometry passes
 misc/cluster.map cluster.png out: a data source other than shapefiles, POSTGIS
 misc/cluster.map wms_cluster_cap_latestversion.xml out: an OGC or CGI request
 misc/cluster.map wms_cluster_cap.xml out: an OGC or CGI request
@@ -63,7 +63,7 @@ misc/geopdf.map geopdf-ogc.pdf out: another output format, pdf
 misc/grid_without_label.map grid_without_label.png geometry fails  # not built yet: the GRID of a layer
 misc/issue5558.map issue5581-1.png blank out: labels
 misc/issue5558.map issue5581-2.png blank out: a map2img option not applied, -c
-misc/line_offset_clipped_to_multiline.map line_offset_clipped_to_multiline.png geometry fails  # not built yet: inline FEATURE shapes, the clip before the OFFSET, and the offset curve as GEOS draws it
+misc/line_offset_clipped_to_multiline.map line_offset_clipped_to_multiline.png geometry passes
 misc/listexpression.map listexpression.png out: labels
 misc/map2img-argparse.map map2img-argparse-s.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-e.txt out: another output format, txt
@@ -72,12 +72,12 @@ misc/map2img-argparse.map map2img-argparse-c.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-d.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-layer_debug.txt out: another output format, txt
 misc/map2img-size.map map2img-size.png out: labels
-misc/maxfeatures.map maxfeatures.png geometry fails  # not built yet: inline FEATURE points and MAXFEATURES
+misc/maxfeatures.map maxfeatures.png geometry fails  # not built yet: MAXFEATURES
 misc/maxfeatures.map maxfeatures-of.png out: another output format, pngmf
 misc/mode_tile.map mode_tile_output.png out: an OGC or CGI request
 misc/mode_tile.map mode_tile_output_512.png out: an OGC or CGI request
 misc/multipoint.map multipoint.png out: a data source other than shapefiles, OGR
-misc/nested_symbolset.map nested_symbolset.png geometry fails  # not built yet: inline FEATURE points
+misc/nested_symbolset.map nested_symbolset.png geometry passes
 misc/ogr_attrfilter.map ogr_attrfilter.png out: a data source other than shapefiles, OGR
 misc/ogr_direct.map ogr_direct.png out: a data source other than shapefiles, OGR
 misc/ogr_empty_geojson.map ogr_empty_geojson.json out: an OGC or CGI request
@@ -85,7 +85,7 @@ misc/ogr_join.map ogr_join.png out: a data source other than shapefiles, OGR
 misc/ogr_multi_defer.map ogr_multi_defer.png out: a data source other than shapefiles, OGR
 misc/ogr_select.map ogr_select.png out: a data source other than shapefiles, OGR
 misc/ogr_vrtconnect.map ogr_vrtconnect.png out: a data source other than shapefiles, OGR
-misc/ogr_wkt.map ogr_wkt.png geometry fails  # not built yet: inline FEATURE shapes given as WKT
+misc/ogr_wkt.map ogr_wkt.png geometry passes
 misc/ogrbrush.map ogrbrush.png out: a data source other than shapefiles, OGR
 misc/ogrmultitool.map ogrmultitool.png out: a data source other than shapefiles, OGR
 misc/ogrpen.map ogrpen.png out: an OGC or CGI request
@@ -221,7 +221,7 @@ renderers/force_pc256.map force_pc256.png out: a raster source
 renderers/force_pc256.map force_pc256.cairo.png out: another output format, cairopng
 renderers/force_pc256_rgba.map force_pc256_rgba.png out: a raster source
 renderers/force_pc256_rgba.map force_pc256_rgba.cairo.png out: another output format, cairopng
-renderers/geomtransform-vertex.map geomtransform-vertex.png geometry fails  # not built yet: the GEOMTRANSFORM expressions of a style, TrueType symbols, and inline FEATURE shapes
+renderers/geomtransform-vertex.map geomtransform-vertex.png geometry fails  # not built yet: the GEOMTRANSFORM expressions of a style and TrueType symbols
 renderers/geomtransform-vertex.map geomtransform-vertex.pdf out: another output format, pdf
 renderers/geomtransform-vertex.map geomtransform-vertex.svg out: another output format, svg
 renderers/geomtransform-vertex.map geomtransform-vertex.cairo.png out: another output format, cairopng
@@ -314,7 +314,7 @@ renderers/legend_sizeunits_meters.map legend_sizeunits_meters.cairo.png out: an 
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.svg out: an OGC or CGI request
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.pdf out: an OGC or CGI request
 renderers/line_aliased.map line_aliased.png geometry fails  # not built yet: the ANTIALIAS FALSE of a style
-renderers/line_anchorpoint.map line_anchorpoint.png geometry fails  # not built yet: inline FEATURE shapes
+renderers/line_anchorpoint.map line_anchorpoint.png geometry passes
 renderers/line_anchorpoint.map line_anchorpoint.cairo.png out: another output format, cairopng
 renderers/line_antialiased.map line_anti_aliased.png geometry passes
 renderers/line_label_auto.map line_label_auto.png out: labels
@@ -354,7 +354,7 @@ renderers/line_marker_vector.map line_marker_vector.png geometry passes
 renderers/line_marker_vector.map line_marker_vector.pdf out: another output format, pdf
 renderers/line_marker_vector.map line_marker_vector.svg out: another output format, svg
 renderers/line_marker_vector.map line_marker_vector.cairo.png out: another output format, cairopng
-renderers/line_offset.map line_offset.png geometry fails  # not built yet: inline FEATURE shapes
+renderers/line_offset.map line_offset.png geometry fails  # not built yet: the offset curve as GEOS draws it of a line that crosses itself
 renderers/line_offset.map line_offset.pdf out: another output format, pdf
 renderers/line_offset.map line_offset.svg out: another output format, svg
 renderers/line_offset.map line_offset.cairo.png out: another output format, cairopng
@@ -368,11 +368,11 @@ renderers/line_pattern.map line_pattern.png geometry passes
 renderers/line_pattern.map line_pattern.pdf out: another output format, pdf
 renderers/line_pattern.map line_pattern.svg out: another output format, svg
 renderers/line_pattern.map line_pattern.cairo.png out: another output format, cairopng
-renderers/line_pattern_offset.map line_pattern_offset.png geometry fails  # not built yet: inline FEATURE shapes
+renderers/line_pattern_offset.map line_pattern_offset.png geometry passes
 renderers/line_pattern_offset.map line_pattern_offset.pdf out: another output format, pdf
 renderers/line_pattern_offset.map line_pattern_offset.svg out: another output format, svg
 renderers/line_pattern_offset.map line_pattern_offset.cairo.png out: another output format, cairopng
-renderers/line_short_gap.map line_short_gap.png geometry fails  # not built yet: inline FEATURE shapes
+renderers/line_short_gap.map line_short_gap.png geometry passes
 renderers/line_short_gap.map line_short_gap.pdf out: another output format, pdf
 renderers/line_short_gap.map line_short_gap.svg out: another output format, svg
 renderers/line_short_gap.map line_short_gap.cairo.png out: another output format, cairopng
@@ -416,11 +416,11 @@ renderers/plb_embed_legend_rgba_tr.map plb_embed_legend_rgba_tr.png out: labels,
 renderers/plb_embed_legend_rgba_tr.map plb_embed_legend_rgba_tr.cairo.png out: another output format, cairopng
 renderers/plb_embed_legend_tr.map plb_embed_legend_tr.png out: labels, in the embedded legend
 renderers/plb_embed_legend_tr.map plb_embed_legend_tr.cairo.png out: another output format, cairopng
-renderers/point-polaroffset.map point-polaroffset.png geometry fails  # not built yet: inline FEATURE points
+renderers/point-polaroffset.map point-polaroffset.png geometry passes
 renderers/point-polaroffset.map point-polaroffset.pdf out: another output format, pdf
 renderers/point-polaroffset.map point-polaroffset.svg out: another output format, svg
 renderers/point-polaroffset.map point-polaroffset.cairo.png out: another output format, cairopng
-renderers/point_ellipse.map point_ellipse.png geometry fails  # not built yet: inline FEATURE points
+renderers/point_ellipse.map point_ellipse.png geometry passes
 renderers/point_ellipse.map point_ellipse.pdf out: another output format, pdf
 renderers/point_ellipse.map point_ellipse.svg out: another output format, svg
 renderers/point_ellipse.map point_ellipse.json out: another output format, json
@@ -438,15 +438,15 @@ renderers/point_pixmap_gif.map point_pixmap_gif.png geometry fails  # not built 
 renderers/point_pixmap_gif.map point_pixmap_gif.pdf out: another output format, pdf
 renderers/point_pixmap_gif.map point_pixmap_gif.svg out: another output format, svg
 renderers/point_pixmap_gif.map point_pixmap_gif.cairo.png out: another output format, cairopng
-renderers/point_svg.map point_svg.png geometry fails  # not built yet: inline FEATURE points and SVG symbols
+renderers/point_svg.map point_svg.png geometry fails  # not built yet: SVG symbols
 renderers/point_svg.map point_svg.pdf out: another output format, pdf
 renderers/point_svg.map point_svg.svg out: another output format, svg
 renderers/point_svg.map point_svg.cairo.png out: another output format, cairopng
-renderers/point_truetype.map point_truetype.png geometry fails  # not built yet: inline FEATURE points and TrueType symbols
+renderers/point_truetype.map point_truetype.png geometry fails  # not built yet: TrueType symbols
 renderers/point_truetype.map point_truetype.pdf out: another output format, pdf
 renderers/point_truetype.map point_truetype.svg out: another output format, svg
 renderers/point_truetype.map point_truetype.cairo.png out: another output format, cairopng
-renderers/point_vector.map point_vector.png geometry fails  # not built yet: inline FEATURE points
+renderers/point_vector.map point_vector.png geometry passes
 renderers/point_vector.map point_vector.pdf out: another output format, pdf
 renderers/point_vector.map point_vector.svg out: another output format, svg
 renderers/point_vector.map point_vector.json out: another output format, json
@@ -497,7 +497,7 @@ renderers/polygon-vector.map polygon-vector.png geometry fails  # not built yet:
 renderers/polygon-vector.map polygon-vector.pdf out: another output format, pdf
 renderers/polygon-vector.map polygon-vector.svg out: another output format, svg
 renderers/polygon-vector.map polygon-vector.cairo.png out: another output format, cairopng
-renderers/polyline_no_clip.map polyline_no_clip.png geometry fails  # not built yet: inline FEATURE shapes
+renderers/polyline_no_clip.map polyline_no_clip.png geometry passes
 renderers/raster_simple.map raster_simple.png out: a raster source
 renderers/raster_simple.map raster_simple.pdf out: another output format, pdf
 renderers/raster_simple.map raster_simple.svg out: another output format, svg
@@ -551,8 +551,8 @@ renderers/rgba_overlay_res.map rgba_overlay_res.cairo.png out: another output fo
 renderers/style-size.map style_size_binding.png geometry passes
 renderers/style-size.map style_size_fixed.png geometry passes
 renderers/style-size.map style_size_expression.png geometry passes
-renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes and the ANGLE of the map
-renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: inline FEATURE shapes and the ANGLE of the map
+renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: the ANGLE of the map
+renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: the ANGLE of the map
 renderers/text-shaping.map text_shaping_1.png out: labels
 renderers/text-shaping.map text_shaping_1.cairo.png out: another output format, cairopng
 renderers/text-shaping.map text_shaping_1.pdf out: another output format, pdf

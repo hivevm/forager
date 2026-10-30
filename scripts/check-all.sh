@@ -64,6 +64,8 @@ run "Vendor check self-test" scripts/test-check-vendor.sh
 run "Vendor check" scripts/check-vendor.sh
 run "Notice check self-test" scripts/test-check-notice.sh
 run "MapServer notice check" scripts/check-notice.sh
+# The fidelity check itself runs in the Rust checks, after the harness that counts the cases.
+run "Fidelity check self-test" scripts/test-check-fidelity.sh
 run "Git hooks self-test" scripts/test-git-hooks.sh
 run "Fixture git self-test" scripts/test-fixture-git-env.sh
 run "Shell lint self-test" scripts/test-check-shell.sh
