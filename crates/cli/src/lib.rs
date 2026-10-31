@@ -243,6 +243,8 @@ mod tests {
         let sans = rendered("sans");
         let huge = rendered("huge");
         std::fs::remove_dir_all(&dir).unwrap();
+        assert!(sans.diagnostics.is_empty(), "{:?}", sans.diagnostics);
+        assert_eq!(huge.diagnostics.len(), 1, "{:?}", huge.diagnostics);
         assert!(sans.image.is_some(), "{:?}", sans.diagnostics);
         assert_eq!(sans.labels.len(), 1, "{:?}", sans.diagnostics);
         // The CLI's loader refuses the font, with its own reason, before the engine sees it.
