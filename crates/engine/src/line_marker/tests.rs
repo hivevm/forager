@@ -243,16 +243,14 @@ fn the_gap_scales_with_the_size_as_computesymbolstyle_scales_it() {
         gap: Some(-20.0),
         ..Style::default()
     };
-    assert_eq!(symbol::symbol_style(&style, &arrow()).gap, -10.0);
+    assert_eq!(symbol::symbol_style(&style, &arrow(), 1.0).gap, -10.0);
     let mut ops = Vec::new();
     let line = [vec![p(0.0, 50.0), p(40.0, 50.0)]];
-    let mut budget = MarkerBudget::new();
-    draw(&mut ops, &line, &style, &arrow(), 0.0, IMAGE, &mut budget);
+    let mut canvas = Canvas::new(&[], 100, 100, 1.0);
+    draw(&mut ops, &line, &style, &arrow(), 0.0, &mut canvas);
     assert_eq!(ops.len(), 5, "at 0, 10, 20, 30, and 40");
-    assert!(!budget.spent());
+    assert!(!canvas.markers_spent());
 }
-
-const IMAGE: (f64, f64) = (100.0, 100.0);
 
 #[test]
 fn the_markers_of_a_layer_share_one_budget_of_points() {
@@ -267,14 +265,15 @@ fn the_markers_of_a_layer_share_one_budget_of_points() {
         ..Style::default()
     };
     let line = [vec![p(0.0, 50.0), p(40.0, 50.0)]];
-    let mut budget = MarkerBudget::of(20);
+    let mut canvas = Canvas::new(&[], 100, 100, 1.0);
+    canvas.markers = MarkerBudget::of(20);
     let mut ops = Vec::new();
-    draw(&mut ops, &line, &style, &arrow(), 0.0, IMAGE, &mut budget);
-    assert_eq!((ops.len(), budget.spent()), (5, false));
-    draw(&mut ops, &line, &style, &arrow(), 0.0, IMAGE, &mut budget);
-    assert_eq!((ops.len(), budget.spent()), (5, true));
+    draw(&mut ops, &line, &style, &arrow(), 0.0, &mut canvas);
+    assert_eq!((ops.len(), canvas.markers_spent()), (5, false));
+    draw(&mut ops, &line, &style, &arrow(), 0.0, &mut canvas);
+    assert_eq!((ops.len(), canvas.markers_spent()), (5, true));
     let short = [vec![p(0.0, 50.0), p(1.0, 50.0)]];
-    draw(&mut ops, &short, &style, &arrow(), 0.0, IMAGE, &mut budget);
+    draw(&mut ops, &short, &style, &arrow(), 0.0, &mut canvas);
     assert_eq!(ops.len(), 5, "nothing once the budget is spent");
 }
 
@@ -287,8 +286,8 @@ fn a_symbol_that_draws_nothing_places_nothing() {
     };
     let mut ops = Vec::new();
     let line = [vec![p(0.0, 50.0), p(100.0, 50.0)]];
-    let mut budget = MarkerBudget::new();
-    draw(&mut ops, &line, &style, &arrow(), 0.0, IMAGE, &mut budget);
+    let mut canvas = Canvas::new(&[], 100, 100, 1.0);
+    draw(&mut ops, &line, &style, &arrow(), 0.0, &mut canvas);
     assert!(ops.is_empty());
-    assert!(!budget.spent());
+    assert!(!canvas.markers_spent());
 }

@@ -88,7 +88,7 @@ pub(crate) fn is_hatch(style: &Style, symbols: &[Symbol]) -> bool {
         .is_some_and(|symbol| symbol.kind == SymbolKind::Hatch)
 }
 
-/// How a symbol is drawn, computeSymbolStyle's `symbolStyleObj` at a scale factor of 1.
+/// How a symbol is drawn, computeSymbolStyle's `symbolStyleObj`.
 #[derive(Debug, PartialEq)]
 pub(crate) struct SymbolStyle {
     fill: Option<Rgba>,
@@ -136,10 +136,14 @@ pub(crate) fn ms_min(a: f64, b: f64) -> f64 {
     if a < b { a } else { b }
 }
 
-/// computeSymbolStyle for a vector or ellipse symbol. A filled symbol is filled with the style's
-/// colour and outlined with its outline colour; one not filled is outlined with its colour, or
-/// its outline colour where it has none. The outline is the style's width.
-pub(crate) fn symbol_style(style: &Style, symbol: &Symbol) -> SymbolStyle {
+/// computeSymbolStyle for a vector or ellipse symbol at `factor`, the style's scale factor and
+/// the image's resolution factor, which are one here (see [`crate::classes::scale_factor`]). A
+/// filled symbol is filled with the style's colour and outlined with its outline colour; one not
+/// filled is outlined with its colour, or its outline colour where it has none. The size is
+/// scaled by the scale factor and bounded by `MINSIZE` and `MAXSIZE` scaled by the resolution
+/// factor; the outline is the style's width scaled and bounded alike by `MINWIDTH` and
+/// `MAXWIDTH`; the `GAP` is scaled as the size is.
+pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> SymbolStyle {
     let default_size = default_size(symbol);
     let style_size = fixed(&style.size).unwrap_or(default_size);
     let color = fixed(&style.color);
@@ -149,12 +153,13 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol) -> SymbolStyle {
     } else {
         (None, color.or(outline_color))
     };
-    let target = ms_max(style_size, style.min_size.unwrap_or(MIN_SIZE));
-    let target = ms_min(target, style.max_size.unwrap_or(MAX_SIZE));
+    let target = style_size * factor;
+    let target = ms_max(target, style.min_size.unwrap_or(MIN_SIZE) * factor);
+    let target = ms_min(target, style.max_size.unwrap_or(MAX_SIZE) * factor);
     let outline_width = if outline.is_some() {
-        let width = fixed(&style.width).unwrap_or(1.0);
-        let width = ms_max(width, style.min_width.unwrap_or(MIN_WIDTH));
-        ms_min(width, style.max_width.unwrap_or(MAX_WIDTH))
+        let width = fixed(&style.width).unwrap_or(1.0) * factor;
+        let width = ms_max(width, style.min_width.unwrap_or(MIN_WIDTH) * factor);
+        ms_min(width, style.max_width.unwrap_or(MAX_WIDTH) * factor)
     } else {
         0.0
     };
@@ -220,13 +225,13 @@ pub(crate) fn marker_size_of(
 }
 
 /// The rest of msAdjustMarkerPos after [`shifted`]: the point moved so that the symbol's anchor
-/// point, turned with the symbol, lies on `at`.
-fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64) -> Point {
+/// point, turned with the symbol, lies on `at`, of the marker's size at `factor`.
+fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64, factor: f64) -> Point {
     let [anchor_x, anchor_y] = symbol.anchor_point.unwrap_or([0.5, 0.5]);
     if anchor_x == 0.5 && anchor_y == 0.5 {
         return at;
     }
-    let (width, height) = marker_size(style, symbol, 1.0);
+    let (width, height) = marker_size(style, symbol, factor);
     let ox = (0.5 - anchor_x) * width;
     let oy = (0.5 - anchor_y) * height;
     if rotation == 0.0 {
@@ -242,10 +247,10 @@ fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64) -> Point {
     }
 }
 
-/// msAdjustMarkerPos before the anchor point, at a scale factor of 1: `at` moved by the style's
-/// `POLAROFFSET`, where its distance or its angle is not 0, then by its `OFFSET`. A line offset is
-/// the `OFFSET` it was written as, its `y` MapServer's −99 or −999.
-pub(crate) fn shifted(at: Point, style: &Style) -> Point {
+/// msAdjustMarkerPos before the anchor point, at the scale factor `factor`: `at` moved by the
+/// style's `POLAROFFSET`, where its distance or its angle is not 0, then by its `OFFSET`, each
+/// scaled. A line offset is the `OFFSET` it was written as, its `y` MapServer's −99 or −999.
+pub(crate) fn shifted(at: Point, style: &Style, factor: f64) -> Point {
     let mut at = at;
     if let Some([distance, angle]) = &style.polar_offset {
         let (distance, angle) = (
@@ -254,8 +259,8 @@ pub(crate) fn shifted(at: Point, style: &Style) -> Point {
         );
         if distance != 0.0 || angle != 0.0 {
             let angle = angle * DEG_TO_RAD;
-            at.x += distance * libm::cos(-angle);
-            at.y += distance * libm::sin(-angle);
+            at.x += distance * libm::cos(-angle) * factor;
+            at.y += distance * libm::sin(-angle) * factor;
         }
     }
     let (x, y) = match (&style.offset, &style.line_offset) {
@@ -266,17 +271,29 @@ pub(crate) fn shifted(at: Point, style: &Style) -> Point {
         (Some([x, y]), None) => (x.value().unwrap_or(0.0), y.value().unwrap_or(0.0)),
         (None, None) => (0.0, 0.0),
     };
-    at.x += x;
-    at.y += y;
+    at.x += x * factor;
+    at.y += y * factor;
     at
 }
 
-/// The drawing operations of `symbol` at the pixel `at` in `style`, as msDrawMarkerSymbol and
-/// the AGG renderer draw a vector or an ellipse symbol: moved by msAdjustMarkerPos, filled first,
-/// then outlined.
-pub(crate) fn symbol_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbol: &Symbol) {
-    let s = symbol_style(style, symbol);
-    let at = anchored(shifted(at, style), style, symbol, s.rotation);
+/// The drawing operations of `symbol` at the pixel `at` in `style` at `factor`, as
+/// msDrawMarkerSymbol and the AGG renderer draw a vector or an ellipse symbol: moved by
+/// msAdjustMarkerPos, filled first, then outlined.
+pub(crate) fn symbol_ops(
+    ops: &mut Vec<DrawOp>,
+    at: Point,
+    style: &Style,
+    symbol: &Symbol,
+    factor: f64,
+) {
+    let s = symbol_style(style, symbol, factor);
+    let at = anchored(
+        shifted(at, style, factor),
+        style,
+        symbol,
+        s.rotation,
+        factor,
+    );
     render(ops, at, symbol, &s);
 }
 

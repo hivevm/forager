@@ -1,7 +1,8 @@
 // The selection of a feature's class and the binding of its style's properties follow
 // msShapeGetClass, msEvalExpression, bindStyle, and bindColorAttribute of src/maputil.c, the layer's
 // filter as msLayerNextShape applies it and the attributes as msLayerWhichItems finds them in
-// src/maplayer.c, of the release pinned in scripts/fetch-msautotest.sh.
+// src/maplayer.c, and the scale factor as msPrepareImage computes it in src/mapdraw.c, of the
+// release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -389,6 +390,15 @@ pub(crate) fn scale_denom(map: &Map, view: &View, width: u32) -> f64 {
     let resolution = map.resolution.unwrap_or(72.0);
     let md = f64::from(width - 1) / (resolution * inches_per_unit);
     (view.extent.max_x - view.extent.min_x) / md
+}
+
+/// msPrepareImage's scale factor of a layer and of its classes, styles, and labels, and its
+/// resolution factor of the image: the map's `RESOLUTION` over its `DEFRESOLUTION`, both 72
+/// unless written. The two are one number for sizes in pixels without a `SYMBOLSCALEDENOM`,
+/// msPrepareImage's last branch, which is the one the engine draws; a label of a layer with
+/// either is not drawn yet, and a style draws as if it had neither.
+pub(crate) fn scale_factor(map: &Map) -> f64 {
+    map.resolution.unwrap_or(72.0) / map.def_resolution.unwrap_or(72.0)
 }
 
 /// A symbol by its name, as msGetSymbolIndex finds it, without regard to case; 0, the default
