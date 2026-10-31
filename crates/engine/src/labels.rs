@@ -34,6 +34,7 @@ use forager_style_ir::{
 };
 
 use crate::CachedLabel;
+use crate::bounds::DEG_TO_RAD;
 use crate::classes::{self, FeatureProperties, Selector, c_bytes, color};
 use crate::draw::vertices;
 use crate::extent::View;
@@ -50,8 +51,6 @@ const DEFAULT_MAX_SIZE: f64 = 256.0;
 const DEFAULT_COLOR: Rgba = Rgba::opaque(0, 0, 0);
 /// A label's `OUTLINEWIDTH` where none is given.
 const DEFAULT_OUTLINE_WIDTH: f64 = 1.0;
-/// MapServer's `MS_DEG_TO_RAD`, `src/mapserver.h`.
-const DEG_TO_RAD: f64 = 0.017_453_292_519_943_295;
 
 /// A property of a label as it is drawn: a value, or the feature's property it is bound to.
 #[derive(Clone, Copy)]

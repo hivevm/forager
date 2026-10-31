@@ -24,6 +24,7 @@
 use forager_render::{DrawOp, Point};
 use forager_style_ir::{Style, Symbol};
 
+use crate::bounds;
 use crate::draw::Canvas;
 use crate::symbol;
 
@@ -138,8 +139,8 @@ pub(crate) fn draw(
         auto_angle: gap < 0.0,
         rotation: s.rotation,
         size: (
-            symbol::ms_max(1.0, size_x * s.scale),
-            symbol::ms_max(1.0, size_y * s.scale),
+            bounds::ms_max(1.0, size_x * s.scale),
+            bounds::ms_max(1.0, size_y * s.scale),
         ),
         anchor: symbol.anchor_point.unwrap_or([0.5, 0.5]),
         image,

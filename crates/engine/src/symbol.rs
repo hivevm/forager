@@ -31,18 +31,8 @@
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
+use crate::bounds::{self, DEG_TO_RAD, MAX_SIZE, MIN_SIZE, ms_max, ms_min};
 use crate::draw::fixed;
-
-/// MapServer's `MS_DEG_TO_RAD`, `src/mapserver.h`.
-const DEG_TO_RAD: f64 = 0.017_453_292_519_943_295;
-
-/// MapServer's default `MINSIZE` and `MAXSIZE` of a style, `MS_MINSYMBOLSIZE` and
-/// `MS_MAXSYMBOLSIZE`, and its `MINWIDTH` and `MAXWIDTH`, `MS_MINSYMBOLWIDTH` and
-/// `MS_MAXSYMBOLWIDTH`.
-const MIN_SIZE: f64 = 0.0;
-const MAX_SIZE: f64 = 500.0;
-const MIN_WIDTH: f64 = 0.0;
-const MAX_WIDTH: f64 = 32.0;
 
 /// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16
 /// for a radius of 6, some 2000 for 100 000 pixels; this many are reached at a radius of some
@@ -127,22 +117,14 @@ pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol]) -> f64 {
     }
 }
 
-/// MapServer's `MS_MAX(a, b)` and `MS_MIN(a, b)`, which keep `b` where they cannot compare.
-pub(crate) fn ms_max(a: f64, b: f64) -> f64 {
-    if a > b { a } else { b }
-}
-
-pub(crate) fn ms_min(a: f64, b: f64) -> f64 {
-    if a < b { a } else { b }
-}
-
 /// computeSymbolStyle for a vector or ellipse symbol at `factor`, the style's scale factor and
 /// the image's resolution factor, which are one here (see [`crate::classes::scale_factor`]). A
 /// filled symbol is filled with the style's colour and outlined with its outline colour; one not
 /// filled is outlined with its colour, or its outline colour where it has none. The size is
 /// scaled by the scale factor and bounded by `MINSIZE` and `MAXSIZE` scaled by the resolution
-/// factor; the outline is the style's width scaled and bounded alike by `MINWIDTH` and
-/// `MAXWIDTH`; the `GAP` is scaled as the size is.
+/// factor (see [`bounds::symbol_size`]); the outline is the style's width scaled and bounded alike
+/// by `MINWIDTH` and `MAXWIDTH` (see [`bounds::symbol_outline_width`]); the `GAP` is scaled as the
+/// size is.
 pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> SymbolStyle {
     let default_size = default_size(symbol);
     let style_size = fixed(&style.size).unwrap_or(default_size);
@@ -153,13 +135,9 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> Symbo
     } else {
         (None, color.or(outline_color))
     };
-    let target = style_size * factor;
-    let target = ms_max(target, style.min_size.unwrap_or(MIN_SIZE) * factor);
-    let target = ms_min(target, style.max_size.unwrap_or(MAX_SIZE) * factor);
+    let target = bounds::symbol_size(style_size * factor, style, factor);
     let outline_width = if outline.is_some() {
-        let width = fixed(&style.width).unwrap_or(1.0) * factor;
-        let width = ms_max(width, style.min_width.unwrap_or(MIN_WIDTH) * factor);
-        ms_min(width, style.max_width.unwrap_or(MAX_WIDTH) * factor)
+        bounds::symbol_outline_width(fixed(&style.width).unwrap_or(1.0) * factor, style, factor)
     } else {
         0.0
     };
