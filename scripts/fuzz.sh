@@ -3,8 +3,10 @@
 # the nightly toolchain cargo-fuzz needs. Both are pinned here. The targets are the [[bin]] entries
 # of fuzz/Cargo.toml, read from there, so that no target the manifest builds is skipped; a target
 # without seeds under fuzz/seeds/<target> fails the run before anything is fuzzed;
-# scripts/test-fuzz.sh tests how the targets are read and refused. A crash, a panic, a hang longer
-# than 10 s, or more than 2 GiB of memory fails the run, and the input lands in fuzz/artifacts/.
+# scripts/test-fuzz.sh tests how the targets are read, refused, and run. A crash, a panic, a hang
+# longer than 10 s, or more than 2 GiB of memory fails the target, and the input lands in
+# fuzz/artifacts/<target>/. A target that fails does not stop the others: every target runs for
+# its time, and the run fails at the end, naming each target that failed.
 # Before fuzzing, cargo deny checks the advisories and sources of the fuzz workspace, which the
 # main check does not see; its licences are not checked, since the harness is never distributed.
 # The weekly workflow fuzz.yml runs it, after install-tools.sh.
@@ -47,9 +49,20 @@ if ! cargo fuzz --version 2> /dev/null | grep -qF " $CARGO_FUZZ_VERSION"; then
 fi
 cargo deny --manifest-path fuzz/Cargo.toml --config deny.toml --locked check advisories sources
 
+failed=()
 for target in "${targets[@]}"; do
   printf '\n--> fuzz %s for %s s\n' "$target" "$SECONDS_PER_TARGET"
   mkdir -p "fuzz/corpus/$target"
-  cargo "+$NIGHTLY" fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- \
-    -max_total_time="$SECONDS_PER_TARGET" -timeout=10 -rss_limit_mb=2048
+  if ! cargo "+$NIGHTLY" fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- \
+    -max_total_time="$SECONDS_PER_TARGET" -timeout=10 -rss_limit_mb=2048; then
+    failed+=("$target")
+  fi
 done
+
+if [ "${#failed[@]}" -gt 0 ]; then
+  echo >&2
+  for target in "${failed[@]}"; do
+    echo "the fuzz target $target failed; its input is under fuzz/artifacts/$target" >&2
+  done
+  exit 1
+fi

@@ -6,8 +6,11 @@
 # seed directories the case asks for, and runs it with stand-ins first on PATH: 'rustup' records
 # its arguments, and 'cargo' hands 'metadata' to the real cargo, so that the targets are read as
 # the script reads them, answers 'fuzz --version' with the pinned version, and records every other
-# call. The case asserts the exit code, a line of the output, and the calls that would have
-# installed the toolchain and fuzzed; a target without seeds fails before any of them is made.
+# call, failing the 'fuzz run' of each target named in $FAKE_FAIL. The case asserts the exit code,
+# a line of the output, and the calls that would have installed the toolchain and fuzzed; a target
+# without seeds fails before any of them is made, and a target that fails does not stop the others.
+# The pins, the nightly toolchain and the version of cargo-fuzz, are read from scripts/fuzz.sh, so
+# that a bump there needs no edit here.
 # Each fixture carries the repository's rust-toolchain.toml, so that cargo reads the manifests
 # with the pinned toolchain (ADR-0008), which scripts/install-tools.sh installs.
 #
@@ -20,6 +23,12 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$ROOT/scripts/fuzz.sh"
 REAL_CARGO="$(command -v cargo)" || { echo "test-fuzz: cargo is not on PATH" >&2; exit 1; }
+NIGHTLY="$(sed -n 's/^NIGHTLY="\([^"]*\)"$/\1/p' "$SCRIPT")"
+CARGO_FUZZ_VERSION="$(sed -n 's/^CARGO_FUZZ_VERSION="\([^"]*\)"$/\1/p' "$SCRIPT")"
+if [[ -z "$NIGHTLY" || -z "$CARGO_FUZZ_VERSION" ]]; then
+  echo "test-fuzz: scripts/fuzz.sh sets no NIGHTLY or CARGO_FUZZ_VERSION pin" >&2
+  exit 1
+fi
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -28,13 +37,18 @@ failed=0
 passed=0
 
 # The stand-ins: every call but 'cargo metadata' and 'cargo fuzz --version' appends its command
-# and arguments as one line to $FAKE_LOG.
+# and arguments as one line to $FAKE_LOG; 'cargo fuzz run' of a target named in $FAKE_FAIL then
+# fails, as a crash would.
 mkdir -p "$work/bin"
 cat > "$work/bin/cargo" << EOF
 #!/usr/bin/env bash
 if [[ "\${1:-}" == "metadata" ]]; then exec "$REAL_CARGO" "\$@"; fi
-if [[ "\$*" == "fuzz --version" ]]; then echo "cargo-fuzz 0.13.2"; exit 0; fi
+if [[ "\$*" == "fuzz --version" ]]; then echo "cargo-fuzz $CARGO_FUZZ_VERSION"; exit 0; fi
 echo "cargo \$*" >> "\$FAKE_LOG"
+if [[ "\${2:-} \${3:-}" == "fuzz run" && " \${FAKE_FAIL:-} " == *" \$4 "* ]]; then
+  echo "stand-in crash in \$4" >&2
+  exit 77
+fi
 EOF
 cat > "$work/bin/rustup" << 'EOF'
 #!/usr/bin/env bash
@@ -93,7 +107,7 @@ expect() {
 
 BIN_ONE=$'[[bin]]\nname = "one"\npath = "fuzz_targets/one.rs"'
 BIN_PATH=$'[[bin]]\nname = "declared"\npath = "elsewhere/odd_name.rs"'
-SETUP="rustup toolchain install nightly-2026-10-20 --profile minimal
+SETUP="rustup toolchain install $NIGHTLY --profile minimal
 cargo deny --manifest-path fuzz/Cargo.toml --config deny.toml --locked check advisories sources"
 LIMITS="-timeout=10 -rss_limit_mb=2048"
 
@@ -126,14 +140,47 @@ REJECT="names no [[bin]] target" expect nonzero "a manifest cargo cannot read st
 d="$(fixture declared-path "$BIN_PATH" declared)"
 expect 0 "a bin declared with a path is fuzzed by its name" "$d" "--> fuzz declared for 300 s" \
   "$SETUP
-cargo +nightly-2026-10-20 fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=300 $LIMITS"
+cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=300 $LIMITS"
 
 d="$(fixture both-seeded "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
 expect 0 "every seeded bin is fuzzed for the seconds given" "$d" "--> fuzz one for 7 s" \
   "$SETUP
-cargo +nightly-2026-10-20 fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=7 $LIMITS
-cargo +nightly-2026-10-20 fuzz run one fuzz/corpus/one fuzz/seeds/one -- -max_total_time=7 $LIMITS" \
+cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=7 $LIMITS
+cargo +$NIGHTLY fuzz run one fuzz/corpus/one fuzz/seeds/one -- -max_total_time=7 $LIMITS" \
   7
+
+# Each of the two targets fails in turn, so that whichever cargo runs first, a case fails it and
+# asserts that the other is fuzzed too and is not named.
+both_runs="$SETUP
+cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=300 $LIMITS
+cargo +$NIGHTLY fuzz run one fuzz/corpus/one fuzz/seeds/one -- -max_total_time=300 $LIMITS"
+for bad in one declared; do
+  good=declared
+  [[ "$bad" == declared ]] && good=one
+  d="$(fixture "fails-$bad" "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
+  FAKE_FAIL="$bad" REJECT="the fuzz target $good failed" expect 1 \
+    "a failing $bad does not stop the other target, and the run fails naming it" "$d" \
+    "the fuzz target $bad failed" "$both_runs"
+done
+
+d="$(fixture fails-both "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
+FAKE_FAIL="one declared" expect 1 "the run names every target that failed" "$d" \
+  "the fuzz target declared failed" "$both_runs"
+FAKE_FAIL="one declared" expect 1 "the run names every target that failed, the other too" "$d" \
+  "the fuzz target one failed" "$both_runs"
+
+# --- the workflow ----------------------------------------------------------------------------
+
+# The run fails only after every target has run, so the workflow uploads the inputs of every
+# target that failed when it uploads fuzz/artifacts/ as a whole, after a failure.
+upload="$(sed -n '/- name: Keep the inputs that failed/,/^[[:space:]]*- /p' "$ROOT/.github/workflows/fuzz.yml")"
+if [[ "$upload" == *"if: failure()"* && "$upload" == *"actions/upload-artifact@"* ]] \
+  && grep -qE '^[[:space:]]*path: fuzz/artifacts/?$' <<< "$upload"; then
+  passed=$((passed + 1))
+else
+  failed=$((failed + 1))
+  echo "FAIL: the fuzz workflow uploads fuzz/artifacts/ after a failure" >&2
+fi
 
 # --- summary ---------------------------------------------------------------------------------
 
