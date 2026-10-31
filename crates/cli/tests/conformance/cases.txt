@@ -403,7 +403,7 @@ renderers/mask.map mask.png out: labels on lines; and a raster source
 renderers/mask.map mask.cairo.png out: another output format, cairopng
 renderers/mask_opacity.map mask_opacity.png out: labels on lines; and a raster source
 renderers/mask_opacity.map mask_opacity.cairo.png out: another output format, cairopng
-renderers/multilabel-leader.map multilabel-leader.png text fails  # not built yet: the labels of a class placed as a group; and its LEADER, which the point-label spec leaves out
+renderers/multilabel-leader.map multilabel-leader.png out: a case MapServer itself does not reproduce, map2img fails: the suite lacks data/DejaVuSansCondensed.ttf, the file of the font `dejavu` its labels name
 renderers/multilabel-leader.map multilabel-leader.pdf out: another output format, pdf
 renderers/multilabel-leader.map multilabel-leader.svg out: another output format, svg
 renderers/multilabel-leader.map multilabel-leader.cairo.png out: another output format, cairopng
