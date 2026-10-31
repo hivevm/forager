@@ -34,8 +34,9 @@ same path.
 `encode::png` writes, and what `encode::decode_png` returns for G-12's round trip and every
 reference image. The pixmap decoders live in `encode`, PNG under [ADR-0017](0017-png-crate.md).
 The images reach the browser among the files a page passes, as fonts do; the feature sources
-[ADR-0038](0038-browser-bindings-bind-geojson-only.md) binds do not change. The bound sits beside the per-render bound of the label cache
-([ADR-0035](0035-label-cache-grid-and-bound.md)), which it leaves as it is.
+[ADR-0038](0038-browser-bindings-bind-geojson-only.md) binds do not change. The bound sits beside
+the per-render bound of the label cache ([ADR-0035](0035-label-cache-grid-and-bound.md)), which it
+leaves as it is.
 
 ## Decision
 
