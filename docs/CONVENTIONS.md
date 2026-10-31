@@ -45,3 +45,12 @@ skimmed. The design revision drops what prevented nothing
   turns every such command on the real repository. `scripts/test-fixture-git-env.sh` checks the
   scripts under `scripts/`; a Rust test that drives git, such as `git_in` of
   `crates/style-ir/tests/schema.rs`, is held by this entry alone.
+- **A ticket's pull request carries what its criteria ask for and nothing else** — a change of
+  another behaviour met on the way, such as a renderer's blending found under a ticket for
+  opacity, leaves for a ticket or a proposed ADR of its own and its own pull request, because
+  folded into the ticket it is reviewed as the ticket's means and not as the decision it is.
+- **A reference image of Forager's own is re-blessed only in the change that moved it, which says
+  how far** — the commit that rewrites images with `FORAGER_BLESS` names the behaviour that moved
+  them, the largest move per channel, and the conformance outcome of the same change, because an
+  image blessed from the renderer under test holds nothing of that change and only the
+  conformance suite still judges it.
