@@ -119,7 +119,7 @@ from the threats below.
   (16 MiB), the values a style document of a newer minor drops (100), and regular-expression
   length (64 KiB) and size are limited, and exceeding a limit is a diagnostic. A test per limit
   feeds an input past it and expects the diagnostic. A label the label cache holds keeps at most
-  400 bytes apart from its text, and at most 24 more for each style value a feature binds to it; a
+  400 bytes apart from its text, and at most 32 more for each style value a feature binds to it; a
   test measures it.
 
 ## Non-Goals
