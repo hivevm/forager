@@ -1445,35 +1445,42 @@ fn labelpoly(color: Bound<Rgba>) -> Style {
     }
 }
 
-#[test]
-fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
-    const GREEN: Rgba = Rgba::opaque(0, 255, 0);
-    let fen = |styles| Label {
+const GREEN: Rgba = Rgba::opaque(0, 255, 0);
+
+/// The label "Fen" with `styles`.
+fn fen_styled(styles: Vec<Style>) -> Label {
+    Label {
         text: Some(Expr::String("Fen".to_owned())),
         styles,
         ..label_item()
-    };
-    let draw = |label: Label| {
-        let sources: BTreeMap<String, GeoJsonSource> =
-            [("places".to_owned(), GeoJsonSource::parse(FEN).unwrap())].into();
-        let recorder = OpRecorder::default();
-        let rendered = ready(render_with_files(
-            &map(label),
-            &sources,
-            &Files,
-            recorder.clone(),
-        ));
-        assert!(
-            rendered.diagnostics.is_empty(),
-            "{:?}",
-            rendered.diagnostics
-        );
-        (rendered, recorder.0.take())
-    };
+    }
+}
+
+/// The render of `label` over [`FEN`], with no diagnostic, and every operation it draws.
+fn draw_fen(label: Label) -> (Rendered, Vec<forager_render::DrawOp>) {
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(FEN).unwrap())].into();
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(
+        &map(label),
+        &sources,
+        &Files,
+        recorder.clone(),
+    ));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    (rendered, recorder.0.take())
+}
+
+#[test]
+fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
     // "Fen" at 12 points stands at CC of the pixel (80, 29) in the box [65.40625, 23.046875,
     // 94.59375, 34.953125]; msDrawLabelCache's labelpoly is get_metrics' box at a buffer of 1,
     // which msDrawLabelBounds fills as the ring from its lower left corner, under the text.
-    let (rendered, ops) = draw(fen(vec![labelpoly(Bound::Value(GREEN))]));
+    let (rendered, ops) = draw_fen(fen_styled(vec![labelpoly(Bound::Value(GREEN))]));
     let p = |x, y| Point { x, y };
     assert_eq!(
         ops[0],
@@ -1497,21 +1504,85 @@ fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
         Some([65.40625, 23.046875, 94.59375, 34.953125])
     );
     // A COLOR bound to the feature's property reads as bindStyle reads it.
-    let (_, ops) = draw(fen(vec![labelpoly(binding("outline"))]));
+    let (_, ops) = draw_fen(fen_styled(vec![labelpoly(binding("outline"))]));
     assert!(matches!(
         ops[0],
         forager_render::DrawOp::Fill { color, .. } if color == Rgba::opaque(255, 255, 0)
     ));
+}
+
+#[test]
+fn a_turned_labelpoly_is_moved_by_its_offset_and_outlined_at_its_width() {
+    let p = |x, y| Point { x, y };
     // Moved by its OFFSET, outlined at its WIDTH, and turned with the text: msDrawShadeSymbol.
     let styled = Label {
         angle: Some(Bound::Value(20.0)),
-        ..fen(vec![Style {
+        ..fen_styled(vec![Style {
             outline_color: Some(Bound::Value(Rgba::opaque(200, 30, 30))),
             width: Some(Bound::Value(2.0)),
             offset: Some([Bound::Value(3.0), Bound::Value(2.0)]),
             ..labelpoly(Bound::Value(GREEN))
         }])
     };
+    // get_metrics turns the corners of the box grown by 1 about the point by 20 degrees, from
+    // x1 = -w/2 and y1 = h/2 of the text 29.1875 by 11.90625 pixels: lower left, upper left,
+    // upper right, lower right. msOffsetPolyline then shifts them by (3, 2) in pixels, unturned,
+    // and msDrawShadeSymbol outlines the ring at WIDTH 2 times the scale factor of 1, in the
+    // OUTLINECOLOR at the COLOR's alpha, with round caps and joins.
+    let (_, ops) = draw_fen(styled.clone());
+    let ring = [
+        p(70.72477700368103, 42.86717686388667),
+        p(65.96855938555845, 29.799576356082625),
+        p(95.27522299631897, 19.132823136113334),
+        p(100.03144061444155, 32.200423643917375),
+        p(70.72477700368103, 42.86717686388667),
+    ];
+    let near = |got: &[Point]| {
+        got.len() == ring.len()
+            && got
+                .iter()
+                .zip(&ring)
+                .all(|(a, b)| (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9)
+    };
+    assert_eq!(ops.len(), 3, "{ops:?}");
+    match &ops[0] {
+        forager_render::DrawOp::Fill {
+            rings,
+            color,
+            gamma,
+        } => {
+            assert_eq!((rings.len(), *color, *gamma), (1, GREEN, Some(0.75)));
+            assert!(near(&rings[0]), "{rings:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+    match &ops[1] {
+        forager_render::DrawOp::Stroke {
+            paths,
+            closed,
+            color,
+            width,
+            cap,
+            join,
+            dashes,
+        } => {
+            assert_eq!(
+                (paths.len(), *closed, *color, *width, *cap, *join),
+                (
+                    1,
+                    false,
+                    Rgba::opaque(200, 30, 30),
+                    2.0,
+                    forager_render::LineCap::Round,
+                    forager_render::LineJoin::Round
+                )
+            );
+            assert!(dashes.pattern.is_empty());
+            assert!(near(&paths[0]), "{paths:?}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(matches!(ops[2], forager_render::DrawOp::Glyphs { .. }));
     let rendered = render(&map(styled), FEN);
     assert!(
         rendered.diagnostics.is_empty(),
