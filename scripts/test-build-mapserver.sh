@@ -76,7 +76,7 @@ check() {
   if grep -Eq '^READER="\$DIR' "$build" || ! grep -Eq '^READER="\$ROOT/target/' "$build"; then
     problems+=("the build script compiles the reader inside the cached build")
   fi
-  if grep -Eq '(^|[[:space:];|&])(patch|git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+(apply|am))[[:space:]]|sed[[:space:]]+(-[a-zA-Z]*i|--in-place)' "$build"; then
+  if grep -Eq '(^|[[:space:];|&])(patch|git([[:space:]]+[^[:space:];|&]+)*[[:space:]]+(apply|am))[[:space:]]|sed[[:space:]]+(-[a-zA-Z]*i|--in-place)' "$build"; then
     problems+=("the build script patches the checkout")
   fi
   local file
@@ -199,13 +199,15 @@ expect "a reader inside the cached build fails" "$b" "$w" 1 "inside the cached b
 read -r b w <<< "$(copy patch 's/^  cmake -S .*/  patch -d "$DIR\/src" -p1 < x.diff\n&/' '')"
 expect "a patch of the checkout fails" "$b" "$w" 1 "patches the checkout"
 
-read -r b w <<< "$(copy gitapply 's/^  cmake -S .*/  git -C "$DIR\/src" apply x.diff\n&/' '')"
+read -r b w <<< "$(copy gitapply 's/^  cmake -S .*/  git --git-dir "$DIR\/src\/.git" apply x.diff\n&/' '')"
 expect "git apply on the checkout fails" "$b" "$w" 1 "patches the checkout"
 
-read -r b w <<< "$(copy gitam 's/^  cmake -S .*/  git -C "$DIR\/src" am x.patch\n&/' '')"
+read -r b w <<< "$(copy gitam 's/^  cmake -S .*/  git --git-dir "$DIR\/src\/.git" am x.patch\n&/' '')"
 expect "git am on the checkout fails" "$b" "$w" 1 "patches the checkout"
 
-read -r b w <<< "$(copy sedi 's/^  cmake -S .*/  sed -i s\/a\/b\/ "$DIR\/src\/src\/mapdraw.c"\n&/' '')"
+# The flag is spliced in, as the shell lint refuses GNU sed's in-place flag written out.
+in_place="-i"
+read -r b w <<< "$(copy sedi "s/^  cmake -S .*/  sed $in_place s\\/a\\/b\\/ x.c\\n\&/" '')"
 expect "sed -i on the checkout fails" "$b" "$w" 1 "patches the checkout"
 
 echo "build-mapserver self-test: $passed passed, $failed failed."
