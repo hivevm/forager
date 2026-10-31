@@ -16,8 +16,10 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The bounds of a style's width and size, one function per MapServer function that bounds them,
-//! and the constants they bound by. MapServer bounds in two orders: the maximum first where it
+//! The bounds of a style's width and size as msDrawLineSymbol(), computeSymbolStyle(), and
+//! msDrawShadeSymbol() apply them, one function per site, and the constants they bound by. Two
+//! sites bound a size outside this module, with these constants: msGetMarkerSize()'s marker size
+//! (`symbol::marker_size`) and msDrawShape()'s clip buffer (`hatch::Hatching::for_class`). MapServer bounds in two orders: the maximum first where it
 //! draws a line or a polygon, the minimum first where it draws a symbol. With `MS_MIN` and
 //! `MS_MAX`, which keep their second operand where they cannot compare, the order decides what a
 //! width that is no number, as an expression may bind, comes out as: the style's `MINWIDTH` in the
