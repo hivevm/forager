@@ -284,10 +284,10 @@ renderers/labels-alignment.map label_ar-align-default.png out: complex script, A
 renderers/labels-alignment.map label_ar-align-default.cairo.png out: another output format, cairopng
 renderers/labels-alignment.map label-align-default.png out: complex script, Arabic
 renderers/labels-alignment.map label-align-default.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_latin_align_left.png text fails  # not built yet: MAXLENGTH
-renderers/labels-alignment.map label_latin_align_right.png text fails  # not built yet: MAXLENGTH
-renderers/labels-alignment.map label_latin_align_center.png text fails  # not built yet: MAXLENGTH
-renderers/labels-alignment.map label_latin_align_default.png text fails  # not built yet: MAXLENGTH
+renderers/labels-alignment.map label_latin_align_left.png text passes labels-hold
+renderers/labels-alignment.map label_latin_align_right.png text passes labels-hold
+renderers/labels-alignment.map label_latin_align_center.png text passes labels-hold
+renderers/labels-alignment.map label_latin_align_default.png text passes labels-hold
 renderers/labels-anno.map labels-anno.png text fails  # not built yet: a label's STYLE
 renderers/labels-anno.map labels-anno.pdf out: another output format, pdf
 renderers/labels-anno.map labels-anno.svg out: another output format, svg
@@ -395,7 +395,7 @@ renderers/line_simple.map line_simple.svg out: another output format, svg
 renderers/line_simple.map line_simple.json out: another output format, json
 renderers/line_simple.map line_simple.cairo.png out: another output format, cairopng
 renderers/line_simple.map line_simple.cairo.jpg out: another output format, jpg
-renderers/lots_of_text.map lots_of_text.png text fails  # not built yet: MAXLENGTH
+renderers/lots_of_text.map lots_of_text.png text passes labels-hold
 renderers/lots_of_text.map lots_of_text.cairo.png out: another output format, cairopng
 renderers/marker_anchorpoint.map marker_anchorpoint.png geometry fails  # not built yet: pixmap symbols
 renderers/marker_anchorpoint.map marker_anchorpoint.pdf out: another output format, pdf

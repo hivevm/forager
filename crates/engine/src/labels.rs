@@ -66,6 +66,8 @@ struct Fixed<'a> {
     text: Option<&'a Expr>,
     fonts: &'a str,
     wrap: Option<char>,
+    /// `MAXLENGTH` as MapServer holds it, an `int`, 0 where the label has none.
+    max_length: i32,
     size: Prop<'a, f64>,
     min_size: f64,
     max_size: f64,
@@ -305,7 +307,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 None => return,
             },
         };
-        let lines = match lines(&text, fixed.wrap) {
+        let lines = match lines(&text, fixed.wrap, fixed.max_length) {
             Ok(lines) => lines,
             Err(LineError::NotLatin(c)) => {
                 let why = format!(
@@ -725,6 +727,16 @@ fn lrint_int(x: f64) -> i32 {
     }
 }
 
+/// A C `(int)` cast of a `double`, as the x86-64 build at the pin computes it: `cvttsd2si`
+/// truncates toward zero, and gives `INT_MIN` for a value past an `int` or no number.
+fn int_cast(x: f64) -> i32 {
+    if x > -2_147_483_649.0 && x < 2_147_483_648.0 {
+        x as i32
+    } else {
+        i32::MIN
+    }
+}
+
 /// `bindIntegerAttribute` into `unset`: `MS_NINT(atof(value))`, or `unset` where the value is
 /// empty.
 fn bound_integer(text: &[u8], unset: i32) -> i32 {
@@ -885,7 +897,6 @@ fn fixed<'a>(
             label.angle_mode.is_some(),
             "an ANGLE AUTO, AUTO2, or FOLLOW",
         ),
-        (label.max_length.is_some_and(|m| m > 0.0), "a MAXLENGTH"),
         (
             matches!(label.priority, Some(Bound::Value(p))
                 if !(p.fract() == 0.0 && (1.0..=f64::from(MAX_PRIORITY)).contains(&p))),
@@ -924,6 +935,9 @@ fn fixed<'a>(
         fonts,
         // WRAP is the first character of its string.
         wrap: label.wrap.as_deref().and_then(|w| w.chars().next()),
+        // labelObj's maxlength starts at 0 (initLabel); getInteger checks the double above 0,
+        // then stores it as `(int)` (mapfile.c:312-318).
+        max_length: label.max_length.map_or(0, int_cast),
         size: prop(label.size.as_ref(), "SIZE", DEFAULT_SIZE, |v| *v)?,
         min_size: label.min_size.unwrap_or(DEFAULT_MIN_SIZE),
         max_size: label.max_size.unwrap_or(DEFAULT_MAX_SIZE),
