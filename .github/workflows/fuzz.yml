@@ -1,8 +1,9 @@
 name: Fuzz
 
 # The fuzz run of Q-3: scripts/fuzz.sh, five minutes per target, once a week and on demand. Too
-# slow to gate a push, so a workflow of its own (ADR-0008). A failure uploads the inputs that
-# caused it.
+# slow to gate a push, so a workflow of its own (ADR-0008). A target that fails does not stop the
+# others, and the script fails after the last, so a failure uploads the inputs of every target
+# that failed, each under its own directory of fuzz/artifacts/.
 
 on:
   schedule:

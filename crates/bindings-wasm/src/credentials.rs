@@ -35,9 +35,11 @@ fn has_secret_parameter(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
     lower.match_indices('=').any(|(eq, _)| {
         let before = lower[..eq].trim_end();
+        // Past the whole character that ends the name, which may take more than one byte.
         let name_start = before
-            .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
-            .map_or(0, |i| i + 1);
+            .char_indices()
+            .rfind(|&(_, c)| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+            .map_or(0, |(i, c)| i + c.len_utf8());
         let name = &before[name_start..];
         !name.is_empty() && SECRET_KEYS.iter().any(|secret| name.ends_with(secret))
     })
@@ -115,5 +117,20 @@ mod tests {
             assert!(admissible(&source(&[("data", data)])), "{data}");
         }
         assert!(admissible(&source(&[])));
+    }
+
+    /// A character of more than one byte before `=` is stepped past whole, and decides as an ASCII
+    /// one in its place does.
+    #[test]
+    fn data_with_any_character_before_an_equals_sign_is_read_without_a_panic() {
+        // Verifies: Q-3, Q-7
+        assert!(admissible(&source(&[("data", "ü=1.shp")])));
+        assert!(admissible(&source(&[("data", "data/ü=1.shp")])));
+        assert!(admissible(&source(&[("data", "#=1.shp")])));
+        assert!(!admissible(&source(&[("data", "€password=x")])));
+        assert!(!admissible(&source(&[("data", "#password=x")])));
+        // The character ends the name: a key after it is a key, one before it is not.
+        assert!(!admissible(&source(&[("data", "ükey=1")])));
+        assert!(admissible(&source(&[("data", "passwordü=x")])));
     }
 }
