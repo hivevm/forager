@@ -470,8 +470,7 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
                         ));
                     }
                 }
-                // BOOTSTRAP: the records come from the first noise run; then a missing one breaks.
-                Err(why) => label_report.push(format!("{named}: {why}")),
+                Err(why) => broken.push(format!("{named}: {why}")),
             }
         }
         tally.count(*blank, matches!(outcome, Ok((true, _))));

@@ -155,7 +155,7 @@ renderers/average_rgb.map average_rgb.png out: a raster source
 renderers/average_rgb.map average_rgb.pdf out: another output format, pdf
 renderers/average_rgb.map average_rgb.svg out: another output format, svg
 renderers/average_rgb.map average_rgb.cairo.png out: another output format, cairopng
-renderers/baseline_text.map baseline_text.png text passes
+renderers/baseline_text.map baseline_text.png text passes labels-hold
 renderers/baseline_text.map baseline_text.pdf out: another output format, pdf
 renderers/baseline_text.map baseline_text.svg out: another output format, svg
 renderers/baseline_text.map baseline_text.cairo.png out: another output format, cairopng
@@ -292,8 +292,8 @@ renderers/labels-anno.map labels-anno.png text fails  # not built yet: a label's
 renderers/labels-anno.map labels-anno.pdf out: another output format, pdf
 renderers/labels-anno.map labels-anno.svg out: another output format, svg
 renderers/labels-anno.map labels-anno.cairo.png out: another output format, cairopng
-renderers/labels-attribute-alignment-offset.map label_align_attribute.png text passes
-renderers/labels-attribute-alignment-offset.map label_offset_attribute.png text passes
+renderers/labels-attribute-alignment-offset.map label_align_attribute.png text passes labels-hold
+renderers/labels-attribute-alignment-offset.map label_offset_attribute.png text passes labels-hold
 renderers/labels-bitmap-multiline.map labels-bitmap-multiline.png out: a bitmap font
 renderers/labels-bitmap.map labels-bitmap.png out: a bitmap font
 renderers/labels-leader.map labels-leader.png out: labels in polygons
@@ -304,8 +304,8 @@ renderers/labels-min-distance.map labels-min-distance.png out: labels on lines
 renderers/labels-min-distance.map labels-min-distance.pdf out: another output format, pdf
 renderers/labels-min-distance.map labels-min-distance.svg out: another output format, svg
 renderers/labels-min-distance.map labels-min-distance.cairo.png out: another output format, cairopng
-renderers/labels-priority.map label_priority_binding.png text passes
-renderers/labels-priority.map label_priority_fixed.png text passes
+renderers/labels-priority.map label_priority_binding.png text passes labels-hold
+renderers/labels-priority.map label_priority_fixed.png text passes labels-hold
 renderers/labels-priority.map label_priority_expression.png text fails  # not built yet: a PRIORITY computed by an expression
 renderers/labels-wrap.map labels-wrap.png out: labels on lines
 renderers/labels.map labels.png text fails  # not built yet: a label's STYLE
