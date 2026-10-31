@@ -66,6 +66,8 @@ struct Fixed<'a> {
     text: Option<&'a Expr>,
     fonts: &'a str,
     wrap: Option<char>,
+    /// `MAXLENGTH`, which the frontend reads as a whole number above 0.
+    max_length: Option<usize>,
     size: Prop<'a, f64>,
     min_size: f64,
     max_size: f64,
@@ -305,7 +307,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 None => return,
             },
         };
-        let lines = match lines(&text, fixed.wrap) {
+        let lines = match lines(&text, fixed.wrap, fixed.max_length) {
             Ok(lines) => lines,
             Err(LineError::NotLatin(c)) => {
                 let why = format!(
@@ -885,7 +887,6 @@ fn fixed<'a>(
             label.angle_mode.is_some(),
             "an ANGLE AUTO, AUTO2, or FOLLOW",
         ),
-        (label.max_length.is_some_and(|m| m > 0.0), "a MAXLENGTH"),
         (
             matches!(label.priority, Some(Bound::Value(p))
                 if !(p.fract() == 0.0 && (1.0..=f64::from(MAX_PRIORITY)).contains(&p))),
@@ -924,6 +925,8 @@ fn fixed<'a>(
         fonts,
         // WRAP is the first character of its string.
         wrap: label.wrap.as_deref().and_then(|w| w.chars().next()),
+        // A value past usize saturates; no text is that long.
+        max_length: label.max_length.filter(|&m| m >= 1.0).map(|m| m as usize),
         size: prop(label.size.as_ref(), "SIZE", DEFAULT_SIZE, |v| *v)?,
         min_size: label.min_size.unwrap_or(DEFAULT_MIN_SIZE),
         max_size: label.max_size.unwrap_or(DEFAULT_MAX_SIZE),

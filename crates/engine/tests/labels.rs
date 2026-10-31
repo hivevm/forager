@@ -385,9 +385,8 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
         change(&mut label);
         label
     };
-    let not_drawn: [fn(&mut Label); 16] = [
+    let not_drawn: [fn(&mut Label); 15] = [
         |l| l.angle_mode = Some(AngleMode::Follow),
-        |l| l.max_length = Some(4.0),
         |l| l.shadow_color = Some(Bound::Value(WHITE)),
         |l| l.styles = vec![Style::default()],
         |l| l.min_scale_denom = Some(1000.0),
