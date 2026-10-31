@@ -730,6 +730,58 @@ mod tests {
     }
 
     #[test]
+    fn a_newer_minors_unknown_function_never_matches_in_a_class_a_label_or_a_filter() {
+        // Verifies: ADR-0036
+        // A condition a newer minor adds is a CQL2 function inside an existing expression; this
+        // build does not know `glows`, so each element it sits on never matches, in YAML and JSON.
+        let yaml = "version: \"1.9\"\nmap:\n  layers:\n  - filter: &cond {op: and, args: \
+                    [{op: \"=\", args: [{property: a}, 1]}, {op: glows, args: [{property: a}]}]}\n    \
+                    classes:\n    - name: c\n      expression: *cond\n      labels:\n      \
+                    - text: {property: t}\n        expression: *cond\n";
+        let condition = r#"{"op":"and","args":[{"op":"=","args":[{"property":"a"},1]},{"op":"glows","args":[{"property":"a"}]}]}"#;
+        let json = format!(
+            r#"{{"version":"1.9","map":{{"layers":[{{"filter":{condition},"classes":[{{"name":"c","expression":{condition},"labels":[{{"text":{{"property":"t"}},"expression":{condition}}}]}}]}}]}}}}"#
+        );
+        for read in [
+            StyleDocument::from_yaml(yaml).unwrap(),
+            StyleDocument::from_json(&json).unwrap(),
+        ] {
+            let layer = &read.document.map.layers[0];
+            let class = &layer.classes[0];
+            assert_eq!(layer.filter, Some(Expr::Bool(false)));
+            assert_eq!(class.name.as_deref(), Some("c"));
+            assert_eq!(class.expression, Some(Expr::Bool(false)));
+            assert_eq!(class.labels[0].text, Some(Expr::property("t")));
+            assert_eq!(class.labels[0].expression, Some(Expr::Bool(false)));
+            let mut warnings: Vec<_> = read
+                .warnings
+                .iter()
+                .map(|w| (w.code.as_str(), w.message.as_str()))
+                .collect();
+            warnings.sort_unstable();
+            let never = "the operator `glows` is unknown to format version 1.0, and the \
+                         expression never matches";
+            assert_eq!(
+                warnings,
+                [
+                    (
+                        "unknown-operator",
+                        format!("/map/layers/0/classes/0/expression: {never}").as_str()
+                    ),
+                    (
+                        "unknown-operator",
+                        format!("/map/layers/0/classes/0/labels/0/expression: {never}").as_str()
+                    ),
+                    (
+                        "unknown-operator",
+                        format!("/map/layers/0/filter: {never}").as_str()
+                    ),
+                ]
+            );
+        }
+    }
+
+    #[test]
     fn in_the_current_minor_an_unknown_value_or_operator_is_a_load_error_naming_its_path() {
         // Verifies: ADR-0022
         let error = StyleDocument::from_yaml(&with_unknowns("1.0", "hologram", "=")).unwrap_err();
