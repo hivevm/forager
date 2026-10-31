@@ -118,6 +118,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
     let scale = classes::scale_denom(map, &view, width);
+    // Each layer's scale factor, the same for every layer the engine draws.
+    let factor = classes::scale_factor(map);
     for (layer_index, layer) in map.layers.iter().enumerate() {
         if !shown(layer) || !classes::layer_in_scale(layer, scale) {
             continue;
@@ -159,7 +161,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             scale,
             view: &view,
         };
-        let mut canvas = Canvas::new(&map.symbols, width, height);
+        let mut canvas = Canvas::new(&map.symbols, width, height, factor);
         drawing.draw_layer(&mut renderer, &mut canvas, &selected);
         if canvas.markers_spent() {
             let message = format!(
