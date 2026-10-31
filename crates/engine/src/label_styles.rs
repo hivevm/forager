@@ -27,7 +27,7 @@ use forager_style_ir::{
 use crate::classes::{self, scale_factor};
 use crate::draw::{Canvas, shade};
 use crate::extent::View;
-use crate::symbol::{self, marker_size_of};
+use crate::symbol::{self, marker_size_with};
 
 /// The kind of a label's style that is drawn: by its `GEOMTRANSFORM`, on the box around the text,
 /// at the label's point, or at the centre of that box.
@@ -111,9 +111,44 @@ pub(crate) fn label_marker(
     else {
         return Ok(None);
     };
-    let size = marker_size_of(style, &map.symbols, factor)
+    marker_of(style, MarkerValues::of(style), &style.symbol, map, factor).map(Some)
+}
+
+/// What a `labelpoint` style's marker is sized and placed by, as a feature binds it: its `SIZE`,
+/// its angle in degrees, and its `OFFSET`, unscaled.
+#[derive(Clone, Copy)]
+struct MarkerValues {
+    size: Option<f64>,
+    angle: f64,
+    offset: [f64; 2],
+}
+
+impl MarkerValues {
+    /// The values of `style` as written, a value that varies by feature taken as none.
+    fn of(style: &Style) -> Self {
+        let value = |p: &Option<Bound<f64>>| p.as_ref().and_then(Bound::value);
+        Self {
+            size: value(&style.size),
+            angle: value(&style.angle).unwrap_or(0.0),
+            offset: style.offset.as_ref().map_or([0.0, 0.0], |[x, y]| {
+                [x, y].map(|o| o.value().unwrap_or(0.0))
+            }),
+        }
+    }
+}
+
+/// The marker of the `labelpoint` style `style` of the values `values` and the symbol `symbol`
+/// at the scale factor `factor`, as computeMarkerBounds sizes it; or why it is not drawn.
+fn marker_of(
+    style: &Style,
+    values: MarkerValues,
+    symbol: &Option<Bound<SymbolRef>>,
+    map: &Map,
+    factor: f64,
+) -> Result<LabelMarker, String> {
+    let size = marker_size_with(style, values.size, symbol, &map.symbols, factor)
         .map_err(|what| format!("its labelpoint style draws {what}"))?;
-    let anchor_point = match &style.symbol {
+    let anchor_point = match symbol {
         Some(Bound::Value(SymbolRef::Index(index))) if *index > 0 => map
             .symbols
             .get(*index as usize - 1)
@@ -121,16 +156,12 @@ pub(crate) fn label_marker(
             .unwrap_or([0.5, 0.5]),
         _ => [0.5, 0.5],
     };
-    let value = |p: &Option<Bound<f64>>| p.as_ref().and_then(Bound::value).unwrap_or(0.0);
-    let offset = style.offset.as_ref().map_or([0.0, 0.0], |[x, y]| {
-        [x, y].map(|o| o.value().unwrap_or(0.0) * factor)
-    });
-    Ok(Some(LabelMarker {
+    Ok(LabelMarker {
         size,
         anchor_point,
-        angle: value(&style.angle),
-        offset,
-    }))
+        angle: values.angle,
+        offset: values.offset.map(|o| o * factor),
+    })
 }
 
 /// A property of a label's style that varies by feature, as [`classes::varies`] finds it: one
@@ -358,9 +389,7 @@ impl LabelStyles {
             let i = written
                 .iter()
                 .position(|s| s.geom_transform == Some(GeomTransform::LabelPoint))?;
-            let style = self.style(text, i, &written[i]);
-            // The label was cached with this marker, which it computed from the same values.
-            label_marker(std::slice::from_ref(&*style), map, scale_factor(map)).ok()??
+            self.bound_marker(text, i, &written[i], map)?
         } else {
             let i = self
                 .def_markers
@@ -375,6 +404,35 @@ impl LabelStyles {
             marker.angle,
             marker.offset,
         ))
+    }
+
+    /// The marker of the `labelpoint` style `i`, written `style`, of the label of text `text`
+    /// whose styles vary by feature, of the values bound to its feature, without the style
+    /// rebuilt: the cache asks for it as often as it tests the label.
+    fn bound_marker(&self, text: u32, i: usize, style: &Style, map: &Map) -> Option<LabelMarker> {
+        let run = self.run(text)?;
+        let fields = &self.layouts[run.layout as usize].1;
+        let at = run.at + (text - run.text) as usize * fields.len();
+        let mut values = MarkerValues::of(style);
+        let mut symbol = None;
+        for (&(s, field), &value) in fields.iter().zip(&self.values[at..]) {
+            match (s == i, field, value) {
+                (true, Field::Size, Value::Number(n)) => values.size = Some(n),
+                (true, Field::Angle, Value::Number(n)) => values.angle = n,
+                (true, Field::Offset(k), Value::Number(n)) => values.offset[k] = n,
+                (true, Field::Symbol, Value::Symbol(index)) => {
+                    symbol = Some(Bound::Value(SymbolRef::Index(index)));
+                }
+                _ => {}
+            }
+        }
+        let symbol = if symbol.is_some() {
+            &symbol
+        } else {
+            &style.symbol
+        };
+        // The label was cached with this marker, which it computed from the same values.
+        marker_of(style, values, symbol, map, scale_factor(map)).ok()
     }
 
     /// The run that holds the values of the label of text `text`, where its styles vary by
@@ -580,6 +638,8 @@ mod tests {
             Style {
                 color: Some(bound("c")),
                 size: Some(bound("s")),
+                angle: Some(bound("a")),
+                symbol: Some(bound("sym")),
                 offset: Some([Bound::Value(1.0), bound("y")]),
                 opacity: Some(Bound::Value(50.0)),
                 geom_transform: Some(GeomTransform::LabelPoint),
@@ -708,6 +768,11 @@ mod tests {
             held.push((written, bound));
         }
         assert!(diagnostics.is_empty());
+        let map = Map {
+            symbols,
+            ..Map::default()
+        };
+        let at = Point { x: 10.0, y: 20.0 };
         for (text, (written, bound)) in held.iter().enumerate() {
             for (i, style) in written.iter().enumerate() {
                 assert_eq!(
@@ -716,6 +781,16 @@ mod tests {
                     "text {text}, style {i}"
                 );
             }
+            // The marker the cache asks for is the one of the bound labelpoint style.
+            let def = u32::from(!std::ptr::eq(*written, &first));
+            let marker = label_marker(bound, &map, scale_factor(&map))
+                .unwrap()
+                .map(|m| marker_bounds(at, m.size, m.anchor_point, m.angle, m.offset));
+            assert_eq!(
+                styles.marker_bounds(&map, def, text as u32, written, at),
+                marker,
+                "text {text}"
+            );
         }
     }
 }
