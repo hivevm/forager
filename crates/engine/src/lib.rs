@@ -24,12 +24,12 @@ use forager_ports::{
     Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Renderer, RgbaImage};
-use forager_style_ir::{Bound, Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
+use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
 
 use forager_expr::Evaluator;
 
 use crate::classes::{Reports, Selector};
-use crate::draw::{Canvas, Pass, can_draw, draw_ops, kind, passes};
+use crate::draw::{Canvas, Pass, Plan, can_draw, draw_ops, kind};
 
 pub use crate::bind::bind_sources;
 pub use crate::extent::View;
@@ -297,44 +297,24 @@ impl Drawing<'_> {
                 }
             }
         };
+        let plans: Vec<Plan> = self
+            .layer
+            .classes
+            .iter()
+            .map(|class| Plan::new(mode, &class.styles))
+            .collect();
         let mut cached = Vec::new();
         let mut most_styles = 0;
         for (feature, class, styles) in selected {
             canvas.class(&self.layer.classes[*class].styles);
-            let bound_outline: Vec<bool> = self.layer.classes[*class]
-                .styles
-                .iter()
-                .map(|s| matches!(s.outline_width, Some(Bound::Binding { .. })))
-                .collect();
-            let passes = passes(mode, styles, &bound_outline);
-            if mode == RenderMode::Line && self.cached(*class) {
-                let (first_style, first) = &passes[0];
-                draw(canvas, feature, first_style, first);
-                // lineLayerDrawShape draws every style with a GEOMTRANSFORM in the first pass,
-                // and the cache's passes skip them.
-                for (style, _) in &passes[1..] {
-                    if style.geom_transform.is_some() && !std::ptr::eq(*style, *first_style) {
-                        draw(canvas, feature, style, &[Pass::Plain]);
-                    }
-                }
+            let plan = &plans[*class];
+            let passes = plan.passes(styles);
+            for (style, passes) in &passes.at_once {
+                draw(canvas, feature, style, passes);
+            }
+            if plan.cached() {
                 most_styles = most_styles.max(styles.len());
-                // The style each later pass draws, by its place in the class.
-                let later: Vec<_> = passes[1..]
-                    .iter()
-                    .filter(|(style, _)| style.geom_transform.is_none())
-                    .map(|(style, passes)| {
-                        let place = styles
-                            .iter()
-                            .position(|s| std::ptr::eq(&**s, *style))
-                            .expect("a style of the class");
-                        (place, *style, passes.clone())
-                    })
-                    .collect();
-                cached.push((*feature, later));
-            } else {
-                for (style, passes) in &passes {
-                    draw(canvas, feature, style, passes);
-                }
+                cached.push((*feature, passes.cached));
             }
         }
         for place in 0..most_styles {
@@ -344,22 +324,6 @@ impl Drawing<'_> {
                 }
             }
         }
-    }
-
-    /// Whether msDrawVectorLayer caches the features of class `class` of a line layer: those of
-    /// a class of several styles, or of one whose style has an outline width above 0 or bound to
-    /// a feature's property, decided on the style as written, whatever a feature binds. An
-    /// outline width computed by an expression is 0 there, as bindStyle computes none.
-    fn cached(&self, class: usize) -> bool {
-        let styles = &self.layer.classes[class].styles;
-        styles.len() > 1
-            || styles
-                .first()
-                .is_some_and(|style| match &style.outline_width {
-                    Some(Bound::Value(width)) => *width > 0.0,
-                    Some(Bound::Binding { .. }) => true,
-                    Some(Bound::Expr(_)) | None => false,
-                })
     }
 }
 
