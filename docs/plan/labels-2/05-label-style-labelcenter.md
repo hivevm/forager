@@ -4,7 +4,7 @@
 
 A label's `STYLE` with `GEOMTRANSFORM labelcenter` is drawn as `msDrawLabelCache` draws it at the
 pin: its marker at the centre of the label's labelpoly box, the text's box grown by a pixel where
-the label is placed (`mapdraw.c:3960-3970`, `4107-4128`), in the order of the label's styles,
+the label is placed (`mapdraw.c:3960-3970`, `4093-4127`), in the order of the label's styles,
 before the text. Its bounds take no room from other labels and stay out of the member's box the
 engine reports (`msTestLabelCacheCollisions`, `maplabel.c:781-868`; `mapdraw.c:3976-4030`). The
 style IR gains a `labelcenter` value of `GeomTransform` that the frontend carries over from the
@@ -30,9 +30,9 @@ mapfile; today the frontend drops it with a warning and the engine leaves out th
 
 - `src/mapdraw.c` at the pin: `msDrawLabelCache` (the labelpoly, the label styles, the member's
   box) and `computeMarkerBounds`.
-- ADR-0020 and ADR-0036 (the version rule: a new enum value is a minor bump; before the first
-  release the schema file is regenerated in the same change), ADR-0007 (the style document format
-  stays with the maintainer), ADR-0029, ADR-0035.
+- ADR-0020 and ADR-0036 (the version rule and its freeze: before the first release the schema
+  file is regenerated in the same change and the version stays where it is), ADR-0007 (the style
+  document format stays with the maintainer), ADR-0029, ADR-0035.
 - The golden path: `labelpoint` in `crates/engine/src/labels.rs` (`Styled::draw`,
   `draw_label_marker`) and `label_poly_at` in `crates/label/src/place.rs`;
   `crates/mapfile/src/translate/style.rs` (`geom_transform`) and `translate/label.rs`.
@@ -44,7 +44,8 @@ mapfile; today the frontend drops it with a warning and the engine leaves out th
 ## Mode
 
 with the human: it adds a value to the style IR's `GeomTransform`, a change of the style document
-format, which ADR-0007 keeps with the maintainer however small; ADR-0020 makes it a minor bump
-with the schema regenerated, and ADR-0036 asks whether it changes what an existing document
-means (a document that held no transform for a mapfile's labelcenter). The engine side alone
-would qualify as unattended, but it cannot land without the IR value.
+format, which ADR-0007 keeps with the maintainer however small; before the first release
+ADR-0020's freeze clause has the schema regenerated in the same change and the version stay where
+it is, and ADR-0036 asks whether it changes what an existing document means (a document that held
+no transform for a mapfile's labelcenter). The engine side alone would qualify as unattended, but
+it cannot land without the IR value.
