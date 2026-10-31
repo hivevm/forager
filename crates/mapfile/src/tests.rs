@@ -703,6 +703,21 @@ fn keywords_are_read_by_the_lexers_longest_match() {
 }
 
 #[test]
+fn a_nul_between_tokens_ends_the_expression_as_the_lexer_does() {
+    // The rule `<EXPRESSION_STRING>[\r|\n|\0]` returns 0 on a NUL as on a newline.
+    assert_eq!(
+        class_expression("([a] = 1 \0 ] \"unterminated)").1,
+        format!(r#"{{"op":"=","args":[{A},1.0]}}"#)
+    );
+    // MapServer holds the expression as a C string: a NUL inside a string ends it there too,
+    // and the string is left open.
+    assert_eq!(
+        class_expression("(\"[a]\" = \"x\0y\")"),
+        (vec!["invalid-expression".to_owned()], "false".to_owned())
+    );
+}
+
+#[test]
 fn a_binding_runs_to_the_last_bracket_the_lexers_longest_match_reaches() {
     // The rules `\[(?:\]\]|[^\]])*\]`, `"\[(?:""|[^"])*\]"`, and `` `\[(?:``|[^`])*\]` ``, the
     // doubled character read as one by msStringUnescape.

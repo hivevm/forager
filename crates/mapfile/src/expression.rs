@@ -213,24 +213,17 @@ fn substituted(text: &str) -> Result<Expr, Problem> {
     })
 }
 
-/// The attributes msTokenizeExpression finds in a plain `TEXT`, in order: it reads the text with
-/// the EXPRESSION_STRING rules of maplexer.l, matched case-insensitively and longest first, and
-/// msEvalTextExpression replaces only the bindings among its tokens. A `[name]`, a quoted
-/// `'[name]'` or `"[name]"`, and a `` `[name]` `` are bindings, `]]` and doubled quotes inside
-/// them read as one; `[shape]`, `[map_cellsize]`, and `[data_cellsize]` are not. A `'` or `"`
-/// that opens none opens a string the next same quote closes, `\` escaping, and what it holds is
-/// no binding; one that does not close ends the text. A pair of backticks is a time literal, and
-/// a lone backtick is one character. A newline and a `|` that is no `||` end the tokens too.
+/// The attributes msTokenizeExpression finds in a plain `TEXT`, in order: the bindings among the
+/// tokens [`Scanner`] reads, as msEvalTextExpression replaces only those. `[shape]`,
+/// `[map_cellsize]`, and `[data_cellsize]` are no attribute, a string holds no binding, and a
+/// string that does not close ends the text.
 ///
 /// MapServer also stops at a token it cannot read: a time literal `msParseTime` rejects, or
 /// `fromtext` not followed by a WKT string. An empty time literal is one; where the frontend
 /// cannot tell, before a `[` that could be a binding, the text is not carried over.
 fn text_bindings(text: &str) -> Result<Vec<String>, Problem> {
-    let bytes = text.as_bytes();
-    // A `[` past the last `]` opens no binding; knowing it keeps many `[` linear.
-    let last_close = bytes.iter().rposition(|&b| b == b']');
     let undecidable = |what: &str, at: usize| {
-        if bytes[at..].contains(&b'[') {
+        if text.as_bytes()[at..].contains(&b'[') {
             Err(Problem::unsupported(&format!(
                 "{what} before a binding in a plain TEXT, where MapServer may stop reading,"
             )))
@@ -239,124 +232,24 @@ fn text_bindings(text: &str) -> Result<Vec<String>, Problem> {
         }
     };
     let mut names = Vec::new();
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\n' | 0 => break,
-            b'|' if bytes.get(i + 1) == Some(&b'|') => i += 2,
-            b'|' => break,
-            b'[' => match binding_end(bytes, i, last_close) {
-                Some(end) => {
-                    let token = &text[i..=end];
-                    if !["[shape]", "[map_cellsize]", "[data_cellsize]"]
-                        .iter()
-                        .any(|special| token.eq_ignore_ascii_case(special))
-                    {
-                        names.push(text[i + 1..end].replace("]]", "]"));
-                    }
-                    i = end + 1;
-                }
-                None => i += 1,
-            },
-            quote @ (b'\'' | b'"' | b'`') => {
-                if let Some(end) = quoted_binding(bytes, i, quote) {
-                    let doubled = String::from_utf8(vec![quote, quote]).expect("ASCII");
-                    let single = String::from_utf8(vec![quote]).expect("ASCII");
-                    names.push(text[i + 2..end - 1].replace(&doubled, &single));
-                    i = end + 1;
-                } else if quote == b'`' {
-                    match bytes[i + 1..].iter().position(|&b| b == b'`') {
-                        // An empty time literal, which msParseTime rejects.
-                        Some(0) => break,
-                        Some(close) => {
-                            i += 1 + close + 1;
-                            undecidable("a time literal", i)?;
-                        }
-                        None => i += 1,
-                    }
-                } else {
-                    match string_end(bytes, i + 1, quote) {
-                        Some(next) => i = next,
-                        None => break,
-                    }
-                }
+    for (lexeme, span) in Scanner::new(text) {
+        match lexeme {
+            Lexeme::Tok(
+                Tok::NumberBinding(name) | Tok::StringBinding(name) | Tok::TimeBinding(name),
+            ) => {
+                names.push(name);
             }
-            b'f' | b'F'
-                if text[i..].len() >= 8 && text[i..i + 8].eq_ignore_ascii_case("fromtext") =>
-            {
-                undecidable("`fromtext`", i + 8)?;
-                i += 8;
+            // An empty time literal, which msParseTime rejects.
+            Lexeme::Tok(Tok::Time(time)) if time.is_empty() => break,
+            Lexeme::Tok(Tok::Time(_)) => undecidable("a time literal", span.end)?,
+            Lexeme::Tok(Tok::Word(word)) if word == "fromtext" => {
+                undecidable("`fromtext`", span.end)?;
             }
-            _ => i += 1,
+            Lexeme::Unterminated => break,
+            _ => {}
         }
     }
     Ok(names)
-}
-
-/// The end of the longest `[(?:]]|[^]])*]` at `start`: the binding rule of maplexer.l. None past
-/// `last_close`, the last `]` of the text.
-fn binding_end(bytes: &[u8], start: usize, last_close: Option<usize>) -> Option<usize> {
-    if last_close.is_none_or(|last| last <= start) {
-        return None;
-    }
-    let mut longest = None;
-    let mut j = start + 1;
-    while j < bytes.len() {
-        if bytes[j] == b']' {
-            longest = Some(j);
-            if bytes.get(j + 1) == Some(&b']') {
-                j += 2;
-                continue;
-            }
-            break;
-        }
-        j += 1;
-    }
-    longest
-}
-
-/// The end of the longest `q[(?:qq|[^q])*]q` at `start`, `q` the quote there: the rules of a
-/// string or time binding in maplexer.l.
-fn quoted_binding(bytes: &[u8], start: usize, quote: u8) -> Option<usize> {
-    if bytes.get(start + 1) != Some(&b'[') {
-        return None;
-    }
-    let mut longest = None;
-    let mut j = start + 2;
-    while j < bytes.len() {
-        if bytes[j] == quote {
-            if bytes[j - 1] == b']' && j > start + 2 {
-                longest = Some(j);
-            }
-            if bytes.get(j + 1) == Some(&quote) {
-                j += 2;
-                continue;
-            }
-            break;
-        }
-        j += 1;
-    }
-    longest
-}
-
-/// Where the lexer goes on after a string opened by `quote` before `start`, as the MSSTRING rules
-/// of maplexer.l read it: a backslash escapes a quote or itself, the other quote is held, and the
-/// same quote, with an `i` after it or not, closes it. `None` when it does not close.
-fn string_end(bytes: &[u8], start: usize, quote: u8) -> Option<usize> {
-    let mut j = start;
-    while j < bytes.len() {
-        match bytes[j] {
-            b'\\' if matches!(bytes.get(j + 1), Some(b'\'' | b'"' | b'\\')) => j += 2,
-            b if b == quote => {
-                let icase = bytes
-                    .get(j + 1)
-                    .is_some_and(|c| c.eq_ignore_ascii_case(&b'i'));
-                return Some(j + 1 + usize::from(icase));
-            }
-            _ => j += 1,
-        }
-    }
-    None
 }
 
 /// The tree of an expression in parentheses and the type of its value. The outer parentheses
@@ -495,118 +388,204 @@ const KEYWORDS: &[&str] = &[
     "fromtext",
 ];
 
-fn tokenize(text: &str) -> Result<Vec<Tok>, Problem> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut tokens = Vec::new();
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        let rest: String = chars[i..chars.len().min(i + 2)].iter().collect();
-        if matches!(c, ' ' | '\t' | '\r') {
-            i += 1;
-        } else if c == '\n' || (c == '|' && chars.get(i + 1) != Some(&'|')) {
-            // The lexer's rule `[\r|\n|\0]` returns 0 on a newline or a single `|`, and
-            // msTokenizeExpression takes 0 as the end of the expression.
-            break;
-        } else if let Some(len) = number_len(&chars[i..]) {
-            let literal: String = chars[i..i + len].iter().collect();
-            tokens.push(Tok::Number(finite(&literal, atof(&literal))?));
-            i += len;
-        } else if c == '[' {
-            let Some((name, next)) = bracketed(&chars, i + 1, ']', &[']']) else {
-                return Err(Problem::invalid("unterminated `[`"));
-            };
-            i = next;
-            match name.to_ascii_lowercase().as_str() {
-                "shape" | "map_cellsize" | "data_cellsize" => {
-                    return Err(Problem::unsupported(&format!("[{name}]")));
+/// A token the EXPRESSION_STRING rules of maplexer.l read, where the parser and a plain `TEXT`
+/// take it differently.
+#[derive(Debug, PartialEq)]
+enum Lexeme {
+    Tok(Tok),
+    /// `[shape]`, `[map_cellsize]`, or `[data_cellsize]`, as written: a binding to no attribute.
+    Special(String),
+    /// A character the rule `.` returns as itself: a `[` or a backtick that opens no binding and
+    /// no time, a letter that starts no keyword, a character of no other rule.
+    Char(char),
+    /// A string the text ends in before its quote closes it, the last token.
+    Unterminated,
+}
+
+/// The tokens msTokenizeExpression reads from `text` with the EXPRESSION_STRING rules of
+/// maplexer.l, which MapServer builds with `flex -i`, matched case-insensitively and longest
+/// first, each with its span. White space is `[ \t\r]+`; a newline, a NUL, and a `|` that is no
+/// `||` end the tokens, as the rule `[\r|\n|\0]` returns 0 there. MapServer holds the text as a C
+/// string, so a NUL inside a token ends the text too: the scanner reads only what comes before
+/// the first one.
+struct Scanner<'a> {
+    text: &'a str,
+    at: usize,
+    /// The last `]` of the text: a `[` past it opens no binding, and knowing it keeps many `[`
+    /// linear.
+    last_close: Option<usize>,
+    done: bool,
+}
+
+impl<'a> Scanner<'a> {
+    fn new(text: &'a str) -> Self {
+        let text = text.split('\0').next().unwrap_or_default();
+        Self {
+            text,
+            at: 0,
+            last_close: text.bytes().rposition(|b| b == b']'),
+            done: false,
+        }
+    }
+
+    /// The token at `start`, and the index past it.
+    fn lexeme(&self, start: usize) -> Option<(Lexeme, usize)> {
+        let bytes = self.text.as_bytes();
+        let c = bytes[start];
+        if c == b'\n' || c == 0 || (c == b'|' && bytes.get(start + 1) != Some(&b'|')) {
+            return None;
+        }
+        if let Some(len) = number_len(&bytes[start..]) {
+            let literal = &self.text[start..start + len];
+            return Some((Lexeme::Tok(Tok::Number(atof(literal))), start + len));
+        }
+        let lexeme = match c {
+            b'[' if self.last_close.is_some_and(|last| last > start) => {
+                bracketed(self.text, start + 1, b']', b"]").map(|(name, next)| {
+                    let token = &self.text[start..next];
+                    let special = ["[shape]", "[map_cellsize]", "[data_cellsize]"]
+                        .iter()
+                        .any(|special| token.eq_ignore_ascii_case(special));
+                    if special {
+                        (Lexeme::Special(name), next)
+                    } else {
+                        (Lexeme::Tok(Tok::NumberBinding(name)), next)
+                    }
+                })
+            }
+            quote @ (b'"' | b'\'' | b'`') if bytes.get(start + 1) == Some(&b'[') => {
+                bracketed(self.text, start + 2, quote, &[b']', quote]).map(|(name, next)| {
+                    let token = if quote == b'`' {
+                        Tok::TimeBinding(name)
+                    } else {
+                        Tok::StringBinding(name)
+                    };
+                    (Lexeme::Tok(token), next)
+                })
+            }
+            _ => None,
+        };
+        if lexeme.is_some() {
+            return lexeme;
+        }
+        Some(match c {
+            b'"' | b'\'' => match string(self.text, start) {
+                Some((value, next)) => (Lexeme::Tok(Tok::Str(value)), next),
+                None => (Lexeme::Unterminated, bytes.len()),
+            },
+            b'`' => match bytes[start + 1..].iter().position(|&b| b == b'`') {
+                Some(len) => {
+                    let time = self.text[start + 1..start + 1 + len].to_owned();
+                    (Lexeme::Tok(Tok::Time(time)), start + len + 2)
                 }
-                _ => tokens.push(Tok::NumberBinding(name)),
+                None => (Lexeme::Char('`'), start + 1),
+            },
+            c if c.is_ascii_alphabetic() => {
+                // The lexer has no rule for a word, only one for each keyword: of `andnot` it
+                // reads `and` and then `not`, the longest keyword each time.
+                let ahead = &bytes[start..bytes.len().min(start + 16)];
+                let keyword = KEYWORDS
+                    .iter()
+                    .chain(&["true", "false"])
+                    .filter(|k| {
+                        ahead.len() >= k.len()
+                            && ahead[..k.len()].eq_ignore_ascii_case(k.as_bytes())
+                    })
+                    .max_by_key(|k| k.len());
+                match keyword {
+                    Some(&"true") => (Lexeme::Tok(Tok::Bool(true)), start + 4),
+                    Some(&"false") => (Lexeme::Tok(Tok::Bool(false)), start + 5),
+                    Some(&word) => (Lexeme::Tok(Tok::Word(word.to_owned())), start + word.len()),
+                    None => (Lexeme::Char(char::from(c)), start + 1),
+                }
             }
-        } else if matches!(c, '"' | '\'') {
-            if chars.get(i + 1) == Some(&'[')
-                && let Some((name, next)) = bracketed(&chars, i + 2, c, &[']', c])
-            {
-                tokens.push(Tok::StringBinding(name));
-                i = next;
-                continue;
+            _ => {
+                let rest = &self.text[start..];
+                match SYMBOLS.iter().find(|s| rest.starts_with(**s)) {
+                    Some(symbol) => (Lexeme::Tok(Tok::Symbol(symbol)), start + symbol.len()),
+                    None => {
+                        let c = rest.chars().next().expect("a character at the start");
+                        (Lexeme::Char(c), start + c.len_utf8())
+                    }
+                }
             }
-            let (value, next) = string(&chars, i)?;
-            tokens.push(Tok::Str(value));
-            // The lexer closes a string on `"i` as well and drops the `i`.
-            i = if matches!(chars.get(next), Some('i' | 'I')) {
-                next + 1
-            } else {
-                next
-            };
-        } else if c == '`' {
-            if chars.get(i + 1) == Some(&'[')
-                && let Some((name, next)) = bracketed(&chars, i + 2, '`', &[']', '`'])
-            {
-                tokens.push(Tok::TimeBinding(name));
-                i = next;
-                continue;
-            }
-            let Some(close) = (i + 1..chars.len()).find(|&j| chars[j] == '`') else {
-                return Err(Problem::invalid("unterminated '`'"));
-            };
-            tokens.push(Tok::Time(chars[i + 1..close].iter().collect()));
-            i = close + 1;
-        } else if c.is_ascii_alphabetic() {
-            // The lexer has no rule for a word, only one for each keyword: of `andnot` it reads
-            // `and` and then `not`, the longest keyword each time.
-            let ahead = chars[i..].iter().take(16).collect::<String>();
-            let ahead = ahead.to_ascii_lowercase();
-            let keyword = KEYWORDS
-                .iter()
-                .chain(&["true", "false"])
-                .filter(|k| ahead.starts_with(**k))
-                .max_by_key(|k| k.len());
-            let Some(&word) = keyword else {
-                let end = (i..chars.len())
-                    .find(|&j| !chars[j].is_ascii_alphabetic())
-                    .unwrap_or(chars.len());
-                let word: String = chars[i..end].iter().collect();
+        })
+    }
+}
+
+impl Iterator for Scanner<'_> {
+    type Item = (Lexeme, std::ops::Range<usize>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let bytes = self.text.as_bytes();
+        while bytes
+            .get(self.at)
+            .is_some_and(|b| matches!(b, b' ' | b'\t' | b'\r'))
+        {
+            self.at += 1;
+        }
+        if self.done || self.at >= bytes.len() {
+            return None;
+        }
+        let start = self.at;
+        let Some((lexeme, next)) = self.lexeme(start) else {
+            self.done = true;
+            return None;
+        };
+        self.done = lexeme == Lexeme::Unterminated;
+        self.at = next;
+        Some((lexeme, start..next))
+    }
+}
+
+/// The tokens of an expression in parentheses, without them, for the parser: a token it has no
+/// use for is a problem.
+fn tokenize(text: &str) -> Result<Vec<Tok>, Problem> {
+    let mut tokens = Vec::new();
+    for (lexeme, span) in Scanner::new(text) {
+        match lexeme {
+            Lexeme::Tok(Tok::Number(n)) => tokens.push(Tok::Number(finite(&text[span], n)?)),
+            Lexeme::Tok(token) => tokens.push(token),
+            Lexeme::Special(name) => return Err(Problem::unsupported(&format!("[{name}]"))),
+            Lexeme::Char('[') => return Err(Problem::invalid("unterminated `[`")),
+            Lexeme::Char('`') => return Err(Problem::invalid("unterminated '`'")),
+            Lexeme::Char(c) if c.is_ascii_alphabetic() => {
+                let rest = &text[span.start..];
+                let end = rest
+                    .find(|c: char| !c.is_ascii_alphabetic())
+                    .unwrap_or(rest.len());
+                let word = &rest[..end];
                 return Err(Problem::invalid(format!("unknown word `{word}`")));
-            };
-            i += word.len();
-            match word {
-                "true" => tokens.push(Tok::Bool(true)),
-                "false" => tokens.push(Tok::Bool(false)),
-                _ => tokens.push(Tok::Word(word.to_owned())),
             }
-        } else if let Some(symbol) = SYMBOLS.iter().find(|s| rest.starts_with(**s)) {
-            tokens.push(Tok::Symbol(symbol));
-            i += symbol.len();
-        } else {
-            return Err(Problem::invalid(format!("unexpected `{c}`")));
+            Lexeme::Char(c) => return Err(Problem::invalid(format!("unexpected `{c}`"))),
+            Lexeme::Unterminated => return Err(Problem::invalid("unterminated string")),
         }
     }
     Ok(tokens)
 }
 
-/// The length of the number at the start of `chars`, by the lexer's rule
+/// The length of the number at the start of `bytes`, by the lexer's rule
 /// `-?[0-9]+|-?[0-9]+\.[0-9]*|-?\.[0-9]*|…[eE][+-]?[0-9]+`.
-fn number_len(chars: &[char]) -> Option<usize> {
+fn number_len(bytes: &[u8]) -> Option<usize> {
     let digits = |from: usize| {
-        (from..=chars.len())
-            .find(|&j| !chars.get(j).is_some_and(char::is_ascii_digit))
-            .unwrap_or(chars.len())
+        (from..=bytes.len())
+            .find(|&j| !bytes.get(j).is_some_and(u8::is_ascii_digit))
+            .unwrap_or(bytes.len())
     };
-    let mut i = usize::from(chars.first() == Some(&'-'));
+    let mut i = usize::from(bytes.first() == Some(&b'-'));
     let int_end = digits(i);
     let has_int = int_end > i;
     i = int_end;
-    let has_dot = chars.get(i) == Some(&'.');
+    let has_dot = bytes.get(i) == Some(&b'.');
     if has_dot {
         i = digits(i + 1);
     }
     if !has_int && !has_dot {
         return None;
     }
-    if matches!(chars.get(i), Some('e' | 'E')) {
+    if matches!(bytes.get(i), Some(b'e' | b'E')) {
         let mut j = i + 1;
-        if matches!(chars.get(j), Some('+' | '-')) {
+        if matches!(bytes.get(j), Some(b'+' | b'-')) {
             j += 1;
         }
         let end = digits(j);
@@ -620,9 +599,9 @@ fn number_len(chars: &[char]) -> Option<usize> {
 /// C's `atof`: the longest numeric prefix, or 0.
 pub fn atof(text: &str) -> f64 {
     let text = text.trim_start();
-    let chars: Vec<char> = text.chars().collect();
-    let sign = usize::from(matches!(chars.first(), Some('+' | '-')));
-    let len = number_len(&chars[sign..]).map_or(0, |len| len + sign);
+    let bytes = text.as_bytes();
+    let sign = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
+    let len = number_len(&bytes[sign..]).map_or(0, |len| len + sign);
     text[..len].parse().unwrap_or(0.0)
 }
 
@@ -640,17 +619,18 @@ fn finite(literal: &str, n: f64) -> Result<f64, Problem> {
 /// of any character but `escape`, which it holds doubled, up to the last `end` flex's longest
 /// match reaches, the doubled `escape` read as one, as msStringUnescape reads it; and the index
 /// past the match.
-fn bracketed(chars: &[char], from: usize, escape: char, end: &[char]) -> Option<(String, usize)> {
+fn bracketed(text: &str, from: usize, escape: u8, end: &[u8]) -> Option<(String, usize)> {
+    let bytes = text.as_bytes();
     let mut last = None;
     let mut i = from;
     loop {
-        if chars[i..].starts_with(end) {
+        if bytes[i..].starts_with(end) {
             last = Some(i);
         }
-        match chars.get(i) {
+        match bytes.get(i) {
             None => break,
-            Some(&c) if c == escape => {
-                if chars.get(i + 1) != Some(&escape) {
+            Some(&b) if b == escape => {
+                if bytes.get(i + 1) != Some(&escape) {
                     break;
                 }
                 i += 2;
@@ -659,32 +639,36 @@ fn bracketed(chars: &[char], from: usize, escape: char, end: &[char]) -> Option<
         }
     }
     let close = last?;
-    let mut name = String::new();
-    let mut j = from;
-    while j < close {
-        name.push(chars[j]);
-        j += if chars[j] == escape { 2 } else { 1 };
-    }
+    let escape = char::from(escape);
+    let name = text[from..close].replace(&format!("{escape}{escape}"), &escape.to_string());
     Some((name, close + end.len()))
 }
 
-/// A quoted string starting at `from`: a backslash escapes a quote or a backslash.
-fn string(chars: &[char], from: usize) -> Result<(String, usize), Problem> {
-    let quote = chars[from];
+/// The string the quote at `from` opens, as the MSSTRING rules of maplexer.l read it, and the
+/// index past it: a backslash escapes a quote or itself, the other quote is held, and the same
+/// quote, with an `i` after it or not, closes it, the `i` dropped. `None` when it does not close.
+fn string(text: &str, from: usize) -> Option<(String, usize)> {
+    let bytes = text.as_bytes();
+    let quote = bytes[from];
     let mut value = String::new();
+    let mut held = from + 1;
     let mut i = from + 1;
     loop {
-        match chars.get(i) {
-            None => return Err(Problem::invalid("unterminated string")),
-            Some('\\') if matches!(chars.get(i + 1), Some('\'' | '"' | '\\')) => {
-                value.push(chars[i + 1]);
+        match bytes.get(i) {
+            None => return None,
+            Some(b'\\') if matches!(bytes.get(i + 1), Some(b'\'' | b'"' | b'\\')) => {
+                value.push_str(&text[held..i]);
+                held = i + 1;
                 i += 2;
             }
-            Some(&c) if c == quote => return Ok((value, i + 1)),
-            Some(&c) => {
-                value.push(c);
-                i += 1;
+            Some(&b) if b == quote => {
+                value.push_str(&text[held..i]);
+                let icase = bytes
+                    .get(i + 1)
+                    .is_some_and(|c| c.eq_ignore_ascii_case(&b'i'));
+                return Some((value, i + 1 + usize::from(icase)));
             }
+            Some(_) => i += 1,
         }
     }
 }
@@ -1094,5 +1078,36 @@ fn compare(cmp: Cmp, (l, lk): (Expr, Kind), (r, rk): (Expr, Kind)) -> Result<Exp
         (Cmp::Gt, ..) => ordered(Op::Gt),
         (Cmp::Le, ..) => ordered(Op::Le),
         (Cmp::Ge, ..) => ordered(Op::Ge),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Tok, text_bindings, tokenize};
+
+    #[test]
+    fn a_binding_with_a_doubled_bracket_reads_the_same_in_an_expression_and_a_text() {
+        // One scanner reads both: `]]` in a binding is one `]`, a doubled quote in a quoted one
+        // is one quote, and the binding runs to the last end the longest match reaches.
+        for (binding, name) in [
+            ("[a]]b]", "a]b"),
+            ("[a]]]", "a]"),
+            ("[a]] = 1 OR [b]", "a] = 1 OR [b"),
+            (r#""[a]]b]""#, "a]]b"),
+            ("'[a''b]'", "a'b"),
+            ("`[t``x]`", "t`x"),
+        ] {
+            let expression = tokenize(binding).unwrap();
+            let read = match expression.as_slice() {
+                [Tok::NumberBinding(n) | Tok::StringBinding(n) | Tok::TimeBinding(n)] => n,
+                other => panic!("{binding}: {other:?}"),
+            };
+            assert_eq!(read, name, "{binding} in an expression");
+            assert_eq!(
+                text_bindings(binding).unwrap(),
+                [name],
+                "{binding} in a TEXT"
+            );
+        }
     }
 }

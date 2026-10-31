@@ -126,6 +126,16 @@ fn a_plain_text_replaces_only_the_bindings_the_lexer_finds() {
     assert_eq!(plain_text(r#""`` [name]""#), r#""`` [name]""#);
 }
 
+/// A multi-byte character just after an `f`, where `fromtext` could start, is read as any other.
+#[test]
+fn a_plain_text_with_a_multi_byte_character_after_an_f_loads() {
+    let name = r#"{"op":"to_string","args":[{"property":"name"}]}"#;
+    assert_eq!(
+        plain_text("'Kaufhaus Müller [name]'"),
+        format!(r#"{{"op":"concat","args":["Kaufhaus Müller ",{name}]}}"#)
+    );
+}
+
 /// Where MapServer may stop reading at a token the frontend cannot judge, a time literal or
 /// `fromtext`, before a `[` that could be a binding, the text is not carried over.
 #[test]
