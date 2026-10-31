@@ -59,6 +59,15 @@ enum Prop<'a, T> {
     Binding(&'a str),
 }
 
+/// A label's `PRIORITY` as it is drawn: a value from 1 to [`MAX_PRIORITY`], the feature's property
+/// it is bound to, or the expression that computes it.
+#[derive(Clone, Copy)]
+enum Priority<'a> {
+    Value(u8),
+    Binding(&'a str),
+    Expr(&'a Expr),
+}
+
 /// What of a label is settled before its features, once checked to be drawable.
 struct Fixed<'a> {
     /// The label's text, or `None` where the label, its class, and its layer's `LABELITEM` give
@@ -78,7 +87,7 @@ struct Fixed<'a> {
     angle: Prop<'a, f64>,
     position: Prop<'a, Position>,
     align: Prop<'a, Align>,
-    priority: Prop<'a, f64>,
+    priority: Priority<'a>,
     /// The layer's scale factor and the image's resolution factor, which are one here.
     factor: f64,
     buffer: f64,
@@ -278,8 +287,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 if let Some(Some(fixed)) = fixed_labels.get(&at)
                     && selector.label_matches(feature, class_index, n)
                 {
-                    self.feature(at, fixed, feature, style, selector.diagnostics)
-                        .await;
+                    self.feature(at, fixed, feature, style, selector).await;
                 }
             }
         }
@@ -292,13 +300,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         fixed: &Fixed<'_>,
         feature: &Feature,
         style: Option<&Style>,
-        diagnostics: &mut Vec<Diagnostic>,
+        selector: &mut Selector<'_, '_>,
     ) {
         let text = match fixed.text {
             Some(expr) => match text(expr, &feature.properties) {
                 Ok(text) => text,
                 Err(why) => {
-                    self.report(diagnostics, at, "label-text-unsupported", why);
+                    self.report(selector.diagnostics, at, "label-text-unsupported", why);
                     return;
                 }
             },
@@ -314,7 +322,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     "the text `{text}` holds U+{:04X}, which needs a shaper",
                     u32::from(c)
                 );
-                self.report(diagnostics, at, "label-line-unsupported", why);
+                self.report(selector.diagnostics, at, "label-line-unsupported", why);
                 return;
             }
         };
@@ -324,11 +332,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             return;
         }
         let blank = lines.iter().all(Vec::is_empty);
-        let bound = bind(fixed, &feature.properties);
+        let bound = bind(fixed, &feature.properties, |expr| {
+            selector.label_number(expr, feature, at.1, at.2)
+        });
         let (position, align, marker) = match settle(fixed, &bound, lines.len(), style, self.map) {
             Ok(settled) => settled,
             Err((code, why)) => {
-                self.report(diagnostics, at, code, why);
+                self.report(selector.diagnostics, at, code, why);
                 return;
             }
         };
@@ -345,12 +355,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             match self.layout(fixed, &lines, glyph_size, align).await {
                 Ok(path) => Some(path),
                 Err(Unlaid::Font(why)) => {
-                    self.report(diagnostics, at, "label-font-unusable", why);
+                    self.report(selector.diagnostics, at, "label-font-unusable", why);
                     return;
                 }
                 Err(Unlaid::Glyph(glyph)) => {
                     let why = format!("its font cannot draw glyph {glyph} of `{text}`");
-                    self.report(diagnostics, at, "label-glyph-unreadable", why);
+                    self.report(selector.diagnostics, at, "label-glyph-unreadable", why);
                     return;
                 }
             }
@@ -747,8 +757,13 @@ fn bound_integer(text: &[u8], unset: i32) -> i32 {
     }
 }
 
-/// A label's properties for a feature with `properties`, as `bindLabel` binds them.
-fn bind(fixed: &Fixed<'_>, properties: &Properties) -> BoundLabel {
+/// A label's properties for a feature with `properties`, as `bindLabel` binds them, with
+/// `evaluate` giving the number an expression computes for the feature.
+fn bind(
+    fixed: &Fixed<'_>,
+    properties: &Properties,
+    evaluate: impl FnOnce(&Expr) -> f64,
+) -> BoundLabel {
     let lookup = FeatureProperties(properties);
     let read = |binding: &str| -> Vec<u8> {
         use forager_expr::Lookup;
@@ -788,12 +803,19 @@ fn bind(fixed: &Fixed<'_>, properties: &Properties) -> BoundLabel {
         },
         position,
         align,
-        // bindIntegerAttribute after the priority is set to 1, and msAddLabelGroup's bounds.
+        // bindIntegerAttribute after the priority is set to 1, or msEvalDoubleExpression's
+        // value assigned to the int, then msAddLabelGroup's bounds.
         priority: match fixed.priority {
-            Prop::Value(p) => p as u8,
-            Prop::Binding(b) => bound_integer(&read(b), 1).clamp(1, i32::from(MAX_PRIORITY)) as u8,
+            Priority::Value(p) => p,
+            Priority::Binding(b) => bounded_priority(bound_integer(&read(b), 1)),
+            Priority::Expr(expr) => bounded_priority(int_cast(evaluate(expr))),
         },
     }
+}
+
+/// A priority bounded to 1 to [`MAX_PRIORITY`], as `msAddLabelGroup` bounds it.
+fn bounded_priority(priority: i32) -> u8 {
+    priority.clamp(1, i32::from(MAX_PRIORITY)) as u8
 }
 
 /// A bound `POSITION` as `bindLabel` reads it: a number rounded to an integer, which where it is
@@ -897,11 +919,6 @@ fn fixed<'a>(
             label.angle_mode.is_some(),
             "an ANGLE AUTO, AUTO2, or FOLLOW",
         ),
-        (
-            matches!(label.priority, Some(Bound::Value(p))
-                if !(p.fract() == 0.0 && (1.0..=f64::from(MAX_PRIORITY)).contains(&p))),
-            "a PRIORITY that is not a whole number from 1 to 10, which a mapfile cannot give",
-        ),
         (label.shadow_color.is_some(), "a SHADOWCOLOR"),
         (!label.styles.is_empty(), "a STYLE"),
         (
@@ -961,7 +978,15 @@ fn fixed<'a>(
             IrAlign::Center => Align::Center,
             IrAlign::Right => Align::Right,
         })?,
-        priority: prop(label.priority.as_ref(), "PRIORITY", 1.0, |v| *v)?,
+        priority: match &label.priority {
+            None => Priority::Value(1),
+            // A value held as an int and bounded as msAddLabelGroup bounds it, such as the 0 the
+            // frontend gives a condition, which MapServer evaluates to `true` or `false` and
+            // `atof` reads as 0.
+            Some(Bound::Value(p)) => Priority::Value(bounded_priority(int_cast(*p))),
+            Some(Bound::Binding { binding }) => Priority::Binding(binding),
+            Some(Bound::Expr(expr)) => Priority::Expr(expr),
+        },
         factor,
         buffer: label.buffer.unwrap_or(0.0),
         force: label.force == Some(Force::On),
