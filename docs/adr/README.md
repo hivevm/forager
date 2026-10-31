@@ -113,6 +113,7 @@ is the table a session reads.
 | [0036](0036-a-change-of-meaning-is-a-major-format-version.md) | A change of what a style document's field means is a major format version, and a condition is added only where an older reader fails closed | `crates/style-ir` (the version rule of the style document and its schema check), `schema/`, and every change to a field of the style IR | 🟢 accepted |
 | [0037](0037-c-number-reading-in-style-ir.md) | C's reading of numbers is ported once, in `style-ir`, for the frontend and the core alike | the ports of C's `atof`, `strtod`, `atoi`, and MapServer's `MS_NINT` in `crates/style-ir`, `crates/expr`, `crates/mapfile`, and `crates/engine` | 🟡 proposed |
 | [0038](0038-browser-bindings-bind-geojson-only.md) | The browser bindings bind only the GeoJSON a page passes, never a shapefile | `crates/bindings-wasm`: which feature sources it binds to the layers, and its dependencies on `adapter-<kind>` crates | 🟡 proposed |
+| [0039](0039-the-clip-to-the-image-is-one-module-of-render.md) | The clip to the image is one module of `render`, shared by the hatch's bound and every renderer | `crates/render/src/clip.rs`, the clipping of paths in `crates/render-agg`, and every renderer or bound that measures or clips a path against the image | 🟡 proposed |
 
 ### Superseded and rejected
 
