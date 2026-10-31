@@ -134,6 +134,10 @@ jobs:
       # decided here, without cargo-mutants.
       - name: Self-test the mutation sensor's arguments
         run: bash scripts/test-mutants.sh
+      # The fuzz targets themselves run weekly (fuzz.yml); how they are read and refused is
+      # decided here, without the nightly toolchain or cargo-fuzz.
+      - name: Self-test how the fuzz script reads its targets
+        run: bash scripts/test-fuzz.sh
       # How MapServer runs on CI for the noise measurement (noise.yml), decided without building it.
       # Verifies: ADR-0027
       - name: Self-test how MapServer is built and run on CI
