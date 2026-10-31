@@ -956,12 +956,13 @@ mod tests {
         )
         .unwrap();
         assert!(shade(&mut ops, line(), &style, &view, &mut plain()));
-        // The polygon shape is one fill item, through MapServer's default gamma.
+        // The polygon shape is one fill item, through MapServer's default gamma, the 0.75 of
+        // agg2CreateImage's msGetOutputFormatOption(format, "GAMMA", "0.75").
         assert!(matches!(
             ops[0],
             DrawOp::Fill {
                 color,
-                gamma: Some(GAMMA),
+                gamma: Some(0.75),
                 ..
             } if color == fill
         ));
@@ -1240,7 +1241,7 @@ mod tests {
         ]);
         let drawn = hatches(&two);
         assert_eq!(drawn.len(), 1);
-        assert_eq!(drawn[0].gamma, Some(GAMMA));
+        assert_eq!(drawn[0].gamma, Some(0.75));
         assert_eq!(drawn[0].rings.len(), 2);
         let first = drawn[0].lines[0];
         assert!((first[0].x - 4.2928).abs() < 1e-9 && (first[1].x - 91.2928).abs() < 1e-9);

@@ -503,8 +503,11 @@ mod tests {
 
     #[test]
     fn a_hatch_passes_its_coverage_through_its_gamma_when_it_has_one() {
-        // A line 1 wide centred at y = 32.25 covers row 31 by a quarter: 0.25 / 0.75 of the
-        // colour through MapServer's default gamma, a quarter without.
+        // A line 1 wide centred at y = 32.25 covers row 31 by a quarter, the cover 64. Through
+        // MapServer's default gamma of 0.75 it is uround(64 / 255 / 0.75 × 255) = 85, without
+        // it stays 64. Blended green 80 over 255 as blender_rgba_pre does, the cover 85: alpha
+        // (255 × 86) >> 8 = 85, and (255 × 170 + 80 × 86) >> 8 = 196; the cover 64: alpha
+        // (255 × 65) >> 8 = 64, and (255 × 191 + 80 × 65) >> 8 = 210.
         let green = |gamma| {
             render(&[DrawOp::Hatch(Hatch {
                 rings: vec![rectangle(8.0, 8.0, 56.0, 56.0)],
@@ -518,8 +521,7 @@ mod tests {
             .unwrap()
             .g
         };
-        let (with, without) = (green(Some(0.75)), green(None));
-        assert!(with < without && without < 255, "{with} {without}");
+        assert_eq!((green(Some(0.75)), green(None)), (196, 210));
     }
 
     #[test]
