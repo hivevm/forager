@@ -703,6 +703,15 @@ fn keywords_are_read_by_the_lexers_longest_match() {
 }
 
 #[test]
+fn a_nul_between_tokens_ends_the_expression_as_the_lexer_does() {
+    // The rule `<EXPRESSION_STRING>[\r|\n|\0]` returns 0 on a NUL as on a newline.
+    assert_eq!(
+        class_expression("([a] = 1 \0 ] \"unterminated)").1,
+        format!(r#"{{"op":"=","args":[{A},1.0]}}"#)
+    );
+}
+
+#[test]
 fn a_binding_runs_to_the_last_bracket_the_lexers_longest_match_reaches() {
     // The rules `\[(?:\]\]|[^\]])*\]`, `"\[(?:""|[^"])*\]"`, and `` `\[(?:``|[^`])*\]` ``, the
     // doubled character read as one by msStringUnescape.
