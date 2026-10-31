@@ -6,24 +6,31 @@
 # The harness applies a line's map2img options -l, -e, and -s to the style IR, as map2img does,
 # before it renders, and -i png as the map's last IMAGETYPE; any other option leaves the case out.
 #
-#   <mapfile> <result> [blank] geometry passes|fails   in scope: rendered, compared, outcome held
+#   <mapfile> <result> [blank] geometry passes|fails   in scope, geometry and symbols
+#   <mapfile> <result> [blank] text passes|fails       in scope, text
 #   <mapfile> <result> [blank] out: <reason>           out of scope, with its reason
 #
-# A case is in scope when it is of the category geometry and symbols, whether Forager draws it
-# right yet or not; one it draws wrong is listed as fails, with what it lacks in a comment, and
-# flips to passes in the change that makes it pass. The reasons for leaving a case out are its
-# category's exclusions: another output format, an OGC or CGI request, a map2img option not
-# applied, a raster source, labels, a projection, a runtime substitution, a data source other
-# than shapefiles; and a case MapServer itself does not reproduce within any threshold of the
-# noise measurement.
+# A case in scope is rendered, compared by the metric of its category, and holds its outcome. A
+# case is in scope when it is of a category the harness compares, whether Forager draws it right
+# yet or not; one it draws wrong is listed as fails, with what it lacks in a comment, and flips to
+# passes in the change that makes it pass. The category text holds the cases whose labels are all
+# of point features, in TrueType fonts and Latin script. The reasons for leaving a case out are
+# their categories' exclusions: another output format, an OGC or CGI request, a map2img option not
+# applied, a raster source, a projection, a runtime substitution, a data source other than
+# shapefiles; of a case with labels, labels on lines, labels in polygons, a bitmap font (a label
+# without a FONT, which MapServer draws in its built-in font), complex script (a text with a code
+# point at or above U+02B0), or the text of an embedded legend, an embedded scalebar, or a GRID;
+# and a case MapServer itself does not reproduce within any threshold of the noise measurement.
 #
 # `blank` marks a case whose reference is nearly one colour: an image of its most common colour
 # passes against it by the metric. The harness checks every mark against the reference.
 #
 # The threshold and the tolerance of the category geometry and symbols are those of G-6 (GEOMETRY
-# in msautotest.rs), above the noise MapServer shows against its own references on CI.
+# in msautotest.rs), above the noise MapServer shows against its own references on CI. Those of
+# the category text (TEXT in msautotest.rs) are provisional, until the noise measurement over the
+# text cases sets them.
 
-misc/attrbind.map attrbind_test001.png out: labels
+misc/attrbind.map attrbind_test001.png text fails  # not built yet: a label's STYLE
 misc/attrbind.map attrbind_test002.png out: a data source other than shapefiles, OGR
 misc/autostyle.map autostyle.png out: a data source other than shapefiles, OGR
 misc/autostyle_quoted.map autostyle_quoted.png out: a data source other than shapefiles, OGR
@@ -44,7 +51,7 @@ misc/dateline.map dateline.png out: a projection, merc to latlong with +over
 misc/dbf-invalid.map dbf-invalid-wfs-get-feature.xml out: an OGC or CGI request
 misc/encoding.map encodings.png geometry fails  # not built yet: the ENCODING of a layer
 misc/encoding.map encodings.xml out: an OGC or CGI request
-misc/encoding_from_cpg.map shp_encodings.png out: labels
+misc/encoding_from_cpg.map shp_encodings.png out: a bitmap font; and complex script, in the encodings of its data
 misc/encrypted_connection.map encrypted_connection_postgis_hits.xml out: an OGC or CGI request
 misc/flatgeobuf-invalid.map flatgeobuf-invalid-wfs-get-feature.xml out: an OGC or CGI request
 misc/flatgeobuf-shapepath.map flatgeobuf-shapepath-continent.png out: a data source other than shapefiles, FlatGeobuf
@@ -61,17 +68,17 @@ misc/flatgeobuf.map flatgeobuf-wfs-get-feature-id.xml out: an OGC or CGI request
 misc/geopdf.map geopdf-iso.pdf out: another output format, pdf
 misc/geopdf.map geopdf-ogc.pdf out: another output format, pdf
 misc/grid_without_label.map grid_without_label.png geometry fails  # not built yet: the GRID of a layer
-misc/issue5558.map issue5581-1.png blank out: labels
+misc/issue5558.map issue5581-1.png blank out: a bitmap font
 misc/issue5558.map issue5581-2.png blank out: a map2img option not applied, -c
 misc/line_offset_clipped_to_multiline.map line_offset_clipped_to_multiline.png geometry passes
-misc/listexpression.map listexpression.png out: labels
+misc/listexpression.map listexpression.png out: labels in polygons
 misc/map2img-argparse.map map2img-argparse-s.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-e.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-o.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-c.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-d.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-layer_debug.txt out: another output format, txt
-misc/map2img-size.map map2img-size.png out: labels
+misc/map2img-size.map map2img-size.png out: a bitmap font
 misc/maxfeatures.map maxfeatures.png geometry fails  # not built yet: MAXFEATURES
 misc/maxfeatures.map maxfeatures-of.png out: another output format, pngmf
 misc/mode_tile.map mode_tile_output.png out: an OGC or CGI request
@@ -102,8 +109,8 @@ misc/ortho.map ortho.png out: a projection, ortho
 misc/pg_join.map pg_join.html out: an OGC or CGI request
 misc/quantized.map quantized.png out: a raster source
 misc/quoted_data.map quoted_data.png out: a data source other than shapefiles, PostGIS
-misc/quoting.map quoting.png out: labels
-misc/rfc14.map rfc14.png out: labels
+misc/quoting.map quoting.png out: a projection, epsg:3978 to epsg:4326
+misc/rfc14.map rfc14.png out: a bitmap font
 misc/rfc36.map rfc36_geojson.js out: an OGC or CGI request
 misc/rfc36_ogr.map rfc36_ogr_geojson.js out: an OGC or CGI request
 misc/rot_out.map rot_out.png geometry fails  # not built yet: the ANGLE of the map
@@ -142,7 +149,7 @@ renderers/average_rgb.map average_rgb.png out: a raster source
 renderers/average_rgb.map average_rgb.pdf out: another output format, pdf
 renderers/average_rgb.map average_rgb.svg out: another output format, svg
 renderers/average_rgb.map average_rgb.cairo.png out: another output format, cairopng
-renderers/baseline_text.map baseline_text.png out: labels
+renderers/baseline_text.map baseline_text.png text fails  # not built yet: the TEXT of an inline feature as its label's text
 renderers/baseline_text.map baseline_text.pdf out: another output format, pdf
 renderers/baseline_text.map baseline_text.svg out: another output format, svg
 renderers/baseline_text.map baseline_text.cairo.png out: another output format, cairopng
@@ -206,13 +213,13 @@ renderers/empty.map empty.png blank geometry passes
 renderers/empty.map empty.pdf out: another output format, pdf
 renderers/empty.map empty.svg out: another output format, svg
 renderers/empty.map empty.cairo.png out: another output format, cairopng
-renderers/entity_encoded_follow_text.map entity_encoded_follow_text.png out: labels
+renderers/entity_encoded_follow_text.map entity_encoded_follow_text.png out: labels on lines
 renderers/entity_encoded_follow_text.map entity_encoded_follow_text.pdf out: another output format, pdf
 renderers/entity_encoded_follow_text.map entity_encoded_follow_text.svg out: another output format, svg
 renderers/entity_encoded_follow_text.map entity_encoded_follow_text.cairo.png out: another output format, cairopng
 renderers/font-fail.map font-fail-key.txt out: an OGC or CGI request
 renderers/font-fail.map font-fail-file.txt out: an OGC or CGI request
-renderers/font-fail.map font-fail-missing-glyph.png out: labels
+renderers/font-fail.map font-fail-missing-glyph.png out: labels in polygons; and complex script, Cyrillic
 renderers/force_palette.map force_palette.png out: a raster source
 renderers/force_palette.map force_palette.cairo.png out: another output format, cairopng
 renderers/force_palette_rgba.map force_palette_rgba.png out: a raster source
@@ -235,67 +242,67 @@ renderers/grid.map grid.png out: labels, of the GRID
 renderers/grid.map grid.pdf out: another output format, pdf
 renderers/grid.map grid.svg out: another output format, svg
 renderers/grid.map grid.cairo.png out: another output format, cairopng
-renderers/label-multifont.map label-multifont.png out: labels
+renderers/label-multifont.map label-multifont.png out: labels on lines; and complex script, Japanese
 renderers/label-multifont.map label-multifont.pdf out: another output format, pdf
 renderers/label-multifont.map label-multifont.svg out: another output format, svg
 renderers/label-multifont.map label-multifont.cairo.png out: another output format, cairopng
-renderers/label_noclip.map label_noclip.png out: labels
+renderers/label_noclip.map label_noclip.png out: labels on lines
 renderers/label_noclip.map label_noclip.pdf out: another output format, pdf
 renderers/label_noclip.map label_noclip.svg out: another output format, svg
 renderers/label_noclip.map label_noclip.cairo.png out: another output format, cairopng
-renderers/labelcacheoff.map labelcacheoff.png out: labels
+renderers/labelcacheoff.map labelcacheoff.png out: labels on lines and in polygons
 renderers/labelcacheoff.map labelcacheoff.pdf out: another output format, pdf
 renderers/labelcacheoff.map labelcacheoff.svg out: another output format, svg
 renderers/labelcacheoff.map labelcacheoff.cairo.png out: another output format, cairopng
-renderers/labelpnt.map labelpnt.png out: labels
+renderers/labelpnt.map labelpnt.png text fails  # not built yet: the TEXT of an inline feature as its label's text, a label's STYLE, and the LABELCACHE OFF of a layer
 renderers/labelpnt.map labelpnt.pdf out: another output format, pdf
 renderers/labelpnt.map labelpnt.svg out: another output format, svg
 renderers/labelpnt.map labelpnt.cairo.png out: another output format, cairopng
-renderers/labelrot.map labelrot.png out: labels
+renderers/labelrot.map labelrot.png out: labels on lines and in polygons
 renderers/labelrot.map labelrot.pdf out: another output format, pdf
 renderers/labelrot.map labelrot.svg out: another output format, svg
 renderers/labelrot.map labelrot.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_ar-align-center.png out: labels
+renderers/labels-alignment.map label_ar-align-center.png out: complex script, Arabic
 renderers/labels-alignment.map label_ar-align-center.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label-align-center.png out: labels
+renderers/labels-alignment.map label-align-center.png out: complex script, Arabic
 renderers/labels-alignment.map label-align-center.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_ar-align-left.png out: labels
+renderers/labels-alignment.map label_ar-align-left.png out: complex script, Arabic
 renderers/labels-alignment.map label_ar-align-left.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label-align-left.png out: labels
+renderers/labels-alignment.map label-align-left.png out: complex script, Arabic
 renderers/labels-alignment.map label-align-left.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_ar-align-right.png out: labels
+renderers/labels-alignment.map label_ar-align-right.png out: complex script, Arabic
 renderers/labels-alignment.map label_ar-align-right.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label-align-right.png out: labels
+renderers/labels-alignment.map label-align-right.png out: complex script, Arabic
 renderers/labels-alignment.map label-align-right.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_ar-align-default.png out: labels
+renderers/labels-alignment.map label_ar-align-default.png out: complex script, Arabic
 renderers/labels-alignment.map label_ar-align-default.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label-align-default.png out: labels
+renderers/labels-alignment.map label-align-default.png out: complex script, Arabic
 renderers/labels-alignment.map label-align-default.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_latin_align_left.png out: labels
-renderers/labels-alignment.map label_latin_align_right.png out: labels
-renderers/labels-alignment.map label_latin_align_center.png out: labels
-renderers/labels-alignment.map label_latin_align_default.png out: labels
-renderers/labels-anno.map labels-anno.png out: labels
+renderers/labels-alignment.map label_latin_align_left.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
+renderers/labels-alignment.map label_latin_align_right.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
+renderers/labels-alignment.map label_latin_align_center.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
+renderers/labels-alignment.map label_latin_align_default.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
+renderers/labels-anno.map labels-anno.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and a label's STYLE
 renderers/labels-anno.map labels-anno.pdf out: another output format, pdf
 renderers/labels-anno.map labels-anno.svg out: another output format, svg
 renderers/labels-anno.map labels-anno.cairo.png out: another output format, cairopng
-renderers/labels-attribute-alignment-offset.map label_align_attribute.png out: labels
-renderers/labels-attribute-alignment-offset.map label_offset_attribute.png out: labels
-renderers/labels-bitmap-multiline.map labels-bitmap-multiline.png out: labels
-renderers/labels-bitmap.map labels-bitmap.png out: labels
-renderers/labels-leader.map labels-leader.png out: labels
+renderers/labels-attribute-alignment-offset.map label_align_attribute.png text passes
+renderers/labels-attribute-alignment-offset.map label_offset_attribute.png text passes
+renderers/labels-bitmap-multiline.map labels-bitmap-multiline.png out: a bitmap font
+renderers/labels-bitmap.map labels-bitmap.png out: a bitmap font
+renderers/labels-leader.map labels-leader.png out: labels in polygons
 renderers/labels-leader.map labels-leader.pdf out: another output format, pdf
 renderers/labels-leader.map labels-leader.svg out: another output format, svg
 renderers/labels-leader.map labels-leader.cairo.png out: another output format, cairopng
-renderers/labels-min-distance.map labels-min-distance.png out: labels
+renderers/labels-min-distance.map labels-min-distance.png out: labels on lines
 renderers/labels-min-distance.map labels-min-distance.pdf out: another output format, pdf
 renderers/labels-min-distance.map labels-min-distance.svg out: another output format, svg
 renderers/labels-min-distance.map labels-min-distance.cairo.png out: another output format, cairopng
-renderers/labels-priority.map label_priority_binding.png out: labels
-renderers/labels-priority.map label_priority_fixed.png out: labels
-renderers/labels-priority.map label_priority_expression.png out: labels
-renderers/labels-wrap.map labels-wrap.png out: labels
-renderers/labels.map labels.png out: labels
+renderers/labels-priority.map label_priority_binding.png text passes
+renderers/labels-priority.map label_priority_fixed.png text passes
+renderers/labels-priority.map label_priority_expression.png text fails  # not built yet: a PRIORITY computed by an expression
+renderers/labels-wrap.map labels-wrap.png out: labels on lines
+renderers/labels.map labels.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and a label's STYLE
 renderers/labels.map labels.pdf out: another output format, pdf
 renderers/labels.map labels.svg out: another output format, svg
 renderers/labels.map labels.cairo.png out: another output format, cairopng
@@ -317,24 +324,24 @@ renderers/line_aliased.map line_aliased.png geometry fails  # not built yet: the
 renderers/line_anchorpoint.map line_anchorpoint.png geometry passes
 renderers/line_anchorpoint.map line_anchorpoint.cairo.png out: another output format, cairopng
 renderers/line_antialiased.map line_anti_aliased.png geometry passes
-renderers/line_label_auto.map line_label_auto.png out: labels
+renderers/line_label_auto.map line_label_auto.png out: labels on lines
 renderers/line_label_auto.map line_label_auto.pdf out: another output format, pdf
 renderers/line_label_auto.map line_label_auto.svg out: another output format, svg
 renderers/line_label_auto.map line_label_auto.json out: another output format, json
 renderers/line_label_auto.map line_label_auto.cairo.png out: another output format, cairopng
-renderers/line_label_auto2.map line_label_auto2.png out: labels
+renderers/line_label_auto2.map line_label_auto2.png out: labels on lines
 renderers/line_label_auto2.map line_label_auto2.pdf out: another output format, pdf
 renderers/line_label_auto2.map line_label_auto2.svg out: another output format, svg
 renderers/line_label_auto2.map line_label_auto2.cairo.png out: another output format, cairopng
-renderers/line_label_follow.map line_label_follow.png out: labels
+renderers/line_label_follow.map line_label_follow.png out: labels on lines
 renderers/line_label_follow.map line_label_follow.pdf out: another output format, pdf
 renderers/line_label_follow.map line_label_follow.svg out: another output format, svg
 renderers/line_label_follow.map line_label_follow.cairo.png out: another output format, cairopng
-renderers/line_label_follow_offsetted.map line_label_follow_offsetted.png out: labels
+renderers/line_label_follow_offsetted.map line_label_follow_offsetted.png out: labels on lines
 renderers/line_label_follow_offsetted.map line_label_follow_offsetted.pdf out: another output format, pdf
 renderers/line_label_follow_offsetted.map line_label_follow_offsetted.svg out: another output format, svg
 renderers/line_label_follow_offsetted.map line_label_follow_offsetted.cairo.png out: another output format, cairopng
-renderers/line_label_follow_retry.map line_label_follow_retry.png out: labels
+renderers/line_label_follow_retry.map line_label_follow_retry.png out: labels on lines
 renderers/line_label_follow_retry.map line_label_follow_retry.pdf out: another output format, pdf
 renderers/line_label_follow_retry.map line_label_follow_retry.svg out: another output format, svg
 renderers/line_label_follow_retry.map line_label_follow_retry.cairo.png out: another output format, cairopng
@@ -382,25 +389,25 @@ renderers/line_simple.map line_simple.svg out: another output format, svg
 renderers/line_simple.map line_simple.json out: another output format, json
 renderers/line_simple.map line_simple.cairo.png out: another output format, cairopng
 renderers/line_simple.map line_simple.cairo.jpg out: another output format, jpg
-renderers/lots_of_text.map lots_of_text.png out: labels
+renderers/lots_of_text.map lots_of_text.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
 renderers/lots_of_text.map lots_of_text.cairo.png out: another output format, cairopng
 renderers/marker_anchorpoint.map marker_anchorpoint.png geometry fails  # not built yet: pixmap symbols
 renderers/marker_anchorpoint.map marker_anchorpoint.pdf out: another output format, pdf
 renderers/marker_anchorpoint.map marker_anchorpoint.svg out: another output format, svg
 renderers/marker_anchorpoint.map marker_anchorpoint.cairo.png out: another output format, cairopng
-renderers/marker_pixmap.map marker_pixmap.png out: labels
+renderers/marker_pixmap.map marker_pixmap.png text fails  # not built yet: the TEXT of an inline feature as its label's text, a label's STYLE, and pixmap symbols
 renderers/marker_pixmap.map marker_pixmap.pdf out: another output format, pdf
 renderers/marker_pixmap.map marker_pixmap.svg out: another output format, svg
 renderers/marker_pixmap.map marker_pixmap.cairo.png out: another output format, cairopng
-renderers/mask.map mask.png out: labels
+renderers/mask.map mask.png out: labels on lines; and a raster source
 renderers/mask.map mask.cairo.png out: another output format, cairopng
-renderers/mask_opacity.map mask_opacity.png out: labels
+renderers/mask_opacity.map mask_opacity.png out: labels on lines; and a raster source
 renderers/mask_opacity.map mask_opacity.cairo.png out: another output format, cairopng
-renderers/multilabel-leader.map multilabel-leader.png out: labels
+renderers/multilabel-leader.map multilabel-leader.png out: a case MapServer itself does not reproduce, map2img fails: the suite lacks data/DejaVuSansCondensed.ttf, the file of the font `dejavu` its labels name
 renderers/multilabel-leader.map multilabel-leader.pdf out: another output format, pdf
 renderers/multilabel-leader.map multilabel-leader.svg out: another output format, svg
 renderers/multilabel-leader.map multilabel-leader.cairo.png out: another output format, cairopng
-renderers/multilabel.map multilabel.png out: labels
+renderers/multilabel.map multilabel.png out: labels in polygons
 renderers/multilabel.map multilabel.pdf out: another output format, pdf
 renderers/multilabel.map multilabel.svg out: another output format, svg
 renderers/multilabel.map multilabel.cairo.png out: another output format, cairopng
@@ -451,11 +458,11 @@ renderers/point_vector.map point_vector.pdf out: another output format, pdf
 renderers/point_vector.map point_vector.svg out: another output format, svg
 renderers/point_vector.map point_vector.json out: another output format, json
 renderers/point_vector.map point_vector.cairo.png out: another output format, cairopng
-renderers/poly-label-multiline-pos-auto.map poly-label-multiline-pos-auto.png out: labels
+renderers/poly-label-multiline-pos-auto.map poly-label-multiline-pos-auto.png out: labels in polygons
 renderers/poly-label-multiline-pos-auto.map poly-label-multiline-pos-auto.pdf out: another output format, pdf
 renderers/poly-label-multiline-pos-auto.map poly-label-multiline-pos-auto.svg out: another output format, svg
 renderers/poly-label-multiline-pos-auto.map poly-label-multiline-pos-auto.cairo.png out: another output format, cairopng
-renderers/poly-label-pos-auto.map poly-label-pos-auto.png out: labels
+renderers/poly-label-pos-auto.map poly-label-pos-auto.png out: labels in polygons
 renderers/poly-label-pos-auto.map poly-label-pos-auto.pdf out: another output format, pdf
 renderers/poly-label-pos-auto.map poly-label-pos-auto.svg out: another output format, svg
 renderers/poly-label-pos-auto.map poly-label-pos-auto.cairo.png out: another output format, cairopng
@@ -484,7 +491,7 @@ renderers/polygon-pixmap.map polygon-pixmap.png geometry fails  # not built yet:
 renderers/polygon-pixmap.map polygon-pixmap.pdf out: another output format, pdf
 renderers/polygon-pixmap.map polygon-pixmap.svg out: another output format, svg
 renderers/polygon-pixmap.map polygon-pixmap.cairo.png out: another output format, cairopng
-renderers/polygon-simple.map polygon-simple.png out: labels
+renderers/polygon-simple.map polygon-simple.png out: labels in polygons
 renderers/polygon-simple.map polygon-simple.pdf out: another output format, pdf
 renderers/polygon-simple.map polygon-simple.svg out: another output format, svg
 renderers/polygon-simple.map polygon-simple.json out: another output format, json
@@ -553,7 +560,7 @@ renderers/style-size.map style_size_fixed.png geometry passes
 renderers/style-size.map style_size_expression.png geometry passes
 renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: the ANGLE of the map
 renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: the ANGLE of the map
-renderers/text-shaping.map text_shaping_1.png out: labels
+renderers/text-shaping.map text_shaping_1.png out: complex script, Hindi
 renderers/text-shaping.map text_shaping_1.cairo.png out: another output format, cairopng
 renderers/text-shaping.map text_shaping_1.pdf out: another output format, pdf
 renderers/text-shaping.map text_shaping_1.svg out: another output format, svg

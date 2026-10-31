@@ -145,7 +145,9 @@ fn the_list_reads_cases_in_scope_and_out_of_scope() {
          renderers/a.map a.png geometry passes\n\
          renderers/a.map a.pdf out: another output format, pdf # a comment\n\
          \n\
-         renderers/b.map b.png geometry fails\n",
+         renderers/b.map b.png geometry fails\n\
+         renderers/labels.map labels.png text fails\n\
+         renderers/baseline_text.map baseline_text.png text passes\n",
     )
     .unwrap();
     let get = |m: &str, r: &str| {
@@ -172,6 +174,20 @@ fn the_list_reads_cases_in_scope_and_out_of_scope() {
         Some(Entry::InScope {
             category: Category::Geometry,
             passes: false
+        })
+    );
+    assert_eq!(
+        get("renderers/labels.map", "labels.png"),
+        Some(Entry::InScope {
+            category: Category::Text,
+            passes: false
+        })
+    );
+    assert_eq!(
+        get("renderers/baseline_text.map", "baseline_text.png"),
+        Some(Entry::InScope {
+            category: Category::Text,
+            passes: true
         })
     );
 }
@@ -213,7 +229,8 @@ fn a_malformed_list_is_an_error_naming_its_line() {
     for (text, line) in [
         ("a.map a.png\n", "line 1"),
         ("a.map a.png out:\n", "line 1"),
-        ("\na.map a.png text passes\n", "line 2"),
+        ("\na.map a.png raster passes\n", "line 2"),
+        ("a.map a.png text\n", "line 1"),
         ("a.map a.png geometry maybe\n", "line 1"),
         ("a.map a.png geometry passes blank\n", "line 1"),
         (
