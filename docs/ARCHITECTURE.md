@@ -88,10 +88,14 @@ golden path and the test pattern an agent copies from are named here.
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0028): it holds
   each label as its glyphs' indices and its point, draws each glyph once per font and size, and
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
-  diagnostic. A label takes its text from the label, the class, the `LABELITEM`, or last its
-  inline feature's own `TEXT` (`inline.rs`). It reports every label of its cache in
-  `Rendered.labels`, in the order the cache walks them, with the box it was drawn in or none
-  where it was discarded. The symbolization of a style, which ADR-0009's crate map gives a crate
+  diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does: a
+  `labelpoly` style on the box around the text, a `labelpoint` style's marker at the label's
+  point, and a `labelcenter` style's at the centre of that box (`labels.rs`); a label's
+  `PRIORITY` it may compute per feature through `expr`. A label takes its text from the label,
+  the class, the `LABELITEM`, or last its inline feature's own `TEXT` (`inline.rs`). It reports
+  every label of its cache in `Rendered.labels`, in the order the cache walks them, with its
+  member box, that of its text and its `labelpoint` marker, where it was drawn, or none where it
+  was discarded. The symbolization of a style, which ADR-0009's crate map gives a crate
   `symbolize` of its own that does not exist yet, lives here too: a line layer's passes, a line's
   dashes, a polygon's fill through MapServer's default gamma, and the canvas a layer draws on
   (`draw.rs`), a style's width and size bounds, one function per site of MapServer's that bounds
@@ -105,12 +109,14 @@ golden path and the test pattern an agent copies from are named here.
   ones a `GEOMTRANSFORM` places share one budget per layer, bounded with a diagnostic (Q-9).
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
-  FreeType's arithmetic, laid out by their advances, wrapped and aligned line by line, and turned
-  by the label's angle; and where a label stands, its point and its box placed by its position,
-  its offset, and its marker's, as a pure function of the text's box (`place.rs`); and which
-  labels MapServer's label cache draws, by priority, collisions with the labels drawn and the
-  markers cached, the image's edge, and `MINDISTANCE`, each test bounded by a grid over the image
-  (`cache.rs`). It is the one crate that depends on skrifa, and does no I/O (ADR-0028).
+  FreeType's arithmetic, laid out by their advances, broken into lines at the label's `WRAP`
+  character and its `MAXLENGTH`, aligned line by line, and turned by the label's angle; and where
+  a label stands, its point and its box placed by its position, its offset, and its marker's, with
+  its labelpoly and the bounds of its `labelpoint` marker, as a pure function of the text's box
+  (`place.rs`); and which labels MapServer's label cache draws, by priority, collisions with the
+  labels drawn, their `labelpoint` markers among them, and the markers cached, the image's edge,
+  and `MINDISTANCE`, each test bounded by a grid over the image (`cache.rs`). It is the one crate
+  that depends on skrifa, and does no I/O (ADR-0028).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives
   them or none, the renderer trait, and the RGBA image; the cost model that
   bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0032, `hatch.rs`); the one segment

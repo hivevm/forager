@@ -41,11 +41,17 @@ to invent.
   ([ADR-0033](adr/0033-inline-features-in-the-style-ir.md)).
 - **Label cache** — MapServer's deferred placement of labels: labels are collected over all layers
   and placed in a separate pass, after the geometry.
+- **Labelpoly** — The box around a label's text grown by a pixel, or its turned polygon where the
+  label is turned, on which a label's `STYLE` of `GEOMTRANSFORM labelpoly` is drawn; it takes no
+  room from other labels.
 - **Mapfile** — A map definition in UMN MapServer's text syntax, read only by the mapfile
   frontend.
 - **Mapfile frontend** — The crate that parses a mapfile, its expressions, and its symbol
   definitions, resolves MapServer's quirks, and emits a style IR.
   _Avoid:_ mapfile parser (it does more than parse).
+- **Member box** — The box the label cache holds for a label it drew: that of its text joined with
+  that of its `labelpoint` style's marker, as `msDrawLabelCache` forms it; the box a label is
+  tested against and the box `Rendered.labels` reports.
 - **Metatile** — A block of tiles rendered together on the server so that labels can be placed
   across tile boundaries.
 - **msautotest** — The conformance suite of the MapServer repository: mapfiles, data, and
