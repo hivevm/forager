@@ -2494,6 +2494,31 @@ fn a_label_of_labelcache_off_draws_its_styles_before_its_text() {
 }
 
 #[test]
+fn a_label_of_labelcache_off_draws_its_styles_bound_to_each_feature() {
+    // A labelpoly whose COLOR is bound to the property `c` draws, drawn at once, in each
+    // feature's own colour: at UR of the pixel (40, 29) in green, its left edge at x = 39, and at
+    // UR of the pixel (110, 29) in magenta, its left edge at x = 109.
+    let mut map = map(Label {
+        styles: vec![labelpoly(binding("c"))],
+        position: Some(Bound::Value(Position::Ur)),
+        ..label_item()
+    });
+    map.layers[0].label_cache = false;
+    let points = [([40.0, 30.0], "0 255 0"), ([110.0, 30.0], "255 0 255")];
+    let rendered = render(&map, &foragers(&points));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    let green = boxed(&image, PURE_GREEN).expect("a green labelpoly");
+    let magenta = boxed(&image, [255, 0, 255, 255]).expect("a magenta labelpoly");
+    assert_eq!([green[0], green[3]], [39, 29]);
+    assert_eq!([magenta[0], magenta[3]], [109, 29]);
+}
+
+#[test]
 fn a_label_of_labelcache_off_without_text_draws_its_labelpnt_styles() {
     // msDrawLabel draws a labelpnt style at the point whatever the text (mapdraw.c:2714-2748),
     // an empty one or one of line breaks; the cache draws neither.
