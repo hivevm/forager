@@ -102,10 +102,10 @@ takes fonts.
 
 What MapServer does, read at the pin, `7515cccf` (`rel-8-6-6`):
 
-- **Reading an image.** `msPreloadImageSymbol` (`src/mapsymbol.c`, 952–973) reads the image
+- **Reading an image.** `msPreloadImageSymbol` (`src/mapsymbol.c`, 952–972) reads the image
   through the renderer's `loadImageFromFile`, which the AGG renderer sets to
   `msLoadMSRasterBufferFromFile` (`src/mapagg.cpp`, 1444), and takes the symbol's width and height
-  from the image (970–971). `msLoadMSRasterBufferFromFile` (`src/mapimageio.c`, 1140–1174) tells
+  from the image (969–970). `msLoadMSRasterBufferFromFile` (`src/mapimageio.c`, 1140–1174) tells
   the format by the file's first bytes, not its name: the PNG signature (1157), `GIF` (1159),
   anything else "unsupported pixmap format" (1170). It is called when the symbol is first drawn or
   measured (`preloadSymbol`, `src/maprendering.c`, 101–132; `msGetMarkerSize`, `src/mapsymbol.c`,

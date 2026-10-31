@@ -114,7 +114,7 @@ is the table a session reads.
 | [0037](0037-c-number-reading-in-style-ir.md) | C's reading of numbers is ported once, in `style-ir`, for the frontend and the core alike | the ports of C's `atof`, `strtod`, `atoi`, and MapServer's `MS_NINT` in `crates/style-ir`, `crates/expr`, `crates/mapfile`, and `crates/engine` | 🟡 proposed |
 | [0038](0038-browser-bindings-bind-geojson-only.md) | The browser bindings bind only the GeoJSON a page passes, never a shapefile | `crates/bindings-wasm`: which feature sources it binds to the layers, and its dependencies on `adapter-<kind>` crates | 🟡 proposed |
 | [0039](0039-the-clip-to-the-image-is-one-module-of-render.md) | The clip to the image is one module of `render`, shared by the hatch's bound and every renderer | `crates/render/src/clip.rs`, the clipping of paths in `crates/render-agg`, and every renderer or bound that measures or clips a path against the image | 🟡 proposed |
-| [0040](0040-a-decoded-pixmap-is-held-once-per-render.md) | A decoded pixmap is held once per render and per path, and shared by every item that draws it | the image store of `crates/engine`, the decoded image type `RgbaImage` of `crates/render` and the display items that carry it, the pixmap decoders of `crates/encode`, and every crate that places a pixmap or a fill tile in the display list | 🟡 proposed |
+| [0040](0040-a-decoded-pixmap-is-held-once-per-render.md) | A decoded pixmap is held once per render and per path, and shared by every item that draws it | the image store of `crates/engine`, the type `PremultipliedImage` of `crates/render` and the display items that carry it, the pixmap decoders of `crates/encode`, and every crate that draws a pixmap or a fill tile | 🟡 proposed |
 
 ### Superseded and rejected
 
