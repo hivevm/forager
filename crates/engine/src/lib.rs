@@ -4,6 +4,7 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod bind;
+mod bounds;
 mod classes;
 mod draw;
 mod extent;

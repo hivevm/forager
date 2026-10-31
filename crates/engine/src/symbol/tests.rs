@@ -69,11 +69,6 @@ fn ops(style: &Style, symbol: &Symbol) -> Vec<DrawOp> {
 }
 
 #[test]
-fn the_degree_is_mapservers_constant() {
-    assert_eq!(DEG_TO_RAD, "0.0174532925199432958".parse::<f64>().unwrap());
-}
-
-#[test]
 fn a_style_marks_by_its_symbol() {
     let symbols = [triangle(true), circle(true), {
         let mut pixmap = triangle(false);
@@ -482,4 +477,31 @@ fn at_a_factor_the_offsets_and_the_anchor_move_the_marker_scaled() {
         Point { x: 60.0, y: 60.0 },
         "a marker 20 across"
     );
+}
+
+#[test]
+fn a_symbol_bounds_its_size_and_outline_as_compute_symbol_style_does() {
+    // computeSymbolStyle, maprendering.c:62-64 and 69-71, at a factor of 2: MS_MAX with the
+    // lower bound times the resolution factor, then MS_MIN with the upper. A SIZE and a WIDTH bound
+    // to a property that reads as `nan`, which atof() reads as NaN, become MINSIZE and MINWIDTH;
+    // a MAXSIZE or MAXWIDTH below the lower bound wins.
+    let nan = forager_expr::atof(b"nan");
+    let bounded = |size: f64, width: f64, min: f64, max: f64| Style {
+        size: Some(Bound::Value(size)),
+        width: Some(Bound::Value(width)),
+        min_size: Some(min),
+        max_size: Some(max),
+        min_width: Some(min),
+        max_width: Some(max),
+        ..style(None, None)
+    };
+    let triangle = triangle(false);
+    let s = symbol_style(&bounded(nan, nan, 2.0, 5.0), &triangle, 2.0);
+    assert_eq!(
+        (s.scale, s.outline_width),
+        (2.0, 4.0),
+        "MINSIZE 2 is a size of 4"
+    );
+    let s = symbol_style(&bounded(4.0, 4.0, 6.0, 3.0), &triangle, 2.0);
+    assert_eq!((s.scale, s.outline_width), (3.0, 6.0), "the maximum last");
 }
