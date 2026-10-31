@@ -185,7 +185,14 @@ fn a_vector_symbol_is_centred_scaled_and_turned_counter_clockwise() {
     // agg2RenderVectorSymbol: translate by half the extent, scale by 10 / 2, turn by -90° in
     // AGG's y-down sense, move to the point. The apex, below the centre, turns to its right.
     let ops = ops(&style(Some(10.0), Some(90.0)), &triangle(true));
-    let [DrawOp::Fill { rings, color }] = ops.as_slice() else {
+    let [
+        DrawOp::Fill {
+            rings,
+            color,
+            gamma: None,
+        },
+    ] = ops.as_slice()
+    else {
         panic!("{ops:?}");
     };
     assert_eq!(*color, RED);
@@ -337,7 +344,14 @@ fn an_ellipse_is_aggs_polygon_of_its_scaled_extent() {
     // agg2RenderEllipseSymbol: a circle 1 across at size 12 has a radius of 6, which AGG's
     // calc_num_steps draws with uround(2π / (2 acos(6 / 6.125))) = 16 vertices, from the angle 0.
     let ops = ops(&style(Some(12.0), None), &circle(true));
-    let [DrawOp::Fill { rings, color }] = ops.as_slice() else {
+    let [
+        DrawOp::Fill {
+            rings,
+            color,
+            gamma: None,
+        },
+    ] = ops.as_slice()
+    else {
         panic!("{ops:?}");
     };
     assert_eq!(*color, RED);
