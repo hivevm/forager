@@ -16,7 +16,7 @@ pub use crate::cache::{MAX_LABELS, MAX_PRIORITY, Member, Members, draw_label_cac
 pub use crate::font::{Attempt, Font, Unusable, attempts};
 pub use crate::layout::{Align, Drawn, Glyphs, Layout, LineError, TextPath, lines};
 pub use crate::place::{
-    AUTO_POSITIONS, Anchor, Bounds, Offsets, Placement, PointLabel, Position, TextBox, metrics,
-    place, placed_at,
+    AUTO_POSITIONS, Anchor, Bounds, Offsets, Placement, PointLabel, Position, TextBox,
+    label_poly_at, metrics, place, placed_at,
 };
 pub use crate::size::{glyph_size, pixel_size};

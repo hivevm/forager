@@ -3,7 +3,8 @@
 //! in `msDrawLabelCache` at the pin.
 
 use forager_label::{
-    AUTO_POSITIONS, Anchor, Bounds, Offsets, PointLabel, Position, TextBox, metrics, place,
+    AUTO_POSITIONS, Anchor, Bounds, Offsets, PointLabel, Position, TextBox, label_poly_at, metrics,
+    place, placed_at,
 };
 use forager_render::Point;
 
@@ -66,6 +67,35 @@ fn a_buffer_grows_the_box_and_leaves_the_point() {
     let (at, bounds) = metrics(AT, Anchor::Ul, &TEXT, 4, 3, 0.0, 2);
     assert_eq!(at, point(66.0, 45.0));
     assert_eq!(bounds.bbox, [64.0, 34.0, 98.0, 49.0]);
+}
+
+#[test]
+fn a_labelpoly_is_the_text_box_grown_by_1_pixel_whatever_the_labels_buffer() {
+    // msDrawLabelCache computes the labelpoly with get_metrics at the label's position and
+    // offsets and a buffer of 1; the label's own BUFFER of 5 grows only the box it tests.
+    let label = PointLabel {
+        position: Position::At(Anchor::Ul),
+        text: TEXT,
+        offsets: Offsets {
+            marker: [0.0, 0.0],
+            label: [4, 3],
+        },
+        rotation: 0.0,
+        buffer: 5,
+        force: false,
+    };
+    // At UL 4 across and 3 down the text's box is [66, 36, 96, 47].
+    assert_eq!(
+        label_poly_at(AT, &label, Anchor::Ul),
+        Bounds {
+            poly: None,
+            bbox: [65.0, 35.0, 97.0, 48.0]
+        }
+    );
+    assert_eq!(
+        placed_at(AT, &label, Anchor::Ul).1.bbox,
+        [61.0, 31.0, 101.0, 52.0]
+    );
 }
 
 #[test]

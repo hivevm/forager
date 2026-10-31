@@ -242,22 +242,34 @@ impl<'a> Selector<'a, '_> {
                 .styles
                 .iter()
                 .enumerate()
-                .map(|(s, style)| self.bind(style, feature, symbols, (index, s)))
+                .map(|(s, style)| self.bind(style, feature, symbols, Carrier::Style(index, s)))
                 .collect();
             selected.push((feature, index, styles));
         }
         selected
     }
 
-    /// `style`, style `place` of its class, with each property bound to a property or computed
-    /// by an expression given its value for `feature`, as bindStyle binds it; the style itself
+    /// `style` of label `label` of class `class`, bound to `feature` as bindLabel binds a
+    /// label's styles, through bindStyle as a class's.
+    pub fn bind_label_style<'s>(
+        &mut self,
+        style: &'s Style,
+        feature: &Feature,
+        symbols: &[Symbol],
+        (class, label): (usize, usize),
+    ) -> Cow<'s, Style> {
+        self.bind(style, feature, symbols, Carrier::Label(class, label))
+    }
+
+    /// `style`, which `carrier` carries, with each property bound to a property or computed by
+    /// an expression given its value for `feature`, as bindStyle binds it; the style itself
     /// where none is.
     fn bind<'s>(
         &mut self,
         style: &'s Style,
         feature: &Feature,
         symbols: &[Symbol],
-        (class, place): (usize, usize),
+        carrier: Carrier,
     ) -> Cow<'s, Style> {
         if !varies(style) {
             return with_opacity(Cow::Borrowed(style));
@@ -308,7 +320,7 @@ impl<'a> Selector<'a, '_> {
                 &failure,
                 self.layer_index,
                 self.layer,
-                Carrier::Style(class, place),
+                carrier,
                 self.diagnostics,
             );
         }
@@ -344,8 +356,14 @@ pub(crate) fn ms_nint(x: f64) -> i32 {
     x.round_ties_even() as i32
 }
 
+/// `style`, which [`varies`] by no feature, as bindStyle leaves it for any: its opacity applied
+/// to its colours.
+pub(crate) fn unbound(style: &Style) -> Cow<'_, Style> {
+    with_opacity(Cow::Borrowed(style))
+}
+
 /// Whether a property the engine draws varies by feature.
-fn varies(style: &Style) -> bool {
+pub(crate) fn varies(style: &Style) -> bool {
     fn bound<T>(property: &Option<Bound<T>>) -> bool {
         property
             .as_ref()

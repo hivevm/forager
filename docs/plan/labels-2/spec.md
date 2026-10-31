@@ -13,10 +13,11 @@ even cache the labels MapServer caches, so G-10 cannot hold there.
 
 The labels of point features are drawn with these four as MapServer draws them at the pin: a text
 longer than `MAXLENGTH` is broken at its `WRAP` character, as `textlayout.c` breaks it; a label's
-`STYLE`s with `GEOMTRANSFORM labelpoly`, `labelpoint`, or `labelcenter` are drawn with it and
-counted in its collisions, as `msDrawLabelCache` counts them; a `PRIORITY` may be an expression;
-a layer with `LABELCACHE OFF` draws its labels at once, without the cache. Each failing text case
-that only lacked these turns to passing, and its labels to holding G-10 where they match.
+`STYLE`s with `GEOMTRANSFORM labelpoly`, `labelpoint`, or `labelcenter` are drawn with it, and
+those of `labelpoint` counted in its collisions, as `msDrawLabelCache` counts them; a `PRIORITY`
+may be an expression; a layer with `LABELCACHE OFF` draws its labels at once, without the cache.
+Each failing text case that only lacked these turns to passing, and its labels to holding G-10
+where they match.
 
 ## Existing behaviour
 
@@ -43,8 +44,8 @@ that only lacked these turns to passing, and its labels to holding G-10 where th
 1. As a user, I want a long label broken into lines at `MAXLENGTH`, so that it reads as MapServer
    draws it.
 2. As a user, I want a label's background box (`labelpoly`) and its marker (`labelpoint`,
-   `labelcenter`) drawn, and their room taken from other labels, so that labels look and collide as
-   in MapServer.
+   `labelcenter`) drawn, and the room of a `labelpoint` marker taken from other labels, so that
+   labels look and collide as in MapServer.
 3. As a user, I want a `PRIORITY` computed by an expression, so that my mapfile's priorities apply.
 4. As a user, I want a layer with `LABELCACHE OFF` to draw its labels at once, so that they are
    neither dropped nor moved above later layers.
@@ -57,8 +58,11 @@ that only lacked these turns to passing, and its labels to holding G-10 where th
   is broken at the `WRAP` character or U+200B once a line holds `MAXLENGTH` glyphs; with `WRAP`
   and no `MAXLENGTH`, at every `WRAP` character, as today.
 - **Label styles.** As `msDrawLabelCache`: a `labelpoly` style's polygon is the text's box grown by
-  the style, drawn under the text and counted in the label's box for collisions; a `labelpoint` or
-  `labelcenter` style is a marker at the label's point or its box's centre, its bounds counted too.
+  a pixel, drawn under the text in the style, and not counted in the label's box for collisions:
+  `msTestLabelCacheCollisions` (`maplabel.c:781-868`) tests the text's box and the `labelpoint`
+  styles' bounds alone, and the member's box (`mapdraw.c:3976-4030`) is formed of them alone. A
+  `labelpoint` style is a marker at the label's point, its bounds counted; a `labelcenter` style is
+  a marker at the labelpoly's centre, not counted either.
   The box the engine reports for a drawn label is MapServer's member box, the union of the text's
   box and the `labelpoint` styles' bounds (the maintainer's choice), so that G-10 compares like
   with like.

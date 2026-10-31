@@ -553,7 +553,7 @@ fn outline_style(style: &Style) -> Style {
 /// the `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width scaled, the
 /// factor itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled, as
 /// MapServer bounds it there. False where a hatch is refused (Q-9).
-fn shade(
+pub(crate) fn shade(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
     style: &Style,
