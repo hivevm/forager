@@ -11,26 +11,11 @@ pub struct FileLoader {
     root: PathBuf,
 }
 
-/// The files of a base context, as a data source or a font reads them: the CLI's directory, or
-/// another host's files, such as the conformance suite's.
-pub trait BaseContext {
-    /// Whether `path` names a regular file of the base context.
-    fn holds(&self, path: &ResourcePath) -> bool;
-
-    /// The bytes of the file at `path`, read no further than one past `limit`, so that a file
-    /// past it is reported without being read whole (Q-9).
-    ///
-    /// # Errors
-    ///
-    /// A file the base context does not hold, or one it cannot read.
-    fn read(&self, path: &ResourcePath, limit: u64) -> Result<Vec<u8>, SourceError>;
-}
-
 /// Reads the files of a data source from the base context, each refused past its limit (Q-9).
 /// A type of its own, so that a data source cannot be handed the loader of a mapfile, whose
 /// limit the frontend applies to all its files together.
-pub struct DataLoader<'a, B: ?Sized> {
-    files: &'a B,
+pub struct DataLoader {
+    files: FileLoader,
     limit: u64,
 }
 
@@ -63,17 +48,17 @@ impl FileLoader {
         Ok((Self { root }, name))
     }
 
+    /// The loader of the same base context for the files of a data source, each refused past
+    /// `limit` bytes (Q-9).
+    pub fn for_data(self, limit: u64) -> DataLoader {
+        DataLoader { files: self, limit }
+    }
+
     /// The canonical path of `path` where it is a file inside the base context; `None` for one
     /// that is missing or that a link leads out of, alike.
     fn inside(&self, path: &ResourcePath) -> Option<PathBuf> {
         let full = self.root.join(path.as_str()).canonicalize().ok()?;
         full.starts_with(&self.root).then_some(full)
-    }
-}
-
-impl BaseContext for FileLoader {
-    fn holds(&self, path: &ResourcePath) -> bool {
-        self.inside(path).is_some_and(|full| full.is_file())
     }
 
     fn read(&self, path: &ResourcePath, limit: u64) -> Result<Vec<u8>, SourceError> {
@@ -90,20 +75,14 @@ impl ResourceLoader for FileLoader {
     }
 }
 
-impl<'a, B: BaseContext + ?Sized> DataLoader<'a, B> {
-    /// The loader of `files` for the files of a data source, each refused past `limit` bytes
-    /// (Q-9).
-    pub fn new(files: &'a B, limit: u64) -> Self {
-        Self { files, limit }
-    }
-
-    /// Whether `path` names a regular file of the base context.
+impl DataLoader {
+    /// Whether `path` names a regular file inside the base context.
     pub fn holds(&self, path: &ResourcePath) -> bool {
-        self.files.holds(path)
+        self.files.inside(path).is_some_and(|full| full.is_file())
     }
 }
 
-impl<B: BaseContext + ?Sized> ResourceLoader for DataLoader<'_, B> {
+impl ResourceLoader for DataLoader {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
         let bytes = self.files.read(path, self.limit)?;
         if bytes.len() as u64 > self.limit {
@@ -147,7 +126,7 @@ mod tests {
         std::fs::write(dir.join("at.shp"), [0u8; 10]).unwrap();
         std::fs::write(dir.join("past.shp"), [0u8; 11]).unwrap();
         let (loader, _) = FileLoader::for_mapfile(&dir.join("m.map"), None).unwrap();
-        let loader = DataLoader::new(&loader, 10);
+        let loader = loader.for_data(10);
         let load = |name: &str| {
             forager_ports::poll_once(loader.load(&ResourcePath::new(name).unwrap())).unwrap()
         };

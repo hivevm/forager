@@ -183,10 +183,10 @@ The conformance harness there reads the cases of `misc` and `renderers`, their `
 in its module `conformance/`, whose list `cases.txt` names each in scope with its category and
 expected outcome, passing or failing, or out of scope with its reason, and marks those whose
 reference is blank; it renders each case in scope in-process through the CLI's library, which binds
-its shapefiles and reads the fonts of its labels as `forager render` does, with the suite's loader
-as the base context, compares it by the metric of its category, geometry and symbols or text,
-and holds its outcome, leaving the renderings of failing cases under
-Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that pass, the blank
+its shapefiles and reads the fonts of its labels as `forager render` does, with the suite's
+directory as the base context, compares it by the metric of its category, geometry and symbols or
+text, and holds its outcome, leaving the renderings of failing cases under Cargo's
+`target/tmp/msautotest/`. It counts the cases in scope and those that pass, the blank
 ones apart, and `scripts/check-fidelity.sh` holds the share of passing cases without a blank
 reference against that of the last release tag `v<semver>` in the record
 `crates/cli/tests/conformance/fidelity.txt`, to which each release adds its line (Q-4). For each

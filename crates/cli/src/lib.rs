@@ -3,7 +3,9 @@
 //! The binary is built on it, and the conformance harness renders through it, with the suite's
 //! directory as the base context.
 
-pub mod files;
+mod files;
+
+pub use crate::files::FileLoader;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -16,10 +18,10 @@ use forager_ports::{FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, S
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{Diagnostic, Map};
 
-use crate::files::{BaseContext, DataLoader};
+use crate::files::DataLoader;
 
 /// The largest data file the CLI reads, a GeoJSON file or one of a shapefile's files (Q-9).
-pub const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Renders `map` with the GeoJSON files `named` binds to its layers by name and the shapefiles
 /// its local layers name in `base`, reading the fonts of its labels from `base` too, each file
@@ -29,16 +31,16 @@ pub const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
 /// # Errors
 ///
 /// The `port-waited` error, when a read waited (see [`now`]).
-pub fn render<B: BaseContext + ?Sized>(
+pub fn render(
     map: &Map,
     named: &[(String, PathBuf)],
-    base: &B,
+    base: &FileLoader,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Rendered, Diagnostic> {
     // The fonts of the labels come from the same base context, each bounded by the engine's
     // limit for a font, read no further than that (Q-9).
-    let fonts = DataLoader::new(base, forager_engine::MAX_FONT_BYTES as u64);
-    let data = DataLoader::new(base, MAX_SOURCE_BYTES);
+    let fonts = base.clone().for_data(forager_engine::MAX_FONT_BYTES as u64);
+    let data = base.clone().for_data(MAX_SOURCE_BYTES);
     let mut shapefiles = Shapefiles::new(&data);
     let sources = forager_engine::bind_sources(
         map,
@@ -89,11 +91,7 @@ enum Held {
 /// report. A layer whose bound source the engine does not read, one OFF, a raster, or one with
 /// inline features, is not bound to its `DATA`: its files would be read into memory for nothing,
 /// and a raster's `DATA` is no shapefile.
-fn held_sources<B: BaseContext + ?Sized>(
-    map: &Map,
-    named: &[(String, PathBuf)],
-    data: &DataLoader<'_, B>,
-) -> Vec<(String, Held)> {
+fn held_sources(map: &Map, named: &[(String, PathBuf)], data: &DataLoader) -> Vec<(String, Held)> {
     let mut held: BTreeMap<String, Held> = BTreeMap::new();
     for layer in &map.layers {
         let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
@@ -115,7 +113,7 @@ fn held_sources<B: BaseContext + ?Sized>(
 
 /// Whether the base context holds the `.shp` or `.SHP` of `data`, whose extension, if any, the
 /// shapefile adapter replaces as `msShapefileOpen` does.
-fn shapefile_exists<B: BaseContext + ?Sized>(loader: &DataLoader<'_, B>, data: &str) -> bool {
+fn shapefile_exists(loader: &DataLoader, data: &str) -> bool {
     let base = forager_adapter_shapefile::basename(data);
     ["shp", "SHP"].iter().any(|extension| {
         ResourcePath::new(&format!("{base}.{extension}")).is_ok_and(|path| loader.holds(&path))
@@ -178,7 +176,7 @@ fn read_source(file: &Path) -> Result<GeoJsonSource, String> {
     GeoJsonSource::parse(&read_bounded(file)?).map_err(|e| e.message)
 }
 
-/// A text file of at most [`MAX_SOURCE_BYTES`] (Q-9). The limit bounds what is read, not only
+/// A text file of at most the limit of a data source (Q-9). The limit bounds what is read, not only
 /// what the file system reports, so that a device or a pipe cannot exhaust memory.
 ///
 /// # Errors
@@ -200,81 +198,67 @@ pub fn read_bounded(file: &Path) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::{Cell, RefCell};
+    use std::cell::Cell;
 
     use forager_ports::SourceError;
 
     use super::*;
 
-    /// A base context in memory that records each read with its limit.
-    struct Recording {
-        files: BTreeMap<&'static str, Vec<u8>>,
-        reads: RefCell<Vec<(String, u64)>>,
-    }
-
-    impl BaseContext for Recording {
-        fn holds(&self, path: &ResourcePath) -> bool {
-            self.files.contains_key(path.as_str())
-        }
-
-        fn read(&self, path: &ResourcePath, limit: u64) -> Result<Vec<u8>, SourceError> {
-            self.reads
-                .borrow_mut()
-                .push((path.as_str().to_owned(), limit));
-            self.files
-                .get(path.as_str())
-                .cloned()
-                .ok_or_else(|| SourceError::new("no such file"))
-        }
-    }
-
-    impl ResourceLoader for Recording {
-        async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
-            self.read(path, u64::MAX)
-        }
-    }
-
     #[test]
     fn the_fonts_of_a_label_are_read_from_the_base_context_within_the_font_limit() {
-        // The conformance harness hands its suite to `render` as the base context; the fonts of
-        // a case's labels are then read here, as `forager render` reads them.
-        let base = Recording {
-            files: [
-                (
-                    "m.map",
-                    b"MAP SIZE 10 10 EXTENT 0 0 10 10 FONTSET 'fonts.lst'\n\
-                      LAYER NAME 'p' TYPE POINT STATUS ON\n\
-                      FEATURE POINTS 5 5 END END\n\
-                      CLASS LABEL FONT 'sans' TEXT 'x' END END END END\n"
-                        .to_vec(),
+        // The conformance harness hands `render` the suite as the base context; the fonts of a
+        // case's labels are then read here, as `forager render` reads them: from the base context,
+        // each refused by the CLI's loader past the engine's limit for a font (Q-9).
+        let dir = std::env::temp_dir().join(format!("forager-lib-fonts-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("fonts")).unwrap();
+        // A test font of the label crate, a subset of DejaVu Sans whose licence lies beside it.
+        let sans = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+        std::fs::copy(sans, dir.join("fonts/sans.ttf")).unwrap();
+        // One byte past the limit, sparse on disk.
+        std::fs::File::create(dir.join("fonts/huge.ttf"))
+            .and_then(|f| f.set_len(forager_engine::MAX_FONT_BYTES as u64 + 1))
+            .unwrap();
+        std::fs::write(
+            dir.join("fonts.lst"),
+            "sans fonts/sans.ttf\nhuge fonts/huge.ttf\n",
+        )
+        .unwrap();
+        let rendered = |font: &str| {
+            std::fs::write(
+                dir.join("m.map"),
+                format!(
+                    "MAP SIZE 10 10 EXTENT 0 0 10 10 FONTSET 'fonts.lst'\n\
+                     LAYER NAME 'p' TYPE POINT STATUS ON FEATURE POINTS 5 5 END END\n\
+                     CLASS LABEL FONT '{font}' TEXT 'x' END END END END\n"
                 ),
-                ("fonts.lst", b"sans fonts/sans.ttf\n".to_vec()),
-                (
-                    // A test font of the label crate, a subset of DejaVu Sans whose licence lies
-                    // beside it.
-                    "fonts/sans.ttf",
-                    include_bytes!("../../label/tests/fixtures/dejavu-sans-subset.ttf").to_vec(),
-                ),
-            ]
-            .into_iter()
-            .collect(),
-            reads: RefCell::new(Vec::new()),
+            )
+            .unwrap();
+            let (base, name) = FileLoader::for_mapfile(&dir.join("m.map"), None).unwrap();
+            let path = ResourcePath::new(&name).unwrap();
+            let loaded = now(forager_mapfile::load(&path, &base, None)).unwrap();
+            let map = loaded.document.expect("the mapfile loads").map;
+            let mut diagnostics = Vec::new();
+            let rendered = render(&map, &[], &base, &mut diagnostics).unwrap();
+            assert!(diagnostics.is_empty(), "{diagnostics:?}");
+            rendered
         };
-        let path = ResourcePath::new("m.map").unwrap();
-        let loaded = now(forager_mapfile::load(&path, &base, None)).unwrap();
-        let map = loaded.document.expect("the mapfile loads").map;
-        base.reads.borrow_mut().clear();
-        let mut diagnostics = Vec::new();
-        let rendered = render(&map, &[], &base, &mut diagnostics).unwrap();
-        assert!(diagnostics.is_empty(), "{diagnostics:?}");
-        assert!(rendered.image.is_some(), "{:?}", rendered.diagnostics);
-        assert_eq!(rendered.labels.len(), 1, "{:?}", rendered.diagnostics);
-        assert_eq!(
-            *base.reads.borrow(),
-            [(
-                "fonts/sans.ttf".to_owned(),
-                forager_engine::MAX_FONT_BYTES as u64
-            )]
+        let sans = rendered("sans");
+        let huge = rendered("huge");
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(sans.image.is_some(), "{:?}", sans.diagnostics);
+        assert_eq!(sans.labels.len(), 1, "{:?}", sans.diagnostics);
+        // The CLI's loader refuses the font, with its own reason, before the engine sees it.
+        let limit = format!(
+            "the file exceeds the limit of {} bytes",
+            forager_engine::MAX_FONT_BYTES
+        );
+        assert!(
+            huge.diagnostics
+                .iter()
+                .any(|d| d.code == "label-font-unusable" && d.message.contains(&limit)),
+            "{:?}",
+            huge.diagnostics
         );
     }
 

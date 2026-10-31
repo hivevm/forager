@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use forager_adapter_epsg::EpsgTable;
-use forager_cli::files::FileLoader;
-use forager_cli::{now, read_bounded};
+use forager_cli::{FileLoader, now, read_bounded};
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath};
 use forager_style_ir::{Diagnostic, StyleDocument};
 

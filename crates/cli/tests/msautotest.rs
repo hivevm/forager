@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use forager_adapter_epsg::EpsgTable;
-use forager_cli::files::BaseContext;
+use forager_cli::FileLoader;
 use forager_engine::CachedLabel;
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
@@ -272,22 +272,6 @@ struct Suite(PathBuf);
 impl ResourceLoader for Suite {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
         std::fs::read(self.0.join(path.as_str())).map_err(|e| SourceError::new(e.to_string()))
-    }
-}
-
-/// The suite as the base context of the CLI's library, for the data and the fonts of a case.
-impl BaseContext for Suite {
-    fn holds(&self, path: &ResourcePath) -> bool {
-        self.0.join(path.as_str()).is_file()
-    }
-
-    fn read(&self, path: &ResourcePath, limit: u64) -> Result<Vec<u8>, SourceError> {
-        use std::io::Read;
-        let mut bytes = Vec::new();
-        std::fs::File::open(self.0.join(path.as_str()))
-            .and_then(|file| file.take(limit + 1).read_to_end(&mut bytes))
-            .map_err(|e| SourceError::new(e.to_string()))?;
-        Ok(bytes)
     }
 }
 
@@ -913,9 +897,10 @@ fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<St
 }
 
 /// The rendering of `case` and the labels of its cache, the options of its `map2img` line applied
-/// to its style IR, its sources bound and the fonts of its labels read by the CLI's library, as
-/// `forager render` binds and reads them. Unlike there, the suite's loader is the base context, and
-/// the projections resolve through the stand-in table of the G-1 test.
+/// to its style IR, its sources bound and the fonts of its labels read by the CLI's library from
+/// the suite's directory as the base context, as `forager render` binds and reads them. Unlike
+/// there, the mapfile loads through the stand-in table of the G-1 test and with `-i` applied, and
+/// the binding's diagnostics are reported only with a rendering that gives no image.
 fn render(
     case: &Case,
     loader: &Suite,
@@ -943,12 +928,15 @@ fn render(
     })?;
     let mut map = document.map;
     conformance::apply(&options, &mut map, &loaded.diagnostics)?;
-    let rendered = forager_cli::render(&map, &[], loader, &mut Vec::new())
+    let (base, _) = FileLoader::for_mapfile(&loader.0.join(&case.mapfile), Some(&loader.0))
+        .map_err(|e| format!("its base context: {e}"))?;
+    let mut bound = Vec::new();
+    let rendered = forager_cli::render(&map, &[], &base, &mut bound)
         .map_err(|diagnostic| diagnostic.to_string())?;
     let Some(image) = rendered.image else {
-        let errors: Vec<_> = rendered
-            .diagnostics
+        let errors: Vec<_> = bound
             .iter()
+            .chain(&rendered.diagnostics)
             .map(ToString::to_string)
             .collect();
         return Err(format!("it renders no image: {}", errors.join("; ")));
