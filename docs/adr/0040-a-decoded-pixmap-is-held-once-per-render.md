@@ -84,9 +84,9 @@ values of Q-9's limits.
 - **Decoded with straight alpha and premultiplied at draw** — each placement premultiplies again,
   and the store would hold bytes MapServer never holds.
 - **`RgbaImage` with a mark that it is premultiplied** — no new type, but the mark is a field the
-  compiler does not check: the 40 places that build an `RgbaImage` would each have to set it, and
-  `encode::png` handed a premultiplied image would write it as straight and silently darken every
-  pixel that is not opaque.
+  compiler does not check: the two dozen or so places that build an `RgbaImage` would each have
+  to set it, and `encode::png` handed a premultiplied image would write it as straight and
+  silently darken every pixel that is not opaque.
 
 ## Sources / Prior art
 
