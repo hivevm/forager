@@ -709,6 +709,12 @@ fn a_nul_between_tokens_ends_the_expression_as_the_lexer_does() {
         class_expression("([a] = 1 \0 ] \"unterminated)").1,
         format!(r#"{{"op":"=","args":[{A},1.0]}}"#)
     );
+    // MapServer holds the expression as a C string: a NUL inside a string ends it there too,
+    // and the string is left open.
+    assert_eq!(
+        class_expression("(\"[a]\" = \"x\0y\")"),
+        (vec!["invalid-expression".to_owned()], "false".to_owned())
+    );
 }
 
 #[test]

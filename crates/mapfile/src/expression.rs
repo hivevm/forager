@@ -405,7 +405,9 @@ enum Lexeme {
 /// The tokens msTokenizeExpression reads from `text` with the EXPRESSION_STRING rules of
 /// maplexer.l, which MapServer builds with `flex -i`, matched case-insensitively and longest
 /// first, each with its span. White space is `[ \t\r]+`; a newline, a NUL, and a `|` that is no
-/// `||` end the tokens, as the rule `[\r|\n|\0]` returns 0 there.
+/// `||` end the tokens, as the rule `[\r|\n|\0]` returns 0 there. MapServer holds the text as a C
+/// string, so a NUL inside a token ends the text too: the scanner reads only what comes before
+/// the first one.
 struct Scanner<'a> {
     text: &'a str,
     at: usize,
@@ -417,6 +419,7 @@ struct Scanner<'a> {
 
 impl<'a> Scanner<'a> {
     fn new(text: &'a str) -> Self {
+        let text = text.split('\0').next().unwrap_or_default();
         Self {
             text,
             at: 0,
