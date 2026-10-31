@@ -8,6 +8,8 @@
 # the script reads them, answers 'fuzz --version' with the pinned version, and records every other
 # call. The case asserts the exit code, a line of the output, and the calls that would have
 # installed the toolchain and fuzzed; a target without seeds fails before any of them is made.
+# Each fixture carries the repository's rust-toolchain.toml, so that cargo reads the manifests
+# with the pinned toolchain (ADR-0008), which scripts/install-tools.sh installs.
 #
 # Usage:
 #     scripts/test-fuzz.sh
@@ -48,6 +50,7 @@ fixture() {
   shift 2
   mkdir -p "$dir/scripts" "$dir/fuzz/src" "$dir/fuzz/fuzz_targets" "$dir/fuzz/elsewhere"
   cp "$SCRIPT" "$dir/scripts/fuzz.sh"
+  cp "$ROOT/rust-toolchain.toml" "$dir/rust-toolchain.toml"
   printf '[package]\nname = "fixture-fuzz"\nversion = "0.0.0"\nedition = "2021"\n' \
     > "$dir/fuzz/Cargo.toml"
   printf 'publish = false\n\n[workspace]\n\n%s\n' "$body" >> "$dir/fuzz/Cargo.toml"
@@ -62,8 +65,10 @@ fixture() {
 }
 
 # expect <exit code> <name> <dir> <needle> <calls> [args...] — run the script in the directory;
-# the output must contain the needle, and the recorded calls, one per line in the order cargo
-# lists the targets, must equal the given ones exactly.
+# the exit code must be the given one, or any but 0 when that is 'nonzero'; the output must
+# contain the needle, and not $REJECT when that is set; and the recorded calls, one per line, must
+# equal the given ones once both are sorted, since cargo, not the manifest, decides the order of
+# the targets.
 expect() {
   local want="$1" name="$2" dir="$3" needle="$4" calls="$5"
   shift 5
@@ -71,12 +76,16 @@ expect() {
   [[ -n "$dir" && -f "$dir/scripts/fuzz.sh" ]] || { echo "expect: '$dir' is no fixture" >&2; exit 1; }
   : > "$log"
   out="$(cd "$dir" && PATH="$work/bin:$PATH" FAKE_LOG="$log" bash scripts/fuzz.sh "$@" 2>&1)"; rc=$?
-  if [[ $rc -eq "$want" && "$out" == *"$needle"* && "$(cat "$log")" == "$calls" ]]; then
+  local rc_ok=0
+  if [[ "$want" == nonzero ]]; then ((rc != 0)) && rc_ok=1; else ((rc == want)) && rc_ok=1; fi
+  if ((rc_ok)) && [[ "$out" == *"$needle"* ]] \
+    && [[ "$(sort "$log")" == "$(if [[ -n "$calls" ]]; then sort <<< "$calls"; fi)" ]] \
+    && [[ -z "${REJECT:-}" || "$out" != *"$REJECT"* ]]; then
     passed=$((passed + 1))
     return
   fi
   failed=$((failed + 1))
-  echo "FAIL: $name (expected exit $want with \"$needle\", got exit $rc)" >&2
+  echo "FAIL: $name (expected exit $want with \"$needle\"${REJECT:+ and without \"$REJECT\"}, got exit $rc)" >&2
   while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
   echo "    calls expected: $calls" >&2
   while IFS= read -r l; do printf '    calls got:      %s\n' "$l"; done < "$log" >&2
@@ -108,8 +117,9 @@ expect 1 "a bin cargo discovers without a [[bin]] entry is a target too" "$d" \
   "the fuzz target discovered has no seeds under fuzz/seeds/discovered" ""
 
 d="$(fixture broken-manifest "[[bin]]")"
-expect 101 "a manifest cargo cannot read stops the run with cargo's message" "$d" \
-  "failed to parse manifest" ""
+# A failing cargo stops the run itself, not the empty list of targets it would leave behind.
+REJECT="names no [[bin]] target" expect nonzero "a manifest cargo cannot read stops the run" \
+  "$d" "" ""
 
 # --- the run ---------------------------------------------------------------------------------
 

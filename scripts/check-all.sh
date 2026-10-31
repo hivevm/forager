@@ -57,7 +57,6 @@ run "Action references sensor self-test" scripts/test-sensor-action-refs.sh
 # Verifies: ADR-0011
 run "Action references" scripts/sensor-action-refs.sh --require major-tag
 run "Mutation sensor self-test" scripts/test-mutants.sh
-run "Fuzz script self-test" scripts/test-fuzz.sh
 # How MapServer runs on CI for the noise measurement of G-6.
 # Verifies: ADR-0027
 run "MapServer build self-test" scripts/test-build-mapserver.sh
@@ -72,6 +71,8 @@ run "Fixture git self-test" scripts/test-fixture-git-env.sh
 run "Shell lint self-test" scripts/test-check-shell.sh
 run "Shell lint" scripts/check-shell.sh
 run "Rust toolchain and tools" scripts/install-tools.sh
+# Reads its fixture manifests with the pinned toolchain the step before installs.
+run "Fuzz script self-test" scripts/test-fuzz.sh
 run "Rust build, test, lint" scripts/check-rust.sh
 
 printf '\n'
