@@ -1,8 +1,7 @@
 //! The engine end to end: a style IR and GeoJSON in, an RGBA image out, compared with a reference
 //! image of Forager's own (spec of the browser tracer, Testing decisions). Set FORAGER_BLESS=1 to
 //! write the references after a deliberate change, and review the images before committing them;
-//! the bless prints, for each image it moves, the share of moved pixels and the largest move per
-//! channel (bless/mod.rs).
+//! what the bless reports is told in bless/mod.rs.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -1326,11 +1325,12 @@ fn a_bless_reports_how_far_it_moved_the_image_it_replaces() {
         [255, 255, 255, 255],
         [202, 220, 179, 255],
         [0, 0, 0, 255],
-        [30, 63, 200, 127],
+        // R moves in two pixels, by 2 and by 1: the report gives the larger, not their sum.
+        [29, 63, 200, 127],
     ]);
     assert_eq!(
         bless::bless(&moved, &after).as_deref(),
-        Some("moved.png: 2 of 4 pixels moved (0.5000), by at most R 2 G 3 B 1 A 1")
+        Some("moved.png: 2 of 4 pixels moved, by at most R 2 G 3 B 1 A 1")
     );
     assert_eq!(
         forager_encode::decode_png(&std::fs::read(&moved).unwrap()).unwrap(),
@@ -1345,7 +1345,7 @@ fn a_bless_reports_how_far_it_moved_the_image_it_replaces() {
 }
 
 #[test]
-fn a_bless_reports_an_image_that_changed_its_size_or_is_new() {
+fn a_bless_reports_an_image_that_changed_its_size_is_new_or_replaces_a_broken_one() {
     let wide = RgbaImage {
         width: 4,
         height: 1,
@@ -1363,5 +1363,16 @@ fn a_bless_reports_an_image_that_changed_its_size_or_is_new() {
     assert_eq!(
         bless::bless(&new, &square).as_deref(),
         Some("new.png: new, 2×2")
+    );
+    let broken = dir.join("broken.png");
+    std::fs::write(&broken, b"not a png").unwrap();
+    assert_eq!(
+        bless::bless(&broken, &square).as_deref(),
+        Some("broken.png: replaced an undecodable reference, 2×2")
+    );
+    assert_eq!(
+        forager_encode::decode_png(&std::fs::read(&broken).unwrap()).unwrap(),
+        square,
+        "the bless repaired the reference"
     );
 }

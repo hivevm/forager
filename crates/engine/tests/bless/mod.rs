@@ -36,16 +36,20 @@ pub fn bless(path: &Path, image: &RgbaImage) -> Option<String> {
     let name = path.file_name().unwrap().to_string_lossy();
     let before = std::fs::read(path)
         .ok()
-        .map(|bytes| forager_encode::decode_png(&bytes).unwrap());
+        .map(|bytes| forager_encode::decode_png(&bytes));
     std::fs::write(path, forager_encode::png(image).unwrap()).unwrap();
+    let size = format!("{}×{}", image.width, image.height);
     match before {
-        None => Some(format!("{name}: new, {}×{}", image.width, image.height)),
-        Some(before) => report(&name, &before, image),
+        None => Some(format!("{name}: new, {size}")),
+        // A reference the strict decoder rejects is repaired by the bless, not a reason to panic.
+        Some(Err(_)) => Some(format!("{name}: replaced an undecodable reference, {size}")),
+        Some(Ok(before)) => report(&name, &before, image),
     }
 }
 
-/// How far `after` moved from `before`: the share of pixels of which a channel differs and the
-/// largest difference of each channel, or `None` when no pixel moved.
+/// How far `after` moved from `before`: the share of pixels of which a channel differs, as a count
+/// of all pixels so that one moved pixel never rounds to none, and the largest difference of each
+/// channel, or `None` when no pixel moved.
 pub fn report(name: &str, before: &RgbaImage, after: &RgbaImage) -> Option<String> {
     if (before.width, before.height) != (after.width, after.height) {
         return Some(format!(
@@ -75,7 +79,6 @@ pub fn report(name: &str, before: &RgbaImage, after: &RgbaImage) -> Option<Strin
     let pixels = u64::from(after.width) * u64::from(after.height);
     let [r, g, b, a] = largest;
     Some(format!(
-        "{name}: {moved} of {pixels} pixels moved ({:.4}), by at most R {r} G {g} B {b} A {a}",
-        moved as f64 / pixels as f64
+        "{name}: {moved} of {pixels} pixels moved, by at most R {r} G {g} B {b} A {a}"
     ))
 }
