@@ -197,7 +197,7 @@ What Forager does:
   loader the first time a render needs it, as it loads a font (ADR-0028), reads the image's size
   from its header, refuses it past the limit of Q-9 before decoding, decodes it once per render,
   and draws every placement from that one decoded image. The frontend reads no image, as today.
-  How the decoded image is held and shared by the display list is the ADR candidate below.
+  How the decoded image is held and shared by the display items is ADR-0040.
 - **Decoding.** PNG and GIF are told by their first bytes, as MapServer tells them, and decoded as
   `readPNG` and `readGIF` decode them, premultiplied as `readPNG` premultiplies; any other format,
   and an image that does not decode, is refused with a diagnostic naming the symbol and its path.
@@ -210,7 +210,7 @@ What Forager does:
 - **Tiles** of a polygon fill are built once per symbol, tile size, scale, and rotation in a render,
   never per feature, at most six held, as MapServer's cache holds them, and count towards the
   256 MiB of decoded images one render holds.
-- **Drawing.** The display list gains an image placed at a point, blended unscaled at a whole pixel
+- **Drawing.** The display items gain an image placed at a point, blended unscaled at a whole pixel
   or resampled bilinearly under a transform, and a polygon filled with a repeated tile; the
   reference renderer draws them as `agg2RenderPixmapSymbol` and `agg2RenderPolygonTiled` do, with
   agg-rust's ports of the AGG span generators (ADR-0015), blended as ADR-0034 blends, and the
@@ -322,9 +322,9 @@ What Forager does:
 - **ADR candidate A, before ticket 06:** the GIF crate. ADR-0012 leaves the choice of each crate to
   the ADR that first needs it. Where pixmaps are decoded is not left to it: ticket 02 decodes PNG
   in `encode` under ADR-0017, and A puts the GIF decoder beside it, keeping ADR-0009's crates.
-- **ADR candidate B, before ticket 02:** how a decoded pixmap is held. Once per render per path,
-  premultiplied as MapServer premultiplies, shared by reference by every display item that draws
-  it rather than copied per placement, and how the display list carries an image and a tile. It
-  constrains the display list and the memory a render holds under Q-9; the maintainer decides
-  whether it is an ADR or an implementation decision under ADR-0009 and ADR-0015.
+- **ADR-0040, before ticket 02:** how a decoded pixmap is held. Once per render per path,
+  premultiplied as MapServer premultiplies, as a `PremultipliedImage` of `render`, shared by
+  reference by every display item that draws it rather than copied per placement, and counted with
+  the fill tiles alive in the render against Q-9's 256 MiB. The shape of the display items that
+  carry an image and a tile is left to the implementation under ADR-0015.
 - **A specification change:** the Q-9 limits of ticket 01.
