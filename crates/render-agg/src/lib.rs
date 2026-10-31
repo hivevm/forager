@@ -45,6 +45,7 @@ use agg_rust::renderer_base::RendererBase;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::scanline_boolean_algebra::ScanlineGenerator;
 use agg_rust::scanline_u::ScanlineU8;
+use forager_render::clip::{CLIP_MARGIN, drawn_width};
 use forager_render::{
     Dashes, DisplayItem, DrawOp, Hatch, LineCap, LineJoin, Point, Renderer, RgbaImage,
 };
@@ -52,9 +53,6 @@ use forager_style_ir::Rgba;
 
 use crate::clip::{Rect, clip_line, clip_ring};
 use crate::pixfmt::{PixfmtMapserver, copy_or_blend_pix, premultiplied};
-
-/// Pixels beyond the image that a clipped path may reach, besides half the stroke width.
-const CLIP_MARGIN: f64 = 2.0;
 
 /// Rasterizes into an RGBA buffer it owns. The buffer holds its colours premultiplied by their
 /// alpha and blends them through [`PixfmtMapserver`], as MapServer's AGG buffer does;
@@ -195,9 +193,7 @@ impl AggRenderer {
         if !(stroke.width.is_finite() && stroke.width > 0.0) {
             return;
         }
-        // A wider stroke covers the image all the same, and the margin stays small enough for
-        // agg-rust's fixed-point coordinates.
-        let width = stroke.width.min(2.0 * f64::from(self.width + self.height));
+        let width = drawn_width(stroke.width, self.width, self.height);
         let stroke = Stroke { width, ..stroke };
         // A miter join reaches up to its limit of 4 half widths past the path, a bevel or round
         // join and a cap no more than about one.
@@ -273,14 +269,14 @@ impl AggRenderer {
         {
             return;
         }
-        let width = hatch.width.min(2.0 * f64::from(self.width + self.height));
+        let width = hatch.drawn_width(self.width, self.height);
         let fill_rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
         let rings: Vec<Vec<Point>> = hatch
             .rings
             .iter()
             .map(|ring| clip_ring(ring, &fill_rect))
             .collect();
-        let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN + width / 2.0);
+        let rect = hatch.line_rect(self.width, self.height);
         let Some(pieces) = hatch::pieces(
             &hatch.lines,
             &rect,
