@@ -149,7 +149,7 @@ renderers/average_rgb.map average_rgb.png out: a raster source
 renderers/average_rgb.map average_rgb.pdf out: another output format, pdf
 renderers/average_rgb.map average_rgb.svg out: another output format, svg
 renderers/average_rgb.map average_rgb.cairo.png out: another output format, cairopng
-renderers/baseline_text.map baseline_text.png text fails  # not built yet: the TEXT of an inline feature as its label's text
+renderers/baseline_text.map baseline_text.png text passes
 renderers/baseline_text.map baseline_text.pdf out: another output format, pdf
 renderers/baseline_text.map baseline_text.svg out: another output format, svg
 renderers/baseline_text.map baseline_text.cairo.png out: another output format, cairopng
@@ -254,7 +254,7 @@ renderers/labelcacheoff.map labelcacheoff.png out: labels on lines and in polygo
 renderers/labelcacheoff.map labelcacheoff.pdf out: another output format, pdf
 renderers/labelcacheoff.map labelcacheoff.svg out: another output format, svg
 renderers/labelcacheoff.map labelcacheoff.cairo.png out: another output format, cairopng
-renderers/labelpnt.map labelpnt.png text fails  # not built yet: the TEXT of an inline feature as its label's text, a label's STYLE, and the LABELCACHE OFF of a layer
+renderers/labelpnt.map labelpnt.png text fails  # not built yet: a label's STYLE and the LABELCACHE OFF of a layer
 renderers/labelpnt.map labelpnt.pdf out: another output format, pdf
 renderers/labelpnt.map labelpnt.svg out: another output format, svg
 renderers/labelpnt.map labelpnt.cairo.png out: another output format, cairopng
@@ -278,11 +278,11 @@ renderers/labels-alignment.map label_ar-align-default.png out: complex script, A
 renderers/labels-alignment.map label_ar-align-default.cairo.png out: another output format, cairopng
 renderers/labels-alignment.map label-align-default.png out: complex script, Arabic
 renderers/labels-alignment.map label-align-default.cairo.png out: another output format, cairopng
-renderers/labels-alignment.map label_latin_align_left.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
-renderers/labels-alignment.map label_latin_align_right.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
-renderers/labels-alignment.map label_latin_align_center.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
-renderers/labels-alignment.map label_latin_align_default.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
-renderers/labels-anno.map labels-anno.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and a label's STYLE
+renderers/labels-alignment.map label_latin_align_left.png text fails  # not built yet: MAXLENGTH
+renderers/labels-alignment.map label_latin_align_right.png text fails  # not built yet: MAXLENGTH
+renderers/labels-alignment.map label_latin_align_center.png text fails  # not built yet: MAXLENGTH
+renderers/labels-alignment.map label_latin_align_default.png text fails  # not built yet: MAXLENGTH
+renderers/labels-anno.map labels-anno.png text fails  # not built yet: a label's STYLE
 renderers/labels-anno.map labels-anno.pdf out: another output format, pdf
 renderers/labels-anno.map labels-anno.svg out: another output format, svg
 renderers/labels-anno.map labels-anno.cairo.png out: another output format, cairopng
@@ -302,7 +302,7 @@ renderers/labels-priority.map label_priority_binding.png text passes
 renderers/labels-priority.map label_priority_fixed.png text passes
 renderers/labels-priority.map label_priority_expression.png text fails  # not built yet: a PRIORITY computed by an expression
 renderers/labels-wrap.map labels-wrap.png out: labels on lines
-renderers/labels.map labels.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and a label's STYLE
+renderers/labels.map labels.png text fails  # not built yet: a label's STYLE
 renderers/labels.map labels.pdf out: another output format, pdf
 renderers/labels.map labels.svg out: another output format, svg
 renderers/labels.map labels.cairo.png out: another output format, cairopng
@@ -389,13 +389,13 @@ renderers/line_simple.map line_simple.svg out: another output format, svg
 renderers/line_simple.map line_simple.json out: another output format, json
 renderers/line_simple.map line_simple.cairo.png out: another output format, cairopng
 renderers/line_simple.map line_simple.cairo.jpg out: another output format, jpg
-renderers/lots_of_text.map lots_of_text.png text fails  # not built yet: the TEXT of an inline feature as its label's text, and MAXLENGTH
+renderers/lots_of_text.map lots_of_text.png text fails  # not built yet: MAXLENGTH
 renderers/lots_of_text.map lots_of_text.cairo.png out: another output format, cairopng
 renderers/marker_anchorpoint.map marker_anchorpoint.png geometry fails  # not built yet: pixmap symbols
 renderers/marker_anchorpoint.map marker_anchorpoint.pdf out: another output format, pdf
 renderers/marker_anchorpoint.map marker_anchorpoint.svg out: another output format, svg
 renderers/marker_anchorpoint.map marker_anchorpoint.cairo.png out: another output format, cairopng
-renderers/marker_pixmap.map marker_pixmap.png text fails  # not built yet: the TEXT of an inline feature as its label's text, a label's STYLE, and pixmap symbols
+renderers/marker_pixmap.map marker_pixmap.png text fails  # not built yet: a label's STYLE and pixmap symbols
 renderers/marker_pixmap.map marker_pixmap.pdf out: another output format, pdf
 renderers/marker_pixmap.map marker_pixmap.svg out: another output format, svg
 renderers/marker_pixmap.map marker_pixmap.cairo.png out: another output format, cairopng

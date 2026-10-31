@@ -34,6 +34,20 @@ pub fn is_inline(layer: &Layer) -> bool {
             .is_none_or(|source| !source.kind.eq_ignore_ascii_case("graticule"))
 }
 
+/// The `TEXT` of the feature `id` of `layer`, where the layer is read from its inline features,
+/// whose ids are their places ([`InlineSource`]); a feature of any other source has none, as a
+/// shapefile's shape has none.
+pub(crate) fn feature_text(layer: &Layer, id: u64) -> Option<&str> {
+    if !is_inline(layer) {
+        return None;
+    }
+    layer
+        .features
+        .get(usize::try_from(id).ok()?)?
+        .text
+        .as_deref()
+}
+
 /// The features of one layer, read from the style IR.
 pub struct InlineSource<'a> {
     features: &'a [InlineFeature],
