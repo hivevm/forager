@@ -102,15 +102,16 @@ golden path and the test pattern an agent copies from are named here.
   markers cached, the image's edge, and `MINDISTANCE`, each test bounded by a grid over the image
   (`cache.rs`). It is the one crate that depends on skrifa, and does no I/O (ADR-0028).
 - **`render`** — the display list, the renderer trait, and the RGBA image; the cost model that
-  bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0032), and the reach past the image
-  a glyph's point may have (`MAX_GLYPH_REACH`).
+  bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0032, `hatch.rs`); the one segment
+  clip and the margin past the image (`clip.rs`), which the bound measures a hatch's lines with
+  and `render-agg` clips them with; and the reach past the image a glyph's point may have
+  (`MAX_GLYPH_REACH`).
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
-  before rasterizing, blends premultiplied colours in a pixel format of its own as MapServer's
-  AGG 2.4 does, draws a layer with an opacity into an image of its own and lays it over, fills
-  glyphs as MapServer's AGG renderer does, and is the one crate that may
-  use `unsafe`
-  ([ADR-0015](adr/0015-agg-rust-rasterizer.md)); it cuts a hatch from its polygon with
-  i_overlay, the one crate that depends on it (ADR-0032).
+  before rasterizing, its polylines by the segment clip of `render`, blends premultiplied colours
+  in a pixel format of its own as MapServer's AGG 2.4 does, draws a layer with an opacity into an
+  image of its own and lays it over, fills glyphs as MapServer's AGG renderer does, and is the one
+  crate that may use `unsafe` ([ADR-0015](adr/0015-agg-rust-rasterizer.md)); it cuts a hatch from
+  its polygon with i_overlay, the one crate that depends on it (ADR-0032).
 - **`encode`** — PNG from and to an RGBA image ([ADR-0017](adr/0017-png-crate.md)).
 - **`adapter-geojson`** — a feature source over a GeoJSON document
   ([ADR-0016](adr/0016-geojson-crate.md)).
