@@ -1,23 +1,14 @@
 //! The Forager command line, a host of the core: it owns the file system.
 
-mod files;
-
-use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::rc::Rc;
 
 use forager_adapter_epsg::EpsgTable;
-use forager_adapter_geojson::GeoJsonSource;
-use forager_adapter_shapefile::ShapefileSource;
-use forager_ports::{
-    FeatureQuery, FeatureSource, ProjectionResolver, ResourceLoader, ResourcePath, SourceError,
-};
-use forager_render_agg::AggRenderer;
+use forager_cli::files::FileLoader;
+use forager_cli::{now, read_bounded};
+use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath};
 use forager_style_ir::{Diagnostic, StyleDocument};
-
-use crate::files::{DataLoader, FileLoader};
 
 const USAGE: &str =
     "usage: forager read <mapfile> [--format yaml|json] [--epsg <file>] [--base <dir>]
@@ -188,15 +179,6 @@ fn load_document(
     Ok(loaded.document)
 }
 
-/// Runs the frontend or the engine in one poll (`forager_ports::poll_once`): the CLI's ports
-/// read local files and never wait. A future that waits is the `port-waited` error the browser
-/// bindings report, rather than a command that hangs.
-fn now<F: Future>(future: F) -> Result<F::Output, Diagnostic> {
-    forager_ports::poll_once(future).ok_or_else(|| {
-        Diagnostic::error("port-waited", "a port waited, which the CLI cannot", None)
-    })
-}
-
 /// Prints a mapfile's style document.
 fn read(args: &ReadArgs) -> ExitCode {
     let Some((document, _)) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref())
@@ -222,37 +204,12 @@ fn render(args: &RenderArgs) -> ExitCode {
     else {
         return ExitCode::FAILURE;
     };
-    // The fonts of the labels come from the same base context, each bounded by the engine's
-    // limit for a font, read no further than that (Q-9).
-    let fonts = loader
-        .clone()
-        .for_data(forager_engine::MAX_FONT_BYTES as u64);
-    let data = loader.for_data(MAX_SOURCE_BYTES);
-    let mut shapefiles = Shapefiles::new(&data);
     let mut diagnostics = Vec::new();
-    let sources = forager_engine::bind_sources(
-        &document.map,
-        held_sources(&document, &args.sources, &data),
-        |held| match held {
-            Held::GeoJson(file) => read_source(&file)
-                .map(Source::GeoJson)
-                .map_err(|message| format!("{}: {message}", file.display())),
-            Held::Shapefile(path) => shapefiles
-                .open(&path)
-                .map(Source::Shapefile)
-                .map_err(|message| format!("{path}: {message}")),
-        },
-        &mut diagnostics,
-    );
+    let rendered = forager_cli::render(&document.map, &args.sources, &loader, &mut diagnostics);
     for diagnostic in &diagnostics {
         eprintln!("{diagnostic}");
     }
-    let rendered = match now(forager_engine::render_with_files(
-        &document.map,
-        &sources,
-        &fonts,
-        AggRenderer::new(),
-    )) {
+    let rendered = match rendered {
         Ok(rendered) => rendered,
         Err(diagnostic) => return report(&diagnostic),
     };
@@ -278,112 +235,6 @@ fn report(diagnostic: &Diagnostic) -> ExitCode {
     ExitCode::FAILURE
 }
 
-/// The largest data file the CLI reads, a GeoJSON file or one of a shapefile's files (Q-9).
-const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
-
-/// What the CLI holds for a layer before it reads it.
-enum Held {
-    /// A GeoJSON file `--source` names.
-    GeoJson(PathBuf),
-    /// A shapefile a local layer's `DATA` names, inside the base context.
-    Shapefile(String),
-}
-
-/// Each local layer's shapefile, by its `DATA`, and the GeoJSON files `--source` names, which win
-/// for their layer. A layer whose `.shp` the base context does not hold is left unbound, so the
-/// engine skips it as any layer without a source, and the CLI reports what the browser bindings
-/// report. A layer whose bound source the engine does not read, one OFF, a raster, or one with
-/// inline features, is not bound to its `DATA`: its files would be read into memory for nothing,
-/// and a raster's `DATA` is no shapefile.
-fn held_sources(
-    document: &StyleDocument,
-    named: &[(String, PathBuf)],
-    data: &DataLoader,
-) -> Vec<(String, Held)> {
-    let mut held: BTreeMap<String, Held> = BTreeMap::new();
-    for layer in &document.map.layers {
-        let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
-            continue;
-        };
-        if forager_engine::reads_bound_source(layer)
-            && source.kind == "local"
-            && let Some(path) = source.props.get("data")
-            && shapefile_exists(data, path)
-        {
-            held.insert(name.clone(), Held::Shapefile(path.clone()));
-        }
-    }
-    for (layer, file) in named {
-        held.insert(layer.clone(), Held::GeoJson(file.clone()));
-    }
-    held.into_iter().collect()
-}
-
-/// Whether the base context holds the `.shp` or `.SHP` of `data`, whose extension, if any, the
-/// shapefile adapter replaces as `msShapefileOpen` does.
-fn shapefile_exists(loader: &DataLoader, data: &str) -> bool {
-    let base = forager_adapter_shapefile::basename(data);
-    ["shp", "SHP"].iter().any(|extension| {
-        ResourcePath::new(&format!("{base}.{extension}")).is_ok_and(|path| loader.holds(&path))
-    })
-}
-
-/// The shapefiles the CLI opened, by the name the adapter cuts from a layer's `DATA`, so that the
-/// layers naming one shapefile share it and its files are read once (ADR-0024: a layer costs
-/// memory in proportion to its files, not to the layers that name them). A shapefile that failed
-/// to open is not tried again.
-struct Shapefiles<'a, L> {
-    loader: &'a L,
-    opened: BTreeMap<String, Result<Rc<ShapefileSource>, String>>,
-}
-
-impl<'a, L: ResourceLoader> Shapefiles<'a, L> {
-    fn new(loader: &'a L) -> Self {
-        Self {
-            loader,
-            opened: BTreeMap::new(),
-        }
-    }
-
-    /// The shapefile at `data`, a path the frontend resolved inside the base context.
-    fn open(&mut self, data: &str) -> Result<Rc<ShapefileSource>, String> {
-        let name = forager_adapter_shapefile::basename(data).to_owned();
-        let loader = self.loader;
-        self.opened
-            .entry(name)
-            .or_insert_with(|| open_shapefile(loader, data).map(Rc::new))
-            .clone()
-    }
-}
-
-fn open_shapefile(loader: &impl ResourceLoader, data: &str) -> Result<ShapefileSource, String> {
-    let path = ResourcePath::new(data).map_err(|e| e.to_string())?;
-    match forager_ports::poll_once(ShapefileSource::open(loader, &path)) {
-        Some(opened) => opened.map_err(|e| e.message),
-        None => Err("its loader waited".to_owned()),
-    }
-}
-
-/// A layer's feature source, of whichever adapter the CLI bound to it; layers that name one
-/// shapefile share it.
-enum Source {
-    GeoJson(GeoJsonSource),
-    Shapefile(Rc<ShapefileSource>),
-}
-
-impl FeatureSource for Source {
-    async fn features(&self, query: &FeatureQuery) -> Result<forager_ports::Features, SourceError> {
-        match self {
-            Self::GeoJson(source) => source.features(query).await,
-            Self::Shapefile(source) => source.features(query).await,
-        }
-    }
-}
-
-fn read_source(file: &Path) -> Result<GeoJsonSource, String> {
-    GeoJsonSource::parse(&read_bounded(file)?).map_err(|e| e.message)
-}
-
 /// The EPSG table a host file supplies (ADR-0023), within the size limit of a source. Each
 /// unusable line is a line of the message.
 fn read_epsg(file: &Path) -> Result<EpsgTable, String> {
@@ -394,22 +245,6 @@ fn read_epsg(file: &Path) -> Result<EpsgTable, String> {
             .collect::<Vec<_>>()
             .join("\n  ")
     })
-}
-
-/// A text file of at most [`MAX_SOURCE_BYTES`] (Q-9). The limit bounds what is read, not only
-/// what the file system reports, so that a device or a pipe cannot exhaust memory.
-fn read_bounded(file: &Path) -> Result<String, String> {
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    std::fs::File::open(file)
-        .and_then(|f| f.take(MAX_SOURCE_BYTES + 1).read_to_end(&mut bytes))
-        .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_SOURCE_BYTES {
-        return Err(format!(
-            "the file exceeds the limit of {MAX_SOURCE_BYTES} bytes"
-        ));
-    }
-    String::from_utf8(bytes).map_err(|_| "the file is not UTF-8 text".to_owned())
 }
 
 #[cfg(test)]
@@ -435,61 +270,6 @@ mod tests {
             .await;
             Ok(b"MAP END".to_vec())
         }
-    }
-
-    /// The files of one empty shapefile, loaded from memory, each load counted.
-    struct CountingLoader {
-        files: BTreeMap<&'static str, Vec<u8>>,
-        loads: Cell<usize>,
-    }
-
-    impl CountingLoader {
-        fn new() -> Self {
-            let mut shx = vec![0u8; 100];
-            shx[..4].copy_from_slice(&[0, 0, 0x27, 0x0a]);
-            shx[24..28].copy_from_slice(&50i32.to_be_bytes());
-            let mut dbf = vec![0u8; 33];
-            dbf[8] = 33;
-            let files = [
-                ("poly.shp", vec![0u8; 100]),
-                ("poly.shx", shx),
-                ("poly.dbf", dbf),
-                ("broken.shp", vec![0u8; 10]),
-            ];
-            Self {
-                files: files.into_iter().collect(),
-                loads: Cell::new(0),
-            }
-        }
-    }
-
-    impl ResourceLoader for CountingLoader {
-        async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
-            self.loads.set(self.loads.get() + 1);
-            self.files
-                .get(path.as_str())
-                .cloned()
-                .ok_or_else(|| SourceError::new("no such file"))
-        }
-    }
-
-    #[test]
-    fn layers_that_name_one_shapefile_read_its_files_once() {
-        // Verifies: Q-9
-        // ADR-0024: a layer costs memory in proportion to its files, so a shapefile that several
-        // layers name is read, and held, once.
-        let loader = CountingLoader::new();
-        let mut shapefiles = Shapefiles::new(&loader);
-        let first = shapefiles.open("poly").unwrap();
-        assert_eq!(loader.loads.get(), 3, "the .shp, .shx, and .dbf");
-        let second = shapefiles.open("poly.shp").unwrap();
-        assert_eq!(loader.loads.get(), 3, "nothing is read again");
-        assert!(Rc::ptr_eq(&first, &second), "the layers share one source");
-        // A shapefile that fails to open is not read again either.
-        assert!(shapefiles.open("broken").is_err());
-        let loads = loader.loads.get();
-        assert!(shapefiles.open("broken.shp").is_err());
-        assert_eq!(loader.loads.get(), loads);
     }
 
     #[test]

@@ -15,11 +15,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use forager_adapter_epsg::EpsgTable;
-use forager_adapter_shapefile::ShapefileSource;
+use forager_cli::files::BaseContext;
 use forager_engine::CachedLabel;
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
-use forager_render_agg::AggRenderer;
 use forager_style_ir::StyleDocument;
 use serde_json::Value;
 
@@ -273,6 +272,22 @@ struct Suite(PathBuf);
 impl ResourceLoader for Suite {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
         std::fs::read(self.0.join(path.as_str())).map_err(|e| SourceError::new(e.to_string()))
+    }
+}
+
+/// The suite as the base context of the CLI's library, for the data and the fonts of a case.
+impl BaseContext for Suite {
+    fn holds(&self, path: &ResourcePath) -> bool {
+        self.0.join(path.as_str()).is_file()
+    }
+
+    fn read(&self, path: &ResourcePath, limit: u64) -> Result<Vec<u8>, SourceError> {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        std::fs::File::open(self.0.join(path.as_str()))
+            .and_then(|file| file.take(limit + 1).read_to_end(&mut bytes))
+            .map_err(|e| SourceError::new(e.to_string()))?;
+        Ok(bytes)
     }
 }
 
@@ -898,13 +913,9 @@ fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<St
 }
 
 /// The rendering of `case` and the labels of its cache, the options of its `map2img` line applied
-/// to its style IR, its sources bound as `forager render` binds them as far as a test can: the
-/// CLI's binding lives in its binary, which a test cannot call. As there, each local layer the
-/// engine reads is bound to the shapefile its `DATA` names, a layer whose shapefile does not open
-/// is left unbound, so that the engine skips it, and the fonts of the labels are read through the
-/// loader. Unlike there, the files are read through the suite's loader without the CLI's read
-/// limit, each layer opens its shapefile anew instead of sharing it, a shapefile that does not open
-/// gives no diagnostic, and the projections resolve through the stand-in table of the G-1 test.
+/// to its style IR, its sources bound and the fonts of its labels read by the CLI's library, as
+/// `forager render` binds and reads them. Unlike there, the suite's loader is the base context, and
+/// the projections resolve through the stand-in table of the G-1 test.
 fn render(
     case: &Case,
     loader: &Suite,
@@ -932,26 +943,8 @@ fn render(
     })?;
     let mut map = document.map;
     conformance::apply(&options, &mut map, &loaded.diagnostics)?;
-    let mut sources = BTreeMap::new();
-    for layer in &map.layers {
-        let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
-            continue;
-        };
-        if forager_engine::reads_bound_source(layer)
-            && source.kind == "local"
-            && let Some(data) = source.props.get("data")
-            && let Ok(data) = ResourcePath::new(data)
-            && let Ok(shapefile) = ready(ShapefileSource::open(loader, &data))
-        {
-            sources.insert(name.clone(), shapefile);
-        }
-    }
-    let rendered = ready(forager_engine::render_with_files(
-        &map,
-        &sources,
-        loader,
-        AggRenderer::new(),
-    ));
+    let rendered = forager_cli::render(&map, &[], loader, &mut Vec::new())
+        .map_err(|diagnostic| diagnostic.to_string())?;
     let Some(image) = rendered.image else {
         let errors: Vec<_> = rendered
             .diagnostics
