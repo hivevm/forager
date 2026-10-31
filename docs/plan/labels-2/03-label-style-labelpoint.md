@@ -3,11 +3,13 @@
 ## What to build
 
 A label's styles with `GEOMTRANSFORM labelpoint` (a marker at the label's point) and `labelcenter`
-(at its box's centre) are drawn as `msDrawLabelCache` draws them and their bounds count in the
-label's collisions; the box the engine reports in `Rendered.labels` for a drawn label is MapServer's
-member box, the union of the text's box and the `labelpoint` styles' bounds, as the maintainer
-chose, so that a case with such styles can hold G-10. `labelpnt` and `marker_pixmap`'s vector part
-come closer; the cases that only lacked these hold their new outcome.
+(at its labelpoly's centre) are drawn as `msDrawLabelCache` draws them, and the bounds of the
+`labelpoint` styles count in the label's collisions, those of `labelcenter` not, as
+`msTestLabelCacheCollisions` (`maplabel.c:781-868`) tests them; the box the engine reports in
+`Rendered.labels` for a drawn label is MapServer's member box, the union of the text's box and
+the `labelpoint` styles' bounds, as the maintainer chose, so that a case with such styles can hold
+G-10. `labelpnt` and `marker_pixmap`'s vector part come closer; the cases that only lacked these
+hold their new outcome.
 
 ## Acceptance criteria
 
