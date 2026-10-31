@@ -45,10 +45,8 @@ of the style IR, what the IR already carries:
 
 What is left needs the IR's format to change (ADR-0020), which the maintainer decides (ADR-0007):
 
-- **`bbox`.** `GeomTransform` has no variant for it; the frontend warns and the style draws the
-  feature's own geometry. MapServer shades the shape's box, clipped to the image grown by
-  `MS_MAX(width, size) + 3` (`MS_GEOMTRANSFORM_BBOX`). Used by
-  `renderers/poly_geomtransform_anchor.map`, which also needs pixmap symbols.
+- **`bbox`.** Carried by `docs/plan/pixmap-symbols/10-geomtransform-bbox.md`, beside the pixmap
+  symbols `renderers/poly_geomtransform_anchor.map` also needs; no longer this ticket's.
 - **A transform that needs a geometry library** (`buffer`, `simplify`, `simplifypt`,
   `centerline`, …). The second criterion asks for a diagnostic and nothing drawn; the IR has no
   way to say "this style draws nothing", and the frontend can only drop the transform, so the
