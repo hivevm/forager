@@ -174,13 +174,15 @@ Beside them, `.github/workflows/noise.yml` measures MapServer's own noise agains
 references: `scripts/build-mapserver.sh` builds `map2img` from the pinned commit on the runner
 ([ADR-0027](adr/0027-mapserver-built-from-the-pin.md)), and the harness's ignored test
 `mapserver_renders_the_cases_in_scope_within_its_noise` runs it over the cases in scope and
-reports the share of differing pixels per case at each threshold of a set.
+reports the share of differing pixels per case at each threshold of a set, and its maximum over
+each category.
 The conformance harness there reads the cases of `misc` and `renderers`, their `RUN_PARMS` lines,
 in its module `conformance/`, whose list `cases.txt` names each in scope with its category and
 expected outcome, passing or failing, or out of scope with its reason, and marks those whose
 reference is blank; it renders each case in scope in-process, binding shapefiles with a copy of what
-`forager render` does, whose departures its `render` names, without the fonts the CLI loads, and
-holds its outcome, leaving the renderings of failing cases under
+`forager render` does, whose departures its `render` names, and reading the fonts of its labels,
+compares it by the metric of its category, geometry and symbols or text, and holds its outcome,
+leaving the renderings of failing cases under
 Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that pass, the blank
 ones apart, and `scripts/check-fidelity.sh` holds the share of passing cases without a blank
 reference against that of the last release tag `v<semver>` in the record
