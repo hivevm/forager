@@ -225,6 +225,18 @@ fn a_label_carries_what_placement_and_drawing_need() {
         ],
         "a label's style draws at the label point unless it says otherwise"
     );
+    // A GEOMTRANSFORM the frontend does not carry over leaves the style without one, not at the
+    // label point: msDrawLabelCache draws labelcenter elsewhere and fails on bbox and others.
+    for transform in ["labelcenter", "bbox", "'nosuch'", "(buffer([shape], 2))"] {
+        let (_, label) = label_of(&format!("STYLE GEOMTRANSFORM {transform} END"));
+        let transforms: Vec<_> = label
+            .unwrap()
+            .styles
+            .iter()
+            .map(|s| s.geom_transform)
+            .collect();
+        assert_eq!(transforms, [None], "{transform}");
+    }
     let loaded = load_files(&[("m.map", "MAP LAYER CLASS LABEL PRIORITY 11 END END END END")]);
     assert_eq!(codes(&loaded), ["invalid-value"]);
 }

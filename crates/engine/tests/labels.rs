@@ -1900,3 +1900,30 @@ fn a_labelpoint_marker_takes_room_from_the_labels_after_it() {
     let apart = [("a", 50.0, 33.0, ""), ("b", 90.0, 30.0, "")];
     assert_eq!(labelled(&map_with_square(fen), &apart), [1, 0]);
 }
+
+#[test]
+fn a_label_style_whose_transform_the_frontend_dropped_is_refused_not_drawn_at_the_point() {
+    // `GEOMTRANSFORM labelcenter`, bbox, or an expression reach the IR as no transform, which
+    // msDrawLabelCache draws elsewhere or fails on (mapdraw.c:4128): the label is left out with
+    // its reason, and nothing of it is drawn.
+    let dropped = Style {
+        geom_transform: None,
+        ..labelpoint()
+    };
+    let rendered = render(&map_with_square(fen_styled(vec![dropped])), FEN);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["label-not-drawn"]);
+    assert!(
+        rendered.diagnostics[0]
+            .message
+            .contains("a STYLE other than one of GEOMTRANSFORM labelpoly or labelpnt"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
+    assert!(rendered.labels.is_empty());
+    assert_eq!(ink(&rendered.image.unwrap(), (0, 160), (0, 60)), None);
+}

@@ -144,10 +144,15 @@ impl Translator<'_> {
                 },
                 Node::Block(b) if b.keyword == "STYLE" => {
                     let mut style = self.style(b);
-                    // loadLabel's default for a label's style.
-                    style
-                        .geom_transform
-                        .get_or_insert(GeomTransform::LabelPoint);
+                    // loadLabel's default for a label's style, which a GEOMTRANSFORM replaces;
+                    // one the frontend does not carry over, as `labelcenter`, stays without a
+                    // transform, so that it is not taken for the default.
+                    let transformed = b.nodes.iter().any(
+                        |node| matches!(node, Node::Directive(d) if d.keyword == "GEOMTRANSFORM"),
+                    );
+                    if !transformed {
+                        style.geom_transform = Some(GeomTransform::LabelPoint);
+                    }
                     label.styles.push(style);
                 }
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
