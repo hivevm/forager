@@ -22,20 +22,21 @@ it:
   interlaced is drawn from row 0 at its column, its `Top` ignored, since that loop starts at `i = 0`
   and adds no `row` (1030–1032);
 - the transparent index is set by a graphic control extension whose first sub-block has bit 0 of
-  its byte 1 set, from its byte 4 (1105–1106), and also by every continuation sub-block of any
-  extension whose byte 1 has bit 0 set, from its byte 4 (1120–1121). A pixel is transparent where
+  its byte 1 set, from its byte 4 (1105–1106); MapServer also takes it from every continuation
+  sub-block of any extension whose byte 1 has bit 0 set (1120–1121), which Forager does not, as
+  decided below. A pixel is transparent where
   its index is the transparent one or lies past the colour table (1012–1023, 1048–1059), opaque in
   its colour otherwise.
 
-**Question for the maintainer: the continuation sub-block.** A looping GIF carries the
-`NETSCAPE2.0` application extension, whose continuation sub-block is `3, 1, lo, hi`: byte 1 is 1,
-so lines 1120–1121 take the transparent index from byte 4, one past the sub-block's three bytes.
-What that byte holds is giflib's buffer: inferred, not read, it is still `S` (83) from the
-`NETSCAPE2.0` identifier read before it, so such a GIF would draw index 83 transparent. A
-continuation sub-block of four bytes or more whose byte 1 is odd, such as a comment's, sets the
-index from a byte it holds. Port both as MapServer behaves, the over-read included as giflib's
-buffer leaves it; port the in-bounds case and ignore the over-read; or refuse a GIF that would
-over-read? The ticket's criteria take the answer before it starts.
+**Decided by the maintainer: only the graphic control extension sets the transparent index.** A
+looping GIF carries the `NETSCAPE2.0` application extension, whose continuation sub-block is
+`3, 1, lo, hi`: byte 1 is 1, so lines 1120–1121 take the transparent index from byte 4, one past the
+sub-block's three bytes, a byte giflib's buffer still holds (inferred, not read: `S`, 83, of the
+identifier read before it); a continuation sub-block of four bytes or more whose byte 1 is odd,
+such as a comment's, sets it from a byte it holds. Forager ignores both: only a graphic control
+extension sets the transparent index (1105–1106), as the GIF format defines it. This deviates from
+MapServer for such GIFs, which there draw one more colour transparent; `docs/semantics/symbol.md`,
+which this ticket extends with GIF pixmaps, states the deviation and the lines it departs from.
 
 `gif` and its dependencies enter `Cargo.lock` under ADR-0012, their licences checked by
 `cargo deny`; the bundle size of the bindings is measured with them (Q-5).
@@ -48,9 +49,14 @@ over-read? The ticket's criteria take the answer before it starts.
   interlaced with a `Top` above 0 (drawn from row 0), and an interlaced one with a `Top` above 0
   (drawn at it) — when each is decoded, then its pixels, or its refusal, are those the C yields,
   the bytes stated in the test.
-- [ ] Given a GIF with a `NETSCAPE2.0` loop extension, and one with a comment whose continuation
-  sub-block's byte 1 is odd, when decoded, then the transparent index is what the maintainer's
-  answer to the question above says, or the GIF is refused as it says, stated in the test.
+- [ ] Given a GIF with a `NETSCAPE2.0` loop extension and no graphic control extension, and one
+  with a comment whose continuation sub-block's byte 1 is odd, when decoded, then neither has a
+  transparent index: every pixel whose index lies in the colour table is opaque, index 83 among
+  them, stated in the test; and given a GIF with both a loop extension and a graphic control
+  extension, the index is the control extension's.
+- [ ] Given `docs/semantics/symbol.md`, when this ticket lands, then it states that only the
+  graphic control extension sets a GIF's transparent index, where MapServer's `readGIF` also reads
+  continuation sub-blocks (`src/mapimageio.c`, 1120–1121).
 - [ ] Given a GIF whose logical screen claims 4097 × 4096 pixels, and one whose screen is within
   the limit but whose first frame claims more, when the render needs it, then the first is refused
   with the limit's diagnostic before anything is allocated for it, the second as a frame past the
@@ -64,9 +70,9 @@ over-read? The ticket's criteria take the answer before it starts.
 - [ADR-0007](../../adr/0007-harness.md), [ADR-0009](../../adr/0009-ports-and-adapters-crates.md),
   [ADR-0012](../../adr/0012-crate-supply-chain.md), [ADR-0017](../../adr/0017-png-crate.md); the
   ADR that candidate A of the spec becomes.
-- Ticket 02's decoder and its tests, the golden path; the maintainer's answer to the question
-  above; the convention on readers of untrusted
-  bytes. Seams: the decoder's unit tests, the engine's render tests, the harness.
+- Ticket 02's decoder and its tests, the golden path; `docs/semantics/symbol.md`; the convention on
+  readers of untrusted bytes. Seams: the decoder's unit tests, the engine's render tests, the
+  harness.
 
 ## Blocked by
 

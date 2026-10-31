@@ -31,9 +31,9 @@ where none matches (232–383), adding it to the cache, which holds at most six
 (`MS_IMAGECACHESIZE`, `src/mapsymbol.h`, 51; `addTileCache`, 134–180, dropping the least recently
 added). The cache changes no pixel, only the cost. The engine builds a tile once per symbol, tile
 size, scale, and rotation in a render, never per feature, and holds at most six, as MapServer does,
-a seventh dropping the one built longest ago. Whether the tiles held count towards the 256 MiB of
-decoded images is ticket 01's question to the maintainer; the proposal is that they do, and this
-ticket implements the answer as it stands in ticket 01 when it starts.
+a seventh dropping the one built longest ago. The tiles held count towards the 256 MiB of decoded
+images one render holds, as the maintainer decided (ticket 01): a tile that would pass it is not
+built, and its style is not drawn, with the limit's diagnostic.
 
 `msDrawShape`'s clip buffer counts a pixmap style at the image's height (`msSymbolGetDefaultSize`,
 `src/mapsymbol.c`, 74–79), where the engine counts 1 today (`docs/semantics/symbol.md`, *Not yet as
@@ -53,9 +53,10 @@ MapServer draws a hatch*); it counts the height, the image loaded before the cli
   counting allocator bounds the peak, while the third is drawn (Q-9).
 - [ ] Given a thousand polygons drawn with one pixmap style, when rendered, then its tile is built
   once; given seven styles of distinct tiles, then at most six tiles are held at once.
-- [ ] Given tiles and decoded images in one render, when they come to more than 256 MiB, then they
-  are bounded as ticket 01's answer on the tiles says, with the limit's diagnostic and a counting
-  allocator bounding the peak (Q-9).
+- [ ] Given decoded images and tiles in one render that come to more than 256 MiB together, each
+  within its own bound, when rendered, then the tile that would pass the 256 MiB is not built, its
+  style is not drawn with the limit's diagnostic, the other styles are drawn, and a counting
+  allocator bounds the peak (Q-9).
 - [ ] Given a class with a hatch style and a pixmap style, when its clip buffer is computed, then
   the pixmap counts at its image's height, stated in the test.
 - [ ] Given `polygon-pixmap`, when the harness renders it, then it passes and the list says so.
@@ -68,7 +69,7 @@ MapServer draws a hatch*); it counts the height, the image loaded before the cli
   [ADR-0039](../../adr/0039-the-clip-to-the-image-is-one-module-of-render.md),
   [ADR-0032](../../adr/0032-hatch-cut-by-i-overlay.md) (the hatch's clip buffer it shares).
 - `docs/semantics/symbol.md` (a hatch over a polygon), `docs/semantics/style-symbol.md` (a
-  polygon's fill); ticket 01's answer on the tiles; the engine's polygon fill and hatch and their
+  polygon's fill); ticket 01 on the tiles; the engine's polygon fill and hatch and their
   reference images, the golden path. Seams: the engine's render tests, the harness.
 
 ## Blocked by

@@ -14,15 +14,11 @@ before the label needs its size.
 A label's own `labelpnt` style whose symbol is a pixmap (`computeMarkerBounds`, `src/mapdraw.c`,
 3284 onwards) stays out of scope: `marker_pixmap`'s one label style is a `labelpoly`.
 
-**Question for the maintainer: the label of a pixmap that does not load.** MapServer's failing
-`msGetMarkerSize` fails `msAddLabelGroup` (350–352) and `msAddLabel` (606–608), and so the layer
-and the map. The maintainer's decision for a pixmap that does not load leaves its style undrawn
-and the rest of the map drawn; it does not say what becomes of the label beside it. Three ways:
-leave the label out with a diagnostic, as the engine leaves out a label whose marker it cannot
-size today; place it as though its class had no marker; or place it against a marker of size 1, as
-`msGetMarkerSize` gives for symbol 0. The proposal is the first, which keeps the label cache from
-placing a label MapServer never would. The ticket's second criterion takes the answer before it
-starts.
+**Decided by the maintainer: the label of a pixmap that does not load is left out.** MapServer's
+failing `msGetMarkerSize` fails `msAddLabelGroup` (350–352) and `msAddLabel` (606–608), and so the
+layer and the map. Forager leaves the label out with the warning of the pixmap that does not load,
+as it leaves the style undrawn, and draws the rest of the map; the label cache never places a label
+MapServer would not have placed.
 
 ## Acceptance criteria
 
@@ -31,8 +27,8 @@ starts.
   give, stated as literals in the test, and the label is placed or discarded against it as the
   engine's label tests state.
 - [ ] Given a label whose class's first style is a pixmap that does not load, when rendered, then
-  the label is treated as the maintainer's answer to the question above says, the diagnostic
-  naming the symbol and its path, and the rest of the map is drawn.
+  the label is left out, absent from the label cache's labels, the warning names the symbol and its
+  path, and the rest of the map is drawn.
 - [ ] Given `marker_pixmap`, when the harness renders it, then it passes and takes its
   `labels-hold` mark, both of its labels discarded as MapServer's record says.
 - [ ] Given the label memory test, when it runs with a pixmap marker under each label, then each
@@ -52,13 +48,13 @@ starts.
 
 ## Mode
 
-with the human: what becomes of a label beside a pixmap that does not load is a behaviour the
-maintainer's decision on failed loads does not cover, and its question above is his to answer
-before the ticket starts. Once answered, the rest would meet the unattended conditions: engine
-tests whose values come from the C, the label memory test, and the harness decide each criterion,
-the change stays in the engine's labels and is undone by one revert, and it sets no limit, path,
-port, interface, or format. It counts against [ADR-0007](../../adr/0007-harness.md)'s cap of three
-open agent branches. A wrong result shows as a stated box that does not hold, a `labels-hold` mark
-that moves, or the memory test failing. Stop: if holding the image's size per label would grow
-what a cached label keeps past Q-9's bound, or the label stage needs the image loaded where the
-engine cannot await it, record why here and hand off.
+unattended: engine tests whose values come from the C, the label memory test, and the harness
+decide each criterion; the change stays in the engine's labels, undone by one revert. It touches
+nothing [ADR-0007](../../adr/0007-harness.md) keeps with the human: it sets no limit and keeps the
+per-label bound of Q-9 as it is, and touches no path, port, interface, or format; the one behaviour
+that was open, the label of a pixmap that does not load, the maintainer decided. Its branch counts
+against ADR-0007's cap of three open agent branches. A wrong result shows as a stated box that does
+not hold, a `labels-hold` mark that moves, a label present that should be left out, or the memory
+test failing, and is undone by the revert; the tests citing the C prove it right. Stop: if holding
+the image's size per label would grow what a cached label keeps past Q-9's bound, or the label
+stage needs the image loaded where the engine cannot await it, record why here and hand off.

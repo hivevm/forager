@@ -124,7 +124,7 @@ What MapServer does, read at the pin, `7515cccf` (`rel-8-6-6`):
   interlaced is drawn from row 0 (1030–1032); and the transparent index is taken from byte 4 of a
   graphic control extension (1105–1106) and of every continuation sub-block of any extension whose
   byte 1 is odd (1120–1121), which for a looping GIF's `NETSCAPE2.0` sub-block of three bytes reads
-  past it, a question ticket 06 puts to the maintainer. The colour table is chosen (918) right
+  past it; Forager does not port that (below). The colour table is chosen (918) right
   after giflib's `DGifOpenFileName`, which reads only the screen descriptor, so the global table
   is used and a frame's local table never is; that is inferred from giflib, not read. A GIF pixel
   is opaque or transparent, so no premultiplication changes it.
@@ -208,7 +208,8 @@ What Forager does:
   `render`, so that the planned `symbolize` crate, synchronous, without I/O, and not allowed to
   depend on `encode` (ADR-0009), can draw it; the engine decodes and hands it on.
 - **Tiles** of a polygon fill are built once per symbol, tile size, scale, and rotation in a render,
-  never per feature, at most six held, as MapServer's cache holds them.
+  never per feature, at most six held, as MapServer's cache holds them, and count towards the
+  256 MiB of decoded images one render holds.
 - **Drawing.** The display list gains an image placed at a point, blended unscaled at a whole pixel
   or resampled bilinearly under a transform, and a polygon filled with a repeated tile; the
   reference renderer draws them as `agg2RenderPixmapSymbol` and `agg2RenderPolygonTiled` do, with
@@ -218,8 +219,13 @@ What Forager does:
   its style undrawn and the layer warns, naming the symbol, its path, and why, and the rest of the
   map draws; never a substitute square. This deviates on purpose, by the maintainer's decision,
   from MapServer, which fails the layer and returns no map at all (`msDrawMap`, `src/mapdraw.c`,
-  508–519); `docs/semantics/symbol.md` records the deviation where ticket 03 updates it. What
-  becomes of a label beside such a pixmap the decision does not cover; ticket 10 asks.
+  508–519); `docs/semantics/symbol.md` records the deviation where ticket 03 updates it. A label
+  beside such a pixmap is left out, with the same warning (ticket 10), where MapServer's failing
+  `msGetMarkerSize` fails the label's layer and the map (`src/maplabel.c`, 350–352, 606–608).
+- **A GIF's transparent index** is set only by its graphic control extension (1105–1106), as the
+  GIF format defines it; the continuation sub-blocks `readGIF` also reads it from (1120–1121), a
+  looping GIF's `NETSCAPE2.0` among them, are ignored. This deviates from MapServer for such GIFs,
+  which there draw one more colour transparent; ticket 06 states it in `docs/semantics/symbol.md`.
 - **An image named by a style** is appended by the frontend to the map's symbols as a pixmap or SVG
   symbol in `classResolveSymbolNames`' order, its path resolved against the main mapfile's directory
   inside the base context (Q-8). The style document's shape does not change: the symbol is one more
@@ -240,16 +246,17 @@ What Forager does:
     allocated for it; a GIF's from its logical screen, which `readGIF` allocates
     (`src/mapimageio.c`, 907–912);
   - a polygon fill's tile is at most 4096 × 4096 pixels, whatever its size or gap asks;
-  - the decoded images one render holds come to at most 256 MiB; whether the tiles held count
-    towards it is a question ticket 01 puts to the maintainer, proposing that they do;
-  - a pixmap file is read within 32 MiB, the bound of a font file (`MAX_FONT_BYTES`), apart from
-    the 16 MiB total of a mapfile and the files it names, with no byte limit of its own; the CLI
-    enforces it through the loader it hands the engine, the browser bindings do not, so the engine
-    checks it too.
+  - the decoded images one render holds, its fill tiles among them, come to at most 256 MiB;
+  - a pixmap file is read within 32 MiB, sharing the font file's number (`MAX_FONT_BYTES`) rather
+    than having one of its own, apart from the 16 MiB total of a mapfile and the files it names; the
+    CLI enforces it through the loader it hands the engine, the browser bindings do not, so the
+    engine checks it too.
 - **Already decided by the maintainer**, at the interrogation: `marker_anchorpoint` stays `fails`
   with "TrueType symbols", its pixmap anchor point built and tested by ticket 07; `point_pixmap`
   stays `fails` with "a symbol fetched by URL"; a pixmap that does not load leaves its style
-  undrawn with a warning; Q-9 gains the limits above.
+  undrawn with a warning, and a label beside it is left out; a GIF's transparent index comes from
+  its graphic control extension alone; Q-9 gains the limits above, the tiles counted in the
+  256 MiB.
 - **Order with other open tickets.**
   - `docs/plan/revision-2026-10-25/05-png-in-the-harness.md` settles what ADR-0017 covers of
     decoding with `png`; it goes before ticket 02, which decodes pixmaps in `encode` under ADR-0017,
@@ -260,11 +267,12 @@ What Forager does:
     blocked by it. It also fixes where the decoded image type lives: in `render`.
   - `docs/plan/revision-2026-10-31b/12-symbol-resolved-once.md` reworks the engine's marker size and
     anchor shift, which tickets 07 and 08 extend for a pixmap; it goes before both, which it blocks.
-  - Once ticket 04 lands, tickets 05 to 09 are on the frontier together and share files: 06 to 09
-    the symbolization of a style and the engine's image store, 05 and 06 the symbols' handling.
-    Worked in parallel, their branches collide; the frontier sensor does not report it yet
-    (`docs/plan/revision-2026-10-31c/08-frontier-tickets-sharing-a-file.md` would make it), so they
-    are claimed one at a time, or in pairs that share no file.
+  - Ticket 05 reaches the frontier once ticket 03 lands, and 06 and 09 once 04 does; 07 and 08 once
+    04 and `docs/plan/revision-2026-10-31b/12-symbol-resolved-once.md` have. Open together, they
+    share files: 06 to 09 the symbolization of a style and the engine's image store, 05 and 06 the
+    symbols' handling. Worked in parallel, their branches collide; the frontier sensor does not
+    report it yet (`docs/plan/revision-2026-10-31c/08-frontier-tickets-sharing-a-file.md` would make
+    it), so they are claimed one at a time, or in pairs that share no file.
 
 ## Testing decisions
 
