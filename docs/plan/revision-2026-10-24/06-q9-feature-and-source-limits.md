@@ -4,7 +4,7 @@
 
 Q-9 names two of its numbers, 16 MiB of mapfile text and 1000 diagnostics, and its other limits
 are the implementer's: `MAX_FEATURES_PER_LAYER = 1_000_000` (`crates/engine/src/lib.rs:24`) and
-the CLI's `MAX_SOURCE_BYTES = 256 MiB` per GeoJSON file (`crates/cli/src/main.rs:206`), which #5
+the CLI's `MAX_SOURCE_BYTES = 256 MiB` per GeoJSON file (`crates/cli/src/lib.rs`), which #5
 listed as awaiting the maintainer and no change since has decided. Q-9's assumption says its
 limits are set from a first measurement. Measured on `main` 9d2a9bc (release build): a GeoJSON
 file of 245 MiB with 2,200,000 line features peaks at 1.1 GB resident in `forager render`, and the

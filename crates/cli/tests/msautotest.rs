@@ -15,11 +15,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use forager_adapter_epsg::EpsgTable;
-use forager_adapter_shapefile::ShapefileSource;
+use forager_cli::FileLoader;
 use forager_engine::CachedLabel;
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
-use forager_render_agg::AggRenderer;
 use forager_style_ir::StyleDocument;
 use serde_json::Value;
 
@@ -898,13 +897,10 @@ fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<St
 }
 
 /// The rendering of `case` and the labels of its cache, the options of its `map2img` line applied
-/// to its style IR, its sources bound as `forager render` binds them as far as a test can: the
-/// CLI's binding lives in its binary, which a test cannot call. As there, each local layer the
-/// engine reads is bound to the shapefile its `DATA` names, a layer whose shapefile does not open
-/// is left unbound, so that the engine skips it, and the fonts of the labels are read through the
-/// loader. Unlike there, the files are read through the suite's loader without the CLI's read
-/// limit, each layer opens its shapefile anew instead of sharing it, a shapefile that does not open
-/// gives no diagnostic, and the projections resolve through the stand-in table of the G-1 test.
+/// to its style IR, its sources bound and the fonts of its labels read by the CLI's library from
+/// the suite's directory as the base context, as `forager render` binds and reads them. Unlike
+/// there, the mapfile loads through the stand-in table of the G-1 test and with `-i` applied, and
+/// the binding's diagnostics are reported only with a rendering that gives no image.
 fn render(
     case: &Case,
     loader: &Suite,
@@ -932,30 +928,15 @@ fn render(
     })?;
     let mut map = document.map;
     conformance::apply(&options, &mut map, &loaded.diagnostics)?;
-    let mut sources = BTreeMap::new();
-    for layer in &map.layers {
-        let (Some(name), Some(source)) = (&layer.name, &layer.source) else {
-            continue;
-        };
-        if forager_engine::reads_bound_source(layer)
-            && source.kind == "local"
-            && let Some(data) = source.props.get("data")
-            && let Ok(data) = ResourcePath::new(data)
-            && let Ok(shapefile) = ready(ShapefileSource::open(loader, &data))
-        {
-            sources.insert(name.clone(), shapefile);
-        }
-    }
-    let rendered = ready(forager_engine::render_with_files(
-        &map,
-        &sources,
-        loader,
-        AggRenderer::new(),
-    ));
+    let (base, _) = FileLoader::for_mapfile(&loader.0.join(&case.mapfile), Some(&loader.0))
+        .map_err(|e| format!("its base context: {e}"))?;
+    let mut bound = Vec::new();
+    let rendered = forager_cli::render(&map, &[], &base, &mut bound)
+        .map_err(|diagnostic| diagnostic.to_string())?;
     let Some(image) = rendered.image else {
-        let errors: Vec<_> = rendered
-            .diagnostics
+        let errors: Vec<_> = bound
             .iter()
+            .chain(&rendered.diagnostics)
             .map(ToString::to_string)
             .collect();
         return Err(format!("it renders no image: {}", errors.join("; ")));
