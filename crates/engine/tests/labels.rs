@@ -1179,6 +1179,80 @@ fn a_higher_priority_is_placed_first_and_a_bound_one_is_held_from_1_to_10() {
     assert_eq!(recorder.0.take().len(), 1, "the label of priority 4 only");
 }
 
+/// The priority each label of `n` is cached at under `PRIORITY` computed by `priority`, for a
+/// feature with each of `values` as its property `n`, by the feature's place.
+fn priorities(priority: Expr, values: &[&str]) -> Vec<(String, u8)> {
+    let features: Vec<String> = values
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            format!(
+                r#"{{"type": "Feature", "properties": {{"name": "f{i}", "n": "{n}"}},
+                    "geometry": {{"type": "Point", "coordinates": [{}, 30]}}}}"#,
+                20 + 40 * i
+            )
+        })
+        .collect();
+    let geojson = format!(
+        r#"{{"type": "FeatureCollection", "features": [{}]}}"#,
+        features.join(",")
+    );
+    let mut map = map(Label {
+        priority: Some(Bound::Expr(priority)),
+        size: Some(Bound::Value(6.0)),
+        ..label_item()
+    });
+    map.size = Some([40 * values.len() as u32, 60]);
+    map.extent.as_mut().unwrap().max_x = f64::from(40 * values.len() as u32 - 1);
+    let rendered = render(&map, &geojson);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let mut cached: Vec<(String, u8)> = rendered
+        .labels
+        .iter()
+        .map(|l| (l.text.clone(), l.priority))
+        .collect();
+    cached.sort();
+    cached
+}
+
+#[test]
+fn a_priority_computed_by_an_expression_is_truncated_and_held_from_1_to_10() {
+    // Verifies: G-10
+    let number = || Expr::call(Op::ToNumber, vec![Expr::property("n")]);
+    let plus_one = Expr::call(Op::Add, vec![number(), Expr::Number(1.0)]);
+    let named = |priorities: &[u8]| -> Vec<(String, u8)> {
+        priorities
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (format!("f{i}"), *p))
+            .collect()
+    };
+    // bindLabel assigns msEvalDoubleExpression's double to the int priority, toward zero, and
+    // msAddLabelGroup holds it from 1 to MS_MAX_LABEL_PRIORITY, 10: 4 + 1 is 5, -3 + 1 is 1,
+    // 29 + 1 is 10, 7.9 + 1 is 8, -0.5 + 1 is 0 and so 1.
+    assert_eq!(
+        priorities(plus_one.clone(), &["4", "-3", "29", "7.9", "-0.5"]),
+        named(&[5, 1, 10, 8, 1])
+    );
+    // msEvalDoubleExpression reads the value the parser prints with %g: 8.9999999 + 1 prints as
+    // 10, not 9.9999999. A value past an int is INT_MIN on x86-64, held at 1, as is no number;
+    // a text that is not a number reads as 0 with atof, and so 1.
+    assert_eq!(
+        priorities(plus_one, &["8.9999999", "1e10", "nan"]),
+        named(&[10, 1, 1])
+    );
+    // An expression that fails, a division by zero, gives 0, held at 1; one that is text is read
+    // with atof.
+    let by_zero = Expr::call(Op::Div, vec![number(), Expr::Number(0.0)]);
+    assert_eq!(priorities(by_zero, &["4"]), named(&[1]));
+    let text = Expr::call(Op::ToString, vec![Expr::property("n")]);
+    assert_eq!(priorities(text, &["6.7", "x"]), named(&[6, 1]));
+}
+
 #[test]
 fn a_label_leaving_the_image_is_left_out_unless_partials_or_force_allow_it() {
     // Verifies: G-10
