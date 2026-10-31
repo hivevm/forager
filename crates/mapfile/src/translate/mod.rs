@@ -20,8 +20,8 @@ use std::collections::BTreeMap;
 
 use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::{
-    Bound, Class, Diagnostic, Expr, Extent, Layer, LayerProjection, LayerStatus, Map, Op,
-    RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol, Units,
+    Bound, Class, Diagnostic, Expr, Extent, GeomTransform, Layer, LayerProjection, LayerStatus,
+    Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol, Units,
 };
 
 use crate::expression;
@@ -190,6 +190,7 @@ impl Translator<'_> {
                     "OUTPUTFORMAT" => self.output_format(&b.keyword, &b.span),
                     "LAYER" => {
                         if let Some(layer) = self.layer(b) {
+                            self.class_labelcenter(&layer);
                             map.layers.push(layer);
                         }
                     }
@@ -337,6 +338,32 @@ impl Translator<'_> {
             });
         }
         Some(layer)
+    }
+
+    /// Warns of each class `STYLE` of `GEOMTRANSFORM labelcenter` of a line or a polygon layer:
+    /// msDrawTransformedShape (src/mapgeomtransform.c:245) fails the layer's draw on it, and the
+    /// engine draws nothing of the style. A label's style is drawn, and a point layer draws the
+    /// style at its points.
+    fn class_labelcenter(&mut self, layer: &Layer) {
+        if !matches!(
+            layer.render_mode,
+            Some(RenderMode::Line | RenderMode::Polygon)
+        ) {
+            return;
+        }
+        let spans: Vec<Span> = layer
+            .classes
+            .iter()
+            .flat_map(|class| &class.styles)
+            .filter(|style| style.geom_transform == Some(GeomTransform::LabelCenter))
+            .filter_map(|style| style.span.clone())
+            .collect();
+        for span in spans {
+            let message = "GEOMTRANSFORM labelcenter is drawn only by a label's style; on a \
+                           class's style of a line or polygon layer MapServer fails the layer's \
+                           draw, and the style draws nothing";
+            self.warn("unsupported-value", message, &span);
+        }
     }
 
     /// Sets the render mode of a layer's `TYPE`, and gives the shape type of the features after it

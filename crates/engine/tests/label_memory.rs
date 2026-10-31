@@ -56,8 +56,8 @@ impl Renderer for Discard {
 }
 
 /// The map of the points, its label drawn where `labelled`, with a style of a fixed colour and
-/// of the transform `styled` where one is given: a `labelpnt` style of symbol 0, which is sized
-/// 1 by 1 and draws nothing.
+/// of the transform `styled` where one is given: a `labelpnt` or `labelcenter` style of symbol 0,
+/// which is sized 1 by 1 and draws nothing.
 fn map(labelled: bool, styled: Option<GeomTransform>) -> Map {
     let styles = styled
         .map(|transform| Style {
@@ -145,11 +145,13 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
     // the label cache; its path, of thousands of bytes, is built only as it is drawn. A
     // `labelpoly` style the same for every feature is read from the map as the label is drawn,
     // and adds nothing a label holds; nor does a `labelpnt` style, whose marker the label's
-    // definition holds and whose bounds are computed at each label's point as the cache tests it.
+    // definition holds and whose bounds are computed at each label's point as the cache tests it,
+    // nor a `labelcenter` style, whose marker is placed only as the label is drawn.
     for styled in [
         None,
         Some(GeomTransform::LabelPoly),
         Some(GeomTransform::LabelPoint),
+        Some(GeomTransform::LabelCenter),
     ] {
         let (with, drawn) = peak(&map(true, styled), &sources);
         assert_eq!(drawn, POINTS, "every label is drawn");

@@ -197,7 +197,7 @@ impl Translator<'_> {
             return None;
         };
         // msStyleSetGeomTransform, src/mapgeomtransform.c: the first of its names the transform
-        // begins with, in its order; `bbox` and `labelcenter` are not carried over.
+        // begins with, in its order; `bbox` is not carried over.
         let names = [
             ("start", Some(GeomTransform::Start)),
             ("end", Some(GeomTransform::End)),
@@ -205,7 +205,7 @@ impl Translator<'_> {
             ("bbox", None),
             ("labelpnt", Some(GeomTransform::LabelPoint)),
             ("labelpoly", Some(GeomTransform::LabelPoly)),
-            ("labelcenter", None),
+            ("labelcenter", Some(GeomTransform::LabelCenter)),
             ("centroid", Some(GeomTransform::Centroid)),
         ];
         let transform = names

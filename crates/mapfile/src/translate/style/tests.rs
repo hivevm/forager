@@ -430,6 +430,14 @@ fn a_geomtransform_name_is_matched_on_its_prefix_as_msstylesetgeomtransform_matc
             "{name}"
         );
     }
+    // `labelcenter` is carried over; a class's style warns of it (see
+    // `a_class_style_of_labelcenter_warns_and_a_label_style_does_not`).
+    let (_, style) =
+        first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM 'LabelCenter' END END END END");
+    assert_eq!(
+        style.unwrap().geom_transform,
+        Some(GeomTransform::LabelCenter)
+    );
     // Neither MapServer's name nor a prefix of one: an unknown transform, which
     // msStyleSetGeomTransform resets to none.
     for name in ["'labelpoint'", "'cent'", "'st'"] {
@@ -530,4 +538,37 @@ fn a_colour_is_three_numbers_one_string_or_one_binding() {
     }
     assert_eq!(color_of("[c]"), binding("c"));
     assert_eq!(style_of("OUTLINECOLOR [o]").outline_color, binding("o"));
+}
+
+#[test]
+fn a_class_style_of_labelcenter_warns_and_a_label_style_does_not() {
+    // msDrawTransformedShape (src/mapgeomtransform.c:245) fails the draw of a line or polygon
+    // layer on a class's labelcenter style; msDrawLabelCache draws a label's.
+    for layer_type in ["LINE", "POLYGON"] {
+        let text: &'static str = format!(
+            "MAP LAYER TYPE {layer_type} CLASS STYLE GEOMTRANSFORM labelcenter END END END END"
+        )
+        .leak();
+        let (loaded, style) = first_style(text);
+        assert_eq!(codes(&loaded), ["unsupported-value"], "{layer_type}");
+        assert_eq!(
+            style.unwrap().geom_transform,
+            Some(forager_style_ir::GeomTransform::LabelCenter)
+        );
+    }
+    // A point layer draws a class's style at its points whatever its transform; a label's
+    // labelcenter style is drawn on any layer.
+    for text in [
+        "MAP LAYER TYPE POINT CLASS STYLE GEOMTRANSFORM labelcenter END END END END",
+        "MAP LAYER TYPE LINE CLASS LABEL STYLE GEOMTRANSFORM labelcenter END END END END END",
+    ] {
+        let loaded = load_files(&[("m.map", text)]);
+        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{text}");
+    }
+    // TYPE after the class.
+    let text = "MAP LAYER CLASS STYLE GEOMTRANSFORM labelcenter END END TYPE POLYGON END END";
+    assert_eq!(
+        codes(&load_files(&[("m.map", text)])),
+        ["unsupported-value"]
+    );
 }
