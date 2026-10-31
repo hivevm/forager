@@ -1974,9 +1974,10 @@ fn square_at(x: f64, y: f64) -> Vec<Point> {
 #[test]
 fn a_labelcenter_style_draws_its_marker_at_the_centre_of_the_labelpoly_in_the_styles_order() {
     // "Fen" at 12 points, 29.1875 by 11.90625 pixels, at LR of the pixel (80, 29), nothing moving
-    // it off: get_metrics at a buffer of 1 gives the labelpoly x1 = 0, y1 = h, its box
-    // [80 - 1, 41.90625 - 11.90625 - 2, 80 + 29.1875 + 1, 29 + 11.90625 + 1] = [79, 28, 110.1875,
-    // 41.90625], whose centre is (94.59375, 34.953125) (mapdraw.c:4093-4127). A labelcenter
+    // it off: get_metrics at a buffer of 1 puts the labelpoly at x1 = 0, y1 = h, the text's top
+    // at y1 - h = 0 below the point, at 29, and its bottom at y1 = h below it: the box
+    // [80 - 1, 29 - 1, 80 + 29.1875 + 1, 29 + 11.90625 + 1] = [79, 28, 110.1875, 41.90625],
+    // whose centre is (94.59375, 34.953125) (mapdraw.c:4093-4127). A labelcenter
     // style moves the text off no marker: computeMarkerBounds counts labelpoint styles alone.
     let at_lr = |styles| Label {
         position: Some(Bound::Value(Position::Lr)),
