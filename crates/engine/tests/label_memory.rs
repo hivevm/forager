@@ -12,8 +12,8 @@ use forager_engine::render_with_files;
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::{DisplayItem, Renderer, RgbaImage};
 use forager_style_ir::{
-    Bound, Class, Expr, Extent, Force, Label, Layer, LayerStatus, Map, Op, RenderMode, Rgba,
-    SourceRef,
+    Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer, LayerStatus, Map, Op,
+    RenderMode, Rgba, SourceRef, Style,
 };
 use peak_alloc::PeakAlloc;
 
@@ -55,8 +55,20 @@ impl Renderer for Discard {
     }
 }
 
-fn map(labelled: bool) -> Map {
+/// The map of the points, its label drawn where `labelled`, with a `labelpoly` style of a fixed
+/// colour where `styled`.
+fn map(labelled: bool, styled: bool) -> Map {
+    let styles = if styled {
+        vec![Style {
+            color: Some(Bound::Value(Rgba::opaque(0, 255, 0))),
+            geom_transform: Some(GeomTransform::LabelPoly),
+            ..Style::default()
+        }]
+    } else {
+        Vec::new()
+    };
     let label = Label {
+        styles,
         text: labelled.then(|| Expr::call(Op::ToString, vec![Expr::property("name")])),
         font: Some(Bound::Value("sans".to_owned())),
         // Forced, so that every label is drawn and held by the label cache, though they overlap.
@@ -127,14 +139,19 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
     );
     let sources: BTreeMap<String, GeoJsonSource> =
         [("places".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
-    let (without, none) = peak(&map(false), &sources);
-    let (with, drawn) = peak(&map(true), &sources);
-    assert_eq!((none, drawn), (0, POINTS), "every label is drawn");
+    let (without, none) = peak(&map(false, false), &sources);
+    assert_eq!(none, 0);
     // About 360 bytes: the label's glyph indices, its line, its box, its point, and its place in
-    // the label cache; its path, of thousands of bytes, is built only as it is drawn.
-    let per_label = with.saturating_sub(without) / POINTS;
-    assert!(
-        per_label < 400,
-        "{per_label} bytes per label ({with} with labels, {without} without)"
-    );
+    // the label cache; its path, of thousands of bytes, is built only as it is drawn. A
+    // `labelpoly` style the same for every feature is read from the map as the label is drawn,
+    // and adds nothing a label holds.
+    for styled in [false, true] {
+        let (with, drawn) = peak(&map(true, styled), &sources);
+        assert_eq!(drawn, POINTS, "every label is drawn");
+        let per_label = with.saturating_sub(without) / POINTS;
+        assert!(
+            per_label < 400,
+            "styled {styled}: {per_label} bytes per label ({with} with labels, {without} without)"
+        );
+    }
 }

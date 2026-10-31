@@ -328,8 +328,14 @@ pub(crate) fn ms_nint(x: f64) -> i32 {
     x.round_ties_even() as i32
 }
 
+/// `style`, which [`varies`] by no feature, as bindStyle leaves it for any: its opacity applied
+/// to its colours.
+pub(crate) fn unbound(style: &Style) -> Cow<'_, Style> {
+    with_opacity(Cow::Borrowed(style))
+}
+
 /// Whether a property the engine draws varies by feature.
-fn varies(style: &Style) -> bool {
+pub(crate) fn varies(style: &Style) -> bool {
     fn bound<T>(property: &Option<Bound<T>>) -> bool {
         property
             .as_ref()

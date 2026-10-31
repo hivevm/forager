@@ -170,8 +170,9 @@ pub(crate) struct Labels<'r, L> {
     cached: Vec<Cached>,
     /// The text of each feature's label cached, for the render's report of its labels.
     label_texts: Vec<Box<str>>,
-    /// The `labelpoly` styles of each feature's label cached that has any, bound to the feature,
-    /// by the index of its text, ascending; held apart so that a label without costs nothing.
+    /// The `labelpoly` styles of each feature's label cached whose styles vary by feature, bound
+    /// to the feature, by the index of its text, ascending; held apart so that a label without
+    /// costs nothing.
     label_styles: Vec<(u32, Box<[Style]>)>,
     /// The box of the marker beneath each label that has one, by the label's index, ascending.
     markers: Vec<(u32, [f64; 4])>,
@@ -283,16 +284,22 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 if let Some(Some(fixed)) = fixed_labels.get(&at)
                     && selector.label_matches(feature, class_index, n)
                 {
-                    // bindLabel binds the label's styles to the feature with its properties.
-                    let styles: Box<[Style]> = layer.classes[class_index].labels[n]
-                        .styles
-                        .iter()
-                        .map(|s| {
-                            selector
-                                .bind_label_style(s, feature, &map.symbols, (class_index, n))
-                                .into_owned()
-                        })
-                        .collect();
+                    // bindLabel binds the label's styles to the feature with its properties. Styles
+                    // that vary by no feature are the same for all, and are read from the map
+                    // where the label is drawn; only those of a label whose styles vary are held.
+                    let written = &layer.classes[class_index].labels[n].styles;
+                    let styles: Box<[Style]> = if written.iter().any(classes::varies) {
+                        written
+                            .iter()
+                            .map(|s| {
+                                selector
+                                    .bind_label_style(s, feature, &map.symbols, (class_index, n))
+                                    .into_owned()
+                            })
+                            .collect()
+                    } else {
+                        Box::default()
+                    };
                     self.feature(at, fixed, feature, style, styles, selector.diagnostics)
                         .await;
                 }
@@ -538,6 +545,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let label_styles = std::mem::take(&mut self.label_styles);
         let (width, height) = self.size;
         let image = [0.0, 0.0, f64::from(width), f64::from(height)];
+        // The labels' scale factor: `fixed` refuses SYMBOLSCALEDENOM and a SIZEUNITS other than
+        // pixels, so every label's factor is the map's, as each label's `Fixed` holds it.
         let mut canvas = Canvas::new(&self.map.symbols, width, height, scale_factor(self.map));
         let mut boxes: Vec<Option<[f64; 4]>> = vec![None; cached.len()];
         draw_label_cache(&cache, self.size, |i, placement| {
@@ -546,12 +555,24 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             // msDrawLabelCache (mapdraw.c:3799-3860) computes the labelpoly where it places the
             // label and draws the label's styles before its text (mapdraw.c:4056-4091); it never
             // tests the labelpoly for collisions (maplabel.c:781).
-            if let Ok(at) = label_styles.binary_search_by_key(&label.text, |(text, _)| *text) {
+            let (layer, class, n) = defs[label.def as usize].at;
+            let written = &self.map.layers[layer].classes[class].labels[n].styles;
+            if !written.is_empty() {
                 let member = cache.member(i);
                 let point_label = member.label.expect("a drawn label has a box");
                 let poly = label_poly_at(member.point, &point_label, placement.anchor);
-                for style in &label_styles[at].1 {
-                    draw_label_poly(renderer, &poly, style, self.view, &mut canvas, label);
+                match label_styles.binary_search_by_key(&label.text, |(text, _)| *text) {
+                    Ok(at) => {
+                        for style in &label_styles[at].1 {
+                            draw_label_poly(renderer, &poly, style, self.view, &mut canvas, label);
+                        }
+                    }
+                    Err(_) => {
+                        for style in written {
+                            let style = classes::unbound(style);
+                            draw_label_poly(renderer, &poly, &style, self.view, &mut canvas, label);
+                        }
+                    }
                 }
             }
             if label.color.is_none() && label.outline.is_none() {
@@ -646,7 +667,9 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
 
 /// A label's `GEOMTRANSFORM labelpoly` style drawn on its polygon `poly`, as `msDrawLabelBounds`
 /// draws it through msDrawShadeSymbol (see [`shade`]): the polygon where the label is turned,
-/// else the ring of its box from its lower left corner up, at the label's scale factor.
+/// else the ring of its box from its lower left corner up, at the canvas's factor: the map's
+/// scale factor, which is every label's while `fixed` refuses SYMBOLSCALEDENOM and a SIZEUNITS
+/// other than pixels.
 fn draw_label_poly<R: Renderer>(
     renderer: &mut R,
     poly: &Bounds,
