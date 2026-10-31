@@ -171,7 +171,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
             .collect();
         // A point layer of LABELCACHE OFF draws each feature's labels after the feature, before
-        // the next feature, into the layer's image, as pointLayerDrawShape does (labels.rs).
+        // the next feature, into the layer's image; pointLayerDrawShape draws them after each
+        // point, before the markers of the next.
         let at_once = point_layer && !layer.label_cache;
         let own_image = drawing.begin_layer(&mut renderer, &mut canvas);
         if at_once {
