@@ -16,8 +16,9 @@ name: Checks
 #   once a project runs that sensor with --require. The job checks out the full history because
 #   three sensors read it.
 # - Shell lint: scripts/check-shell.sh, after the self-test of the git hooks.
-# - Build, test, lint: scripts/check-rust.sh after scripts/install-tools.sh (ADR-0008), the one
-#   job of this workflow that installs something; ~/.cargo/bin and the registry are cached, keyed
+# - Build, test, lint: scripts/check-rust.sh after scripts/install-tools.sh (ADR-0008) and the
+#   self-test of scripts/fuzz.sh, which reads manifests with the toolchain installed; the one job
+#   of this workflow that installs something; ~/.cargo/bin and the registry are cached, keyed
 #   on the files that decide their content, and so is the msautotest suite check-rust.sh fetches,
 #   keyed on the script that holds its pin.
 #
@@ -191,5 +192,9 @@ jobs:
           key: msautotest-${{ hashFiles('scripts/fetch-msautotest.sh') }}
       - name: Install the toolchain and the cargo tools
         run: bash scripts/install-tools.sh
+      # The fuzz targets themselves run weekly (fuzz.yml); how they are read and refused is
+      # decided here, with the pinned toolchain but without the nightly one or cargo-fuzz.
+      - name: Self-test how the fuzz script reads its targets
+        run: bash scripts/test-fuzz.sh
       - name: Build, test, and lint the workspace
         run: bash scripts/check-rust.sh

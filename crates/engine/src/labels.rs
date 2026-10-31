@@ -1,8 +1,9 @@
 // The labels of point layers follow pointLayerDrawShape, msDrawLabelCache, and its choice of a
 // point label's position and offsets, src/mapdraw.c, msAddLabelGroup and msComputeTextPath,
-// src/maplabel.c, bindLabel and bindIntegerAttribute, src/maputil.c, msGetMarkerSize,
-// src/mapsymbol.c, and msDrawTextSymbol, src/maprendering.c, of MapServer at the release pinned
-// in scripts/fetch-msautotest.sh, with the label cache of the label crate (ADR-0028).
+// src/maplabel.c, bindLabel, bindIntegerAttribute, and msShapeGetLabelAnnotation, src/maputil.c,
+// msGetMarkerSize, src/mapsymbol.c, and msDrawTextSymbol, src/maprendering.c, of MapServer at the
+// release pinned in scripts/fetch-msautotest.sh, with the label cache of the label crate
+// (ADR-0028).
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Copyright (c) 1996-2013 Regents of the University of Minnesota.
@@ -36,6 +37,7 @@ use crate::classes::{FeatureProperties, Selector, c_bytes, color};
 use crate::draw::vertices;
 use crate::extent::View;
 use crate::fonts::Fonts;
+use crate::inline::feature_text;
 use crate::symbol::marker_size_of;
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
@@ -59,7 +61,9 @@ enum Prop<'a, T> {
 
 /// What of a label is settled before its features, once checked to be drawable.
 struct Fixed<'a> {
-    text: &'a Expr,
+    /// The label's text, or `None` where the label, its class, and its layer's `LABELITEM` give
+    /// none and the feature's own `TEXT` is read in their place (`msShapeGetLabelAnnotation`).
+    text: Option<&'a Expr>,
     fonts: &'a str,
     wrap: Option<char>,
     size: Prop<'a, f64>,
@@ -218,6 +222,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let layer = &map.layers[index];
         // What of each label of the classes drawn is settled, or why it is not drawn.
         let mut fixed_labels = BTreeMap::new();
+        // The classes that draw a feature with a TEXT of its own.
+        let with_text: BTreeSet<usize> = drawn
+            .iter()
+            .filter(|(feature, _, _)| feature_text(layer, feature.id).is_some())
+            .map(|&(_, class_index, _)| class_index)
+            .collect();
         for &(_, class_index, _) in drawn {
             let class = &layer.classes[class_index];
             for (n, label) in class.labels.iter().enumerate() {
@@ -225,11 +235,15 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 if fixed_labels.contains_key(&at) {
                     continue;
                 }
-                let Some(text) = &label.text else {
-                    // No text and no style to draw in its place: MapServer skips the label.
+                // msShapeGetLabelAnnotation takes the label's TEXT, else its class's, else the
+                // LABELITEM's value, which the frontend has folded into the label's text, and
+                // last the feature's own TEXT, which only an inline feature has. Without any, and
+                // without a style to draw in its place, MapServer skips the label.
+                let text = label.text.as_ref();
+                if text.is_none() && !with_text.contains(&class_index) {
                     fixed_labels.insert(at, None);
                     continue;
-                };
+                }
                 let fixed = if !point_layer {
                     Err("labels of line and polygon layers are not drawn yet".to_owned())
                 } else if class.labels.len() > 1 {
@@ -273,12 +287,18 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         style: Option<&Style>,
         diagnostics: &mut Vec<Diagnostic>,
     ) {
-        let text = match text(fixed.text, &feature.properties) {
-            Ok(text) => text,
-            Err(why) => {
-                self.report(diagnostics, at, "label-text-unsupported", why);
-                return;
-            }
+        let text = match fixed.text {
+            Some(expr) => match text(expr, &feature.properties) {
+                Ok(text) => text,
+                Err(why) => {
+                    self.report(diagnostics, at, "label-text-unsupported", why);
+                    return;
+                }
+            },
+            None => match feature_text(&self.map.layers[at.0], feature.id) {
+                Some(text) => text.to_owned(),
+                None => return,
+            },
         };
         let lines = match lines(&text, fixed.wrap) {
             Ok(lines) => lines,
@@ -824,7 +844,7 @@ fn fixed<'a>(
     map: &Map,
     layer: &Layer,
     label: &'a Label,
-    text: &'a Expr,
+    text: Option<&'a Expr>,
 ) -> Result<Fixed<'a>, String> {
     let fonts = match &label.font {
         Some(Bound::Value(fonts)) => fonts.as_str(),
