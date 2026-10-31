@@ -53,15 +53,16 @@ pub struct Hatching {
 }
 
 impl Hatching {
-    /// msDrawShape()'s clip buffer of a polygon drawn in the styles of a class: per style, the
+    /// msDrawShape()'s clip buffer of a polygon drawn in the styles of a class at `factor`, the
+    /// styles' scale factor and the image's resolution factor, which are one here: per style, the
     /// largest of its symbol's default size, its `SIZE`, and its `WIDTH`, grown by its larger
-    /// `OFFSET` unless that is a line offset, or its `MINSIZE` or `MINWIDTH` where larger, plus
-    /// 1, rounded as `lrint`; the largest of the styles, plus 2 for a polygon. A size or width
+    /// `OFFSET` unless that is a line offset, scaled, or its `MINSIZE` or `MINWIDTH` scaled where
+    /// larger, plus 1, rounded as `lrint`; the largest of the styles, plus 2 for a polygon. A size or width
     /// bound to a property or an expression counts as unset, MapServer's -1 and 1; MapServer
     /// computes the buffer before msBindLayerToShape() binds the feature's values, so it counts
     /// the values bound for the feature drawn before. The default size of a pixmap or SVG symbol
     /// counts as 1, where MapServer takes its image's height, which is not read.
-    pub fn for_class(styles: &[Style], symbols: &[Symbol]) -> Self {
+    pub fn for_class(styles: &[Style], symbols: &[Symbol], factor: f64) -> Self {
         let mut buffer = 0.0_f64;
         for style in styles {
             let default_size = symbol::default_size_of(style, symbols);
@@ -69,8 +70,8 @@ impl Hatching {
             let width = fixed(&style.width).unwrap_or(1.0);
             let mut largest = ms_max(default_size, ms_max(size, width));
             let unscaled = ms_max(
-                style.min_size.unwrap_or(MIN_SIZE),
-                style.min_width.unwrap_or(MIN_WIDTH),
+                style.min_size.unwrap_or(MIN_SIZE) * factor,
+                style.min_width.unwrap_or(MIN_WIDTH) * factor,
             );
             if style.line_offset.is_none()
                 && let Some([x, y]) = &style.offset
@@ -78,7 +79,10 @@ impl Hatching {
                 let (x, y) = (x.value().unwrap_or(0.0), y.value().unwrap_or(0.0));
                 largest += ms_max(y.abs(), x.abs());
             }
-            buffer = ms_max(buffer, (ms_max(largest, unscaled) + 1.0).round_ties_even());
+            buffer = ms_max(
+                buffer,
+                (ms_max(largest * factor, unscaled) + 1.0).round_ties_even(),
+            );
         }
         Self {
             clip_buffer: buffer + 2.0,
@@ -204,10 +208,11 @@ pub(crate) enum Hatched {
     Refused,
 }
 
-/// msDrawShadeSymbol()'s parameters of a hatch at a scale factor of 1: the spacing is the
-/// `SIZE`, 1 without one, bounded by `MAXSIZE` and then `MINSIZE`; the width the `WIDTH`, 1
-/// without one, bounded by `MAXWIDTH` and then `MINWIDTH`; the pattern scaled by the factor the
-/// bounds applied to the width. MapServer divides by the width as written; where that is 0, the
+/// msDrawShadeSymbol()'s parameters of a hatch at `factor`, the style's scale factor and the
+/// image's resolution factor, which are one here: the spacing is the `SIZE` scaled, the factor
+/// itself without one, bounded by `MAXSIZE` and then `MINSIZE` scaled by the resolution factor;
+/// the width the `WIDTH` scaled, the factor without one, bounded alike by `MAXWIDTH` and then
+/// `MINWIDTH`; the pattern scaled by the factor the scaling and the bounds applied to the width. MapServer divides by the width as written; where that is 0, the
 /// lengths are infinite, and AGG draws a line whose first dash is infinite as solid, so the
 /// pattern is dropped. A size, width, or angle bound to a property or an expression is drawn as
 /// if unset.
@@ -217,19 +222,20 @@ pub(crate) fn hatch(
     color: Rgba,
     image: (f64, f64),
     reference: Point,
+    factor: f64,
 ) -> Hatched {
     let written_width = fixed(&style.width).unwrap_or(1.0);
     let width = if written_width <= 0.0 {
-        1.0
+        factor
     } else {
-        written_width
+        written_width * factor
     };
-    let width = ms_min(width, style.max_width.unwrap_or(MAX_WIDTH));
-    let width = ms_max(width, style.min_width.unwrap_or(MIN_WIDTH));
+    let width = ms_min(width, style.max_width.unwrap_or(MAX_WIDTH) * factor);
+    let width = ms_max(width, style.min_width.unwrap_or(MIN_WIDTH) * factor);
     let size = fixed(&style.size).unwrap_or(-1.0);
-    let spacing = if size <= 0.0 { 1.0 } else { size };
-    let spacing = ms_min(spacing, style.max_size.unwrap_or(MAX_SIZE));
-    let spacing = ms_max(spacing, style.min_size.unwrap_or(MIN_SIZE));
+    let spacing = if size <= 0.0 { factor } else { size * factor };
+    let spacing = ms_min(spacing, style.max_size.unwrap_or(MAX_SIZE) * factor);
+    let spacing = ms_max(spacing, style.min_size.unwrap_or(MIN_SIZE) * factor);
     let pattern = if written_width == 0.0 {
         Vec::new()
     } else {

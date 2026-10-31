@@ -108,23 +108,26 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
 }
 
 /// What a layer draws its features on beside the view: the map's symbols, the image's width and
-/// height in pixels, what is left to the layer of [`line_marker::MAX_MARKER_POINTS`], the
+/// height in pixels, the layer's scale factor and the image's resolution factor (see
+/// [`crate::classes::scale_factor`]), what is left to the layer of [`line_marker::MAX_MARKER_POINTS`], the
 /// hatching of the class drawn, which counts the hatches refused (Q-9), and whether the layer is
 /// drawn into an image of its own.
 pub struct Canvas<'a> {
     symbols: &'a [Symbol],
-    image: (f64, f64),
-    markers: MarkerBudget,
+    pub(crate) image: (f64, f64),
+    pub(crate) factor: f64,
+    pub(crate) markers: MarkerBudget,
     hatching: Hatching,
     own_image: bool,
 }
 
 impl<'a> Canvas<'a> {
-    /// A canvas for one layer, its budget of markers whole.
-    pub fn new(symbols: &'a [Symbol], width: u32, height: u32) -> Self {
+    /// A canvas for one layer at `factor`, its budget of markers whole.
+    pub fn new(symbols: &'a [Symbol], width: u32, height: u32, factor: f64) -> Self {
         Self {
             symbols,
             image: (f64::from(width), f64::from(height)),
+            factor,
             markers: MarkerBudget::new(),
             hatching: Hatching::default(),
             own_image: false,
@@ -153,7 +156,7 @@ impl<'a> Canvas<'a> {
     pub fn class(&mut self, styles: &[Style]) {
         self.hatching = Hatching {
             refused: self.hatching.refused,
-            ..Hatching::for_class(styles, self.symbols)
+            ..Hatching::for_class(styles, self.symbols, self.factor)
         };
     }
 
@@ -194,7 +197,7 @@ pub fn draw_ops(
             // pointLayerDrawShape: a point outside the map's extent draws nothing. It draws every
             // style at every point, whatever its GEOMTRANSFORM.
             for c in vertices(geometry).into_iter().filter(|&c| view.contains(c)) {
-                marker_ops(&mut ops, view.point_to_pixel(c), style, canvas.symbols);
+                marker_ops(&mut ops, view.point_to_pixel(c), style, canvas);
             }
         }
         (RenderMode::Polygon, Geometry::Polygon(_) | Geometry::MultiPolygon(_))
@@ -332,13 +335,14 @@ fn outline_width(style: &Style) -> f64 {
     fixed(&style.outline_width).unwrap_or(0.0)
 }
 
-/// The style's `WIDTH` bounded by its `MINWIDTH` and `MAXWIDTH`, as msDrawLineSymbol() bounds
-/// it: the maximum first, then the minimum. With the width as written.
-fn bounded_width(style: &Style) -> (f64, f64) {
+/// The style's `WIDTH` scaled by the scale factor and bounded by its `MINWIDTH` and `MAXWIDTH`
+/// scaled by the resolution factor, both `factor` here, as msDrawLineSymbol() bounds it: the
+/// maximum first, then the minimum. With the width as written.
+fn bounded_width(style: &Style, factor: f64) -> (f64, f64) {
     let written = fixed(&style.width).unwrap_or(1.0);
-    let max = style.max_width.unwrap_or(MAX_SYMBOL_WIDTH);
-    let min = style.min_width.unwrap_or(MIN_SYMBOL_WIDTH);
-    (written.min(max).max(min), written)
+    let max = style.max_width.unwrap_or(MAX_SYMBOL_WIDTH) * factor;
+    let min = style.min_width.unwrap_or(MIN_SYMBOL_WIDTH) * factor;
+    ((written * factor).min(max).max(min), written)
 }
 
 /// The offset of the style, its numbers multiplied by `factor`; `None` when it moves nothing.
@@ -392,8 +396,9 @@ fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
 }
 
 /// A line drawn in a style, as msDrawLineSymbol() draws one of a simple symbol: in the `COLOR`,
-/// or the `OUTLINECOLOR` without one; the width bounded; the offset, the dash pattern, and the
-/// initial gap scaled by the factor the bounds applied to the width; and the style's cap and
+/// or the `OUTLINECOLOR` without one; the width scaled by the canvas's factor and bounded; the
+/// offset, the dash pattern, and the initial gap scaled by the factor the scaling and the bounds
+/// applied to the width; and the style's cap and
 /// join, by default `round` and `none`. An outline pass draws the style widened by twice its
 /// outline width with its colours swapped, as msOutlineRenderingPrepareStyle() prepares it.
 /// A style with a vector or ellipse symbol and a `GAP` draws the symbol along the line instead,
@@ -421,7 +426,7 @@ fn line_symbol(
     let Some(color) = first.or(second) else {
         return;
     };
-    let (width, written) = bounded_width(style);
+    let (width, written) = bounded_width(style, canvas.factor);
     let factor = if written != 0.0 { width / written } else { 1.0 };
     let initial_gap = style.initial_gap.unwrap_or(-1.0);
     // msDrawLineSymbol's `gap < 0` or `gap > 0`: a gap that is not a number brushes the line.
@@ -431,16 +436,7 @@ fn line_symbol(
         symbol::Mark::Symbol(symbol) if gapped => {
             let paths = moved(paths, style_offset(style, factor));
             let initial_gap = initial_gap * factor;
-            let image = canvas.image;
-            line_marker::draw(
-                ops,
-                &paths,
-                style,
-                symbol,
-                initial_gap,
-                image,
-                &mut canvas.markers,
-            );
+            line_marker::draw(ops, &paths, style, symbol, initial_gap, canvas);
             return;
         }
         symbol::Mark::Symbol(_) | symbol::Mark::Square => {}
@@ -468,9 +464,12 @@ fn line_symbol(
     });
 }
 
-/// The style of an outline pass as msOutlineRenderingPrepareStyle() prepares it, at a scale
-/// factor of 1: its width and its bounds widened by twice its `OUTLINEWIDTH`, its size, MapServer's
-/// -1 where it has none, grown by it, and its colours swapped.
+/// The style of an outline pass as msOutlineRenderingPrepareStyle() prepares it: its width and
+/// its bounds widened by twice its `OUTLINEWIDTH`, its size, MapServer's -1 where it has none,
+/// grown by it, and its colours swapped. MapServer divides the width's growth by the layer's
+/// scale factor over the image's resolution factor, and the size's by the scale factor times the
+/// resolution factor, which are one here, so that both grow by the outline width as written; the
+/// drawing scales them after.
 fn outline_style(style: &Style) -> Style {
     let outline = outline_width(style);
     Style {
@@ -486,11 +485,12 @@ fn outline_style(style: &Style) -> Style {
     }
 }
 
-/// A polygon drawn in a style, as msDrawShadeSymbol() draws one: without a `COLOR`, its
-/// outline as a line in the `OUTLINECOLOR`; with one, moved by the offset, and with a hatch
-/// symbol hatched (see [`hatch::hatch`]), with any other filled, and outlined in the
-/// `OUTLINECOLOR` at the colour's alpha, with round caps and joins. False where a hatch is
-/// refused (Q-9).
+/// A polygon drawn in a style, as msDrawShadeSymbol() draws one at the canvas's factor: without
+/// a `COLOR`, its outline as a line in the `OUTLINECOLOR`; with one, moved by the offset scaled,
+/// and with a hatch symbol hatched (see [`hatch::hatch`]), with any other filled, and outlined in
+/// the `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width scaled, the
+/// factor itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled, as
+/// MapServer bounds it there. False where a hatch is refused (Q-9).
 fn shade(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
@@ -502,7 +502,8 @@ fn shade(
         line_symbol(ops, open_rings(rings), style, Pass::Plain, canvas);
         return true;
     };
-    let rings = moved(rings, style_offset(style, 1.0));
+    let factor = canvas.factor;
+    let rings = moved(rings, style_offset(style, factor));
     if symbol::is_hatch(style, canvas.symbols) {
         return match hatch::hatch(
             rings,
@@ -510,6 +511,7 @@ fn shade(
             color,
             view.image_size(),
             canvas.reference(view),
+            factor,
         ) {
             Hatched::Drawn(hatch) => {
                 ops.push(DrawOp::Hatch(hatch));
@@ -525,7 +527,7 @@ fn shade(
     });
     if let Some(outline) = fixed(&style.outline_color) {
         let width = fixed(&style.width).unwrap_or(1.0);
-        let width = if width == 0.0 { 1.0 } else { width };
+        let width = if width == 0.0 { factor } else { width * factor };
         let max = style.max_width.unwrap_or(MAX_SYMBOL_WIDTH);
         let min = style.min_width.unwrap_or(MIN_SYMBOL_WIDTH);
         let width = width.min(max).max(min);
@@ -546,12 +548,14 @@ fn shade(
     true
 }
 
-/// What msDrawMarkerSymbol draws of `style` at the pixel `at`: its symbol, or the square that
-/// stands for a symbol not drawn yet, moved as msAdjustMarkerPos moves it.
-fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbols: &[Symbol]) {
-    match symbol::mark(style, symbols) {
-        symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style), style),
-        symbol::Mark::Symbol(s) => symbol::symbol_ops(ops, at, style, s),
+/// What msDrawMarkerSymbol draws of `style` at the pixel `at` at the canvas's factor: its
+/// symbol, or the square that stands for a symbol not drawn yet, moved as msAdjustMarkerPos
+/// moves it. The square is Forager's, not MapServer's, which draws nothing for symbol 0; it is
+/// drawn at a factor of 1.
+fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, canvas: &Canvas) {
+    match symbol::mark(style, canvas.symbols) {
+        symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style, 1.0), style),
+        symbol::Mark::Symbol(s) => symbol::symbol_ops(ops, at, style, s, canvas.factor),
         symbol::Mark::Nothing => {}
     }
 }
@@ -592,7 +596,7 @@ fn transformed(
     }
     // What one symbol costs, the same at every point and angle.
     let mut probe = Vec::new();
-    marker_ops(&mut probe, Point { x: 0.0, y: 0.0 }, style, canvas.symbols);
+    marker_ops(&mut probe, Point { x: 0.0, y: 0.0 }, style, canvas);
     let cost: usize = probe.iter().map(line_marker::points).sum();
     if !canvas.markers.take(placed.len().saturating_mul(cost)) {
         return;
@@ -602,9 +606,9 @@ fn transformed(
         match (&mut turned, angle) {
             (Some(turned), Some(angle)) => {
                 turned.angle = Some(Bound::Value(angle));
-                marker_ops(ops, at, turned, canvas.symbols);
+                marker_ops(ops, at, turned, canvas);
             }
-            _ => marker_ops(ops, at, style, canvas.symbols),
+            _ => marker_ops(ops, at, style, canvas),
         }
     }
 }
@@ -664,7 +668,7 @@ mod tests {
 
     /// A canvas without symbols, of 100 × 100.
     fn plain() -> Canvas<'static> {
-        Canvas::new(&[], 100, 100)
+        Canvas::new(&[], 100, 100, 1.0)
     }
 
     fn line() -> Vec<Vec<Point>> {
@@ -820,7 +824,7 @@ mod tests {
                     .collect(),
             )
         };
-        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         let mut draw = |geometry: &Geometry| {
             let ops = draw_ops(
                 RenderMode::Line,
@@ -1041,11 +1045,11 @@ mod tests {
         let symbols = [circle()];
         for symbol in [None, Some(0)] {
             let style = transformed_style(GeomTransform::Start, symbol);
-            let mut canvas = Canvas::new(&symbols, 101, 101);
+            let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
             assert!(transformed_ops(&ell(), &style, &mut canvas).is_empty());
         }
         let style = transformed_style(GeomTransform::Start, Some(1));
-        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         assert!(!transformed_ops(&ell(), &style, &mut canvas).is_empty());
     }
 
@@ -1067,10 +1071,10 @@ mod tests {
         };
         let at_corner = |style: &Style| {
             let mut ops = Vec::new();
-            symbol::symbol_ops(&mut ops, p(90.0, 20.0), style, &arrow);
+            symbol::symbol_ops(&mut ops, p(90.0, 20.0), style, &arrow, 1.0);
             ops
         };
-        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         assert_eq!(
             transformed_ops(&ell(), &style, &mut canvas),
             at_corner(&style)
@@ -1113,16 +1117,16 @@ mod tests {
             (50.0, 50.0),
             (60.0, 60.0),
         ]));
-        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         let drawn = transformed_ops(&zigzag, &style, &mut canvas);
         assert_eq!(drawn.len(), 4);
         let cost = points(&drawn);
-        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         canvas.markers = MarkerBudget::of(cost - 1);
         assert!(transformed_ops(&zigzag, &style, &mut canvas).is_empty());
         assert!(canvas.markers_spent());
         assert!(transformed_ops(&ell(), &style, &mut canvas).is_empty());
-        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         canvas.markers = MarkerBudget::of(cost);
         assert_eq!(transformed_ops(&zigzag, &style, &mut canvas).len(), 4);
         assert!(!canvas.markers_spent());
@@ -1138,10 +1142,10 @@ mod tests {
             Geometry::LineString(coords(&[(10.0, 50.0), (30.0, 50.0)])),
             Geometry::LineString(coords(&[(70.0, 50.0), (90.0, 50.0)])),
         ]);
-        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         let drawn = transformed_ops(&collection, &style, &mut canvas);
         let mut expected = Vec::new();
-        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &symbols[0]);
+        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &symbols[0], 1.0);
         assert_eq!(drawn, expected);
     }
 
@@ -1181,7 +1185,7 @@ mod tests {
             ..colored(Some(BLUE), None)
         };
         let symbols = [hatch_symbol()];
-        let mut canvas = Canvas::new(&symbols, 101, 101);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         canvas.class(std::slice::from_ref(&style));
         let ops = draw_ops(
             RenderMode::Polygon,
@@ -1238,5 +1242,181 @@ mod tests {
         assert_eq!(drawn[0].rings.len(), 2);
         let first = drawn[0].lines[0];
         assert!((first[0].x - 4.2928).abs() < 1e-9 && (first[1].x - 91.2928).abs() < 1e-9);
+    }
+
+    /// The operations of `style` on [`line`] at `factor`.
+    fn strokes_at(style: &Style, factor: f64) -> Vec<DrawOp> {
+        let mut ops = Vec::new();
+        let mut canvas = Canvas::new(&[], 100, 100, factor);
+        line_symbol(&mut ops, line(), style, Pass::Plain, &mut canvas);
+        ops
+    }
+
+    fn stroke(op: &DrawOp) -> (f64, &Dashes, &[Vec<Point>]) {
+        match op {
+            DrawOp::Stroke {
+                width,
+                dashes,
+                paths,
+                ..
+            } => (*width, dashes, paths),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn at_a_factor_a_line_is_scaled_and_bounded_by_the_resolution_factor() {
+        // msDrawLineSymbol, maprendering.c:622-653, at a scale and a resolution factor of 2:
+        // the width times the scale factor, MAXWIDTH and MINWIDTH times the resolution factor,
+        // and the offset, the pattern, and the initial gap by the final width over the WIDTH.
+        let bounded = Style {
+            width: Some(Bound::Value(10.0)),
+            max_width: Some(5.0),
+            pattern: vec![20.0, 8.0],
+            initial_gap: Some(6.0),
+            line_offset: Some(LineOffset {
+                distance: Bound::Value(4.0),
+                both_sides: false,
+            }),
+            ..colored(Some(BLUE), None)
+        };
+        let ops = strokes_at(&bounded, 2.0);
+        let (width, dashes, paths) = stroke(&ops[0]);
+        assert_eq!(width, 10.0, "MAXWIDTH 5 is 10");
+        assert_eq!(dashes.pattern, vec![20.0, 8.0]);
+        assert_eq!(dashes.offset, 6.0);
+        assert_eq!(paths[0], vec![p(0.0, 4.0), p(10.0, 4.0)]);
+        let plain = Style {
+            width: Some(Bound::Value(3.0)),
+            pattern: vec![3.0, 1.0],
+            ..colored(Some(BLUE), None)
+        };
+        let ops = strokes_at(&plain, 2.0);
+        assert_eq!(stroke(&ops[0]).0, 6.0);
+        assert_eq!(stroke(&ops[0]).1.pattern, vec![6.0, 2.0]);
+        let wide = Style {
+            width: Some(Bound::Value(40.0)),
+            ..colored(Some(BLUE), None)
+        };
+        assert_eq!(
+            stroke(&strokes_at(&wide, 2.0)[0]).0,
+            64.0,
+            "the default MAXWIDTH 32 is 64"
+        );
+        let raised = Style {
+            width: Some(Bound::Value(1.0)),
+            min_width: Some(4.0),
+            ..colored(Some(BLUE), None)
+        };
+        assert_eq!(stroke(&strokes_at(&raised, 2.0)[0]).0, 8.0);
+    }
+
+    #[test]
+    fn at_a_factor_symbols_along_a_line_are_those_of_the_scaled_style() {
+        // msDrawLineSymbol hands computeSymbolStyle the scale factor, and the initial gap is
+        // scaled by the final width over the WIDTH: at 2, SIZE 6, GAP 20, and INITIALGAP 5 draw
+        // what SIZE 12, GAP 40, and INITIALGAP 10 draw at 1.
+        let symbols = [circle()];
+        let gapped = |size: f64, gap: f64, initial_gap: f64| Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            size: Some(Bound::Value(size)),
+            gap: Some(gap),
+            initial_gap: Some(initial_gap),
+            ..colored(Some(BLUE), None)
+        };
+        let along = |style: &Style, factor: f64| {
+            let mut ops = Vec::new();
+            let mut canvas = Canvas::new(&symbols, 101, 101, factor);
+            let long = vec![vec![p(0.0, 50.0), p(100.0, 50.0)]];
+            line_symbol(&mut ops, long, style, Pass::Plain, &mut canvas);
+            ops
+        };
+        let scaled = along(&gapped(6.0, 20.0, 5.0), 2.0);
+        assert_eq!(scaled.len(), 3);
+        assert_eq!(scaled, along(&gapped(12.0, 40.0, 10.0), 1.0));
+    }
+
+    #[test]
+    fn at_a_factor_a_polygon_moves_by_its_offset_scaled_and_its_outline_bounds_stay() {
+        // msDrawShadeSymbol, maprendering.c:771-799, at a scale factor of 2: the OFFSET
+        // times the scale factor; the outline's WIDTH times it, the factor itself for a WIDTH of
+        // 0, bounded by MAXWIDTH and MINWIDTH as written.
+        let outlined = |width: f64, max_width: Option<f64>| {
+            let style = Style {
+                width: Some(Bound::Value(width)),
+                max_width,
+                offset: Some([Bound::Value(3.0), Bound::Value(4.0)]),
+                ..colored(Some(BLUE), Some(BLACK))
+            };
+            let mut ops = Vec::new();
+            let mut canvas = Canvas::new(&[], 101, 101, 2.0);
+            let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
+            assert!(shade(&mut ops, ring, &style, &unit_view(), &mut canvas));
+            ops
+        };
+        let ops = outlined(3.0, None);
+        let DrawOp::Polygon { rings, .. } = &ops[0] else {
+            panic!("{ops:?}");
+        };
+        assert_eq!(rings[0], vec![p(16.0, 18.0), p(26.0, 18.0), p(26.0, 28.0)]);
+        assert_eq!(stroke(&ops[1]).0, 6.0);
+        assert_eq!(
+            stroke(&outlined(0.0, None)[1]).0,
+            2.0,
+            "WIDTH 0 is the factor"
+        );
+        assert_eq!(
+            stroke(&outlined(3.0, Some(5.0))[1]).0,
+            5.0,
+            "MAXWIDTH 5 stays 5"
+        );
+    }
+
+    #[test]
+    fn at_a_factor_a_point_draws_its_symbol_scaled_and_its_stand_in_square_as_written() {
+        // pointLayerDrawShape and msDrawTransformedShape hand msDrawMarkerSymbol the style's
+        // scale factor; the square is Forager's stand-in, drawn at 1.
+        let symbols = [circle()];
+        let marked = |symbol: Option<u32>, mode: RenderMode, transform| Style {
+            symbol: symbol.map(|i| Bound::Value(SymbolRef::Index(i))),
+            size: Some(Bound::Value(6.0)),
+            offset: Some([Bound::Value(2.0), Bound::Value(1.0)]),
+            geom_transform: transform,
+            ..colored(Some(BLUE), (mode == RenderMode::Point).then_some(BLACK))
+        };
+        let drawn = |style: &Style, mode: RenderMode, geometry: &Geometry, factor: f64| {
+            let mut canvas = Canvas::new(&symbols, 101, 101, factor);
+            draw_ops(
+                mode,
+                geometry,
+                style,
+                Pass::Plain,
+                &unit_view(),
+                &mut canvas,
+            )
+        };
+        let point = Geometry::Point(Coord { x: 50.0, y: 50.0 });
+        let style = marked(Some(1), RenderMode::Point, None);
+        let mut expected = Vec::new();
+        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &circle(), 2.0);
+        assert_eq!(drawn(&style, RenderMode::Point, &point, 2.0), expected);
+        assert_ne!(drawn(&style, RenderMode::Point, &point, 1.0), expected);
+        let square = marked(None, RenderMode::Point, None);
+        assert_eq!(
+            drawn(&square, RenderMode::Point, &point, 2.0),
+            drawn(&square, RenderMode::Point, &point, 1.0)
+        );
+        let start = marked(Some(1), RenderMode::Line, Some(GeomTransform::Start));
+        let mut expected = Vec::new();
+        symbol::symbol_ops(&mut expected, p(10.0, 20.0), &start, &circle(), 2.0);
+        assert_eq!(drawn(&start, RenderMode::Line, &ell(), 2.0), expected);
+    }
+
+    #[test]
+    fn at_a_factor_the_canvas_clips_a_class_s_hatches_by_the_scaled_buffer() {
+        // msDrawShape's clip buffer at a factor of 2: a plain style 1 × 2 + 1, and 2 more.
+        let mut canvas = Canvas::new(&[], 101, 101, 2.0);
+        canvas.class(&[Style::default()]);
+        assert_eq!(canvas.hatching.clip_buffer, 5.0);
     }
 }
