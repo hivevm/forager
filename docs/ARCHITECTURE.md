@@ -85,7 +85,9 @@ golden path and the test pattern an agent copies from are named here.
   diagnostic (G-8); a source that skips records yields one warning for its layer
   ([ADR-0025](adr/0025-source-reports-skipped-records.md)); the fonts a label names it loads once
   per render through the host's resource loader, each bounded, and it draws the labels of point
-  layers after every layer, as MapServer's label cache does, through `label` (ADR-0028): it holds
+  layers after every layer, as MapServer's label cache does, through `label` (ADR-0028), and
+  those of a point layer of `LABELCACHE OFF` after each feature, untested, where
+  `pointLayerDrawShape` draws them after each point ([label.md](semantics/label.md)): it holds
   each label as its glyphs' indices and its point, draws each glyph once per font and size, and
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
   diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does: a

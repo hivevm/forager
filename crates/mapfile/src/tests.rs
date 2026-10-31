@@ -93,6 +93,19 @@ fn keywords_not_yet_supported_and_out_of_scope_are_warnings() {
 }
 
 #[test]
+fn a_layers_labelcache_is_carried_and_on_without_one() {
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER NAME 'a' LABELCACHE OFF END LAYER NAME 'b' LABELCACHE ON END \
+         LAYER NAME 'c' END LAYER NAME 'd' LABELCACHE FALSE END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let layers = &loaded.document.unwrap().map.layers;
+    let cached: Vec<bool> = layers.iter().map(|l| l.label_cache).collect();
+    assert_eq!(cached, [false, true, true, false]);
+}
+
+#[test]
 fn a_query_layer_is_discarded() {
     let loaded = load_files(&[("m.map", "MAP LAYER NAME 'q' TYPE QUERY END END")]);
     assert!(loaded.document.as_ref().unwrap().map.layers.is_empty());

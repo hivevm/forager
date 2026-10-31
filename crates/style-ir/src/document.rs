@@ -323,6 +323,7 @@ mod tests {
                 min_scale_denom: Some(1000.0),
                 max_scale_denom: None,
                 opacity: Some(50.0),
+                label_cache: false,
                 filter: Some(Expr::call(
                     Op::In,
                     vec![
@@ -477,6 +478,24 @@ mod tests {
             .document;
         assert_eq!(from_yaml, document);
         assert_eq!(from_json, document);
+    }
+
+    #[test]
+    fn a_layer_without_label_cache_keeps_its_labels_in_the_cache() {
+        // A document written before the field reads as it did: its layers' labels are cached,
+        // and a layer of the cache writes no field.
+        let read = StyleDocument::from_json(r#"{"version":"1.0","map":{"layers":[{}]}}"#).unwrap();
+        assert!(read.warnings.is_empty(), "{:?}", read.warnings);
+        assert!(read.document.map.layers[0].label_cache);
+        let compact = |text: String| text.split_whitespace().collect::<String>();
+        assert_eq!(
+            compact(read.document.to_json().unwrap()),
+            r#"{"version":"1.0","map":{"layers":[{}]}}"#
+        );
+        let off = r#"{"version":"1.0","map":{"layers":[{"label_cache":false}]}}"#;
+        let read = StyleDocument::from_json(off).unwrap();
+        assert!(!read.document.map.layers[0].label_cache);
+        assert_eq!(compact(read.document.to_json().unwrap()), off);
     }
 
     #[test]
