@@ -377,6 +377,24 @@ mod tests {
         assert_eq!(codes(&without), ["resource-unreadable"]);
     }
 
+    /// A `DATA` with a character of more than one byte reaches the credential filter, and the
+    /// render returns its diagnostics instead of aborting the page.
+    #[test]
+    fn a_data_with_a_multi_byte_character_renders_without_a_panic() {
+        // Verifies: Q-3
+        let mapfile = "MAP SIZE 10 10 EXTENT 0 0 10 10\n\
+                       LAYER NAME 'p' TYPE POINT STATUS ON DATA 'ü=1.shp'\n\
+                       CLASS STYLE COLOR 0 0 0 SIZE 3 END END END END\n";
+        let sources = serde_json::json!({ "p": {"type": "Point", "coordinates": [5, 5]} });
+        let output = render_map(mapfile, &sources.to_string(), None, &Viewport::default());
+        assert!(output.image.is_some());
+        assert!(
+            !codes(&output).contains(&"source-rejected"),
+            "{:?}",
+            codes(&output)
+        );
+    }
+
     #[test]
     fn the_cli_fixture_renders_to_the_engines_reference_image() {
         // Verifies: G-5
