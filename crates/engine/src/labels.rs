@@ -133,6 +133,8 @@ struct Def {
     min_distance: f64,
     /// What an outline adds to the offset from a marker: half its width, scaled.
     outline_grow: f64,
+    /// The marker of the label's first `labelpoint` style, where its styles vary by no feature.
+    label_marker: Option<LabelMarker>,
 }
 
 /// A path that stands for a text of line breaks only, which has no box.
@@ -186,9 +188,10 @@ pub(crate) struct Labels<'r, L> {
     label_styles: Vec<(u32, Box<[Style]>)>,
     /// The box of the marker beneath each label that has one, by the label's index, ascending.
     markers: Vec<(u32, [f64; 4])>,
-    /// The bounds of the marker of each label's first `labelpoint` style, by the label's index,
-    /// ascending.
-    label_markers: Vec<(u32, Bounds)>,
+    /// The marker of the first `labelpoint` style of each feature's label cached whose styles
+    /// vary by feature, by the index of its text, ascending; a label whose styles vary by none
+    /// holds its marker in its definition, so that no label holds bounds of its own (Q-9).
+    label_markers: Vec<(u32, LabelMarker)>,
     /// Each label's text, held only where a label of the map has a `MINDISTANCE`.
     texts: Option<Vec<Box<[u8]>>>,
     /// The labels already reported, with the diagnostic's code.
@@ -425,26 +428,43 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             priority: bound.priority,
             test_point: !fixed.force && bound.offset == [0, 0],
         };
-        if self.cache(feature, &template, marker, label_marker.as_ref(), &text) {
-            self.label_texts.push(Box::from(&text[..]));
-            if !styles.is_empty() {
-                self.label_styles.push((template.text, styles));
+        if self.cache(feature, &template, marker, &text) {
+            self.hold(&template, text, (styles, label_marker), path);
+        }
+    }
+
+    /// Holds what a feature's label cached as `template` draws with: its text, its path, and its
+    /// styles and their marker, those of a label whose styles vary by feature for the feature,
+    /// else its definition's.
+    fn hold(
+        &mut self,
+        template: &Cached,
+        text: String,
+        (styles, label_marker): (Box<[Style]>, Option<LabelMarker>),
+        path: Option<TextPath>,
+    ) {
+        self.label_texts.push(text.into_boxed_str());
+        if styles.is_empty() {
+            self.defs[template.def as usize].label_marker = label_marker;
+        } else {
+            self.label_styles.push((template.text, styles));
+            if let Some(m) = label_marker {
+                self.label_markers.push((template.text, m));
             }
-            if let Some(path) = path {
-                self.paths.push(path);
-            }
+        }
+        if let Some(path) = path {
+            self.paths.push(path);
         }
     }
 
     /// Caches `template` at each point of `feature` inside the map's extent, as
-    /// `pointLayerDrawShape` adds a label at each, with the marker of `marker`'s size beneath and
-    /// the marker of its labelpoint style, `label_marker`; whether any was cached.
+    /// `pointLayerDrawShape` adds a label at each, with the marker of `marker`'s size beneath;
+    /// whether any was cached.
     fn cache(
         &mut self,
         feature: &Feature,
         template: &Cached,
         marker: Option<(f64, f64)>,
-        label_marker: Option<&LabelMarker>,
         text: &str,
     ) -> bool {
         let extent = self.view.extent;
@@ -474,10 +494,6 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 let bounds = [min_x, min_y, min_x + (w - 1.0), min_y + (h - 1.0)];
                 self.markers.push((index, bounds));
             }
-            if let Some(m) = label_marker {
-                let bounds = marker_bounds(point, m.size, m.anchor_point, m.angle, m.offset);
-                self.label_markers.push((index, bounds));
-            }
             self.cached.push(Cached { point, ..*template });
             if let Some(texts) = &mut self.texts {
                 texts.push(c_bytes(text).into());
@@ -499,6 +515,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 partials: fixed.partials,
                 min_distance: fixed.min_distance * fixed.factor,
                 outline_grow: fixed.outline_width / 2.0 * fixed.factor,
+                label_marker: None,
             });
             (defs.len() - 1) as u32
         })
@@ -777,6 +794,7 @@ fn draw_label_poly<R: Renderer>(
 /// What `computeMarkerBounds` takes of a label's first `labelpoint` style: the width and height
 /// `msGetMarkerSize` gives its marker, its symbol's anchor point, its angle in degrees, and its
 /// `OFFSET`, scaled.
+#[derive(Clone, Copy)]
 struct LabelMarker {
     size: (f64, f64),
     anchor_point: [f64; 2],
@@ -845,7 +863,7 @@ struct Cache<'c> {
     paths: &'c [TextPath],
     defs: &'c [Def],
     markers: &'c [(u32, [f64; 4])],
-    label_markers: &'c [(u32, Bounds)],
+    label_markers: &'c [(u32, LabelMarker)],
     texts: Option<&'c [Box<[u8]>]>,
 }
 
@@ -866,11 +884,14 @@ impl Members for Cache<'_> {
             .binary_search_by_key(&(index as u32), |(i, _)| *i)
             .ok()
             .map(|i| self.markers[i].1);
+        // computeMarkerBounds at the label's point.
         let label_marker = self
             .label_markers
-            .binary_search_by_key(&(index as u32), |(i, _)| *i)
+            .binary_search_by_key(&label.text, |(text, _)| *text)
             .ok()
-            .map(|i| self.label_markers[i].1);
+            .map(|i| &self.label_markers[i].1)
+            .or(def.label_marker.as_ref())
+            .map(|m| marker_bounds(label.point, m.size, m.anchor_point, m.angle, m.offset));
         // msDrawLabelCache's offset from the marker: half the size of its box, or of its
         // labelpoint marker's where that is larger, grown by half the label's outline where it
         // has one.
