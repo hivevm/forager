@@ -71,6 +71,8 @@ run "Fixture git self-test" scripts/test-fixture-git-env.sh
 run "Shell lint self-test" scripts/test-check-shell.sh
 run "Shell lint" scripts/check-shell.sh
 run "Rust toolchain and tools" scripts/install-tools.sh
+# Reads its fixture manifests with the pinned toolchain the step before installs.
+run "Fuzz script self-test" scripts/test-fuzz.sh
 run "Rust build, test, lint" scripts/check-rust.sh
 
 printf '\n'
