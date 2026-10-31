@@ -23,7 +23,7 @@
 
 use forager_label::{
     Anchor, Bounds, MAX_PRIORITY, Member, Members, Offsets, PointLabel, Position, TextBox,
-    draw_label_cache, place,
+    draw_label_cache, marker_bounds, place,
 };
 use forager_render::Point;
 
@@ -187,6 +187,7 @@ fn member(rng: &mut Rng) -> (Member, u8) {
         }
         m
     });
+    let label_marker = label_marker(rng, point);
     let member = Member {
         priority: 1 + rng.below(3) as u8,
         point,
@@ -194,6 +195,7 @@ fn member(rng: &mut Rng) -> (Member, u8) {
         partials: rng.chance(50),
         test_point: rng.chance(40),
         marker,
+        label_marker,
         min_distance: if rng.chance(20) {
             rng.range(1.0, 100.0)
         } else {
@@ -201,6 +203,28 @@ fn member(rng: &mut Rng) -> (Member, u8) {
         },
     };
     (member, rng.below(3) as u8)
+}
+
+/// The marker of a labelpoint style at `point`, or none: a box about the point, now and then
+/// turned, of no number, or inside out.
+fn label_marker(rng: &mut Rng, point: Point) -> Option<Bounds> {
+    rng.chance(30).then(|| {
+        let size = (rng.range(0.0, 40.0), rng.range(0.0, 40.0));
+        let anchor = [rng.range(0.0, 1.0), rng.range(0.0, 1.0)];
+        let angle = if rng.chance(20) {
+            rng.range(0.0, 360.0)
+        } else {
+            0.0
+        };
+        let offset = [rng.range(-10.0, 10.0), rng.range(-10.0, 10.0)];
+        let mut bounds = marker_bounds(point, size, anchor, angle, offset);
+        match rng.below(10) {
+            0 => bounds.bbox[rng.below(4) as usize] = rng.special(),
+            1 => bounds.bbox.swap(0, 2),
+            _ => {}
+        }
+        bounds
+    })
 }
 
 /// The labels the cache draws, in order, with the position each takes.
@@ -225,8 +249,14 @@ fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
             let Some(label) = m.label else {
                 continue;
             };
-            // The label point, tested at MS_MAX_LABEL_PRIORITY: against no marker.
-            if m.test_point {
+            let current = usize::from(priority) - 1;
+            // The marker of a labelpoint style, unless the label is forced; else the label
+            // point, tested at MS_MAX_LABEL_PRIORITY: against no marker.
+            if let Some(marker) = &m.label_marker {
+                if !label.force && !collisions(cache, &drawn, &m, marker, current, i) {
+                    continue;
+                }
+            } else if m.test_point {
                 let p = m.point;
                 let point = Bounds {
                     poly: None,
@@ -236,13 +266,13 @@ fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
                     continue;
                 }
             }
-            let current = usize::from(priority) - 1;
             let Some(placement) = place(m.point, &label, |lb| {
                 collisions(cache, &drawn, &m, lb, current, i)
             }) else {
                 continue;
             };
-            if min_distance(cache, &drawn, i, &placement.bounds.bbox) {
+            let bbox = global_bbox(&placement.bounds, m.label_marker.as_ref());
+            if min_distance(cache, &drawn, i, &bbox) {
                 continue;
             }
             drawn.push((i, placement.bounds));
@@ -252,9 +282,26 @@ fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
     out
 }
 
-/// `msTestLabelCacheCollisions` with no gutter, no label styles, and no leader: false where `lb`
-/// leaves the image of a label not partial, meets a marker of slot `current_priority` or above
-/// but the label's own, or meets a label drawn.
+/// msDrawLabelCache's global label bbox of a label of one text: its text's box, then by `MS_MIN`
+/// and `MS_MAX` its labelpoint marker's.
+fn global_bbox(text: &Bounds, marker: Option<&Bounds>) -> [f64; 4] {
+    let mut bbox = text.bbox;
+    if let Some(m) = marker {
+        let min = |a: f64, b: f64| if a < b { a } else { b };
+        let max = |a: f64, b: f64| if a > b { a } else { b };
+        bbox = [
+            min(bbox[0], m.bbox[0]),
+            min(bbox[1], m.bbox[1]),
+            max(bbox[2], m.bbox[2]),
+            max(bbox[3], m.bbox[3]),
+        ];
+    }
+    bbox
+}
+
+/// `msTestLabelCacheCollisions` with no gutter and no leader: false where `lb` leaves the image
+/// of a label not partial, meets a marker of slot `current_priority` or above but the label's
+/// own, or, within a drawn label's global bbox, meets its text or its labelpoint marker.
 fn collisions(
     cache: &Cache,
     drawn: &[(usize, Bounds)],
@@ -281,14 +328,21 @@ fn collisions(
             }
         }
     }
-    for (_, theirs) in drawn {
-        if rect_overlap(&theirs.bbox, &lb.bbox)
-            && intersect_label_polygons(
-                theirs.poly.as_ref(),
-                &theirs.bbox,
-                lb.poly.as_ref(),
-                &lb.bbox,
-            )
+    for (j, theirs) in drawn {
+        let marker = cache.0[*j].0.label_marker;
+        if !rect_overlap(&global_bbox(theirs, marker.as_ref()), &lb.bbox) {
+            continue;
+        }
+        if intersect_label_polygons(
+            theirs.poly.as_ref(),
+            &theirs.bbox,
+            lb.poly.as_ref(),
+            &lb.bbox,
+        ) {
+            return false;
+        }
+        if let Some(m) = &marker
+            && intersect_label_polygons(m.poly.as_ref(), &m.bbox, lb.poly.as_ref(), &lb.bbox)
         {
             return false;
         }
@@ -307,9 +361,10 @@ fn min_distance(cache: &Cache, drawn: &[(usize, Bounds)], i: usize, bbox: &[f64;
     let d = m.min_distance;
     let buffered = [bbox[0] - d, bbox[1] - d, bbox[2] + d, bbox[3] + d];
     drawn.iter().any(|(j, theirs)| {
+        let bbox = global_bbox(theirs, cache.0[*j].0.label_marker.as_ref());
         cache.same_text(i, *j)
             && (point_in_rect(&cache.0[*j].0.point, &buffered)
-                || intersect_label_polygons(None, &theirs.bbox, None, &buffered))
+                || intersect_label_polygons(None, &bbox, None, &buffered))
     })
 }
 

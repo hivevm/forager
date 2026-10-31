@@ -55,18 +55,18 @@ impl Renderer for Discard {
     }
 }
 
-/// The map of the points, its label drawn where `labelled`, with a `labelpoly` style of a fixed
-/// colour where `styled`.
-fn map(labelled: bool, styled: bool) -> Map {
-    let styles = if styled {
-        vec![Style {
+/// The map of the points, its label drawn where `labelled`, with a style of a fixed colour and
+/// of the transform `styled` where one is given: a `labelpnt` style of symbol 0, which is sized
+/// 1 by 1 and draws nothing.
+fn map(labelled: bool, styled: Option<GeomTransform>) -> Map {
+    let styles = styled
+        .map(|transform| Style {
             color: Some(Bound::Value(Rgba::opaque(0, 255, 0))),
-            geom_transform: Some(GeomTransform::LabelPoly),
+            geom_transform: Some(transform),
             ..Style::default()
-        }]
-    } else {
-        Vec::new()
-    };
+        })
+        .into_iter()
+        .collect();
     let label = Label {
         styles,
         text: labelled.then(|| Expr::call(Op::ToString, vec![Expr::property("name")])),
@@ -139,19 +139,24 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
     );
     let sources: BTreeMap<String, GeoJsonSource> =
         [("places".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
-    let (without, none) = peak(&map(false, false), &sources);
+    let (without, none) = peak(&map(false, None), &sources);
     assert_eq!(none, 0);
     // About 360 bytes: the label's glyph indices, its line, its box, its point, and its place in
     // the label cache; its path, of thousands of bytes, is built only as it is drawn. A
     // `labelpoly` style the same for every feature is read from the map as the label is drawn,
-    // and adds nothing a label holds.
-    for styled in [false, true] {
+    // and adds nothing a label holds; nor does a `labelpnt` style, whose marker the label's
+    // definition holds and whose bounds are computed at each label's point as the cache tests it.
+    for styled in [
+        None,
+        Some(GeomTransform::LabelPoly),
+        Some(GeomTransform::LabelPoint),
+    ] {
         let (with, drawn) = peak(&map(true, styled), &sources);
         assert_eq!(drawn, POINTS, "every label is drawn");
         let per_label = with.saturating_sub(without) / POINTS;
         assert!(
             per_label < 400,
-            "styled {styled}: {per_label} bytes per label ({with} with labels, {without} without)"
+            "styled {styled:?}: {per_label} bytes per label ({with} with labels, {without} without)"
         );
     }
 }

@@ -260,7 +260,7 @@ renderers/labelcacheoff.map labelcacheoff.png out: labels on lines and in polygo
 renderers/labelcacheoff.map labelcacheoff.pdf out: another output format, pdf
 renderers/labelcacheoff.map labelcacheoff.svg out: another output format, svg
 renderers/labelcacheoff.map labelcacheoff.cairo.png out: another output format, cairopng
-renderers/labelpnt.map labelpnt.png text fails  # not built yet: a label's STYLE and the LABELCACHE OFF of a layer
+renderers/labelpnt.map labelpnt.png text passes  # labels: Forager caches the label of its layer of LABELCACHE OFF
 renderers/labelpnt.map labelpnt.pdf out: another output format, pdf
 renderers/labelpnt.map labelpnt.svg out: another output format, svg
 renderers/labelpnt.map labelpnt.cairo.png out: another output format, cairopng
@@ -401,7 +401,7 @@ renderers/marker_anchorpoint.map marker_anchorpoint.png geometry fails  # not bu
 renderers/marker_anchorpoint.map marker_anchorpoint.pdf out: another output format, pdf
 renderers/marker_anchorpoint.map marker_anchorpoint.svg out: another output format, svg
 renderers/marker_anchorpoint.map marker_anchorpoint.cairo.png out: another output format, cairopng
-renderers/marker_pixmap.map marker_pixmap.png text fails  # not built yet: a label's STYLE and pixmap symbols
+renderers/marker_pixmap.map marker_pixmap.png text fails  # not built yet: the size of a pixmap symbol
 renderers/marker_pixmap.map marker_pixmap.pdf out: another output format, pdf
 renderers/marker_pixmap.map marker_pixmap.svg out: another output format, svg
 renderers/marker_pixmap.map marker_pixmap.cairo.png out: another output format, cairopng

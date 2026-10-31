@@ -397,7 +397,7 @@
           "const": "vertices"
         },
         {
-          "description": "Where a label is placed; a label's style without a transform draws there.",
+          "description": "Where a label is placed. A label's style is drawn only with a transform of its own: one\nwithout a transform is not drawn, so a marker at the label's point names `labelpoint`.",
           "type": "string",
           "const": "labelpoint"
         },

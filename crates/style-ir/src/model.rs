@@ -489,7 +489,8 @@ pub enum GeomTransform {
     /// Every point of a line but the first and the last.
     Vertices,
     Centroid,
-    /// Where a label is placed; a label's style without a transform draws there.
+    /// Where a label is placed. A label's style is drawn only with a transform of its own: one
+    /// without a transform is not drawn, so a marker at the label's point names `labelpoint`.
     #[serde(rename = "labelpoint")]
     LabelPoint,
     /// The box around a label's text.

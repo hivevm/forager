@@ -1,9 +1,10 @@
 // The labels of point layers follow pointLayerDrawShape, msDrawLabelCache, its choice of a point
-// label's position and offsets, and its labelpoly styles, src/mapdraw.c, msAddLabelGroup and
-// msComputeTextPath, src/maplabel.c, bindLabel, bindIntegerAttribute, and
-// msShapeGetLabelAnnotation, src/maputil.c, msGetMarkerSize, src/mapsymbol.c, and msDrawTextSymbol
-// and msDrawLabelBounds, src/maprendering.c, of MapServer at the release pinned in
-// scripts/fetch-msautotest.sh, with the label cache of the label crate (ADR-0028).
+// label's position and offsets, its labelpoly and labelpoint styles and its member's box, and
+// computeMarkerBounds, src/mapdraw.c, msAddLabelGroup and msComputeTextPath, src/maplabel.c,
+// bindLabel, bindIntegerAttribute, and msShapeGetLabelAnnotation, src/maputil.c, msGetMarkerSize,
+// src/mapsymbol.c, and msDrawTextSymbol, msDrawLabelBounds, and msDrawMarkerSymbol,
+// src/maprendering.c, of MapServer at the release pinned in scripts/fetch-msautotest.sh, with the
+// label cache of the label crate (ADR-0028).
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Copyright (c) 1996-2013 Regents of the University of Minnesota.
@@ -24,14 +25,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use forager_expr::atof;
 use forager_label::{
     Align, Anchor, Bounds, Font, Glyphs, Layout, LineError, MAX_LABELS, MAX_PRIORITY, Member,
-    Members, Offsets, PointLabel, Position, TextPath, draw_label_cache, glyph_size, label_poly_at,
-    lines, pixel_size,
+    Members, Offsets, Placement, PointLabel, Position, TextPath, draw_label_cache, glyph_size,
+    label_poly_at, lines, marker_bounds, member_box, pixel_size,
 };
 use forager_ports::{Feature, Properties, ResourceLoader, Value};
 use forager_render::{DisplayItem, DrawOp, GlyphOutline, Point, Renderer};
 use forager_style_ir::{
     Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Layer, Map, Op,
-    Position as IrPosition, Rgba, Span, Style, SymbolRef, Units,
+    Position as IrPosition, Rgba, Span, Style, SymbolKind, SymbolRef, Units,
 };
 
 use crate::CachedLabel;
@@ -41,7 +42,7 @@ use crate::draw::{Canvas, shade, vertices};
 use crate::extent::View;
 use crate::fonts::Fonts;
 use crate::inline::feature_text;
-use crate::symbol::marker_size_of;
+use crate::symbol::{self, marker_size_of};
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
 const DEFAULT_SIZE: f64 = 10.0;
@@ -132,6 +133,8 @@ struct Def {
     min_distance: f64,
     /// What an outline adds to the offset from a marker: half its width, scaled.
     outline_grow: f64,
+    /// The marker of the label's first `labelpoint` style, where its styles vary by no feature.
+    label_marker: Option<LabelMarker>,
 }
 
 /// A path that stands for a text of line breaks only, which has no box.
@@ -185,6 +188,10 @@ pub(crate) struct Labels<'r, L> {
     label_styles: Vec<(u32, Box<[Style]>)>,
     /// The box of the marker beneath each label that has one, by the label's index, ascending.
     markers: Vec<(u32, [f64; 4])>,
+    /// The marker of the first `labelpoint` style of each feature's label cached whose styles
+    /// vary by feature, by the index of its text, ascending; a label whose styles vary by none
+    /// holds its marker in its definition, so that no label holds bounds of its own (Q-9).
+    label_markers: Vec<(u32, LabelMarker)>,
     /// Each label's text, held only where a label of the map has a `MINDISTANCE`.
     texts: Option<Vec<Box<[u8]>>>,
     /// The labels already reported, with the diagnostic's code.
@@ -215,6 +222,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             label_texts: Vec::new(),
             label_styles: Vec::new(),
             markers: Vec::new(),
+            label_markers: Vec::new(),
             texts: map
                 .layers
                 .iter()
@@ -359,7 +367,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let bound = bind(fixed, &feature.properties, |expr| {
             selector.label_number(expr, feature, at.1, at.2)
         });
-        let (position, align, marker) = match settle(fixed, &bound, lines.len(), style, self.map) {
+        let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
+        let label_styles: &[Style] = if styles.is_empty() { written } else { &styles };
+        let settled = settle(fixed, &bound, lines.len(), style, self.map).and_then(|settled| {
+            let marker = label_marker(label_styles, self.map, fixed.factor);
+            Ok((settled, marker.map_err(|why| ("label-not-drawn", why))?))
+        });
+        let ((position, align, marker), label_marker) = match settled {
             Ok(settled) => settled,
             Err((code, why)) => {
                 self.report(selector.diagnostics, at, code, why);
@@ -415,13 +429,31 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             test_point: !fixed.force && bound.offset == [0, 0],
         };
         if self.cache(feature, &template, marker, &text) {
-            self.label_texts.push(Box::from(&text[..]));
-            if !styles.is_empty() {
-                self.label_styles.push((template.text, styles));
+            self.hold(&template, text, (styles, label_marker), path);
+        }
+    }
+
+    /// Holds what a feature's label cached as `template` draws with: its text, its path, and its
+    /// styles and their marker, those of a label whose styles vary by feature for the feature,
+    /// else its definition's.
+    fn hold(
+        &mut self,
+        template: &Cached,
+        text: String,
+        (styles, label_marker): (Box<[Style]>, Option<LabelMarker>),
+        path: Option<TextPath>,
+    ) {
+        self.label_texts.push(text.into_boxed_str());
+        if styles.is_empty() {
+            self.defs[template.def as usize].label_marker = label_marker;
+        } else {
+            self.label_styles.push((template.text, styles));
+            if let Some(m) = label_marker {
+                self.label_markers.push((template.text, m));
             }
-            if let Some(path) = path {
-                self.paths.push(path);
-            }
+        }
+        if let Some(path) = path {
+            self.paths.push(path);
         }
     }
 
@@ -483,6 +515,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 partials: fixed.partials,
                 min_distance: fixed.min_distance * fixed.factor,
                 outline_grow: fixed.outline_width / 2.0 * fixed.factor,
+                label_marker: None,
             });
             (defs.len() - 1) as u32
         })
@@ -542,6 +575,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
         let cached = std::mem::take(&mut self.cached);
         let markers = std::mem::take(&mut self.markers);
+        let label_markers = std::mem::take(&mut self.label_markers);
         let texts = self.texts.take();
         let defs = std::mem::take(&mut self.defs);
         let paths = std::mem::take(&mut self.paths);
@@ -551,6 +585,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             paths: &paths,
             defs: &defs,
             markers: &markers,
+            label_markers: &label_markers,
             texts: texts.as_deref(),
         };
         let label_styles = std::mem::take(&mut self.label_styles);
@@ -558,33 +593,28 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let image = [0.0, 0.0, f64::from(width), f64::from(height)];
         // The labels' scale factor: `fixed` refuses SYMBOLSCALEDENOM and a SIZEUNITS other than
         // pixels, so every label's factor is the map's, as each label's `Fixed` holds it.
-        let mut canvas = Canvas::new(&self.map.symbols, width, height, scale_factor(self.map));
+        let factor = scale_factor(self.map);
+        let mut canvas = Canvas::new(&self.map.symbols, width, height, factor);
+        let styled = Styled {
+            view: self.view,
+            map: self.map,
+            factor,
+            bound: &label_styles,
+        };
         let mut boxes: Vec<Option<[f64; 4]>> = vec![None; cached.len()];
         draw_label_cache(&cache, self.size, |i, placement| {
-            boxes[i] = Some(placement.bounds.bbox);
+            let member = cache.member(i);
+            // The member's box, of its text and its labelpoint marker (mapdraw.c:3976-4030).
+            boxes[i] = Some(member_box(
+                &placement.bounds.bbox,
+                member.label_marker.as_ref(),
+            ));
             let label = &cached[i];
-            // msDrawLabelCache (mapdraw.c:3799-3860) computes the labelpoly where it places the
-            // label and draws the label's styles before its text (mapdraw.c:4056-4091); it never
-            // tests the labelpoly for collisions (maplabel.c:781).
+            // The label's styles, before its text.
             let (layer, class, n) = defs[label.def as usize].at;
             let written = &self.map.layers[layer].classes[class].labels[n].styles;
             if !written.is_empty() {
-                let member = cache.member(i);
-                let point_label = member.label.expect("a drawn label has a box");
-                let poly = label_poly_at(member.point, &point_label, placement.anchor);
-                match label_styles.binary_search_by_key(&label.text, |(text, _)| *text) {
-                    Ok(at) => {
-                        for style in &label_styles[at].1 {
-                            draw_label_poly(renderer, &poly, style, self.view, &mut canvas, label);
-                        }
-                    }
-                    Err(_) => {
-                        for style in written {
-                            let style = classes::unbound(style);
-                            draw_label_poly(renderer, &poly, &style, self.view, &mut canvas, label);
-                        }
-                    }
-                }
+                styled.draw(renderer, &mut canvas, label, (&member, placement), written);
             }
             if label.color.is_none() && label.outline.is_none() {
                 return;
@@ -676,6 +706,54 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 }
 
+/// What the styles of the labels drawn are drawn with.
+struct Styled<'a> {
+    view: &'a View,
+    map: &'a Map,
+    /// The labels' scale factor.
+    factor: f64,
+    /// The styles of the labels whose styles vary by feature, bound to it, by the label's text.
+    bound: &'a [(u32, Box<[Style]>)],
+}
+
+impl Styled<'_> {
+    /// Draws the styles of `label`, `member` placed at `placement`, in their order, bound to its
+    /// feature where they vary by it, else `written`, as msDrawLabelCache draws them before the
+    /// text (mapdraw.c:4056-4091): a labelpoint style's marker at its point, a labelpoly style on
+    /// the labelpoly it computes at `placement` (mapdraw.c:3799-3860), which it never tests for
+    /// collisions (maplabel.c:781).
+    fn draw<R: Renderer>(
+        &self,
+        renderer: &mut R,
+        canvas: &mut Canvas<'_>,
+        label: &Cached,
+        (member, placement): (&Member, &Placement),
+        written: &[Style],
+    ) {
+        let bound = self
+            .bound
+            .binary_search_by_key(&label.text, |(text, _)| *text)
+            .ok()
+            .map(|at| &self.bound[at].1[..]);
+        let point_label = member.label.expect("a drawn label has a box");
+        let poly = label_poly_at(member.point, &point_label, placement.anchor);
+        let mut draw = |style: &Style| match style.geom_transform {
+            Some(GeomTransform::LabelPoint) => {
+                draw_label_marker(renderer, member.point, style, self.map, self.factor, label)
+            }
+            _ => draw_label_poly(renderer, &poly, style, self.view, canvas, label),
+        };
+        match bound {
+            Some(styles) => styles.iter().for_each(&mut draw),
+            None => {
+                for style in written {
+                    draw(&classes::unbound(style));
+                }
+            }
+        }
+    }
+}
+
 /// A label's `GEOMTRANSFORM labelpoly` style drawn on its polygon `poly`, as `msDrawLabelBounds`
 /// draws it through msDrawShadeSymbol (see [`shade`]): the polygon where the label is turned,
 /// else the ring of its box from its lower left corner up, at the canvas's factor: the map's
@@ -713,12 +791,79 @@ fn draw_label_poly<R: Renderer>(
     }
 }
 
+/// What `computeMarkerBounds` takes of a label's first `labelpoint` style: the width and height
+/// `msGetMarkerSize` gives its marker, its symbol's anchor point, its angle in degrees, and its
+/// `OFFSET`, scaled.
+#[derive(Clone, Copy)]
+struct LabelMarker {
+    size: (f64, f64),
+    anchor_point: [f64; 2],
+    angle: f64,
+    offset: [f64; 2],
+}
+
+/// The marker of the first `labelpoint` style of a label's `styles`, as computeMarkerBounds sizes
+/// it at the label's scale factor `factor`; `None` without one; or why it is not drawn.
+fn label_marker(styles: &[Style], map: &Map, factor: f64) -> Result<Option<LabelMarker>, String> {
+    let Some(style) = styles
+        .iter()
+        .find(|s| s.geom_transform == Some(GeomTransform::LabelPoint))
+    else {
+        return Ok(None);
+    };
+    let size = marker_size_of(style, &map.symbols, factor)
+        .map_err(|what| format!("its labelpoint style draws {what}"))?;
+    let anchor_point = match &style.symbol {
+        Some(Bound::Value(SymbolRef::Index(index))) if *index > 0 => map
+            .symbols
+            .get(*index as usize - 1)
+            .and_then(|s| s.anchor_point)
+            .unwrap_or([0.5, 0.5]),
+        _ => [0.5, 0.5],
+    };
+    let value = |p: &Option<Bound<f64>>| p.as_ref().and_then(Bound::value).unwrap_or(0.0);
+    let offset = style.offset.as_ref().map_or([0.0, 0.0], |[x, y]| {
+        [x, y].map(|o| o.value().unwrap_or(0.0) * factor)
+    });
+    Ok(Some(LabelMarker {
+        size,
+        anchor_point,
+        angle: value(&style.angle),
+        offset,
+    }))
+}
+
+/// A label's `GEOMTRANSFORM labelpoint` style drawn at the label's point `at`, as
+/// msDrawMarkerSymbol draws it at the label's scale factor `factor`: its vector or ellipse
+/// symbol, moved by msAdjustMarkerPos; nothing for symbol 0.
+fn draw_label_marker<R: Renderer>(
+    renderer: &mut R,
+    at: Point,
+    style: &Style,
+    map: &Map,
+    factor: f64,
+    label: &Cached,
+) {
+    let symbol::Mark::Symbol(s) = symbol::mark(style, &map.symbols) else {
+        return;
+    };
+    let mut ops = Vec::new();
+    symbol::symbol_ops(&mut ops, at, style, s, factor);
+    for op in ops {
+        renderer.draw(&DisplayItem {
+            op,
+            feature_id: Some(label.feature_id),
+        });
+    }
+}
+
 /// The labels of a render as the label cache reads them.
 struct Cache<'c> {
     cached: &'c [Cached],
     paths: &'c [TextPath],
     defs: &'c [Def],
     markers: &'c [(u32, [f64; 4])],
+    label_markers: &'c [(u32, LabelMarker)],
     texts: Option<&'c [Box<[u8]>]>,
 }
 
@@ -739,11 +884,36 @@ impl Members for Cache<'_> {
             .binary_search_by_key(&(index as u32), |(i, _)| *i)
             .ok()
             .map(|i| self.markers[i].1);
-        // msDrawLabelCache's offset from the marker: half the size of its box, grown by half the
-        // label's outline where it has one.
-        let mut from_marker = marker.map_or([0.0, 0.0], |[min_x, min_y, max_x, max_y]| {
-            [(max_x - min_x) / 2.0, (max_y - min_y) / 2.0]
-        });
+        // computeMarkerBounds at the label's point.
+        let label_marker = self
+            .label_markers
+            .binary_search_by_key(&label.text, |(text, _)| *text)
+            .ok()
+            .map(|i| &self.label_markers[i].1)
+            .or(def.label_marker.as_ref())
+            .map(|m| marker_bounds(label.point, m.size, m.anchor_point, m.angle, m.offset));
+        // msDrawLabelCache's offset from the marker: half the size of its box, or of its
+        // labelpoint marker's where that is larger, grown by half the label's outline where it
+        // has one.
+        let half =
+            |[min_x, min_y, max_x, max_y]: [f64; 4]| [(max_x - min_x) / 2.0, (max_y - min_y) / 2.0];
+        let mut from_marker = marker.map_or([0.0, 0.0], half);
+        if let Some(m) = &label_marker {
+            let [x, y] = half(m.bbox);
+            // MS_MAX.
+            from_marker = [
+                if from_marker[0] > x {
+                    from_marker[0]
+                } else {
+                    x
+                },
+                if from_marker[1] > y {
+                    from_marker[1]
+                } else {
+                    y
+                },
+            ];
+        }
         if from_marker[0] != 0.0 && label.outline.is_some() {
             from_marker = from_marker.map(|o| o + def.outline_grow);
         }
@@ -764,6 +934,7 @@ impl Members for Cache<'_> {
             partials: def.partials,
             test_point: label.test_point,
             marker,
+            label_marker,
             min_distance: def.min_distance,
         }
     }
@@ -972,6 +1143,36 @@ fn bound_align(text: &[u8]) -> Option<Align> {
     }
 }
 
+/// The first of a label's styles that is not drawn yet, named.
+fn unsupported_style(label: &Label, symbols: &[forager_style_ir::Symbol]) -> Option<&'static str> {
+    label.styles.iter().find_map(|s| match s.geom_transform {
+        Some(GeomTransform::LabelPoly)
+            if !matches!(s.symbol, None | Some(Bound::Value(SymbolRef::Index(0)))) =>
+        {
+            Some("a STYLE of GEOMTRANSFORM labelpoly with a SYMBOL")
+        }
+        Some(GeomTransform::LabelPoly) => None,
+        Some(GeomTransform::LabelPoint) if !labelpoint_drawn(s, symbols) => Some(
+            "a STYLE of GEOMTRANSFORM labelpnt whose SYMBOL is no vector or ellipse of the \
+             symbol set",
+        ),
+        Some(GeomTransform::LabelPoint) => None,
+        _ => Some("a STYLE other than one of GEOMTRANSFORM labelpoly or labelpnt"),
+    })
+}
+
+/// Whether a label's `labelpoint` style is drawn: without a symbol, or with symbol 0, which
+/// MapServer sizes as 1 by 1 and draws nothing of, or with a vector or an ellipse of the set.
+fn labelpoint_drawn(style: &Style, symbols: &[forager_style_ir::Symbol]) -> bool {
+    match &style.symbol {
+        None | Some(Bound::Value(SymbolRef::Index(0))) => true,
+        Some(Bound::Value(SymbolRef::Index(index))) => symbols
+            .get(*index as usize - 1)
+            .is_some_and(|s| matches!(s.kind, SymbolKind::Vector | SymbolKind::Ellipse)),
+        Some(_) => false,
+    }
+}
+
 /// A property that is a value or bound to a feature's property, or why it is not drawn: one
 /// computed by an expression is not evaluated yet.
 fn prop<'a, T, U>(
@@ -1011,20 +1212,7 @@ fn fixed<'a>(
             "an ANGLE AUTO, AUTO2, or FOLLOW",
         ),
         (label.shadow_color.is_some(), "a SHADOWCOLOR"),
-        (
-            label
-                .styles
-                .iter()
-                .any(|s| s.geom_transform != Some(GeomTransform::LabelPoly)),
-            "a STYLE other than one of GEOMTRANSFORM labelpoly",
-        ),
-        (
-            label
-                .styles
-                .iter()
-                .any(|s| !matches!(s.symbol, None | Some(Bound::Value(SymbolRef::Index(0))))),
-            "a STYLE of GEOMTRANSFORM labelpoly with a SYMBOL",
-        ),
+        unsupported_style(label, &map.symbols).map_or((false, ""), |what| (true, what)),
         (
             label.min_scale_denom.is_some() || label.max_scale_denom.is_some(),
             "a scale range",
