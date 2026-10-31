@@ -201,6 +201,24 @@ pub struct PointLabel {
 /// `CC` by its offset alone, at any other position, and at every position `AUTO` tries, by its
 /// offset and the marker's.
 pub fn placed_at(at: Point, label: &PointLabel, anchor: Anchor) -> (Point, Bounds) {
+    placed_with_buffer(at, label, anchor, label.buffer)
+}
+
+/// The polygon of a label's `GEOMTRANSFORM labelpoly` styles at `anchor` of `at`, as
+/// `msDrawLabelCache` computes it once the label is placed: `get_metrics` at the label's position
+/// and offsets with a buffer of 1 pixel, whatever the label's own `BUFFER`. The label cache never
+/// tests it: a label's collisions are its text's box and its marker's.
+pub fn label_poly_at(at: Point, label: &PointLabel, anchor: Anchor) -> Bounds {
+    placed_with_buffer(at, label, anchor, 1).1
+}
+
+/// [`placed_at`] with a box grown by `buffer` pixels.
+fn placed_with_buffer(
+    at: Point,
+    label: &PointLabel,
+    anchor: Anchor,
+    buffer: i32,
+) -> (Point, Bounds) {
     let [lx, ly] = label.offsets.label;
     let (ox, oy) = if label.position == Position::At(Anchor::Cc) {
         (lx, ly)
@@ -211,15 +229,7 @@ pub fn placed_at(at: Point, label: &PointLabel, anchor: Anchor) -> (Point, Bound
             (label.offsets.marker[1] + f64::from(ly)) as i32,
         )
     };
-    metrics(
-        at,
-        anchor,
-        &label.text,
-        ox,
-        oy,
-        label.rotation,
-        label.buffer,
-    )
+    metrics(at, anchor, &label.text, ox, oy, label.rotation, buffer)
 }
 
 /// Places `label` at `at`, as `msDrawLabelCache` places a label without a leader: at `AUTO` at
