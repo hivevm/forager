@@ -5,7 +5,9 @@
 
 **Text.** A label's text is its own `TEXT`, else the class's `TEXT`, else the layer's
 `LABELITEM` as `to_string` of that property, as `msShapeGetLabelAnnotation` in `src/maputil.c`
-picks it; the frontend resolves the choice at import. A label's own `TEXT ''` is its text, and
+picks it; the frontend resolves the choice at import. A label without any of the three takes
+the `TEXT` of an inline feature, which the engine reads for each feature
+([feature.md](feature.md)). A label's own `TEXT ''` is its text, and
 draws no label, without falling back. A `TEXT` is a string or an expression; `loadLabel` and
 `loadClass` refuse a regular expression or a list, a class `TEXT` a later one replaces included.
 A `TEXT` is evaluated as `msEvalTextExpression` does. A string has replaced by the property's value
