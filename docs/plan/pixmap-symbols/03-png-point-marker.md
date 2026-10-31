@@ -8,7 +8,7 @@ from the CLI and from the browser bindings, with the image ticket 02's store giv
 
 - **Frontend.** Nothing changes: the style IR already carries the symbol's `IMAGE` as a resource
   path resolved beside the file that holds it (`loadSymbol`, `src/mapsymbol.c`, 239–250).
-- **Engine.** The point mark of a pixmap symbol is the image, not the square: the display list
+- **Engine.** The point mark of a pixmap symbol is the image, not the square: the display item
   carries the image placed at the point, shared with every other placement of it, not copied. A
   pixmap the store refuses leaves its style undrawn, the layer warns with a diagnostic naming the
   symbol, its path, and why, and the rest of the map draws: a deliberate deviation, decided by the
@@ -40,8 +40,12 @@ angle is not 0, as the square it draws today.
 - [ ] Given a pixmap file of 32 MiB and one byte, when the CLI renders the map and when the browser
   bindings render it with the file passed by the page, then on each host the style is not drawn,
   with the file bound's warning, and the rest of the map draws.
-- [ ] Given one image placed at a thousand points, when rendered, then the display list holds one
-  image, which every placement refers to.
+- [ ] Given one 512 × 512 pixmap placed at 10,000 points, when rendered, then every item the
+  renderer is handed for it refers to the same image, by pointer equality; the loader is called
+  once; and under the counting allocator of `crates/engine/tests/label_memory.rs` the memory
+  returns to its level before the render once it ends. The test cites
+  [ADR-0040](../../adr/0040-a-decoded-pixmap-is-held-once-per-render.md) with
+  `Verifies: ADR-0040`.
 - [ ] Given the browser bindings and a page that passes the image beside the mapfile, when
   rendered, then the image is drawn as the CLI draws it, byte for byte.
 
@@ -52,8 +56,8 @@ angle is not 0, as the square it draws today.
   (Fonts), [ADR-0034](../../adr/0034-render-agg-blends-as-agg-2-4.md),
   [ADR-0037](../../adr/0037-c-number-reading-in-style-ir.md),
   [ADR-0038](../../adr/0038-browser-bindings-bind-geojson-only.md) (left as it is),
-  [ADR-0039](../../adr/0039-the-clip-to-the-image-is-one-module-of-render.md); ADR candidate B of
-  the spec.
+  [ADR-0039](../../adr/0039-the-clip-to-the-image-is-one-module-of-render.md),
+  [ADR-0040](../../adr/0040-a-decoded-pixmap-is-held-once-per-render.md).
 - The spec `docs/plan/pixmap-symbols/spec.md`; `docs/semantics/symbol.md`; the convention on what
   a render holds per feature. Golden path: the vector symbol at a point; the bindings' test of a
   page's fonts. Seams: the engine's render tests with reference images, the CLI's and the bindings'
@@ -67,5 +71,6 @@ angle is not 0, as the square it draws today.
 ## Mode
 
 with the human: it enforces the file bound of Q-9 in both hosts, a resource limit, and carries the
-decoded image in the display list, the rest of ADR candidate B; both
+decoded image in the display items, the rest of
+[ADR-0040](../../adr/0040-a-decoded-pixmap-is-held-once-per-render.md); both
 [ADR-0007](../../adr/0007-harness.md) keeps with the maintainer.
