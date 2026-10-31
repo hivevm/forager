@@ -475,8 +475,9 @@ const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 /// [`NOISE_THRESHOLDS`]. The report, a table of the share per case and threshold and its maximum
 /// over each category, goes to standard output and to the job summary; it names apart each case
 /// MapServer does not reproduce: `map2img` fails, writes no PNG, writes one of another size, or
-/// differs beyond its category's tolerance at every threshold of the set. The list moves such a case out of scope, so the test fails when
-/// one is in scope. The renderings stay in `noise/` under the test's target directory.
+/// differs beyond its category's tolerance at every threshold of the set. The list moves such a
+/// case out of scope, so the test fails when one is in scope. The renderings stay in `noise/`
+/// under the test's target directory.
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test"]
 fn mapserver_renders_the_cases_in_scope_within_its_noise() {
@@ -527,12 +528,11 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
 
 /// Runs `map2img` for `case` in its mapfile's directory, writing `rendering`, and compares the
 /// rendering with the reference at each of [`NOISE_THRESHOLDS`]. The shares are in their order;
-/// the error is why MapServer does not reproduce the case at all, by `category`, the metric of its
-/// category.
+/// the error is why MapServer does not reproduce the case at all, by `metric`.
 fn measure(
     suite: &Path,
     case: &Case,
-    category: &Metric,
+    metric: &Metric,
     map2img: &Path,
     rendering: &Path,
 ) -> Result<Vec<f64>, String> {
@@ -570,19 +570,18 @@ fn measure(
             comparison.share().ok_or_else(|| comparison.to_string())
         })
         .collect::<Result<Vec<_>, _>>()?;
-    reproduced(shares, category)
+    reproduced(shares, metric)
 }
 
 /// The shares of a case MapServer reproduces: one at some threshold of the set within the
-/// tolerance of `category`, the metric of its category. The shares fall as the threshold rises,
-/// so the last decides; the error names a case that differs beyond the tolerance at every
-/// threshold.
-fn reproduced(shares: Vec<f64>, category: &Metric) -> Result<Vec<f64>, String> {
+/// tolerance of `metric`. The shares fall as the threshold rises, so the last decides; the error
+/// names a case that differs beyond the tolerance at every threshold.
+fn reproduced(shares: Vec<f64>, metric: &Metric) -> Result<Vec<f64>, String> {
     match shares.last() {
-        Some(&share) if share > category.tolerance => Err(format!(
+        Some(&share) if share > metric.tolerance => Err(format!(
             "{share:.6} of its pixels differ by more than {}, above the tolerance {}",
             NOISE_THRESHOLDS[NOISE_THRESHOLDS.len() - 1],
-            category.tolerance
+            metric.tolerance
         )),
         _ => Ok(shares),
     }
@@ -594,15 +593,15 @@ fn a_case_beyond_the_tolerance_at_every_threshold_is_not_reproduced() {
         threshold: 16,
         tolerance: 0.01,
     };
-    for category in [&GEOMETRY, &TEXT, &loose] {
+    for metric in [&GEOMETRY, &TEXT, &loose] {
         let mut shares = vec![0.5; NOISE_THRESHOLDS.len()];
         assert!(
-            reproduced(shares.clone(), category)
+            reproduced(shares.clone(), metric)
                 .unwrap_err()
-                .contains(&format!("above the tolerance {}", category.tolerance))
+                .contains(&format!("above the tolerance {}", metric.tolerance))
         );
-        *shares.last_mut().unwrap() = category.tolerance;
-        assert_eq!(reproduced(shares.clone(), category), Ok(shares));
+        *shares.last_mut().unwrap() = metric.tolerance;
+        assert_eq!(reproduced(shares.clone(), metric), Ok(shares));
     }
     // The tolerance is the case's category's: a share within the loose one is beyond the strict.
     let mut shares = vec![0.5; NOISE_THRESHOLDS.len()];
@@ -680,7 +679,10 @@ fn noise_report(measured: &[(String, Category, Vec<f64>)], unreproduced: &[Strin
         }
         report.push('\n');
     }
-    for (category, maximum) in &maxima {
+    for (category, maximum) in Category::ALL
+        .iter()
+        .filter_map(|c| maxima.get(c).map(|m| (c, m)))
+    {
         report.push_str(&format!("| **maximum, {}** | |", category.name()));
         for max in maximum {
             report.push_str(&format!(" **{max:.6}** |"));
@@ -742,8 +744,8 @@ fn blank_markers(suite: &Path, entries: &BTreeMap<(String, String), Listed>) -> 
 
 /// Renders `case` in-process and compares it with its reference by `metric`, its category's,
 /// leaving the rendering and a difference image in `dir` as `<name>.png` and `<name>.diff.png`
-/// when it fails. The outcome is whether it passes, and the comparison; an error is a case that cannot
-/// be rendered or compared, which fails.
+/// when it fails. The outcome is whether it passes, and the comparison; an error is a case that
+/// cannot be rendered or compared, which fails.
 fn render_and_compare(
     suite: &Path,
     case: &Case,
@@ -769,9 +771,9 @@ fn render_and_compare(
 /// binary, which a test cannot call. As there, each local layer the engine reads is bound to the
 /// shapefile its `DATA` names, a layer whose shapefile does not open is left unbound, so that the
 /// engine skips it, and the fonts of the labels are read through the loader. Unlike there, the
-/// files are read through the suite's loader without the CLI's limits on a data file and a font, each layer opens its shapefile anew instead of sharing it, a
-/// shapefile that does not open gives no diagnostic, and the projections resolve through the
-/// stand-in table of the G-1 test.
+/// files are read through the suite's loader without the CLI's read limit, each layer opens its
+/// shapefile anew instead of sharing it, a shapefile that does not open gives no diagnostic, and
+/// the projections resolve through the stand-in table of the G-1 test.
 fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, String> {
     let path = ResourcePath::new(&case.mapfile).map_err(|e| e.to_string())?;
     let options = case.options()?;

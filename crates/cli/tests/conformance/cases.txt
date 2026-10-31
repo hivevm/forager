@@ -14,13 +14,13 @@
 # case is in scope when it is of a category the harness compares, whether Forager draws it right
 # yet or not; one it draws wrong is listed as fails, with what it lacks in a comment, and flips to
 # passes in the change that makes it pass. The category text holds the cases whose labels are all
-# of point features, in TrueType fonts and Latin script. The reasons for leaving a case out are their categories' exclusions:
-# another output format, an OGC or CGI request, a map2img option not applied, a raster source, a
-# projection, a runtime substitution, a data source other than shapefiles; of a case with labels,
-# labels on lines, labels in polygons, a bitmap font (a label without a FONT, which MapServer
-# draws in its built-in font), complex script (a text with a code point at or above U+02B0), or
-# the text of an embedded legend, an embedded scalebar, or a GRID; and a case MapServer itself
-# does not reproduce within any threshold of the noise measurement.
+# of point features, in TrueType fonts and Latin script. The reasons for leaving a case out are
+# their categories' exclusions: another output format, an OGC or CGI request, a map2img option not
+# applied, a raster source, a projection, a runtime substitution, a data source other than
+# shapefiles; of a case with labels, labels on lines, labels in polygons, a bitmap font (a label
+# without a FONT, which MapServer draws in its built-in font), complex script (a text with a code
+# point at or above U+02B0), or the text of an embedded legend, an embedded scalebar, or a GRID;
+# and a case MapServer itself does not reproduce within any threshold of the noise measurement.
 #
 # `blank` marks a case whose reference is nearly one colour: an image of its most common colour
 # passes against it by the metric. The harness checks every mark against the reference.
@@ -403,7 +403,7 @@ renderers/mask.map mask.png out: labels on lines; and a raster source
 renderers/mask.map mask.cairo.png out: another output format, cairopng
 renderers/mask_opacity.map mask_opacity.png out: labels on lines; and a raster source
 renderers/mask_opacity.map mask_opacity.cairo.png out: another output format, cairopng
-renderers/multilabel-leader.map multilabel-leader.png text fails  # not built yet: the labels of a class placed as a group, and LEADER
+renderers/multilabel-leader.map multilabel-leader.png text fails  # not built yet: the labels of a class placed as a group; and its LEADER, which the point-label spec leaves out
 renderers/multilabel-leader.map multilabel-leader.pdf out: another output format, pdf
 renderers/multilabel-leader.map multilabel-leader.svg out: another output format, svg
 renderers/multilabel-leader.map multilabel-leader.cairo.png out: another output format, cairopng
