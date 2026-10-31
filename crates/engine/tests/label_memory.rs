@@ -2,8 +2,8 @@
 //! 400 bytes apart from its text, and at most 32 more for each style value a feature binds to
 //! it; a test measures it." What a render holds per label until the labels are drawn after the
 //! last layer is measured under a counting allocator, as the difference between a render of many
-//! labelled points and the same render with no label, its text counted with it. One test, so
-//! that no other test's allocations are counted with it.
+//! labelled points and the same render with no label, its text counted with it, so that the test
+//! is stricter than Q-9. One test, so that no other test's allocations are counted with it.
 
 use std::collections::BTreeMap;
 use std::future::Future;
