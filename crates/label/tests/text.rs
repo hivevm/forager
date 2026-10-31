@@ -62,7 +62,7 @@ impl Laid {
 
 /// The one line of `text`.
 fn line(text: &str) -> Vec<char> {
-    let mut lines = lines(text, None, None).unwrap();
+    let mut lines = lines(text, None, 0).unwrap();
     assert_eq!(lines.len(), 1);
     lines.remove(0)
 }
@@ -230,34 +230,28 @@ fn a_glyph_reaching_too_far_from_the_visible_area_is_left_out_and_counted() {
 #[test]
 fn only_a_line_below_u_02b0_is_laid_out() {
     // Verifies: ADR-0028
+    assert_eq!(lines("a\u{2AF}", None, 0), Ok(vec![vec!['a', '\u{2AF}']]));
     assert_eq!(
-        lines("a\u{2AF}", None, None),
-        Ok(vec![vec!['a', '\u{2AF}']])
-    );
-    assert_eq!(
-        lines("a\u{2B0}", None, None),
+        lines("a\u{2B0}", None, 0),
         Err(LineError::NotLatin('\u{2B0}'))
     );
     assert_eq!(
-        lines("ok\nit\u{2019}s", None, None),
+        lines("ok\nit\u{2019}s", None, 0),
         Err(LineError::NotLatin('\u{2019}'))
     );
     // `\r` is skipped, a last `\n` closes the line, any other starts a second one.
+    assert_eq!(lines("a\r\nb\r", None, 0), Ok(vec![vec!['a'], vec!['b']]));
+    assert_eq!(lines("ab\r\n", None, 0), Ok(vec![vec!['a', 'b']]));
     assert_eq!(
-        lines("a\r\nb\r", None, None),
-        Ok(vec![vec!['a'], vec!['b']])
-    );
-    assert_eq!(lines("ab\r\n", None, None), Ok(vec![vec!['a', 'b']]));
-    assert_eq!(
-        lines("a\n\nb", None, None),
+        lines("a\n\nb", None, 0),
         Ok(vec![vec!['a'], vec![], vec!['b']])
     );
-    assert_eq!(lines("\n", None, None), Ok(vec![vec![]]));
-    assert_eq!(lines("\r", None, None), Ok(vec![]));
+    assert_eq!(lines("\n", None, 0), Ok(vec![vec![]]));
+    assert_eq!(lines("\r", None, 0), Ok(vec![]));
 }
 
 /// The lines of `text` as plain strings.
-fn broken(text: &str, wrap: Option<char>, max_length: Option<usize>) -> Vec<String> {
+fn broken(text: &str, wrap: Option<char>, max_length: i32) -> Vec<String> {
     lines(text, wrap, max_length)
         .unwrap()
         .into_iter()
@@ -267,31 +261,42 @@ fn broken(text: &str, wrap: Option<char>, max_length: Option<usize>) -> Vec<Stri
 
 #[test]
 fn a_text_longer_than_maxlength_breaks_at_its_wrap_character_once_a_line_is_full() {
-    // Verifies: ADR-0028
     // Each expected value is worked out by hand from msLayoutTextSymbol's maxlength branch,
     // src/textlayout.c:646-660: a wrap character or U+200B breaks once the line counts
     // `maxlength` characters; every other character, a `\n` of the text too, adds one.
     assert_eq!(
-        broken("the big complex_shape", Some(' '), Some(5)),
+        broken("the big complex_shape", Some(' '), 5),
         ["the big", "complex_shape"]
     );
-    assert_eq!(broken("a b c", Some(' '), Some(3)), ["a b", "c"]);
+    assert_eq!(broken("a b c", Some(' '), 3), ["a b", "c"]);
     // A text no longer than MAXLENGTH is laid out as written, its wrap characters kept.
-    assert_eq!(broken("a b", Some(' '), Some(3)), ["a b"]);
+    assert_eq!(broken("a b", Some(' '), 3), ["a b"]);
     // Without WRAP, only U+200B breaks; one never reached stays, and needs a shaper.
+    assert_eq!(broken("abcd efgh\u{200B}ij", None, 3), ["abcd efgh", "ij"]);
     assert_eq!(
-        broken("abcd efgh\u{200B}ij", None, Some(3)),
-        ["abcd efgh", "ij"]
-    );
-    assert_eq!(
-        lines("ab\u{200B}c", None, Some(3)),
+        lines("ab\u{200B}c", None, 3),
         Err(LineError::NotLatin('\u{200B}'))
     );
     // A `\n` of the text is counted and resets nothing; `\r` is left out before counting.
-    assert_eq!(broken("ab\ncd e", Some(' '), Some(4)), ["ab", "cd", "e"]);
-    assert_eq!(broken("ab\r\r c", Some(' '), Some(3)), ["ab c"]);
+    assert_eq!(broken("ab\ncd e", Some(' '), 4), ["ab", "cd", "e"]);
+    assert_eq!(broken("ab\r\r c", Some(' '), 3), ["ab c"]);
     // Without MAXLENGTH, every wrap character breaks.
-    assert_eq!(broken("a b", Some(' '), None), ["a", "b"]);
+    assert_eq!(broken("a b", Some(' '), 0), ["a", "b"]);
+}
+
+#[test]
+fn a_maxlength_past_an_int_breaks_at_every_wrap_character_and_u_200b() {
+    // `(int)` of a MAXLENGTH past INT_MAX gives INT_MIN on x86-64; the release build compiles out
+    // textlayout.c:646's assertion, every text is longer, and every line holds at least INT_MIN
+    // characters (src/textlayout.c:638-660), worked out by hand.
+    assert_eq!(broken("a b\u{200B}c", Some(' '), i32::MIN), ["a", "b", "c"]);
+    // A wrap outside ASCII is set and never matches: U+200B still breaks.
+    assert_eq!(
+        broken("a\u{e9}b\u{200B}c", Some('\u{e9}'), i32::MIN),
+        ["a\u{e9}b", "c"]
+    );
+    // Without a wrap, a MAXLENGTH that is not positive breaks nothing.
+    assert_eq!(broken("a b", None, i32::MIN), ["a b"]);
 }
 
 #[test]
@@ -535,21 +540,18 @@ fn an_empty_line_takes_its_height_and_shifts_the_alignment_of_the_lines_after_it
 #[test]
 fn a_wrap_character_breaks_the_text_into_lines_only_where_it_is_ascii() {
     assert_eq!(
-        lines("a b\nc", Some(' '), None),
+        lines("a b\nc", Some(' '), 0),
         Ok(vec![vec!['a'], vec!['b'], vec!['c']])
     );
     // A last wrap closes the line as a last line break does.
-    assert_eq!(lines("ab ", Some(' '), None), Ok(vec![vec!['a', 'b']]));
+    assert_eq!(lines("ab ", Some(' '), 0), Ok(vec![vec!['a', 'b']]));
     // MapServer holds WRAP in a C char: a character outside ASCII never matches, NUL wraps
     // nothing.
     assert_eq!(
-        lines("a\u{e9}b", Some('\u{e9}'), None),
+        lines("a\u{e9}b", Some('\u{e9}'), 0),
         Ok(vec![vec!['a', '\u{e9}', 'b']])
     );
-    assert_eq!(
-        lines("a\0b", Some('\0'), None),
-        Ok(vec![vec!['a', '\0', 'b']])
-    );
+    assert_eq!(lines("a\0b", Some('\0'), 0), Ok(vec![vec!['a', '\0', 'b']]));
 }
 
 #[test]

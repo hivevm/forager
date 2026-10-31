@@ -1407,3 +1407,53 @@ fn the_render_reports_its_labels_drawn_and_discarded_in_the_caches_order() {
         [x0, y0, x1, y1]
     );
 }
+
+/// A label's `MAXLENGTH` reaches its layout: the text `Fen Fen` with `WRAP ' '` is laid out on
+/// one line or on two, as msLayoutTextSymbol, src/textlayout.c:638-660, breaks it, and each line
+/// past the first adds `ceil(12 * 1.33)` = 16 px to the height of the box the label is drawn in.
+#[test]
+fn a_labels_maxlength_decides_where_its_text_breaks() {
+    let one = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Fen Fen"},
+         "geometry": {"type": "Point", "coordinates": [80, 30]}}
+    ]}"#;
+    let size = |max_length: Option<f64>, wrap: Option<&str>, text: Option<&str>| {
+        let mut label = label_item();
+        label.max_length = max_length;
+        label.wrap = wrap.map(str::to_owned);
+        if let Some(text) = text {
+            label.text = Some(Expr::String(text.to_owned()));
+        }
+        let rendered = render(&map(label), one);
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        let [x0, y0, x1, y1] = rendered.labels[0].drawn.expect("the label is drawn");
+        (x1 - x0, y1 - y0)
+    };
+    let (fen_width, fen_height) = size(None, None, Some("Fen"));
+    let two_lines = (fen_width, fen_height + 16.0);
+    let one_line = size(None, None, None);
+    for (max_length, lines) in [
+        // `Fen Fen` holds 7 characters, no more than 7 or 50: laid out as written.
+        (Some(7.0), one_line),
+        (Some(50.0), one_line),
+        // Past 3, the space is met when the line holds 3 characters: it breaks there for 3 and
+        // not for 4.
+        (Some(3.0), two_lines),
+        (Some(4.0), one_line),
+        // MAXLENGTH 0 is none: each wrap character breaks.
+        (None, two_lines),
+        (Some(0.0), two_lines),
+        // Past an `int`, `(int)` gives INT_MIN, which every line already holds.
+        (Some(3_000_000_000.0), two_lines),
+    ] {
+        assert_eq!(
+            size(max_length, Some(" "), None),
+            lines,
+            "MAXLENGTH {max_length:?}"
+        );
+    }
+}

@@ -41,41 +41,41 @@ pub enum LineError {
 
 /// The lines of a label's text as `msLayoutTextSymbol` reads them: each `\r` left out, its wrap
 /// applied, and the text broken at each `\n`, a last one closing its line without opening
-/// another; none when no character is left. Without a `max_length`, each `wrap` character becomes
-/// a line break. With a positive `max_length` (`MAXLENGTH`), a text of more characters than it is
-/// broken at a `wrap` character or U+200B met once the line holds `max_length` characters, counted
-/// as MapServer counts them, a `\n` of the text among them and resetting nothing; a text no longer
-/// is laid out as written, its `wrap` characters kept. MapServer holds `WRAP` in a C `char` and
-/// compares it with code points as an `unsigned int`: a character outside ASCII, its first byte
-/// negative on the x86-64 build the references come from, never matches, and NUL is no wrap at
-/// all. Each line must lie below U+02B0, where `unicode_is_latin1` gives it the basic shaper.
-pub fn lines(
-    text: &str,
-    wrap: Option<char>,
-    max_length: Option<usize>,
-) -> Result<Vec<Vec<char>>, LineError> {
-    let wrap = wrap.filter(|&c| c.is_ascii() && c != '\0');
+/// another; none when no character is left. `max_length` is `MAXLENGTH` as MapServer holds it, an
+/// `int`, 0 where the label has none. With a `wrap` and no `max_length`, each `wrap` character
+/// becomes a line break. Otherwise, with a `wrap` or a positive `max_length`, a text of more
+/// characters than `max_length` is broken at a `wrap` character or U+200B met once the line holds
+/// `max_length` characters, every other character, a `\n` of the text among them, adding one and
+/// resetting nothing; a text no longer is laid out as written, its `wrap` characters kept. The
+/// release build compiles out the assertion that `max_length` is positive there, so a negative one
+/// with a `wrap` breaks at each of them and at each U+200B. MapServer holds `WRAP` in a C `char`
+/// and compares it with code points as an `unsigned int`: a character outside ASCII, its first
+/// byte negative on the x86-64 build the references come from, is a wrap that never matches, and
+/// NUL is no wrap at all. Each line must lie below U+02B0, where `unicode_is_latin1` gives it the
+/// basic shaper.
+pub fn lines(text: &str, wrap: Option<char>, max_length: i32) -> Result<Vec<Vec<char>>, LineError> {
+    // `wrap` is set when its C `char` is not NUL; it matches a code point only within ASCII.
+    let wrap = wrap.filter(|&c| c != '\0');
+    let matches = |c: char| wrap.is_some_and(|w| w.is_ascii() && w == c);
     let mut chars: Vec<char> = text.chars().filter(|&c| c != '\r').collect();
-    match max_length.filter(|&m| m > 0) {
-        None => {
-            for c in &mut chars {
-                if Some(*c) == wrap {
-                    *c = '\n';
-                }
+    if wrap.is_some() && max_length == 0 {
+        for c in &mut chars {
+            if matches(*c) {
+                *c = '\n';
             }
         }
-        Some(max) if chars.len() > max => {
-            let mut on_line = 0;
-            for c in &mut chars {
-                if (Some(*c) == wrap || *c == '\u{200B}') && on_line >= max {
-                    *c = '\n';
-                    on_line = 0;
-                } else {
-                    on_line += 1;
-                }
+    } else if (wrap.is_some() || max_length > 0)
+        && i64::try_from(chars.len()).unwrap_or(i64::MAX) > i64::from(max_length)
+    {
+        let mut on_line: i64 = 0;
+        for c in &mut chars {
+            if (matches(*c) || *c == '\u{200B}') && on_line >= i64::from(max_length) {
+                *c = '\n';
+                on_line = 0;
+            } else {
+                on_line += 1;
             }
         }
-        Some(_) => {}
     }
     if chars.is_empty() {
         return Ok(Vec::new());
