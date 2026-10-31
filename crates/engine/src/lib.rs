@@ -12,6 +12,7 @@ mod fonts;
 mod geom_transform;
 mod hatch;
 mod inline;
+mod label_styles;
 mod labels;
 mod line_marker;
 mod offset;
