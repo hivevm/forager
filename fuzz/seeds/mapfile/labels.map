@@ -1,0 +1,52 @@
+# Labels whose TEXT the expression scanner reads: bindings, quoted strings, and characters past
+# ASCII, among them a multi-byte character just after an f.
+MAP
+  NAME "Straßen und Plätze"
+  EXTENT 0 0 100 100
+  SIZE 200 200
+  LAYER
+    NAME "orte"
+    TYPE POINT
+    STATUS ON
+    PROCESSING "ITEMS=name,kind,höhe"
+    LABELITEM "name"
+    FEATURE
+      POINTS 10 10 END
+      ITEMS "Kaufhaus Müller;1;12"
+    END
+    FEATURE
+      POINTS 50 50 END
+      ITEMS "Café Größe;2;3.5"
+    END
+    CLASS
+      NAME "Geschäfte"
+      EXPRESSION ([kind] = 1)
+      TEXT 'Kaufhaus Müller [name]'
+      LABEL
+        TEXT "Auf [name] [höhe] m"
+        SIZE 8
+        COLOR 0 0 0
+      END
+      LABEL
+        TEXT "[name]] [name]]] 'it''s [kind]' \"[name]\" `[kind]` straße fö"
+      END
+      LABEL
+        TEXT ("[name]" + " – " + "Ωf€ 漢字 😀")
+      END
+    END
+    CLASS
+      NAME "Cafés"
+      EXPRESSION ("[kind]" = "2")
+      TEXT "fü [name] fé fü f😀 [kind]"
+      LABEL
+        TEXT ([höhe] * 2)
+      END
+      LABEL
+        TEXT ([kind] = 2 AND "[name]" ~ "Caf.")
+      END
+      LABEL
+        TEXT "'[name]' \"Größe\" `2026-10-31` fromtext"
+      END
+    END
+  END
+END
