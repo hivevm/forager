@@ -1,7 +1,9 @@
-//! The memory the labels of a render take (Q-9): what a render holds per label until the labels
-//! are drawn after the last layer is measured under a counting allocator, as the difference
-//! between a render of many labelled points and the same render with no label. One test, so
-//! that no other test's allocations are counted with it.
+//! The memory the labels of a render take (Q-9): "A label the label cache holds keeps at most
+//! 400 bytes apart from its text, and at most 32 more for each style value a feature binds to
+//! it; a test measures it." What a render holds per label until the labels are drawn after the
+//! last layer is measured under a counting allocator, as the difference between a render of many
+//! labelled points and the same render with no label, its text counted with it, so that the test
+//! is stricter than Q-9. One test, so that no other test's allocations are counted with it.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -13,7 +15,7 @@ use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::{DisplayItem, Renderer, RgbaImage};
 use forager_style_ir::{
     Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer, LayerStatus, Map, Op,
-    RenderMode, Rgba, SourceRef, Style,
+    RenderMode, Rgba, SourceRef, Style, Symbol, SymbolKind, SymbolRef,
 };
 use peak_alloc::PeakAlloc;
 
@@ -55,18 +57,11 @@ impl Renderer for Discard {
     }
 }
 
-/// The map of the points, its label drawn where `labelled`, with a style of a fixed colour and
-/// of the transform `styled` where one is given: a `labelpnt` or `labelcenter` style of symbol 0,
-/// which is sized 1 by 1 and draws nothing.
-fn map(labelled: bool, styled: Option<GeomTransform>) -> Map {
-    let styles = styled
-        .map(|transform| Style {
-            color: Some(Bound::Value(Rgba::opaque(0, 255, 0))),
-            geom_transform: Some(transform),
-            ..Style::default()
-        })
-        .into_iter()
-        .collect();
+/// The map of the points, its label drawn where `labelled`, with the style `styled` where one is
+/// given: a `labelpnt` or `labelcenter` style of symbol 0, which is sized 1 by 1 and draws
+/// nothing, unless the style names symbol 1, a square its size scales.
+fn map(labelled: bool, styled: Option<Style>) -> Map {
+    let styles = styled.into_iter().collect();
     let label = Label {
         styles,
         text: labelled.then(|| Expr::call(Op::ToString, vec![Expr::property("name")])),
@@ -84,6 +79,26 @@ fn map(labelled: bool, styled: Option<GeomTransform>) -> Map {
         }),
         size: Some([1000, 1000]),
         fonts: [("sans".to_owned(), "sans.ttf".to_owned())].into(),
+        // Symbol 1, a vector square of side 1, which a style's SIZE scales.
+        symbols: vec![Symbol {
+            kind: SymbolKind::Vector,
+            paths: vec![vec![
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 1.0],
+                [0.0, 1.0],
+                [0.0, 0.0],
+            ]],
+            extent: Some([1.0, 1.0]),
+            filled: true,
+            name: None,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }],
         layers: vec![Layer {
             name: Some("places".into()),
             render_mode: Some(RenderMode::Point),
@@ -126,8 +141,12 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
     let features: Vec<String> = (0..POINTS)
         .map(|i| {
             format!(
-                r#"{{"type": "Feature", "properties": {{"name": "Forager {i}"}},
+                r#"{{"type": "Feature", "properties": {{"name": "Forager {i}",
+                    "color": "{} 255 0", "size": "{}", "width": "{}"}},
                     "geometry": {{"type": "Point", "coordinates": [{}, {}]}}}}"#,
+                i % 256,
+                i % 7 + 1,
+                i % 5 + 1,
                 i % 1000,
                 (i / 1000) * 40
             )
@@ -141,23 +160,62 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
         [("places".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
     let (without, none) = peak(&map(false, None), &sources);
     assert_eq!(none, 0);
-    // About 360 bytes: the label's glyph indices, its line, its box, its point, and its place in
-    // the label cache; its path, of thousands of bytes, is built only as it is drawn. A
-    // `labelpoly` style the same for every feature is read from the map as the label is drawn,
+    // About 390 bytes: the label's text, its glyph indices, its line, its box, its point, and
+    // its place in the label cache; its path, of thousands of bytes, is built only as it is drawn.
+    // A `labelpoly` style the same for every feature is read from the map as the label is drawn,
     // and adds nothing a label holds; nor does a `labelpnt` style, whose marker the label's
     // definition holds and whose bounds are computed at each label's point as the cache tests it,
-    // nor a `labelcenter` style, whose marker is placed only as the label is drawn.
-    for styled in [
-        None,
-        Some(GeomTransform::LabelPoly),
-        Some(GeomTransform::LabelPoint),
-        Some(GeomTransform::LabelCenter),
+    // nor a `labelcenter` style, whose marker is placed only as the label is drawn. A style whose
+    // properties are bound to the feature's adds the values bound to it, each feature's its own;
+    // a `labelpnt` marker those values size is computed from them as the cache tests it.
+    let style = |transform, color: Bound<Rgba>| Style {
+        color: Some(color),
+        geom_transform: Some(transform),
+        ..Style::default()
+    };
+    let fixed = || Bound::Value(Rgba::opaque(0, 255, 0));
+    fn bound<T>(name: &str) -> Bound<T> {
+        Bound::Binding {
+            binding: name.to_owned(),
+        }
+    }
+    // Each style, and the values a feature binds to it.
+    for (styled, values) in [
+        (None, 0),
+        (Some(style(GeomTransform::LabelPoly, fixed())), 0),
+        (Some(style(GeomTransform::LabelPoint, fixed())), 0),
+        (Some(style(GeomTransform::LabelCenter, fixed())), 0),
+        (Some(style(GeomTransform::LabelPoly, bound("color"))), 1),
+        (Some(style(GeomTransform::LabelPoint, bound("color"))), 1),
+        (
+            Some(Style {
+                size: Some(bound("size")),
+                ..style(GeomTransform::LabelPoly, fixed())
+            }),
+            1,
+        ),
+        // A marker of symbol 1 whose size is each feature's own.
+        (
+            Some(Style {
+                size: Some(bound("size")),
+                symbol: Some(Bound::Value(SymbolRef::Index(1))),
+                ..style(GeomTransform::LabelPoint, fixed())
+            }),
+            1,
+        ),
+        (
+            Some(Style {
+                width: Some(bound("width")),
+                ..style(GeomTransform::LabelPoly, bound("color"))
+            }),
+            2,
+        ),
     ] {
-        let (with, drawn) = peak(&map(true, styled), &sources);
+        let (with, drawn) = peak(&map(true, styled.clone()), &sources);
         assert_eq!(drawn, POINTS, "every label is drawn");
         let per_label = with.saturating_sub(without) / POINTS;
         assert!(
-            per_label < 400,
+            per_label < 400 + 32 * values,
             "styled {styled:?}: {per_label} bytes per label ({with} with labels, {without} without)"
         );
     }

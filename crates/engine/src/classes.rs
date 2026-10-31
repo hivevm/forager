@@ -333,7 +333,7 @@ impl<'a> Selector<'a, '_> {
 /// and its outline colour with `opacity × 2.55` rounded as `MS_NINT` rounds, kept in a byte as
 /// AGG keeps it. The opacity is rounded first, as bindIntegerAttribute rounds a bound one, and is
 /// not bounded to 0 to 100.
-fn with_opacity(style: Cow<'_, Style>) -> Cow<'_, Style> {
+pub(crate) fn with_opacity(style: Cow<'_, Style>) -> Cow<'_, Style> {
     let Some(opacity) = style.opacity.as_ref().and_then(Bound::value) else {
         return style;
     };

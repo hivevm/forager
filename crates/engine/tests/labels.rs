@@ -1949,6 +1949,41 @@ fn a_label_with_a_labelpoint_style_reports_the_box_of_its_text_and_its_marker() 
 }
 
 #[test]
+fn a_labelpoint_marker_of_a_bound_size_takes_each_features_size_in_the_cache() {
+    // Each feature's SIZE sizes its own marker as the cache tests it: at the pixel (20, 29),
+    // size 8 gives the box [16, 25, 24, 33], which moves the text 4 and 4 off the point to
+    // [24, 33, 53.1875, 44.90625]; at the pixel (100, 29), size 4 gives [98, 27, 102, 31], and
+    // the text 2 and 2 off it, [102, 31, 131.1875, 42.90625]. Each member's box is both; the
+    // label added last is reported first.
+    let fen = Label {
+        position: Some(Bound::Value(Position::Lr)),
+        ..fen_styled(vec![Style {
+            size: Some(binding("size")),
+            ..labelpoint()
+        }])
+    };
+    let geojson = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"size": "8"},
+         "geometry": {"type": "Point", "coordinates": [20, 30]}},
+        {"type": "Feature", "properties": {"size": "4"},
+         "geometry": {"type": "Point", "coordinates": [100, 30]}}]}"#;
+    let rendered = render(&map_with_square(fen), geojson);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let drawn: Vec<_> = rendered.labels.iter().map(|l| l.drawn).collect();
+    assert_eq!(
+        drawn,
+        [
+            Some([98.0, 27.0, 131.1875, 42.90625]),
+            Some([16.0, 25.0, 53.1875, 44.90625]),
+        ]
+    );
+}
+
+#[test]
 fn a_labelpoint_marker_takes_room_from_the_labels_after_it() {
     // msTestLabelCacheCollisions tests a label's text against the text and the labelpoint
     // markers of the labels drawn (maplabel.c:781-868). "b", added last, is drawn first: its
@@ -2456,6 +2491,31 @@ fn a_label_of_labelcache_off_draws_its_styles_before_its_text() {
     let centre = |a: u32, b: u32| f64::from(a + b + 1) / 2.0;
     assert!((centre(x0, x1) - centre(poly[0], poly[2])).abs() <= 1.0);
     assert!((centre(y0, y1) - centre(poly[1], poly[3])).abs() <= 1.0);
+}
+
+#[test]
+fn a_label_of_labelcache_off_draws_its_styles_bound_to_each_feature() {
+    // A labelpoly whose COLOR is bound to the property `c` draws, drawn at once, in each
+    // feature's own colour: at UR of the pixel (40, 29) in green, its left edge at x = 39, and at
+    // UR of the pixel (110, 29) in magenta, its left edge at x = 109.
+    let mut map = map(Label {
+        styles: vec![labelpoly(binding("c"))],
+        position: Some(Bound::Value(Position::Ur)),
+        ..label_item()
+    });
+    map.layers[0].label_cache = false;
+    let points = [([40.0, 30.0], "0 255 0"), ([110.0, 30.0], "255 0 255")];
+    let rendered = render(&map, &foragers(&points));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    let green = boxed(&image, PURE_GREEN).expect("a green labelpoly");
+    let magenta = boxed(&image, [255, 0, 255, 255]).expect("a magenta labelpoly");
+    assert_eq!([green[0], green[3]], [39, 29]);
+    assert_eq!([magenta[0], magenta[3]], [109, 29]);
 }
 
 #[test]

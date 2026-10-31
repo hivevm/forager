@@ -154,9 +154,18 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> Symbo
 /// msGetMarkerSize for a vector or ellipse symbol at `scale_factor`: the width and height it is
 /// drawn at, from a size cut to whole pixels, or its own extent for a style without a size.
 fn marker_size(style: &Style, symbol: &Symbol, scale_factor: f64) -> (f64, f64) {
+    marker_size_at(style, fixed(&style.size), symbol, scale_factor)
+}
+
+/// [`marker_size`] of `style` at the size `size` in place of its own.
+fn marker_size_at(
+    style: &Style,
+    size: Option<f64>,
+    symbol: &Symbol,
+    scale_factor: f64,
+) -> (f64, f64) {
     // initSymbol's 1 by 1 for a symbol without points.
     let [size_x, size_y] = symbol.extent.unwrap_or([1.0, 1.0]);
-    let size = fixed(&style.size);
     // `size` is an int there: each assignment cuts the fraction.
     let pixels = (size.unwrap_or_else(|| default_size(symbol)) * scale_factor).trunc();
     let pixels = ms_max(pixels, style.min_size.unwrap_or(MIN_SIZE)).trunc();
@@ -177,7 +186,25 @@ pub(crate) fn marker_size_of(
     symbols: &[Symbol],
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
-    let index = match &style.symbol {
+    marker_size_with(
+        style,
+        fixed(&style.size),
+        &style.symbol,
+        symbols,
+        scale_factor,
+    )
+}
+
+/// [`marker_size_of`] of `style` at the size `size` and of the symbol `symbol` in place of its
+/// own, as a feature binds them.
+pub(crate) fn marker_size_with(
+    style: &Style,
+    size: Option<f64>,
+    symbol: &Option<Bound<SymbolRef>>,
+    symbols: &[Symbol],
+    scale_factor: f64,
+) -> Result<(f64, f64), String> {
+    let index = match symbol {
         None => 0,
         Some(Bound::Value(SymbolRef::Index(index))) => *index as usize,
         Some(_) => return Err("a symbol by a name that is not resolved".to_owned()),
@@ -196,7 +223,7 @@ pub(crate) fn marker_size_of(
             )
             .to_lowercase()),
             SymbolKind::Vector | SymbolKind::Ellipse | SymbolKind::Simple | SymbolKind::Hatch => {
-                Ok(marker_size(style, symbol, scale_factor))
+                Ok(marker_size_at(style, size, symbol, scale_factor))
             }
         },
     }
