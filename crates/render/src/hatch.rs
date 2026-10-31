@@ -21,6 +21,8 @@ pub struct Hatch {
     /// Dash and gap lengths in pixels, alternating, taken as they are; an odd last length is
     /// dropped, and fewer than two draw solid lines.
     pub pattern: Vec<f64>,
+    /// The gamma the cut stroke's coverage passes through, as [`crate::DrawOp::Fill`]'s.
+    pub gamma: Option<f64>,
 }
 
 impl Hatch {
@@ -359,6 +361,7 @@ mod tests {
             color: Rgba::opaque(0, 0, 0),
             width: 2.0,
             pattern,
+            gamma: None,
         }
     }
 

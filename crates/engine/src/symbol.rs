@@ -295,6 +295,7 @@ pub(crate) fn render(ops: &mut Vec<DrawOp>, at: Point, symbol: &Symbol, s: &Symb
         ops.push(DrawOp::Fill {
             rings: paths.clone(),
             color,
+            gamma: None,
         });
     }
     // agg2RenderEllipseSymbol outlines only at a width other than 0; a vector symbol's outline
