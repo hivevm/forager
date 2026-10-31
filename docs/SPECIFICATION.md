@@ -113,8 +113,12 @@ from the threats below.
 - **Q-9** — Bounded resources: `INCLUDE` depth and cycles, the total size of a mapfile with its
   `INCLUDE`s and the files it names (16 MiB of text), the number of diagnostics one load reports
   (1000), image size, the features one layer draws (1,000,000), the size of a data file a host reads
-  (256 MiB), the size of a font file (32 MiB, apart from that total), the points of the symbols
-  one layer places along its lines (1,000,000), the labels one render's label cache holds
+  (256 MiB), the size of a font file, which a symbol image's file shares (32 MiB, apart from that
+  total), the pixels of a symbol image, read from its header before it is decoded, a GIF's from
+  its logical screen (4096 × 4096), the pixels of the tile a polygon is filled with, whatever its
+  size or gap asks (4096 × 4096), the images one render holds decoded, its fill tiles among them
+  (256 MiB), the points of the symbols one layer places along its lines (1,000,000), the labels
+  one render's label cache holds
   (100,000), expression nesting (24 levels), the length of a text an expression reads or computes
   (16 MiB), the values a style document of a newer minor drops (100), and regular-expression
   length (64 KiB) and size are limited, and exceeding a limit is a diagnostic. A test per limit
