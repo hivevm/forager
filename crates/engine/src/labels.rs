@@ -420,7 +420,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             test_point: !fixed.force && bound.offset == [0, 0],
         };
         if self.cache(feature, &template, marker, &text) {
-            self.hold(&template, text, styles, label_marker, path);
+            self.hold(&template, text, written, &styles, label_marker, path);
         }
     }
 
@@ -431,13 +431,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         &mut self,
         template: &Cached,
         text: String,
-        styles: Box<[Style]>,
+        written: &[Style],
+        styles: &[Style],
         label_marker: Option<LabelMarker>,
         path: Option<TextPath>,
     ) {
         self.label_texts.push(text.into_boxed_str());
         self.styles
-            .hold(template.def, template.text, styles, label_marker);
+            .hold(template.def, template.text, written, styles, label_marker);
         if let Some(path) = path {
             self.paths.push(path);
         }
@@ -573,6 +574,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             markers: &markers,
             styles: &styles,
             texts: texts.as_deref(),
+            map: self.map,
         };
         let (width, height) = self.size;
         let image = [0.0, 0.0, f64::from(width), f64::from(height)];
@@ -697,6 +699,7 @@ struct Cache<'c> {
     markers: &'c [(u32, [f64; 4])],
     styles: &'c LabelStyles,
     texts: Option<&'c [Box<[u8]>]>,
+    map: &'c Map,
 }
 
 impl Members for Cache<'_> {
@@ -717,9 +720,11 @@ impl Members for Cache<'_> {
             .ok()
             .map(|i| self.markers[i].1);
         // computeMarkerBounds at the label's point.
-        let label_marker = self
-            .styles
-            .marker_bounds(label.def, label.text, label.point);
+        let (layer, class, n) = def.at;
+        let written = &self.map.layers[layer].classes[class].labels[n].styles;
+        let label_marker =
+            self.styles
+                .marker_bounds(self.map, label.def, label.text, written, label.point);
         // msDrawLabelCache's offset from the marker: half the size of its box, or of its
         // labelpoint marker's where that is larger, grown by half the label's outline where it
         // has one.
