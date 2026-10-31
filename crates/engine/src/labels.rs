@@ -24,13 +24,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use forager_expr::atof;
 use forager_label::{
     Align, Anchor, Font, Glyphs, Layout, LineError, MAX_LABELS, MAX_PRIORITY, Member, Members,
-    Offsets, PointLabel, Position, TextPath, draw_label_cache, glyph_size, lines, member_box,
-    pixel_size,
+    Offsets, Placement, PointLabel, Position, TextBox, TextPath, draw_label_cache, glyph_size,
+    lines, member_box, pixel_size, placed_at,
 };
 use forager_ports::{Feature, Properties, ResourceLoader, Value};
 use forager_render::{DisplayItem, DrawOp, GlyphOutline, Point, Renderer};
 use forager_style_ir::{
-    Align as IrAlign, Bound, Diagnostic, Expr, Force, Label, Layer, Map, Op,
+    Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Layer, Map, Op,
     Position as IrPosition, Rgba, Span, Style, Units,
 };
 
@@ -231,13 +231,16 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// them, as msDrawShape adds each feature's labels to the cache: on a point layer at each
     /// vertex inside the map's extent, as `pointLayerDrawShape` places them; a label of any other
     /// layer is not drawn yet. A label whose `EXPRESSION` does not match a feature is not
-    /// collected for it, as `msGetLabelStatus` decides.
-    pub(crate) async fn collect(
+    /// collected for it, as `msGetLabelStatus` decides. With `at_once`, the layer's of
+    /// `LABELCACHE OFF`, each label is drawn into it instead of cached (see
+    /// [`Self::draw_at_once`]).
+    pub(crate) async fn collect<R: Renderer>(
         &mut self,
         index: usize,
         point_layer: bool,
         drawn: &[Labelled<'_>],
         selector: &mut Selector<'_, '_>,
+        mut at_once: Option<&mut R>,
     ) {
         let map = self.map;
         let layer = &map.layers[index];
@@ -268,10 +271,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 let fixed = if !point_layer {
                     Err("labels of line and polygon layers are not drawn yet".to_owned())
                 } else if class.labels.len() > 1 {
-                    Err(
+                    Err(if at_once.is_some() {
+                        "its class has several labels, which MapServer draws each on its own \
+                         under LABELCACHE OFF, and which are not drawn yet"
+                    } else {
                         "its class has several labels, which MapServer places as a group"
-                            .to_owned(),
-                    )
+                    }
+                    .to_owned())
                 } else {
                     fixed(map, layer, label, text)
                 };
@@ -308,15 +314,18 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     } else {
                         Box::default()
                     };
-                    self.feature(at, fixed, feature, style, styles, selector)
+                    let renderer = at_once.as_deref_mut();
+                    self.feature(at, fixed, feature, style, styles, selector, renderer)
                         .await;
                 }
             }
         }
     }
 
-    /// Lays out one label of one feature and places it at each of its points.
-    async fn feature(
+    /// Lays out one label of one feature and places it at each of its points, or draws it there
+    /// into `at_once`.
+    #[allow(clippy::too_many_arguments)]
+    async fn feature<R: Renderer>(
         &mut self,
         at: LabelAt,
         fixed: &Fixed<'_>,
@@ -324,34 +333,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         style: Option<&Style>,
         styles: Box<[Style]>,
         selector: &mut Selector<'_, '_>,
+        at_once: Option<&mut R>,
     ) {
-        let text = match fixed.text {
-            Some(expr) => match text(expr, &feature.properties) {
-                Ok(text) => text,
-                Err(why) => {
-                    self.report(selector.diagnostics, at, "label-text-unsupported", why);
-                    return;
-                }
-            },
-            None => match feature_text(&self.map.layers[at.0], feature.id) {
-                Some(text) => text.to_owned(),
-                None => return,
-            },
+        let Some((text, lines)) = self.text_lines(at, fixed, feature, selector.diagnostics) else {
+            return;
         };
-        let lines = match lines(&text, fixed.wrap, fixed.max_length) {
-            Ok(lines) => lines,
-            Err(LineError::NotLatin(c)) => {
-                let why = format!(
-                    "the text `{text}` holds U+{:04X}, which needs a shaper",
-                    u32::from(c)
-                );
-                self.report(selector.diagnostics, at, "label-line-unsupported", why);
-                return;
-            }
-        };
-        // A text that is empty draws nothing; one of line breaks only is cached, its marker
-        // with it, but takes no box.
-        if text.is_empty() {
+        // A text that is empty draws nothing from the cache; one of line breaks only is cached,
+        // its marker with it, but takes no box. Drawn at once, both draw their styles.
+        if text.is_empty() && at_once.is_none() {
             return;
         }
         let blank = lines.iter().all(Vec::is_empty);
@@ -360,6 +349,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         });
         let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
         let label_styles: &[Style] = if styles.is_empty() { written } else { &styles };
+        // msDrawLabel moves a label off no marker: the class's style is not read for it.
+        let style = style.filter(|_| at_once.is_none());
         let settled = settle(fixed, &bound, lines.len(), style, self.map).and_then(|settled| {
             let marker = label_styles::label_marker(label_styles, self.map, fixed.factor);
             Ok((settled, marker.map_err(|why| ("label-not-drawn", why))?))
@@ -419,8 +410,164 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             priority: bound.priority,
             test_point: !fixed.force && bound.offset == [0, 0],
         };
-        if self.cache(feature, &template, marker, &text) {
+        if let Some(renderer) = at_once {
+            self.draw_at_once(
+                renderer,
+                at,
+                feature,
+                &template,
+                path.as_ref(),
+                &styles,
+                selector,
+            );
+        } else if self.cache(feature, &template, marker, &text) {
             self.hold(&template, text, written, &styles, label_marker, path);
+        }
+    }
+
+    /// Draws `label` of `at` with its text of `path` at each point of `feature` inside the map's
+    /// extent, its styles `styles` bound to the feature where they vary by it, as
+    /// `pointLayerDrawShape` draws the labels of a layer of `LABELCACHE OFF` with `msDrawLabel`
+    /// (src/mapdraw.c:2086-2105, 2703-2897): at once, at the point by its position and its
+    /// `OFFSET` alone, `get_metrics` given no marker's offset and no buffer, its styles before its
+    /// text, and with no test against the other labels, the markers, or the image's edge. A
+    /// `POSITION AUTO` stands as `get_metrics` places a position none of its cases names. The
+    /// label is not cached, so the label cache never tests a label against it.
+    ///
+    /// Without a `path`, for a text that is empty or of line breaks only, its labelpnt styles
+    /// are drawn at the point and nothing else (mapdraw.c:2714-2748): a labelpoly or labelcenter
+    /// style fails msDrawLabel and the layer's draw where the text is empty (2793-2799), and is
+    /// drawn on the box of a text path without glyphs, which `msLayoutTextSymbol` leaves at
+    /// `FLT_MAX` and `-FLT_MAX` (textlayout.c:817-819), where it is of line breaks; such a label
+    /// is left out with a diagnostic.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_at_once<R: Renderer>(
+        &mut self,
+        renderer: &mut R,
+        at: LabelAt,
+        feature: &Feature,
+        label: &Cached,
+        path: Option<&TextPath>,
+        styles: &[Style],
+        selector: &mut Selector<'_, '_>,
+    ) {
+        let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
+        let boxed = |s: &Style| {
+            matches!(
+                s.geom_transform,
+                Some(GeomTransform::LabelPoly | GeomTransform::LabelCenter)
+            )
+        };
+        if path.is_none() && written.iter().any(boxed) {
+            let why = "its text is empty or of line breaks only, where msDrawLabel fails on a \
+                       labelpoly or labelcenter style or draws it on a box of no size"
+                .to_owned();
+            self.report(selector.diagnostics, at, "label-not-drawn", why);
+            return;
+        }
+        // The text's box, which a label without one draws no style on.
+        let text = path.map_or(
+            TextBox {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 0.0,
+                max_y: 0.0,
+                num_lines: 1,
+            },
+            TextPath::text_box,
+        );
+        let anchor = match label.position {
+            Position::At(anchor) => anchor,
+            Position::Auto => Anchor::Other,
+        };
+        let mut held = LabelStyles::default();
+        held.hold(label.def, label.text, written, styles, None);
+        let (width, height) = self.size;
+        let image = [0.0, 0.0, f64::from(width), f64::from(height)];
+        let mut styled = Styled::new(self.map, self.view, &held, width, height);
+        let extent = self.view.extent;
+        let mut out_of_reach = 0;
+        for c in vertices(&feature.geometry) {
+            // pointLayerDrawShape skips a point outside the map's extent.
+            if !(c.x >= extent.min_x && c.x <= extent.max_x)
+                || !(c.y >= extent.min_y && c.y <= extent.max_y)
+            {
+                continue;
+            }
+            let point = self.view.point_to_pixel(c);
+            let point_label = PointLabel {
+                position: Position::At(anchor),
+                text,
+                offsets: Offsets {
+                    marker: [0.0, 0.0],
+                    label: label.offset,
+                },
+                rotation: label.rotation,
+                buffer: 0,
+                force: true,
+            };
+            let (origin, bounds) = placed_at(point, &point_label, anchor);
+            let member = Member {
+                priority: label.priority,
+                point,
+                label: Some(point_label),
+                partials: true,
+                test_point: false,
+                marker: None,
+                label_marker: None,
+                min_distance: -1.0,
+            };
+            let placement = Placement {
+                origin,
+                bounds,
+                anchor,
+            };
+            let label = Cached { point, ..*label };
+            out_of_reach += draw_label(
+                renderer,
+                &mut styled,
+                self.map,
+                at,
+                &member,
+                &placement,
+                &label,
+                path,
+                &self.glyphs,
+                image,
+            );
+        }
+        self.out_of_reach(selector.diagnostics, at, out_of_reach);
+    }
+
+    /// The text of label `at` for `feature` and its lines, or `None` where it has none or it is
+    /// not drawn, which is reported.
+    fn text_lines(
+        &mut self,
+        at: LabelAt,
+        fixed: &Fixed<'_>,
+        feature: &Feature,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<(String, Vec<Vec<char>>)> {
+        let text = match fixed.text {
+            Some(expr) => match text(expr, &feature.properties) {
+                Ok(text) => text,
+                Err(why) => {
+                    self.report(diagnostics, at, "label-text-unsupported", why);
+                    return None;
+                }
+            },
+            None => feature_text(&self.map.layers[at.0], feature.id)?.to_owned(),
+        };
+        match lines(&text, fixed.wrap, fixed.max_length) {
+            Ok(lines) => Some((text, lines)),
+            Err(LineError::NotLatin(c)) => {
+                let why = format!(
+                    "the text `{text}` holds U+{:04X}, which needs a shaper",
+                    u32::from(c)
+                );
+                self.report(diagnostics, at, "label-line-unsupported", why);
+                None
+            }
         }
     }
 
@@ -588,54 +735,21 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 member.label_marker.as_ref(),
             ));
             let label = &cached[i];
-            // The label's styles, before its text.
-            let (layer, class, n) = defs[label.def as usize].at;
-            let written = &self.map.layers[layer].classes[class].labels[n].styles;
-            if !written.is_empty() {
-                styled.draw(
-                    renderer,
-                    &member,
-                    placement,
-                    label.feature_id,
-                    label.text,
-                    written,
-                );
-            }
-            if label.color.is_none() && label.outline.is_none() {
-                return;
-            }
             let at = defs[label.def as usize].at;
-            // An outline reaches past its glyphs: half its width, and at a sharp corner a miter
-            // up to its whole width, so a glyph that close outside the image is drawn for it.
-            let reach = label
-                .outline
-                .map_or(0.0, |(_, width)| 2.0 * f64::from(width).abs());
-            let [x0, y0, x1, y1] = image;
-            let visible = [x0 - reach, y0 - reach, x1 + reach, y1 + reach];
-            let drawn =
-                paths[label.path as usize].draw(&glyphs, placement.origin, label.rotation, visible);
-            if drawn.out_of_reach > 0 {
-                let why = format!(
-                    "{} of its glyphs reach farther than {} pixels from the image",
-                    drawn.out_of_reach,
-                    forager_render::MAX_GLYPH_REACH
-                );
-                let outcome = "those glyphs are left out";
-                self.report_with(diagnostics, at, "label-glyph-out-of-reach", why, outcome);
-            }
-            if !drawn.path.is_empty() {
-                renderer.draw(&DisplayItem {
-                    op: DrawOp::Glyphs {
-                        path: drawn.path,
-                        color: label.color,
-                        outline: label.outline.map(|(color, width)| GlyphOutline {
-                            color,
-                            width: f64::from(width),
-                        }),
-                    },
-                    feature_id: Some(label.feature_id),
-                });
-            }
+            let path = Some(&paths[label.path as usize]);
+            let out_of_reach = draw_label(
+                renderer,
+                &mut styled,
+                self.map,
+                at,
+                &member,
+                placement,
+                label,
+                path,
+                &glyphs,
+                image,
+            );
+            self.out_of_reach(diagnostics, at, out_of_reach);
         });
         // The report walks the cache as msDrawLabelCache does.
         let mut labels = Vec::with_capacity(cached.len());
@@ -655,6 +769,18 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             }
         }
         labels
+    }
+
+    /// Reports the glyphs of `at` left out for reaching too far from the image, once per label.
+    fn out_of_reach(&mut self, diagnostics: &mut Vec<Diagnostic>, at: LabelAt, count: usize) {
+        if count > 0 {
+            let why = format!(
+                "{count} of its glyphs reach farther than {} pixels from the image",
+                forager_render::MAX_GLYPH_REACH
+            );
+            let outcome = "those glyphs are left out";
+            self.report_with(diagnostics, at, "label-glyph-out-of-reach", why, outcome);
+        }
     }
 
     /// Reports why `at` is not drawn, once per label and code.
@@ -689,6 +815,65 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             .span
             .clone()
     }
+}
+
+/// Draws `label` of definition `at`, `member` placed at `placement`, into `renderer`: its styles,
+/// then its text of `path` in its colour and outline, as msDrawLabelCache and msDrawLabel draw
+/// them, each glyph that reaches into `image` or near it; the count of glyphs left out for reaching
+/// too far from it.
+#[allow(clippy::too_many_arguments)]
+fn draw_label<R: Renderer>(
+    renderer: &mut R,
+    styled: &mut Styled<'_>,
+    map: &Map,
+    (layer, class, n): LabelAt,
+    member: &Member,
+    placement: &Placement,
+    label: &Cached,
+    path: Option<&TextPath>,
+    glyphs: &[Glyphs],
+    image: [f64; 4],
+) -> usize {
+    // The label's styles, before its text.
+    let written = &map.layers[layer].classes[class].labels[n].styles;
+    if !written.is_empty() {
+        styled.draw(
+            renderer,
+            member,
+            placement,
+            label.feature_id,
+            label.text,
+            written,
+        );
+    }
+    let Some(path) = path else {
+        return 0;
+    };
+    if label.color.is_none() && label.outline.is_none() {
+        return 0;
+    }
+    // An outline reaches past its glyphs: half its width, and at a sharp corner a miter up to its
+    // whole width, so a glyph that close outside the image is drawn for it.
+    let reach = label
+        .outline
+        .map_or(0.0, |(_, width)| 2.0 * f64::from(width).abs());
+    let [x0, y0, x1, y1] = image;
+    let visible = [x0 - reach, y0 - reach, x1 + reach, y1 + reach];
+    let drawn = path.draw(glyphs, placement.origin, label.rotation, visible);
+    if !drawn.path.is_empty() {
+        renderer.draw(&DisplayItem {
+            op: DrawOp::Glyphs {
+                path: drawn.path,
+                color: label.color,
+                outline: label.outline.map(|(color, width)| GlyphOutline {
+                    color,
+                    width: f64::from(width),
+                }),
+            },
+            feature_id: Some(label.feature_id),
+        });
+    }
+    drawn.out_of_reach
 }
 
 /// The labels of a render as the label cache reads them.

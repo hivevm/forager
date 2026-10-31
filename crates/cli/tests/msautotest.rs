@@ -452,9 +452,10 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
             ));
         }
         if *category == Category::Text
-            && let Some(labels) = &labels
+            && let Some((labels, uncompared)) = &labels
         {
             let named = format!("{} {}", case.mapfile, case.result);
+            label_report.extend(uncompared.iter().map(|layer| format!("{named}: {layer}")));
             match labels_against_record(case, labels) {
                 Ok(differences) => {
                     let holds = differences.is_empty();
@@ -861,6 +862,10 @@ fn blank_markers(suite: &Path, entries: &BTreeMap<(String, String), Listed>) -> 
     problems
 }
 
+/// The labels of a render's label cache, and the layers whose labels are not compared
+/// ([`labels::uncompared`]).
+type RenderLabels = (Vec<CachedLabel>, Vec<String>);
+
 /// Renders `case` in-process and compares it with its reference by `metric`, its category's,
 /// leaving the rendering and a difference image in `dir` as `<name>.png` and `<name>.diff.png`
 /// when it fails. The outcome is whether it passes, and the comparison, with the labels of the
@@ -873,7 +878,7 @@ fn render_and_compare(
     metric: &Metric,
     dir: &Path,
     name: &str,
-) -> Result<((bool, String), Vec<CachedLabel>), String> {
+) -> Result<((bool, String), RenderLabels), String> {
     let directory = &case.mapfile[..case.mapfile.find('/').unwrap()];
     let reference = suite.join(directory).join("expected").join(&case.result);
     let reference = std::fs::read(&reference)
@@ -896,16 +901,17 @@ fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<St
     Ok(labels::compare(rendered, &recorded))
 }
 
-/// The rendering of `case` and the labels of its cache, the options of its `map2img` line applied
-/// to its style IR, its sources bound and the fonts of its labels read by the CLI's library from
-/// the suite's directory as the base context, as `forager render` binds and reads them. Unlike
-/// there, the mapfile loads through the stand-in table of the G-1 test and with `-i` applied, and
-/// the binding's diagnostics are reported only with a rendering that gives no image.
+/// The rendering of `case`, the labels of its cache, and the layers whose labels are not compared,
+/// the options of its `map2img` line applied to its style IR, its sources bound and the fonts of
+/// its labels read by the CLI's library from the suite's directory as the base context, as
+/// `forager render` binds and reads them. Unlike there, the mapfile loads through the stand-in
+/// table of the G-1 test and with `-i` applied, and the binding's diagnostics are reported only
+/// with a rendering that gives no image.
 fn render(
     case: &Case,
     loader: &Suite,
     resolver: &StandIn,
-) -> Result<(RgbaImage, Vec<CachedLabel>), String> {
+) -> Result<(RgbaImage, RenderLabels), String> {
     let path = ResourcePath::new(&case.mapfile).map_err(|e| e.to_string())?;
     let options = case.options()?;
     let loaded = match conformance::image_type(&options) {
@@ -939,5 +945,5 @@ fn render(
             .collect();
         return Err(format!("it renders no image: {}", errors.join("; ")));
     };
-    Ok((image, rendered.labels))
+    Ok((image, (rendered.labels, labels::uncompared(&map))))
 }

@@ -161,7 +161,7 @@ pub struct Extent {
     pub max_y: f64,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Layer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -196,6 +196,12 @@ pub struct Layer {
     /// one, it is drawn straight onto the map.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity: Option<f64>,
+    /// Whether the layer's labels go to the label cache, MapServer's `LABELCACHE`: placed with
+    /// the labels of every layer and drawn after them. Without the cache, each label is drawn at
+    /// once after its feature, untested against any other. Absent, it is true, MapServer's
+    /// default `LABELCACHE ON`.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub label_cache: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     /// The features written into the layer (ADR-0033). A layer with any is read from them alone,
@@ -204,6 +210,37 @@ pub struct Layer {
     pub features: Vec<InlineFeature>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
+}
+
+impl Default for Layer {
+    /// A layer of no property set, its labels in the label cache.
+    fn default() -> Self {
+        Self {
+            name: None,
+            render_mode: None,
+            status: None,
+            source: None,
+            filter: None,
+            size_units: None,
+            symbol_scale_denom: None,
+            projection: None,
+            min_scale_denom: None,
+            max_scale_denom: None,
+            opacity: None,
+            label_cache: true,
+            classes: Vec::new(),
+            features: Vec::new(),
+            span: None,
+        }
+    }
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// A feature written into a layer, a shape as MapServer holds one (ADR-0033).
