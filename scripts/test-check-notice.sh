@@ -71,6 +71,18 @@ mkdir -p "$cdir/crates/x/tests"
 printf '%s\n' '/* Walks the cache as msDrawLabelCache in src/mapdraw.c does. */' > "$cdir/crates/x/tests/reader.c"
 expect "a C file that cites MapServer's source without the notice fails" \
   "$cdir" 1 "crates/x/tests/reader.c follows MapServer"
+PNPOLY='// Copyright (c) 1970-2003, Wm. Randolph Franklin
+// 1. Redistributions of source code must retain the above copyright notice, this list of
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.'
+expect "a file that ports msPointInPolygon without Franklin's notice fails, by name" \
+  "$(repo pnpolybare '// As msPointInPolygon tests it.')" 1 "crates/x/src/lib.rs follows pnpoly"
+pdir="$(repo pnpolynotice "$PNPOLY
+// As msPointInPolygon tests it.")"
+expect "Franklin's notice without THIRD-PARTY-NOTICES.md reproducing it fails" \
+  "$pdir" 1 "THIRD-PARTY-NOTICES.md does not reproduce"
+printf '%s\n' 'Copyright (c) 1970-2003, Wm. Randolph Franklin' > "$pdir/THIRD-PARTY-NOTICES.md"
+expect "Franklin's notice, reproduced in THIRD-PARTY-NOTICES.md, passes" \
+  "$pdir" 0 "Notice check passed"
 expect "a root that is no directory exits 2" "$work/none" 2 "is not a directory"
 
 if ((failed)); then
