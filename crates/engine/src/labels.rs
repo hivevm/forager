@@ -1,9 +1,8 @@
 // The labels of point layers follow pointLayerDrawShape, msDrawLabelCache, its choice of a point
-// label's position and offsets, its labelpoly, labelpoint, and labelcenter styles and its
-// member's box, and computeMarkerBounds, src/mapdraw.c, msAddLabelGroup and msComputeTextPath,
-// src/maplabel.c, bindLabel, bindIntegerAttribute, and msShapeGetLabelAnnotation, src/maputil.c,
-// msGetMarkerSize, src/mapsymbol.c, and msDrawTextSymbol, msDrawLabelBounds, and
-// msDrawMarkerSymbol, src/maprendering.c, of MapServer at the release pinned in
+// label's position and offsets and its member's box, src/mapdraw.c, msAddLabelGroup and
+// msComputeTextPath, src/maplabel.c, bindLabel, bindIntegerAttribute, and
+// msShapeGetLabelAnnotation, src/maputil.c, msGetMarkerSize, src/mapsymbol.c, and
+// msDrawTextSymbol, src/maprendering.c, of MapServer at the release pinned in
 // scripts/fetch-msautotest.sh, with the label cache of the label crate (ADR-0028).
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.

@@ -27,8 +27,7 @@ use crate::symbol::{self, marker_size_of};
 
 /// The kind of a label's style that is drawn: by its `GEOMTRANSFORM`, on the box around the text,
 /// at the label's point, or at the centre of that box.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Kind {
+enum Kind {
     Poly,
     Point,
     Center,
@@ -36,7 +35,7 @@ pub(crate) enum Kind {
 
 /// The kind of a label's `style`, or why it is not drawn: a labelpoly with a symbol, a labelpoint
 /// or labelcenter whose marker is not drawn, or a style of any other transform or none.
-pub(crate) fn kind(style: &Style, symbols: &[Symbol]) -> Result<Kind, &'static str> {
+fn kind(style: &Style, symbols: &[Symbol]) -> Result<Kind, &'static str> {
     match style.geom_transform {
         Some(GeomTransform::LabelPoly)
             if !matches!(style.symbol, None | Some(Bound::Value(SymbolRef::Index(0)))) =>
