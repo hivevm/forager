@@ -1,6 +1,6 @@
 # ADR-0036: A change of what a style document's field means is a major format version, and a condition is added only where an older reader fails closed
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/style-ir` (the version rule of the style document and its schema check), `schema/`, and every change to a field of the style IR
@@ -31,7 +31,7 @@ gives a map survives; Q-9 and the fail-closed convention ask that what a lenient
 never widens what a map draws or what an input may cost. The freeze of ADR-0020 applies from the
 first release tag, which does not exist yet, so the rule can still be set before it binds.
 
-Open questions for the maintainer, written here instead of asked:
+Questions the maintainer settled on acceptance:
 
 1. Is a change of meaning a major bump in every case, or only where a document written by the
    older version draws differently, so that a widened range of accepted values stays minor?
@@ -42,6 +42,9 @@ Open questions for the maintainer, written here instead of asked:
    and dropping one makes the element it sits on never drawn.
 3. Is the check for meaning a reviewed list, kept beside the schema, of the fields whose meaning
    moved since the last release, or only a line in the review skill's checklist?
+
+The decision answers the first two: a change of meaning is a major version in every case, and a new
+condition is minor only in the form of (b). The third is left to the check that enforces it.
 
 ## Decision
 

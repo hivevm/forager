@@ -24,6 +24,7 @@
 use forager_render::{DrawOp, Point};
 use forager_style_ir::{Style, Symbol};
 
+use crate::draw::Canvas;
 use crate::symbol;
 
 /// The most points the markers along the lines of one layer, and the symbols a `GEOMTRANSFORM`
@@ -104,22 +105,24 @@ pub(crate) struct Placement {
 }
 
 /// The markers of `style` with its vector or ellipse `symbol` along `paths`, in pixels already
-/// offset, as msDrawLineSymbol draws a symbol with a `GAP`: `initial_gap` is the `INITIALGAP`
-/// scaled as the width is. The markers' points are taken from `budget`; where they would exceed
-/// what is left, none is drawn, and none after them once it is spent.
+/// offset, as msDrawLineSymbol draws a symbol with a `GAP` on the canvas's image, with
+/// computeSymbolStyle at the canvas's factor: `initial_gap` is the `INITIALGAP` scaled as the
+/// width is. The markers' points are taken from the canvas's budget; where they would exceed what
+/// is left, none is drawn, and none after them once it is spent.
 pub(crate) fn draw(
     ops: &mut Vec<DrawOp>,
     paths: &[Vec<Point>],
     style: &Style,
     symbol: &Symbol,
     initial_gap: f64,
-    image: (f64, f64),
-    budget: &mut MarkerBudget,
+    canvas: &mut Canvas,
 ) {
+    let image = canvas.image;
+    let budget = &mut canvas.markers;
     if budget.spent {
         return;
     }
-    let s = symbol::symbol_style(style, symbol);
+    let s = symbol::symbol_style(style, symbol, canvas.factor);
     // What one marker costs; a symbol that draws nothing has no markers to place.
     let mut probe = Vec::new();
     symbol::render(&mut probe, Point { x: 0.0, y: 0.0 }, symbol, &s);
@@ -158,9 +161,7 @@ pub(crate) fn draw(
 pub(crate) fn points(op: &DrawOp) -> usize {
     match op {
         DrawOp::Stroke { paths, .. } => paths.iter().map(Vec::len).sum(),
-        DrawOp::Fill { rings, .. } | DrawOp::Polygon { rings, .. } => {
-            rings.iter().map(Vec::len).sum()
-        }
+        DrawOp::Fill { rings, .. } => rings.iter().map(Vec::len).sum(),
         DrawOp::Hatch(hatch) => {
             hatch.rings.iter().map(Vec::len).sum::<usize>() + 2 * hatch.lines.len()
         }

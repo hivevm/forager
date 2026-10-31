@@ -138,10 +138,49 @@ fn style(size: Option<f64>, width: Option<f64>) -> Style {
 }
 
 fn drawn(style: &Style) -> Hatch {
-    match hatch(square(), style, BLACK, IMAGE, ORIGIN) {
+    drawn_at(style, 1.0)
+}
+
+fn drawn_at(style: &Style, factor: f64) -> Hatch {
+    match hatch(square(), style, BLACK, IMAGE, ORIGIN, factor) {
         Hatched::Drawn(hatch) => hatch,
         other => panic!("{other:?}"),
     }
+}
+
+#[test]
+fn at_a_factor_the_spacing_width_and_pattern_are_scaled_and_bounded_by_the_resolution_factor() {
+    // msDrawShadeSymbol, maprendering.c:808-817, at a scale and a resolution factor of 2:
+    // without SIZE and WIDTH both are the scale factor; with them, they are scaled; the bounds
+    // are scaled by the resolution factor; the pattern follows the width over the WIDTH written.
+    let plain = drawn_at(&style(None, None), 2.0);
+    assert_eq!(plain.width, 2.0);
+    assert!(close(plain.lines[1][0].y - plain.lines[0][0].y, 2.0));
+    let bounded = Style {
+        max_size: Some(5.0),
+        min_width: Some(3.0),
+        ..style(Some(10.0), Some(2.0))
+    };
+    let hatch = drawn_at(&bounded, 2.0);
+    assert_eq!(hatch.width, 6.0, "MINWIDTH 3 is 6 over a WIDTH of 4");
+    assert!(
+        close(hatch.lines[1][0].y - hatch.lines[0][0].y, 10.0),
+        "MAXSIZE 5 is 10 under a SIZE of 20"
+    );
+    let dashed = Style {
+        pattern: vec![10.0, 4.0],
+        ..style(Some(10.0), Some(4.0))
+    };
+    assert_eq!(drawn_at(&dashed, 2.0).pattern, vec![20.0, 8.0]);
+    let capped = Style {
+        max_width: Some(2.0),
+        ..dashed
+    };
+    assert_eq!(
+        drawn_at(&capped, 2.0).pattern,
+        vec![10.0, 4.0],
+        "MAXWIDTH 2 is 4, the WIDTH written"
+    );
 }
 
 #[test]
@@ -184,7 +223,8 @@ fn the_pattern_scales_with_the_bound_on_the_width() {
 #[test]
 fn a_hatch_that_would_not_end_or_cost_past_its_bound_is_refused() {
     // Verifies: Q-9
-    let refused = |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN) == Hatched::Refused;
+    let refused =
+        |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN, 1.0) == Hatched::Refused;
     // MAXSIZE 0 bounds the spacing to 0, where MapServer's loop never ends.
     assert!(refused(&Style {
         max_size: Some(0.0),
@@ -210,7 +250,8 @@ fn a_hatch_that_would_not_end_or_cost_past_its_bound_is_refused() {
 
 #[test]
 fn a_width_or_angle_that_is_no_number_draws_nothing() {
-    let nothing = |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN) == Hatched::Nothing;
+    let nothing =
+        |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN, 1.0) == Hatched::Nothing;
     assert!(nothing(&Style {
         angle: Some(Bound::Value(f64::NAN)),
         ..style(Some(10.0), None)
@@ -219,7 +260,14 @@ fn a_width_or_angle_that_is_no_number_draws_nothing() {
         max_width: Some(f64::NAN),
         ..style(Some(10.0), None)
     }));
-    let empty = hatch(Vec::new(), &style(Some(10.0), None), BLACK, IMAGE, ORIGIN);
+    let empty = hatch(
+        Vec::new(),
+        &style(Some(10.0), None),
+        BLACK,
+        IMAGE,
+        ORIGIN,
+        1.0,
+    );
     assert_eq!(empty, Hatched::Nothing);
 }
 
@@ -238,7 +286,10 @@ fn a_hatch_whose_steps_no_longer_move_is_refused() {
         angle: Some(Bound::Value(5.3e-315)),
         ..style(None, None)
     };
-    assert_eq!(hatch(far, &style, BLACK, IMAGE, ORIGIN), Hatched::Refused);
+    assert_eq!(
+        hatch(far, &style, BLACK, IMAGE, ORIGIN, 1.0),
+        Hatched::Refused
+    );
 }
 
 #[test]
@@ -250,7 +301,7 @@ fn the_clip_buffer_is_msdrawshape_s() {
         offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
         ..style(Some(10.0), Some(3.0))
     };
-    let hatching = Hatching::for_class(&[plain, hatched], &[]);
+    let hatching = Hatching::for_class(&[plain, hatched], &[], 1.0);
     assert_eq!(hatching.clip_buffer, 18.0);
     assert!(!hatching.clip_in_pixels);
     // MINSIZE above the rest counts as it is: 12.5 + 1 rounds half to even, to 14, and 16 with
@@ -259,7 +310,7 @@ fn the_clip_buffer_is_msdrawshape_s() {
         min_size: Some(12.5),
         ..style(None, None)
     };
-    assert_eq!(Hatching::for_class(&[small], &[]).clip_buffer, 16.0);
+    assert_eq!(Hatching::for_class(&[small], &[], 1.0).clip_buffer, 16.0);
 }
 
 #[test]
@@ -294,4 +345,26 @@ fn a_polygon_is_clipped_as_msclippolygonrect_clips_it() {
     let outside = vec![p(30.0, 30.0), p(40.0, 30.0), p(40.0, 40.0)];
     let kept = clip_polygon_rect(&[inside, outside], p(0.0, 0.0), p(20.0, 20.0));
     assert_eq!(kept.len(), 1);
+}
+
+#[test]
+fn at_a_factor_the_clip_buffer_is_scaled() {
+    // msDrawShape, mapdraw.c:2489-2499, at a scale and a resolution factor of 2: the largest
+    // size, grown by the offset, times the scale factor; MINSIZE and MINWIDTH times the
+    // resolution factor. A plain style: 1 × 2 + 1 = 3; the hatch: (10 + 5) × 2 + 1 = 31; the
+    // class 31 + 2.
+    let plain = style(None, None);
+    let hatched = Style {
+        offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
+        ..style(Some(10.0), Some(3.0))
+    };
+    let hatching = Hatching::for_class(&[plain.clone(), hatched], &[], 2.0);
+    assert_eq!(hatching.clip_buffer, 33.0);
+    assert_eq!(Hatching::for_class(&[plain], &[], 2.0).clip_buffer, 5.0);
+    // MINSIZE 6.25 is 12.5: + 1 rounds half to even, to 14, and 16 with the 2.
+    let small = Style {
+        min_size: Some(6.25),
+        ..style(None, None)
+    };
+    assert_eq!(Hatching::for_class(&[small], &[], 2.0).clip_buffer, 16.0);
 }

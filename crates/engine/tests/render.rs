@@ -635,6 +635,40 @@ fn an_ellipse_is_drawn_at_its_size_and_angle() {
 }
 
 #[test]
+fn at_resolution_144_a_marker_is_drawn_twice_its_size_at_72() {
+    // msPrepareImage's scale factor, RESOLUTION 144 over the default DEFRESOLUTION 72, which
+    // pointLayerDrawShape hands msDrawMarkerSymbol and computeSymbolStyle scales the size and
+    // the outline by: the filled head of SIZE 10 and WIDTH 1.5 at 144 is that of SIZE 20 and
+    // WIDTH 3 at 72.
+    let head = |size: f64, width: f64| Style {
+        color: Some(Bound::Value(GREEN)),
+        outline_color: Some(Bound::Value(BLACK)),
+        size: Some(Bound::Value(size)),
+        width: Some(Bound::Value(width)),
+        ..Style::default()
+    };
+    let drawn = |style: Style, resolution: Option<f64>| {
+        let mut map = map(RenderMode::Point, style);
+        map.symbols = symbols();
+        map.resolution = resolution;
+        map.layers[0].classes[0].styles[0].symbol = Some(Bound::Value(SymbolRef::Index(2)));
+        let rendered = render_with(&map, Some(r#"{"type": "Point", "coordinates": [50, 50]}"#));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        rendered.image.unwrap()
+    };
+    let at_144 = drawn(head(10.0, 1.5), Some(144.0));
+    assert!(
+        at_144 == drawn(head(20.0, 3.0), None),
+        "twice the size at 72"
+    );
+    assert!(at_144 != drawn(head(10.0, 1.5), None), "not the size at 72");
+}
+
+#[test]
 fn a_point_outside_the_extent_draws_no_symbol() {
     let mut map = map(
         RenderMode::Point,

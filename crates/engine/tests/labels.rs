@@ -800,6 +800,57 @@ fn a_label_moves_away_from_the_marker_its_class_draws_first() {
 }
 
 #[test]
+fn at_resolution_144_a_label_moves_away_from_the_marker_as_it_is_drawn() {
+    // Verifies: ADR-0028
+    // msPrepareImage's scale factor, RESOLUTION 144 over DEFRESOLUTION 72, scales the marker
+    // msDrawMarkerSymbol draws and the one msGetMarkerSize gives the label cache alike, and the
+    // label's size and offset: a circle of SIZE 9 under a label of SIZE 12 offset (3, 2) at 144
+    // is drawn as a circle of 18 under a label of 24 offset (6, 4) at 72.
+    let with_marker = |resolution: Option<f64>, marker: f64, size: f64, (x, y): (f64, f64)| {
+        let mut map = map(Label {
+            text: Some(Expr::String("Fen".to_owned())),
+            position: Some(Bound::Value(Position::Ur)),
+            offset: Some([Bound::Value(x), Bound::Value(y)]),
+            size: Some(Bound::Value(size)),
+            ..label_item()
+        });
+        map.resolution = resolution;
+        map.symbols = vec![Symbol {
+            name: Some("circle".to_owned()),
+            kind: SymbolKind::Ellipse,
+            paths: vec![vec![[1.0, 1.0]]],
+            extent: Some([1.0, 1.0]),
+            filled: true,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }];
+        map.layers[0].classes[0].styles = vec![Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            size: Some(Bound::Value(marker)),
+            color: Some(Bound::Value(BLUE)),
+            ..Style::default()
+        }];
+        let rendered = render(&map, FEN);
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        rendered.image.unwrap()
+    };
+    let at_144 = with_marker(Some(144.0), 9.0, 12.0, (3.0, 2.0));
+    assert!(at_144 == with_marker(None, 18.0, 24.0, (6.0, 4.0)));
+    assert!(
+        at_144 != with_marker(None, 9.0, 24.0, (6.0, 4.0)),
+        "the marker is drawn twice its size"
+    );
+}
+
+#[test]
 fn bound_properties_draw_as_their_values_do_once_bound_label_reads_them() {
     // Verifies: ADR-0028
     let fen = || Label {

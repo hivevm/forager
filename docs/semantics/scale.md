@@ -43,3 +43,9 @@ it is evaluated.
 same, as `loadStyle` in `src/mapfile.c` checks; `SYMBOLSCALEDENOM` takes a number of at least 1,
 as `loadLayer` checks. `SIZEUNITS` takes `pixels`, `inches`, `feet`, `miles`, `meters`,
 `kilometers`, `nauticalmiles`, and `dd`; the map's `UNITS` the same without `pixels`.
+
+**Not yet as MapServer scales.** The engine computes the last branch only, `RESOLUTION /
+DEFRESOLUTION`, and applies it to every style and label. A label of a layer with `SIZEUNITS`
+other than `pixels` or with a `SYMBOLSCALEDENOM` is not drawn and says so; a style of such a layer
+is drawn at `RESOLUTION / DEFRESOLUTION` without a word, where MapServer takes the first or the
+second branch.
