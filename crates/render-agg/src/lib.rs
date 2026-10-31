@@ -89,28 +89,21 @@ impl AggRenderer {
         f(&mut renderer);
     }
 
-    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, stroke: Option<&Stroke<'_>>) {
+    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, stroke: &Stroke<'_>) {
         let color = rgba8(color);
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
             let mut scanline = ScanlineU8::new();
-            match stroke {
-                Some(stroke) if stroke.dashes.pattern.len() >= 2 => {
-                    let mut dashed = ConvDash::new(path);
-                    add_dashes(&mut dashed, stroke.dashes);
-                    let mut outline = ConvStroke::new(dashed);
-                    stroke.apply(&mut outline);
-                    rasterizer.add_path(&mut outline, 0);
-                }
-                Some(stroke) => {
-                    let mut outline = ConvStroke::new(path);
-                    stroke.apply(&mut outline);
-                    rasterizer.add_path(&mut outline, 0);
-                }
-                None => {
-                    rasterizer.filling_rule(FillingRule::EvenOdd);
-                    rasterizer.add_path(path, 0);
-                }
+            if stroke.dashes.pattern.len() >= 2 {
+                let mut dashed = ConvDash::new(path);
+                add_dashes(&mut dashed, stroke.dashes);
+                let mut outline = ConvStroke::new(dashed);
+                stroke.apply(&mut outline);
+                rasterizer.add_path(&mut outline, 0);
+            } else {
+                let mut outline = ConvStroke::new(path);
+                stroke.apply(&mut outline);
+                rasterizer.add_path(&mut outline, 0);
             }
             render_scanlines_aa_solid(&mut rasterizer, &mut scanline, renderer, &color);
         });
@@ -212,7 +205,7 @@ impl AggRenderer {
                 }
             }
         }
-        self.rasterize(&mut path, color, Some(&stroke));
+        self.rasterize(&mut path, color, &stroke);
     }
 }
 
@@ -258,8 +251,8 @@ impl AggRenderer {
     /// Fills a hatch as msHatchPolygon() does: the lines stroked with butt caps, each dashed
     /// from its first point with the pattern as given, the stroke intersected with the polygon
     /// as MapServer's Clipper intersects them (see [`hatch::intersect`]), and the intersection
-    /// filled under the non-zero rule through MapServer's default gamma, as
-    /// renderPolygonHatches() fills it. The polygon is clipped to the image grown by a margin and
+    /// filled under the non-zero rule through the hatch's gamma, as renderPolygonHatches() fills
+    /// it. The polygon is clipped to the image grown by a margin and
     /// the lines to the image grown by the stroke before they are cut, a dashed line keeping the
     /// phase its dashes had at its first point. A hatch beyond the bounds of
     /// [`Hatch::is_bounded`] draws nothing (Q-9).
@@ -293,23 +286,22 @@ impl AggRenderer {
         let mut area = RasterizerScanlineAa::new();
         area.filling_rule(FillingRule::NonZero);
         area.add_path(&mut path, 0);
-        self.paint(&mut area, hatch.color, &gamma_table());
+        self.paint(&mut area, hatch.color, &gamma_table(hatch.gamma));
     }
 }
 
-/// MapServer's default `GAMMA` of its AGG output formats, `src/mapagg.cpp`.
-const GAMMA: f64 = 0.75;
-
-/// The coverage table of AGG's `gamma_linear(0, GAMMA)`, as a rasterizer builds it from the
-/// function: a coverage at or past the gamma is full, one below it grows in proportion. MapServer
-/// fills polygon shapes and hatches through it; a `GAMMA` of the output format or of the layer
-/// is not carried yet.
-fn gamma_table() -> [u8; 256] {
-    std::array::from_fn(|cover| {
-        let x = cover as f64 / 255.0;
-        let y = if x >= GAMMA { 1.0 } else { x / GAMMA };
-        // AGG's uround, which stays within 0 to 255 here.
-        (y * 255.0 + 0.5) as u8
+/// The coverage table of AGG's `gamma_linear(0, gamma)`, as a rasterizer builds it from the
+/// function: a coverage at or past the gamma is full, one below it grows in proportion. Without a
+/// gamma each coverage stays as it is.
+fn gamma_table(gamma: Option<f64>) -> [u8; 256] {
+    std::array::from_fn(|cover| match gamma {
+        Some(gamma) => {
+            let x = cover as f64 / 255.0;
+            let y = if x >= gamma { 1.0 } else { x / gamma };
+            // AGG's uround; the cast saturates within 0 to 255 whatever the gamma.
+            (y * 255.0 + 0.5) as u8
+        }
+        None => cover as u8,
     })
 }
 
@@ -351,15 +343,15 @@ impl Renderer for AggRenderer {
 
     fn draw(&mut self, item: &DisplayItem) {
         match &item.op {
-            DrawOp::Fill { rings, color } => {
-                let mut path = self.area(rings);
-                self.rasterize(&mut path, *color, None);
-            }
-            DrawOp::Polygon { rings, color } => {
+            DrawOp::Fill {
+                rings,
+                color,
+                gamma,
+            } => {
                 let mut area = RasterizerScanlineAa::new();
                 area.filling_rule(FillingRule::EvenOdd);
                 area.add_path(&mut self.area(rings), 0);
-                self.paint(&mut area, *color, &gamma_table());
+                self.paint(&mut area, *color, &gamma_table(*gamma));
             }
             DrawOp::Stroke {
                 paths,
@@ -481,6 +473,7 @@ mod tests {
         let image = render(&[DrawOp::Fill {
             rings: vec![outer, hole],
             color: RED,
+            gamma: None,
         }]);
         assert_eq!(image.pixel(12, 12), Some(RED));
         assert_eq!(image.pixel(32, 32), Some(WHITE));
@@ -488,23 +481,47 @@ mod tests {
     }
 
     #[test]
-    fn a_polygon_shape_is_filled_through_the_gamma_and_a_fill_is_not() {
+    fn a_fill_passes_its_coverage_through_its_gamma_when_it_has_one() {
         // Verifies: ADR-0034
         // A square edge at x = 8.5 covers column 8 by half: 0.5 / 0.75 of the colour through
         // MapServer's default gamma of 0.75, half of it without. The cover 171 blends green 80
         // over 255 as blender_rgba_pre does: alpha (255 × 172) >> 8 = 171, and
         // (255 × 84 + 80 × 172) >> 8 = 137; the cover 128: (255 × 127 + 80 × 129) >> 8 = 166.
         let square = vec![p(8.5, 8.0), p(56.0, 8.0), p(56.0, 56.0), p(8.5, 56.0)];
-        let green = |op: DrawOp| render(&[op]).pixel(8, 30).unwrap().g;
-        let polygon = green(DrawOp::Polygon {
-            rings: vec![square.clone()],
-            color: RED,
-        });
-        let fill = green(DrawOp::Fill {
-            rings: vec![square],
-            color: RED,
-        });
-        assert_eq!((polygon, fill), (137, 166));
+        let green = |gamma| {
+            render(&[DrawOp::Fill {
+                rings: vec![square.clone()],
+                color: RED,
+                gamma,
+            }])
+            .pixel(8, 30)
+            .unwrap()
+            .g
+        };
+        assert_eq!((green(Some(0.75)), green(None)), (137, 166));
+    }
+
+    #[test]
+    fn a_hatch_passes_its_coverage_through_its_gamma_when_it_has_one() {
+        // A line 1 wide centred at y = 32.25 covers row 31 by a quarter, the cover 64. Through
+        // MapServer's default gamma of 0.75 it is uround(64 / 255 / 0.75 × 255) = 85, without
+        // it stays 64. Blended green 80 over 255 as blender_rgba_pre does, the cover 85: alpha
+        // (255 × 86) >> 8 = 85, and (255 × 170 + 80 × 86) >> 8 = 196; the cover 64: alpha
+        // (255 × 65) >> 8 = 64, and (255 × 191 + 80 × 65) >> 8 = 210.
+        let green = |gamma| {
+            render(&[DrawOp::Hatch(Hatch {
+                rings: vec![rectangle(8.0, 8.0, 56.0, 56.0)],
+                lines: vec![[p(0.0, 32.25), p(64.0, 32.25)]],
+                color: RED,
+                width: 1.0,
+                pattern: vec![],
+                gamma,
+            })])
+            .pixel(30, 31)
+            .unwrap()
+            .g
+        };
+        assert_eq!((green(Some(0.75)), green(None)), (196, 210));
     }
 
     #[test]
@@ -522,6 +539,7 @@ mod tests {
             color: RED,
             width: 2.0,
             pattern: vec![10.0, 10.0, 99.0],
+            gamma: Some(0.75),
         })]);
         assert_eq!(
             image.pixel(25, 15),
@@ -551,6 +569,7 @@ mod tests {
             color: RED,
             width: 3.0,
             pattern,
+            gamma: Some(0.75),
         })])
     }
 
@@ -645,6 +664,7 @@ mod tests {
             color: RED,
             width: 1.0,
             pattern: vec![],
+            gamma: Some(0.75),
         };
         assert!(!dense.is_bounded(4096, 4096));
         // Over 64 × 64, some 5e5 crossings, it is cut, and only inside the comb.
@@ -799,6 +819,7 @@ mod tests {
             DrawOp::Fill {
                 rings: vec![huge.clone(), broken.clone()],
                 color: RED,
+                gamma: None,
             },
             DrawOp::Stroke {
                 paths: vec![huge.clone(), broken.clone()],
@@ -844,6 +865,7 @@ mod tests {
                 color: RED,
                 width,
                 pattern,
+                gamma: Some(0.75),
             })
         };
         let _ = render(&[
@@ -876,6 +898,7 @@ mod tests {
             let image = render(&[DrawOp::Fill {
                 rings: vec![square],
                 color: RED,
+                gamma: None,
             }]);
             assert!(
                 image.pixels.chunks(4).all(|px| px == [200, 80, 80, 255]),
@@ -1006,6 +1029,7 @@ mod tests {
             op: DrawOp::Fill {
                 rings: vec![vec![p(0.0, 0.0), p(9.0, 0.0), p(9.0, 9.0)]],
                 color: RED,
+                gamma: None,
             },
             feature_id: None,
         });

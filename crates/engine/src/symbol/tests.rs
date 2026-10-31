@@ -64,7 +64,7 @@ fn close(actual: &[Point], expected: &[(f64, f64)]) {
 
 fn ops(style: &Style, symbol: &Symbol) -> Vec<DrawOp> {
     let mut ops = Vec::new();
-    symbol_ops(&mut ops, AT, style, symbol);
+    symbol_ops(&mut ops, AT, style, symbol, 1.0);
     ops
 }
 
@@ -101,12 +101,12 @@ fn a_filled_symbol_fills_with_the_colour_and_outlines_with_the_outline_colour() 
     let mut outlined = style(Some(10.0), None);
     outlined.outline_color = Some(Bound::Value(BLACK));
     outlined.width = Some(Bound::Value(3.0));
-    let s = symbol_style(&outlined, &triangle(true));
+    let s = symbol_style(&outlined, &triangle(true), 1.0);
     assert_eq!(
         (s.fill, s.outline, s.outline_width),
         (Some(RED), Some(BLACK), 3.0)
     );
-    let s = symbol_style(&style(Some(10.0), None), &triangle(true));
+    let s = symbol_style(&style(Some(10.0), None), &triangle(true), 1.0);
     assert_eq!((s.fill, s.outline, s.outline_width), (Some(RED), None, 0.0));
 }
 
@@ -114,14 +114,14 @@ fn a_filled_symbol_fills_with_the_colour_and_outlines_with_the_outline_colour() 
 fn a_symbol_not_filled_is_outlined_with_the_colour_or_else_the_outline_colour() {
     // computeSymbolStyle, the branch of a symbol not filled: the outline is the style's width,
     // 1 by default.
-    let s = symbol_style(&style(Some(10.0), None), &triangle(false));
+    let s = symbol_style(&style(Some(10.0), None), &triangle(false), 1.0);
     assert_eq!((s.fill, s.outline, s.outline_width), (None, Some(RED), 1.0));
     let only_outline = Style {
         outline_color: Some(Bound::Value(BLACK)),
         width: Some(Bound::Value(100.0)),
         ..Style::default()
     };
-    let s = symbol_style(&only_outline, &triangle(false));
+    let s = symbol_style(&only_outline, &triangle(false), 1.0);
     assert_eq!(
         (s.fill, s.outline, s.outline_width),
         (None, Some(BLACK), 32.0)
@@ -149,22 +149,25 @@ fn the_size_is_the_symbols_height_and_bounded() {
     );
     assert_eq!(default_size(&point), 1.0);
     // Without SIZE, the symbol's own size: a scale of 1.
-    assert_eq!(symbol_style(&style(None, None), &triangle(true)).scale, 1.0);
     assert_eq!(
-        symbol_style(&style(Some(10.0), None), &triangle(true)).scale,
+        symbol_style(&style(None, None), &triangle(true), 1.0).scale,
+        1.0
+    );
+    assert_eq!(
+        symbol_style(&style(Some(10.0), None), &triangle(true), 1.0).scale,
         5.0
     );
     let mut bounded = style(Some(10.0), None);
     bounded.max_size = Some(4.0);
-    assert_eq!(symbol_style(&bounded, &triangle(true)).scale, 2.0);
+    assert_eq!(symbol_style(&bounded, &triangle(true), 1.0).scale, 2.0);
     bounded.min_size = Some(8.0);
     assert_eq!(
-        symbol_style(&bounded, &triangle(true)).scale,
+        symbol_style(&bounded, &triangle(true), 1.0).scale,
         2.0,
         "MAXSIZE applies last"
     );
     assert_eq!(
-        symbol_style(&style(None, Some(90.0)), &triangle(true)).rotation,
+        symbol_style(&style(None, Some(90.0)), &triangle(true), 1.0).rotation,
         90.0 * DEG_TO_RAD
     );
 }
@@ -176,7 +179,7 @@ fn minsize_raises_the_size_and_minwidth_the_outline() {
     small.min_size = Some(6.0);
     small.width = Some(Bound::Value(0.5));
     small.min_width = Some(2.0);
-    let s = symbol_style(&small, &triangle(false));
+    let s = symbol_style(&small, &triangle(false), 1.0);
     assert_eq!((s.scale, s.outline_width), (3.0, 2.0));
 }
 
@@ -185,7 +188,14 @@ fn a_vector_symbol_is_centred_scaled_and_turned_counter_clockwise() {
     // agg2RenderVectorSymbol: translate by half the extent, scale by 10 / 2, turn by -90° in
     // AGG's y-down sense, move to the point. The apex, below the centre, turns to its right.
     let ops = ops(&style(Some(10.0), Some(90.0)), &triangle(true));
-    let [DrawOp::Fill { rings, color }] = ops.as_slice() else {
+    let [
+        DrawOp::Fill {
+            rings,
+            color,
+            gamma: None,
+        },
+    ] = ops.as_slice()
+    else {
         panic!("{ops:?}");
     };
     assert_eq!(*color, RED);
@@ -265,14 +275,14 @@ fn the_polar_offset_then_the_offset_move_the_symbol_before_its_anchor() {
     // A polar offset of distance 0 at an angle other than 0 moves nothing.
     let mut turned_only = style(None, None);
     turned_only.polar_offset = Some([Bound::Value(0.0), Bound::Value(30.0)]);
-    assert_eq!(shifted(AT, &turned_only), AT);
+    assert_eq!(shifted(AT, &turned_only, 1.0), AT);
     // A line offset moves a symbol by the OFFSET it was written as: its y is −99.
     let mut line_offset = style(None, None);
     line_offset.line_offset = Some(forager_style_ir::LineOffset {
         distance: Bound::Value(4.0),
         both_sides: false,
     });
-    assert_eq!(shifted(AT, &line_offset), Point { x: 54.0, y: -49.0 });
+    assert_eq!(shifted(AT, &line_offset, 1.0), Point { x: 54.0, y: -49.0 });
 }
 
 #[test]
@@ -337,7 +347,14 @@ fn an_ellipse_is_aggs_polygon_of_its_scaled_extent() {
     // agg2RenderEllipseSymbol: a circle 1 across at size 12 has a radius of 6, which AGG's
     // calc_num_steps draws with uround(2π / (2 acos(6 / 6.125))) = 16 vertices, from the angle 0.
     let ops = ops(&style(Some(12.0), None), &circle(true));
-    let [DrawOp::Fill { rings, color }] = ops.as_slice() else {
+    let [
+        DrawOp::Fill {
+            rings,
+            color,
+            gamma: None,
+        },
+    ] = ops.as_slice()
+    else {
         panic!("{ops:?}");
     };
     assert_eq!(*color, RED);
@@ -396,4 +413,73 @@ fn a_hostile_ellipse_is_bounded_and_a_hostile_size_draws_without_a_panic() {
         let _ = super::tests::ops(&style(Some(size), Some(f64::NAN)), &circle(true));
         let _ = super::tests::ops(&style(Some(size), None), &triangle(false));
     }
+}
+
+#[test]
+fn at_a_factor_the_size_and_outline_are_scaled_and_their_bounds_by_the_resolution_factor() {
+    // computeSymbolStyle, maprendering.c:62-74, at a scale and a resolution factor of 2: the
+    // size times the scale factor, bounded by MINSIZE and MAXSIZE times the resolution factor;
+    // the outline width alike; the GAP scaled as the size is.
+    let triangle = triangle(false);
+    assert_eq!(
+        symbol_style(&style(Some(10.0), None), &triangle, 2.0).scale,
+        10.0
+    );
+    assert_eq!(
+        symbol_style(&style(None, None), &triangle, 2.0).scale,
+        2.0,
+        "without SIZE, the symbol's own size scaled"
+    );
+    let mut capped = style(Some(10.0), None);
+    capped.max_size = Some(4.0);
+    assert_eq!(
+        symbol_style(&capped, &triangle, 2.0).scale,
+        4.0,
+        "MAXSIZE 4 is 8"
+    );
+    let mut raised = style(Some(2.0), None);
+    raised.min_size = Some(6.0);
+    assert_eq!(
+        symbol_style(&raised, &triangle, 2.0).scale,
+        6.0,
+        "MINSIZE 6 is 12"
+    );
+    let mut wide = style(Some(10.0), None);
+    wide.width = Some(Bound::Value(20.0));
+    assert_eq!(
+        symbol_style(&wide, &triangle, 2.0).outline_width,
+        40.0,
+        "the default MAXWIDTH 32 is 64"
+    );
+    wide.max_width = Some(15.0);
+    assert_eq!(symbol_style(&wide, &triangle, 2.0).outline_width, 30.0);
+    let mut thin = style(Some(10.0), None);
+    thin.width = Some(Bound::Value(0.5));
+    thin.min_width = Some(2.0);
+    assert_eq!(symbol_style(&thin, &triangle, 2.0).outline_width, 4.0);
+    let mut gapped = style(Some(10.0), None);
+    gapped.gap = Some(5.0);
+    assert_eq!(symbol_style(&gapped, &triangle, 2.0).gap, 10.0);
+}
+
+#[test]
+fn at_a_factor_the_offsets_and_the_anchor_move_the_marker_scaled() {
+    // msAdjustMarkerPos, maprendering.c:1013-1046, at a scale factor of 2: the polar offset
+    // and the OFFSET times the factor, the anchor point by the size msGetMarkerSize gives at it.
+    let mut moved = style(None, None);
+    moved.polar_offset = Some([Bound::Value(10.0), Bound::Value(90.0)]);
+    moved.offset = Some([Bound::Value(2.0), Bound::Value(3.0)]);
+    close(&[shifted(AT, &moved, 2.0)], &[(54.0, 36.0)]);
+    let mut anchored_triangle = triangle(true);
+    anchored_triangle.anchor_point = Some([0.0, 0.0]);
+    let sized = style(Some(10.0), None);
+    assert_eq!(
+        anchored(AT, &sized, &anchored_triangle, 0.0, 1.0),
+        Point { x: 55.0, y: 55.0 }
+    );
+    assert_eq!(
+        anchored(AT, &sized, &anchored_triangle, 0.0, 2.0),
+        Point { x: 60.0, y: 60.0 },
+        "a marker 20 across"
+    );
 }

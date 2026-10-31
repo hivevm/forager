@@ -17,11 +17,14 @@ would take the gap for an omission. G-5 asks the bindings for GeoJSON features, 
 bundle at 3 MB gzipped, and Q-7 keeps every source reference but a credential-free `DATA` away from
 the page.
 
-Open questions for the maintainer, written here instead of asked:
+Questions the maintainer settled:
 
 1. Is a page that hands in shapefiles a use case the browser must serve, or does a server convert
    them to GeoJSON before they leave it?
 2. Would the adapter's size in the bundle, measured, change the answer under Q-5?
+
+The decision answers the first: a server converts shapefiles to GeoJSON before they reach a page.
+The second is a reason to revisit, not a condition of this decision.
 
 ## Decision
 

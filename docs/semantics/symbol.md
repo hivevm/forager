@@ -55,25 +55,26 @@ with parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprende
 `msHatchPolygon` and `createHatch` in `src/mapagg.cpp` draw it, in the `COLOR`; without one, the
 polygon's outline is drawn as a line in the `OUTLINECOLOR`, as for any polygon style. The lines
 stand `SIZE` apart, 1 without one, bounded by `MAXSIZE` and then `MINSIZE`; they are `WIDTH`
-wide, 1 without one or for one not above 0, bounded by `MAXWIDTH` and then `MINWIDTH`; they turn
-counter-clockwise from the horizontal by `ANGLE`, and are counted from the pixel of the map's
-origin, so that the hatches of neighbouring polygons line up. The polygon is the feature's whole
-shape, all of its parts at once; where it reaches beyond the map's extent, it is first clipped,
-as `msDrawShape` in `src/mapdraw.c` clips it with `msClipPolygonRect` in `src/mapprimitive.cpp`,
-to the extent grown by the class's clip buffer: per style, the largest of its symbol's default
-size, its `SIZE`, and its `WIDTH`, grown by its larger `OFFSET` unless that is a line offset, or
-its `MINSIZE` or `MINWIDTH` where larger, plus 1, rounded half to even; the largest of the
-styles, plus 2. It is clipped in map units, or, where a style of the class has a `GEOMTRANSFORM`,
-in pixels after the transformation, to the image so grown. Each line runs across the clipped
-polygon's bounding box grown by 0.7072 widths, so that the box sets where its dashes fall, is
-dashed by `PATTERN` from its first point, the lengths scaled by the factor the bounds applied to
-the width, and is stroked with butt caps. The stroke is cut from the polygon as MapServer's
-Clipper cuts it ([ADR-0032](../adr/0032-hatch-cut-by-i-overlay.md)): the intersection of the
-polygon with the stroke's rectangles, both read under the even-odd rule, every coordinate rounded
-to a hundredth of a pixel; so where stroked lines overlap, at a `SIZE` below the `WIDTH`, and
-where the polygon's rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the
-pattern by 0, and AGG draws its infinite dashes as solid lines. `OFFSET` moves the polygon after
-the clip. The cut is filled under the non-zero rule through the AGG output format's gamma
+wide, 1 without one or for one not above 0, bounded by `MAXWIDTH` and then `MINWIDTH`, the
+spacing, the width, their bounds, and the clip buffer below each scaled ([`scale.md`](scale.md));
+they turn counter-clockwise from the horizontal by `ANGLE`, and are counted from the pixel of the
+map's origin, so that the hatches of neighbouring polygons line up. The polygon is the feature's
+whole shape, all of its parts at once; where it reaches beyond the map's extent, it is first
+clipped, as `msDrawShape` in `src/mapdraw.c` clips it with `msClipPolygonRect` in
+`src/mapprimitive.cpp`, to the extent grown by the class's clip buffer: per style, the largest of
+its symbol's default size, its `SIZE`, and its `WIDTH`, grown by its larger `OFFSET` unless that is
+a line offset, or its `MINSIZE` or `MINWIDTH` where larger, plus 1, rounded half to even; the
+largest of the styles, plus 2. It is clipped in map units, or, where a style of the class has a
+`GEOMTRANSFORM`, in pixels after the transformation, to the image so grown. Each line runs across
+the clipped polygon's bounding box grown by 0.7072 widths, so that the box sets where its dashes
+fall, is dashed by `PATTERN` from its first point, the lengths scaled by the factor the bounds
+applied to the width, and is stroked with butt caps. The stroke is cut from the polygon as
+MapServer's Clipper cuts it ([ADR-0032](../adr/0032-hatch-cut-by-i-overlay.md)): the intersection of
+the polygon with the stroke's rectangles, both read under the even-odd rule, every coordinate
+rounded to a hundredth of a pixel; so where stroked lines overlap, at a `SIZE` below the `WIDTH`,
+and where the polygon's rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the
+pattern by 0, and AGG draws its infinite dashes as solid lines. `OFFSET` moves the polygon after the
+clip. The cut is filled under the non-zero rule through the AGG output format's gamma
 ([`style-symbol.md`](style-symbol.md)).
 
 A hatch that would not end or that costs past its bounds is not drawn, and the layer warns with
@@ -88,17 +89,18 @@ that gives up past the bound. MapServer loops forever on the first three and for
 takes on the rest. Only the lines that cross the image are laid; the others draw nothing.
 
 **Not yet as MapServer draws a hatch.** A size, width, or angle bound to a property or given by
-an expression is drawn as if unset, and the scale factor is 1; both count so in the clip buffer
-too, where MapServer counts the values bound for the feature drawn before, since it computes the
-buffer before it binds the feature's. A pixmap or SVG symbol of the class counts in the clip
-buffer at a default size of 1, where MapServer takes its image's height. i_overlay snaps points
-that come within a hundredth of a pixel of an edge, which Clipper does not. The polygon of any
-other style is not clipped, which draws the same.
+an expression is drawn as if unset, and counts so in the clip buffer too, where MapServer counts
+the values bound for the feature drawn before, since it computes the buffer before it binds the
+feature's. A pixmap or SVG symbol of the class counts in the clip buffer at a default size of 1,
+where MapServer takes its image's height. i_overlay snaps points that come within a hundredth of
+a pixel of an edge, which Clipper does not. The polygon of any other style is not clipped, which
+draws the same.
 
 **Not yet as MapServer draws it at a point.** A point layer's style without a symbol it draws —
 none, 0, a pixmap, TrueType, SVG, hatch, or simple symbol, or a name no symbol carries — draws a
 square of its size, where MapServer draws nothing for none and 0 and the symbol or image
 otherwise. A style a `GEOMTRANSFORM` places ([`style-symbol.md`](style-symbol.md)) draws nothing
-for none and 0, as MapServer does, and the square for the others. The scale factor is 1:
-`RESOLUTION`, `SIZEUNITS`, and `SYMBOLSCALEDENOM` do not scale a symbol yet
+for none and 0, as MapServer does, and the square for the others, at a scale factor of 1. A
+symbol, a line, a polygon's offset and outline, and a hatch are scaled by `RESOLUTION` over
+`DEFRESOLUTION`; `SIZEUNITS` other than `pixels` and `SYMBOLSCALEDENOM` do not scale them yet
 ([`scale.md`](scale.md)).

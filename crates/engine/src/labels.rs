@@ -33,7 +33,7 @@ use forager_style_ir::{
     Position as IrPosition, Rgba, Span, Style, Units,
 };
 
-use crate::classes::{FeatureProperties, Selector, c_bytes, color};
+use crate::classes::{self, FeatureProperties, Selector, c_bytes, color};
 use crate::draw::vertices;
 use crate::extent::View;
 use crate::fonts::Fonts;
@@ -891,7 +891,7 @@ fn fixed<'a>(
     };
     // Without SYMBOLSCALEDENOM and SIZEUNITS, the scale factor and the resolution factor are both
     // the map's resolution over its DEFRESOLUTION.
-    let factor = map.resolution.unwrap_or(72.0) / map.def_resolution.unwrap_or(72.0);
+    let factor = classes::scale_factor(map);
     Ok(Fixed {
         text,
         fonts,
