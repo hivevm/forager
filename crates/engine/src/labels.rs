@@ -918,11 +918,6 @@ fn fixed<'a>(
             "an ANGLE AUTO, AUTO2, or FOLLOW",
         ),
         (label.max_length.is_some_and(|m| m > 0.0), "a MAXLENGTH"),
-        (
-            matches!(label.priority, Some(Bound::Value(p))
-                if !(p.fract() == 0.0 && (1.0..=f64::from(MAX_PRIORITY)).contains(&p))),
-            "a PRIORITY that is not a whole number from 1 to 10, which a mapfile cannot give",
-        ),
         (label.shadow_color.is_some(), "a SHADOWCOLOR"),
         (!label.styles.is_empty(), "a STYLE"),
         (
@@ -981,8 +976,10 @@ fn fixed<'a>(
         })?,
         priority: match &label.priority {
             None => Priority::Value(1),
-            // Checked above to be a whole number from 1 to 10.
-            Some(Bound::Value(p)) => Priority::Value(*p as u8),
+            // A value held as an int and bounded as msAddLabelGroup bounds it, such as the 0 the
+            // frontend gives a condition, which MapServer evaluates to `true` or `false` and
+            // `atof` reads as 0.
+            Some(Bound::Value(p)) => Priority::Value(bounded_priority(trunc_int(*p))),
             Some(Bound::Binding { binding }) => Priority::Binding(binding),
             Some(Bound::Expr(expr)) => Priority::Expr(expr),
         },

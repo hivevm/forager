@@ -195,8 +195,8 @@ impl<'a> Selector<'a, '_> {
     }
 
     /// The number the expression `expr` of label `label` of class `class` computes for `feature`,
-    /// as msEvalDoubleExpression gives it: the expression's value as text, read with `atof`, and
-    /// 0 where the expression fails.
+    /// 0 where it fails, as msEvalDoubleExpression gives it; the frontend has wrapped the
+    /// expression in the `%g` text and the `atof` that msEvalDoubleExpression reads it with.
     pub fn label_number(
         &mut self,
         expr: &Expr,
@@ -206,9 +206,9 @@ impl<'a> Selector<'a, '_> {
     ) -> f64 {
         match self
             .evaluator
-            .text(expr, &FeatureProperties(&feature.properties))
+            .number(expr, &FeatureProperties(&feature.properties))
         {
-            Ok(text) => atof(&text),
+            Ok(number) => number,
             Err(failure) => {
                 self.reports.report(
                     &failure,
