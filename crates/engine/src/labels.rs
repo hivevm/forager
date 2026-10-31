@@ -24,13 +24,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use forager_expr::atof;
 use forager_label::{
     Align, Anchor, Font, Glyphs, Layout, LineError, MAX_LABELS, MAX_PRIORITY, Member, Members,
-    Offsets, Placement, PointLabel, Position, TextPath, draw_label_cache, glyph_size, lines,
-    member_box, pixel_size, placed_at,
+    Offsets, Placement, PointLabel, Position, TextBox, TextPath, draw_label_cache, glyph_size,
+    lines, member_box, pixel_size, placed_at,
 };
 use forager_ports::{Feature, Properties, ResourceLoader, Value};
 use forager_render::{DisplayItem, DrawOp, GlyphOutline, Point, Renderer};
 use forager_style_ir::{
-    Align as IrAlign, Bound, Diagnostic, Expr, Force, Label, Layer, Map, Op,
+    Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Layer, Map, Op,
     Position as IrPosition, Rgba, Span, Style, Units,
 };
 
@@ -271,10 +271,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 let fixed = if !point_layer {
                     Err("labels of line and polygon layers are not drawn yet".to_owned())
                 } else if class.labels.len() > 1 {
-                    Err(
+                    Err(if at_once.is_some() {
+                        "its class has several labels, which MapServer draws each on its own \
+                         under LABELCACHE OFF, and which are not drawn yet"
+                    } else {
                         "its class has several labels, which MapServer places as a group"
-                            .to_owned(),
-                    )
+                    }
+                    .to_owned())
                 } else {
                     fixed(map, layer, label, text)
                 };
@@ -332,33 +335,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         selector: &mut Selector<'_, '_>,
         at_once: Option<&mut R>,
     ) {
-        let text = match fixed.text {
-            Some(expr) => match text(expr, &feature.properties) {
-                Ok(text) => text,
-                Err(why) => {
-                    self.report(selector.diagnostics, at, "label-text-unsupported", why);
-                    return;
-                }
-            },
-            None => match feature_text(&self.map.layers[at.0], feature.id) {
-                Some(text) => text.to_owned(),
-                None => return,
-            },
+        let Some((text, lines)) = self.text_lines(at, fixed, feature, selector.diagnostics) else {
+            return;
         };
-        let lines = match lines(&text, fixed.wrap, fixed.max_length) {
-            Ok(lines) => lines,
-            Err(LineError::NotLatin(c)) => {
-                let why = format!(
-                    "the text `{text}` holds U+{:04X}, which needs a shaper",
-                    u32::from(c)
-                );
-                self.report(selector.diagnostics, at, "label-line-unsupported", why);
-                return;
-            }
-        };
-        // A text that is empty draws nothing; one of line breaks only is cached, its marker
-        // with it, but takes no box.
-        if text.is_empty() {
+        // A text that is empty draws nothing from the cache; one of line breaks only is cached,
+        // its marker with it, but takes no box. Drawn at once, both draw their styles.
+        if text.is_empty() && at_once.is_none() {
             return;
         }
         let blank = lines.iter().all(Vec::is_empty);
@@ -429,10 +411,15 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             test_point: !fixed.force && bound.offset == [0, 0],
         };
         if let Some(renderer) = at_once {
-            // A text of line breaks only is not drawn.
-            if let Some(path) = &path {
-                self.draw_at_once(renderer, at, feature, &template, path, styles, selector);
-            }
+            self.draw_at_once(
+                renderer,
+                at,
+                feature,
+                &template,
+                path.as_ref(),
+                styles,
+                selector,
+            );
         } else if self.cache(feature, &template, marker, &text) {
             self.hold(&template, text, styles, label_marker, path);
         }
@@ -446,6 +433,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// text, and with no test against the other labels, the markers, or the image's edge. A
     /// `POSITION AUTO` stands as `get_metrics` places a position none of its cases names. The
     /// label is not cached, so the label cache never tests a label against it.
+    ///
+    /// Without a `path`, for a text that is empty or of line breaks only, its labelpnt styles
+    /// are drawn at the point and nothing else (mapdraw.c:2714-2748): a labelpoly or labelcenter
+    /// style fails msDrawLabel and the layer's draw where the text is empty (2793-2799), and is
+    /// drawn on the box of a text path without glyphs, which `msLayoutTextSymbol` leaves at
+    /// `FLT_MAX` and `-FLT_MAX` (textlayout.c:817-819), where it is of line breaks; such a label
+    /// is left out with a diagnostic.
     #[allow(clippy::too_many_arguments)]
     fn draw_at_once<R: Renderer>(
         &mut self,
@@ -453,10 +447,35 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         at: LabelAt,
         feature: &Feature,
         label: &Cached,
-        path: &TextPath,
+        path: Option<&TextPath>,
         styles: Box<[Style]>,
         selector: &mut Selector<'_, '_>,
     ) {
+        let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
+        let boxed = |s: &Style| {
+            matches!(
+                s.geom_transform,
+                Some(GeomTransform::LabelPoly | GeomTransform::LabelCenter)
+            )
+        };
+        if path.is_none() && written.iter().any(boxed) {
+            let why = "its text is empty or of line breaks only, where msDrawLabel fails on a \
+                       labelpoly or labelcenter style or draws it on a box of no size"
+                .to_owned();
+            self.report(selector.diagnostics, at, "label-not-drawn", why);
+            return;
+        }
+        // The text's box, which a label without one draws no style on.
+        let text = path.map_or(
+            TextBox {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 0.0,
+                max_y: 0.0,
+                num_lines: 1,
+            },
+            TextPath::text_box,
+        );
         let anchor = match label.position {
             Position::At(anchor) => anchor,
             Position::Auto => Anchor::Other,
@@ -478,7 +497,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let point = self.view.point_to_pixel(c);
             let point_label = PointLabel {
                 position: Position::At(anchor),
-                text: path.text_box(),
+                text,
                 offsets: Offsets {
                     marker: [0.0, 0.0],
                     label: label.offset,
@@ -518,6 +537,38 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             );
         }
         self.out_of_reach(selector.diagnostics, at, out_of_reach);
+    }
+
+    /// The text of label `at` for `feature` and its lines, or `None` where it has none or it is
+    /// not drawn, which is reported.
+    fn text_lines(
+        &mut self,
+        at: LabelAt,
+        fixed: &Fixed<'_>,
+        feature: &Feature,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<(String, Vec<Vec<char>>)> {
+        let text = match fixed.text {
+            Some(expr) => match text(expr, &feature.properties) {
+                Ok(text) => text,
+                Err(why) => {
+                    self.report(diagnostics, at, "label-text-unsupported", why);
+                    return None;
+                }
+            },
+            None => feature_text(&self.map.layers[at.0], feature.id)?.to_owned(),
+        };
+        match lines(&text, fixed.wrap, fixed.max_length) {
+            Ok(lines) => Some((text, lines)),
+            Err(LineError::NotLatin(c)) => {
+                let why = format!(
+                    "the text `{text}` holds U+{:04X}, which needs a shaper",
+                    u32::from(c)
+                );
+                self.report(diagnostics, at, "label-line-unsupported", why);
+                None
+            }
+        }
     }
 
     /// Holds what a feature's label cached as `template` draws with: its text, its path, and its
@@ -683,7 +734,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             ));
             let label = &cached[i];
             let at = defs[label.def as usize].at;
-            let path = &paths[label.path as usize];
+            let path = Some(&paths[label.path as usize]);
             let out_of_reach = draw_label(
                 renderer,
                 &mut styled,
@@ -777,7 +828,7 @@ fn draw_label<R: Renderer>(
     member: &Member,
     placement: &Placement,
     label: &Cached,
-    path: &TextPath,
+    path: Option<&TextPath>,
     glyphs: &[Glyphs],
     image: [f64; 4],
 ) -> usize {
@@ -793,6 +844,9 @@ fn draw_label<R: Renderer>(
             written,
         );
     }
+    let Some(path) = path else {
+        return 0;
+    };
     if label.color.is_none() && label.outline.is_none() {
         return 0;
     }

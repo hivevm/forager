@@ -2356,11 +2356,28 @@ fn the_label_cache_does_not_test_its_labels_against_those_drawn_at_once() {
     assert!(rendered.labels[0].drawn.is_some());
 }
 
+/// The box of the pixels of `image` that are of `rgba` exactly, `None` when none is.
+fn boxed(image: &RgbaImage, rgba: [u8; 4]) -> Option<[u32; 4]> {
+    let mut found: Option<[u32; 4]> = None;
+    for y in 0..image.height {
+        for x in 0..image.width {
+            if image.pixel(x, y).map(|p| [p.r, p.g, p.b, p.a]) == Some(rgba) {
+                let b = found.get_or_insert([x, y, x, y]);
+                *b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+            }
+        }
+    }
+    found
+}
+
+const PURE_GREEN: [u8; 4] = [0, 255, 0, 255];
+
 #[test]
 fn a_label_of_labelcache_off_stands_by_its_position_and_offset_alone() {
     // msDrawLabel calls get_metrics with the label's OFFSET and no marker's: a class style's
-    // marker does not move the label. POSITION AUTO is a case get_metrics' switch does not name,
-    // the text's box from the point up and to the right, its offset unread.
+    // marker of 30 pixels, which would move a cached label 15 pixels off, does not move it.
+    // POSITION AUTO is a case get_metrics' switch does not name, x1 = y1 = 0, its offset unread.
+    // The label's labelpoly, filled, shows where get_metrics puts the text's box.
     let mut boxes = Vec::new();
     for (position, offset) in [
         (Position::Auto, [10.0, 10.0]),
@@ -2371,6 +2388,7 @@ fn a_label_of_labelcache_off_stands_by_its_position_and_offset_alone() {
         let label = &mut map.layers[0].classes[0].labels[0];
         label.position = Some(Bound::Value(position));
         label.offset = Some([Bound::Value(offset[0]), Bound::Value(offset[1])]);
+        label.styles = vec![labelpoly(Bound::Value(GREEN))];
         map.layers[0].classes[0].styles = vec![Style {
             symbol: Some(Bound::Value(SymbolRef::Index(0))),
             size: Some(Bound::Value(30.0)),
@@ -2382,19 +2400,20 @@ fn a_label_of_labelcache_off_stands_by_its_position_and_offset_alone() {
             "{:?}",
             rendered.diagnostics
         );
-        boxes.push(ink(&rendered.image.unwrap(), (0, 160), (0, 60)));
+        boxes.push(boxed(&rendered.image.unwrap(), PURE_GREEN).expect("a labelpoly"));
     }
-    // The point is pixel (40, 29); the text's ink starts a pixel right of it, past the F's
-    // bearing, and ends on the row above it, where the bottom of the text's box, its descent
-    // included, meets the point. A marker of 30 pixels
-    // would move a cached label 15 pixels off.
+    // The point (40, 30) is pixel (40, 29): the extent's 159 units over 160 pixels give a cell of
+    // one (msTransformPoint). At UR, x1 = ox and y1 = -oy (get_metrics), so the text's box has
+    // its lower left corner at (40 + ox, 29); the labelpoly is that box grown by 1, its left edge
+    // at x = 39 + ox and its bottom at y = 30, the pixels of columns from 39 + ox and of rows up
+    // to 29. Its top and right follow the font's metrics, which the relations hold.
+    assert_eq!([boxes[1][0], boxes[1][3]], [39, 29]);
+    assert_eq!([boxes[2][0], boxes[2][3]], [49, 29]);
+    assert_eq!(boxes[0], boxes[1], "AUTO stands as UR at offset 0");
     assert_eq!(
-        boxes,
-        [
-            Some([41, 14, 101, 28]),
-            Some([41, 14, 101, 28]),
-            Some([51, 14, 111, 28])
-        ]
+        boxes[2],
+        [boxes[1][0] + 10, boxes[1][1], boxes[1][2] + 10, boxes[1][3]],
+        "an OFFSET of 10 moves it 10 pixels"
     );
 }
 
@@ -2424,22 +2443,102 @@ fn a_label_of_labelcache_off_draws_its_styles_before_its_text() {
         rendered.diagnostics
     );
     let image = rendered.image.unwrap();
-    let boxed = |rgba: [u8; 4]| {
-        let mut b: Option<[u32; 4]> = None;
-        for y in 0..60 {
-            for x in 0..160 {
-                if image.pixel(x, y).map(|p| [p.r, p.g, p.b, p.a]) == Some(rgba) {
-                    let e = b.get_or_insert([x, y, x, y]);
-                    *e = [e[0].min(x), e[1].min(y), e[2].max(x), e[3].max(y)];
-                }
-            }
-        }
-        b
-    };
-    // The labelpoly the text's box of a label at UR of pixel (40, 29), the box of
-    // [`a_label_of_labelcache_off_stands_by_its_position_and_offset_alone`] grown; the square of
-    // 8 pixels about the point, unmoved and over the labelpoly; the blue marker at the centre.
-    assert_eq!(boxed([0, 255, 0, 255]), Some([39, 13, 102, 29]));
-    assert_eq!(boxed([220, 20, 20, 255]), Some([36, 25, 43, 32]));
-    assert_eq!(boxed([30, 60, 200, 255]), Some([69, 22, 71, 22]));
+    // The labelpoly at UR of pixel (40, 29), as in
+    // [`a_label_of_labelcache_off_stands_by_its_position_and_offset_alone`]: its left edge at
+    // x = 39, its bottom at y = 30.
+    let poly = boxed(&image, PURE_GREEN).expect("a labelpoly");
+    assert_eq!([poly[0], poly[3]], [39, 29]);
+    // The square of 8 pixels centred on the point, from 36 to 44 and from 25 to 33, unmoved and
+    // drawn over the labelpoly.
+    assert_eq!(boxed(&image, [220, 20, 20, 255]), Some([36, 25, 43, 32]));
+    // The labelcenter marker at the centre of the labelpoly's box, after it.
+    let [x0, y0, x1, y1] = boxed(&image, [30, 60, 200, 255]).expect("a labelcenter marker");
+    let centre = |a: u32, b: u32| f64::from(a + b + 1) / 2.0;
+    assert!((centre(x0, x1) - centre(poly[0], poly[2])).abs() <= 1.0);
+    assert!((centre(y0, y1) - centre(poly[1], poly[3])).abs() <= 1.0);
+}
+
+#[test]
+fn a_label_of_labelcache_off_without_text_draws_its_labelpnt_styles() {
+    // msDrawLabel draws a labelpnt style at the point whatever the text (mapdraw.c:2714-2748),
+    // an empty one or one of line breaks; the cache draws neither.
+    for text in ["", "\n"] {
+        let label = || Label {
+            text: Some(Expr::String(text.to_owned())),
+            ..fen_styled(vec![labelpoint()])
+        };
+        let mut map = map_with_square(label());
+        map.layers[0].label_cache = false;
+        let rendered = render(&map, &foragers(&[([40.0, 30.0], "")]));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        let image = rendered.image.unwrap();
+        // The square of 8 pixels centred on pixel (40, 29), and nothing else.
+        assert_eq!(boxed(&image, [220, 20, 20, 255]), Some([36, 25, 43, 32]));
+        assert_eq!(ink(&image, (0, 160), (0, 60)), Some([36, 25, 43, 32]));
+        let cached = render(&map_with_square(label()), &foragers(&[([40.0, 30.0], "")]));
+        assert_eq!(ink(&cached.image.unwrap(), (0, 160), (0, 60)), None);
+    }
+}
+
+#[test]
+fn a_label_of_labelcache_off_without_text_and_a_labelpoly_is_refused() {
+    // On an empty text msDrawLabel fails the layer's draw at a labelpoly style
+    // (mapdraw.c:2793-2799); on one of line breaks it draws it on a box left at FLT_MAX: the
+    // label is left out with its reason.
+    for text in ["", "\n"] {
+        let mut map = map_with_square(Label {
+            text: Some(Expr::String(text.to_owned())),
+            ..fen_styled(vec![labelpoint(), labelpoly(Bound::Value(GREEN))])
+        });
+        map.layers[0].label_cache = false;
+        let rendered = render(&map, &foragers(&[([40.0, 30.0], "")]));
+        let codes: Vec<&str> = rendered
+            .diagnostics
+            .iter()
+            .map(|d| d.code.as_str())
+            .collect();
+        assert_eq!(codes, ["label-not-drawn"]);
+        assert!(
+            rendered.diagnostics[0]
+                .message
+                .contains("its text is empty or of line breaks only"),
+            "{}",
+            rendered.diagnostics[0].message
+        );
+        assert_eq!(ink(&rendered.image.unwrap(), (0, 160), (0, 60)), None);
+    }
+}
+
+/// [`cache_off`] with its layer at `OPACITY 50`.
+fn cache_off_at_half() -> Map {
+    let mut map = cache_off();
+    map.layers[0].opacity = Some(50.0);
+    map
+}
+
+#[test]
+fn the_labels_of_a_layer_of_labelcache_off_are_drawn_into_its_own_image() {
+    // msDrawLabel draws into the image the layer is drawn in, its own where it has an opacity,
+    // which is laid over the map at MS_NINT(50 × 2.55) = 128 of 255 after its labels: a glyph's
+    // pure blue over white is laid over as 255 - 255 × 128 / 255 = 127 in red and green.
+    let rendered = render(
+        &cache_off_at_half(),
+        &foragers(&[([80.0, 30.0], "0 0 255")]),
+    );
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(
+        count(&image, [0, 0, 255, 255]),
+        0,
+        "no glyph is drawn opaque"
+    );
+    assert!(count(&image, [127, 127, 255, 255]) > 0);
 }
