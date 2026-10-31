@@ -182,59 +182,39 @@ impl Field {
         .filter_map(|(varies, field)| varies.then_some(field))
     }
 
-    /// The bytes the field takes: a colour its four channels and whether it read, a number eight,
-    /// a symbol's index four.
-    fn size(self) -> usize {
-        match self {
-            Field::Color | Field::OutlineColor => 5,
-            Field::Symbol => 4,
-            _ => 8,
-        }
-    }
-
-    /// The field's value in `style`, bound to a feature, written to `out`.
-    fn write(self, style: &Style, out: &mut Vec<u8>) {
-        let number = |p: Option<&Bound<f64>>| p.and_then(Bound::value).unwrap_or(0.0).to_le_bytes();
-        let color = |c: &Option<Bound<Rgba>>| match c.as_ref().and_then(Bound::value) {
-            Some(c) => [1, c.r, c.g, c.b, c.a],
-            None => [0; 5],
-        };
+    /// The field's value in `style`, bound to a feature.
+    fn value(self, style: &Style) -> Value {
+        let number =
+            |p: Option<&Bound<f64>>| Value::Number(p.and_then(Bound::value).unwrap_or(0.0));
+        let color = |c: &Option<Bound<Rgba>>| Value::Color(c.as_ref().and_then(Bound::value));
         let pair = |p: &Option<[Bound<f64>; 2]>, i: usize| number(p.as_ref().map(|p| &p[i]));
         match self {
-            Field::Color => out.extend(color(&style.color)),
-            Field::OutlineColor => out.extend(color(&style.outline_color)),
-            Field::Opacity => out.extend(number(style.opacity.as_ref())),
-            Field::Angle => out.extend(number(style.angle.as_ref())),
-            Field::Size => out.extend(number(style.size.as_ref())),
-            Field::Width => out.extend(number(style.width.as_ref())),
-            Field::OutlineWidth => out.extend(number(style.outline_width.as_ref())),
-            Field::Offset(i) => out.extend(pair(&style.offset, i)),
-            Field::PolarOffset(i) => out.extend(pair(&style.polar_offset, i)),
-            Field::LineOffset => {
-                out.extend(number(style.line_offset.as_ref().map(|l| &l.distance)));
-            }
-            Field::Symbol => {
-                let index = match &style.symbol {
-                    Some(Bound::Value(SymbolRef::Index(index))) => *index,
-                    _ => 0,
-                };
-                out.extend(index.to_le_bytes());
-            }
+            Field::Color => color(&style.color),
+            Field::OutlineColor => color(&style.outline_color),
+            Field::Opacity => number(style.opacity.as_ref()),
+            Field::Angle => number(style.angle.as_ref()),
+            Field::Size => number(style.size.as_ref()),
+            Field::Width => number(style.width.as_ref()),
+            Field::OutlineWidth => number(style.outline_width.as_ref()),
+            Field::Offset(i) => pair(&style.offset, i),
+            Field::PolarOffset(i) => pair(&style.polar_offset, i),
+            Field::LineOffset => number(style.line_offset.as_ref().map(|l| &l.distance)),
+            Field::Symbol => Value::Symbol(match &style.symbol {
+                Some(Bound::Value(SymbolRef::Index(index))) => *index,
+                _ => 0,
+            }),
         }
     }
 
-    /// Sets the field of `style` to the value in `bytes`, as [`Field::write`] wrote it.
-    fn read(self, bytes: &[u8], style: &mut Style) {
-        let number = || Bound::Value(f64::from_le_bytes(bytes[..8].try_into().expect("8 bytes")));
-        let color = || {
-            (bytes[0] == 1).then(|| {
-                Bound::Value(Rgba {
-                    r: bytes[1],
-                    g: bytes[2],
-                    b: bytes[3],
-                    a: bytes[4],
-                })
-            })
+    /// Sets the field of `style` to `value`, as [`Field::value`] took it.
+    fn set(self, value: Value, style: &mut Style) {
+        let number = || match value {
+            Value::Number(n) => Bound::Value(n),
+            _ => unreachable!("a number field holds a number"),
+        };
+        let color = || match value {
+            Value::Color(c) => c.map(Bound::Value),
+            _ => unreachable!("a colour field holds a colour"),
         };
         match self {
             Field::Color => style.color = color(),
@@ -260,60 +240,34 @@ impl Field {
                 }
             }
             Field::Symbol => {
-                let index = u32::from_le_bytes(bytes[..4].try_into().expect("4 bytes"));
+                let Value::Symbol(index) = value else {
+                    unreachable!("a symbol field holds a symbol")
+                };
                 style.symbol = Some(Bound::Value(SymbolRef::Index(index)));
             }
         }
     }
 }
 
-/// The properties a label definition's styles vary by feature in, each with its style's index,
-/// and the bytes a feature's values of them take.
-struct Layout {
-    fields: Box<[(usize, Field)]>,
-    stride: usize,
+/// A value of a style's property bound to a feature: a colour, `None` where it does not read, a
+/// number, or a symbol's index.
+#[derive(Clone, Copy)]
+enum Value {
+    Color(Option<Rgba>),
+    Number(f64),
+    Symbol(u32),
 }
 
+/// The fields of a definition's styles that vary by feature, each with its style's index.
+type Layout = Box<[(usize, Field)]>;
+
 /// The labels of consecutive texts of one definition whose styles vary by feature: from text
-/// `text`, `len` of them, their values held from byte `at` in the layout `layout`.
+/// `text`, `len` of them, their values held from `at` in the order of the fields of `layout`.
 struct Run {
     text: u32,
     len: u32,
     layout: u32,
     at: usize,
-}
-
-/// The bytes a chunk of [`Chunks`] holds.
-const CHUNK: usize = 4096;
-
-/// Bytes held in chunks of a fixed size, so that holding them never takes twice what they need,
-/// as a vector that grows by doubling does, nor both its old and new buffer as it grows (Q-9).
-#[derive(Default)]
-struct Chunks {
-    chunks: Vec<Vec<u8>>,
-    len: usize,
-}
-
-impl Chunks {
-    fn push(&mut self, mut bytes: &[u8]) {
-        while !bytes.is_empty() {
-            if self.chunks.last().is_none_or(|c| c.len() == CHUNK) {
-                self.chunks.push(Vec::with_capacity(CHUNK));
-            }
-            let chunk = self.chunks.last_mut().expect("a chunk");
-            let n = bytes.len().min(CHUNK - chunk.len());
-            chunk.extend_from_slice(&bytes[..n]);
-            bytes = &bytes[n..];
-            self.len += n;
-        }
-    }
-
-    /// The bytes from `at` that fill `out`.
-    fn read(&self, at: usize, out: &mut [u8]) {
-        for (i, byte) in out.iter_mut().enumerate() {
-            *byte = self.chunks[(at + i) / CHUNK][(at + i) % CHUNK];
-        }
-    }
 }
 
 /// The styles of the labels cached and the markers of their first `labelpoint` styles: of a label
@@ -323,12 +277,13 @@ impl Chunks {
 /// label holds bounds of its own (Q-9).
 #[derive(Default)]
 pub(crate) struct LabelStyles {
-    /// The layouts of the definitions whose styles vary by feature, by the definition's index.
+    /// The fields that vary by feature of each definition whose styles vary, each with its
+    /// style's index, by the definition's index, in the order first held.
     layouts: Vec<(u32, Layout)>,
     /// The runs of the labels cached whose styles vary by feature, by their first text, ascending.
     runs: Vec<Run>,
     /// The values bound to the features of those labels, in the order of their texts.
-    values: Chunks,
+    values: Vec<Value>,
     /// The marker of the first `labelpoint` style of each feature's label cached whose styles vary
     /// by feature, where it is not its definition's, by the index of its text.
     markers: Vec<(u32, LabelMarker)>,
@@ -363,29 +318,18 @@ impl LabelStyles {
             }
             return;
         }
-        let layout = match self.layouts.binary_search_by_key(&def, |(d, _)| *d) {
-            Ok(i) => i,
-            Err(i) => {
-                let fields: Box<[(usize, Field)]> = written
+        let layout = match self.layouts.iter().position(|(d, _)| *d == def) {
+            Some(i) => i,
+            None => {
+                let fields = written
                     .iter()
                     .enumerate()
                     .flat_map(|(i, s)| Field::of(s).map(move |f| (i, f)))
                     .collect();
-                let stride = fields.iter().map(|(_, f)| f.size()).sum();
-                self.layouts.insert(i, (def, Layout { fields, stride }));
-                // The runs name a layout by its place, which the insertion moves.
-                for run in &mut self.runs {
-                    if run.layout as usize >= i {
-                        run.layout += 1;
-                    }
-                }
-                i
+                self.layouts.push((def, fields));
+                self.layouts.len() - 1
             }
         };
-        let mut bytes = Vec::with_capacity(self.layouts[layout].1.stride);
-        for &(i, field) in &self.layouts[layout].1.fields {
-            field.write(&styles[i], &mut bytes);
-        }
         match self.runs.last_mut() {
             Some(run) if run.layout as usize == layout && run.text + run.len == text => {
                 run.len += 1;
@@ -394,10 +338,12 @@ impl LabelStyles {
                 text,
                 len: 1,
                 layout: layout as u32,
-                at: self.values.len,
+                at: self.values.len(),
             }),
         }
-        self.values.push(&bytes);
+        let fields = &self.layouts[layout].1;
+        self.values
+            .extend(fields.iter().map(|&(i, field)| field.value(&styles[i])));
         match (at, marker) {
             (Ok(i), Some(m)) if self.def_markers[i].1 == m => {}
             (Err(i), Some(m)) => self.def_markers.insert(i, (def, m)),
@@ -431,20 +377,16 @@ impl LabelStyles {
         else {
             return classes::unbound(style);
         };
-        let layout = &self.layouts[run.layout as usize].1;
-        let mut at = run.at + (text - run.text) as usize * layout.stride;
+        let fields = &self.layouts[run.layout as usize].1;
+        let at = run.at + (text - run.text) as usize * fields.len();
         let mut bound = None;
-        let mut bytes = [0; 8];
-        for &(s, field) in &layout.fields {
-            let bytes = &mut bytes[..field.size()];
+        for (&(s, field), &value) in fields.iter().zip(&self.values[at..]) {
             if s == i {
-                self.values.read(at, bytes);
-                field.read(bytes, bound.get_or_insert_with(|| style.clone()));
+                field.set(value, bound.get_or_insert_with(|| style.clone()));
             }
-            at += field.size();
         }
         match bound {
-            Some(bound) => Cow::Owned(classes::unbound(&bound).into_owned()),
+            Some(bound) => classes::with_opacity(Cow::Owned(bound)),
             None => classes::unbound(style),
         }
     }
@@ -598,5 +540,167 @@ fn draw_label_marker<R: Renderer>(
             op,
             feature_id: Some(feature_id),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::classes::{Reports, Selector};
+    use forager_expr::Evaluator;
+    use forager_ports::{Coord, Feature, Geometry, Properties, Stored};
+    use forager_style_ir::{Layer, LineOffset};
+
+    fn bound<T>(name: &str) -> Bound<T> {
+        Bound::Binding {
+            binding: name.to_owned(),
+        }
+    }
+
+    /// A definition's three styles: the first and the third with every property
+    /// `classes::varies` checks bound between them, beside one that varies by none; a second
+    /// definition of one bound width; and the symbols they name.
+    fn written() -> (Vec<Style>, Vec<Style>, Vec<Symbol>) {
+        let first = vec![
+            Style {
+                color: Some(bound("c")),
+                size: Some(bound("s")),
+                offset: Some([Bound::Value(1.0), bound("y")]),
+                opacity: Some(Bound::Value(50.0)),
+                geom_transform: Some(GeomTransform::LabelPoint),
+                ..Style::default()
+            },
+            Style {
+                color: Some(Bound::Value(Rgba::opaque(1, 2, 3))),
+                opacity: Some(Bound::Value(30.0)),
+                ..Style::default()
+            },
+            Style {
+                color: Some(Bound::Value(Rgba::opaque(4, 5, 6))),
+                outline_color: Some(bound("o")),
+                opacity: Some(bound("op")),
+                angle: Some(bound("a")),
+                width: Some(bound("w")),
+                outline_width: Some(bound("ow")),
+                offset: Some([bound("x"), Bound::Value(2.0)]),
+                polar_offset: Some([bound("pd"), bound("pa")]),
+                line_offset: Some(LineOffset {
+                    distance: bound("d"),
+                    both_sides: true,
+                }),
+                symbol: Some(bound("sym")),
+                ..Style::default()
+            },
+        ];
+        let second = vec![Style {
+            width: Some(bound("w")),
+            ..Style::default()
+        }];
+        let symbols: Vec<Symbol> = ["dot", "square"]
+            .map(|name| Symbol {
+                name: Some(name.to_owned()),
+                kind: SymbolKind::Ellipse,
+                paths: Vec::new(),
+                extent: None,
+                filled: true,
+                anchor_point: None,
+                character: None,
+                font: None,
+                image: None,
+                transparent: None,
+                span: None,
+            })
+            .into();
+        (first, second, symbols)
+    }
+
+    /// The properties of the feature of text `text`, each distinct.
+    fn properties(text: u32) -> Properties {
+        let k = f64::from(text);
+        // A colour that reads, one of an alpha, one empty, and one that does not read.
+        let color = match text % 4 {
+            0 => format!("{} 10 20", text % 256),
+            1 => format!("#0a0b{:02x}80", text % 256),
+            2 => String::new(),
+            _ => "red".to_owned(),
+        };
+        let number = |n: f64| Stored::Number(n.to_string().into());
+        Properties::list(vec![
+            ("c".into(), Stored::String(color.into())),
+            (
+                "o".into(),
+                Stored::String(format!("1 {} 3", text % 200).into()),
+            ),
+            // An opacity below 100 and above it.
+            ("op".into(), number(40.0 + f64::from(text % 120))),
+            ("a".into(), number(k / 3.0)),
+            ("s".into(), number(k + 0.5)),
+            ("w".into(), number(f64::from(text % 9))),
+            ("ow".into(), number(k * 2.0)),
+            ("x".into(), number(-k)),
+            ("y".into(), number(k / 7.0)),
+            ("pd".into(), number(k + 1.25)),
+            ("pa".into(), number(k - 1.25)),
+            ("d".into(), number(k * 0.1)),
+            (
+                "sym".into(),
+                Stored::String(["dot", "square", "none"][text as usize % 3].into()),
+            ),
+        ])
+    }
+
+    #[test]
+    fn a_style_held_for_a_feature_is_the_style_bound_to_it() {
+        // Every property `classes::varies` checks bound, in the first of three styles of one
+        // definition and the third, beside a style that varies by none; and a second definition
+        // of one bound width, its labels interleaved with the first's.
+        let (first, second, symbols) = written();
+        let layer = Layer::default();
+        let mut evaluator = Evaluator::new();
+        let mut reports = Reports::default();
+        let mut diagnostics = Vec::new();
+        let mut selector = Selector {
+            layer: &layer,
+            layer_index: 0,
+            scale: 1.0,
+            evaluator: &mut evaluator,
+            reports: &mut reports,
+            diagnostics: &mut diagnostics,
+        };
+        let mut styles = LabelStyles::default();
+        let mut held = Vec::new();
+        for text in 0..3000u32 {
+            let properties = properties(text);
+            let feature = Feature {
+                id: u64::from(text),
+                geometry: Geometry::Point(Coord { x: 0.0, y: 0.0 }),
+                properties,
+            };
+            let (def, written) = if text % 5 == 2 || text % 7 == 3 {
+                (1, &second)
+            } else {
+                (0, &first)
+            };
+            let bound: Vec<Style> = written
+                .iter()
+                .map(|s| {
+                    selector
+                        .bind_label_style(s, &feature, &symbols, (0, 0))
+                        .into_owned()
+                })
+                .collect();
+            styles.hold(def, text, written, &bound, None);
+            held.push((written, bound));
+        }
+        assert!(diagnostics.is_empty());
+        for (text, (written, bound)) in held.iter().enumerate() {
+            for (i, style) in written.iter().enumerate() {
+                assert_eq!(
+                    styles.style(text as u32, i, style).as_ref(),
+                    &bound[i],
+                    "text {text}, style {i}"
+                );
+            }
+        }
     }
 }
