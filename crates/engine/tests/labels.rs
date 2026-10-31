@@ -1,11 +1,15 @@
 //! The labels of point layers, drawn through the reference renderer and compared with a reference
 //! image of Forager's own, as the geometry of render.rs is (ADR-0028). Set FORAGER_BLESS=1 to write
-//! the reference after a deliberate change, and review the image before committing it.
+//! the reference after a deliberate change, and review the image before committing it; the bless
+//! reports how far it moved each image, as render.rs does.
 
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::PathBuf;
 
+mod bless;
+
+use bless::assert_matches_reference;
 use forager_adapter_geojson::GeoJsonSource;
 use forager_engine::{Rendered, render_with_files};
 use forager_label::{Anchor, Font, Glyphs, TextPath, metrics};
@@ -106,20 +110,6 @@ fn render(map: &Map, geojson: &str) -> Rendered {
     let sources: BTreeMap<String, GeoJsonSource> =
         [("places".to_owned(), GeoJsonSource::parse(geojson).unwrap())].into();
     ready(render_with_files(map, &sources, &Files, AggRenderer::new()))
-}
-
-fn assert_matches_reference(image: &RgbaImage, name: &str) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name);
-    if std::env::var_os("FORAGER_BLESS").is_some() {
-        std::fs::write(&path, forager_encode::png(image).unwrap()).unwrap();
-    }
-    let reference = forager_encode::decode_png(&std::fs::read(&path).unwrap()).unwrap();
-    assert!(
-        reference == *image,
-        "{name} differs from its reference image"
-    );
 }
 
 /// The box of the pixels that are not white within `[x0, x1) × [y0, y1)`, `None` when all are.
