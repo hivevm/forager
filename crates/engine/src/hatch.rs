@@ -24,17 +24,9 @@
 use forager_render::{Hatch, Point};
 use forager_style_ir::{Rgba, Style, Symbol};
 
+use crate::bounds::{self, DEG_TO_RAD, MIN_SIZE, MIN_WIDTH, ms_max};
 use crate::draw::{GAMMA, fixed};
-use crate::symbol::{self, ms_max, ms_min};
-
-/// MapServer's `MS_DEG_TO_RAD`, `src/mapserver.h`.
-const DEG_TO_RAD: f64 = 0.017_453_292_519_943_295;
-
-/// MapServer's default `MINSIZE`, `MAXSIZE`, `MINWIDTH`, and `MAXWIDTH` of a style.
-const MIN_SIZE: f64 = 0.0;
-const MAX_SIZE: f64 = 500.0;
-const MIN_WIDTH: f64 = 0.0;
-const MAX_WIDTH: f64 = 32.0;
+use crate::symbol;
 
 /// The most lines one hatch lays over the image (Q-9): a hatch a pixel apart over the largest
 /// image has some 5800.
@@ -230,12 +222,10 @@ pub(crate) fn hatch(
     } else {
         written_width * factor
     };
-    let width = ms_min(width, style.max_width.unwrap_or(MAX_WIDTH) * factor);
-    let width = ms_max(width, style.min_width.unwrap_or(MIN_WIDTH) * factor);
+    let width = bounds::hatch_width(width, style, factor);
     let size = fixed(&style.size).unwrap_or(-1.0);
     let spacing = if size <= 0.0 { factor } else { size * factor };
-    let spacing = ms_min(spacing, style.max_size.unwrap_or(MAX_SIZE) * factor);
-    let spacing = ms_max(spacing, style.min_size.unwrap_or(MIN_SIZE) * factor);
+    let spacing = bounds::hatch_spacing(spacing, style, factor);
     let pattern = if written_width == 0.0 {
         Vec::new()
     } else {

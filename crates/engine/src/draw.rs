@@ -22,6 +22,7 @@ use forager_ports::{Coord, Geometry};
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol, SymbolRef};
 
+use crate::bounds::{self, MAX_SIZE, MAX_WIDTH, MIN_WIDTH};
 use crate::extent::View;
 use crate::geom_transform;
 use crate::hatch::{self, Hatched, Hatching};
@@ -33,15 +34,6 @@ use crate::symbol;
 /// AGG output formats (`agg2CreateImage`, `src/mapagg.cpp`); a `GAMMA` of the output
 /// format or of the layer is not carried yet.
 pub(crate) const GAMMA: f64 = 0.75;
-
-/// The widest line, MapServer's default `MAXWIDTH` (`MS_MAXSYMBOLWIDTH`).
-const MAX_SYMBOL_WIDTH: f64 = 32.0;
-
-/// The narrowest line, MapServer's default `MINWIDTH` (`MS_MINSYMBOLWIDTH`).
-const MIN_SYMBOL_WIDTH: f64 = 0.0;
-
-/// The largest symbol, MapServer's default `MAXSIZE` of a style (`MS_MAXSYMBOLSIZE`).
-const MAX_SYMBOL_SIZE: f64 = 500.0;
 
 /// One drawing of a style on a feature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -341,13 +333,11 @@ fn outline_width(style: &Style) -> f64 {
 }
 
 /// The style's `WIDTH` scaled by the scale factor and bounded by its `MINWIDTH` and `MAXWIDTH`
-/// scaled by the resolution factor, both `factor` here, as msDrawLineSymbol() bounds it: the
-/// maximum first, then the minimum. With the width as written.
+/// scaled by the resolution factor, both `factor` here, as msDrawLineSymbol() bounds it (see
+/// [`bounds::line_width`]). With the width as written.
 fn bounded_width(style: &Style, factor: f64) -> (f64, f64) {
     let written = fixed(&style.width).unwrap_or(1.0);
-    let max = style.max_width.unwrap_or(MAX_SYMBOL_WIDTH) * factor;
-    let min = style.min_width.unwrap_or(MIN_SYMBOL_WIDTH) * factor;
-    ((written * factor).min(max).max(min), written)
+    (bounds::line_width(written * factor, style, factor), written)
 }
 
 /// The offset of the style, its numbers multiplied by `factor`; `None` when it moves nothing.
@@ -482,8 +472,8 @@ fn outline_style(style: &Style) -> Style {
         width: Some(Bound::Value(
             fixed(&style.width).unwrap_or(1.0) + 2.0 * outline,
         )),
-        min_width: Some(style.min_width.unwrap_or(MIN_SYMBOL_WIDTH) + 2.0 * outline),
-        max_width: Some(style.max_width.unwrap_or(MAX_SYMBOL_WIDTH) + 2.0 * outline),
+        min_width: Some(style.min_width.unwrap_or(MIN_WIDTH) + 2.0 * outline),
+        max_width: Some(style.max_width.unwrap_or(MAX_WIDTH) + 2.0 * outline),
         size: Some(Bound::Value(fixed(&style.size).unwrap_or(-1.0) + outline)),
         ..style.clone()
     }
@@ -533,9 +523,7 @@ fn shade(
     if let Some(outline) = fixed(&style.outline_color) {
         let width = fixed(&style.width).unwrap_or(1.0);
         let width = if width == 0.0 { factor } else { width * factor };
-        let max = style.max_width.unwrap_or(MAX_SYMBOL_WIDTH);
-        let min = style.min_width.unwrap_or(MIN_SYMBOL_WIDTH);
-        let width = width.min(max).max(min);
+        let width = bounds::shade_outline_width(width, style);
         let (cap, join) = line_ends(width, LineCap::Round, LineJoin::Round);
         ops.push(DrawOp::Stroke {
             paths: open_rings(rings),
@@ -619,12 +607,10 @@ fn transformed(
 }
 
 /// A point as a square of the style's size, centred on it, filled in the `COLOR` and outlined
-/// in the `OUTLINECOLOR`.
+/// in the `OUTLINECOLOR` at the style's width, bounded as computeSymbolStyle() bounds the outline
+/// of the symbol the square stands for, at a factor of 1 (see [`bounds::symbol_outline_width`]).
 fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
-    let half = fixed(&style.size)
-        .unwrap_or(1.0)
-        .clamp(0.0, MAX_SYMBOL_SIZE)
-        / 2.0;
+    let half = fixed(&style.size).unwrap_or(1.0).clamp(0.0, MAX_SIZE) / 2.0;
     let corner = |dx: f64, dy: f64| Point {
         x: at.x + dx,
         y: at.y + dy,
@@ -643,9 +629,7 @@ fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
         });
     }
     if let Some(color) = fixed(&style.outline_color) {
-        let width = fixed(&style.width)
-            .unwrap_or(1.0)
-            .clamp(0.0, MAX_SYMBOL_WIDTH);
+        let width = bounds::symbol_outline_width(fixed(&style.width).unwrap_or(1.0), style, 1.0);
         let (cap, join) = line_ends(width, LineCap::Round, LineJoin::None);
         ops.push(DrawOp::Stroke {
             paths: vec![square],
@@ -1416,6 +1400,85 @@ mod tests {
         let mut expected = Vec::new();
         symbol::symbol_ops(&mut expected, p(10.0, 20.0), &start, &circle(), 2.0);
         assert_eq!(drawn(&start, RenderMode::Line, &ell(), 2.0), expected);
+    }
+
+    /// A style with `MINWIDTH` and `MAXWIDTH` whose `WIDTH` is bound to a feature's property that
+    /// reads as no number, `nan`, which atof() reads as NaN.
+    fn bounded_nan(min_width: f64, max_width: f64, outline: Option<Rgba>) -> Style {
+        Style {
+            width: Some(Bound::Value(forager_expr::atof(b"nan"))),
+            min_width: Some(min_width),
+            max_width: Some(max_width),
+            ..colored(Some(BLUE), outline)
+        }
+    }
+
+    #[test]
+    fn a_line_bounds_its_width_as_ms_draw_line_symbol_does() {
+        // msDrawLineSymbol, maprendering.c:622-624: MS_MIN with MAXWIDTH times the resolution
+        // factor, then MS_MAX with MINWIDTH times it. A NaN width becomes MAXWIDTH, and a MINWIDTH
+        // above the MAXWIDTH wins.
+        let style = bounded_nan(2.0, 5.0, None);
+        assert_eq!(
+            stroke(&strokes_at(&style, 2.0)[0]).0,
+            10.0,
+            "MAXWIDTH 5 is 10"
+        );
+        let crossed = Style {
+            width: Some(Bound::Value(4.0)),
+            ..bounded_nan(6.0, 3.0, None)
+        };
+        assert_eq!(
+            stroke(&strokes_at(&crossed, 1.0)[0]).0,
+            6.0,
+            "MINWIDTH last"
+        );
+    }
+
+    #[test]
+    fn a_polygon_bounds_its_outline_as_ms_draw_shade_symbol_does() {
+        // msDrawShadeSymbol, maprendering.c:796-799: the WIDTH times the scale factor (NaN is not
+        // 0), MS_MIN with MAXWIDTH, then MS_MAX with MINWIDTH, neither scaled. A NaN width becomes
+        // MAXWIDTH as written, and a MINWIDTH above the MAXWIDTH wins.
+        let outline = |style: &Style| {
+            let mut ops = Vec::new();
+            let mut canvas = Canvas::new(&[], 101, 101, 2.0);
+            let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
+            assert!(shade(&mut ops, ring, style, &unit_view(), &mut canvas));
+            stroke(&ops[1]).0
+        };
+        assert_eq!(outline(&bounded_nan(2.0, 5.0, Some(BLACK))), 5.0);
+        let crossed = Style {
+            width: Some(Bound::Value(4.0)),
+            ..bounded_nan(6.0, 3.0, Some(BLACK))
+        };
+        assert_eq!(outline(&crossed), 6.0, "MINWIDTH last");
+    }
+
+    #[test]
+    fn a_stand_in_square_bounds_its_outline_as_compute_symbol_style_does() {
+        // The square stands for a marker symbol, whose outline computeSymbolStyle bounds,
+        // maprendering.c:69-71: MS_MAX with MINWIDTH, then MS_MIN with MAXWIDTH, here at a
+        // factor of 1. A NaN width becomes MINWIDTH, and a MAXWIDTH below the MINWIDTH wins.
+        let outline = |style: &Style| {
+            let mut canvas = Canvas::new(&[], 101, 101, 2.0);
+            let point = Geometry::Point(Coord { x: 50.0, y: 50.0 });
+            let ops = draw_ops(
+                RenderMode::Point,
+                &point,
+                style,
+                Pass::Plain,
+                &unit_view(),
+                &mut canvas,
+            );
+            stroke(&ops[1]).0
+        };
+        assert_eq!(outline(&bounded_nan(2.0, 5.0, Some(BLACK))), 2.0);
+        let crossed = Style {
+            width: Some(Bound::Value(4.0)),
+            ..bounded_nan(6.0, 3.0, Some(BLACK))
+        };
+        assert_eq!(outline(&crossed), 3.0, "MAXWIDTH last");
     }
 
     #[test]

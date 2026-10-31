@@ -368,3 +368,26 @@ fn at_a_factor_the_clip_buffer_is_scaled() {
     };
     assert_eq!(Hatching::for_class(&[small], &[], 2.0).clip_buffer, 16.0);
 }
+
+#[test]
+fn a_hatch_bounds_its_width_and_spacing_as_ms_draw_shade_symbol_does() {
+    // msDrawShadeSymbol, maprendering.c:808-813, at a factor of 2: a WIDTH and a SIZE bound to a
+    // property that reads as `nan`, which atof() reads as NaN, are no number at or below 0 and
+    // are scaled; MS_MIN with the upper bound times the resolution factor, then MS_MAX with the
+    // lower, make them MAXWIDTH and MAXSIZE; a MINWIDTH or MINSIZE above the upper bound wins.
+    let nan = forager_expr::atof(b"nan");
+    let bounded = |value: f64, min: f64, max: f64| Style {
+        min_size: Some(min),
+        max_size: Some(max),
+        min_width: Some(min),
+        max_width: Some(max),
+        ..style(Some(value), Some(value))
+    };
+    let spacing = |hatch: &Hatch| hatch.lines[1][0].y - hatch.lines[0][0].y;
+    let hatch = drawn_at(&bounded(nan, 2.0, 5.0), 2.0);
+    assert_eq!(hatch.width, 10.0, "MAXWIDTH 5 is 10");
+    assert!(close(spacing(&hatch), 10.0), "MAXSIZE 5 is 10");
+    let hatch = drawn_at(&bounded(4.0, 6.0, 3.0), 2.0);
+    assert_eq!(hatch.width, 12.0, "MINWIDTH 6 is 12");
+    assert!(close(spacing(&hatch), 12.0), "MINSIZE 6 is 12");
+}
