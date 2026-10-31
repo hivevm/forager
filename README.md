@@ -236,4 +236,4 @@ of opening a public issue.
 Released under `MIT OR Apache-2.0`. See [`LICENSE`](LICENSE) (MIT) and
 [`LICENSE-APACHE`](LICENSE-APACHE). The notices of the code Forager follows, MapServer's and
 W. Randolph Franklin's pnpoly, are in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md), which
-every copy of Forager carries, its binaries included.
+every distribution of Forager must carry, one of its binaries included.

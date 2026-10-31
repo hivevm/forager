@@ -71,17 +71,38 @@ mkdir -p "$cdir/crates/x/tests"
 printf '%s\n' '/* Walks the cache as msDrawLabelCache in src/mapdraw.c does. */' > "$cdir/crates/x/tests/reader.c"
 expect "a C file that cites MapServer's source without the notice fails" \
   "$cdir" 1 "crates/x/tests/reader.c follows MapServer"
-PNPOLY='// Copyright (c) 1970-2003, Wm. Randolph Franklin
-// 1. Redistributions of source code must retain the above copyright notice, this list of
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.'
+PNPOLY_LINE='// Copyright (c) 1970-2003, Wm. Randolph Franklin'
+PNPOLY_ONE='// 1. Redistributions of source code must retain the above copyright notice, this list of'
+PNPOLY_THREE='// 3. The name of W. Randolph Franklin may not be used to endorse or promote products'
+PNPOLY_END='// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.'
+PNPOLY="$PNPOLY_LINE
+$PNPOLY_ONE
+$PNPOLY_THREE
+$PNPOLY_END"
+expect "a file that names pnpoly without Franklin's notice fails, by name" \
+  "$(repo pnpolyname '// The crossing test of pnpoly.')" 1 "crates/x/src/lib.rs follows pnpoly"
+expect "Franklin's copyright line alone fails" \
+  "$(repo pnpolyline "$PNPOLY_LINE
+// As msPointInPolygon tests it.")" 1 "follows pnpoly"
+expect "Franklin's notice without his third condition fails" \
+  "$(repo pnpolynothree "$PNPOLY_LINE
+$PNPOLY_ONE
+$PNPOLY_END
+// As msPointInPolygon tests it.")" 1 "follows pnpoly"
 expect "a file that ports msPointInPolygon without Franklin's notice fails, by name" \
   "$(repo pnpolybare '// As msPointInPolygon tests it.')" 1 "crates/x/src/lib.rs follows pnpoly"
 pdir="$(repo pnpolynotice "$PNPOLY
 // As msPointInPolygon tests it.")"
 expect "Franklin's notice without THIRD-PARTY-NOTICES.md reproducing it fails" \
   "$pdir" 1 "THIRD-PARTY-NOTICES.md does not reproduce"
-printf '%s\n' 'Copyright (c) 1970-2003, Wm. Randolph Franklin' > "$pdir/THIRD-PARTY-NOTICES.md"
-expect "Franklin's notice, reproduced in THIRD-PARTY-NOTICES.md, passes" \
+printf '%s\n' "$PNPOLY_LINE" > "$pdir/THIRD-PARTY-NOTICES.md"
+expect "THIRD-PARTY-NOTICES.md with only Franklin's copyright line fails" \
+  "$pdir" 1 "THIRD-PARTY-NOTICES.md does not reproduce"
+printf '%s\n' "$PNPOLY" > "$pdir/THIRD-PARTY-NOTICES.md"
+expect "THIRD-PARTY-NOTICES.md without MapServer's notice fails" \
+  "$pdir" 1 "THIRD-PARTY-NOTICES.md does not reproduce"
+printf '%s\n' "$PNPOLY" "$NOTICE" > "$pdir/THIRD-PARTY-NOTICES.md"
+expect "Franklin's notice, reproduced in THIRD-PARTY-NOTICES.md beside MapServer's, passes" \
   "$pdir" 0 "Notice check passed"
 expect "a root that is no directory exits 2" "$work/none" 2 "is not a directory"
 
