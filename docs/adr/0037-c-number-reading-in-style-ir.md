@@ -1,6 +1,6 @@
 # ADR-0037: C's reading of numbers is ported once, in `style-ir`, for the frontend and the core alike
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** the ports of C's `atof`, `strtod`, `atoi`, and MapServer's `MS_NINT` in `crates/style-ir`, `crates/expr`, `crates/mapfile`, and `crates/engine`
@@ -27,7 +27,7 @@ defeated by copies: a branch fixed in one copy stays wrong in the others. Forces
 reading of a number everywhere MapServer reads it the same), ADR-0009's edges, ADR-0031, which
 places C's functions that `expr` needs in `expr`.
 
-Open questions for the maintainer, written here instead of asked:
+Questions the maintainer settled on acceptance:
 
 1. `style-ir` is the IR's data model; is it the right home for behaviour every crate may call, or
    should a leaf crate (say `c-runtime`) take it, which supersedes ADR-0009 for one more row and
@@ -36,6 +36,9 @@ Open questions for the maintainer, written here instead of asked:
    each item when it evaluates, which would take the frontend's `atof` away without a new home?
 3. Which behaviour of `MS_NINT` past a `long` is the pin's on the targets Forager builds for:
    C leaves it undefined, and the three copies chose three answers.
+
+The decision answers the first: the module lives in `style-ir`, with no new crate. The second and
+third are left to the ticket that implements it, which reads them from the pin.
 
 ## Decision
 
