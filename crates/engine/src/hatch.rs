@@ -24,7 +24,7 @@
 use forager_render::{Hatch, Point};
 use forager_style_ir::{Rgba, Style, Symbol};
 
-use crate::draw::fixed;
+use crate::draw::{GAMMA, fixed};
 use crate::symbol::{self, ms_max, ms_min};
 
 /// MapServer's `MS_DEG_TO_RAD`, `src/mapserver.h`.
@@ -264,6 +264,7 @@ pub(crate) fn hatch(
         color,
         width,
         pattern,
+        gamma: Some(GAMMA),
     };
     // The image's size in whole pixels, as the renderer checks the same bound.
     if hatch.is_bounded(image.0 as u32, image.1 as u32) {

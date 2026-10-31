@@ -21,12 +21,15 @@ pub struct Point {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DrawOp {
     /// Fills the area the rings enclose under the even-odd rule, so holes stay empty whatever
-    /// their winding.
-    Fill { rings: Vec<Vec<Point>>, color: Rgba },
-    /// Fills the area of a polygon feature as [`DrawOp::Fill`] does, as MapServer's renderer
-    /// fills a polygon shape; MapServer's AGG renderer, unlike a symbol's fill, passes its
-    /// coverage through the gamma of the output format.
-    Polygon { rings: Vec<Vec<Point>>, color: Rgba },
+    /// their winding. With a `gamma`, each pixel's coverage passes through AGG's
+    /// `gamma_linear(0, gamma)` first, as MapServer's AGG renderer fills a polygon shape through
+    /// the gamma of the output format; without one, as it fills a symbol, the coverage is taken
+    /// as it is. The renderer takes the gamma as given; the engine chooses it.
+    Fill {
+        rings: Vec<Vec<Point>>,
+        color: Rgba,
+        gamma: Option<f64>,
+    },
     /// Strokes each path; a closed path joins its last point to its first, an open one ends
     /// in caps at both. The cap, the join, and the dashes are those of MapServer's stroke style,
     /// its `strokeStyleObj`; how they map onto the rasterizer is the renderer's.

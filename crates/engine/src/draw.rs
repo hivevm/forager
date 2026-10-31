@@ -29,6 +29,11 @@ use crate::line_marker::{self, MarkerBudget};
 use crate::offset::{self, Offset};
 use crate::symbol;
 
+/// The gamma a polygon shape and a hatch are filled through, MapServer's default `GAMMA` of its
+/// AGG output formats (`agg2CreateImage`, `src/mapagg.cpp`); a `GAMMA` of the output
+/// format or of the layer is not carried yet.
+pub(crate) const GAMMA: f64 = 0.75;
+
 /// The widest line, MapServer's default `MAXWIDTH` (`MS_MAXSYMBOLWIDTH`).
 const MAX_SYMBOL_WIDTH: f64 = 32.0;
 
@@ -520,9 +525,10 @@ fn shade(
             Hatched::Refused => false,
         };
     }
-    ops.push(DrawOp::Polygon {
+    ops.push(DrawOp::Fill {
         rings: rings.clone(),
         color,
+        gamma: Some(GAMMA),
     });
     if let Some(outline) = fixed(&style.outline_color) {
         let width = fixed(&style.width).unwrap_or(1.0);
@@ -633,6 +639,7 @@ fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
         ops.push(DrawOp::Fill {
             rings: vec![square.clone()],
             color,
+            gamma: None,
         });
     }
     if let Some(color) = fixed(&style.outline_color) {
@@ -695,10 +702,7 @@ mod tests {
                     paths,
                     ..
                 } => (color, width, dashes, paths),
-                DrawOp::Fill { .. }
-                | DrawOp::Polygon { .. }
-                | DrawOp::Hatch(_)
-                | DrawOp::Glyphs { .. } => {
+                DrawOp::Fill { .. } | DrawOp::Hatch(_) | DrawOp::Glyphs { .. } => {
                     panic!("a line is not filled")
                 }
             })
@@ -768,9 +772,7 @@ mod tests {
         ops.iter()
             .map(|op| match op {
                 DrawOp::Stroke { paths, .. } => paths.iter().map(Vec::len).sum(),
-                DrawOp::Fill { rings, .. } | DrawOp::Polygon { rings, .. } => {
-                    rings.iter().map(Vec::len).sum()
-                }
+                DrawOp::Fill { rings, .. } => rings.iter().map(Vec::len).sum(),
                 DrawOp::Hatch(_) | DrawOp::Glyphs { .. } => 0,
             })
             .sum()
@@ -925,10 +927,7 @@ mod tests {
             line_symbol(&mut ops, line(), &style(width), Pass::Plain, &mut plain());
             match &ops[0] {
                 DrawOp::Stroke { cap, join, .. } => (*cap, *join),
-                DrawOp::Fill { .. }
-                | DrawOp::Polygon { .. }
-                | DrawOp::Hatch(_)
-                | DrawOp::Glyphs { .. } => {
+                DrawOp::Fill { .. } | DrawOp::Hatch(_) | DrawOp::Glyphs { .. } => {
                     panic!("a line is not filled")
                 }
             }
@@ -960,6 +959,16 @@ mod tests {
         )
         .unwrap();
         assert!(shade(&mut ops, line(), &style, &view, &mut plain()));
+        // The polygon shape is one fill item, through MapServer's default gamma, the 0.75 of
+        // agg2CreateImage's msGetOutputFormatOption(format, "GAMMA", "0.75").
+        assert!(matches!(
+            ops[0],
+            DrawOp::Fill {
+                color,
+                gamma: Some(0.75),
+                ..
+            } if color == fill
+        ));
         match &ops[1] {
             DrawOp::Stroke {
                 color, cap, join, ..
@@ -967,10 +976,7 @@ mod tests {
                 assert_eq!(*color, Rgba { a: 100, ..BLACK });
                 assert_eq!((*cap, *join), (LineCap::Round, LineJoin::Round));
             }
-            DrawOp::Fill { .. }
-            | DrawOp::Polygon { .. }
-            | DrawOp::Hatch(_)
-            | DrawOp::Glyphs { .. } => {
+            DrawOp::Fill { .. } | DrawOp::Hatch(_) | DrawOp::Glyphs { .. } => {
                 panic!("the outline is a stroke")
             }
         }
@@ -1238,6 +1244,7 @@ mod tests {
         ]);
         let drawn = hatches(&two);
         assert_eq!(drawn.len(), 1);
+        assert_eq!(drawn[0].gamma, Some(0.75));
         assert_eq!(drawn[0].rings.len(), 2);
         let first = drawn[0].lines[0];
         assert!((first[0].x - 4.2928).abs() < 1e-9 && (first[1].x - 91.2928).abs() < 1e-9);
@@ -1354,7 +1361,7 @@ mod tests {
             ops
         };
         let ops = outlined(3.0, None);
-        let DrawOp::Polygon { rings, .. } = &ops[0] else {
+        let DrawOp::Fill { rings, .. } = &ops[0] else {
             panic!("{ops:?}");
         };
         assert_eq!(rings[0], vec![p(16.0, 18.0), p(26.0, 18.0), p(26.0, 28.0)]);
