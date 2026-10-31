@@ -109,7 +109,7 @@ is the table a session reads.
 | [0032](0032-hatch-cut-by-i-overlay.md) | The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it | the cut of a hatch in `crates/render-agg`, the `i_overlay` entry of its `Cargo.toml`, and the bounds of a hatch in `crates/render` | 🟢 accepted |
 | [0033](0033-inline-features-in-the-style-ir.md) | A layer's inline features are a field of the layer in the style IR, read by the engine as the layer's source | the inline features of a layer in `crates/style-ir`, the reading of `FEATURE` in `crates/mapfile`, and the source the engine makes of them in `crates/engine` | 🟢 accepted |
 | [0034](0034-render-agg-blends-as-agg-2-4.md) | `render-agg` blends with a port of AGG 2.4's premultiplied blender, as MapServer bundles it | the pixel format of `crates/render-agg`: how a covered pixel is blended, how a layer's image is laid over the map, and how the alpha is divided out of the finished image | 🟢 accepted |
-| [0035](0035-label-cache-grid-and-bound.md) | The label cache tests collisions over a grid, with MapServer's outcome, and holds at most 100,000 labels a render | the label cache of `crates/label` and the engine's use of it in `crates/engine`: how a label is tested against the markers and the labels drawn before it, and how many labels one render holds | 🟡 proposed |
+| [0035](0035-label-cache-grid-and-bound.md) | The label cache tests collisions over a grid, with MapServer's outcome, and holds at most 100,000 labels a render | the label cache of `crates/label` and the engine's use of it in `crates/engine`: how a label is tested against the markers and the labels drawn before it, and how many labels one render holds | 🟢 accepted |
 
 ### Superseded and rejected
 
