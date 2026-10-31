@@ -734,16 +734,26 @@ mod tests {
         // Verifies: ADR-0036
         // A condition a newer minor adds is a CQL2 function inside an existing expression; this
         // build does not know `glows`, so each element it sits on never matches, in YAML and JSON.
-        let yaml = "version: \"1.9\"\nmap:\n  layers:\n  - filter: &cond {op: and, args: \
-                    [{op: \"=\", args: [{property: a}, 1]}, {op: glows, args: [{property: a}]}]}\n    \
-                    classes:\n    - name: c\n      expression: *cond\n      labels:\n      \
-                    - text: {property: t}\n        expression: *cond\n";
-        let condition = r#"{"op":"and","args":[{"op":"=","args":[{"property":"a"},1]},{"op":"glows","args":[{"property":"a"}]}]}"#;
+        let in_yaml = r#"{op: or, args: [{op: "=", args: [{property: a}, 1]}, {op: glows, args: [{property: a}]}]}"#;
+        let yaml = [
+            r#"version: "1.9""#.to_owned(),
+            "map:".to_owned(),
+            "  layers:".to_owned(),
+            format!("  - filter: {in_yaml}"),
+            "    classes:".to_owned(),
+            "    - name: c".to_owned(),
+            format!("      expression: {in_yaml}"),
+            "      labels:".to_owned(),
+            "      - text: {property: t}".to_owned(),
+            format!("        expression: {in_yaml}"),
+        ]
+        .join("\n");
+        let in_json = r#"{"op":"or","args":[{"op":"=","args":[{"property":"a"},1]},{"op":"glows","args":[{"property":"a"}]}]}"#;
         let json = format!(
-            r#"{{"version":"1.9","map":{{"layers":[{{"filter":{condition},"classes":[{{"name":"c","expression":{condition},"labels":[{{"text":{{"property":"t"}},"expression":{condition}}}]}}]}}]}}}}"#
+            r#"{{"version":"1.9","map":{{"layers":[{{"filter":{in_json},"classes":[{{"name":"c","expression":{in_json},"labels":[{{"text":{{"property":"t"}},"expression":{in_json}}}]}}]}}]}}}}"#
         );
         for read in [
-            StyleDocument::from_yaml(yaml).unwrap(),
+            StyleDocument::from_yaml(&yaml).unwrap(),
             StyleDocument::from_json(&json).unwrap(),
         ] {
             let layer = &read.document.map.layers[0];
