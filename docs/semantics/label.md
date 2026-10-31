@@ -56,7 +56,8 @@ are read and discarded, as `loadLabel` discards them.
 **Lines and priority.** A label's text is broken into lines as `msLayoutTextSymbol` in
 `src/textlayout.c` breaks it: with a `WRAP` and no `MAXLENGTH`, at every `WRAP` character; with a
 positive `MAXLENGTH`, a text of more characters than it is broken at a `WRAP` character or U+200B
-met once the line holds `MAXLENGTH` characters, and a text no longer keeps its `WRAP` characters.
+met once the line holds `MAXLENGTH` characters, and a text no longer than `MAXLENGTH` keeps its
+`WRAP` characters.
 `MAXLENGTH` is held as MapServer's `int`. A `PRIORITY` expression is evaluated for each feature
 as `msEvalDoubleExpression` evaluates it, its value printed with `%g` and read back with `atof`;
 that value, a literal, and a bound value alike are converted to an `int` and held at 1 to 10, as

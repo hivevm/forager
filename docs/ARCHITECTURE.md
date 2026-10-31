@@ -95,9 +95,8 @@ golden path and the test pattern an agent copies from are named here.
   the class, the `LABELITEM`, or last its inline feature's own `TEXT` (`inline.rs`). It reports
   every label of its cache in `Rendered.labels`, in the order the cache walks them, with its
   member box, that of its text and its `labelpoint` marker, where it was drawn, or none where it
-  was discarded. The
-  symbolization of a style, which ADR-0009's crate map gives a crate `symbolize` of its own that
-  does not exist yet, lives here too: a line layer's passes, a line's
+  was discarded. The symbolization of a style, which ADR-0009's crate map gives a crate
+  `symbolize` of its own that does not exist yet, lives here too: a line layer's passes, a line's
   dashes, a polygon's fill through MapServer's default gamma, and the canvas a layer draws on
   (`draw.rs`), a style's width and size bounds, one function per site of MapServer's that bounds
   them, with the constants they bound by (`bounds.rs`), its vector and ellipse symbols
