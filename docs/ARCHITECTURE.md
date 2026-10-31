@@ -85,7 +85,8 @@ golden path and the test pattern an agent copies from are named here.
   each label as its glyphs' indices and its point, draws each glyph once per font and size, and
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
   diagnostic. The symbolization of a style, which ADR-0009's crate map gives a crate `symbolize`
-  of its own that does not exist yet, lives here too: a style's bounds and dashes (`draw.rs`), its
+  of its own that does not exist yet, lives here too: a style's dashes (`draw.rs`), its bounds
+  and MapServer's constants they bound by, one function per MapServer function (`bounds.rs`), its
   vector and ellipse symbols (`symbol.rs`), hatches (`hatch.rs`), symbols along a line
   (`line_marker.rs`), line offsets (`offset.rs`), and the style's `GEOMTRANSFORM` and
   `POLAROFFSET` (`geom_transform.rs`). It is the one core crate
