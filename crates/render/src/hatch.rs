@@ -67,7 +67,6 @@ impl Hatch {
     /// more than [`Self::MAX_CROSSINGS`] crossings of the two, with those of the polygon with
     /// itself at sixteen each.
     pub fn is_bounded(&self, width: u32, height: u32) -> bool {
-        let drawn = self.drawn_width(width, height);
         let rect = self.line_rect(width, height);
         let visible: Vec<f64> = self
             .lines
@@ -102,24 +101,11 @@ impl Hatch {
         if vertices > Self::MAX_VERTICES {
             return false;
         }
-        let with_stroke = self.crossings_at(drawn / 2.0, pieces, vertices as f64);
+        let with_stroke = self.crossings(width, height, pieces, vertices as f64);
         // What is left of the bound for the polygon's own crossings, each of which costs the cut
         // some sixteen of the others.
         let left = (Self::MAX_CROSSINGS - with_stroke) / SELF_CROSSING_WEIGHT;
         left >= 0.0 && (self_crossings(&self.rings, left as usize) as f64) <= left
-    }
-
-    /// An estimate of the crossings the cut has to find, of the polygon's edges with the stroked
-    /// lines and of the stroke with itself: where the lines run parallel, the stroke bands each
-    /// edge reaches across, found among the lines sorted by their distance from the origin, twice
-    /// each; four for every piece, and 32 for every piece and every other line whose band
-    /// overlaps its own, at most, where the lines lie closer than their width and the ends of
-    /// their pieces, along the edge of the image, run over each other, which costs i_overlay
-    /// some eight times a crossing; and two for every piece and every vertex besides. Where they
-    /// do not run parallel, four for every piece and edge and for every two pieces. Lines and
-    /// points that are not finite count nothing; the renderer draws none.
-    pub fn crossings(&self, pieces: f64, vertices: f64) -> f64 {
-        self.crossings_at(self.width.abs() / 2.0, pieces, vertices)
     }
 
     /// The width the renderer strokes the lines at on an image of `width` × `height` pixels.
@@ -137,8 +123,18 @@ impl Hatch {
         )
     }
 
-    /// [`Self::crossings`] of the lines stroked `half` to either side.
-    fn crossings_at(&self, half: f64, pieces: f64, vertices: f64) -> f64 {
+    /// An estimate of the crossings the cut has to find on an image of `width` × `height`
+    /// pixels, of the polygon's edges with the lines stroked at the width the renderer draws and
+    /// of the stroke with itself: where the lines run parallel, the stroke bands each
+    /// edge reaches across, found among the lines sorted by their distance from the origin, twice
+    /// each; four for every piece, and 32 for every piece and every other line whose band
+    /// overlaps its own, at most, where the lines lie closer than their width and the ends of
+    /// their pieces, along the edge of the image, run over each other, which costs i_overlay
+    /// some eight times a crossing; and two for every piece and every vertex besides. Where they
+    /// do not run parallel, four for every piece and edge and for every two pieces. Lines and
+    /// points that are not finite count nothing; the renderer draws none.
+    pub fn crossings(&self, width: u32, height: u32, pieces: f64, vertices: f64) -> f64 {
+        let half = self.drawn_width(width, height) / 2.0;
         let unit = |[a, b]: [Point; 2]| {
             let (dx, dy) = (b.x - a.x, b.y - a.y);
             let length = (dx * dx + dy * dy).sqrt();
@@ -399,6 +395,15 @@ mod tests {
         assert!(wide.is_bounded(100, 100));
     }
 
+    #[test]
+    fn lines_with_both_ends_far_out_count_the_part_the_renderer_draws() {
+        // Verifies: Q-9
+        // A line from -1e150 to 1e150 meets the margin's edges at t = 0.5 either way, rounded;
+        // the renderer still draws its 106 pixels, so 100 000 of them are past the bound.
+        let far = vec![[p(-1e150, 5.0), p(1e150, 5.0)]; 100_000];
+        assert!(!hatch(far, vec![]).is_bounded(100, 100));
+    }
+
     fn star(points: usize, skip: usize) -> Vec<Point> {
         (0..points)
             .map(|i| {
@@ -469,7 +474,7 @@ mod tests {
         // The two upright edges reach across the bands of lines 1 to 9, the others none: 2 × 18;
         // each line's band overlaps its own alone: 4 for each of the 10 pieces; and 2 for each
         // piece and each of the 4 vertices.
-        assert_eq!(bounded.crossings(10.0, 4.0), 104.0);
+        assert_eq!(bounded.crossings(100, 100, 10.0, 4.0), 104.0);
         assert!(bounded.is_bounded(100, 100));
         // Lines not parallel count four crossings for each piece and vertex, and each two pieces.
         let mut crossed = lines;
@@ -478,7 +483,7 @@ mod tests {
             rings: vec![square.clone()],
             ..hatch(crossed, vec![])
         };
-        assert_eq!(skewed.crossings(11.0, 4.0), 660.0);
+        assert_eq!(skewed.crossings(100, 100, 11.0, 4.0), 660.0);
         // Lines a thousandth of a pixel apart under a stroke a pixel wide: each band overlaps a
         // thousand others, whose ends the cut would have to cross.
         let close: Vec<[Point; 2]> = (0..2000)
@@ -491,7 +496,7 @@ mod tests {
             rings: vec![vec![p(5.0, 5.0), p(95.0, 5.0), p(95.0, 95.0)]],
             ..hatch(close, vec![])
         };
-        assert!(crowded.crossings(2000.0, 3.0) > 3e7);
+        assert!(crowded.crossings(100, 100, 2000.0, 3.0) > 3e7);
         assert!(!crowded.is_bounded(100, 100));
         let many = Hatch {
             rings: vec![square; Hatch::MAX_VERTICES / 4 + 1],
