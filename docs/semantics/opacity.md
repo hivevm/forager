@@ -26,7 +26,8 @@ created with `msImageCreate`, and lays that image over the map once for each blo
 it instead). The frontend carries one block that composites `src-over`, MapServer's default
 `COMPOP`, without a `COMPFILTER`; another `COMPOP`, a `COMPFILTER`, or a layer of several blocks is
 not yet supported and is ignored with a warning, and the layer is drawn straight onto the map.
-The layer's labels go to the label cache and are drawn over every layer at full opacity. The image
+The layer's labels go to the label cache and are drawn over every layer at full opacity; with
+`LABELCACHE OFF` they are drawn into the layer's image ([label.md](label.md)). The image
 of the layer keeps the `refpt` its creation leaves, its top left corner, which a hatch counts its
 lines from (`msHatchPolygon`), where the map's image has it at the map's origin.
 

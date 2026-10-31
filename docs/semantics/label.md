@@ -78,6 +78,17 @@ of that box, the box of the turned polygon where the label is turned. They are d
 order, before the text; the marker of the first `labelpoint` style takes room from other labels,
 a `labelpoly` and a `labelcenter` marker take none.
 
+**`LABELCACHE`.** A layer's `LABELCACHE`, `ON` or `OFF` as `loadLayer` in `src/mapfile.c` reads
+it and `ON` without one (`initLayer`), is the IR's `label_cache`, true where it is absent. A point
+layer of `LABELCACHE OFF` draws each feature's labels as `pointLayerDrawShape` in `src/mapdraw.c`
+draws them: after the feature's markers at each of its points inside the map's extent, before the
+next feature, into the layer's image, each label `msGetLabelStatus` in `src/maputil.c` passes
+drawn by `msDrawLabel` with its styles before its text, by its position and its `OFFSET` alone,
+moved off no marker, with no test against other labels, markers, or the image's edge. They never
+enter the label cache, so the cached labels are not tested against them, and `Rendered.labels`
+does not list them. MapServer's line and polygon layers draw their labels at once too, which the
+engine does not draw yet.
+
 **`TRUE` and `ON`.** Wherever MapServer takes `ON` and `OFF` it takes `TRUE` and `FALSE` too, and
 the other way round: its lexer gives `MS_TRUE` and `MS_ON` the value 1, `MS_FALSE` and `MS_OFF`
 0 (`src/mapserver.h`), and its parser compares the values. The frontend takes them alike.

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use forager_engine::CachedLabel;
+use forager_style_ir::Map;
 
 use super::Case;
 
@@ -161,6 +162,25 @@ pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
         }
     }
     differences
+}
+
+/// The layers of `map` whose labels the comparison does not see, one line each: a layer of
+/// `LABELCACHE OFF` draws its labels at once, and neither Forager's `Rendered.labels` nor the
+/// reader of MapServer's cache, which holds only the cache, lists them.
+pub fn uncompared(map: &Map) -> Vec<String> {
+    map.layers
+        .iter()
+        .enumerate()
+        .filter(|(_, layer)| !layer.label_cache)
+        .filter(|(_, layer)| layer.classes.iter().any(|class| !class.labels.is_empty()))
+        .map(|(index, layer)| {
+            format!(
+                "the labels of layer {index} ({}) are not compared: LABELCACHE OFF draws them at \
+                 once, outside the label cache",
+                layer.name.as_deref().unwrap_or("unnamed")
+            )
+        })
+        .collect()
 }
 
 /// The largest distance between an edge of `a` and the same edge of `b`.

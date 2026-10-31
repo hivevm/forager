@@ -57,7 +57,7 @@ pub struct Rendered {
     pub diagnostics: Vec<Diagnostic>,
     /// Every label the label cache held, drawn or discarded, in the order `msDrawLabelCache`
     /// walks them: from the highest priority down, and within a priority from the last added to
-    /// the first.
+    /// the first. The labels of a layer of `LABELCACHE OFF`, drawn at once, are not among them.
     pub labels: Vec<CachedLabel>,
 }
 
@@ -164,50 +164,88 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             view: &view,
         };
         let mut canvas = Canvas::new(&map.symbols, width, height, factor);
-        drawing.draw_layer(&mut renderer, &mut canvas, &selected);
-        if canvas.markers_spent() {
-            let message = format!(
-                "layer {}: its symbols along lines or placed by a GEOMTRANSFORM exceed \
-                 {MAX_MARKER_POINTS} points; those past the limit are not drawn",
-                name(layer)
-            );
-            selector.diagnostics.push(Diagnostic::warning(
-                "line-markers-over-limit",
-                message,
-                layer.span.clone(),
-            ));
-        }
-        selector
-            .diagnostics
-            .extend(refused_hatches(layer, canvas.hatches_refused()));
-        for (kind, count) in undrawn {
-            let message = format!(
-                "layer {} cannot draw {count} {kind} geometr{} in its render mode",
-                name(layer),
-                if count == 1 { "y" } else { "ies" }
-            );
-            selector.diagnostics.push(Diagnostic::warning(
-                "geometry-not-drawn",
-                message,
-                layer.span.clone(),
-            ));
-        }
         // Each feature is labelled by the class that draws it, in the order it is drawn.
         let point_layer = mode == RenderMode::Point;
         let drawn: Vec<labels::Labelled<'_>> = selected
             .iter()
             .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
             .collect();
-        labels
-            .collect(layer_index, point_layer, &drawn, &mut selector)
-            .await;
+        // A point layer of LABELCACHE OFF draws each feature's labels after the feature, before
+        // the next feature, into the layer's image, as pointLayerDrawShape does (labels.rs).
+        let at_once = point_layer && !layer.label_cache;
+        let own_image = drawing.begin_layer(&mut renderer, &mut canvas);
+        if at_once {
+            for (one, labelled) in selected.chunks(1).zip(drawn.chunks(1)) {
+                drawing.draw(&mut renderer, &mut canvas, one);
+                labels
+                    .collect(
+                        layer_index,
+                        true,
+                        labelled,
+                        &mut selector,
+                        Some(&mut renderer),
+                    )
+                    .await;
+            }
+        } else {
+            drawing.draw(&mut renderer, &mut canvas, &selected);
+        }
+        Drawing::end_layer(&mut renderer, own_image);
+        layer_reports(layer, &canvas, undrawn, selector.diagnostics);
+        if !at_once {
+            labels
+                .collect(
+                    layer_index,
+                    point_layer,
+                    &drawn,
+                    &mut selector,
+                    None::<&mut R>,
+                )
+                .await;
+        }
     }
-    // The labels are drawn after every layer, as MapServer's label cache draws them.
+    // The labels of the cache are drawn after every layer, as MapServer's label cache draws
+    // them.
     let labels = labels.finish(&mut renderer, &mut diagnostics);
     Rendered {
         image: Some(renderer.finish()),
         labels,
         diagnostics,
+    }
+}
+
+/// Reports what `layer` left undrawn on `canvas`: symbols past the budget of markers, hatches
+/// refused, and the geometries of `undrawn`, by kind, its render mode cannot draw.
+fn layer_reports(
+    layer: &Layer,
+    canvas: &Canvas,
+    undrawn: BTreeMap<&'static str, usize>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if canvas.markers_spent() {
+        let message = format!(
+            "layer {}: its symbols along lines or placed by a GEOMTRANSFORM exceed \
+             {MAX_MARKER_POINTS} points; those past the limit are not drawn",
+            name(layer)
+        );
+        diagnostics.push(Diagnostic::warning(
+            "line-markers-over-limit",
+            message,
+            layer.span.clone(),
+        ));
+    }
+    diagnostics.extend(refused_hatches(layer, canvas.hatches_refused()));
+    for (kind, count) in undrawn {
+        let message = format!(
+            "layer {} cannot draw {count} {kind} geometr{} in its render mode",
+            name(layer),
+            if count == 1 { "y" } else { "ies" }
+        );
+        diagnostics.push(Diagnostic::warning(
+            "geometry-not-drawn",
+            message,
+            layer.span.clone(),
+        ));
     }
 }
 
@@ -258,24 +296,23 @@ struct Drawing<'a> {
 }
 
 impl Drawing<'_> {
-    /// Draws the layer's selected features, into an image of their own that is laid over the
-    /// map where the layer has an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block.
-    fn draw_layer<R: Renderer>(
-        &self,
-        renderer: &mut R,
-        canvas: &mut Canvas,
-        selected: &[Selected<'_>],
-    ) {
-        let Some(opacity) = layer_opacity(self.layer) else {
-            self.draw(renderer, canvas, selected);
-            return;
-        };
+    /// Begins the layer's drawing into an image of its own, which is laid over the map where the
+    /// layer has an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block; the alpha it
+    /// is laid over at, or `None` where the layer is drawn straight onto the map.
+    fn begin_layer<R: Renderer>(&self, renderer: &mut R, canvas: &mut Canvas) -> Option<u8> {
+        let opacity = layer_opacity(self.layer)?;
         canvas.in_own_image();
         renderer.begin_layer();
-        self.draw(renderer, canvas, selected);
         // aggCompositeRasterBufferNoPixman lays the layer over at MS_NINT(opacity × 2.55).
         let alpha = classes::ms_nint(f64::from(opacity) * 2.55);
-        renderer.end_layer(alpha.clamp(0, 255) as u8);
+        Some(alpha.clamp(0, 255) as u8)
+    }
+
+    /// Lays the layer's own image over the map at `alpha`, where [`Self::begin_layer`] began one.
+    fn end_layer<R: Renderer>(renderer: &mut R, alpha: Option<u8>) {
+        if let Some(alpha) = alpha {
+            renderer.end_layer(alpha);
+        }
     }
 
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
