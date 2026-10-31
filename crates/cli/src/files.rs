@@ -14,7 +14,7 @@ pub struct FileLoader {
 /// Reads the files of a data source from the base context, each refused past its limit (Q-9).
 /// A type of its own, so that a data source cannot be handed the loader of a mapfile, whose
 /// limit the frontend applies to all its files together.
-pub struct DataLoader {
+pub(crate) struct DataLoader {
     files: FileLoader,
     limit: u64,
 }
@@ -50,7 +50,7 @@ impl FileLoader {
 
     /// The loader of the same base context for the files of a data source, each refused past
     /// `limit` bytes (Q-9).
-    pub fn for_data(self, limit: u64) -> DataLoader {
+    pub(crate) fn for_data(self, limit: u64) -> DataLoader {
         DataLoader { files: self, limit }
     }
 

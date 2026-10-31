@@ -930,13 +930,11 @@ fn render(
     conformance::apply(&options, &mut map, &loaded.diagnostics)?;
     let (base, _) = FileLoader::for_mapfile(&loader.0.join(&case.mapfile), Some(&loader.0))
         .map_err(|e| format!("its base context: {e}"))?;
-    let mut bound = Vec::new();
-    let rendered = forager_cli::render(&map, &[], &base, &mut bound)
-        .map_err(|diagnostic| diagnostic.to_string())?;
+    let rendered = forager_cli::render(&map, &[], &base);
     let Some(image) = rendered.image else {
-        let errors: Vec<_> = bound
+        let errors: Vec<_> = rendered
+            .diagnostics
             .iter()
-            .chain(&rendered.diagnostics)
             .map(ToString::to_string)
             .collect();
         return Err(format!("it renders no image: {}", errors.join("; ")));
