@@ -306,7 +306,7 @@ renderers/labels-min-distance.map labels-min-distance.svg out: another output fo
 renderers/labels-min-distance.map labels-min-distance.cairo.png out: another output format, cairopng
 renderers/labels-priority.map label_priority_binding.png text passes labels-hold
 renderers/labels-priority.map label_priority_fixed.png text passes labels-hold
-renderers/labels-priority.map label_priority_expression.png text fails  # not built yet: a PRIORITY computed by an expression
+renderers/labels-priority.map label_priority_expression.png text passes labels-hold
 renderers/labels-wrap.map labels-wrap.png out: labels on lines
 renderers/labels.map labels.png text passes labels-hold
 renderers/labels.map labels.pdf out: another output format, pdf

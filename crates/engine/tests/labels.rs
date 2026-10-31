@@ -385,7 +385,7 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
         change(&mut label);
         label
     };
-    let not_drawn: [fn(&mut Label); 16] = [
+    let not_drawn: [fn(&mut Label); 15] = [
         |l| l.angle_mode = Some(AngleMode::Follow),
         |l| l.shadow_color = Some(Bound::Value(WHITE)),
         |l| l.styles = vec![Style::default()],
@@ -403,7 +403,6 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
             });
         },
         |l| l.font = None,
-        |l| l.priority = Some(Bound::Value(0.5)),
         |l| l.size = Some(Bound::Expr(Expr::property("x"))),
         |l| l.color = Some(Bound::Expr(Expr::property("x"))),
         |l| l.outline_color = Some(Bound::Expr(Expr::property("x"))),
@@ -1182,6 +1181,112 @@ fn a_higher_priority_is_placed_first_and_a_bound_one_is_held_from_1_to_10() {
     let recorder = LabelRecorder::default();
     ready(render_with_files(&two, &sources, &Files, recorder.clone()));
     assert_eq!(recorder.0.take().len(), 1, "the label of priority 4 only");
+}
+
+/// The priority each label is cached at under `priority`, for a feature with each of `values`
+/// as its property `n`, by the feature's place.
+fn priorities(priority: Bound<f64>, values: &[&str]) -> Vec<(String, u8)> {
+    let features: Vec<String> = values
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            format!(
+                r#"{{"type": "Feature", "properties": {{"name": "f{i}", "n": "{n}"}},
+                    "geometry": {{"type": "Point", "coordinates": [{}, 30]}}}}"#,
+                20 + 40 * i
+            )
+        })
+        .collect();
+    let geojson = format!(
+        r#"{{"type": "FeatureCollection", "features": [{}]}}"#,
+        features.join(",")
+    );
+    let mut map = map(Label {
+        priority: Some(priority),
+        size: Some(Bound::Value(6.0)),
+        ..label_item()
+    });
+    map.size = Some([40 * values.len() as u32, 60]);
+    map.extent.as_mut().unwrap().max_x = f64::from(40 * values.len() as u32 - 1);
+    let rendered = render(&map, &geojson);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let mut cached: Vec<(String, u8)> = rendered
+        .labels
+        .iter()
+        .map(|l| (l.text.clone(), l.priority))
+        .collect();
+    cached.sort();
+    cached
+}
+
+/// `(f0, p0), (f1, p1), …` of `priorities`.
+fn named(priorities: &[u8]) -> Vec<(String, u8)> {
+    priorities
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (format!("f{i}"), *p))
+        .collect()
+}
+
+#[test]
+fn a_priority_computed_by_an_expression_is_truncated_and_held_from_1_to_10() {
+    // Verifies: G-10
+    let n = || Expr::call(Op::ToNumber, vec![Expr::property("n")]);
+    // The frontend's form of a numeric expression, as msEvalDoubleExpression reads it: the value
+    // printed with %g and read back with atof.
+    let numeric = |expr: Expr| {
+        Bound::Expr(Expr::call(
+            Op::ToNumber,
+            vec![Expr::call(
+                Op::Tostring,
+                vec![expr, Expr::String("%g".to_owned())],
+            )],
+        ))
+    };
+    let plus_one = || numeric(Expr::call(Op::Add, vec![n(), Expr::Number(1.0)]));
+    // bindLabel assigns the double to the int priority, toward zero, and msAddLabelGroup holds it
+    // from 1 to MS_MAX_LABEL_PRIORITY, 10: 4 + 1 is 5, -3 + 1 is 1, 29 + 1 is 10, 7.9 + 1 is 8,
+    // -0.5 + 1 is 0 and so 1.
+    assert_eq!(
+        priorities(plus_one(), &["4", "-3", "29", "7.9", "-0.5"]),
+        named(&[5, 1, 10, 8, 1])
+    );
+    // 8.9999999 + 1 prints with %g as 10, not 9.9999999. A value past an int is INT_MIN on
+    // x86-64, held at 1, as is no number.
+    assert_eq!(
+        priorities(plus_one(), &["8.9999999", "1e10", "nan"]),
+        named(&[10, 1, 1])
+    );
+    // An expression that fails, a division by zero, gives 0, held at 1.
+    let by_zero = numeric(Expr::call(Op::Div, vec![n(), Expr::Number(0.0)]));
+    assert_eq!(priorities(by_zero, &["4"]), named(&[1]));
+    // A text expression is read with atof once, without %g: 7.9999999 is 7, `x` is 0 and so 1.
+    let text = Bound::Expr(Expr::call(
+        Op::ToNumber,
+        vec![Expr::call(Op::ToString, vec![Expr::property("n")])],
+    ));
+    assert_eq!(
+        priorities(text, &["6.7", "7.9999999", "x"]),
+        named(&[6, 7, 1])
+    );
+}
+
+#[test]
+fn a_literal_priority_is_held_from_1_to_10_as_a_condition_given_0_is() {
+    // Verifies: G-10
+    // The frontend gives a condition, which MapServer evaluates to `true` or `false` and atof
+    // reads as 0, or an expression it cannot read, the PRIORITY 0; msAddLabelGroup holds it at 1.
+    for (value, priority) in [(0.0, 1), (4.0, 4), (30.0, 10), (-2.0, 1)] {
+        assert_eq!(
+            priorities(Bound::Value(value), &["1"]),
+            named(&[priority]),
+            "{value}"
+        );
+    }
 }
 
 #[test]

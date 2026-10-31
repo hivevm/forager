@@ -194,6 +194,34 @@ impl<'a> Selector<'a, '_> {
         }
     }
 
+    /// The number the expression `expr` of label `label` of class `class` computes for `feature`,
+    /// 0 where it fails, as msEvalDoubleExpression gives it; the frontend has wrapped the
+    /// expression in the `%g` text and the `atof` that msEvalDoubleExpression reads it with.
+    pub fn label_number(
+        &mut self,
+        expr: &Expr,
+        feature: &Feature,
+        class: usize,
+        label: usize,
+    ) -> f64 {
+        match self
+            .evaluator
+            .number(expr, &FeatureProperties(&feature.properties))
+        {
+            Ok(number) => number,
+            Err(failure) => {
+                self.reports.report(
+                    &failure,
+                    self.layer_index,
+                    self.layer,
+                    Carrier::Label(class, label),
+                    self.diagnostics,
+                );
+                0.0
+            }
+        }
+    }
+
     /// Each of `features` the layer draws, with the place of its class and its styles bound to
     /// it, in the source's order.
     pub fn select<'f>(
