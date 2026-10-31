@@ -277,11 +277,9 @@ impl Drawing<'_> {
         renderer.end_layer(alpha.clamp(0, 255) as u8);
     }
 
-    /// Draws a layer's selected features in the order msDrawVectorLayer draws them: a feature of
-    /// a line layer whose class has several styles, or an outline, draws its first pass and its
-    /// styles with a `GEOMTRANSFORM` at once, and the rest from its cache, style by style, after
-    /// every feature; any other draws all its styles at once. A style outside its scale range
-    /// draws nothing, where msDrawShape and the cache's pass skip it.
+    /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
+    /// from the cache as the [`Plan`] of each class says. A style outside its scale range draws
+    /// nothing, where msDrawShape and the cache's pass skip it.
     fn draw<R: Renderer>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
         let mode = self.mode;
         let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {

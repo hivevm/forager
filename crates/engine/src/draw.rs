@@ -55,7 +55,6 @@ pub enum Pass {
 /// draws its first pass, and its styles with a `GEOMTRANSFORM`, at once, and the rest from the
 /// cache, style by style, after every feature. Any other class draws every style of a feature
 /// at once.
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Plan {
     mode: RenderMode,
     cached: bool,
@@ -66,7 +65,6 @@ pub struct Plan {
 
 /// The passes of a feature: those drawn at once, and those the cache draws after every feature,
 /// each with the place of its style in the class.
-#[derive(Debug, PartialEq)]
 pub struct Passes<'s> {
     pub at_once: Vec<(&'s Style, Vec<Pass>)>,
     pub cached: Vec<(usize, &'s Style, Vec<Pass>)>,
@@ -106,6 +104,7 @@ impl Plan {
     /// every later style with a `GEOMTRANSFORM` in the first pass, as written, and the cache's
     /// passes skip every style with one.
     pub fn passes<'s, S: Borrow<Style>>(&self, styles: &'s [S]) -> Passes<'s> {
+        debug_assert_eq!(styles.len(), self.bound_outline.len());
         if self.mode != RenderMode::Line {
             return Passes {
                 at_once: styles
