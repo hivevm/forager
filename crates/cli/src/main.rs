@@ -203,15 +203,7 @@ fn render(args: &RenderArgs) -> ExitCode {
     else {
         return ExitCode::FAILURE;
     };
-    let mut diagnostics = Vec::new();
-    let rendered = forager_cli::render(&document.map, &args.sources, &loader, &mut diagnostics);
-    for diagnostic in &diagnostics {
-        eprintln!("{diagnostic}");
-    }
-    let rendered = match rendered {
-        Ok(rendered) => rendered,
-        Err(diagnostic) => return report(&diagnostic),
-    };
+    let rendered = forager_cli::render(&document.map, &args.sources, &loader);
     for diagnostic in &rendered.diagnostics {
         eprintln!("{diagnostic}");
     }
