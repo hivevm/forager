@@ -190,6 +190,7 @@ impl Translator<'_> {
                     "OUTPUTFORMAT" => self.output_format(&b.keyword, &b.span),
                     "LAYER" => {
                         if let Some(layer) = self.layer(b) {
+                            self.class_labelcenter(&layer);
                             map.layers.push(layer);
                         }
                     }
@@ -316,7 +317,6 @@ impl Translator<'_> {
             }
         }
         layer.opacity = self.composite(&composites);
-        self.class_labelcenter(&layer);
         if let Some(span) = source_span {
             // Without CONNECTIONTYPE, MapServer reads DATA as a local shapefile.
             let kind = connection_type.unwrap_or_else(|| "local".to_owned());
