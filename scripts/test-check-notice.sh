@@ -66,6 +66,11 @@ expect "a file that names only a MapServer function is beyond the check's reach"
   "$(repo function '// As bindLabel reads it.')" 0 "Notice check passed (0 files"
 expect "a file that cites PROJ's source is not MapServer's" \
   "$(repo proj '// As get_init_string in src/init.cpp reads it.')" 0 "Notice check passed (0 files"
+cdir="$work/cfile"
+mkdir -p "$cdir/crates/x/tests"
+printf '%s\n' '/* Walks the cache as msDrawLabelCache in src/mapdraw.c does. */' > "$cdir/crates/x/tests/reader.c"
+expect "a C file that cites MapServer's source without the notice fails" \
+  "$cdir" 1 "crates/x/tests/reader.c follows MapServer"
 expect "a root that is no directory exits 2" "$work/none" 2 "is not a directory"
 
 if ((failed)); then

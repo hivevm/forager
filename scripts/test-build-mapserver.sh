@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# Self-test of how MapServer runs on CI. Verifies: ADR-0027
+# Self-test of how MapServer runs on CI. Verifies: ADR-0027, ADR-0029
 #
 # The rules hold scripts/build-mapserver.sh and .github/workflows/noise.yml: the build script
 # reads the pin from scripts/fetch-msautotest.sh and names no tag or commit of its own, refuses to
-# run outside GitHub Actions, and neither file adds an apt source; the workflow runs on
+# run outside GitHub Actions, compiles the reader of the label cache outside the cached build, and
+# patches nothing of the checkout, and neither file adds an apt source; the workflow runs on
 # ubuntu-24.04 without a container, triggers on demand and on a push to the paths of the ADR only,
 # and keys the cache of the build on the two scripts alone. The real files must pass; each case
 # then breaks one rule in a copy and must fail with the line that names it.
@@ -67,6 +68,16 @@ check() {
   out="$(env -u GITHUB_ACTIONS PATH="$stubs:$PATH" bash "$build" 2>&1 </dev/null)"; rc=$?
   if ((rc != 2)) || [[ "$out" != *"runs on a GitHub-hosted runner only"* ]]; then
     problems+=("the build script does not refuse to run outside GitHub Actions")
+  fi
+  if ! grep -Eq '^cc .*"\$READER_SRC"' "$build" \
+    || ! grep -qx 'READER_SRC="\$ROOT/crates/cli/tests/conformance/mapserver_labels.c"' "$build"; then
+    problems+=("the build script does not compile crates/cli/tests/conformance/mapserver_labels.c")
+  fi
+  if grep -Eq '^READER="\$DIR' "$build" || ! grep -Eq '^READER="\$ROOT/target/' "$build"; then
+    problems+=("the build script compiles the reader inside the cached build")
+  fi
+  if grep -Eq '(^|[[:space:];|&])(patch|git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?[[:space:]]+(apply|am))[[:space:]]|sed[[:space:]]+(-[a-zA-Z]*i|--in-place)' "$build"; then
+    problems+=("the build script patches the checkout")
   fi
   local file
   for file in "$build" "$workflow"; do
@@ -178,6 +189,24 @@ expect "a cache key without the build script fails" "$b" "$w" 1 "keys the build'
 
 read -r b w <<< "$(copy second '' 's/^      - name: Build MapServer.*/      - uses: actions\/cache@v6\n        with:\n          path: target\/mapserver\n          key: other\n&/')"
 expect "a second cache of the build fails" "$b" "$w" 1 "keys the build's cache"
+
+read -r b w <<< "$(copy noreader '/^cc .*READER_SRC/d' '')"
+expect "a build without the reader fails" "$b" "$w" 1 "does not compile crates/cli"
+
+read -r b w <<< "$(copy inside 's/^READER="\$ROOT\/target\/mapserver-labels/READER="$DIR/' '')"
+expect "a reader inside the cached build fails" "$b" "$w" 1 "inside the cached build"
+
+read -r b w <<< "$(copy patch 's/^  cmake -S .*/  patch -d "$DIR\/src" -p1 < x.diff\n&/' '')"
+expect "a patch of the checkout fails" "$b" "$w" 1 "patches the checkout"
+
+read -r b w <<< "$(copy gitapply 's/^  cmake -S .*/  git -C "$DIR\/src" apply x.diff\n&/' '')"
+expect "git apply on the checkout fails" "$b" "$w" 1 "patches the checkout"
+
+read -r b w <<< "$(copy gitam 's/^  cmake -S .*/  git -C "$DIR\/src" am x.patch\n&/' '')"
+expect "git am on the checkout fails" "$b" "$w" 1 "patches the checkout"
+
+read -r b w <<< "$(copy sedi 's/^  cmake -S .*/  sed -i s\/a\/b\/ "$DIR\/src\/src\/mapdraw.c"\n&/' '')"
+expect "sed -i on the checkout fails" "$b" "$w" 1 "patches the checkout"
 
 echo "build-mapserver self-test: $passed passed, $failed failed."
 ((failed == 0))

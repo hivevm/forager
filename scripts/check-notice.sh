@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# Check: a Rust file whose logic follows MapServer's C code keeps MapServer's copyright and
-# permission notice, as the specification's licence constraint requires.
+# Check: a Rust or C file whose logic follows MapServer's C code keeps MapServer's copyright and
+# permission notice, as the specification's licence constraint requires; the C file is the reader
+# of the label cache, which follows src/apps/map2img.c (ADR-0029).
 #
-# A file under crates/ or fuzz/ that names a MapServer source file — src/map….c, .h, .l, or .y —
+# A Rust or C file under crates/ or fuzz/ that names a MapServer source file — src/map….c, .h, .l, or .y —
 # follows that code, and must hold the notice of those files: the copyright line of the Regents
 # of the University of Minnesota, the permission sentence, and the disclaimer to its last words.
 # Beyond this check's reach are a file that names only a MapServer function, one that names a
@@ -34,7 +35,8 @@ while IFS= read -r -d '' file; do
     echo "ERROR: ${file#"$ROOT"/} follows MapServer's source and does not hold its notice" >&2
     failures=$((failures + 1))
   fi
-done < <(find "$ROOT/crates" "$ROOT/fuzz" -name '*.rs' -not -path '*/target/*' -print0 2>/dev/null)
+done < <(find "$ROOT/crates" "$ROOT/fuzz" \( -name '*.rs' -o -name '*.c' \) -not -path '*/target/*' \
+  -print0 2>/dev/null)
 
 if ((failures)); then
   echo "Notice check FAILED ($failures of $checked files that follow MapServer's source)." >&2

@@ -16,13 +16,14 @@ use std::process::Command;
 
 use forager_adapter_epsg::EpsgTable;
 use forager_adapter_shapefile::ShapefileSource;
+use forager_engine::CachedLabel;
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
 use forager_render_agg::AggRenderer;
 use forager_style_ir::StyleDocument;
 use serde_json::Value;
 
-use crate::conformance::{Case, Category, Entry, Listed, Tally, Verdict};
+use crate::conformance::{Case, Category, Entry, Listed, Tally, Verdict, labels};
 use crate::metric::Metric;
 
 /// The cases of the suite and the list that scopes them, for the harness.
@@ -407,6 +408,7 @@ const CASES: &str = include_str!("conformance/cases.txt");
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_case_in_scope_holds_its_outcome() {
     // Verifies: G-6
+    // Verifies: G-10, for the text cases the list marks labels-hold
     let suite = suite();
     let cases = conformance::cases(&suite, conformance::DIRECTORIES);
     let entries = conformance::list(CASES).unwrap();
@@ -425,10 +427,12 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
     let mut tally = Tally::default();
     let mut failures = Vec::new();
     let mut broken = Vec::new();
+    let mut label_report = Vec::new();
     for case in &cases {
         let Some(Listed {
             entry: Entry::InScope { category, passes },
             blank,
+            labels_hold,
         }) = entries.get(&case.key())
         else {
             continue;
@@ -436,13 +440,49 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
         let dir = out.join(case.mapfile.trim_end_matches(".map"));
         let name = case.result.trim_end_matches(".png");
         let metric = metric_of(*category);
-        let outcome = render_and_compare(&suite, case, &loader, &resolver, metric, &dir, name);
+        let (outcome, labels) =
+            match render_and_compare(&suite, case, &loader, &resolver, metric, &dir, name) {
+                Ok((outcome, labels)) => (Ok(outcome), Some(labels)),
+                Err(why) => (Err(why), None),
+            };
+        if *category == Category::Text
+            && let Some(labels) = &labels
+        {
+            let named = format!("{} {}", case.mapfile, case.result);
+            match labels_against_record(case, labels) {
+                Ok(differences) => {
+                    let holds = differences.is_empty();
+                    if !holds {
+                        label_report.push(format!(
+                            "{named}: {} of its labels differ from MapServer's:\n  {}",
+                            differences.len(),
+                            differences.join("\n  ")
+                        ));
+                    }
+                    if holds != *labels_hold {
+                        let (found, marked) = if holds {
+                            ("all match MapServer's", "without labels-hold")
+                        } else {
+                            ("differ from MapServer's", "labels-hold")
+                        };
+                        failures.push(format!(
+                            "{named}: its labels {found}; the list marks it {marked}"
+                        ));
+                    }
+                }
+                // BOOTSTRAP: the records come from the first noise run; then a missing one breaks.
+                Err(why) => label_report.push(format!("{named}: {why}")),
+            }
+        }
         tally.count(*blank, matches!(outcome, Ok((true, _))));
         match conformance::verdict(case, *passes, outcome) {
             Some(Verdict::Broken(problem)) => broken.push(problem),
             Some(Verdict::Differs(failure)) => failures.push(failure),
             None => {}
         }
+    }
+    if !label_report.is_empty() {
+        println!("The labels of G-10:\n{}", label_report.join("\n"));
     }
     let in_scope = tally.in_scope;
     // The counts for scripts/check-fidelity.sh, which scripts/check-rust.sh runs after this test.
@@ -476,22 +516,31 @@ const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 /// over each category, goes to standard output and to the job summary; it names apart each case
 /// MapServer does not reproduce: `map2img` fails, writes no PNG, writes one of another size, or
 /// differs beyond its category's tolerance at every threshold of the set. The list moves such a
-/// case out of scope, so the test fails when one is in scope. The renderings stay in `noise/`
-/// under the test's target directory.
+/// case out of scope, so the test fails when one is in scope. For each text case the reader of
+/// MapServer's label cache (ADR-0029) renders it beside `map2img`, its image byte for byte the
+/// same, and its labels must equal the record beside the list; the test fails on a record that
+/// differs or is missing, and the reader's labels stay in `noise/labels/` to take the record from.
+/// The renderings stay in `noise/` under the test's target directory.
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test"]
 fn mapserver_renders_the_cases_in_scope_within_its_noise() {
+    // Verifies: ADR-0029
     let suite = suite();
     let map2img = PathBuf::from(
         std::env::var("FORAGER_MAP2IMG")
             .expect("FORAGER_MAP2IMG names map2img; .github/workflows/noise.yml sets it"),
     );
+    let reader = PathBuf::from(std::env::var("FORAGER_MAPSERVER_LABELS").expect(
+        "FORAGER_MAPSERVER_LABELS names the reader of the label cache; .github/workflows/noise.yml \
+         sets it",
+    ));
     let cases = conformance::cases(&suite, conformance::DIRECTORIES);
     let entries = conformance::list(CASES).unwrap();
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("noise");
     let _ = std::fs::remove_dir_all(&out);
     let mut measured = Vec::new();
     let mut unreproduced = Vec::new();
+    let mut records = Vec::new();
     for case in &cases {
         let Some(Entry::InScope { category, .. }) = entries.get(&case.key()).map(|l| &l.entry)
         else {
@@ -502,7 +551,14 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
             .join(case.mapfile.trim_end_matches(".map"))
             .join(&case.result);
         match measure(&suite, case, metric_of(*category), &map2img, &rendering) {
-            Ok(shares) => measured.push((name, *category, shares)),
+            Ok(shares) => {
+                if *category == Category::Text
+                    && let Err(why) = read_labels(&suite, case, &reader, &rendering, &out)
+                {
+                    records.push(format!("{name}: {why}"));
+                }
+                measured.push((name, *category, shares));
+            }
             Err(reason) => unreproduced.push(format!("{name}: {reason}")),
         }
     }
@@ -524,6 +580,64 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
         unreproduced.len(),
         unreproduced.join("\n")
     );
+    assert!(
+        records.is_empty(),
+        "{} text cases do not hold the record of MapServer's labels beside the list; the reader's \
+         labels are in {}:\n{}",
+        records.len(),
+        out.join("labels").display(),
+        records.join("\n")
+    );
+}
+
+/// Renders `case` with the reader of MapServer's label cache beside `map2img`'s `rendering`,
+/// holds the two images byte for byte equal, keeps the reader's labels in `out/labels/`, and
+/// holds them equal to the record beside the list; the error says what does not hold.
+fn read_labels(
+    suite: &Path,
+    case: &Case,
+    reader: &Path,
+    rendering: &Path,
+    out: &Path,
+) -> Result<(), String> {
+    let image = rendering.with_extension("reader.png");
+    let mapfile = suite.join(&case.mapfile);
+    let output = Command::new(reader)
+        .args(case.map2img_arguments(&image)?)
+        .current_dir(mapfile.parent().unwrap())
+        .output()
+        .map_err(|e| format!("the reader does not start: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "the reader fails, {}: {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+    let ours = std::fs::read(&image).map_err(|e| format!("the reader writes no image: {e}"))?;
+    let theirs = std::fs::read(rendering).map_err(|e| e.to_string())?;
+    if ours != theirs {
+        return Err("the reader's image differs from map2img's".to_owned());
+    }
+    let text = String::from_utf8(output.stdout)
+        .map_err(|_| "the reader's labels are not UTF-8".to_owned())?;
+    labels::read(&text).map_err(|e| format!("the reader's labels: {e}"))?;
+    let record = labels::record_path(case);
+    let relative = record
+        .strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/conformance/labels"))
+        .unwrap();
+    let kept = out.join("labels").join(relative);
+    std::fs::create_dir_all(kept.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(&kept, &text).map_err(|e| e.to_string())?;
+    match std::fs::read_to_string(&record) {
+        Ok(recorded) if recorded == text => Ok(()),
+        Ok(_) => Err(format!(
+            "MapServer's labels differ from {}",
+            record.display()
+        )),
+        Err(e) => Err(format!("{}: {e}", record.display())),
+    }
 }
 
 /// Runs `map2img` for `case` in its mapfile's directory, writing `rendering`, and compares the
@@ -744,8 +858,8 @@ fn blank_markers(suite: &Path, entries: &BTreeMap<(String, String), Listed>) -> 
 
 /// Renders `case` in-process and compares it with its reference by `metric`, its category's,
 /// leaving the rendering and a difference image in `dir` as `<name>.png` and `<name>.diff.png`
-/// when it fails. The outcome is whether it passes, and the comparison; an error is a case that
-/// cannot be rendered or compared, which fails.
+/// when it fails. The outcome is whether it passes, and the comparison, with the labels of the
+/// render; an error is a case that cannot be rendered or compared, which fails.
 fn render_and_compare(
     suite: &Path,
     case: &Case,
@@ -754,19 +868,30 @@ fn render_and_compare(
     metric: &Metric,
     dir: &Path,
     name: &str,
-) -> Result<(bool, String), String> {
+) -> Result<((bool, String), Vec<CachedLabel>), String> {
     let directory = &case.mapfile[..case.mapfile.find('/').unwrap()];
     let reference = suite.join(directory).join("expected").join(&case.result);
     let reference = std::fs::read(&reference)
         .map_err(|e| format!("its reference {}: {e}", reference.display()))
         .and_then(|bytes| metric::decode(&bytes).map_err(|e| format!("its reference: {e}")))?;
-    let rendering = render(case, loader, resolver)?;
+    let (rendering, labels) = render(case, loader, resolver)?;
     let comparison = metric::compare_and_keep(&rendering, &reference, metric, dir, name)
         .map_err(|e| format!("{}: {e}", dir.display()))?;
-    Ok((comparison.passes(), comparison.to_string()))
+    Ok(((comparison.passes(), comparison.to_string()), labels))
 }
 
-/// The rendering of `case`, the options of its `map2img` line applied to its style IR, its sources
+/// What differs between the labels of `case` Forager renders and MapServer's, as the record
+/// beside the list holds them (G-10, ADR-0029); an error is a record missing or unreadable.
+fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<String>, String> {
+    let path = labels::record_path(case);
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("its label record {}: {e}", path.display()))?;
+    let recorded =
+        labels::read(&text).map_err(|e| format!("its label record {}: {e}", path.display()))?;
+    Ok(labels::compare(rendered, &recorded))
+}
+
+/// The rendering of `case` and the labels of its cache, the options of its `map2img` line applied to its style IR, its sources
 /// bound as `forager render` binds them as far as a test can: the CLI's binding lives in its
 /// binary, which a test cannot call. As there, each local layer the engine reads is bound to the
 /// shapefile its `DATA` names, a layer whose shapefile does not open is left unbound, so that the
@@ -774,7 +899,11 @@ fn render_and_compare(
 /// files are read through the suite's loader without the CLI's read limit, each layer opens its
 /// shapefile anew instead of sharing it, a shapefile that does not open gives no diagnostic, and
 /// the projections resolve through the stand-in table of the G-1 test.
-fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, String> {
+fn render(
+    case: &Case,
+    loader: &Suite,
+    resolver: &StandIn,
+) -> Result<(RgbaImage, Vec<CachedLabel>), String> {
     let path = ResourcePath::new(&case.mapfile).map_err(|e| e.to_string())?;
     let options = case.options()?;
     let loaded = match conformance::image_type(&options) {
@@ -817,12 +946,13 @@ fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, 
         loader,
         AggRenderer::new(),
     ));
-    rendered.image.ok_or_else(|| {
+    let Some(image) = rendered.image else {
         let errors: Vec<_> = rendered
             .diagnostics
             .iter()
             .map(ToString::to_string)
             .collect();
-        format!("it renders no image: {}", errors.join("; "))
-    })
+        return Err(format!("it renders no image: {}", errors.join("; ")));
+    };
+    Ok((image, rendered.labels))
 }

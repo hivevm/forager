@@ -47,12 +47,30 @@ pub const MAX_FEATURES_PER_LAYER: usize = 1_000_000;
 /// MapServer's default `IMAGECOLOR`.
 const DEFAULT_BACKGROUND: Rgba = Rgba::opaque(255, 255, 255);
 
-/// The result of a render: the image unless the map could not be drawn at all, and the
-/// diagnostics, among them one for every layer skipped.
+/// The result of a render: the image unless the map could not be drawn at all, the diagnostics,
+/// among them one for every layer skipped, and the labels of its label cache.
 #[derive(Debug)]
 pub struct Rendered {
     pub image: Option<RgbaImage>,
     pub diagnostics: Vec<Diagnostic>,
+    /// Every label the label cache held, drawn or discarded, in the order `msDrawLabelCache`
+    /// walks them: from the highest priority down, and within a priority from the last added to
+    /// the first.
+    pub labels: Vec<CachedLabel>,
+}
+
+/// A label of a render's label cache.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CachedLabel {
+    /// From 1 to `MAX_PRIORITY` of `forager-label`.
+    pub priority: u8,
+    /// The index of the layer in the map, and of the class in the layer.
+    pub layer: usize,
+    pub class: usize,
+    pub text: String,
+    /// The box the label was drawn in, `[min x, min y, max x, max y]` in pixels, its buffer
+    /// included; `None` for a label the cache discarded.
+    pub drawn: Option<[f64; 4]>,
 }
 
 /// Renders `map` with `renderer`, reading each layer's features from the source bound to the
@@ -92,6 +110,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         return Rendered {
             image: None,
             diagnostics,
+            labels: Vec::new(),
         };
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
@@ -180,9 +199,10 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .await;
     }
     // The labels are drawn after every layer, as MapServer's label cache draws them.
-    labels.finish(&mut renderer, &mut diagnostics);
+    let labels = labels.finish(&mut renderer, &mut diagnostics);
     Rendered {
         image: Some(renderer.finish()),
+        labels,
         diagnostics,
     }
 }

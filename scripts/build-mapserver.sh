@@ -3,7 +3,10 @@
 # of G-6 (ADR-0027): from the commit scripts/fetch-msautotest.sh pins, which this script reads and
 # never names itself, with MapServer's default build options, SVG symbols through librsvg, and
 # curl, as MapServer's own CI builds the references, and the Ubuntu archive's packages below, into
-# target/mapserver/<commit>/, and prints the path of map2img. It adds no apt source. It runs on a
+# target/mapserver/<commit>/. It then compiles the reader of MapServer's label cache,
+# crates/cli/tests/conformance/mapserver_labels.c, against that build's unmodified library and
+# headers, outside the cached build, into target/mapserver-labels/<commit>/ (ADR-0029), and prints
+# the path of map2img and, on a second line, that of the reader. It adds no apt source. It runs on a
 # GitHub-hosted runner only, where .github/workflows/noise.yml calls it, and refuses anywhere else,
 # the dev container included.
 #
@@ -13,7 +16,7 @@
 # other than the archive is seen. A build already in target/ is kept, as the workflow restores it
 # from its cache; the packages are installed on every run, as map2img links them.
 #
-# Usage: bash scripts/build-mapserver.sh    (prints the path of map2img)
+# Usage: bash scripts/build-mapserver.sh    (prints the paths of map2img and of the reader)
 set -euo pipefail
 # A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
 # repository instead of the one it names (docs/CONVENTIONS.md).
@@ -93,4 +96,14 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   } >>"$GITHUB_STEP_SUMMARY"
 fi
 
+# The reader is compiled on every run, so that a change to it alone is measured; it links the
+# library map2img links, and finds it beside map2img at run time.
+READER_SRC="$ROOT/crates/cli/tests/conformance/mapserver_labels.c"
+READER="$ROOT/target/mapserver-labels/$COMMIT/mapserver_labels"
+mkdir -p "$(dirname "$READER")"
+# shellcheck disable=SC2046
+cc -O2 -o "$READER" "$READER_SRC" -I"$DIR/src/src" -I"$DIR/build" $(gdal-config --cflags) \
+  -L"$DIR/build" -lmapserver -Wl,-rpath,"$DIR/build" >&2
+
 echo "$MAP2IMG"
+echo "$READER"

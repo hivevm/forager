@@ -539,3 +539,97 @@ fn the_tally_counts_the_blank_cases_apart_as_the_fidelity_check_reads_them() {
         "in-scope 5\npassing 3\nblank 2\nblank-passing 1\n"
     );
 }
+
+#[test]
+fn the_list_marks_a_text_case_whose_labels_hold() {
+    let entries = list(
+        "renderers/a.map a.png text passes labels-hold
+         renderers/b.map b.png text fails
+",
+    )
+    .unwrap();
+    assert!(entries[&("renderers/a.map".to_owned(), "a.png".to_owned())].labels_hold);
+    assert!(!entries[&("renderers/b.map".to_owned(), "b.png".to_owned())].labels_hold);
+    let geometry = list("renderers/c.map c.png geometry passes labels-hold\n").unwrap_err();
+    assert!(
+        geometry.contains("line 1: `labels-hold` is no mark of a geometry case"),
+        "{geometry}"
+    );
+    let other = list("renderers/c.map c.png text passes hold\n").unwrap_err();
+    assert!(
+        other.contains("`hold` is no mark of a text case"),
+        "{other}"
+    );
+}
+
+#[test]
+fn the_readers_labels_are_read_with_their_escapes() {
+    let read = super::labels::read(
+        "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\\tby\\\\the sea\n1\t0\tplaces\t0\t0\t\tForager\n",
+    )
+    .unwrap();
+    assert_eq!(read.len(), 2);
+    assert_eq!(read[0].priority, 2);
+    assert_eq!(read[0].layer_name, "places");
+    assert_eq!(read[0].class, 1);
+    assert_eq!(read[0].drawn, Some([1.5, 2.0, 30.25, 14.0]));
+    assert_eq!(read[0].texts, ["Fen\tby\\the sea"]);
+    assert_eq!(read[1].drawn, None);
+    assert!(
+        super::labels::read("1\t0\tplaces\t0\t1\t\tFen\n")
+            .unwrap_err()
+            .contains("line 1")
+    );
+    assert!(
+        super::labels::read("1\t0\tplaces\n")
+            .unwrap_err()
+            .contains("too few fields")
+    );
+}
+
+#[test]
+fn labels_match_when_both_are_drawn_within_a_pixel_or_both_discarded() {
+    // Verifies: G-10
+    use forager_engine::CachedLabel;
+    let recorded = super::labels::read(
+        "1\t0\tp\t0\t1\t10 10 40 20\tFen\n1\t0\tp\t0\t0\t\tForager\n1\t0\tp\t0\t1\t50 10 60 20\tMoor\n1\t0\tp\t0\t1\t0 30 9 40\tLea\n",
+    )
+    .unwrap();
+    let ours = |text: &str, drawn: Option<[f64; 4]>| CachedLabel {
+        priority: 1,
+        layer: 0,
+        class: 0,
+        text: text.to_owned(),
+        drawn,
+    };
+    let matching = [
+        ours("Fen", Some([10.9, 9.1, 41.0, 20.5])),
+        ours("Forager", None),
+        ours("Moor", Some([50.0, 10.0, 60.0, 20.0])),
+        ours("Lea", Some([0.0, 30.0, 9.0, 40.0])),
+    ];
+    assert_eq!(
+        super::labels::compare(&matching, &recorded),
+        Vec::<String>::new()
+    );
+    let differing = [
+        ours("Fen", Some([11.5, 10.0, 40.0, 20.0])),
+        ours("Forager", Some([0.0, 0.0, 5.0, 5.0])),
+        ours("Moor", None),
+        ours("Heath", None),
+    ];
+    let differences = super::labels::compare(&differing, &recorded);
+    assert_eq!(
+        differences,
+        [
+            "label \"Fen\" of layer 0, class 0: MapServer draws it at [10.00 10.00 40.00 20.00], \
+             Forager 1.50 px off",
+            "label \"Forager\" of layer 0, class 0: Forager draws it at [0.00 0.00 5.00 5.00], \
+             MapServer discards it",
+            "label \"Heath\" of layer 0, class 0: only Forager caches it",
+            "label \"Lea\" of layer 0, class 0: only MapServer caches it",
+            "label \"Moor\" of layer 0, class 0: MapServer draws it at [50.00 10.00 60.00 20.00], \
+             Forager discards it",
+        ]
+    );
+}

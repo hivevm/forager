@@ -49,9 +49,11 @@ jobs:
       - name: Build MapServer at the pinned release
         id: mapserver
         # Assigned first, so that a failing build fails the step; an echo would hide its status.
+        # The script prints map2img's path and, on the second line, the label cache reader's.
         run: |
-          map2img="$(bash scripts/build-mapserver.sh)"
-          echo "map2img=$map2img" >> "$GITHUB_OUTPUT"
+          paths="$(bash scripts/build-mapserver.sh)"
+          echo "map2img=$(sed -n 1p <<< "$paths")" >> "$GITHUB_OUTPUT"
+          echo "labels=$(sed -n 2p <<< "$paths")" >> "$GITHUB_OUTPUT"
       - name: Install the toolchain and the cargo tools
         run: bash scripts/install-tools.sh
       # The path reaches the shell through the environment, not spliced into the script. The suite
@@ -59,6 +61,7 @@ jobs:
       - name: Measure MapServer's noise over the cases in scope
         env:
           FORAGER_MAP2IMG: ${{ steps.mapserver.outputs.map2img }}
+          FORAGER_MAPSERVER_LABELS: ${{ steps.mapserver.outputs.labels }}
         run: |
           suite="$(bash scripts/fetch-msautotest.sh)"
           python3 -m http.server 8000 --bind 127.0.0.1 --directory "$suite" >/dev/null 2>&1 &
