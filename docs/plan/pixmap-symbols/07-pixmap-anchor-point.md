@@ -13,7 +13,9 @@ computes for the first time:
   and its width the size over the image's height times its width (772–782).
 
 The engine's marker size of a style (today "a pixmap symbol, whose size is not computed yet") gives
-that size from the decoded image's dimensions; ticket 09 uses it under a label.
+that size from the decoded image's dimensions; ticket 10 uses it under a label. It lands after
+`docs/plan/revision-2026-10-31b/12-symbol-resolved-once.md`, which reworks the engine's marker size
+and its anchoring into one function each, so that the pixmap branch goes into those.
 
 ## Acceptance criteria
 
@@ -29,13 +31,16 @@ that size from the decoded image's dimensions; ticket 09 uses it under a label.
 
 ## Read first
 
-- [ADR-0015](../../adr/0015-agg-rust-rasterizer.md); `docs/semantics/symbol.md` (the anchor
-  point of a vector symbol, the golden path); the engine's anchoring of vector symbols and its
-  tests; the conventions on ported behaviour and stated values. Seam: the engine's render tests.
+- [ADR-0015](../../adr/0015-agg-rust-rasterizer.md),
+  [ADR-0037](../../adr/0037-c-number-reading-in-style-ir.md) (the `int` truncation of the size);
+  `docs/semantics/symbol.md` (the anchor point of a vector symbol, the golden path); the engine's
+  anchoring of vector symbols and its tests; the conventions on ported behaviour and stated values.
+  Seam: the engine's render tests.
 
 ## Blocked by
 
-- docs/plan/pixmap-symbols/03-pixmap-scaled-and-rotated.md
+- docs/plan/pixmap-symbols/04-pixmap-scaled-and-rotated.md
+- docs/plan/revision-2026-10-31b/12-symbol-resolved-once.md
 
 ## Mode
 
@@ -44,6 +49,6 @@ the engine's anchoring and marker size, undone by one revert. It touches nothing
 [ADR-0007](../../adr/0007-harness.md) keeps with the human: no resource limit, resource path, port,
 public interface, or style document format. Its branch counts against ADR-0007's cap of three open
 agent branches. A wrong result shows as a stated position or size that does not hold, and as
-`poly_geomtransform_anchor` failing in ticket 10; the tests citing the C prove it right. Stop: if
+`poly_geomtransform_anchor` failing in ticket 11; the tests citing the C prove it right. Stop: if
 the C contradicts this ticket, record where here and hand off; or after three attempts at a
 reference image that will not hold.

@@ -20,6 +20,28 @@ warns, so the load has no error (G-1). A path refused by the base context is a d
 `IMAGE` refuses one. `docs/semantics/style-symbol.md` and `symbol.md` say so, and drop the claim
 that MapServer fails the load where the file is missing, which holds for a URL only.
 
+**What changes, and the tests that pin today's behaviour.** Today a name no symbol carries warns
+`symbol-unknown` at load ("MapServer would read it as an image file, which is not yet supported")
+and is kept as a `SymbolRef::Name`, which the engine draws as a square
+(`crates/mapfile/src/translate/symbol.rs`, the name branch of `symbol`). After this ticket such a
+name warns nothing at load: it becomes an image symbol, and whether its file exists is known only
+when a render loads it, so the diagnostic moves from load time to draw time, as the warning of
+ticket 03 for a pixmap that does not load, naming the symbol and its path. `symbol-unknown` stays
+for an index past the symbols and for a name that starts with `http`, which keeps its warning at
+load. Two frontend tests pin the old behaviour and change with a reason each, in the pull request:
+
+- `an_unknown_symbol_is_a_warning` (`translate/symbol/tests.rs`, 92–96): `SYMBOL 'nowhere'` no
+  longer warns and refers to the appended pixmap `nowhere`; the index past the symbols keeps its
+  warning;
+- `an_index_past_the_symbols_or_a_quoted_number_warns_and_a_negative_one_is_refused` (390–402): a
+  quoted `'1'` is a name (`MS_STRING`), so it becomes the appended pixmap `1` without a warning, as
+  `msAddImageSymbol` makes it, and draws nothing at render with the warning of a file that does not
+  load.
+
+The engine's test of a style whose symbol is the name `x.png` (`crates/engine/src/symbol/tests.rs`,
+89) keeps a name the frontend writes only for a URL, and stays as a test of a document
+written by hand.
+
 ## Acceptance criteria
 
 - [ ] Given a mapfile with a symbol file and two styles naming `a.png` and `A.PNG` and one naming
@@ -30,6 +52,9 @@ that MapServer fails the load where the file is missing, which holds for a URL o
   absolute path, when loaded, then each is a diagnostic and no symbol is appended for it (Q-8).
 - [ ] Given a style naming `http://localhost:8000/x.png`, when loaded and rendered, then the load
   has a warning and no error, and the style draws nothing.
+- [ ] Given `SYMBOL 'nowhere'` and `SYMBOL '1'` with no such symbols, when loaded, then neither
+  warns, each refers to an appended pixmap of its name, and when rendered each style is not drawn
+  with the warning of a file that does not load, the rest of the map drawn.
 - [ ] Given every mapfile of the msautotest suite, when loaded, then none has an error it did not
   have before (G-1).
 - [ ] Given `point_pixmap`, when the harness renders it, then it stays `fails` and the list gives
@@ -48,7 +73,7 @@ that MapServer fails the load where the file is missing, which holds for a URL o
 
 ## Blocked by
 
-- docs/plan/pixmap-symbols/02-png-point-marker.md
+- docs/plan/pixmap-symbols/03-png-point-marker.md
 
 ## Mode
 

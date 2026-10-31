@@ -33,14 +33,15 @@ takes fonts.
 
 ## Existing behaviour
 
-- **Frontend.** `loadSymbol` (`src/mapsymbol.c`, 151–313) is ported: `TYPE PIXMAP`, `IMAGE`
-  resolved beside the file that holds the symbol (lines 239–250, `msBuildPath` against the
-  symbol's path), `TRANSPARENT` (291–296), `ANCHORPOINT` (159–170), and the load error for a
-  pixmap without an image (185–189). The style IR already carries a pixmap symbol's `IMAGE` as a
-  resource path inside the base context, not read at load, and its `TRANSPARENT`; no field of the
-  style document changes for a symbol of a symbol file. A style's `SYMBOL` naming no symbol is kept
-  as a name with the warning `symbol-unknown`. Pinned by the frontend's tests of symbols and by the
-  load of every msautotest mapfile (G-1).
+- **Frontend.** `loadSymbol` (`src/mapsymbol.c`, 151–313) is ported: `TYPE PIXMAP`, `IMAGE` resolved
+  beside the file that holds the symbol (lines 239–250, `msBuildPath` against the symbol's path),
+  `TRANSPARENT` (291–296), `ANCHORPOINT` (159–170), and the load error for a pixmap without an image
+  (185–189). The style IR already carries a pixmap symbol's `IMAGE` as a resource path inside the
+  base context, not read at load, and its `TRANSPARENT`; no field of the style document changes for
+  a symbol of a symbol file. A style's `SYMBOL` naming no symbol is kept as a name with the warning
+  `symbol-unknown`, pinned by the frontend's tests `an_unknown_symbol_is_a_warning` and
+  `an_index_past_the_symbols_or_a_quoted_number_warns_and_a_negative_one_is_refused`, which ticket
+  05 changes with a reason each. Pinned too by the load of every msautotest mapfile (G-1).
 - **Engine.** A point style whose symbol is a pixmap draws a square of its size (`Mark::Square`);
   the size of a pixmap marker under a label is "not computed yet", so a point label whose class's
   first style is a pixmap is not drawn (`label-not-drawn`); a pixmap counts in a hatch's clip
@@ -107,24 +108,29 @@ What MapServer does, read at the pin, `7515cccf` (`rel-8-6-6`):
   from the image (970–971). `msLoadMSRasterBufferFromFile` (`src/mapimageio.c`, 1140–1174) tells
   the format by the file's first bytes, not its name: the PNG signature (1157), `GIF` (1159),
   anything else "unsupported pixmap format" (1170). It is called when the symbol is first drawn or
-  measured (`preloadSymbol`, `src/maprendering.c`, 101–132; `msGetMarkerSize`, 736–738), never at
-  load.
+  measured (`preloadSymbol`, `src/maprendering.c`, 101–132; `msGetMarkerSize`, `src/mapsymbol.c`,
+  736–738), never at load.
 - **PNG.** `readPNG` (`src/mapimageio.c`, 629–733) expands a palette, grey below 8 bits, and a
   `tRNS` chunk; strips 16 bits to 8; turns grey into RGB; adds an opaque alpha where there is none;
   and premultiplies each pixel whose alpha is below 255 as `(c * a + 255) >> 8`, a transparent one
-  to 0 (714–729). What `png_set_strip_16` and `png_read_image` do with an interlaced or 16-bit image
-  is libpng's, and the ticket that decodes PNG reads it at the version the noise build links.
+  to 0 (714–729). What libpng does with a 16-bit or interlaced image under those calls is libpng's,
+  read by ticket 02.
 - **GIF.** `readGIF` (`src/mapimageio.c`, 876–1138) allocates the logical screen
   (`SWidth × SHeight`, 907–912), fills it opaque with the background colour, an index past the
   colour table taken as 0 (928–941); refuses a frame that does not fit the screen (977–986); draws
-  the first frame only, interlaced or not, and skips the rest (970–1088); takes the transparent
-  index of a graphic control extension (1102–1124); and draws a pixel transparent where its index
-  is the transparent one or lies past the colour table (1012–1023, 1048–1059). The colour table
-  is chosen (918) before any image descriptor is read; whether a frame's local table can win
-  there is giflib's, not read for this spec. A GIF pixel is opaque or transparent, so no
-  premultiplication changes it.
-- **`TRANSPARENT`** of a symbol is read and written (`loadSymbol` 291–296, `writeSymbol` 334) and
-  never used in drawing: no file under `src/` at the pin reads `transparentcolor` otherwise.
+  the first frame only and skips the rest (970–1091); and draws a pixel transparent where its
+  index is the transparent one or lies past the colour table (1012–1023, 1048–1059). Two quirks:
+  only the interlaced branch adds the frame's `Top` to its rows (989–995), so a frame that is not
+  interlaced is drawn from row 0 (1030–1032); and the transparent index is taken from byte 4 of a
+  graphic control extension (1105–1106) and of every continuation sub-block of any extension whose
+  byte 1 is odd (1120–1121), which for a looping GIF's `NETSCAPE2.0` sub-block of three bytes reads
+  past it, a question ticket 06 puts to the maintainer. The colour table is chosen (918) right
+  after giflib's `DGifOpenFileName`, which reads only the screen descriptor, so the global table
+  is used and a frame's local table never is; that is inferred from giflib, not read. A GIF pixel
+  is opaque or transparent, so no premultiplication changes it.
+- **`TRANSPARENT`** of a symbol is read, written, and copied (`loadSymbol` 291–296, `writeSymbol`
+  334, `msCopySymbol` 1007; `src/mapscale.c` 455 sets it for the scale bar's symbol) and never drawn
+  with: no drawing code under `src/` at the pin reads `transparentcolor`.
 - **At a point.** `msDrawMarkerSymbolInternal` (`src/maprendering.c`, 906–1010) draws a pixmap
   without a colour (930–933), after `msAdjustMarkerPos` (945–950), through
   `agg2RenderPixmapSymbol` (980–983); the AGG renderer has no image cache (`use_imagecache = 0`,
@@ -155,8 +161,13 @@ What MapServer does, read at the pin, `7515cccf` (`rel-8-6-6`):
   (478–480, 559–561).
 - **A polygon's fill.** `msDrawShadeSymbol` (`src/maprendering.c`, 733–898) needs no colour for a
   pixmap (753); its tile is the image's size times the scale, rounded with `MS_NINT` where the scale
-  is not 1, at least the `GAP` where there is one, at least 1 (853–872); `getTile` (222–386) draws
-  the image centred in a new transparent image of that size (234–243, 263–269; `agg2CreateImage`,
+  is not 1 and there is no positive `GAP` (858–859); with a positive `GAP` it is the larger of the
+  scaled gap and the image's size times the scale, taken in `double` and truncated by the assignment
+  to `int`, the gap rounded with `MS_NINT` first where the scale is not 1 (855–856, 863–864); at
+  least 1 (867–870). `getTile` (222–386) builds a tile only where its cache holds none of the same
+  symbol, size, scale, rotation, and colours (`searchTileCache`, 83–99; 230), a cache of at most six
+  per image (`MS_IMAGECACHESIZE`, `src/mapsymbol.h`, 51; `addTileCache`, 134–180), and draws the
+  image centred in a new transparent image of that size (234–243, 263–269; `agg2CreateImage`,
   `src/mapagg.cpp`, 864–867, clears an image without a background to no colour);
   `agg2RenderPolygonTiled` (`src/mapagg.cpp`, 529–547) fills the polygon even-odd, without gamma,
   with the tile repeated from the image's origin (`image_accessor_wrap`, `wrap_mode_repeat`,
@@ -190,9 +201,14 @@ What Forager does:
 - **Decoding.** PNG and GIF are told by their first bytes, as MapServer tells them, and decoded as
   `readPNG` and `readGIF` decode them, premultiplied as `readPNG` premultiplies; any other format,
   and an image that does not decode, is refused with a diagnostic naming the symbol and its path.
-  PNG with the `png` crate already in the workspace (ADR-0017); GIF with the pure-Rust `gif` crate
-  of image-rs (0.14.2, MIT OR Apache-2.0, on crates.io; its one required dependency, `weezl`, is MIT
-  OR Apache-2.0 too), chosen by an ADR (ADR-0012 leaves each crate to the ADR that first needs it).
+  The decoders live in `encode`, PNG with the `png` crate under ADR-0017, which already decides
+  decoding PNG there; GIF with the pure-Rust `gif` crate of image-rs (0.14.2, MIT OR Apache-2.0, on
+  crates.io; its one required dependency, `weezl`, is MIT OR Apache-2.0 too), chosen by an ADR
+  (ADR-0012 leaves each crate to the ADR that first needs it). The decoded image is a type of
+  `render`, so that the planned `symbolize` crate, synchronous, without I/O, and not allowed to
+  depend on `encode` (ADR-0009), can draw it; the engine decodes and hands it on.
+- **Tiles** of a polygon fill are built once per symbol, tile size, scale, and rotation in a render,
+  never per feature, at most six held, as MapServer's cache holds them.
 - **Drawing.** The display list gains an image placed at a point, blended unscaled at a whole pixel
   or resampled bilinearly under a transform, and a polygon filled with a repeated tile; the
   reference renderer draws them as `agg2RenderPixmapSymbol` and `agg2RenderPolygonTiled` do, with
@@ -202,14 +218,17 @@ What Forager does:
   its style undrawn and the layer warns, naming the symbol, its path, and why, and the rest of the
   map draws; never a substitute square. This deviates on purpose, by the maintainer's decision,
   from MapServer, which fails the layer and returns no map at all (`msDrawMap`, `src/mapdraw.c`,
-  508–519); `docs/semantics/symbol.md` records the deviation where ticket 02 updates it.
+  508–519); `docs/semantics/symbol.md` records the deviation where ticket 03 updates it. What
+  becomes of a label beside such a pixmap the decision does not cover; ticket 10 asks.
 - **An image named by a style** is appended by the frontend to the map's symbols as a pixmap or SVG
-  symbol in `classResolveSymbolNames`' order, its path resolved against the main mapfile's
-  directory inside the base context (Q-8). The style document's shape does not change: the symbol
-  is one more entry of the map's symbols. A name that starts with `http` is not fetched; the
-  style draws nothing and the frontend warns, so that the load still has no error (G-1). A symbol
-  bound to a property whose value names a file, which `bindStyle` (`src/maputil.c`, 145–153) adds
-  at draw time, stays as it is today.
+  symbol in `classResolveSymbolNames`' order, its path resolved against the main mapfile's directory
+  inside the base context (Q-8). The style document's shape does not change: the symbol is one more
+  entry of the map's symbols. The `symbol-unknown` warning such a name raises at load today goes:
+  whether its file exists is known at draw time, where a missing one warns. A name that starts with
+  `http` is not fetched; the style draws nothing and the frontend warns, so that the load still has
+  no error (G-1). `point_pixmap` stays `fails` with "a symbol fetched by URL". A symbol bound to a
+  property whose value names a file, which `bindStyle` (`src/maputil.c`, 145–153) adds at draw time,
+  stays as it is today.
 - **Hosts.** The CLI reads images from its base context through the loader it hands the engine.
   The browser bindings take them among the files a page passes, by the path the mapfile names; the
   binding of feature sources, which ADR-0038 decides, does not change.
@@ -220,14 +239,36 @@ What Forager does:
   - a symbol image is at most 4096 × 4096 pixels, read from its header before anything is
     allocated for it; a GIF's from its logical screen, which `readGIF` allocates
     (`src/mapimageio.c`, 907–912);
-  - a polygon fill's tile is at most 4096 × 4096 pixels, whatever `SIZE` asks;
-  - the decoded images one render holds come to at most 256 MiB;
-  - a pixmap file is read within the 32 MiB its load path already bounds, with no byte limit of
-    its own.
+  - a polygon fill's tile is at most 4096 × 4096 pixels, whatever its size or gap asks;
+  - the decoded images one render holds come to at most 256 MiB; whether the tiles held count
+    towards it is a question ticket 01 puts to the maintainer, proposing that they do;
+  - a pixmap file is read within 32 MiB, the bound of a font file (`MAX_FONT_BYTES`), apart from
+    the 16 MiB total of a mapfile and the files it names, with no byte limit of its own; the CLI
+    enforces it through the loader it hands the engine, the browser bindings do not, so the engine
+    checks it too.
+- **Already decided by the maintainer**, at the interrogation: `marker_anchorpoint` stays `fails`
+  with "TrueType symbols", its pixmap anchor point built and tested by ticket 07; `point_pixmap`
+  stays `fails` with "a symbol fetched by URL"; a pixmap that does not load leaves its style
+  undrawn with a warning; Q-9 gains the limits above.
+- **Order with other open tickets.**
+  - `docs/plan/revision-2026-10-25/05-png-in-the-harness.md` settles what ADR-0017 covers of
+    decoding with `png`; it goes before ticket 02, which decodes pixmaps in `encode` under ADR-0017,
+    so that ticket 02 reads ADR-0017 as it then stands.
+  - `docs/plan/revision-2026-10-31/01-symbolize-crate.md` moves the symbolization out of the engine
+    into a synchronous crate without I/O that may not depend on `encode`. It goes before ticket 03,
+    the first that draws a pixmap, so that the drawing is written once in its new home; ticket 03 is
+    blocked by it. It also fixes where the decoded image type lives: in `render`.
+  - `docs/plan/revision-2026-10-31b/12-symbol-resolved-once.md` reworks the engine's marker size and
+    anchor shift, which tickets 07 and 08 extend for a pixmap; it goes before both, which it blocks.
+  - Once ticket 04 lands, tickets 05 to 09 are on the frontier together and share files: 06 to 09
+    the symbolization of a style and the engine's image store, 05 and 06 the symbols' handling.
+    Worked in parallel, their branches collide; the frontier sensor does not report it yet
+    (`docs/plan/revision-2026-10-31c/08-frontier-tickets-sharing-a-file.md` would make it), so they
+    are claimed one at a time, or in pairs that share no file.
 
 ## Testing decisions
 
-- The engine is tested with Forager's own reference images at `crates/engine`'s render seam, with
+- The engine is tested with Forager's own reference images at the engine's render seam, with
   test images of Forager's own, each value the test states read from the C at the pin: the
   whole-pixel position of an unturned image, the square and transform of a turned one, the marker's
   size of `msGetMarkerSize`, the tile's size, the anchor's offset. The engine's tests of fonts are
@@ -258,36 +299,24 @@ What Forager does:
 - `TRANSPARENT` of a symbol, which MapServer does not draw with.
 - The legend and the scale bar.
 
-## Decisions of the maintainer
-
-The interrogation left four questions, which the maintainer answered:
-
-1. `marker_anchorpoint` stays `fails` with "TrueType symbols"; ticket 06 builds the pixmap's
-   anchor point and decides it by its own tests.
-2. `point_pixmap` stays `fails` with "a symbol fetched by URL"; Forager reads no URL (Q-8).
-3. A pixmap that does not load leaves its style undrawn with a warning, and the rest of the map
-   draws, a deliberate deviation from `msDrawMap` (`src/mapdraw.c`, 508–519).
-4. Q-9 gains the three limits above, drafted by ticket 01; a pixmap file keeps the 32 MiB of its
-   load path.
-
 ## ADR impact
 
 - **Binding:** ADR-0007 (the resource limits, the resolution of resource paths, the style document
   format, `deny.toml` and the licences stay with the maintainer, and the cap of open branches);
-  ADR-0009 (where decoding lives among the crates; the engine may depend on `encode`); ADR-0012
-  (the new crate); ADR-0015 and ADR-0034 (how the reference renderer resamples, tiles, and blends);
+  ADR-0009 (where decoding lives among the crates; the engine may depend on `encode`); ADR-0012 (the
+  new crate); ADR-0015 and ADR-0034 (how the reference renderer resamples, tiles, and blends);
   ADR-0017 (PNG decoding in `encode`); ADR-0028 (the resource loader each host hands the engine);
-  ADR-0035 (the label cache, for the marker under a label); ADR-0039 (the image's square and the
-  tiled polygon clipped to the image); ADR-0014, ADR-0020, and ADR-0036 (the `bbox` transform in
-  the style document). ADR-0038 binds the browser bindings' feature sources, which this spec leaves
-  as they are.
-- **ADR candidate A, before ticket 05:** the GIF crate and where pixmaps are decoded. ADR-0012
-  leaves the choice of each crate to the ADR that first needs it, and ADR-0017 decides PNG only, in
-  `encode`. Decoding both in `encode` keeps ADR-0009's crates; a crate of its own changes ADR-0009's
-  map.
+  ADR-0035 (the label cache, for the marker under a label); ADR-0037 (`MS_NINT` and C's `int`
+  conversions, as the image's position, the marker's size, and the tile's size use them); ADR-0039
+  (the image's square and the tiled polygon clipped to the image); ADR-0014, ADR-0020, and ADR-0036
+  (the `bbox` transform in the style document). ADR-0038 binds the browser bindings' feature
+  sources, which this spec leaves as they are.
+- **ADR candidate A, before ticket 06:** the GIF crate. ADR-0012 leaves the choice of each crate to
+  the ADR that first needs it. Where pixmaps are decoded is not left to it: ticket 02 decodes PNG
+  in `encode` under ADR-0017, and A puts the GIF decoder beside it, keeping ADR-0009's crates.
 - **ADR candidate B, before ticket 02:** how a decoded pixmap is held. Once per render per path,
   premultiplied as MapServer premultiplies, shared by reference by every display item that draws
   it rather than copied per placement, and how the display list carries an image and a tile. It
   constrains the display list and the memory a render holds under Q-9; the maintainer decides
   whether it is an ADR or an implementation decision under ADR-0009 and ADR-0015.
-- **A specification change:** the Q-9 limit of ticket 01.
+- **A specification change:** the Q-9 limits of ticket 01.

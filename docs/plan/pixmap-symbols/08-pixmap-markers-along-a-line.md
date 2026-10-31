@@ -11,7 +11,9 @@ them (447–464); skips one whose point lies outside the image grown by that wid
 (467–474); places one marker halfway along a line on which none fell, without `INITIALGAP`, where
 the line is longer than the marker is wide (524–595); and draws the image as at a point
 (478–480, 559–561). The engine's placement of vector symbols along a line already follows this
-function; it takes the pixmap's size and draws the image of tickets 02 and 03. The markers count
+function; it takes the pixmap's size and draws the image of tickets 03 and 04. It lands after
+`docs/plan/revision-2026-10-31b/12-symbol-resolved-once.md`, which makes the anchor shift of a
+marker along a line and at a point one function. The markers count
 towards the layer's marker budget (Q-9), as today.
 
 ## Acceptance criteria
@@ -31,7 +33,8 @@ towards the layer's marker budget (Q-9), as today.
 
 ## Blocked by
 
-- docs/plan/pixmap-symbols/03-pixmap-scaled-and-rotated.md
+- docs/plan/pixmap-symbols/04-pixmap-scaled-and-rotated.md
+- docs/plan/revision-2026-10-31b/12-symbol-resolved-once.md
 
 ## Mode
 

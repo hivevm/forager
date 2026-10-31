@@ -16,8 +16,8 @@ format: under [ADR-0036](../../adr/0036-a-change-of-meaning-is-a-major-format-ve
 maintainer decides whether a reader of an older minor, which drops the unknown value and draws the
 feature's own geometry, fails closed enough for a minor version, or whether the change is major
 ([ADR-0020](../../adr/0020-style-document-compatibility.md)). The schema under `schema/` moves with
-it. This ticket carries the `bbox` point of
-`docs/plan/geometry-styles/10-geomtransform-polaroffset-maxfeatures.md`, which no longer does.
+it. This ticket alone carries `bbox`;
+`docs/plan/geometry-styles/10-geomtransform-polaroffset-maxfeatures.md` points here.
 
 ## Acceptance criteria
 
@@ -44,7 +44,7 @@ it. This ticket carries the `bbox` point of
 
 ## Blocked by
 
-- docs/plan/pixmap-symbols/06-pixmap-anchor-point.md
+- docs/plan/pixmap-symbols/07-pixmap-anchor-point.md
 
 ## Mode
 
