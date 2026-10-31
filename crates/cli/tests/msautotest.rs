@@ -3,7 +3,8 @@
 //! severity error, or, where its only errors are the suite's init file named bare, in-process
 //! with a stand-in for that file. G-3: the style IR of every one survives YAML and JSON unchanged.
 //! The conformance harness: every case of `misc` and `renderers` that `conformance/cases.txt`
-//! puts in scope is rendered in-process and compared with its reference image.
+//! puts in scope is rendered in-process and compared with its reference image by the metric of
+//! its category.
 //! `scripts/check-rust.sh` fetches the suite with `scripts/fetch-msautotest.sh`, which holds the
 //! pin, and runs these tests with `FORAGER_MSAUTOTEST` naming it; `cargo test` alone skips them,
 //! as they need the network once.
@@ -21,7 +22,7 @@ use forager_render_agg::AggRenderer;
 use forager_style_ir::StyleDocument;
 use serde_json::Value;
 
-use crate::conformance::{Case, Entry, Listed, Tally, Verdict};
+use crate::conformance::{Case, Category, Entry, Listed, Tally, Verdict};
 use crate::metric::Metric;
 
 /// The cases of the suite and the list that scopes them, for the harness.
@@ -383,6 +384,22 @@ const GEOMETRY: Metric = Metric {
     tolerance: 0.001,
 };
 
+/// The metric of the category text, provisional: no criterion states its numbers yet, so the
+/// harness compares the category by those of geometry and symbols until the noise measurement over
+/// the text cases sets its own.
+const TEXT: Metric = Metric {
+    threshold: 16,
+    tolerance: 0.001,
+};
+
+/// The metric `category` is compared by.
+fn metric_of(category: Category) -> &'static Metric {
+    match category {
+        Category::Geometry => &GEOMETRY,
+        Category::Text => &TEXT,
+    }
+}
+
 /// The list of the cases of `misc` and `renderers`, in scope or out of it.
 const CASES: &str = include_str!("conformance/cases.txt");
 
@@ -410,7 +427,7 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
     let mut broken = Vec::new();
     for case in &cases {
         let Some(Listed {
-            entry: Entry::InScope { passes, .. },
+            entry: Entry::InScope { category, passes },
             blank,
         }) = entries.get(&case.key())
         else {
@@ -418,7 +435,8 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
         };
         let dir = out.join(case.mapfile.trim_end_matches(".map"));
         let name = case.result.trim_end_matches(".png");
-        let outcome = render_and_compare(&suite, case, &loader, &resolver, &dir, name);
+        let metric = metric_of(*category);
+        let outcome = render_and_compare(&suite, case, &loader, &resolver, metric, &dir, name);
         tally.count(*blank, matches!(outcome, Ok((true, _))));
         match conformance::verdict(case, *passes, outcome) {
             Some(Verdict::Broken(problem)) => broken.push(problem),
@@ -451,13 +469,13 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
 /// The thresholds the noise measurement reports the share of differing pixels at.
 const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 
-/// The noise of G-6: MapServer at the pinned release, which `.github/workflows/noise.yml` builds
-/// (ADR-0027), renders every case the list puts in scope as msautotest's test library runs it, and
-/// each rendering is compared with its reference at each of [`NOISE_THRESHOLDS`]. The report, a
-/// table of the share per case and threshold and its maximum over the category, goes to standard
-/// output and to the job summary; it names apart each case MapServer does not reproduce: `map2img`
-/// fails, writes no PNG, writes one of another size, or differs beyond the category's tolerance
-/// at every threshold of the set. The list moves such a case out of scope, so the test fails when
+/// The noise of G-6 and G-13: MapServer at the pinned release, which `.github/workflows/noise.yml`
+/// builds (ADR-0027), renders every case the list puts in scope, of every category, as
+/// msautotest's test library runs it, and each rendering is compared with its reference at each of
+/// [`NOISE_THRESHOLDS`]. The report, a table of the share per case and threshold and its maximum
+/// over each category, goes to standard output and to the job summary; it names apart each case
+/// MapServer does not reproduce: `map2img` fails, writes no PNG, writes one of another size, or
+/// differs beyond its category's tolerance at every threshold of the set. The list moves such a case out of scope, so the test fails when
 /// one is in scope. The renderings stay in `noise/` under the test's target directory.
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test"]
@@ -474,15 +492,16 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
     let mut measured = Vec::new();
     let mut unreproduced = Vec::new();
     for case in &cases {
-        let Some(Entry::InScope { .. }) = entries.get(&case.key()).map(|l| &l.entry) else {
+        let Some(Entry::InScope { category, .. }) = entries.get(&case.key()).map(|l| &l.entry)
+        else {
             continue;
         };
         let name = format!("{} {}", case.mapfile, case.result);
         let rendering = out
             .join(case.mapfile.trim_end_matches(".map"))
             .join(&case.result);
-        match measure(&suite, case, &map2img, &rendering) {
-            Ok(shares) => measured.push((name, shares)),
+        match measure(&suite, case, metric_of(*category), &map2img, &rendering) {
+            Ok(shares) => measured.push((name, *category, shares)),
             Err(reason) => unreproduced.push(format!("{name}: {reason}")),
         }
     }
@@ -508,10 +527,12 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
 
 /// Runs `map2img` for `case` in its mapfile's directory, writing `rendering`, and compares the
 /// rendering with the reference at each of [`NOISE_THRESHOLDS`]. The shares are in their order;
-/// the error is why MapServer does not reproduce the case at all.
+/// the error is why MapServer does not reproduce the case at all, by `category`, the metric of its
+/// category.
 fn measure(
     suite: &Path,
     case: &Case,
+    category: &Metric,
     map2img: &Path,
     rendering: &Path,
 ) -> Result<Vec<f64>, String> {
@@ -549,18 +570,19 @@ fn measure(
             comparison.share().ok_or_else(|| comparison.to_string())
         })
         .collect::<Result<Vec<_>, _>>()?;
-    reproduced(shares)
+    reproduced(shares, category)
 }
 
 /// The shares of a case MapServer reproduces: one at some threshold of the set within the
-/// category's tolerance. The shares fall as the threshold rises, so the last decides; the error
-/// names a case that differs beyond the tolerance at every threshold.
-fn reproduced(shares: Vec<f64>) -> Result<Vec<f64>, String> {
+/// tolerance of `category`, the metric of its category. The shares fall as the threshold rises,
+/// so the last decides; the error names a case that differs beyond the tolerance at every
+/// threshold.
+fn reproduced(shares: Vec<f64>, category: &Metric) -> Result<Vec<f64>, String> {
     match shares.last() {
-        Some(&share) if share > GEOMETRY.tolerance => Err(format!(
+        Some(&share) if share > category.tolerance => Err(format!(
             "{share:.6} of its pixels differ by more than {}, above the tolerance {}",
             NOISE_THRESHOLDS[NOISE_THRESHOLDS.len() - 1],
-            GEOMETRY.tolerance
+            category.tolerance
         )),
         _ => Ok(shares),
     }
@@ -568,14 +590,25 @@ fn reproduced(shares: Vec<f64>) -> Result<Vec<f64>, String> {
 
 #[test]
 fn a_case_beyond_the_tolerance_at_every_threshold_is_not_reproduced() {
+    let loose = Metric {
+        threshold: 16,
+        tolerance: 0.01,
+    };
+    for category in [&GEOMETRY, &TEXT, &loose] {
+        let mut shares = vec![0.5; NOISE_THRESHOLDS.len()];
+        assert!(
+            reproduced(shares.clone(), category)
+                .unwrap_err()
+                .contains(&format!("above the tolerance {}", category.tolerance))
+        );
+        *shares.last_mut().unwrap() = category.tolerance;
+        assert_eq!(reproduced(shares.clone(), category), Ok(shares));
+    }
+    // The tolerance is the case's category's: a share within the loose one is beyond the strict.
     let mut shares = vec![0.5; NOISE_THRESHOLDS.len()];
-    assert!(
-        reproduced(shares.clone())
-            .unwrap_err()
-            .contains("above the tolerance")
-    );
-    *shares.last_mut().unwrap() = GEOMETRY.tolerance;
-    assert_eq!(reproduced(shares.clone()), Ok(shares));
+    *shares.last_mut().unwrap() = 0.005;
+    assert!(reproduced(shares.clone(), &loose).is_ok());
+    assert!(reproduced(shares, &GEOMETRY).is_err());
 }
 
 #[test]
@@ -585,54 +618,77 @@ fn the_noise_report_holds_each_share_the_maximum_and_the_cases_not_reproduced() 
     let mut high = vec![0.0; NOISE_THRESHOLDS.len()];
     high[0] = 0.5;
     high[1] = 0.125;
+    let mut text = vec![0.0; NOISE_THRESHOLDS.len()];
+    text[0] = 0.75;
     let measured = [
-        ("a.map a.png".to_owned(), low),
-        ("b.map b.png".to_owned(), high),
+        ("a.map a.png".to_owned(), Category::Geometry, low),
+        ("b.map b.png".to_owned(), Category::Geometry, high),
+        ("t.map t.png".to_owned(), Category::Text, text),
     ];
     let report = noise_report(&measured, &["c.map c.png: map2img fails".to_owned()]);
     assert!(
-        report.contains("| a.map a.png | 0.250000 | 0.000000 |"),
+        report.contains("| a.map a.png | geometry and symbols | 0.250000 | 0.000000 |"),
         "{report}"
     );
     assert!(
-        report.contains("| **maximum, geometry and symbols** | **0.500000** | **0.125000** |"),
+        report.contains("| t.map t.png | text | 0.750000 | 0.000000 |"),
         "{report}"
     );
-    assert!(report.contains("2 of 3 cases measured."), "{report}");
+    // Each category's maximum is over its own cases alone.
+    assert!(
+        report.contains("| **maximum, geometry and symbols** | | **0.500000** | **0.125000** |"),
+        "{report}"
+    );
+    assert!(
+        report.contains("| **maximum, text** | | **0.750000** | **0.000000** |"),
+        "{report}"
+    );
+    assert!(report.contains("3 of 4 cases measured."), "{report}");
     assert!(
         report.contains("### Not reproduced by MapServer\n\n- c.map c.png: map2img fails\n"),
         "{report}"
     );
     let clean = noise_report(&measured, &[]);
     assert!(!clean.contains("Not reproduced"), "{clean}");
+    // A category with no case measured has no maximum.
+    let geometry = noise_report(&measured[..2], &[]);
+    assert!(!geometry.contains("maximum, text"), "{geometry}");
 }
 
-/// The report of the noise measurement, as Markdown: a row per measured case with its share of
-/// differing pixels at each of [`NOISE_THRESHOLDS`], the maximum of each column over the category,
-/// and the cases MapServer does not reproduce, each with its reason.
-fn noise_report(measured: &[(String, Vec<f64>)], unreproduced: &[String]) -> String {
-    let mut report = String::from("## MapServer's noise over the cases in scope\n\n| Case |");
+/// The report of the noise measurement, as Markdown: a row per measured case with its category and
+/// its share of differing pixels at each of [`NOISE_THRESHOLDS`], the maximum of each column over
+/// each category that has a case measured, and the cases MapServer does not reproduce, each with
+/// its reason.
+fn noise_report(measured: &[(String, Category, Vec<f64>)], unreproduced: &[String]) -> String {
+    let mut report =
+        String::from("## MapServer's noise over the cases in scope\n\n| Case | Category |");
     for threshold in NOISE_THRESHOLDS {
         report.push_str(&format!(" > {threshold} |"));
     }
-    report.push_str("\n| --- |");
+    report.push_str("\n| --- | --- |");
     report.push_str(&" ---: |".repeat(NOISE_THRESHOLDS.len()));
     report.push('\n');
-    let mut maximum = vec![0.0_f64; NOISE_THRESHOLDS.len()];
-    for (name, shares) in measured {
-        report.push_str(&format!("| {name} |"));
+    let mut maxima = BTreeMap::new();
+    for (name, category, shares) in measured {
+        report.push_str(&format!("| {name} | {} |", category.name()));
+        let maximum = maxima
+            .entry(*category)
+            .or_insert_with(|| vec![0.0_f64; NOISE_THRESHOLDS.len()]);
         for (max, share) in maximum.iter_mut().zip(shares) {
             *max = max.max(*share);
             report.push_str(&format!(" {share:.6} |"));
         }
         report.push('\n');
     }
-    report.push_str("| **maximum, geometry and symbols** |");
-    for max in &maximum {
-        report.push_str(&format!(" **{max:.6}** |"));
+    for (category, maximum) in &maxima {
+        report.push_str(&format!("| **maximum, {}** | |", category.name()));
+        for max in maximum {
+            report.push_str(&format!(" **{max:.6}** |"));
+        }
+        report.push('\n');
     }
     report.push_str(&format!(
-        "\n\n{} of {} cases measured.\n",
+        "\n{} of {} cases measured.\n",
         measured.len(),
         measured.len() + unreproduced.len()
     ));
@@ -646,8 +702,9 @@ fn noise_report(measured: &[(String, Vec<f64>)], unreproduced: &[String]) -> Str
 }
 
 /// The cases whose `blank` marker in the list disagrees with their reference: a case is blank
-/// when its reference is a PNG that [`metric::blank`] finds nearly one colour by [`GEOMETRY`],
-/// an image of its most common colour passing against it. A reference that is no PNG, or that
+/// when its reference is a PNG that [`metric::blank`] finds nearly one colour by the metric of its
+/// category, or by [`GEOMETRY`] when it is out of scope, an image of its most common colour
+/// passing against it. A reference that is no PNG, or that
 /// the suite does not hold, is not blank. A list line whose mapfile names no directory is
 /// reported, as it can name no reference.
 fn blank_markers(suite: &Path, entries: &BTreeMap<(String, String), Listed>) -> Vec<String> {
@@ -659,11 +716,15 @@ fn blank_markers(suite: &Path, entries: &BTreeMap<(String, String), Listed>) -> 
             ));
             continue;
         };
+        let metric = match listed.entry {
+            Entry::InScope { category, .. } => metric_of(category),
+            Entry::Out(_) => &GEOMETRY,
+        };
         let blank = result.ends_with(".png")
             && std::fs::read(suite.join(directory).join("expected").join(result))
                 .ok()
                 .and_then(|bytes| metric::decode(&bytes).ok())
-                .is_some_and(|reference| metric::blank(&reference, &GEOMETRY));
+                .is_some_and(|reference| metric::blank(&reference, metric));
         if blank != listed.blank {
             let is = if blank { "is" } else { "is not" };
             let marks = if listed.blank {
@@ -679,15 +740,16 @@ fn blank_markers(suite: &Path, entries: &BTreeMap<(String, String), Listed>) -> 
     problems
 }
 
-/// Renders `case` in-process and compares it with its reference by [`GEOMETRY`], leaving the
-/// rendering and a difference image in `dir` as `<name>.png` and `<name>.diff.png` when it
-/// fails. The outcome is whether it passes, and the comparison; an error is a case that cannot
+/// Renders `case` in-process and compares it with its reference by `metric`, its category's,
+/// leaving the rendering and a difference image in `dir` as `<name>.png` and `<name>.diff.png`
+/// when it fails. The outcome is whether it passes, and the comparison; an error is a case that cannot
 /// be rendered or compared, which fails.
 fn render_and_compare(
     suite: &Path,
     case: &Case,
     loader: &Suite,
     resolver: &StandIn,
+    metric: &Metric,
     dir: &Path,
     name: &str,
 ) -> Result<(bool, String), String> {
@@ -697,7 +759,7 @@ fn render_and_compare(
         .map_err(|e| format!("its reference {}: {e}", reference.display()))
         .and_then(|bytes| metric::decode(&bytes).map_err(|e| format!("its reference: {e}")))?;
     let rendering = render(case, loader, resolver)?;
-    let comparison = metric::compare_and_keep(&rendering, &reference, &GEOMETRY, dir, name)
+    let comparison = metric::compare_and_keep(&rendering, &reference, metric, dir, name)
         .map_err(|e| format!("{}: {e}", dir.display()))?;
     Ok((comparison.passes(), comparison.to_string()))
 }
@@ -705,9 +767,9 @@ fn render_and_compare(
 /// The rendering of `case`, the options of its `map2img` line applied to its style IR, its sources
 /// bound as `forager render` binds them as far as a test can: the CLI's binding lives in its
 /// binary, which a test cannot call. As there, each local layer the engine reads is bound to the
-/// shapefile its `DATA` names, and a layer whose shapefile does not open is left unbound, so that
-/// the engine skips it. Unlike there, the files are read through the suite's loader without the
-/// CLI's limit on a data file, each layer opens its shapefile anew instead of sharing it, a
+/// shapefile its `DATA` names, a layer whose shapefile does not open is left unbound, so that the
+/// engine skips it, and the fonts of the labels are read through the loader. Unlike there, the
+/// files are read through the suite's loader without the CLI's limits on a data file and a font, each layer opens its shapefile anew instead of sharing it, a
 /// shapefile that does not open gives no diagnostic, and the projections resolve through the
 /// stand-in table of the G-1 test.
 fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, String> {
@@ -747,7 +809,12 @@ fn render(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<RgbaImage, 
             sources.insert(name.clone(), shapefile);
         }
     }
-    let rendered = ready(forager_engine::render(&map, &sources, AggRenderer::new()));
+    let rendered = ready(forager_engine::render_with_files(
+        &map,
+        &sources,
+        loader,
+        AggRenderer::new(),
+    ));
     rendered.image.ok_or_else(|| {
         let errors: Vec<_> = rendered
             .diagnostics

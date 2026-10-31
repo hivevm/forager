@@ -405,17 +405,42 @@ pub struct Listed {
     pub blank: bool,
 }
 
-/// The categories of G-6 the list knows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The categories of G-6 and G-13 the list knows, each compared by a metric of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Category {
-    /// Geometry and symbols.
+    /// Geometry and symbols, of G-6.
     Geometry,
+    /// Text, of G-13: the cases whose labels are all of point features, in TrueType fonts and
+    /// Latin script.
+    Text,
 }
 
-/// Reads the list: a line `<mapfile> <result> [blank] geometry passes|fails` names a case in
-/// scope, a line `<mapfile> <result> [blank] out: <reason>` one out of scope, `blank` marking a
-/// case whose reference is blank; `#` begins a comment, and blank lines are ignored. A case named
-/// twice, a line of another form, or an empty reason is an error naming its line.
+impl Category {
+    /// Every category, in the order the noise report names them.
+    pub const ALL: [Category; 2] = [Category::Geometry, Category::Text];
+
+    /// The category's word in the list.
+    pub fn word(self) -> &'static str {
+        match self {
+            Category::Geometry => "geometry",
+            Category::Text => "text",
+        }
+    }
+
+    /// The category's name, as the specification names it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Category::Geometry => "geometry and symbols",
+            Category::Text => "text",
+        }
+    }
+}
+
+/// Reads the list: a line `<mapfile> <result> [blank] geometry|text passes|fails` names a case in
+/// scope with its category, a line `<mapfile> <result> [blank] out: <reason>` one out of scope,
+/// `blank` marking a case whose reference is blank; `#` begins a comment, and blank lines are
+/// ignored. A case named twice, a line of another form, or an empty reason is an error naming its
+/// line.
 pub fn list(text: &str) -> Result<BTreeMap<(String, String), Listed>, String> {
     let mut entries = BTreeMap::new();
     for (number, line) in text.lines().enumerate() {
@@ -444,9 +469,11 @@ pub fn list(text: &str) -> Result<BTreeMap<(String, String), Listed>, String> {
             Entry::Out(reason.to_owned())
         } else {
             let words: Vec<_> = rest.split_whitespace().collect();
-            let category = match words.first() {
-                Some(&"geometry") => Category::Geometry,
-                _ => return Err(format!("line {number}: `{rest}` is no category")),
+            let Some(category) = Category::ALL
+                .into_iter()
+                .find(|c| words.first() == Some(&c.word()))
+            else {
+                return Err(format!("line {number}: `{rest}` is no category"));
             };
             let passes = match words.get(1..) {
                 Some(["passes"]) => true,
