@@ -47,6 +47,15 @@ MAP
       LABEL
         TEXT "'[name]' \"Größe\" `2026-10-31` fromtext"
       END
+      LABEL
+        TEXT "`2026-10-31` [name] fé"
+      END
+      LABEL
+        TEXT "`` [name]"
+      END
+      LABEL
+        TEXT "'fü [name]"
+      END
     END
   END
 END
