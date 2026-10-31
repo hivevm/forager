@@ -21,8 +21,8 @@ page passes in. The host hands the mapfile frontend a resource loader rooted at 
 and a projection resolver; the frontend returns a style document and diagnostics. To render, the
 host binds a feature source to each layer by the layer's name, which a layer that holds its
 features inline does not need, and hands the engine a renderer;
-the engine returns an RGBA image and diagnostics, and the host encodes it or hands it to the
-page.
+the engine returns an RGBA image, diagnostics, and the labels of its label cache, and the host
+encodes the image or hands it to the page.
 
 ## Building blocks
 
@@ -57,10 +57,13 @@ golden path and the test pattern an agent copies from are named here.
   a path, read through the resource loader against the same directory within the same bounds
   (`init_file.rs`, [ADR-0023](adr/0023-projection-resolver-and-init-files.md)), and the
   translation into the style IR (`translate/`, a module per block it reads: symbols, font set,
-  labels, styles, projections, inline features), which reports every keyword it does not carry
-  over, reads the WKT of an inline feature with a reader of its own, bounded in nesting (`wkt.rs`,
+  labels, styles, projections, the output format's transparency, inline features), which reports
+  every keyword it does not carry over, reads the WKT of an inline feature with a reader of its
+  own, bounded in nesting (`wkt.rs`,
   [ADR-0033](adr/0033-inline-features-in-the-style-ir.md)), translates
-  MapServer's expressions with their typing into the CQL2 tree (`expression.rs`), and resolves
+  MapServer's expressions with their typing into the CQL2 tree and a plain `TEXT`'s bindings into
+  a concatenation, both read by one scanner of the expression rules of MapServer's lexer
+  (`expression.rs`), and resolves
   every other `init=` through the host's projection resolver. A load reports at most a thousand
   diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
   carries means is described per parameter under `docs/semantics/`.
@@ -76,7 +79,8 @@ golden path and the test pattern an agent copies from are named here.
   in memory of its own over them, which reports a bound source as not read (`inline.rs`,
   ADR-0033), draws each feature that passes the layer's
   filter with the first class whose expression matches it, its styles' bound and computed
-  properties bound to it (`classes.rs`), and turns each feature and style into display items
+  properties bound to it and every style and label scaled by the map's `RESOLUTION` over its
+  `DEFRESOLUTION` (`classes.rs`), and turns each feature and style into display items
   by the layer's render mode. A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer
   ([ADR-0025](adr/0025-source-reports-skipped-records.md)); the fonts a label names it loads once
@@ -84,16 +88,21 @@ golden path and the test pattern an agent copies from are named here.
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0028): it holds
   each label as its glyphs' indices and its point, draws each glyph once per font and size, and
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
-  diagnostic. The symbolization of a style, which ADR-0009's crate map gives a crate `symbolize`
-  of its own that does not exist yet, lives here too: a style's dashes (`draw.rs`), its bounds
-  and MapServer's constants they bound by, one function per MapServer function (`bounds.rs`), its
-  vector and ellipse symbols (`symbol.rs`), hatches (`hatch.rs`), symbols along a line
+  diagnostic. A label takes its text from the label, the class, the `LABELITEM`, or last its
+  inline feature's own `TEXT` (`inline.rs`). It reports every label of its cache in
+  `Rendered.labels`, in the order the cache walks them, with the box it was drawn in or none
+  where it was discarded. The symbolization of a style, which ADR-0009's crate map gives a crate
+  `symbolize` of its own that does not exist yet, lives here too: a line layer's passes, a line's
+  dashes, a polygon's fill through MapServer's default gamma, and the canvas a layer draws on
+  (`draw.rs`), a style's width and size bounds, one function per site of MapServer's that bounds
+  them, with the constants they bound by (`bounds.rs`), its vector and ellipse symbols
+  (`symbol.rs`), hatches and the clip of a hatched polygon (`hatch.rs`), symbols along a line
   (`line_marker.rs`), line offsets (`offset.rs`), and the style's `GEOMTRANSFORM` and
   `POLAROFFSET` (`geom_transform.rs`). It is the one core crate
   that awaits the ports. Every host binds its sources to the layers by name through the engine's
   `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
-  way for each. A line style's symbol with a `GAP` it places along the line, the markers of one
-  layer bounded with a diagnostic (Q-9).
+  way for each. A line style's symbol with a `GAP` it places along the line; those markers and the
+  ones a `GEOMTRANSFORM` places share one budget per layer, bounded with a diagnostic (Q-9).
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
   FreeType's arithmetic, laid out by their advances, wrapped and aligned line by line, and turned
@@ -102,13 +111,16 @@ golden path and the test pattern an agent copies from are named here.
   labels MapServer's label cache draws, by priority, collisions with the labels drawn and the
   markers cached, the image's edge, and `MINDISTANCE`, each test bounded by a grid over the image
   (`cache.rs`). It is the one crate that depends on skrifa, and does no I/O (ADR-0028).
-- **`render`** — the display list, the renderer trait, and the RGBA image; the cost model that
+- **`render`** — the display list, its fills and hatches each with the gamma the engine gives
+  them or none, the renderer trait, and the RGBA image; the cost model that
   bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0032, `hatch.rs`); the one segment
-  clip and the margin past the image (`clip.rs`), which the bound measures a hatch's lines with
-  and `render-agg` clips them with; and the reach past the image a glyph's point may have
-  (`MAX_GLYPH_REACH`).
+  clip, the crossing of an edge, the width a stroke is drawn at, and the margin past the image
+  (`clip.rs`), which the bound measures a hatch's lines with and `render-agg` clips every path
+  with; and the reach past the image a glyph's point may have (`MAX_GLYPH_REACH`).
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
-  before rasterizing, its polylines by the segment clip of `render`, blends premultiplied colours
+  before rasterizing, its polylines by the segment clip of `render` and its rings by
+  Sutherland–Hodgman on `render`'s crossing of an edge, fills through the gamma it is given,
+  blends premultiplied colours
   in a pixel format of its own as MapServer's AGG 2.4 does, draws a layer with an opacity into an
   image of its own and lays it over, fills glyphs as MapServer's AGG renderer does, and is the one
   crate that may use `unsafe` ([ADR-0015](adr/0015-agg-rust-rasterizer.md)); it cuts a hatch from
@@ -165,43 +177,44 @@ the product's build, and `scripts/check-rust.sh` lints it on every push. Beside 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
 pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles, fonts,
 and symbol images the cases of `misc` and `renderers` read, and the non-cairo PNG references of
-those two directories, cached in CI, never in the repository.
-`scripts/check-rust.sh` loads every mapfile of it through the CLI on every push (G-1), with the
-suite's directory as the base context and a stand-in table for the EPSG codes beyond the built-in
-ones, and round-trips the style IR of each through YAML and JSON (G-3);
-`crates/cli/tests/msautotest.rs` names the files it skips with a reason each, and loads the one
-mapfile that names the suite's init file bare in-process with a stand-in for it. Its module
-`metric/` compares a rendering with a reference image as RGBA buffers, decoding the reference by
-the `png` crate whatever its colour type, and writes the rendering and a difference image when
-a case fails.
-Beside them, `.github/workflows/noise.yml` measures MapServer's own noise against the same
-references: `scripts/build-mapserver.sh` builds `map2img` from the pinned commit on the runner
-([ADR-0027](adr/0027-mapserver-built-from-the-pin.md)), and the harness's ignored test
-`mapserver_renders_the_cases_in_scope_within_its_noise` runs it over the cases in scope and
-reports the share of differing pixels per case at each threshold of a set, and its maximum over
-each category.
-The conformance harness there reads the cases of `misc` and `renderers`, their `RUN_PARMS` lines,
-in its module `conformance/`, whose list `cases.txt` names each in scope with its category and
-expected outcome, passing or failing, or out of scope with its reason, and marks those whose
-reference is blank; it renders each case in scope in-process through the CLI's library, which binds
-its shapefiles and reads the fonts of its labels as `forager render` does, with the suite's
-directory as the base context, compares it by the metric of its category, geometry and symbols or
-text, and holds its outcome, leaving the renderings of failing cases under Cargo's
-`target/tmp/msautotest/`. It counts the cases in scope and those that pass, the blank
-ones apart, and `scripts/check-fidelity.sh` holds the share of passing cases without a blank
-reference against that of the last release tag `v<semver>` in the record
+those two directories, cached in CI, never in the repository. `scripts/check-rust.sh` loads every
+mapfile of it through the CLI on every push (G-1), with the suite's directory as the base context
+and a stand-in table for the EPSG codes beyond the built-in ones, and round-trips the style IR of
+each through YAML and JSON (G-3); `crates/cli/tests/msautotest.rs` names the files it skips with a
+reason each, and loads the one mapfile that names the suite's init file bare in-process with a
+stand-in for it. Its module `metric/` compares a rendering with a reference image as RGBA buffers,
+decoding the reference by the `png` crate whatever its colour type, and writes the rendering and a
+difference image when a case fails. Beside them, `.github/workflows/noise.yml` measures MapServer's
+own noise against the same references: `scripts/build-mapserver.sh` builds `map2img` from the pinned
+commit on the runner ([ADR-0027](adr/0027-mapserver-built-from-the-pin.md)), and the harness's
+ignored test `mapserver_renders_the_cases_in_scope_within_its_noise` runs it over the cases in scope
+and reports the share of differing pixels per case at each threshold of a set, and its maximum over
+each category. The conformance harness there reads the cases of `misc` and `renderers`, their
+`RUN_PARMS` lines, in its module `conformance/`, whose list `cases.txt` names each in scope with its
+category and expected outcome, passing or failing, or out of scope with its reason, and marks those
+whose reference is blank; it renders each case in scope in-process: the mapfile loads through the
+harness's own loader of the suite, with the stand-in EPSG table and the case's `-i` applied, and the
+CLI's library binds its shapefiles and reads the fonts of its labels as `forager render` does, with
+the suite's directory as the base context; it compares the rendering by the metric of its category,
+geometry and symbols or text, and holds its outcome, leaving the renderings of failing cases under
+Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that pass, the blank ones
+apart, and `scripts/check-fidelity.sh` holds the share of passing cases without a blank reference
+against that of the last release tag `v<semver>` in the record
 `crates/cli/tests/conformance/fidelity.txt`, to which each release adds its line (Q-4). For each
 text case it compares the labels the engine reports in its `Rendered` with MapServer's, recorded
 under `conformance/labels/`, and holds the list's mark `labels-hold` of the cases whose labels all
-match (G-10); the noise measurement takes that record from MapServer's label cache with the C
-reader `conformance/mapserver_labels.c`, which `scripts/build-mapserver.sh` compiles against the
-pinned build (ADR-0029).
+match (G-10). The noise measurement runs, for each text case, the C reader
+`conformance/mapserver_labels.c` beside `map2img`, which `scripts/build-mapserver.sh` compiles
+against the pinned build (ADR-0029); it holds the reader's image byte for byte equal to `map2img`'s
+and fails when the labels the reader takes from MapServer's label cache differ from the record, and
+keeps them in the run's artifact, from which a record is taken again.
 
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).
 
 **Golden path:** `forager read`, from the CLI's argument through the file loader and the
-frontend's `load` to the style document — `crates/cli/src/main.rs`, `crates/mapfile/src/lib.rs`.
+frontend's `load` to the style document — `crates/cli/src/main.rs`, `crates/cli/src/files.rs`,
+`crates/mapfile/src/lib.rs`.
 **Test pattern:** behaviour is tested at the highest seam that decides it — the frontend's `load`
 with files in memory (`crates/mapfile/src/tests.rs`, and beside each module of the translation
 that it tests), the binary as a process with fixtures (`crates/cli/tests/read.rs`) — each test
@@ -212,26 +225,26 @@ naming the goal or ADR it verifies with `Verifies:`.
 The few paths worth following end to end, such as a request, a job, or a build, and where state
 lives between them. Only what a newcomer would otherwise reconstruct from code.
 
-`forager read <mapfile>`: the CLI canonicalizes the mapfile's path and roots a file loader at its
-directory. The frontend reads the mapfile through the loader, lexes it, and splices in each
-`INCLUDE`'s tokens, resolved against that directory as MapServer resolves them. The parser builds
-the `MAP` block; the symbol file, the font set, and the init files it names are read next, through
-the same loader and within the same size bound. The translation then walks the block into the
-style IR, resolving each `init=` from an init file or through the CLI's EPSG table, and adds a
-warning for each keyword not carried over. With no error, the CLI prints the style document;
-diagnostics go to standard error. No state outlives the call.
+`forager read <mapfile>`: the CLI canonicalizes the mapfile's path and roots a file loader at the
+base context, its directory or the one `--base` names. The frontend reads the mapfile through the
+loader, lexes it, and splices in each `INCLUDE`'s tokens, resolved against that directory as
+MapServer resolves them. The parser builds the `MAP` block; the symbol file, the font set, and the
+init files it names are read next, through the same loader and within the same size bound. The
+translation then walks the block into the style IR, resolving each `init=` from an init file or
+through the CLI's EPSG table, and adds a warning for each keyword not carried over. With no error,
+the CLI prints the style document; diagnostics go to standard error. No state outlives the call.
 
-`forager render <mapfile> --source <layer>=<file> -o <png>` loads the mapfile the same way, binds
-each local layer the engine draws and whose shapefile the base context holds to the shapefile
-adapter, opening each shapefile once for all the layers that name it, parses the
-GeoJSON file of each name a layer carries into a source bound to that layer instead, and runs the
-engine with the agg-rust renderer.
-For each layer that is ON or DEFAULT, in order, the engine queries the source with the fitted
-extent and draws its features in the styles of the first class: a point or polygon layer each
-feature in every style before the next feature, a line layer style by style over all its
-features, with each style's outline in a pass before the style, as MapServer's line layers do.
-The labels of point layers are placed by the label cache and drawn after the last layer. The image
-is encoded as PNG.
+`forager render <mapfile> --source <layer>=<file> -o <png>` loads the mapfile the same way and hands
+it to the binding of the CLI's library (`render` in `src/lib.rs`), which binds each local layer the
+engine draws and whose shapefile the base context holds to the shapefile adapter, opening each
+shapefile once for all the layers that name it, parses the GeoJSON file of each name a layer carries
+into a source bound to that layer instead, reads the fonts its labels name from the base context,
+and runs the engine with the agg-rust renderer. For each layer that is ON or DEFAULT, in order, the
+engine queries the source with the fitted extent and draws its features in the styles of the first
+class whose expression matches: a point or polygon layer each feature in every style before the next
+feature, a line layer style by style over all its features, with each style's outline in a pass
+before the style, as MapServer's line layers do. The labels of point layers are placed by the label
+cache and drawn after the last layer. The image is encoded as PNG.
 
 In the browser, the page calls the bundle's `render`, or `renderWith`, with the mapfile text, a JSON
 object of GeoJSON by layer name, an optional viewport, and the files the mapfile names. The bindings

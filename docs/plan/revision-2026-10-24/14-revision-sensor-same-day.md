@@ -7,7 +7,10 @@
 the number alone does not reset it. A second revision on the same day cannot move the line: it
 already reads that date. This revision of `style-document-versions` ran on 2026-10-24, the day
 of the revision after the browser tracer (`73be508`), and after it the sensor still reports 27
-changes and DUE, counting the work this revision covered.
+changes and DUE, counting the work this revision covered. It happened again on 2026-10-31: the
+second revision of that day (`docs/plan/revision-2026-10-31b/`) found the line already reading
+2026-10-31, the sensor anchored on the first revision's commit `7273150`, and after its own commit
+the sensor still reports the 26 changes it covered, and DUE.
 
 The line, or the sensor, distinguishes the revision that ran from the one before it on the same
 day — for example a date with a time, or the sensor taking the youngest commit that adds the line

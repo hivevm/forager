@@ -6,9 +6,8 @@ The review of #75 found the header of `scripts/fetch-msautotest.sh` with one com
 than 200 columns (fixed in d541a0c). Check 15 of `scripts/check-docs.sh` holds Markdown prose to
 100 columns and `rustfmt` holds Rust code, but nothing holds the comments of shell scripts, where
 the checks state their rules. `scripts/check-shell.sh` also refuses comment lines past 100
-columns in the files it lints, a line that cannot break (a URL) exempt as in check 15. Ten lines
-exceed it today: one in `scripts/check-notice.sh`, the project's own, and nine in files the
-template ships: `.githooks/pre-commit`, `scripts/check-docs.sh`,
+columns in the files it lints, a line that cannot break (a URL) exempt as in check 15. Nine lines
+exceed it today, all in files the template ships: `.githooks/pre-commit`, `scripts/check-docs.sh`,
 `scripts/test-check-traceability.sh`, `scripts/test-git-hooks.sh`,
 `scripts/test-sensor-action-refs.sh`. Since those files and
 `check-shell.sh` are the template's ([ADR-0005](../../adr/0005-template-releases.md)), the

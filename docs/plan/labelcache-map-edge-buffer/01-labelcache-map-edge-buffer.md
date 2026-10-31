@@ -21,13 +21,17 @@ The style IR carries the map's edge buffer; the engine hands it to the label cac
 - [ ] Given a gutter and a turned label whose box crosses it but whose corners do not, then it
       is drawn as `labelInImage` decides.
 - [ ] Given a style document of an earlier version, then it loads as before (ADR-0020).
+- [ ] Given `crates/label/tests/cache_pairwise.rs`, whose reference of MapServer's walk has no
+      gutter, when the gutter is built, then the reference takes it too and the inputs draw
+      gutters of 0 and above.
 
 ## Read first
 
 - ADR-0007 (the style document format stays with the maintainer), ADR-0020, ADR-0028.
 - MapServer at the pin: `msDrawLabelCache`, src/mapdraw.c (the metadata read), `labelInImage`
   and `msTestLabelCacheCollisions`, src/maplabel.c.
-- The label cache of the label crate and its tests of the image's edge.
+- The label cache of the label crate, its tests of the image's edge, and its pairwise reference
+  `crates/label/tests/cache_pairwise.rs` (ADR-0035).
 - The msautotest case that sets it: renderers/multilabel-leader.map.
 
 ## Blocked by

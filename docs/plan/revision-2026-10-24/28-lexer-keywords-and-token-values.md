@@ -15,6 +15,15 @@ frontend does not follow:
   `DEFAULT`/`MILES`/`CENTER` are `butt`; for a label, `ALIGN on` is left and `SIZE dd` is tiny;
   in `SYMBOL`, `TYPE FALSE`/`OFF` is TrueType (`MS_TRUETYPE` is 0, `mapserver.h:583`). The
   frontend's `choice` aliases only `TRUE`/`ON` and `FALSE`/`OFF`.
+- **A number token is read as `atof` reads it.**
+  [ADR-0037](../../adr/0037-c-number-reading-in-style-ir.md) leaves the lexer's reading of a
+  number token to this ticket. The lexer (`number_len` and the `invalid-number` refusal in
+  `crates/mapfile/src/lexer.rs`) refuses `.`, which MapServer reads as 0, with a reason, that JSON
+  cannot carry a non-finite number, which holds for `1e999` and not for `.`; the expression
+  scanner's own `number_len` (`crates/mapfile/src/expression.rs`) reads the same rule of
+  `src/maplexer.l` over bytes and takes `.` as 0, so `EXTENT . 0 1 1` is refused where `([a] = .)`
+  reads. Read the number rule once for both, and `.` as MapServer's `getDouble` does, read at the
+  pin.
 
 The lexer knows which bare words are keywords and their token values; a string read refuses a
 keyword, and a choice accepts every token of the chosen value, as MapServer does. Where
@@ -27,6 +36,9 @@ ticket follows what it yields and says so.
   load error MapServer's loader gives, and quoted they load as before.
 - [ ] Given `LINEJOIN off`, `LINECAP polygon`, `ALIGN on`, when each loads, then it reads as
   MapServer reads it, a test per token value.
+- [ ] Given `EXTENT . 0 1 1` and `([a] = .)`, when each loads, then `.` reads as MapServer's
+  `getDouble` and its expression lexer read it, and one function of `crates/mapfile` measures a
+  number token for both.
 - [ ] Given the msautotest corpus, when G-1 runs, then every mapfile still loads.
 
 ## Read first

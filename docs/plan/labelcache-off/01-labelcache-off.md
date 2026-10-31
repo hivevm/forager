@@ -23,6 +23,10 @@ when it is off, and adds them to the label cache otherwise.
       the polygons cover its labels.
 - [ ] Given such a layer beside one whose labels are cached, then the cached labels are not tested
       against the labels drawn at once, as `msTestLabelCacheCollisions` knows only the cache.
+- [ ] Given such a layer, when rendered, then `Rendered.labels`, which reports the label cache's
+      members for the comparison of G-10, does not list its labels; the G-10 comparison of a case
+      with such a layer says that those labels are not compared, as the reader of MapServer's
+      cache (`crates/cli/tests/conformance/mapserver_labels.c`) does not see them either.
 - [ ] Given a style document of an earlier version, then it loads as before (ADR-0020).
 
 ## Read first

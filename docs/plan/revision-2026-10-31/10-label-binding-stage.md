@@ -2,7 +2,7 @@
 
 ## What to build
 
-About 400 of the 955 lines of `crates/engine/src/labels.rs` are MapServer's `bindLabel` (`Prop`,
+About 400 of the 1,002 lines of `crates/engine/src/labels.rs` are MapServer's `bindLabel` (`Prop`,
 `Fixed`, `BoundLabel`, `bind`, `bound_integer`, `bound_position`, `bound_align`), which does what
 `classes::Binder` does for `bindStyle` with defaults, number reading, and colour reading of its own.
 Move it into a module of its own sharing one port of MapServer's `bind*Attribute` with `classes.rs`,

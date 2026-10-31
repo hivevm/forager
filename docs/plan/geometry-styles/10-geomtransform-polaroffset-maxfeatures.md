@@ -62,8 +62,8 @@ What is left needs the IR's format to change (ADR-0020), which the maintainer de
   `geomtransform-vertex-layer.png`, uses `simplify`.
 - **`MAXFEATURES`** of a layer, and the metadata `maxfeaturestodraw` and the output format's
   `MAXFEATURESTODRAW` that `misc/maxfeatures.map` also exercises: `Layer` has no field for them.
-  That case also needs inline `FEATURE` points (ticket 04).
+  Its inline `FEATURE` points are drawn since ADR-0033.
 
-No case of the harness flips with this branch: `geomtransform-vertex.png` still needs the
-transform expressions, TrueType symbols, and inline features; `point-polaroffset.png` inline
-features. Their reasons in `cases.txt` are updated to what they still lack.
+`point-polaroffset.png` passes since inline features are drawn; `geomtransform-vertex.png` still
+needs the transform expressions of a style and TrueType symbols, as its reason in `cases.txt`
+says.
