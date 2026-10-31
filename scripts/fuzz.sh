@@ -62,7 +62,8 @@ done
 if [ "${#failed[@]}" -gt 0 ]; then
   echo >&2
   for target in "${failed[@]}"; do
-    echo "the fuzz target $target failed; its input is under fuzz/artifacts/$target" >&2
+    where="a crash's input is under fuzz/artifacts/$target, the cause otherwise in the output above"
+    echo "the fuzz target $target failed; $where" >&2
   done
   exit 1
 fi

@@ -154,20 +154,25 @@ cargo +$NIGHTLY fuzz run one fuzz/corpus/one fuzz/seeds/one -- -max_total_time=7
 both_runs="$SETUP
 cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=300 $LIMITS
 cargo +$NIGHTLY fuzz run one fuzz/corpus/one fuzz/seeds/one -- -max_total_time=300 $LIMITS"
+# failed_line <target> — the line the run prints for a target that failed.
+failed_line() {
+  echo "the fuzz target $1 failed; a crash's input is under fuzz/artifacts/$1," \
+    "the cause otherwise in the output above"
+}
 for bad in one declared; do
   good=declared
   [[ "$bad" == declared ]] && good=one
   d="$(fixture "fails-$bad" "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
   FAKE_FAIL="$bad" REJECT="the fuzz target $good failed" expect 1 \
     "a failing $bad does not stop the other target, and the run fails naming it" "$d" \
-    "the fuzz target $bad failed" "$both_runs"
+    "$(failed_line "$bad")" "$both_runs"
 done
 
 d="$(fixture fails-both "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
 FAKE_FAIL="one declared" expect 1 "the run names every target that failed" "$d" \
-  "the fuzz target declared failed" "$both_runs"
+  "$(failed_line declared)" "$both_runs"
 FAKE_FAIL="one declared" expect 1 "the run names every target that failed, the other too" "$d" \
-  "the fuzz target one failed" "$both_runs"
+  "$(failed_line one)" "$both_runs"
 
 # --- the workflow ----------------------------------------------------------------------------
 
