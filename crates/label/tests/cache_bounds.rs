@@ -70,6 +70,7 @@ fn labels(width: f64, buffer: i32, spread: bool, force: bool) -> Counted {
                 partials: true,
                 test_point: false,
                 marker: None,
+                label_marker: None,
                 min_distance: 0.0,
             }
         })

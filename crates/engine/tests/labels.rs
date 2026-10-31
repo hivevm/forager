@@ -1764,3 +1764,139 @@ fn a_labels_maxlength_decides_where_its_text_breaks() {
         );
     }
 }
+
+/// A label's style with `GEOMTRANSFORM labelpnt`: symbol 1, a filled square of side 1, at `SIZE`
+/// 8, in `RED`.
+fn labelpoint() -> Style {
+    Style {
+        color: Some(Bound::Value(RED)),
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: Some(Bound::Value(8.0)),
+        geom_transform: Some(forager_style_ir::GeomTransform::LabelPoint),
+        ..Style::default()
+    }
+}
+
+const RED: Rgba = Rgba::opaque(220, 20, 20);
+
+/// [`map`] with symbol 1 a filled vector square of side 1.
+fn map_with_square(label: Label) -> Map {
+    Map {
+        symbols: vec![Symbol {
+            kind: SymbolKind::Vector,
+            paths: vec![vec![
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 1.0],
+                [0.0, 1.0],
+                [0.0, 0.0],
+            ]],
+            extent: Some([1.0, 1.0]),
+            filled: true,
+            name: None,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }],
+        ..map(label)
+    }
+}
+
+/// The label "Fen" at `LR` with a labelpoint style.
+fn fen_at_lr_with_marker() -> Label {
+    Label {
+        position: Some(Bound::Value(Position::Lr)),
+        ..fen_styled(vec![labelpoint()])
+    }
+}
+
+#[test]
+fn a_labelpoint_style_draws_its_marker_at_the_point_under_the_text_moved_off_it() {
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(FEN).unwrap())].into();
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(
+        &map_with_square(fen_at_lr_with_marker()),
+        &sources,
+        &Files,
+        recorder.clone(),
+    ));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let ops = recorder.0.take();
+    // msDrawMarkerSymbol draws the square, msGetMarkerSize 8 by 8, centred on the label's point,
+    // the pixel (80, 29), before the text: agg2RenderVectorSymbol's points of the unit square
+    // moved by half its extent, scaled by 8, and moved to the point.
+    let p = |x, y| Point { x, y };
+    assert_eq!(
+        ops[0],
+        forager_render::DrawOp::Fill {
+            rings: vec![vec![
+                p(76.0, 25.0),
+                p(84.0, 25.0),
+                p(84.0, 33.0),
+                p(76.0, 33.0),
+                p(76.0, 25.0),
+            ]],
+            color: RED,
+            gamma: None,
+        }
+    );
+    assert_eq!(ops.len(), 2, "{ops:?}");
+    // computeMarkerBounds' box, [76, 25, 84, 33], moves the text off the point by half its
+    // width and height, MS_MAX'd with the class's marker, of which there is none: get_metrics
+    // at LR with an offset of (int)4 each way.
+    assert_eq!(
+        glyph_path(&ops[1]),
+        &expected("Fen", 12.0, Anchor::Lr, (4, 4), 0.0)[..]
+    );
+    let rendered = render(&map_with_square(fen_at_lr_with_marker()), FEN);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_matches_reference(&rendered.image.unwrap(), "label_labelpoint.png");
+}
+
+#[test]
+fn a_label_with_a_labelpoint_style_reports_the_box_of_its_text_and_its_marker() {
+    // msDrawLabelCache's member bbox (mapdraw.c:3976-4030): the text's box, then MS_MIN and
+    // MS_MAX with the marker's. "Fen" at 12 points is 29.1875 by 11.90625 pixels; at LR of the
+    // pixel (80, 29), 4 and 4 away, get_metrics puts its box at x1 = 4, y1 = h + 4 from the
+    // point: [84, 33, 113.1875, 44.90625]. The marker's box is [76, 25, 84, 33].
+    let rendered = render(&map_with_square(fen_at_lr_with_marker()), FEN);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        rendered.labels[0].drawn,
+        Some([76.0, 25.0, 113.1875, 44.90625])
+    );
+}
+
+#[test]
+fn a_labelpoint_marker_takes_room_from_the_labels_after_it() {
+    // msTestLabelCacheCollisions tests a label's text against the text and the labelpoint
+    // markers of the labels drawn (maplabel.c:781-868). "b", added last, is drawn first: its
+    // marker [78, 25, 86, 33] and its text [86, 33, 115.1875, 44.90625]. "a", 3 pixels higher,
+    // stands with its text at [54, 30, 83.1875, 41.90625]: clear of b's text, it meets b's
+    // marker, and is left out.
+    let fen = Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        ..fen_at_lr_with_marker()
+    };
+    let points = [("a", 50.0, 33.0, ""), ("b", 82.0, 30.0, "")];
+    assert_eq!(labelled(&map_with_square(fen.clone()), &points), [1]);
+    // With b 8 pixels further right, its marker [86, 25, 94, 33] is clear of a's text too.
+    let apart = [("a", 50.0, 33.0, ""), ("b", 90.0, 30.0, "")];
+    assert_eq!(labelled(&map_with_square(fen), &apart), [1, 0]);
+}

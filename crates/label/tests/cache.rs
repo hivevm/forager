@@ -54,6 +54,7 @@ fn at(x: f64, y: f64) -> Member {
         partials: false,
         test_point: false,
         marker: None,
+        label_marker: None,
         min_distance: 0.0,
     }
 }

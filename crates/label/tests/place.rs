@@ -3,8 +3,8 @@
 //! in `msDrawLabelCache` at the pin.
 
 use forager_label::{
-    AUTO_POSITIONS, Anchor, Bounds, Offsets, PointLabel, Position, TextBox, label_poly_at, metrics,
-    place, placed_at,
+    AUTO_POSITIONS, Anchor, Bounds, Offsets, PointLabel, Position, TextBox, label_poly_at,
+    marker_bounds, metrics, place, placed_at,
 };
 use forager_render::Point;
 
@@ -232,5 +232,39 @@ fn label(position: Position, offsets: Offsets, force: bool) -> PointLabel {
         rotation: 0.0,
         buffer: 0,
         force,
+    }
+}
+
+#[test]
+fn a_labelpoint_marker_is_its_box_about_its_anchor_or_its_turned_corners() {
+    // computeMarkerBounds: 8 by 4 at (10, 20), anchored at its upper left corner, offset (1, 2):
+    // centred (0.5 - 0) * 8 + 10 + 1 = 15 across and (0.5 - 0) * 4 + 20 + 2 = 24 down.
+    let at = Point { x: 10.0, y: 20.0 };
+    assert_eq!(
+        marker_bounds(at, (8.0, 4.0), [0.0, 0.0], 0.0, [1.0, 2.0]),
+        Bounds {
+            poly: None,
+            bbox: [11.0, 22.0, 19.0, 26.0]
+        }
+    );
+    // Turned by 90 degrees about its centre, its corners (4, 2), (4, -2), (-4, -2), (-4, 2)
+    // become (2, -4), (-2, -4), (-2, 4), (2, 4), moved to the point: a box 4 wide, 8 high.
+    let turned = marker_bounds(at, (8.0, 4.0), [0.5, 0.5], 90.0, [0.0, 0.0]);
+    let poly = turned.poly.expect("a turned marker has its corners");
+    let want = [
+        (12.0, 16.0),
+        (8.0, 16.0),
+        (8.0, 24.0),
+        (12.0, 24.0),
+        (12.0, 16.0),
+    ];
+    for (p, (x, y)) in poly.iter().zip(want) {
+        assert!(
+            (p.x - x).abs() < 1e-12 && (p.y - y).abs() < 1e-12,
+            "{poly:?}"
+        );
+    }
+    for (got, want) in turned.bbox.iter().zip([8.0, 16.0, 12.0, 24.0]) {
+        assert!((got - want).abs() < 1e-12, "{:?}", turned.bbox);
     }
 }

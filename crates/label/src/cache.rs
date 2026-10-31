@@ -16,12 +16,13 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! MapServer's label cache for labels of points: which labels are drawn, where, and in what
-//! order, from the boxes of their texts alone.
+//! order, from the boxes of their texts and of their `labelpoint` markers.
 //!
 //! The labels are walked from the highest priority down and, within a priority, from the last
 //! added to the first. A label is tested against the image, unless it may be partial, against
 //! the markers its priority and higher ones cached, its own apart, and against every label drawn
-//! before it; it is drawn where it fits, or where it is forced, and left out where a drawn label
+//! before it, the box of its text and the marker of its `labelpoint` style; such a marker is
+//! tested so before the text. A label is drawn where it fits, or where it is forced, and left out where a drawn label
 //! of the same text lies within its minimum distance.
 //!
 //! The tests are MapServer's, pair by pair; which pairs are tested is bounded by a loose grid
@@ -30,7 +31,7 @@
 
 use forager_render::Point;
 
-use crate::place::{Anchor, Bounds, Placement, PointLabel, place, placed_at};
+use crate::place::{Anchor, Bounds, Placement, PointLabel, member_box, place, placed_at};
 
 /// MapServer's `MS_MAX_LABEL_PRIORITY`: priorities run from 1 to it.
 pub const MAX_PRIORITY: u8 = 10;
@@ -59,6 +60,10 @@ pub struct Member {
     /// The box of the marker drawn at the point, `[min x, min y, max x, max y]`, as the marker
     /// cache holds it.
     pub marker: Option<[f64; 4]>,
+    /// The bounds of the marker of the label's first `GEOMTRANSFORM labelpoint` style, at the
+    /// point, as `computeMarkerBounds` computes them: tested before the text, and taking room
+    /// from the labels after it.
+    pub label_marker: Option<Bounds>,
     /// `MINDISTANCE` in pixels; none at 0 or below.
     pub min_distance: f64,
 }
@@ -100,9 +105,10 @@ pub fn draw_label_cache<M: Members + ?Sized>(
                 continue;
             }
             if let Some(placement) = cache.place(i) {
+                let member = members.member(i);
                 cache.drawn.insert(
-                    &placement.bounds.bbox,
-                    Some(members.member(i).point),
+                    &member_box(&placement.bounds.bbox, member.label_marker.as_ref()),
+                    Some(member.point),
                     (i as u32, placement.anchor),
                 );
                 draw(i, &placement);
@@ -131,7 +137,13 @@ impl<M: Members + ?Sized> Cache<'_, M> {
     fn place(&self, i: usize) -> Option<Placement> {
         let member = self.members.member(i);
         let label = member.label?;
-        if member.test_point {
+        // The marker of a labelpoint style is tested first, at the label's priority, unless the
+        // label is forced; where it has one, the point is not tested.
+        if let Some(marker) = &member.label_marker {
+            if !label.force && !self.fits(&member, marker, Some((member.priority, i))) {
+                return None;
+            }
+        } else if member.test_point {
             // The point alone, tested at a priority above every slot's: against no marker.
             let p = member.point;
             let point = Bounds {
@@ -147,7 +159,11 @@ impl<M: Members + ?Sized> Cache<'_, M> {
         })?;
         if member.min_distance > 0.0
             && !label.force
-            && self.too_close(i, &placement.bounds.bbox, member.min_distance)
+            && self.too_close(
+                i,
+                &member_box(&placement.bounds.bbox, member.label_marker.as_ref()),
+                member.min_distance,
+            )
         {
             return None;
         }
@@ -156,7 +172,7 @@ impl<M: Members + ?Sized> Cache<'_, M> {
 
     /// `msTestLabelCacheCollisions`: whether `lb` lies in the image, where the member may not be
     /// partial, and meets no marker of `markers`' priority and above but the member's own, and no
-    /// label drawn.
+    /// label drawn whose box it meets by its text's box or its `labelpoint` marker.
     fn fits(&self, member: &Member, lb: &Bounds, markers: Option<(u8, usize)>) -> bool {
         if !member.partials && !in_image(self.image, lb) {
             return false;
@@ -175,20 +191,24 @@ impl<M: Members + ?Sized> Cache<'_, M> {
                 }
             }
         }
+        let meets = |theirs: &Bounds| {
+            intersect(
+                theirs.poly.as_ref(),
+                &theirs.bbox,
+                lb.poly.as_ref(),
+                &lb.bbox,
+            )
+        };
         !self.drawn.any(&lb.bbox, |&(j, anchor)| {
-            let theirs = self.bounds(j as usize, anchor);
-            rect_overlap(&theirs.bbox, &lb.bbox)
-                && intersect(
-                    theirs.poly.as_ref(),
-                    &theirs.bbox,
-                    lb.poly.as_ref(),
-                    &lb.bbox,
-                )
+            let marker = self.members.member(j as usize).label_marker;
+            let text = self.bounds(j as usize, anchor);
+            rect_overlap(&member_box(&text.bbox, marker.as_ref()), &lb.bbox)
+                && (meets(&text) || marker.as_ref().is_some_and(meets))
         })
     }
 
     /// `msCheckLabelMinDistance`: whether a label drawn with the text of member `i` stands, by its
-    /// point or its box, within `distance` of `bbox`.
+    /// point or its member's box, within `distance` of `bbox`, member `i`'s box.
     fn too_close(&self, i: usize, bbox: &[f64; 4], distance: f64) -> bool {
         let buffered = [
             bbox[0] - distance,
@@ -198,9 +218,11 @@ impl<M: Members + ?Sized> Cache<'_, M> {
         ];
         self.drawn.any(&buffered, |&(j, anchor)| {
             let j = j as usize;
+            let theirs = self.members.member(j);
+            let text = self.bounds(j, anchor).bbox;
             self.members.same_text(i, j)
-                && (point_in_rect(&self.members.member(j).point, &buffered)
-                    || rect_overlap(&self.bounds(j, anchor).bbox, &buffered))
+                && (point_in_rect(&theirs.point, &buffered)
+                    || rect_overlap(&member_box(&text, theirs.label_marker.as_ref()), &buffered))
         })
     }
 

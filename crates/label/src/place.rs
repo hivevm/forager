@@ -1,6 +1,7 @@
 // The placement follows get_metrics, src/maplabel.c, and the choice of a point label's position in
-// msDrawLabelCache, its point and its box, with fastComputeBounds, src/mapdraw.c, of MapServer at
-// the release pinned in scripts/fetch-msautotest.sh.
+// msDrawLabelCache, its point, its box, and its member's box, with computeMarkerBounds and
+// fastComputeBounds, src/mapdraw.c, of MapServer at the release pinned in
+// scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -207,9 +208,80 @@ pub fn placed_at(at: Point, label: &PointLabel, anchor: Anchor) -> (Point, Bound
 /// The polygon of a label's `GEOMTRANSFORM labelpoly` styles at `anchor` of `at`, as
 /// `msDrawLabelCache` computes it once the label is placed: `get_metrics` at the label's position
 /// and offsets with a buffer of 1 pixel, whatever the label's own `BUFFER`. The label cache never
-/// tests it: a label's collisions are its text's box and its marker's.
+/// tests it: a label's collisions are its text's box and its `labelpoint` marker's.
 pub fn label_poly_at(at: Point, label: &PointLabel, anchor: Anchor) -> Bounds {
     placed_with_buffer(at, label, anchor, 1).1
+}
+
+/// A marker of a label's `GEOMTRANSFORM labelpoint` style at `at`, as `computeMarkerBounds`
+/// computes its bounds: `size` the width and height `msGetMarkerSize` gives it, `anchor_point`
+/// its symbol's, `angle` the style's in degrees, and `offset` the style's `OFFSET`, scaled. A
+/// marker turned by any angle but 0 has its turned corners, and their box; one not turned, its
+/// box alone.
+pub fn marker_bounds(
+    at: Point,
+    (sx, sy): (f64, f64),
+    [anchor_x, anchor_y]: [f64; 2],
+    angle: f64,
+    [offset_x, offset_y]: [f64; 2],
+) -> Bounds {
+    if angle != 0.0 {
+        let (hx, hy) = (sx / 2.0, sy / 2.0);
+        let p = |x, y| Point { x, y };
+        let mut points = [p(hx, hy), p(hx, -hy), p(-hx, -hy), p(-hx, hy), p(hx, hy)];
+        if anchor_x != 0.5 || anchor_y != 0.5 {
+            let (aox, aoy) = ((0.5 - anchor_x) * sx, (0.5 - anchor_y) * sy);
+            for point in &mut points {
+                point.x += aox;
+                point.y += aoy;
+            }
+        }
+        // MS_DEG_TO_RAD, MS_PI / 180.
+        let rot = -angle * (std::f64::consts::PI / 180.0);
+        let (sin, cos) = (libm::sin(rot), libm::cos(rot));
+        for point in &mut points {
+            let x = point.x;
+            point.x = point.x * cos - point.y * sin;
+            point.y = x * sin + point.y * cos;
+        }
+        let (aox, aoy) = (at.x + offset_x, at.y + offset_y);
+        for point in &mut points {
+            point.x += aox;
+            point.y += aoy;
+        }
+        Bounds {
+            poly: Some(points),
+            bbox: fast_bounds(&points),
+        }
+    } else {
+        let aox = (0.5 - anchor_x) * sx + at.x + offset_x;
+        let aoy = (0.5 - anchor_y) * sy + at.y + offset_y;
+        Bounds {
+            poly: None,
+            bbox: [
+                -sx / 2.0 + aox,
+                -sy / 2.0 + aoy,
+                sx / 2.0 + aox,
+                sy / 2.0 + aoy,
+            ],
+        }
+    }
+}
+
+/// The box of a label drawn, as `msDrawLabelCache` forms the member's `bbox`: its text's box
+/// `text`, grown by `MS_MIN` and `MS_MAX` to the bounds of its `labelpoint` marker where it has
+/// one. The label cache tests a box against it first, and a label's minimum distance is measured
+/// from it.
+pub fn member_box(text: &[f64; 4], marker: Option<&Bounds>) -> [f64; 4] {
+    let mut b = *text;
+    if let Some(m) = marker {
+        let m = &m.bbox;
+        b[0] = if b[0] < m[0] { b[0] } else { m[0] };
+        b[1] = if b[1] < m[1] { b[1] } else { m[1] };
+        b[2] = if b[2] > m[2] { b[2] } else { m[2] };
+        b[3] = if b[3] > m[3] { b[3] } else { m[3] };
+    }
+    b
 }
 
 /// [`placed_at`] with a box grown by `buffer` pixels.
