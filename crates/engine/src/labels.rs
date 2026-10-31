@@ -37,7 +37,7 @@ use crate::classes::{FeatureProperties, Selector, c_bytes, color};
 use crate::draw::vertices;
 use crate::extent::View;
 use crate::fonts::Fonts;
-use crate::inline::{feature_text, is_inline};
+use crate::inline::feature_text;
 use crate::symbol::marker_size_of;
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
@@ -222,6 +222,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let layer = &map.layers[index];
         // What of each label of the classes drawn is settled, or why it is not drawn.
         let mut fixed_labels = BTreeMap::new();
+        // The classes that draw a feature with a TEXT of its own.
+        let with_text: BTreeSet<usize> = drawn
+            .iter()
+            .filter(|(feature, _, _)| feature_text(layer, feature.id).is_some())
+            .map(|&(_, class_index, _)| class_index)
+            .collect();
         for &(_, class_index, _) in drawn {
             let class = &layer.classes[class_index];
             for (n, label) in class.labels.iter().enumerate() {
@@ -234,9 +240,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 // last the feature's own TEXT, which only an inline feature has. Without any, and
                 // without a style to draw in its place, MapServer skips the label.
                 let text = label.text.as_ref();
-                if text.is_none()
-                    && !(is_inline(layer) && layer.features.iter().any(|f| f.text.is_some()))
-                {
+                if text.is_none() && !with_text.contains(&class_index) {
                     fixed_labels.insert(at, None);
                     continue;
                 }

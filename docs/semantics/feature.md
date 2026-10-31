@@ -72,9 +72,11 @@ inline features; and a `FEATURE` keyword inside a `FEATURE`, which `loadFeature`
   its place after the names, `""` where the feature has none, and without `ITEMS` the items
   referred to take the values in the order they are referred to. The frontend names values by
   `ITEMS` alone: a name it lacks is absent, as is every name without `ITEMS`.
-- A `LABELITEM` whose value is empty draws no label, where MapServer draws the feature's text in
-  its place: the style IR holds a label's text with the `LABELITEM` folded in, and does not tell
-  it from a label's `TEXT` of the same property, whose empty value draws nothing in both.
+- A `LABELITEM` whose value is empty, or that names an item the layer's `ITEMS` does not hold, a
+  layer without `PROCESSING "ITEMS=…"` included, draws no label, where MapServer gives such an
+  item `""` and draws the feature's text in its place: the style IR holds a label's text with the
+  `LABELITEM` folded in, and does not tell it from a label's `TEXT` of the same property, whose
+  empty value draws nothing in both.
 - An `EMPTY` geometry, which MapServer loads for most types as a shape of an empty part, is a
   load error here.
 - A `LINEARRING` member of a `GEOMETRYCOLLECTION`, which MapServer skips

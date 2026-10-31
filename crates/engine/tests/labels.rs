@@ -285,14 +285,106 @@ fn an_inline_features_text_is_its_labels_text_after_the_label_class_and_labelite
         ink(rendered.image.as_ref().unwrap(), (0, 160), (0, 60)),
         None
     );
-    // A known divergence (docs/semantics/feature.md): an empty LABELITEM value draws no label,
-    // where MapServer falls back on the feature's TEXT, as the style IR does not tell a label's
+    // A known divergence (docs/semantics/feature.md): a LABELITEM whose value is empty, or that
+    // names an item the layer's ITEMS does not hold, draws no label, where MapServer gives such
+    // an item "" and falls back on the feature's TEXT, as the style IR does not tell a label's
     // text from its LABELITEM.
     let rendered = render_inline(map(label_item()), Some("Fen"), "");
     assert_eq!(
         ink(rendered.image.as_ref().unwrap(), (0, 160), (0, 60)),
         None
     );
+}
+
+/// A point inline feature at `at` of the property `k` of the value `k` and the `TEXT` `text`.
+fn inline_point(at: [f64; 2], k: &str, text: Option<&str>) -> InlineFeature {
+    InlineFeature {
+        shape_type: ShapeType::Point,
+        parts: vec![vec![at]],
+        properties: vec![FeatureProperty {
+            name: "k".to_owned(),
+            value: k.to_owned(),
+        }],
+        text: text.map(str::to_owned),
+        span: None,
+    }
+}
+
+#[test]
+fn a_label_reads_the_text_of_the_features_its_class_draws_by_their_place() {
+    let one = r#"{"type": "Feature", "properties": {"name": "Fen"},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let reference = render(&map(label_item()), one).image.unwrap();
+    let sources = BTreeMap::<String, GeoJsonSource>::new();
+    // The first feature out of view: the second's text is read, not the first's.
+    let mut placed = map(Label {
+        text: None,
+        ..label_item()
+    });
+    placed.layers[0].source = None;
+    placed.layers[0].features = vec![
+        inline_point([500.0, 500.0], "a", Some("Other")),
+        inline_point([80.0, 30.0], "a", Some("Fen")),
+    ];
+    let rendered = ready(render_with_files(
+        &placed,
+        &sources,
+        &Files,
+        AggRenderer::new(),
+    ));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image.unwrap(), reference);
+    // A label without a text, and without a FONT, whose class draws only features without a
+    // TEXT, is skipped as MapServer skips it, and not reported; another class's feature with a
+    // TEXT does not make it a label.
+    let is_a = Expr::call(
+        Op::Eq,
+        vec![
+            Expr::call(Op::ToString, vec![Expr::property("k")]),
+            "a".into(),
+        ],
+    );
+    let mut classes = map(label_item());
+    let layer = &mut classes.layers[0];
+    layer.source = None;
+    layer.classes = vec![
+        Class {
+            expression: Some(is_a),
+            labels: vec![Label {
+                text: Some(Expr::String("Fen".to_owned())),
+                ..label_item()
+            }],
+            ..Class::default()
+        },
+        Class {
+            labels: vec![Label {
+                text: None,
+                font: None,
+                ..label_item()
+            }],
+            ..Class::default()
+        },
+    ];
+    layer.features = vec![
+        inline_point([80.0, 30.0], "a", Some("Fen")),
+        inline_point([20.0, 10.0], "b", None),
+    ];
+    let rendered = ready(render_with_files(
+        &classes,
+        &sources,
+        &Files,
+        AggRenderer::new(),
+    ));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image.unwrap(), reference);
 }
 
 #[test]
