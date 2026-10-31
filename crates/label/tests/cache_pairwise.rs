@@ -115,15 +115,14 @@ fn member(rng: &mut Rng) -> (Member, u8) {
             rng.or_special(3, y)
         },
     };
-    let width = match rng.below(20) {
-        0..=13 => rng.range(0.0, 60.0),
-        14..=16 => rng.range(60.0, 300.0),
-        _ => rng.range(300.0, 2000.0),
-    };
-    let height = if rng.chance(10) {
-        rng.range(60.0, 1000.0)
-    } else {
-        rng.range(0.0, 30.0)
+    // A negative width or height turns the box inside out along that axis alone, and the other
+    // axis is then long, so that boxes inside out along different axes come to meet.
+    let (width, height) = match rng.below(20) {
+        0..=2 => (rng.range(-200.0, -1.0), rng.range(30.0, 400.0)),
+        3..=5 => (rng.range(30.0, 400.0), rng.range(-200.0, -1.0)),
+        6..=13 => (rng.range(0.0, 60.0), rng.range(0.0, 30.0)),
+        14..=16 => (rng.range(60.0, 300.0), rng.range(0.0, 30.0)),
+        _ => (rng.range(300.0, 2000.0), rng.range(60.0, 1000.0)),
     };
     let (min_x, max_y) = (rng.range(-5.0, 5.0), rng.range(-5.0, 5.0));
     let (min_x, max_y) = (rng.or_special(2, min_x), rng.or_special(2, max_y));
@@ -177,11 +176,13 @@ fn member(rng: &mut Rng) -> (Member, u8) {
             point.x + w / 2.0,
             point.y + h / 2.0,
         ];
+        // Inside out along one axis, a marker is long along the other.
+        let long = rng.range(20.0, 300.0);
         match rng.below(10) {
             0 => m[rng.below(4) as usize] = rng.special(),
-            1 => m.swap(0, 2),
-            2 => m.swap(1, 3),
-            3 => m = [-1e4, -1e4, 1e4, 1e4],
+            1..=2 => m = [m[2], point.y - long, m[0], point.y + long],
+            3..=4 => m = [point.x - long, m[3], point.x + long, m[1]],
+            5 => m = [-1e4, -1e4, 1e4, 1e4],
             _ => {}
         }
         m
