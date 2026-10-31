@@ -476,7 +476,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             {
                 continue;
             }
-            let point = self.view.to_pixel(c);
+            // msTransformPoint: by the inverse of the cellsize, as the marker beneath is drawn.
+            let point = self.view.point_to_pixel(c);
             // The label cache holds at most MAX_LABELS labels a render (Q-9, ADR-0035).
             if self.cached.len() >= MAX_LABELS {
                 let first = self

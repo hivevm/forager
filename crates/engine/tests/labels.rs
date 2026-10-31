@@ -845,6 +845,71 @@ fn at_resolution_144_a_label_moves_away_from_the_marker_as_it_is_drawn() {
 }
 
 #[test]
+fn a_label_stands_by_the_point_pixel_ms_transform_point_computes() {
+    // misc/attrbind.map's "Label 1": a circle of 13 at (-1.2827027027027027,
+    // 0.7747297297297298) in EXTENT -1.5 0.1 -0.6 1.0 at SIZE 500 500, its label at UR.
+    // msTransformPoint (maputil.c) multiplies by 1 / cellsize: the pixel is
+    // (120.47927927927928, 124.89984984984984), where dividing by the cellsize gives
+    // 124.89984984984983 down. msAddLabelGroup's marker box at that y runs from
+    // 118.39984984984984 to 130.39984984984983, 11.999999999999986 tall, so msDrawLabelCache's
+    // offset up is 5.999999999999993, cut to 5 by get_metrics' int; across it is 12 / 2, 6.
+    let mut map = map(Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        position: Some(Bound::Value(Position::Ur)),
+        ..label_item()
+    });
+    map.extent = Some(Extent {
+        min_x: -1.5,
+        min_y: 0.1,
+        max_x: -0.6,
+        max_y: 1.0,
+    });
+    map.size = Some([500, 500]);
+    map.symbols = vec![Symbol {
+        name: Some("circle".to_owned()),
+        kind: SymbolKind::Ellipse,
+        paths: vec![vec![[1.0, 1.0]]],
+        extent: Some([1.0, 1.0]),
+        filled: true,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    }];
+    map.layers[0].classes[0].styles = vec![Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: Some(Bound::Value(13.0)),
+        color: Some(Bound::Value(BLUE)),
+        ..Style::default()
+    }];
+    let point = r#"{"type": "Feature", "properties": {},
+        "geometry": {"type": "Point",
+                     "coordinates": [-1.2827027027027027, 0.7747297297297298]}}"#;
+    let ops = recorded(&map, point);
+    assert_eq!(ops.len(), 1);
+
+    let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+    let data = std::fs::read(file).unwrap();
+    let font = Font::new(&data).unwrap();
+    let ids = font.glyphs(&['F', 'e', 'n'], true).unwrap().unwrap();
+    let mut glyphs = Glyphs::new(12.0);
+    let path = TextPath::new(&font, &mut glyphs, &ids).unwrap();
+    let at = Point {
+        x: 120.479_279_279_279_28,
+        y: 124.899_849_849_849_84,
+    };
+    let (origin, _) = metrics(at, Anchor::Ur, &path.text_box(), 6, 5, 0.0, 0);
+    let visible = [0.0, 0.0, 500.0, 500.0];
+    let drawn = path
+        .draw(std::slice::from_ref(&glyphs), origin, 0.0, visible)
+        .path;
+    assert_eq!(glyph_path(&ops[0]), drawn);
+}
+
+#[test]
 fn bound_properties_draw_as_their_values_do_once_bound_label_reads_them() {
     // Verifies: ADR-0028
     let fen = || Label {

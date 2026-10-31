@@ -36,7 +36,7 @@
 # the category text (TEXT in msautotest.rs) are provisional, until the noise measurement over the
 # text cases sets them.
 
-misc/attrbind.map attrbind_test001.png text passes  # labels: "Label 1" stands 1 px above MapServer's
+misc/attrbind.map attrbind_test001.png text passes labels-hold
 misc/attrbind.map attrbind_test002.png out: a data source other than shapefiles, OGR
 misc/autostyle.map autostyle.png out: a data source other than shapefiles, OGR
 misc/autostyle_quoted.map autostyle_quoted.png out: a data source other than shapefiles, OGR
