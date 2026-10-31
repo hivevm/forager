@@ -10,14 +10,17 @@ three times (`lrint_int`, `int_cast`, and a `trunc_int` that #154 merged into `i
 proposed, ports C's `atof`, `strtod`, `atoi`, and `MS_NINT` once, but names no `(int)` cast, and its
 open ticket `docs/plan/revision-2026-10-31/05-c-number-reading-once.md` moves only those.
 
-Bare casts that stand for a C `(int)` remain: a label's scaled `OFFSET` and `BUFFER`
-(`labels.rs`, in `feature`, `def`, and `bind`), the offset from a marker
-(`crates/label/src/place.rs`, `placed_with_buffer`), a line's length (`crates/label/src/layout.rs`,
-`pen_x as i32`), and a layer's `OPACITY` (`crates/engine/src/lib.rs`). Each diverges from the pin
-only past an `int`, which no corpus case reaches, so only a check would see the next one.
+Bare casts that stand for a C `(int)` remain: a label's scaled `OFFSET` and `BUFFER` (`labels.rs`,
+in `feature`, `def`, and `bind`, the last of which
+`docs/plan/revision-2026-10-31/10-label-binding-stage.md` moves into a module of its own), the
+offset from a marker (`crates/label/src/place.rs`, `placed_with_buffer`), a line's length
+(`crates/label/src/layout.rs`, `pen_x as i32`), and a layer's `OPACITY`
+(`crates/engine/src/lib.rs`). Each diverges from the pin only past an `int`, which no corpus case
+reaches, so only a check would see the next one.
 
 Draft for the maintainer a revision of ADR-0037 that adds the `(int)` cast to the ports it places,
-with the sites above; once it is settled, move `int_cast` and each site onto it, and add the check:
+with the sites above; once it is settled and the module of ADR-0037 exists, which the ticket
+named under *Blocked by* creates, move `int_cast` and each site onto it, and add the check:
 for example clippy's `cast_possible_truncation` in `engine` and `label`, with the index casts it
 also names written with `try_from`, or a narrower test of ADR-0037's *Enforcement*.
 
@@ -25,8 +28,8 @@ also names written with `try_from`, or a narrower test of ADR-0037's *Enforcemen
 
 - [ ] Given the drafted revision of ADR-0037, when the maintainer reads it, then it names the
   `(int)` cast and the behaviour it gives past an `int`, in an ADR-only pull request.
-- [ ] Given a label's `OFFSET` of 3e9 pixels and a `MAXLENGTH` of 3e9, when they are drawn, then
-  both convert as the one port does, each with a test that states its value.
+- [ ] Given a label whose scaled `OFFSET` lies past an `int` and a `MAXLENGTH` of 3e9, when they
+  are drawn, then both convert as the one port does, each with a test that states its value.
 - [ ] Given a new `f64 as i32` in `crates/engine` or `crates/label`, when the checks run, then
   they fail and name it.
 
@@ -41,7 +44,7 @@ also names written with `try_from`, or a narrower test of ADR-0037's *Enforcemen
 
 ## Blocked by
 
-- None (can start immediately)
+- docs/plan/revision-2026-10-31/05-c-number-reading-once.md
 
 ## Mode
 

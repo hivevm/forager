@@ -29,6 +29,10 @@ the pin where the engine's arithmetic leaves MapServer's for this label, and fix
 ## Mode
 
 unattended: the harness's mark and an engine test decide it; the fix is one step of the
-placement, undone by one revert; a wrong result moves another case's mark. Stop: if two hours of
+placement in `crates/label` or the engine, undone by one revert. It touches nothing
+[ADR-0007](../../adr/0007-harness.md) keeps with the human: no resource limit, port, public
+interface, or style document format. Its branch counts against ADR-0007's cap of three open agent
+branches. A wrong result moves another case's outcome or mark, and is undone by the revert; the
+case marked `labels-hold` and the test of the step prove it right. Stop: if two hours of
 tracing find no step, or the fix moves any other case's outcome or mark, record what was ruled
 out here and hand off.

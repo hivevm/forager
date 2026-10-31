@@ -8,9 +8,10 @@ and the splits pass tuples to stay under the argument count (`hold`'s
 `(styles, label_marker)`, `Styled::draw`'s `(member, placement)`). A label's styles are the larger
 part of that growth and are spread over the file: `unsupported_style` and `marker_drawn` decide
 which a label may carry; `label_marker` sizes the first `labelpoint` marker; `Styled`,
-`draw_label_poly`, and `draw_label_marker` draw them; and four tables hold what they need, each by
-another index (`Labels::markers` by the cached label, `label_styles` and `label_markers` by the
-text, `Def::label_marker` by the definition).
+`draw_label_poly`, and `draw_label_marker` draw them; and three tables hold what they need, each
+by another index (`Labels::label_styles` and `label_markers` by the text, `Def::label_marker` by
+the definition). `Labels::markers`, the marker of the class's first style that `msAddLabelGroup`
+caches beneath each label, is no label style and stays.
 
 Two matches on a style's `GEOMTRANSFORM` are kept in step by hand: `unsupported_style` refuses what
 it does not name, and `Styled::draw` draws every other style, its `_` arm, as a labelpoly. Should a
@@ -31,8 +32,8 @@ same file; the two do not overlap, and whichever lands second rebases on the oth
 - [ ] Given the drawing of a label's styles, when its match on the style's kind is read, then it
   names every kind and has no `_` arm, so a new kind does not compile until it is drawn.
 - [ ] Given `crates/engine/src/labels.rs`, when the move is done, then it holds none of the
-  functions and tables named above, and no function of the new module takes a tuple to stay
-  under clippy's argument count.
+  functions named above nor the three tables of a label's styles, and no function of the new module
+  takes a tuple to stay under clippy's argument count.
 
 ## Read first
 
@@ -47,8 +48,10 @@ same file; the two do not overlap, and whichever lands second rebases on the oth
 
 ## Mode
 
-unattended: the existing suite and the harness decide it; the change is a refactor inside one
-crate, undone by one revert; it touches no public interface and nothing ADR-0007 keeps with the
-human. It is noticed wrong by any test or case outcome that moves. Stop: if a test or a case's
-outcome would have to change, or the move needs a change outside `crates/engine`, record where
-in this file and hand off. Claim it only while no other ticket that edits `labels.rs` is claimed.
+unattended: the existing suite and the harness decide it; the change is a refactor inside one crate,
+undone by one revert; it touches no public interface and nothing ADR-0007 keeps with the human (no
+resource limit, port, or style document format), and its branch counts against ADR-0007's cap of
+three open agent branches. It is noticed wrong by any test or case outcome that moves. Stop: if a
+test or a case's outcome would have to change, or the move needs a change outside `crates/engine`,
+record where in this file and hand off. Claim it only while no other ticket that edits `labels.rs`
+is claimed.

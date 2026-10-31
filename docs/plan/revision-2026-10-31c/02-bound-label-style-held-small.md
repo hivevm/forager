@@ -32,7 +32,14 @@ bound.
 
 ## Mode
 
-unattended: the memory test decides it; it changes what one module holds, undone by one revert,
-and touches no public interface. A wrong result shows as a styled test that draws otherwise.
-Stop: if the bound cannot be kept without a change to the style IR, or after three attempts, record
-the measurements here and hand off.
+unattended: the memory test decides it, with a case added under the bound it already holds; the
+scope is what the engine's labels hold for a feature, undone by one revert. It touches nothing
+[ADR-0007](../../adr/0007-harness.md) keeps with the human: no port, public interface, or style
+document format, and none of the resource limits, which are Q-9's limits a diagnostic reports; the
+400 bytes of the test is neither one of them nor moved here, and the ticket keeps the engine under
+it rather than setting it (whether it should be a limit is ticket 06's question, with the human).
+Its branch counts against ADR-0007's cap of three open agent branches. A wrong result shows as a
+styled test that draws otherwise, and is undone by the revert; the new case failing against
+today's code and passing after proves it right. Stop: if the bound cannot be kept without a change
+to the style IR, if the 400 bytes would have to move, or after three attempts, record the
+measurements here and hand off.

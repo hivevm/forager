@@ -16,8 +16,9 @@ claims one at a time; the report fails nothing. The sensor belongs to the templa
 
 - [ ] Given a fixture plan with two frontier tickets that name `crates/x/src/a.rs`, when the
   sensor runs, then it names the two tickets and the path, and its exit code is unchanged.
-- [ ] Given the drafted change, when the template's maintainer reads it, then it is raised
-  upstream, and this ticket's file is deleted with the release that carries it.
+- [ ] Given the ticket's pull request, when it merges, then it leaves the drafted change and its
+  self-test in the tree, with its description naming what the template's maintainer raises
+  upstream.
 
 ## Read first
 
