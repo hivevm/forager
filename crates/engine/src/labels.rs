@@ -33,6 +33,7 @@ use forager_style_ir::{
     Position as IrPosition, Rgba, Span, Style, Units,
 };
 
+use crate::CachedLabel;
 use crate::classes::{self, FeatureProperties, Selector, c_bytes, color};
 use crate::draw::vertices;
 use crate::extent::View;
@@ -136,6 +137,8 @@ struct Cached {
     path: u32,
     /// Into the label definitions.
     def: u32,
+    /// Into the texts of the labels cached, one for each feature's label, whatever its points.
+    text: u32,
     /// The label's `OFFSET`, scaled, in whole pixels.
     offset: [i32; 2],
     color: Option<Rgba>,
@@ -163,6 +166,8 @@ pub(crate) struct Labels<'r, L> {
     defs: Vec<Def>,
     def_index: BTreeMap<LabelAt, u32>,
     cached: Vec<Cached>,
+    /// The text of each feature's label cached, for the render's report of its labels.
+    label_texts: Vec<Box<str>>,
     /// The box of the marker beneath each label that has one, by the label's index, ascending.
     markers: Vec<(u32, [f64; 4])>,
     /// Each label's text, held only where a label of the map has a `MINDISTANCE`.
@@ -192,6 +197,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             defs: Vec::new(),
             def_index: BTreeMap::new(),
             cached: Vec::new(),
+            label_texts: Vec::new(),
             markers: Vec::new(),
             texts: map
                 .layers
@@ -364,6 +370,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 NO_PATH
             },
             def: self.def(at, fixed),
+            text: self.label_texts.len() as u32,
             // The offset scaled into an int.
             offset: bound.offset.map(|o| (f64::from(o) * fixed.factor) as i32),
             color: bound.color,
@@ -372,10 +379,11 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             priority: bound.priority,
             test_point: !fixed.force && bound.offset == [0, 0],
         };
-        if self.cache(feature, &template, marker, &text)
-            && let Some(path) = path
-        {
-            self.paths.push(path);
+        if self.cache(feature, &template, marker, &text) {
+            self.label_texts.push(Box::from(&text[..]));
+            if let Some(path) = path {
+                self.paths.push(path);
+            }
         }
     }
 
@@ -485,7 +493,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         mut self,
         renderer: &mut R,
         diagnostics: &mut Vec<Diagnostic>,
-    ) {
+    ) -> Vec<CachedLabel> {
         if let (left_out, Some(first)) = self.over_limit {
             let message = format!(
                 "the label cache of a render holds at most {MAX_LABELS} labels; {left_out} \
@@ -509,7 +517,9 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         };
         let (width, height) = self.size;
         let image = [0.0, 0.0, f64::from(width), f64::from(height)];
+        let mut boxes: Vec<Option<[f64; 4]>> = vec![None; cached.len()];
         draw_label_cache(&cache, self.size, |i, placement| {
+            boxes[i] = Some(placement.bounds.bbox);
             let label = &cached[i];
             if label.color.is_none() && label.outline.is_none() {
                 return;
@@ -547,6 +557,24 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 });
             }
         });
+        // The report walks the cache as msDrawLabelCache does.
+        let mut labels = Vec::with_capacity(cached.len());
+        for priority in (1..=MAX_PRIORITY).rev() {
+            for (i, label) in cached.iter().enumerate().rev() {
+                if label.priority != priority {
+                    continue;
+                }
+                let (layer, class, _) = defs[label.def as usize].at;
+                labels.push(CachedLabel {
+                    priority,
+                    layer,
+                    class,
+                    text: self.label_texts[label.text as usize].to_string(),
+                    drawn: boxes[i],
+                });
+            }
+        }
+        labels
     }
 
     /// Reports why `at` is not drawn, once per label and code.

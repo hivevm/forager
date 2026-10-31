@@ -1372,3 +1372,49 @@ fn the_label_cache_holds_at_most_100000_labels_and_reports_those_past_it_once() 
     );
     assert_eq!(recorder.0.take().len(), 2);
 }
+
+/// The render reports every label of its cache in the order msDrawLabelCache walks it, the last
+/// added first, the one drawn with the box it was drawn in, which holds its ink to the pixel, and
+/// the one it discarded without.
+#[test]
+fn the_render_reports_its_labels_drawn_and_discarded_in_the_caches_order() {
+    let overlapping = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Forager"},
+         "geometry": {"type": "Point", "coordinates": [40, 30]}},
+        {"type": "Feature", "properties": {"name": "Fen"},
+         "geometry": {"type": "Point", "coordinates": [42, 30]}}
+    ]}"#;
+    let rendered = render(&map(label_item()), overlapping);
+    let labels: Vec<_> = rendered
+        .labels
+        .iter()
+        .map(|l| {
+            (
+                l.priority,
+                l.layer,
+                l.class,
+                l.text.as_str(),
+                l.drawn.is_some(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        labels,
+        [(1, 0, 0, "Fen", true), (1, 0, 0, "Forager", false)]
+    );
+    let [x0, y0, x1, y1] = rendered.labels[0].drawn.unwrap();
+    let image = rendered.image.unwrap();
+    let [ix0, iy0, ix1, iy1] = ink(&image, (0, 160), (0, 60)).unwrap();
+    assert!(
+        x0.floor() <= f64::from(ix0) && y0.floor() <= f64::from(iy0),
+        "the ink {:?} starts before the box {:?}",
+        [ix0, iy0, ix1, iy1],
+        [x0, y0, x1, y1]
+    );
+    assert!(
+        f64::from(ix1) <= x1.ceil() && f64::from(iy1) <= y1.ceil(),
+        "the ink {:?} ends past the box {:?}",
+        [ix0, iy0, ix1, iy1],
+        [x0, y0, x1, y1]
+    );
+}

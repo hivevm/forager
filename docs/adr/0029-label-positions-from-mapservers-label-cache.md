@@ -45,9 +45,9 @@ case as `map2img` renders it and writes out each label of the cache.
 
 - **The reader.** It follows `main` of `src/apps/map2img.c` at the pin for the options the harness
   applies: `msSetup`, `msLoadConfig` without a file, `msProjDataInitFromEnv`, `msDebugInitFromEnv`,
-  `msLoadMap`, `msApplyDefaultSubstitutions`, `msApplyStyleItemsToLayers`, the options `-l`, `-e`,
-  and `-s` as `map2img` applies them, `msDrawMap`, and `msSaveImage` to the file `-o` names. It
-  keeps the notice of `map2img.c`.
+  `msLoadMap`, `msApplyDefaultSubstitutions`, `msApplyStyleItemsToLayers`, the options `-i`, `-l`,
+  `-e`, and `-s` as `map2img` applies them, `msDrawMap`, and `msSaveImage` to the file `-o` names.
+  It keeps the notice of `map2img.c`.
 - **Its output.** One line per member, tab-separated, in the order `msDrawLabelCache` walks them:
   the priority, the layer's index and name, the class index, whether it was drawn (listed in
   `rendered_text_symbols`), its box as `minx miny maxx maxy` for a drawn member and nothing for a
@@ -64,7 +64,8 @@ case as `map2img` renders it and writes out each label of the cache.
 
 **Out of scope:** the harness's report and how it names a mismatch, which ticket 09 of the labels
 spec builds; options of `map2img` beyond the harness's; labels MapServer draws without its label
-cache.
+cache, and those a layer's `PROCESSING "FORCE_DRAW_LABEL_CACHE=FLUSH"` draws and empties from it
+before the map is drawn, which the reader refuses.
 
 ## Alternatives considered
 

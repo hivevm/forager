@@ -15,6 +15,8 @@ use std::path::Path;
 
 use forager_style_ir::{Diagnostic, Extent, Layer, LayerStatus, Map};
 
+pub mod labels;
+
 #[cfg(test)]
 mod tests;
 
@@ -397,12 +399,13 @@ pub enum Entry {
     Out(String),
 }
 
-/// One line of the list: what it says of the case, and whether it marks the case's reference
-/// blank.
+/// One line of the list: what it says of the case, whether it marks the case's reference blank,
+/// and whether it marks a text case whose labels hold G-10, each matching MapServer's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Listed {
     pub entry: Entry,
     pub blank: bool,
+    pub labels_hold: bool,
 }
 
 /// The categories of G-6 and G-13 the list knows, each compared by a metric of its own.
@@ -438,9 +441,9 @@ impl Category {
 
 /// Reads the list: a line `<mapfile> <result> [blank] geometry|text passes|fails` names a case in
 /// scope with its category, a line `<mapfile> <result> [blank] out: <reason>` one out of scope,
-/// `blank` marking a case whose reference is blank; `#` begins a comment, and blank lines are
-/// ignored. A case named twice, a line of another form, or an empty reason is an error naming its
-/// line.
+/// `blank` marking a case whose reference is blank, and `labels-hold` after the outcome of a text
+/// case one whose labels match MapServer's; `#` begins a comment, and blank lines are ignored.
+/// A case named twice, a line of another form, or an empty reason is an error naming its line.
 pub fn list(text: &str) -> Result<BTreeMap<(String, String), Listed>, String> {
     let mut entries = BTreeMap::new();
     for (number, line) in text.lines().enumerate() {
@@ -459,6 +462,7 @@ pub fn list(text: &str) -> Result<BTreeMap<(String, String), Listed>, String> {
             Some(after) if after.starts_with(char::is_whitespace) => (true, after.trim_start()),
             _ => (false, rest),
         };
+        let mut labels_hold = false;
         let entry = if let Some(reason) = rest.strip_prefix("out:") {
             let reason = reason.trim();
             if reason.is_empty() {
@@ -475,17 +479,36 @@ pub fn list(text: &str) -> Result<BTreeMap<(String, String), Listed>, String> {
             else {
                 return Err(format!("line {number}: `{rest}` is no category"));
             };
-            let passes = match words.get(1..) {
-                Some(["passes"]) => true,
-                Some(["fails"]) => false,
+            let (outcome, mark) = match words.get(1..) {
+                Some([outcome]) => (*outcome, None),
+                Some([outcome, mark]) => (*outcome, Some(*mark)),
                 _ => return Err(format!("line {number}: `{rest}` is no outcome")),
             };
+            let passes = match outcome {
+                "passes" => true,
+                "fails" => false,
+                _ => return Err(format!("line {number}: `{rest}` is no outcome")),
+            };
+            match mark {
+                None => {}
+                Some("labels-hold") if category == Category::Text => labels_hold = true,
+                Some(mark) => {
+                    return Err(format!(
+                        "line {number}: `{mark}` is no mark of a {} case",
+                        category.word()
+                    ));
+                }
+            }
             Entry::InScope { category, passes }
         };
         if entries
             .insert(
                 (mapfile.to_owned(), result.to_owned()),
-                Listed { entry, blank },
+                Listed {
+                    entry,
+                    blank,
+                    labels_hold,
+                },
             )
             .is_some()
         {
