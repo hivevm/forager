@@ -17,8 +17,9 @@ skimmed. The design revision drops what prevented nothing
 - **A test that expects a refusal asserts its reason** — the diagnostic's code in a Rust test,
   the refusal's text in a script, because any other failure, a missing tool or a broken fixture,
   would otherwise pass for the refusal.
-- **A `Verifies:` marker claims every *shall* of its criterion** — a test cites a goal or quality
-  goal only when it decides all the criterion asks for, such as G-5's image *and* the HTML example
+- **A `Verifies:` marker claims every *shall* of its criterion** — a test cites a goal, a quality
+  goal, or an ADR only when it decides all the criterion asks for, or a clause of the ADR's
+  *Decision*, never because a test beside it does, such as G-5's image *and* the HTML example
   that shows it; a test that decides a part cites nothing and the criterion stays pending, unless
   the criterion asks for a test per item itself, as Q-8 and Q-9 do. The
   traceability check counts a marker as met and cannot tell how much its test decides.
@@ -26,7 +27,11 @@ skimmed. The design revision drops what prevented nothing
   tested** — a rule that follows their code names the function it follows, read at the pinned
   release, never as a ticket or memory describes it, and each branch of that function the port
   takes over has a test of its own: the msautotest corpus passing says nothing of a branch no
-  file of it takes, which is where such a port goes silently wrong.
+  file of it takes, which is where such a port goes silently wrong. A spec or ticket that says
+  what MapServer does names the function and lines it read at the pin, or asks instead of
+  stating; and a port in the engine first reads the parameter's page under `docs/semantics/`,
+  which says what part of the C the frontend has already carried into the IR, so that no part is
+  ported twice.
 - **A reader of untrusted bytes allocates nothing from a count or a size the bytes state before
   checking it against the bytes present** — a header's record count, a part count, a length
   field: each is compared with what the input holds, in checked arithmetic, before anything is
@@ -35,9 +40,15 @@ skimmed. The design revision drops what prevented nothing
   allocator, as the shapefile adapter's tests do; the same test, run against a crate's reader,
   shows whether that reader keeps to it ([ADR-0024](adr/0024-shapefile-reader.md)).
 - **A reader that skips what it cannot read fails closed** — a condition it cannot read becomes
-  one that never matches, never one that is absent, and what it skips is still held to the limits
-  of Q-9; a lenient path is a second way in, and what it leaves out must not widen what a map
-  draws or what an input may cost.
+  one that never matches, never one that is absent, a value it cannot carry over leaves what it
+  belongs to undrawn, never at the default an absent value takes, and what it skips is still held
+  to the limits of Q-9; a lenient path is a second way in, and what it leaves out must not widen
+  what a map draws or what an input may cost.
+- **What a render comes to hold per label or per feature is measured where it starts to** — the
+  change that makes a cached label or a feature hold something more, a style, a marker, a bound,
+  adds the case that holds it to the memory test of Q-9, such as
+  `crates/engine/tests/label_memory.rs`, because that test measures only the maps it builds and
+  says nothing of a field none of them sets.
 - **A script that points git at a repository runs git without git's repository variables** — a
   test, a self-test, or a script under `scripts/` that drives git on a repository it names, a
   fixture or a checkout, removes what `git rev-parse --local-env-vars` names from git's
