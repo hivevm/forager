@@ -55,13 +55,13 @@ impl Renderer for Discard {
     }
 }
 
-/// The map of the points, its label drawn where `labelled`, with a style of a fixed colour and
-/// of the transform `styled` where one is given: a `labelpnt` or `labelcenter` style of symbol 0,
-/// which is sized 1 by 1 and draws nothing.
-fn map(labelled: bool, styled: Option<GeomTransform>) -> Map {
+/// The map of the points, its label drawn where `labelled`, with a style of the transform and the
+/// colour `styled` where one is given: a `labelpnt` or `labelcenter` style of symbol 0, which is
+/// sized 1 by 1 and draws nothing.
+fn map(labelled: bool, styled: Option<(GeomTransform, Bound<Rgba>)>) -> Map {
     let styles = styled
-        .map(|transform| Style {
-            color: Some(Bound::Value(Rgba::opaque(0, 255, 0))),
+        .map(|(transform, color)| Style {
+            color: Some(color),
             geom_transform: Some(transform),
             ..Style::default()
         })
@@ -126,7 +126,7 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
     let features: Vec<String> = (0..POINTS)
         .map(|i| {
             format!(
-                r#"{{"type": "Feature", "properties": {{"name": "Forager {i}"}},
+                r#"{{"type": "Feature", "properties": {{"name": "Forager {i}", "color": "0 255 0"}},
                     "geometry": {{"type": "Point", "coordinates": [{}, {}]}}}}"#,
                 i % 1000,
                 (i / 1000) * 40
@@ -146,14 +146,22 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
     // `labelpoly` style the same for every feature is read from the map as the label is drawn,
     // and adds nothing a label holds; nor does a `labelpnt` style, whose marker the label's
     // definition holds and whose bounds are computed at each label's point as the cache tests it,
-    // nor a `labelcenter` style, whose marker is placed only as the label is drawn.
+    // nor a `labelcenter` style, whose marker is placed only as the label is drawn. A style whose
+    // `COLOR` is bound to the feature's property adds the colour bound to it, and a `labelpnt`
+    // one the marker too.
+    let fixed = || Bound::Value(Rgba::opaque(0, 255, 0));
+    let bound = || Bound::Binding {
+        binding: "color".to_owned(),
+    };
     for styled in [
         None,
-        Some(GeomTransform::LabelPoly),
-        Some(GeomTransform::LabelPoint),
-        Some(GeomTransform::LabelCenter),
+        Some((GeomTransform::LabelPoly, fixed())),
+        Some((GeomTransform::LabelPoint, fixed())),
+        Some((GeomTransform::LabelCenter, fixed())),
+        Some((GeomTransform::LabelPoly, bound())),
+        Some((GeomTransform::LabelPoint, bound())),
     ] {
-        let (with, drawn) = peak(&map(true, styled), &sources);
+        let (with, drawn) = peak(&map(true, styled.clone()), &sources);
         assert_eq!(drawn, POINTS, "every label is drawn");
         let per_label = with.saturating_sub(without) / POINTS;
         assert!(

@@ -420,7 +420,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             test_point: !fixed.force && bound.offset == [0, 0],
         };
         if self.cache(feature, &template, marker, &text) {
-            self.hold(&template, text, styles, label_marker, path);
+            self.hold(&template, text, written, &styles, label_marker, path);
         }
     }
 
@@ -431,13 +431,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         &mut self,
         template: &Cached,
         text: String,
-        styles: Box<[Style]>,
+        written: &[Style],
+        styles: &[Style],
         label_marker: Option<LabelMarker>,
         path: Option<TextPath>,
     ) {
         self.label_texts.push(text.into_boxed_str());
         self.styles
-            .hold(template.def, template.text, styles, label_marker);
+            .hold(template.def, template.text, written, styles, label_marker);
         if let Some(path) = path {
             self.paths.push(path);
         }
