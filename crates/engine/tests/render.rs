@@ -1,11 +1,15 @@
 //! The engine end to end: a style IR and GeoJSON in, an RGBA image out, compared with a reference
 //! image of Forager's own (spec of the browser tracer, Testing decisions). Set FORAGER_BLESS=1 to
-//! write the references after a deliberate change, and review the images before committing them.
+//! write the references after a deliberate change, and review the images before committing them;
+//! what the bless reports is told in bless/mod.rs.
 
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::PathBuf;
 
+mod bless;
+
+use bless::assert_matches_reference;
 use forager_adapter_geojson::GeoJsonSource;
 use forager_engine::{MAX_IMAGE_SIDE, Rendered, render};
 use forager_render::RgbaImage;
@@ -66,20 +70,6 @@ fn render_with(map: &Map, geojson: Option<&str>) -> Rendered {
         .into_iter()
         .collect();
     ready(render(map, &sources, AggRenderer::new()))
-}
-
-fn assert_matches_reference(image: &RgbaImage, name: &str) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name);
-    if std::env::var_os("FORAGER_BLESS").is_some() {
-        std::fs::write(&path, forager_encode::png(image).unwrap()).unwrap();
-    }
-    let reference = forager_encode::decode_png(&std::fs::read(&path).unwrap()).unwrap();
-    assert!(
-        reference == *image,
-        "{name} differs from its reference image"
-    );
 }
 
 const SQUARE_WITH_HOLE: &str = r#"{"type": "Polygon", "coordinates": [
@@ -1305,4 +1295,84 @@ fn a_transformed_first_style_with_an_outline_draws_once_as_its_outline_prepares_
     );
     assert_eq!(image.pixel(10, 30), Some(WHITE), "past the outline");
     assert_matches_reference(&image, "geomtransform_outline.png");
+}
+
+/// A 2 × 2 image of four pixels given in reading order.
+fn image_of(pixels: [[u8; 4]; 4]) -> RgbaImage {
+    RgbaImage {
+        width: 2,
+        height: 2,
+        pixels: pixels.concat(),
+    }
+}
+
+#[test]
+fn a_bless_reports_how_far_it_moved_the_image_it_replaces() {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("bless");
+    std::fs::create_dir_all(&dir).unwrap();
+    let moved = dir.join("moved.png");
+    let kept = dir.join("kept.png");
+    let before = image_of([
+        [255, 255, 255, 255],
+        [200, 220, 180, 255],
+        [0, 0, 0, 255],
+        [30, 60, 200, 128],
+    ]);
+    for path in [&moved, &kept] {
+        std::fs::write(path, forager_encode::png(&before).unwrap()).unwrap();
+    }
+    let after = image_of([
+        [255, 255, 255, 255],
+        [202, 220, 179, 255],
+        [0, 0, 0, 255],
+        // R moves in two pixels, by 2 and by 1: the report gives the larger, not their sum.
+        [29, 63, 200, 127],
+    ]);
+    assert_eq!(
+        bless::bless(&moved, &after).as_deref(),
+        Some("moved.png: 2 of 4 pixels moved, by at most R 2 G 3 B 1 A 1")
+    );
+    assert_eq!(
+        forager_encode::decode_png(&std::fs::read(&moved).unwrap()).unwrap(),
+        after,
+        "the bless wrote the new image"
+    );
+    assert_eq!(
+        bless::bless(&kept, &before),
+        None,
+        "an image that did not move reports nothing"
+    );
+}
+
+#[test]
+fn a_bless_reports_an_image_that_changed_its_size_is_new_or_replaces_a_broken_one() {
+    let wide = RgbaImage {
+        width: 4,
+        height: 1,
+        pixels: [[0_u8, 0, 0, 255]; 4].concat(),
+    };
+    let square = image_of([[0, 0, 0, 255]; 4]);
+    assert_eq!(
+        bless::report("x.png", &wide, &square).as_deref(),
+        Some("x.png: 4×1 became 2×2")
+    );
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("bless");
+    std::fs::create_dir_all(&dir).unwrap();
+    let new = dir.join("new.png");
+    let _ = std::fs::remove_file(&new);
+    assert_eq!(
+        bless::bless(&new, &square).as_deref(),
+        Some("new.png: new, 2×2")
+    );
+    let broken = dir.join("broken.png");
+    std::fs::write(&broken, b"not a png").unwrap();
+    assert_eq!(
+        bless::bless(&broken, &square).as_deref(),
+        Some("broken.png: replaced an undecodable reference, 2×2")
+    );
+    assert_eq!(
+        forager_encode::decode_png(&std::fs::read(&broken).unwrap()).unwrap(),
+        square,
+        "the bless repaired the reference"
+    );
 }
