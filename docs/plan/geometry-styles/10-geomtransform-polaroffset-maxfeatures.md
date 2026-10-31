@@ -2,14 +2,16 @@
 
 ## What to build
 
-The engine applies a style's `GEOMTRANSFORM` (`start`, `end`, `vertices`, `centroid`, and
-the bounding box), a layer's `GEOMTRANSFORM` where it needs no geometry library, a style's
-`POLAROFFSET`, and a layer's `MAXFEATURES`, as MapServer does at the pin.
+The engine applies a style's `GEOMTRANSFORM` (`start`, `end`, `vertices`, and `centroid`; the
+bounding box is `docs/plan/pixmap-symbols/11-geomtransform-bbox.md`'s), a layer's
+`GEOMTRANSFORM` where it needs no geometry library, a style's `POLAROFFSET`, and a layer's
+`MAXFEATURES`, as MapServer does at the pin.
 
 ## Acceptance criteria
 
-- [ ] Given each transform, a polar offset, and a feature limit, when rendered, then the image
-      matches Forager's reference, the transformed points taken from MapServer's computation.
+- [ ] Given each transform but `bbox`, a polar offset, and a feature limit, when rendered, then
+      the image matches Forager's reference, the transformed points taken from MapServer's
+      computation.
 - [ ] Given a transform that needs a geometry library, then it is a diagnostic and nothing is drawn
       in its place.
 - [ ] Given the harness, then every case this makes pass is flipped to `passes` in the list.
@@ -45,10 +47,8 @@ of the style IR, what the IR already carries:
 
 What is left needs the IR's format to change (ADR-0020), which the maintainer decides (ADR-0007):
 
-- **`bbox`.** `GeomTransform` has no variant for it; the frontend warns and the style draws the
-  feature's own geometry. MapServer shades the shape's box, clipped to the image grown by
-  `MS_MAX(width, size) + 3` (`MS_GEOMTRANSFORM_BBOX`). Used by
-  `renderers/poly_geomtransform_anchor.map`, which also needs pixmap symbols.
+- **`bbox`.** Carried by `docs/plan/pixmap-symbols/11-geomtransform-bbox.md`, beside the pixmap
+  symbols `renderers/poly_geomtransform_anchor.map` also needs.
 - **A transform that needs a geometry library** (`buffer`, `simplify`, `simplifypt`,
   `centerline`, …). The second criterion asks for a diagnostic and nothing drawn; the IR has no
   way to say "this style draws nothing", and the frontend can only drop the transform, so the
