@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-25, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-10-31, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -47,7 +47,9 @@ golden path and the test pattern an agent copies from are named here.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
   resolver — with the features a source delivers, their geometries and properties
   ([ADR-0026](adr/0026-feature-properties-at-the-port.md)), and the resource path that
-  cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`.
+  cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`;
+  `poll_once` runs a future whose ports never wait in one poll, as every host and test that runs
+  the frontend or the engine synchronously does.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
   against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), the
@@ -66,8 +68,9 @@ golden path and the test pattern an agent copies from are named here.
   reads through a trait of its own, as MapServer's parser evaluates its expressions, and matches
   `regexp_like` with the `regex` crate in byte mode, each pattern compiled once per render
   ([ADR-0031](adr/0031-expression-evaluator.md)); C's `atof`, `printf`, and `strptime` it needs
-  are ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax in `pattern.rs`. Synchronous,
-  without I/O; the only crate that uses `regex`.
+  are ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax in `pattern.rs`; its `atof`
+  and `atoi` it also lends to the engine, which reads a style's or a label's bound values with
+  them. Synchronous, without I/O; the only crate that uses `regex`.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, or, for a layer with inline features, a source
   in memory of its own over them, which reports a bound source as not read (`inline.rs`,
@@ -81,7 +84,11 @@ golden path and the test pattern an agent copies from are named here.
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0028): it holds
   each label as its glyphs' indices and its point, draws each glyph once per font and size, and
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
-  diagnostic. It is the one core crate
+  diagnostic. The symbolization of a style, which ADR-0009's crate map gives a crate `symbolize`
+  of its own that does not exist yet, lives here too: a style's bounds and dashes (`draw.rs`), its
+  vector and ellipse symbols (`symbol.rs`), hatches (`hatch.rs`), symbols along a line
+  (`line_marker.rs`), line offsets (`offset.rs`), and the style's `GEOMTRANSFORM` and
+  `POLAROFFSET` (`geom_transform.rs`). It is the one core crate
   that awaits the ports. Every host binds its sources to the layers by name through the engine's
   `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
   way for each. A line style's symbol with a `GAP` it places along the line, the markers of one
@@ -94,7 +101,9 @@ golden path and the test pattern an agent copies from are named here.
   labels MapServer's label cache draws, by priority, collisions with the labels drawn and the
   markers cached, the image's edge, and `MINDISTANCE`, each test bounded by a grid over the image
   (`cache.rs`). It is the one crate that depends on skrifa, and does no I/O (ADR-0028).
-- **`render`** — the display list, the renderer trait, and the RGBA image.
+- **`render`** — the display list, the renderer trait, and the RGBA image; the cost model that
+  bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0032), and the reach past the image
+  a glyph's point may have (`MAX_GLYPH_REACH`).
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, blends premultiplied colours in a pixel format of its own as MapServer's
   AGG 2.4 does, draws a layer with an opacity into an image of its own and lays it over, fills
@@ -170,9 +179,10 @@ each category.
 The conformance harness there reads the cases of `misc` and `renderers`, their `RUN_PARMS` lines,
 in its module `conformance/`, whose list `cases.txt` names each in scope with its category and
 expected outcome, passing or failing, or out of scope with its reason, and marks those whose
-reference is blank; it renders each case in scope in-process, binding shapefiles and reading the
-fonts of its labels as `forager render` does, compares it by the metric of its category, geometry
-and symbols or text, and holds its outcome, leaving the renderings of failing cases under
+reference is blank; it renders each case in scope in-process, binding shapefiles with a copy of what
+`forager render` does, whose departures its `render` names, and reading the fonts of its labels,
+compares it by the metric of its category, geometry and symbols or text, and holds its outcome,
+leaving the renderings of failing cases under
 Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that pass, the blank
 ones apart, and `scripts/check-fidelity.sh` holds the share of passing cases without a blank
 reference against that of the last release tag `v<semver>` in the record
