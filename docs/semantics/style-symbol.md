@@ -30,7 +30,8 @@ the centre of the shape's segments weighted by their lengths (`msGetPolygonCentr
 falls. A collection's members are one shape. With `ANGLE AUTO` the symbol turns with the segment
 at `start` and `end`, and at a vertex halfway between its two segments (`calcOrientation` and
 `calcMidAngle`). `labelpnt` and `labelpoly` draw nothing there, nor does `labelcenter`, on which
-`msDrawTransformedShape` fails, nor does a style without a symbol or with symbol 0, as
+`msDrawTransformedShape` fails the layer's draw, so the frontend warns of it on a class's style
+of a line or polygon layer; nor does a style without a symbol or with symbol 0, as
 `msDrawMarkerSymbol` draws none. A line layer that draws its features style
 by style draws the transformed styles with its first style, before the rest, and its first style,
 when it has an outline, as its outline prepares it. A point layer draws every style at its points,
