@@ -23,9 +23,9 @@ that size from the decoded image's dimensions; ticket 09 uses it under a label.
 - [ ] Given a pixmap of 40 × 20 at `SIZE 1`, at `SIZE 10.9`, and without a size at a scale factor
   of 1.5, when its marker's size is computed, then it is (40, 20), (20, 10), and (60, 30) — the
   truncation and the size-1 branch of `msGetMarkerSize` — and a test states them.
-- [ ] Given `marker_anchorpoint`, when the harness renders it, then its pixmap classes are drawn,
-  and the list gives it the outcome and the reason the maintainer's answer to the spec's first open
-  question decides.
+- [ ] Given `marker_anchorpoint`, when the harness renders it, then it stays `fails` and the list
+  gives the reason "TrueType symbols": its classes 1 to 4 draw TrueType symbols, which Forager does
+  not draw yet; the anchor point of its pixmap classes is decided by the tests above.
 
 ## Read first
 
@@ -45,5 +45,5 @@ the engine's anchoring and marker size, undone by one revert. It touches nothing
 public interface, or style document format. Its branch counts against ADR-0007's cap of three open
 agent branches. A wrong result shows as a stated position or size that does not hold, and as
 `poly_geomtransform_anchor` failing in ticket 10; the tests citing the C prove it right. Stop: if
-the maintainer has not answered the spec's first open question when the rest is done, leave the
-case `fails` with "TrueType symbols" and hand off; or if the C contradicts this ticket.
+the C contradicts this ticket, record where here and hand off; or after three attempts at a
+reference image that will not hold.

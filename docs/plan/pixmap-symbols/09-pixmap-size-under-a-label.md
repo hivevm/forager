@@ -15,8 +15,8 @@ MapServer's failing `msGetMarkerSize` fails `msAddLabelGroup` (350–352) and `m
 
 A label's own `labelpnt` style whose symbol is a pixmap (`computeMarkerBounds`, `src/mapdraw.c`,
 3284 onwards) stays out of scope: `marker_pixmap`'s one label style is a `labelpoly`. Where
-MapServer would fail the map for an image that does not load, the label is left out instead, the
-deviation the spec's third open question asks about.
+MapServer would fail the map for an image that does not load, the label is left out instead and
+the rest of the map draws, the deviation the maintainer decided (`docs/semantics/symbol.md`).
 
 ## Acceptance criteria
 

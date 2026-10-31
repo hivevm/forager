@@ -8,7 +8,8 @@ A polygon style whose symbol is a pixmap fills the polygon with the image repeat
 - no colour is needed for a pixmap (753); `OFFSET` moves the polygon first (770–783);
 - the tile is `MS_NINT(width * scale)` by `MS_NINT(height * scale)` where the scale is not 1, the
   image's own size where it is, at least `MS_NINT(gap)` (or the gap) where the `GAP` is positive,
-  and at least 1 (853–872); held to Q-9 as ticket 01 settles a tile;
+  and at least 1 (853–872); held to Q-9's 4096 × 4096, whatever `SIZE` asks, before it is
+  allocated: past it the style is not drawn, with the limit's diagnostic;
 - `getTile` (222–386) draws the image, scaled and turned as at a point, centred in a new
   transparent image of the tile's size (234–243, 263–269; `agg2CreateImage`, `src/mapagg.cpp`,
   864–867); no seamless mode for a pixmap (878–883);
@@ -26,9 +27,10 @@ MapServer draws a hatch*); it counts the height, the image loaded before the cli
   when rendered, then the tile is 32 × 32, 15 × 15, and 40 × 40, stated in the test, its origin at
   the image's, and the engine's reference images hold the fills.
 - [ ] Given a polygon with a hole, when filled with a pixmap, then the hole stays empty (even-odd).
-- [ ] Given a tile whose size passes the bound ticket 01 sets for it, when rendered, then the style
-  is not drawn with the limit's diagnostic, and a counting allocator bounds the peak; where ticket
-  01 sets none, this criterion states the bound the maintainer chose instead.
+- [ ] Given a 32 × 32 pixmap at a `SIZE` that asks a tile of 4097 × 4097 pixels, and one at a
+  `SIZE` that asks 4096 × 4096, when rendered, then the first style is not drawn with the limit's
+  diagnostic before anything is allocated for its tile, and a counting allocator bounds the peak,
+  while the second is drawn (Q-9).
 - [ ] Given a class with a hatch style and a pixmap style, when its clip buffer is computed, then
   the pixmap counts at its image's height, stated in the test.
 - [ ] Given `polygon-pixmap`, when the harness renders it, then it passes and the list says so.
@@ -50,5 +52,10 @@ MapServer draws a hatch*); it counts the height, the image loaded before the cli
 
 ## Mode
 
-with the human: the tile is an allocation `SIZE` alone sets, and its bound is a resource limit of
-Q-9 that [ADR-0007](../../adr/0007-harness.md) keeps with the maintainer.
+with the human: the maintainer has now settled the tile's bound in Q-9 (ticket 01), so its number
+is no longer open, but this ticket is the code that enforces it, and
+[ADR-0007](../../adr/0007-harness.md) keeps "the resource limits" with the maintainer however
+small the ticket, whoever decided the number. Of the unattended conditions, the test would decide
+the criteria and a revert undo them, but the third, touching nothing ADR-0007 keeps with the human,
+cannot be answered yes. Split off, the fill without the bound could run unattended; it is not split,
+because an unbounded tile would land a hole in Q-9 between the two pull requests.

@@ -15,8 +15,13 @@ from the CLI and from the browser bindings.
   629–733) decodes it, premultiplied as it premultiplies (714–729), and hands the display list an
   image placed at the point. A file whose first bytes are no PNG signature is refused as
   "unsupported pixmap format" (`msLoadMSRasterBufferFromFile`, 1140–1174); a GIF is refused for now,
-  until ticket 05. A pixmap that does not load, decode, or keep to the limit leaves its style
-  undrawn and the layer warns with a diagnostic naming the symbol, its path, and why.
+  until ticket 05. A pixmap that does not load, decode, or keep to a limit leaves its style
+  undrawn and the layer warns with a diagnostic naming the symbol, its path, and why, and the rest
+  of the map draws: a deliberate deviation, decided by the maintainer, from MapServer, whose
+  `msDrawMap` (`src/mapdraw.c`, 508–519) returns no map when a layer fails to draw.
+  `docs/semantics/symbol.md` says so, beside what the engine now draws of a pixmap at a point.
+- **Memory.** The images one render holds decoded come to at most 256 MiB (Q-9); an image that
+  would pass it is not decoded, and its style is refused as above.
 - **Renderer.** Unturned and at scale 1, `agg2RenderPixmapSymbol` (`src/mapagg.cpp`, 693–700)
   blends the image with full cover at `MS_NINT(x - width / 2.)`, `MS_NINT(y - height / 2.)`; the
   reference renderer does the same, blended as ADR-0034 blends a premultiplied source. A style's
@@ -39,11 +44,17 @@ angle is not 0, as the square it draws today.
   RGB, RGBA, and 16-bit RGBA, when each is decoded, then its pixels are those `readPNG` yields,
   each premultiplied as `(c * a + 255) >> 8` where its alpha is below 255 and 0 where it is 0, the
   expected bytes stated in the test.
-- [ ] Given a PNG whose header claims a size past Q-9's limit with a few bytes behind it, when the
-  render needs it, then the style is not drawn, the layer warns with the limit's diagnostic, and a
-  counting allocator bounds the render's peak allocation far below the claimed size.
+- [ ] Given a PNG whose header claims 4097 × 4096 pixels, and one claiming 4096 × 4097, each with
+  a few bytes behind it, when the render needs it, then the style is not drawn, the layer warns
+  with the limit's diagnostic, and a counting allocator bounds the render's peak allocation far
+  below the claimed size (Q-9).
+- [ ] Given a map whose pixmaps, each within 4096 × 4096, come to more than 256 MiB decoded, when
+  rendered, then the image that would pass the bound is not decoded, its style is not drawn with
+  the limit's diagnostic, the styles of the images within it are drawn, and a counting allocator
+  bounds the peak (Q-9).
 - [ ] Given a pixmap whose file is missing, one that is no PNG, and one that is a truncated PNG,
-  when rendered, then each style is not drawn and the diagnostic names the symbol and the path.
+  when rendered, then each style is not drawn, the warning names the symbol and the path, and the
+  map is drawn with every other layer and style.
 - [ ] Given one image placed at a thousand points, when rendered, then it is loaded and decoded
   once.
 - [ ] Given the browser bindings and a page that passes the image beside the mapfile, when

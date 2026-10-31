@@ -10,6 +10,15 @@ MapServer map marks a point of interest, is lost. And a label beside such an ico
 all: the label cache cannot size the icon, so the engine leaves the label out with
 `label-not-drawn`.
 
+This spec makes five of the seven pass: `point_pixmap_gif`, `marker_pixmap`, `line_marker_pixmap`,
+`polygon-pixmap`, and `poly_geomtransform_anchor`. Two stay `fails`, by the maintainer's decision:
+`marker_anchorpoint`, with the reason "TrueType symbols", since 32 of its 56 points draw the
+TrueType symbols `1` to `4` of its classes 1 to 4, which Forager does not draw yet; and
+`point_pixmap`, with the reason "a symbol fetched by URL", since its fourth layer names
+`http://localhost:8000/misc/data/gdalicon.png`, which MapServer at the pin, built with curl, fetches
+and draws, and Forager never reads a URL (Q-8). The pixmap parts of both are built and decided by
+their own tests.
+
 ## Solution
 
 A user sees the image of a `TYPE PIXMAP` symbol drawn where MapServer draws it: at a point, scaled
@@ -17,7 +26,8 @@ by `SIZE`, turned by `ANGLE`, placed by its `ANCHORPOINT`; along a line with a `
 fill of a polygon; and at a transformed geometry, `bbox` among the transforms. A style may name an
 image file instead of a symbol, as MapServer allows. PNG and GIF images are read; any other format
 is refused with a diagnostic, and so is an image larger than 4096 × 4096 pixels, before it is
-decoded. A label beside an image marker is placed against the image's size, as MapServer's label
+decoded; an image that does not load leaves its style undrawn with a warning, and the rest of the
+map draws. A label beside an image marker is placed against the image's size, as MapServer's label
 cache places it. The browser takes the images from the page, by the path the mapfile names, as it
 takes fonts.
 
@@ -50,11 +60,12 @@ takes fonts.
 
 ## Goals served
 
-- G-6, for the six cases of the category geometry and symbols; G-13 and G-10, for `marker_pixmap`
-  of the category text, whose two labels MapServer discards.
+- G-6, for the four cases of the category geometry and symbols that pass; G-13 and G-10, for
+  `marker_pixmap` of the category text, whose two labels MapServer discards.
 - Q-4: the share of passing cases grows.
-- Q-9: a new limit on the pixels of a symbol image, a change of the specification drafted by the
-  first ticket. Q-8: an image a style names by its file resolves inside the base context.
+- Q-9: three new limits, on the pixels of a symbol image, on a polygon fill's tile, and on the
+  decoded images of one render, a change of the specification drafted by the first ticket. Q-8:
+  an image a style names by its file resolves inside the base context.
 - Q-1, Q-2, G-9: the decoders are pure Rust, build for `wasm32-unknown-unknown`, and decode the
   same bytes on every target. Q-5: the decoders enter the browser bundle and are measured.
 - Q-6: the new crate's licence passes `cargo deny`.
@@ -187,9 +198,11 @@ What Forager does:
   reference renderer draws them as `agg2RenderPixmapSymbol` and `agg2RenderPolygonTiled` do, with
   agg-rust's ports of the AGG span generators (ADR-0015), blended as ADR-0034 blends, and the
   image's square clipped as ADR-0039 clips.
-- **A pixmap that does not load** leaves its style undrawn and the layer warns, naming the symbol,
-  its path, and why, where MapServer fails the whole map; a reader that fails closes, never a
-  substitute square. This deviation is asked of the maintainer below.
+- **A pixmap that does not load** — missing, of another format, broken, or past a limit — leaves
+  its style undrawn and the layer warns, naming the symbol, its path, and why, and the rest of the
+  map draws; never a substitute square. This deviates on purpose, by the maintainer's decision,
+  from MapServer, which fails the layer and returns no map at all (`msDrawMap`, `src/mapdraw.c`,
+  508–519); `docs/semantics/symbol.md` records the deviation where ticket 02 updates it.
 - **An image named by a style** is appended by the frontend to the map's symbols as a pixmap or SVG
   symbol in `classResolveSymbolNames`' order, its path resolved against the main mapfile's
   directory inside the base context (Q-8). The style document's shape does not change: the symbol
@@ -202,9 +215,15 @@ What Forager does:
   binding of feature sources, which ADR-0038 decides, does not change.
 - **`GEOMTRANSFORM bbox`** becomes a value of the style IR's transform, a change of the style
   document format the maintainer decides (ADR-0007, ADR-0020, ADR-0036).
-- **Resource limit.** A symbol image may be at most 4096 × 4096 pixels, read from its header before
-  anything is allocated for it; past that it is not drawn, with a diagnostic (Q-9, a specification
-  change drafted by ticket 01, with the further bounds it asks about).
+- **Resource limits** (Q-9, a specification change drafted by ticket 01), each a diagnostic past it,
+  the style not drawn:
+  - a symbol image is at most 4096 × 4096 pixels, read from its header before anything is
+    allocated for it; a GIF's from its logical screen, which `readGIF` allocates
+    (`src/mapimageio.c`, 907–912);
+  - a polygon fill's tile is at most 4096 × 4096 pixels, whatever `SIZE` asks;
+  - the decoded images one render holds come to at most 256 MiB;
+  - a pixmap file is read within the 32 MiB its load path already bounds, with no byte limit of
+    its own.
 
 ## Testing decisions
 
@@ -217,19 +236,21 @@ What Forager does:
   branch of `readGIF` named above (screen larger than the frame, background past the table,
   interlaced, transparent index, index past the table, later frames skipped), and a format other
   than PNG or GIF refused.
-- The limit is tested as Q-9 asks, an input past it expecting the diagnostic, and as the
-  conventions ask of a reader of untrusted bytes: a header claiming 4097 × 4097, or 65535 × 65535,
-  with few bytes behind it, under a counting allocator that bounds the peak, as the shapefile
-  adapter's memory test does.
+- Each limit is tested as Q-9 asks, a test per limit feeding an input past it and expecting the
+  diagnostic: an image's header claiming 4097 × 4096, a GIF's screen past the limit, a tile asked
+  past it, and decoded images past 256 MiB in one render; and as the conventions ask of a reader of
+  untrusted bytes, each with few bytes behind it under a counting allocator that bounds the peak,
+  as the shapefile adapter's memory test does.
 - The conformance harness flips each case that passes to `passes` in its list; `marker_pixmap`
   also takes its `labels-hold` mark.
 - The browser bindings are tested with an image passed as a page passes a font.
 
 ## Out of scope
 
-- SVG symbols, and TrueType symbols, which `marker_anchorpoint` also needs (see the open
-  questions).
-- Fetching an image by URL, which MapServer does with curl.
+- SVG symbols, and TrueType symbols, which `marker_anchorpoint` also needs; it stays `fails` with
+  "TrueType symbols".
+- Fetching an image by URL, which MapServer does with curl; `point_pixmap` stays `fails` with "a
+  symbol fetched by URL".
 - A pixmap brushed along a line without a `GAP` (the tile of `msDrawLineSymbol`, 687–707), and a
   pixmap as a label's style, unless a case of this spec needs it.
 - A symbol bound to a property whose value names an image file.
@@ -237,25 +258,17 @@ What Forager does:
 - `TRANSPARENT` of a symbol, which MapServer does not draw with.
 - The legend and the scale bar.
 
-## Open questions for the maintainer
+## Decisions of the maintainer
 
-1. **`marker_anchorpoint` needs TrueType symbols.** Its classes 1 to 4 draw the TrueType symbols
-   `1` to `4`, and 32 of the 56 points of `rotpoints.dbf` are of those classes; Forager draws no
-   TrueType symbol yet (`point_truetype` fails for it). The case cannot pass under this spec. Keep
-   it `fails` with the reason "TrueType symbols" once its pixmap half is drawn, or bring TrueType
-   symbols into scope as a spec of their own?
-2. **`point_pixmap` fetches an image by URL.** Its fourth layer names
-   `http://localhost:8000/misc/data/gdalicon.png`; MapServer at the pin is built with curl
-   (`scripts/build-mapserver.sh`) and the reference image shows the icon drawn. Forager reads no URL
-   (Q-8), so the case cannot pass. Keep it `fails` with the reason "a symbol fetched by URL", or
-   decide a new reason for leaving a case out of scope?
-3. **A pixmap that does not load** fails the whole map in MapServer (`msDrawMap`, 508–519). Is
-   leaving the style undrawn with a warning, as for a font, the deviation you want?
-4. **Q-9 beyond the pixels of one image.** Ticket 01 drafts the 4096 × 4096 limit and asks: does it
-   also bound a polygon fill's tile, whose size `SIZE` alone sets at the pin (853–872)? Is a pixmap
-   file bounded in bytes, and at what? Is there a bound on the decoded images one render holds,
-   each up to 64 MiB at the limit? For a GIF, is the limit read from its logical screen, which
-   `readGIF` allocates?
+The interrogation left four questions, which the maintainer answered:
+
+1. `marker_anchorpoint` stays `fails` with "TrueType symbols"; ticket 06 builds the pixmap's
+   anchor point and decides it by its own tests.
+2. `point_pixmap` stays `fails` with "a symbol fetched by URL"; Forager reads no URL (Q-8).
+3. A pixmap that does not load leaves its style undrawn with a warning, and the rest of the map
+   draws, a deliberate deviation from `msDrawMap` (`src/mapdraw.c`, 508–519).
+4. Q-9 gains the three limits above, drafted by ticket 01; a pixmap file keeps the 32 MiB of its
+   load path.
 
 ## ADR impact
 

@@ -7,7 +7,8 @@ A pixmap symbol whose image is a GIF, told by its first bytes (`msLoadMSRasterBu
 it, with the pure-Rust `gif` crate of image-rs, once ADR candidate A of the spec has chosen it:
 
 - the image is the logical screen, `SWidth × SHeight` (907–912), its size read from the header and
-  held to Q-9's limit before anything is allocated for it, as ticket 01 settles it for a GIF;
+  held to Q-9's 4096 × 4096 before anything is allocated for it, the logical screen being what
+  `readGIF` allocates;
 - the screen is filled opaque with the background colour, an index past the colour table taken as
   0 (928–941); the colour table is chosen at line 918, the frame's local one where giflib holds one
   by then, else the global one, before any image descriptor is read, so whether a local table is
@@ -28,8 +29,10 @@ it, with the pure-Rust `gif` crate of image-rs, once ADR candidate A of the spec
   background index past the table, an interlaced frame, a transparent index, an index past the
   table, two frames, a local and a global table, no table, a frame past the screen — when each is
   decoded, then its pixels, or its refusal, are those the C yields, the bytes stated in the test.
-- [ ] Given a GIF whose screen claims a size past Q-9's limit, when the render needs it, then the
-  style is not drawn with the limit's diagnostic, and a counting allocator bounds the peak.
+- [ ] Given a GIF whose logical screen claims 4097 × 4096 pixels, and one whose screen is within
+  the limit but whose first frame claims more, when the render needs it, then the first is refused
+  with the limit's diagnostic before anything is allocated for it, the second as a frame past the
+  screen, each style not drawn, and a counting allocator bounds the peak (Q-9).
 - [ ] Given `point_pixmap_gif`, when the harness renders it, then it passes and the list says so.
 - [ ] Given the workspace, when `cargo deny check` and the build for `wasm32-unknown-unknown` run,
   then both are green.

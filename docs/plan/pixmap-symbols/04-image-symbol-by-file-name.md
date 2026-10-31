@@ -32,8 +32,9 @@ that MapServer fails the load where the file is missing, which holds for a URL o
   has a warning and no error, and the style draws nothing.
 - [ ] Given every mapfile of the msautotest suite, when loaded, then none has an error it did not
   have before (G-1).
-- [ ] Given `point_pixmap`, when the harness renders it, then its outcome is the one the
-  maintainer's answer to the spec's second open question decides, and the list says why.
+- [ ] Given `point_pixmap`, when the harness renders it, then it stays `fails` and the list gives
+  the reason "a symbol fetched by URL": its three other layers are drawn, and its fourth names
+  `http://localhost:8000/misc/data/gdalicon.png`, which Forager never reads (Q-8).
 
 ## Read first
 
@@ -52,5 +53,4 @@ that MapServer fails the load where the file is missing, which holds for a URL o
 ## Mode
 
 with the human: it resolves a resource path the mapfile names against the base context (Q-8),
-which [ADR-0007](../../adr/0007-harness.md) never lets run unattended, and `point_pixmap`'s outcome
-waits on the maintainer's answer about the URL.
+which [ADR-0007](../../adr/0007-harness.md) never lets run unattended.
