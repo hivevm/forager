@@ -3,7 +3,8 @@
 ## What to build
 
 The engine with the reference renderer is built for `wasm32-unknown-unknown` as a module that
-takes a style document and features and returns an RGBA buffer; a native test runs it over every
+takes a style document, features, and the font files its labels name, since the cases in scope
+include those of the category text, and returns an RGBA buffer; a native test runs it over every
 in-scope case and compares its buffer byte for byte with the native render (G-9). What runs the
 module, a pure-Rust interpreter in the test or a JavaScript runtime on CI, and which crate builds
 it, is decided first, through `propose-adr`, in its own pull request; should the module need a

@@ -4,18 +4,21 @@
 
 `scripts/check-rust.sh` runs the ignored tests of `msautotest` with `--skip
 mapserver_renders_the_cases_in_scope_within_its_noise`, and `.github/workflows/noise.yml` runs the
-same name with `--exact`: renamed, the test runs on every push without `map2img`, and a second
-ignored test that needs MapServer joins the push checks unnoticed. Its code (`measure`,
-`reproduced`, `noise_report`) sits at the top of `msautotest.rs` beside the G-1 loading, the G-3
-round trip, and the conformance render, where `conformance/` and `metric/` are modules. Move it into
-a `noise/` module, and keep it out of the push checks by one rule a test holds, such as skipping
-itself without `FORAGER_MAP2IMG`, instead of a name written twice
+same name with `--exact`: renamed, the test runs on every push and fails there without `map2img`
+and the label reader, and a second ignored test that needs MapServer joins the push checks
+unnoticed. Its code (`measure`, `reproduced`, `noise_report`, and `read_labels`, which holds the
+reader's labels to the records) sits in the middle of `msautotest.rs` beside the G-1 loading, the
+G-3 round trip, and the conformance render, where `conformance/` and `metric/` are modules, and it
+shares the metric lookup (`metric_of`) with the harness. Move it into a `noise/` module, and keep it
+out of the push checks by one rule a test holds, such as skipping itself without
+`FORAGER_MAP2IMG` and `FORAGER_MAPSERVER_LABELS`, instead of a name written twice
 ([ADR-0027](../../adr/0027-mapserver-built-from-the-pin.md)).
 
 ## Acceptance criteria
 
-- [ ] Given `scripts/check-rust.sh`, when it runs without `FORAGER_MAP2IMG`, then the noise test
-  does not run, whatever it is named, and no `--skip` names it.
+- [ ] Given `scripts/check-rust.sh`, when it runs without `FORAGER_MAP2IMG` and
+  `FORAGER_MAPSERVER_LABELS`, then the noise test does not run, whatever it is named, and no
+  `--skip` names it.
 - [ ] Given the noise workflow, when it runs, then it measures as before.
 
 ## Read first

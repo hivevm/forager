@@ -54,3 +54,13 @@ skimmed. The design revision drops what prevented nothing
   them, the largest move per channel, and the conformance outcome of the same change, because an
   image blessed from the renderer under test holds nothing of that change and only the
   conformance suite still judges it.
+- **A test holds a value it states, never one the code under test computes** — the expected value
+  is a literal, read from MapServer's source or a reference, not the engine's own constant or
+  function, and a relation between two outputs of the same code, one doubled at twice the
+  resolution, one ordered before another, comes beside a pinned value and never in place of it,
+  because a wrong implementation that both sides share passes the relation and the self-derived
+  value alike.
+- **A commit typed `refactor` changes nothing a test can see** — a behaviour it fixes or moves on
+  the way, such as a bound that now measures what the renderer draws, is a commit of its own typed
+  `fix` with its regression test, because the type tells the reviewer and the history which change
+  to read as a decision.

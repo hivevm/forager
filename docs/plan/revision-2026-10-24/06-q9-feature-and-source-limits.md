@@ -3,7 +3,7 @@
 ## What to build
 
 Q-9 names two of its numbers, 16 MiB of mapfile text and 1000 diagnostics, and its other limits
-are the implementer's: `MAX_FEATURES_PER_LAYER = 1_000_000` (`crates/engine/src/lib.rs:24`) and
+are the implementer's: `MAX_FEATURES_PER_LAYER = 1_000_000` (`crates/engine/src/lib.rs`) and
 the CLI's `MAX_SOURCE_BYTES = 256 MiB` per GeoJSON file (`crates/cli/src/lib.rs`), which #5
 listed as awaiting the maintainer and no change since has decided. Q-9's assumption says its
 limits are set from a first measurement. Measured on `main` 9d2a9bc (release build): a GeoJSON
@@ -11,9 +11,10 @@ file of 245 MiB with 2,200,000 line features peaks at 1.1 GB resident in `forage
 layer is skipped with `layer-skipped` only after the source has delivered every feature. So the
 feature limit bounds the drawing, not the memory: memory is bounded by the host's file limit in
 the CLI, and in the browser by nothing but the page's own tab, since the bindings take GeoJSON
-text of any size. Neither limit has the test per limit Q-9 asks for: the only limit test in
-`crates/engine/tests/render.rs` is the image size (line 165), and `crates/cli/tests/render.rs` has
-none.
+text of any size. Neither limit has the test per limit Q-9 asks for: the limit tests of
+`crates/engine/tests/render.rs` hold the image size and the markers, not the features, and the
+CLI's hold a shapefile's file past the data limit (`crates/cli/src/files.rs`) and the fonts
+(`crates/cli/src/lib.rs`), not a GeoJSON file past `MAX_SOURCE_BYTES`.
 
 Draft for the maintainer, in Q-9 of `docs/SPECIFICATION.md`:
 

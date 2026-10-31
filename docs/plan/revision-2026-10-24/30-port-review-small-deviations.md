@@ -16,7 +16,9 @@ Found by areas 3, 4, and 5 of the port review (revision ticket 23, #66, #67, #70
 - **`OPACITY [o] OPACITY 50`:** MapServer applies the alpha for 50 at load and keeps it when the
   bound value is 100 (`src/mapfile.c:2794-2806`); not modelled.
 - **ALIGN and POSITION bound:** where the bound value does not read, `bindLabel` keeps the
-  earlier value (`src/maputil.c:~362-415`); the frontend drops it.
+  earlier value (`src/maputil.c:~362-415`); the engine keeps the binding and warns
+  `label-binding-unsettled`. The ticket
+  `docs/plan/label-binding-state/01-label-binding-state.md` carries it, not this one.
 - **Not checked:** whether GDAL's `CPLReadLineL`, which `msLoadFontSet` reads with, ends a line
   at a lone CR.
 
