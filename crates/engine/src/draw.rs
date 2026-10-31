@@ -109,9 +109,9 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
 
 /// What a layer draws its features on beside the view: the map's symbols, the image's width and
 /// height in pixels, the layer's scale factor and the image's resolution factor (see
-/// [`crate::classes::scale_factor`]), what is left to the layer of [`line_marker::MAX_MARKER_POINTS`], the
-/// hatching of the class drawn, which counts the hatches refused (Q-9), and whether the layer is
-/// drawn into an image of its own.
+/// [`crate::classes::scale_factor`]), what is left to the layer of
+/// [`line_marker::MAX_MARKER_POINTS`], the hatching of the class drawn, which counts the hatches
+/// refused (Q-9), and whether the layer is drawn into an image of its own.
 pub struct Canvas<'a> {
     symbols: &'a [Symbol],
     pub(crate) image: (f64, f64),
@@ -395,15 +395,14 @@ fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
     rings
 }
 
-/// A line drawn in a style, as msDrawLineSymbol() draws one of a simple symbol: in the `COLOR`,
-/// or the `OUTLINECOLOR` without one; the width scaled by the canvas's factor and bounded; the
-/// offset, the dash pattern, and the initial gap scaled by the factor the scaling and the bounds
-/// applied to the width; and the style's cap and
-/// join, by default `round` and `none`. An outline pass draws the style widened by twice its
-/// outline width with its colours swapped, as msOutlineRenderingPrepareStyle() prepares it.
-/// A style with a vector or ellipse symbol and a `GAP` draws the symbol along the line instead,
-/// its markers' points taken from the canvas's budget; one whose symbol index is past the last
-/// draws nothing.
+/// A line drawn in a style, as msDrawLineSymbol() draws one of a simple symbol: in the `COLOR`, or
+/// the `OUTLINECOLOR` without one; the width scaled by the canvas's factor and bounded; the offset,
+/// the dash pattern, and the initial gap scaled by the factor the scaling and the bounds applied to
+/// the width; and the style's cap and join, by default `round` and `none`. An outline pass draws
+/// the style widened by twice its outline width with its colours swapped, as
+/// msOutlineRenderingPrepareStyle() prepares it. A style with a vector or ellipse symbol and a
+/// `GAP` draws the symbol along the line instead, its markers' points taken from the canvas's
+/// budget; one whose symbol index is past the last draws nothing.
 fn line_symbol(
     ops: &mut Vec<DrawOp>,
     paths: Vec<Vec<Point>>,
@@ -467,9 +466,9 @@ fn line_symbol(
 /// The style of an outline pass as msOutlineRenderingPrepareStyle() prepares it: its width and
 /// its bounds widened by twice its `OUTLINEWIDTH`, its size, MapServer's -1 where it has none,
 /// grown by it, and its colours swapped. MapServer divides the width's growth by the layer's
-/// scale factor over the image's resolution factor, and the size's by the scale factor times the
-/// resolution factor, which are one here, so that both grow by the outline width as written; the
-/// drawing scales them after.
+/// scale factor over the image's resolution factor, and divides the size's by the scale factor
+/// and multiplies it by the resolution factor; the two factors are one here, so that both grow by
+/// the outline width as written, and the drawing scales them after.
 fn outline_style(style: &Style) -> Style {
     let outline = outline_width(style);
     Style {

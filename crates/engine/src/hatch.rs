@@ -57,11 +57,11 @@ impl Hatching {
     /// styles' scale factor and the image's resolution factor, which are one here: per style, the
     /// largest of its symbol's default size, its `SIZE`, and its `WIDTH`, grown by its larger
     /// `OFFSET` unless that is a line offset, scaled, or its `MINSIZE` or `MINWIDTH` scaled where
-    /// larger, plus 1, rounded as `lrint`; the largest of the styles, plus 2 for a polygon. A size or width
-    /// bound to a property or an expression counts as unset, MapServer's -1 and 1; MapServer
-    /// computes the buffer before msBindLayerToShape() binds the feature's values, so it counts
-    /// the values bound for the feature drawn before. The default size of a pixmap or SVG symbol
-    /// counts as 1, where MapServer takes its image's height, which is not read.
+    /// larger, plus 1, rounded as `lrint`; the largest of the styles, plus 2 for a polygon. A size
+    /// or width bound to a property or an expression counts as unset, MapServer's -1 and 1;
+    /// MapServer computes the buffer before msBindLayerToShape() binds the feature's values, so it
+    /// counts the values bound for the feature drawn before. The default size of a pixmap or SVG
+    /// symbol counts as 1, where MapServer takes its image's height, which is not read.
     pub fn for_class(styles: &[Style], symbols: &[Symbol], factor: f64) -> Self {
         let mut buffer = 0.0_f64;
         for style in styles {
@@ -210,12 +210,12 @@ pub(crate) enum Hatched {
 
 /// msDrawShadeSymbol()'s parameters of a hatch at `factor`, the style's scale factor and the
 /// image's resolution factor, which are one here: the spacing is the `SIZE` scaled, the factor
-/// itself without one, bounded by `MAXSIZE` and then `MINSIZE` scaled by the resolution factor;
-/// the width the `WIDTH` scaled, the factor without one, bounded alike by `MAXWIDTH` and then
-/// `MINWIDTH`; the pattern scaled by the factor the scaling and the bounds applied to the width. MapServer divides by the width as written; where that is 0, the
-/// lengths are infinite, and AGG draws a line whose first dash is infinite as solid, so the
-/// pattern is dropped. A size, width, or angle bound to a property or an expression is drawn as
-/// if unset.
+/// itself without one, bounded by `MAXSIZE` and then `MINSIZE` scaled by the resolution factor; the
+/// width the `WIDTH` scaled, the factor without one, bounded alike by `MAXWIDTH` and then
+/// `MINWIDTH`; the pattern scaled by the factor the scaling and the bounds applied to the width.
+/// MapServer divides by the width as written; where that is 0, the lengths are infinite, and AGG
+/// draws a line whose first dash is infinite as solid, so the pattern is dropped. A size, width, or
+/// angle bound to a property or an expression is drawn as if unset.
 pub(crate) fn hatch(
     rings: Vec<Vec<Point>>,
     style: &Style,
