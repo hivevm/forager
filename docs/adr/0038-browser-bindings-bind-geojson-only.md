@@ -1,6 +1,6 @@
 # ADR-0038: The browser bindings bind only the GeoJSON a page passes, never a shapefile
 
-- **Status:** 🟢 accepted
+- **Status:** 🟡 proposed
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/bindings-wasm`: which feature sources it binds to the layers, and its dependencies on `adapter-<kind>` crates
@@ -17,7 +17,7 @@ would take the gap for an omission. G-5 asks the bindings for GeoJSON features, 
 bundle at 3 MB gzipped, and Q-7 keeps every source reference but a credential-free `DATA` away from
 the page.
 
-Questions the maintainer settled on acceptance:
+Questions the maintainer settled:
 
 1. Is a page that hands in shapefiles a use case the browser must serve, or does a server convert
    them to GeoJSON before they leave it?
