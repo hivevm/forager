@@ -22,8 +22,8 @@
 //! added to the first. A label is tested against the image, unless it may be partial, against
 //! the markers its priority and higher ones cached, its own apart, and against every label drawn
 //! before it, the box of its text and the marker of its `labelpoint` style; such a marker is
-//! tested so before the text. A label is drawn where it fits, or where it is forced, and left out where a drawn label
-//! of the same text lies within its minimum distance.
+//! tested so before the text. A label is drawn where it fits, or where it is forced, and left
+//! out where a drawn label of the same text lies within its minimum distance.
 //!
 //! The tests are MapServer's, pair by pair; which pairs are tested is bounded by a loose grid
 //! over the image (Q-9): every label and marker is held once, and a test visits each entry near

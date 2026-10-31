@@ -20,10 +20,10 @@ cache, read from its source at `rel-8-6-6`:
   `rendered_text_symbols`. Its `status` does not say so: a label along a line is set to
   `MS_DELETE` whether it was drawn or not, and a label waiting for a leader line can end as
   `MS_OFF`.
-- **Box.** A drawn member's `bbox` is the bounds of its text paths in pixels, final after the
-  collision tests. A member discarded before that is given no box: `msAddLabel` takes it from
-  reallocated memory and never sets one, and `msDrawLabelCache` computes it only for a label not
-  yet discarded.
+- **Box.** A drawn member's `bbox` is the bounds of its text paths and of its `labelpoint`
+  styles' markers in pixels, as `msDrawLabelCache` forms it, final after the collision tests. A
+  member discarded before that is given no box: `msAddLabel` takes it from reallocated memory and
+  never sets one, and `msDrawLabelCache` computes it only for a label not yet discarded.
 - **Lifetime.** The cache stays filled after `msDrawMap` returns, until the next map is prepared
   (`msPrepareImage`).
 

@@ -718,10 +718,10 @@ struct Styled<'a> {
 
 impl Styled<'_> {
     /// Draws the styles of `label`, `member` placed at `placement`, in their order, bound to its
-    /// feature where they vary by it, else `written`, as msDrawLabelCache draws them before the text (mapdraw.c:4056-4091): a
-    /// labelpoint style's marker at its point, a labelpoly style on the labelpoly it computes
-    /// at `placement` (mapdraw.c:3799-3860), which it never tests for collisions
-    /// (maplabel.c:781).
+    /// feature where they vary by it, else `written`, as msDrawLabelCache draws them before the
+    /// text (mapdraw.c:4056-4091): a labelpoint style's marker at its point, a labelpoly style on
+    /// the labelpoly it computes at `placement` (mapdraw.c:3799-3860), which it never tests for
+    /// collisions (maplabel.c:781).
     fn draw<R: Renderer>(
         &self,
         renderer: &mut R,
