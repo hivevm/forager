@@ -14,8 +14,9 @@ use forager_render::RgbaImage;
 use forager_render::{PathCommand, Point};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    AngleMode, Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, Op, Position,
-    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
+    AngleMode, Bound, Class, Expr, Extent, FeatureProperty, InlineFeature, Label, Layer,
+    LayerStatus, Map, Op, Position, RenderMode, Rgba, ShapeType, SourceRef, Span, Style, Symbol,
+    SymbolKind, SymbolRef, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -198,6 +199,100 @@ fn a_label_is_drawn_from_its_text_its_class_text_or_its_labelitem_alike() {
         );
         assert_eq!(rendered.image.unwrap(), reference);
     }
+}
+
+/// `map` with its layer read from one inline feature at (80, 30) of the `TEXT` `text` and the
+/// property `name` of the value `name`, rendered without a source bound to it.
+fn render_inline(mut map: Map, text: Option<&str>, name: &str) -> Rendered {
+    map.layers[0].source = None;
+    map.layers[0].features = vec![InlineFeature {
+        shape_type: ShapeType::Point,
+        parts: vec![vec![[80.0, 30.0]]],
+        properties: vec![FeatureProperty {
+            name: "name".to_owned(),
+            value: name.to_owned(),
+        }],
+        text: text.map(str::to_owned),
+        span: None,
+    }];
+    let sources = BTreeMap::<String, GeoJsonSource>::new();
+    ready(render_with_files(
+        &map,
+        &sources,
+        &Files,
+        AggRenderer::new(),
+    ))
+}
+
+#[test]
+fn an_inline_features_text_is_its_labels_text_after_the_label_class_and_labelitem() {
+    // msShapeGetLabelAnnotation takes the label's TEXT, else the class's, else the
+    // LABELITEM's value where it is not empty, else the feature's TEXT; the frontend folds the
+    // first three into the label's text.
+    let one = r#"{"type": "Feature", "properties": {"name": "Fen"},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let reference = render(&map(label_item()), one).image.unwrap();
+    let no_text = || {
+        map(Label {
+            text: None,
+            ..label_item()
+        })
+    };
+    let cases = [
+        // The feature's TEXT where the label has no text.
+        (no_text(), Some("Fen"), "Other"),
+        // The label's or the class's TEXT before the feature's.
+        (
+            map(Label {
+                text: Some(Expr::String("Fen".to_owned())),
+                ..label_item()
+            }),
+            Some("Other"),
+            "Other",
+        ),
+        // The LABELITEM's value before the feature's.
+        (map(label_item()), Some("Other"), "Fen"),
+    ];
+    for (map, text, name) in cases {
+        let rendered = render_inline(map, text, name);
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        assert_eq!(rendered.image.unwrap(), reference, "{text:?} {name:?}");
+    }
+    // Neither the label nor the feature has a text: no label, and nothing to report, as
+    // MapServer skips it.
+    let rendered = render_inline(no_text(), None, "Fen");
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        ink(rendered.image.as_ref().unwrap(), (0, 160), (0, 60)),
+        None
+    );
+    // Nor does a feature of a source other than inline features have one.
+    let rendered = render(&no_text(), one);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        ink(rendered.image.as_ref().unwrap(), (0, 160), (0, 60)),
+        None
+    );
+    // A known divergence (docs/semantics/feature.md): an empty LABELITEM value draws no label,
+    // where MapServer falls back on the feature's TEXT, as the style IR does not tell a label's
+    // text from its LABELITEM.
+    let rendered = render_inline(map(label_item()), Some("Fen"), "");
+    assert_eq!(
+        ink(rendered.image.as_ref().unwrap(), (0, 160), (0, 60)),
+        None
+    );
 }
 
 #[test]

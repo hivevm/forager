@@ -15,7 +15,11 @@ leaves it as it was read. `loadFeature` reads the block's statements in order:
 - `ITEMS "…"` replaces the feature's values with the string split at `;`, an empty value kept
   between two separators and after the last, and none of an empty string
   (`msStringSplitComplex` with `MS_ALLOWEMPTYTOKENS`).
-- `TEXT "…"` replaces the feature's text. The labels do not read it yet.
+- `TEXT "…"` replaces the feature's text. It is the text of a label that has no `TEXT` of its
+  own, whose class has none, and whose layer has no `LABELITEM`: `msShapeGetLabelAnnotation` in
+  `src/maputil.c` takes the label's `TEXT`, else the class's, else the `LABELITEM`'s value where
+  it is not empty, and the feature's text last. A label of a feature without a text then draws
+  nothing, as MapServer skips it.
 - `WKT "…"` replaces the whole shape, its values and text included, with what `msShapeFromWKT` makes
   of the text through GEOS: a point shape of one point for a `POINT`, one part of all the points for
   a `MULTIPOINT`, one part per line for a `LINESTRING` or a `MULTILINESTRING`, one part per ring,
@@ -56,7 +60,7 @@ feature has no properties. An expression or a binding finds a name without regar
 the first of two that match (`msLayerGetItemIndex`). `PROCESSING "ITEMS=…"` of a layer without
 features, and every other `PROCESSING` key, is not yet supported and is ignored with a warning.
 
-**Not carried:** the `TEXT` as a label's text; the layer's `GEOMTRANSFORM` and `TRANSFORM` on
+**Not carried:** the layer's `GEOMTRANSFORM` and `TRANSFORM` on
 inline features; and a `FEATURE` keyword inside a `FEATURE`, which `loadFeature` skips (`case
 (FEATURE): break;`, for features loaded from a string).
 
@@ -68,6 +72,9 @@ inline features; and a `FEATURE` keyword inside a `FEATURE`, which `loadFeature`
   its place after the names, `""` where the feature has none, and without `ITEMS` the items
   referred to take the values in the order they are referred to. The frontend names values by
   `ITEMS` alone: a name it lacks is absent, as is every name without `ITEMS`.
+- A `LABELITEM` whose value is empty draws no label, where MapServer draws the feature's text in
+  its place: the style IR holds a label's text with the `LABELITEM` folded in, and does not tell
+  it from a label's `TEXT` of the same property, whose empty value draws nothing in both.
 - An `EMPTY` geometry, which MapServer loads for most types as a shape of an empty part, is a
   load error here.
 - A `LINEARRING` member of a `GEOMETRYCOLLECTION`, which MapServer skips
