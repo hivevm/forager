@@ -126,8 +126,11 @@ mod tests {
         // Verifies: Q-3, Q-7
         assert!(admissible(&source(&[("data", "ü=1.shp")])));
         assert!(admissible(&source(&[("data", "data/ü=1.shp")])));
-        assert!(admissible(&source(&[("data", "u=1.shp")])));
+        assert!(admissible(&source(&[("data", "#=1.shp")])));
         assert!(!admissible(&source(&[("data", "€password=x")])));
         assert!(!admissible(&source(&[("data", "#password=x")])));
+        // The character ends the name: a key after it is a key, one before it is not.
+        assert!(!admissible(&source(&[("data", "ükey=1")])));
+        assert!(admissible(&source(&[("data", "passwordü=x")])));
     }
 }
