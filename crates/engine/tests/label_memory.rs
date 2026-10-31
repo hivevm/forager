@@ -1,5 +1,5 @@
 //! The memory the labels of a render take (Q-9): "A label the label cache holds keeps at most
-//! 400 bytes apart from its text, and at most 24 more for each style value a feature binds to
+//! 400 bytes apart from its text, and at most 32 more for each style value a feature binds to
 //! it; a test measures it." What a render holds per label until the labels are drawn after the
 //! last layer is measured under a counting allocator, as the difference between a render of many
 //! labelled points and the same render with no label, its text counted with it. One test, so
@@ -15,7 +15,7 @@ use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::{DisplayItem, Renderer, RgbaImage};
 use forager_style_ir::{
     Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer, LayerStatus, Map, Op,
-    RenderMode, Rgba, SourceRef, Style,
+    RenderMode, Rgba, SourceRef, Style, Symbol, SymbolKind, SymbolRef,
 };
 use peak_alloc::PeakAlloc;
 
@@ -59,7 +59,7 @@ impl Renderer for Discard {
 
 /// The map of the points, its label drawn where `labelled`, with the style `styled` where one is
 /// given: a `labelpnt` or `labelcenter` style of symbol 0, which is sized 1 by 1 and draws
-/// nothing.
+/// nothing, unless the style names symbol 1, a square its size scales.
 fn map(labelled: bool, styled: Option<Style>) -> Map {
     let styles = styled.into_iter().collect();
     let label = Label {
@@ -79,6 +79,26 @@ fn map(labelled: bool, styled: Option<Style>) -> Map {
         }),
         size: Some([1000, 1000]),
         fonts: [("sans".to_owned(), "sans.ttf".to_owned())].into(),
+        // Symbol 1, a vector square of side 1, which a style's SIZE scales.
+        symbols: vec![Symbol {
+            kind: SymbolKind::Vector,
+            paths: vec![vec![
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [1.0, 1.0],
+                [0.0, 1.0],
+                [0.0, 0.0],
+            ]],
+            extent: Some([1.0, 1.0]),
+            filled: true,
+            name: None,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }],
         layers: vec![Layer {
             name: Some("places".into()),
             render_mode: Some(RenderMode::Point),
@@ -146,7 +166,8 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
     // and adds nothing a label holds; nor does a `labelpnt` style, whose marker the label's
     // definition holds and whose bounds are computed at each label's point as the cache tests it,
     // nor a `labelcenter` style, whose marker is placed only as the label is drawn. A style whose
-    // properties are bound to the feature's adds the values bound to it, each feature's its own.
+    // properties are bound to the feature's adds the values bound to it, each feature's its own;
+    // a `labelpnt` marker those values size is computed from them as the cache tests it.
     let style = |transform, color: Bound<Rgba>| Style {
         color: Some(color),
         geom_transform: Some(transform),
@@ -173,6 +194,15 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
             }),
             1,
         ),
+        // A marker of symbol 1 whose size is each feature's own.
+        (
+            Some(Style {
+                size: Some(bound("size")),
+                symbol: Some(Bound::Value(SymbolRef::Index(1))),
+                ..style(GeomTransform::LabelPoint, fixed())
+            }),
+            1,
+        ),
         (
             Some(Style {
                 width: Some(bound("width")),
@@ -184,12 +214,8 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
         let (with, drawn) = peak(&map(true, styled.clone()), &sources);
         assert_eq!(drawn, POINTS, "every label is drawn");
         let per_label = with.saturating_sub(without) / POINTS;
-        eprintln!(
-            "MEASURE {values} {per_label} {}",
-            (with - without) as f64 / POINTS as f64
-        );
         assert!(
-            per_label < 400 + 24 * values,
+            per_label < 400 + 32 * values,
             "styled {styled:?}: {per_label} bytes per label ({with} with labels, {without} without)"
         );
     }

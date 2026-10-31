@@ -90,7 +90,7 @@ fn marker_drawn(style: &Style, symbols: &[Symbol]) -> bool {
 /// What `computeMarkerBounds` takes of a label's first `labelpoint` style: the width and height
 /// `msGetMarkerSize` gives its marker, its symbol's anchor point, its angle in degrees, and its
 /// `OFFSET`, scaled.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 pub(crate) struct LabelMarker {
     size: (f64, f64),
     anchor_point: [f64; 2],
@@ -272,9 +272,9 @@ struct Run {
 
 /// The styles of the labels cached and the markers of their first `labelpoint` styles: of a label
 /// whose styles vary by feature, the values bound to the feature only, by the index of its text,
-/// held apart so that a label without costs nothing; a label whose styles vary by none, and one
-/// whose marker is its definition's first, holds its marker by its definition's index, so that no
-/// label holds bounds of its own (Q-9).
+/// held apart so that a label without costs nothing, its marker computed from them as the cache
+/// asks for it; a label whose styles vary by none holds its marker by its definition's index, so
+/// that no label holds bounds of its own (Q-9).
 #[derive(Default)]
 pub(crate) struct LabelStyles {
     /// The fields that vary by feature of each definition whose styles vary, each with its
@@ -284,20 +284,16 @@ pub(crate) struct LabelStyles {
     runs: Vec<Run>,
     /// The values bound to the features of those labels, in the order of their texts.
     values: Vec<Value>,
-    /// The marker of the first `labelpoint` style of each feature's label cached whose styles vary
-    /// by feature, where it is not its definition's, by the index of its text.
-    markers: Vec<(u32, LabelMarker)>,
     /// The marker of the first `labelpoint` style of each label whose styles vary by no feature,
-    /// and of the first label cached of each whose styles vary, by its definition's index,
-    /// ascending.
+    /// by its definition's index, ascending.
     def_markers: Vec<(u32, LabelMarker)>,
 }
 
 impl LabelStyles {
     /// Holds the styles of the feature's label of text `text` and definition `def`, written
     /// `written`, and their marker: of `styles`, bound to the feature where they vary by it, else
-    /// empty, the values bound to it, and the marker, held by the definition where it is the
-    /// definition's.
+    /// empty, the values bound to it, from which its marker is computed; else the marker, held by
+    /// the definition.
     pub(crate) fn hold(
         &mut self,
         def: u32,
@@ -306,8 +302,8 @@ impl LabelStyles {
         styles: &[Style],
         marker: Option<LabelMarker>,
     ) {
-        let at = self.def_markers.binary_search_by_key(&def, |(d, _)| *d);
         if styles.is_empty() {
+            let at = self.def_markers.binary_search_by_key(&def, |(d, _)| *d);
             match (at, marker) {
                 (Ok(i), Some(m)) => self.def_markers[i].1 = m,
                 (Ok(i), None) => {
@@ -344,37 +340,56 @@ impl LabelStyles {
         let fields = &self.layouts[layout].1;
         self.values
             .extend(fields.iter().map(|&(i, field)| field.value(&styles[i])));
-        match (at, marker) {
-            (Ok(i), Some(m)) if self.def_markers[i].1 == m => {}
-            (Err(i), Some(m)) => self.def_markers.insert(i, (def, m)),
-            (_, Some(m)) => self.markers.push((text, m)),
-            (_, None) => {}
-        }
     }
 
-    /// The bounds of the marker of the label of text `text` and definition `def` at its point
-    /// `at`, as computeMarkerBounds computes them; `None` where it has none.
-    pub(crate) fn marker_bounds(&self, def: u32, text: u32, at: Point) -> Option<Bounds> {
-        let by = |table: &[(u32, LabelMarker)], key: u32| {
-            table
-                .binary_search_by_key(&key, |(k, _)| *k)
-                .ok()
-                .map(|i| table[i].1)
+    /// The bounds of the marker of the label of text `text` and definition `def`, written
+    /// `written`, at its point `at`, as computeMarkerBounds computes them: of its first
+    /// `labelpoint` style bound to its feature where its styles vary by it, else its definition's
+    /// marker; `None` where it has none.
+    pub(crate) fn marker_bounds(
+        &self,
+        map: &Map,
+        def: u32,
+        text: u32,
+        written: &[Style],
+        at: Point,
+    ) -> Option<Bounds> {
+        let marker = if self.run(text).is_some() {
+            let i = written
+                .iter()
+                .position(|s| s.geom_transform == Some(GeomTransform::LabelPoint))?;
+            let style = self.style(text, i, &written[i]);
+            // The label was cached with this marker, which it computed from the same values.
+            label_marker(std::slice::from_ref(&*style), map, scale_factor(map)).ok()??
+        } else {
+            let i = self
+                .def_markers
+                .binary_search_by_key(&def, |(d, _)| *d)
+                .ok()?;
+            self.def_markers[i].1
         };
-        by(&self.markers, text)
-            .or_else(|| by(&self.def_markers, def))
-            .map(|m| marker_bounds(at, m.size, m.anchor_point, m.angle, m.offset))
+        Some(marker_bounds(
+            at,
+            marker.size,
+            marker.anchor_point,
+            marker.angle,
+            marker.offset,
+        ))
+    }
+
+    /// The run that holds the values of the label of text `text`, where its styles vary by
+    /// feature.
+    fn run(&self, text: u32) -> Option<&Run> {
+        let run = self.runs.partition_point(|r| r.text <= text);
+        run.checked_sub(1)
+            .map(|r| &self.runs[r])
+            .filter(|r| text < r.text + r.len)
     }
 
     /// The style `i` of the label of text `text`, written `style`, bound to its feature where its
     /// styles vary by it, as `bindLabel` binds it, else as written.
     fn style<'s>(&self, text: u32, i: usize, style: &'s Style) -> Cow<'s, Style> {
-        let run = self.runs.partition_point(|r| r.text <= text);
-        let Some(run) = run
-            .checked_sub(1)
-            .map(|r| &self.runs[r])
-            .filter(|r| text < r.text + r.len)
-        else {
+        let Some(run) = self.run(text) else {
             return classes::unbound(style);
         };
         let fields = &self.layouts[run.layout as usize].1;

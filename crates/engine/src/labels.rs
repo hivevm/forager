@@ -574,6 +574,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             markers: &markers,
             styles: &styles,
             texts: texts.as_deref(),
+            map: self.map,
         };
         let (width, height) = self.size;
         let image = [0.0, 0.0, f64::from(width), f64::from(height)];
@@ -698,6 +699,7 @@ struct Cache<'c> {
     markers: &'c [(u32, [f64; 4])],
     styles: &'c LabelStyles,
     texts: Option<&'c [Box<[u8]>]>,
+    map: &'c Map,
 }
 
 impl Members for Cache<'_> {
@@ -718,9 +720,11 @@ impl Members for Cache<'_> {
             .ok()
             .map(|i| self.markers[i].1);
         // computeMarkerBounds at the label's point.
-        let label_marker = self
-            .styles
-            .marker_bounds(label.def, label.text, label.point);
+        let (layer, class, n) = def.at;
+        let written = &self.map.layers[layer].classes[class].labels[n].styles;
+        let label_marker =
+            self.styles
+                .marker_bounds(self.map, label.def, label.text, written, label.point);
         // msDrawLabelCache's offset from the marker: half the size of its box, or of its
         // labelpoint marker's where that is larger, grown by half the label's outline where it
         // has one.
