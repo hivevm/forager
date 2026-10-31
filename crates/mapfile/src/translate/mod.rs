@@ -280,6 +280,7 @@ impl Translator<'_> {
                     "CLASSITEM" | "FILTERITEM" | "LABELITEM" => {
                         self.string(d);
                     }
+                    "LABELCACHE" => self.label_cache(&mut layer, d),
                     "FILTER" => layer.filter = self.expression(d, filter_item.as_deref()),
                     "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
                     "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
@@ -317,27 +318,45 @@ impl Translator<'_> {
             }
         }
         layer.opacity = self.composite(&composites);
-        if let Some(span) = source_span {
-            // Without CONNECTIONTYPE, MapServer reads DATA as a local shapefile.
-            let kind = connection_type.unwrap_or_else(|| "local".to_owned());
-            if kind == "local"
-                && let (Some(data), Some(at)) = (props.remove("data"), data_span)
-            {
-                match self.data_path(&data) {
-                    Ok(path) => {
-                        props.insert("data".to_owned(), path.as_str().to_owned());
-                    }
-                    // The layer keeps no data, so the engine skips it (G-8) and the map renders.
-                    Err(message) => self.warn("data-refused", &message, &at),
-                }
-            }
-            layer.source = Some(SourceRef {
-                kind,
-                props,
-                span: Some(span),
-            });
-        }
+        layer.source = source_span.map(|span| self.source(connection_type, props, span, data_span));
         Some(layer)
+    }
+
+    /// A layer's source of the `CONNECTIONTYPE` `connection_type`, its `CONNECTION` and `DATA` in
+    /// `props`, the first of them at `span`, its `DATA` at `data_span`.
+    fn source(
+        &mut self,
+        connection_type: Option<String>,
+        mut props: BTreeMap<String, String>,
+        span: Span,
+        data_span: Option<Span>,
+    ) -> SourceRef {
+        // Without CONNECTIONTYPE, MapServer reads DATA as a local shapefile.
+        let kind = connection_type.unwrap_or_else(|| "local".to_owned());
+        if kind == "local"
+            && let (Some(data), Some(at)) = (props.remove("data"), data_span)
+        {
+            match self.data_path(&data) {
+                Ok(path) => {
+                    props.insert("data".to_owned(), path.as_str().to_owned());
+                }
+                // The layer keeps no data, so the engine skips it (G-8) and the map renders.
+                Err(message) => self.warn("data-refused", &message, &at),
+            }
+        }
+        SourceRef {
+            kind,
+            props,
+            span: Some(span),
+        }
+    }
+
+    /// Sets the layer's label cache by its `LABELCACHE`, `ON` or `OFF` as loadLayer reads it
+    /// (mapfile.c:4643-4646); initLayer starts it on.
+    fn label_cache(&mut self, layer: &mut Layer, d: &Directive) {
+        if let Some(on) = self.choice(d, &[("ON", true), ("OFF", false)]) {
+            layer.label_cache = on;
+        }
     }
 
     /// Warns of each class `STYLE` of `GEOMTRANSFORM labelcenter` of a line or a polygon layer:

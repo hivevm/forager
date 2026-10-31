@@ -633,3 +633,34 @@ fn labels_match_when_both_are_drawn_within_a_pixel_or_both_discarded() {
         ]
     );
 }
+
+#[test]
+fn the_labels_of_a_layer_of_labelcache_off_are_named_as_not_compared() {
+    use forager_style_ir::{Class, Label};
+    let labelled = |name: &str, label_cache: bool| Layer {
+        label_cache,
+        classes: vec![Class {
+            labels: vec![Label::default()],
+            ..Class::default()
+        }],
+        ..layer(name, None)
+    };
+    let map = Map {
+        layers: vec![
+            labelled("cached", true),
+            labelled("at once", false),
+            Layer {
+                label_cache: false,
+                ..layer("unlabelled", None)
+            },
+        ],
+        ..Map::default()
+    };
+    assert_eq!(
+        super::labels::uncompared(&map),
+        [
+            "the labels of layer 1 (at once) are not compared: LABELCACHE OFF draws them at once, \
+             outside the label cache"
+        ]
+    );
+}
