@@ -63,7 +63,10 @@ expression, which `bindLabel` evaluates after the binding, and a later `PRIORITY
 
 **Styles.** A label's `STYLE` blocks are [styles](style-symbol.md) drawn with the label; one
 without a `GEOMTRANSFORM` draws at the label's point, `labelpoint`, the default `loadLabel` gives
-it, and `labelpoly` draws the box around the text.
+it, `labelpoly` draws the box around the text, and `labelcenter` draws its marker at the centre
+of that box, the box of the turned polygon where the label is turned. They are drawn in their
+order, before the text; the marker of the first `labelpoint` style takes room from other labels,
+a `labelpoly` and a `labelcenter` marker take none.
 
 **`TRUE` and `ON`.** Wherever MapServer takes `ON` and `OFF` it takes `TRUE` and `FALSE` too, and
 the other way round: its lexer gives `MS_TRUE` and `MS_ON` the value 1, `MS_FALSE` and `MS_OFF`

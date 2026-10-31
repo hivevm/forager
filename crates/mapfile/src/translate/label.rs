@@ -145,7 +145,7 @@ impl Translator<'_> {
                 Node::Block(b) if b.keyword == "STYLE" => {
                     let mut style = self.style(b);
                     // loadLabel's default for a label's style, which a GEOMTRANSFORM replaces;
-                    // one the frontend does not carry over, as `labelcenter`, stays without a
+                    // one the frontend does not carry over, as `bbox`, stays without a
                     // transform, so that it is not taken for the default.
                     let transformed = b.nodes.iter().any(
                         |node| matches!(node, Node::Directive(d) if d.keyword == "GEOMTRANSFORM"),

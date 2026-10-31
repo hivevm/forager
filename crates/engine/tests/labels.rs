@@ -1903,9 +1903,9 @@ fn a_labelpoint_marker_takes_room_from_the_labels_after_it() {
 
 #[test]
 fn a_label_style_whose_transform_the_frontend_dropped_is_refused_not_drawn_at_the_point() {
-    // `GEOMTRANSFORM labelcenter`, bbox, or an expression reach the IR as no transform, which
-    // msDrawLabelCache draws elsewhere or fails on (mapdraw.c:4128): the label is left out with
-    // its reason, and nothing of it is drawn.
+    // `GEOMTRANSFORM bbox` or an expression reach the IR as no transform, which msDrawLabelCache
+    // fails on (mapdraw.c:4128): the label is left out with its reason, and nothing of it is
+    // drawn.
     let dropped = Style {
         geom_transform: None,
         ..labelpoint()
@@ -1918,12 +1918,211 @@ fn a_label_style_whose_transform_the_frontend_dropped_is_refused_not_drawn_at_th
         .collect();
     assert_eq!(codes, ["label-not-drawn"]);
     assert!(
-        rendered.diagnostics[0]
-            .message
-            .contains("a STYLE other than one of GEOMTRANSFORM labelpoly or labelpnt"),
+        rendered.diagnostics[0].message.contains(
+            "a STYLE other than one of GEOMTRANSFORM labelpoly, labelpnt, or labelcenter"
+        ),
         "{}",
         rendered.diagnostics[0].message
     );
     assert!(rendered.labels.is_empty());
     assert_eq!(ink(&rendered.image.unwrap(), (0, 160), (0, 60)), None);
+}
+
+/// A label's style with `GEOMTRANSFORM labelcenter`: symbol 1, a filled square of side 1, at
+/// `SIZE` `size`, in `RED`.
+fn labelcenter(size: f64) -> Style {
+    Style {
+        size: Some(Bound::Value(size)),
+        geom_transform: Some(forager_style_ir::GeomTransform::LabelCenter),
+        ..labelpoint()
+    }
+}
+
+/// The render of `label` over [`FEN`] with symbol 1 a square, with no diagnostic, and every
+/// operation it draws.
+fn draw_fen_with_square(label: Label) -> (Rendered, Vec<forager_render::DrawOp>) {
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(FEN).unwrap())].into();
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(
+        &map_with_square(label),
+        &sources,
+        &Files,
+        recorder.clone(),
+    ));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    (rendered, recorder.0.take())
+}
+
+/// The ring agg2RenderVectorSymbol fills for the unit square at `SIZE` 8 centred on `(x, y)`:
+/// its points moved by half its extent, scaled by 8, and moved to the point.
+fn square_at(x: f64, y: f64) -> Vec<Point> {
+    let p = |x, y| Point { x, y };
+    vec![
+        p(x - 4.0, y - 4.0),
+        p(x + 4.0, y - 4.0),
+        p(x + 4.0, y + 4.0),
+        p(x - 4.0, y + 4.0),
+        p(x - 4.0, y - 4.0),
+    ]
+}
+
+#[test]
+fn a_labelcenter_style_draws_its_marker_at_the_centre_of_the_labelpoly_in_the_styles_order() {
+    // "Fen" at 12 points, 29.1875 by 11.90625 pixels, at LR of the pixel (80, 29), nothing moving
+    // it off: get_metrics at a buffer of 1 gives the labelpoly x1 = 0, y1 = h, its box
+    // [80 - 1, 41.90625 - 11.90625 - 2, 80 + 29.1875 + 1, 29 + 11.90625 + 1] = [79, 28, 110.1875,
+    // 41.90625], whose centre is (94.59375, 34.953125) (mapdraw.c:4093-4127). A labelcenter
+    // style moves the text off no marker: computeMarkerBounds counts labelpoint styles alone.
+    let at_lr = |styles| Label {
+        position: Some(Bound::Value(Position::Lr)),
+        ..fen_styled(styles)
+    };
+    let p = |x, y| Point { x, y };
+    let labelpoly_fill = forager_render::DrawOp::Fill {
+        rings: vec![vec![
+            p(79.0, 28.0),
+            p(79.0, 41.90625),
+            p(110.1875, 41.90625),
+            p(110.1875, 28.0),
+            p(79.0, 28.0),
+        ]],
+        color: GREEN,
+        gamma: Some(0.75),
+    };
+    let marker = forager_render::DrawOp::Fill {
+        rings: vec![square_at(94.59375, 34.953125)],
+        color: RED,
+        gamma: None,
+    };
+    let text = expected("Fen", 12.0, Anchor::Lr, (0, 0), 0.0);
+    // In the label's styles' order, before the text.
+    let styles = vec![labelpoly(Bound::Value(GREEN)), labelcenter(8.0)];
+    let (rendered, ops) = draw_fen_with_square(at_lr(styles));
+    assert_eq!(ops.len(), 3, "{ops:?}");
+    assert_eq!(ops[0], labelpoly_fill);
+    assert_eq!(ops[1], marker);
+    assert_eq!(glyph_path(&ops[2]), &text[..]);
+    // The box the label reports is its text's alone: [80, 29, 109.1875, 40.90625].
+    assert_eq!(
+        rendered.labels[0].drawn,
+        Some([80.0, 29.0, 109.1875, 40.90625])
+    );
+    let styles = vec![labelcenter(8.0), labelpoly(Bound::Value(GREEN))];
+    let (_, ops) = draw_fen_with_square(at_lr(styles));
+    assert_eq!(ops.len(), 3, "{ops:?}");
+    assert_eq!(ops[0], marker);
+    assert_eq!(ops[1], labelpoly_fill);
+    assert_eq!(glyph_path(&ops[2]), &text[..]);
+}
+
+#[test]
+fn a_turned_labels_labelcenter_marker_stands_at_the_centre_of_its_turned_polygons_box() {
+    // Turned by 20 degrees at LR of the pixel (80, 29), get_metrics turns the corners of the box
+    // grown by 1, from x1 = 0 and y1 = h, about the point: lower left (83.474504854011,
+    // 41.4699280303438), upper left (78.71828723588843, 28.40232752253976), upper right
+    // (108.02495084664895, 17.735574302570466), lower right (112.78116846477153,
+    // 30.803174810374507). fastComputeBounds gives their box [78.71828723588843,
+    // 17.735574302570466, 112.78116846477153, 41.4699280303438], whose centre is
+    // (95.74972785032998, 29.602751166457132); the marker is drawn there, unturned.
+    let turned = Label {
+        position: Some(Bound::Value(Position::Lr)),
+        angle: Some(Bound::Value(20.0)),
+        ..fen_styled(vec![labelcenter(8.0)])
+    };
+    let (_, ops) = draw_fen_with_square(turned.clone());
+    assert_eq!(ops.len(), 2, "{ops:?}");
+    let want = square_at(95.749_727_850_329_98, 29.602_751_166_457_132);
+    match &ops[0] {
+        forager_render::DrawOp::Fill {
+            rings,
+            color,
+            gamma,
+        } => {
+            assert_eq!((rings.len(), *color, *gamma), (1, RED, None));
+            assert_eq!(rings[0].len(), want.len());
+            for (got, want) in rings[0].iter().zip(&want) {
+                assert!(
+                    (got.x - want.x).abs() < 1e-9 && (got.y - want.y).abs() < 1e-9,
+                    "{rings:?}"
+                );
+            }
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        glyph_path(&ops[1]),
+        &expected("Fen", 12.0, Anchor::Lr, (0, 0), 20.0)[..]
+    );
+    let rendered = render(&map_with_square(turned), FEN);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_matches_reference(&rendered.image.unwrap(), "label_labelcenter.png");
+}
+
+#[test]
+fn a_labelcenter_marker_takes_no_room_and_stays_out_of_the_box_a_label_reports() {
+    // Two "Fen" at LR with a labelpoint marker of SIZE 8 and a labelcenter marker of SIZE 40.
+    // At the pixel (x, 29), the labelpoint marker [x - 4, 25, x + 4, 33] moves the text 4 and 4
+    // off: its box [x + 4, 33, x + 33.1875, 44.90625]. The labelpoly, get_metrics at x1 = 4 and
+    // y1 = h + 4 with a buffer of 1, is [x + 3, 32, x + 34.1875, 45.90625], centred on
+    // (x + 18.59375, 38.953125): the labelcenter marker spans x - 1.40625 to x + 38.59375 and
+    // 18.953125 to 58.953125. "b" at 88, added last, is drawn first; "a" at 50, its labelpoint
+    // marker [46, 54] across and its text [54, 83.1875], meets neither b's labelpoint marker
+    // [84, 92] nor b's text [92, 121.1875], while their labelcenter markers, [48.59375, 88.59375]
+    // and [86.59375, 126.59375], meet: msTestLabelCacheCollisions tests the text and the
+    // labelpoint marker alone (maplabel.c:781-868), so both are drawn.
+    let fen = Label {
+        position: Some(Bound::Value(Position::Lr)),
+        ..fen_styled(vec![labelpoint(), labelcenter(40.0)])
+    };
+    let points = [("a", 50.0, 30.0, ""), ("b", 88.0, 30.0, "")];
+    assert_eq!(labelled(&map_with_square(fen.clone()), &points), [1, 0]);
+    // Each reports the box of its text and its labelpoint marker (mapdraw.c:3976-4030), in the
+    // cache's order: b's [84, 25, 121.1875, 44.90625], a's [46, 25, 83.1875, 44.90625].
+    let rendered = render(&map_with_square(fen), &collection(&points));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let drawn: Vec<_> = rendered.labels.iter().map(|l| l.drawn).collect();
+    assert_eq!(
+        drawn,
+        [
+            Some([84.0, 25.0, 121.1875, 44.90625]),
+            Some([46.0, 25.0, 83.1875, 44.90625])
+        ]
+    );
+}
+
+#[test]
+fn a_labelcenter_style_whose_symbol_is_not_drawn_yet_is_refused() {
+    // A labelcenter marker is msDrawMarkerSymbol's, as a labelpoint marker is: a SYMBOL that is
+    // no vector or ellipse of the set, here one past the set, leaves the label out.
+    let style = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        ..labelcenter(8.0)
+    };
+    let rendered = render(&map_with_square(fen_styled(vec![style])), FEN);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["label-not-drawn"]);
+    assert!(
+        rendered.diagnostics[0]
+            .message
+            .contains("a STYLE of GEOMTRANSFORM labelcenter whose SYMBOL"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
 }

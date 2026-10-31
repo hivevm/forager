@@ -422,6 +422,7 @@ fn a_geomtransform_name_is_matched_on_its_prefix_as_msstylesetgeomtransform_matc
         ("'Ending'", GeomTransform::End),
         ("'vertices2'", GeomTransform::Vertices),
         ("'labelpolygon'", GeomTransform::LabelPoly),
+        ("LABELCENTER", GeomTransform::LabelCenter),
         ("'centroids'", GeomTransform::Centroid),
     ] {
         assert_eq!(

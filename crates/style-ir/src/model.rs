@@ -496,6 +496,9 @@ pub enum GeomTransform {
     /// The box around a label's text.
     #[serde(rename = "labelpoly")]
     LabelPoly,
+    /// The centre of the box around a label's text: a marker drawn there, before the text.
+    #[serde(rename = "labelcenter")]
+    LabelCenter,
 }
 
 /// A label a class draws for each feature.

@@ -12,14 +12,13 @@ MapServer draws nothing for it.
 
 `GEOMTRANSFORM` draws the style on another geometry than the feature's: `start`, `end`,
 `vertices` (every point of a line but its ends), `centroid`, `labelpnt` (the IR's `labelpoint`),
-and `labelpoly` are carried over, written quoted or bare. `msStyleSetGeomTransform` in
-`src/mapgeomtransform.c` takes the first of its names, in the order `start`, `end`, `vertices`,
-`bbox`, `labelpnt`, `labelpoly`, `labelcenter`, `centroid`, that the value begins with, without
-regard to case, so `'startpoint'` is `start`; a value that begins with none is no transform, and
-the frontend warns. A label's style draws at its `labelpnt` unless it names another
-([`label.md`](label.md)). MapServer's other transforms (`bbox`, `labelcenter`) and its
-expressions are not yet carried over, and are a warning; the style draws the feature's own
-geometry.
+`labelpoly`, and `labelcenter` are carried over, written quoted or bare.
+`msStyleSetGeomTransform` in `src/mapgeomtransform.c` takes the first of its names, in the order
+`start`, `end`, `vertices`, `bbox`, `labelpnt`, `labelpoly`, `labelcenter`, `centroid`, that the
+value begins with, without regard to case, so `'startpoint'` is `start`; a value that begins with
+none is no transform, and the frontend warns. A label's style draws at its `labelpnt` unless it
+names another ([`label.md`](label.md)). MapServer's other transform, `bbox`, and its expressions
+are not yet carried over, and are a warning; the style draws the feature's own geometry.
 
 **Drawing a transform.** On a line or a polygon layer, `msDrawTransformedShape` in
 `src/mapgeomtransform.c` draws the style's symbol, as at a point, on the feature's unclipped
@@ -30,8 +29,9 @@ polygon's first two and last two are kept): `start` at the first point of each l
 the centre of the shape's segments weighted by their lengths (`msGetPolygonCentroid`), wherever it
 falls. A collection's members are one shape. With `ANGLE AUTO` the symbol turns with the segment
 at `start` and `end`, and at a vertex halfway between its two segments (`calcOrientation` and
-`calcMidAngle`). `labelpnt` and `labelpoly` draw nothing there, nor does a style without a symbol
-or with symbol 0, as `msDrawMarkerSymbol` draws none. A line layer that draws its features style
+`calcMidAngle`). `labelpnt` and `labelpoly` draw nothing there, nor does `labelcenter`, on which
+`msDrawTransformedShape` fails, nor does a style without a symbol or with symbol 0, as
+`msDrawMarkerSymbol` draws none. A line layer that draws its features style
 by style draws the transformed styles with its first style, before the rest, and its first style,
 when it has an outline, as its outline prepares it. A point layer draws every style at its points,
 whatever its transform. The symbols a transform places count towards a layer's bound on the

@@ -83,7 +83,7 @@ pub(crate) fn placed(
                 placed.push((c, None));
             }
         }
-        GeomTransform::LabelPoint | GeomTransform::LabelPoly => {}
+        GeomTransform::LabelPoint | GeomTransform::LabelPoly | GeomTransform::LabelCenter => {}
     }
     placed
 }
@@ -380,7 +380,11 @@ mod tests {
 
     #[test]
     fn label_transforms_draw_nothing_on_a_shape() {
-        for transform in [GeomTransform::LabelPoint, GeomTransform::LabelPoly] {
+        for transform in [
+            GeomTransform::LabelPoint,
+            GeomTransform::LabelPoly,
+            GeomTransform::LabelCenter,
+        ] {
             assert!(placed(transform, &ell(), &view(), IMAGE).is_empty());
         }
     }

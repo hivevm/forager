@@ -1,10 +1,10 @@
 // The labels of point layers follow pointLayerDrawShape, msDrawLabelCache, its choice of a point
-// label's position and offsets, its labelpoly and labelpoint styles and its member's box, and
-// computeMarkerBounds, src/mapdraw.c, msAddLabelGroup and msComputeTextPath, src/maplabel.c,
-// bindLabel, bindIntegerAttribute, and msShapeGetLabelAnnotation, src/maputil.c, msGetMarkerSize,
-// src/mapsymbol.c, and msDrawTextSymbol, msDrawLabelBounds, and msDrawMarkerSymbol,
-// src/maprendering.c, of MapServer at the release pinned in scripts/fetch-msautotest.sh, with the
-// label cache of the label crate (ADR-0028).
+// label's position and offsets, its labelpoly, labelpoint, and labelcenter styles and its
+// member's box, and computeMarkerBounds, src/mapdraw.c, msAddLabelGroup and msComputeTextPath,
+// src/maplabel.c, bindLabel, bindIntegerAttribute, and msShapeGetLabelAnnotation, src/maputil.c,
+// msGetMarkerSize, src/mapsymbol.c, and msDrawTextSymbol, msDrawLabelBounds, and
+// msDrawMarkerSymbol, src/maprendering.c, of MapServer at the release pinned in
+// scripts/fetch-msautotest.sh, with the label cache of the label crate (ADR-0028).
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Copyright (c) 1996-2013 Regents of the University of Minnesota.
@@ -719,9 +719,11 @@ struct Styled<'a> {
 impl Styled<'_> {
     /// Draws the styles of `label`, `member` placed at `placement`, in their order, bound to its
     /// feature where they vary by it, else `written`, as msDrawLabelCache draws them before the
-    /// text (mapdraw.c:4056-4091): a labelpoint style's marker at its point, a labelpoly style on
-    /// the labelpoly it computes at `placement` (mapdraw.c:3799-3860), which it never tests for
-    /// collisions (maplabel.c:781).
+    /// text (mapdraw.c:4056-4127): a labelpoint style's marker at its point, a labelpoly style on
+    /// the labelpoly it computes at `placement` (mapdraw.c:3799-3860), and a labelcenter style's
+    /// marker at the centre of the labelpoly's box, the box of the turned polygon where the label
+    /// is turned; it never tests the labelpoly or the labelcenter marker for collisions
+    /// (maplabel.c:781).
     fn draw<R: Renderer>(
         &self,
         renderer: &mut R,
@@ -740,6 +742,14 @@ impl Styled<'_> {
         let mut draw = |style: &Style| match style.geom_transform {
             Some(GeomTransform::LabelPoint) => {
                 draw_label_marker(renderer, member.point, style, self.map, self.factor, label)
+            }
+            Some(GeomTransform::LabelCenter) => {
+                let [min_x, min_y, max_x, max_y] = poly.bbox;
+                let center = Point {
+                    x: (max_x + min_x) / 2.0,
+                    y: (max_y + min_y) / 2.0,
+                };
+                draw_label_marker(renderer, center, style, self.map, self.factor, label)
             }
             _ => draw_label_poly(renderer, &poly, style, self.view, canvas, label),
         };
@@ -833,9 +843,10 @@ fn label_marker(styles: &[Style], map: &Map, factor: f64) -> Result<Option<Label
     }))
 }
 
-/// A label's `GEOMTRANSFORM labelpoint` style drawn at the label's point `at`, as
-/// msDrawMarkerSymbol draws it at the label's scale factor `factor`: its vector or ellipse
-/// symbol, moved by msAdjustMarkerPos; nothing for symbol 0.
+/// A label's `GEOMTRANSFORM labelpoint` style drawn at the label's point `at`, or its
+/// `labelcenter` style at the centre of its labelpoly's box, as msDrawMarkerSymbol draws it at
+/// the label's scale factor `factor`: its vector or ellipse symbol, moved by msAdjustMarkerPos;
+/// nothing for symbol 0.
 fn draw_label_marker<R: Renderer>(
     renderer: &mut R,
     at: Point,
@@ -1152,18 +1163,24 @@ fn unsupported_style(label: &Label, symbols: &[forager_style_ir::Symbol]) -> Opt
             Some("a STYLE of GEOMTRANSFORM labelpoly with a SYMBOL")
         }
         Some(GeomTransform::LabelPoly) => None,
-        Some(GeomTransform::LabelPoint) if !labelpoint_drawn(s, symbols) => Some(
+        Some(GeomTransform::LabelPoint) if !marker_drawn(s, symbols) => Some(
             "a STYLE of GEOMTRANSFORM labelpnt whose SYMBOL is no vector or ellipse of the \
              symbol set",
         ),
         Some(GeomTransform::LabelPoint) => None,
-        _ => Some("a STYLE other than one of GEOMTRANSFORM labelpoly or labelpnt"),
+        Some(GeomTransform::LabelCenter) if !marker_drawn(s, symbols) => Some(
+            "a STYLE of GEOMTRANSFORM labelcenter whose SYMBOL is no vector or ellipse of the \
+             symbol set",
+        ),
+        Some(GeomTransform::LabelCenter) => None,
+        _ => Some("a STYLE other than one of GEOMTRANSFORM labelpoly, labelpnt, or labelcenter"),
     })
 }
 
-/// Whether a label's `labelpoint` style is drawn: without a symbol, or with symbol 0, which
-/// MapServer sizes as 1 by 1 and draws nothing of, or with a vector or an ellipse of the set.
-fn labelpoint_drawn(style: &Style, symbols: &[forager_style_ir::Symbol]) -> bool {
+/// Whether a label's `labelpoint` or `labelcenter` style is drawn: without a symbol, or with
+/// symbol 0, which MapServer sizes as 1 by 1 and draws nothing of, or with a vector or an ellipse
+/// of the set.
+fn marker_drawn(style: &Style, symbols: &[forager_style_ir::Symbol]) -> bool {
     match &style.symbol {
         None | Some(Bound::Value(SymbolRef::Index(0))) => true,
         Some(Bound::Value(SymbolRef::Index(index))) => symbols

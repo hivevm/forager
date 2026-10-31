@@ -405,6 +405,11 @@
           "description": "The box around a label's text.",
           "type": "string",
           "const": "labelpoly"
+        },
+        {
+          "description": "The centre of the box around a label's text: a marker drawn there, before the text.",
+          "type": "string",
+          "const": "labelcenter"
         }
       ]
     },
