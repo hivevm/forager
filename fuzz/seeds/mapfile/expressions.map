@@ -1,0 +1,44 @@
+# A class EXPRESSION with each kind of literal the expression lexer reads, and a class TEXT and
+# labels with bindings and characters past ASCII.
+MAP
+  EXTENT 0 0 100 100
+  SIZE 100 100
+  LAYER
+    NAME "flächen"
+    TYPE POLYGON
+    STATUS ON
+    PROCESSING "ITEMS=name,kind,date"
+    CLASSITEM "name"
+    FEATURE
+      POINTS 10 10 90 10 90 90 10 10 END
+      ITEMS "Größe;1;2026-10-31"
+    END
+    CLASS
+      EXPRESSION ([kind] = 1 AND 1.5e2 > -3 OR "[name]" = "Größe" OR '[name]' eq 'Ü' OR `[date]` > `2026-10-31` OR TRUE OR NOT false OR "[name]" ~* "^gr" OR "[name]" IN "a,ö,f€" OR length("fü") = 2 OR [kind] % 2 ^ 3 != 0)
+      TEXT "Fläche [name] im Kaufhaus Müller f[kind] fé"
+      STYLE COLOR 0 0 0 END
+      LABEL
+        TEXT 'fü [name]]]'
+      END
+    END
+    CLASS
+      EXPRESSION (area(fromtext("POLYGON((0 0,1 0,1 1,0 0))")) > 0)
+      STYLE COLOR 3 3 3 END
+    END
+    CLASS
+      EXPRESSION /^Grö.*e$/
+      TEXT "[name]"
+      STYLE COLOR 9 9 9 END
+    END
+    CLASS
+      EXPRESSION {Größe,Ü,f€}
+      TEXT ("[name]" + "ß")
+      STYLE COLOR 1 1 1 END
+    END
+    CLASS
+      EXPRESSION "Größe"
+      TEXT "fü"
+      STYLE COLOR 2 2 2 END
+    END
+  END
+END
