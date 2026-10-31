@@ -1,7 +1,7 @@
 /*
  * The reader of MapServer's label cache for the noise measurement (ADR-0029): it renders a case
  * as map2img renders it, following main of src/apps/map2img.c at the pin for the options the
- * harness applies, -m, -o, -e, -s, and -l, and then writes each label of the cache to standard
+ * harness applies, -m, -o, -i, -e, -s, and -l, and then writes each label of the cache to standard
  * output, one line per member, tab-separated, in the order msDrawLabelCache in src/mapdraw.c
  * walks them: from the highest priority down, and within a slot from the last added to the first.
  *
@@ -10,6 +10,9 @@
  * "minx miny maxx maxy" for a drawn member and empty for a discarded one, and then each of its
  * texts in a field of its own. A tab, a line feed, a carriage return, and a backslash in a name
  * or a text are written as \t, \n, \r, and \\.
+ *
+ * It refuses a map with a layer whose PROCESSING "FORCE_DRAW_LABEL_CACHE=FLUSH" draws and empties
+ * the cache before the map is drawn, as its output would miss the labels flushed.
  *
  * Copyright (c) 1996-2005 Regents of the University of Minnesota.
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
@@ -103,6 +106,17 @@ int main(int argc, char *argv[]) {
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
       outfile = argv[++i];
+    } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
+      /* As map2img selects the format, its notice on standard error, not among the labels. */
+      outputFormatObj *format = msSelectOutputFormat(map, argv[i + 1]);
+      if (format == NULL) {
+        fprintf(stderr, "No such OUTPUTFORMAT as %s.\n", argv[i + 1]);
+      } else {
+        msFree((char *)map->imagetype);
+        map->imagetype = msStrdup(argv[i + 1]);
+        msApplyOutputFormat(&(map->outputformat), format, MS_NOOVERRIDE);
+      }
+      i += 1;
     } else if (strcmp(argv[i], "-e") == 0 && i + 4 < argc) {
       map->extent.minx = atof(argv[i + 1]);
       map->extent.miny = atof(argv[i + 2]);
@@ -146,6 +160,17 @@ int main(int argc, char *argv[]) {
       }
       msFreeCharArray(layers, num_layers);
       i += 1;
+    }
+  }
+
+  for (int j = 0; j < map->numlayers; j++) {
+    const char *flush = msLayerGetProcessingKey(GET_LAYER(map, j), "FORCE_DRAW_LABEL_CACHE");
+    if (flush && strncasecmp(flush, "FLUSH", 5) == 0) {
+      fprintf(stderr, "layer %d flushes the label cache, whose labels this reader would miss\n", j);
+      msFreeMap(map);
+      msCleanup();
+      msFreeConfig(config);
+      exit(1);
     }
   }
 

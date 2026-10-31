@@ -445,6 +445,13 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
                 Ok((outcome, labels)) => (Ok(outcome), Some(labels)),
                 Err(why) => (Err(why), None),
             };
+        // A case marked to hold G-10 whose render fails does not hold it.
+        if *labels_hold && labels.is_none() {
+            failures.push(format!(
+                "{} {}: it renders no labels; the list marks it labels-hold",
+                case.mapfile, case.result
+            ));
+        }
         if *category == Category::Text
             && let Some(labels) = &labels
         {
@@ -890,14 +897,14 @@ fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<St
     Ok(labels::compare(rendered, &recorded))
 }
 
-/// The rendering of `case` and the labels of its cache, the options of its `map2img` line applied to its style IR, its sources
-/// bound as `forager render` binds them as far as a test can: the CLI's binding lives in its
-/// binary, which a test cannot call. As there, each local layer the engine reads is bound to the
-/// shapefile its `DATA` names, a layer whose shapefile does not open is left unbound, so that the
-/// engine skips it, and the fonts of the labels are read through the loader. Unlike there, the
-/// files are read through the suite's loader without the CLI's read limit, each layer opens its
-/// shapefile anew instead of sharing it, a shapefile that does not open gives no diagnostic, and
-/// the projections resolve through the stand-in table of the G-1 test.
+/// The rendering of `case` and the labels of its cache, the options of its `map2img` line applied
+/// to its style IR, its sources bound as `forager render` binds them as far as a test can: the
+/// CLI's binding lives in its binary, which a test cannot call. As there, each local layer the
+/// engine reads is bound to the shapefile its `DATA` names, a layer whose shapefile does not open
+/// is left unbound, so that the engine skips it, and the fonts of the labels are read through the
+/// loader. Unlike there, the files are read through the suite's loader without the CLI's read
+/// limit, each layer opens its shapefile anew instead of sharing it, a shapefile that does not open
+/// gives no diagnostic, and the projections resolve through the stand-in table of the G-1 test.
 fn render(
     case: &Case,
     loader: &Suite,

@@ -4,9 +4,10 @@
 # permission notice, as the specification's licence constraint requires; the C file is the reader
 # of the label cache, which follows src/apps/map2img.c (ADR-0029).
 #
-# A Rust or C file under crates/ or fuzz/ that names a MapServer source file — src/map….c, .h, .l, or .y —
-# follows that code, and must hold the notice of those files: the copyright line of the Regents
-# of the University of Minnesota, the permission sentence, and the disclaimer to its last words.
+# A Rust or C file under crates/ or fuzz/ that names a MapServer source file — src/map….c, .h,
+# .l, or .y — follows that code, and must hold the notice of those files: the copyright line of
+# the Regents of the University of Minnesota, the permission sentence, and the disclaimer to its
+# last words.
 # Beyond this check's reach are a file that names only a MapServer function, one that names a
 # source without `src/`, and one that names a C++ source (`src/map….cpp`), whose holders differ
 # by file.
