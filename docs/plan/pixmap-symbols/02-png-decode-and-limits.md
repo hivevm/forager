@@ -15,8 +15,9 @@ has none, without drawing it yet (ticket 03 draws it).
   transparent one to 0 (714–729). What libpng's `png_set_strip_16` keeps of a 16-bit sample and how
   `png_read_image` handles an interlaced image without `png_set_interlace_handling` is libpng's:
   read both at the libpng the noise build links (`scripts/build-mapserver.sh`), or ask, before
-  stating the expected bytes. The decoded image is a type of `render`, which `encode`, the engine,
-  and a later `symbolize` crate may all depend on (ADR-0009), premultiplied and marked so.
+  stating the expected bytes. The decoded image is a `forager_render::PremultipliedImage`, a type
+  of `render`, which `encode`, the engine, and a later `symbolize` crate may all depend on
+  (ADR-0009, ADR-0040).
 - **Image store, in the engine.** The engine loads a pixmap's file through the resource loader the
   first time a render needs it, as it loads a font (ADR-0028), and decodes it once per render per
   path; every later use takes the same image. A file over 32 MiB, the bound of the load path
@@ -48,9 +49,9 @@ has none, without drawing it yet (ticket 03 draws it).
 
 - [ADR-0007](../../adr/0007-harness.md), [ADR-0009](../../adr/0009-ports-and-adapters-crates.md),
   [ADR-0017](../../adr/0017-png-crate.md), [ADR-0028](../../adr/0028-text-stack.md) (Fonts);
-  ADR candidate B of the spec (how a decoded image is held), proposed through `propose-adr` first
-  where the maintainer asks for it; ADR candidate A, which decides only the GIF crate, since this
-  ticket decodes PNG in `encode` under ADR-0017.
+  [ADR-0040](../../adr/0040-a-decoded-pixmap-is-held-once-per-render.md) (how a decoded image is
+  held); ADR candidate A, which decides only the GIF crate, since this ticket decodes PNG in
+  `encode` under ADR-0017.
 - The spec `docs/plan/pixmap-symbols/spec.md`; the conventions on readers of untrusted bytes and on
   ported behaviour. Golden path: the engine's fonts and `crates/engine/tests/fonts.rs`; the memory
   test of `crates/adapter-shapefile/tests/memory.rs`. Seams: `encode`'s unit tests, the engine's
@@ -63,5 +64,6 @@ has none, without drawing it yet (ticket 03 draws it).
 
 ## Mode
 
-with the human: it implements three resource limits of Q-9 and takes the decision of ADR candidate
-B, both of which [ADR-0007](../../adr/0007-harness.md) keeps with the maintainer.
+with the human: it implements three resource limits of Q-9 and takes the decision of
+[ADR-0040](../../adr/0040-a-decoded-pixmap-is-held-once-per-render.md), both of which
+[ADR-0007](../../adr/0007-harness.md) keeps with the maintainer.

@@ -31,9 +31,11 @@ where none matches (232–383), adding it to the cache, which holds at most six
 (`MS_IMAGECACHESIZE`, `src/mapsymbol.h`, 51; `addTileCache`, 134–180, dropping the least recently
 added). The cache changes no pixel, only the cost. The engine builds a tile once per symbol, tile
 size, scale, and rotation in a render, never per feature, and holds at most six, as MapServer does,
-a seventh dropping the one built longest ago. The tiles held count towards the 256 MiB of decoded
-images one render holds, as the maintainer decided (ticket 01): a tile that would pass it is not
-built, and its style is not drawn, with the limit's diagnostic.
+a seventh dropping the one built longest ago. The tiles alive in the render, held or still
+referenced, count towards the 256 MiB of decoded images one render holds
+([ADR-0040](../../adr/0040-a-decoded-pixmap-is-held-once-per-render.md)), as the maintainer
+decided (ticket 01): a tile that would pass it is not built, and its style is not drawn, with the
+limit's diagnostic.
 
 `msDrawShape`'s clip buffer counts a pixmap style at the image's height (`msSymbolGetDefaultSize`,
 `src/mapsymbol.c`, 74–79), where the engine counts 1 today (`docs/semantics/symbol.md`, *Not yet as
