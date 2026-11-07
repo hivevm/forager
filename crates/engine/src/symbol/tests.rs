@@ -308,6 +308,27 @@ fn the_marker_size_cuts_the_size_to_whole_pixels() {
 }
 
 #[test]
+fn the_marker_size_is_bounded_by_maxsize_or_its_default() {
+    // msGetMarkerSize: MS_MIN with the style's MAXSIZE, MS_MAXSYMBOLSIZE (500) without one, cut
+    // to whole pixels.
+    let wide = symbol(
+        SymbolKind::Vector,
+        vec![vec![[0.0, 0.0], [4.0, 2.0]]],
+        [4.0, 2.0],
+        true,
+    );
+    let mut capped = style(Some(10.0), None);
+    capped.max_size = Some(6.5);
+    assert_eq!(marker_size(&capped, &wide, 1.0), (12.0, 6.0));
+    assert_eq!(
+        marker_size(&style(Some(800.0), None), &wide, 1.0),
+        (1000.0, 500.0)
+    );
+    // The default MINSIZE, 0, leaves a size of 0 where it is.
+    assert_eq!(marker_size(&style(Some(0.4), None), &wide, 1.0), (0.0, 0.0));
+}
+
+#[test]
 fn a_label_moves_away_from_a_marker_of_the_size_ms_get_marker_size_gives() {
     let wide = symbol(
         SymbolKind::Vector,
@@ -504,4 +525,65 @@ fn a_symbol_bounds_its_size_and_outline_as_compute_symbol_style_does() {
     );
     let s = symbol_style(&bounded(4.0, 4.0, 6.0, 3.0), &triangle, 2.0);
     assert_eq!((s.scale, s.outline_width), (3.0, 6.0), "the maximum last");
+}
+
+#[test]
+fn each_reader_of_a_styles_symbol_tells_the_default_the_missing_the_unresolved_and_the_found() {
+    // msDrawMarkerSymbol, msSymbolGetDefaultSize, and msGetMarkerSize each read the symbol by
+    // its index from 1: index 0 is MapServer's default symbol, an index past the set is none, a
+    // name the frontend did not resolve, or a binding, is not an index yet.
+    let mut hatch = triangle(false);
+    hatch.kind = SymbolKind::Hatch;
+    let symbols = [triangle(true), hatch];
+    let by = |symbol: Option<Bound<SymbolRef>>| Style {
+        symbol,
+        ..style(Some(10.0), None)
+    };
+    let index = |i| by(Some(Bound::Value(SymbolRef::Index(i))));
+    let none = by(None);
+    let zero = index(0);
+    let past = index(3);
+    let name = by(Some(Bound::Value(SymbolRef::Name("x.png".into()))));
+    let binding = by(Some(Bound::Binding {
+        binding: "sym".into(),
+    }));
+    let vector = index(1);
+    let hatched = index(2);
+
+    for (style, case) in [
+        (&none, "none"),
+        (&zero, "0"),
+        (&name, "a name"),
+        (&binding, "a binding"),
+    ] {
+        assert_eq!(mark(style, &symbols), Mark::Square, "{case}");
+        assert!(!is_hatch(style, &symbols), "{case}");
+        assert_eq!(default_size_of(style, &symbols), 1.0, "{case}");
+    }
+    assert_eq!(mark(&past, &symbols), Mark::Nothing);
+    assert_eq!(mark(&vector, &symbols), Mark::Symbol(&symbols[0]));
+    assert_eq!(mark(&hatched, &symbols), Mark::Square);
+
+    assert!(!is_hatch(&past, &symbols));
+    assert!(!is_hatch(&vector, &symbols));
+    assert!(is_hatch(&hatched, &symbols));
+
+    assert_eq!(default_size_of(&past, &symbols), 1.0);
+    assert_eq!(default_size_of(&vector, &symbols), 2.0);
+    assert_eq!(default_size_of(&hatched, &symbols), 1.0);
+
+    assert_eq!(marker_size_of(&none, &symbols, 1.0), Ok((1.0, 1.0)));
+    assert_eq!(marker_size_of(&zero, &symbols, 1.0), Ok((1.0, 1.0)));
+    assert_eq!(
+        marker_size_of(&past, &symbols, 1.0),
+        Err("symbol 3, which the symbol set does not hold".to_owned())
+    );
+    for unresolved in [&name, &binding] {
+        assert_eq!(
+            marker_size_of(unresolved, &symbols, 1.0),
+            Err("a symbol by a name that is not resolved".to_owned())
+        );
+    }
+    assert_eq!(marker_size_of(&vector, &symbols, 1.0), Ok((10.0, 10.0)));
+    assert_eq!(marker_size_of(&hatched, &symbols, 1.0), Ok((10.0, 10.0)));
 }

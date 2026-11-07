@@ -1,5 +1,6 @@
 // The source follows MapServer's msINLINELayerNextShape and msLayerGetItemIndex, src/maplayer.c,
-// of the release pinned in scripts/fetch-msautotest.sh.
+// and msShapeGetLabelAnnotation, src/maputil.c, of the release pinned in
+// scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -36,7 +37,7 @@ pub fn is_inline(layer: &Layer) -> bool {
 
 /// The `TEXT` of the feature `id` of `layer`, where the layer is read from its inline features,
 /// whose ids are their places ([`InlineSource`]); a feature of any other source has none, as a
-/// shapefile's shape has none.
+/// shapefile's shape has none; the text ends at its first NUL.
 pub(crate) fn feature_text(layer: &Layer, id: u64) -> Option<&str> {
     if !is_inline(layer) {
         return None;
@@ -46,6 +47,9 @@ pub(crate) fn feature_text(layer: &Layer, id: u64) -> Option<&str> {
         .get(usize::try_from(id).ok()?)?
         .text
         .as_deref()
+        // msShapeGetLabelAnnotation (src/maputil.c) takes shape->text with msStrdup, a C string
+        // that ends at its first NUL.
+        .map(crate::classes::c_str)
 }
 
 /// The features of one layer, read from the style IR.

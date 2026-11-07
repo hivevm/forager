@@ -22,8 +22,9 @@ before agg-rust; neither says where the clip's code lives.
 whole clip, segments, lines, and rings, and the image grown by its margin in `render::clip`, with
 `Axis`, `crossing`, and the edges private, and asks the maintainer where agg-rust's limits stand.
 Implement it while it is proposed, after the maintainer's review: one module clips, one value
-grows the image, and the open ticket
-`docs/plan/revision-2026-10-31/12-one-glyph-reach.md` puts its predicate beside it.
+grows the image, and the glyph reach's predicate, `within_glyph_reach` beside `MAX_GLYPH_REACH`
+in `crates/render/src/lib.rs` (the landed ticket one-glyph-reach), moves beside it once the
+maintainer has answered ADR-0039's question of where the reach is decided.
 
 ## Acceptance criteria
 

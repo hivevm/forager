@@ -199,7 +199,7 @@ pub(crate) fn place(paths: &[Vec<Point>], p: &Placement, limit: usize) -> Option
             let count = count(current, length, p.spacing)?;
             if count > 0.0 {
                 line_in = true;
-                let (ox, oy) = anchor_offset(p, rotation);
+                let (ox, oy) = symbol::anchor_shift(p.anchor, p.size, rotation);
                 let origin = Point {
                     x: a.x + ox,
                     y: a.y + oy,
@@ -293,22 +293,6 @@ fn count(current: f64, length: f64, spacing: f64) -> Option<f64> {
         }
     }
     Some(n)
-}
-
-/// The shift of the drawn point that puts the symbol's anchor point on the line, turned with the
-/// symbol.
-fn anchor_offset(p: &Placement, rotation: f64) -> (f64, f64) {
-    let [anchor_x, anchor_y] = p.anchor;
-    if anchor_x == 0.5 && anchor_y == 0.5 {
-        return (0.0, 0.0);
-    }
-    let ox = (0.5 - anchor_x) * p.size.0;
-    let oy = (0.5 - anchor_y) * p.size.1;
-    if rotation == 0.0 {
-        return (ox, oy);
-    }
-    let (sin, cos) = (libm::sin(-rotation), libm::cos(-rotation));
-    (ox * cos - oy * sin, ox * sin + oy * cos)
 }
 
 /// Whether msImagePolylineMarkers skips the point as outside the map: more than the symbol's

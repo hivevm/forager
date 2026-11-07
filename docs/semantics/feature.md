@@ -19,7 +19,8 @@ leaves it as it was read. `loadFeature` reads the block's statements in order:
   own, whose class has none, and whose layer has no `LABELITEM`: `msShapeGetLabelAnnotation` in
   `src/maputil.c` takes the label's `TEXT`, else the class's, else the `LABELITEM`'s value where
   it is not empty, and the feature's text last. A label of a feature without a text then draws
-  nothing, as MapServer skips it.
+  nothing, as MapServer skips it. The text ends at its first NUL, as the C string `msStrdup`
+  copies does, and one that starts with a NUL draws nothing, as an empty one.
 - `WKT "…"` replaces the whole shape, its values and text included, with what `msShapeFromWKT` makes
   of the text through GEOS: a point shape of one point for a `POINT`, one part of all the points for
   a `MULTIPOINT`, one part per line for a `LINESTRING` or a `MULTILINESTRING`, one part per ring,

@@ -47,7 +47,7 @@ use agg_rust::scanline_boolean_algebra::ScanlineGenerator;
 use agg_rust::scanline_u::ScanlineU8;
 use forager_render::clip::{CLIP_MARGIN, drawn_width};
 use forager_render::{
-    Dashes, DisplayItem, DrawOp, Hatch, LineCap, LineJoin, Point, Renderer, RgbaImage,
+    Dashes, DisplayItem, Draw, DrawOp, Hatch, LineCap, LineJoin, Point, Renderer, RgbaImage,
 };
 use forager_style_ir::Rgba;
 
@@ -63,9 +63,6 @@ pub struct AggRenderer {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
-    /// The image beneath the layer being drawn into `pixels`, between
-    /// [`Renderer::begin_layer`] and [`Renderer::end_layer`].
-    beneath: Option<Vec<u8>>,
 }
 
 impl AggRenderer {
@@ -311,6 +308,8 @@ fn rgba8(color: Rgba) -> Rgba8 {
 }
 
 impl Renderer for AggRenderer {
+    type Layer<'a> = AggLayer<'a>;
+
     fn begin(&mut self, width: u32, height: u32, background: Rgba) {
         // An image whose size overflows is drawn as no image at all; the engine never asks for one.
         let pixels = (width as usize).checked_mul(height as usize);
@@ -323,24 +322,54 @@ impl Renderer for AggRenderer {
         let c = rgba8(background);
         let background = [c.r, c.g, c.b, c.a];
         self.pixels = background.repeat(width as usize * height as usize);
-        self.beneath = None;
     }
 
-    fn begin_layer(&mut self) {
-        debug_assert!(self.beneath.is_none(), "layers do not nest");
+    fn layer(&mut self, opacity: u8) -> AggLayer<'_> {
         // msDrawLayer's temporary image, created without a background: cleared to no colour.
-        let layer = vec![0; self.pixels.len()];
-        self.beneath = Some(std::mem::replace(&mut self.pixels, layer));
+        let clear = vec![0; self.pixels.len()];
+        let beneath = std::mem::replace(&mut self.pixels, clear);
+        AggLayer {
+            renderer: self,
+            beneath,
+            opacity,
+        }
     }
 
-    fn end_layer(&mut self, opacity: u8) {
-        let Some(beneath) = self.beneath.take() else {
-            return;
-        };
-        let layer = std::mem::replace(&mut self.pixels, beneath);
-        lay_over(&mut self.pixels, &layer, opacity);
+    fn finish(mut self) -> RgbaImage {
+        for p in self.pixels.as_chunks_mut::<4>().0.iter_mut() {
+            unpremultiply(p);
+        }
+        RgbaImage {
+            width: self.width,
+            height: self.height,
+            pixels: self.pixels,
+        }
     }
+}
 
+/// A layer of an [`AggRenderer`]: drawn into the renderer's buffer, cleared for it, while the
+/// image beneath waits; laid over that image when dropped.
+pub struct AggLayer<'a> {
+    renderer: &'a mut AggRenderer,
+    beneath: Vec<u8>,
+    opacity: u8,
+}
+
+impl Draw for AggLayer<'_> {
+    fn draw(&mut self, item: &DisplayItem) {
+        self.renderer.draw(item);
+    }
+}
+
+impl Drop for AggLayer<'_> {
+    fn drop(&mut self) {
+        let beneath = std::mem::take(&mut self.beneath);
+        let image = std::mem::replace(&mut self.renderer.pixels, beneath);
+        lay_over(&mut self.renderer.pixels, &image, self.opacity);
+    }
+}
+
+impl Draw for AggRenderer {
     fn draw(&mut self, item: &DisplayItem) {
         match &item.op {
             DrawOp::Fill {
@@ -376,17 +405,6 @@ impl Renderer for AggRenderer {
                 color,
                 outline,
             } => self.glyphs(path, *color, *outline),
-        }
-    }
-
-    fn finish(mut self) -> RgbaImage {
-        for p in self.pixels.as_chunks_mut::<4>().0.iter_mut() {
-            unpremultiply(p);
-        }
-        RgbaImage {
-            width: self.width,
-            height: self.height,
-            pixels: self.pixels,
         }
     }
 }

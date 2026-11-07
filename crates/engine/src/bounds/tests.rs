@@ -33,3 +33,29 @@ fn ms_min_and_ms_max_keep_their_second_operand_where_they_cannot_compare() {
     assert!(ms_min(2.0, f64::NAN).is_nan());
     assert!(ms_max(2.0, f64::NAN).is_nan());
 }
+
+#[test]
+fn marker_pixels_are_bounded_unscaled_and_cut_to_whole() {
+    // msGetMarkerSize, src/mapsymbol.c:754-755: MS_MAX with MINSIZE, then MS_MIN with MAXSIZE,
+    // into an int each time.
+    let style = Style {
+        min_size: Some(4.5),
+        max_size: Some(9.5),
+        ..Style::default()
+    };
+    assert_eq!(marker_pixels(3.0, &style), 4.0);
+    assert_eq!(marker_pixels(12.0, &style), 9.0);
+    assert_eq!(marker_pixels(800.0, &Style::default()), 500.0);
+}
+
+#[test]
+fn the_least_clip_buffer_is_the_larger_of_minsize_and_minwidth_scaled() {
+    // msDrawShape, src/mapdraw.c:2491-2492.
+    let style = Style {
+        min_size: Some(3.0),
+        min_width: Some(10.0),
+        ..Style::default()
+    };
+    assert_eq!(clip_buffer_minimum(&style, 2.0), 20.0);
+    assert_eq!(clip_buffer_minimum(&Style::default(), 2.0), 0.0);
+}

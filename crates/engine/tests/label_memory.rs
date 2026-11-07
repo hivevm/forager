@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use forager_adapter_geojson::GeoJsonSource;
 use forager_engine::render_with_files;
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
-use forager_render::{DisplayItem, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
 use forager_style_ir::{
     Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer, LayerStatus, Map, Op,
     RenderMode, Rgba, SourceRef, Style, Symbol, SymbolKind, SymbolRef,
@@ -41,13 +41,20 @@ impl ResourceLoader for Files {
 /// A renderer that keeps nothing of what it is handed, so that only the engine's memory counts.
 struct Discard(usize);
 
-impl Renderer for Discard {
-    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+impl Draw for Discard {
     fn draw(&mut self, item: &DisplayItem) {
         self.0 += usize::from(matches!(item.op, forager_render::DrawOp::Glyphs { .. }));
     }
-    fn begin_layer(&mut self) {}
-    fn end_layer(&mut self, _: u8) {}
+}
+
+/// A layer's items are drawn as if onto the map.
+impl Renderer for Discard {
+    type Layer<'a> = &'a mut Self;
+
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+    fn layer(&mut self, _: u8) -> &mut Self {
+        self
+    }
     fn finish(self) -> RgbaImage {
         RgbaImage {
             width: 0,

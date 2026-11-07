@@ -24,7 +24,7 @@
 use forager_render::{Hatch, Point};
 use forager_style_ir::{Rgba, Style, Symbol};
 
-use crate::bounds::{self, DEG_TO_RAD, MIN_SIZE, MIN_WIDTH, ms_max};
+use crate::bounds::{self, DEG_TO_RAD, ms_max};
 use crate::draw::{GAMMA, fixed};
 use crate::symbol;
 
@@ -61,10 +61,7 @@ impl Hatching {
             let size = fixed(&style.size).unwrap_or(-1.0);
             let width = fixed(&style.width).unwrap_or(1.0);
             let mut largest = ms_max(default_size, ms_max(size, width));
-            let unscaled = ms_max(
-                style.min_size.unwrap_or(MIN_SIZE) * factor,
-                style.min_width.unwrap_or(MIN_WIDTH) * factor,
-            );
+            let unscaled = bounds::clip_buffer_minimum(style, factor);
             if style.line_offset.is_none()
                 && let Some([x, y]) = &style.offset
             {

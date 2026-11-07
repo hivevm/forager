@@ -370,6 +370,19 @@ fn at_a_factor_the_clip_buffer_is_scaled() {
 }
 
 #[test]
+fn minwidth_counts_toward_the_clip_buffer_as_minsize_does() {
+    // msDrawShape, mapdraw.c:2489-2499: the larger of MINSIZE and MINWIDTH, scaled by the
+    // resolution factor, where it is larger than the size. MINWIDTH 10 at a factor of 2 is 20,
+    // + 1 is 21, and 23 with the 2; a MINSIZE below it does not count.
+    let wide = Style {
+        min_width: Some(10.0),
+        min_size: Some(3.0),
+        ..style(None, None)
+    };
+    assert_eq!(Hatching::for_class(&[wide], &[], 2.0).clip_buffer, 23.0);
+}
+
+#[test]
 fn a_hatch_bounds_its_width_and_spacing_as_ms_draw_shade_symbol_does() {
     // msDrawShadeSymbol, maprendering.c:808-813, at a factor of 2: a WIDTH and a SIZE bound to a
     // property that reads as `nan`, which atof() reads as NaN, are no number at or below 0 and

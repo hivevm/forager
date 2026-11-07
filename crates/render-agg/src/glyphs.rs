@@ -20,7 +20,7 @@ use agg_rust::path_storage::PathStorage;
 use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::scanline_u::ScanlineU8;
-use forager_render::{GlyphOutline, MAX_GLYPH_REACH, PathCommand};
+use forager_render::{GlyphOutline, PathCommand, within_glyph_reach};
 use forager_style_ir::Rgba;
 
 use crate::{AggRenderer, CLIP_MARGIN};
@@ -29,45 +29,30 @@ impl AggRenderer {
     /// Draws `path` as `agg2RenderGlyphsPath` draws a text path, its curves flattened by
     /// `conv_curve`, under the non-zero rule, with no gamma: first its outline, the
     /// `conv_contour` of the curves at the outline's width, then its fill in `color`. A path with
-    /// a point past [`MAX_GLYPH_REACH`], or one that is no number, is not drawn: the engine
-    /// leaves out and reports such a glyph before it reaches the display list, so this guards
-    /// the renderer against any other display list.
+    /// a point past [`forager_render::MAX_GLYPH_REACH`] of the image, or one that is no number,
+    /// is not drawn: the engine leaves out and reports such a glyph before it reaches the display
+    /// list by the same predicate, so this guards the renderer against any other display list.
     pub(crate) fn glyphs(
         &mut self,
         path: &[PathCommand],
         color: Option<Rgba>,
         outline: Option<GlyphOutline>,
     ) {
-        let reach = f64::from(self.width.max(self.height)) + MAX_GLYPH_REACH;
+        // The same image the engine hands the text path, so that a glyph it kept is drawn here.
+        let image = [0.0, 0.0, f64::from(self.width), f64::from(self.height)];
+        if !within_glyph_reach(image, path) {
+            return;
+        }
         let mut storage = PathStorage::new();
         for command in path {
-            let points = match *command {
-                PathCommand::MoveTo(p) => {
-                    storage.move_to(p.x, p.y);
-                    vec![p]
-                }
-                PathCommand::LineTo(p) => {
-                    storage.line_to(p.x, p.y);
-                    vec![p]
-                }
-                PathCommand::QuadTo(c, p) => {
-                    storage.curve3(c.x, c.y, p.x, p.y);
-                    vec![c, p]
-                }
+            match *command {
+                PathCommand::MoveTo(p) => storage.move_to(p.x, p.y),
+                PathCommand::LineTo(p) => storage.line_to(p.x, p.y),
+                PathCommand::QuadTo(c, p) => storage.curve3(c.x, c.y, p.x, p.y),
                 PathCommand::CubicTo(c0, c1, p) => {
                     storage.curve4(c0.x, c0.y, c1.x, c1.y, p.x, p.y);
-                    vec![c0, c1, p]
                 }
-                PathCommand::Close => {
-                    storage.close_polygon(PATH_FLAGS_NONE);
-                    vec![]
-                }
-            };
-            if !points
-                .iter()
-                .all(|p| p.x.abs() <= reach && p.y.abs() <= reach)
-            {
-                return;
+                PathCommand::Close => storage.close_polygon(PATH_FLAGS_NONE),
             }
         }
         if let Some(outline) = outline

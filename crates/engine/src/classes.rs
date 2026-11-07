@@ -468,8 +468,12 @@ struct Binder<'a> {
 
 /// A C string's bytes: up to the first NUL.
 pub(crate) fn c_bytes(text: &str) -> &[u8] {
-    let bytes = text.as_bytes();
-    &bytes[..bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len())]
+    c_str(text).as_bytes()
+}
+
+/// `text` up to its first NUL, where a C string of it ends.
+pub(crate) fn c_str(text: &str) -> &str {
+    text.split('\0').next().unwrap_or_default()
 }
 
 impl Binder<'_> {

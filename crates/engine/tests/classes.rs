@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use forager_adapter_geojson::GeoJsonSource;
 use forager_engine::{Rendered, render};
-use forager_render::{DisplayItem, DrawOp, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, DrawOp, Renderer, RgbaImage};
 use forager_style_ir::{
     Bound, Class, Expr, Extent, Layer, LayerStatus, Map, Op, RenderMode, Rgba, Style,
 };
@@ -20,15 +20,22 @@ const BLUE: Rgba = Rgba::opaque(0, 0, 255);
 #[derive(Clone, Default)]
 struct Recorder(Rc<RefCell<Vec<DisplayItem>>>);
 
-impl Renderer for Recorder {
-    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
-
+impl Draw for Recorder {
     fn draw(&mut self, item: &DisplayItem) {
         self.0.borrow_mut().push(item.clone());
     }
+}
 
-    fn begin_layer(&mut self) {}
-    fn end_layer(&mut self, _: u8) {}
+/// A layer's items are recorded as if drawn onto the map.
+impl Renderer for Recorder {
+    type Layer<'a> = &'a mut Self;
+
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+
+    fn layer(&mut self, _: u8) -> &mut Self {
+        self
+    }
+
     fn finish(self) -> RgbaImage {
         RgbaImage {
             width: 0,
@@ -518,4 +525,108 @@ fn a_text_past_the_limit_is_reported_and_its_class_never_matches() {
         .map(|d| d.code.as_str())
         .collect();
     assert_eq!(codes, ["text-too-long"]);
+}
+
+/// What a [`LayerRecorder`] is asked to draw: an item onto the map, or a layer of its own.
+#[derive(Clone, Debug, PartialEq)]
+enum Recorded {
+    Item(DisplayItem),
+    Layer {
+        opacity: u8,
+        items: Vec<DisplayItem>,
+    },
+}
+
+/// A renderer that keeps the items and the layers it is asked to draw, in order.
+#[derive(Clone, Default)]
+struct LayerRecorder(Rc<RefCell<Vec<Recorded>>>);
+
+/// A layer of a [`LayerRecorder`]: it keeps its items in the layer it recorded last.
+struct RecordedLayer<'a>(&'a LayerRecorder);
+
+impl Draw for RecordedLayer<'_> {
+    fn draw(&mut self, item: &DisplayItem) {
+        match self.0.0.borrow_mut().last_mut() {
+            Some(Recorded::Layer { items, .. }) => items.push(item.clone()),
+            _ => unreachable!("a layer is recorded when it begins"),
+        }
+    }
+}
+
+impl Draw for LayerRecorder {
+    fn draw(&mut self, item: &DisplayItem) {
+        self.0.borrow_mut().push(Recorded::Item(item.clone()));
+    }
+}
+
+impl Renderer for LayerRecorder {
+    type Layer<'a> = RecordedLayer<'a>;
+
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+
+    fn layer(&mut self, opacity: u8) -> RecordedLayer<'_> {
+        self.0.borrow_mut().push(Recorded::Layer {
+            opacity,
+            items: Vec::new(),
+        });
+        RecordedLayer(self)
+    }
+
+    fn finish(self) -> RgbaImage {
+        RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        }
+    }
+}
+
+fn record_layers(layer: Layer, geojson: &str) -> Vec<Recorded> {
+    let map = Map {
+        extent: Some(Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 100.0,
+            max_y: 100.0,
+        }),
+        size: Some([101, 101]),
+        layers: vec![layer],
+        ..Map::default()
+    };
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("data".to_owned(), GeoJsonSource::parse(geojson).unwrap())].into();
+    let recorder = LayerRecorder::default();
+    forager_ports::poll_once(render(&map, &sources, recorder.clone())).unwrap();
+    recorder.0.borrow().clone()
+}
+
+#[test]
+fn a_layer_with_an_opacity_is_recorded_with_its_items_and_its_opacity() {
+    let classes = vec![class(None, vec![filled(RED, 2.0)])];
+    let mut half = layer(RenderMode::Point, None, classes);
+    half.opacity = Some(50.0);
+    let recorded = record_layers(half, &points(&["{}", "{}"]));
+    // One layer, laid over at MS_NINT(50 × 2.55) = 127, holding both features' squares.
+    let [Recorded::Layer { opacity, items }] = recorded.as_slice() else {
+        panic!("expected one layer, got {recorded:?}");
+    };
+    assert_eq!(*opacity, 127);
+    assert_eq!(fills(items), vec![(1, RED, 2.0), (2, RED, 2.0)]);
+}
+
+#[test]
+fn a_layer_without_an_opacity_is_recorded_as_items_onto_the_map() {
+    let classes = vec![class(None, vec![filled(RED, 2.0)])];
+    let recorded = record_layers(
+        layer(RenderMode::Point, None, classes),
+        &points(&["{}", "{}"]),
+    );
+    let items: Vec<DisplayItem> = recorded
+        .iter()
+        .map(|r| match r {
+            Recorded::Item(item) => item.clone(),
+            Recorded::Layer { .. } => panic!("expected no layer, got {r:?}"),
+        })
+        .collect();
+    assert_eq!(fills(&items), vec![(1, RED, 2.0), (2, RED, 2.0)]);
 }

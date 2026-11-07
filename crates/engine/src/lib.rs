@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use forager_ports::{
     Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
 };
-use forager_render::{DisplayItem, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
 use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
 
 use forager_expr::Evaluator;
@@ -174,24 +174,25 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         // the next feature, into the layer's image; pointLayerDrawShape draws them after each
         // point, before the markers of the next.
         let at_once = point_layer && !layer.label_cache;
-        let own_image = drawing.begin_layer(&mut renderer, &mut canvas);
+        let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
             for (one, labelled) in selected.chunks(1).zip(drawn.chunks(1)) {
-                drawing.draw(&mut renderer, &mut canvas, one);
+                drawing.draw(&mut target, &mut canvas, one);
                 labels
                     .collect(
                         layer_index,
                         true,
                         labelled,
                         &mut selector,
-                        Some(&mut renderer),
+                        Some(&mut target),
                     )
                     .await;
             }
         } else {
-            drawing.draw(&mut renderer, &mut canvas, &selected);
+            drawing.draw(&mut target, &mut canvas, &selected);
         }
-        Drawing::end_layer(&mut renderer, own_image);
+        // A layer of its own is laid over the map here, before the layer's labels are cached.
+        drop(target);
         layer_reports(layer, &canvas, undrawn, selector.diagnostics);
         if !at_once {
             labels
@@ -287,6 +288,22 @@ fn checked_opacity(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<i
 /// A feature drawn: it, the place of its class, and its styles bound to it.
 pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
 
+/// Where a layer is drawn: straight onto the map, or, where it has an opacity, into a layer of
+/// the renderer, laid over the map when the target is dropped.
+enum Target<'r, R: Renderer + 'r> {
+    Map(&'r mut R),
+    Layer(R::Layer<'r>),
+}
+
+impl<R: Renderer> Draw for Target<'_, R> {
+    fn draw(&mut self, item: &DisplayItem) {
+        match self {
+            Target::Map(renderer) => renderer.draw(item),
+            Target::Layer(layer) => layer.draw(item),
+        }
+    }
+}
+
 /// What a layer's features are drawn with.
 struct Drawing<'a> {
     mode: RenderMode,
@@ -297,29 +314,23 @@ struct Drawing<'a> {
 }
 
 impl Drawing<'_> {
-    /// Begins the layer's drawing into an image of its own, which is laid over the map where the
-    /// layer has an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block; the alpha it
-    /// is laid over at, or `None` where the layer is drawn straight onto the map.
-    fn begin_layer<R: Renderer>(&self, renderer: &mut R, canvas: &mut Canvas) -> Option<u8> {
-        let opacity = layer_opacity(self.layer)?;
+    /// Where the layer is drawn: into an image of its own, laid over the map, where the layer has
+    /// an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block, and straight onto the
+    /// map otherwise.
+    fn target<'r, R: Renderer>(&self, renderer: &'r mut R, canvas: &mut Canvas) -> Target<'r, R> {
+        let Some(opacity) = layer_opacity(self.layer) else {
+            return Target::Map(renderer);
+        };
         canvas.in_own_image();
-        renderer.begin_layer();
         // aggCompositeRasterBufferNoPixman lays the layer over at MS_NINT(opacity × 2.55).
         let alpha = classes::ms_nint(f64::from(opacity) * 2.55);
-        Some(alpha.clamp(0, 255) as u8)
-    }
-
-    /// Lays the layer's own image over the map at `alpha`, where [`Self::begin_layer`] began one.
-    fn end_layer<R: Renderer>(renderer: &mut R, alpha: Option<u8>) {
-        if let Some(alpha) = alpha {
-            renderer.end_layer(alpha);
-        }
+        Target::Layer(renderer.layer(alpha.clamp(0, 255) as u8))
     }
 
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
     /// from the cache as the [`Plan`] of each class says. A style outside its scale range draws
     /// nothing, where msDrawShape and the cache's pass skip it.
-    fn draw<R: Renderer>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
+    fn draw<R: Draw>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
         let mode = self.mode;
         let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {
             if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {

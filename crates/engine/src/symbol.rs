@@ -31,7 +31,7 @@
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
-use crate::bounds::{self, DEG_TO_RAD, MAX_SIZE, MIN_SIZE, ms_max, ms_min};
+use crate::bounds::{self, DEG_TO_RAD};
 use crate::draw::fixed;
 
 /// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16
@@ -50,32 +50,50 @@ pub(crate) enum Mark<'a> {
     Nothing,
 }
 
+/// What a style's symbol is among MapServer's symbols, from index 1.
+enum Resolved<'a> {
+    /// MapServer's default symbol: no symbol, or index 0.
+    Default,
+    /// A name the frontend did not resolve to an index, or a binding not read yet.
+    Unresolved,
+    /// An index past the last symbol.
+    Missing(usize),
+    /// The symbol at the index.
+    Found(&'a Symbol),
+}
+
+/// The symbol `symbol` names among `symbols`.
+fn resolve<'a>(symbol: &Option<Bound<SymbolRef>>, symbols: &'a [Symbol]) -> Resolved<'a> {
+    let index = match symbol {
+        None => return Resolved::Default,
+        Some(Bound::Value(SymbolRef::Index(index))) => *index as usize,
+        Some(_) => return Resolved::Unresolved,
+    };
+    let Some(position) = index.checked_sub(1) else {
+        return Resolved::Default;
+    };
+    symbols
+        .get(position)
+        .map_or(Resolved::Missing(index), Resolved::Found)
+}
+
+/// Whether `symbol` is drawn as a vector or an ellipse.
+fn is_vector_or_ellipse(symbol: &Symbol) -> bool {
+    matches!(symbol.kind, SymbolKind::Vector | SymbolKind::Ellipse)
+}
+
 /// The mark of `style` among `symbols`, MapServer's symbols from index 1.
 pub(crate) fn mark<'a>(style: &Style, symbols: &'a [Symbol]) -> Mark<'a> {
-    let Some(Bound::Value(SymbolRef::Index(index))) = &style.symbol else {
-        return Mark::Square;
-    };
-    let Some(position) = (*index as usize).checked_sub(1) else {
-        return Mark::Square;
-    };
-    match symbols.get(position) {
-        None => Mark::Nothing,
-        Some(symbol) if matches!(symbol.kind, SymbolKind::Vector | SymbolKind::Ellipse) => {
-            Mark::Symbol(symbol)
-        }
-        Some(_) => Mark::Square,
+    match resolve(&style.symbol, symbols) {
+        Resolved::Missing(_) => Mark::Nothing,
+        Resolved::Found(symbol) if is_vector_or_ellipse(symbol) => Mark::Symbol(symbol),
+        Resolved::Default | Resolved::Unresolved | Resolved::Found(_) => Mark::Square,
     }
 }
 
 /// Whether the style's symbol among `symbols` is a hatch.
 pub(crate) fn is_hatch(style: &Style, symbols: &[Symbol]) -> bool {
-    let Some(Bound::Value(SymbolRef::Index(index))) = &style.symbol else {
-        return false;
-    };
-    (*index as usize)
-        .checked_sub(1)
-        .and_then(|position| symbols.get(position))
-        .is_some_and(|symbol| symbol.kind == SymbolKind::Hatch)
+    matches!(resolve(&style.symbol, symbols), Resolved::Found(symbol) if symbol.kind == SymbolKind::Hatch)
 }
 
 /// How a symbol is drawn, computeSymbolStyle's `symbolStyleObj`.
@@ -103,16 +121,8 @@ fn default_size(symbol: &Symbol) -> f64 {
 /// msSymbolGetDefaultSize of the style's symbol: of a vector or an ellipse its height, or its
 /// width; 1 for MapServer's default symbol, for any other kind, and where none is found.
 pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol]) -> f64 {
-    let Some(Bound::Value(SymbolRef::Index(index))) = &style.symbol else {
-        return 1.0;
-    };
-    match (*index as usize)
-        .checked_sub(1)
-        .and_then(|i| symbols.get(i))
-    {
-        Some(symbol) if matches!(symbol.kind, SymbolKind::Vector | SymbolKind::Ellipse) => {
-            default_size(symbol)
-        }
+    match resolve(&style.symbol, symbols) {
+        Resolved::Found(symbol) if is_vector_or_ellipse(symbol) => default_size(symbol),
         _ => 1.0,
     }
 }
@@ -168,8 +178,7 @@ fn marker_size_at(
     let [size_x, size_y] = symbol.extent.unwrap_or([1.0, 1.0]);
     // `size` is an int there: each assignment cuts the fraction.
     let pixels = (size.unwrap_or_else(|| default_size(symbol)) * scale_factor).trunc();
-    let pixels = ms_max(pixels, style.min_size.unwrap_or(MIN_SIZE)).trunc();
-    let pixels = ms_min(pixels, style.max_size.unwrap_or(MAX_SIZE)).trunc();
+    let pixels = bounds::marker_pixels(pixels, style);
     match size {
         Some(size) if size > 0.0 => (pixels / size_y * size_x, pixels),
         _ => (size_x, size_y),
@@ -204,19 +213,13 @@ pub(crate) fn marker_size_with(
     symbols: &[Symbol],
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
-    let index = match symbol {
-        None => 0,
-        Some(Bound::Value(SymbolRef::Index(index))) => *index as usize,
-        Some(_) => return Err("a symbol by a name that is not resolved".to_owned()),
-    };
-    let Some(position) = index.checked_sub(1) else {
-        return Ok((1.0, 1.0));
-    };
-    match symbols.get(position) {
-        None => Err(format!(
+    match resolve(symbol, symbols) {
+        Resolved::Default => Ok((1.0, 1.0)),
+        Resolved::Unresolved => Err("a symbol by a name that is not resolved".to_owned()),
+        Resolved::Missing(index) => Err(format!(
             "symbol {index}, which the symbol set does not hold"
         )),
-        Some(symbol) => match symbol.kind {
+        Resolved::Found(symbol) => match symbol.kind {
             SymbolKind::Pixmap | SymbolKind::Svg | SymbolKind::Truetype => Err(format!(
                 "a {:?} symbol, whose size is not computed yet",
                 symbol.kind
@@ -229,26 +232,34 @@ pub(crate) fn marker_size_with(
     }
 }
 
-/// The rest of msAdjustMarkerPos after [`shifted`]: the point moved so that the symbol's anchor
-/// point, turned with the symbol, lies on `at`, of the marker's size at `factor`.
-fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64, factor: f64) -> Point {
-    let [anchor_x, anchor_y] = symbol.anchor_point.unwrap_or([0.5, 0.5]);
+/// The shift of a marker of `size`, width and height, that puts the symbol's anchor point
+/// `anchor` on the point it is drawn at, turned with the symbol by `rotation`, as both
+/// msAdjustMarkerPos and msImagePolylineMarkers shift it; nothing for an anchor at the centre.
+pub(crate) fn anchor_shift(anchor: [f64; 2], size: (f64, f64), rotation: f64) -> (f64, f64) {
+    let [anchor_x, anchor_y] = anchor;
     if anchor_x == 0.5 && anchor_y == 0.5 {
-        return at;
+        return (0.0, 0.0);
     }
-    let (width, height) = marker_size(style, symbol, factor);
-    let ox = (0.5 - anchor_x) * width;
-    let oy = (0.5 - anchor_y) * height;
+    let ox = (0.5 - anchor_x) * size.0;
+    let oy = (0.5 - anchor_y) * size.1;
     if rotation == 0.0 {
-        return Point {
-            x: at.x + ox,
-            y: at.y + oy,
-        };
+        return (ox, oy);
     }
     let (sin, cos) = (libm::sin(-rotation), libm::cos(-rotation));
+    (ox * cos - oy * sin, ox * sin + oy * cos)
+}
+
+/// The rest of msAdjustMarkerPos after [`shifted`]: the point moved so that the symbol's anchor
+/// point, turned with the symbol, lies on `at`, of the size msGetMarkerSize gives at `factor`.
+fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64, factor: f64) -> Point {
+    let anchor = symbol.anchor_point.unwrap_or([0.5, 0.5]);
+    if anchor == [0.5, 0.5] {
+        return at;
+    }
+    let (ox, oy) = anchor_shift(anchor, marker_size(style, symbol, factor), rotation);
     Point {
-        x: at.x + (ox * cos - oy * sin),
-        y: at.y + (ox * sin + oy * cos),
+        x: at.x + ox,
+        y: at.y + oy,
     }
 }
 

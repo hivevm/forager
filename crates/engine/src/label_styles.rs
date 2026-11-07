@@ -19,7 +19,7 @@
 use std::borrow::Cow;
 
 use forager_label::{Bounds, Member, Placement, label_poly_at, marker_bounds};
-use forager_render::{DisplayItem, Point, Renderer};
+use forager_render::{DisplayItem, Draw, Point};
 use forager_style_ir::{
     Bound, GeomTransform, Label, Map, Rgba, Style, Symbol, SymbolKind, SymbolRef,
 };
@@ -504,7 +504,7 @@ impl<'a> Styled<'a> {
     /// box, the box of the turned polygon where the label is turned; it never tests the labelpoly
     /// or the labelcenter marker for collisions (maplabel.c:781). Each style is drawn by the kind
     /// of its written style, which `fixed` has checked; one of no kind is not drawn.
-    pub(crate) fn draw<R: Renderer>(
+    pub(crate) fn draw<R: Draw>(
         &mut self,
         renderer: &mut R,
         member: &Member,
@@ -559,7 +559,7 @@ impl<'a> Styled<'a> {
 /// else the ring of its box from its lower left corner up, at the canvas's factor: the map's
 /// scale factor, which is every label's while `fixed` refuses SYMBOLSCALEDENOM and a SIZEUNITS
 /// other than pixels.
-fn draw_label_poly<R: Renderer>(
+fn draw_label_poly<R: Draw>(
     renderer: &mut R,
     poly: &Bounds,
     style: &Style,
@@ -595,7 +595,7 @@ fn draw_label_poly<R: Renderer>(
 /// `labelcenter` style at the centre of its labelpoly's box, as msDrawMarkerSymbol draws it at
 /// the label's scale factor `factor`: its vector or ellipse symbol, moved by msAdjustMarkerPos;
 /// nothing for symbol 0.
-fn draw_label_marker<R: Renderer>(
+fn draw_label_marker<R: Draw>(
     renderer: &mut R,
     at: Point,
     style: &Style,

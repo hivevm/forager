@@ -22,7 +22,7 @@ use forager_ports::{Coord, Geometry};
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, RenderMode, Rgba, Style, Symbol, SymbolRef};
 
-use crate::bounds::{self, MAX_SIZE, MAX_WIDTH, MIN_WIDTH};
+use crate::bounds::{self, MAX_SIZE};
 use crate::extent::View;
 use crate::geom_transform;
 use crate::hatch::{self, Hatched, Hatching};
@@ -540,8 +540,8 @@ fn outline_style(style: &Style) -> Style {
         width: Some(Bound::Value(
             fixed(&style.width).unwrap_or(1.0) + 2.0 * outline,
         )),
-        min_width: Some(style.min_width.unwrap_or(MIN_WIDTH) + 2.0 * outline),
-        max_width: Some(style.max_width.unwrap_or(MAX_WIDTH) + 2.0 * outline),
+        min_width: Some(bounds::min_width(style) + 2.0 * outline),
+        max_width: Some(bounds::max_width(style) + 2.0 * outline),
         size: Some(Bound::Value(fixed(&style.size).unwrap_or(-1.0) + outline)),
         ..style.clone()
     }
@@ -817,6 +817,61 @@ mod tests {
             ..style
         };
         assert_eq!(fixed(&outline_style(&without_size).size), Some(0.5));
+    }
+
+    #[test]
+    fn an_outline_pass_grows_the_style_s_own_width_bounds() {
+        // msOutlineRenderingPrepareStyle grows the style's MINWIDTH and MAXWIDTH where it has
+        // them, and MapServer's defaults, 0 and 32, where it has none.
+        let style = Style {
+            min_width: Some(4.0),
+            max_width: Some(10.0),
+            outline_width: Some(Bound::Value(1.5)),
+            ..colored(Some(BLUE), Some(BLACK))
+        };
+        let prepared = outline_style(&style);
+        assert_eq!(
+            (prepared.min_width, prepared.max_width),
+            (Some(7.0), Some(13.0))
+        );
+        let defaults = outline_style(&Style {
+            min_width: None,
+            max_width: None,
+            ..style
+        });
+        assert_eq!(
+            (defaults.min_width, defaults.max_width),
+            (Some(3.0), Some(35.0))
+        );
+    }
+
+    /// The half side of the stand-in square [`point_ops`] draws for `style`.
+    fn half_side(style: &Style) -> f64 {
+        let mut ops = Vec::new();
+        point_ops(&mut ops, p(0.0, 0.0), style);
+        match &ops[0] {
+            DrawOp::Fill { rings, .. } => rings[0][1].x,
+            _ => panic!("the square is filled first"),
+        }
+    }
+
+    #[test]
+    fn the_stand_in_square_bounds_its_size_by_mapserver_s_defaults_alone() {
+        // Forager's stand-in, not MapServer's: its size is cut to between 0 and MS_MAXSYMBOLSIZE,
+        // 500, and the style's MINSIZE and MAXSIZE do not count.
+        let sized = |size: f64| Style {
+            size: Some(Bound::Value(size)),
+            ..colored(Some(BLUE), None)
+        };
+        assert_eq!(half_side(&sized(6.0)), 3.0);
+        assert_eq!(half_side(&sized(600.0)), 250.0);
+        assert_eq!(half_side(&sized(-4.0)), 0.0);
+        let bounded = Style {
+            min_size: Some(10.0),
+            max_size: Some(2.0),
+            ..sized(6.0)
+        };
+        assert_eq!(half_side(&bounded), 3.0);
     }
 
     /// The points of drawing operations.

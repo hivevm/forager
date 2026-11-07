@@ -1,7 +1,8 @@
 // The bounds of a style follow MapServer's MS_MIN and MS_MAX and its default bounds of a style,
-// src/mapserver.h, and the bounding of a style's width and size in msDrawLineSymbol(),
-// computeSymbolStyle(), and msDrawShadeSymbol(), src/maprendering.c, of the release pinned in
-// scripts/fetch-msautotest.sh.
+// src/mapserver.h, the bounding of a style's width and size in msDrawLineSymbol(),
+// computeSymbolStyle(), and msDrawShadeSymbol(), src/maprendering.c, of a marker's size in
+// msGetMarkerSize(), src/mapsymbol.c, and of a clip buffer in msDrawShape(), src/mapdraw.c, of the
+// release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota (src/maprendering.c).
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
@@ -16,14 +17,19 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The bounds of a style's width and size as msDrawLineSymbol(), computeSymbolStyle(), and
-//! msDrawShadeSymbol() apply them, one function per site, and the constants they bound by. Two
-//! sites bound a size outside this module, with these constants: msGetMarkerSize()'s marker size
-//! (`symbol::marker_size`) and msDrawShape()'s clip buffer (`hatch::Hatching::for_class`). MapServer bounds in two orders: the maximum first where it
-//! draws a line or a polygon, the minimum first where it draws a symbol. With `MS_MIN` and
-//! `MS_MAX`, which keep their second operand where they cannot compare, the order decides what a
-//! width that is no number, as an expression may bind, comes out as: the style's `MINWIDTH` in the
-//! one order, its `MAXWIDTH` in the other.
+//! The bounds of a style's width and size as msDrawLineSymbol(), computeSymbolStyle(),
+//! msDrawShadeSymbol(), msGetMarkerSize(), and msDrawShape() apply them, one function per site,
+//! the style's bounds with their defaults, and the constants they bound by. Two sites bound a size
+//! outside this module: the stand-in square of `draw::point_ops`, Forager's and not MapServer's,
+//! which cuts its size to between 0 and [`MAX_SIZE`] and ignores the style's `MINSIZE` and
+//! `MAXSIZE`, as the images blessed with it draw it; and msImagePolylineMarkers()'s marker along a
+//! line (`line_marker::draw`), which keeps its symbol's scaled extent at 1 pixel or more, by no
+//! bound of the style. `draw::outline_style` bounds nothing: it widens the style's `MINWIDTH` and
+//! `MAXWIDTH`, read here with their defaults, for the outline pass. MapServer bounds in two
+//! orders: the maximum first where it draws a line or a polygon, the minimum first where it draws
+//! a symbol. With `MS_MIN` and `MS_MAX`, which keep their second operand where they cannot
+//! compare, the order decides what a width that is no number, as an expression may bind, comes
+//! out as: the style's `MINWIDTH` in the one order, its `MAXWIDTH` in the other.
 
 use forager_style_ir::Style;
 
@@ -53,22 +59,22 @@ pub(crate) fn ms_min(a: f64, b: f64) -> f64 {
 }
 
 /// The style's `MINWIDTH`, its default without one.
-fn min_width(style: &Style) -> f64 {
+pub(crate) fn min_width(style: &Style) -> f64 {
     style.min_width.unwrap_or(MIN_WIDTH)
 }
 
 /// The style's `MAXWIDTH`, its default without one.
-fn max_width(style: &Style) -> f64 {
+pub(crate) fn max_width(style: &Style) -> f64 {
     style.max_width.unwrap_or(MAX_WIDTH)
 }
 
 /// The style's `MINSIZE`, its default without one.
-fn min_size(style: &Style) -> f64 {
+pub(crate) fn min_size(style: &Style) -> f64 {
     style.min_size.unwrap_or(MIN_SIZE)
 }
 
 /// The style's `MAXSIZE`, its default without one.
-fn max_size(style: &Style) -> f64 {
+pub(crate) fn max_size(style: &Style) -> f64 {
     style.max_size.unwrap_or(MAX_SIZE)
 }
 
@@ -112,6 +118,20 @@ pub(crate) fn hatch_width(width: f64, style: &Style, resolution: f64) -> f64 {
 pub(crate) fn hatch_spacing(spacing: f64, style: &Style, resolution: f64) -> f64 {
     let spacing = ms_min(spacing, max_size(style) * resolution);
     ms_max(spacing, min_size(style) * resolution)
+}
+
+/// msGetMarkerSize(), `src/mapsymbol.c:754-755`: a marker's size in whole `pixels`, bounded by the
+/// style's `MINSIZE` and then its `MAXSIZE`, neither scaled, and cut to whole pixels after each,
+/// as `size` is an int there.
+pub(crate) fn marker_pixels(pixels: f64, style: &Style) -> f64 {
+    let pixels = ms_max(pixels, min_size(style)).trunc();
+    ms_min(pixels, max_size(style)).trunc()
+}
+
+/// msDrawShape(), `src/mapdraw.c:2491-2492`: the least size of a style's clip buffer, the larger of
+/// its `MINSIZE` and its `MINWIDTH`, both times the `resolution` factor.
+pub(crate) fn clip_buffer_minimum(style: &Style, resolution: f64) -> f64 {
+    ms_max(min_size(style) * resolution, min_width(style) * resolution)
 }
 
 #[cfg(test)]

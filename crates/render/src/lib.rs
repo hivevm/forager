@@ -67,6 +67,26 @@ pub struct GlyphOutline {
 /// a glyph that reaches farther, and the reference renderer draws no path that does.
 pub const MAX_GLYPH_REACH: f64 = 4_194_304.0;
 
+/// Whether every point of `path` lies within [`MAX_GLYPH_REACH`] of `image`,
+/// `[min x, min y, max x, max y]`; a point that is no number does not. The bound is the image's
+/// alone, whatever the outline, so that it holds below agg-rust's limit. The text path keeps a
+/// glyph, and the reference renderer draws a glyph path, only when this holds of the same image,
+/// so that the renderer leaves out no label the text path kept.
+pub fn within_glyph_reach(image: [f64; 4], path: &[PathCommand]) -> bool {
+    let within = |p: &Point| {
+        p.x >= image[0] - MAX_GLYPH_REACH
+            && p.y >= image[1] - MAX_GLYPH_REACH
+            && p.x <= image[2] + MAX_GLYPH_REACH
+            && p.y <= image[3] + MAX_GLYPH_REACH
+    };
+    path.iter().all(|command| match command {
+        PathCommand::MoveTo(p) | PathCommand::LineTo(p) => within(p),
+        PathCommand::QuadTo(c, p) => within(c) && within(p),
+        PathCommand::CubicTo(c0, c1, p) => within(c0) && within(c1) && within(p),
+        PathCommand::Close => true,
+    })
+}
+
 /// A step of a glyph outline, in pixels; a quadratic curve names its control point and its end,
 /// a cubic its two control points and its end.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -120,14 +140,29 @@ impl RgbaImage {
     }
 }
 
-/// Rasterizes a display list.
-pub trait Renderer {
-    fn begin(&mut self, width: u32, height: u32, background: Rgba);
+/// Draws display items one by one, onto an image or into a layer of it.
+pub trait Draw {
     fn draw(&mut self, item: &DisplayItem);
-    /// Draws what follows, up to [`Renderer::end_layer`], into a transparent image of its own.
-    fn begin_layer(&mut self);
-    /// Lays the image begun by [`Renderer::begin_layer`] over the image beneath it, its alpha
-    /// scaled by `opacity`, 0 to 255.
-    fn end_layer(&mut self, opacity: u8);
+}
+
+impl<D: Draw + ?Sized> Draw for &mut D {
+    fn draw(&mut self, item: &DisplayItem) {
+        (**self).draw(item);
+    }
+}
+
+/// Rasterizes a display list.
+pub trait Renderer: Draw {
+    /// A layer begun by [`Renderer::layer`]; it borrows the renderer until it is dropped.
+    type Layer<'a>: Draw
+    where
+        Self: 'a;
+
+    fn begin(&mut self, width: u32, height: u32, background: Rgba);
+    /// Begins a layer: what is drawn into it goes into a transparent image of its own, which is
+    /// laid over the image, its alpha scaled by `opacity`, 0 to 255, when the layer is dropped.
+    /// The layer borrows the renderer, so no layer begins within another, and it draws an item
+    /// as it is handed, holding none.
+    fn layer(&mut self, opacity: u8) -> Self::Layer<'_>;
     fn finish(self) -> RgbaImage;
 }

@@ -28,7 +28,7 @@ use forager_label::{
     lines, member_box, pixel_size, placed_at,
 };
 use forager_ports::{Feature, Properties, ResourceLoader, Value};
-use forager_render::{DisplayItem, DrawOp, GlyphOutline, Point, Renderer};
+use forager_render::{DisplayItem, Draw, DrawOp, GlyphOutline, Point};
 use forager_style_ir::{
     Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Layer, Map, Op,
     Position as IrPosition, Rgba, Span, Style, Units,
@@ -36,7 +36,7 @@ use forager_style_ir::{
 
 use crate::CachedLabel;
 use crate::bounds::DEG_TO_RAD;
-use crate::classes::{self, FeatureProperties, Selector, c_bytes, color};
+use crate::classes::{self, FeatureProperties, Selector, c_bytes, c_str, color};
 use crate::draw::vertices;
 use crate::extent::View;
 use crate::fonts::Fonts;
@@ -234,7 +234,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// collected for it, as `msGetLabelStatus` decides. With `at_once`, the layer's of
     /// `LABELCACHE OFF`, each label is drawn into it instead of cached (see
     /// [`Self::draw_at_once`]).
-    pub(crate) async fn collect<R: Renderer>(
+    pub(crate) async fn collect<R: Draw>(
         &mut self,
         index: usize,
         point_layer: bool,
@@ -325,7 +325,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// Lays out one label of one feature and places it at each of its points, or draws it there
     /// into `at_once`.
     #[allow(clippy::too_many_arguments)]
-    async fn feature<R: Renderer>(
+    async fn feature<R: Draw>(
         &mut self,
         at: LabelAt,
         fixed: &Fixed<'_>,
@@ -441,7 +441,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// `FLT_MAX` and `-FLT_MAX` (textlayout.c:817-819), where it is of line breaks; such a label
     /// is left out with a diagnostic.
     #[allow(clippy::too_many_arguments)]
-    fn draw_at_once<R: Renderer>(
+    fn draw_at_once<R: Draw>(
         &mut self,
         renderer: &mut R,
         at: LabelAt,
@@ -694,7 +694,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// Draws the labels the label cache places, in the order it places them, each label's path
     /// built just before it is drawn. A glyph left out for reaching too far from the image is
     /// reported once for its label, and the labels left out past [`MAX_LABELS`] once.
-    pub(crate) fn finish<R: Renderer>(
+    pub(crate) fn finish<R: Draw>(
         mut self,
         renderer: &mut R,
         diagnostics: &mut Vec<Diagnostic>,
@@ -822,7 +822,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
 /// them, each glyph that reaches into `image` or near it; the count of glyphs left out for reaching
 /// too far from it.
 #[allow(clippy::too_many_arguments)]
-fn draw_label<R: Renderer>(
+fn draw_label<R: Draw>(
     renderer: &mut R,
     styled: &mut Styled<'_>,
     map: &Map,
@@ -852,14 +852,9 @@ fn draw_label<R: Renderer>(
     if label.color.is_none() && label.outline.is_none() {
         return 0;
     }
-    // An outline reaches past its glyphs: half its width, and at a sharp corner a miter up to its
-    // whole width, so a glyph that close outside the image is drawn for it.
-    let reach = label
-        .outline
-        .map_or(0.0, |(_, width)| 2.0 * f64::from(width).abs());
-    let [x0, y0, x1, y1] = image;
-    let visible = [x0 - reach, y0 - reach, x1 + reach, y1 + reach];
-    let drawn = path.draw(glyphs, placement.origin, label.rotation, visible);
+    // An outline reaches past its glyphs, so a glyph that close outside the image is drawn for it.
+    let width = label.outline.map_or(0.0, |(_, width)| f64::from(width));
+    let drawn = path.draw_outlined(glyphs, placement.origin, label.rotation, image, width);
     if !drawn.path.is_empty() {
         renderer.draw(&DisplayItem {
             op: DrawOp::Glyphs {
@@ -1305,7 +1300,10 @@ fn text(expr: &Expr, properties: &Properties) -> Result<String, String> {
             [Expr::Property { property }] => match properties.get(property) {
                 None | Some(Value::Null) => Ok(String::new()),
                 Some(Value::Number(digits)) => Ok(digits.to_owned()),
-                Some(Value::String(text)) => Ok(text.into_owned()),
+                // msEvalTextExpressionInternal (src/maputil.c) puts the value in place of its
+                // binding with msReplaceSubstring, which reads it as a C string: it ends at its
+                // first NUL, and the text around the binding goes on.
+                Some(Value::String(text)) => Ok(c_str(&text).to_owned()),
                 Some(Value::Bool(_)) => Err(format!(
                     "the property `{property}` holds a boolean, whose text is not settled"
                 )),
