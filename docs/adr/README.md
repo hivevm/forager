@@ -115,6 +115,7 @@ is the table a session reads.
 | [0038](0038-browser-bindings-bind-geojson-only.md) | The browser bindings bind only the GeoJSON a page passes, never a shapefile | `crates/bindings-wasm`: which feature sources it binds to the layers, and its dependencies on `adapter-<kind>` crates | 🟢 accepted |
 | [0039](0039-the-clip-to-the-image-is-one-module-of-render.md) | The clip to the image is one module of `render`, shared by the hatch's bound and every renderer | `crates/render/src/clip.rs`, the clipping of paths in `crates/render-agg`, and every renderer or bound that measures or clips a path against the image | 🟢 accepted |
 | [0040](0040-a-decoded-pixmap-is-held-once-per-render.md) | A decoded pixmap is held once per render and per path, and shared by every item that draws it | the image store of `crates/engine`, the type `PremultipliedImage` of `crates/render` and the display items that carry it, the pixmap decoders of `crates/encode`, and every crate that draws a pixmap or a fill tile | 🟢 accepted |
+| [0041](0041-render-agg-resamples-pixmaps-as-agg-2-4.md) | `render-agg` resamples a scaled or turned pixmap with a port of AGG 2.4's bilinear clip filter and linear interpolator | the resampling of a pixmap that `crates/render-agg` draws scaled or turned: its span generator, its interpolator, and the rounding of both | 🟢 accepted |
 
 ### Superseded and rejected
 

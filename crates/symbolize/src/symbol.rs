@@ -1,6 +1,7 @@
 // Vector and ellipse symbols at a point follow MapServer's msDrawMarkerSymbol, msAdjustMarkerPos,
 // and computeSymbolStyle, src/maprendering.c, msSymbolGetDefaultSize and msGetMarkerSize,
-// src/mapsymbol.c, and agg2RenderVectorSymbol and agg2RenderEllipseSymbol, src/mapagg.cpp, of the
+// src/mapsymbol.c, and agg2RenderVectorSymbol, agg2RenderEllipseSymbol, and the square and
+// transformation of agg2RenderPixmapSymbol, src/mapagg.cpp, of the
 // release pinned in scripts/fetch-msautotest.sh, and the ellipse and affine transformation of the
 // AGG it bundles, src/renderers/agg/include/agg_ellipse.h and src/agg_trans_affine.cpp.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
@@ -29,6 +30,7 @@
 //! every target, so that the native and the browser build draw the same bytes (Q-2).
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
+use forager_style_ir::c::lrint;
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use crate::bounds;
@@ -180,6 +182,37 @@ pub(crate) fn pixmap_style(style: &Style, height: u32, factor: f64) -> (f64, f64
         target / default_size,
         fixed(&style.angle).unwrap_or(0.0) * DEG_TO_RAD,
     )
+}
+
+/// What agg2RenderPixmapSymbol, `src/mapagg.cpp:656-683`, resamples an image of `width` by
+/// `height` pixels at the pixel `at` through, turned by `rotation` and at `scale`: the half-side
+/// of the square it fills about the point, `MS_NINT(max(width, height) × scale × 1.415) / 2 + 1`
+/// in a `long` narrowed to an `int`, and the inverse of the image's transformation, a translation
+/// by minus half the image, a rotation by `-rotation`, the scaling, and a translation to the
+/// point, in AGG's order of operations.
+pub(crate) fn pixmap_square(
+    width: u32,
+    height: u32,
+    at: Point,
+    scale: f64,
+    rotation: f64,
+) -> (i32, forager_render::Affine) {
+    let side = f64::from(width.max(height)) * scale * 1.415;
+    let half = (lrint(side) / 2 + 1) as i32;
+    let m = Affine::translation(-(f64::from(width) / 2.0), -(f64::from(height) / 2.0))
+        .then(Affine::rotation(-rotation))
+        .then(Affine::scaling(scale))
+        .then(Affine::translation(at.x, at.y))
+        .inverse();
+    let inverse = forager_render::Affine {
+        sx: m.sx,
+        shy: m.shy,
+        shx: m.shx,
+        sy: m.sy,
+        tx: m.tx,
+        ty: m.ty,
+    };
+    (half, inverse)
 }
 
 /// msGetMarkerSize for a vector or ellipse symbol at `scale_factor`: the width and height it is
@@ -472,6 +505,23 @@ impl Affine {
             shy: self.sx * m.shy + self.shy * m.sy,
             sy: self.shx * m.shy + self.sy * m.sy,
             ty: self.tx * m.shy + self.ty * m.sy + m.ty,
+        }
+    }
+
+    /// The inverse of this transformation, AGG's `invert`, in its order of operations.
+    fn inverse(self) -> Self {
+        let d = 1.0 / (self.sx * self.sy - self.shy * self.shx);
+        let t0 = self.sy * d;
+        let sy = self.sx * d;
+        let shy = -self.shy * d;
+        let shx = -self.shx * d;
+        Self {
+            sx: t0,
+            shy,
+            shx,
+            sy,
+            tx: -self.tx * t0 - self.ty * shx,
+            ty: -self.tx * shy - self.ty * sy,
         }
     }
 

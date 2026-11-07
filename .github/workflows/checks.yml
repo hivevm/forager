@@ -143,6 +143,9 @@ jobs:
         run: bash scripts/test-check-vendor.sh
       - name: Check the vendored JavaScript of the browser example against its checksums
         run: bash scripts/check-vendor.sh
+      # Two runs of the generator match each other and the browser example's checked-in GeoJSON.
+      - name: Self-test the example generator against the checked-in GeoJSON
+        run: bash scripts/test-generate-example.sh
       - name: Self-test the MapServer notice check
         run: bash scripts/test-check-notice.sh
       # The licence constraint: a file that follows MapServer's source keeps its notice.

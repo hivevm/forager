@@ -14,10 +14,20 @@ The pull requests of the spec `labels-2` left three points of a label's styles i
 - A label's style without a transform, which the style document now means "not drawn", is
   refused as "a STYLE other than one of GEOMTRANSFORM labelpoly, labelpnt, or labelcenter",
   which does not say that the transform is missing.
+- A `labelpoly` style with a `SYMBOL`, a hatch among them, is refused today ("a STYLE of
+  GEOMTRANSFORM labelpoly with a SYMBOL"), so the label is not drawn; `msDrawLabelBounds` draws it
+  through `msDrawShadeSymbol`, so MapServer hatches the box. Taken over from
+  `docs/plan/revision-2026-11-07/06-label-style-refused-hatch-reported.md`, which found the path
+  it named unreachable: once such a style is drawn, `draw_label_poly`
+  (`crates/engine/src/label_styles.rs`) must count the `false` that `symbolize::shade` returns for
+  a hatch past `Hatch::is_bounded`, and the engine must report it with the layer's
+  `hatches_refused`, as it reports a refused polygon hatch (Q-9). It reads the count from the
+  layer's canvas today, not from the label styles' canvas in `LabelStyles`.
 
 Read each in `msDrawLabelCache` and `computeMarkerBounds` (`src/mapdraw.c`) and `bindLabel`
-(`src/maputil.c`) at the pin; port the first two, or refuse them with `label-not-drawn` where
-porting needs more than this ticket, and word the third refusal for what it is.
+(`src/maputil.c`) at the pin, and `msDrawLabelBounds`; port the first two and the fourth, or
+refuse them with `label-not-drawn` where porting needs more than this ticket, and word the third
+refusal for what it is.
 
 ## Acceptance criteria
 
@@ -30,6 +40,10 @@ porting needs more than this ticket, and word the third refusal for what it is.
   it, or refused with `label-not-drawn`.
 - [ ] Given a label's style without a transform, when it is refused, then the diagnostic says that
   the style has no transform.
+- [ ] Given a label with a `labelpoly` style of a hatch, when it is drawn, then the box is hatched
+  as `msDrawShadeSymbol` hatches it, with stated values or an msautotest case, or the label is
+  refused as today; and given the same hatch past `Hatch::is_bounded`, then the layer's report
+  carries the refusal with the code a refused polygon hatch gets.
 
 ## Read first
 

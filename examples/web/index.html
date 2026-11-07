@@ -33,15 +33,23 @@
                     font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
   textarea { resize: vertical; }
   #mapfile { height: 340px; }
-  .source { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+  .inputs details { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+  .inputs > details:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+  summary { font-size: 14px; text-transform: uppercase; letter-spacing: .04em;
+            color: var(--muted); font-weight: 600; cursor: pointer; }
+  details[open] > summary { margin-bottom: 10px; }
+  /* Floated, not a flex row, so that the summary keeps its disclosure triangle. */
+  .source summary input { width: auto; float: right; margin: 2px 0 0 8px; }
   .source label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-  .source textarea { height: 120px; margin-top: 6px; }
+  .source textarea { height: 300px; margin-top: 6px; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   button { background: var(--accent); color: var(--bg); border: 0; border-radius: 6px;
            padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
   button.secondary { background: transparent; color: var(--accent);
                      border: 1px solid var(--accent); }
-  canvas { display: block; max-width: 100%; height: auto; border: 1px solid var(--line);
+  /* The single image only: Leaflet's tiles are canvases too, and a border on each would draw a
+     grid over the tile view. */
+  #map { display: block; max-width: 100%; height: auto; border: 1px solid var(--line);
            border-radius: 4px; background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
   #status { color: var(--muted); font-size: 13px; }
   ul#diagnostics { list-style: none; padding: 0; margin: 12px 0 0;
@@ -57,14 +65,23 @@
 <main>
   <h1>Forager in the browser</h1>
   <p class="lead">A mapfile and GeoJSON for its layers, rendered by Forager's WebAssembly build.
-    GeoJSON is bound to the layer whose NAME you give. The page hands the bindings the files the
-    sample mapfile names beside it: its font set <code>fonts.lst</code> and the font DejaVu Sans,
-    which its labels are drawn with.</p>
+    GeoJSON is bound to the layer whose NAME you give. The sample is a synthetic landscape that
+    <code>scripts/generate-example.sh</code> generates; zoom into the tiles to see its villages,
+    streets, and fields. The page hands the bindings the files the sample mapfile names beside it:
+    its font set <code>fonts.lst</code> and the font DejaVu Sans, which its labels are drawn
+    with.</p>
   <div class="grid">
-    <section>
-      <h2>Mapfile</h2>
-      <textarea id="mapfile" spellcheck="false" aria-label="Mapfile"></textarea>
-      <h2 style="margin-top: 16px">GeoJSON by layer</h2>
+    <section class="wide">
+      <h2>Tiles</h2>
+      <div id="tiles"></div>
+    </section>
+    <section class="inputs">
+      <!-- The mapfile and each layer's GeoJSON fold away, one open at a time: details elements
+           of the same name are exclusive. -->
+      <details name="input">
+        <summary>Mapfile</summary>
+        <textarea id="mapfile" spellcheck="false" aria-label="Mapfile"></textarea>
+      </details>
       <div id="sources"></div>
       <div class="row">
         <button class="secondary" id="add">Add source</button>
@@ -78,10 +95,6 @@
         <span id="status">Loading…</span>
       </div>
       <ul id="diagnostics" aria-live="polite"></ul>
-    </section>
-    <section class="wide">
-      <h2>Tiles</h2>
-      <div id="tiles"></div>
     </section>
   </div>
 </main>
@@ -99,14 +112,31 @@
   const sources = document.getElementById("sources");
   const status = document.getElementById("status");
 
+  // Adds a source: a layer's GeoJSON, folded under its NAME, with a checkbox that switches the
+  // layer off and on.
   function addSource(layer = "", geojson = "") {
-    const row = document.createElement("div");
+    const row = document.createElement("details");
     row.className = "source";
-    row.innerHTML = `<label>Layer NAME</label><input class="layer" spellcheck="false">
+    row.name = "input";
+    row.innerHTML = `<summary><span class="title"></span><input type="checkbox" class="active"
+        checked aria-label="Draw this layer" title="Draw this layer"></summary>
+      <label>Layer NAME</label><input class="layer" spellcheck="false">
       <textarea class="geojson" spellcheck="false" aria-label="GeoJSON"></textarea>`;
-    row.querySelector(".layer").value = layer;
+    const name = row.querySelector(".layer");
+    const active = row.querySelector(".active");
+    const title = row.querySelector(".title");
+    name.value = layer;
     row.querySelector(".geojson").value = geojson;
+    const label = () => {
+      const off = active.checked ? "" : " (off)";
+      title.textContent = `Layer ${name.value.trim() || "(no NAME yet)"}${off}`;
+    };
+    name.addEventListener("input", label);
+    // Switching a layer on or off draws the map and the tiles again at once.
+    active.addEventListener("change", () => { label(); if (renderWith) draw(); });
+    label();
     sources.append(row);
+    return row;
   }
 
   function draw() {
@@ -121,7 +151,13 @@
     const bound = {};
     for (const row of sources.querySelectorAll(".source")) {
       const layer = row.querySelector(".layer").value.trim();
-      if (layer) bound[layer] = row.querySelector(".geojson").value;
+      // A layer switched off is bound to no features: it draws nothing and, unlike a layer
+      // without a source, is not reported as skipped.
+      if (layer) {
+        bound[layer] = row.querySelector(".active").checked
+          ? row.querySelector(".geojson").value
+          : '{"type": "FeatureCollection", "features": []}';
+      }
     }
     current = { mapfile: document.getElementById("mapfile").value, sources: JSON.stringify(bound) };
     tiles?.redraw();
@@ -140,9 +176,11 @@
   // are moved in by half a pixel; then neighbouring tiles meet without a seam. Each tile is drawn
   // with TILE_BUFFER pixels more on every side, which are cut away, as a metatile's buffer is:
   // the label cache then places a label beside the tile's edge as the neighbouring tile does, as
-  // long as a label and the labels it gives way to reach less far than the buffer. A dashed line
-  // a tile cuts starts its dashes again at the cut, as MapServer clips a line before dashing it.
-  const TILE_BUFFER = 128;
+  // long as a label and the labels it gives way to reach less far than the buffer; among the
+  // sample's many names, half a tile's buffer leaves a seam at many tiles' edges, a whole tile's at
+  // few. A dashed line a tile cuts starts its dashes again at the cut, as MapServer clips a line
+  // before dashing it.
+  const TILE_BUFFER = 256;
   const ForagerTiles = L.GridLayer.extend({
     createTile(coords) {
       const tile = document.createElement("canvas");
@@ -175,13 +213,14 @@
   });
 
   // The tile view in plain map units, framed once at load by the first EXTENT line of the
-  // mapfile, which in the sample is the map's.
+  // mapfile, which in the sample is the map's: centred on it, at zoom 0, one map unit a pixel.
   function showTiles() {
     const map = L.map("tiles", { crs: L.CRS.Simple, minZoom: -4, maxZoom: 10 });
     const line = current.mapfile.match(/^\s*EXTENT\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/im);
     const [minx, miny, maxx, maxy] = line ? line.slice(1).map(Number) : [];
     if ([minx, miny, maxx, maxy].every(Number.isFinite)) {
-      map.fitBounds([[miny, minx], [maxy, maxx]]);
+      const bounds = L.latLngBounds([[miny, minx], [maxy, maxx]]);
+      map.setView(bounds.getCenter(), 0);
     } else {
       map.setView([0, 0], 0);
     }
@@ -227,7 +266,11 @@
     return loaded;
   }
 
-  document.getElementById("add").addEventListener("click", () => addSource());
+  document.getElementById("add").addEventListener("click", () => {
+    const row = addSource();
+    row.open = true;
+    row.querySelector(".layer").focus();
+  });
 
   let bundle;
   try {
@@ -248,7 +291,7 @@
   renderButton.addEventListener("click", draw);
   renderButton.disabled = false;
   document.getElementById("mapfile").value = await text("sample.map");
-  for (const layer of ["areas", "river", "roads", "places"]) {
+  for (const layer of ["landuse", "rivers", "buildings", "roads", "places"]) {
     addSource(layer, await text(`${layer}.geojson`));
   }
   draw();

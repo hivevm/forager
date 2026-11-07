@@ -67,8 +67,29 @@ at a scale of 1, the image is moved by the style's `OFFSET` and `POLAROFFSET` as
 blended unscaled, every pixel at full cover, its top-left pixel at `MS_NINT(x - width / 2.)` and
 `MS_NINT(y - height / 2.)`: a point at the pixel (50.5, 41.5) puts a 32 × 32 image's top-left
 pixel at (34, 26), `lrint` rounding 34.5 and 25.5 half to even. Neither the style's colour nor
-its opacity reaches the image (`computeSymbolStyle`). A pixmap at a scale other than 1, or turned
-by an `ANGLE` other than 0 or 360, is not drawn yet as MapServer draws it (below).
+its opacity reaches the image (`computeSymbolStyle`). A scale of 0 draws nothing
+(`msDrawMarkerSymbolInternal`). At a scale other than 1, or turned by an `ANGLE` whose radians,
+`ANGLE × MS_DEG_TO_RAD`, are neither 0 nor `MS_PI × 2` (360 is, exactly, in `double`), the image
+is resampled as `agg2RenderPixmapSymbol` resamples it: the square of half-side
+`MS_NINT(max(width, height) × scale × 1.415) / 2 + 1`, in integer division, about the point is
+filled under the non-zero rule without a gamma, each of its pixels the image sampled bilinearly,
+transparent beyond it, at the position the inverse of the image's transformation takes the pixel's
+centre to: a translation by minus half the image, a rotation by minus the angle, so
+counter-clockwise on the map, the scaling, and a translation to the point, in the order of
+operations of AGG's `trans_affine`. The filter and the interpolator are AGG 2.4's, ported
+([ADR-0041](../adr/0041-render-agg-resamples-pixmaps-as-agg-2-4.md)). A 32 × 32 image at
+`SIZE 55` has the half-side `lrint(77.825) / 2 + 1 = 40`. The square is clipped to the image
+grown by its margin, as every path is
+([ADR-0039](../adr/0039-the-clip-to-the-image-is-one-module-of-render.md)); MapServer
+rasterizes it whole. Where the square reaches more than that margin past the image, each row's
+span of full cover then starts at the margin, not at the square's edge, and the interpolator,
+which rounds a span's two ends to 256ths of a pixel and steps between them, may sample a pixel
+of that row a 256th of a pixel apart from MapServer, a channel off by one at most. Farther still,
+the two part more: MapServer's rasterizer has no clip box (`agg2RenderPixmapSymbol` sets none),
+so it takes the square's corners in 24.8 fixed point, which overflows past some 8 million pixels,
+and its packed scanline (`scanline_p8`) holds a span's position in 16 bits, which wraps on an image
+wider than 32,767 pixels. Forager clips first and models neither; a square that large, or an image
+that wide, draws as the clip leaves it, not as MapServer would.
 
 **A pixmap that does not load** — its file missing, past 32 MiB, of a format other than PNG, broken,
 past 4096 × 4096 pixels by its header, or past what the images one render holds decoded may come
@@ -125,8 +146,8 @@ draws the same.
 
 **Not yet as MapServer draws it at a point.** A point layer's style without a symbol it draws —
 none, 0, a TrueType, SVG, hatch, or simple symbol, or a name no symbol carries — draws a square of
-its size, where MapServer draws nothing for none and 0 and the symbol or image otherwise; so does
-a pixmap scaled or turned, which MapServer resamples. A pixmap's `ANCHORPOINT` is not applied
+its size, where MapServer draws nothing for none and 0 and the symbol or image otherwise. A
+pixmap's `ANCHORPOINT` is not applied
 yet: its image is centred on the point. A style a `GEOMTRANSFORM` places
 ([`style-symbol.md`](style-symbol.md)) draws nothing for none and 0, as MapServer does, its pixmap
 as at a point, and the square for the others, at a scale factor of 1. A

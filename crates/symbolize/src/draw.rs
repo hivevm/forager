@@ -504,10 +504,11 @@ fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, canvas: &mut Canv
 }
 
 /// A pixmap's `image` at the pixel `at` in `style` at `factor`, as msDrawMarkerSymbol draws it:
-/// moved by the style's offsets, then, unturned and at a scale of 1, blended with its top-left
-/// pixel at `MS_NINT(x - width / 2.)`, `MS_NINT(y - height / 2.)`, as agg2RenderPixmapSymbol
-/// blends it. A style's colour and opacity do not reach the image (computeSymbolStyle). A
-/// turned or scaled image is drawn as the square that stands for a symbol not drawn yet.
+/// nothing at a scale of 0; moved by the style's offsets; then, unturned (an angle of 0 or 360)
+/// and at a scale of 1, blended with its top-left pixel at `MS_NINT(x - width / 2.)`,
+/// `MS_NINT(y - height / 2.)`, and otherwise resampled into the square about the point, as
+/// agg2RenderPixmapSymbol draws it (see [`symbol::pixmap_square`]). A style's colour and opacity
+/// do not reach the image (computeSymbolStyle).
 fn pixmap_ops(
     ops: &mut Vec<DrawOp>,
     at: Point,
@@ -516,11 +517,21 @@ fn pixmap_ops(
     factor: f64,
 ) {
     let (scale, rotation) = symbol::pixmap_style(style, image.height(), factor);
-    if (rotation != 0.0 && rotation != std::f64::consts::PI * 2.0) || scale != 1.0 {
-        point_ops(ops, symbol::shifted(at, style, 1.0), style);
+    if scale == 0.0 {
         return;
     }
     let at = symbol::shifted(at, style, factor);
+    if (rotation != 0.0 && rotation != std::f64::consts::PI * 2.0) || scale != 1.0 {
+        let (half, inverse) =
+            symbol::pixmap_square(image.width(), image.height(), at, scale, rotation);
+        ops.push(DrawOp::ResampledPixmap {
+            image,
+            at,
+            half,
+            inverse,
+        });
+        return;
+    }
     ops.push(DrawOp::Pixmap {
         left: ms_nint(at.x - f64::from(image.width()) / 2.0),
         top: ms_nint(at.y - f64::from(image.height()) / 2.0),
@@ -664,7 +675,8 @@ mod tests {
                 DrawOp::Fill { .. }
                 | DrawOp::Hatch(_)
                 | DrawOp::Glyphs { .. }
-                | DrawOp::Pixmap { .. } => {
+                | DrawOp::Pixmap { .. }
+                | DrawOp::ResampledPixmap { .. } => {
                     panic!("a line is not filled")
                 }
             })
@@ -790,7 +802,10 @@ mod tests {
             .map(|op| match op {
                 DrawOp::Stroke { paths, .. } => paths.iter().map(Vec::len).sum(),
                 DrawOp::Fill { rings, .. } => rings.iter().map(Vec::len).sum(),
-                DrawOp::Hatch(_) | DrawOp::Glyphs { .. } | DrawOp::Pixmap { .. } => 0,
+                DrawOp::Hatch(_)
+                | DrawOp::Glyphs { .. }
+                | DrawOp::Pixmap { .. }
+                | DrawOp::ResampledPixmap { .. } => 0,
             })
             .sum()
     }
@@ -918,7 +933,8 @@ mod tests {
                 DrawOp::Fill { .. }
                 | DrawOp::Hatch(_)
                 | DrawOp::Glyphs { .. }
-                | DrawOp::Pixmap { .. } => {
+                | DrawOp::Pixmap { .. }
+                | DrawOp::ResampledPixmap { .. } => {
                     panic!("a line is not filled")
                 }
             }
@@ -970,7 +986,8 @@ mod tests {
             DrawOp::Fill { .. }
             | DrawOp::Hatch(_)
             | DrawOp::Glyphs { .. }
-            | DrawOp::Pixmap { .. } => {
+            | DrawOp::Pixmap { .. }
+            | DrawOp::ResampledPixmap { .. } => {
                 panic!("the outline is a stroke")
             }
         }
@@ -1542,7 +1559,7 @@ mod tests {
     }
 
     #[test]
-    fn a_pixmap_is_its_image_at_scale_1_unturned_and_the_square_otherwise() {
+    fn a_pixmap_is_its_image_at_scale_1_unturned_and_resampled_otherwise() {
         let image = Rc::new(PremultipliedImage::new(4, 3, vec![9; 48]).unwrap());
         let pixmaps: Pixmaps = [("pin.png".to_owned(), Ok(Rc::clone(&image)))].into();
         let symbols = [pixmap_symbol(Some("pin.png"))];
@@ -1573,10 +1590,99 @@ mod tests {
                 other => panic!("{size:?} {angle:?}: {other:?}"),
             }
         }
-        // A size other than the image's height scales it, an angle turns it: not drawn yet.
-        for (size, angle) in [(Some(6.0), None), (None, Some(30.0))] {
-            let (ops, _) = pixmap_ops_of(&style(size, angle), &symbols, &pixmaps);
-            assert!(matches!(ops[0], DrawOp::Fill { .. }), "{size:?} {angle:?}");
+        // A size other than the image's height scales it, an angle turns it: resampled into the
+        // square about the point moved by the offset, (53, 48), agg2RenderPixmapSymbol's
+        // half-side MS_NINT(4 × scale × 1.415) / 2 + 1 and the inverse of its transformation,
+        // computed in trans_affine's order of operations at the pin.
+        // SIZE 6: scale 6 / 3 = 2, MS_NINT(11.32) = 11, 11 / 2 + 1 = 6; the inverse of
+        // translate(-2, -1.5), rotate(-0), scale(2), translate(53, 48).
+        // ANGLE 30 at scale 1: MS_NINT(5.66) = 6, 6 / 2 + 1 = 4; rotate(-30 × MS_DEG_TO_RAD).
+        let cases = [
+            (Some(6.0), None, 6, [0.5, -0.0, -0.0, 0.5, -24.5, -22.5]),
+            (
+                None,
+                Some(30.0),
+                4,
+                [
+                    0.866_025_403_784_438_7,
+                    0.499_999_999_999_999_94,
+                    -0.499_999_999_999_999_94,
+                    0.866_025_403_784_438_7,
+                    -19.899_346_400_575_258,
+                    -66.569_219_381_653_06,
+                ],
+            ),
+        ];
+        for (size, angle, half_side, [sx, shy, shx, sy, tx, ty]) in cases {
+            let (ops, refused) = pixmap_ops_of(&style(size, angle), &symbols, &pixmaps);
+            assert!(refused.is_empty());
+            match &ops[..] {
+                [
+                    DrawOp::ResampledPixmap {
+                        image: drawn,
+                        at,
+                        half,
+                        inverse,
+                    },
+                ] => {
+                    assert!(Rc::ptr_eq(drawn, &image), "the image itself, not a copy");
+                    assert_eq!(*at, p(53.0, 48.0));
+                    assert_eq!(*half, half_side, "{size:?} {angle:?}");
+                    let expected = forager_render::Affine {
+                        sx,
+                        shy,
+                        shx,
+                        sy,
+                        tx,
+                        ty,
+                    };
+                    assert_eq!(*inverse, expected, "{size:?} {angle:?}");
+                }
+                other => panic!("{size:?} {angle:?}: {other:?}"),
+            }
+        }
+        // A size of 0 is a scale of 0, which msDrawMarkerSymbol draws nothing at.
+        let (ops, refused) = pixmap_ops_of(&style(Some(0.0), None), &symbols, &pixmaps);
+        assert!(ops.is_empty() && refused.is_empty(), "{ops:?}");
+    }
+
+    #[test]
+    fn a_pixmap_s_scale_is_bounded_by_its_size_bounds_times_the_resolution_factor() {
+        // computeSymbolStyle, maprendering.c:62-65, at a scale and resolution factor of 2, for an
+        // image 3 high: SIZE 6 × 2 = 12 bounded by MAXSIZE 5 × 2 = 10, scale 10 / 3; SIZE 1 × 2 =
+        // 2 raised by MINSIZE 4 × 2 = 8, scale 8 / 3. The half-side of the 4 × 3 image: MS_NINT(4
+        // × 10 / 3 × 1.415 = 18.866...) = 19, 19 / 2 + 1 = 10; MS_NINT(4 × 8 / 3 × 1.415 =
+        // 15.093...) = 15, 15 / 2 + 1 = 8. The inverse, by trans_affine's invert, scales by
+        // (10 / 3) × 1 / ((10 / 3) × (10 / 3)) = 0.29999999999999993 in doubles, and 0.375.
+        let image = Rc::new(PremultipliedImage::new(4, 3, vec![9; 48]).unwrap());
+        let pixmaps: Pixmaps = [("pin.png".to_owned(), Ok(Rc::clone(&image)))].into();
+        let symbols = [pixmap_symbol(Some("pin.png"))];
+        let bounded = |size: f64| Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            size: Some(Bound::Value(size)),
+            min_size: Some(4.0),
+            max_size: Some(5.0),
+            ..Style::default()
+        };
+        for (size, half_side, scale) in [(6.0, 10, 0.299_999_999_999_999_93), (1.0, 8, 0.375)] {
+            let mut canvas = Canvas::new(&symbols, 101, 101, 2.0).with_pixmaps(&pixmaps);
+            let point = Geometry::Point(Coord { x: 50.0, y: 50.0 });
+            let ops = draw_ops(
+                RenderMode::Point,
+                &point,
+                &bounded(size),
+                Pass::Plain,
+                &unit_view(),
+                &mut canvas,
+            );
+            match &ops[..] {
+                [DrawOp::ResampledPixmap { half, inverse, .. }] => {
+                    assert_eq!(*half, half_side, "SIZE {size}");
+                    assert_eq!(inverse.sx, scale, "SIZE {size}");
+                    assert_eq!(inverse.sy, scale, "SIZE {size}");
+                }
+                other => panic!("SIZE {size}: {other:?}"),
+            }
         }
     }
 

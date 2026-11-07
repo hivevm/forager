@@ -64,6 +64,30 @@ pub enum DrawOp {
         left: i32,
         top: i32,
     },
+    /// Resamples a pixmap symbol's image into the square of half-side `half` about `at`, as
+    /// `agg2RenderPixmapSymbol` draws an image turned or scaled: the square filled under the
+    /// non-zero rule without a gamma, each pixel's colour the image sampled at the position
+    /// `inverse` takes the pixel's centre to, bilinearly, transparent beyond the image
+    /// (ADR-0041). The square is clipped to the image as every path is (ADR-0039). The image is
+    /// the one the render decoded, never a copy (ADR-0040).
+    ResampledPixmap {
+        image: Rc<PremultipliedImage>,
+        at: Point,
+        half: i32,
+        inverse: Affine,
+    },
+}
+
+/// An affine transformation of positions in pixels, AGG's `trans_affine`: it takes (x, y) to
+/// (x × `sx` + y × `shx` + `tx`, x × `shy` + y × `sy` + `ty`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Affine {
+    pub sx: f64,
+    pub shy: f64,
+    pub shx: f64,
+    pub sy: f64,
+    pub tx: f64,
+    pub ty: f64,
 }
 
 /// The outline of a label's glyphs: the contour of their path at `width` pixels, filled in

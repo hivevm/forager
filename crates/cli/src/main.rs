@@ -39,6 +39,7 @@ struct RenderArgs {
     base: Option<PathBuf>,
 }
 
+#[expect(clippy::print_stdout, reason = "the CLI's help is its output")]
 fn main() -> ExitCode {
     // Arguments as the OS gives them: a path need not be UTF-8.
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
@@ -61,6 +62,7 @@ fn main() -> ExitCode {
     }
 }
 
+#[expect(clippy::print_stderr, reason = "the CLI reports its usage on stderr")]
 fn usage(message: &str) -> ExitCode {
     eprintln!("forager: {message}\n{USAGE}");
     ExitCode::from(2)
@@ -137,6 +139,10 @@ fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
 /// Loads a mapfile inside `base`, by default its directory, resolving `init=` projections with the
 /// built-in EPSG definitions and those of `epsg` (ADR-0023), and prints every diagnostic. The
 /// loader of the base context comes with the document, for the files its layers read.
+#[expect(
+    clippy::print_stderr,
+    reason = "the CLI reports the loader's diagnostics on stderr"
+)]
 fn load(
     mapfile: &Path,
     epsg: Option<&Path>,
@@ -166,6 +172,10 @@ fn load(
 
 /// Loads the mapfile at `path` through `loader` and prints the frontend's diagnostics; a loader
 /// that waits is the `port-waited` error, since nothing here could wake it.
+#[expect(
+    clippy::print_stderr,
+    reason = "the CLI reports the frontend's diagnostics on stderr"
+)]
 fn load_document(
     path: &ResourcePath,
     loader: &impl ResourceLoader,
@@ -179,6 +189,10 @@ fn load_document(
 }
 
 /// Prints a mapfile's style document.
+#[expect(
+    clippy::print_stdout,
+    reason = "the style document on stdout is the output of `forager read`"
+)]
 fn read(args: &ReadArgs) -> ExitCode {
     let Some((document, _)) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref())
     else {
@@ -198,6 +212,10 @@ fn read(args: &ReadArgs) -> ExitCode {
 }
 
 /// Renders a mapfile with GeoJSON files bound to its layers by name, and writes a PNG.
+#[expect(
+    clippy::print_stderr,
+    reason = "the CLI reports the renderer's diagnostics on stderr"
+)]
 fn render(args: &RenderArgs) -> ExitCode {
     let Some((document, loader)) = load(&args.mapfile, args.epsg.as_deref(), args.base.as_deref())
     else {
@@ -221,6 +239,10 @@ fn render(args: &RenderArgs) -> ExitCode {
     }
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "the CLI reports a diagnostic on stderr"
+)]
 fn report(diagnostic: &Diagnostic) -> ExitCode {
     eprintln!("{diagnostic}");
     ExitCode::FAILURE
