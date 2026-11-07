@@ -50,6 +50,11 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 too_many_lines = "warn"
 cognitive_complexity = "warn"
+# No stray debug output (AGENTS.md §5), in tests too: each deliberate output says so where it
+# stands, with #[expect(clippy::print_stdout, reason = "...")].
+print_stdout = "warn"
+print_stderr = "warn"
+dbg_macro = "warn"
 # The bans of clippy.toml (Q-2) bind the IR and the core alone; each of their crates warns these
 # lints at the top of its lib.rs.
 disallowed_types = "allow"

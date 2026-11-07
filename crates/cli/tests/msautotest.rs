@@ -102,6 +102,25 @@ impl ProjectionResolver for StandIn {
     }
 }
 
+/// Prints a count of a test that passed, G-1's mapfiles or G-3's round trips.
+#[expect(
+    clippy::print_stderr,
+    reason = "the counts of G-1 and G-3, on stderr, shown with --nocapture"
+)]
+fn count(line: &str) {
+    eprintln!("{line}");
+}
+
+/// Prints a report of the harness, G-10's labels or the noise measurement.
+#[expect(
+    clippy::print_stdout,
+    reason = "the reports of G-10's labels and of the noise measurement, read with --nocapture \
+              and in the noise job's log"
+)]
+fn report(text: &str) {
+    println!("{text}");
+}
+
 fn stand_in() -> StandIn {
     StandIn(EpsgTable::with_table(&epsg_table()).unwrap())
 }
@@ -212,10 +231,10 @@ fn every_msautotest_mapfile_loads_without_an_error() {
         found.len() - skipped,
         failures.join("\n")
     );
-    eprintln!(
+    count(&format!(
         "{loaded} mapfiles loaded, {with_init_file} more with a stand-in for the init file, \
          {skipped} skipped"
-    );
+    ));
 }
 
 /// Files the cases of `misc` and `renderers` read, one of each place they lie: a reference image, a
@@ -356,7 +375,7 @@ fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
         failures.len(),
         failures.join("\n")
     );
-    eprintln!("{checked} style IRs read back equal");
+    count(&format!("{checked} style IRs read back equal"));
 }
 
 #[test]
@@ -505,7 +524,7 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
         }
     }
     if !label_report.is_empty() {
-        println!("The labels of G-10:\n{}", label_report.join("\n"));
+        report(&format!("The labels of G-10:\n{}", label_report.join("\n")));
     }
     let in_scope = tally.in_scope;
     // The counts for scripts/check-fidelity.sh, which scripts/check-rust.sh runs after this test.
@@ -587,7 +606,7 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
         }
     }
     let report = noise_report(&measured, &unreproduced);
-    println!("{report}");
+    self::report(&report);
     if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY") {
         use std::io::Write;
         std::fs::OpenOptions::new()

@@ -12,6 +12,11 @@ use forager_ports::ResourcePath;
 
 const USAGE: &str = "usage: forager-dev-server [--port <port>]";
 
+#[expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "the dev server's address on stdout, its usage and errors on stderr, are its output"
+)]
 fn main() {
     let mut args = std::env::args().skip(1);
     let mut port: u16 = 8000;
