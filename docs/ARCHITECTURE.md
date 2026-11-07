@@ -119,11 +119,14 @@ golden path and the test pattern an agent copies from are named here.
 - **`symbolize`** — the symbolization of a style, synchronous and without I/O: a feature's geometry
   in a style bound to it turned into drawing operations, as MapServer draws it. A line's dashes, a
   polygon's fill through MapServer's default gamma, a point's marker, a pixmap's image placed at a
-  point, and the canvas a layer draws on, with the images of the render's pixmaps (`draw.rs`); a
+  point, unscaled at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol`
+  fills about the point and the inverse of the image's transformation, and the canvas a layer
+  draws on, with the images of the render's pixmaps (`draw.rs`); a
   style's width and size bounds, one function per site of MapServer's that bounds them, with the
   constants they bound by (`bounds.rs`); a property's value as bound, the gamma, and
   degrees to radians (`style.rs`); the view that maps the extent to the image (`extent.rs`); its
-  vector and ellipse symbols (`symbol.rs`); hatches, the clip of a hatched polygon, and the
+  vector and ellipse symbols, and a pixmap's scale, square, and transformation, in the order of
+  operations of AGG's `trans_affine` (`symbol.rs`); hatches, the clip of a hatched polygon, and the
   reference point its lines count from (`hatch.rs`); symbols along a line (`line_marker.rs`); line
   offsets (`offset.rs`); and the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`).
   A line style's symbol with a `GAP` it places along the line; those markers and the ones a
@@ -142,7 +145,8 @@ golden path and the test pattern an agent copies from are named here.
   and `MINDISTANCE`, each test bounded by a grid over the image (`cache.rs`). It is the one crate
   that depends on skrifa, and does no I/O (ADR-0028).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
-  or none, a pixmap's image placed at a whole pixel by a counted reference to the one image, the
+  or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
+  transformation, each by a counted reference to the one image, the
   renderer trait, the RGBA image, and the premultiplied image a pixmap is decoded to
   (`PremultipliedImage`, ADR-0040); the cost model that bounds a hatch before it is cut
   (`Hatch::is_bounded`, ADR-0032, `hatch.rs`); and the clip of every path to the image, its
@@ -155,7 +159,10 @@ golden path and the test pattern an agent copies from are named here.
   blends premultiplied colours
   in a pixel format of its own as MapServer's AGG 2.4 does, draws a layer with an opacity into an
   image of its own and lays it over, fills glyphs as MapServer's AGG renderer does, blends a
-  pixmap's image as `blend_from` does, and is the one
+  pixmap's image as `blend_from` does, resamples a scaled or turned one with a port of AGG 2.4's
+  bilinear clip filter and linear interpolator, `iround` being `style-ir`'s `lrint` narrowed to an
+  `int`, over the packed scanlines of the square it fills (`resample.rs`,
+  [ADR-0041](adr/0041-render-agg-resamples-pixmaps-as-agg-2-4.md)), and is the one
   crate that may use `unsafe` ([ADR-0015](adr/0015-agg-rust-rasterizer.md)); it cuts a hatch from
   its polygon with i_overlay, the one crate that depends on it (ADR-0032).
 - **`encode`** — PNG from and to an RGBA image, and a pixmap symbol's PNG decoded as MapServer's

@@ -124,7 +124,8 @@ fn fills(items: &[DisplayItem]) -> Vec<(u64, Rgba, f64)> {
             DrawOp::Stroke { .. }
             | DrawOp::Hatch(_)
             | DrawOp::Glyphs { .. }
-            | DrawOp::Pixmap { .. } => None,
+            | DrawOp::Pixmap { .. }
+            | DrawOp::ResampledPixmap { .. } => None,
         })
         .collect()
 }
@@ -286,7 +287,8 @@ fn a_line_layer_draws_cached_styles_after_every_feature_whatever_its_class() {
             DrawOp::Fill { .. }
             | DrawOp::Hatch(_)
             | DrawOp::Glyphs { .. }
-            | DrawOp::Pixmap { .. } => None,
+            | DrawOp::Pixmap { .. }
+            | DrawOp::ResampledPixmap { .. } => None,
         })
         .collect();
     assert_eq!(strokes, vec![(1, RED), (2, BLUE), (1, GREEN)]);
@@ -462,7 +464,8 @@ fn a_line_class_whose_outline_width_is_bound_is_cached_whatever_its_value() {
             DrawOp::Fill { .. }
             | DrawOp::Hatch(_)
             | DrawOp::Glyphs { .. }
-            | DrawOp::Pixmap { .. } => None,
+            | DrawOp::Pixmap { .. }
+            | DrawOp::ResampledPixmap { .. } => None,
         })
         .collect();
     // The cached feature draws its first pass at once, then its line after every feature.

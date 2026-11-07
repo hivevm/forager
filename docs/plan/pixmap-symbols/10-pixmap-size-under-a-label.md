@@ -29,8 +29,9 @@ MapServer would not have placed.
 - [ ] Given a label whose class's first style is a pixmap that does not load, when rendered, then
   the label is left out, absent from the label cache's labels, the warning names the symbol and its
   path, and the rest of the map is drawn.
-- [ ] Given `marker_pixmap`, when the harness renders it, then it passes and takes its
-  `labels-hold` mark, both of its labels discarded as MapServer's record says.
+- [ ] Given `marker_pixmap`, when the harness renders it, then it takes its `labels-hold` mark,
+  both of its labels discarded as MapServer's record says. Its image already passes since
+  pixmap-symbols/04, which marked it `text passes` in `cases.txt`; it must keep passing.
 - [ ] Given the label memory test, when it runs with a pixmap marker under each label, then each
   label still keeps to Q-9's per-label bound, the image held once per render and not per label.
 

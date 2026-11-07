@@ -167,7 +167,7 @@ pub(crate) fn points(op: &DrawOp) -> usize {
         DrawOp::Hatch(hatch) => {
             hatch.rings.iter().map(Vec::len).sum::<usize>() + 2 * hatch.lines.len()
         }
-        DrawOp::Glyphs { .. } | DrawOp::Pixmap { .. } => 1,
+        DrawOp::Glyphs { .. } | DrawOp::Pixmap { .. } | DrawOp::ResampledPixmap { .. } => 1,
     }
 }
 
