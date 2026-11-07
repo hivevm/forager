@@ -57,7 +57,9 @@
 <main>
   <h1>Forager in the browser</h1>
   <p class="lead">A mapfile and GeoJSON for its layers, rendered by Forager's WebAssembly build.
-    GeoJSON is bound to the layer whose NAME you give.</p>
+    GeoJSON is bound to the layer whose NAME you give. The page hands the bindings the files the
+    sample mapfile names beside it: its font set <code>fonts.lst</code> and the font DejaVu Sans,
+    which its labels are drawn with.</p>
   <div class="grid">
     <section>
       <h2>Mapfile</h2>
@@ -86,7 +88,10 @@
 <script src="vendor/leaflet/leaflet.js"></script>
 <script type="module">
   // Imported dynamically, so that a missing bundle is reported on the page.
-  let render;
+  let renderWith;
+  // The files beside the mapfile, by the path the mapfile names them, handed to every render.
+  let files;
+  const FILES = ["fonts.lst", "vendor/dejavu/DejaVuSans.ttf"];
   // The mapfile and sources of the last Render, which the tiles draw until the next one.
   let current;
   let tiles;
@@ -121,7 +126,8 @@
     current = { mapfile: document.getElementById("mapfile").value, sources: JSON.stringify(bound) };
     tiles?.redraw();
     const started = performance.now();
-    const result = render(current.mapfile, current.sources);
+    const result = renderWith(current.mapfile, current.sources, undefined, undefined, undefined,
+                              undefined, files);
     try {
       show(result, performance.now() - started);
     } finally {
@@ -131,7 +137,12 @@
 
   // A Leaflet layer whose tiles Forager renders, each with the extent of the tile. MapServer's
   // extent runs from the centre of the first pixel to the centre of the last, so the tile's edges
-  // are moved in by half a pixel; then neighbouring tiles meet without a seam.
+  // are moved in by half a pixel; then neighbouring tiles meet without a seam. Each tile is drawn
+  // with TILE_BUFFER pixels more on every side, which are cut away, as a metatile's buffer is:
+  // the label cache then places a label beside the tile's edge as the neighbouring tile does, as
+  // long as a label and the labels it gives way to reach less far than the buffer. A dashed line
+  // a tile cuts starts its dashes again at the cut, as MapServer clips a line before dashing it.
+  const TILE_BUFFER = 128;
   const ForagerTiles = L.GridLayer.extend({
     createTile(coords) {
       const tile = document.createElement("canvas");
@@ -140,16 +151,18 @@
       tile.height = size.y;
       const topLeft = this._map.unproject(coords.scaleBy(size), coords.z);
       const bottomRight = this._map.unproject(coords.add([1, 1]).scaleBy(size), coords.z);
-      const half = (bottomRight.lng - topLeft.lng) / size.x / 2;
-      const extent = [topLeft.lng + half, bottomRight.lat + half,
-                      bottomRight.lng - half, topLeft.lat - half];
+      const pixel = (bottomRight.lng - topLeft.lng) / size.x;
+      const grown = pixel * TILE_BUFFER;
+      const extent = [topLeft.lng - grown + pixel / 2, bottomRight.lat - grown + pixel / 2,
+                      bottomRight.lng + grown - pixel / 2, topLeft.lat + grown - pixel / 2];
       try {
-        const result = render(current.mapfile, current.sources, size.x, size.y, extent);
+        const result = renderWith(current.mapfile, current.sources, size.x + 2 * TILE_BUFFER,
+                                  size.y + 2 * TILE_BUFFER, extent, undefined, files);
         try {
           if (result.width > 0) {
             const pixels = new Uint8ClampedArray(result.pixels);
             const image = new ImageData(pixels, result.width, result.height);
-            tile.getContext("2d").putImageData(image, 0, 0);
+            tile.getContext("2d").putImageData(image, -TILE_BUFFER, -TILE_BUFFER);
           }
         } finally {
           result.free();
@@ -204,22 +217,38 @@
     return response.ok ? response.text() : "";
   }
 
+  // A file that does not load is left out; the render then reports it as unreadable.
+  async function loadFiles(bundle) {
+    const loaded = new bundle.Files();
+    for (const path of FILES) {
+      const response = await fetch(path);
+      if (response.ok) loaded.add(path, new Uint8Array(await response.arrayBuffer()));
+    }
+    return loaded;
+  }
+
   document.getElementById("add").addEventListener("click", () => addSource());
 
+  let bundle;
   try {
-    const bundle = await import("./pkg/forager_bindings_wasm.js");
+    status.textContent = "Loading the WebAssembly bundle…";
+    bundle = await import("./pkg/forager_bindings_wasm.js");
+    status.textContent = "Compiling the WebAssembly module…";
     await bundle.default();
-    render = bundle.render;
+    renderWith = bundle.renderWith;
   } catch (error) {
-    status.textContent =
-      "The WebAssembly bundle did not load; run `bash scripts/build-web.sh` and reload.";
+    status.textContent = "The WebAssembly bundle did not load; run `bash scripts/build-web.sh` " +
+      `and reload. (${error})`;
     throw error;
   }
+  status.textContent = "Loading the font set and its font…";
+  files = await loadFiles(bundle);
+  status.textContent = "Loading the sample…";
   const renderButton = document.getElementById("render");
   renderButton.addEventListener("click", draw);
   renderButton.disabled = false;
   document.getElementById("mapfile").value = await text("sample.map");
-  for (const layer of ["areas", "roads", "places"]) {
+  for (const layer of ["areas", "river", "roads", "places"]) {
     addSource(layer, await text(`${layer}.geojson`));
   }
   draw();

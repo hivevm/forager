@@ -94,13 +94,14 @@ $ forager render crates/cli/tests/fixtures/square.map \
 square.map:23:5: warning [layer-skipped]: layer `unbound` (source local) is skipped: no source is bound to it
 ```
 
-The first class of each layer draws every feature for now; class expressions, symbols, labels,
-and projections come with later work.
+The browser example below shows more of what the engine draws: classes picked by expression,
+symbols, dashes, hatches, opacity, and labels.
 
 Render in the browser: build the WebAssembly bundle, start the local server, and open
-<http://127.0.0.1:8000/>. The page loads a sample mapfile with GeoJSON for its three layers; edit
-either and press **Render**. Below the image, a [Leaflet](https://leafletjs.com/) map pans and
-zooms over the same map, each tile rendered by Forager for its extent; Leaflet is a checked copy
+<http://127.0.0.1:8000/>. The page loads a sample mapfile with GeoJSON for its four layers, and
+the font set and font its labels use; edit the mapfile or the GeoJSON and press **Render**.
+Below the image, a [Leaflet](https://leafletjs.com/) map pans and zooms over the same map, each
+tile rendered by Forager for its extent; Leaflet and the font DejaVu Sans are checked copies
 under `examples/web/vendor/` ([ADR-0021](docs/adr/0021-vendored-leaflet.md)).
 
 ```console
@@ -110,7 +111,8 @@ Serving the Forager example on http://127.0.0.1:8000/
 ```
 
 From JavaScript, the bundle's `render(mapfile, sources, width?, height?, extent?)` takes the
-mapfile text and a JSON object from layer name to GeoJSON, and returns the image's `width`,
+mapfile text and a JSON object from layer name to GeoJSON (`renderWith` takes as well the
+`Files` beside the mapfile, such as its font set and fonts), and returns the image's `width`,
 `height`, RGBA `pixels`, and its `diagnostics` as JSON. A source reference that carries credentials
 is refused in the browser.
 
@@ -125,7 +127,7 @@ docs/CONVENTIONS.md   # how this project writes what no check decides, kept curr
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
 docs/plan/            # feature specs and their tickets, deleted as their work lands (ADR-0006)
-examples/web/         # the browser example: a page, a sample mapfile, its GeoJSON, vendored Leaflet
+examples/web/         # the browser example: a page, a sample mapfile, its GeoJSON, vendored Leaflet and font
 fuzz/                 # the fuzz targets of Q-3, run weekly by scripts/fuzz.sh (own workspace)
 Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0009)
 crates/               # the crates, one per responsibility: style-ir, mapfile, engine, cli, …

@@ -586,61 +586,90 @@ mod tests {
 mod example {
     use super::*;
 
-    /// The page under `examples/web/` passes these files to `render`; they render clean.
-    #[test]
-    fn the_browser_example_renders_without_diagnostics() {
-        let sources = serde_json::json!({
+    const MAPFILE: &str = include_str!("../../../examples/web/sample.map");
+
+    /// The layers' GeoJSON the page under `examples/web/` binds by name.
+    fn sources() -> String {
+        serde_json::json!({
             "areas": include_str!("../../../examples/web/areas.geojson"),
+            "river": include_str!("../../../examples/web/river.geojson"),
             "roads": include_str!("../../../examples/web/roads.geojson"),
             "places": include_str!("../../../examples/web/places.geojson"),
         })
-        .to_string();
-        let output = render_map(
-            include_str!("../../../examples/web/sample.map"),
-            &sources,
-            None,
-            &Viewport::default(),
-        );
+        .to_string()
+    }
+
+    /// The files the page hands in beside the mapfile, its `FILES`: the font set and its font.
+    fn files() -> BTreeMap<String, Vec<u8>> {
+        let mut page = Files::new();
+        assert!(page.add(
+            "fonts.lst",
+            include_bytes!("../../../examples/web/fonts.lst").to_vec()
+        ));
+        assert!(page.add(
+            "vendor/dejavu/DejaVuSans.ttf",
+            include_bytes!("../../../examples/web/vendor/dejavu/DejaVuSans.ttf").to_vec()
+        ));
+        page.files
+    }
+
+    /// The page passes these files to `renderWith`; they render clean.
+    #[test]
+    fn the_browser_example_renders_without_diagnostics() {
+        let output =
+            render_map_with_files(MAPFILE, &sources(), None, &Viewport::default(), &files());
         assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
         let image = output.image.unwrap();
         assert_eq!((image.width, image.height), (640, 400));
     }
 
-    /// The page's tile view renders each tile with its edges moved in by half a pixel; two
-    /// neighbouring tiles then match one image of both within rounding.
+    /// The page's tile view renders each tile with its edges moved in by half a pixel, and with
+    /// a buffer of `TILE_BUFFER` pixels around it that it cuts away, so that a label beside a
+    /// tile's edge is placed as its neighbour places it; at this scale, where the buffer holds
+    /// nearly the whole map, two neighbouring tiles then match one image of both, drawn the same
+    /// way, within rounding. Zoomed in further, a tile cuts the dashed trail, and its dashes start
+    /// again at the cut, as MapServer clips a line before it dashes it; this test holds no such
+    /// scale.
     #[test]
     fn neighbouring_tiles_meet_without_a_seam() {
-        let sources = serde_json::json!({
-            "areas": include_str!("../../../examples/web/areas.geojson"),
-            "roads": include_str!("../../../examples/web/roads.geojson"),
-            "places": include_str!("../../../examples/web/places.geojson"),
-        })
-        .to_string();
+        // The page's `TILE_BUFFER`.
+        const BUFFER: u32 = 128;
+        let (sources, files) = (sources(), files());
         let draw = |min_x: f64, max_x: f64, width: u32| {
-            let half = (max_x - min_x) / f64::from(width) / 2.0;
+            let pixel = (max_x - min_x) / f64::from(width);
+            let grown = pixel * f64::from(BUFFER);
             let viewport = Viewport {
-                size: Some([width, 256]),
+                size: Some([width + 2 * BUFFER, 256 + 2 * BUFFER]),
                 extent: Some(Extent {
-                    min_x: min_x + half,
-                    min_y: half,
-                    max_x: max_x - half,
-                    max_y: 50.0 - half,
+                    min_x: min_x - grown + pixel / 2.0,
+                    min_y: -grown + pixel / 2.0,
+                    max_x: max_x + grown - pixel / 2.0,
+                    max_y: 50.0 + grown - pixel / 2.0,
                 }),
             };
-            let mapfile = include_str!("../../../examples/web/sample.map");
-            render_map(mapfile, &sources, None, &viewport)
-                .image
-                .unwrap()
+            let output = render_map_with_files(MAPFILE, &sources, None, &viewport, &files);
+            assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+            (output.image.unwrap(), (width + 2 * BUFFER) as usize)
         };
-        let whole = draw(0.0, 100.0, 512);
-        let tiles = [draw(0.0, 50.0, 256), draw(50.0, 100.0, 256)];
-        for y in 0..256 {
-            for x in 0..512 {
-                let tile = &tiles[x / 256];
-                let a = (y * 512 + x) * 4;
-                let b = (y * 256 + x % 256) * 4;
-                for (p, q) in whole.pixels[a..a + 4].iter().zip(&tile.pixels[b..b + 4]) {
-                    assert!(p.abs_diff(*q) <= 1, "pixel ({x}, {y}): {p} against {q}");
+        let at = |(image, stride): &(RgbaImage, usize), x: usize, y: usize| {
+            let i = ((y + BUFFER as usize) * stride + x + BUFFER as usize) * 4;
+            image.pixels[i..i + 4].to_vec()
+        };
+        // Two places of the edge: 10 pixels left of the place `Junction` (x 52), through its label,
+        // and 50 pixels right of it, through the hatched marsh and the main road; without the
+        // buffer, both edges show a seam.
+        for edge in [50.0, 61.8] {
+            let whole = draw(edge - 50.0, edge + 50.0, 512);
+            let tiles = [draw(edge - 50.0, edge, 256), draw(edge, edge + 50.0, 256)];
+            for y in 0..256 {
+                for x in 0..512 {
+                    let (p, q) = (at(&whole, x, y), at(&tiles[x / 256], x % 256, y));
+                    for (p, q) in p.iter().zip(&q) {
+                        assert!(
+                            p.abs_diff(*q) <= 1,
+                            "edge {edge}, pixel ({x}, {y}): {p} against {q}"
+                        );
+                    }
                 }
             }
         }

@@ -1,6 +1,8 @@
 {"type": "FeatureCollection", "features": [
-  {"type": "Feature", "properties": {"name": "Main road"}, "geometry": {"type": "LineString",
+  {"type": "Feature", "properties": {"name": "Main road", "kind": "main"}, "geometry": {"type": "LineString",
     "coordinates": [[0, 48], [30, 50], [52, 40], [76, 18], [100, 12]]}},
-  {"type": "Feature", "properties": {"name": "Side road"}, "geometry": {"type": "LineString",
-    "coordinates": [[52, 40], [56, 58]]}}
+  {"type": "Feature", "properties": {"name": "Side road", "kind": "side"}, "geometry": {"type": "LineString",
+    "coordinates": [[52, 40], [56, 58]]}},
+  {"type": "Feature", "properties": {"name": "Trail", "kind": "trail"}, "geometry": {"type": "LineString",
+    "coordinates": [[14, 4], [16, 14], [34, 30], [42, 44]]}}
 ]}
