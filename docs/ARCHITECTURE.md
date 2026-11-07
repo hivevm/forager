@@ -212,11 +212,13 @@ against that of the last release tag `v<semver>` in the record
 `crates/cli/tests/conformance/fidelity.txt`, to which each release adds its line (Q-4). For each
 text case it compares the labels the engine reports in its `Rendered` with MapServer's, recorded
 under `conformance/labels/`, and holds the list's mark `labels-hold` of the cases whose labels all
-match (G-10). The noise measurement runs, for each text case, the C reader
-`conformance/mapserver_labels.c` beside `map2img`, which `scripts/build-mapserver.sh` compiles
-against the pinned build (ADR-0029); it holds the reader's image byte for byte equal to `map2img`'s
-and fails when the labels the reader takes from MapServer's label cache differ from the record, and
-keeps them in the run's artifact, from which a record is taken again.
+match (G-10). A test that runs on every push without the suite holds the records under
+`conformance/labels/` and the text cases in scope of the list equal, naming each record no such
+case reads and each such case without its record. The noise measurement runs, for each text case,
+the C reader `conformance/mapserver_labels.c` beside `map2img`, which `scripts/build-mapserver.sh`
+compiles against the pinned build (ADR-0029); it holds the reader's image byte for byte equal to
+`map2img`'s and fails when the labels the reader takes from MapServer's label cache differ from the
+record, and keeps them in the run's artifact, from which a record is taken again.
 
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).

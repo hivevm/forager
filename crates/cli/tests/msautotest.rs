@@ -403,6 +403,23 @@ fn metric_of(category: Category) -> &'static Metric {
 /// The list of the cases of `misc` and `renderers`, in scope or out of it.
 const CASES: &str = include_str!("conformance/cases.txt");
 
+/// Every record under `conformance/labels/` is the record of a text case in scope of the list, and
+/// every such case has its record, read from the list and the directory alone, without the suite:
+/// a record left behind by a case that left the list, the scope, or the category text would pass
+/// for measured.
+#[test]
+fn every_label_record_is_that_of_a_text_case_in_scope() {
+    let entries = conformance::list(CASES).unwrap();
+    let found = labels::records(&labels::records_dir());
+    let unmatched = labels::unmatched(&entries, &found);
+    assert!(
+        unmatched.is_empty(),
+        "the records under conformance/labels/ do not line up with the text cases of \
+         conformance/cases.txt:\n{}",
+        unmatched.join("\n")
+    );
+}
+
 #[test]
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_case_in_scope_holds_its_outcome() {
@@ -524,9 +541,10 @@ const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 /// differs beyond its category's tolerance at every threshold of the set. The list moves such a
 /// case out of scope, so the test fails when one is in scope. For each text case the reader of
 /// MapServer's label cache (ADR-0029) renders it beside `map2img`, its image byte for byte the
-/// same, and its labels must equal the record beside the list; the test fails on a record that
-/// differs or is missing, and the reader's labels stay in `noise/labels/` to take the record from.
-/// The renderings stay in `noise/` under the test's target directory.
+/// same, and its labels must hold the record beside the list, each box within [`labels::NOISE`] and
+/// every other field exactly; the test fails on a record that differs or is missing, and the
+/// reader's labels stay in `noise/labels/` to take the record from. The renderings stay in
+/// `noise/` under the test's target directory.
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test"]
 fn mapserver_renders_the_cases_in_scope_within_its_noise() {
@@ -598,7 +616,8 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
 
 /// Renders `case` with the reader of MapServer's label cache beside `map2img`'s `rendering`,
 /// holds the two images byte for byte equal, keeps the reader's labels in `out/labels/`, and
-/// holds them equal to the record beside the list; the error says what does not hold.
+/// holds them to the record beside the list as [`labels::beyond_noise`] does; the error says what
+/// does not hold.
 fn read_labels(
     suite: &Path,
     case: &Case,
@@ -628,21 +647,24 @@ fn read_labels(
     }
     let text = String::from_utf8(output.stdout)
         .map_err(|_| "the reader's labels are not UTF-8".to_owned())?;
-    labels::read(&text).map_err(|e| format!("the reader's labels: {e}"))?;
+    let read = labels::read(&text).map_err(|e| format!("the reader's labels: {e}"))?;
     let record = labels::record_path(case);
-    let relative = record
-        .strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/conformance/labels"))
-        .unwrap();
+    let relative = record.strip_prefix(labels::records_dir()).unwrap();
     let kept = out.join("labels").join(relative);
     std::fs::create_dir_all(kept.parent().unwrap()).map_err(|e| e.to_string())?;
     std::fs::write(&kept, &text).map_err(|e| e.to_string())?;
-    match std::fs::read_to_string(&record) {
-        Ok(recorded) if recorded == text => Ok(()),
-        Ok(_) => Err(format!(
-            "MapServer's labels differ from {}",
-            record.display()
-        )),
-        Err(e) => Err(format!("{}: {e}", record.display())),
+    let recorded =
+        std::fs::read_to_string(&record).map_err(|e| format!("{}: {e}", record.display()))?;
+    let recorded = labels::read(&recorded).map_err(|e| format!("{}: {e}", record.display()))?;
+    let differences = labels::beyond_noise(&recorded, &read);
+    if differences.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "MapServer's labels differ from {}:\n  {}",
+            record.display(),
+            differences.join("\n  ")
+        ))
     }
 }
 
