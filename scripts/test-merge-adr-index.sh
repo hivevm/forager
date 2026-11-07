@@ -77,10 +77,10 @@ rows() {
   grep -E '^(\| \[|Rule:|After:)' "$1/docs/adr/README.md" | tr '\n' ' '
 }
 
-# Both are called through check.
-# shellcheck disable=SC2317
+# Both are called through check (SC2317 before ShellCheck 0.11, SC2329 from it).
+# shellcheck disable=SC2317,SC2329
 merges() { g "$1" merge -q -m m one > /dev/null 2>&1; }
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 conflicts() { ! merges "$1" && grep -q '^<<<<<<< ' "$1/docs/adr/README.md"; }
 
 # --- The driver on a small index. ---
