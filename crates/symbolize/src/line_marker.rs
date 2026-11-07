@@ -25,7 +25,6 @@ use forager_render::{DrawOp, Point};
 use forager_style_ir::{Style, Symbol};
 
 use crate::bounds;
-use crate::draw::Canvas;
 use crate::symbol;
 
 /// The most points the markers along the lines of one layer, and the symbols a `GEOMTRANSFORM`
@@ -105,30 +104,30 @@ pub(crate) struct Placement {
     pub image: (f64, f64),
 }
 
-/// The markers of `style` with its vector or ellipse `symbol` along `paths`, in pixels already
-/// offset, as msDrawLineSymbol draws a symbol with a `GAP` on the canvas's image, with
-/// computeSymbolStyle at the canvas's factor: `initial_gap` is the `INITIALGAP` scaled as the
-/// width is. The markers' points are taken from the canvas's budget; where they would exceed what
-/// is left, none is drawn, and none after them once it is spent.
+/// The drawing operations of the markers of `style` with its vector or ellipse `symbol` along
+/// `paths`, in pixels already offset, as msDrawLineSymbol draws a symbol with a `GAP` on an image of `image` width and
+/// height, with computeSymbolStyle at `factor`, the layer's scale factor and the image's
+/// resolution factor: `initial_gap` is the `INITIALGAP` scaled as the width is. The markers'
+/// points are taken from the layer's `budget`; where they would exceed what is left, none is
+/// drawn, and none after them once it is spent.
 pub(crate) fn draw(
-    ops: &mut Vec<DrawOp>,
     paths: &[Vec<Point>],
     style: &Style,
     symbol: &Symbol,
     initial_gap: f64,
-    canvas: &mut Canvas,
-) {
-    let image = canvas.image;
-    let budget = &mut canvas.markers;
+    image: (f64, f64),
+    factor: f64,
+    budget: &mut MarkerBudget,
+) -> Vec<DrawOp> {
     if budget.spent {
-        return;
+        return Vec::new();
     }
-    let s = symbol::symbol_style(style, symbol, canvas.factor);
+    let s = symbol::symbol_style(style, symbol, factor);
     // What one marker costs; a symbol that draws nothing has no markers to place.
     let mut probe = Vec::new();
     symbol::render(&mut probe, Point { x: 0.0, y: 0.0 }, symbol, &s);
     if probe.is_empty() {
-        return;
+        return Vec::new();
     }
     let cost = probe.iter().map(points).sum::<usize>().max(1);
     let gap = style.gap.unwrap_or(0.0);
@@ -148,14 +147,16 @@ pub(crate) fn draw(
     let Some(markers) = place(paths, &placement, budget.remaining / cost) else {
         budget.remaining = 0;
         budget.spent = true;
-        return;
+        return Vec::new();
     };
     budget.remaining -= markers.len() * cost;
+    let mut ops = Vec::new();
     let mut turned = s;
     for marker in markers {
         turned.rotation = marker.rotation;
-        symbol::render(ops, marker.at, symbol, &turned);
+        symbol::render(&mut ops, marker.at, symbol, &turned);
     }
+    ops
 }
 
 /// The points of a drawing operation.
@@ -166,7 +167,7 @@ pub(crate) fn points(op: &DrawOp) -> usize {
         DrawOp::Hatch(hatch) => {
             hatch.rings.iter().map(Vec::len).sum::<usize>() + 2 * hatch.lines.len()
         }
-        DrawOp::Glyphs { .. } => 1,
+        DrawOp::Glyphs { .. } | DrawOp::Pixmap { .. } => 1,
     }
 }
 

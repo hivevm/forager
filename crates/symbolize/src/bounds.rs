@@ -33,9 +33,6 @@
 
 use forager_style_ir::Style;
 
-/// `MS_DEG_TO_RAD`, `src/mapserver.h:251`.
-pub(crate) const DEG_TO_RAD: f64 = 0.017_453_292_519_943_295;
-
 /// A style's default `MINSIZE`, `MS_MINSYMBOLSIZE`, `src/mapserver.h:277`.
 pub(crate) const MIN_SIZE: f64 = 0.0;
 

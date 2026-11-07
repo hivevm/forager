@@ -15,8 +15,8 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use forager_ports::Coord;
 use forager_render::Point;
+use forager_style_ir::Coord;
 use forager_style_ir::Extent;
 
 /// The mapping from map coordinates to pixels of one image.

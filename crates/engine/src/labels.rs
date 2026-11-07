@@ -33,16 +33,13 @@ use forager_style_ir::{
     Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Layer, Map, Op,
     Position as IrPosition, Rgba, Span, Style, Units,
 };
+use forager_symbolize::{DEG_TO_RAD, View, marker_size_of, vertices};
 
 use crate::CachedLabel;
-use crate::bounds::DEG_TO_RAD;
 use crate::classes::{self, FeatureProperties, Selector, c_bytes, c_str, color};
-use crate::draw::vertices;
-use crate::extent::View;
 use crate::fonts::Fonts;
 use crate::inline::feature_text;
 use crate::label_styles::{self, LabelMarker, LabelStyles, Styled};
-use crate::symbol::marker_size_of;
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
 const DEFAULT_SIZE: f64 = 10.0;

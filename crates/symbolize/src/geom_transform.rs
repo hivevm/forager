@@ -20,9 +20,9 @@
 //! with the angle `ANGLE AUTO` turns it to. Its trigonometry is libm's, the same code on every
 //! target (Q-2).
 
-use forager_ports::{Coord, Geometry};
 use forager_render::Point;
 use forager_style_ir::GeomTransform;
+use forager_style_ir::{Coord, Geometry};
 
 use crate::extent::View;
 

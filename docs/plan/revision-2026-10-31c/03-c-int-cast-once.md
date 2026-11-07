@@ -21,7 +21,7 @@ reaches, so only a check would see the next one.
 Inline roundings that the test of ADR-0037's *Enforcement* cannot see, as it refuses only
 functions by name, are sites to judge here too, each against the C it follows and
 `forager_style_ir::c::{lrint, ms_nint}`: the clip buffer of a hatch
-(`crates/engine/src/hatch.rs:73`), the glyph size and the pixel size
+(`crates/symbolize/src/hatch.rs:73`), the glyph size and the pixel size
 (`crates/label/src/size.rs:34` and `:40`), and the dash lengths of the AGG renderer
 (`crates/render-agg/src/lib.rs:151`), which are clamped on purpose (Q-3, Q-9).
 

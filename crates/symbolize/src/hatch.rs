@@ -18,14 +18,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The hatch of a polygon: the lines MapServer lays over the polygon's bounding box, at the
-//! style's spacing, width, and angle, for the renderer to stroke and clip to the polygon. Its
-//! trigonometry is libm's, the same code on every target (Q-2).
+//! style's spacing, width, and angle, from the image's reference point, for the renderer to stroke
+//! and clip to the polygon; and msDrawShape()'s clip of a hatched polygon before it is hatched, by
+//! the class's clip buffer. Its trigonometry is libm's, the same code on every target (Q-2).
 
 use forager_render::{Hatch, Point};
+use forager_style_ir::Coord;
 use forager_style_ir::{Rgba, Style, Symbol};
 
-use crate::bounds::{self, DEG_TO_RAD, ms_max};
-use crate::draw::{GAMMA, fixed};
+use crate::bounds::{self, ms_max};
+use crate::extent::View;
+use crate::style::{DEG_TO_RAD, GAMMA, fixed};
 use crate::symbol;
 
 /// The most lines one hatch lays over the image (Q-9): a hatch a pixel apart over the largest
@@ -181,6 +184,71 @@ fn clip_edge(line: &mut Vec<Point>, a: Point, b: Point, min: Point, max: Point) 
                 }
             }
         }
+    }
+}
+
+/// The rings of a feature in pixels as msDrawShape() hands them to a hatch: all of its polygons
+/// as one shape, and, where the shape reaches beyond the map's extent, clipped first to the
+/// extent grown by the class's clip buffer (see [`Hatching::for_class`]) with
+/// msClipPolygonRect(); in map units before the transformation to pixels, or, where a style of
+/// the class has a `GEOMTRANSFORM`, to the image so grown after it. The hatch's box, and so where
+/// its dashes fall, is the clipped shape's.
+pub fn hatch_rings(rings: &[Vec<Coord>], view: &View, hatching: &Hatching) -> Vec<Vec<Point>> {
+    let e = view.extent;
+    let beyond = rings
+        .iter()
+        .flatten()
+        .any(|c| c.x < e.min_x || c.y < e.min_y || c.x > e.max_x || c.y > e.max_y);
+    let to_pixels = |rings: &[Vec<Point>]| -> Vec<Vec<Point>> {
+        rings
+            .iter()
+            .map(|r| {
+                r.iter()
+                    .map(|p| view.to_pixel(Coord { x: p.x, y: p.y }))
+                    .collect()
+            })
+            .collect()
+    };
+    let points: Vec<Vec<Point>> = rings
+        .iter()
+        .map(|r| r.iter().map(|c| Point { x: c.x, y: c.y }).collect())
+        .collect();
+    let buffer = hatching.clip_buffer;
+    if !beyond {
+        return to_pixels(&points);
+    }
+    if hatching.clip_in_pixels {
+        let (width, height) = view.image_size();
+        let min = Point {
+            x: -buffer,
+            y: -buffer,
+        };
+        let max = Point {
+            x: width + buffer,
+            y: height + buffer,
+        };
+        return clip_polygon_rect(&to_pixels(&points), min, max);
+    }
+    let grow = buffer * view.cellsize;
+    let min = Point {
+        x: e.min_x - grow,
+        y: e.min_y - grow,
+    };
+    let max = Point {
+        x: e.max_x + grow,
+        y: e.max_y + grow,
+    };
+    to_pixels(&clip_polygon_rect(&points, min, max))
+}
+
+/// The pixel a hatch counts its lines from, the image's `refpt`: the map's origin on the map's
+/// image, where msPrepareImage() puts it, and the corner on a layer's own image, which msDrawLayer
+/// creates with msImageCreate and whose `refpt` stays where agg2CreateImage's `calloc` leaves it.
+pub(crate) fn reference(own_image: bool, view: &View) -> Point {
+    if own_image {
+        Point { x: 0.0, y: 0.0 }
+    } else {
+        view.point_to_pixel(Coord { x: 0.0, y: 0.0 })
     }
 }
 

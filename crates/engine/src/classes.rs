@@ -28,8 +28,7 @@ use forager_style_ir::c::{atof, atoi, ms_nint};
 use forager_style_ir::{
     Bound, Diagnostic, Expr, Layer, LineOffset, Map, Rgba, Span, Style, Symbol, SymbolRef, Units,
 };
-
-use crate::extent::View;
+use forager_symbolize::View;
 
 /// A feature's properties as the evaluator reads them. A name is found without regard to ASCII
 /// case, as MapServer finds an attribute in a shapefile's `.dbf` or an OGR source: by the

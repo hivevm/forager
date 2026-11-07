@@ -46,7 +46,8 @@ use agg_rust::scanline_boolean_algebra::ScanlineGenerator;
 use agg_rust::scanline_u::ScanlineU8;
 use forager_render::clip::{self, Rect, drawn_width};
 use forager_render::{
-    Dashes, DisplayItem, Draw, DrawOp, Hatch, LineCap, LineJoin, Point, Renderer, RgbaImage,
+    Dashes, DisplayItem, Draw, DrawOp, Hatch, LineCap, LineJoin, Point, PremultipliedImage,
+    Renderer, RgbaImage,
 };
 use forager_style_ir::Rgba;
 
@@ -403,6 +404,43 @@ impl Draw for AggRenderer {
                 color,
                 outline,
             } => self.glyphs(path, *color, *outline),
+            DrawOp::Pixmap { image, left, top } => self.pixmap(image, *left, *top),
+        }
+    }
+}
+
+impl AggRenderer {
+    /// Blends `image` with its top-left pixel at (`left`, `top`), as agg2RenderPixmapSymbol
+    /// blends an unturned image at scale 1 through renderer_base's `blend_from` at full cover:
+    /// the part that lies on the image drawn on, pixel by pixel through `copy_or_blend_pix`.
+    fn pixmap(&mut self, image: &PremultipliedImage, left: i32, top: i32) {
+        let (width, height) = (i64::from(self.width), i64::from(self.height));
+        let (left, top) = (i64::from(left), i64::from(top));
+        let side = i64::from(image.width());
+        let (from, to) = (left.max(0), (left + side).min(width));
+        if from >= to {
+            return;
+        }
+        let rows = image.pixels().chunks_exact(side as usize * 4);
+        for (y, row) in (top..).zip(rows) {
+            if y < 0 {
+                continue;
+            }
+            if y >= height {
+                break;
+            }
+            let start = ((y * width + from) * 4) as usize;
+            let span = &mut self.pixels[start..start + ((to - from) * 4) as usize];
+            let source = &row[((from - left) * 4) as usize..((to - left) * 4) as usize];
+            for (p, c) in span
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(source.as_chunks::<4>().0)
+            {
+                let c = Rgba8::new(c[0].into(), c[1].into(), c[2].into(), c[3].into());
+                copy_or_blend_pix(p, &c, 255);
+            }
         }
     }
 }
@@ -1051,5 +1089,50 @@ mod tests {
         });
         let image = renderer.finish();
         assert_eq!((image.width, image.height, image.pixels.len()), (0, 0, 0));
+    }
+
+    /// A pixmap of 3 × 2 pixels, each its own colour: red, green, and blue above, translucent
+    /// grey, transparent, and opaque black below.
+    fn pixmap() -> std::rc::Rc<PremultipliedImage> {
+        #[rustfmt::skip]
+        let pixels = vec![
+            255, 0, 0, 255,  0, 255, 0, 255,  0, 0, 255, 255,
+            64, 64, 64, 128,  0, 0, 0, 0,  0, 0, 0, 255,
+        ];
+        std::rc::Rc::new(PremultipliedImage::new(3, 2, pixels).unwrap())
+    }
+
+    #[test]
+    fn a_pixmap_is_blended_at_its_whole_pixel_and_cut_at_the_image_s_edges() {
+        // Verifies: ADR-0034
+        let at = |left, top| {
+            render(&[DrawOp::Pixmap {
+                image: pixmap(),
+                left,
+                top,
+            }])
+        };
+        let image = at(10, 20);
+        assert_eq!(image.pixel(10, 20), Some(Rgba::opaque(255, 0, 0)));
+        assert_eq!(image.pixel(12, 20), Some(Rgba::opaque(0, 0, 255)));
+        // Grey 64 at alpha 128, premultiplied, over white: (255 × 127) >> 8 = 126, plus 64.
+        assert_eq!(image.pixel(10, 21), Some(Rgba::opaque(190, 190, 190)));
+        assert_eq!(image.pixel(11, 21), Some(WHITE), "a transparent pixel");
+        assert_eq!(image.pixel(9, 20), Some(WHITE));
+        assert_eq!(image.pixel(13, 20), Some(WHITE));
+        assert_eq!(image.pixel(10, 22), Some(WHITE));
+        // Past the top-left corner, only its last column and row are drawn.
+        let image = at(-2, -1);
+        assert_eq!(image.pixel(0, 0), Some(Rgba::opaque(0, 0, 0)));
+        assert_eq!(image.pixel(1, 0), Some(WHITE));
+        assert_eq!(image.pixel(0, 1), Some(WHITE));
+        // Past the bottom-right corner, only its first column and row.
+        let image = at(63, 63);
+        assert_eq!(image.pixel(63, 63), Some(Rgba::opaque(255, 0, 0)));
+        // Wholly outside, or far past the edges, nothing.
+        for (left, top) in [(64, 0), (0, 64), (-3, 0), (0, -2), (i32::MIN, i32::MAX)] {
+            let image = at(left, top);
+            assert!(image.pixels.chunks(4).all(|px| px == [255, 255, 255, 255]));
+        }
     }
 }

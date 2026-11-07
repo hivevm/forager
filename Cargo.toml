@@ -18,6 +18,7 @@ forager-expr = { path = "crates/expr" }
 forager-render = { path = "crates/render" }
 forager-render-agg = { path = "crates/render-agg" }
 forager-label = { path = "crates/label" }
+forager-symbolize = { path = "crates/symbolize" }
 forager-encode = { path = "crates/encode" }
 forager-engine = { path = "crates/engine" }
 forager-adapter-geojson = { path = "crates/adapter-geojson" }

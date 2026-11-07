@@ -31,8 +31,8 @@
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
-use crate::bounds::{self, DEG_TO_RAD};
-use crate::draw::fixed;
+use crate::bounds;
+use crate::style::{DEG_TO_RAD, fixed};
 
 /// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16
 /// for a radius of 6, some 2000 for 100 000 pixels; this many are reached at a radius of some
@@ -41,11 +41,13 @@ const MAX_ELLIPSE_STEPS: u32 = 4096;
 
 /// What a point style draws at each point.
 #[derive(Debug, PartialEq)]
-pub(crate) enum Mark<'a> {
+pub enum Mark<'a> {
     /// A square of the style's size: a style without a symbol, or with one not drawn yet.
     Square,
     /// A vector or ellipse symbol.
     Symbol(&'a Symbol),
+    /// A pixmap symbol, and its index among MapServer's symbols, from 1.
+    Pixmap(usize, &'a Symbol),
     /// Nothing, for an index past the last symbol, as msDrawMarkerSymbol draws nothing.
     Nothing,
 }
@@ -58,8 +60,8 @@ enum Resolved<'a> {
     Unresolved,
     /// An index past the last symbol.
     Missing(usize),
-    /// The symbol at the index.
-    Found(&'a Symbol),
+    /// The symbol at the index, and the index, from 1.
+    Found(usize, &'a Symbol),
 }
 
 /// The symbol `symbol` names among `symbols`.
@@ -74,7 +76,9 @@ fn resolve<'a>(symbol: &Option<Bound<SymbolRef>>, symbols: &'a [Symbol]) -> Reso
     };
     symbols
         .get(position)
-        .map_or(Resolved::Missing(index), Resolved::Found)
+        .map_or(Resolved::Missing(index), |symbol| {
+            Resolved::Found(index, symbol)
+        })
 }
 
 /// Whether `symbol` is drawn as a vector or an ellipse.
@@ -83,17 +87,20 @@ fn is_vector_or_ellipse(symbol: &Symbol) -> bool {
 }
 
 /// The mark of `style` among `symbols`, MapServer's symbols from index 1.
-pub(crate) fn mark<'a>(style: &Style, symbols: &'a [Symbol]) -> Mark<'a> {
+pub fn mark<'a>(style: &Style, symbols: &'a [Symbol]) -> Mark<'a> {
     match resolve(&style.symbol, symbols) {
         Resolved::Missing(_) => Mark::Nothing,
-        Resolved::Found(symbol) if is_vector_or_ellipse(symbol) => Mark::Symbol(symbol),
-        Resolved::Default | Resolved::Unresolved | Resolved::Found(_) => Mark::Square,
+        Resolved::Found(_, symbol) if is_vector_or_ellipse(symbol) => Mark::Symbol(symbol),
+        Resolved::Found(index, symbol) if symbol.kind == SymbolKind::Pixmap => {
+            Mark::Pixmap(index, symbol)
+        }
+        Resolved::Default | Resolved::Unresolved | Resolved::Found(..) => Mark::Square,
     }
 }
 
 /// Whether the style's symbol among `symbols` is a hatch.
 pub(crate) fn is_hatch(style: &Style, symbols: &[Symbol]) -> bool {
-    matches!(resolve(&style.symbol, symbols), Resolved::Found(symbol) if symbol.kind == SymbolKind::Hatch)
+    matches!(resolve(&style.symbol, symbols), Resolved::Found(_, symbol) if symbol.kind == SymbolKind::Hatch)
 }
 
 /// How a symbol is drawn, computeSymbolStyle's `symbolStyleObj`.
@@ -122,13 +129,13 @@ fn default_size(symbol: &Symbol) -> f64 {
 /// width; 1 for MapServer's default symbol, for any other kind, and where none is found.
 pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol]) -> f64 {
     match resolve(&style.symbol, symbols) {
-        Resolved::Found(symbol) if is_vector_or_ellipse(symbol) => default_size(symbol),
+        Resolved::Found(_, symbol) if is_vector_or_ellipse(symbol) => default_size(symbol),
         _ => 1.0,
     }
 }
 
 /// computeSymbolStyle for a vector or ellipse symbol at `factor`, the style's scale factor and
-/// the image's resolution factor, which are one here (see [`crate::classes::scale_factor`]). A
+/// the image's resolution factor, which are one here (see the engine's `classes::scale_factor`). A
 /// filled symbol is filled with the style's colour and outlined with its outline colour; one not
 /// filled is outlined with its colour, or its outline colour where it has none. The size is
 /// scaled by the scale factor and bounded by `MINSIZE` and `MAXSIZE` scaled by the resolution
@@ -161,6 +168,20 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> Symbo
     }
 }
 
+/// computeSymbolStyle for a pixmap symbol whose image is `height` pixels high, at `factor` (see
+/// [`symbol_style`]): the scale of the image, the style's size, its default the image's height
+/// (msSymbolGetDefaultSize), scaled and bounded by `MINSIZE` and `MAXSIZE`, over that height;
+/// and its rotation in radians, counter-clockwise.
+pub(crate) fn pixmap_style(style: &Style, height: u32, factor: f64) -> (f64, f64) {
+    let default_size = if height > 0 { f64::from(height) } else { 1.0 };
+    let style_size = fixed(&style.size).unwrap_or(default_size);
+    let target = bounds::symbol_size(style_size * factor, style, factor);
+    (
+        target / default_size,
+        fixed(&style.angle).unwrap_or(0.0) * DEG_TO_RAD,
+    )
+}
+
 /// msGetMarkerSize for a vector or ellipse symbol at `scale_factor`: the width and height it is
 /// drawn at, from a size cut to whole pixels, or its own extent for a style without a size.
 fn marker_size(style: &Style, symbol: &Symbol, scale_factor: f64) -> (f64, f64) {
@@ -190,7 +211,7 @@ fn marker_size_at(
 /// or any other symbol's MapServer sizes by its extent as it sizes them; the error names a symbol
 /// whose size needs its image or its font, which is not read for it yet, or one the symbol set
 /// does not hold, for which MapServer fails the map.
-pub(crate) fn marker_size_of(
+pub fn marker_size_of(
     style: &Style,
     symbols: &[Symbol],
     scale_factor: f64,
@@ -206,7 +227,7 @@ pub(crate) fn marker_size_of(
 
 /// [`marker_size_of`] of `style` at the size `size` and of the symbol `symbol` in place of its
 /// own, as a feature binds them.
-pub(crate) fn marker_size_with(
+pub fn marker_size_with(
     style: &Style,
     size: Option<f64>,
     symbol: &Option<Bound<SymbolRef>>,
@@ -219,7 +240,7 @@ pub(crate) fn marker_size_with(
         Resolved::Missing(index) => Err(format!(
             "symbol {index}, which the symbol set does not hold"
         )),
-        Resolved::Found(symbol) => match symbol.kind {
+        Resolved::Found(_, symbol) => match symbol.kind {
             SymbolKind::Pixmap | SymbolKind::Svg | SymbolKind::Truetype => Err(format!(
                 "a {:?} symbol, whose size is not computed yet",
                 symbol.kind
@@ -295,13 +316,7 @@ pub(crate) fn shifted(at: Point, style: &Style, factor: f64) -> Point {
 /// The drawing operations of `symbol` at the pixel `at` in `style` at `factor`, as
 /// msDrawMarkerSymbol and the AGG renderer draw a vector or an ellipse symbol: moved by
 /// msAdjustMarkerPos, filled first, then outlined.
-pub(crate) fn symbol_ops(
-    ops: &mut Vec<DrawOp>,
-    at: Point,
-    style: &Style,
-    symbol: &Symbol,
-    factor: f64,
-) {
+pub fn symbol_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbol: &Symbol, factor: f64) {
     let s = symbol_style(style, symbol, factor);
     let at = anchored(
         shifted(at, style, factor),

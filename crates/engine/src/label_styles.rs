@@ -23,11 +23,9 @@ use forager_render::{DisplayItem, Draw, Point};
 use forager_style_ir::{
     Bound, GeomTransform, Label, Map, Rgba, Style, Symbol, SymbolKind, SymbolRef,
 };
+use forager_symbolize::{Canvas, Mark, View, mark, marker_size_with, shade, symbol_ops};
 
 use crate::classes::{self, scale_factor};
-use crate::draw::{Canvas, shade};
-use crate::extent::View;
-use crate::symbol::{self, marker_size_with};
 
 /// The kind of a label's style that is drawn: by its `GEOMTRANSFORM`, on the box around the text,
 /// at the label's point, or at the centre of that box.
@@ -603,11 +601,11 @@ fn draw_label_marker<R: Draw>(
     factor: f64,
     feature_id: u64,
 ) {
-    let symbol::Mark::Symbol(s) = symbol::mark(style, &map.symbols) else {
+    let Mark::Symbol(s) = mark(style, &map.symbols) else {
         return;
     };
     let mut ops = Vec::new();
-    symbol::symbol_ops(&mut ops, at, style, s, factor);
+    symbol_ops(&mut ops, at, style, s, factor);
     for op in ops {
         renderer.draw(&DisplayItem {
             op,

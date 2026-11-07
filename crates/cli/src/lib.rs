@@ -1,5 +1,6 @@
 //! The binding of the Forager command line, a host of the core: how `forager render` binds the
-//! layers of a map to their sources and reads the fonts of its labels, inside a base context.
+//! layers of a map to their sources and reads the fonts of its labels and the images of its
+//! pixmap symbols, inside a base context.
 //! The binary is built on it, and the conformance harness renders through it, with the suite's
 //! directory as the base context.
 
@@ -24,12 +25,13 @@ use crate::files::DataLoader;
 const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Renders `map` with the GeoJSON files `named` binds to its layers by name and the shapefiles
-/// its local layers name in `base`, reading the fonts of its labels from `base` too, each file
+/// its local layers name in `base`, reading the fonts of its labels and the images of its pixmap
+/// symbols from `base` too, each file
 /// bounded by its limit (Q-9). The rendering's diagnostics are the binding's, then the engine's;
 /// a read that waited (see [`now`]) is the `port-waited` error among them, with no image.
 pub fn render(map: &Map, named: &[(String, PathBuf)], base: &FileLoader) -> Rendered {
-    // The fonts of the labels come from the same base context, each bounded by the engine's
-    // limit for a font, read no further than that (Q-9).
+    // The fonts of the labels and the images of the pixmap symbols come from the same base
+    // context, each bounded by the engine's limit for a font, read no further than that (Q-9).
     let fonts = base.clone().for_data(forager_engine::MAX_FONT_BYTES as u64);
     let data = base.clone().for_data(MAX_SOURCE_BYTES);
     let mut shapefiles = Shapefiles::new(&data);

@@ -8,6 +8,8 @@ use std::fmt;
 use std::rc::Rc;
 
 use forager_style_ir::Extent;
+/// The geometry of a feature, a type of the IR, which the symbolization reads too (ADR-0009).
+pub use forager_style_ir::{Coord, Geometry};
 
 /// A path inside the base context: relative, normalized, and unable to leave it (Q-8).
 ///
@@ -297,25 +299,6 @@ mod tests {
         assert_eq!(ResourcePath::new("./"), Err(PathError::Empty));
         assert_eq!(ResourcePath::new("a/.."), Err(PathError::Empty));
     }
-}
-
-/// A position in the coordinates of its source.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Coord {
-    pub x: f64,
-    pub y: f64,
-}
-
-/// The geometry of a feature. A polygon is its rings, the exterior first.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Geometry {
-    Point(Coord),
-    MultiPoint(Vec<Coord>),
-    LineString(Vec<Coord>),
-    MultiLineString(Vec<Vec<Coord>>),
-    Polygon(Vec<Vec<Coord>>),
-    MultiPolygon(Vec<Vec<Vec<Coord>>>),
-    Collection(Vec<Geometry>),
 }
 
 /// A feature as a source delivers it. Its id is stable for a source, so that output that depends

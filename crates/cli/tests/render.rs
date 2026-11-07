@@ -208,3 +208,76 @@ END
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(image.pixel(50, 50), Some(Rgba::opaque(255, 0, 0)));
 }
+
+#[test]
+fn a_pixmap_symbol_is_read_from_the_base_context_and_drawn_at_its_point() {
+    // pixmap.map draws pin.png, beside it, at the pixel (50.5, 41.5): the engine's reference
+    // image of the same map, which the browser bindings' test reads too, so that both hosts draw
+    // it byte for byte alike.
+    let output = std::env::temp_dir().join(format!("forager-pixmap-{}.png", std::process::id()));
+    let result = Command::new(env!("CARGO_BIN_EXE_forager"))
+        .arg("render")
+        .arg(fixture("pixmap.map"))
+        .arg("-o")
+        .arg(&output)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(result.status.success(), "{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    let image = forager_encode::decode_png(&std::fs::read(&output).unwrap()).unwrap();
+    std::fs::remove_file(&output).unwrap();
+    let reference =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../engine/tests/fixtures/pixmap_point.png");
+    let reference = forager_encode::decode_png(&std::fs::read(reference).unwrap()).unwrap();
+    assert!(
+        image == reference,
+        "pixmap.map differs from the engine's reference"
+    );
+}
+
+#[test]
+fn a_pixmap_file_past_32_mib_is_not_drawn_and_the_map_is() {
+    // Verifies: Q-9
+    // The CLI's loader reads an image no further than the engine's bound on a file, 32 MiB, and
+    // refuses one byte more: the style is not drawn, with the bound's warning, and the square
+    // of the next style is.
+    let dir = std::env::temp_dir().join(format!("forager-pixmap-big-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // One byte past the limit, sparse on disk.
+    std::fs::File::create(dir.join("big.png"))
+        .and_then(|f| f.set_len(32 * 1024 * 1024 + 1))
+        .unwrap();
+    std::fs::write(
+        dir.join("m.map"),
+        "MAP SIZE 21 21 EXTENT 0 0 20 20 IMAGECOLOR 255 255 255\n\
+         SYMBOL NAME 'big' TYPE PIXMAP IMAGE 'big.png' END\n\
+         LAYER NAME 'p' TYPE POINT STATUS ON FEATURE POINTS 10 10 END END\n\
+         CLASS STYLE SYMBOL 'big' END STYLE COLOR 0 0 255 SIZE 5 END END END END\n",
+    )
+    .unwrap();
+    let output = dir.join("m.png");
+    let result = Command::new(env!("CARGO_BIN_EXE_forager"))
+        .arg("render")
+        .arg(dir.join("m.map"))
+        .arg("-o")
+        .arg(&output)
+        .output()
+        .unwrap();
+    let image = std::fs::read(&output).map(|png| forager_encode::decode_png(&png).unwrap());
+    std::fs::remove_dir_all(&dir).unwrap();
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(result.status.success(), "{stderr}");
+    assert!(stderr.contains("warning [pixmap-not-drawn]"), "{stderr}");
+    assert!(
+        stderr.contains("`big`") && stderr.contains("big.png"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("the file exceeds the limit of 33554432 bytes"),
+        "{stderr}"
+    );
+    let image = image.unwrap();
+    assert_eq!(image.pixel(10, 10), Some(Rgba::opaque(0, 0, 255)));
+    assert_eq!(image.pixel(1, 1), Some(Rgba::opaque(255, 255, 255)));
+}

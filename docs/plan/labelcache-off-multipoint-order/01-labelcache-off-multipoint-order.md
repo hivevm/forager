@@ -12,7 +12,7 @@ later point's marker does not cover an earlier point's label; `docs/semantics/la
 
 A class style's `GEOMTRANSFORM` does not change this: `pointLayerDrawShape` calls
 `msDrawMarkerSymbol` for every style at every point, whatever its transform (2072-2085), and the
-engine's point branch does the same (`crates/engine/src/draw.rs:261-266`). The interleaving keeps
+engine's point branch does the same (`crates/symbolize/src/draw.rs:261-266`). The interleaving keeps
 that.
 
 ## Acceptance criteria
@@ -35,7 +35,7 @@ that.
 - `pointLayerDrawShape`, `src/mapdraw.c:2034-2125`, at the pin.
 - `crates/engine/src/lib.rs` (the per-feature drawing of a layer of `LABELCACHE OFF`, 168-190),
   `draw_at_once` in `crates/engine/src/labels.rs`, and the point branch of `draw_ops` in
-  `crates/engine/src/draw.rs`; `docs/semantics/label.md` (LABELCACHE).
+  `crates/symbolize/src/draw.rs`; `docs/semantics/label.md` (LABELCACHE).
 - The review of #163: interleaving per vertex was judged larger than that ticket, because it
   splits a feature's drawing per point.
 

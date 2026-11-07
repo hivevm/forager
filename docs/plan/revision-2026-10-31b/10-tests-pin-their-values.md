@@ -7,7 +7,7 @@ two of its outputs, which a wrong implementation that both share passes (the con
 that hold a value they state, in `docs/CONVENTIONS.md`):
 
 - `at_a_factor_a_point_draws_its_symbol_scaled_and_its_stand_in_square_as_written`
-  (`crates/engine/src/draw.rs`) takes its expected display items for a `GEOMTRANSFORM start` from
+  (`crates/symbolize/src/draw.rs`) takes its expected display items for a `GEOMTRANSFORM start` from
   `symbol::symbol_ops` itself, so it tests the wiring and not the placement.
 - `at_resolution_144_a_marker_is_drawn_twice_its_size_at_72` (`crates/engine/tests/render.rs`) and
   `at_resolution_144_a_label_moves_away_from_the_marker_as_it_is_drawn`

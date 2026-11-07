@@ -17,8 +17,7 @@ use super::*;
 
 #[test]
 fn the_constants_are_mapservers() {
-    // src/mapserver.h:251 and 277-281.
-    assert_eq!(DEG_TO_RAD, "0.0174532925199432958".parse::<f64>().unwrap());
+    // src/mapserver.h:277-281.
     assert_eq!((MIN_SIZE, MAX_SIZE), (0.0, 500.0));
     assert_eq!((MIN_WIDTH, MAX_WIDTH), (0.0, 32.0));
 }

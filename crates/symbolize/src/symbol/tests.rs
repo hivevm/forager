@@ -84,7 +84,7 @@ fn a_style_marks_by_its_symbol() {
     assert_eq!(mark(&index(0), &symbols), Mark::Square);
     assert_eq!(mark(&index(1), &symbols), Mark::Symbol(&symbols[0]));
     assert_eq!(mark(&index(2), &symbols), Mark::Symbol(&symbols[1]));
-    assert_eq!(mark(&index(3), &symbols), Mark::Square, "a pixmap");
+    assert_eq!(mark(&index(3), &symbols), Mark::Pixmap(3, &symbols[2]));
     assert_eq!(mark(&index(4), &symbols), Mark::Nothing, "past the last");
     let name = by(Some(Bound::Value(SymbolRef::Name("x.png".into()))));
     assert_eq!(mark(&name, &symbols), Mark::Square);

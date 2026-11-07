@@ -1,0 +1,24 @@
+MAP
+  NAME "pixmap"
+  EXTENT 0 0 100 100
+  SIZE 101 101
+  IMAGECOLOR 255 255 255
+  SYMBOL
+    NAME "pin"
+    TYPE PIXMAP
+    IMAGE "pin.png"
+  END
+  LAYER
+    NAME "pins"
+    TYPE POINT
+    STATUS ON
+    FEATURE
+      POINTS 50.5 58.5 END
+    END
+    CLASS
+      STYLE
+        SYMBOL "pin"
+      END
+    END
+  END
+END

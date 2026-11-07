@@ -1,6 +1,6 @@
 //! The WebAssembly bindings: a host for the browser. A page hands in a mapfile, GeoJSON per layer
-//! name, a viewport, and the files the mapfile names, such as its font set and fonts, and gets
-//! back the RGBA image and the diagnostics (G-5).
+//! name, a viewport, and the files the mapfile names, such as its font set, its fonts, and the
+//! images of its pixmap symbols, and gets back the RGBA image and the diagnostics (G-5).
 //!
 //! [`render_map`] holds the logic and is tested natively; [`render`] is its JavaScript face.
 
@@ -43,8 +43,9 @@ pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &V
 }
 
 /// Renders as [`render_map`] does, with `files` beside the mapfile in its base context, by the
-/// path the mapfile names them: a font set and its fonts, an `INCLUDE`, a symbol set (ADR-0028).
-/// Nothing else is read; a font past [`forager_engine::MAX_FONT_BYTES`] is refused by the engine.
+/// path the mapfile names them: a font set and its fonts, an `INCLUDE`, a symbol set (ADR-0028),
+/// the image of a pixmap symbol (ADR-0040). Nothing else is read; a font or an image past
+/// [`forager_engine::MAX_FONT_BYTES`] is refused by the engine.
 pub fn render_map_with_files(
     mapfile: &str,
     sources: &str,
@@ -428,6 +429,65 @@ mod tests {
             forager_encode::decode_png(include_bytes!("../../engine/tests/fixtures/polygon.png"))
                 .unwrap();
         assert!(output.image.unwrap() == reference);
+    }
+
+    /// A page hands in the image of a pixmap symbol beside the mapfile, by the path the mapfile
+    /// names; the engine draws it as the CLI draws pixmap.map, whose test reads the same
+    /// reference image of the engine.
+    #[test]
+    fn a_pixmap_a_page_hands_in_is_drawn_as_the_cli_draws_it() {
+        // Verifies: G-5
+        let mapfile = include_str!("../../cli/tests/fixtures/pixmap.map");
+        let mut page = Files::new();
+        assert!(page.add(
+            "pin.png",
+            include_bytes!("../../cli/tests/fixtures/pin.png").to_vec()
+        ));
+        let output = render_map_with_files(mapfile, "{}", None, &Viewport::default(), &page.files);
+        assert_eq!(codes(&output), Vec::<&str>::new());
+        let reference = forager_encode::decode_png(include_bytes!(
+            "../../engine/tests/fixtures/pixmap_point.png"
+        ))
+        .unwrap();
+        assert!(output.image.unwrap() == reference);
+        // Without the image, the style is not drawn, and the map is.
+        let output = render_map(mapfile, "{}", None, &Viewport::default());
+        assert_eq!(codes(&output), ["pixmap-not-drawn"]);
+        assert!(output.diagnostics[0].message.contains("pin.png"));
+        assert!(output.image.is_some());
+    }
+
+    /// The bindings' loader holds every file a page hands in; the engine refuses an image past
+    /// its bound on a file itself.
+    #[test]
+    fn a_pixmap_file_past_32_mib_is_not_drawn_and_the_map_is() {
+        // Verifies: Q-9
+        let mapfile = "MAP SIZE 21 21 EXTENT 0 0 20 20 IMAGECOLOR 255 255 255\n\
+                       SYMBOL NAME 'big' TYPE PIXMAP IMAGE 'big.png' END\n\
+                       LAYER NAME 'p' TYPE POINT STATUS ON FEATURE POINTS 10 10 END END\n\
+                       CLASS STYLE SYMBOL 'big' END STYLE COLOR 0 0 255 SIZE 5 END END END END\n";
+        let mut page = Files::new();
+        assert!(page.add("big.png", vec![0; forager_engine::MAX_FONT_BYTES + 1]));
+        let output = render_map_with_files(mapfile, "{}", None, &Viewport::default(), &page.files);
+        assert_eq!(codes(&output), ["pixmap-not-drawn"]);
+        let message = &output.diagnostics[0].message;
+        assert!(
+            message.contains("`big`") && message.contains("big.png"),
+            "{message}"
+        );
+        assert!(
+            message.contains("exceeds the limit of 33554432 bytes"),
+            "{message}"
+        );
+        let image = output.image.unwrap();
+        assert_eq!(
+            image.pixel(10, 10),
+            Some(forager_style_ir::Rgba::opaque(0, 0, 255))
+        );
+        assert_eq!(
+            image.pixel(1, 1),
+            Some(forager_style_ir::Rgba::opaque(255, 255, 255))
+        );
     }
 
     #[test]

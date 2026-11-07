@@ -1,6 +1,6 @@
 [package]
 name = "forager-encode"
-description = "PNG encoding of Forager's RGBA images (ADR-0017)."
+description = "PNG encoding of Forager's RGBA images, and the decoding of pixmap symbols (ADR-0017)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,6 +11,10 @@ publish.workspace = true
 [dependencies]
 forager-render.workspace = true
 png.workspace = true
+
+[dev-dependencies]
+# Counts the bytes a decode allocates, in the memory test of a pixmap's header (Q-9).
+peak_alloc = "0.3.0"
 
 [lints]
 workspace = true

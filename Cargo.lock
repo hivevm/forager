@@ -254,6 +254,7 @@ name = "forager-encode"
 version = "0.1.0"
 dependencies = [
  "forager-render",
+ "peak_alloc",
  "png",
 ]
 
@@ -269,6 +270,7 @@ dependencies = [
  "forager-render",
  "forager-render-agg",
  "forager-style-ir",
+ "forager-symbolize",
  "libm",
  "peak_alloc",
 ]
@@ -335,6 +337,15 @@ dependencies = [
  "serde_ignored",
  "serde_json",
  "serde_path_to_error",
+]
+
+[[package]]
+name = "forager-symbolize"
+version = "0.1.0"
+dependencies = [
+ "forager-render",
+ "forager-style-ir",
+ "libm",
 ]
 
 [[package]]

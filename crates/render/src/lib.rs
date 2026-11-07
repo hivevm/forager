@@ -3,6 +3,8 @@
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
+use std::rc::Rc;
+
 use forager_style_ir::Rgba;
 pub use forager_style_ir::{LineCap, LineJoin};
 pub use hatch::Hatch;
@@ -51,6 +53,16 @@ pub enum DrawOp {
         path: Vec<PathCommand>,
         color: Option<Rgba>,
         outline: Option<GlyphOutline>,
+    },
+    /// Blends a pixmap symbol's image unturned and unscaled, its top-left pixel at the whole
+    /// pixel (`left`, `top`), every pixel at full cover, as AGG's `blend_from` lays one
+    /// premultiplied image over another; what lies outside the image drawn on is left out. The
+    /// image is the one the render decoded, shared by every item that draws it, never a copy
+    /// (ADR-0040).
+    Pixmap {
+        image: Rc<PremultipliedImage>,
+        left: i32,
+        top: i32,
     },
 }
 
@@ -112,6 +124,44 @@ impl RgbaImage {
             b: p[2],
             a: p[3],
         })
+    }
+}
+
+/// An image as rows of premultiplied RGBA bytes, top row first: each colour already multiplied
+/// by its alpha, as MapServer's `readPNG` premultiplies a pixmap (ADR-0040). A type apart from
+/// [`RgbaImage`], whose alpha is straight, so that the one is never read as the other.
+#[derive(Debug, PartialEq, Eq)]
+pub struct PremultipliedImage {
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
+}
+
+impl PremultipliedImage {
+    /// The image of `width` by `height` pixels whose premultiplied RGBA bytes are `pixels`, or
+    /// `None` where they are not four bytes for each pixel.
+    pub fn new(width: u32, height: u32, pixels: Vec<u8>) -> Option<Self> {
+        let len = (width as usize)
+            .checked_mul(height as usize)?
+            .checked_mul(4)?;
+        (pixels.len() == len).then_some(Self {
+            width,
+            height,
+            pixels,
+        })
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// The premultiplied RGBA bytes, row by row from the top.
+    pub fn pixels(&self) -> &[u8] {
+        &self.pixels
     }
 }
 
