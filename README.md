@@ -35,8 +35,10 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 1. Open the repository in VS Code and choose **Reopen in Container**. The Dev Container and the
    preconfigured agent extensions build automatically, and the container enables the repository's
    git hooks ([`.githooks/`](.githooks/)): no commit on `main`, and the checks run before a push.
-   Working outside the container? Enable them yourself, once per clone:
-   `git config core.hooksPath .githooks`.
+   It also enables the merge driver of the ADR index, so that two branches that each add an ADR
+   merge without a conflict on its rows. Working outside the container? Enable both yourself, once
+   per clone: `git config core.hooksPath .githooks` and
+   `git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'`.
 2. Authenticate your coding agent inside the container (for Claude Code: `claude login`).
 3. Start working with the agent. Drive the work from the specification and the ADRs.
 

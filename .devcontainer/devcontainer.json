@@ -2,8 +2,9 @@
   "name": "Forager DevContainer",
 
   "image": "mcr.microsoft.com/devcontainers/base:debian",
-  "workspaceFolder": "/workspace",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  // No workspaceFolder or workspaceMount: the default, /workspaces/<directory name>, keeps each
+  // project under a path of its own, and an agent keys its memory by the path (as NUC v0.7.0
+  // mounts it). A path every project shares gives every project one agent memory.
 
   "remoteUser": "vscode",
   "containerEnv": {
@@ -34,6 +35,8 @@
   // shell lint CI runs; without it the lint skips itself locally.
   "postCreateCommand": {
     "hooks": "git config core.hooksPath .githooks",
+    // The merge driver of the ADR index, which .gitattributes names (.githooks/merge-adr-index).
+    "adr-index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'",
     "shellcheck": "sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck",
     // The pinned toolchain, cargo-deny, and the wasm-bindgen CLI (ADR-0008, ADR-0010).
     "tools": "bash scripts/install-tools.sh"

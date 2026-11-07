@@ -30,6 +30,12 @@ and is the human's; the template carries the sensor, so the fix likely belongs t
 - [ADR-0006](../../adr/0006-feature-layer.md); `scripts/sensor-revision-due.sh` and its
   self-test.
 
+## Maintainer's decision (2026-11-07)
+
+This ticket lands with the normalization that takes up NUC v0.7.0, whose files carry what it asks
+for; the maintainer deletes it at the start of that normalization, with this reason, so that it
+does not block the take-up that is its implementation.
+
 ## Blocked by
 
 - None (can start immediately)

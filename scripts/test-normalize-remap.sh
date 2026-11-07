@@ -148,7 +148,9 @@ check "outside a repository the script exits 1" "[[ $rc -eq 1 ]]"
 # every other self-test passing. So no fixture carries a literal identifier whose move by a
 # normalization would break it. The template setup self-test reads the record itself, which the
 # map script leaves to the normalization, so it is not run; its references to the record are
-# links and file names, which the map script moves.
+# links and file names, which the map script moves. The ADR index merge self-test runs
+# scripts/check-docs.sh on a copy of the whole tree, which a cycle leaves inconsistent by design,
+# so it is not run either; its fixtures name no identifier of the record.
 copy="$work/tree"
 mkdir -p "$copy"
 (cd "$ROOT" && git ls-files --cached --others --exclude-standard | while IFS= read -r f; do
@@ -179,7 +181,7 @@ cp "$work/record"/*.md "$copy/docs/adr/"
 pids=()
 names=()
 for t in "$copy"/scripts/test-*.sh; do
-  case "$t" in */test-template-setup.sh | */test-normalize-remap.sh | */test-fixture-git-env.sh) continue ;; esac
+  case "$t" in */test-template-setup.sh | */test-merge-adr-index.sh | */test-normalize-remap.sh | */test-fixture-git-env.sh) continue ;; esac
   name="$(basename "$t")"
   names+=("$name")
   bash "$t" > "$work/$name.log" 2>&1 &

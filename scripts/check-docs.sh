@@ -6,7 +6,7 @@
 # docs/adr/README.md:
 #
 #   1. ADR index integrity: every docs/adr/NNNN-*.md file is listed in the index table in
-#      docs/adr/README.md, every index row points to an existing file, and the status and the
+#      docs/adr/README.md, once, every index row points to an existing file, and the status and the
 #      'Applies to' cell shown in the index match the **Status:** and **Applies to:** lines
 #      inside each ADR — the index routes a reader from a change to the ADRs that bind it
 #      (AGENTS.md, section 2), so a row that misstates what its ADR governs misroutes them.
@@ -247,6 +247,14 @@ check_adr_index() {
         ;;
     esac
   done < "$ADR_INDEX"
+
+  # A file listed twice is a row both sides of a merge changed (.githooks/merge-adr-index).
+  local -A seen_rows=()
+  for f in "${indexed_files[@]}"; do
+    [[ -v seen_rows["$f"] ]] \
+      && add_error "ADR index: lists '$f' twice — keep the row that matches the file, delete the other"
+    seen_rows["$f"]=1
+  done
 
   # Every file on disk must be listed.
   local d

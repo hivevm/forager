@@ -519,6 +519,10 @@ adr "$d" 1 "🔴 rejected"
 } > "$d/docs/adr/README.md"
 expect fail "a rejected row with no archive heading above it" "$d" "sits above the 'Superseded and rejected' heading"
 
+d="$(repo index-row-twice)"
+index_row 1 "🟡 proposed" >> "$d/docs/adr/README.md"
+expect fail "a row both sides of a union merge kept" "$d" "lists '0001-decision.md' twice"
+
 d="$(repo binding-row-below)"
 {
   echo "# Architecture Decision Records"
