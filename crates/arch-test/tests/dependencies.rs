@@ -267,6 +267,20 @@ fn only_label_reads_fonts_with_skrifa() {
 }
 
 #[test]
+fn the_browser_bindings_bind_no_shapefile() {
+    // Verifies: ADR-0038
+    let ws = workspace();
+    let binders = dependents(&ws, "forager-adapter-shapefile");
+    assert!(
+        !binders.contains(&"bindings-wasm".to_owned()),
+        "{binders:?}"
+    );
+    // The check itself sees a dependency: the CLI binds shapefiles, the bindings GeoJSON.
+    assert!(binders.contains(&"cli".to_owned()));
+    assert!(dependents(&ws, "forager-adapter-geojson").contains(&"bindings-wasm".to_owned()));
+}
+
+#[test]
 fn only_render_agg_cuts_polygons_with_i_overlay() {
     // Verifies: ADR-0032
     let ws = workspace();

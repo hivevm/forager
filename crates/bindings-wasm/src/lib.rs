@@ -395,6 +395,25 @@ mod tests {
         );
     }
 
+    /// A shapefile among the page's files binds no layer: the `DATA` layer that names it is
+    /// skipped as unbound, so the bytes of its files need not be a shapefile.
+    #[test]
+    fn a_shapefile_among_the_pages_files_leaves_its_layer_skipped() {
+        // Verifies: ADR-0038
+        let mapfile = "MAP SIZE 10 10 EXTENT 0 0 10 10\n\
+                       LAYER NAME 'roads' TYPE POINT STATUS ON DATA 'data/roads.shp'\n\
+                       CLASS STYLE COLOR 0 0 0 SIZE 3 END END END END\n";
+        let mut page = Files::new();
+        for extension in ["shp", "shx", "dbf"] {
+            assert!(page.add(&format!("data/roads.{extension}"), b"never read".to_vec()));
+        }
+        let output = render_map_with_files(mapfile, "{}", None, &Viewport::default(), &page.files);
+        assert_eq!(codes(&output), ["layer-skipped"]);
+        let message = &output.diagnostics[0].message;
+        assert!(message.contains("no source is bound to it"), "{message}");
+        assert!(output.image.is_some());
+    }
+
     #[test]
     fn the_cli_fixture_renders_to_the_engines_reference_image() {
         // Verifies: G-5

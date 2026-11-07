@@ -1,6 +1,6 @@
 # ADR-0038: The browser bindings bind only the GeoJSON a page passes, never a shapefile
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/bindings-wasm`: which feature sources it binds to the layers, and its dependencies on `adapter-<kind>` crates
