@@ -1,6 +1,6 @@
 # ADR-0040: A decoded pixmap is held once per render and per path, and shared by every item that draws it
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** the image store of `crates/engine`, the type `PremultipliedImage` of `crates/render` and the display items that carry it, the pixmap decoders of `crates/encode`, and every crate that draws a pixmap or a fill tile
@@ -11,7 +11,7 @@ A `TYPE PIXMAP` symbol draws an image at each point of a layer, along a line at 
 the repeated tile of a polygon's fill. One image may be placed at every feature of a layer, and
 Q-9 lets a layer draw 1,000,000. Q-9 bounds a symbol image at 4096 × 4096 pixels, so one image
 decoded takes up to 64 MiB, and the images one render holds decoded, its fill tiles among them, at
-256 MiB. The engine keeps no display list: `draw_ops` (`crates/engine/src/draw.rs`) yields the
+256 MiB. The engine keeps no display list: `draw_ops` (`crates/symbolize/src/draw.rs`) yields the
 items of one feature and style, and the engine hands each to the renderer as it is produced, after
 which it is dropped.
 
@@ -28,7 +28,7 @@ the resource loader each host hands it, once per render, when a label first need
 shared by `Rc` among the lines drawn in it ([ADR-0028](0028-text-stack.md)). A pixmap takes the
 same path.
 
-[ADR-0009](0009-ports-and-adapters-crates.md) lets `encode` depend on `render` and the planned
+[ADR-0009](0009-ports-and-adapters-crates.md) lets `encode` depend on `render` and the
 `symbolize` crate depend on `render` but not on `encode`, so the decoded image is a type of
 `render`. `forager_render::RgbaImage` holds straight alpha: it is the render's output, what
 `encode::png` writes, and what `encode::decode_png` returns for G-12's round trip and every
@@ -93,8 +93,8 @@ values of Q-9's limits.
 - MapServer at `rel-8-6-6`: `src/mapsymbol.c` (`msPreloadImageSymbol`, `msFreeSymbol`),
   `src/mapimageio.c` (`readPNG`, `readGIF`, `msLoadMSRasterBufferFromFile`), `src/mapagg.cpp`
   (`use_imagecache = 0`); read 2026-10-31.
-- The engine's fonts, `crates/engine/src/fonts.rs`; its drawing, `crates/engine/src/draw.rs` and
-  `crates/engine/src/lib.rs`; the spec `docs/plan/pixmap-symbols/spec.md`.
+- The engine's fonts, `crates/engine/src/fonts.rs`; the drawing of a style,
+  `crates/symbolize/src/draw.rs`, and the engine's `crates/engine/src/lib.rs`; the pixmap spec.
 
 ## Consequences
 
@@ -113,13 +113,10 @@ values of Q-9's limits.
 
 Tests that cite this ADR with `Verifies: ADR-0040`:
 
-- In `crates/engine`, written by `docs/plan/pixmap-symbols/03-png-point-marker.md`: a render
-  placing one 512 × 512 pixmap at 10,000 points hands the renderer items that all refer to the
-  same image, by pointer equality; it calls the loader once; and under the counting allocator of
-  `crates/engine/tests/label_memory.rs` the memory returns to its level before the render once it
-  ends.
-- In `crates/engine`, written by `docs/plan/pixmap-symbols/02-png-decode-and-limits.md`: images
-  whose decoded bytes come to more than 256 MiB, taken by the store in turn, have the one that
-  would pass the bound refused before it is decoded; the polygon fill's ticket,
-  `docs/plan/pixmap-symbols/09-polygon-pixmap-tile-fill.md`, adds a tile counted against the same
-  bound.
+- `crates/engine/tests/pixmap_memory.rs`: a render placing one 512 × 512 pixmap at 10,000 points
+  hands the renderer items that all refer to the same image, by pointer equality; it calls the
+  loader once; the image is released once the render returns; and under a counting allocator the
+  memory returns to its level before the render.
+- `crates/engine/tests/image_memory.rs`: images whose decoded bytes come to more than 256 MiB,
+  taken by the store in turn, have the one that would pass the bound refused before it is
+  decoded. The polygon fill's tile, when it lands, is counted against the same bound.

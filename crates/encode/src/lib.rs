@@ -1,8 +1,13 @@
-//! Encodes an RGBA image as PNG, and decodes one back (ADR-0017).
+//! Encodes an RGBA image as PNG, and decodes one back; decodes a pixmap symbol's image
+//! (ADR-0017).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
+mod pixmap;
+
 use forager_render::RgbaImage;
+
+pub use pixmap::{MAX_PIXMAP_SIDE, PixmapError, decode_pixmap, pixmap_size};
 
 /// Encodes `image` as an 8-bit RGBA PNG.
 pub fn png(image: &RgbaImage) -> Result<Vec<u8>, String> {

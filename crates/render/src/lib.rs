@@ -3,6 +3,8 @@
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
+use std::rc::Rc;
+
 use forager_style_ir::Rgba;
 pub use forager_style_ir::{LineCap, LineJoin};
 pub use hatch::Hatch;
@@ -52,6 +54,16 @@ pub enum DrawOp {
         color: Option<Rgba>,
         outline: Option<GlyphOutline>,
     },
+    /// Blends a pixmap symbol's image unturned and unscaled, its top-left pixel at the whole
+    /// pixel (`left`, `top`), every pixel at full cover, as AGG's `blend_from` lays one
+    /// premultiplied image over another; what lies outside the image drawn on is left out. The
+    /// image is the one the render decoded, shared by every item that draws it, never a copy
+    /// (ADR-0040).
+    Pixmap {
+        image: Rc<PremultipliedImage>,
+        left: i32,
+        top: i32,
+    },
 }
 
 /// The outline of a label's glyphs: the contour of their path at `width` pixels, filled in
@@ -61,11 +73,6 @@ pub struct GlyphOutline {
     pub color: Rgba,
     pub width: f64,
 }
-
-/// How far, in pixels, a point of a glyph path may lie outside the image: agg-rust holds
-/// coordinates in 24.8 fixed point, which a farther point would overflow. The text path leaves out
-/// a glyph that reaches farther, and the reference renderer draws no path that does.
-pub const MAX_GLYPH_REACH: f64 = 4_194_304.0;
 
 /// A step of a glyph outline, in pixels; a quadratic curve names its control point and its end,
 /// a cubic its two control points and its end.
@@ -120,14 +127,67 @@ impl RgbaImage {
     }
 }
 
-/// Rasterizes a display list.
-pub trait Renderer {
-    fn begin(&mut self, width: u32, height: u32, background: Rgba);
+/// An image as rows of premultiplied RGBA bytes, top row first: each colour already multiplied
+/// by its alpha, as MapServer's `readPNG` premultiplies a pixmap (ADR-0040). A type apart from
+/// [`RgbaImage`], whose alpha is straight, so that the one is never read as the other.
+#[derive(Debug, PartialEq, Eq)]
+pub struct PremultipliedImage {
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
+}
+
+impl PremultipliedImage {
+    /// The image of `width` by `height` pixels whose premultiplied RGBA bytes are `pixels`, or
+    /// `None` where they are not four bytes for each pixel.
+    pub fn new(width: u32, height: u32, pixels: Vec<u8>) -> Option<Self> {
+        let len = (width as usize)
+            .checked_mul(height as usize)?
+            .checked_mul(4)?;
+        (pixels.len() == len).then_some(Self {
+            width,
+            height,
+            pixels,
+        })
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// The premultiplied RGBA bytes, row by row from the top.
+    pub fn pixels(&self) -> &[u8] {
+        &self.pixels
+    }
+}
+
+/// Draws display items one by one, onto an image or into a layer of it.
+pub trait Draw {
     fn draw(&mut self, item: &DisplayItem);
-    /// Draws what follows, up to [`Renderer::end_layer`], into a transparent image of its own.
-    fn begin_layer(&mut self);
-    /// Lays the image begun by [`Renderer::begin_layer`] over the image beneath it, its alpha
-    /// scaled by `opacity`, 0 to 255.
-    fn end_layer(&mut self, opacity: u8);
+}
+
+impl<D: Draw + ?Sized> Draw for &mut D {
+    fn draw(&mut self, item: &DisplayItem) {
+        (**self).draw(item);
+    }
+}
+
+/// Rasterizes a display list.
+pub trait Renderer: Draw {
+    /// A layer begun by [`Renderer::layer`]; it borrows the renderer until it is dropped.
+    type Layer<'a>: Draw
+    where
+        Self: 'a;
+
+    fn begin(&mut self, width: u32, height: u32, background: Rgba);
+    /// Begins a layer: what is drawn into it goes into a transparent image of its own, which is
+    /// laid over the image, its alpha scaled by `opacity`, 0 to 255, when the layer is dropped.
+    /// The layer borrows the renderer, so no layer begins within another, and it draws an item
+    /// as it is handed, holding none.
+    fn layer(&mut self, opacity: u8) -> Self::Layer<'_>;
     fn finish(self) -> RgbaImage;
 }

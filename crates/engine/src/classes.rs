@@ -22,13 +22,13 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
-use forager_expr::{Evaluator, Failure, Lookup, atof, atoi};
+use forager_expr::{Evaluator, Failure, Lookup};
 use forager_ports::{Feature, Properties, Value};
+use forager_style_ir::c::{atof, atoi, ms_nint};
 use forager_style_ir::{
     Bound, Diagnostic, Expr, Layer, LineOffset, Map, Rgba, Span, Style, Symbol, SymbolRef, Units,
 };
-
-use crate::extent::View;
+use forager_symbolize::View;
 
 /// A feature's properties as the evaluator reads them. A name is found without regard to ASCII
 /// case, as MapServer finds an attribute in a shapefile's `.dbf` or an OGR source: by the
@@ -351,11 +351,6 @@ pub(crate) fn with_opacity(style: Cow<'_, Style>) -> Cow<'_, Style> {
     Cow::Owned(style)
 }
 
-/// `MS_NINT`, which is `lrint` in the build at the pin: the nearest integer, half to even.
-pub(crate) fn ms_nint(x: f64) -> i32 {
-    x.round_ties_even() as i32
-}
-
 /// `style`, which [`varies`] by no feature, as bindStyle leaves it for any: its opacity applied
 /// to its colours.
 pub(crate) fn unbound(style: &Style) -> Cow<'_, Style> {
@@ -468,8 +463,12 @@ struct Binder<'a> {
 
 /// A C string's bytes: up to the first NUL.
 pub(crate) fn c_bytes(text: &str) -> &[u8] {
-    let bytes = text.as_bytes();
-    &bytes[..bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len())]
+    c_str(text).as_bytes()
+}
+
+/// `text` up to its first NUL, where a C string of it ends.
+pub(crate) fn c_str(text: &str) -> &str {
+    text.split('\0').next().unwrap_or_default()
 }
 
 impl Binder<'_> {

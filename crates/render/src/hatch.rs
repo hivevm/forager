@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use forager_style_ir::Rgba;
 
 use crate::Point;
-use crate::clip::{CLIP_MARGIN, Rect, drawn_width, segment};
+use crate::clip::{Rect, drawn_width, segment};
 
 /// Straight lines stroked with butt caps, each dashed from its first point, and their stroke
 /// intersected with the area of the rings, MapServer's hatch fill (`msHatchPolygon`). The rings
@@ -118,11 +118,7 @@ impl Hatch {
     /// The rectangle the renderer clips the lines to before it cuts them: the image enlarged by
     /// the margin and half the width drawn.
     pub fn line_rect(&self, width: u32, height: u32) -> Rect {
-        Rect::around_image(
-            width,
-            height,
-            CLIP_MARGIN + self.drawn_width(width, height) / 2.0,
-        )
+        Rect::around_image(width, height, self.drawn_width(width, height) / 2.0)
     }
 
     /// An estimate of the crossings the cut has to find on an image of `width` × `height`

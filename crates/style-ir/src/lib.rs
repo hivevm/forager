@@ -4,9 +4,11 @@
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
+pub mod c;
 mod diagnostic;
 mod document;
 mod expression;
+mod geometry;
 mod lenient;
 mod migration;
 mod model;
@@ -14,6 +16,7 @@ mod model;
 pub use diagnostic::{Diagnostic, Severity, Span};
 pub use document::{FORMAT_VERSION, Read, StyleDocument};
 pub use expression::{Expr, MAX_EXPRESSION_DEPTH, Op};
+pub use geometry::{Coord, Geometry};
 pub use lenient::MAX_DROPPED_VALUES;
 pub use migration::{STEPS, Step};
 pub use model::{

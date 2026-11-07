@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Check: the vendored JavaScript of the browser example (ADR-0021).
+# Check: the vendored files of the browser example, its JavaScript and font (ADR-0021).
 #
 # The example loads third-party code only from copies under examples/web/vendor/, and those copies
 # are the published bytes. This check fails when:

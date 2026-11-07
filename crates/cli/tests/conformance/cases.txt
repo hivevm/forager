@@ -14,7 +14,8 @@
 # discards as MapServer does, each drawn label within 1 px (G-10). MapServer's labels of each text
 # case are recorded in labels/<mapfile without .map>/<result without .png>.tsv, as the reader of
 # its label cache writes them (ADR-0029); the noise measurement holds the record against the
-# reader, and the harness holds every mark against the record.
+# reader, and the harness holds every mark against the record. Every record is that of a text
+# case in scope here, and every such case has its record; a test without the suite holds both.
 #
 # A case in scope is rendered, compared by the metric of its category, and holds its outcome. A
 # case is in scope when it is of a category the harness compares, whether Forager draws it right

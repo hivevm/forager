@@ -4,7 +4,7 @@
 
 Since #134, a `DrawOp::Fill` and a `Hatch` of `crates/render` carry `gamma: Option<f64>`, and
 `render-agg` passes coverage through AGG's linear gamma for `Some`. The engine's one producer is
-`GAMMA` in `crates/engine/src/draw.rs`, MapServer's default 0.75. Two values say "no gamma",
+`GAMMA` in `crates/symbolize/src/style.rs`, MapServer's default 0.75. Two values say "no gamma",
 `None` and `Some(1.0)`, which draw alike; `Some(NaN)` draws nothing; and a gamma at or below 0, or
 at or above 1, is drawn as given, where `agg2CreateImage` (`src/mapagg.cpp` at the pin) replaces it
 with 0.75. No ticket carries a format's or a layer's `GAMMA` yet, so nothing feeds such a value
@@ -23,7 +23,7 @@ or two.
 ## Read first
 
 - `crates/render/src/lib.rs`, `hatch.rs`; `crates/render-agg/src/lib.rs`; `GAMMA` in
-  `crates/engine/src/draw.rs`; `agg2CreateImage` in MapServer's `src/mapagg.cpp` at the pin;
+  `crates/symbolize/src/style.rs`; `agg2CreateImage` in MapServer's `src/mapagg.cpp` at the pin;
   [ADR-0032](../../adr/0032-hatch-cut-by-i-overlay.md),
   [ADR-0034](../../adr/0034-render-agg-blends-as-agg-2-4.md);
   #134's doubts (`gh pr view 134`).

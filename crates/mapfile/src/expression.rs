@@ -22,6 +22,7 @@
 // syntax decides each operand's type, so every attribute is wrapped in a conversion that states
 // it.
 
+use forager_style_ir::c::atof;
 use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
 
 use crate::lexer::{Token, TokenKind};
@@ -437,7 +438,10 @@ impl<'a> Scanner<'a> {
         }
         if let Some(len) = number_len(&bytes[start..]) {
             let literal = &self.text[start..start + len];
-            return Some((Lexeme::Tok(Tok::Number(atof(literal))), start + len));
+            return Some((
+                Lexeme::Tok(Tok::Number(atof(literal.as_bytes()))),
+                start + len,
+            ));
         }
         let lexeme = match c {
             b'[' if self.last_close.is_some_and(|last| last > start) => {
@@ -594,15 +598,6 @@ fn number_len(bytes: &[u8]) -> Option<usize> {
         }
     }
     Some(i)
-}
-
-/// C's `atof`: the longest numeric prefix, or 0.
-pub fn atof(text: &str) -> f64 {
-    let text = text.trim_start();
-    let bytes = text.as_bytes();
-    let sign = usize::from(matches!(bytes.first(), Some(b'+' | b'-')));
-    let len = number_len(&bytes[sign..]).map_or(0, |len| len + sign);
-    text[..len].parse().unwrap_or(0.0)
 }
 
 /// A number literal, which the IR can hold only when it is finite: JSON has no infinity.
@@ -1033,9 +1028,12 @@ fn compare(cmp: Cmp, (l, lk): (Expr, Kind), (r, rk): (Expr, Kind)) -> Result<Exp
             let Expr::String(list) = &r else {
                 return Err(Problem::unsupported("IN against a computed string"));
             };
+            // The grammar's `math_exp IN string_exp` (src/mapparser.y) compares the number with
+            // `atof` of each item as it evaluates; `atof` of a literal is the same every time, so
+            // the list is read once here, an item `atof` reads as no finite number refused.
             let values = list.split(',').map(|v| {
                 Ok(if lk == Kind::Number {
-                    Expr::Number(finite(v, atof(v))?)
+                    Expr::Number(finite(v, atof(v.as_bytes()))?)
                 } else {
                     Expr::String(v.to_owned())
                 })

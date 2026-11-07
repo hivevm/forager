@@ -1,5 +1,6 @@
 {"type": "FeatureCollection", "features": [
-  {"type": "Feature", "properties": {"name": "North"}, "geometry": {"type": "Point", "coordinates": [30, 50]}},
-  {"type": "Feature", "properties": {"name": "Junction"}, "geometry": {"type": "Point", "coordinates": [52, 40]}},
-  {"type": "Feature", "properties": {"name": "East"}, "geometry": {"type": "Point", "coordinates": [76, 18]}}
+  {"type": "Feature", "properties": {"name": "North", "kind": "town", "size": 12}, "geometry": {"type": "Point", "coordinates": [30, 50]}},
+  {"type": "Feature", "properties": {"name": "Junction", "kind": "village", "size": 9}, "geometry": {"type": "Point", "coordinates": [52, 40]}},
+  {"type": "Feature", "properties": {"name": "East", "kind": "town", "size": 14}, "geometry": {"type": "Point", "coordinates": [76, 18]}},
+  {"type": "Feature", "properties": {"name": "Hill", "kind": "peak", "size": 11}, "geometry": {"type": "Point", "coordinates": [70, 44]}}
 ]}

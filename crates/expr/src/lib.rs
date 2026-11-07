@@ -29,10 +29,8 @@ mod time;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use forager_style_ir::c::{atof, lrint};
 use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
-
-pub use crate::c::{atof, atoi};
-pub use crate::pattern::{MAX_PATTERN_BYTES, SIZE_LIMIT};
 
 /// The properties of one feature, as the evaluator reads them.
 pub trait Lookup {
@@ -272,8 +270,9 @@ impl Evaluator {
             }
             (Op::Commify, [Str(s)]) => Str(c::commify(s)),
             (Op::Length, [Str(s)]) => Num(s.len() as f64),
-            (Op::Round, [Num(x)]) => Num(lrint(*x)?),
-            (Op::Round, [Num(x), Num(n)]) => Num(lrint(x / n)? * n),
+            // MS_NINT, `lrint` at the pin, whose `long` ROUND keeps as a double.
+            (Op::Round, [Num(x)]) => Num(lrint(*x) as f64),
+            (Op::Round, [Num(x), Num(n)]) => Num(lrint(x / n) as f64 * n),
             (Op::Tostring, [Num(x), Str(format)]) => {
                 Str(c::to_string(format, *x).ok_or(Failure::Undefined)?)
             }
@@ -393,17 +392,6 @@ fn modulo(a: f64, b: f64) -> Result<i32, Failure> {
             .ok_or(Failure::Undefined)
     };
     int(a)?.checked_rem(int(b)?).ok_or(Failure::Undefined)
-}
-
-/// MS_NINT, `lrint` at the pin: half to even, undefined past a `long`.
-fn lrint(x: f64) -> Result<f64, Failure> {
-    let rounded = x.round_ties_even();
-    const LONG: f64 = 9_223_372_036_854_775_808.0;
-    if (-LONG..LONG).contains(&rounded) {
-        Ok(rounded)
-    } else {
-        Err(Failure::Undefined)
-    }
 }
 
 #[cfg(test)]

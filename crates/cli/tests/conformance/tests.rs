@@ -622,16 +622,105 @@ fn labels_match_when_both_are_drawn_within_a_pixel_or_both_discarded() {
     assert_eq!(
         differences,
         [
-            "label \"Fen\" of layer 0, class 0: MapServer draws it at [10.00 10.00 40.00 20.00], \
-             Forager 1.50 px off",
-            "label \"Forager\" of layer 0, class 0: Forager draws it at [0.00 0.00 5.00 5.00], \
-             MapServer discards it",
-            "label \"Heath\" of layer 0, class 0: only Forager caches it",
-            "label \"Lea\" of layer 0, class 0: only MapServer caches it",
-            "label \"Moor\" of layer 0, class 0: MapServer draws it at [50.00 10.00 60.00 20.00], \
-             Forager discards it",
+            "label \"Fen\" of layer 0, class 0, priority 1: MapServer draws it at \
+             [10.00 10.00 40.00 20.00], Forager 1.50 px off",
+            "label \"Forager\" of layer 0, class 0, priority 1: Forager draws it at \
+             [0.00 0.00 5.00 5.00], MapServer discards it",
+            "label \"Heath\" of layer 0, class 0, priority 1: only Forager caches it",
+            "label \"Lea\" of layer 0, class 0, priority 1: only MapServer caches it",
+            "label \"Moor\" of layer 0, class 0, priority 1: MapServer draws it at \
+             [50.00 10.00 60.00 20.00], Forager discards it",
         ]
     );
+}
+
+#[test]
+fn labels_of_another_priority_at_the_same_box_do_not_match() {
+    // Verifies: G-10
+    // Verifies: ADR-0029
+    use forager_engine::CachedLabel;
+    let recorded = super::labels::read("3\t0\tp\t0\t1\t10 10 40 20\tFen\n").unwrap();
+    let ours = CachedLabel {
+        priority: 2,
+        layer: 0,
+        class: 0,
+        text: "Fen".to_owned(),
+        drawn: Some([10.0, 10.0, 40.0, 20.0]),
+    };
+    assert_eq!(
+        super::labels::compare(&[ours], &recorded),
+        [
+            "label \"Fen\" of layer 0, class 0, priority 2: only Forager caches it",
+            "label \"Fen\" of layer 0, class 0, priority 3: only MapServer caches it",
+        ]
+    );
+}
+
+/// A record of two labels, the second discarded.
+const RECORD: &str = "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n1\t1\troads\t0\t0\t\tMoor\n";
+
+#[test]
+fn the_readers_labels_hold_the_record_within_a_millionth_of_a_pixel() {
+    // Verifies: ADR-0029
+    let read = |text: &str| super::labels::read(text).unwrap();
+    let record = read(RECORD);
+    let nudged = |by: f64| {
+        read(&format!(
+            "2\t0\tplaces\t1\t1\t1.5 2 {} 14\tFen\n1\t1\troads\t0\t0\t\tMoor\n",
+            30.25 + by
+        ))
+    };
+    assert_eq!(
+        super::labels::beyond_noise(&record, &record),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        super::labels::beyond_noise(&record, &nudged(1e-7)),
+        Vec::<String>::new()
+    );
+    let moved = super::labels::beyond_noise(&record, &nudged(1e-5));
+    assert_eq!(moved.len(), 1, "{moved:?}");
+    assert!(moved[0].starts_with("line 1: "), "{moved:?}");
+}
+
+#[test]
+fn the_readers_labels_differ_from_the_record_in_any_field_but_the_box() {
+    // Verifies: ADR-0029
+    let record = super::labels::read(RECORD).unwrap();
+    let changed = [
+        // The priority, the layer's index and name, the class, the drawn state, the texts.
+        "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n2\t1\troads\t0\t0\t\tMoor\n",
+        "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n1\t2\troads\t0\t0\t\tMoor\n",
+        "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n1\t1\tlanes\t0\t0\t\tMoor\n",
+        "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n1\t1\troads\t1\t0\t\tMoor\n",
+        "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n1\t1\troads\t0\t1\t1.5 2 30.25 14\tMoor\n",
+        "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n1\t1\troads\t0\t0\t\tMoors\n",
+        "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n1\t1\troads\t0\t0\t\tMoor\tLea\n",
+    ];
+    for output in changed {
+        let differences =
+            super::labels::beyond_noise(&record, &super::labels::read(output).unwrap());
+        assert_eq!(differences.len(), 1, "{output:?}: {differences:?}");
+        assert!(
+            differences[0].starts_with("line 2: "),
+            "{output:?}: {differences:?}"
+        );
+    }
+    // The order: the same two labels swapped differ on both lines.
+    let swapped =
+        super::labels::read("1\t1\troads\t0\t0\t\tMoor\n2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n")
+            .unwrap();
+    let differences = super::labels::beyond_noise(&record, &swapped);
+    assert_eq!(differences.len(), 2, "{differences:?}");
+    assert!(differences[0].starts_with("line 1: "), "{differences:?}");
+    assert!(differences[1].starts_with("line 2: "), "{differences:?}");
+    // A line the record has and the output has not, and the reverse.
+    let shorter = super::labels::beyond_noise(&record, &record[..1]);
+    assert_eq!(shorter.len(), 1, "{shorter:?}");
+    assert!(shorter[0].starts_with("line 2: "), "{shorter:?}");
+    let longer = super::labels::beyond_noise(&record[..1], &record);
+    assert_eq!(longer.len(), 1, "{longer:?}");
+    assert!(longer[0].starts_with("line 2: "), "{longer:?}");
 }
 
 #[test]
@@ -662,5 +751,75 @@ fn the_labels_of_a_layer_of_labelcache_off_are_named_as_not_compared() {
             "the labels of layer 1 (at once) are not compared: LABELCACHE OFF draws them at once, \
              outside the label cache"
         ]
+    );
+}
+
+#[test]
+fn a_record_no_text_case_in_scope_reads_is_named() {
+    use std::path::PathBuf;
+    let entries = list(
+        "renderers/a.map a.png text passes labels-hold
+         renderers/b.map b.png out: a raster source
+         renderers/c.map c.png geometry passes
+",
+    )
+    .unwrap();
+    let found: Vec<PathBuf> = [
+        "renderers/a/a.tsv",
+        "renderers/b/b.tsv",
+        "renderers/c/c.tsv",
+        "renderers/d/d.tsv",
+    ]
+    .into_iter()
+    .map(PathBuf::from)
+    .collect();
+    assert_eq!(
+        super::labels::unmatched(&entries, &found),
+        [
+            "labels/renderers/b/b.tsv is the record of no text case in scope of the list",
+            "labels/renderers/c/c.tsv is the record of no text case in scope of the list",
+            "labels/renderers/d/d.tsv is the record of no text case in scope of the list",
+        ]
+    );
+}
+
+#[test]
+fn a_text_case_in_scope_without_its_record_is_named() {
+    use std::path::PathBuf;
+    let entries = list(
+        "renderers/a.map a.png text passes labels-hold
+         renderers/b.map b.png text fails
+         renderers/b.map b2.png text passes
+",
+    )
+    .unwrap();
+    let found = vec![PathBuf::from("renderers/b/b2.tsv")];
+    assert_eq!(
+        super::labels::unmatched(&entries, &found),
+        [
+            "renderers/a.map a.png is a text case in scope without its record labels/renderers/a/a.tsv",
+            "renderers/b.map b.png is a text case in scope without its record labels/renderers/b/b.tsv",
+        ]
+    );
+}
+
+#[test]
+fn the_records_are_the_files_under_their_directory_relative_to_it() {
+    use std::path::PathBuf;
+    let dir = std::env::temp_dir().join(format!("forager-records-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("renderers/b")).unwrap();
+    std::fs::create_dir_all(dir.join("misc/a")).unwrap();
+    std::fs::write(dir.join("renderers/b/b.tsv"), "").unwrap();
+    std::fs::write(dir.join("misc/a/a.tsv"), "").unwrap();
+    std::fs::write(dir.join("misc/stray"), "").unwrap();
+    let found = super::labels::records(&dir);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(
+        found,
+        ["misc/a/a.tsv", "misc/stray", "renderers/b/b.tsv"]
+            .into_iter()
+            .map(PathBuf::from)
+            .collect::<Vec<_>>()
     );
 }

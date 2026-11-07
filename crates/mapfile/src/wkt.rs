@@ -28,6 +28,7 @@ use std::collections::BTreeSet;
 use std::ops::Bound::{Excluded, Unbounded};
 
 use forager_style_ir::ShapeType;
+use forager_style_ir::c::strtod;
 
 /// The deepest a `GEOMETRYCOLLECTION` nests in another.
 pub const MAX_NESTING: usize = 32;
@@ -117,7 +118,7 @@ impl<'a> Reader<'a> {
         Ok(match raw.parse::<f64>() {
             Ok(n) if n.is_finite() => Token::Number(n),
             Ok(_) => Token::Unread(raw),
-            Err(_) if strtod_reads(raw) => Token::Unread(raw),
+            Err(_) if strtod(raw.as_bytes()).1 == raw.len() => Token::Unread(raw),
             Err(_) => Token::Word(raw.to_ascii_uppercase()),
         })
     }
@@ -315,14 +316,6 @@ pub fn excerpt(text: &str) -> Cow<'_, str> {
 
 /// The most characters of a text a message quotes.
 pub const EXCERPT_CHARS: usize = 80;
-
-/// Whether C's `strtod` reads `raw` whole where Rust's parser does not: a hexadecimal number,
-/// or `nan` with its parenthesized tag.
-fn strtod_reads(raw: &str) -> bool {
-    let unsigned = raw.strip_prefix(['+', '-']).unwrap_or(raw);
-    let lower = unsigned.to_ascii_lowercase();
-    lower.starts_with("0x") && lower.len() > 2 || lower.starts_with("nan(")
-}
 
 /// Whether a closed ring is simple, as GEOS's `isRing` asks of an inner ring: walked from its
 /// first point back to it, the ring passes through no point twice. A point repeated in a row is
@@ -699,6 +692,23 @@ mod tests {
             "12",
         ] {
             assert!(read(text).is_err(), "{text:?} was read");
+        }
+    }
+
+    #[test]
+    fn a_token_strtod_reads_whole_is_an_unread_number_and_any_other_a_word() {
+        // strtod reads `0x10` whole, a number Rust's parser does not read; of `0xg` and `0x1p` it
+        // reads only a part, so each is a word. (`(` ends a token, so `nan(` never reaches here.)
+        assert_eq!(
+            read("POINT (0x10 1)").unwrap_err(),
+            "the number `0x10` is not read"
+        );
+        for (text, word) in [("POINT (0xg 1)", "0XG"), ("POINT (0x1p 1)", "0X1P")] {
+            assert_eq!(
+                read(text).unwrap_err(),
+                format!("expected a number, found `{word}`"),
+                "{text}"
+            );
         }
     }
 

@@ -13,6 +13,9 @@ second revision of that day (`docs/plan/revision-2026-10-31b/`) found the line a
 the sensor still reports the 26 changes it covered, and DUE. The third revision of that day
 (`docs/plan/revision-2026-10-31c/`, closing the spec `labels-2`) met the same line.
 
+On 2026-11-07 the sensor reported 87 changes for the next revision, of which 29 came after the
+third revision of 2026-10-31 (`e1645a5`); the revision of 2026-11-07 took those 29 as its scope.
+
 The line, or the sensor, distinguishes the revision that ran from the one before it on the same
 day — for example a date with a time, or the sensor taking the youngest commit that adds the line
 when the line before it differed in more than the number. The choice changes the line of ADR-0006
@@ -29,6 +32,12 @@ and is the human's; the template carries the sensor, so the fix likely belongs t
 
 - [ADR-0006](../../adr/0006-feature-layer.md); `scripts/sensor-revision-due.sh` and its
   self-test.
+
+## Maintainer's decision (2026-11-07)
+
+This ticket lands with the normalization that takes up NUC v0.7.0, whose files carry what it asks
+for; the maintainer deletes it at the start of that normalization, with this reason, so that it
+does not block the take-up that is its implementation.
 
 ## Blocked by
 

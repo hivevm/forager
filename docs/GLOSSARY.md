@@ -58,6 +58,12 @@ to invent.
   reference images.
 - **Port** — A trait at the edge of the core through which the host supplies data and resources;
   the only place async appears.
+- **Premultiplied image** — The image of a pixmap symbol as a render holds it decoded, each
+  colour already multiplied by its alpha, as MapServer's `readPNG` premultiplies it: once per
+  render and path, shared by every display item that draws it
+  ([ADR-0040](adr/0040-a-decoded-pixmap-is-held-once-per-render.md)). The code's
+  `PremultipliedImage`, apart from the straight-alpha `RgbaImage` a render returns.
+  _Avoid:_ pixmap buffer, for the decoded image.
 - **Property** — A named value of a feature, which a mapfile calls an item and binds as
   `[name]`. _Avoid:_ attribute, item, outside mapfile syntax.
 - **Pushdown** — Handing the part of a filter that an adapter can evaluate natively to that

@@ -4,39 +4,35 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod bind;
-mod bounds;
 mod classes;
-mod draw;
-mod extent;
 mod fonts;
-mod geom_transform;
-mod hatch;
+pub mod images;
 mod inline;
 mod label_styles;
 mod labels;
-mod line_marker;
-mod offset;
-mod symbol;
+mod plan;
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use forager_ports::{
-    Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
+    Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
 };
-use forager_render::{DisplayItem, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
+use forager_style_ir::c::ms_nint;
 use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
+use forager_symbolize::{Canvas, Pass, can_draw, draw_ops, marked_pixmap};
 
 use forager_expr::Evaluator;
 
 use crate::classes::{Reports, Selector};
-use crate::draw::{Canvas, Pass, Plan, can_draw, draw_ops, kind};
+use crate::images::Images;
+use crate::plan::Plan;
 
 pub use crate::bind::bind_sources;
-pub use crate::extent::View;
 pub use crate::fonts::MAX_FONT_BYTES;
 pub use crate::inline::is_inline;
-pub use crate::line_marker::MAX_MARKER_POINTS;
+pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
 
@@ -99,8 +95,9 @@ impl ResourceLoader for NoFiles {
 }
 
 /// Renders as [`render`] does, and reads the files the map names beyond its sources, the fonts
-/// of its labels, through `files`, the host's resource loader rooted at the base context
-/// (ADR-0028).
+/// of its labels and the images of its pixmap symbols, through `files`, the host's resource
+/// loader rooted at the base context (ADR-0028). The images are decoded once each and held until
+/// the render ends (ADR-0040).
 pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>(
     map: &Map,
     sources: &BTreeMap<String, S>,
@@ -117,6 +114,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
     let mut labels = Labels::new(map, &view, files, (width, height));
+    // The images of the render's pixmap symbols, dropped with the render (ADR-0040).
+    let mut images = Images::default();
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
     let scale = classes::scale_denom(map, &view, width);
@@ -139,15 +138,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         if layer.classes.is_empty() {
             continue;
         }
-        let mut undrawn = BTreeMap::new();
-        let mut drawable = Vec::with_capacity(features.len());
-        for feature in &features {
-            if can_draw(mode, &feature.geometry) {
-                drawable.push(feature);
-            } else {
-                *undrawn.entry(kind(&feature.geometry)).or_insert(0usize) += 1;
-            }
-        }
+        let (drawable, undrawn) = drawable(mode, &features);
         let mut selector = Selector {
             layer,
             layer_index,
@@ -163,7 +154,11 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             scale,
             view: &view,
         };
-        let mut canvas = Canvas::new(&map.symbols, width, height, factor);
+        drawing
+            .load_pixmaps(&selected, &map.symbols, &mut images, files)
+            .await;
+        let mut canvas =
+            Canvas::new(&map.symbols, width, height, factor).with_pixmaps(images.decoded());
         // Each feature is labelled by the class that draws it, in the order it is drawn.
         let point_layer = mode == RenderMode::Point;
         let drawn: Vec<labels::Labelled<'_>> = selected
@@ -174,24 +169,25 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         // the next feature, into the layer's image; pointLayerDrawShape draws them after each
         // point, before the markers of the next.
         let at_once = point_layer && !layer.label_cache;
-        let own_image = drawing.begin_layer(&mut renderer, &mut canvas);
+        let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
             for (one, labelled) in selected.chunks(1).zip(drawn.chunks(1)) {
-                drawing.draw(&mut renderer, &mut canvas, one);
+                drawing.draw(&mut target, &mut canvas, one);
                 labels
                     .collect(
                         layer_index,
                         true,
                         labelled,
                         &mut selector,
-                        Some(&mut renderer),
+                        Some(&mut target),
                     )
                     .await;
             }
         } else {
-            drawing.draw(&mut renderer, &mut canvas, &selected);
+            drawing.draw(&mut target, &mut canvas, &selected);
         }
-        Drawing::end_layer(&mut renderer, own_image);
+        // A layer of its own is laid over the map here, before the layer's labels are cached.
+        drop(target);
         layer_reports(layer, &canvas, undrawn, selector.diagnostics);
         if !at_once {
             labels
@@ -215,6 +211,23 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     }
 }
 
+/// The features a layer of `mode` draws, and how many of each kind of geometry it cannot.
+fn drawable(
+    mode: RenderMode,
+    features: &[Feature],
+) -> (Vec<&Feature>, BTreeMap<&'static str, usize>) {
+    let mut undrawn = BTreeMap::new();
+    let mut drawable = Vec::with_capacity(features.len());
+    for feature in features {
+        if can_draw(mode, &feature.geometry) {
+            drawable.push(feature);
+        } else {
+            *undrawn.entry(kind(&feature.geometry)).or_insert(0usize) += 1;
+        }
+    }
+    (drawable, undrawn)
+}
+
 /// Reports what `layer` left undrawn on `canvas`: symbols past the budget of markers, hatches
 /// refused, and the geometries of `undrawn`, by kind, its render mode cannot draw.
 fn layer_reports(
@@ -236,6 +249,18 @@ fn layer_reports(
         ));
     }
     diagnostics.extend(refused_hatches(layer, canvas.hatches_refused()));
+    for (index, symbol, why) in canvas.pixmaps_refused() {
+        let symbol = symbol
+            .name
+            .as_deref()
+            .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"));
+        let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
+        diagnostics.push(Diagnostic::warning(
+            "pixmap-not-drawn",
+            message,
+            layer.span.clone(),
+        ));
+    }
     for (kind, count) in undrawn {
         let message = format!(
             "layer {} cannot draw {count} {kind} geometr{} in its render mode",
@@ -287,6 +312,22 @@ fn checked_opacity(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<i
 /// A feature drawn: it, the place of its class, and its styles bound to it.
 pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
 
+/// Where a layer is drawn: straight onto the map, or, where it has an opacity, into a layer of
+/// the renderer, laid over the map when the target is dropped.
+enum Target<'r, R: Renderer + 'r> {
+    Map(&'r mut R),
+    Layer(R::Layer<'r>),
+}
+
+impl<R: Renderer> Draw for Target<'_, R> {
+    fn draw(&mut self, item: &DisplayItem) {
+        match self {
+            Target::Map(renderer) => renderer.draw(item),
+            Target::Layer(layer) => layer.draw(item),
+        }
+    }
+}
+
 /// What a layer's features are drawn with.
 struct Drawing<'a> {
     mode: RenderMode,
@@ -297,29 +338,49 @@ struct Drawing<'a> {
 }
 
 impl Drawing<'_> {
-    /// Begins the layer's drawing into an image of its own, which is laid over the map where the
-    /// layer has an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block; the alpha it
-    /// is laid over at, or `None` where the layer is drawn straight onto the map.
-    fn begin_layer<R: Renderer>(&self, renderer: &mut R, canvas: &mut Canvas) -> Option<u8> {
-        let opacity = layer_opacity(self.layer)?;
+    /// Where the layer is drawn: into an image of its own, laid over the map, where the layer has
+    /// an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block, and straight onto the
+    /// map otherwise.
+    fn target<'r, R: Renderer>(&self, renderer: &'r mut R, canvas: &mut Canvas) -> Target<'r, R> {
+        let Some(opacity) = layer_opacity(self.layer) else {
+            return Target::Map(renderer);
+        };
         canvas.in_own_image();
-        renderer.begin_layer();
         // aggCompositeRasterBufferNoPixman lays the layer over at MS_NINT(opacity × 2.55).
-        let alpha = classes::ms_nint(f64::from(opacity) * 2.55);
-        Some(alpha.clamp(0, 255) as u8)
+        let alpha = ms_nint(f64::from(opacity) * 2.55);
+        Target::Layer(renderer.layer(alpha.clamp(0, 255) as u8))
     }
 
-    /// Lays the layer's own image over the map at `alpha`, where [`Self::begin_layer`] began one.
-    fn end_layer<R: Renderer>(renderer: &mut R, alpha: Option<u8>) {
-        if let Some(alpha) = alpha {
-            renderer.end_layer(alpha);
+    /// Loads into `images`, through `files`, the image of each pixmap symbol the styles of the
+    /// `selected` features draw as a mark, those outside their scale range left out, so that the
+    /// layer is drawn from them; one the store refuses leaves its style undrawn, as the canvas
+    /// records.
+    async fn load_pixmaps<L: ResourceLoader>(
+        &self,
+        selected: &[Selected<'_>],
+        symbols: &[forager_style_ir::Symbol],
+        images: &mut Images,
+        files: &L,
+    ) {
+        for (_, _, styles) in selected {
+            for style in styles {
+                if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
+                    continue;
+                }
+                if let Some(path) = marked_pixmap(self.mode, style, symbols)
+                    && !images.decoded().contains_key(path)
+                {
+                    // The image, or why it has none, is kept by the store for the canvas.
+                    let _ = images.image(path, files).await;
+                }
+            }
         }
     }
 
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
     /// from the cache as the [`Plan`] of each class says. A style outside its scale range draws
     /// nothing, where msDrawShape and the cache's pass skip it.
-    fn draw<R: Renderer>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
+    fn draw<R: Draw>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
         let mode = self.mode;
         let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {
             if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
@@ -553,6 +614,19 @@ fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnostic> {
         );
         Diagnostic::warning("hatch-not-drawn", message, layer.span.clone())
     })
+}
+
+/// The kind of a geometry, as a diagnostic names it.
+fn kind(geometry: &Geometry) -> &'static str {
+    match geometry {
+        Geometry::Point(_) => "point",
+        Geometry::MultiPoint(_) => "multipoint",
+        Geometry::LineString(_) => "line",
+        Geometry::MultiLineString(_) => "multiline",
+        Geometry::Polygon(_) => "polygon",
+        Geometry::MultiPolygon(_) => "multipolygon",
+        Geometry::Collection(_) => "collection",
+    }
 }
 
 fn name(layer: &Layer) -> String {

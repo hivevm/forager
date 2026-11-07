@@ -25,7 +25,7 @@ land with it.
 
 - Q-9 in `docs/SPECIFICATION.md`;
   `docs/plan/revision-2026-10-24/06-q9-feature-and-source-limits.md`; `MarkerBudget` in
-  `crates/engine/src/line_marker.rs`.
+  `crates/symbolize/src/line_marker.rs`.
 
 ## Blocked by
 

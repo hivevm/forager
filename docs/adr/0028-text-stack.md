@@ -1,6 +1,6 @@
 # ADR-0028: Label glyphs are drawn from skrifa's unhinted FreeType outlines, laid out unshaped as MapServer lays out its Latin lines
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-29
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/label`, the text of `crates/engine` and `crates/render-agg`, the glyph operation of `crates/render`, the resource loader each host hands the engine, and every crate that lays out, measures, or draws text

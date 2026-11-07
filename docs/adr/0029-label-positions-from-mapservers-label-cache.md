@@ -1,9 +1,9 @@
 # ADR-0029: The noise measurement reads MapServer's label cache with a C reader linked to its library
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-29
 - **Deciders:** Markus Brigl
-- **Applies to:** `crates/cli/tests/conformance/mapserver_labels.c`, `scripts/build-mapserver.sh`, `scripts/check-notice.sh`, and every comparison of label positions with MapServer's
+- **Applies to:** `crates/cli/tests/conformance/mapserver_labels.c`, `scripts/build-mapserver.sh`, `scripts/check-notice.sh`, the records of MapServer's labels under `crates/cli/tests/conformance/labels/` and the mark `labels-hold` of `crates/cli/tests/conformance/cases.txt`, and every comparison of label positions with MapServer's
 
 ## Context
 
@@ -36,36 +36,68 @@ source, hides the cache's slots and its list of drawn members from SWIG (`#ifnde
 unpatched and runs the noise measurement on a push to the conformance harness; the spec's licence
 constraint keeps MapServer's notice on a file that follows its source.
 
+MapServer is not run where every push is checked: the push harness compares Forager's labels with
+a record of MapServer's, taken once from the reader's output and kept in the tree. The libraries
+MapServer draws text with, freetype and harfbuzz among them, come unpinned from the runner's
+Ubuntu archive (`scripts/build-mapserver.sh`), so a package update can move a box by a fraction of
+a pixel that no rendering shows.
+
+Questions the maintainer settled:
+
+1. Is a record held byte for byte, though the packages under it are unpinned? No: its boxes are
+   held within 1e-6 px, far below a pixel, so an update of the packages that moves no label does
+   not fail the noise measurement.
+2. Is the refusal of a patched checkout decided by a test? No: a text match of the build script
+   names the common tools and passes others, so it is a tripwire, and the rule is not mechanically
+   decidable.
+3. Does G-10's "the same labels" ask for the priority slot? Yes: a label drawn at the same box
+   from another slot is another label.
+
+Open, a reason to revisit and not a condition of this decision: whether the reader, compiled anew
+on every run against `gdal-config`, can drift in ABI from a cached `libmapserver` whose key is the
+two build scripts alone.
+
 ## Decision
 
 We will read MapServer's label cache with a C program kept beside the conformance harness,
 `crates/cli/tests/conformance/mapserver_labels.c`, compiled by `scripts/build-mapserver.sh` on
 every run against the unmodified `libmapserver` and headers of the pinned build, which renders a
-case as `map2img` renders it and writes out each label of the cache.
+case as `map2img` renders it and writes out each label of the cache; and keep its output for every
+text case in scope as a record beside the list, which the push harness compares Forager's labels
+with.
 
 - **The reader.** It follows `main` of `src/apps/map2img.c` at the pin for the options the harness
   applies: `msSetup`, `msLoadConfig` without a file, `msProjDataInitFromEnv`, `msDebugInitFromEnv`,
   `msLoadMap`, `msApplyDefaultSubstitutions`, `msApplyStyleItemsToLayers`, the options `-i`, `-l`,
   `-e`, and `-s` as `map2img` applies them, `msDrawMap`, and `msSaveImage` to the file `-o` names.
-  It keeps the notice of `map2img.c`.
+  It keeps the notice of `map2img.c`. It refuses a map one of whose layers flushes the label cache
+  (`PROCESSING "FORCE_DRAW_LABEL_CACHE=FLUSH"`).
 - **Its output.** One line per member, tab-separated, in the order `msDrawLabelCache` walks them:
   the priority, the layer's index and name, the class index, whether it was drawn (listed in
-  `rendered_text_symbols`), its box as `minx miny maxx maxy` for a drawn member and nothing for a
-  discarded one, and its texts.
-- **The same render.** The noise measurement runs the reader beside `map2img` for every case in
-  scope and holds the two images byte for byte equal, so that the cache read is the one of the
-  rendering compared.
-- **A match.** A label of Forager's is paired with MapServer's by its layer, class, and texts, in
-  the cache's order among labels with the same key. A pair matches when both are drawn and each
-  edge of the two boxes lies within 1 px, or when both are discarded; a label without a partner
-  does not match.
+  `rendered_text_symbols`), its box as `minx miny maxx maxy` written with `%.17g` for a drawn
+  member and nothing for a discarded one, and its texts.
+- **The records.** The output for each text case in scope is a record under
+  `crates/cli/tests/conformance/labels/`, at the path the harness gives the case. A record is
+  taken from the noise measurement's artifact, `noise/labels/`, never written by hand; every record
+  belongs to a text case in scope, and every such case has one.
+- **The same render.** The noise measurement runs the reader beside `map2img` for every text case
+  in scope, holds the two images byte for byte equal, so that the cache read is the one of the
+  rendering compared, and holds its output equal to the record: the priority, the layer's index
+  and name, the class, the texts, the drawn state, and the order exactly, each edge of each box
+  within 1e-6 px.
+- **A match.** A label of Forager's is paired with MapServer's by its priority, layer, class, and
+  texts, in the cache's order among labels with the same key. A pair matches when both are drawn
+  and each edge of the two boxes lies within 1 px, or when both are discarded; a label without a
+  partner does not match.
+- **The mark.** A text case whose labels all match is marked `labels-hold` in `cases.txt`, and only
+  such a case; the push harness fails on a case whose labels and mark disagree, and on a case
+  marked `labels-hold` whose render fails.
 - **The build.** The reader is compiled after `map2img`, outside the cached build, with the
   compiler, include directories, and library of the same build; nothing patches MapServer's source.
 
-**Out of scope:** the harness's report and how it names a mismatch, which ticket 09 of the labels
-spec builds; options of `map2img` beyond the harness's; labels MapServer draws without its label
-cache, and those a layer's `PROCESSING "FORCE_DRAW_LABEL_CACHE=FLUSH"` draws and empties from it
-before the map is drawn, which the reader refuses.
+**Out of scope:** how the harness reports a mismatch; options of `map2img` beyond the harness's;
+labels MapServer draws without its label cache, and those a flushing layer draws and empties from
+it before the map is drawn.
 
 ## Alternatives considered
 
@@ -78,10 +110,21 @@ before the map is drawn, which the reader refuses.
 - **Comparing the boxes of discarded labels** — MapServer gives most of them none.
 - **Pairing in the cache's order alone** — one label added or missing would shift every pair after
   it.
+- **Pairing without the priority** — a label drawn from another slot at the same box would match.
 - **The reader under `scripts/`** — a change to it alone would not run the noise measurement, whose
   push paths ADR-0027 fixes.
 - **Positions read from the references, or from the SVG output** — images and paths show drawn
   pixels, not labels, and nothing of a discarded label.
+- **Running the reader on every push** — the push would build MapServer; the record carries its
+  output instead.
+- **Records held byte for byte** — a package update that moves a box by 1e-12 px would fail the
+  noise measurement though no label moved.
+- **A line in each record naming the package versions it was taken under** — keeps byte equality,
+  at the cost of a header in every record and a second rule for reading it.
+- **Taking the records again whenever the packages drift** — keeps byte equality as a rule of
+  work, with every such update a manual step.
+- **Wider patterns for a patched checkout** — `perl -i`, a redirect into the checkout, a script in
+  another language: each pattern added leaves another out, and comments trip them.
 
 ## Sources / Prior art
 
@@ -91,11 +134,13 @@ before the map is drawn, which the reader refuses.
   (`msAddLabel`, `msAddLabelGroup`), `src/apps/map2img.c` (`main`), `src/mapscript/swiginc/`
   (no accessor of the cache's members), `msautotest/renderers/expected/labels.svg` (text as
   paths), its `CMakeLists.txt` (`libmapserver` shared); read 2026-10-29.
+- The reader, the records, and the harness as built: `crates/cli/tests/conformance/`,
+  `crates/cli/tests/msautotest.rs`, `scripts/build-mapserver.sh`; read 2026-11-07.
 
 ## Consequences
 
 - Positive: G-10 is measured label by label against MapServer's own decisions, with the release
-  unmodified.
+  unmodified, and every push holds Forager to them without building MapServer.
 - Positive: the byte equality with `map2img` shows that the reader renders the map the references
   were rendered from.
 - Negative: comparing all four edges holds a label's size too, so a text laid out more than 1 px
@@ -104,16 +149,27 @@ before the map is drawn, which the reader refuses.
   pin may need it changed, and its build fails if a field it reads is gone.
 - Negative: a C file in the repository, outside every crate's build, compiled only in the noise
   measurement.
-- Follow-ups: the harness's report of the labels, with ticket 09.
+- Negative: a record is only as current as the noise run it was taken from; a package update that
+  moves a box by more than 1e-6 px fails the noise measurement until the record is taken again.
+- Follow-ups: the notice check reaching the reader through `src/apps/map2img.c`.
 
 ## Enforcement
 
 `scripts/test-build-mapserver.sh` cites this ADR with `Verifies:` and fails when
-`scripts/build-mapserver.sh` does not compile `crates/cli/tests/conformance/mapserver_labels.c`,
-compiles it inside the cached build, or patches the checkout (`patch`, `git apply`, `git am`, or
-`sed -i` under it). `scripts/check-notice.sh` holds the reader to the notice of `map2img.c`. The
-noise measurement, the ignored test of the harness that `noise.yml` runs, cites it and fails when
-the reader's image of a case in scope differs from `map2img`'s.
+`scripts/build-mapserver.sh` does not compile `crates/cli/tests/conformance/mapserver_labels.c` or
+compiles it inside the cached build. `scripts/check-notice.sh` holds the reader to MapServer's
+notice; it reaches the reader through its mention of `src/mapdraw.c`, not yet through
+`src/apps/map2img.c`. A test of the harness that runs on every push without the suite holds the
+records and the text cases in scope to each other; the harness's comparison cites G-10 for the
+cases marked `labels-hold`. Unit tests of the harness cite this ADR with `Verifies:`: labels of
+another priority at the same box do not match (`labels::compare`), and the reader's output holds
+the record within 1e-6 px in its boxes and exactly in every other field (`labels::beyond_noise`).
+The noise measurement, the ignored test of the harness that `noise.yml` runs, cites this ADR with
+`Verifies:` and fails when the reader's image of a text case in scope differs from `map2img`'s, or
+its output from the record: a box by more than 1e-6 px, or any other field at all.
 
-**Not mechanically decidable:** that the reader writes every field of every member, short of the
-comparison ticket 09 builds on it.
+**Not mechanically decidable:** that nothing patches MapServer's checkout — the self-test's match
+of `patch`, `git apply`, `git am`, and `sed -i` is a tripwire for the common tools, not a proof;
+that a record is taken from the noise run's artifact and never written by hand; and that the
+reader writes every field of every member, short of the comparison the harness makes with its
+records.

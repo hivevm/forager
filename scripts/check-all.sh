@@ -67,6 +67,7 @@ run "MapServer notice check" scripts/check-notice.sh
 # The fidelity check itself runs in the Rust checks, after the harness that counts the cases.
 run "Fidelity check self-test" scripts/test-check-fidelity.sh
 run "Git hooks self-test" scripts/test-git-hooks.sh
+run "ADR index merge self-test" scripts/test-merge-adr-index.sh
 run "Fixture git self-test" scripts/test-fixture-git-env.sh
 run "Shell lint self-test" scripts/test-check-shell.sh
 run "Shell lint" scripts/check-shell.sh

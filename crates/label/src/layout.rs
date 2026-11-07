@@ -22,7 +22,8 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
-use forager_render::{MAX_GLYPH_REACH, PathCommand, Point};
+use forager_render::clip::within_glyph_reach;
+use forager_render::{PathCommand, Point};
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::DrawSettings;
 use skrifa::outline::pen::{OutlinePen, PathStyle};
@@ -169,7 +170,7 @@ pub struct TextPath {
 }
 
 /// The outlines of a text path drawn at a point, and how many of its glyphs were left out for
-/// reaching farther from the visible area than [`MAX_GLYPH_REACH`].
+/// reaching farther from the image than [`forager_render::clip::MAX_GLYPH_REACH`].
 #[derive(Debug, Default, PartialEq)]
 pub struct Drawn {
     pub path: Vec<PathCommand>,
@@ -405,28 +406,39 @@ impl TextPath {
         Ok(layout.finish(Align::Left))
     }
 
+    /// The outlines of the glyphs drawn from `origin` into `image`, `[min x, min y, max x, max y]`,
+    /// as [`Self::draw_outlined`] draws them with no outline.
+    pub fn draw(&self, caches: &[Glyphs], origin: Point, rotation: f64, image: [f64; 4]) -> Drawn {
+        self.draw_outlined(caches, origin, rotation, image, 0.0)
+    }
+
     /// The outlines of the glyphs drawn from `origin`, turned by `rotation` in radians
     /// counter-clockwise, in pixels, out of `caches`, each line's glyphs out of the cache it was
     /// laid out with, as `msDrawTextSymbol` places each glyph and `agg2RenderGlyphsPath` turns
-    /// them into one path. Each glyph that lies wholly outside `visible`,
-    /// `[min x, min y, max x, max y]`, is left out, so that what a label costs to draw follows what of
-    /// it can be seen; a glyph reaching farther than [`MAX_GLYPH_REACH`] from it is left out and
-    /// counted.
-    pub fn draw(
+    /// them into one path. Each glyph that lies wholly outside `image`,
+    /// `[min x, min y, max x, max y]`, grown by twice `outline_width`, is left out, so that what a
+    /// label costs to draw follows what of it can be seen: an outline reaches half its width past
+    /// its glyph, and at a sharp corner a miter up to its whole width. A glyph with a point past
+    /// [`forager_render::clip::MAX_GLYPH_REACH`] of `image` itself is left out and counted, by
+    /// [`within_glyph_reach`] as the renderer tests the whole path, so that the renderer draws
+    /// every glyph kept.
+    pub fn draw_outlined(
         &self,
         caches: &[Glyphs],
         origin: Point,
         rotation: f64,
-        visible: [f64; 4],
+        image: [f64; 4],
+        outline_width: f64,
     ) -> Drawn {
+        let grow = 2.0 * outline_width.abs();
+        let visible = [
+            image[0] - grow,
+            image[1] - grow,
+            image[2] + grow,
+            image[3] + grow,
+        ];
         let mut drawn = Drawn::default();
         let turn = Turn::new(rotation);
-        let reach = [
-            visible[0] - MAX_GLYPH_REACH,
-            visible[1] - MAX_GLYPH_REACH,
-            visible[2] + MAX_GLYPH_REACH,
-            visible[3] + MAX_GLYPH_REACH,
-        ];
         let mut start = 0;
         for line in &self.lines {
             let ids = &self.ids[start..line.end as usize];
@@ -452,10 +464,7 @@ impl TextPath {
                 {
                     continue;
                 }
-                if !(x0 >= reach[0] && y0 >= reach[1] && x1 <= reach[2] && y1 <= reach[3]) {
-                    drawn.out_of_reach += 1;
-                    continue;
-                }
+                let glyph_start = drawn.path.len();
                 let place = |p: Point| turn.outline_point(p, at);
                 drawn
                     .path
@@ -468,6 +477,10 @@ impl TextPath {
                         }
                         PathCommand::Close => PathCommand::Close,
                     }));
+                if !within_glyph_reach(image, &drawn.path[glyph_start..]) {
+                    drawn.path.truncate(glyph_start);
+                    drawn.out_of_reach += 1;
+                }
             }
         }
         drawn

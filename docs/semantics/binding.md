@@ -28,7 +28,8 @@ and an expression.
 
 A label's properties are read by `bindLabel` in the same file: `ANGLE` as a number, `SIZE`,
 `PRIORITY`, `SHADOWSIZE`, and `OFFSET` as a number rounded to an integer (`bindIntegerAttribute`,
-`MS_NINT(atof(…))`, `lrint` at the pin, half to even), and `FONT` as the value as written. Before it
+`MS_NINT(atof(…))`, `lrint` at the pin, half to even, narrowed to the low 32 bits of its `long`,
+`LONG_MIN` past one), and `FONT` as the value as written. Before it
 reads the value, `bindLabel` sets `SIZE`, `PRIORITY`, and `SHADOWSIZE` to 1 and `OFFSET` to 0, which
 an empty value leaves. `ALIGN` and `POSITION` take a nonzero integer as it is, without a range
 check; where the value reads as 0, `ALIGN` takes a value of at least four characters that begins

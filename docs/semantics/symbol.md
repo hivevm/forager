@@ -50,6 +50,33 @@ than the centre moves the symbol so that the anchor, turned with it, lies on the
 at the size cut to whole pixels (`msAdjustMarkerPos`, `msGetMarkerSize` in `src/mapsymbol.c`).
 A style whose symbol index lies past the last symbol draws nothing.
 
+**A pixmap at a point.** A point layer's style whose symbol is a pixmap draws its image at each
+point inside the map's extent, as `msDrawMarkerSymbolInternal` in `src/maprendering.c` and
+`agg2RenderPixmapSymbol` in `src/mapagg.cpp` draw it. The image is read through the resource
+loader the first time a feature the layer draws names it, in a style within its scale range,
+from the path its `IMAGE` names, within 32 MiB, the bound of a font file, and decoded once for
+the whole render, which every point draws from
+([ADR-0040](../adr/0040-a-decoded-pixmap-is-held-once-per-render.md)); a PNG is read as `readPNG`
+in `src/mapimageio.c` reads it, its colours premultiplied by their alpha. The image is read, and
+counted against the bytes of the render's images, even where none of the feature's points lies
+inside the map's extent; MapServer reads it only when `msDrawMarkerSymbol` runs, so there a pixmap
+no point draws is never read, and one that does not load fails nothing. Its scale is the
+style's size, its default the image's height, bounded by `MINSIZE` and `MAXSIZE`, over the
+image's height; so without a size, and with `MAXSIZE` not below the height, it is 1. Unturned and
+at a scale of 1, the image is moved by the style's `OFFSET` and `POLAROFFSET` as a symbol is, and
+blended unscaled, every pixel at full cover, its top-left pixel at `MS_NINT(x - width / 2.)` and
+`MS_NINT(y - height / 2.)`: a point at the pixel (50.5, 41.5) puts a 32 × 32 image's top-left
+pixel at (34, 26), `lrint` rounding 34.5 and 25.5 half to even. Neither the style's colour nor
+its opacity reaches the image (`computeSymbolStyle`). A pixmap at a scale other than 1, or turned
+by an `ANGLE` other than 0 or 360, is not drawn yet as MapServer draws it (below).
+
+**A pixmap that does not load** — its file missing, past 32 MiB, of a format other than PNG, broken,
+past 4096 × 4096 pixels by its header, or past what the images one render holds decoded may come
+to (Q-9) — leaves its style undrawn, and the layer warns with `pixmap-not-drawn`, once per symbol,
+naming the symbol, its path, and why; the rest of the map draws. This deviates on purpose, by the
+maintainer's decision, from MapServer: there the symbol fails to load, so the layer fails to draw,
+and `msDrawMap` (`src/mapdraw.c`) returns no map at all.
+
 **A hatch over a polygon.** A polygon layer's style whose symbol is a hatch fills the polygon
 with parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprendering.c` and
 `msHatchPolygon` and `createHatch` in `src/mapagg.cpp` draw it, in the `COLOR`; without one, the
@@ -97,10 +124,12 @@ a pixel of an edge, which Clipper does not. The polygon of any other style is no
 draws the same.
 
 **Not yet as MapServer draws it at a point.** A point layer's style without a symbol it draws —
-none, 0, a pixmap, TrueType, SVG, hatch, or simple symbol, or a name no symbol carries — draws a
-square of its size, where MapServer draws nothing for none and 0 and the symbol or image
-otherwise. A style a `GEOMTRANSFORM` places ([`style-symbol.md`](style-symbol.md)) draws nothing
-for none and 0, as MapServer does, and the square for the others, at a scale factor of 1. A
+none, 0, a TrueType, SVG, hatch, or simple symbol, or a name no symbol carries — draws a square of
+its size, where MapServer draws nothing for none and 0 and the symbol or image otherwise; so does
+a pixmap scaled or turned, which MapServer resamples. A pixmap's `ANCHORPOINT` is not applied
+yet: its image is centred on the point. A style a `GEOMTRANSFORM` places
+([`style-symbol.md`](style-symbol.md)) draws nothing for none and 0, as MapServer does, its pixmap
+as at a point, and the square for the others, at a scale factor of 1. A
 symbol, a line, a polygon's offset and outline, and a hatch are scaled by `RESOLUTION` over
 `DEFRESOLUTION`; `SIZEUNITS` other than `pixels` and `SYMBOLSCALEDENOM` do not scale them yet
 ([`scale.md`](scale.md)).

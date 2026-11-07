@@ -509,6 +509,75 @@ fn a_null_property_draws_no_label_as_an_empty_one_does() {
     assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
 
+/// One point at (80, 30) whose property `name` is `name`, a NUL in it written `\u0000`.
+fn named_point(name: &str) -> String {
+    format!(
+        r#"{{"type": "Feature", "properties": {{"name": "{}"}},
+        "geometry": {{"type": "Point", "coordinates": [80, 30]}}}}"#,
+        name.replace('\0', "\\u0000")
+    )
+}
+
+#[test]
+fn a_propertys_text_ends_at_its_first_nul_as_mapservers_c_string_does() {
+    // msEvalTextExpressionInternal copies each attribute value with msStrdup
+    // and puts it in place of its binding with msReplaceSubstring, which reads strlen of it: the
+    // value ends at its first NUL, and the text around the binding goes on after it.
+    let cut = render(&map(label_item()), &named_point("ab\0cd"));
+    assert!(cut.diagnostics.is_empty(), "{:?}", cut.diagnostics);
+    let whole = render(&map(label_item()), &named_point("ab"));
+    assert!(cut.image == whole.image, "`ab\\0cd` draws other than `ab`");
+    let texts: Vec<_> = cut.labels.iter().map(|l| l.text.as_str()).collect();
+    assert_eq!(texts, ["ab"]);
+    // A value that starts with a NUL is empty, and msEvalTextExpressionInternal gives no text.
+    let empty = render(&map(label_item()), &named_point("\0abc"));
+    assert!(empty.diagnostics.is_empty(), "{:?}", empty.diagnostics);
+    assert_eq!(ink(empty.image.as_ref().unwrap(), (0, 160), (0, 60)), None);
+    assert!(empty.labels.is_empty(), "{:?}", empty.labels);
+    // A binding inside a text: its value ends at the NUL, the text after the binding stays.
+    let around = |name: &str| {
+        let label = Label {
+            text: Some(Expr::call(
+                Op::Concat,
+                vec![
+                    Expr::call(Op::ToString, vec![Expr::property("name")]),
+                    Expr::String("x".to_owned()),
+                ],
+            )),
+            ..label_item()
+        };
+        render(&map(label), &named_point(name))
+    };
+    let cut = around("ab\0cd");
+    assert!(cut.diagnostics.is_empty(), "{:?}", cut.diagnostics);
+    let abx = render(&map(label_item()), &named_point("abx"));
+    assert!(cut.image == abx.image, "`[name]x` draws other than `abx`");
+    let texts: Vec<_> = cut.labels.iter().map(|l| l.text.as_str()).collect();
+    assert_eq!(texts, ["abx"]);
+}
+
+#[test]
+fn an_inline_features_text_ends_at_its_first_nul() {
+    // msShapeGetLabelAnnotation takes the feature's TEXT with msStrdup, which
+    // ends at its first NUL.
+    let no_text = || {
+        map(Label {
+            text: None,
+            ..label_item()
+        })
+    };
+    let cut = render_inline(no_text(), Some("ab\0cd"), "Other");
+    assert!(cut.diagnostics.is_empty(), "{:?}", cut.diagnostics);
+    let whole = render_inline(no_text(), Some("ab"), "Other");
+    assert!(cut.image == whole.image, "`ab\\0cd` draws other than `ab`");
+    let texts: Vec<_> = cut.labels.iter().map(|l| l.text.as_str()).collect();
+    assert_eq!(texts, ["ab"]);
+    let empty = render_inline(no_text(), Some("\0abc"), "Other");
+    assert!(empty.diagnostics.is_empty(), "{:?}", empty.diagnostics);
+    assert_eq!(ink(empty.image.as_ref().unwrap(), (0, 160), (0, 60)), None);
+    assert!(empty.labels.is_empty(), "{:?}", empty.labels);
+}
+
 #[test]
 fn a_glyph_reaching_too_far_from_the_image_is_left_out_with_a_diagnostic() {
     // Verifies: ADR-0028
@@ -545,6 +614,50 @@ fn a_glyph_reaching_too_far_from_the_image_is_left_out_with_a_diagnostic() {
 }
 
 #[test]
+fn a_glyph_at_the_reach_with_an_outline_is_drawn_or_left_out_with_a_diagnostic() {
+    // Verifies: ADR-0028
+    // The `1` of the huge test font, a square about 8,000,000 pixels wide at 3000 points, outlined
+    // 3 wide, moved right step by step across the reach: its right edge passes `MAX_GLYPH_REACH`
+    // beyond the image, where the outline once let the text path keep a glyph the renderer then
+    // dropped. The square covers the image while it is drawn; past the reach it is left out with a
+    // diagnostic, never dropped without one.
+    let one = r#"{"type": "Feature", "properties": {},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let (mut drawn, mut left_out) = (0, 0);
+    for dx in 194_370..194_410 {
+        let label = Label {
+            font: Some(Bound::Value("huge".to_owned())),
+            text: Some(Expr::String("1".to_owned())),
+            size: Some(Bound::Value(3000.0)),
+            max_size: Some(3000.0),
+            offset: Some([Bound::Value(f64::from(dx)), Bound::Value(0.0)]),
+            outline_color: Some(Bound::Value(Rgba::opaque(240, 200, 0))),
+            outline_width: Some(3.0),
+            // Partial, so that the label cache keeps it though it leaves the image.
+            partials: Some(true),
+            ..label_item()
+        };
+        let rendered = render(&map(label), one);
+        let codes: Vec<&str> = rendered
+            .diagnostics
+            .iter()
+            .map(|d| d.code.as_str())
+            .collect();
+        let image = rendered.image.unwrap();
+        let ink = image.pixels.chunks(4).any(|p| p != [255, 255, 255, 255]);
+        match (ink, codes.as_slice()) {
+            (true, []) => drawn += 1,
+            (false, ["label-glyph-out-of-reach"]) => left_out += 1,
+            other => panic!("at an offset of {dx}: {other:?}"),
+        }
+    }
+    assert!(
+        drawn > 0 && left_out > 0,
+        "{drawn} drawn, {left_out} left out"
+    );
+}
+
+#[test]
 fn a_label_of_a_line_layer_is_not_drawn_yet_and_says_so() {
     let mut map = map(label_item());
     map.layers[0].render_mode = Some(RenderMode::Line);
@@ -563,9 +676,7 @@ fn a_label_of_a_line_layer_is_not_drawn_yet_and_says_so() {
 #[derive(Clone, Default)]
 struct LabelRecorder(std::rc::Rc<std::cell::RefCell<Vec<(u64, Rgba)>>>);
 
-impl forager_render::Renderer for LabelRecorder {
-    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
-
+impl forager_render::Draw for LabelRecorder {
     fn draw(&mut self, item: &forager_render::DisplayItem) {
         if let forager_render::DrawOp::Glyphs { color, .. } = &item.op {
             self.0
@@ -573,9 +684,17 @@ impl forager_render::Renderer for LabelRecorder {
                 .push((item.feature_id.unwrap(), color.unwrap()));
         }
     }
+}
 
-    fn begin_layer(&mut self) {}
-    fn end_layer(&mut self, _: u8) {}
+/// A layer's items are drawn as if onto the map.
+impl forager_render::Renderer for LabelRecorder {
+    type Layer<'a> = &'a mut Self;
+
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+
+    fn layer(&mut self, _: u8) -> &mut Self {
+        self
+    }
     fn finish(self) -> RgbaImage {
         RgbaImage {
             width: 0,
@@ -624,17 +743,23 @@ fn each_feature_is_labelled_by_the_class_that_draws_it() {
 #[derive(Clone, Default)]
 struct GlyphRecorder(std::rc::Rc<std::cell::RefCell<Vec<forager_render::DrawOp>>>);
 
-impl forager_render::Renderer for GlyphRecorder {
-    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
-
+impl forager_render::Draw for GlyphRecorder {
     fn draw(&mut self, item: &forager_render::DisplayItem) {
         if matches!(item.op, forager_render::DrawOp::Glyphs { .. }) {
             self.0.borrow_mut().push(item.op.clone());
         }
     }
+}
 
-    fn begin_layer(&mut self) {}
-    fn end_layer(&mut self, _: u8) {}
+/// A layer's items are drawn as if onto the map.
+impl forager_render::Renderer for GlyphRecorder {
+    type Layer<'a> = &'a mut Self;
+
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+
+    fn layer(&mut self, _: u8) -> &mut Self {
+        self
+    }
     fn finish(self) -> RgbaImage {
         RgbaImage {
             width: 0,
@@ -661,7 +786,7 @@ fn recorded(map: &Map, geojson: &str) -> Vec<forager_render::DrawOp> {
 /// One feature named "Fen" at the pixel (80, 29).
 const FEN: &str = r#"{"type": "Feature", "properties": {"name": "Fen", "pos": "ul",
     "x": "2.5", "y": "-3.5", "size": "14", "angle": "30", "outline": "255 255 0",
-    "align": "right", "bad": "zz"},
+    "align": "right", "bad": "zz", "op": "3e9"},
     "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
 
 /// The path of `text` in the test font at a glyph size of `size`, laid out on one line and drawn
@@ -1588,15 +1713,21 @@ fn the_render_reports_its_labels_drawn_and_discarded_in_the_caches_order() {
 #[derive(Clone, Default)]
 struct OpRecorder(std::rc::Rc<std::cell::RefCell<Vec<forager_render::DrawOp>>>);
 
-impl forager_render::Renderer for OpRecorder {
-    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
-
+impl forager_render::Draw for OpRecorder {
     fn draw(&mut self, item: &forager_render::DisplayItem) {
         self.0.borrow_mut().push(item.op.clone());
     }
+}
 
-    fn begin_layer(&mut self) {}
-    fn end_layer(&mut self, _: u8) {}
+/// A layer's items are drawn as if onto the map.
+impl forager_render::Renderer for OpRecorder {
+    type Layer<'a> = &'a mut Self;
+
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+
+    fn layer(&mut self, _: u8) -> &mut Self {
+        self
+    }
     fn finish(self) -> RgbaImage {
         RgbaImage {
             width: 0,
@@ -1679,6 +1810,26 @@ fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
         ops[0],
         forager_render::DrawOp::Fill { color, .. } if color == Rgba::opaque(255, 255, 0)
     ));
+}
+
+#[test]
+fn a_label_styles_opacity_past_an_int_is_rounded_as_a_class_styles_is() {
+    // Verifies: ADR-0037
+    // bindStyle rounds a label's style as it rounds a class's: MS_NINT(atof("3e9")) in an int is
+    // -1294967296, and the alpha MS_NINT(-1294967296 × 2.55) keeps 179 in a byte.
+    let style = Style {
+        opacity: Some(binding("op")),
+        ..labelpoly(Bound::Value(GREEN))
+    };
+    let (_, ops) = draw_fen(fen_styled(vec![style]));
+    assert!(
+        matches!(
+            ops[0],
+            forager_render::DrawOp::Fill { color, .. } if color == Rgba { a: 179, ..GREEN }
+        ),
+        "{:?}",
+        ops[0]
+    );
 }
 
 #[test]
@@ -2601,4 +2752,109 @@ fn the_labels_of_a_layer_of_labelcache_off_are_drawn_into_its_own_image() {
         "no glyph is drawn opaque"
     );
     assert!(count(&image, [127, 127, 255, 255]) > 0);
+}
+
+/// An item a [`LayerRecorder`] is handed: its feature and whether it is a label's glyphs.
+type Drawn = (Option<u64>, bool);
+
+/// What a [`LayerRecorder`] is asked to draw: an item onto the map, or a layer of its own.
+#[derive(Clone, Debug, PartialEq)]
+enum Recorded {
+    Item(Drawn),
+    Layer { opacity: u8, items: Vec<Drawn> },
+}
+
+fn drawn(item: &forager_render::DisplayItem) -> Drawn {
+    (
+        item.feature_id,
+        matches!(item.op, forager_render::DrawOp::Glyphs { .. }),
+    )
+}
+
+/// A renderer that keeps each item's feature and kind, and the layers it begins.
+#[derive(Clone, Default)]
+struct LayerRecorder(std::rc::Rc<std::cell::RefCell<Vec<Recorded>>>);
+
+/// A layer of a [`LayerRecorder`]: it keeps its items in the layer it recorded last.
+struct RecordedLayer<'a>(&'a LayerRecorder);
+
+impl forager_render::Draw for RecordedLayer<'_> {
+    fn draw(&mut self, item: &forager_render::DisplayItem) {
+        match self.0.0.borrow_mut().last_mut() {
+            Some(Recorded::Layer { items, .. }) => items.push(drawn(item)),
+            _ => unreachable!("a layer is recorded when it begins"),
+        }
+    }
+}
+
+impl forager_render::Draw for LayerRecorder {
+    fn draw(&mut self, item: &forager_render::DisplayItem) {
+        self.0.borrow_mut().push(Recorded::Item(drawn(item)));
+    }
+}
+
+impl forager_render::Renderer for LayerRecorder {
+    type Layer<'a> = RecordedLayer<'a>;
+
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+
+    fn layer(&mut self, opacity: u8) -> RecordedLayer<'_> {
+        self.0.borrow_mut().push(Recorded::Layer {
+            opacity,
+            items: Vec::new(),
+        });
+        RecordedLayer(self)
+    }
+
+    fn finish(self) -> RgbaImage {
+        RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        }
+    }
+}
+
+#[test]
+fn a_layer_of_labelcache_off_with_an_opacity_draws_each_label_into_its_image_after_its_feature() {
+    // msDrawLayer draws a layer of OPACITY 50 into an image of its own, laid over the map at
+    // MS_NINT(50 × 2.55), and pointLayerDrawShape draws each feature's label into it right after
+    // the feature's point, before the next feature.
+    let mut map = map(label_item());
+    map.layers[0].opacity = Some(50.0);
+    map.layers[0].label_cache = false;
+    map.layers[0].classes[0].styles = vec![Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(4.0)),
+        ..Style::default()
+    }];
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(PLACES).unwrap())].into();
+    let recorder = LayerRecorder::default();
+    let rendered = ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.labels, []);
+    let recorded = recorder.0.borrow().clone();
+    let [Recorded::Layer { opacity, items }] = recorded.as_slice() else {
+        panic!("expected one layer, got {recorded:?}");
+    };
+    assert_eq!(*opacity, 127);
+    // The items in order, a run of one feature's items of one kind taken once: the third
+    // feature has no name and so no label.
+    let mut runs = items.clone();
+    runs.dedup();
+    assert_eq!(
+        runs,
+        [
+            (Some(0), false),
+            (Some(0), true),
+            (Some(1), false),
+            (Some(1), true),
+            (Some(2), false),
+        ]
+    );
 }

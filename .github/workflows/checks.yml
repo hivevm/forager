@@ -161,6 +161,8 @@ jobs:
           persist-credentials: false
       - name: Self-test the git hooks
         run: bash scripts/test-git-hooks.sh
+      - name: Self-test the ADR index's merge driver
+        run: bash scripts/test-merge-adr-index.sh
       - name: Self-test the self-tests' fixture git
         run: bash scripts/test-fixture-git-env.sh
       - name: Self-test the shell lint

@@ -38,9 +38,9 @@ load. Two frontend tests pin the old behaviour and change with a reason each, in
   `msAddImageSymbol` makes it, and draws nothing at render with the warning of a file that does not
   load.
 
-The engine's test of a style whose symbol is the name `x.png` (`crates/engine/src/symbol/tests.rs`,
-89) keeps a name the frontend writes only for a URL, and stays as a test of a document
-written by hand.
+The test of a style whose symbol is the name `x.png` (`crates/symbolize/src/symbol/tests.rs`, 89)
+keeps a name the frontend writes only for a URL, and stays as a test of a document written by
+hand.
 
 ## Acceptance criteria
 

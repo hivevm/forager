@@ -29,6 +29,9 @@ Authority runs **specification → accepted ADRs → task**
    and stops while they are red. They need only bash and coreutils, already in the Dev Container.
    Only the shell lint additionally needs [ShellCheck](https://www.shellcheck.net), which the Dev
    Container installs; elsewhere it skips itself where that is missing, and CI runs it always.
+   Outside the container, also enable the ADR index's merge driver as Getting Started in the
+   [README](README.md) says, so that rows two branches append do not conflict
+   ([`.githooks/merge-adr-index`](.githooks/merge-adr-index)).
 3. **Open a pull request** against `main`, fill in the PR template, and link the issue or ADR.
 
 ## Reporting security issues

@@ -17,8 +17,8 @@ paths, a point layer's markers among them, under the wording ticket 07 of this r
 
 ## Read first
 
-- `MarkerBudget` and `draw` in `crates/engine/src/line_marker.rs`; `transformed` and `marker_ops` in
-  `crates/engine/src/draw.rs`.
+- `MarkerBudget` and `draw` in `crates/symbolize/src/line_marker.rs`; `transformed` and
+  `marker_ops` in `crates/symbolize/src/draw.rs`.
 
 ## Blocked by
 

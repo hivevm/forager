@@ -768,7 +768,12 @@ fn a_binding_runs_to_the_last_bracket_the_lexers_longest_match_reaches() {
 #[test]
 fn a_number_the_ir_cannot_hold_is_a_warning() {
     // atof reads `1e999` as infinity, which JSON cannot carry.
-    for expression in ["([a] > 1e999)", r#"([a] IN "1,1e999")"#] {
+    for expression in [
+        "([a] > 1e999)",
+        r#"([a] IN "1,1e999")"#,
+        r#"([a] IN "inf")"#,
+        r#"([a] IN "nan(x)")"#,
+    ] {
         assert_eq!(
             class_expression(expression),
             (
@@ -787,6 +792,16 @@ fn numbers_take_the_lexers_forms_and_lists_split_without_trimming() {
         format!(
             r#"{{"op":"and","args":[{{"op":"in","args":[{A},[0.5,2.0,0.0]]}},{{"op":"<","args":[{A},1.0]}},{{"op":"=","args":[{A},-100.0]}},{{"op":"=","args":[{A},0.0]}}]}}"#
         )
+    );
+}
+
+#[test]
+fn a_numeric_list_reads_each_item_as_atof_does() {
+    // `atof` of each item, as the grammar's `math_exp IN string_exp` reads it (src/mapparser.y):
+    // hexadecimal, leading white space, and a sign, up to where strtod stops.
+    assert_eq!(
+        class_expression(r#"([a] IN "0x10, -0X1p1,+3e1x")"#).1,
+        format!(r#"{{"op":"in","args":[{A},[16.0,-2.0,30.0]]}}"#)
     );
 }
 

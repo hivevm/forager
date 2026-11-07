@@ -2,16 +2,20 @@
 //! of it the list keeps for each text case under `labels/`, and the comparison of Forager's labels
 //! with it that G-10 asks for.
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use forager_engine::CachedLabel;
 use forager_style_ir::Map;
 
-use super::Case;
+use super::{Case, Category, Entry, Listed};
 
 /// How far each edge of a label's box may lie from MapServer's, in pixels (G-10).
 pub const TOLERANCE: f64 = 1.0;
+
+/// How far each edge of a box the reader writes may lie from the record's, in pixels: far below a
+/// pixel, so that an update of the unpinned text libraries that moves no label holds (ADR-0029).
+pub const NOISE: f64 = 1e-6;
 
 /// A label of MapServer's cache, one line of the reader's output.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,12 +29,79 @@ pub struct Recorded {
     pub texts: Vec<String>,
 }
 
+/// The directory of the records beside the list.
+pub fn records_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/conformance/labels")
+}
+
 /// The record of `case`'s labels beside the list: `labels/<directory>/<result>.tsv`.
 pub fn record_path(case: &Case) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/conformance/labels")
-        .join(case.mapfile.trim_end_matches(".map"))
-        .join(format!("{}.tsv", case.result.trim_end_matches(".png")))
+    records_dir().join(record(&case.mapfile, &case.result))
+}
+
+/// The record of the case of `mapfile` and `result`, inside the directory of the records:
+/// `<mapfile without .map>/<result without .png>.tsv`.
+pub fn record(mapfile: &str, result: &str) -> PathBuf {
+    Path::new(mapfile.trim_end_matches(".map"))
+        .join(format!("{}.tsv", result.trim_end_matches(".png")))
+}
+
+/// The files under `dir`, the directory of the records, each relative to it, in their order.
+pub fn records(dir: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, at: &Path, found: &mut Vec<PathBuf>) {
+        for entry in std::fs::read_dir(at).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(dir, &path, found);
+            } else {
+                found.push(path.strip_prefix(dir).unwrap().to_path_buf());
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(dir, dir, &mut found);
+    found.sort();
+    found
+}
+
+/// What does not line up between the text cases in scope of the list, `entries`, and the records
+/// under the directory of the records, `found`, each relative to it: each record that no text
+/// case in scope reads, and each text case in scope without its record, one line each. Empty
+/// when every record is the record of one text case in scope and every such case has its record.
+pub fn unmatched(entries: &BTreeMap<(String, String), Listed>, found: &[PathBuf]) -> Vec<String> {
+    let found: BTreeSet<&PathBuf> = found.iter().collect();
+    let read: BTreeMap<PathBuf, (&String, &String)> = entries
+        .iter()
+        .filter(|(_, listed)| {
+            matches!(
+                listed.entry,
+                Entry::InScope {
+                    category: Category::Text,
+                    ..
+                }
+            )
+        })
+        .map(|((mapfile, result), _)| (record(mapfile, result), (mapfile, result)))
+        .collect();
+    let mut problems: Vec<String> = found
+        .iter()
+        .filter(|path| !read.contains_key(**path))
+        .map(|path| {
+            format!(
+                "labels/{} is the record of no text case in scope of the list",
+                path.display()
+            )
+        })
+        .collect();
+    problems.extend(read.iter().filter(|(path, _)| !found.contains(path)).map(
+        |(path, (mapfile, result))| {
+            format!(
+                "{mapfile} {result} is a text case in scope without its record labels/{}",
+                path.display()
+            )
+        },
+    ));
+    problems
 }
 
 /// Reads the reader's output: one tab-separated line per label, its priority, its layer's index
@@ -103,19 +174,24 @@ fn unescape(field: &str) -> String {
 }
 
 /// What differs between Forager's labels and MapServer's, one line per label, as ADR-0029 pairs
-/// them: by layer, class, and text, the n-th of a key in Forager's walk with the n-th in
+/// them: by priority, layer, class, and text, the n-th of a key in Forager's walk with the n-th in
 /// MapServer's. A pair matches when both are drawn with each edge within [`TOLERANCE`], or when
 /// both are discarded; a label without a partner does not match. Empty when every label matches.
 pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
-    type Key = (usize, usize, String);
+    type Key = (usize, usize, String, u8);
     let mut theirs: BTreeMap<Key, Vec<&Recorded>> = BTreeMap::new();
     for label in mapserver {
-        let key = (label.layer, label.class, label.texts.join("\n"));
+        let key = (
+            label.layer,
+            label.class,
+            label.texts.join("\n"),
+            label.priority,
+        );
         theirs.entry(key).or_default().push(label);
     }
     let mut ours: BTreeMap<Key, Vec<&CachedLabel>> = BTreeMap::new();
     for label in forager {
-        let key = (label.layer, label.class, label.text.clone());
+        let key = (label.layer, label.class, label.text.clone(), label.priority);
         ours.entry(key).or_default().push(label);
     }
     let mut keys: Vec<&Key> = theirs.keys().chain(ours.keys()).collect();
@@ -123,8 +199,8 @@ pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
     keys.dedup();
     let mut differences = Vec::new();
     for key in keys {
-        let (layer, class, text) = key;
-        let name = format!("label {text:?} of layer {layer}, class {class}");
+        let (layer, class, text, priority) = key;
+        let name = format!("label {text:?} of layer {layer}, class {class}, priority {priority}");
         let ms = theirs.get(key).map_or(&[][..], Vec::as_slice);
         let fg = ours.get(key).map_or(&[][..], Vec::as_slice);
         for n in 0..ms.len().max(fg.len()) {
@@ -159,6 +235,45 @@ pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
             if let Some(difference) = difference {
                 differences.push(format!("{name}{nth}: {difference}"));
             }
+        }
+    }
+    differences
+}
+
+/// What differs between MapServer's labels as the record holds them, `record`, and as the reader
+/// writes them in the noise measurement, `output`, one line each, named by its line: ADR-0029
+/// holds the priority, the layer's index and name, the class, the drawn state, the texts, and the
+/// order exactly, and each edge of each box within [`NOISE`]. Empty when the output holds the
+/// record.
+pub fn beyond_noise(record: &[Recorded], output: &[Recorded]) -> Vec<String> {
+    let mut differences = Vec::new();
+    for n in 0..record.len().max(output.len()) {
+        let line = n + 1;
+        let difference = match (record.get(n), output.get(n)) {
+            (Some(a), Some(b)) => {
+                let fields = a.priority == b.priority
+                    && a.layer == b.layer
+                    && a.layer_name == b.layer_name
+                    && a.class == b.class
+                    && a.texts == b.texts
+                    && a.drawn.is_some() == b.drawn.is_some();
+                if !fields {
+                    Some(format!("the record holds {a:?}, the reader {b:?}"))
+                } else if let (Some(x), Some(y)) = (a.drawn, b.drawn) {
+                    let off = distance(&x, &y);
+                    (off > NOISE).then(|| {
+                        format!("the reader's box {y:?} lies {off:e} px from the record's {x:?}")
+                    })
+                } else {
+                    None
+                }
+            }
+            (Some(a), None) => Some(format!("only the record holds {a:?}")),
+            (None, Some(b)) => Some(format!("only the reader writes {b:?}")),
+            (None, None) => None,
+        };
+        if let Some(difference) = difference {
+            differences.push(format!("line {line}: {difference}"));
         }
     }
     differences

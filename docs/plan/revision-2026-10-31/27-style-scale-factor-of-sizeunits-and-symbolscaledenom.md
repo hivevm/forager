@@ -14,6 +14,10 @@ the bounds apart from it, or leave such styles out with a diagnostic, as their l
 the first may need the style IR to carry the `SIZEUNITS` of a class, a style, and a label, which it
 holds only for a layer, and the second is a new diagnostic.
 
+The revision of 2026-11-07 found the label's styles assuming the map's factor in three places, all
+of which move with this ticket: `Styled::new` and `LabelStyles::bound_marker` in
+`crates/engine/src/label_styles.rs`, and the comment of `draw_label_poly` there.
+
 ## Acceptance criteria
 
 - [ ] Given a point layer with `SYMBOLSCALEDENOM 25000`, a style of `SIZE 10`, a map at 1:50000 and

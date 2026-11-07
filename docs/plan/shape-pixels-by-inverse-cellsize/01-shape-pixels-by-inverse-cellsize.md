@@ -3,7 +3,7 @@
 ## What to build
 
 The engine puts a line's or polygon's vertices, and a hatch's rings, at pixels through
-`View::to_pixel`, which divides by the cellsize (`crates/engine/src/draw.rs:249`, the `pixels`
+`View::to_pixel`, which divides by the cellsize (`crates/symbolize/src/draw.rs:249`, the `pixels`
 closure, and `:327`, `hatch_rings`' `to_pixels`). MapServer's AGG renderer defaults to the transform
 mode `MS_TRANSFORM_SIMPLIFY` (`mapagg.cpp:1420`); `msImageStartLayer` (`src/mapdraw.c:4201-4221`)
 keeps that default for a layer without the `PROCESSING` key `APPROXIMATION_SCALE`, and sets
@@ -20,7 +20,7 @@ The ticket covers layers without `APPROXIMATION_SCALE`: the style IR carries no 
 the kind, so every layer the engine draws is one. It moves the arithmetic only;
 `msTransformShapeSimplify`'s dropping of vertices less than a pixel from their predecessor is not
 part of it. `View::to_pixel` stays: it is public through `crates/engine/src/lib.rs:36`, and the
-tests at `crates/engine/src/extent.rs:109-131` use it, so its removal is a change of the engine's
+tests at `crates/symbolize/src/extent.rs:109-131` use it, so its removal is a change of the engine's
 interface of its own.
 
 ## Acceptance criteria
@@ -39,7 +39,7 @@ interface of its own.
 
 - `msTransformShapeSimplify` and `msTransformShape`, `mapprimitive.cpp:948-1084`;
   `mapagg.cpp:1420`; `msImageStartLayer`, `src/mapdraw.c:4201-4221`, at the pin.
-- `crates/engine/src/extent.rs` (`to_pixel`, `point_to_pixel`), `crates/engine/src/draw.rs`.
+- `crates/symbolize/src/extent.rs` (`to_pixel`, `point_to_pixel`), `crates/symbolize/src/draw.rs`.
 - #159, which moved the label cache's point onto `point_to_pixel`.
 
 ## Blocked by
@@ -49,7 +49,7 @@ interface of its own.
 ## Mode
 
 unattended: engine tests whose values come from the C arithmetic decide each criterion; the change
-stays in `crates/engine/src/draw.rs`, undone by one revert. It touches nothing
+stays in `crates/symbolize/src/draw.rs`, undone by one revert. It touches nothing
 [ADR-0007](../../adr/0007-harness.md) keeps with the human: no resource limit, port, public
 interface or style document format, only the arithmetic by which the engine places what it already
 draws. Its branch counts against ADR-0007's cap of three open agent branches. A wrong result shows
