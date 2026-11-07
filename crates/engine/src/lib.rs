@@ -25,6 +25,7 @@ use forager_ports::{
     Feature, FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
+use forager_style_ir::c::ms_nint;
 use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
 
 use forager_expr::Evaluator;
@@ -323,7 +324,7 @@ impl Drawing<'_> {
         };
         canvas.in_own_image();
         // aggCompositeRasterBufferNoPixman lays the layer over at MS_NINT(opacity × 2.55).
-        let alpha = classes::ms_nint(f64::from(opacity) * 2.55);
+        let alpha = ms_nint(f64::from(opacity) * 2.55);
         Target::Layer(renderer.layer(alpha.clamp(0, 255) as u8))
     }
 

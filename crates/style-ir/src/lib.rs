@@ -4,6 +4,7 @@
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
+pub mod c;
 mod diagnostic;
 mod document;
 mod expression;

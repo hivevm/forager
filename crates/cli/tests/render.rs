@@ -159,3 +159,52 @@ fn the_fonts_a_label_names_are_read_from_the_base_context() {
         );
     }
 }
+
+#[test]
+fn a_numeric_in_list_reads_its_items_as_atof_does() {
+    // Verifies: ADR-0037
+    // The grammar's `math_exp IN string_exp` compares the number with `atof` of
+    // each item, so `0x10` reads 16, as the frontend folds it at load and `expr` reads it.
+    let dir = std::env::temp_dir().join(format!("forager-in-hex-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("in.map"),
+        r#"MAP
+  EXTENT 0 0 100 100
+  SIZE 101 101
+  IMAGECOLOR 255 255 255
+  LAYER
+    NAME "areas"
+    TYPE POLYGON
+    STATUS ON
+    CLASS
+      EXPRESSION ([n] IN "0x10,1")
+      STYLE
+        COLOR 255 0 0
+      END
+    END
+  END
+END
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("areas.geojson"),
+        r#"{"type": "Feature", "properties": {"n": 16}, "geometry": {"type": "Polygon",
+            "coordinates": [[[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}}"#,
+    )
+    .unwrap();
+    let output = dir.join("in.png");
+    let areas = format!("areas={}", dir.join("areas.geojson").display());
+    let result = Command::new(env!("CARGO_BIN_EXE_forager"))
+        .arg("render")
+        .arg(dir.join("in.map"))
+        .args(["--source", &areas, "-o"])
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    let image = forager_encode::decode_png(&std::fs::read(&output).unwrap()).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(image.pixel(50, 50), Some(Rgba::opaque(255, 0, 0)));
+}

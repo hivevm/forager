@@ -21,7 +21,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use forager_expr::atof;
 use forager_label::{
     Align, Anchor, Font, Glyphs, Layout, LineError, MAX_LABELS, MAX_PRIORITY, Member, Members,
     Offsets, Placement, PointLabel, Position, TextBox, TextPath, draw_label_cache, glyph_size,
@@ -29,6 +28,7 @@ use forager_label::{
 };
 use forager_ports::{Feature, Properties, ResourceLoader, Value};
 use forager_render::{DisplayItem, Draw, DrawOp, GlyphOutline, Point};
+use forager_style_ir::c::{atof, ms_nint};
 use forager_style_ir::{
     Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Layer, Map, Op,
     Position as IrPosition, Rgba, Span, Style, Units,
@@ -388,7 +388,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         // msDrawTextSymbol's outline width, `MS_NINT(outlinewidth * (glyph_size / size))`, and
         // AGG's contour one pixel wider.
         let outline = bound.outline_color.map(|color| {
-            let ow = lrint_int(fixed.outline_width * (glyph_size / bound.size));
+            let ow = ms_nint(fixed.outline_width * (glyph_size / bound.size));
             (color, ow.wrapping_add(1))
         });
         let template = Cached {
@@ -1000,18 +1000,6 @@ fn settle(
     Ok((position, align, marker))
 }
 
-/// `MS_NINT` into an `int`, as the x86-64 build at the pin computes it: `lrint`, half to even,
-/// gives a `long`, `LONG_MIN` for a value past one or no number, and the `long` narrowed to an
-/// `int` keeps its low 32 bits.
-fn lrint_int(x: f64) -> i32 {
-    let r = x.round_ties_even();
-    if (-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(&r) {
-        (r as i64) as i32
-    } else {
-        0
-    }
-}
-
 /// A C `(int)` cast of a `double`, as the x86-64 build at the pin computes it: `cvttsd2si`
 /// truncates toward zero, and gives `INT_MIN` for a value past an `int` or no number.
 fn int_cast(x: f64) -> i32 {
@@ -1028,7 +1016,7 @@ fn bound_integer(text: &[u8], unset: i32) -> i32 {
     if text.is_empty() {
         unset
     } else {
-        lrint_int(atof(text))
+        ms_nint(atof(text))
     }
 }
 

@@ -388,7 +388,7 @@ fn a_hatch_bounds_its_width_and_spacing_as_ms_draw_shade_symbol_does() {
     // property that reads as `nan`, which atof() reads as NaN, are no number at or below 0 and
     // are scaled; MS_MIN with the upper bound times the resolution factor, then MS_MAX with the
     // lower, make them MAXWIDTH and MAXSIZE; a MINWIDTH or MINSIZE above the upper bound wins.
-    let nan = forager_expr::atof(b"nan");
+    let nan = forager_style_ir::c::atof(b"nan");
     let bounded = |value: f64, min: f64, max: f64| Style {
         min_size: Some(min),
         max_size: Some(max),

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use super::*;
+use crate::pattern::MAX_PATTERN_BYTES;
 
 /// A feature's properties by exact name.
 struct Props(BTreeMap<&'static str, &'static str>);
@@ -159,9 +160,22 @@ fn the_functions_follow_mapserver() {
         number(&call(Op::Round, vec![num(35.0), num(10.0)])),
         Ok(40.0)
     );
+    // MS_NINT is lrint, which on the x86-64 build at the pin gives LONG_MIN past a long and for
+    // no number; ROUND keeps that long as a double (ADR-0037).
+    let long_min = -9_223_372_036_854_775_808.0;
+    assert_eq!(number(&call(Op::Round, vec![num(1e19)])), Ok(long_min));
+    assert_eq!(number(&call(Op::Round, vec![num(-1e300)])), Ok(long_min));
+    assert_eq!(number(&call(Op::Round, vec![num(f64::NAN)])), Ok(long_min));
     assert_eq!(
-        number(&call(Op::Round, vec![num(1.0), num(0.0)])),
-        Err(Failure::Undefined)
+        number(&call(Op::Round, vec![num(3e9)])),
+        Ok(3_000_000_000.0)
+    );
+    // 1 / 0 is an infinity, and LONG_MIN × 0 is -0.
+    let zero = number(&call(Op::Round, vec![num(1.0), num(0.0)]));
+    assert!(
+        zero.as_ref()
+            .is_ok_and(|&z| z == 0.0 && z.is_sign_negative()),
+        "{zero:?}"
     );
     assert_eq!(text(&call(Op::Upper, vec![s("r\u{e9}d")])), "R\u{e9}D");
     assert_eq!(text(&call(Op::Lower, vec![s("R\u{c9}D")])), "r\u{c9}d");

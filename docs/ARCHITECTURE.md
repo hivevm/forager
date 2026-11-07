@@ -42,8 +42,11 @@ golden path and the test pattern an agent copies from are named here.
   `schema` feature derives the JSON Schema of the current format version with schemars, checked
   in under `schema/`; `tests/schema.rs` compares a fresh derivation with that file on every push
   and, once a release tag `v<semver>` holds schema files, freezes them and asks for the bump the
-  change since the last release needs. The browser bindings never enable the feature. It
-  depends on no other crate of the workspace.
+  change since the last release needs. The browser bindings never enable the feature. Its
+  module `c.rs` ports C's reading of numbers once for the frontend and the core: glibc's
+  `strtod`, `atof`, and `atoi`, and MapServer's `MS_NINT` as `lrint` on x86-64 narrowed to an
+  `int` ([ADR-0037](adr/0037-c-number-reading-in-style-ir.md)). It depends on no other crate of
+  the workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
   resolver — with the features a source delivers, their geometries and properties
   ([ADR-0026](adr/0026-feature-properties-at-the-port.md)), and the resource path that
@@ -70,10 +73,10 @@ golden path and the test pattern an agent copies from are named here.
 - **`expr`** — evaluates the style IR's expressions against a feature's properties, which it
   reads through a trait of its own, as MapServer's parser evaluates its expressions, and matches
   `regexp_like` with the `regex` crate in byte mode, each pattern compiled once per render
-  ([ADR-0031](adr/0031-expression-evaluator.md)); C's `atof`, `printf`, and `strptime` it needs
-  are ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax in `pattern.rs`; its `atof`
-  and `atoi` it also lends to the engine, which reads a style's or a label's bound values with
-  them. Synchronous, without I/O; the only crate that uses `regex`.
+  ([ADR-0031](adr/0031-expression-evaluator.md)); C's `printf` and `strptime` it needs are
+  ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax in `pattern.rs`, and it reads
+  numbers with `style-ir`'s `c.rs`, as the engine reads a style's or a label's bound values.
+  Synchronous, without I/O; the only crate that uses `regex`.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, or, for a layer with inline features, a source
   in memory of its own over them, which reports a bound source as not read (`inline.rs`,
@@ -170,7 +173,9 @@ golden path and the test pattern an agent copies from are named here.
   `render-agg` (ADR-0032), and requires every crate of the IR and the core to turn on the lints of
   `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them nowhere but
   the one test time bound it names; the frontend, the ports, the adapters, and the hosts are not
-  held to the ban.
+  held to the ban. `tests/c_numbers.rs` refuses a function `atof`, `atoi`, `strtod`, `lrint`, or
+  `ms_nint`, or one named `lrint_…` or `ms_nint_…`, defined outside `style-ir`'s `c.rs`
+  (ADR-0037).
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on

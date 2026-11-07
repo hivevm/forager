@@ -506,7 +506,7 @@ fn a_symbol_bounds_its_size_and_outline_as_compute_symbol_style_does() {
     // lower bound times the resolution factor, then MS_MIN with the upper. A SIZE and a WIDTH bound
     // to a property that reads as `nan`, which atof() reads as NaN, become MINSIZE and MINWIDTH;
     // a MAXSIZE or MAXWIDTH below the lower bound wins.
-    let nan = forager_expr::atof(b"nan");
+    let nan = forager_style_ir::c::atof(b"nan");
     let bounded = |size: f64, width: f64, min: f64, max: f64| Style {
         size: Some(Bound::Value(size)),
         width: Some(Bound::Value(width)),

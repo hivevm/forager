@@ -122,13 +122,15 @@ condition as `true` or `false` and a number as `%g`. A whole expression that is 
 when it is not 0, one that is a string always.
 
 **Operators.** `in` compares the value to each item as it stands, untrimmed, by `strcmp` or as
-doubles. `%` is `(int)a % (int)b`; `/` and `%` by zero, a `%` operand past an `int`, and `round`
-past a `long` are undefined in C, and fail the expression. `^` is `pow`. `AND`, `OR`, and `NOT`
+doubles. `%` is `(int)a % (int)b`; `/` and `%` by zero and a `%` operand past an `int` are
+undefined in C, and fail the expression. `^` is `pow`. `AND`, `OR`, and `NOT`
 take conditions; the grammar evaluates every operand before an operator, so a failure anywhere in
 the tree, `false AND 1/0 <> 0` included, fails the whole expression, which then does not match.
 
-**Functions.** `length` counts bytes. `round(x)` is `MS_NINT`, `lrint` at the pin, half to even;
-`round(x, n)` is `MS_NINT(x / n) * n`. `upper`, `lower`, `initcap`, and `firstcap` change ASCII
+**Functions.** `length` counts bytes. `round(x)` is `MS_NINT`, `lrint` at the pin, half to even,
+its `long` kept as a double; past a `long`, and for no number, `lrint` on x86-64 gives `LONG_MIN`,
+-9223372036854775808. `round(x, n)` is `MS_NINT(x / n) * n`, so `round(1, 0)` is `LONG_MIN × 0`,
+-0. `upper`, `lower`, `initcap`, and `firstcap` change ASCII
 letters byte by byte, `initcap` starting a word after each space. `commify` places a comma before
 every third character left of the decimal point as `msCommifyString` does, a sign counted as a
 digit (`-123456` is `-,123,456`), and leaves a text with two points, or none before its point, as

@@ -1,6 +1,6 @@
 # ADR-0037: C's reading of numbers is ported once, in `style-ir`, for the frontend and the core alike
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** the ports of C's `atof`, `strtod`, `atoi`, and MapServer's `MS_NINT` in `crates/style-ir`, `crates/expr`, `crates/mapfile`, and `crates/engine`
@@ -37,8 +37,16 @@ Questions the maintainer settled:
 3. Which behaviour of `MS_NINT` past a `long` is the pin's on the targets Forager builds for:
    C leaves it undefined, and the three copies chose three answers.
 
-The decision answers the first: the module lives in `style-ir`, with no new crate. The second and
-third are left to the ticket that implements it, which reads them from the pin.
+The decision answers all three, the second and third as read from the pin. The module lives in
+`style-ir`, with no new crate. The frontend keeps folding a numeric `IN` list at load, with that
+module's `atof`: the pin reads each item with `atof` as it evaluates (`math_exp IN string_exp` in
+`src/mapparser.y`), and `atof` of a literal gives the same value every time; an item it reads as no
+finite number stays refused, as JSON cannot carry it. `MS_NINT` is `lrint` in the pin's Linux
+build (`src/mapserver.h` with `HAVE_LRINT`), which on x86-64 gives `LONG_MIN` past a `long` and
+for NaN; the module ports `lrint` to a 64-bit integer with that bound, and `ms_nint` as its low 32
+bits, as GCC narrows it into an `int`; `expr`'s `ROUND` keeps the `long` as a double. The basis is
+x86-64, where the references are rendered (ADR-0027): glibc's `lrint` on AArch64 saturates
+instead, which is not the reference's behaviour.
 
 ## Decision
 
@@ -62,8 +70,10 @@ of the revision of 2026-10-24 takes up.
 ## Sources / Prior art
 
 - glibc's `strtod` and `atof`, and MapServer's `MS_NINT` at the pin, as the existing ports cite
-  them in their comments; where MapServer calls each was not re-read for this proposal and is
-  the first step of its implementation.
+  them in their comments; read at `rel-8-6-6`: `bindIntegerAttribute` and `bindStyle` in
+  `src/maputil.c`, `ROUND` and `IN` in `src/mapparser.y`, `MS_NINT` in `src/mapserver.h`, and
+  `HAVE_LRINT` in `CMakeLists.txt` and `src/mapserver-config.h.in`; glibc's `lrint` checked on
+  x86-64.
 - The design revision of 2026-10-31, its survey of `crates/mapfile`, `crates/expr`, and
   `crates/engine`.
 
@@ -73,11 +83,12 @@ of the revision of 2026-10-24 takes up.
   `0x10` alike; `expr`'s public surface shrinks to evaluation.
 - Negative / trade-offs: the IR crate carries behaviour that is not the data model; every crate
   depends on it already, so no edge is added.
-- Follow-ups: the ticket that moves the copies onto the module, and the choice of question 3 as a
-  test of its own.
+- Follow-ups: none.
 
 ## Enforcement
 
-A test in `crates/arch-test` refuses a function named `atof`, `atoi`, `ms_nint`, or `lrint` defined
-outside the module of `style-ir`, citing this ADR with `Verifies: ADR-0037`; the module's tests
-cover each branch of the C functions it ports.
+A test in `crates/arch-test` refuses a function named `atof`, `atoi`, `strtod`, `ms_nint`, or
+`lrint`, or one whose name starts with `lrint_` or `ms_nint_`, defined outside the module
+`crates/style-ir/src/c.rs`, citing this ADR with `Verifies: ADR-0037`; the module's tests cover
+each branch of the C functions it ports. A rounding written inline under another name is beyond
+the test, and review.

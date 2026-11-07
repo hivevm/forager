@@ -22,8 +22,9 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
-use forager_expr::{Evaluator, Failure, Lookup, atof, atoi};
+use forager_expr::{Evaluator, Failure, Lookup};
 use forager_ports::{Feature, Properties, Value};
+use forager_style_ir::c::{atof, atoi, ms_nint};
 use forager_style_ir::{
     Bound, Diagnostic, Expr, Layer, LineOffset, Map, Rgba, Span, Style, Symbol, SymbolRef, Units,
 };
@@ -349,11 +350,6 @@ pub(crate) fn with_opacity(style: Cow<'_, Style>) -> Cow<'_, Style> {
         }
     }
     Cow::Owned(style)
-}
-
-/// `MS_NINT`, which is `lrint` in the build at the pin: the nearest integer, half to even.
-pub(crate) fn ms_nint(x: f64) -> i32 {
-    x.round_ties_even() as i32
 }
 
 /// `style`, which [`varies`] by no feature, as bindStyle leaves it for any: its opacity applied

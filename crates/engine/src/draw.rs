@@ -1607,7 +1607,7 @@ mod tests {
     /// reads as no number, `nan`, which atof() reads as NaN.
     fn bounded_nan(min_width: f64, max_width: f64, outline: Option<Rgba>) -> Style {
         Style {
-            width: Some(Bound::Value(forager_expr::atof(b"nan"))),
+            width: Some(Bound::Value(forager_style_ir::c::atof(b"nan"))),
             min_width: Some(min_width),
             max_width: Some(max_width),
             ..colored(Some(BLUE), outline)

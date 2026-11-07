@@ -786,7 +786,7 @@ fn recorded(map: &Map, geojson: &str) -> Vec<forager_render::DrawOp> {
 /// One feature named "Fen" at the pixel (80, 29).
 const FEN: &str = r#"{"type": "Feature", "properties": {"name": "Fen", "pos": "ul",
     "x": "2.5", "y": "-3.5", "size": "14", "angle": "30", "outline": "255 255 0",
-    "align": "right", "bad": "zz"},
+    "align": "right", "bad": "zz", "op": "3e9"},
     "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
 
 /// The path of `text` in the test font at a glyph size of `size`, laid out on one line and drawn
@@ -1810,6 +1810,26 @@ fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
         ops[0],
         forager_render::DrawOp::Fill { color, .. } if color == Rgba::opaque(255, 255, 0)
     ));
+}
+
+#[test]
+fn a_label_styles_opacity_past_an_int_is_rounded_as_a_class_styles_is() {
+    // Verifies: ADR-0037
+    // bindStyle rounds a label's style as it rounds a class's: MS_NINT(atof("3e9")) in an int is
+    // -1294967296, and the alpha MS_NINT(-1294967296 × 2.55) keeps 179 in a byte.
+    let style = Style {
+        opacity: Some(binding("op")),
+        ..labelpoly(Bound::Value(GREEN))
+    };
+    let (_, ops) = draw_fen(fen_styled(vec![style]));
+    assert!(
+        matches!(
+            ops[0],
+            forager_render::DrawOp::Fill { color, .. } if color == Rgba { a: 179, ..GREEN }
+        ),
+        "{:?}",
+        ops[0]
+    );
 }
 
 #[test]

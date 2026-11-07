@@ -12,7 +12,9 @@ included, with `opacity × 2.55` rounded (`loadStyle` at its `END`, and `bindSty
 The engine applies it as it binds the style to a feature: a bound opacity is the property's
 number rounded as `bindIntegerAttribute` rounds it, 100 where the property is empty, and is not
 bounded; `opacity × 2.55` is rounded by `MS_NINT`, `lrint` in the build at the pin, so 50 gives
-127.
+127. Both are stored in an `int`, which keeps the low 32 bits of `lrint`'s `long`, and `lrint` on
+x86-64 gives `LONG_MIN` past a `long`: an opacity bound to `3e9` is -1294967296, below 100, and
+one past a `long` is 0.
 
 **Where:** `LAYER`'s `COMPOSITE` block. **IR:** the layer's `opacity`, percent, a number.
 
