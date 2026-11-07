@@ -19,6 +19,18 @@ that hold a value they state, in `docs/CONVENTIONS.md`):
   inside it, with one priority and no MultiPoint, though its comment says it holds the ink to the
   pixel and the order of the cache's walk.
 
+The revision of 2026-11-07 found more of the same in `crates/engine/tests/labels.rs` and
+`pixmaps.rs`:
+
+- `a_label_of_labelcache_off_stands_by_its_position_and_offset_alone` pins only the left and
+  bottom edges, and holds the rest as `boxes[0] == boxes[1]` and `boxes[1] + 10`;
+- `a_label_of_labelcache_off_draws_its_styles_before_its_text` holds the `labelcenter` marker's
+  centre only against the labelpoly's, within one pixel;
+- `a_layer_of_labelcache_off_draws_every_label_in_the_order_of_its_features` asserts only a count
+  above zero;
+- the tests of `crates/engine/tests/pixmaps.rs` that a parameter has no effect compare one render
+  with another and pin no pixel of either.
+
 Give each a value it states, taken from MapServer's arithmetic read at the pin, or from a render of
 `map2img` the pull request names, beside the relation where the relation says something more.
 

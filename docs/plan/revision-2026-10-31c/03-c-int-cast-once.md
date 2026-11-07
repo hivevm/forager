@@ -25,6 +25,13 @@ functions by name, are sites to judge here too, each against the C it follows an
 (`crates/label/src/size.rs:34` and `:40`), and the dash lengths of the AGG renderer
 (`crates/render-agg/src/lib.rs:151`), which are clamped on purpose (Q-3, Q-9).
 
+The revision of 2026-11-07 found further sites written inline: a range-checked `(int)` in
+`modulo` (`crates/expr/src/lib.rs`), `.trunc()` standing for an `(int)` in
+`crates/symbolize/src/hatch.rs` and for C's assignment to an `int` in
+`crates/symbolize/src/symbol.rs`, and AGG's `uround` written `as u32` in `symbol.rs`. Its ticket
+`docs/plan/revision-2026-11-07/08-mapserver-macros-ported-once.md` places `MS_MIN`, `MS_MAX`, and
+`MS_DEG_TO_RAD` in the same module; fold the two drafts of ADR-0037 into one where both are open.
+
 Draft for the maintainer a revision of ADR-0037 that adds the `(int)` cast to the ports it places,
 with the sites above; once it is settled, move `int_cast` and each site onto it, and add the check:
 for example clippy's `cast_possible_truncation` in `engine` and `label`, with the index casts it

@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-10-31, due after 20 changes. The revision that ran moves the
+> **Last design revision:** 2026-11-07, due after 20 changes. The revision that ran moves the
 > date; the number is this project's to set; a sensor counts the changes outside `docs/` since
 > the commit that set the date and says when the next is due
 > ([ADR-0006](adr/0006-feature-layer.md)).
@@ -94,9 +94,10 @@ golden path and the test pattern an agent copies from are named here.
   and on the bytes one render's images come to (`images.rs`,
   [ADR-0040](adr/0040-a-decoded-pixmap-is-held-once-per-render.md)); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0028), and
-  those of a point layer of `LABELCACHE OFF` after each feature, untested, where
-  `pointLayerDrawShape` draws them after each point ([label.md](semantics/label.md)): it holds
-  each label as its glyphs' indices and its point, draws each glyph once per font and size, and
+  those of a point layer of `LABELCACHE OFF` after each feature, without a test against other
+  labels, markers, or the image's edge, where `pointLayerDrawShape` draws them after each point
+  ([label.md](semantics/label.md)): it holds each label as its glyphs' indices and its point,
+  draws each glyph once per font and size, and
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
   diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does: a
   `labelpoly` style on the box around the text, a `labelpoint` style's marker at the label's
@@ -128,7 +129,8 @@ golden path and the test pattern an agent copies from are named here.
   A line style's symbol with a `GAP` it places along the line; those markers and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS` (Q-9). Its modules import
   one another in one direction only, `draw.rs` at the top and `bounds.rs`, `style.rs`,
-  `extent.rs`, and `offset.rs` the leaves (ADR-0009).
+  `extent.rs`, and `offset.rs` the leaves; no check holds that direction, which ADR-0009 decides
+  only between crates.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
   FreeType's arithmetic, laid out by their advances, broken into lines at the label's `WRAP`
@@ -158,7 +160,8 @@ golden path and the test pattern an agent copies from are named here.
   its polygon with i_overlay, the one crate that depends on it (ADR-0032).
 - **`encode`** — PNG from and to an RGBA image, and a pixmap symbol's PNG decoded as MapServer's
   `readPNG` decodes it, premultiplied, its header held to Q-9's 4096 × 4096 before anything is
-  allocated for it (`pixmap.rs`, [ADR-0017](adr/0017-png-crate.md)).
+  allocated for it (`pixmap.rs`, [ADR-0017](adr/0017-png-crate.md),
+  [ADR-0040](adr/0040-a-decoded-pixmap-is-held-once-per-render.md)).
 - **`adapter-geojson`** — a feature source over a GeoJSON document
   ([ADR-0016](adr/0016-geojson-crate.md)).
 - **`adapter-shapefile`** — a feature source over an ESRI shapefile, its `.shp`, `.shx`, and
@@ -184,14 +187,17 @@ golden path and the test pattern an agent copies from are named here.
   `scripts/build-web.sh` builds it into `target/web/`.
 - **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out. The
   page shows the image, and a Leaflet map whose tiles each call the bindings with the tile's
-  extent; Leaflet is a vendored copy that `scripts/check-vendor.sh` checks by checksum
+  extent; its labels use the font DejaVu Sans, which the page hands in beside the mapfile. Leaflet
+  and the font are vendored copies that `scripts/check-vendor.sh` checks by checksum
   ([ADR-0021](adr/0021-vendored-leaflet.md)).
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`
   ([ADR-0015](adr/0015-agg-rust-rasterizer.md)), skrifa outside `label` (ADR-0028), `regex`
   outside `expr` ([ADR-0031](adr/0031-expression-evaluator.md)), and i_overlay outside
-  `render-agg` (ADR-0032), and requires every crate of the IR and the core to turn on the lints of
+  `render-agg` (ADR-0032), and `adapter-shapefile` as a dependency of `bindings-wasm`
+  ([ADR-0038](adr/0038-browser-bindings-bind-geojson-only.md)), and requires every crate of the IR
+  and the core to turn on the lints of
   `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them nowhere but
   the one test time bound it names; the frontend, the ports, the adapters, and the hosts are not
   held to the ban. `tests/c_numbers.rs` refuses a function `atof`, `atoi`, `strtod`, `lrint`, or
