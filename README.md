@@ -95,14 +95,18 @@ square.map:23:5: warning [layer-skipped]: layer `unbound` (source local) is skip
 ```
 
 The browser example below shows more of what the engine draws: classes picked by expression,
-symbols, dashes, hatches, opacity, and labels.
+scale ranges, symbols along lines and at their ends, dashes, hatches, opacity, and labels that
+the label cache places by priority.
 
 Render in the browser: build the WebAssembly bundle, start the local server, and open
-<http://127.0.0.1:8000/>. The page loads a sample mapfile with GeoJSON for its four layers, and
-the font set and font its labels use; edit the mapfile or the GeoJSON and press **Render**.
-Below the image, a [Leaflet](https://leafletjs.com/) map pans and zooms over the same map, each
-tile rendered by Forager for its extent; Leaflet and the font DejaVu Sans are checked copies
-under `examples/web/vendor/` ([ADR-0021](docs/adr/0021-vendored-leaflet.md)).
+<http://127.0.0.1:8000/>. The page loads a sample mapfile with GeoJSON for its five layers, a
+synthetic landscape of land use, rivers, buildings, roads, and a few hundred named places that
+`scripts/generate-example.sh` generates from a fixed seed, and the font set and font its labels
+use; edit the mapfile or the GeoJSON and press **Render**. At the top of the page, a
+[Leaflet](https://leafletjs.com/) map pans and zooms over the same map, from zoom 0, one map unit
+a pixel, with streets and houses a few levels in, each tile rendered by Forager for its extent;
+Leaflet and the font DejaVu Sans are checked copies under `examples/web/vendor/`
+([ADR-0021](docs/adr/0021-vendored-leaflet.md)).
 
 ```console
 $ bash scripts/build-web.sh
@@ -127,7 +131,7 @@ docs/CONVENTIONS.md   # how this project writes what no check decides, kept curr
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
 docs/plan/            # feature specs and their tickets, deleted as their work lands (ADR-0006)
-examples/web/         # the browser example: a page, a sample mapfile, its GeoJSON, vendored Leaflet and font
+examples/web/         # the browser example: a page, a sample mapfile, its generated GeoJSON, vendored Leaflet and font
 fuzz/                 # the fuzz targets of Q-3, run weekly by scripts/fuzz.sh (own workspace)
 Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0009)
 crates/               # the crates, one per responsibility: style-ir, mapfile, engine, cli, …

@@ -187,9 +187,14 @@ golden path and the test pattern an agent copies from are named here.
   `scripts/build-web.sh` builds it into `target/web/`.
 - **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out. The
   page shows the image, and a Leaflet map whose tiles each call the bindings with the tile's
-  extent; its labels use the font DejaVu Sans, which the page hands in beside the mapfile. Leaflet
-  and the font are vendored copies that `scripts/check-vendor.sh` checks by checksum
-  ([ADR-0021](adr/0021-vendored-leaflet.md)).
+  extent, grown by a buffer of a tile on every side that it cuts away, so that the label cache
+  places a label beside a tile's edge as the neighbouring tile does; its labels use the font
+  DejaVu Sans, which the page hands in beside the mapfile. Leaflet and the font are vendored
+  copies that `scripts/check-vendor.sh` checks by checksum
+  ([ADR-0021](adr/0021-vendored-leaflet.md)). The sample's GeoJSON is a synthetic landscape of
+  4000 × 2500 map units that `scripts/generate-example.sh` writes from a fixed seed in bash and
+  awk; `scripts/test-generate-example.sh` holds two runs of it to each other and to the
+  checked-in files.
 - **`arch-test`** — the dependency test of [ADR-0009](adr/0009-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`

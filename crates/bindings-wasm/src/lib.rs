@@ -588,11 +588,13 @@ mod example {
 
     const MAPFILE: &str = include_str!("../../../examples/web/sample.map");
 
-    /// The layers' GeoJSON the page under `examples/web/` binds by name.
+    /// The layers' GeoJSON the page under `examples/web/` binds by name, which
+    /// `scripts/generate-example.sh` writes.
     fn sources() -> String {
         serde_json::json!({
-            "areas": include_str!("../../../examples/web/areas.geojson"),
-            "river": include_str!("../../../examples/web/river.geojson"),
+            "landuse": include_str!("../../../examples/web/landuse.geojson"),
+            "rivers": include_str!("../../../examples/web/rivers.geojson"),
+            "buildings": include_str!("../../../examples/web/buildings.geojson"),
             "roads": include_str!("../../../examples/web/roads.geojson"),
             "places": include_str!("../../../examples/web/places.geojson"),
         })
@@ -625,49 +627,60 @@ mod example {
 
     /// The page's tile view renders each tile with its edges moved in by half a pixel, and with
     /// a buffer of `TILE_BUFFER` pixels around it that it cuts away, so that a label beside a
-    /// tile's edge is placed as its neighbour places it; at this scale, where the buffer holds
-    /// nearly the whole map, two neighbouring tiles then match one image of both, drawn the same
-    /// way, within rounding. Zoomed in further, a tile cuts the dashed trail, and its dashes start
-    /// again at the cut, as MapServer clips a line before it dashes it; this test holds no such
-    /// scale.
+    /// tile's edge is placed as its neighbour places it, as long as a label and the labels it
+    /// gives way to reach less far than the buffer; two neighbouring tiles then match one image
+    /// of both, drawn the same way, within rounding. A tile that cuts a dashed line starts its
+    /// dashes again at the cut, as MapServer clips a line before it dashes it, and a label the
+    /// buffer does not hold may stand otherwise; the edges below are chosen clear of both, which
+    /// the test cannot hold for every edge.
     #[test]
     fn neighbouring_tiles_meet_without_a_seam() {
-        // The page's `TILE_BUFFER`.
-        const BUFFER: u32 = 128;
+        // The page's `TILE_BUFFER`, and Leaflet's tile of 256 pixels.
+        const BUFFER: u32 = 256;
+        const TILE: u32 = 256;
         let (sources, files) = (sources(), files());
-        let draw = |min_x: f64, max_x: f64, width: u32| {
-            let pixel = (max_x - min_x) / f64::from(width);
+        // The image of `tiles` tiles across from (min_x, min_y), each `unit` map units wide.
+        let draw = |min_x: f64, min_y: f64, unit: f64, tiles: u32| {
+            let pixel = unit / f64::from(TILE);
             let grown = pixel * f64::from(BUFFER);
             let viewport = Viewport {
-                size: Some([width + 2 * BUFFER, 256 + 2 * BUFFER]),
+                size: Some([tiles * TILE + 2 * BUFFER, TILE + 2 * BUFFER]),
                 extent: Some(Extent {
                     min_x: min_x - grown + pixel / 2.0,
-                    min_y: -grown + pixel / 2.0,
-                    max_x: max_x + grown - pixel / 2.0,
-                    max_y: 50.0 + grown - pixel / 2.0,
+                    min_y: min_y - grown + pixel / 2.0,
+                    max_x: min_x + f64::from(tiles) * unit + grown - pixel / 2.0,
+                    max_y: min_y + unit + grown - pixel / 2.0,
                 }),
             };
             let output = render_map_with_files(MAPFILE, &sources, None, &viewport, &files);
             assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
-            (output.image.unwrap(), (width + 2 * BUFFER) as usize)
+            (output.image.unwrap(), (tiles * TILE + 2 * BUFFER) as usize)
         };
         let at = |(image, stride): &(RgbaImage, usize), x: usize, y: usize| {
             let i = ((y + BUFFER as usize) * stride + x + BUFFER as usize) * 4;
             image.pixels[i..i + 4].to_vec()
         };
-        // Two places of the edge: 10 pixels left of the place `Junction` (x 52), through its label,
-        // and 50 pixels right of it, through the hatched marsh and the main road; without the
-        // buffer, both edges show a seam.
-        for edge in [50.0, 61.8] {
-            let whole = draw(edge - 50.0, edge + 50.0, 512);
-            let tiles = [draw(edge - 50.0, edge, 256), draw(edge, edge + 50.0, 256)];
-            for y in 0..256 {
-                for x in 0..512 {
-                    let (p, q) = (at(&whole, x, y), at(&tiles[x / 256], x % 256, y));
+        // The vertical edges between two tiles of Leaflet's grid, as (zoom, x, y) of the edge's
+        // lower end in map units, a tile 2^-zoom × 256 units wide. At zoom 0, where the page
+        // starts, the edge at x 2048 runs through the middle of the map; at zoom 2, two levels
+        // deeper, the edge at x 1344 runs 8 units, 32 pixels, left of the point of Fernmere, the
+        // largest place. Without the buffer, both edges show a seam: the labels the cache places
+        // differ.
+        for (zoom, edge, min_y) in [(0, 2048.0, 1024.0), (2, 1344.0, 768.0)] {
+            let unit = f64::from(TILE) / 2f64.powi(zoom);
+            let whole = draw(edge - unit, min_y, unit, 2);
+            let tiles = [
+                draw(edge - unit, min_y, unit, 1),
+                draw(edge, min_y, unit, 1),
+            ];
+            for y in 0..TILE as usize {
+                for x in 0..2 * TILE as usize {
+                    let tile = &tiles[x / TILE as usize];
+                    let (p, q) = (at(&whole, x, y), at(tile, x % TILE as usize, y));
                     for (p, q) in p.iter().zip(&q) {
                         assert!(
                             p.abs_diff(*q) <= 1,
-                            "edge {edge}, pixel ({x}, {y}): {p} against {q}"
+                            "zoom {zoom}, edge {edge}, pixel ({x}, {y}): {p} against {q}"
                         );
                     }
                 }
