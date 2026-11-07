@@ -776,7 +776,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         if count > 0 {
             let why = format!(
                 "{count} of its glyphs reach farther than {} pixels from the image",
-                forager_render::MAX_GLYPH_REACH
+                forager_render::clip::MAX_GLYPH_REACH
             );
             let outcome = "those glyphs are left out";
             self.report_with(diagnostics, at, "label-glyph-out-of-reach", why, outcome);

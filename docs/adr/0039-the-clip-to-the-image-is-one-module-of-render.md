@@ -1,6 +1,6 @@
 # ADR-0039: The clip to the image is one module of `render`, shared by the hatch's bound and every renderer
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/render/src/clip.rs`, the clipping of paths in `crates/render-agg`, and every renderer or bound that measures or clips a path against the image
@@ -25,7 +25,7 @@ agg-rust's limits stand in two files of `render` (`CLIP_MARGIN` in `clip.rs`, `M
 `lib.rs`). The forces: Q-9 asks that the bound measure what is drawn, so the measure and the clip
 must be one; ADR-0009 keeps `render` free of a backend; Simplicity asks for one place.
 
-Questions for the maintainer:
+Questions the maintainer settled:
 
 1. Does the whole clip, segments, lines, and rings, stand in `render::clip`, with `Axis`,
    `crossing`, and the edges private, as this ADR proposes; or does `render` keep only what the
@@ -36,11 +36,21 @@ Questions for the maintainer:
 3. Does a second renderer, should one come, clip through the same module, or is the module the
    reference renderer's and the bound's alone?
 
+The decision answers all three: the whole clip stands in `render::clip`, its edges private; the
+margin past the image and the reach of a glyph are properties of the display list, which every
+renderer is held to, and stand beside each other in that module; and a second renderer clips
+through it too.
+
 ## Decision
 
 We will hold the clip of every path to the image, its segments, lines, and rings, and the image
 grown by its margin in one module of `render`, `clip.rs`, which the hatch's bound measures with and
-every renderer clips with, and publish from it only the clips and the rectangle.
+every renderer clips with, and publish from it only the clips, the rectangle, which only the image
+grown by its margin builds, the width a stroke is drawn at, and the reach of a glyph. The margin
+past the image and the reach of a glyph (`MAX_GLYPH_REACH`, with its predicate
+`within_glyph_reach`) are
+properties of the display list: they stand in that module, and every renderer, not only
+`render-agg`, is held to them and clips through it.
 
 **Out of scope:** how a renderer rasterizes what the clip leaves; the cut of a hatch from its
 polygon, which ADR-0032 gives i_overlay; the clip of a hatched polygon to the class's clip buffer in
@@ -70,8 +80,7 @@ the engine, which is MapServer's `msClipPolygonRect` and not a clip to the image
   the clip one way; a glyph's reach can stand beside the margin.
 - Negative / trade-offs: `render` holds code no display item needs to be built, only to be drawn
   and bounded; a renderer that clips by other means still links it.
-- Follow-ups: where the reach of a glyph is decided, which the revision ticket on one glyph reach
-  takes up.
+- Follow-ups: none.
 
 ## Enforcement
 

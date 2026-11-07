@@ -28,13 +28,12 @@
 //! pixel, Clipper's scaling in `agg_conv_clipper`.
 
 use forager_render::Point;
+use forager_render::clip::{self, Rect};
 use i_overlay::core::fill_rule::FillRule;
 use i_overlay::core::overlay::Overlay;
 use i_overlay::core::overlay_rule::OverlayRule;
 use i_overlay::core::solver::{Precision, Solver, Strategy};
 use i_overlay::i_float::int::point::IntPoint;
-
-use crate::clip::{Rect, clip_line};
 
 /// agg_conv_clipper's default scaling: 10 to the power of 2.
 const SCALE: f64 = 100.0;
@@ -101,7 +100,7 @@ pub fn pieces(
     let mut walked = 0.0;
     let mut pieces = Vec::new();
     for &[a, b] in lines {
-        for run in clip_line(&[a, b], rect) {
+        for run in clip::line(&[a, b], rect) {
             let (start, end) = (run[0], run[run.len() - 1]);
             let run_length = length(end.x - start.x, end.y - start.y);
             if run_length.is_nan() || run_length <= 0.0 {
@@ -247,16 +246,12 @@ mod tests {
 
     #[test]
     fn a_dashed_line_keeps_the_phase_of_its_start_beyond_the_clip() {
-        // The line starts 25 before the clip at 0: 25 into a pattern of 10 on, 10 off is 5 into
-        // the second dash, so the first dash on the image runs from 0 to 5.
-        let rect = Rect {
-            min_x: 0.0,
-            min_y: -10.0,
-            max_x: 40.0,
-            max_y: 10.0,
-        };
+        // The line starts 25 before the clip at -10, the image 20 wide grown by the margin and 8:
+        // 25 into a pattern of 10 on, 10 off is 5 into the second dash, so the first dash inside
+        // runs from -10 to -5.
+        let rect = Rect::around_image(20, 0, 8.0);
         let pieces = pieces(
-            &[[p(-25.0, 0.0), p(40.0, 0.0)]],
+            &[[p(-35.0, 0.0), p(30.0, 0.0)]],
             &rect,
             &[10.0, 10.0],
             2.0,
@@ -267,7 +262,7 @@ mod tests {
             .iter()
             .map(|q| (q.corners()[0].x, q.corners()[1].x))
             .collect();
-        assert_eq!(spans, vec![(0.0, 5.0), (15.0, 25.0), (35.0, 40.0)]);
+        assert_eq!(spans, vec![(-10.0, -5.0), (5.0, 15.0), (25.0, 30.0)]);
         let corners = pieces[0].corners();
         assert_eq!((corners[0].y, corners[3].y), (1.0, -1.0));
     }
@@ -277,22 +272,13 @@ mod tests {
         // Verifies: Q-9
         // A line from 3e125 pixels away, dashed in lengths of 1e-277: its phase is reduced to a
         // period, but no step moves the walk along a pixel.
-        let rect = Rect {
-            min_x: -3.0,
-            min_y: -3.0,
-            max_x: 99.0,
-            max_y: 6.0,
-        };
+        // The image 96 × 3 grown by the margin and 1: from -3 to 99 across, -3 to 6 down.
+        let rect = Rect::around_image(96, 3, 1.0);
         let far = [[p(-3.4e125, 2.1e125), p(0.0, 1.29)]];
         assert_eq!(pieces(&far, &rect, &[1.8e-278, 5.8e-277], 1.0, 1e6), None);
-        // The line of 65 pixels above walks 7 dashes and gaps.
+        // A line of 65 pixels, the whole of it inside, walks 7 dashes and gaps.
         let near = [[p(-25.0, 0.0), p(40.0, 0.0)]];
-        let wide = Rect {
-            min_x: -30.0,
-            min_y: -10.0,
-            max_x: 40.0,
-            max_y: 10.0,
-        };
+        let wide = Rect::around_image(40, 0, 28.0);
         assert!(pieces(&near, &wide, &[10.0, 10.0], 2.0, 7.0).is_some());
         assert_eq!(pieces(&near, &wide, &[10.0, 10.0], 2.0, 6.0), None);
     }

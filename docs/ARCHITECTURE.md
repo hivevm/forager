@@ -125,13 +125,14 @@ golden path and the test pattern an agent copies from are named here.
   that depends on skrifa, and does no I/O (ADR-0028).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives
   them or none, the renderer trait, and the RGBA image; the cost model that
-  bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0032, `hatch.rs`); the one segment
-  clip, the crossing of an edge, the width a stroke is drawn at, and the margin past the image
-  (`clip.rs`), which the bound measures a hatch's lines with and `render-agg` clips every path
-  with; and the reach past the image a glyph's point may have (`MAX_GLYPH_REACH`).
+  bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0032, `hatch.rs`); and the clip of
+  every path to the image, its segments, lines, and rings, the image grown by its margin, the
+  width a stroke is drawn at, and the reach past the image a glyph's point may have
+  (`MAX_GLYPH_REACH`), properties of the display list in one module (`clip.rs`,
+  [ADR-0039](adr/0039-the-clip-to-the-image-is-one-module-of-render.md)), which the bound
+  measures a hatch's lines with and every renderer clips with.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
-  before rasterizing, its polylines by the segment clip of `render` and its rings by
-  Sutherland–Hodgman on `render`'s crossing of an edge, fills through the gamma it is given,
+  before rasterizing, by the clip of `render`, fills through the gamma it is given,
   blends premultiplied colours
   in a pixel format of its own as MapServer's AGG 2.4 does, draws a layer with an opacity into an
   image of its own and lays it over, fills glyphs as MapServer's AGG renderer does, and is the one

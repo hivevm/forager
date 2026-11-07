@@ -62,31 +62,6 @@ pub struct GlyphOutline {
     pub width: f64,
 }
 
-/// How far, in pixels, a point of a glyph path may lie outside the image: agg-rust holds
-/// coordinates in 24.8 fixed point, which a farther point would overflow. The text path leaves out
-/// a glyph that reaches farther, and the reference renderer draws no path that does.
-pub const MAX_GLYPH_REACH: f64 = 4_194_304.0;
-
-/// Whether every point of `path` lies within [`MAX_GLYPH_REACH`] of `image`,
-/// `[min x, min y, max x, max y]`; a point that is no number does not. The bound is the image's
-/// alone, whatever the outline, so that it holds below agg-rust's limit. The text path keeps a
-/// glyph, and the reference renderer draws a glyph path, only when this holds of the same image,
-/// so that the renderer leaves out no label the text path kept.
-pub fn within_glyph_reach(image: [f64; 4], path: &[PathCommand]) -> bool {
-    let within = |p: &Point| {
-        p.x >= image[0] - MAX_GLYPH_REACH
-            && p.y >= image[1] - MAX_GLYPH_REACH
-            && p.x <= image[2] + MAX_GLYPH_REACH
-            && p.y <= image[3] + MAX_GLYPH_REACH
-    };
-    path.iter().all(|command| match command {
-        PathCommand::MoveTo(p) | PathCommand::LineTo(p) => within(p),
-        PathCommand::QuadTo(c, p) => within(c) && within(p),
-        PathCommand::CubicTo(c0, c1, p) => within(c0) && within(c1) && within(p),
-        PathCommand::Close => true,
-    })
-}
-
 /// A step of a glyph outline, in pixels; a quadratic curve names its control point and its end,
 /// a cubic its two control points and its end.
 #[derive(Clone, Copy, Debug, PartialEq)]

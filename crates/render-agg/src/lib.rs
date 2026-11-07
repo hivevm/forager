@@ -29,7 +29,6 @@
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
-mod clip;
 mod glyphs;
 mod hatch;
 mod pixfmt;
@@ -45,13 +44,12 @@ use agg_rust::renderer_base::RendererBase;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::scanline_boolean_algebra::ScanlineGenerator;
 use agg_rust::scanline_u::ScanlineU8;
-use forager_render::clip::{CLIP_MARGIN, drawn_width};
+use forager_render::clip::{self, Rect, drawn_width};
 use forager_render::{
     Dashes, DisplayItem, Draw, DrawOp, Hatch, LineCap, LineJoin, Point, Renderer, RgbaImage,
 };
 use forager_style_ir::Rgba;
 
-use crate::clip::{Rect, clip_line, clip_ring};
 use crate::pixfmt::{PixfmtMapserver, copy_or_blend_pix, premultiplied};
 
 /// Rasterizes into an RGBA buffer it owns. The buffer holds its colours premultiplied by their
@@ -191,13 +189,13 @@ impl AggRenderer {
             LineJoin::Miter => 2.0 * width,
             LineJoin::Round | LineJoin::Bevel | LineJoin::None => width / 2.0,
         };
-        let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN + reach);
+        let rect = Rect::around_image(self.width, self.height, reach);
         let mut path = PathStorage::new();
         for points in paths {
             if closed {
-                add(&mut path, &clip_ring(points, &rect), true);
+                add(&mut path, &clip::ring(points, &rect), true);
             } else {
-                for run in clip_line(points, &rect) {
+                for run in clip::line(points, &rect) {
                     add(&mut path, &run, false);
                 }
             }
@@ -210,9 +208,9 @@ impl AggRenderer {
     /// The rings as a path, each clipped to the image enlarged by the margin.
     fn area(&self, rings: &[Vec<Point>]) -> PathStorage {
         let mut path = PathStorage::new();
-        let rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
+        let rect = Rect::around_image(self.width, self.height, 0.0);
         for ring in rings {
-            add(&mut path, &clip_ring(ring, &rect), true);
+            add(&mut path, &clip::ring(ring, &rect), true);
         }
         path
     }
@@ -260,11 +258,11 @@ impl AggRenderer {
             return;
         }
         let width = hatch.drawn_width(self.width, self.height);
-        let fill_rect = Rect::around_image(self.width, self.height, CLIP_MARGIN);
+        let fill_rect = Rect::around_image(self.width, self.height, 0.0);
         let rings: Vec<Vec<Point>> = hatch
             .rings
             .iter()
-            .map(|ring| clip_ring(ring, &fill_rect))
+            .map(|ring| clip::ring(ring, &fill_rect))
             .collect();
         let rect = hatch.line_rect(self.width, self.height);
         let Some(pieces) = hatch::pieces(

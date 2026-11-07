@@ -22,7 +22,8 @@
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 
-use forager_render::{PathCommand, Point, within_glyph_reach};
+use forager_render::clip::within_glyph_reach;
+use forager_render::{PathCommand, Point};
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::DrawSettings;
 use skrifa::outline::pen::{OutlinePen, PathStyle};
@@ -169,7 +170,7 @@ pub struct TextPath {
 }
 
 /// The outlines of a text path drawn at a point, and how many of its glyphs were left out for
-/// reaching farther from the image than [`forager_render::MAX_GLYPH_REACH`].
+/// reaching farther from the image than [`forager_render::clip::MAX_GLYPH_REACH`].
 #[derive(Debug, Default, PartialEq)]
 pub struct Drawn {
     pub path: Vec<PathCommand>,
@@ -418,7 +419,7 @@ impl TextPath {
     /// `[min x, min y, max x, max y]`, grown by twice `outline_width`, is left out, so that what a
     /// label costs to draw follows what of it can be seen: an outline reaches half its width past
     /// its glyph, and at a sharp corner a miter up to its whole width. A glyph with a point past
-    /// [`forager_render::MAX_GLYPH_REACH`] of `image` itself is left out and counted, by
+    /// [`forager_render::clip::MAX_GLYPH_REACH`] of `image` itself is left out and counted, by
     /// [`within_glyph_reach`] as the renderer tests the whole path, so that the renderer draws
     /// every glyph kept.
     pub fn draw_outlined(

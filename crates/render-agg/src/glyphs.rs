@@ -20,16 +20,17 @@ use agg_rust::path_storage::PathStorage;
 use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::scanline_u::ScanlineU8;
-use forager_render::{GlyphOutline, PathCommand, within_glyph_reach};
+use forager_render::clip::{Rect, within_glyph_reach};
+use forager_render::{GlyphOutline, PathCommand};
 use forager_style_ir::Rgba;
 
-use crate::{AggRenderer, CLIP_MARGIN};
+use crate::AggRenderer;
 
 impl AggRenderer {
     /// Draws `path` as `agg2RenderGlyphsPath` draws a text path, its curves flattened by
     /// `conv_curve`, under the non-zero rule, with no gamma: first its outline, the
     /// `conv_contour` of the curves at the outline's width, then its fill in `color`. A path with
-    /// a point past [`forager_render::MAX_GLYPH_REACH`] of the image, or one that is no number,
+    /// a point past [`forager_render::clip::MAX_GLYPH_REACH`] of the image, or one that is no number,
     /// is not drawn: the engine leaves out and reports such a glyph before it reaches the display
     /// list by the same predicate, so this guards the renderer against any other display list.
     pub(crate) fn glyphs(
@@ -72,7 +73,7 @@ impl AggRenderer {
     /// Fills `source` in `color` under the non-zero rule.
     fn fill_glyphs<VS: VertexSource>(&mut self, source: &mut VS, color: Rgba) {
         let color = crate::rgba8(color);
-        let (width, height) = (f64::from(self.width), f64::from(self.height));
+        let rect = Rect::around_image(self.width, self.height, 0.0);
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
             let mut scanline = ScanlineU8::new();
@@ -80,12 +81,8 @@ impl AggRenderer {
             // A glyph's curves cannot be clipped as a polygon is, so the rasterizer clips its
             // flattened lines to the image enlarged by the margin, as ADR-0015 clips every path;
             // the cells of a glyph far larger than the image then stay within it.
-            rasterizer.clip_box(
-                -CLIP_MARGIN,
-                -CLIP_MARGIN,
-                width + CLIP_MARGIN,
-                height + CLIP_MARGIN,
-            );
+            let [min_x, min_y, max_x, max_y] = rect.bounds();
+            rasterizer.clip_box(min_x, min_y, max_x, max_y);
             rasterizer.add_path(source, 0);
             render_scanlines_aa_solid(&mut rasterizer, &mut scanline, renderer, &color);
         });
