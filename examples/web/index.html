@@ -47,7 +47,9 @@
            padding: 8px 16px; font: inherit; font-weight: 600; cursor: pointer; }
   button.secondary { background: transparent; color: var(--accent);
                      border: 1px solid var(--accent); }
-  canvas { display: block; max-width: 100%; height: auto; border: 1px solid var(--line);
+  /* The single image only: Leaflet's tiles are canvases too, and a border on each would draw a
+     grid over the tile view. */
+  #map { display: block; max-width: 100%; height: auto; border: 1px solid var(--line);
            border-radius: 4px; background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
   #status { color: var(--muted); font-size: 13px; }
   ul#diagnostics { list-style: none; padding: 0; margin: 12px 0 0;
