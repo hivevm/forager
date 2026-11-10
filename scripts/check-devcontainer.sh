@@ -8,9 +8,9 @@
 #
 #   1. Socket: .devcontainer/devcontainer.json mounts no host Docker socket — no 'docker.sock'
 #      and no '/var/run/docker' on any line that is not a full-line comment — and adds no
-#      Feature whose id names 'docker-outside-of-docker', the one that mounts it. An engine
-#      inside the container, such as the Docker-in-Docker Feature, talks to no host engine and
-#      is the project's choice (ADR-0009, out of scope).
+#      Feature whose id names 'docker-outside-of-docker', the one that mounts it. ADR-0009 gives
+#      the container no engine inside either, such as the Docker-in-Docker Feature; this check
+#      does not detect one, and review catches it (ADR-0009, Not mechanically decidable).
 #   2. Pinning: every Feature is referenced by its major version tag alone ('<ref>:N'), never
 #      untagged, ':latest', a full version, or a digest in the hand-edited file.
 #   3. Lock: .devcontainer/devcontainer-lock.json exists and its 'features' block names exactly

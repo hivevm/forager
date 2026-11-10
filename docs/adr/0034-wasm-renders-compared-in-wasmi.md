@@ -24,8 +24,9 @@ The candidates, read on 2026-11-07: wasmi 2.0.0 (an interpreter, MIT OR Apache-2
 small tree, two published security audits), wasmtime 50.0.1 (Cranelift, Apache-2.0 WITH
 LLVM-exception, which `deny.toml` does not admit, a heavy build, a new major version about every
 month), wasmer 7.5.0 (several compiler backends, the largest tree), and Node with wasm-bindgen's
-glue (no Node in the container; the browser runner ADR-0007 left out). None of the Rust runtimes
-runs wasm-bindgen's glue without stubbing its imports, which follow wasm-bindgen's internals.
+glue (no Node in the container; the browser runner [ADR-0007](0007-rust-toolchain.md) left out).
+None of the Rust runtimes runs wasm-bindgen's glue without stubbing its imports, which follow
+wasm-bindgen's internals.
 
 The workspace denies `unsafe` code outside `render-agg` ([ADR-0025](0025-agg-rust-rasterizer.md)),
 and an export of the C ABI needs `#[unsafe(no_mangle)]`; `wasm_bindgen` exports a function without
@@ -59,21 +60,22 @@ which G-14 waits for.
   `deny.toml` ([ADR-0011](0011-crate-supply-chain.md)), its build costs minutes cold, and its
   monthly major versions bring advisory churn, for speed this test does not need.
 - **wasmer** — the heaviest tree, and nothing this test needs beyond wasmi.
-- **Node running the wasm-bindgen bundle** — tests the glue as shipped, but supersedes ADR-0009
-  and takes up what ADR-0007 left out, and the module has no file system, so every case would be
-  embedded and the native buffers passed between processes.
+- **Node running the wasm-bindgen bundle** — tests the glue as shipped, but supersedes
+  [ADR-0009](0009-dev-container.md) and takes up what [ADR-0007](0007-rust-toolchain.md) left out,
+  and the module has no file system, so every case would be embedded and the native buffers passed
+  between processes.
 - **Stubbing wasm-bindgen's imports in a Rust runtime** — no new exports, but bound to
   wasm-bindgen's internals, which change with its versions. The exports chosen call none of the
   imports, so a stub that traps stands for each, whatever wasm-bindgen imports.
 - **C-ABI exports with `#[unsafe(no_mangle)]`** — no wasm-bindgen in the comparison, but `unsafe`
-  code in a second crate, against ADR-0025.
+  code in a second crate, against [ADR-0025](0025-agg-rust-rasterizer.md).
 - **The exports of the module `cargo` builds, found by their names' prefix** — no pass of the
   wasm-bindgen CLI, but bound to the hash it appends, an internal of wasm-bindgen.
 - **A host crate of its own for the exports** — keeps `bindings-wasm` as it is, but supersedes
   [ADR-0008](0008-ports-and-adapters-crates.md) to add a crate for the same logic.
 - **Mapfile and GeoJSON as the input** — covers the frontend on wasm32 too, but the shapefile cases
-  cannot be bound in the bindings (ADR-0024), and a difference would point at the frontend, the
-  readers, or the engine alike.
+  cannot be bound in the bindings ([ADR-0024](0024-browser-bindings-bind-geojson-only.md)), and a
+  difference would point at the frontend, the readers, or the engine alike.
 
 ## Sources / Prior art
 
@@ -96,7 +98,8 @@ which G-14 waits for.
 
 - Positive: G-9 has its test, run in the dev container as on CI, with no second toolchain and no
   licence exception; a difference points at the engine or the renderer.
-- Positive: no new crate, so ADR-0008 stands; the browser bundle does not change.
+- Positive: no new crate, so [ADR-0008](0008-ports-and-adapters-crates.md) stands; the browser
+  bundle does not change.
 - Negative / trade-offs: an interpreter runs the renders several times slower than native. The
   first run compared the 74 cases in scope in 14 s, with wasmi optimized in the dev profile and its
   portable dispatch, so the test runs on every push; unoptimized it took nine minutes, and the
@@ -105,10 +108,11 @@ which G-14 waits for.
   with its feature; the comparison reaches the engine through `wasm_bindgen`'s export of integers,
   not through the bundle's JavaScript API.
 - Negative / trade-offs: the native side's render of a document with its files, and the module's
-  input format, are written twice, in `bindings-wasm` and in the CLI's test, since ADR-0008 lets no
-  host depend on another. A drift of the format fails the comparison; a drift of the render, which
-  is a call of `forager_engine::render_with_files` with no source bound and a fresh
-  `AggRenderer` on both sides, a reviewer holds. The maintainer kept the copies (2026-11-10).
+  input format, are written twice, in `bindings-wasm` and in the CLI's test, since
+  [ADR-0008](0008-ports-and-adapters-crates.md) lets no host depend on another. A drift of the
+  format fails the comparison; a drift of the render, which is a call of
+  `forager_engine::render_with_files` with no source bound and a fresh `AggRenderer` on both sides,
+  a reviewer holds. The maintainer kept the copies (2026-11-10).
 - Follow-ups: whether `render-agg` and `render` take their mathematical functions from `libm` on
   both targets, as `symbolize` does, should the test find a difference there; its first run found
   none (2026-11-10).

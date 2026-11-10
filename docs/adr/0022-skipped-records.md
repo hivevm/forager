@@ -39,8 +39,6 @@ that reason, at the layer's source span.
 - **Dropped per record.** A source that skips per record visited, as the shapefile adapter does,
   reports the records the query visited. A query its file's bounds exclude reports none.
 - **Once.** Each record counts once per query, however many passes the source makes over it.
-- **Not skipped.** A valid record with nothing to draw is no skipped record: neither a
-  shapefile's null shape nor a GeoJSON feature whose geometry is empty, which RFC 7946 allows.
 
 **Out of scope:** what a source counts as a skipped record, which each adapter's ADR and semantics
 page decide; a strict mode that fails the map on a skipped record, akin to the strict mode for an
@@ -84,7 +82,9 @@ loader and of the projection resolver; the properties of a feature, which
 - Negative / trade-offs: the shapefile adapter's two passes count the matched features, the first
   to size the list and the second to fill it; only one of them may count the skips, or each skip
   counts twice.
-- JSON holds no number that is not finite, so the GeoJSON adapter reports no skipped record.
+- A valid record with nothing to draw is no skipped record: neither a shapefile's null shape nor a
+  GeoJSON feature whose geometry is empty, which RFC 7946 allows; and JSON holds no number that is
+  not finite, so the GeoJSON adapter reports none.
 - Follow-ups: whether a render's diagnostics as a whole are bounded like a load's.
 
 ## Enforcement

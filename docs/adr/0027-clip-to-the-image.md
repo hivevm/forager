@@ -15,13 +15,13 @@ says where the code that clips to the image lives.
 
 The bound once measured a hatch's lines with a clip of its own and the renderer clipped them with
 another, and the two disagreed on lines with both ends far out: 400,000 lines of `(-1e150, 5)` to
-`(1e150, 5)` on a 100 × 100 image passed the bound at 0 px each, while the renderer drew about
-106 px each (Q-9). The design revision of 2026-10-31 filed one clip. #131 moved the segment clip
-and the margin past the image into `render`, but left the ring clip (Sutherland–Hodgman) and the
-line clip in `render-agg`, on parts of the clip `render` had to publish for it, and the image
-grown by the margin written four ways. The forces: Q-9 asks that the bound measure what is drawn,
-so the measure and the clip must be one; ADR-0008 keeps `render` free of a backend; Simplicity asks
-for one place.
+`(1e150, 5)` on a 100 × 100 image passed the bound at 0 px each, while the renderer drew about 106
+px each (Q-9). The design revision of 2026-10-31 filed one clip. #131 moved the segment clip and the
+margin past the image into `render`, but left the ring clip (Sutherland–Hodgman) and the line clip
+in `render-agg`, on parts of the clip `render` had to publish for it, and the image grown by the
+margin written four ways. The forces: Q-9 asks that the bound measure what is drawn, so the measure
+and the clip must be one; [ADR-0008](0008-ports-and-adapters-crates.md) keeps `render` free of a
+backend; Simplicity asks for one place.
 
 The maintainer settled three questions. The whole clip, segments, lines, and rings, stands in
 `render::clip`, its edges private, rather than `render` keeping only what the hatch's bound needs.
@@ -50,14 +50,15 @@ of `render`, `clip.rs`, which the hatch's bound measures with and every renderer
   and must clip through the module.
 
 **Out of scope:** how a renderer rasterizes what the clip leaves; the cut of a hatch from its
-polygon, which ADR-0028 gives i_overlay; the clip of a hatched polygon to the class's clip buffer in
-the engine, which is MapServer's `msClipPolygonRect` and not a clip to the image.
+polygon, which [ADR-0028](0028-hatch-cut-by-i-overlay.md) gives i_overlay; the clip of a hatched
+polygon to the class's clip buffer in the engine, which is MapServer's `msClipPolygonRect` and not a
+clip to the image.
 
 ## Alternatives considered
 
 - **The clip in `render-agg`, the bound asking the renderer** — the bound would need the renderer
-  crate, against ADR-0008's edges, or a trait method for a measure that is the same for every
-  renderer.
+  crate, against [ADR-0008](0008-ports-and-adapters-crates.md)'s edges, or a trait method for a
+  measure that is the same for every renderer.
 - **A clip in each crate, held equal by a test** — the state before #131, under which the two
   drifted apart unseen until the Q-9 hole above.
 - **The split of #131** — one segment clip in `render`, the ring and line clips in `render-agg` on
@@ -83,7 +84,7 @@ the engine, which is MapServer's `msClipPolygonRect` and not a clip to the image
 
 `crates/render/tests/clip.rs` clips segments, lines, and rings with both ends far out, holds the
 hatch's measure to the length of what the clip leaves, and cites this ADR with `Verifies:`.
-`crates/arch-test` keeps ADR-0008's edges.
+`crates/arch-test` keeps [ADR-0008](0008-ports-and-adapters-crates.md)'s edges.
 
 **Not mechanically decidable:** that `render-agg`, or another renderer, clips through no code of
 its own; a reviewer holds it.

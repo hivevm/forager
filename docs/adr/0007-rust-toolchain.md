@@ -41,9 +41,8 @@ SHA-256 of every release asset at upload and shows it with the asset.
 We will build, test, and lint with the pinned tools `scripts/install-tools.sh` installs, run
 through `scripts/check-rust.sh` and `scripts/check-shell.sh`:
 
-- **Rust.** `rust-toolchain.toml` pins stable Rust, 1.99.1, with the components `rustfmt` and
-  `clippy` and the target `wasm32-unknown-unknown`. The workspace uses edition 2024. The pin moves
-  only by a deliberate change.
+- **Rust.** `rust-toolchain.toml` pins stable Rust, 1.99.1 at setup, with the components
+  `rustfmt` and `clippy` and the target `wasm32-unknown-unknown`. The workspace uses edition 2024.
 - **Tools.** `scripts/install-tools.sh` installs these, and skips a tool already at its version:
   - the toolchain of `rust-toolchain.toml`, with rustup;
   - `cargo-deny` at the version the script names, by `cargo install --locked`;
@@ -60,8 +59,8 @@ through `scripts/check-rust.sh` and `scripts/check-shell.sh`:
   - `scripts/check-shell.sh` names the running and the pinned version where they differ, and
     fails in a CI run.
 - **Commands.** `scripts/check-rust.sh` runs every build, test, and lint command of the workspace.
-  `scripts/check-all.sh` invokes it, and the `rust` job of `checks.yml` runs it. Among its other
-  steps, it must run these in this order:
+  `scripts/check-all.sh` invokes it, and the `rust` job of `checks.yml` runs it. It must run
+  these in this order:
   1. `cargo fmt --all --check`;
   2. `cargo clippy --workspace --all-targets -- -D warnings`, with `clippy::too_many_lines` and
      `clippy::cognitive_complexity` warned in the workspace lints;
@@ -70,6 +69,8 @@ through `scripts/check-rust.sh` and `scripts/check-shell.sh`:
   5. `wasm-bindgen --target web` on the browser bindings, and a check of the gzipped `.wasm`
      against Q-5;
   6. `cargo deny check`.
+
+  Other ADRs add steps of their own to the script.
 - **Sensors.**
   - Behaviour: `cargo test`, whose tests cite goals and ADRs with `// Verifies:`.
   - Maintainability: the clippy lints above and rustc's `dead_code`, made errors by

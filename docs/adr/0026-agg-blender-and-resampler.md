@@ -70,7 +70,8 @@ at the pin, while agg-rust keeps rasterizing.
 
 - the rasterizer, the scanlines, and the coverage, which stay agg-rust's under
   [ADR-0025](0025-agg-rust-rasterizer.md);
-- the `unsafe_code` allowance of ADR-0025, which the port no longer needs but does not withdraw;
+- the `unsafe_code` allowance of [ADR-0025](0025-agg-rust-rasterizer.md), which the port no longer
+  needs but does not withdraw;
 - compositing through pixman, which MapServer's default build does not use;
 - the compositing operators of a `COMPOSITE` block other than `src-over`;
 - a line patterned with an image (`agg2RenderLineTiled`), which resamples through

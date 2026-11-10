@@ -127,10 +127,10 @@ records the push harness compares Forager's labels with.
   such a case. The push harness fails on a case whose labels and mark disagree, and on a case
   marked `labels-hold` whose render fails.
 
-**Out of scope:** the tolerances of G-6 and G-13, which the specification states; running
-MapServer on another platform; how the harness reports a mismatch; options of `map2img` beyond the
-harness's; labels MapServer draws without its label cache, and those a flushing layer draws and
-empties from it before the map is drawn.
+**Out of scope:** the tolerances of G-6, which the specification states; running MapServer on
+another platform; the categories of G-13; how the harness reports a mismatch; options of `map2img`
+beyond the harness's; labels MapServer draws without its label cache, and those a flushing layer
+draws and empties from it before the map is drawn.
 
 ## Alternatives considered
 

@@ -62,7 +62,7 @@ the host:
 
 **Out of scope:**
 
-- whether the container pins extensions;
+- which extensions a project picks, and whether it pins them;
 - whether work may happen outside the container;
 - hardening the container, which is not a security boundary;
 - how the lock is refreshed;
@@ -164,11 +164,12 @@ when:
 Its self-test, `scripts/test-check-devcontainer.sh`, cites this ADR with `Verifies:`
 ([ADR-0002](0002-decisions-verified-by-tests.md)).
 
-**Not mechanically decidable:** the check reads neither of these, and a reviewer holds them:
+**Not mechanically decidable:** the check decides none of these. A reviewer holds each, except
+where the item names what shows it:
 
 - a variant definition under a subdirectory of `.devcontainer/`, which the check does not read;
 - whether the lock's digests are the ones the tags currently resolve to;
 - the mount of a definition built from a compose file, which that file declares;
-- the container itself, which no CI job builds: that it builds the project, that the login's
-  directory exists on the host, and that `gh auth setup-git` ran;
+- the container itself, which no CI job builds: that it builds the project, which is shown by
+  building it; that the login's directory exists on the host; and that `gh auth setup-git` ran;
 - a Feature that would run an engine inside the container, which review catches.

@@ -55,8 +55,8 @@ one major at a time on its value tree, and make any change of what a field means
   must be a major bump. A change of what a field means, with or without a change of its shape,
   must be a major bump.
 - **Conditions.** A new condition must be added only where a reader of an older minor reads what
-  it does not know as never matching: as a CQL2 function inside an existing expression. A new
-  condition must not be a new field of its own.
+  it does not know as never matching, such as a CQL2 function inside an existing expression. A
+  new condition must never be a new top-level field.
 - **Schema files.** The `schema` feature of `style-ir` derives each format version's schema, and
   the file is checked in under `schema/`. A check derives the schema and compares it with the
   checked-in file of the current version. A difference without a bump fails the check. The kind

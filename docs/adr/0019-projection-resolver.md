@@ -68,15 +68,17 @@ the resource loader inside the base context.
   to the resolver.
 
 **Out of scope:** reprojection; a search path for init files named without a `/`, as PROJ's
-`PROJ_DATA` or a mapfile's `CONFIG "PROJ_DATA"` gives one; `PROJECTION AUTO`; other authorities
-than EPSG in an adapter, which the port allows and none provides yet.
+`PROJ_DATA` or a mapfile's `CONFIG "PROJ_DATA"` gives one; other authorities than EPSG in an
+adapter, which the port allows and none provides yet.
 
 ## Alternatives considered
 
 - **Every `init=` to the resolver, the file name taken as the authority** — the first form of this
   decision, with the resolver and the table as they stand and no init file read by the frontend.
   It did not stand: no resolver knows a path such as `./data/epsg2`, so 39 msautotest mapfiles
-  failed to load once layer projections were carried, where MapServer finds the file.
+  failed to load once layer projections were carried, where MapServer finds the file. It left
+  `PROJECTION AUTO` out of scope, which the frontend has since come to read
+  (`crates/mapfile/src/projection.rs`).
 - **A curated subset of the EPSG dataset in the repository** — the simplest to use, as PROJ and
   proj4js do, but a file under IOGP's terms in a repository released as `MIT OR Apache-2.0`.
 - **No built-in definitions at all** — the cleanest licence, but the commonest codes would need a

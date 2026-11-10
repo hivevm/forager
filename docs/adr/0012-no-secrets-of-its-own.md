@@ -9,6 +9,8 @@
 
 The specification names credentials as an asset, but they are the users' — connection strings of
 mapfiles at runtime — and Q-7 protects them by tests. The project itself needs no token in CI.
+`scripts/sensor-repo-settings.sh`, run on a human's instruction, reports push protection unless
+it reads it enabled ([ADR-0002](0002-decisions-verified-by-tests.md)).
 
 ## Decision
 
@@ -33,6 +35,4 @@ None — cheap to reverse.
 ## Enforcement
 
 **Not mechanically decidable:** push protection is a repository setting outside the tree, and a
-credential of an unknown shape is recognized only in review. `scripts/sensor-repo-settings.sh`
-reports push protection unless it reads it enabled, on a human's instruction
-([ADR-0002](0002-decisions-verified-by-tests.md)).
+credential of an unknown shape is recognized only in review.

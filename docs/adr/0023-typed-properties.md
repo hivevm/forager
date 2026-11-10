@@ -54,7 +54,9 @@ shares with its field table, a value decoded only when a property is read.
   cost.
 - **Lookup.** Each source decides its lookup, since a JSON object can hold keys that differ only
   in case. A shapefile feature finds a property by name without regard to ASCII case, the first
-  field winning, as `msDBFGetItemIndex` does. A GeoJSON feature finds it by the exact key.
+  field winning, as `msDBFGetItemIndex` does. A GeoJSON feature finds it by the exact key. How the
+  engine looks a name up past the source's own lookup, and what a name a feature does not hold
+  reads as, are decided in [ADR-0016](0016-expression-evaluation.md).
 - **Absence.** A feature whose shape lies past the `.dbf`'s records carries no properties, as
   MapServer's shape carries no values there. A name a feature does not hold reads as absent, which
   is not null.
@@ -107,9 +109,7 @@ properties of other sources; a number's source text where `serde_json` does not 
   the fuzz targets' included; a property is decoded and trimmed each time it is read, which costs
   time where an expression reads it per feature; the port's value type has a borrowed form, since
   a shapefile's string is decoded on read.
-- Follow-ups: whether a property an expression names but the `.dbf` lacks fails the layer, as
-  `msDBFGetItemIndexes` makes MapServer's layer fail; how a browser host delivers properties of its
-  own features.
+- Follow-ups: how a browser host delivers properties of its own features.
 
 ## Enforcement
 
