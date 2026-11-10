@@ -3,7 +3,8 @@
 # Dev Container check for this repository (ADR-0004, ADR-0042).
 #
 # ADR-0004 keeps the host container engine out of the Dev Container's reach and pins its Features.
-# This check reads the files the decision names and fails on what would break it:
+# This check reads the files the decision names and fails on what would break it, and on a
+# container that would not enable the repository's git hooks:
 #
 #   1. Socket: .devcontainer/devcontainer.json mounts no host Docker socket — no 'docker.sock'
 #      and no '/var/run/docker' on any line that is not a full-line comment — and adds no
@@ -18,7 +19,17 @@
 #   4. Host side: .vscode/settings.json pins the container-management extension to the host
 #      ('"ms-azuretools.vscode-containers": ["ui"]' inside the 'remote.extensionKind' object),
 #      which is how host containers are managed without the socket.
-#   5. GitHub CLI login (ADR-0042): devcontainer.json binds no host path ending in '.config/gh',
+#   5. Git settings: the postStartCommand of devcontainer.json runs 'git config core.hooksPath
+#      .githooks', 'git config merge.ff false', 'git config pull.ff only', and 'git config
+#      merge.adr-index.driver' with the driver's command as CONTRIBUTING.md writes it. The git hooks
+#      of CONTRIBUTING.md and SECURITY.md hold in the container because it enables them on every
+#      start, the container's share of the local gate (ADR-0002, ADR-0004). The value is read from
+#      its key to the next top-level key, whatever its form: a string, an array, or an object.
+#   6. Mount path: 'workspaceFolder' and the target of 'workspaceMount', where the file sets them,
+#      are '/workspaces/${localWorkspaceFolderBasename}', the default of Dev Containers, so that
+#      every project sits under a path of its own and an agent's memory, keyed by that path,
+#      stays with it (ADR-0004).
+#   7. GitHub CLI login (ADR-0042): devcontainer.json binds no host path ending in '.config/gh',
 #      the host's own configuration, whose token may sit in a keyring the container cannot read;
 #      and what it binds to the container's /home/vscode/.config/gh comes from a host path ending
 #      in '.config/gh-devcontainer', the directory of the container's login.
@@ -38,13 +49,13 @@
 
 set -uo pipefail
 
+# shellcheck source-path=SCRIPTDIR source=lib/check.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/check.sh"
+
 ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
 CONFIG=".devcontainer/devcontainer.json"
 LOCK=".devcontainer/devcontainer-lock.json"
 SETTINGS=".vscode/settings.json"
-
-errors=()
-add_error() { errors+=("$1"); }
 
 # uncommented <file> — the file without its full-line '//' comments.
 uncommented() { grep -vE '^[[:space:]]*//' "$1"; }
@@ -72,12 +83,33 @@ feature_ids() {
     }'
 }
 
-# _contains <needle> <haystack...> — true if needle equals one of the arguments.
-_contains() {
-  local needle="$1"; shift
-  local x
-  for x in "$@"; do [[ "$x" == "$needle" ]] && return 0; done
-  return 1
+# top_level_value <file> <key> — the text after the top-level key up to the next top-level key or
+# the end, whatever its value holds. A top-level key is a string at depth 1 that opens the file's
+# object or follows a comma there; strings are skipped with their escapes, so a brace inside one,
+# such as '${containerWorkspaceFolder}', counts for nothing.
+top_level_value() {
+  uncommented "$1" | awk -v want="$2" '
+    { text = text $0 "\n" }
+    END {
+      n = length(text)
+      for (i = 1; i <= n; i++) {
+        c = substr(text, i, 1)
+        if (in_string) {
+          if (c == "\\") { s = s c substr(text, i + 1, 1); i++ }
+          else if (c == "\"") {
+            in_string = 0
+            if (is_key) { capture = (s == want); is_key = 0; continue }
+          } else s = s c
+          if (capture && !is_key) printf "%s", (c == "\\" ? substr(text, i - 1, 2) : c)
+          continue
+        }
+        if (c == "\"") { in_string = 1; s = ""; is_key = (depth == 1 && expect_key); expect_key = 0 }
+        else if (c == "{" || c == "[") { depth++; if (depth == 1) expect_key = 1 }
+        else if (c == "}" || c == "]") depth--
+        else if (c == "," && depth == 1) expect_key = 1
+        if (capture && !is_key) printf "%s", c
+      }
+    }'
 }
 
 features=()
@@ -85,7 +117,7 @@ if [[ ! -f "$ROOT/$CONFIG" ]]; then
   add_error "$CONFIG: not found — the Dev Container ADR-0004 governs has nothing to check"
 else
   # 1. Socket.
-  if uncommented "$ROOT/$CONFIG" | grep -qE 'docker\.sock|/var/run/docker'; then
+  if grep -qE 'docker\.sock|/var/run/docker' <<< "$(uncommented "$ROOT/$CONFIG")"; then
     add_error "$CONFIG: mounts the host Docker socket — the Dev Container never reaches the host engine (ADR-0004); manage host containers from the host-side extension instead"
   fi
 
@@ -99,7 +131,7 @@ else
       || add_error "$CONFIG: Feature '$id' is not pinned by its major version tag alone ('<ref>:N') — an untagged, mutable, or fully versioned reference is not what the lock resolves (ADR-0004)"
   done
 
-  # 5. GitHub CLI login: each mount is a 'source=…,target=…' string on a line of its own.
+  # 7. GitHub CLI login: each mount is a 'source=…,target=…' string on a line of its own.
   while IFS= read -r mount; do
     source="$(grep -oE 'source=[^,"]*' <<< "$mount")"
     target="$(grep -oE 'target=[^,"]*' <<< "$mount")"
@@ -124,14 +156,40 @@ else
         || add_error "$LOCK: lists Feature '$id', which $CONFIG no longer adds — the lock was not regenerated (ADR-0004)"
     done
   fi
+
+  # 5. Git settings: the text from the postStartCommand key to the next top-level key, its
+  # whitespace collapsed.
+  post="$(top_level_value "$ROOT/$CONFIG" postStartCommand | tr '\t\n' '  ' | tr -s ' ')"
+  for setting in "core.hooksPath .githooks" "merge.ff false" "pull.ff only" \
+    "merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'"; do
+    [[ "$post" == *"git config $setting"* ]] \
+      || add_error "$CONFIG: postStartCommand does not run 'git config $setting' — the git hooks and the merge settings they rely on are enabled on every start (CONTRIBUTING.md, Git hooks)"
+  done
+
+  # 6. Mount path: a key the file leaves out takes the default, which is the path itself.
+  # shellcheck disable=SC2016  # the variable is devcontainer.json's, not the shell's
+  own='/workspaces/${localWorkspaceFolderBasename}'
+  folder="$(top_level_value "$ROOT/$CONFIG" workspaceFolder)"
+  [[ -z "$folder" || "$folder" == *"\"$own\""* ]] \
+    || add_error "$CONFIG: workspaceFolder is not '$own' — a path every project shares gives every project one agent memory (ADR-0004)"
+  # The target is one of the mount's comma-separated options, under any of its names.
+  mount="$(top_level_value "$ROOT/$CONFIG" workspaceMount | tr -d '" \t\n')"
+  mount_own=0
+  [[ -z "$mount" ]] && mount_own=1
+  IFS=',' read -ra options <<< "$mount"
+  for option in "${options[@]}"; do
+    case "${option#:}" in target="$own" | dst="$own" | destination="$own") mount_own=1 ;; esac
+  done
+  ((mount_own)) \
+    || add_error "$CONFIG: workspaceMount does not target '$own' — a path every project shares gives every project one agent memory (ADR-0004)"
 fi
 
 # 4. Host side: the pair has to sit inside the 'remote.extensionKind' object, so the text is
 # flattened and matched from that key up to the first closing brace.
 if [[ ! -f "$ROOT/$SETTINGS" ]]; then
   add_error "$SETTINGS: not found — it pins the container-management extension to the host side (ADR-0004)"
-elif ! uncommented "$ROOT/$SETTINGS" | tr -d ' \t\n' \
-       | grep -qE '"remote\.extensionKind":\{[^}]*"ms-azuretools\.vscode-containers":\["ui"\]'; then
+elif ! grep -qE '"remote\.extensionKind":\{[^}]*"ms-azuretools\.vscode-containers":\["ui"\]' \
+       <<< "$(uncommented "$ROOT/$SETTINGS" | tr -d ' \t\n')"; then
   add_error "$SETTINGS: does not pin 'ms-azuretools.vscode-containers' to [\"ui\"] under 'remote.extensionKind' — without it the extension runs in the container and asks for the socket (ADR-0004)"
 fi
 
@@ -141,5 +199,5 @@ if ((${#errors[@]})); then
   exit 1
 fi
 
-echo "Dev Container check passed (${#features[@]} Features pinned and locked, no host socket)."
+echo "Dev Container check passed (${#features[@]} Features pinned and locked, no host socket, git hooks enabled, a path of its own)."
 exit 0

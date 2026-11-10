@@ -102,3 +102,9 @@ skimmed. The design revision drops what prevented nothing
   `[workspace.lints]` and the ADRs that bind the crate, because ADR-0043 first decided exports of
   the C ABI, which need the `unsafe` that ADR-0015 denies outside `render-agg`, and was found
   unworkable only by its implementation.
+- **A rule changes everywhere it is stated** — a change to a rule, a step, or a name searches
+  the tree for its old wording and for every citation of its anchor, and corrects them in the
+  same change. A link check sees the anchor, never a sentence that restates it.
+- **A self-test asserts what it builds** — it takes its fixtures from the tree it copies or writes
+  them itself, never from the template's own ADRs, scripts, or numbers, so it holds in a derived
+  project and after a normalization.

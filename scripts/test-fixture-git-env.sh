@@ -7,8 +7,8 @@
 # Each self-test that drives git runs with GIT_DIR naming a decoy repository; the decoy's refs
 # and config must be unchanged afterwards, and the self-test must pass as it does without one.
 # Every other script under scripts/ that points git at a directory with -C or clone, such as the
-# corpus fetch, which needs the network to run, must clear the variables itself: a script without
-# the line fails by name.
+# corpus fetch, which needs the network to run, must clear the variables itself, or source
+# scripts/lib/selftest.sh, which does: a script with neither fails by name.
 #
 # Usage:
 #     scripts/test-fixture-git-env.sh
@@ -35,7 +35,9 @@ passed=0
 for script in "$ROOT"/scripts/*.sh; do
   grep -qE '\bgit (-C|.*\bclone\b)' "$script" || continue
   # shellcheck disable=SC2016 # the line itself, not its expansion
-  if grep -qF 'unset $(git rev-parse --local-env-vars)' "$script"; then
+  # The line itself, or the shared library of the self-tests, which runs it on being sourced.
+  if grep -qF 'unset $(git rev-parse --local-env-vars)' "$script" \
+    || grep -qE '^source .*/lib/selftest\.sh"$' "$script"; then
     passed=$((passed + 1))
   else
     failed=$((failed + 1))

@@ -36,14 +36,18 @@
     "gh": "mkdir -p \"${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh-devcontainer\" || exit 0"
   },
 
-  // Runs inside the container once it is created. Git does not version its hooks, so the
-  // repository keeps them under .githooks/ and this points git at them: pre-commit refuses a
-  // commit on main (AGENTS.md, section 6), pre-push runs the checks first (AGENTS.md, section 5).
-  // Outside the container, run the same command once per clone (README → "Getting Started").
-  "postCreateCommand": {
+  // Runs inside the container on every start, so the settings are set again should a session
+  // have changed them: the repository's git hooks under .githooks/ and the merge settings they
+  // rely on. What each refuses, and the same commands for a clone outside the container,
+  // are under "Git hooks" in CONTRIBUTING.md.
+  "postStartCommand": {
     "hooks": "git config core.hooksPath .githooks",
-    // The merge driver of the ADR index, which .gitattributes names (.githooks/merge-adr-index).
-    "adr-index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'",
+    "merge": "git config merge.ff false && git config pull.ff only",
+    "index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'"
+  },
+
+  // Runs inside the container once it is created.
+  "postCreateCommand": {
     // The pinned toolchain, cargo-deny, the wasm-bindgen CLI, and ShellCheck at the version CI runs,
     // so that the pre-push hook runs the shell lint CI runs (ADR-0008, ADR-0010, ADR-0044).
     "tools": "bash scripts/install-tools.sh",
@@ -54,7 +58,7 @@
 
   // DevContainer Features layered on top of the base image. The container intentionally has NO
   // access to the host Docker daemon (no socket mount) — see ADR-0004. Manage the host's containers
-  // from a host-side VS Code extension instead (README → "Host container management").
+  // from a host-side VS Code extension instead (CONTRIBUTING.md → "Host container management").
   "features": {
     // GitHub CLI (`gh`) — used by the coding agent for GitHub operations and as the git
     // credential helper. A push and every gh action wait for a human instruction

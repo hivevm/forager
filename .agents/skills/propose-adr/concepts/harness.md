@@ -15,7 +15,7 @@ and the cap on open agent work.
 - A second agent, a second human, or parallel sessions start working in the repository.
 - A ticket asks to run unattended, and nothing says what may.
 - Reviews pile up faster than the humans read them.
-- Pull requests of ADRs wait on the one human who may decide them.
+- Proposed ADRs wait on the one human who may decide them.
 
 ## Fits when
 
@@ -31,22 +31,25 @@ and the cap on open agent work.
   a container, of its own, and starts a fresh session of the implementing agent in each; where
   several humans or machines dispatch from clones of their own, the claim is made on the
   shared remote, the one push the ADR grants without an instruction per push; the
-  open agent work is capped at what the humans can review. The
+  open agent work is capped at what the humans can review, two or three at the start. Parallel
+  sessions save time, not tokens: each pays its own start and its own review, and two whose
+  branches collide pay a rework and the review of the whole branch after it. The
   [`work-tickets`](../../work-tickets/SKILL.md) skill is the order of that work, and every
   agent that reads skills and runs from a command line can be dispatcher or worker.
 
 Whichever fits, the ADR answers: who decides ADRs and lands changes to the specification, one
-maintainer or several, and where several, which of them decides for which part of the system,
-named by the paths an ADR's *Applies to* names, with the code owners of `docs/adr/` and the
-specification being exactly those who may decide and each ADR's `Deciders` line naming the one
-who did; which agent and model implements and which
-reviews, and the
-command that starts a session of each without a human, such as the agent's non-interactive
-mode; how parallel sessions are kept apart, if there are any, and on which remote claims on
-tickets are made where the sessions do not all share one repository; how much agent work may
-be open at once; and which parts of the system are never worked unattended however small the
-ticket, such as authentication and authorization, payment, public interfaces, data migrations,
-and whatever else the specification's threats protect.
+maintainer or several, and where several, which of them decides for which part of the system, named
+by the paths an ADR's *Applies to* names, with the code owners of `docs/adr/` and the specification
+being exactly those who may decide and each ADR's `Deciders` line naming the one who did; which
+agent and model implements and which reviews, and which smaller model takes the work that needs no
+stronger one, such as a light review, a search whose answer is a conclusion, or a ticket that takes
+no decision; the command that starts a session of each without a human, such as the agent's
+non-interactive mode, and the one that continues a session, where the agent has one; how parallel
+sessions are kept apart, if there are any, and on which remote claims on tickets are made where the
+sessions do not all share one repository; how much agent work may be open at once; and which parts
+of the system are never worked unattended however small the ticket, such as authentication and
+authorization, payment, public interfaces, data migrations, and whatever else the specification's
+threats protect.
 
 ## Does not fit
 
@@ -55,8 +58,8 @@ and whatever else the specification's threats protect.
 - The implementer reviewing its own change:
   [`AGENTS.md` §5](../../../../AGENTS.md#5-quality-bar--definition-of-done) excludes it whatever
   the harness says.
-- A gate in one agent's own configuration as the enforcement of a rule: the next agent does not
-  honour it, so it looks like a rule and is not one.
+- A gate in one agent's own configuration as the enforcement of a rule
+  ([`AGENTS.md` §6](../../../../AGENTS.md#6-project-rules)).
 
 ## The rule a test decides
 
@@ -69,7 +72,7 @@ review of the repository settings.
 ## Sensors
 
 The review skill, the inferential sensor; the git hooks under `.githooks/`; the required checks
-and the Code Owners review listed under *Repository settings* in the README;
+and the Code Owners review listed under *Repository settings* in `CONTRIBUTING.md`;
 [`scripts/sensor-plan-frontier.sh`](../../../../scripts/sensor-plan-frontier.sh), which lists
 the tickets that may be claimed, for the dispatching session.
 

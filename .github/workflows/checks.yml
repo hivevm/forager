@@ -2,26 +2,22 @@ name: Checks
 
 # Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed but
 # ShellCheck, which the shell job installs at the version scripts/install-shellcheck.sh pins
-# (ADR-0044).
-# scripts/check-all.sh is the local equivalent; check 9 of scripts/check-docs.sh holds the two
-# lists and the required checks named in README.md together. Each job runs a check after its own
-# self-test, and each script's header says what it checks:
-# - Documentation: scripts/check-docs.sh, then the self-test of the normalize skill's map
-#   script, scripts/test-normalize-remap.sh (ADR-0001).
-# - Traceability: scripts/check-traceability.sh (ADR-0002).
-# - Dev Container: scripts/check-devcontainer.sh (ADR-0004).
-# - Sensors: scripts/sensor-tests-kept.sh, sensor-binding-adrs.sh (ADR-0001),
-#   sensor-revision-due.sh and sensor-plan-frontier.sh (ADR-0006), and sensor-action-refs.sh, run
-#   with --require major-tag as the check of ADR-0011.
-#   They report for the reviewer and fail on nothing they count, except the action references
-#   once a project runs that sensor with --require. The job checks out the full history because
-#   three sensors read it.
-# - Shell lint: scripts/check-shell.sh, after the self-test of the git hooks.
-# - Build, test, lint: scripts/check-rust.sh after scripts/install-tools.sh (ADR-0008) and the
-#   self-test of scripts/fuzz.sh, which reads manifests with the toolchain installed; the one job
-#   of this workflow that installs something; ~/.cargo/bin and the registry are cached, keyed
-#   on the files that decide their content, and so is the msautotest suite check-rust.sh fetches,
-#   keyed on the script that holds its pin.
+# (ADR-0044), and the toolchain of the rust job. scripts/check-all.sh is the local equivalent;
+# check 9 of scripts/check-docs.sh holds its list, the jobs of this workflow, and the required
+# checks named in CONTRIBUTING.md together. Each job runs a check after its own self-test, and
+# each script's header says what it checks and which ADR it holds.
+#
+# The sensors report for the reviewer and fail on nothing they count, except the action
+# references, which this project runs with --require major-tag as the check of ADR-0011; their
+# self-tests fail like any check's. The sensors job checks out the full history because five
+# sensors read it. The review binding sensor runs in review-binding.yml, the repository settings
+# sensor on a human's instruction (ADR-0002); this workflow runs the self-test of each.
+#
+# The build, test, and lint job runs scripts/check-rust.sh after scripts/install-tools.sh
+# (ADR-0008) and the self-test of scripts/fuzz.sh, which reads manifests with the toolchain
+# installed; the one job of this workflow that installs a toolchain; ~/.cargo/bin and the
+# registry are cached, keyed on the files that decide their content, and so is the msautotest
+# suite check-rust.sh fetches, keyed on the script that holds its pin.
 #
 # Every job is bounded by a timeout — a hung step would otherwise occupy a runner until the
 # platform's own six-hour limit — and every checkout runs with 'persist-credentials: false': the
@@ -30,8 +26,14 @@ name: Checks
 
 on:
   pull_request:
+    # ready_for_review runs check 16 of check-docs.sh again on a draft pull request marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
+  # Started by hand on a pushed branch that has no pull request yet, such as a feat/ branch
+  # under rework (AGENTS.md, section 6): gh workflow run checks.yml --ref <branch>. GitHub offers
+  # it only once this trigger is on the default branch.
+  workflow_dispatch:
   # Once a week against main without a change: catches what moves without a commit, the runner
   # image, a retagged action, a toolchain download. GitHub disables a schedule after 60 days
   # without activity in a public repository.
@@ -65,10 +67,21 @@ jobs:
       # The check's own tests run first: a check that is wrong passes nothing worth trusting.
       - name: Self-test the documentation checks
         run: bash scripts/test-check-docs.sh
+      # Check 16 reads the branch the change lands on from GitHub's own variables: a draft ADR
+      # fails on a pull request into main once it is ready for review, and on a push to main
+      # (ADR-0002). A draft pull request tests a feat/ branch still under rework, and passes.
       - name: Check documentation consistency
         run: bash scripts/check-docs.sh
+        env:
+          PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
       - name: Self-test the map script of the normalize skill
         run: bash scripts/test-normalize-remap.sh
+      - name: Self-test the numbering script of the drafts
+        run: bash scripts/test-number-adrs.sh
+      - name: Self-test the readiness script of the pull request into main
+        run: bash scripts/test-ready-for-main.sh
+      - name: Self-test the drop script of a merged branch
+        run: bash scripts/test-drop-merged-branch.sh
 
   traceability:
     runs-on: ubuntu-latest
@@ -118,6 +131,12 @@ jobs:
         run: bash scripts/sensor-binding-adrs.sh "$BASE"
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - name: Self-test the plain rules sensor
+        run: bash scripts/test-sensor-plain-rules.sh
+      - name: Report long sentences and soft modal verbs the change adds to the rules
+        run: bash scripts/sensor-plain-rules.sh "$BASE"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       - name: Self-test the revision-due sensor
         run: bash scripts/test-sensor-revision-due.sh
       - name: Report the changes since the last design revision
@@ -126,6 +145,10 @@ jobs:
         run: bash scripts/test-sensor-plan-frontier.sh
       - name: Report the tickets that may be claimed, the claimed, and the blocked
         run: bash scripts/sensor-plan-frontier.sh
+      - name: Self-test the backlog sensor
+        run: bash scripts/test-sensor-backlog.sh
+      - name: Report the backlog entries on main and on unmerged local branches
+        run: bash scripts/sensor-backlog.sh
       - name: Self-test the action references sensor
         run: bash scripts/test-sensor-action-refs.sh
       # The check of ADR-0011: every action by its major version tag, kept current by Dependabot.
@@ -155,6 +178,11 @@ jobs:
       # The fidelity check itself runs in the rust job, after the harness that counts the cases.
       - name: Self-test the fidelity check
         run: bash scripts/test-check-fidelity.sh
+      - name: Self-test the review binding sensor
+        run: bash scripts/test-sensor-review-binding.sh
+      # The repository settings sensor itself runs on a human's instruction (ADR-0002).
+      - name: Self-test the repository settings sensor
+        run: bash scripts/test-sensor-repo-settings.sh
 
   shell:
     runs-on: ubuntu-latest
@@ -167,6 +195,8 @@ jobs:
         run: |
           bash scripts/install-shellcheck.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Self-test the check runner
+        run: bash scripts/test-check-all.sh
       - name: Self-test the git hooks
         run: bash scripts/test-git-hooks.sh
       - name: Self-test the ADR index's merge driver

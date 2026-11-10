@@ -27,17 +27,19 @@
 # session was first, 1 on anything else.
 set -uo pipefail
 
+# shellcheck source-path=SCRIPTDIR source=../../../scripts/lib/ticket.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../../../scripts/lib/ticket.sh"
+
 ticket="${1:-}" remote="${2:-}"
 
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "claim: not inside a git repository" >&2; exit 1; }
 cd "$top" || exit 1
 
-if [[ ! "$ticket" =~ ^docs/plan/[A-Za-z0-9._-]+/[0-9][0-9]-[A-Za-z0-9._-]+\.md$ ]]; then
+if [[ ! "$ticket" =~ $TICKET_PATH_RE ]]; then
   echo "claim: '$ticket' is no ticket path, docs/plan/<spec>/<NN>-<slug>.md" >&2
   exit 1
 fi
-branch="ticket/${ticket#docs/plan/}"
-branch="${branch%.md}"
+branch="$(ticket_branch "$ticket")"
 
 if git show-ref --verify --quiet "refs/heads/$branch"; then
   echo "claim: $branch exists here — another session was first" >&2

@@ -56,8 +56,8 @@ check() {
   local build="$1" workflow="$2" problems=()
   if grep -Eq '^[[:space:]]*(TAG|COMMIT)=["'"'"']?[^"$]' "$build" \
     || grep -Eq '\b[0-9a-f]{7,40}\b|rel-[0-9]+-[0-9]+-[0-9]+' "$build" \
-    || grep -E -- 'git[^|]* (clone|checkout|fetch)|--branch' "$build" \
-      | grep -vq -- '--branch "\$TAG"'; then
+    || (( $(grep -E -- 'git[^|]* (clone|checkout|fetch)|--branch' "$build" \
+      | grep -vc -- '--branch "\$TAG"') )); then
     problems+=("the build script names a tag or a commit of its own")
   fi
   if ! grep -qx 'PIN="\$ROOT/scripts/fetch-msautotest.sh"' "$build" \

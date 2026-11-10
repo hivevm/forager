@@ -9,8 +9,9 @@
 # 'Mode' section, so a session dispatching parallel work sees which may run unattended. Paths in
 # HTML comments are not read. A blocker is closed once its file is gone, so a path that never
 # existed blocks nothing. It reports and never fails on what it counts; it fails when a ticket
-# has no 'Blocked by' or no 'Mode' section, or a blocker that is neither a path under docs/plan/
-# nor 'None', such as a link, because then it cannot place that ticket.
+# has a name the claim refuses (scripts/lib/ticket.sh), no 'Blocked by' or no 'Mode' section, or
+# a blocker that is neither a path under docs/plan/ nor 'None', such as a link, because then it
+# cannot place or claim that ticket.
 #
 # Pure bash + git + coreutils/awk. Usage:
 #     scripts/sensor-plan-frontier.sh [repository root]
@@ -22,6 +23,9 @@ set -uo pipefail
 # repository instead of the one it names (docs/CONVENTIONS.md).
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
+
+# shellcheck source-path=SCRIPTDIR source=lib/ticket.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/ticket.sh"
 
 ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)"
 PLAN="docs/plan"
@@ -68,8 +72,11 @@ fi
 claimed_by="$(branches)"
 frontier=() claimed=() blocked=() errors=()
 for t in "${tickets[@]}"; do
-  branch="ticket/${t#"$PLAN"/}"
-  branch="${branch%.md}"
+  if [[ ! "$t" =~ $TICKET_PATH_RE ]]; then
+    errors+=("$t: a name the claim refuses — use letters, digits, '.', '_', and '-' only, as docs/plan/<spec>/<NN>-<slug>.md")
+    continue
+  fi
+  branch="$(ticket_branch "$t")"
   if ! blockers="$(section "$ROOT/$t" "Blocked by")"; then
     errors+=("$t: no '## Blocked by' section — name the blocking tickets by path, or 'None (can start immediately)'")
     continue
