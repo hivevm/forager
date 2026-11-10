@@ -451,7 +451,7 @@ fn a_line_height_past_any_integer_lays_out_without_a_panic() {
         let mut glyphs = Glyphs::new(10.0);
         let mut layout = Layout::new(glyph_size, 3);
         for _ in 0..3 {
-            layout.line(&font, &mut glyphs, 0, &ids).unwrap();
+            layout.line(&font, &mut glyphs, 0, ids.as_slice()).unwrap();
         }
         layout.finish(Align::Left);
     }
@@ -468,7 +468,7 @@ fn laid_lines(font: &Font<'_>, text: &[&str], align: Align) -> Laid {
             layout.empty_line();
         } else {
             let ids = font.glyphs(&chars, true).unwrap().unwrap();
-            layout.line(font, &mut glyphs, 0, &ids).unwrap();
+            layout.line(font, &mut glyphs, 0, ids).unwrap();
         }
     }
     Laid {

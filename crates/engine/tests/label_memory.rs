@@ -436,21 +436,27 @@ fn labels_most_features_refuse() {
 /// apart from its text, which Q-9 bounds, is not counted with it, and held to four times the
 /// input's size, the maintainer's bound; a copy of the text for each point would be over a
 /// thousand times its size. The text and the points are few enough that such a copy, of 160 MiB,
-/// fails the assertion rather than exhaust the memory of the machine that runs the test. The
-/// coordinates outweigh the text here, so the bound leaves room for some copies of it besides.
+/// fails the assertion rather than exhaust the memory of the machine that runs the test. At
+/// 10,000 points the coordinates outweigh the text, so the bound leaves room for some copies of it
+/// besides. At 2,000 points and 64 KiB the text weighs more: laid out, a line is held as its
+/// characters and its glyph indices, 4 bytes each per byte of an ASCII text, once each; a third
+/// copy of the indices, into the layout, held 6.4 times the input. The bound cannot hold where a
+/// text far outweighs its input's coordinates, as its glyph indices alone take 4 bytes for each of
+/// its bytes; that question is the maintainer's.
 fn a_long_text_is_held_once_for_all_its_points() {
-    const VERTICES: usize = 10_000;
-    const TEXT: usize = 1 << 14;
-    // Words of a glyph each, so that the text is laid out as any other.
-    let long = "Forager ".repeat(TEXT / 8);
-    for min_distance in [None, Some(10.0)] {
-        let (short, _) = held(VERTICES, "Forager", min_distance);
-        let (with, input) = held(VERTICES, &long, min_distance);
-        let kept = with.saturating_sub(short);
-        assert!(
-            kept <= 4 * input,
-            "MINDISTANCE {min_distance:?}: {kept} bytes for the text, for an input of {input} bytes"
-        );
+    for (vertices, text) in [(10_000, 1 << 14), (2_000, 1 << 16)] {
+        // Words of a glyph each, so that the text is laid out as any other.
+        let long = "Forager ".repeat(text / 8);
+        for min_distance in [None, Some(10.0)] {
+            let (short, _) = held(vertices, "Forager", min_distance);
+            let (with, input) = held(vertices, &long, min_distance);
+            let kept = with.saturating_sub(short);
+            assert!(
+                kept <= 4 * input,
+                "{vertices} points, {text} bytes, MINDISTANCE {min_distance:?}: {kept} bytes for \
+                 the text, for an input of {input} bytes"
+            );
+        }
     }
 }
 

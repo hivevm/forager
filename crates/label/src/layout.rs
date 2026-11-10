@@ -82,8 +82,15 @@ pub fn lines(text: &str, wrap: Option<char>, max_length: i32) -> Result<Vec<Vec<
         return Ok(Vec::new());
     }
     // A last `\n` closes the line without opening another.
-    let body = chars.strip_suffix(&['\n']).unwrap_or(&chars);
-    let lines: Vec<Vec<char>> = body.split(|&c| c == '\n').map(<[char]>::to_vec).collect();
+    if chars.last() == Some(&'\n') {
+        chars.pop();
+    }
+    // One line keeps the characters as they are, so that a long text is not held twice.
+    let lines: Vec<Vec<char>> = if chars.contains(&'\n') {
+        chars.split(|&c| c == '\n').map(<[char]>::to_vec).collect()
+    } else {
+        vec![chars]
+    };
     if let Some(&c) = lines.iter().flatten().find(|&&c| u32::from(c) >= 0x2B0) {
         return Err(LineError::NotLatin(c));
     }
@@ -219,8 +226,9 @@ impl Layout {
         font: &Font<'_>,
         cache: &mut Glyphs,
         index: u32,
-        glyphs: &[u32],
+        glyphs: impl Into<Vec<u32>>,
     ) -> Result<(), u32> {
+        let glyphs = glyphs.into();
         let number = self.lengths.len();
         // (1 - numlines + line_number) * line_height, in C's int before the double. Where that
         // overflows, which C leaves undefined, the pen saturates: such a line stands past any
@@ -228,7 +236,7 @@ impl Layout {
         let rows = 1 - self.num_lines as i64 + number as i64;
         let pen_y = rows.saturating_mul(self.line_height) as f64;
         let mut pen_x = 0.0;
-        for &id in glyphs {
+        for &id in &glyphs {
             let glyph = cache.get(font, id).ok_or(id)?;
             pen_x += glyph.advance;
             // The top only of the first line, the bottom of every line.
@@ -245,7 +253,13 @@ impl Layout {
             self.max_x = pen_x;
         }
         if !glyphs.is_empty() {
-            self.ids.extend_from_slice(glyphs);
+            // The first line's glyphs are taken as they are, so that a long text's are not held
+            // twice.
+            if self.ids.is_empty() {
+                self.ids = glyphs;
+            } else {
+                self.ids.extend_from_slice(&glyphs);
+            }
             let line = Line {
                 cache: index,
                 end: self.ids.len() as u32,

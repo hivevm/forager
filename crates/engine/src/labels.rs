@@ -446,7 +446,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let path = if blank {
             None
         } else {
-            match self.layout(fixed, &lines, glyph_size, align).await {
+            match self.layout(fixed, lines, glyph_size, align).await {
                 Ok(path) => Some(path),
                 Err(unlaid) => {
                     let (code, why, outcome) = unlaid.reason(&text);
@@ -740,11 +740,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 
     /// Lays out `lines` at `glyph_size`, each in the font of the label's list that draws it, or
-    /// says why it cannot.
+    /// says why it cannot. Each line is let go once its glyphs are laid out, so that a long text
+    /// is not held as characters and as glyphs at once.
     async fn layout(
         &mut self,
         fixed: &Fixed<'_>,
-        lines: &[Vec<char>],
+        lines: Vec<Vec<char>>,
         glyph_size: f64,
         align: Align,
     ) -> Result<TextPath, Unlaid> {
@@ -758,7 +759,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let fonts = fixed.fonts.ok_or(Unlaid::NoFont)?;
             let face = self
                 .fonts
-                .face(self.map, fonts, line, self.files)
+                .face(self.map, fonts, &line, self.files)
                 .await
                 .map_err(Unlaid::Font)?;
             let key = (face.path, pixel_size(glyph_size));
@@ -769,7 +770,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             Font::new(&face.bytes)
                 .map_err(|_| 0)
                 .and_then(|font| {
-                    layout.line(&font, &mut self.glyphs[cache], cache as u32, &face.glyphs)
+                    layout.line(&font, &mut self.glyphs[cache], cache as u32, face.glyphs)
                 })
                 .map_err(Unlaid::Glyph)?;
         }
