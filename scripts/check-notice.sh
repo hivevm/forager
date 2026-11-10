@@ -6,9 +6,14 @@
 # follows src/apps/map2img.c (ADR-0029).
 #
 # A Rust or C file under crates/ or fuzz/ that names a MapServer source file — src/map….c, .h,
-# .l, or .y — follows that code, and must hold the notice of those files: the copyright line of
-# the Regents of the University of Minnesota, the permission sentence, and the disclaimer to its
-# last words.
+# .l, or .y, or a program's src/apps/….c — follows that code, and must hold the notice of those
+# files: the copyright line of the Regents of the University of Minnesota, the permission
+# sentence, and the disclaimer to its last words. src/apps/map2img.c at rel-8-6-6 carries the
+# same notice (l.9-27), as do the other programs under src/apps/ but two: src/apps/msencrypt.c
+# names the years 1996-2006, which a file that names it may hold instead, and src/apps/coshp.c
+# is Paul Ramsey's (2021), not the Regents', so a file that names only it is not held to their
+# notice (the maintainer's decision of 2026-11-08); a port of it would take a notice of its own,
+# as pnpoly's.
 # A file that names msPointInPolygon or pnpoly, a mere mention included, follows W. Randolph
 # Franklin's pnpoly, under a notice of its own, and must hold it: his copyright line, his first
 # and his third condition, which no other notice holds, and the disclaimer. THIRD-PARTY-NOTICES.md,
@@ -29,6 +34,8 @@ ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
   || { echo "Notice check: '${1:-}' is not a directory." >&2; exit 2; }
 
 COPYRIGHT='Copyright (c) 1996-2005 Regents of the University of Minnesota.'
+# The copyright line of src/apps/msencrypt.c, which a file that names it may hold instead.
+COPYRIGHT_2006='Copyright (c) 1996-2006 Regents of the University of Minnesota.'
 PERMISSION='Permission is hereby granted, free of charge, to any person obtaining a copy of this software'
 DISCLAIMER='OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.'
 # W. Randolph Franklin's pnpoly, which MapServer's msPointInPolygon is, under a notice of its own:
@@ -56,9 +63,16 @@ while IFS= read -r -d '' file; do
       pnpoly_failures=$((pnpoly_failures + 1))
     fi
   fi
-  grep -qE '\bsrc/map[a-z_]*\.(c|h|l|y)\b' "$file" || continue
+  # Captured, not piped into grep -q: under pipefail a long list would fail the pipe by SIGPIPE.
+  refs="$(grep -oE '\bsrc/(map[a-z_]*\.(c|h|l|y)|apps/[a-z0-9_]+\.c)\b' "$file" \
+    | grep -vx 'src/apps/coshp.c')"
+  [[ -n "$refs" ]] || continue
   checked=$((checked + 1))
-  if ! grep -qF "$COPYRIGHT" "$file" || ! grep -qF "$PERMISSION" "$file" \
+  copyright="$COPYRIGHT"
+  if grep -qx 'src/apps/msencrypt.c' <<< "$refs" && ! grep -qF "$COPYRIGHT" "$file"; then
+    copyright="$COPYRIGHT_2006"
+  fi
+  if ! grep -qF "$copyright" "$file" || ! grep -qF "$PERMISSION" "$file" \
      || ! grep -qF "$DISCLAIMER" "$file"; then
     echo "ERROR: ${file#"$ROOT"/} follows MapServer's source and does not hold its notice" >&2
     failures=$((failures + 1))

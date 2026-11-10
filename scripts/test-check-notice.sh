@@ -71,6 +71,29 @@ mkdir -p "$cdir/crates/x/tests"
 printf '%s\n' '/* Walks the cache as msDrawLabelCache in src/mapdraw.c does. */' > "$cdir/crates/x/tests/reader.c"
 expect "a C file that cites MapServer's source without the notice fails" \
   "$cdir" 1 "crates/x/tests/reader.c follows MapServer"
+adir="$work/apps"
+mkdir -p "$adir/crates/x/tests"
+printf '%s\n' '/* Walks the cache as main in src/apps/map2img.c does. */' > "$adir/crates/x/tests/reader.c"
+expect "a C file that cites only src/apps/map2img.c without the notice fails" \
+  "$adir" 1 "crates/x/tests/reader.c follows MapServer"
+expect "a Rust file that cites only src/apps/map2img.c without the notice fails" \
+  "$(repo appsrust '// As main in src/apps/map2img.c renders it.')" 1 "does not hold its notice"
+expect "a file that cites src/apps/map2img.c with the notice passes" \
+  "$(repo appsnoticed "$NOTICE
+// As main in src/apps/map2img.c renders it.")" 0 "Notice check passed (1 files"
+expect "a file that cites only src/apps/coshp.c, Paul Ramsey's, is not held to the Regents' notice" \
+  "$(repo appscoshp '// As src/apps/coshp.c sorts it.')" 0 "Notice check passed (0 files"
+expect "a file that cites src/apps/coshp.c and a MapServer source without the notice fails" \
+  "$(repo appscoshpmap '// As src/apps/coshp.c and src/mapshape.c read it.')" 1 "does not hold its notice"
+expect "a file that cites src/apps/msencrypt.c with its 1996-2006 notice passes" \
+  "$(repo appsencrypt "${NOTICE/1996-2005/1996-2006}
+// As src/apps/msencrypt.c reads the key.")" 0 "Notice check passed (1 files"
+expect "a file that cites only src/mapshape.c with the 1996-2006 line fails" \
+  "$(repo map2006 "${NOTICE/1996-2005/1996-2006}
+// As src/mapshape.c reads it.")" 1 "does not hold its notice"
+expect "a file that cites a source a thousand times without the notice fails" \
+  "$(repo manyrefs "$(for _ in $(seq 1000); do echo '// src/mapshape.c'; done)")" 1 \
+  "does not hold its notice"
 PNPOLY_LINE='// Copyright (c) 1970-2003, Wm. Randolph Franklin'
 PNPOLY_ONE='// 1. Redistributions of source code must retain the above copyright notice, this list of'
 PNPOLY_THREE='// 3. The name of W. Randolph Franklin may not be used to endorse or promote products'

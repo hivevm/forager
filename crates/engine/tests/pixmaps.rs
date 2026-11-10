@@ -34,8 +34,8 @@ use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::{Affine, DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Span, Style,
-    Symbol, SymbolKind, SymbolRef,
+    Bound, Class, Extent, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef,
+    Span, Style, Symbol, SymbolKind, SymbolRef,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -334,9 +334,19 @@ fn a_pixmap_that_does_not_load_leaves_its_style_undrawn_and_the_map_drawn() {
     assert!(wide.contains("4096"), "{wide}");
     let drawn = render(&without, &files, &sources);
     assert!(drawn.diagnostics.is_empty(), "{:?}", drawn.diagnostics);
+    // In both: the area's triangle, the map's (30, 20) its pixel (30, 80), in green; the squares
+    // at the pixels (50, 50) and (70, 70), the map's (70, 30), in blue; and where the pin would
+    // stand about (50, 50), from 34 to 65 (agg2RenderPixmapSymbol, mapagg.cpp), white beside the
+    // square, its pixel (40, 50) the pin's half-transparent (6, 16).
     let image = rendered.image.unwrap();
-    assert_eq!(rgb(&image, 50, 50), BLUE, "the square beside them");
-    assert!(image == drawn.image.unwrap());
+    let drawn = drawn.image.unwrap();
+    for image in [&image, &drawn] {
+        assert_eq!(rgb(image, 30, 80), GREEN, "the area");
+        assert_eq!(rgb(image, 50, 50), BLUE, "the square beside them");
+        assert_eq!(rgb(image, 70, 70), BLUE, "the second square");
+        assert_eq!(rgb(image, 40, 50), WHITE, "no pin");
+    }
+    assert!(image == drawn);
 }
 
 #[test]
@@ -607,4 +617,55 @@ fn a_pixmap_s_anchor_point_turned_with_it_lies_on_its_point() {
         rendered.diagnostics
     );
     assert_matches_reference(&rendered.image.unwrap(), "pixmap_anchor_point.png");
+}
+
+#[test]
+fn a_later_transformed_pixmap_style_without_a_color_is_drawn_at_each_vertex() {
+    // A line layer of two styles is cached. lineLayerDrawShape hands the second, with
+    // GEOMTRANSFORM vertices, to msDrawTransformedShape in the first pass, with no test of its
+    // COLOR, and the cache's later passes skip it; msDrawMarkerSymbolInternal draws a pixmap
+    // without a colour. So the pin is drawn once at the line's one inner vertex, the pixel
+    // (50, 50), blended at MS_NINT(50 - 32 / 2.) = 34 on both axes, after the line's stroke.
+    let files = Files([("icons/pin.png", PIN.to_vec())].into());
+    let line = Style {
+        color: Some(Bound::Value(GREEN)),
+        ..Style::default()
+    };
+    let pin = Style {
+        geom_transform: Some(GeomTransform::Vertices),
+        ..symbol_style(1)
+    };
+    let map = map(
+        vec![pixmap("pin", "icons/pin.png")],
+        vec![layer("lines", RenderMode::Line, vec![line, pin])],
+    );
+    let sources: BTreeMap<String, GeoJsonSource> = [(
+        "lines".to_owned(),
+        GeoJsonSource::parse(
+            r#"{"type": "LineString", "coordinates": [[10, 80], [50, 50], [90, 80]]}"#,
+        )
+        .unwrap(),
+    )]
+    .into();
+    let recorder = Recorder::default();
+    let rendered = ready(render_with_files(&map, &sources, &files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let drawn: Vec<String> = recorder
+        .0
+        .borrow()
+        .iter()
+        .map(|item| match &item.op {
+            DrawOp::Stroke { color, .. } => format!("stroke {color:?}"),
+            DrawOp::Pixmap { left, top, .. } => format!("pixmap at ({left}, {top})"),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        drawn,
+        [format!("stroke {GREEN:?}"), "pixmap at (34, 34)".to_owned()]
+    );
 }

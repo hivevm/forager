@@ -70,7 +70,8 @@ pub type Pixmaps = BTreeMap<String, Result<Rc<PremultipliedImage>, String>>;
 pub struct Canvas<'a> {
     symbols: &'a [Symbol],
     pixmaps: Option<&'a Pixmaps>,
-    pub(crate) image: (f64, f64),
+    /// The image's width and height in pixels, as the renderer is handed them.
+    size: (u32, u32),
     pub(crate) factor: f64,
     pub(crate) markers: MarkerBudget,
     hatching: Hatching,
@@ -85,7 +86,7 @@ impl<'a> Canvas<'a> {
         Self {
             symbols,
             pixmaps: None,
-            image: (f64::from(width), f64::from(height)),
+            size: (width, height),
             factor,
             markers: MarkerBudget::new(),
             hatching: Hatching::default(),
@@ -117,6 +118,11 @@ impl<'a> Canvas<'a> {
             refused: self.hatching.refused,
             ..Hatching::for_class(styles, self.symbols, self.factor)
         };
+    }
+
+    /// The image's width and height in pixels.
+    pub(crate) fn image(&self) -> (f64, f64) {
+        (f64::from(self.size.0), f64::from(self.size.1))
     }
 
     /// Whether symbols along the layer's lines were left out, their points past the budget.
@@ -213,7 +219,7 @@ pub fn draw_ops(
                 Geometry::MultiPolygon(polygons) => polygons.concat(),
                 _ => Vec::new(),
             };
-            let rings = hatch::hatch_rings(&rings, view, &canvas.hatching);
+            let rings = hatch::hatch_rings(&rings, view, canvas.image(), &canvas.hatching);
             let drawn = shade(&mut ops, rings, style, view, canvas);
             canvas.hatching.refused += usize::from(!drawn);
         }
@@ -371,7 +377,7 @@ fn line_symbol(
                 style,
                 symbol,
                 initial_gap,
-                canvas.image,
+                canvas.image(),
                 canvas.factor,
                 &mut canvas.markers,
             ));
@@ -447,7 +453,7 @@ pub fn shade(
             rings,
             style,
             color,
-            view.image_size(),
+            canvas.size,
             hatch::reference(canvas.own_image, view),
             factor,
         ) {
@@ -571,6 +577,15 @@ fn transformed(
     if matches!(style.symbol, None | Some(Bound::Value(SymbolRef::Index(0)))) {
         return;
     }
+    // A pass's condition, a COLOR or an OUTLINECOLOR, does not apply here, and the engine's
+    // `Plan::passes` never hands this function `PlainIfColored` or `OutlineIfOutlined`: a later
+    // transformed style of a cached class takes `Plain`, the first `Plain` or `Outline`, as
+    // lineLayerDrawShape (src/mapdraw.c:2140-2149) hands every style with a GEOMTRANSFORM in its
+    // scale range to msDrawTransformedShape without testing a colour, whatever
+    // MS_DRAWMODE_SINGLESTYLE asks, once: in a cached layer in its first pass, where only the
+    // first style is prepared for its outline (1365-1378), and in an uncached one as written.
+    // The cache's later passes, which test MS_VALID_COLOR, skip such a style (1443-1444). Which
+    // colours a marker draws, msDrawMarkerSymbolInternal decides (`marker_ops`).
     let prepared;
     let style = match pass {
         Pass::Plain | Pass::PlainIfColored => style,
@@ -579,7 +594,7 @@ fn transformed(
             &prepared
         }
     };
-    let placed = geom_transform::placed(transform, geometry, view, canvas.image);
+    let placed = geom_transform::placed(transform, geometry, view, canvas.image());
     if placed.is_empty() {
         return;
     }
@@ -1257,6 +1272,49 @@ mod tests {
     }
 
     #[test]
+    fn a_hatch_is_bounded_on_the_image_s_own_size_not_one_rebuilt_from_the_extent() {
+        // An image of 1001 × 1001 pixels whose view spans 0..99 at a pixel a unit: the extent
+        // over the cellsize would give 100 × 100. A hatch a tenth of a pixel apart, a pixel
+        // wide, over a polygon wider than the image lays some 10 060 lines of 1 006 pixels over
+        // the image itself, past the bound on their length (Q-9), which the renderer measures
+        // on 1001 × 1001; over 100 × 100 they would be some 110 000 pixels in all.
+        let view = View {
+            extent: Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 99.0,
+                max_y: 99.0,
+            },
+            cellsize: 1.0,
+        };
+        let style = Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            size: Some(Bound::Value(0.1)),
+            ..colored(Some(BLUE), None)
+        };
+        let symbols = [hatch_symbol()];
+        let ring = |side: f64| {
+            vec![vec![
+                p(-10.0, -10.0),
+                p(side, -10.0),
+                p(side, side),
+                p(-10.0, side),
+            ]]
+        };
+        let shaded = |width: u32, ring| {
+            let mut canvas = Canvas::new(&symbols, width, width, 1.0);
+            let mut ops = Vec::new();
+            shade(&mut ops, ring, &style, &view, &mut canvas)
+        };
+        assert!(!shaded(1001, ring(1100.0)), "refused on 1001 × 1001");
+        // For contrast, not deciding: the hatch over a polygon about an image that is truly
+        // 100 × 100 is drawn. The view is built by hand, since `View::for_image` always gives
+        // an extent that rebuilds the image's own size, and the criterion is the case where the
+        // two disagree.
+        assert!(shaded(100, ring(110.0)), "drawn on 100 × 100");
+    }
+
+    #[test]
     fn a_multipolygon_is_hatched_as_one_shape() {
         // msDrawShadeSymbol hatches the whole shape: one box over both squares.
         let two = Geometry::MultiPolygon(vec![
@@ -1402,8 +1460,29 @@ mod tests {
     #[test]
     fn at_a_factor_a_point_draws_its_symbol_scaled_and_its_stand_in_square_as_written() {
         // pointLayerDrawShape and msDrawTransformedShape hand msDrawMarkerSymbol the style's
-        // scale factor; the square is Forager's stand-in, drawn at 1.
-        let symbols = [circle()];
+        // scale factor; the square of SYMBOL 0 is Forager's stand-in, drawn at 1. Symbol 1 is a
+        // vector square of side 2: at the factor 2, computeSymbolStyle's scale is SIZE 6 × 2 over
+        // msSymbolGetDefaultSize's sizey 2, 6 (maprendering.c:62-65, mapsymbol.c:87), and its
+        // outline the default WIDTH 1 × 2 (maprendering.c:69); msAdjustMarkerPos moves the point
+        // by OFFSET (2, 1) × 2 (maprendering.c:1022-1023); agg2RenderVectorSymbol moves the
+        // square's centre (1, 1) to the origin, scales it by 6, and moves it to the point
+        // (mapagg.cpp:615-623).
+        let square = Symbol {
+            kind: SymbolKind::Vector,
+            paths: vec![vec![
+                [0.0, 0.0],
+                [2.0, 0.0],
+                [2.0, 2.0],
+                [0.0, 2.0],
+                [0.0, 0.0],
+            ]],
+            extent: Some([2.0, 2.0]),
+            ..circle()
+        };
+        let symbols = [square];
+        let ring = |x0: f64, y0: f64, x1: f64, y1: f64| {
+            vec![vec![p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1), p(x0, y0)]]
+        };
         let marked = |symbol: Option<u32>, mode: RenderMode, transform| Style {
             symbol: symbol.map(|i| Bound::Value(SymbolRef::Index(i))),
             size: Some(Bound::Value(6.0)),
@@ -1424,8 +1503,24 @@ mod tests {
         };
         let point = Geometry::Point(Coord { x: 50.0, y: 50.0 });
         let style = marked(Some(1), RenderMode::Point, None);
-        let mut expected = Vec::new();
-        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &circle(), 2.0);
+        // The point (50, 50) moved to (54, 52): the square from (48, 46) to (60, 58), filled,
+        // then outlined open, as agg2RenderVectorSymbol strokes its path.
+        let expected = vec![
+            DrawOp::Fill {
+                rings: ring(48.0, 46.0, 60.0, 58.0),
+                color: BLUE,
+                gamma: None,
+            },
+            DrawOp::Stroke {
+                paths: ring(48.0, 46.0, 60.0, 58.0),
+                closed: false,
+                color: BLACK,
+                width: 2.0,
+                cap: LineCap::Butt,
+                join: LineJoin::Miter,
+                dashes: Dashes::default(),
+            },
+        ];
         assert_eq!(drawn(&style, RenderMode::Point, &point, 2.0), expected);
         assert_ne!(drawn(&style, RenderMode::Point, &point, 1.0), expected);
         let square = marked(None, RenderMode::Point, None);
@@ -1433,10 +1528,17 @@ mod tests {
             drawn(&square, RenderMode::Point, &point, 2.0),
             drawn(&square, RenderMode::Point, &point, 1.0)
         );
+        // GEOMTRANSFORM start at the L's first vertex, the pixel (10, 20), moved to (14, 22)
+        // (mapgeomtransform.c:132-142): the square from (8, 16) to (20, 28), filled alone.
         let start = marked(Some(1), RenderMode::Line, Some(GeomTransform::Start));
-        let mut expected = Vec::new();
-        symbol::symbol_ops(&mut expected, p(10.0, 20.0), &start, &circle(), 2.0);
-        assert_eq!(drawn(&start, RenderMode::Line, &ell(), 2.0), expected);
+        assert_eq!(
+            drawn(&start, RenderMode::Line, &ell(), 2.0),
+            [DrawOp::Fill {
+                rings: ring(8.0, 16.0, 20.0, 28.0),
+                color: BLUE,
+                gamma: None,
+            }]
+        );
     }
 
     /// A style with `MINWIDTH` and `MAXWIDTH` whose `WIDTH` is bound to a feature's property that

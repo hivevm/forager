@@ -193,7 +193,12 @@ fn clip_edge(line: &mut Vec<Point>, a: Point, b: Point, min: Point, max: Point) 
 /// msClipPolygonRect(); in map units before the transformation to pixels, or, where a style of
 /// the class has a `GEOMTRANSFORM`, to the image so grown after it. The hatch's box, and so where
 /// its dashes fall, is the clipped shape's.
-pub fn hatch_rings(rings: &[Vec<Coord>], view: &View, hatching: &Hatching) -> Vec<Vec<Point>> {
+pub fn hatch_rings(
+    rings: &[Vec<Coord>],
+    view: &View,
+    image: (f64, f64),
+    hatching: &Hatching,
+) -> Vec<Vec<Point>> {
     let e = view.extent;
     let beyond = rings
         .iter()
@@ -218,7 +223,7 @@ pub fn hatch_rings(rings: &[Vec<Coord>], view: &View, hatching: &Hatching) -> Ve
         return to_pixels(&points);
     }
     if hatching.clip_in_pixels {
-        let (width, height) = view.image_size();
+        let (width, height) = image;
         let min = Point {
             x: -buffer,
             y: -buffer,
@@ -277,7 +282,7 @@ pub(crate) fn hatch(
     rings: Vec<Vec<Point>>,
     style: &Style,
     color: Rgba,
-    image: (f64, f64),
+    image: (u32, u32),
     reference: Point,
     factor: f64,
 ) -> Hatched {
@@ -321,8 +326,7 @@ pub(crate) fn hatch(
         pattern,
         gamma: Some(GAMMA),
     };
-    // The image's size in whole pixels, as the renderer checks the same bound.
-    if hatch.is_bounded(image.0 as u32, image.1 as u32) {
+    if hatch.is_bounded(image.0, image.1) {
         Hatched::Drawn(hatch)
     } else {
         Hatched::Refused
@@ -333,14 +337,15 @@ pub(crate) fn hatch(
 /// the stroke, in pixels of the image of `image` width and height; `None` past [`MAX_LINES`].
 /// The lines are counted from the reference point, the pixel of the map's origin, where
 /// msPrepareImage() puts the image's `refpt`.
-/// Only the lines that cross the image, grown by the stroke, are laid: the others are MapServer's
-/// too but draw nothing, and a polygon far larger than the image would have countless of them.
+/// Only the lines that cross the rectangle the renderer clips them to, [`Hatch::line_rect_at`],
+/// are laid: the others are MapServer's too but draw nothing, and a polygon far larger than the
+/// image would have countless of them.
 pub(crate) fn hatch_polygon(
     rings: &[Vec<Point>],
     spacing: f64,
     width: f64,
     angle: f64,
-    image: (f64, f64),
+    image: (u32, u32),
     reference: Point,
 ) -> Option<Vec<[Point; 2]>> {
     let mut points = rings
@@ -365,12 +370,12 @@ pub(crate) fn hatch_polygon(
     if !(size_x.is_finite() && size_y.is_finite()) {
         return Some(Vec::new());
     }
-    let margin = width + 2.0;
+    let [min_vx, min_vy, max_vx, max_vy] = Hatch::line_rect_at(width, image.0, image.1).bounds();
     let visible = Visible {
-        min_x: -margin - ox,
-        min_y: -margin - oy,
-        max_x: image.0 + margin - ox,
-        max_y: image.1 + margin - oy,
+        min_x: min_vx - ox,
+        min_y: min_vy - oy,
+        max_x: max_vx - ox,
+        max_y: max_vy - oy,
     };
     let lines = create_hatch(
         [ox, oy],

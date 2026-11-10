@@ -141,13 +141,24 @@ fn a_feature_without_points_draws_nothing() {
 }
 
 #[test]
-fn a_graticule_layer_is_not_read_from_its_features() {
-    // msInitializeVirtualTable exempts a GRATICULE layer from being inline.
+fn a_layer_is_read_from_its_features_whatever_its_sources_kind() {
+    // The frontend leaves out the features of a kind MapServer exempts, as GRATICULE; the engine
+    // tests only for features.
     let mut map = map(vec![feature(vec![square(10.0, 30.0)], "a")]);
     map.layers[0].source = Some(forager_style_ir::SourceRef {
         kind: "graticule".into(),
         ..forager_style_ir::SourceRef::default()
     });
+    assert!(forager_engine::is_inline(&map.layers[0]));
+    let rendered = render_with(&map, None);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image.unwrap().pixel(20, 80), Some(GREEN));
+    // Without its features, as the frontend leaves such a layer, it is skipped as before.
+    map.layers[0].features.clear();
     assert!(!forager_engine::is_inline(&map.layers[0]));
     let rendered = render_with(&map, None);
     let codes: Vec<_> = rendered

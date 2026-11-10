@@ -4,7 +4,7 @@ use super::*;
 
 const BLACK: Rgba = Rgba::opaque(0, 0, 0);
 const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
-const IMAGE: (f64, f64) = (100.0, 100.0);
+const IMAGE: (u32, u32) = (100, 100);
 
 fn p(x: f64, y: f64) -> Point {
     Point { x, y }
@@ -104,6 +104,26 @@ fn diagonal_lines_run_from_side_to_side_of_the_box() {
         lines(10.0, 1.0, 180.0, ORIGIN),
         lines(10.0, 1.0, 0.0, ORIGIN)
     );
+}
+
+#[test]
+fn the_lines_laid_reach_the_rectangle_the_renderer_clips_them_to() {
+    // A hatch 20 wide, a pixel apart, over a square far larger than the image of 100 × 100: the
+    // renderer clips its lines to the image grown by its clip's margin of 2 and half the width,
+    // 12 pixels on every side. The lines laid are those from y (or x) = -12 to 112, and none
+    // beyond, as the lines farther out draw nothing.
+    let huge = vec![vec![p(-1e9, -1e9), p(1e9, -1e9), p(1e9, 1e9), p(-1e9, 1e9)]];
+    let rect = Hatch::line_rect_at(20.0, IMAGE.0, IMAGE.1).bounds();
+    assert_eq!(rect, [-12.0, -12.0, 112.0, 112.0]);
+    for (angle, across) in [(0.0, 1), (90.0, 0)] {
+        let drawn = hatch_polygon(&huge, 1.0, 20.0, angle, IMAGE, ORIGIN).unwrap();
+        let at: Vec<f64> = drawn
+            .iter()
+            .map(|l| if across == 1 { l[0].y } else { l[0].x })
+            .collect();
+        let expected: Vec<f64> = (-12..=112).map(f64::from).collect();
+        assert_eq!(at, expected, "{angle}");
+    }
 }
 
 #[test]
@@ -403,4 +423,25 @@ fn a_hatch_bounds_its_width_and_spacing_as_ms_draw_shade_symbol_does() {
     let hatch = drawn_at(&bounded(4.0, 6.0, 3.0), 2.0);
     assert_eq!(hatch.width, 12.0, "MINWIDTH 6 is 12");
     assert!(close(spacing(&hatch), 12.0), "MINSIZE 6 is 12");
+}
+
+#[test]
+fn a_diagonal_hatch_is_bounded_by_the_lines_the_renderer_clips_it_to() {
+    // Verifies: Q-9
+    // A hatch at 45 degrees, 32 wide, over a square far larger than the image of 300 × 300: the
+    // bound counts only the lines laid inside the renderer's clip, so a spacing of 0.4807 is
+    // drawn, where lines laid out to the old margin of the width and 2 refused it, and 0.48 is
+    // refused. The maintainer accepted that shift of what Q-9 refuses on 2026-11-08.
+    let huge = || vec![vec![p(-1e6, -1e6), p(1e6, -1e6), p(1e6, 1e6), p(-1e6, 1e6)]];
+    let at = |size: f64| {
+        let style = Style {
+            size: Some(Bound::Value(size)),
+            width: Some(Bound::Value(32.0)),
+            angle: Some(Bound::Value(45.0)),
+            ..Style::default()
+        };
+        hatch(huge(), &style, BLACK, (300, 300), ORIGIN, 1.0)
+    };
+    assert!(matches!(at(0.4807), Hatched::Drawn(_)));
+    assert_eq!(at(0.48), Hatched::Refused);
 }

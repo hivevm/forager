@@ -66,6 +66,34 @@ fn invalid_geojson_skips_its_layer_with_diagnostics() {
     );
 }
 
+/// The CLI's data-file limit, `MAX_SOURCE_BYTES` (Q-9).
+const DATA_FILE_LIMIT: u64 = 256 * 1024 * 1024;
+
+#[test]
+fn a_geojson_source_past_the_data_file_limit_skips_its_layer() {
+    // Verifies: Q-9
+    // One byte past the limit, sparse on disk.
+    let big = std::env::temp_dir().join(format!("forager-big-{}.geojson", std::process::id()));
+    std::fs::File::create(&big)
+        .and_then(|f| f.set_len(DATA_FILE_LIMIT + 1))
+        .unwrap();
+    let (code, stderr) = render(&["--source".into(), format!("areas={}", big.display())]);
+    std::fs::remove_file(&big).unwrap();
+    assert_eq!(code, Some(0), "{stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "warning [source-unreadable]: source of layer `areas`: {}: the file exceeds the \
+             limit of {DATA_FILE_LIMIT} bytes",
+            big.display()
+        )),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("square.map:10:5: warning [layer-skipped]: layer `areas`"),
+        "{stderr}"
+    );
+}
+
 #[test]
 fn a_source_for_no_layer_is_reported_and_a_doubled_one_refused() {
     let areas = format!("areas={}", fixture("areas.geojson").display());

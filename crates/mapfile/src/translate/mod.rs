@@ -63,6 +63,31 @@ fn item(block: &Block, keyword: &str) -> Option<String> {
     })
 }
 
+/// Whether the layer `block`'s features are never read: a `FEATURE` makes the layer inline as
+/// `loadLayer` reads it (src/mapfile.c), and a `CONNECTIONTYPE GRATICULE` after the last one
+/// makes it a graticule again, which `msInitializeVirtualTable` (src/maplayer.c) does not read
+/// features for; so that the style IR carries features only where they are the layer's source
+/// (ADR-0033).
+fn exempts_features(block: &Block) -> bool {
+    block
+        .nodes
+        .iter()
+        .rev()
+        .find_map(|node| match node {
+            Node::Directive(d) if d.keyword == "CONNECTIONTYPE" => {
+                Some(match d.values.as_slice() {
+                    [token] => token
+                        .keyword()
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("graticule")),
+                    _ => false,
+                })
+            }
+            Node::Block(b) if b.keyword == "FEATURE" => Some(false),
+            _ => None,
+        })
+        .unwrap_or(false)
+}
+
 /// The files a map was read from: the main mapfile, and the symbol file and font set it names,
 /// each with the path it was read from.
 pub struct Files<'a> {
@@ -246,11 +271,14 @@ impl Translator<'_> {
         let filter_item = item(block, "FILTERITEM");
         let mut composites = Vec::new();
         // A layer with features is an inline layer (msInitializeVirtualTable), whose item names
-        // its PROCESSING "ITEMS=…" gives (msLayerGetItems).
-        let inline = block
-            .nodes
-            .iter()
-            .any(|node| matches!(node, Node::Block(b) if b.keyword == "FEATURE"));
+        // its PROCESSING "ITEMS=…" gives (msLayerGetItems), unless its connection type is one
+        // MapServer exempts, whose features are never read.
+        let exempt = exempts_features(block);
+        let inline = !exempt
+            && block
+                .nodes
+                .iter()
+                .any(|node| matches!(node, Node::Block(b) if b.keyword == "FEATURE"));
         let item_names = feature::item_names(block);
         // The shape type of the features the TYPE read so far gives (loadLayer); none before one.
         let mut shape_type = None;
@@ -311,7 +339,13 @@ impl Translator<'_> {
                     "COMPOSITE" => composites.push(b),
                     "FEATURE" => {
                         let feature = self.feature(b, shape_type, &item_names);
-                        layer.features.extend(feature);
+                        if exempt {
+                            let message = "a FEATURE before the layer's CONNECTIONTYPE GRATICULE is never \
+                                           read, as in MapServer, and is left out";
+                            self.warn("features-ignored", message, &b.span);
+                        } else {
+                            layer.features.extend(feature);
+                        }
                     }
                     _ => self.unhandled(&b.keyword, &b.span),
                 },

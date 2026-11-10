@@ -562,6 +562,64 @@ fn a_missing_file_is_an_error_and_upper_case_names_are_tried() {
     assert!(ready(source).is_ok());
 }
 
+/// A loader that refuses one path, as a host refuses a file past its limit, and hands over the
+/// rest.
+struct Refusing(Loader, String);
+
+impl forager_ports::ResourceLoader for Refusing {
+    async fn load(
+        &self,
+        path: &forager_ports::ResourcePath,
+    ) -> Result<Vec<u8>, forager_ports::SourceError> {
+        if path.as_str() == self.1 {
+            Err(forager_ports::SourceError::new(format!(
+                "{path} is past the limit"
+            )))
+        } else {
+            self.0.load(path).await
+        }
+    }
+}
+
+#[test]
+fn an_upper_case_name_is_tried_where_the_lower_case_file_is_refused() {
+    // Verifies: ADR-0024
+    // MapServer tries `.SHP` only where `.shp` cannot be opened (msSHPOpen, msDBFOpen). The
+    // port's error tells no missing file from a refused one, so a refused `.shp` beside a valid
+    // `.SHP` reads the `.SHP`, a departure docs/semantics/shapefile.md states.
+    let named = Files::new(
+        POINT,
+        BOUNDS,
+        &[point(1.0, 1.0), point(2.0, 2.0), point(3.0, 3.0)],
+    );
+    for ext in ["shp", "shx", "dbf"] {
+        let refused = format!("data/layer.{ext}");
+        let mut loader = three_points().loader_named("data/layer", "SHP", "SHX", "DBF");
+        loader.0.extend(named.loader().0);
+        let source = ready(forager_adapter_shapefile::ShapefileSource::open(
+            &Refusing(loader, refused.clone()),
+            &forager_ports::ResourcePath::new("data/layer.shp").unwrap(),
+        ))
+        .expect(&refused);
+        // The .SHP's first point where the .shp is refused, else the .shp's.
+        let x = if ext == "shp" { 0.0 } else { 1.0 };
+        let features = query(&source, EVERYWHERE);
+        assert_eq!(features[0].geometry, Geometry::Point(c(x, x)), "{refused}");
+        // Without the upper-case file, the refusal is the error, naming the lower-case file.
+        let alone = Refusing(named.loader(), refused.clone());
+        let error = ready(forager_adapter_shapefile::ShapefileSource::open(
+            &alone,
+            &forager_ports::ResourcePath::new("data/layer.shp").unwrap(),
+        ))
+        .expect_err(&refused)
+        .message;
+        assert!(
+            error.contains(&refused) && error.contains("past the limit"),
+            "{error}"
+        );
+    }
+}
+
 #[test]
 fn no_mutation_of_a_shapefile_panics() {
     // Verifies: ADR-0024, Q-3

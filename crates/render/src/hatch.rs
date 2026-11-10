@@ -118,7 +118,17 @@ impl Hatch {
     /// The rectangle the renderer clips the lines to before it cuts them: the image enlarged by
     /// the margin and half the width drawn.
     pub fn line_rect(&self, width: u32, height: u32) -> Rect {
-        Rect::around_image(width, height, self.drawn_width(width, height) / 2.0)
+        Self::line_rect_at(self.width, width, height)
+    }
+
+    /// [`Self::line_rect`] of a hatch whose lines are `line_width` wide, before the hatch is
+    /// made: the part of the image its lines must cover.
+    pub fn line_rect_at(line_width: f64, width: u32, height: u32) -> Rect {
+        Rect::around_image(
+            width,
+            height,
+            drawn_width(line_width.abs(), width, height) / 2.0,
+        )
     }
 
     /// An estimate of the crossings the cut has to find on an image of `width` × `height`
