@@ -191,7 +191,12 @@ pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
     }
     let mut ours: BTreeMap<Key, Vec<&CachedLabel>> = BTreeMap::new();
     for label in forager {
-        let key = (label.layer, label.class, label.text.clone(), label.priority);
+        let key = (
+            label.layer,
+            label.class,
+            label.text.to_string(),
+            label.priority,
+        );
         ours.entry(key).or_default().push(label);
     }
     let mut keys: Vec<&Key> = theirs.keys().chain(ours.keys()).collect();

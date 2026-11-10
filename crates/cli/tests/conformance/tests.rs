@@ -599,7 +599,7 @@ fn labels_match_when_both_are_drawn_within_a_pixel_or_both_discarded() {
         priority: 1,
         layer: 0,
         class: 0,
-        text: text.to_owned(),
+        text: text.into(),
         drawn,
     };
     let matching = [
@@ -644,7 +644,7 @@ fn labels_of_another_priority_at_the_same_box_do_not_match() {
         priority: 2,
         layer: 0,
         class: 0,
-        text: "Fen".to_owned(),
+        text: "Fen".into(),
         drawn: Some([10.0, 10.0, 40.0, 20.0]),
     };
     assert_eq!(

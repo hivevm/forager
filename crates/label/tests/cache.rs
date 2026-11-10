@@ -51,6 +51,7 @@ fn at(x: f64, y: f64) -> Member {
             buffer: 0,
             force: false,
         }),
+        force: false,
         partials: false,
         test_point: false,
         marker: None,

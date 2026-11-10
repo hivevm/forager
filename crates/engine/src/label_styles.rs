@@ -35,14 +35,17 @@ enum Kind {
     Center,
 }
 
-/// The kind of a label's `style`, or why it is not drawn: a labelpoly with a symbol, a labelpoint
-/// or labelcenter whose marker is not drawn, or a style of any other transform or none.
+/// The kind of a label's `style`, or why it is not drawn: a labelpoly with a symbol other than a
+/// hatch, a labelpoint or labelcenter whose marker is not drawn, a style of any other transform,
+/// or one without a transform. `ANGLE AUTO` changes none of them: `loadStyle` sets only the
+/// style's `autoangle` for it (mapfile.c:2773-2775), which neither msDrawLabelCache nor
+/// computeMarkerBounds (mapdraw.c:3284-3353, 4056-4135), msDrawMarkerSymbol through
+/// computeSymbolStyle (maprendering.c:76), nor msDrawShadeSymbol (maprendering.c:821) reads; they
+/// turn by its `ANGLE` alone.
 fn kind(style: &Style, symbols: &[Symbol]) -> Result<Kind, &'static str> {
     match style.geom_transform {
-        Some(GeomTransform::LabelPoly)
-            if !matches!(style.symbol, None | Some(Bound::Value(SymbolRef::Index(0)))) =>
-        {
-            Err("a STYLE of GEOMTRANSFORM labelpoly with a SYMBOL")
+        Some(GeomTransform::LabelPoly) if !shade_drawn(style, symbols) => {
+            Err("a STYLE of GEOMTRANSFORM labelpoly whose SYMBOL is no hatch of the symbol set")
         }
         Some(GeomTransform::LabelPoly) => Ok(Kind::Poly),
         Some(GeomTransform::LabelPoint) if !marker_drawn(style, symbols) => Err(
@@ -60,16 +63,27 @@ fn kind(style: &Style, symbols: &[Symbol]) -> Result<Kind, &'static str> {
             | GeomTransform::End
             | GeomTransform::Vertices
             | GeomTransform::Centroid,
-        )
-        | None => {
-            Err("a STYLE other than one of GEOMTRANSFORM labelpoly, labelpnt, or labelcenter")
-        }
+        ) => Err("a STYLE of a GEOMTRANSFORM other than labelpoly, labelpnt, or labelcenter"),
+        None => Err("a STYLE without a GEOMTRANSFORM"),
     }
 }
 
 /// The first of a label's styles that is not drawn yet, named.
 pub(crate) fn unsupported(label: &Label, symbols: &[Symbol]) -> Option<&'static str> {
     label.styles.iter().find_map(|s| kind(s, symbols).err())
+}
+
+/// Whether a label's `labelpoly` style is drawn: without a symbol, or with symbol 0, which
+/// msDrawShadeSymbol fills, or with a hatch of the set, which it hatches (maprendering.c:787-822);
+/// the tile of any other symbol is not drawn yet.
+fn shade_drawn(style: &Style, symbols: &[Symbol]) -> bool {
+    match &style.symbol {
+        None | Some(Bound::Value(SymbolRef::Index(0))) => true,
+        Some(Bound::Value(SymbolRef::Index(index))) => symbols
+            .get(*index as usize - 1)
+            .is_some_and(|s| s.kind == SymbolKind::Hatch),
+        Some(_) => false,
+    }
 }
 
 /// Whether a label's `labelpoint` or `labelcenter` style is drawn: without a symbol, or with
@@ -359,14 +373,18 @@ impl LabelStyles {
             Some(run) if run.layout as usize == layout && run.text + run.len == text => {
                 run.len += 1;
             }
-            _ => self.runs.push(Run {
-                text,
-                len: 1,
-                layout: layout as u32,
-                at: self.values.len(),
-            }),
+            _ => crate::labels::push(
+                &mut self.runs,
+                Run {
+                    text,
+                    len: 1,
+                    layout: layout as u32,
+                    at: self.values.len(),
+                },
+            ),
         }
         let fields = &self.layouts[layout].1;
+        crate::labels::make_room(&mut self.values, fields.len());
         self.values
             .extend(fields.iter().map(|&(i, field)| field.value(&styles[i])));
     }
@@ -471,6 +489,8 @@ pub(crate) struct Styled<'a> {
     factor: f64,
     styles: &'a LabelStyles,
     canvas: Canvas<'a>,
+    /// The hatches of labelpoly styles refused since last taken (Q-9).
+    hatches_refused: usize,
 }
 
 impl<'a> Styled<'a> {
@@ -491,7 +511,20 @@ impl<'a> Styled<'a> {
             factor,
             styles,
             canvas: Canvas::new(&map.symbols, width, height, factor),
+            hatches_refused: 0,
         }
+    }
+
+    /// Marks the labels as drawn into a layer's image of its own, from whose corner a hatch
+    /// counts its lines (see [`Canvas::in_own_image`]).
+    pub(crate) fn in_own_image(&mut self) {
+        self.canvas.in_own_image();
+    }
+
+    /// How many hatches of labelpoly styles were refused since this was last asked (Q-9), as
+    /// [`shade`] refuses a polygon's.
+    pub(crate) fn take_hatches_refused(&mut self) -> usize {
+        std::mem::take(&mut self.hatches_refused)
     }
 
     /// Draws the styles of the label of text `text` of feature `feature_id`, `member` placed at
@@ -511,15 +544,18 @@ impl<'a> Styled<'a> {
         text: u32,
         written: &[Style],
     ) {
-        let point_label = member.label.expect("a drawn label has a box");
-        let poly = label_poly_at(member.point, &point_label, placement.anchor);
+        // A label without text draws its labelpoint styles alone (mapdraw.c:4056-4069); one with a
+        // labelpoly or labelcenter style is refused before it is cached.
+        let poly = member
+            .label
+            .map(|label| label_poly_at(member.point, &label, placement.anchor));
         for (i, style) in written.iter().enumerate() {
             let Ok(kind) = kind(style, &self.map.symbols) else {
                 continue;
             };
             let style = self.styles.style(text, i, style);
-            match kind {
-                Kind::Point => {
+            match (kind, &poly) {
+                (Kind::Point, _) => {
                     draw_label_marker(
                         renderer,
                         member.point,
@@ -529,7 +565,7 @@ impl<'a> Styled<'a> {
                         feature_id,
                     );
                 }
-                Kind::Center => {
+                (Kind::Center, Some(poly)) => {
                     let [min_x, min_y, max_x, max_y] = poly.bbox;
                     let center = Point {
                         x: (max_x + min_x) / 2.0,
@@ -537,16 +573,20 @@ impl<'a> Styled<'a> {
                     };
                     draw_label_marker(renderer, center, &style, self.map, self.factor, feature_id);
                 }
-                Kind::Poly => {
-                    draw_label_poly(
+                (Kind::Poly, Some(poly)) => {
+                    let drawn = draw_label_poly(
                         renderer,
-                        &poly,
+                        poly,
                         &style,
                         self.view,
                         &mut self.canvas,
                         feature_id,
                     );
+                    self.hatches_refused += usize::from(!drawn);
                 }
+                // The label cache refuses a label without text that has such a style before it is
+                // cached; should one reach here, it draws nothing rather than fail the map (Q-3).
+                (Kind::Center | Kind::Poly, None) => {}
             }
         }
     }
@@ -556,7 +596,7 @@ impl<'a> Styled<'a> {
 /// draws it through msDrawShadeSymbol (see [`shade`]): the polygon where the label is turned,
 /// else the ring of its box from its lower left corner up, at the canvas's factor: the map's
 /// scale factor, which is every label's while `fixed` refuses SYMBOLSCALEDENOM and a SIZEUNITS
-/// other than pixels.
+/// other than pixels. False where its hatch is refused (Q-9).
 fn draw_label_poly<R: Draw>(
     renderer: &mut R,
     poly: &Bounds,
@@ -564,7 +604,7 @@ fn draw_label_poly<R: Draw>(
     view: &View,
     canvas: &mut Canvas<'_>,
     feature_id: u64,
-) {
+) -> bool {
     let ring = match &poly.poly {
         Some(points) => points.to_vec(),
         None => {
@@ -580,13 +620,14 @@ fn draw_label_poly<R: Draw>(
         }
     };
     let mut ops = Vec::new();
-    shade(&mut ops, vec![ring], style, view, canvas);
+    let drawn = shade(&mut ops, vec![ring], style, view, canvas);
     for op in ops {
         renderer.draw(&DisplayItem {
             op,
             feature_id: Some(feature_id),
         });
     }
+    drawn
 }
 
 /// A label's `GEOMTRANSFORM labelpoint` style drawn at the label's point `at`, or its
@@ -789,6 +830,22 @@ mod tests {
                 marker,
                 "text {text}"
             );
+        }
+    }
+
+    #[test]
+    fn the_runs_of_labels_of_alternating_definitions_grow_by_a_quarter() {
+        // Verifies: Q-9
+        // Labels of two definitions in turn start a run each; the list of runs grows as the
+        // label cache's lists grow, by a quarter, not by doubling, which would hold up to three
+        // times what it fills while it moves.
+        let (_, second, _) = written();
+        let mut styles = LabelStyles::default();
+        for text in 0..5_000u32 {
+            styles.hold(text % 2, text, &second, &second, None);
+            let (len, capacity) = (styles.runs.len(), styles.runs.capacity());
+            assert_eq!(len, text as usize + 1);
+            assert!(capacity <= len + len / 4 + 8, "{len} runs in {capacity}");
         }
     }
 }

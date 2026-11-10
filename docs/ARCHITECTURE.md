@@ -110,10 +110,11 @@ golden path and the test pattern an agent copies from are named here.
   `symbolize`, in the order MapServer's shape cache draws a line layer's styles and their outlines
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
-  pixmaps whose image the store refused, and geometries its render mode cannot draw (Q-9). It
-  loads the images of a layer's pixmap marks into the render's store before it draws the layer,
-  since `symbolize` does no I/O, and hands them to it on the canvas, and to the labels, which
-  size the marker a class's first style holds beneath each label by them. It is the one core crate
+  a label's `labelpoly` hatches among them, pixmaps whose image the store refused, and geometries
+  its render mode cannot draw (Q-9). It loads the images of a layer's pixmap marks into the
+  render's store before it draws the layer, since `symbolize` does no I/O, and hands them to it on
+  the canvas, and to the labels, which size the marker a class's first style holds beneath each
+  label by them. It is the one core crate
   that awaits the ports. Every host binds its sources to the layers by name through the engine's
   `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
   way for each.

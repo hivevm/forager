@@ -192,6 +192,7 @@ fn member(rng: &mut Rng) -> (Member, u8) {
         priority: 1 + rng.below(3) as u8,
         point,
         label,
+        force: rng.chance(15),
         partials: rng.chance(50),
         test_point: rng.chance(40),
         marker,
@@ -238,7 +239,7 @@ fn through_cache(cache: &Cache) -> Vec<(usize, Anchor)> {
 /// down and, within a priority, from the last added, with every test pair by pair.
 fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
     let members = &cache.0;
-    let mut drawn: Vec<(usize, Bounds)> = Vec::new();
+    let mut drawn: Vec<(usize, Option<Bounds>)> = Vec::new();
     let mut out = Vec::new();
     for priority in (1..=MAX_PRIORITY).rev() {
         for i in (0..members.len()).rev() {
@@ -246,10 +247,19 @@ fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
             if m.priority != priority {
                 continue;
             }
+            let current = usize::from(priority) - 1;
             let Some(label) = m.label else {
+                // A label without text, of its labelpoint marker alone: the marker tested unless
+                // the label is forced, the text and the minimum distance skipped.
+                let Some(marker) = &m.label_marker else {
+                    continue;
+                };
+                if m.force || collisions(cache, &drawn, &m, marker, current, i) {
+                    drawn.push((i, None));
+                    out.push((i, Anchor::Cc));
+                }
                 continue;
             };
-            let current = usize::from(priority) - 1;
             // The marker of a labelpoint style, unless the label is forced; else the label
             // point, tested at MS_MAX_LABEL_PRIORITY: against no marker.
             if let Some(marker) = &m.label_marker {
@@ -275,7 +285,7 @@ fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
             if min_distance(cache, &drawn, i, &bbox) {
                 continue;
             }
-            drawn.push((i, placement.bounds));
+            drawn.push((i, Some(placement.bounds)));
             out.push((i, placement.anchor));
         }
     }
@@ -304,7 +314,7 @@ fn global_bbox(text: &Bounds, marker: Option<&Bounds>) -> [f64; 4] {
 /// own, or, within a drawn label's global bbox, meets its text or its labelpoint marker.
 fn collisions(
     cache: &Cache,
-    drawn: &[(usize, Bounds)],
+    drawn: &[(usize, Option<Bounds>)],
     m: &Member,
     lb: &Bounds,
     current_priority: usize,
@@ -330,15 +340,23 @@ fn collisions(
     }
     for (j, theirs) in drawn {
         let marker = cache.0[*j].0.label_marker;
-        if !rect_overlap(&global_bbox(theirs, marker.as_ref()), &lb.bbox) {
+        // A label without text has its marker's box.
+        let bbox = match (theirs, &marker) {
+            (Some(theirs), marker) => global_bbox(theirs, marker.as_ref()),
+            (None, Some(marker)) => marker.bbox,
+            (None, None) => continue,
+        };
+        if !rect_overlap(&bbox, &lb.bbox) {
             continue;
         }
-        if intersect_label_polygons(
-            theirs.poly.as_ref(),
-            &theirs.bbox,
-            lb.poly.as_ref(),
-            &lb.bbox,
-        ) {
+        if let Some(theirs) = theirs
+            && intersect_label_polygons(
+                theirs.poly.as_ref(),
+                &theirs.bbox,
+                lb.poly.as_ref(),
+                &lb.bbox,
+            )
+        {
             return false;
         }
         if let Some(m) = &marker
@@ -352,7 +370,12 @@ fn collisions(
 
 /// `msCheckLabelMinDistance` for a label of a point: whether a drawn label of the same text
 /// stands, by its point or its box, within the label's minimum distance of `bbox`.
-fn min_distance(cache: &Cache, drawn: &[(usize, Bounds)], i: usize, bbox: &[f64; 4]) -> bool {
+fn min_distance(
+    cache: &Cache,
+    drawn: &[(usize, Option<Bounds>)],
+    i: usize,
+    bbox: &[f64; 4],
+) -> bool {
     let m = cache.0[i].0;
     let label = m.label.expect("a placed label has a text");
     if m.min_distance <= 0.0 || label.force {
@@ -361,6 +384,10 @@ fn min_distance(cache: &Cache, drawn: &[(usize, Bounds)], i: usize, bbox: &[f64;
     let d = m.min_distance;
     let buffered = [bbox[0] - d, bbox[1] - d, bbox[2] + d, bbox[3] + d];
     drawn.iter().any(|(j, theirs)| {
+        // A label without text is not measured from.
+        let Some(theirs) = theirs else {
+            return false;
+        };
         let bbox = global_bbox(theirs, cache.0[*j].0.label_marker.as_ref());
         cache.same_text(i, *j)
             && (point_in_rect(&cache.0[*j].0.point, &buffered)

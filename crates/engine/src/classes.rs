@@ -222,6 +222,30 @@ impl<'a> Selector<'a, '_> {
         }
     }
 
+    /// The text the expression `expr` of label `label` of class `class` gives for `feature`, as
+    /// msEvalTextExpression gives it, its properties read as `bind` reads them; `None` where it
+    /// fails, as for a text past Q-9's bound, which is reported.
+    pub fn label_text(
+        &mut self,
+        expr: &Expr,
+        feature: &Feature,
+        class: usize,
+        label: usize,
+    ) -> Option<Vec<u8>> {
+        self.evaluator
+            .text(expr, &FeatureProperties(&feature.properties))
+            .map_err(|failure| {
+                self.reports.report(
+                    &failure,
+                    self.layer_index,
+                    self.layer,
+                    Carrier::Label(class, label),
+                    self.diagnostics,
+                );
+            })
+            .ok()
+    }
+
     /// Each of `features` the layer draws, with the place of its class and its styles bound to
     /// it, in the source's order.
     pub fn select<'f>(

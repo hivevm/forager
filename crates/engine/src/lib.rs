@@ -29,6 +29,7 @@ mod plan;
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use forager_ports::{
     Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
@@ -80,7 +81,8 @@ pub struct CachedLabel {
     /// The index of the layer in the map, and of the class in the layer.
     pub layer: usize,
     pub class: usize,
-    pub text: String,
+    /// The label's text, held once for a feature's label and shared by its labels at every point.
+    pub text: Arc<str>,
     /// The box the label was drawn in, `[min x, min y, max x, max y]` in pixels, its buffer
     /// included; `None` for a label the cache discarded.
     pub drawn: Option<[f64; 4]>,
@@ -204,7 +206,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         }
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
-        layer_reports(layer, &canvas, undrawn, selector.diagnostics);
+        let label_hatches = labels.take_hatches_refused(layer_index);
+        layer_reports(layer, &canvas, label_hatches, undrawn, selector.diagnostics);
         if !at_once {
             labels
                 .collect(
@@ -246,10 +249,12 @@ fn drawable(
 }
 
 /// Reports what `layer` left undrawn on `canvas`: symbols past the budget of markers, hatches
-/// refused, and the geometries of `undrawn`, by kind, its render mode cannot draw.
+/// refused, those of the labelpoly styles of its labels drawn at once, `label_hatches`, among them,
+/// and the geometries of `undrawn`, by kind, its render mode cannot draw.
 fn layer_reports(
     layer: &Layer,
     canvas: &Canvas,
+    label_hatches: usize,
     undrawn: BTreeMap<&'static str, usize>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -265,7 +270,10 @@ fn layer_reports(
             layer.span.clone(),
         ));
     }
-    diagnostics.extend(refused_hatches(layer, canvas.hatches_refused()));
+    diagnostics.extend(refused_hatches(
+        layer,
+        canvas.hatches_refused() + label_hatches,
+    ));
     for (index, symbol, why) in canvas.pixmaps_refused() {
         let symbol = symbol
             .name
