@@ -575,7 +575,7 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
     let entries = conformance::list(CASES).unwrap();
     let resolver = stand_in();
     let loader = Suite(suite.clone());
-    let (mut compared, mut differences) = (0, Vec::new());
+    let (mut in_scope, mut compared, mut differences) = (0, 0, Vec::new());
     for case in &cases {
         let Some(Listed {
             entry: Entry::InScope { .. },
@@ -584,6 +584,7 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
         else {
             continue;
         };
+        in_scope += 1;
         let named = format!("{} {}", case.mapfile, case.result);
         let mut map = match map_of(case, &loader, &resolver) {
             Ok(map) => map,
@@ -615,8 +616,9 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
         differences.join("\n")
     );
     assert!(compared > 0, "no case in scope was compared");
+    assert_eq!(compared, in_scope, "every case in scope is compared");
     count(&format!(
-        "{compared} cases in scope render alike natively and on wasm32"
+        "{compared} of {in_scope} cases in scope render alike natively and on wasm32"
     ));
 }
 

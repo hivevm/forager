@@ -271,18 +271,13 @@ impl Wasm {
 }
 
 /// What differs between the native image and the module's: their sizes, the first pixel whose
-/// bytes differ, by its column and row, or whether either has no image, and why; `None` when they
-/// are the same, byte for byte, or neither has an image for the same reason.
+/// bytes differ, by its column and row, or why either has no image; `None` when they are the
+/// same, byte for byte. A case in scope has a reference image, so a native render that gives none
+/// is a difference whatever the module gives, as two renders without an image compare nothing.
 pub fn difference(native: &Image, wasm: &Image) -> Option<String> {
     match (native, wasm) {
-        (Err(a), Err(b)) if a == b => None,
-        (Err(a), Err(b)) => Some(format!(
-            "neither renders an image, natively for `{a}`, in the module for `{b}`"
-        )),
+        (Err(why), _) => Some(format!("the native render gives no image: {why}")),
         (Ok(_), Err(why)) => Some(format!("the module renders no image: {why}")),
-        (Err(why), Ok(_)) => Some(format!(
-            "the module renders an image, the native render none: {why}"
-        )),
         (Ok((w, h, a)), Ok((ww, wh, b))) => {
             if (w, h) != (ww, wh) || a.len() != b.len() {
                 return Some(format!(

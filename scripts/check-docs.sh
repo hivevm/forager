@@ -95,8 +95,15 @@
 #      Superseded and rejected ADRs are not read, nor is a file .gitattributes marks
 #      'linguist-generated', such as a changelog a tool writes. Indented code blocks are read as
 #      prose.
+#  16. No inactive ADR cited outside the record: an 'ADR-NNNN' reference to a ⚪ superseded or
+#      🔴 rejected ADR in a file outside docs/adr/ is an error naming the file, the line, and the
+#      ADR that supersedes it. Such an ADR explains why and is not a rule (AGENTS.md, section 2),
+#      so a reader sent to it as the decision in force is sent to one the project has left; check
+#      5 passes it, as the file exists. Inside docs/adr/ it is cited by right, as the history a
+#      successor answers. A line outside that names a superseded ADR as history names its
+#      successor too, and one that names a rejected ADR says 'rejected'.
 #
-# Checks 5 and 6 read every text file of the repository, not a list of documentation extensions:
+# Checks 5, 6, and 16 read every text file of the repository, not a list of documentation extensions:
 # docs/adr/README.md states that code may reference an ADR number, so a verifier restricted to
 # documentation file types would leave the references most likely to go stale — those in source
 # comments, which no reviewer reads alongside the ADR index — unchecked. Check 4 reads the
@@ -645,6 +652,39 @@ check_adr_refs() {
   done
 }
 
+# A superseded or rejected ADR cited outside docs/adr/ sends a reader to a decision the project
+# has left: check 5 passes the reference, as the file exists, and the README went on citing an
+# ADR after its successor landed until a review found it. A line that names the successor as well, or says the ADR was rejected,
+# tells the history apart from the decision in force and passes.
+check_inactive_adr_refs() {
+  local f rel lineno text adr nr successor
+  local -A inactive=()
+  while IFS= read -r adr; do
+    is_inactive_adr "$adr" || continue
+    nr="$(basename "$adr")"
+    inactive["${nr%%-*}"]="$(superseding_number "$(grep -m1 -F '**Status:**' "$adr")")"
+  done < <(find "$ADR_DIR" -maxdepth 1 -type f -name '[0-9][0-9][0-9][0-9]-*.md')
+  ((${#inactive[@]})) || return 0
+  for f in "${TEXT_FILES[@]}"; do
+    [[ "$f" == "$ADR_DIR"/* ]] && continue
+    rel="${f#"$ROOT"/}"
+    while IFS=: read -r lineno text; do
+      while IFS= read -r nr; do
+        nr="${nr#ADR-}"
+        [[ -v "inactive[$nr]" ]] || continue
+        successor="${inactive[$nr]}"
+        if [[ -n "$successor" ]]; then
+          [[ "$text" == *"ADR-$successor"* ]] && continue
+          add_error "$rel:$lineno: cites ADR-$nr, which is superseded by ADR-$successor — cite ADR-$successor, or name it on the same line to cite ADR-$nr as history"
+        else
+          [[ "$text" == *rejected* ]] && continue
+          add_error "$rel:$lineno: cites ADR-$nr, which is rejected — cite the decision in force, or say on the same line that ADR-$nr was rejected"
+        fi
+      done < <(grep -oE 'ADR-[0-9]{4}' <<<"$text" | sort -u)
+    done < <(grep -nE 'ADR-[0-9]{4}' "$f")
+  done
+}
+
 # A Markdown link that cites 'ADR-NNNN' in its text must point at that ADR's own file. Both
 # halves resolve on their own — the number names a file that exists, the target is a file that
 # exists — so a renumbering, a copied line, or a consolidated decision set leaves the two naming
@@ -977,6 +1017,7 @@ check_adr_supersessions
 check_relative_links
 check_section_refs
 check_adr_refs
+check_inactive_adr_refs
 check_adr_link_targets
 check_check_lists
 check_project_layout
