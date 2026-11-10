@@ -40,3 +40,10 @@ range that narrows what a document of today may say a change of meaning under AD
 
 with the human: the style document format and its versioning stay with the maintainer
 ([ADR-0006](../../adr/0006-harness.md)).
+
+## Maintainer's decision (2026-11-10)
+
+The range 10 to 1000 is part of the format, read leniently: a value outside it is dropped with a
+warning and the default applies, as ADR-0014's reader drops a value it cannot read; the schema
+states the range. Every addition or narrowing of the style document keeps the format at 1.0 until
+its first release, the schema regenerated (ADR-0014's freeze while unreleased).

@@ -49,3 +49,8 @@ here.
 
 with the human: it changes the style document format and its version, which
 [ADR-0006](../../adr/0006-harness.md) never lets run unattended.
+
+## Maintainer's decision (2026-11-10)
+
+As described. Every addition or narrowing of the style document keeps the format at 1.0 until its
+first release, the schema regenerated (ADR-0014's freeze while unreleased).

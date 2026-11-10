@@ -40,3 +40,8 @@ Found by areas 3, 4, and 5 of the port review (revision ticket 23, #66, #67, #70
 
 with the human: the font names' case changes what the IR's `fonts` means
 ([ADR-0006](../../adr/0006-harness.md)).
+
+## Maintainer's decision (2026-11-10)
+
+As described: follow MapServer at the pin exactly; font names match without regard to case, the last
+of two winning; a symbol file without its last `END` reads.

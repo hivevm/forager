@@ -60,3 +60,9 @@ Its criteria, now this ticket's as well:
 
 with the human: it is the label bound of Q-9 and the grid ADR-0032 decides, which ADR-0006 keeps
 with the maintainer.
+
+## Maintainer's decision (2026-11-10)
+
+As described: a drawn label is filed by its box, its point held apart for the `MINDISTANCE` test,
+its bounds kept; the cache takes the first `MAX_LABELS` and returns how many it left out, and the
+engine words the diagnostic.

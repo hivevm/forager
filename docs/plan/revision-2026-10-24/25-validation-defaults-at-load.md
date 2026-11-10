@@ -42,3 +42,8 @@ with the human, on one question: which parameters take the default — only `FIL
 class's `EXPRESSION`, or also those MapServer substitutes besides, `DATA` and `CONNECTION` among
 them? It is a scope question for the maintainer, and the answer changes what the style document
 holds.
+
+## Maintainer's decision (2026-11-10)
+
+Only `FILTER` and a class's `EXPRESSION` take the default from `VALIDATION`; `DATA`, `CONNECTION`,
+and the rest stay unsubstituted, as runtime substitution is a non-goal.

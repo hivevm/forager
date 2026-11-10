@@ -64,3 +64,8 @@ with the human: it moves the reach of a quality goal's check, and the markers th
 the human's call. The four tickets it waited for have landed: the one table of crate groups, the
 one `poll_once` in `crates/ports/src/lib.rs`, the hosts' binding of sources through
 `crates/engine/src/bind.rs`, and the properties a feature carries in the ports and both adapters.
+
+## Maintainer's decision (2026-11-10)
+
+The ban extends to the frontend, the ports, and the adapters. The two tests that bound their run
+time with a clock are rewritten to bound their work by a count, so no exemption is needed.

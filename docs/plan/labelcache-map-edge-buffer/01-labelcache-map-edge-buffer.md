@@ -43,3 +43,10 @@ The style IR carries the map's edge buffer; the engine hands it to the label cac
 with the human: the style IR must carry the map's edge buffer, which changes the style document
 format that ADR-0006 keeps with the maintainer, and how much of `WEB` `METADATA` the IR carries is
 a decision of its own.
+
+## Maintainer's decision (2026-11-10)
+
+The style IR carries only the edge buffer, as a field of the map in pixels, read by the frontend
+from `WEB` `METADATA` as MapServer reads it; no other metadata. Every addition or narrowing of the
+style document keeps the format at 1.0 until its first release, the schema regenerated (ADR-0014's
+freeze while unreleased).

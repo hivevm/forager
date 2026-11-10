@@ -44,3 +44,8 @@ order, its labels cached.
 
 with the human: it adds a layer property to the style document, whose format ADR-0006 keeps with
 the maintainer.
+
+## Maintainer's decision (2026-11-10)
+
+As described. Every addition or narrowing of the style document keeps the format at 1.0 until its
+first release, the schema regenerated (ADR-0014's freeze while unreleased).

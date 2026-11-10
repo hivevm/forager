@@ -55,3 +55,8 @@ ticket follows what it yields and says so.
 ## Mode
 
 with the human: what a mapfile may say changes ([ADR-0006](../../adr/0006-harness.md)).
+
+## Maintainer's decision (2026-11-10)
+
+As described: follow MapServer at the pin exactly, a bare keyword is no string, a keyword choice is
+compared by its token value, and `.` reads as 0 as `getDouble` reads it.

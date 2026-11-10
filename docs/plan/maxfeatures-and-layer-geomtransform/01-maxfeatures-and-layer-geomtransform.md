@@ -58,3 +58,13 @@ each part of which needs the style IR's format to change (ADR-0014):
 with the human: every part changes the style document format, which
 [ADR-0006](../../adr/0006-harness.md) never leaves unattended. The maintainer decides the shape of
 the new fields and the variant, and the version bump they take.
+
+## Maintainer's decision (2026-11-10)
+
+As described: a layer field for `MAXFEATURES` (with `maxfeaturestodraw` and the output format's
+`MAXFEATURESTODRAW`); a variant of `GeomTransform` for a style transform the engine does not draw,
+which draws nothing with a diagnostic carrying the expression's text; a layer `GEOMTRANSFORM` field,
+whose transforms without GEOS (`generalize`, `smoothsia`, `densify`, `outer`, `inner`) are ported
+and whose others draw nothing with that diagnostic. Every addition or narrowing of the style
+document keeps the format at 1.0 until its first release, the schema regenerated (ADR-0014's freeze
+while unreleased).

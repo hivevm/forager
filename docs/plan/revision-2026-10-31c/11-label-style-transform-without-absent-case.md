@@ -43,3 +43,10 @@ be refused. Two ways out, the maintainer's to choose:
 
 with the human: the style document format and its versioning are never worked unattended
 ([ADR-0006](../../adr/0006-harness.md)), and the choice may be a decision for the record.
+
+## Maintainer's decision (2026-11-10)
+
+A label style takes a transform type of its own, with only `labelpoly`, `labelpoint`, and
+`labelcenter` and no absent case, so that a label style without one cannot be written. Every
+addition or narrowing of the style document keeps the format at 1.0 until its first release, the
+schema regenerated (ADR-0014's freeze while unreleased).

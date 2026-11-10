@@ -46,3 +46,8 @@ may allow it. No behaviour changes.
 
 with the human: the sites it rewrites include the credential filter of the browser bindings and the
 reading of resource paths, which [ADR-0006](../../adr/0006-harness.md) never leaves unattended.
+
+## Maintainer's decision (2026-11-10)
+
+As described, the credential filter and the reading of resource paths included; the pull request
+names every site it rewrites.
