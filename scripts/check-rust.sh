@@ -3,7 +3,8 @@
 # errors, the tests, the style document's JSON Schema against its checked-in file (ADR-0020),
 # the load of the msautotest suite at the pinned MapServer release (G-1, fetched once into
 # target/ by scripts/fetch-msautotest.sh) and the conformance harness over its cases, whose share
-# of passing cases scripts/check-fidelity.sh holds against the last release (Q-4), the build
+# of passing cases scripts/check-fidelity.sh holds against the last release (Q-4), and which render
+# alike natively and in the bindings' wasm32 module run in wasmi (G-9, ADR-0043), the build
 # of every crate that must run in the browser for wasm32-unknown-unknown (Q-1), the WebAssembly
 # bindings and their size (Q-5) once they exist, and cargo deny (ADR-0012). scripts/check-all.sh
 # and the `rust` job of checks.yml run it; the tools come from scripts/install-tools.sh. Two
@@ -40,13 +41,32 @@ if cargo tree -p forager-bindings-wasm --locked -e normal | grep -q '^.*schemars
   echo "check-rust: the browser bindings depend on schemars; the schema feature is enabled" >&2
   exit 1
 fi
-step "msautotest: every mapfile loads (G-1), and the cases in scope hold their outcome"
+step "The browser bindings' module of the conformance test (G-9, ADR-0043)"
+# The bundle's crate and profile with the feature `conformance`, in a target directory of its own
+# so that the bundle built below stays without it, then through the wasm-bindgen CLI as the bundle
+# is, which gives its exports their names. Its exports for wasm32 alone are linted here, its input
+# format tested natively.
+cargo clippy --locked --target wasm32-unknown-unknown -p forager-bindings-wasm \
+  --features conformance -- -D warnings
+cargo test --locked -p forager-bindings-wasm --features conformance --lib conformance
+cargo build --locked --profile wasm --target wasm32-unknown-unknown -p forager-bindings-wasm \
+  --features conformance --target-dir target/conformance
+if ! command -v wasm-bindgen > /dev/null 2>&1; then
+  echo "check-rust: wasm-bindgen not found; running scripts/install-tools.sh" >&2
+  bash scripts/install-tools.sh
+fi
+wasm-bindgen --target web --out-dir target/conformance/web \
+  target/conformance/wasm32-unknown-unknown/wasm/forager_bindings_wasm.wasm
+
+step "msautotest: mapfiles load (G-1), cases hold their outcome and render alike on wasm32 (G-9)"
 suite="$(bash scripts/fetch-msautotest.sh)"
 fidelity="$ROOT/target/fidelity-counts.txt"
 rm -f "$fidelity"
 # The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (ADR-0027).
-FORAGER_MSAUTOTEST="$suite" FORAGER_FIDELITY="$fidelity" cargo test -p forager-cli --locked \
-  --test msautotest -- --ignored --skip mapserver_renders_the_cases_in_scope_within_its_noise
+FORAGER_MSAUTOTEST="$suite" FORAGER_FIDELITY="$fidelity" \
+  FORAGER_CONFORMANCE_WASM="$ROOT/target/conformance/web/forager_bindings_wasm_bg.wasm" \
+  cargo test -p forager-cli --locked --test msautotest -- --ignored \
+  --skip mapserver_renders_the_cases_in_scope_within_its_noise
 
 step "The share of the cases in scope that pass does not fall below the last release's (Q-4)"
 # Verifies: Q-4

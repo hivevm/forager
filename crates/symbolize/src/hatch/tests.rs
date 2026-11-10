@@ -1,10 +1,14 @@
-use forager_style_ir::Bound;
+use std::rc::Rc;
+
+use forager_render::PremultipliedImage;
+use forager_style_ir::{Bound, SymbolKind, SymbolRef};
 
 use super::*;
+use crate::draw::clip_pixmaps;
 
 const BLACK: Rgba = Rgba::opaque(0, 0, 0);
 const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
-const IMAGE: (f64, f64) = (100.0, 100.0);
+const IMAGE: (u32, u32) = (100, 100);
 
 fn p(x: f64, y: f64) -> Point {
     Point { x, y }
@@ -107,6 +111,26 @@ fn diagonal_lines_run_from_side_to_side_of_the_box() {
 }
 
 #[test]
+fn the_lines_laid_reach_the_rectangle_the_renderer_clips_them_to() {
+    // A hatch 20 wide, a pixel apart, over a square far larger than the image of 100 × 100: the
+    // renderer clips its lines to the image grown by its clip's margin of 2 and half the width,
+    // 12 pixels on every side. The lines laid are those from y (or x) = -12 to 112, and none
+    // beyond, as the lines farther out draw nothing.
+    let huge = vec![vec![p(-1e9, -1e9), p(1e9, -1e9), p(1e9, 1e9), p(-1e9, 1e9)]];
+    let rect = Hatch::line_rect_at(20.0, IMAGE.0, IMAGE.1).bounds();
+    assert_eq!(rect, [-12.0, -12.0, 112.0, 112.0]);
+    for (angle, across) in [(0.0, 1), (90.0, 0)] {
+        let drawn = hatch_polygon(&huge, 1.0, 20.0, angle, IMAGE, ORIGIN).unwrap();
+        let at: Vec<f64> = drawn
+            .iter()
+            .map(|l| if across == 1 { l[0].y } else { l[0].x })
+            .collect();
+        let expected: Vec<f64> = (-12..=112).map(f64::from).collect();
+        assert_eq!(at, expected, "{angle}");
+    }
+}
+
+#[test]
 fn only_the_lines_that_cross_the_image_are_laid() {
     // A square 1e9 pixels a side under a hatch a pixel apart would have some 1.4e9 lines; those
     // over the image of 100 × 100, grown by the stroke, are MapServer's lines all the same.
@@ -142,7 +166,7 @@ fn drawn(style: &Style) -> Hatch {
 }
 
 fn drawn_at(style: &Style, factor: f64) -> Hatch {
-    match hatch(square(), style, BLACK, IMAGE, ORIGIN, factor) {
+    match hatch(square(), style, BLACK, IMAGE, ORIGIN, factor, factor) {
         Hatched::Drawn(hatch) => hatch,
         other => panic!("{other:?}"),
     }
@@ -224,7 +248,7 @@ fn the_pattern_scales_with_the_bound_on_the_width() {
 fn a_hatch_that_would_not_end_or_cost_past_its_bound_is_refused() {
     // Verifies: Q-9
     let refused =
-        |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN, 1.0) == Hatched::Refused;
+        |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN, 1.0, 1.0) == Hatched::Refused;
     // MAXSIZE 0 bounds the spacing to 0, where MapServer's loop never ends.
     assert!(refused(&Style {
         max_size: Some(0.0),
@@ -251,7 +275,7 @@ fn a_hatch_that_would_not_end_or_cost_past_its_bound_is_refused() {
 #[test]
 fn a_width_or_angle_that_is_no_number_draws_nothing() {
     let nothing =
-        |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN, 1.0) == Hatched::Nothing;
+        |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN, 1.0, 1.0) == Hatched::Nothing;
     assert!(nothing(&Style {
         angle: Some(Bound::Value(f64::NAN)),
         ..style(Some(10.0), None)
@@ -266,6 +290,7 @@ fn a_width_or_angle_that_is_no_number_draws_nothing() {
         BLACK,
         IMAGE,
         ORIGIN,
+        1.0,
         1.0,
     );
     assert_eq!(empty, Hatched::Nothing);
@@ -287,7 +312,7 @@ fn a_hatch_whose_steps_no_longer_move_is_refused() {
         ..style(None, None)
     };
     assert_eq!(
-        hatch(far, &style, BLACK, IMAGE, ORIGIN, 1.0),
+        hatch(far, &style, BLACK, IMAGE, ORIGIN, 1.0, 1.0),
         Hatched::Refused
     );
 }
@@ -301,7 +326,7 @@ fn the_clip_buffer_is_msdrawshape_s() {
         offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
         ..style(Some(10.0), Some(3.0))
     };
-    let hatching = Hatching::for_class(&[plain, hatched], &[], 1.0);
+    let hatching = Hatching::for_class(&[plain, hatched], &[], None, 1.0, 1.0);
     assert_eq!(hatching.clip_buffer, 18.0);
     assert!(!hatching.clip_in_pixels);
     // MINSIZE above the rest counts as it is: 12.5 + 1 rounds half to even, to 14, and 16 with
@@ -310,7 +335,10 @@ fn the_clip_buffer_is_msdrawshape_s() {
         min_size: Some(12.5),
         ..style(None, None)
     };
-    assert_eq!(Hatching::for_class(&[small], &[], 1.0).clip_buffer, 16.0);
+    assert_eq!(
+        Hatching::for_class(&[small], &[], None, 1.0, 1.0).clip_buffer,
+        16.0
+    );
 }
 
 #[test]
@@ -358,15 +386,21 @@ fn at_a_factor_the_clip_buffer_is_scaled() {
         offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
         ..style(Some(10.0), Some(3.0))
     };
-    let hatching = Hatching::for_class(&[plain.clone(), hatched], &[], 2.0);
+    let hatching = Hatching::for_class(&[plain.clone(), hatched], &[], None, 2.0, 2.0);
     assert_eq!(hatching.clip_buffer, 33.0);
-    assert_eq!(Hatching::for_class(&[plain], &[], 2.0).clip_buffer, 5.0);
+    assert_eq!(
+        Hatching::for_class(&[plain], &[], None, 2.0, 2.0).clip_buffer,
+        5.0
+    );
     // MINSIZE 6.25 is 12.5: + 1 rounds half to even, to 14, and 16 with the 2.
     let small = Style {
         min_size: Some(6.25),
         ..style(None, None)
     };
-    assert_eq!(Hatching::for_class(&[small], &[], 2.0).clip_buffer, 16.0);
+    assert_eq!(
+        Hatching::for_class(&[small], &[], None, 2.0, 2.0).clip_buffer,
+        16.0
+    );
 }
 
 #[test]
@@ -379,7 +413,10 @@ fn minwidth_counts_toward_the_clip_buffer_as_minsize_does() {
         min_size: Some(3.0),
         ..style(None, None)
     };
-    assert_eq!(Hatching::for_class(&[wide], &[], 2.0).clip_buffer, 23.0);
+    assert_eq!(
+        Hatching::for_class(&[wide], &[], None, 2.0, 2.0).clip_buffer,
+        23.0
+    );
 }
 
 #[test]
@@ -403,4 +440,107 @@ fn a_hatch_bounds_its_width_and_spacing_as_ms_draw_shade_symbol_does() {
     let hatch = drawn_at(&bounded(4.0, 6.0, 3.0), 2.0);
     assert_eq!(hatch.width, 12.0, "MINWIDTH 6 is 12");
     assert!(close(spacing(&hatch), 12.0), "MINSIZE 6 is 12");
+}
+
+#[test]
+fn a_diagonal_hatch_is_bounded_by_the_lines_the_renderer_clips_it_to() {
+    // Verifies: Q-9
+    // A hatch at 45 degrees, 32 wide, over a square far larger than the image of 300 × 300: the
+    // bound counts only the lines laid inside the renderer's clip, so a spacing of 0.4807 is
+    // drawn, where lines laid out to the old margin of the width and 2 refused it, and 0.48 is
+    // refused. The maintainer accepted that shift of what Q-9 refuses on 2026-11-08.
+    let huge = || vec![vec![p(-1e6, -1e6), p(1e6, -1e6), p(1e6, 1e6), p(-1e6, 1e6)]];
+    let at = |size: f64| {
+        let style = Style {
+            size: Some(Bound::Value(size)),
+            width: Some(Bound::Value(32.0)),
+            angle: Some(Bound::Value(45.0)),
+            ..Style::default()
+        };
+        hatch(huge(), &style, BLACK, (300, 300), ORIGIN, 1.0, 1.0)
+    };
+    assert!(matches!(at(0.4807), Hatched::Drawn(_)));
+    assert_eq!(at(0.48), Hatched::Refused);
+}
+
+#[test]
+fn a_pixmap_counts_in_the_clip_buffer_at_its_image_s_height() {
+    // msDrawShape's maxsize takes msSymbolGetDefaultSize, for a pixmap the image's height, 48 of
+    // an image 16 wide: MS_NINT(48 + 1), plus 2 for a polygon. Without its image, 1 counts, and
+    // the hatch's SIZE 10 is the largest: MS_NINT(10 + 1) + 2.
+    let tall = Rc::new(PremultipliedImage::new(16, 48, vec![0; 16 * 48 * 4]).unwrap());
+    let pixmaps: Pixmaps = [("tall.png".to_owned(), Ok(tall))].into();
+    let refused: Pixmaps = [("tall.png".to_owned(), Err("gone".to_owned()))].into();
+    let symbol = |kind, image: Option<&str>| Symbol {
+        name: None,
+        kind,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: image.map(str::to_owned),
+        transparent: None,
+        span: None,
+    };
+    let symbols = [
+        symbol(SymbolKind::Hatch, None),
+        symbol(SymbolKind::Pixmap, Some("tall.png")),
+    ];
+    let style = |index, size| Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(index))),
+        size,
+        ..Style::default()
+    };
+    let class = [style(1, Some(Bound::Value(10.0))), style(2, None)];
+    let buffer = |pixmaps| Hatching::for_class(&class, &symbols, pixmaps, 1.0, 1.0).clip_buffer;
+    assert_eq!(buffer(Some(&pixmaps)), 51.0);
+    assert_eq!(buffer(Some(&refused)), 13.0);
+    assert_eq!(buffer(None), 13.0);
+    // At a factor it is scaled as every size is: MS_NINT(48 × 2 + 1) + 2.
+    let scaled = Hatching::for_class(&class, &symbols, Some(&pixmaps), 2.0, 2.0).clip_buffer;
+    assert_eq!(scaled, 99.0);
+    // The engine loads those a hatched class counts, and none of another class.
+    assert_eq!(clip_pixmaps(&class, &symbols), ["tall.png"]);
+    assert!(clip_pixmaps(&class[1..], &symbols).is_empty());
+}
+
+#[test]
+fn a_hatched_polygon_s_rings_reach_pixels_as_ms_transform_shape_simplify_puts_them() {
+    // msTransformShapeSimplify, src/mapprimitive.cpp:1002-1040, on a view of cellsize 0.1:
+    // each vertex by inv_cs = 10 (953), x = 0.3 at 3 where 0.3 / 0.1 is 2.9999999999999996;
+    // (0.32, 9.7), a fifth of a pixel from the second vertex kept, is dropped; the last two are
+    // kept; a ring of fewer than four vertices keeps none.
+    let view = View::for_image(
+        forager_style_ir::Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 10.0,
+            max_y: 10.0,
+        },
+        101,
+        101,
+    )
+    .unwrap();
+    assert_eq!(view.cellsize, 0.1);
+    let c = |x: f64, y: f64| Coord { x, y };
+    let ring = vec![
+        c(5.0, 9.7),
+        c(0.3, 9.7),
+        c(0.32, 9.7),
+        c(0.3, 5.0),
+        c(5.0, 5.0),
+        c(5.0, 9.7),
+    ];
+    let three = vec![c(1.0, 1.0), c(2.0, 1.0), c(1.0, 1.0)];
+    let hatching = Hatching {
+        clip_buffer: 2.0,
+        clip_in_pixels: false,
+        refused: 0,
+    };
+    let rings = hatch_rings(&[ring, three], &view, (101.0, 101.0), &hatching);
+    assert_eq!(rings.len(), 1);
+    let xs: Vec<f64> = rings[0].iter().map(|p| p.x).collect();
+    assert_eq!(xs, vec![50.0, 3.0, 3.0, 50.0, 50.0]);
 }

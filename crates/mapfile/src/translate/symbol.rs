@@ -1,5 +1,6 @@
-// The symbols follow MapServer's loadSymbol, src/mapsymbol.c, and msGetSymbolIndex,
-// src/mapfile.c, of the release pinned in scripts/fetch-msautotest.sh.
+// The symbols follow MapServer's loadSymbol and msAddImageSymbol, src/mapsymbol.c, and
+// msGetSymbolIndex, classResolveSymbolNames, and resolveSymbolNames, src/mapfile.c, of the release
+// pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -17,7 +18,7 @@
 //! to one.
 
 use forager_ports::ResourcePath;
-use forager_style_ir::{Bound, Symbol, SymbolKind, SymbolRef};
+use forager_style_ir::{Bound, Map, Symbol, SymbolKind, SymbolRef};
 
 use super::{Range, Translator, binding_of};
 use crate::lexer::TokenKind;
@@ -165,37 +166,134 @@ impl Translator<'_> {
                 self.invalid(d, expected);
                 return None;
             }
+            // Whether the index is past the symbols is known once the styles' images are
+            // appended (`image_symbols`).
             let index = n as u32;
-            if index as usize > self.symbols.len() {
-                // msDrawLineSymbol and its kin draw nothing for an index past the set.
-                let message = format!("there is no symbol {index}; the style draws nothing");
-                self.warn("symbol-unknown", &message, &d.span);
-            }
+            self.numbered.push((index, d.span.clone()));
             return Some(Bound::Value(SymbolRef::Index(index)));
         }
         let Some(value) = token.string() else {
             self.invalid(d, expected);
             return None;
         };
-        // msGetSymbolIndex: by name, without regard to case, the first from index 1.
-        let found = self.symbols.iter().position(|symbol| {
-            symbol
-                .name
-                .as_ref()
-                .is_some_and(|name| name.eq_ignore_ascii_case(value))
-        });
-        match found {
-            Some(i) => Some(Bound::Value(SymbolRef::Index(i as u32 + 1))),
-            None => {
-                let message = format!(
-                    "no symbol is named `{value}`; MapServer would read it as an image file, \
-                     which is not yet supported"
-                );
-                self.warn("symbol-unknown", &message, &d.span);
-                Some(Bound::Value(SymbolRef::Name(value.to_owned())))
+        if let Some(i) = self.named(value) {
+            return Some(Bound::Value(SymbolRef::Index(i as u32 + 1)));
+        }
+        // msAddImageSymbol makes no symbol of an empty name, and classResolveSymbolNames fails
+        // the load: "Undefined symbol".
+        if value.is_empty() {
+            let message = "an empty SYMBOL name names no symbol; MapServer fails the load";
+            self.error("invalid-value", message, &d.span);
+            return None;
+        }
+        // msAddImageSymbol fetches a name that begins with `http` with curl.
+        if is_url(value) {
+            let message = format!(
+                "no symbol is named `{value}`; MapServer would fetch it as an image by URL, which \
+                 Forager never reads, so its image is not drawn"
+            );
+            self.warn("symbol-unknown", &message, &d.span);
+            return Some(Bound::Value(SymbolRef::Name(value.to_owned())));
+        }
+        // Any other name is an image file beside the main mapfile, appended to the symbols once
+        // the map is read (`image_symbols`); whether it exists is known as it is drawn.
+        if let Err(e) = self.main.resolve(value) {
+            let message = format!("the image file `{value}` the style names is refused: {e}");
+            self.error("image-refused", &message, &d.span);
+            return None;
+        }
+        Some(Bound::Value(SymbolRef::Name(value.to_owned())))
+    }
+
+    /// The position among the symbols of the first named `name`, without regard to case, as
+    /// msGetSymbolIndex finds it.
+    fn named(&self, name: &str) -> Option<usize> {
+        self.names.get(&name.to_ascii_lowercase()).copied()
+    }
+
+    /// Appends `symbol` to the symbols, and its name, unless an earlier symbol has it.
+    pub(super) fn push_symbol(&mut self, symbol: Symbol) {
+        if let Some(name) = &symbol.name {
+            let position = self.symbols.len();
+            self.names
+                .entry(name.to_ascii_lowercase())
+                .or_insert(position);
+        }
+        self.symbols.push(symbol);
+    }
+
+    /// The image files the styles of `map` name, appended to the symbols as resolveSymbolNames
+    /// and classResolveSymbolNames append them: layer by layer and class by class, a class's
+    /// styles before its labels' styles, through msGetSymbolIndex, which finds a name without
+    /// regard to case from index 1, or else msAddImageSymbol (see [`Self::image_symbol`]). Then
+    /// a style's index past the symbols, which msDrawLineSymbol and its kin draw nothing for,
+    /// warns.
+    pub(super) fn image_symbols(&mut self, map: &mut Map) {
+        for class in map.layers.iter_mut().flat_map(|layer| &mut layer.classes) {
+            let labels = class.labels.iter_mut().flat_map(|label| &mut label.styles);
+            for style in class.styles.iter_mut().chain(labels) {
+                let Some(Bound::Value(SymbolRef::Name(name))) = &style.symbol else {
+                    continue;
+                };
+                if let Some(index) = self.image_symbol(name) {
+                    style.symbol = Some(Bound::Value(SymbolRef::Index(index)));
+                }
+            }
+        }
+        let count = self.symbols.len();
+        for (index, span) in std::mem::take(&mut self.numbered) {
+            if index as usize > count {
+                let message = format!("there is no symbol {index}; the style draws nothing");
+                self.warn("symbol-unknown", &message, &span);
             }
         }
     }
+
+    /// The index from 1 of the symbol named `name`, appended as msAddImageSymbol appends it
+    /// where none is: a symbol named by the file name, an SVG symbol for a `.svg` extension and a
+    /// pixmap otherwise, its path against the main mapfile's directory. A name by URL, which
+    /// msAddImageSymbol fetches after it has taken its index, takes it too, as a pixmap without
+    /// an image, which draws nothing. None for a path the base context refuses.
+    fn image_symbol(&mut self, name: &str) -> Option<u32> {
+        if let Some(i) = self.named(name) {
+            return Some(i as u32 + 1);
+        }
+        let (kind, image) = if is_url(name) {
+            (SymbolKind::Pixmap, None)
+        } else {
+            let path = self.main.resolve(name).ok()?;
+            let svg = name
+                .rfind('.')
+                .and_then(|dot| name.get(dot..dot + 4))
+                .is_some_and(|extension| extension.eq_ignore_ascii_case(".svg"));
+            let kind = if svg {
+                SymbolKind::Svg
+            } else {
+                SymbolKind::Pixmap
+            };
+            (kind, Some(path.as_str().to_owned()))
+        };
+        self.push_symbol(Symbol {
+            name: Some(name.to_owned()),
+            kind,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image,
+            transparent: None,
+            span: None,
+        });
+        Some(self.symbols.len() as u32)
+    }
+}
+
+/// Whether msAddImageSymbol fetches `name` by URL: it begins with `http`, without regard to case.
+fn is_url(name: &str) -> bool {
+    name.get(..4)
+        .is_some_and(|start| start.eq_ignore_ascii_case("http"))
 }
 
 /// A symbol's points split into lines at MapServer's pen-up `-99 -99`, and its extent, as

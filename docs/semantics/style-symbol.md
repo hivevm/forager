@@ -5,10 +5,32 @@
 **Meaning.** `SYMBOL` names the symbol the style draws: by its name, by MapServer's index into the
 [symbols](symbol.md) (at least 0, a fraction cut as `loadStyle` casts it; 0 is the default symbol),
 or bound to a property. A name resolves at import to the index of the first symbol of that name,
-without regard to case, as `msGetSymbolIndex` in `src/mapfile.c` resolves it. MapServer reads a
-name it does not find as an image file and fails the load where there is none; the frontend, which
-reads no image at load, keeps the name and warns. An index past the last symbol is a warning too:
-MapServer draws nothing for it.
+without regard to case, as `msGetSymbolIndex` in `src/mapfile.c` resolves it. A name no symbol
+carries is an image file, as `msAddImageSymbol` in `src/mapsymbol.c` reads it once the map is read:
+the frontend appends a symbol named by the file name to the map's symbols, after the symbol file's,
+layer by layer and class by class, a class's styles before its labels' styles, as
+`classResolveSymbolNames` takes them; an SVG symbol for a `.svg` extension and a pixmap otherwise,
+its `IMAGE` the name against the main mapfile's directory inside the base context (Q-8), as
+MapServer's `mappath`. A later style of the same name, in any case, refers to the same symbol. No
+file is read at load: one that does not exist warns with `pixmap-not-drawn` as the symbol is drawn
+([`symbol.md`](symbol.md)): at a point, along a line with a `GAP`, or over a polygon, where its
+image does not load, and along a line without a `GAP`, where MapServer tiles the image and Forager
+draws a line in its place without reading it. A path that leaves the base context is a load error,
+as `IMAGE`'s. A name that begins with `http`, without regard to case, MapServer fetches
+with curl, and fails the load where it cannot; Forager never reads it, and the frontend warns. The
+name still takes its index, as `msAddImageSymbol` grows the symbols before it fetches
+(`src/mapsymbol.c`, 402–406), so that the images after it are numbered as MapServer numbers them: a
+pixmap symbol of that name without an image, a `.svg` name among them, drawn as a pixmap whose
+image does not load. An empty name is a load error, as MapServer's: `msAddImageSymbol` makes no
+symbol of it (398–399), and
+`classResolveSymbolNames` fails with "Undefined symbol" (`src/mapfile.c`, 3723–3762). An index past
+the last symbol, those the styles append among them, is a warning too: MapServer draws nothing for
+it.
+
+In a style document, a `symbol` that is a name resolves as `msGetSymbolIndex` resolves it
+(`src/mapfile.c`, 408–426): to the first symbol of that name from index 1, without regard to case. A
+name no symbol carries draws nothing, as a document has no image file to read it as, and the layer
+warns with `symbol-unknown` once for each such name of its classes' styles.
 
 `GEOMTRANSFORM` draws the style on another geometry than the feature's: `start`, `end`,
 `vertices` (every point of a line but its ends), `centroid`, `labelpnt` (the IR's `labelpoint`),
@@ -46,12 +68,13 @@ outside the part.
 
 **A polygon's fill.** A polygon layer's style with a `COLOR` and without a symbol, or with a
 simple one, fills the polygon under the even-odd rule, as `msDrawShadeSymbol` in
-`src/maprendering.c` and `agg2RenderPolygon` in `src/mapagg.cpp` fill it, and a hatch symbol
-hatches it ([`symbol.md`](symbol.md)). Both go through the gamma of MapServer's AGG output format:
-a pixel covered by at least 0.75 of the polygon is filled fully, one covered less in proportion,
-so that edges come out darker than their coverage; a symbol's fill and a line do not. The gamma
-is MapServer's default of 0.75: `FORMATOPTION "GAMMA=…"` of the output format and `PROCESSING
-"GAMMA=…"` of a layer are not carried yet.
+`src/maprendering.c` and `agg2RenderPolygon` in `src/mapagg.cpp` fill it, a hatch symbol hatches
+it, and a pixmap symbol fills it with its image tiled, with or without a `COLOR`
+([`symbol.md`](symbol.md)). The fill and the hatch go through the gamma of MapServer's AGG output
+format: a pixel covered by at least 0.75 of the polygon is filled fully, one covered less in
+proportion, so that edges come out darker than their coverage; a symbol's fill, a tile's, and a line
+do not. The gamma is MapServer's default of 0.75: `FORMATOPTION "GAMMA=…"` of the output format and
+`PROCESSING "GAMMA=…"` of a layer are not carried yet.
 
 **Repeated directives.** A later directive replaces an earlier one, but for a binding:
 `loadStyle` never frees a property's binding when a later directive gives it a number, and

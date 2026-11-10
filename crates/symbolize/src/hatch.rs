@@ -29,7 +29,7 @@ use forager_style_ir::{Rgba, Style, Symbol};
 use crate::bounds::{self, ms_max};
 use crate::extent::View;
 use crate::style::{DEG_TO_RAD, GAMMA, fixed};
-use crate::symbol;
+use crate::symbol::{self, Pixmaps};
 
 /// The most lines one hatch lays over the image (Q-9): a hatch a pixel apart over the largest
 /// image has some 5800.
@@ -55,16 +55,23 @@ impl Hatching {
     /// larger, plus 1, rounded as `lrint`; the largest of the styles, plus 2 for a polygon. A size
     /// or width bound to a property or an expression counts as unset, MapServer's -1 and 1;
     /// MapServer computes the buffer before msBindLayerToShape() binds the feature's values, so it
-    /// counts the values bound for the feature drawn before. The default size of a pixmap or SVG
-    /// symbol counts as 1, where MapServer takes its image's height, which is not read.
-    pub fn for_class(styles: &[Style], symbols: &[Symbol], factor: f64) -> Self {
+    /// counts the values bound for the feature drawn before. The default size of a pixmap symbol
+    /// is its image's height, the image among `pixmaps`; of one not among them, and of an SVG
+    /// symbol, 1.
+    pub fn for_class(
+        styles: &[Style],
+        symbols: &[Symbol],
+        pixmaps: Option<&Pixmaps>,
+        factor: f64,
+        resolution: f64,
+    ) -> Self {
         let mut buffer = 0.0_f64;
         for style in styles {
-            let default_size = symbol::default_size_of(style, symbols);
+            let default_size = symbol::default_size_of(style, symbols, pixmaps);
             let size = fixed(&style.size).unwrap_or(-1.0);
             let width = fixed(&style.width).unwrap_or(1.0);
             let mut largest = ms_max(default_size, ms_max(size, width));
-            let unscaled = bounds::clip_buffer_minimum(style, factor);
+            let unscaled = bounds::clip_buffer_minimum(style, resolution);
             if style.line_offset.is_none()
                 && let Some([x, y]) = &style.offset
             {
@@ -188,12 +195,18 @@ fn clip_edge(line: &mut Vec<Point>, a: Point, b: Point, min: Point, max: Point) 
 }
 
 /// The rings of a feature in pixels as msDrawShape() hands them to a hatch: all of its polygons
-/// as one shape, and, where the shape reaches beyond the map's extent, clipped first to the
-/// extent grown by the class's clip buffer (see [`Hatching::for_class`]) with
+/// as one shape, transformed to pixels as msTransformShapeSimplify() transforms a polygon's rings
+/// (see [`View::ring_to_pixels`]), and, where the shape reaches beyond the map's extent, clipped
+/// first to the extent grown by the class's clip buffer (see [`Hatching::for_class`]) with
 /// msClipPolygonRect(); in map units before the transformation to pixels, or, where a style of
 /// the class has a `GEOMTRANSFORM`, to the image so grown after it. The hatch's box, and so where
 /// its dashes fall, is the clipped shape's.
-pub fn hatch_rings(rings: &[Vec<Coord>], view: &View, hatching: &Hatching) -> Vec<Vec<Point>> {
+pub fn hatch_rings(
+    rings: &[Vec<Coord>],
+    view: &View,
+    image: (f64, f64),
+    hatching: &Hatching,
+) -> Vec<Vec<Point>> {
     let e = view.extent;
     let beyond = rings
         .iter()
@@ -203,10 +216,10 @@ pub fn hatch_rings(rings: &[Vec<Coord>], view: &View, hatching: &Hatching) -> Ve
         rings
             .iter()
             .map(|r| {
-                r.iter()
-                    .map(|p| view.to_pixel(Coord { x: p.x, y: p.y }))
-                    .collect()
+                let ring: Vec<Coord> = r.iter().map(|p| Coord { x: p.x, y: p.y }).collect();
+                view.ring_to_pixels(&ring)
             })
+            .filter(|r| !r.is_empty())
             .collect()
     };
     let points: Vec<Vec<Point>> = rings
@@ -218,7 +231,7 @@ pub fn hatch_rings(rings: &[Vec<Coord>], view: &View, hatching: &Hatching) -> Ve
         return to_pixels(&points);
     }
     if hatching.clip_in_pixels {
-        let (width, height) = view.image_size();
+        let (width, height) = image;
         let min = Point {
             x: -buffer,
             y: -buffer,
@@ -277,9 +290,10 @@ pub(crate) fn hatch(
     rings: Vec<Vec<Point>>,
     style: &Style,
     color: Rgba,
-    image: (f64, f64),
+    image: (u32, u32),
     reference: Point,
     factor: f64,
+    resolution: f64,
 ) -> Hatched {
     let written_width = fixed(&style.width).unwrap_or(1.0);
     let width = if written_width <= 0.0 {
@@ -287,10 +301,10 @@ pub(crate) fn hatch(
     } else {
         written_width * factor
     };
-    let width = bounds::hatch_width(width, style, factor);
+    let width = bounds::hatch_width(width, style, resolution);
     let size = fixed(&style.size).unwrap_or(-1.0);
     let spacing = if size <= 0.0 { factor } else { size * factor };
-    let spacing = bounds::hatch_spacing(spacing, style, factor);
+    let spacing = bounds::hatch_spacing(spacing, style, resolution);
     let pattern = if written_width == 0.0 {
         Vec::new()
     } else {
@@ -321,8 +335,7 @@ pub(crate) fn hatch(
         pattern,
         gamma: Some(GAMMA),
     };
-    // The image's size in whole pixels, as the renderer checks the same bound.
-    if hatch.is_bounded(image.0 as u32, image.1 as u32) {
+    if hatch.is_bounded(image.0, image.1) {
         Hatched::Drawn(hatch)
     } else {
         Hatched::Refused
@@ -333,14 +346,15 @@ pub(crate) fn hatch(
 /// the stroke, in pixels of the image of `image` width and height; `None` past [`MAX_LINES`].
 /// The lines are counted from the reference point, the pixel of the map's origin, where
 /// msPrepareImage() puts the image's `refpt`.
-/// Only the lines that cross the image, grown by the stroke, are laid: the others are MapServer's
-/// too but draw nothing, and a polygon far larger than the image would have countless of them.
+/// Only the lines that cross the rectangle the renderer clips them to, [`Hatch::line_rect_at`],
+/// are laid: the others are MapServer's too but draw nothing, and a polygon far larger than the
+/// image would have countless of them.
 pub(crate) fn hatch_polygon(
     rings: &[Vec<Point>],
     spacing: f64,
     width: f64,
     angle: f64,
-    image: (f64, f64),
+    image: (u32, u32),
     reference: Point,
 ) -> Option<Vec<[Point; 2]>> {
     let mut points = rings
@@ -365,12 +379,12 @@ pub(crate) fn hatch_polygon(
     if !(size_x.is_finite() && size_y.is_finite()) {
         return Some(Vec::new());
     }
-    let margin = width + 2.0;
+    let [min_vx, min_vy, max_vx, max_vy] = Hatch::line_rect_at(width, image.0, image.1).bounds();
     let visible = Visible {
-        min_x: -margin - ox,
-        min_y: -margin - oy,
-        max_x: image.0 + margin - ox,
-        max_y: image.1 + margin - oy,
+        min_x: min_vx - ox,
+        min_y: min_vy - oy,
+        max_x: max_vx - ox,
+        max_y: max_vy - oy,
     };
     let lines = create_hatch(
         [ox, oy],

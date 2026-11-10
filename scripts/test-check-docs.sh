@@ -11,8 +11,9 @@
 # every direction; of the older checks, one case each pins the message a maintainer would meet
 # first — check 9 gets two more for the toolchain job a derived project adds, checks 12 and 13
 # (inherited ADRs decided and the template's identity replaced once the setup file is gone) have
-# a case for each of their conditions, and check 14 (the template release named) one for each
-# form the line may take.
+# a case for each of their conditions, check 14 (the template release named) one for each
+# form the line may take, and check 16 (no inactive ADR cited outside the record) one for each
+# side of its line.
 #
 # Section references and ADR numbers inside fixtures are assembled, never written literally, so
 # that check-docs.sh does not read this script's own fixtures as references into this repository.
@@ -582,6 +583,33 @@ expect fail "a reference in words in a JSON file" "$d" "settings.json:1: referen
 d="$(repo unknown-adr-ref)"
 echo "Decided in $(adr_id 42)." >> "$d/README.md"
 expect fail "a reference to an ADR that does not exist" "$d" "matches no ADR file"
+
+# --- cases: no inactive ADR cited outside the record (check 16) --------------------------
+
+d="$(repo superseded-cited)"
+consolidation "$d" yes
+echo "Decided in $(adr_id 1)." >> "$d/README.md"
+expect fail "a superseded ADR cited in the README" "$d" \
+  "README.md:$(wc -l < "$d/README.md" | tr -d ' '): cites $(adr_id 1), which is superseded by $(adr_id 3)"
+
+d="$(repo superseded-cited-in-record)"
+consolidation "$d" yes
+printf '\nAs %s decided before.\n' "$(adr_id 1)" >> "$d/docs/adr/0003-decision.md"
+expect pass "a superseded ADR cited inside another ADR" "$d"
+
+d="$(repo superseded-cited-with-successor)"
+consolidation "$d" yes
+echo "Decided in $(adr_id 3), which superseded $(adr_id 1)." >> "$d/README.md"
+expect pass "a superseded ADR cited as history beside its successor" "$d"
+
+d="$(repo rejected-cited)"
+adr "$d" 2 "🔴 rejected"
+printf '\n## Superseded and rejected\n\n| ADR | Title | Applies to | Status |\n|-----|-------|------------|--------|\n%s\n' \
+  "$(index_row 2 "🔴 rejected")" >> "$d/docs/adr/README.md"
+echo "# Decided in $(adr_id 2)." > "$d/scripts/run.sh"
+expect fail "a rejected ADR cited in a script" "$d" "scripts/run.sh:1: cites $(adr_id 2), which is rejected"
+echo "# Not $(adr_id 2), which was rejected." > "$d/scripts/run.sh"
+expect pass "a rejected ADR cited as rejected" "$d"
 
 d="$(repo check-lists)"
 echo 'run "Extra" scripts/check-extra.sh' >> "$d/scripts/check-all.sh"

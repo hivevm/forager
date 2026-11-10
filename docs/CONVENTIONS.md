@@ -19,9 +19,10 @@ skimmed. The design revision drops what prevented nothing
   would otherwise pass for the refusal.
 - **A `Verifies:` marker claims every *shall* of its criterion** — a test cites a goal, a quality
   goal, or an ADR only when it decides all the criterion asks for, or a clause of the ADR's
-  *Decision*, never because a test beside it does, such as G-5's image *and* the HTML example
-  that shows it; a test that decides a part cites nothing and the criterion stays pending, unless
-  the criterion asks for a test per item itself, as Q-8 and Q-9 do. The
+  *Decision*, never because a test beside it does; a test that decides a part cites nothing and
+  the criterion stays pending, unless the criterion asks for a test per item itself, as Q-8 and
+  Q-9 do, and, by the maintainer's ruling of 2026-11-08, G-13 per category and G-10 per case: a
+  marker such as `Verifies: G-13, for the category text` decides only the item it names. The
   traceability check counts a marker as met and cannot tell how much its test decides.
 - **Behaviour ported from MapServer or PROJ is read in their source, and its branches are
   tested** — a rule that follows their code names the function it follows, read at the pinned
@@ -39,6 +40,12 @@ skimmed. The design revision drops what prevented nothing
   Its test states counts past the bytes present and bounds the peak allocation under a counting
   allocator, as the shapefile adapter's tests do; the same test, run against a crate's reader,
   shows whether that reader keeps to it ([ADR-0024](adr/0024-shapefile-reader.md)).
+- **A change that gives a target of Q-3 a new reader or a new path brings the fuzz seed that
+  reaches it** — a decoder, a parser, or a path of the renderer is fuzzed from the change that
+  adds it, not from a ticket after it, because a fuzz target reaches only what its harness builds
+  and its seeds lead to: the pixmap decoder of 1eec7a6 panicked in the png crate on a ragged
+  `PLTE` until its target came in a later ticket, and the render target drew no pixmap through
+  two changes that added resampling and tiled fills, until c39b845.
 - **A reader that skips what it cannot read fails closed** — a condition it cannot read becomes
   one that never matches, never one that is absent, a value it cannot carry over leaves what it
   belongs to undrawn, never at the default an absent value takes, and what it skips is still held
@@ -75,3 +82,23 @@ skimmed. The design revision drops what prevented nothing
   the way, such as a bound that now measures what the renderer draws, is a commit of its own typed
   `fix` with its regression test, because the type tells the reviewer and the history which change
   to read as a decision.
+- **A comparison fails when there is nothing to compare** — a test that holds two results equal,
+  two renders, a rendering and its reference, a record and a reader, first asserts that each side
+  holds what it is meant to compare, a layer's features, an image, a label, because two empty
+  results agree: a text case marked `labels-hold` that rendered nothing held its mark until
+  b1f2c29, and a shapefile that did not read left both sides of G-9 empty until f3a9c8f.
+- **A port holds a value in the C type MapServer holds it in, at the step it does** — a value C
+  keeps in an `int`, a label's `SIZE`, its `MAXLENGTH`, a `PRIORITY`, a line's pen, is cut,
+  narrowed, or bounded where the C casts it, and an overflow C leaves undefined is decided and
+  named beside the code, because the label work held four such values in a wider type, each
+  differing from MapServer only past the range a reference case takes (168b04c, cb21a5c, 7a509de,
+  c39b845).
+- **A minimum or maximum over values that may be NaN decides the NaN first** — `f64::min` and
+  `f64::max` return the other operand, so a fold or a bound drops a NaN without a trace: the label
+  cache filed a box with a NaN edge at its point until f8fa86d, and the label comparison of the
+  harness was found on 2026-11-10 holding such a box within its tolerance.
+- **An ADR that decides how code is written is tried against the workspace's lints before it is
+  proposed** — an attribute, an export, or a pattern it names is compiled once under
+  `[workspace.lints]` and the ADRs that bind the crate, because ADR-0043 first decided exports of
+  the C ABI, which need the `unsafe` that ADR-0015 denies outside `render-agg`, and was found
+  unworkable only by its implementation.

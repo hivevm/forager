@@ -135,6 +135,9 @@ struct Workspace {
     deps: BTreeMap<String, Vec<String>>,
     /// Package name, by package id.
     names: BTreeMap<String, String>,
+    /// Each dependency a workspace crate's manifest declares: the crate's short name, the
+    /// dependency's name, and its kind, `normal`, `dev`, or `build`.
+    declared: Vec<(String, String, String)>,
 }
 
 fn workspace() -> Workspace {
@@ -151,7 +154,7 @@ fn workspace() -> Workspace {
         .iter()
         .map(|p| (string(&p["id"]), string(&p["name"])))
         .collect::<BTreeMap<_, _>>();
-    let members = metadata["workspace_members"]
+    let members: BTreeMap<String, String> = metadata["workspace_members"]
         .as_array()
         .unwrap()
         .iter()
@@ -185,10 +188,23 @@ fn workspace() -> Workspace {
             (string(&node["id"]), normal)
         })
         .collect();
+    let declared = metadata["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|p| Some((members.get(&string(&p["id"]))?, p)))
+        .flat_map(|(member, p)| {
+            p["dependencies"].as_array().unwrap().iter().map(|dep| {
+                let kind = dep["kind"].as_str().unwrap_or("normal").to_owned();
+                (member.clone(), string(&dep["name"]), kind)
+            })
+        })
+        .collect();
     Workspace {
         members,
         deps,
         names,
+        declared,
     }
 }
 
@@ -278,6 +294,27 @@ fn the_browser_bindings_bind_no_shapefile() {
     // The check itself sees a dependency: the CLI binds shapefiles, the bindings GeoJSON.
     assert!(binders.contains(&"cli".to_owned()));
     assert!(dependents(&ws, "forager-adapter-geojson").contains(&"bindings-wasm".to_owned()));
+}
+
+#[test]
+fn only_the_cli_s_tests_run_wasm_in_wasmi() {
+    // Verifies: ADR-0043
+    let ws = workspace();
+    let declaring: Vec<_> = ws
+        .declared
+        .iter()
+        .filter(|(_, dep, _)| dep == "wasmi")
+        .map(|(member, _, kind)| format!("{member} ({kind})"))
+        .collect();
+    assert_eq!(declaring, ["cli (dev)"]);
+    // No crate reaches it through a normal dependency either.
+    assert!(dependents(&ws, "wasmi").is_empty());
+    // The check itself sees a declaration and its kind: the CLI's tests decode PNG with png.
+    assert!(ws.declared.iter().any(|(member, dep, kind)| (
+        member.as_str(),
+        dep.as_str(),
+        kind.as_str()
+    ) == ("cli", "png", "dev")));
 }
 
 #[test]

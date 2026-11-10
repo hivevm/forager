@@ -175,8 +175,9 @@ fn unescape(field: &str) -> String {
 
 /// What differs between Forager's labels and MapServer's, one line per label, as ADR-0029 pairs
 /// them: by priority, layer, class, and text, the n-th of a key in Forager's walk with the n-th in
-/// MapServer's. A pair matches when both are drawn with each edge within [`TOLERANCE`], or when
-/// both are discarded; a label without a partner does not match. Empty when every label matches.
+/// MapServer's. A pair matches when both are drawn with each edge finite and within
+/// [`TOLERANCE`], or when both are discarded; a label without a partner does not match. Empty when
+/// every label matches.
 pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
     type Key = (usize, usize, String, u8);
     let mut theirs: BTreeMap<Key, Vec<&Recorded>> = BTreeMap::new();
@@ -191,7 +192,12 @@ pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
     }
     let mut ours: BTreeMap<Key, Vec<&CachedLabel>> = BTreeMap::new();
     for label in forager {
-        let key = (label.layer, label.class, label.text.clone(), label.priority);
+        let key = (
+            label.layer,
+            label.class,
+            label.text.to_string(),
+            label.priority,
+        );
         ours.entry(key).or_default().push(label);
     }
     let mut keys: Vec<&Key> = theirs.keys().chain(ours.keys()).collect();
@@ -210,15 +216,17 @@ pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
                 String::new()
             };
             let difference = match (ms.get(n).map(|l| l.drawn), fg.get(n).map(|l| l.drawn)) {
-                (Some(Some(a)), Some(Some(b))) => {
-                    let off = distance(&a, &b);
-                    (off > TOLERANCE).then(|| {
-                        format!(
-                            "MapServer draws it at {}, Forager {off:.2} px off",
-                            show(&a)
-                        )
-                    })
-                }
+                (Some(Some(a)), Some(Some(b))) => unfinite("MapServer's", &a)
+                    .or_else(|| unfinite("Forager's", &b))
+                    .or_else(|| {
+                        let off = distance(&a, &b);
+                        (off > TOLERANCE).then(|| {
+                            format!(
+                                "MapServer draws it at {}, Forager {off:.2} px off",
+                                show(&a)
+                            )
+                        })
+                    }),
                 (Some(None), Some(None)) => None,
                 (Some(Some(a)), Some(None)) => Some(format!(
                     "MapServer draws it at {}, Forager discards it",
@@ -243,8 +251,8 @@ pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
 /// What differs between MapServer's labels as the record holds them, `record`, and as the reader
 /// writes them in the noise measurement, `output`, one line each, named by its line: ADR-0029
 /// holds the priority, the layer's index and name, the class, the drawn state, the texts, and the
-/// order exactly, and each edge of each box within [`NOISE`]. Empty when the output holds the
-/// record.
+/// order exactly, and each edge of each box finite and within [`NOISE`]. Empty when the output
+/// holds the record.
 pub fn beyond_noise(record: &[Recorded], output: &[Recorded]) -> Vec<String> {
     let mut differences = Vec::new();
     for n in 0..record.len().max(output.len()) {
@@ -260,10 +268,16 @@ pub fn beyond_noise(record: &[Recorded], output: &[Recorded]) -> Vec<String> {
                 if !fields {
                     Some(format!("the record holds {a:?}, the reader {b:?}"))
                 } else if let (Some(x), Some(y)) = (a.drawn, b.drawn) {
-                    let off = distance(&x, &y);
-                    (off > NOISE).then(|| {
-                        format!("the reader's box {y:?} lies {off:e} px from the record's {x:?}")
-                    })
+                    unfinite("the record's", &x)
+                        .or_else(|| unfinite("the reader's", &y))
+                        .or_else(|| {
+                            let off = distance(&x, &y);
+                            (off > NOISE).then(|| {
+                                format!(
+                                    "the reader's box {y:?} lies {off:e} px from the record's {x:?}"
+                                )
+                            })
+                        })
                 } else {
                     None
                 }
@@ -298,7 +312,19 @@ pub fn uncompared(map: &Map) -> Vec<String> {
         .collect()
 }
 
-/// The largest distance between an edge of `a` and the same edge of `b`.
+/// The first edge of `bbox` that is no finite number, named as `whose` box's: a NaN edge would
+/// drop out of [`distance`], whose fold by `f64::max` returns the other operand, and a pair would
+/// match on the other edges, so neither comparison measures a box that is not finite.
+fn unfinite(whose: &str, bbox: &[f64; 4]) -> Option<String> {
+    const EDGES: [&str; 4] = ["min x", "min y", "max x", "max y"];
+    let i = bbox.iter().position(|edge| !edge.is_finite())?;
+    Some(format!(
+        "{whose} box is not finite in its {}: {}",
+        EDGES[i], bbox[i]
+    ))
+}
+
+/// The largest distance between an edge of `a` and the same edge of `b`, each finite.
 fn distance(a: &[f64; 4], b: &[f64; 4]) -> f64 {
     a.iter()
         .zip(b)

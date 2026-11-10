@@ -39,8 +39,9 @@ pub struct Map {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fonts: BTreeMap<String, String>,
     /// The map's symbols in MapServer's order: those of its `SYMBOL` blocks, then those of its
-    /// symbol set. The one at position `i` has MapServer's index `i + 1`; index 0 is MapServer's
-    /// default symbol, a filled circle of size 1, which the list leaves out.
+    /// symbol set, then the image files its styles name. The one at position `i` has MapServer's
+    /// index `i + 1`; index 0 is MapServer's default symbol, a filled circle of size 1, which the
+    /// list leaves out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub symbols: Vec<Symbol>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -476,8 +477,9 @@ impl Label {
     }
 }
 
-/// A symbol of the map's symbol set: by its name, or by MapServer's index, in which 0 is the
-/// default symbol.
+/// A symbol of the map's symbol set: by MapServer's index, in which 0 is the default symbol, or by
+/// its name: the first symbol of that name, without regard to case, as MapServer's
+/// `msGetSymbolIndex` finds it. A name no symbol carries draws nothing.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]

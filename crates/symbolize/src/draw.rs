@@ -19,7 +19,6 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
-use forager_style_ir::c::ms_nint;
 use forager_style_ir::{Bound, Coord, Geometry, RenderMode, Rgba, Style, Symbol, SymbolRef};
 
 use crate::bounds::{self, MAX_SIZE};
@@ -29,7 +28,8 @@ use crate::hatch::{self, Hatched, Hatching};
 use crate::line_marker::{self, MarkerBudget};
 use crate::offset::{self, Offset};
 use crate::style::{GAMMA, fixed};
-use crate::symbol;
+use crate::symbol::{self, Pixmaps};
+use crate::tile::{self, Tiles};
 
 /// One drawing of a style on a feature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,6 +38,9 @@ pub enum Pass {
     Plain,
     /// The style as written, only when it has a `COLOR`.
     PlainIfColored,
+    /// The style as written, only when it has a `COLOR` or its symbol is a pixmap, as the shape
+    /// cache draws a style after the first (`src/mapdraw.c:1487-1494`).
+    PlainIfColoredOrPixmap,
     /// The outline of a line: the style widened by twice its `OUTLINEWIDTH`, its colours swapped.
     Outline,
     /// The outline, only when the style has an `OUTLINECOLOR`.
@@ -57,21 +60,24 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
     }
 }
 
-/// The images of a render's pixmap symbols by their resource path, each the decoded image or why
-/// it has none, as the engine's store of the render holds them (ADR-0040).
-pub type Pixmaps = BTreeMap<String, Result<Rc<PremultipliedImage>, String>>;
-
 /// What a layer draws its features on beside the view: the map's symbols, the images of its
-/// pixmap symbols, the image's width and height in pixels, the layer's scale factor and the
-/// image's resolution factor (see the engine's `classes::scale_factor`), what is left to the
-/// layer of [`line_marker::MAX_MARKER_POINTS`], the hatching of the class drawn, which counts the
-/// hatches refused (Q-9), the pixmap symbols left undrawn, and whether the layer is drawn into an
-/// image of its own.
+/// pixmap symbols and the render's tiles of them, the image's width and height in pixels, the
+/// layer's scale factor and the image's resolution factor (see the engine's
+/// `classes::layer_scale_factor`), what is left to the layer of [`line_marker::MAX_MARKER_POINTS`],
+/// the hatching of the class drawn, which counts the hatches refused (Q-9), the pixmap symbols
+/// left undrawn, and whether the layer is drawn into an image of its own.
 pub struct Canvas<'a> {
     symbols: &'a [Symbol],
     pixmaps: Option<&'a Pixmaps>,
-    pub(crate) image: (f64, f64),
+    tiles: Option<&'a mut Tiles>,
+    /// The image's width and height in pixels, as the renderer is handed them.
+    size: (u32, u32),
+    /// The layer's scale factor, by which the sizes, widths, gaps, patterns, and offsets of its
+    /// styles are scaled.
     pub(crate) factor: f64,
+    /// The image's resolution factor, by which the bounds of its styles, their `MINSIZE`,
+    /// `MAXSIZE`, `MINWIDTH`, and `MAXWIDTH`, are scaled.
+    pub(crate) resolution: f64,
     pub(crate) markers: MarkerBudget,
     hatching: Hatching,
     /// Each pixmap symbol left undrawn, by its index from 1, and why.
@@ -80,13 +86,16 @@ pub struct Canvas<'a> {
 }
 
 impl<'a> Canvas<'a> {
-    /// A canvas for one layer at `factor`, its budget of markers whole.
+    /// A canvas for one layer at the scale factor `factor`, its budget of markers whole, its
+    /// resolution factor the same until [`Self::with_resolution`] sets it.
     pub fn new(symbols: &'a [Symbol], width: u32, height: u32, factor: f64) -> Self {
         Self {
             symbols,
             pixmaps: None,
-            image: (f64::from(width), f64::from(height)),
+            tiles: None,
+            size: (width, height),
             factor,
+            resolution: factor,
             markers: MarkerBudget::new(),
             hatching: Hatching::default(),
             refused_pixmaps: BTreeMap::new(),
@@ -103,6 +112,27 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// Sets the scale factor the next styles are drawn at, as the labels of several layers, each
+    /// at its layer's, are drawn on one canvas.
+    pub fn set_factor(&mut self, factor: f64) {
+        self.factor = factor;
+    }
+
+    /// The canvas at the image's resolution factor `resolution`, which bounds its styles, apart
+    /// from the layer's scale factor, which sizes them (msPrepareImage).
+    pub fn with_resolution(self, resolution: f64) -> Self {
+        Self { resolution, ..self }
+    }
+
+    /// The canvas, the polygons of its pixmap symbols filled with the tiles of `tiles`; without
+    /// them, such a pixmap is left undrawn.
+    pub fn with_tiles(self, tiles: &'a mut Tiles) -> Self {
+        Self {
+            tiles: Some(tiles),
+            ..self
+        }
+    }
+
     /// Marks the layer as drawn into an image of its own, which msDrawLayer creates with
     /// msImageCreate: that image's `refpt` stays at its top left corner, where agg2CreateImage's
     /// `calloc` leaves it, and a hatch counts its lines from there.
@@ -115,11 +145,23 @@ impl<'a> Canvas<'a> {
     pub fn class(&mut self, styles: &[Style]) {
         self.hatching = Hatching {
             refused: self.hatching.refused,
-            ..Hatching::for_class(styles, self.symbols, self.factor)
+            ..Hatching::for_class(
+                styles,
+                self.symbols,
+                self.pixmaps,
+                self.factor,
+                self.resolution,
+            )
         };
     }
 
-    /// Whether symbols along the layer's lines were left out, their points past the budget.
+    /// The image's width and height in pixels.
+    pub(crate) fn image(&self) -> (f64, f64) {
+        (f64::from(self.size.0), f64::from(self.size.1))
+    }
+
+    /// Whether markers of the layer were left out, their points past the budget: at its
+    /// features, along its lines, or where a style's `GEOMTRANSFORM` places them.
     pub fn markers_spent(&self) -> bool {
         self.markers.spent()
     }
@@ -139,6 +181,27 @@ impl<'a> Canvas<'a> {
                 Some((index, symbol, why.as_str()))
             })
             .collect()
+    }
+
+    /// Records the pixmap symbol of `mark`, if it is one, as not drawn where MapServer tiles its
+    /// image along a line, without a GAP, which Forager does not: the style's `COLOR` stands in
+    /// for it, or, for the first style of a class, its `OUTLINECOLOR` without a `COLOR`; nothing
+    /// otherwise. Its image is not read, so that one that does not exist warns too.
+    fn untiled_pixmap(&mut self, mark: &symbol::Mark<'_>) {
+        let symbol::Mark::Pixmap(index, symbol) = *mark else {
+            return;
+        };
+        self.refused_pixmaps.entry(index).or_insert_with(|| {
+            let image = symbol
+                .image
+                .as_deref()
+                .map_or("its image".to_owned(), |path| format!("its image {path}"));
+            format!(
+                "MapServer tiles {image} along a line without a GAP, which Forager does not \
+                 yet; the style's COLOR is drawn in its place, or, for the first style of a \
+                 class, its OUTLINECOLOR without a COLOR; nothing otherwise"
+            )
+        });
     }
 
     /// The image of the pixmap symbol `symbol`, at `index` from 1, or `None`, its refusal
@@ -161,19 +224,44 @@ impl<'a> Canvas<'a> {
 }
 
 /// The image path of the pixmap symbol that [`draw_ops`] draws as the mark of `style` in a layer
-/// of `mode`: at each point of a point layer, and at each point a `GEOMTRANSFORM` places on a
-/// line or a polygon. The engine loads it before the layer is drawn, since this crate does no
-/// I/O.
+/// of `mode`: at each point of a point layer, at each point a `GEOMTRANSFORM` places on a line or
+/// a polygon, along each line of a line layer every `GAP` pixels, and tiled over each polygon of
+/// a polygon layer. The engine loads it before the layer is drawn, since this crate does no I/O.
 pub fn marked_pixmap<'a>(
     mode: RenderMode,
     style: &Style,
     symbols: &'a [Symbol],
 ) -> Option<&'a str> {
-    let marked = mode == RenderMode::Point || style.geom_transform.is_some();
+    let marked = matches!(mode, RenderMode::Point | RenderMode::Polygon)
+        || style.geom_transform.is_some()
+        || (mode == RenderMode::Line && gapped(style));
     match symbol::mark(style, symbols) {
         symbol::Mark::Pixmap(_, symbol) if marked => symbol.image.as_deref(),
         _ => None,
     }
+}
+
+/// The image paths of the pixmap symbols that msDrawShape counts in the clip buffer of a class's
+/// `styles` at their images' heights, having loaded them whatever their scale range
+/// (`src/mapdraw.c:2466-2490`): those of a class with a hatch, the one style the clip buffer
+/// reaches here (see [`Hatching::for_class`]).
+pub fn clip_pixmaps<'a>(styles: &[Style], symbols: &'a [Symbol]) -> Vec<&'a str> {
+    if !styles.iter().any(|style| symbol::is_hatch(style, symbols)) {
+        return Vec::new();
+    }
+    styles
+        .iter()
+        .filter_map(|style| match symbol::mark(style, symbols) {
+            symbol::Mark::Pixmap(_, symbol) => symbol.image.as_deref(),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether msDrawLineSymbol draws the style's symbol along the line, `gap < 0` or `gap > 0`
+/// (`src/maprendering.c:679-688`), rather than as a brush: a gap that is not a number brushes it.
+fn gapped(style: &Style) -> bool {
+    matches!(style.gap, Some(gap) if gap.abs() > 0.0)
 }
 
 /// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts, a hatch
@@ -186,7 +274,24 @@ pub fn draw_ops(
     view: &View,
     canvas: &mut Canvas,
 ) -> Vec<DrawOp> {
-    let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
+    // The shape in pixels as msTransformShape gives it in the AGG renderer's mode, which
+    // msImageStartLayer keeps for a layer without APPROXIMATION_SCALE (`src/mapdraw.c:4201-4224`):
+    // msTransformShapeSimplify, its lines or its rings as the shape is a line or a polygon,
+    // whatever the layer, a part it leaves without points dropped.
+    let lines = |parts: &[Vec<Coord>]| -> Vec<Vec<Point>> {
+        parts
+            .iter()
+            .map(|l| view.line_to_pixels(l))
+            .filter(|l| !l.is_empty())
+            .collect()
+    };
+    let rings = |parts: &[Vec<Coord>]| -> Vec<Vec<Point>> {
+        parts
+            .iter()
+            .map(|r| view.ring_to_pixels(r))
+            .filter(|r| !r.is_empty())
+            .collect()
+    };
     let mut ops = Vec::new();
     match (mode, geometry) {
         // The whole shape, a collection's parts together, as msDrawTransformedShape takes it.
@@ -201,8 +306,19 @@ pub fn draw_ops(
         (RenderMode::Point, _) => {
             // pointLayerDrawShape: a point outside the map's extent draws nothing. It draws every
             // style at every point, whatever its GEOMTRANSFORM.
-            for c in vertices(geometry).into_iter().filter(|&c| view.contains(c)) {
-                marker_ops(&mut ops, view.point_to_pixel(c), style, canvas);
+            // The markers' points are taken from the canvas's budget (Q-9): where they would
+            // exceed what is left, none of the shape's is drawn, nor any after them. The square
+            // Forager draws for symbol 0, which MapServer does not draw, takes nothing.
+            let points = vertices(geometry);
+            let inside = points.iter().filter(|&&c| view.contains(c)).count();
+            if inside > 0
+                && (of_symbol_zero(style)
+                    || marker_price(style, canvas)
+                        .is_some_and(|price| canvas.markers.take(inside, price)))
+            {
+                for c in points.into_iter().filter(|&c| view.contains(c)) {
+                    marker_ops(&mut ops, view.point_to_pixel(c), style, canvas);
+                }
             }
         }
         (RenderMode::Polygon, Geometry::Polygon(_) | Geometry::MultiPolygon(_))
@@ -213,34 +329,31 @@ pub fn draw_ops(
                 Geometry::MultiPolygon(polygons) => polygons.concat(),
                 _ => Vec::new(),
             };
-            let rings = hatch::hatch_rings(&rings, view, &canvas.hatching);
+            let rings = hatch::hatch_rings(&rings, view, canvas.image(), &canvas.hatching);
             let drawn = shade(&mut ops, rings, style, view, canvas);
             canvas.hatching.refused += usize::from(!drawn);
         }
-        (RenderMode::Polygon, Geometry::Polygon(rings)) => {
-            let rings = rings.iter().map(|r| pixels(r)).collect();
-            shade(&mut ops, rings, style, view, canvas);
+        (RenderMode::Polygon, Geometry::Polygon(parts)) => {
+            shade(&mut ops, rings(parts), style, view, canvas);
         }
         (RenderMode::Polygon, Geometry::MultiPolygon(polygons)) => {
-            for rings in polygons {
-                let rings = rings.iter().map(|r| pixels(r)).collect();
-                shade(&mut ops, rings, style, view, canvas);
+            for parts in polygons {
+                shade(&mut ops, rings(parts), style, view, canvas);
             }
         }
         (RenderMode::Line, Geometry::LineString(points)) => {
-            line_symbol(&mut ops, vec![pixels(points)], style, pass, canvas);
-        }
-        (RenderMode::Line, Geometry::MultiLineString(lines) | Geometry::Polygon(lines)) => {
-            let paths: Vec<_> = lines.iter().map(|l| pixels(l)).collect();
-            let paths = match geometry {
-                Geometry::Polygon(_) => open_rings(paths),
-                _ => paths,
-            };
+            let paths = lines(std::slice::from_ref(points));
             line_symbol(&mut ops, paths, style, pass, canvas);
         }
+        (RenderMode::Line, Geometry::MultiLineString(parts)) => {
+            line_symbol(&mut ops, lines(parts), style, pass, canvas);
+        }
+        (RenderMode::Line, Geometry::Polygon(parts)) => {
+            line_symbol(&mut ops, open_rings(rings(parts)), style, pass, canvas);
+        }
         (RenderMode::Line, Geometry::MultiPolygon(polygons)) => {
-            let rings = polygons.iter().flatten().map(|r| pixels(r)).collect();
-            line_symbol(&mut ops, open_rings(rings), style, pass, canvas);
+            let paths = rings(&polygons.concat());
+            line_symbol(&mut ops, open_rings(paths), style, pass, canvas);
         }
         _ => {}
     }
@@ -268,12 +381,15 @@ fn outline_width(style: &Style) -> f64 {
     fixed(&style.outline_width).unwrap_or(0.0)
 }
 
-/// The style's `WIDTH` scaled by the scale factor and bounded by its `MINWIDTH` and `MAXWIDTH`
-/// scaled by the resolution factor, both `factor` here, as msDrawLineSymbol() bounds it (see
+/// The style's `WIDTH` scaled by the scale factor `factor` and bounded by its `MINWIDTH` and
+/// `MAXWIDTH` scaled by the resolution factor `resolution`, as msDrawLineSymbol() bounds it (see
 /// [`bounds::line_width`]). With the width as written.
-fn bounded_width(style: &Style, factor: f64) -> (f64, f64) {
+fn bounded_width(style: &Style, factor: f64, resolution: f64) -> (f64, f64) {
     let written = fixed(&style.width).unwrap_or(1.0);
-    (bounds::line_width(written * factor, style, factor), written)
+    (
+        bounds::line_width(written * factor, style, resolution),
+        written,
+    )
 }
 
 /// The offset of the style, its numbers multiplied by `factor`; `None` when it moves nothing.
@@ -331,9 +447,10 @@ fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
 /// the dash pattern, and the initial gap scaled by the factor the scaling and the bounds applied to
 /// the width; and the style's cap and join, by default `round` and `none`. An outline pass draws
 /// the style widened by twice its outline width with its colours swapped, as
-/// msOutlineRenderingPrepareStyle() prepares it. A style with a vector or ellipse symbol and a
-/// `GAP` draws the symbol along the line instead, its markers' points taken from the canvas's
-/// budget; one whose symbol index is past the last draws nothing.
+/// msOutlineRenderingPrepareStyle() prepares it. A style with a vector, an ellipse, or a pixmap
+/// symbol and a `GAP` draws the symbol along the line instead, its markers' points taken from the
+/// canvas's budget, a pixmap without a colour and not at all where its image is refused; one whose
+/// symbol index is past the last draws nothing.
 fn line_symbol(
     ops: &mut Vec<DrawOp>,
     paths: Vec<Vec<Point>>,
@@ -343,26 +460,53 @@ fn line_symbol(
 ) {
     let prepared;
     let style = match pass {
-        Pass::Plain | Pass::PlainIfColored => style,
+        Pass::Plain | Pass::PlainIfColored | Pass::PlainIfColoredOrPixmap => style,
         Pass::Outline | Pass::OutlineIfOutlined => {
-            prepared = outline_style(style);
+            prepared = outline_style(style, canvas.factor, canvas.resolution);
             &prepared
         }
     };
     let (first, second) = (fixed(&style.color), fixed(&style.outline_color));
-    if matches!(pass, Pass::PlainIfColored | Pass::OutlineIfOutlined) && first.is_none() {
+    let mark = symbol::mark(style, canvas.symbols);
+    let gapped = gapped(style);
+    if !gapped {
+        canvas.untiled_pixmap(&mark);
+    }
+    let skipped = match pass {
+        Pass::Plain | Pass::Outline => false,
+        Pass::PlainIfColored | Pass::OutlineIfOutlined => first.is_none(),
+        // A pixmap with a GAP of 0, which MapServer tiles along the line (src/maprendering.c:
+        // 687-707) and Forager does not, is skipped without a COLOR as any other symbol.
+        Pass::PlainIfColoredOrPixmap => {
+            first.is_none() && !(gapped && matches!(mark, symbol::Mark::Pixmap(..)))
+        }
+    };
+    if skipped {
         return;
     }
-    let Some(color) = first.or(second) else {
-        return;
-    };
-    let (width, written) = bounded_width(style, canvas.factor);
+    let (width, written) = bounded_width(style, canvas.factor, canvas.resolution);
     let factor = if written != 0.0 { width / written } else { 1.0 };
     let initial_gap = style.initial_gap.unwrap_or(-1.0);
-    // msDrawLineSymbol's `gap < 0` or `gap > 0`: a gap that is not a number brushes the line.
-    let gapped = matches!(style.gap, Some(gap) if gap.abs() > 0.0);
-    match symbol::mark(style, canvas.symbols) {
+    match mark {
         symbol::Mark::Nothing => return,
+        symbol::Mark::Pixmap(index, symbol) if gapped => {
+            // computeSymbolStyle sets no colour for a pixmap (src/maprendering.c:47-48), and
+            // msDrawLineSymbol asks for none on this branch (666-688).
+            if let Some(pixmap) = canvas.pixmap(index, symbol) {
+                let paths = moved(paths, style_offset(style, factor));
+                ops.extend(line_marker::draw_pixmap(
+                    &paths,
+                    style,
+                    symbol,
+                    &pixmap,
+                    initial_gap * factor,
+                    canvas.image(),
+                    (canvas.factor, canvas.resolution),
+                    &mut canvas.markers,
+                ));
+            }
+            return;
+        }
         symbol::Mark::Symbol(symbol) if gapped => {
             let paths = moved(paths, style_offset(style, factor));
             let initial_gap = initial_gap * factor;
@@ -371,14 +515,17 @@ fn line_symbol(
                 style,
                 symbol,
                 initial_gap,
-                canvas.image,
-                canvas.factor,
+                canvas.image(),
+                (canvas.factor, canvas.resolution),
                 &mut canvas.markers,
             ));
             return;
         }
         symbol::Mark::Symbol(_) | symbol::Mark::Pixmap(..) | symbol::Mark::Square => {}
     }
+    let Some(color) = first.or(second) else {
+        return;
+    };
     let (cap, join) = line_ends(
         width,
         style.line_cap.unwrap_or(LineCap::Round),
@@ -405,30 +552,35 @@ fn line_symbol(
 /// The style of an outline pass as msOutlineRenderingPrepareStyle() prepares it: its width and
 /// its bounds widened by twice its `OUTLINEWIDTH`, its size, MapServer's -1 where it has none,
 /// grown by it, and its colours swapped. MapServer divides the width's growth by the layer's
-/// scale factor over the image's resolution factor, and divides the size's by the scale factor
-/// and multiplies it by the resolution factor; the two factors are one here, so that both grow by
-/// the outline width as written, and the drawing scales them after.
-fn outline_style(style: &Style) -> Style {
+/// scale factor `factor` over the image's resolution factor `resolution`, and divides the size's
+/// by the scale factor and multiplies it by the resolution factor, so that, scaled as the drawing
+/// scales them after, both grow by the outline width at the resolution; the bounds grow by it as
+/// written.
+fn outline_style(style: &Style, factor: f64, resolution: f64) -> Style {
     let outline = outline_width(style);
     Style {
         color: style.outline_color.clone(),
         outline_color: style.color.clone(),
         width: Some(Bound::Value(
-            fixed(&style.width).unwrap_or(1.0) + 2.0 * outline,
+            fixed(&style.width).unwrap_or(1.0) + outline / (factor / resolution) * 2.0,
         )),
         min_width: Some(bounds::min_width(style) + 2.0 * outline),
         max_width: Some(bounds::max_width(style) + 2.0 * outline),
-        size: Some(Bound::Value(fixed(&style.size).unwrap_or(-1.0) + outline)),
+        size: Some(Bound::Value(
+            fixed(&style.size).unwrap_or(-1.0) + outline / factor * resolution,
+        )),
         ..style.clone()
     }
 }
 
-/// A polygon drawn in a style, as msDrawShadeSymbol() draws one at the canvas's factor: without
-/// a `COLOR`, its outline as a line in the `OUTLINECOLOR`; with one, moved by the offset scaled,
-/// and with a hatch symbol hatched (see [`hatch::hatch`]), with any other filled, and outlined in
-/// the `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width scaled, the
-/// factor itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled, as
-/// MapServer bounds it there. False where a hatch is refused (Q-9).
+/// A polygon drawn in a style, as msDrawShadeSymbol() draws one at the canvas's factor: nothing
+/// for a symbol past the last or a name no symbol carries; with a pixmap, whatever its colours,
+/// moved by the offset scaled and filled with the image tiled (see [`tiled`]); without a `COLOR`,
+/// its outline as a line in the `OUTLINECOLOR`; with one, moved by the offset scaled, and with a
+/// hatch symbol hatched (see [`hatch::hatch`]), with any other filled, and outlined in the
+/// `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width scaled, the factor
+/// itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled, as MapServer
+/// bounds it there. False where a hatch is refused (Q-9).
 pub fn shade(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
@@ -436,6 +588,16 @@ pub fn shade(
     view: &View,
     canvas: &mut Canvas,
 ) -> bool {
+    match symbol::mark(style, canvas.symbols) {
+        // No such symbol (src/maprendering.c:742-743).
+        symbol::Mark::Nothing => return true,
+        // A pixmap needs no colour (753), and draws neither its COLOR nor an outline.
+        symbol::Mark::Pixmap(index, symbol) => {
+            tiled(ops, rings, style, index, symbol, canvas);
+            return true;
+        }
+        _ => {}
+    }
     let Some(color) = fixed(&style.color) else {
         line_symbol(ops, open_rings(rings), style, Pass::Plain, canvas);
         return true;
@@ -447,9 +609,10 @@ pub fn shade(
             rings,
             style,
             color,
-            view.image_size(),
+            canvas.size,
             hatch::reference(canvas.own_image, view),
             factor,
+            canvas.resolution,
         ) {
             Hatched::Drawn(hatch) => {
                 ops.push(DrawOp::Hatch(hatch));
@@ -485,6 +648,57 @@ pub fn shade(
     true
 }
 
+/// The pixmap symbol `symbol`, at `index` from 1, over a polygon, as msDrawShadeSymbol tiles it:
+/// computeSymbolStyle's scale, rotation, and gap at the canvas's factor give the tile of the
+/// canvas's (see [`tile::tile`]), and the polygon, moved by the offset scaled, is filled with it.
+/// Where the image has not loaded or its tile is refused (Q-9), nothing is drawn, and the canvas
+/// records why. A polygon moved wholly off the image builds no tile, which would draw nothing
+/// and take bytes from the tiles of the polygons on it.
+fn tiled(
+    ops: &mut Vec<DrawOp>,
+    rings: Vec<Vec<Point>>,
+    style: &Style,
+    index: usize,
+    symbol: &Symbol,
+    canvas: &mut Canvas,
+) {
+    let Some(image) = canvas.pixmap(index, symbol) else {
+        return;
+    };
+    let factor = canvas.factor;
+    let rings = moved(rings, style_offset(style, factor));
+    if !meets_image(&rings, canvas.image()) {
+        return;
+    }
+    let drawn = symbol::pixmap_style(style, image.height(), factor, canvas.resolution);
+    // The engine's canvas always keeps tiles; one made without them, as a test's is, refuses the
+    // fill rather than build a tile that nothing would hold or count (Q-9).
+    let tile = match canvas.tiles.as_deref_mut() {
+        Some(tiles) => tile::tile(tiles, index, image, drawn),
+        None => Err("no tiles are kept where it is drawn".to_owned()),
+    };
+    match tile {
+        Ok(tile) => ops.push(DrawOp::TiledFill { rings, tile }),
+        Err(why) => {
+            canvas.refused_pixmaps.entry(index).or_insert(why);
+        }
+    }
+}
+
+/// Whether the box of `rings` meets the image of `(width, height)` pixels.
+fn meets_image(rings: &[Vec<Point>], (width, height): (f64, f64)) -> bool {
+    let mut points = rings.iter().flatten();
+    let Some(first) = points.next() else {
+        return false;
+    };
+    let (mut min, mut max) = (*first, *first);
+    for p in points {
+        (min.x, min.y) = (min.x.min(p.x), min.y.min(p.y));
+        (max.x, max.y) = (max.x.max(p.x), max.y.max(p.y));
+    }
+    min.x <= width && max.x >= 0.0 && min.y <= height && max.y >= 0.0
+}
+
 /// What msDrawMarkerSymbol draws of `style` at the pixel `at` at the canvas's factor: its
 /// symbol, or the square that stands for a symbol not drawn yet, moved as msAdjustMarkerPos
 /// moves it. The square is Forager's, not MapServer's, which draws nothing for symbol 0; it is
@@ -493,50 +707,60 @@ pub fn shade(
 fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, canvas: &mut Canvas) {
     match symbol::mark(style, canvas.symbols) {
         symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style, 1.0), style),
-        symbol::Mark::Symbol(s) => symbol::symbol_ops(ops, at, style, s, canvas.factor),
+        symbol::Mark::Symbol(s) => {
+            symbol::symbol_ops(ops, at, style, s, canvas.factor, canvas.resolution);
+        }
         symbol::Mark::Pixmap(index, s) => {
             if let Some(image) = canvas.pixmap(index, s) {
-                pixmap_ops(ops, at, style, image, canvas.factor);
+                pixmap_ops(ops, at, style, s, image, canvas.factor, canvas.resolution);
             }
         }
         symbol::Mark::Nothing => {}
     }
 }
 
+/// Whether `style` names no symbol, or symbol 0, MapServer's default, which msDrawMarkerSymbol
+/// does not draw.
+fn of_symbol_zero(style: &Style) -> bool {
+    matches!(style.symbol, None | Some(Bound::Value(SymbolRef::Index(0))))
+}
+
+/// The price in points of the symbol `style` draws at a point (see [`MarkerBudget::price`]),
+/// the same at every point: what [`marker_ops`] draws of it at the origin.
+fn marker_price(style: &Style, canvas: &mut Canvas) -> Option<usize> {
+    let mut probe = Vec::new();
+    marker_ops(&mut probe, Point { x: 0.0, y: 0.0 }, style, canvas);
+    MarkerBudget::price(&probe)
+}
+
 /// A pixmap's `image` at the pixel `at` in `style` at `factor`, as msDrawMarkerSymbol draws it:
-/// nothing at a scale of 0; moved by the style's offsets; then, unturned (an angle of 0 or 360)
-/// and at a scale of 1, blended with its top-left pixel at `MS_NINT(x - width / 2.)`,
-/// `MS_NINT(y - height / 2.)`, and otherwise resampled into the square about the point, as
-/// agg2RenderPixmapSymbol draws it (see [`symbol::pixmap_square`]). A style's colour and opacity
+/// nothing at a scale of 0; moved by the style's offsets and by the symbol's anchor point, of
+/// the size msGetMarkerSize gives the image (msAdjustMarkerPos); then drawn as
+/// agg2RenderPixmapSymbol draws it (see [`symbol::render_pixmap`]). A style's colour and opacity
 /// do not reach the image (computeSymbolStyle).
 fn pixmap_ops(
     ops: &mut Vec<DrawOp>,
     at: Point,
     style: &Style,
+    symbol: &Symbol,
     image: Rc<PremultipliedImage>,
     factor: f64,
+    resolution: f64,
 ) {
-    let (scale, rotation) = symbol::pixmap_style(style, image.height(), factor);
+    let (scale, rotation, _) = symbol::pixmap_style(style, image.height(), factor, resolution);
     if scale == 0.0 {
         return;
     }
-    let at = symbol::shifted(at, style, factor);
-    if (rotation != 0.0 && rotation != std::f64::consts::PI * 2.0) || scale != 1.0 {
-        let (half, inverse) =
-            symbol::pixmap_square(image.width(), image.height(), at, scale, rotation);
-        ops.push(DrawOp::ResampledPixmap {
-            image,
-            at,
-            half,
-            inverse,
-        });
-        return;
-    }
-    ops.push(DrawOp::Pixmap {
-        left: ms_nint(at.x - f64::from(image.width()) / 2.0),
-        top: ms_nint(at.y - f64::from(image.height()) / 2.0),
-        image,
+    let at = symbol::anchored(symbol::shifted(at, style, factor), symbol, rotation, || {
+        symbol::pixmap_marker_size(
+            style,
+            fixed(&style.size),
+            image.width(),
+            image.height(),
+            factor,
+        )
     });
+    ops.push(symbol::render_pixmap(at, image, scale, rotation));
 }
 
 /// A style with a `GEOMTRANSFORM` on a shape of a line or a polygon layer, as
@@ -558,26 +782,35 @@ fn transformed(
     let Some(transform) = style.geom_transform else {
         return;
     };
-    if matches!(style.symbol, None | Some(Bound::Value(SymbolRef::Index(0)))) {
+    if of_symbol_zero(style) {
         return;
     }
+    // A pass's condition, a COLOR or an OUTLINECOLOR, does not apply here, and the engine's
+    // `Plan::passes` never hands this function `PlainIfColored`, `PlainIfColoredOrPixmap`, or
+    // `OutlineIfOutlined`: a later transformed style of a cached class takes `Plain`, the first
+    // `Plain` or `Outline`, as lineLayerDrawShape (src/mapdraw.c:2140-2149) hands every style with
+    // a GEOMTRANSFORM in its scale range to msDrawTransformedShape without testing a colour,
+    // whatever MS_DRAWMODE_SINGLESTYLE asks, once: in a cached layer in its first pass, where only
+    // the first style is prepared for its outline (1365-1378), and in an uncached one as written.
+    // The cache's later passes, which test MS_VALID_COLOR, skip such a style (1443-1444). Which
+    // colours a marker draws, msDrawMarkerSymbolInternal decides (`marker_ops`).
     let prepared;
     let style = match pass {
-        Pass::Plain | Pass::PlainIfColored => style,
+        Pass::Plain | Pass::PlainIfColored | Pass::PlainIfColoredOrPixmap => style,
         Pass::Outline | Pass::OutlineIfOutlined => {
-            prepared = outline_style(style);
+            prepared = outline_style(style, canvas.factor, canvas.resolution);
             &prepared
         }
     };
-    let placed = geom_transform::placed(transform, geometry, view, canvas.image);
+    let placed = geom_transform::placed(transform, geometry, view, canvas.image());
     if placed.is_empty() {
         return;
     }
     // What one symbol costs, the same at every point and angle.
-    let mut probe = Vec::new();
-    marker_ops(&mut probe, Point { x: 0.0, y: 0.0 }, style, canvas);
-    let cost: usize = probe.iter().map(line_marker::points).sum();
-    if !canvas.markers.take(placed.len().saturating_mul(cost)) {
+    let Some(price) = marker_price(style, canvas) else {
+        return;
+    };
+    if !canvas.markers.take(placed.len(), price) {
         return;
     }
     let mut turned = style.auto_angle.then(|| style.clone());
@@ -676,7 +909,8 @@ mod tests {
                 | DrawOp::Hatch(_)
                 | DrawOp::Glyphs { .. }
                 | DrawOp::Pixmap { .. }
-                | DrawOp::ResampledPixmap { .. } => {
+                | DrawOp::ResampledPixmap { .. }
+                | DrawOp::TiledFill { .. } => {
                     panic!("a line is not filled")
                 }
             })
@@ -723,7 +957,7 @@ mod tests {
             outline_width: Some(Bound::Value(1.5)),
             ..colored(Some(BLUE), Some(BLACK))
         };
-        let prepared = outline_style(&style);
+        let prepared = outline_style(&style, 1.0, 1.0);
         assert_eq!(fixed(&prepared.width), Some(5.0));
         assert_eq!(
             (prepared.min_width, prepared.max_width),
@@ -738,7 +972,10 @@ mod tests {
             size: None,
             ..style
         };
-        assert_eq!(fixed(&outline_style(&without_size).size), Some(0.5));
+        assert_eq!(
+            fixed(&outline_style(&without_size, 1.0, 1.0).size),
+            Some(0.5)
+        );
     }
 
     #[test]
@@ -751,16 +988,20 @@ mod tests {
             outline_width: Some(Bound::Value(1.5)),
             ..colored(Some(BLUE), Some(BLACK))
         };
-        let prepared = outline_style(&style);
+        let prepared = outline_style(&style, 1.0, 1.0);
         assert_eq!(
             (prepared.min_width, prepared.max_width),
             (Some(7.0), Some(13.0))
         );
-        let defaults = outline_style(&Style {
-            min_width: None,
-            max_width: None,
-            ..style
-        });
+        let defaults = outline_style(
+            &Style {
+                min_width: None,
+                max_width: None,
+                ..style
+            },
+            1.0,
+            1.0,
+        );
         assert_eq!(
             (defaults.min_width, defaults.max_width),
             (Some(3.0), Some(35.0))
@@ -805,7 +1046,8 @@ mod tests {
                 DrawOp::Hatch(_)
                 | DrawOp::Glyphs { .. }
                 | DrawOp::Pixmap { .. }
-                | DrawOp::ResampledPixmap { .. } => 0,
+                | DrawOp::ResampledPixmap { .. }
+                | DrawOp::TiledFill { .. } => 0,
             })
             .sum()
     }
@@ -934,7 +1176,8 @@ mod tests {
                 | DrawOp::Hatch(_)
                 | DrawOp::Glyphs { .. }
                 | DrawOp::Pixmap { .. }
-                | DrawOp::ResampledPixmap { .. } => {
+                | DrawOp::ResampledPixmap { .. }
+                | DrawOp::TiledFill { .. } => {
                     panic!("a line is not filled")
                 }
             }
@@ -987,7 +1230,8 @@ mod tests {
             | DrawOp::Hatch(_)
             | DrawOp::Glyphs { .. }
             | DrawOp::Pixmap { .. }
-            | DrawOp::ResampledPixmap { .. } => {
+            | DrawOp::ResampledPixmap { .. }
+            | DrawOp::TiledFill { .. } => {
                 panic!("the outline is a stroke")
             }
         }
@@ -1087,7 +1331,7 @@ mod tests {
         };
         let at_corner = |style: &Style| {
             let mut ops = Vec::new();
-            symbol::symbol_ops(&mut ops, p(90.0, 20.0), style, &arrow, 1.0);
+            symbol::symbol_ops(&mut ops, p(90.0, 20.0), style, &arrow, 1.0, 1.0);
             ops
         };
         let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
@@ -1149,6 +1393,99 @@ mod tests {
     }
 
     #[test]
+    fn the_markers_of_a_point_layer_share_the_layer_s_budget() {
+        // Verifies: Q-9
+        // Three circles at three points, priced as a transform prices them; a budget one circle
+        // short of them draws none of the shape's, nor anything after it.
+        let symbols = [circle()];
+        let style = Style {
+            geom_transform: None,
+            ..transformed_style(GeomTransform::Vertices, Some(1))
+        };
+        let three = Geometry::MultiPoint(coords(&[(10.0, 50.0), (50.0, 50.0), (90.0, 50.0)]));
+        let point_ops = |canvas: &mut Canvas| {
+            draw_ops(
+                RenderMode::Point,
+                &three,
+                &style,
+                Pass::Plain,
+                &unit_view(),
+                canvas,
+            )
+        };
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+        let drawn = point_ops(&mut canvas);
+        assert_eq!(drawn.len(), 3);
+        let cost = points(&drawn);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+        canvas.markers = MarkerBudget::of(cost - 1);
+        assert!(point_ops(&mut canvas).is_empty());
+        assert!(canvas.markers_spent());
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+        canvas.markers = MarkerBudget::of(cost);
+        assert_eq!(point_ops(&mut canvas).len(), 3);
+        assert!(!canvas.markers_spent());
+    }
+
+    #[test]
+    fn the_stand_in_squares_of_symbols_not_drawn_yet_pay_the_budget_and_symbol_0_s_does_not() {
+        // Verifies: Q-9
+        // An SVG, a TrueType, a hatch, or a bound symbol is drawn at a point as Forager's square,
+        // which spends the layer's budget as the symbol would, by the maintainer's decision of
+        // 2026-11-08; the square of no symbol or symbol 0, which MapServer draws nothing for,
+        // spends none.
+        let three = Geometry::MultiPoint(coords(&[(10.0, 50.0), (50.0, 50.0), (90.0, 50.0)]));
+        let of_kind = |kind| Symbol {
+            kind,
+            ..hatch_symbol()
+        };
+        let symbols = [
+            of_kind(SymbolKind::Svg),
+            of_kind(SymbolKind::Truetype),
+            of_kind(SymbolKind::Hatch),
+        ];
+        let at_points = |symbol: Option<Bound<SymbolRef>>| Style {
+            symbol,
+            geom_transform: None,
+            ..transformed_style(GeomTransform::Vertices, None)
+        };
+        let point_ops = |style: &Style, budget: usize| {
+            let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+            canvas.markers = MarkerBudget::of(budget);
+            let ops = draw_ops(
+                RenderMode::Point,
+                &three,
+                style,
+                Pass::Plain,
+                &unit_view(),
+                &mut canvas,
+            );
+            (ops, canvas.markers_spent())
+        };
+        let bound = Bound::Binding {
+            binding: "sym".to_owned(),
+        };
+        let index = |i| Some(Bound::Value(SymbolRef::Index(i)));
+        for symbol in [index(1), index(2), index(3), Some(bound)] {
+            let style = at_points(symbol.clone());
+            let (drawn, _) = point_ops(&style, usize::MAX);
+            assert_eq!(drawn.len(), 3, "{symbol:?}");
+            // Three squares, each a ring of four points.
+            let cost = points(&drawn);
+            assert_eq!(cost, 12, "{symbol:?}");
+            assert_eq!(
+                point_ops(&style, cost - 1),
+                (Vec::new(), true),
+                "{symbol:?}"
+            );
+        }
+        for symbol in [None, index(0)] {
+            let (drawn, spent) = point_ops(&at_points(symbol.clone()), 0);
+            assert_eq!((drawn.len(), spent), (3, false), "{symbol:?}");
+        }
+    }
+
+    #[test]
     fn a_centroid_of_a_collection_is_that_of_all_its_parts() {
         // Two lines of a collection, (10, 50)–(30, 50) and (70, 50)–(90, 50): one centroid, at
         // (50, 50), not one for each.
@@ -1161,7 +1498,7 @@ mod tests {
         let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         let drawn = transformed_ops(&collection, &style, &mut canvas);
         let mut expected = Vec::new();
-        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &symbols[0], 1.0);
+        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &symbols[0], 1.0, 1.0);
         assert_eq!(drawn, expected);
     }
 
@@ -1244,6 +1581,49 @@ mod tests {
             "{:?}",
             hatch.lines[0]
         );
+    }
+
+    #[test]
+    fn a_hatch_is_bounded_on_the_image_s_own_size_not_one_rebuilt_from_the_extent() {
+        // An image of 1001 × 1001 pixels whose view spans 0..99 at a pixel a unit: the extent
+        // over the cellsize would give 100 × 100. A hatch a tenth of a pixel apart, a pixel
+        // wide, over a polygon wider than the image lays some 10 060 lines of 1 006 pixels over
+        // the image itself, past the bound on their length (Q-9), which the renderer measures
+        // on 1001 × 1001; over 100 × 100 they would be some 110 000 pixels in all.
+        let view = View {
+            extent: Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 99.0,
+                max_y: 99.0,
+            },
+            cellsize: 1.0,
+        };
+        let style = Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            size: Some(Bound::Value(0.1)),
+            ..colored(Some(BLUE), None)
+        };
+        let symbols = [hatch_symbol()];
+        let ring = |side: f64| {
+            vec![vec![
+                p(-10.0, -10.0),
+                p(side, -10.0),
+                p(side, side),
+                p(-10.0, side),
+            ]]
+        };
+        let shaded = |width: u32, ring| {
+            let mut canvas = Canvas::new(&symbols, width, width, 1.0);
+            let mut ops = Vec::new();
+            shade(&mut ops, ring, &style, &view, &mut canvas)
+        };
+        assert!(!shaded(1001, ring(1100.0)), "refused on 1001 × 1001");
+        // For contrast, not deciding: the hatch over a polygon about an image that is truly
+        // 100 × 100 is drawn. The view is built by hand, since `View::for_image` always gives
+        // an extent that rebuilds the image's own size, and the criterion is the case where the
+        // two disagree.
+        assert!(shaded(100, ring(110.0)), "drawn on 100 × 100");
     }
 
     #[test]
@@ -1392,8 +1772,29 @@ mod tests {
     #[test]
     fn at_a_factor_a_point_draws_its_symbol_scaled_and_its_stand_in_square_as_written() {
         // pointLayerDrawShape and msDrawTransformedShape hand msDrawMarkerSymbol the style's
-        // scale factor; the square is Forager's stand-in, drawn at 1.
-        let symbols = [circle()];
+        // scale factor; the square of SYMBOL 0 is Forager's stand-in, drawn at 1. Symbol 1 is a
+        // vector square of side 2: at the factor 2, computeSymbolStyle's scale is SIZE 6 × 2 over
+        // msSymbolGetDefaultSize's sizey 2, 6 (maprendering.c:62-65, mapsymbol.c:87), and its
+        // outline the default WIDTH 1 × 2 (maprendering.c:69); msAdjustMarkerPos moves the point
+        // by OFFSET (2, 1) × 2 (maprendering.c:1022-1023); agg2RenderVectorSymbol moves the
+        // square's centre (1, 1) to the origin, scales it by 6, and moves it to the point
+        // (mapagg.cpp:615-623).
+        let square = Symbol {
+            kind: SymbolKind::Vector,
+            paths: vec![vec![
+                [0.0, 0.0],
+                [2.0, 0.0],
+                [2.0, 2.0],
+                [0.0, 2.0],
+                [0.0, 0.0],
+            ]],
+            extent: Some([2.0, 2.0]),
+            ..circle()
+        };
+        let symbols = [square];
+        let ring = |x0: f64, y0: f64, x1: f64, y1: f64| {
+            vec![vec![p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1), p(x0, y0)]]
+        };
         let marked = |symbol: Option<u32>, mode: RenderMode, transform| Style {
             symbol: symbol.map(|i| Bound::Value(SymbolRef::Index(i))),
             size: Some(Bound::Value(6.0)),
@@ -1414,8 +1815,24 @@ mod tests {
         };
         let point = Geometry::Point(Coord { x: 50.0, y: 50.0 });
         let style = marked(Some(1), RenderMode::Point, None);
-        let mut expected = Vec::new();
-        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &circle(), 2.0);
+        // The point (50, 50) moved to (54, 52): the square from (48, 46) to (60, 58), filled,
+        // then outlined open, as agg2RenderVectorSymbol strokes its path.
+        let expected = vec![
+            DrawOp::Fill {
+                rings: ring(48.0, 46.0, 60.0, 58.0),
+                color: BLUE,
+                gamma: None,
+            },
+            DrawOp::Stroke {
+                paths: ring(48.0, 46.0, 60.0, 58.0),
+                closed: false,
+                color: BLACK,
+                width: 2.0,
+                cap: LineCap::Butt,
+                join: LineJoin::Miter,
+                dashes: Dashes::default(),
+            },
+        ];
         assert_eq!(drawn(&style, RenderMode::Point, &point, 2.0), expected);
         assert_ne!(drawn(&style, RenderMode::Point, &point, 1.0), expected);
         let square = marked(None, RenderMode::Point, None);
@@ -1423,10 +1840,17 @@ mod tests {
             drawn(&square, RenderMode::Point, &point, 2.0),
             drawn(&square, RenderMode::Point, &point, 1.0)
         );
+        // GEOMTRANSFORM start at the L's first vertex, the pixel (10, 20), moved to (14, 22)
+        // (mapgeomtransform.c:132-142): the square from (8, 16) to (20, 28), filled alone.
         let start = marked(Some(1), RenderMode::Line, Some(GeomTransform::Start));
-        let mut expected = Vec::new();
-        symbol::symbol_ops(&mut expected, p(10.0, 20.0), &start, &circle(), 2.0);
-        assert_eq!(drawn(&start, RenderMode::Line, &ell(), 2.0), expected);
+        assert_eq!(
+            drawn(&start, RenderMode::Line, &ell(), 2.0),
+            [DrawOp::Fill {
+                rings: ring(8.0, 16.0, 20.0, 28.0),
+                color: BLUE,
+                gamma: None,
+            }]
+        );
     }
 
     /// A style with `MINWIDTH` and `MAXWIDTH` whose `WIDTH` is bound to a feature's property that
@@ -1460,6 +1884,40 @@ mod tests {
             6.0,
             "MINWIDTH last"
         );
+    }
+
+    #[test]
+    fn a_polygon_of_a_symbol_past_the_last_or_of_a_name_no_symbol_carries_draws_nothing() {
+        // msDrawShadeSymbol draws nothing for an index past the symbols; a style document's name
+        // no symbol carries draws nothing either. Symbol 0 and a name found fill the polygon.
+        let symbols = [Symbol {
+            name: Some("Dot".to_owned()),
+            ..circle()
+        }];
+        let by = |symbol| Style {
+            symbol: Some(Bound::Value(symbol)),
+            color: Some(Bound::Value(BLUE)),
+            outline_color: Some(Bound::Value(BLACK)),
+            ..Style::default()
+        };
+        for (symbol, drawn) in [
+            (SymbolRef::Index(2), false),
+            (SymbolRef::Name("nowhere".to_owned()), false),
+            (SymbolRef::Index(0), true),
+            (SymbolRef::Name("DOT".to_owned()), true),
+        ] {
+            let mut ops = Vec::new();
+            let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+            let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
+            assert!(shade(
+                &mut ops,
+                ring,
+                &by(symbol.clone()),
+                &unit_view(),
+                &mut canvas
+            ));
+            assert_eq!(!ops.is_empty(), drawn, "{symbol:?}: {ops:?}");
+        }
     }
 
     #[test]
@@ -1647,6 +2105,270 @@ mod tests {
     }
 
     #[test]
+    fn a_pixmap_along_a_line_needs_no_colour_and_a_polygon_s_draws_no_line() {
+        // msDrawLineSymbol draws a symbol with a GAP whatever its colours (src/maprendering.c:
+        // 666-688), and the cache's later pass draws a pixmap without a COLOR (src/mapdraw.c:
+        // 1487-1494), its first style's again only with one (1453-1456). msDrawShadeSymbol hands
+        // a pixmap to no line (753-762). The 4 × 3 image unscaled every 10 pixels along (0, 50),
+        // (30, 50): at 5, 15, 25, blended at MS_NINT(x - 2), MS_NINT(50 - 1.5) = 48.
+        let image = Rc::new(PremultipliedImage::new(4, 3, vec![9; 48]).unwrap());
+        let pixmaps: Pixmaps = [("pin.png".to_owned(), Ok(Rc::clone(&image)))].into();
+        let symbols = [
+            pixmap_symbol(Some("pin.png")),
+            pixmap_symbol(Some("gone.png")),
+        ];
+        let style = |index: u32, gap: f64| Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(index))),
+            gap: Some(gap),
+            outline_color: Some(Bound::Value(BLACK)),
+            ..Style::default()
+        };
+        let drawn = |style: &Style, pass: Pass| {
+            let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+            let mut ops = Vec::new();
+            let line = vec![vec![p(0.0, 50.0), p(30.0, 50.0)]];
+            line_symbol(&mut ops, line, style, pass, &mut canvas);
+            let placed: Vec<_> = ops
+                .iter()
+                .map(|op| match op {
+                    DrawOp::Pixmap { left, top, .. } => (*left, *top),
+                    other => panic!("{other:?}"),
+                })
+                .collect();
+            let refused: Vec<_> = canvas.pixmaps_refused().iter().map(|r| r.0).collect();
+            (placed, refused)
+        };
+        let along = (vec![(3, 48), (13, 48), (23, 48)], vec![]);
+        assert_eq!(drawn(&style(1, 10.0), Pass::Plain), along);
+        assert_eq!(drawn(&style(1, 10.0), Pass::PlainIfColoredOrPixmap), along);
+        assert_eq!(
+            drawn(&style(1, 10.0), Pass::PlainIfColored),
+            (vec![], vec![])
+        );
+        // An image not loaded is refused, and nothing drawn.
+        assert_eq!(drawn(&style(2, 10.0), Pass::Plain), (vec![], vec![2]));
+        // The engine loads the image of a line layer's style with a GAP, and of no other.
+        assert_eq!(
+            marked_pixmap(RenderMode::Line, &style(1, -10.0), &symbols),
+            Some("pin.png")
+        );
+        assert_eq!(
+            marked_pixmap(RenderMode::Line, &style(1, 0.0), &symbols),
+            None
+        );
+        assert_eq!(
+            marked_pixmap(RenderMode::Polygon, &style(1, 10.0), &symbols),
+            Some("pin.png")
+        );
+        // A polygon's pixmap without a COLOR draws no outline, markers or stroke, only its tile.
+        let mut tiles = Tiles::default();
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0)
+            .with_pixmaps(&pixmaps)
+            .with_tiles(&mut tiles);
+        let mut ops = Vec::new();
+        let ring = vec![vec![
+            p(10.0, 10.0),
+            p(90.0, 10.0),
+            p(90.0, 90.0),
+            p(10.0, 10.0),
+        ]];
+        assert!(shade(
+            &mut ops,
+            ring,
+            &style(1, 10.0),
+            &unit_view(),
+            &mut canvas
+        ));
+        assert!(canvas.pixmaps_refused().is_empty());
+        match ops.as_slice() {
+            [DrawOp::TiledFill { tile, .. }] => {
+                assert_eq!((tile.width(), tile.height()), (10, 10), "the GAP's");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_polygon_s_pixmap_is_moved_by_its_offset_and_draws_neither_colour_nor_outline() {
+        // msDrawShadeSymbol: the offset moves the polygon (770-783), computeSymbolStyle leaves a
+        // pixmap no colours (46-47), and the tile's branch draws no outline.
+        let image = Rc::new(PremultipliedImage::new(4, 3, vec![9; 48]).unwrap());
+        let pixmaps: Pixmaps = [("pin.png".to_owned(), Ok(image))].into();
+        let symbols = [pixmap_symbol(Some("pin.png"))];
+        let style = Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            color: Some(Bound::Value(BLUE)),
+            outline_color: Some(Bound::Value(BLACK)),
+            offset: Some([Bound::Value(3.0), Bound::Value(-2.0)]),
+            ..Style::default()
+        };
+        let mut tiles = Tiles::default();
+        let mut canvas = Canvas::new(&symbols, 101, 101, 2.0)
+            .with_pixmaps(&pixmaps)
+            .with_tiles(&mut tiles);
+        let mut ops = Vec::new();
+        let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
+        assert!(shade(&mut ops, ring, &style, &unit_view(), &mut canvas));
+        match ops.as_slice() {
+            [DrawOp::TiledFill { rings, tile }] => {
+                assert_eq!(rings[0][0], p(16.0, 6.0), "the offset scaled by the factor");
+                // Without a SIZE: the image's height 3 at the factor 2, over 3: 8 × 6.
+                assert_eq!((tile.width(), tile.height()), (8, 6));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_polygon_s_pixmap_without_its_image_or_past_its_bound_draws_nothing_and_says_why() {
+        // Verifies: Q-9
+        let image = Rc::new(PremultipliedImage::new(4, 3, vec![9; 48]).unwrap());
+        let pixmaps: Pixmaps = [
+            ("pin.png".to_owned(), Ok(image)),
+            ("gone.png".to_owned(), Err("it does not load".to_owned())),
+        ]
+        .into();
+        let symbols = [
+            pixmap_symbol(Some("gone.png")),
+            pixmap_symbol(Some("pin.png")),
+        ];
+        let style = |index, gap| Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(index))),
+            color: Some(Bound::Value(BLUE)),
+            gap: Some(gap),
+            ..Style::default()
+        };
+        let drawn = |style: &Style, tiles: Option<&mut Tiles>| {
+            let canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+            let mut canvas = match tiles {
+                Some(tiles) => canvas.with_tiles(tiles),
+                None => canvas,
+            };
+            let mut ops = Vec::new();
+            let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
+            assert!(shade(&mut ops, ring, style, &unit_view(), &mut canvas));
+            assert!(ops.is_empty(), "{ops:?}");
+            let refused = canvas.pixmaps_refused();
+            assert_eq!(refused.len(), 1);
+            refused[0].2.to_owned()
+        };
+        let mut tiles = Tiles::default();
+        assert_eq!(drawn(&style(1, 0.0), Some(&mut tiles)), "it does not load");
+        let why = drawn(&style(2, 4097.0), Some(&mut tiles));
+        assert!(why.contains("4097 × 4097"), "{why}");
+        assert!(why.contains("past the limit of 4096 × 4096"), "{why}");
+        assert!(drawn(&style(2, 0.0), None).contains("no tiles"));
+    }
+
+    /// The top-left pixels of the 4 × 3 image of symbol 1 that [`line_symbol`] blends along
+    /// (0, 50), (30, 50) in `style`'s `pass` on `canvas`, a panic on any other operation.
+    fn pixmaps_along(style: &Style, pass: Pass, canvas: &mut Canvas) -> Vec<(i32, i32)> {
+        let mut ops = Vec::new();
+        let line = vec![vec![p(0.0, 50.0), p(30.0, 50.0)]];
+        line_symbol(&mut ops, line, style, pass, canvas);
+        ops.iter()
+            .map(|op| match op {
+                DrawOp::Pixmap { left, top, .. } => (*left, *top),
+                other => panic!("{other:?}"),
+            })
+            .collect()
+    }
+
+    /// The 4 × 3 image `pin.png`, of symbol 1 of [`pixmap_symbol`].
+    fn pin_pixmaps() -> Pixmaps {
+        let image = Rc::new(PremultipliedImage::new(4, 3, vec![9; 48]).unwrap());
+        [("pin.png".to_owned(), Ok(image))].into()
+    }
+
+    /// A style of symbol 1 with `gap`, an `OUTLINECOLOR`, and no `COLOR`.
+    fn gapped_pin(gap: f64) -> Style {
+        Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            gap: Some(gap),
+            outline_color: Some(Bound::Value(BLACK)),
+            ..Style::default()
+        }
+    }
+
+    #[test]
+    fn a_pixmap_s_gap_along_a_line_is_scaled_as_its_size_is() {
+        // computeSymbolStyle, src/maprendering.c:62-66: s->gap = src->gap * target_size /
+        // style_size. SIZE 6 bounded by MAXSIZE 3 at a factor of 1, and SIZE 1.5 at a scale and
+        // resolution factor of 2, are each a target of 3, a scale of 3 / 3 = 1 for the 4 × 3
+        // image: GAP 20 × 3 / 6 and GAP 5 × 3 / 1.5 are a spacing of 10. Without an INITIALGAP the
+        // markers stand at 10 / 2 = 5, 15, 25 (420, 443-445, 512), each blended at MS_NINT(x - 2),
+        // MS_NINT(50 - 1.5) = 48 (src/mapagg.cpp:699-700): the gap unscaled would put them at
+        // 10, 30, and at 2.5, 7.5, ....
+        let pixmaps = pin_pixmaps();
+        let symbols = [pixmap_symbol(Some("pin.png"))];
+        let along = vec![(3, 48), (13, 48), (23, 48)];
+        let bounded = Style {
+            size: Some(Bound::Value(6.0)),
+            max_size: Some(3.0),
+            ..gapped_pin(20.0)
+        };
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+        assert_eq!(pixmaps_along(&bounded, Pass::Plain, &mut canvas), along);
+        let scaled = Style {
+            size: Some(Bound::Value(1.5)),
+            ..gapped_pin(5.0)
+        };
+        let mut canvas = Canvas::new(&symbols, 101, 101, 2.0).with_pixmaps(&pixmaps);
+        assert_eq!(pixmaps_along(&scaled, Pass::Plain, &mut canvas), along);
+    }
+
+    #[test]
+    fn a_pixmap_along_a_line_costs_one_point_of_the_layer_s_budget() {
+        // Verifies: Q-9
+        // Three markers every 10 pixels along (0, 50), (30, 50): a budget of 2 points draws none
+        // of the line's, nor anything after it; one of 3 draws all three.
+        let pixmaps = pin_pixmaps();
+        let symbols = [pixmap_symbol(Some("pin.png"))];
+        let style = gapped_pin(10.0);
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+        canvas.markers = MarkerBudget::of(2);
+        assert!(pixmaps_along(&style, Pass::Plain, &mut canvas).is_empty());
+        assert!(canvas.markers_spent());
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+        canvas.markers = MarkerBudget::of(3);
+        assert_eq!(pixmaps_along(&style, Pass::Plain, &mut canvas).len(), 3);
+        assert!(!canvas.markers_spent());
+    }
+
+    #[test]
+    fn a_later_cached_pixmap_brush_without_a_colour_draws_nothing() {
+        // The cache's later pass draws a pixmap without a COLOR (src/mapdraw.c:1487-1494), and
+        // msDrawLineSymbol tiles one with a GAP of 0 along the line (src/maprendering.c:687-707),
+        // which Forager does not: the pass skips it, and strokes no line in the OUTLINECOLOR.
+        let pixmaps = pin_pixmaps();
+        let symbols = [pixmap_symbol(Some("pin.png"))];
+        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+        let mut ops = Vec::new();
+        let line = vec![vec![p(0.0, 50.0), p(30.0, 50.0)]];
+        let brush = gapped_pin(0.0);
+        line_symbol(
+            &mut ops,
+            line,
+            &brush,
+            Pass::PlainIfColoredOrPixmap,
+            &mut canvas,
+        );
+        assert!(ops.is_empty(), "{ops:?}");
+    }
+
+    #[test]
+    fn a_pixmap_at_a_scale_of_0_draws_nothing_along_a_line_and_spends_no_budget() {
+        // At a scale factor of 0 the target size is 0, the scale 0, and the gap 10 × 0 / 3 = 0
+        // (src/maprendering.c:62-66), on which msImagePolylineMarkers' loop never ends (443-513).
+        // Forager draws nothing, as at a point, and leaves the layer's budget whole.
+        let pixmaps = pin_pixmaps();
+        let symbols = [pixmap_symbol(Some("pin.png"))];
+        let mut canvas = Canvas::new(&symbols, 101, 101, 0.0).with_pixmaps(&pixmaps);
+        assert!(pixmaps_along(&gapped_pin(10.0), Pass::Plain, &mut canvas).is_empty());
+        assert!(!canvas.markers_spent());
+    }
+
+    #[test]
     fn a_pixmap_s_scale_is_bounded_by_its_size_bounds_times_the_resolution_factor() {
         // computeSymbolStyle, maprendering.c:62-65, at a scale and resolution factor of 2, for an
         // image 3 high: SIZE 6 × 2 = 12 bounded by MAXSIZE 5 × 2 = 10, scale 10 / 3; SIZE 1 × 2 =
@@ -1742,7 +2464,10 @@ mod tests {
             Some("pin.png")
         );
         assert_eq!(marked_pixmap(RenderMode::Line, &style, &symbols), None);
-        assert_eq!(marked_pixmap(RenderMode::Polygon, &style, &symbols), None);
+        assert_eq!(
+            marked_pixmap(RenderMode::Polygon, &style, &symbols),
+            Some("pin.png")
+        );
         assert_eq!(
             marked_pixmap(RenderMode::Line, &transformed, &symbols),
             Some("pin.png")
@@ -1750,6 +2475,135 @@ mod tests {
         assert_eq!(
             marked_pixmap(RenderMode::Point, &Style::default(), &symbols),
             None
+        );
+    }
+
+    /// The paths of the strokes `draw_ops` draws for `geometry` in `mode`, outlined in black.
+    fn outline_paths(mode: RenderMode, geometry: &Geometry, view: &View) -> Vec<Vec<Point>> {
+        let style = colored(None, Some(BLACK));
+        let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+        draw_ops(mode, geometry, &style, Pass::Plain, view, &mut canvas)
+            .into_iter()
+            .flat_map(|op| match op {
+                DrawOp::Stroke { paths, .. } => paths,
+                _ => panic!("an outline is a stroke"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_polygon_s_outline_drops_the_vertices_less_than_a_pixel_from_the_one_kept_before() {
+        // msTransformShapeSimplify, src/mapprimitive.cpp:1002-1040: a ring keeps its first two
+        // vertices, (10, 10) and (10.5, 10) half a pixel on; drops (11.5, 10), exactly a pixel
+        // from the one kept before, as 1 > 1 fails, and (30, 10.5); keeps (30, 10), (30, 40), and
+        // (10, 40), more than a pixel from the one kept before; and keeps its last two, (10, 39.5)
+        // half a pixel from (10, 40), and the closing (10, 10).
+        let ring = coords(&[
+            (10.0, 90.0),
+            (10.5, 90.0),
+            (11.5, 90.0),
+            (30.0, 90.0),
+            (30.0, 89.5),
+            (30.0, 60.0),
+            (10.0, 60.0),
+            (10.0, 60.5),
+            (10.0, 90.0),
+        ]);
+        let expected = vec![vec![
+            p(10.0, 10.0),
+            p(10.5, 10.0),
+            p(30.0, 10.0),
+            p(30.0, 40.0),
+            p(10.0, 40.0),
+            p(10.0, 39.5),
+            p(10.0, 10.0),
+        ]];
+        let polygon = Geometry::Polygon(vec![ring.clone()]);
+        assert_eq!(
+            outline_paths(RenderMode::Polygon, &polygon, &unit_view()),
+            expected
+        );
+        // A polygon shape is simplified as a ring in a line layer too (958 against 1002: the
+        // shape's type decides, not the layer's), and in each polygon of a multipolygon.
+        assert_eq!(
+            outline_paths(RenderMode::Line, &polygon, &unit_view()),
+            expected
+        );
+        let multi = Geometry::MultiPolygon(vec![vec![ring]]);
+        assert_eq!(
+            outline_paths(RenderMode::Polygon, &multi, &unit_view()),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_ring_of_fewer_than_four_vertices_is_not_drawn() {
+        // msTransformShapeSimplify, src/mapprimitive.cpp:1012-1015: such a ring keeps no point;
+        // the ring of four beside it is drawn.
+        let three = coords(&[(10.0, 90.0), (50.0, 90.0), (10.0, 90.0)]);
+        let four = coords(&[(10.0, 50.0), (50.0, 50.0), (50.0, 10.0), (10.0, 50.0)]);
+        let polygon = Geometry::Polygon(vec![three, four]);
+        assert_eq!(
+            outline_paths(RenderMode::Polygon, &polygon, &unit_view()),
+            vec![vec![
+                p(10.0, 50.0),
+                p(50.0, 50.0),
+                p(50.0, 90.0),
+                p(10.0, 50.0)
+            ]]
+        );
+    }
+
+    #[test]
+    fn a_line_drops_the_vertices_less_than_a_pixel_from_the_one_kept_before() {
+        // msTransformShapeSimplify, src/mapprimitive.cpp:958-1001: a line keeps its first vertex,
+        // drops (10.5, 50) half a pixel on, keeps (30, 50), and keeps a last vertex half a pixel
+        // from it, (30.5, 50); a last vertex equal to the one kept before it is dropped; a line
+        // left with fewer than two vertices is not drawn.
+        let dense = Geometry::LineString(coords(&[
+            (10.0, 50.0),
+            (10.5, 50.0),
+            (30.0, 50.0),
+            (30.5, 50.0),
+        ]));
+        assert_eq!(
+            outline_paths(RenderMode::Line, &dense, &unit_view()),
+            vec![vec![p(10.0, 50.0), p(30.0, 50.0), p(30.5, 50.0)]]
+        );
+        let repeated = Geometry::MultiLineString(vec![
+            coords(&[(10.0, 50.0), (30.0, 50.0), (30.0, 50.0)]),
+            coords(&[(10.0, 20.0), (10.0, 20.0)]),
+            coords(&[(10.0, 20.0)]),
+        ]);
+        assert_eq!(
+            outline_paths(RenderMode::Line, &repeated, &unit_view()),
+            vec![vec![p(10.0, 50.0), p(30.0, 50.0)]]
+        );
+    }
+
+    #[test]
+    fn a_line_s_and_a_ring_s_vertices_are_placed_by_the_inverse_of_the_cellsize() {
+        // MS_MAP2IMAGE_X_IC_DBL multiplies by inv_cs = 1 / cellsize, src/mapprimitive.cpp:953:
+        // x = 0.3 on a cellsize of 0.1 is 0.3 × 10 = 3, where 0.3 / 0.1 is 2.9999999999999996.
+        let view = View::for_image(
+            Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 10.0,
+                max_y: 10.0,
+            },
+            101,
+            101,
+        )
+        .unwrap();
+        assert_eq!(view.cellsize, 0.1);
+        let line = Geometry::LineString(coords(&[(0.3, 5.0), (8.0, 5.0)]));
+        assert_eq!(outline_paths(RenderMode::Line, &line, &view)[0][0].x, 3.0);
+        let ring = coords(&[(0.3, 5.0), (8.0, 5.0), (8.0, 1.0), (0.3, 5.0)]);
+        let polygon = Geometry::Polygon(vec![ring]);
+        assert_eq!(
+            outline_paths(RenderMode::Polygon, &polygon, &view)[0][0].x,
+            3.0
         );
     }
 }

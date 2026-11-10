@@ -4,9 +4,10 @@
 //! cache orders it, and reports what a layer left undrawn.
 //!
 //! Its modules import one another in one direction only: `draw` imports every other; `hatch`
-//! imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` imports `bounds` and
+//! imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile` import `bounds` and
 //! `symbol`; `symbol` imports `bounds` and `style`; `geom_transform` imports `extent`; `bounds`,
-//! `extent`, `offset`, and `style` import none.
+//! `extent`, `offset`, and `style` import none. The test `symbolize_modules.rs` of
+//! `crates/arch-test` holds that direction, its tests aside, by a table in this order.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -19,11 +20,16 @@ mod line_marker;
 mod offset;
 mod style;
 mod symbol;
+mod tile;
 
 pub use crate::draw::{
-    Canvas, Pass, Pixmaps, can_draw, draw_ops, marked_pixmap, outlined, shade, vertices,
+    Canvas, Pass, can_draw, clip_pixmaps, draw_ops, marked_pixmap, outlined, shade, vertices,
 };
 pub use crate::extent::View;
 pub use crate::line_marker::MAX_MARKER_POINTS;
 pub use crate::style::DEG_TO_RAD;
-pub use crate::symbol::{Mark, mark, marker_size_of, marker_size_with, symbol_ops};
+pub use crate::symbol::{
+    Mark, Pixmaps, Resolved, mark, marker_size_of, marker_size_with, pixmap_marker_size, resolve,
+    symbol_ops,
+};
+pub use crate::tile::{MAX_DECODED_IMAGE_BYTES, Tiles};

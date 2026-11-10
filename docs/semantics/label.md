@@ -26,7 +26,12 @@ text with one before a `[` is a warning and not carried over.
 An expression in parentheses is taken as text, a number printed with `%g`, a condition as `true`
 or `false`, as `src/mapparser.y` gives a logical value where a string is asked for. A `TEXT` the
 frontend cannot carry over, a time among them, is a warning and an empty text, which draws no
-label.
+label but its labelpnt styles (see `LABELCACHE` below).
+The engine evaluates a string, a property as text, and their concatenation, reading a feature's
+properties as a bound property reads them ([expression.md](expression.md), *Attributes*): a name
+matches whatever its case, a boolean prints as `1` or `0`, and a value ends at its first NUL. A
+text that would pass 16 MiB leaves the label out, with the diagnostic of that bound
+(`text-too-long`, Q-9). Any other expression leaves the label out with `label-text-unsupported`.
 
 **Condition.** A label's `EXPRESSION` decides whether it is drawn for a feature:
 `msGetLabelStatus` in `src/maputil.c` evaluates it against the layer's `LABELITEM`, and a label
@@ -76,7 +81,31 @@ without a `GEOMTRANSFORM` draws at the label's point, `labelpoint`, the default 
 it, `labelpoly` draws the box around the text, and `labelcenter` draws its marker at the centre
 of that box, the box of the turned polygon where the label is turned. They are drawn in their
 order, before the text; the marker of the first `labelpoint` style takes room from other labels,
-a `labelpoly` and a `labelcenter` marker take none.
+a `labelpoly` and a `labelcenter` marker take none. A `labelpoly` is drawn by `msDrawShadeSymbol`
+in `src/maprendering.c`, as a polygon's style is: filled without a symbol, and hatched with a hatch
+symbol, its lines counted from the map's origin, or from the corner of a layer's own image for
+the labels of a layer of `LABELCACHE OFF` drawn there ([symbol.md](symbol.md)); a hatch past its
+bounds is not drawn, and the label's layer warns with `hatch-not-drawn`, as for a polygon's (Q-9).
+A `labelpoly` of any other symbol is not drawn yet, so its label is left out with
+`label-not-drawn`, as is a label with a style that reaches the IR without a transform (the
+diagnostic says so). `ANGLE AUTO` on a label's style changes nothing: `loadStyle` sets only the
+style's `autoangle`, which none of the functions drawing a label's styles reads, so the style turns
+by its `ANGLE` alone.
+
+**The marker under a label.** The label cache holds beneath each label of a point layer the box
+of the marker its class's first style draws at the point, as `msAddLabelGroup` and `msAddLabel`
+in `src/maplabel.c` hold the box of `msGetMarkerSize` in `src/mapsymbol.c`: `w` by `h` about the
+point, its far corner `w - 1` and `h - 1` from its near one. A label at any position but `CC` moves
+off it by half that span, cut to whole pixels, and other labels are tested against it. A vector or
+ellipse symbol is sized by its extent, MapServer's default symbol at 1 by 1, and a pixmap by its
+image, loaded before the layer's labels are collected, at any scale, as `msGetMarkerSize` loads
+it: a 32 × 32 image is 32 × 32 without a `SIZE` and 55 × 55 at `SIZE 55`, whatever its `ANGLE`
+([symbol.md](symbol.md)). An SVG or a TrueType symbol has no size yet, so its label is left out
+with `label-not-drawn`. The label of a pixmap that does not load is left out too, with
+`label-not-drawn` naming the symbol and its image, and the rest of the map drawn; in MapServer
+`msGetMarkerSize` fails, and with it `msAddLabelGroup`, the layer, and the map. A class whose first
+style varies by no feature sizes every label's marker alike, held once for the label, not for
+each feature's (Q-9). A layer of `LABELCACHE OFF` holds no marker.
 
 **`LABELCACHE`.** A layer's `LABELCACHE`, `ON` or `OFF` as `loadLayer` in `src/mapfile.c` reads
 it and `ON` without one (`initLayer`), is the IR's `label_cache`, true where it is absent. A point
@@ -87,13 +116,38 @@ no marker, with no test against other labels, markers, or the image's edge. They
 label cache, so the cached labels are not tested against them, and `Rendered.labels` does not list
 them. A text that is empty or of line breaks only draws the label's labelpnt styles alone; with a
 labelpoly or labelcenter style, on which `msDrawLabel` fails the layer's draw or draws on a box of
-no size, the label is left out with a warning.
+no size, the label is left out with a warning. Through the label cache, a label whose text is of
+line breaks only and that has styles is left out with `label-not-drawn`: `msDrawLabelCache` tests
+and draws its labelpnt marker whatever the text (`src/mapdraw.c:3607-3646, 4056-4065`), but only
+once the text's box, which `msLayoutTextSymbol` leaves at `FLT_MAX` and `-FLT_MAX`, has passed its
+tests (3789, 3898), and that box is not ported. A label without text, its text empty, which
+`msShapeGetLabelAnnotation` in `src/maputil.c` reads as none, or not set at all, is kept by the
+label cache for a labelpnt style alone, as `msAddLabelGroup` keeps it (`src/maplabel.c:267-277`):
+its marker is tested unless the label is forced, takes room from the labels after it, and is its
+box in `Rendered.labels`; its labelpnt styles are drawn, and it is measured from by no
+`MINDISTANCE` (`src/mapdraw.c:3384-3385, 3607-3650, 3994-4069`). A labelpoly or labelcenter style
+beside them fails `msDrawLabelCache` and the map, as it is drawn only with a text
+(`src/mapdraw.c:4056-4133, 540, 593`): such a label is left out with `label-not-drawn`. Without a
+labelpnt style it draws nothing and nothing is reported. MapServer needs no `FONT` for a label
+without text, as it resolves one only to lay out a text (`msComputeTextPath`, which
+`msDrawLabelCache` and `msDrawLabel` call only for a text, `src/mapdraw.c:3607-3650, 2710-2727`):
+such a label without a `FONT` is drawn as one with a `FONT`, through the label cache and under
+`LABELCACHE OFF`. A font is settled feature by feature: of a label without a `FONT` whose text is
+empty only for some features, an empty `LABELITEM` value, those features draw their labelpnt
+markers, and the others, whose text MapServer lays out in its built-in font, which is not bundled,
+are left out with `label-not-drawn` ("it names no FONT"). A text of line breaks only lays out no
+glyph and so needs no font either.
 
 MapServer draws a feature point by point: the markers at its first point, then the labels there,
 then the markers at its next point. The engine draws all of a feature's markers, then its labels at
 each of its points, then the next feature; so where a feature of several points is drawn, a marker
 at a later point does not cover a label at an earlier one, as it does in MapServer. MapServer's line
-and polygon layers draw their labels at once too, which the engine does not draw yet.
+and polygon layers draw their labels at once too, which the engine does not draw yet: it leaves
+them out with `label-not-drawn`. MapServer labels no such feature that its simplification to
+pixels ([line.md](line.md), **Vertices**) leaves without a part: `msDrawShape` in `src/mapdraw.c`
+returns before `lineLayerDrawShape` or `polygonLayerDrawShape`, which draw the labels, once
+`msTransformShape` has left the shape no line (`src/mapdraw.c:2505-2507, 2577-2580`). The engine,
+which draws none of those labels, does not tell such a feature from the others yet.
 
 **`TRUE` and `ON`.** Wherever MapServer takes `ON` and `OFF` it takes `TRUE` and `FALSE` too, and
 the other way round: its lexer gives `MS_TRUE` and `MS_ON` the value 1, `MS_FALSE` and `MS_OFF`

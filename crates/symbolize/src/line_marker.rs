@@ -15,28 +15,35 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! Symbols along a line: a vector or an ellipse symbol repeated every `GAP` pixels from the
-//! `INITIALGAP`, upright for a positive gap and turned with each segment for a negative one, as
-//! MapServer places them. The positions of the markers outside the image are not visited one by
-//! one but skipped, and the markers along the lines of one layer, with the symbols its
-//! `GEOMTRANSFORM`s place, amount to at most [`MAX_MARKER_POINTS`] points (Q-9).
+//! Symbols along a line: a vector, an ellipse, or a pixmap symbol repeated every `GAP` pixels
+//! from the `INITIALGAP`, upright for a positive gap and turned with each segment for a negative
+//! one, as MapServer places them. The positions of the markers outside the image are not visited
+//! one by one but skipped, and the markers along the lines of one layer, with those at its
+//! features and the symbols its `GEOMTRANSFORM`s place, amount to at most [`MAX_MARKER_POINTS`]
+//! points (Q-9).
 
-use forager_render::{DrawOp, Point};
+use std::rc::Rc;
+
+use forager_render::{DrawOp, Point, PremultipliedImage};
 use forager_style_ir::{Style, Symbol};
 
 use crate::bounds;
 use crate::symbol;
 
-/// The most points the markers along the lines of one layer, and the symbols a `GEOMTRANSFORM`
-/// places on its lines and polygons, amount to, over all its features and styles (Q-9). The
-/// markers of a line, or of a transformed shape, that would pass it are not drawn, nor any of the
-/// layer's after them, and the render reports it. MapServer places markers without a bound, so that a
-/// tiny `GAP` on a long line, or a feature of many small rings, draws them by the billion; a
-/// million points are some 10 000 markers of an ellipse of 30 pixels, or 200 000 of a five-point
-/// arrow.
+/// The most points the markers along the lines of one layer, those at the points of a point
+/// layer's features, and the symbols a `GEOMTRANSFORM` places on its lines and polygons, amount
+/// to, over all its features and styles (Q-9). The markers of a line, of a point layer's feature,
+/// or of a transformed shape, that would pass it are not drawn, nor any of the layer's after
+/// them, and the render reports it. The square Forager draws at a point layer's feature for
+/// symbol 0, which MapServer does not draw, takes none of it. MapServer places markers without
+/// a bound, so that a tiny `GAP` on a long line, or a feature of many small rings, draws them by
+/// the billion; a million points are some 10 000 markers of an ellipse of 30 pixels, or 200 000
+/// of a five-point arrow.
 pub const MAX_MARKER_POINTS: usize = 1_000_000;
 
-/// What is left to one layer of [`MAX_MARKER_POINTS`].
+/// What is left to one layer of [`MAX_MARKER_POINTS`], from which every path that places a
+/// layer's markers takes them one way: a symbol of a style at its [`MarkerBudget::price`], all the
+/// markers of a line or a shape at once with [`MarkerBudget::take`].
 #[derive(Debug)]
 pub(crate) struct MarkerBudget {
     remaining: usize,
@@ -61,9 +68,26 @@ impl MarkerBudget {
         self.spent
     }
 
-    /// Takes `points` from what is left: false, and spent, where they exceed it or it is spent
-    /// already, and then nothing is taken.
-    pub(crate) fn take(&mut self, points: usize) -> bool {
+    /// The price in points of one symbol of a style, from `probe`, what it draws at one place,
+    /// the same at every place: the points of its operations, at least 1. `None` where it draws
+    /// nothing, and then it places no marker and takes nothing.
+    pub(crate) fn price(probe: &[DrawOp]) -> Option<usize> {
+        (!probe.is_empty()).then(|| probe.iter().map(points).sum::<usize>().max(1))
+    }
+
+    /// How many symbols of `price` points are left.
+    fn most(&self, price: usize) -> usize {
+        if self.spent {
+            0
+        } else {
+            self.remaining / price
+        }
+    }
+
+    /// Takes `markers` symbols of `price` points each from what is left: false, and spent, where
+    /// they exceed it or it is spent already, and then nothing is taken.
+    pub(crate) fn take(&mut self, markers: usize, price: usize) -> bool {
+        let points = markers.saturating_mul(price);
         if self.spent || points > self.remaining {
             self.remaining = 0;
             self.spent = true;
@@ -116,54 +140,143 @@ pub(crate) fn draw(
     symbol: &Symbol,
     initial_gap: f64,
     image: (f64, f64),
-    factor: f64,
+    (factor, resolution): (f64, f64),
     budget: &mut MarkerBudget,
 ) -> Vec<DrawOp> {
-    if budget.spent {
+    if budget.spent() {
         return Vec::new();
     }
-    let s = symbol::symbol_style(style, symbol, factor);
+    let s = symbol::symbol_style(style, symbol, factor, resolution);
     // What one marker costs; a symbol that draws nothing has no markers to place.
     let mut probe = Vec::new();
     symbol::render(&mut probe, Point { x: 0.0, y: 0.0 }, symbol, &s);
-    if probe.is_empty() {
+    let Some(price) = MarkerBudget::price(&probe) else {
         return Vec::new();
-    }
-    let cost = probe.iter().map(points).sum::<usize>().max(1);
-    let gap = style.gap.unwrap_or(0.0);
+    };
     let [size_x, size_y] = symbol.extent.unwrap_or([0.0, 0.0]);
-    let placement = Placement {
-        spacing: if gap < 0.0 { -s.gap } else { s.gap },
+    let placement = Placement::of(
+        style,
+        (s.gap, s.rotation),
+        (size_x * s.scale, size_y * s.scale),
+        symbol.anchor_point,
         initial_gap,
-        auto_angle: gap < 0.0,
-        rotation: s.rotation,
-        size: (
-            bounds::ms_max(1.0, size_x * s.scale),
-            bounds::ms_max(1.0, size_y * s.scale),
-        ),
-        anchor: symbol.anchor_point.unwrap_or([0.5, 0.5]),
         image,
-    };
-    let Some(markers) = place(paths, &placement, budget.remaining / cost) else {
-        budget.remaining = 0;
-        budget.spent = true;
-        return Vec::new();
-    };
-    budget.remaining -= markers.len() * cost;
+    );
     let mut ops = Vec::new();
     let mut turned = s;
-    for marker in markers {
+    for marker in taken(paths, &placement, price, budget) {
         turned.rotation = marker.rotation;
         symbol::render(&mut ops, marker.at, symbol, &turned);
     }
     ops
 }
 
+/// The drawing operations of the markers of `style` with the pixmap `symbol` of `pixmap` along
+/// `paths`, as [`draw`] places a vector symbol's: msImagePolylineMarkers sizes the marker as
+/// the image times the scale, at least 1 each way (`src/maprendering.c:400-401`, the symbol's
+/// `sizex` and `sizey` the image's, `src/mapsymbol.c:969-970`), and draws the image as at a
+/// point (478-480, 559-561; see [`symbol::render_pixmap`]). Nothing at a scale of 0, as a vector
+/// symbol at that scale draws nothing. Each marker costs one point of the `budget`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "msDrawLineSymbol's inputs, as draw takes them, and the image"
+)]
+pub(crate) fn draw_pixmap(
+    paths: &[Vec<Point>],
+    style: &Style,
+    symbol: &Symbol,
+    pixmap: &Rc<PremultipliedImage>,
+    initial_gap: f64,
+    image: (f64, f64),
+    (factor, resolution): (f64, f64),
+    budget: &mut MarkerBudget,
+) -> Vec<DrawOp> {
+    if budget.spent() {
+        return Vec::new();
+    }
+    let (scale, rotation, gap) = symbol::pixmap_style(style, pixmap.height(), factor, resolution);
+    if scale == 0.0 {
+        return Vec::new();
+    }
+    let placement = Placement::of(
+        style,
+        (gap, rotation),
+        (
+            f64::from(pixmap.width()) * scale,
+            f64::from(pixmap.height()) * scale,
+        ),
+        symbol.anchor_point,
+        initial_gap,
+        image,
+    );
+    // What one marker costs: a pixmap is drawn as one operation, of one point.
+    let probe = symbol::render_pixmap(Point { x: 0.0, y: 0.0 }, Rc::clone(pixmap), scale, rotation);
+    let Some(price) = MarkerBudget::price(&[probe]) else {
+        return Vec::new();
+    };
+    let mut ops = Vec::new();
+    for marker in taken(paths, &placement, price, budget) {
+        ops.push(symbol::render_pixmap(
+            marker.at,
+            Rc::clone(pixmap),
+            scale,
+            marker.rotation,
+        ));
+    }
+    ops
+}
+
+impl Placement {
+    /// What msDrawLineSymbol hands msImagePolylineMarkers of `style`, `src/maprendering.c:679-688`,
+    /// with computeSymbolStyle's gap and rotation: the spacing the gap's size, turned with the
+    /// line for a negative `GAP`; and the marker's size, the symbol's width and height scaled, at
+    /// least 1 each way (400-401), anchored at `anchor`, the centre without one.
+    fn of(
+        style: &Style,
+        (gap, rotation): (f64, f64),
+        (width, height): (f64, f64),
+        anchor: Option<[f64; 2]>,
+        initial_gap: f64,
+        image: (f64, f64),
+    ) -> Self {
+        let turned = style.gap.unwrap_or(0.0) < 0.0;
+        Self {
+            spacing: if turned { -gap } else { gap },
+            initial_gap,
+            auto_angle: turned,
+            rotation,
+            size: (bounds::ms_max(1.0, width), bounds::ms_max(1.0, height)),
+            anchor: anchor.unwrap_or([0.5, 0.5]),
+            image,
+        }
+    }
+}
+
+/// The markers of `placement` along `paths`, each of `price` points taken from the `budget`:
+/// none, and the budget spent, where they would exceed what is left.
+fn taken(
+    paths: &[Vec<Point>],
+    placement: &Placement,
+    price: usize,
+    budget: &mut MarkerBudget,
+) -> Vec<Marker> {
+    let most = budget.most(price);
+    let Some(markers) = place(paths, placement, most) else {
+        // More markers than are left, which the budget refuses, and is spent.
+        budget.take(most.saturating_add(1), price);
+        return Vec::new();
+    };
+    budget.take(markers.len(), price);
+    markers
+}
+
 /// The points of a drawing operation.
 pub(crate) fn points(op: &DrawOp) -> usize {
     match op {
         DrawOp::Stroke { paths, .. } => paths.iter().map(Vec::len).sum(),
-        DrawOp::Fill { rings, .. } => rings.iter().map(Vec::len).sum(),
+        DrawOp::Fill { rings, .. } | DrawOp::TiledFill { rings, .. } => {
+            rings.iter().map(Vec::len).sum()
+        }
         DrawOp::Hatch(hatch) => {
             hatch.rings.iter().map(Vec::len).sum::<usize>() + 2 * hatch.lines.len()
         }

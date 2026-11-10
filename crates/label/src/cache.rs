@@ -50,9 +50,14 @@ pub struct Member {
     pub priority: u8,
     /// The point the label stands at, in pixels.
     pub point: Point,
-    /// The label; `None` for a text of line breaks only, which takes no box and is not drawn, but
-    /// whose marker is cached.
+    /// The label; `None` for a label without a box of text. With a `label_marker`, it is a label
+    /// without text, of its `labelpoint` marker alone: the marker is tested unless `force`, and
+    /// the member's box is the marker's. Without one, a text of line breaks only, which is not
+    /// drawn, but whose marker is cached.
     pub label: Option<PointLabel>,
+    /// `FORCE` of a label without a box of text: its marker is drawn untested. Read only for a
+    /// member whose `label` is `None`; a label with one is forced by its [`PointLabel`]'s.
+    pub force: bool,
     /// `PARTIALS TRUE`: the label may leave the image.
     pub partials: bool,
     /// The point itself is tested before the text, as for a label neither forced nor offset.
@@ -136,7 +141,20 @@ impl<M: Members + ?Sized> Cache<'_, M> {
     /// Places member `i`, or `None` where it is left out.
     fn place(&self, i: usize) -> Option<Placement> {
         let member = self.members.member(i);
-        let label = member.label?;
+        let Some(label) = member.label else {
+            // A label without text, of its marker alone: msDrawLabelCache tests the marker
+            // unless the label is forced, and skips the text and the minimum distance
+            // (mapdraw.c:3607-3650, 4035-4037).
+            let marker = member.label_marker?;
+            if !member.force && !self.fits(&member, &marker, Some((member.priority, i))) {
+                return None;
+            }
+            return Some(Placement {
+                origin: member.point,
+                bounds: marker,
+                anchor: Anchor::Cc,
+            });
+        };
         // The marker of a labelpoint style is tested first, at the label's priority, unless the
         // label is forced; where it has one, the point is not tested.
         if let Some(marker) = &member.label_marker {
@@ -202,8 +220,13 @@ impl<M: Members + ?Sized> Cache<'_, M> {
         !self.drawn.any(&lb.bbox, |&(j, anchor)| {
             let marker = self.members.member(j as usize).label_marker;
             let text = self.bounds(j as usize, anchor);
-            rect_overlap(&member_box(&text.bbox, marker.as_ref()), &lb.bbox)
-                && (meets(&text) || marker.as_ref().is_some_and(meets))
+            let bbox = match (&text, &marker) {
+                (Some(text), marker) => member_box(&text.bbox, marker.as_ref()),
+                (None, Some(marker)) => marker.bbox,
+                (None, None) => return false,
+            };
+            rect_overlap(&bbox, &lb.bbox)
+                && (text.as_ref().is_some_and(meets) || marker.as_ref().is_some_and(meets))
         })
     }
 
@@ -219,18 +242,23 @@ impl<M: Members + ?Sized> Cache<'_, M> {
         self.drawn.any(&buffered, |&(j, anchor)| {
             let j = j as usize;
             let theirs = self.members.member(j);
-            let text = self.bounds(j, anchor).bbox;
+            // A label without text is not measured from (mapdraw.c:3384-3385).
+            let Some(text) = self.bounds(j, anchor) else {
+                return false;
+            };
+            let text = text.bbox;
             self.members.same_text(i, j)
                 && (point_in_rect(&theirs.point, &buffered)
                     || rect_overlap(&member_box(&text, theirs.label_marker.as_ref()), &buffered))
         })
     }
 
-    /// The box of the drawn member `j` at `anchor`, computed again as it was placed.
-    fn bounds(&self, j: usize, anchor: Anchor) -> Bounds {
+    /// The box of the text of the drawn member `j` at `anchor`, computed again as it was placed;
+    /// `None` for a label without text.
+    fn bounds(&self, j: usize, anchor: Anchor) -> Option<Bounds> {
         let member = self.members.member(j);
-        let label = member.label.expect("a drawn label has a box");
-        placed_at(member.point, &label, anchor).1
+        let label = member.label?;
+        Some(placed_at(member.point, &label, anchor).1)
     }
 }
 

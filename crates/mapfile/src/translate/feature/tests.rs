@@ -223,3 +223,24 @@ fn a_wkt_polygons_inner_ring_that_crosses_itself_is_left_out() {
     // An exterior that crosses itself is kept, as msGEOSGeometry2Shape tests only inner rings.
     assert_eq!(features[1].parts, [bow_tie, exterior]);
 }
+
+#[test]
+fn a_graticule_layers_features_are_left_out_with_a_warning() {
+    // loadLayer (src/mapfile.c) makes a layer inline at each FEATURE, and a CONNECTIONTYPE
+    // GRATICULE after the last one makes it a graticule again, whose features
+    // msInitializeVirtualTable (src/maplayer.c) never reads.
+    let body = r#"TYPE LINE FEATURE POINTS 1 1 2 2 END END PROCESSING "ITEMS=a"
+                  CONNECTIONTYPE GRATICULE"#;
+    let (loaded, layer) = load_layer(body);
+    assert_eq!(codes(&loaded), ["features-ignored", "unsupported-keyword"]);
+    let layer = layer.unwrap();
+    assert!(layer.features.is_empty());
+    assert_eq!(layer.source.unwrap().kind, "graticule");
+    // A FEATURE after the CONNECTIONTYPE makes the layer inline: its features are read.
+    let body = r#"TYPE LINE CONNECTIONTYPE GRATICULE FEATURE POINTS 1 1 2 2 END END"#;
+    assert_eq!(features(body).len(), 1);
+    // Another CONNECTIONTYPE after the GRATICULE takes its place.
+    let body = r#"TYPE LINE FEATURE POINTS 1 1 2 2 END END CONNECTIONTYPE GRATICULE
+                  CONNECTIONTYPE OGR"#;
+    assert_eq!(features(body).len(), 1);
+}

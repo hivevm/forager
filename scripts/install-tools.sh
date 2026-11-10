@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Installs what scripts/check-rust.sh needs beyond rustup (ADR-0008): the toolchain pinned in
 # rust-toolchain.toml, cargo-deny at the version named below, and the wasm-bindgen CLI at exactly
-# the version of the wasm-bindgen crate in Cargo.lock, which the generated glue must match. A tool
-# already at its version is skipped. The Dev Container runs this after creation (ADR-0010) and CI
+# the version of the wasm-bindgen crate in Cargo.lock, which the generated glue must match; and
+# ShellCheck at the version scripts/install-shellcheck.sh pins, for the shell lint (ADR-0044). A
+# tool already at its version is skipped. The Dev Container runs this after creation (ADR-0010) and CI
 # before the build, with ~/.cargo/bin cached.
 #
 # Usage: bash scripts/install-tools.sh
@@ -44,3 +45,5 @@ if [[ -n "$wasm_bindgen_version" ]]; then
 else
   echo "install-tools: no wasm-bindgen in Cargo.lock; the wasm-bindgen CLI is not needed yet"
 fi
+
+bash "$ROOT/scripts/install-shellcheck.sh"

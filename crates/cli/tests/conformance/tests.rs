@@ -599,7 +599,7 @@ fn labels_match_when_both_are_drawn_within_a_pixel_or_both_discarded() {
         priority: 1,
         layer: 0,
         class: 0,
-        text: text.to_owned(),
+        text: text.into(),
         drawn,
     };
     let matching = [
@@ -644,7 +644,7 @@ fn labels_of_another_priority_at_the_same_box_do_not_match() {
         priority: 2,
         layer: 0,
         class: 0,
-        text: "Fen".to_owned(),
+        text: "Fen".into(),
         drawn: Some([10.0, 10.0, 40.0, 20.0]),
     };
     assert_eq!(
@@ -821,5 +821,160 @@ fn the_records_are_the_files_under_their_directory_relative_to_it() {
             .into_iter()
             .map(PathBuf::from)
             .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn a_difference_between_the_native_and_the_wasm32_image_names_the_first_differing_pixel() {
+    // Verifies: ADR-0043
+    use super::wasm::difference;
+    let image = |pixels: &[u8]| Ok((2, 2, pixels.to_vec()));
+    let native = [0; 16];
+    let mut changed = native;
+    changed[13] = 7;
+    changed[5] = 1;
+    assert_eq!(difference(&image(&native), &image(&native)), None);
+    assert_eq!(
+        difference(&image(&native), &image(&changed)).as_deref(),
+        Some("pixel (1, 0) is [0, 0, 0, 0] natively and [0, 1, 0, 0] in the module")
+    );
+    assert_eq!(
+        difference(&image(&native), &Ok((4, 1, native.to_vec()))).as_deref(),
+        Some("the native image is 2x2, the module's 4x1")
+    );
+    assert_eq!(
+        difference(&image(&native), &Err("a trap".to_owned())).as_deref(),
+        Some("the module renders no image: a trap")
+    );
+}
+
+/// A loader that holds no file.
+struct Empty;
+
+impl forager_ports::ResourceLoader for Empty {
+    async fn load(
+        &self,
+        path: &forager_ports::ResourcePath,
+    ) -> Result<Vec<u8>, forager_ports::SourceError> {
+        Err(forager_ports::SourceError::new(format!(
+            "{} is not held",
+            path.as_str()
+        )))
+    }
+}
+
+#[test]
+fn a_shapefile_the_loader_does_not_hold_is_an_error_naming_it_rather_than_an_empty_layer() {
+    // Verifies: ADR-0043
+    let mut map = Map {
+        layers: vec![Layer {
+            render_mode: Some(forager_style_ir::RenderMode::Polygon),
+            source: Some(forager_style_ir::SourceRef {
+                kind: "local".to_owned(),
+                props: BTreeMap::from([("data".to_owned(), "data/gone.shp".to_owned())]),
+                span: None,
+            }),
+            ..layer("gone", Some(LayerStatus::On))
+        }],
+        ..Map::default()
+    };
+    let why = super::wasm::inline(&mut map, &Empty).unwrap_err();
+    assert!(why.contains("data/gone.shp"), "{why}");
+}
+
+#[test]
+fn a_case_that_renders_no_image_natively_differs_whatever_the_module_renders() {
+    // Verifies: ADR-0043
+    use super::wasm::difference;
+    let none = || Err::<(u32, u32, Vec<u8>), _>("no map".to_owned());
+    for wasm in [none(), Err("a trap".to_owned()), Ok((1, 1, vec![0; 4]))] {
+        assert_eq!(
+            difference(&none(), &wasm).as_deref(),
+            Some("the native render gives no image: no map"),
+            "{wasm:?}"
+        );
+    }
+}
+
+#[test]
+fn a_label_box_with_an_edge_that_is_no_number_never_matches() {
+    // Verifies: G-10
+    // Verifies: ADR-0029
+    use forager_engine::CachedLabel;
+    let recorded = |bbox: &str| super::labels::read(&format!("1\t0\tp\t0\t1\t{bbox}\tFen\n"));
+    let ours = |drawn: [f64; 4]| CachedLabel {
+        priority: 1,
+        layer: 0,
+        class: 0,
+        text: "Fen".into(),
+        drawn: Some(drawn),
+    };
+    let name = "label \"Fen\" of layer 0, class 0, priority 1";
+    assert_eq!(
+        super::labels::compare(
+            &[ours([10.0, f64::NAN, 40.0, 20.0])],
+            &recorded("10 10 40 20").unwrap()
+        ),
+        [format!(
+            "{name}: Forager's box is not finite in its min y: NaN"
+        )]
+    );
+    assert_eq!(
+        super::labels::compare(
+            &[ours([10.0, 10.0, 40.0, 20.0])],
+            &recorded("10 10 nan 20").unwrap()
+        ),
+        [format!(
+            "{name}: MapServer's box is not finite in its max x: NaN"
+        )]
+    );
+    assert_eq!(
+        super::labels::compare(
+            &[ours([10.0, 10.0, 40.0, f64::INFINITY])],
+            &recorded("10 10 40 inf").unwrap()
+        ),
+        [format!(
+            "{name}: MapServer's box is not finite in its max y: inf"
+        )]
+    );
+}
+
+#[test]
+fn a_reader_box_with_an_edge_that_is_no_number_never_holds_the_record() {
+    // Verifies: ADR-0029
+    let read = |bbox: &str| super::labels::read(&format!("1\t0\tp\t0\t1\t{bbox}\tFen\n")).unwrap();
+    let finite = read("10 10 40 20");
+    for (record, output, says) in [
+        (
+            "10 10 40 20",
+            "nan 10 40 20",
+            "the reader's box is not finite in its min x: NaN",
+        ),
+        (
+            "10 nan 40 20",
+            "10 10 40 20",
+            "the record's box is not finite in its min y: NaN",
+        ),
+        (
+            "10 10 inf 20",
+            "10 10 inf 20",
+            "the record's box is not finite in its max x: inf",
+        ),
+        (
+            "10 10 40 20",
+            "10 10 40 -inf",
+            "the reader's box is not finite in its max y: -inf",
+        ),
+    ] {
+        let (record, output) = (read(record), read(output));
+        assert_eq!(
+            super::labels::beyond_noise(&record, &output),
+            [format!("line 1: {says}")],
+            "{record:?} {output:?}"
+        );
+    }
+    assert_eq!(
+        super::labels::beyond_noise(&finite, &finite),
+        Vec::<String>::new()
     );
 }

@@ -33,8 +33,14 @@ impl Drop for Scratch {
 /// `forager read` with `args`, killed after a time no load of these fixtures comes near, so that
 /// a loader that waits on a file fails the test instead of hanging it.
 fn forager(args: &[&Path]) -> Output {
+    let mut read = vec![Path::new("read")];
+    read.extend_from_slice(args);
+    forager_with(&read)
+}
+
+/// The binary with `args`, killed as [`forager`] says.
+fn forager_with(args: &[&Path]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_forager"))
-        .arg("read")
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -44,7 +50,7 @@ fn forager(args: &[&Path]) -> Output {
     while child.try_wait().unwrap().is_none() {
         if start.elapsed() > Duration::from_secs(20) {
             child.kill().unwrap();
-            panic!("forager read {args:?} did not finish");
+            panic!("forager {args:?} did not finish");
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -225,5 +231,82 @@ fn a_file_past_the_limit_is_cut_where_the_limit_is_not_read_whole() {
     let huge = std::fs::File::create(dir.0.join("huge.inc")).unwrap();
     huge.set_len(1 << 40).unwrap();
     let mapfile = dir.write("m.map", "MAP\n  INCLUDE 'huge.inc'\nEND\n");
+    assert_refused(&forager(&[&mapfile]), "error [mapfile-too-large]");
+}
+
+/// A FIFO named `name` in `dir`.
+#[cfg(unix)]
+fn fifo(dir: &Scratch, name: &str) -> PathBuf {
+    let fifo = dir.0.join(name);
+    let made = Command::new("mkfifo").arg(&fifo).status().unwrap();
+    assert!(made.success());
+    fifo
+}
+
+#[cfg(unix)]
+#[test]
+fn a_source_that_is_a_fifo_is_refused_not_waited_on() {
+    // Verifies: Q-9
+    let dir = Scratch::new("source-fifo");
+    let pipe = fifo(&dir, "pipe.geojson");
+    let mapfile = dir.write(
+        "m.map",
+        "MAP SIZE 10 10 EXTENT 0 0 10 10\n\
+         LAYER NAME 'p' TYPE POINT STATUS ON CLASS END END\nEND\n",
+    );
+    let source = format!("p={}", pipe.display());
+    let output = forager_with(&[
+        Path::new("render"),
+        &mapfile,
+        Path::new("--source"),
+        Path::new(&source),
+        Path::new("-o"),
+        &dir.0.join("out.png"),
+    ]);
+    // A source that cannot be read leaves its layer unbound, whatever the reason, as a missing
+    // file does: the diagnostic names the reason, the binary has not waited to report it, and
+    // the map is rendered without the layer, by the maintainer's decision of 2026-11-08.
+    assert!(
+        stderr(&output).contains("warning [source-unreadable]")
+            && stderr(&output).contains("not a regular file"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(dir.0.join("out.png").is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn an_epsg_file_that_is_a_fifo_is_refused_not_waited_on() {
+    // Verifies: Q-9
+    let dir = Scratch::new("epsg-fifo");
+    let pipe = fifo(&dir, "epsg");
+    let mapfile = dir.write("m.map", "MAP END\n");
+    let output = forager(&[&mapfile, Path::new("--epsg"), &pipe]);
+    assert_refused(&output, "not a regular file");
+}
+
+#[test]
+fn an_epsg_file_past_its_limit_is_refused_with_the_limit() {
+    // Verifies: Q-9
+    let dir = Scratch::new("epsg-limit");
+    // Sparse: one byte past the limit of a data source, which takes no space.
+    let big = std::fs::File::create(dir.0.join("epsg")).unwrap();
+    big.set_len(256 * 1024 * 1024 + 1).unwrap();
+    let mapfile = dir.write("m.map", "MAP END\n");
+    let output = forager(&[&mapfile, Path::new("--epsg"), &dir.0.join("epsg")]);
+    assert_refused(&output, "the file exceeds the limit of 268435456 bytes");
+}
+
+#[test]
+fn files_whose_sizes_sum_past_the_total_bound_are_refused_with_that_bound() {
+    // Verifies: Q-9
+    let dir = Scratch::new("total");
+    // Comments, each under the bound; together they pass it.
+    let ten_mib = format!("{}\n", "#".repeat(10 * 1024 * 1024));
+    dir.write("a.inc", &ten_mib);
+    dir.write("b.inc", &ten_mib);
+    let mapfile = dir.write("m.map", "MAP\n  INCLUDE 'a.inc'\n  INCLUDE 'b.inc'\nEND\n");
     assert_refused(&forager(&[&mapfile]), "error [mapfile-too-large]");
 }

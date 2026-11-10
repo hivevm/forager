@@ -43,6 +43,9 @@ libm = { version = "0.2.16", default-features = false }
 # Encodes and decodes PNG in `encode` (ADR-0017); the CLI's tests decode the reference images with
 # it, so that the encoder and the harness read one version.
 png = "0.18.1"
+# Runs the browser bindings' wasm32 build in the CLI's conformance test, compared with the native
+# render (G-9, ADR-0043); a dev-dependency of the CLI alone.
+wasmi = { version = "2.0.0", default-features = false, features = ["std", "validate", "portable-dispatch"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -67,3 +70,12 @@ inherits = "release"
 opt-level = "s"
 lto = true
 codegen-units = 1
+
+# The interpreter of the conformance test's wasm32 module (ADR-0043) runs optimized in the test
+# build; unoptimized it takes about nine minutes for the cases in scope.
+[profile.dev.package.wasmi]
+opt-level = 3
+[profile.dev.package.wasmi_core]
+opt-level = 3
+[profile.dev.package.wasmi_ir]
+opt-level = 3

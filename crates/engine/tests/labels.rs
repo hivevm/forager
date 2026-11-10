@@ -1,3 +1,19 @@
+// The tests of the marker a pixmap holds under a label work their values out from MapServer's
+// msAddLabelGroup, src/maplabel.c, and msGetMarkerSize, src/mapsymbol.c, of the release pinned in
+// scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 //! The labels of point layers, drawn through the reference renderer and compared with a reference
 //! image of Forager's own, as the geometry of render.rs is (ADR-0028). Set FORAGER_BLESS=1 to write
 //! the reference after a deliberate change, and review the image before committing it; the bless
@@ -32,11 +48,14 @@ fn ready<F: Future>(future: F) -> F::Output {
 
 /// The font set's files, test fonts of the label crate whose licence lies beside them:
 /// `fonts/sans.ttf` a subset of DejaVu Sans, and `fonts/<name>.ttf` its variant
-/// `dejavu-sans-<name>.ttf`.
+/// `dejavu-sans-<name>.ttf`; and `pin.png`, the test icon of the command line, 32 × 32.
 struct Files;
 
 impl ResourceLoader for Files {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        if path.as_str() == "pin.png" {
+            return Ok(include_bytes!("../../cli/tests/fixtures/pin.png").to_vec());
+        }
         let fixture = match path.as_str() {
             "fonts/sans.ttf" => "dejavu-sans-subset.ttf".to_owned(),
             other => match other.strip_prefix("fonts/") {
@@ -378,6 +397,62 @@ fn a_label_reads_the_text_of_the_features_its_class_draws_by_their_place() {
 }
 
 #[test]
+fn a_label_finds_its_features_text_by_the_features_place_among_all_the_layers_features() {
+    // The labels read an inline feature's TEXT beside the port, at the place its id names among
+    // the layer's features (ARCHITECTURE.md, inline.rs); this holds only while the inline source
+    // numbers every feature by that place, those out of view included (msINLINELayerNextShape).
+    let sources = BTreeMap::<String, GeoJsonSource>::new();
+    let one = r#"{"type": "Feature", "properties": {"name": "Fen"},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let reference = render(&map(label_item()), one).image.unwrap();
+    let without_text = || {
+        let mut map = map(Label {
+            text: None,
+            ..label_item()
+        });
+        map.layers[0].source = None;
+        map
+    };
+    let render = |features: Vec<InlineFeature>| {
+        let mut map = without_text();
+        map.layers[0].features = features;
+        ready(render_with_files(
+            &map,
+            &sources,
+            &Files,
+            AggRenderer::new(),
+        ))
+    };
+    // Two features out of view with a TEXT, then the one in view with its own: its text is drawn.
+    let rendered = render(vec![
+        inline_point([500.0, 500.0], "a", Some("Other")),
+        inline_point([600.0, 600.0], "a", Some("Others")),
+        inline_point([80.0, 30.0], "a", Some("Fen")),
+    ]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image.unwrap(), reference);
+    // A feature out of view with a TEXT, then the one in view without: nothing is drawn, the
+    // text of the first lending its class no label.
+    let rendered = render(vec![
+        inline_point([500.0, 500.0], "a", Some("Other")),
+        inline_point([80.0, 30.0], "a", None),
+    ]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        ink(rendered.image.as_ref().unwrap(), (0, 160), (0, 60)),
+        None
+    );
+}
+
+#[test]
 fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
     // Verifies: ADR-0028
     let with = |change: fn(&mut Label)| {
@@ -433,10 +508,6 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
             "label-text-unsupported",
         ),
         (
-            with(|l| l.text = Some(Expr::call(Op::ToString, vec![Expr::property("capital")]))),
-            "label-text-unsupported",
-        ),
-        (
             with(|l| {
                 l.font = Some(Bound::Value("broken".to_owned()));
                 l.text = Some(Expr::String("1".to_owned()));
@@ -465,23 +536,171 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
     }
 }
 
+/// The messages of the diagnostics of `rendered`, each with its code.
+fn messages(rendered: &Rendered) -> Vec<(&str, &str)> {
+    rendered
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.as_str(), d.message.as_str()))
+        .collect()
+}
+
+/// A feature of one point whose `name` is the JSON string `name`, escaped as JSON writes it.
+fn named_at_40_30(name: &str) -> String {
+    format!(
+        r#"{{"type": "Feature", "properties": {{"name": "{name}"}},
+            "geometry": {{"type": "Point", "coordinates": [40, 30]}}}}"#
+    )
+}
+
 #[test]
-fn a_layer_whose_sizes_are_not_pixels_or_whose_class_has_several_labels_is_not_drawn_yet() {
-    let mut sized = map(label_item());
-    sized.layers[0].size_units = Some(Units::Meters);
+fn a_label_refused_for_its_text_quotes_at_most_64_characters_of_it() {
+    // Verifies: ADR-0028
+    // A text of 1 MiB, 1,048,574 characters, whose second line ends in U+2019, read by the label
+    // of each of 100 layers of one source: each label is reported once, and its message names the
+    // line and the character and quotes the text's first 64 characters, its length after them,
+    // rather than the whole text for every label.
+    const LAYERS: usize = 100;
+    let geojson = named_at_40_30(&format!("Forager\\n{}\u{2019}", "x".repeat((1 << 20) - 11)));
+    let mut layers = map(label_item());
+    layers.layers = vec![layers.layers[0].clone(); LAYERS];
+    let rendered = render(&layers, &geojson);
+    // Each message's size first, so that a failure does not print the texts it quotes.
+    for (code, message) in messages(&rendered) {
+        assert!(message.len() < 200, "{code}: {} bytes", message.len());
+    }
+    let quote = format!("Forager\n{}", "x".repeat(56));
+    let expected = format!(
+        "line 2 of the text `{quote}\u{2026}` (1048574 characters) holds U+2019, which needs a \
+         shaper; the label is not drawn"
+    );
+    assert_eq!(
+        messages(&rendered),
+        vec![("label-line-unsupported", expected.as_str()); LAYERS]
+    );
+    // A text of 64 characters or fewer is quoted whole.
+    let short = map(Label {
+        text: Some(Expr::String("two\nlin\u{2019}s".to_owned())),
+        ..label_item()
+    });
+    assert_eq!(
+        messages(&render(&short, PLACES)),
+        [(
+            "label-line-unsupported",
+            "line 2 of the text `two\nlin\u{2019}s` holds U+2019, which needs a shaper; the \
+             label is not drawn"
+        )]
+    );
+    // A glyph its font cannot draw quotes the text the same way: `1`, glyph 3 of the font
+    // `broken`, which cannot read it.
+    let mut broken = map(label_item());
+    broken.layers[0].classes[0].labels[0].font = Some(Bound::Value("broken".to_owned()));
+    let rendered = render(&broken, &named_at_40_30(&"1".repeat(1 << 20)));
+    for (code, message) in messages(&rendered) {
+        assert!(message.len() < 200, "{code}: {} bytes", message.len());
+    }
+    let expected = format!(
+        "its font cannot draw glyph 3 of `{}\u{2026}` (1048576 characters); the label is not \
+         drawn for a text that holds it",
+        "1".repeat(64)
+    );
+    assert_eq!(
+        messages(&rendered),
+        [("label-glyph-unreadable", expected.as_str())]
+    );
+}
+
+#[test]
+fn a_labelpoly_of_a_symbol_that_is_no_hatch_is_left_out() {
+    // A labelpoly whose symbol is in the set but is no hatch: msDrawShadeSymbol tiles it
+    // (maprendering.c:823-), which is not drawn yet, so it is refused rather than filled plain.
+    let mut tiled = map(label_item());
+    tiled.layers[0].classes[0].labels[0].styles = vec![Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        ..labelpoly(Bound::Value(WHITE))
+    }];
+    tiled.symbols = vec![Symbol {
+        name: Some("square".to_owned()),
+        kind: SymbolKind::Vector,
+        paths: vec![vec![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [0.0, 1.0],
+            [0.0, 0.0],
+        ]],
+        extent: Some([1.0, 1.0]),
+        filled: true,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    }];
+    let rendered = render(&tiled, PLACES);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["label-not-drawn"]);
+    assert!(
+        rendered
+            .image
+            .unwrap()
+            .pixels
+            .chunks(4)
+            .all(|p| p == [255, 255, 255, 255])
+    );
+}
+
+#[test]
+fn a_class_with_several_labels_is_not_drawn_yet() {
     let mut several = map(label_item());
     several.layers[0].classes[0].labels.push(label_item());
+    let rendered = render(&several, PLACES);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, vec!["label-not-drawn"; 2]);
+}
+
+#[test]
+fn a_labels_size_is_scaled_by_its_layers_scale_factor() {
+    // msPrepareImage: a label inherits its layer's scale factor (msUpdateClassScaleFactor), and
+    // msPopulateTextSymbolForLabelAndString scales its SIZE by it, bounded by MINSIZE and MAXSIZE
+    // times the resolution factor. The map is at 1 : 72 × 39.3701 (159 meters over 159 pixels).
+    let scale = 72.0 * 39.3701;
+    let drawn = |map: &Map| {
+        let rendered = render(map, PLACES);
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        rendered.image
+    };
+    // A SYMBOLSCALEDENOM of twice the map's scale: a factor of 2, so SIZE 12 draws as 24.
     let mut symbol_scaled = map(label_item());
-    symbol_scaled.layers[0].symbol_scale_denom = Some(10_000.0);
-    for (map, count) in [(sized, 1), (several, 2), (symbol_scaled, 1)] {
-        let rendered = render(&map, PLACES);
-        let codes: Vec<&str> = rendered
-            .diagnostics
-            .iter()
-            .map(|d| d.code.as_str())
-            .collect();
-        assert_eq!(codes, vec!["label-not-drawn"; count]);
-    }
+    symbol_scaled.layers[0].symbol_scale_denom = Some(2.0 * scale);
+    let twice = map(Label {
+        size: Some(Bound::Value(24.0)),
+        ..label_item()
+    });
+    assert_eq!(drawn(&symbol_scaled), drawn(&twice));
+    // SIZEUNITS meters at a meter a pixel: a factor of 1 at any RESOLUTION, so at 144 dpi the
+    // label draws as at 72, where the resolution factor alone would double it.
+    let mut sized = map(label_item());
+    sized.resolution = Some(144.0);
+    sized.layers[0].size_units = Some(Units::Meters);
+    assert_eq!(drawn(&sized), drawn(&map(label_item())));
+}
+
+#[test]
+fn a_layer_of_pixels_and_the_default_priority_draw_as_without_them() {
     // A layer of pixels, and a PRIORITY of 1, the default, draw as without them.
     let mut pixels = map(label_item());
     pixels.layers[0].size_units = Some(Units::Pixels);
@@ -527,7 +746,7 @@ fn a_propertys_text_ends_at_its_first_nul_as_mapservers_c_string_does() {
     assert!(cut.diagnostics.is_empty(), "{:?}", cut.diagnostics);
     let whole = render(&map(label_item()), &named_point("ab"));
     assert!(cut.image == whole.image, "`ab\\0cd` draws other than `ab`");
-    let texts: Vec<_> = cut.labels.iter().map(|l| l.text.as_str()).collect();
+    let texts: Vec<_> = cut.labels.iter().map(|l| &*l.text).collect();
     assert_eq!(texts, ["ab"]);
     // A value that starts with a NUL is empty, and msEvalTextExpressionInternal gives no text.
     let empty = render(&map(label_item()), &named_point("\0abc"));
@@ -552,8 +771,71 @@ fn a_propertys_text_ends_at_its_first_nul_as_mapservers_c_string_does() {
     assert!(cut.diagnostics.is_empty(), "{:?}", cut.diagnostics);
     let abx = render(&map(label_item()), &named_point("abx"));
     assert!(cut.image == abx.image, "`[name]x` draws other than `abx`");
-    let texts: Vec<_> = cut.labels.iter().map(|l| l.text.as_str()).collect();
+    let texts: Vec<_> = cut.labels.iter().map(|l| &*l.text).collect();
     assert_eq!(texts, ["abx"]);
+}
+
+#[test]
+fn a_labels_text_reads_a_feature_as_its_bound_properties_do() {
+    // Verifies: Q-9
+    // The text takes bindLabel's reading of a feature, as `bind` does: a property matches
+    // whatever its case, as MapServer finds an attribute in a `.dbf` or an OGR source, and a
+    // boolean prints as OGR gives it, 1 or 0.
+    let of = |expr: Expr, geojson: &str| {
+        let rendered = render(
+            &map(Label {
+                text: Some(expr),
+                ..label_item()
+            }),
+            geojson,
+        );
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        let texts: Vec<String> = rendered.labels.iter().map(|l| l.text.to_string()).collect();
+        (texts, rendered.image)
+    };
+    let property = |name: &str| Expr::call(Op::ToString, vec![Expr::property(name)]);
+    let forager = named_point("Forager");
+    let (upper, upper_image) = of(property("NAME"), &forager);
+    let (lower, lower_image) = of(property("name"), &forager);
+    assert_eq!((&upper, &lower), (&vec!["Forager".to_owned()], &upper));
+    assert!(
+        upper_image == lower_image,
+        "`[NAME]` draws other than `[name]`"
+    );
+    for (value, expected) in [("true", "1"), ("false", "0")] {
+        let capital = format!(
+            r#"{{"type": "Feature", "properties": {{"capital": {value}}},
+            "geometry": {{"type": "Point", "coordinates": [80, 30]}}}}"#
+        );
+        let (texts, _) = of(property("Capital"), &capital);
+        assert_eq!(texts, [expected], "{value}");
+    }
+    // A text that would pass Q-9's 16 MiB leaves the label out, with the diagnostic of the bound:
+    // four times 4 MiB and a byte is 16 MiB and four bytes.
+    let long = "x".repeat(4 * 1024 * 1024 + 1);
+    let four = Expr::call(Op::Concat, vec![property("name"); 4]);
+    let rendered = render(
+        &map(Label {
+            text: Some(four),
+            ..label_item()
+        }),
+        &named_point(&long),
+    );
+    let codes: Vec<_> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["text-too-long"]);
+    assert!(rendered.labels.is_empty());
+    assert_eq!(
+        ink(rendered.image.as_ref().unwrap(), (0, 160), (0, 60)),
+        None
+    );
 }
 
 #[test]
@@ -570,7 +852,7 @@ fn an_inline_features_text_ends_at_its_first_nul() {
     assert!(cut.diagnostics.is_empty(), "{:?}", cut.diagnostics);
     let whole = render_inline(no_text(), Some("ab"), "Other");
     assert!(cut.image == whole.image, "`ab\\0cd` draws other than `ab`");
-    let texts: Vec<_> = cut.labels.iter().map(|l| l.text.as_str()).collect();
+    let texts: Vec<_> = cut.labels.iter().map(|l| &*l.text).collect();
     assert_eq!(texts, ["ab"]);
     let empty = render_inline(no_text(), Some("\0abc"), "Other");
     assert!(empty.diagnostics.is_empty(), "{:?}", empty.diagnostics);
@@ -923,9 +1205,10 @@ fn at_resolution_144_a_label_moves_away_from_the_marker_as_it_is_drawn() {
     // Verifies: ADR-0028
     // msPrepareImage's scale factor, RESOLUTION 144 over DEFRESOLUTION 72, scales the marker
     // msDrawMarkerSymbol draws and the one msGetMarkerSize gives the label cache alike, and the
-    // label's size and offset: a circle of SIZE 9 under a label of SIZE 12 offset (3, 2) at 144
-    // is drawn as a circle of 18 under a label of 24 offset (6, 4) at 72.
-    let with_marker = |resolution: Option<f64>, marker: f64, size: f64, (x, y): (f64, f64)| {
+    // label's size and offset: a circle of SIZE 9 under a label of SIZE 6 offset (3, 2) at 144
+    // is drawn as a circle of 18 under a label of 12 offset (6, 4) at 72. The label stays inside
+    // the image, which a label without PARTIALS must (msTestLabelCacheCollisions, maplabel.c:790).
+    let marked = |resolution: Option<f64>, marker: f64, size: f64, (x, y): (f64, f64)| {
         let mut map = map(Label {
             text: Some(Expr::String("Fen".to_owned())),
             position: Some(Bound::Value(Position::Ur)),
@@ -953,7 +1236,10 @@ fn at_resolution_144_a_label_moves_away_from_the_marker_as_it_is_drawn() {
             color: Some(Bound::Value(BLUE)),
             ..Style::default()
         }];
-        let rendered = render(&map, FEN);
+        map
+    };
+    let with_marker = |resolution: Option<f64>, marker: f64, size: f64, offset: (f64, f64)| {
+        let rendered = render(&marked(resolution, marker, size, offset), FEN);
         assert!(
             rendered.diagnostics.is_empty(),
             "{:?}",
@@ -961,11 +1247,30 @@ fn at_resolution_144_a_label_moves_away_from_the_marker_as_it_is_drawn() {
         );
         rendered.image.unwrap()
     };
-    let at_144 = with_marker(Some(144.0), 9.0, 12.0, (3.0, 2.0));
-    assert!(at_144 == with_marker(None, 18.0, 24.0, (6.0, 4.0)));
+    let at_144 = with_marker(Some(144.0), 9.0, 6.0, (3.0, 2.0));
+    assert!(at_144 == with_marker(None, 18.0, 12.0, (6.0, 4.0)));
     assert!(
-        at_144 != with_marker(None, 9.0, 24.0, (6.0, 4.0)),
+        at_144 != with_marker(None, 9.0, 12.0, (6.0, 4.0)),
         "the marker is drawn twice its size"
+    );
+    // At 144, msGetMarkerSize's size is the int 9 × 2 = 18, the circle 18 by 18
+    // (mapsymbol.c:753, 785-786); msAddLabelGroup's marker box runs from the point less 9 to it
+    // plus 8, w - 1 (maplabel.c:367-371), so msDrawLabelCache's marker offset is 17 / 2 = 8.5
+    // across and up (mapdraw.c:3572-3575). The label's OFFSET (3, 2) × 2 is (6, 4)
+    // (mapdraw.c:3708-3711), and get_metrics takes 8.5 + 6 = 14.5 and 8.5 + 4 = 12.5 as its ints,
+    // 14 and 12 (mapdraw.c:3768-3769, maplabel.c:1019): "Fen" at 6 × 2 = 12 at UR of the pixel
+    // (80, 29), 14 across and 12 up, its box 29.1875 by 11.90625 from (94, 17) to (123.1875,
+    // 5.09375).
+    let map = marked(Some(144.0), 9.0, 6.0, (3.0, 2.0));
+    let ops = recorded(&map, FEN);
+    assert_eq!(ops.len(), 1);
+    assert_eq!(
+        glyph_path(&ops[0]),
+        expected("Fen", 12.0, Anchor::Ur, (14, 12), 0.0)
+    );
+    assert_eq!(
+        render(&map, FEN).labels[0].drawn,
+        Some([94.0, 5.09375, 123.1875, 17.0])
     );
 }
 
@@ -1407,7 +1712,7 @@ fn priorities(priority: Bound<f64>, values: &[&str]) -> Vec<(String, u8)> {
     let mut cached: Vec<(String, u8)> = rendered
         .labels
         .iter()
-        .map(|l| (l.text.clone(), l.priority))
+        .map(|l| (l.text.to_string(), l.priority))
         .collect();
     cached.sort();
     cached
@@ -1559,9 +1864,9 @@ fn min_distance_leaves_out_a_label_near_one_of_the_same_text() {
 fn a_label_over_a_marker_whose_size_is_not_computed_yet_is_not_drawn() {
     // Verifies: G-10
     // The label cache holds the box of the marker of the class's first style beneath every
-    // label of a point layer, at CC too; a pixmap, SVG, or TrueType symbol has no size yet, so
+    // label of a point layer, at CC too; an SVG or TrueType symbol has no size yet, so
     // the label is left out rather than placed without that box.
-    for kind in [SymbolKind::Pixmap, SymbolKind::Svg, SymbolKind::Truetype] {
+    for kind in [SymbolKind::Svg, SymbolKind::Truetype] {
         let mut map = map(label_item());
         map.symbols = vec![Symbol {
             name: Some("unsized".to_owned()),
@@ -1663,50 +1968,89 @@ fn the_label_cache_holds_at_most_100000_labels_and_reports_those_past_it_once() 
     assert_eq!(recorder.0.take().len(), 2);
 }
 
-/// The render reports every label of its cache in the order msDrawLabelCache walks it, the last
-/// added first, the one drawn with the box it was drawn in, which holds its ink to the pixel, and
-/// the one it discarded without.
+/// The render reports every label of its cache in the order msDrawLabelCache walks it, the
+/// highest priority first, the one drawn with the box it was drawn in, which holds its ink, and
+/// the one a label of a higher priority made it discard without. Two labels of one priority that
+/// meet are left to the cache's own tests.
 #[test]
 fn the_render_reports_its_labels_drawn_and_discarded_in_the_caches_order() {
-    let overlapping = r#"{"type": "FeatureCollection", "features": [
-        {"type": "Feature", "properties": {"name": "Forager"},
+    // Three features named "Fen", each label 29.1875 by 11.90625 pixels at 12 points: one of
+    // PRIORITY 7 at the pixel (40, 29); a MultiPoint of PRIORITY 3 at (80, 29) and (120, 29), a
+    // label for each point; and one of PRIORITY 3 at (42, 29), over the first. msDrawLabelCache
+    // walks the priorities from the highest, and each slot from its last label
+    // (mapdraw.c:3500-3504): the label at (40, 29), then the one at (42, 29), which meets it and
+    // is discarded, then (120, 29) and (80, 29). At CC, get_metrics puts the box at x1 = -w / 2
+    // and y1 = h / 2 of the point (maplabel.c:1049-1051, 1109-1117): from x - 14.59375 to
+    // x + 14.59375 across and from 29 - 5.953125 to 29 + 5.953125 down.
+    let geojson = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"name": "Fen", "p": "7"},
          "geometry": {"type": "Point", "coordinates": [40, 30]}},
-        {"type": "Feature", "properties": {"name": "Fen"},
+        {"type": "Feature", "properties": {"name": "Fen", "p": "3"},
+         "geometry": {"type": "MultiPoint", "coordinates": [[80, 30], [120, 30]]}},
+        {"type": "Feature", "properties": {"name": "Fen", "p": "3"},
          "geometry": {"type": "Point", "coordinates": [42, 30]}}
     ]}"#;
-    let rendered = render(&map(label_item()), overlapping);
+    let rendered = render(
+        &map(Label {
+            priority: Some(binding("p")),
+            ..label_item()
+        }),
+        geojson,
+    );
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
     let labels: Vec<_> = rendered
         .labels
         .iter()
-        .map(|l| {
-            (
-                l.priority,
-                l.layer,
-                l.class,
-                l.text.as_str(),
-                l.drawn.is_some(),
-            )
-        })
+        .map(|l| (l.priority, l.layer, l.class, &*l.text, l.drawn))
         .collect();
     assert_eq!(
         labels,
-        [(1, 0, 0, "Fen", true), (1, 0, 0, "Forager", false)]
+        [
+            (
+                7,
+                0,
+                0,
+                "Fen",
+                Some([25.40625, 23.046875, 54.59375, 34.953125])
+            ),
+            (3, 0, 0, "Fen", None),
+            (
+                3,
+                0,
+                0,
+                "Fen",
+                Some([105.40625, 23.046875, 134.59375, 34.953125])
+            ),
+            (
+                3,
+                0,
+                0,
+                "Fen",
+                Some([65.40625, 23.046875, 94.59375, 34.953125])
+            ),
+        ]
     );
-    let [x0, y0, x1, y1] = rendered.labels[0].drawn.unwrap();
+    // The ink of each label drawn lies within its box, to the pixel.
     let image = rendered.image.unwrap();
-    let [ix0, iy0, ix1, iy1] = ink(&image, (0, 160), (0, 60)).unwrap();
-    assert!(
-        x0.floor() <= f64::from(ix0) && y0.floor() <= f64::from(iy0),
-        "the ink {:?} starts before the box {:?}",
-        [ix0, iy0, ix1, iy1],
-        [x0, y0, x1, y1]
-    );
-    assert!(
-        f64::from(ix1) <= x1.ceil() && f64::from(iy1) <= y1.ceil(),
-        "the ink {:?} ends past the box {:?}",
-        [ix0, iy0, ix1, iy1],
-        [x0, y0, x1, y1]
-    );
+    for label in &rendered.labels {
+        let Some([x0, y0, x1, y1]) = label.drawn else {
+            continue;
+        };
+        let [ix0, iy0, ix1, iy1] = ink(&image, (x0 as u32 - 2, x1 as u32 + 3), (18, 42)).unwrap();
+        assert!(
+            x0.floor() <= f64::from(ix0)
+                && y0.floor() <= f64::from(iy0)
+                && f64::from(ix1) <= x1.ceil()
+                && f64::from(iy1) <= y1.ceil(),
+            "the ink {:?} lies outside the box {:?}",
+            [ix0, iy0, ix1, iy1],
+            [x0, y0, x1, y1]
+        );
+    }
 }
 
 /// Every operation the render draws, in its order.
@@ -2169,14 +2513,628 @@ fn a_label_style_whose_transform_the_frontend_dropped_is_refused_not_drawn_at_th
         .collect();
     assert_eq!(codes, ["label-not-drawn"]);
     assert!(
-        rendered.diagnostics[0].message.contains(
-            "a STYLE other than one of GEOMTRANSFORM labelpoly, labelpnt, or labelcenter"
-        ),
+        rendered.diagnostics[0]
+            .message
+            .contains("it has a STYLE without a GEOMTRANSFORM"),
         "{}",
         rendered.diagnostics[0].message
     );
     assert!(rendered.labels.is_empty());
     assert_eq!(ink(&rendered.image.unwrap(), (0, 160), (0, 60)), None);
+}
+
+#[test]
+fn a_cached_label_of_line_breaks_only_with_a_labelpnt_style_is_refused() {
+    // Does msDrawLabelCache test and draw the labelpnt marker of a member whose text has no box?
+    // It computes the marker by computeMarkerBounds and tests it before the text
+    // (mapdraw.c:3607-3646), and draws a labelpnt style at the member's point whatever its text
+    // (4056-4065). But a text of line breaks is no NULL annotext (msAddLabelGroup,
+    // maplabel.c:267-282): its path is laid out (mapdraw.c:3651, 3688-3693) on a box
+    // msLayoutTextSymbol leaves at FLT_MAX and -FLT_MAX (textlayout.c:817-819), which get_metrics
+    // places and msTestLabelCacheCollisions tests (mapdraw.c:3789, 3898) before the marker is
+    // drawn. That box is not ported through the cache, so the label is left out with its reason
+    // rather than drawn or dropped in silence.
+    let label = Label {
+        text: Some(Expr::String("\n".to_owned())),
+        ..fen_styled(vec![labelpoint()])
+    };
+    let rendered = render(&map_with_square(label), FEN);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["label-not-drawn"]);
+    assert!(
+        rendered.diagnostics[0]
+            .message
+            .contains("its text is of line breaks only"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
+    assert!(rendered.labels.is_empty());
+    assert_eq!(ink(&rendered.image.unwrap(), (0, 160), (0, 60)), None);
+}
+
+/// The render of `label` over the features `geojson` with [`map_with_square`], and every
+/// operation it draws.
+fn draw_square(label: Label, geojson: &str) -> (Rendered, Vec<forager_render::DrawOp>) {
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(geojson).unwrap())].into();
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(
+        &map_with_square(label),
+        &sources,
+        &Files,
+        recorder.clone(),
+    ));
+    (rendered, recorder.0.take())
+}
+
+#[test]
+fn a_cached_label_without_text_with_a_labelpnt_style_draws_its_marker_alone() {
+    // msShapeGetLabelAnnotation gives no text for an empty LABELITEM value (maputil.c:973-976),
+    // nor where no text is set at all (980); msAddLabelGroup keeps such a label for its labelpnt
+    // style (maplabel.c:267-277). msDrawLabelCache tests and draws its marker, and skips all of
+    // its text (mapdraw.c:3607-3649); the member's box is the marker's (3994-4027), and its
+    // labelpnt style is drawn at its point (4056-4065).
+    let empty = r#"{"type": "Feature", "properties": {"name": ""},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let no_text = Label {
+        text: None,
+        ..label_item()
+    };
+    for label in [label_item(), no_text] {
+        let styles = vec![labelpoint()];
+        let (rendered, ops) = draw_square(Label { styles, ..label }, empty);
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        // The square of msGetMarkerSize 8 by 8 centred on the pixel (80, 29), as
+        // a_labelpoint_style_draws_its_marker_at_the_point_under_the_text_moved_off_it draws it.
+        let p = |x, y| Point { x, y };
+        assert_eq!(
+            ops,
+            [forager_render::DrawOp::Fill {
+                rings: vec![vec![
+                    p(76.0, 25.0),
+                    p(84.0, 25.0),
+                    p(84.0, 33.0),
+                    p(76.0, 33.0),
+                    p(76.0, 25.0),
+                ]],
+                color: RED,
+                gamma: None,
+            }]
+        );
+        assert_eq!(rendered.labels.len(), 1);
+        assert_eq!(&*rendered.labels[0].text, "");
+        assert_eq!(rendered.labels[0].drawn, Some([76.0, 25.0, 84.0, 33.0]));
+    }
+}
+
+#[test]
+fn a_cached_label_without_text_with_a_labelpoly_or_labelcenter_style_is_refused() {
+    // msDrawLabelCache draws a labelpoly or labelcenter style only with an annotext; a label
+    // without one, kept for its labelpnt style (maplabel.c:267-277), falls to the last branch of
+    // the style loop, which fails the map with "Labels only support LABELPNT, LABELPOLY and
+    // LABELCENTER GEOMTRANSFORMS" (mapdraw.c:4056-4133, 540, 593). The label is left out with its
+    // reason rather than drawn in part.
+    let empty = r#"{"type": "Feature", "properties": {"name": ""},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let no_text = Label {
+        text: None,
+        ..label_item()
+    };
+    for label in [label_item(), no_text] {
+        for boxed in [labelpoly(Bound::Value(GREEN)), labelcenter(8.0)] {
+            let styles = vec![labelpoint(), boxed];
+            let label = Label {
+                styles,
+                ..label.clone()
+            };
+            let (rendered, ops) = draw_square(label, empty);
+            let codes: Vec<&str> = rendered
+                .diagnostics
+                .iter()
+                .map(|d| d.code.as_str())
+                .collect();
+            assert_eq!(codes, ["label-not-drawn"]);
+            assert!(
+                rendered.diagnostics[0]
+                    .message
+                    .contains("its text is empty, where msDrawLabelCache fails the map"),
+                "{}",
+                rendered.diagnostics[0].message
+            );
+            assert_eq!(ops, []);
+            assert_eq!(rendered.labels, []);
+        }
+    }
+}
+
+/// A label of no text source and no `FONT`, whose one style is `labelpoint`.
+fn marker_alone() -> Label {
+    Label {
+        text: None,
+        font: None,
+        styles: vec![labelpoint()],
+        ..label_item()
+    }
+}
+
+#[test]
+fn a_cached_label_of_a_marker_alone_without_a_font_is_tested_and_drawn() {
+    // MapServer needs no FONT for a label without text: loadLabel requires none, a label's style
+    // is labelpnt by default (mapfile.c:2058-2061), and a font is resolved only to lay out a text,
+    // in msComputeTextPath, which msDrawLabelCache calls only with an annotext
+    // (mapdraw.c:3651). As a_cached_label_without_text_with_a_labelpnt_style_draws_its_marker
+    // _alone draws it with a FONT: the square of 8 by 8 centred on the pixel (80, 29), its box.
+    let (rendered, ops) = draw_square(marker_alone(), &collection(&[("", 80.0, 30.0, "")]));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        ops,
+        [forager_render::DrawOp::Fill {
+            rings: vec![square_at(80.0, 29.0)],
+            color: RED,
+            gamma: None,
+        }]
+    );
+    assert_eq!(rendered.labels.len(), 1);
+    assert_eq!(rendered.labels[0].drawn, Some([76.0, 25.0, 84.0, 33.0]));
+    // The marker is tested (msTestLabelCacheCollisions, mapdraw.c:3632-3646): the one added last
+    // is placed first, and the other, 4 pixels off it, is left out unless FORCE is on.
+    let close = collection(&[("", 80.0, 30.0, ""), ("", 84.0, 30.0, "")]);
+    let drawn = |label: Label| -> Vec<Option<[f64; 4]>> {
+        let (rendered, _) = draw_square(label, &close);
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        rendered.labels.iter().map(|l| l.drawn).collect()
+    };
+    let (first, second) = (
+        Some([76.0, 25.0, 84.0, 33.0]),
+        Some([80.0, 25.0, 88.0, 33.0]),
+    );
+    assert_eq!(drawn(marker_alone()), [second, None]);
+    let forced = Label {
+        force: Some(forager_style_ir::Force::On),
+        ..marker_alone()
+    };
+    assert_eq!(drawn(forced), [second, first]);
+}
+
+#[test]
+fn a_marker_alone_without_a_font_is_drawn_at_the_point_under_labelcache_off() {
+    // msDrawLabel computes a text path only where it has a text (haveLabelText,
+    // mapdraw.c:2710-2727), and draws the labelpnt styles at the point whatever the text
+    // (2736-2748).
+    let geojson = collection(&[("", 80.0, 30.0, "")]);
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
+    let mut map = map_with_square(marker_alone());
+    map.layers[0].label_cache = false;
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        recorder.0.take(),
+        [forager_render::DrawOp::Fill {
+            rings: vec![square_at(80.0, 29.0)],
+            color: RED,
+            gamma: None,
+        }]
+    );
+    assert_eq!(rendered.labels, []);
+}
+
+#[test]
+fn a_text_of_line_breaks_only_lays_out_nothing_and_needs_no_font() {
+    // msLayoutTextSymbol looks a face up for each run (textlayout.c:802-803), but a run of no
+    // glyph takes nothing of it, and msDrawLabel draws the labelpnt styles (mapdraw.c:2736-2748).
+    let geojson = collection(&[("\\n", 80.0, 30.0, "")]);
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
+    let mut map = map_with_square(Label {
+        font: None,
+        styles: vec![labelpoint()],
+        ..label_item()
+    });
+    map.layers[0].label_cache = false;
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        recorder.0.take(),
+        [forager_render::DrawOp::Fill {
+            rings: vec![square_at(80.0, 29.0)],
+            color: RED,
+            gamma: None,
+        }]
+    );
+}
+
+#[test]
+fn a_label_with_a_text_and_no_font_is_refused_for_the_built_in_font() {
+    // MapServer lays such a text out in its built-in font (msGetFontFace of no key, through
+    // get_face_for_run in msLayoutTextSymbol), which is not bundled: the reason says so.
+    for cache in [true, false] {
+        let mut map = map_with_square(Label {
+            font: None,
+            ..label_item()
+        });
+        map.layers[0].label_cache = cache;
+        let rendered = render(&map, FEN);
+        let codes: Vec<&str> = rendered
+            .diagnostics
+            .iter()
+            .map(|d| d.code.as_str())
+            .collect();
+        assert_eq!(codes, ["label-not-drawn"], "LABELCACHE {cache}");
+        let message = &rendered.diagnostics[0].message;
+        assert!(
+            message.contains("it names no FONT; MapServer's built-in font is not bundled"),
+            "{message}"
+        );
+        assert_eq!(rendered.labels, []);
+    }
+}
+
+#[test]
+fn an_inline_features_own_text_without_a_font_is_refused_for_the_built_in_font() {
+    // A label of no text source reads the feature's TEXT (msShapeGetLabelAnnotation), which
+    // MapServer lays out in its built-in font where the label names no FONT.
+    let label = Label {
+        text: None,
+        font: None,
+        ..label_item()
+    };
+    let rendered = render_inline(map(label), Some("Fen"), "");
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["label-not-drawn"]);
+    let message = &rendered.diagnostics[0].message;
+    assert!(message.contains("it names no FONT"), "{message}");
+    assert_eq!(rendered.labels, []);
+}
+
+#[test]
+fn a_text_label_without_a_font_or_styles_whose_features_are_all_empty_reports_nothing() {
+    // A label whose text is empty for every feature lays out nothing, so it needs no font and
+    // draws nothing; nor is it refused for one, as no text of it is laid out.
+    let label = Label {
+        font: None,
+        ..label_item()
+    };
+    let rendered = render(
+        &map(label),
+        &collection(&[("", 40.0, 30.0, ""), ("", 80.0, 30.0, "")]),
+    );
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.labels, []);
+    assert_eq!(
+        ink(rendered.image.as_ref().unwrap(), (0, 160), (0, 60)),
+        None
+    );
+}
+
+#[test]
+fn a_label_without_a_font_is_drawn_for_the_features_without_text_and_refused_for_the_others() {
+    // msDrawLabelCache settles a font member by member, for a member with an annotext
+    // (mapdraw.c:3651): of a LABELITEM empty for one feature only (maputil.c:973-976), that
+    // feature's marker is drawn as a marker alone's, and the other's text is refused, once.
+    let label = Label {
+        font: None,
+        styles: vec![labelpoint()],
+        ..label_item()
+    };
+    let (rendered, ops) = draw_square(
+        label,
+        &collection(&[("Fen", 40.0, 30.0, ""), ("", 80.0, 30.0, "")]),
+    );
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["label-not-drawn"]);
+    let message = &rendered.diagnostics[0].message;
+    assert!(
+        message.ends_with(
+            "it names no FONT; MapServer's built-in font is not bundled; the label is not drawn \
+             where a feature gives it a text"
+        ),
+        "{message}"
+    );
+    assert_eq!(
+        ops,
+        [forager_render::DrawOp::Fill {
+            rings: vec![square_at(80.0, 29.0)],
+            color: RED,
+            gamma: None,
+        }]
+    );
+    assert_eq!(rendered.labels.len(), 1);
+    assert_eq!(rendered.labels[0].drawn, Some([76.0, 25.0, 84.0, 33.0]));
+}
+
+#[test]
+fn the_marker_of_a_cached_label_without_text_is_tested_and_takes_room() {
+    // msDrawLabelCache tests the marker of a member without text against the labels drawn,
+    // unless FORCE is on (mapdraw.c:3632-3646), and msTestLabelCacheCollisions tests a later label
+    // against that marker (maplabel.c:845-861). As in
+    // a_labelpoint_marker_takes_room_from_the_labels_after_it, "Fen" at LR of the pixel (50, 26)
+    // takes its marker [46, 22, 54, 30] and its text [54, 30, 83.1875, 41.90625]; the label
+    // without text at the pixel (82, 29) has its marker at [78, 25, 86, 33], which meets that
+    // text.
+    let label = || Label {
+        position: Some(Bound::Value(Position::Lr)),
+        styles: vec![labelpoint()],
+        ..label_item()
+    };
+    let drawn = |label: Label, points: &[(&str, f64, f64, &str)]| -> Vec<Option<[f64; 4]>> {
+        let (rendered, _) = draw_square(label, &collection(points));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        rendered.labels.iter().map(|l| l.drawn).collect()
+    };
+    let fen = Some([46.0, 22.0, 83.1875, 41.90625]);
+    let marker = Some([78.0, 25.0, 86.0, 33.0]);
+    // Added last, "Fen" is drawn first, and the marker after it is left out.
+    let fen_last = [("", 82.0, 30.0, ""), ("Fen", 50.0, 33.0, "")];
+    assert_eq!(drawn(label(), &fen_last), [fen, None]);
+    // Forced, the marker is drawn untested.
+    let forced = Label {
+        force: Some(forager_style_ir::Force::On),
+        ..label()
+    };
+    assert_eq!(drawn(forced, &fen_last), [fen, marker]);
+    // Added last, the marker is drawn first, and "Fen" after it is left out.
+    let fen_first = [("Fen", 50.0, 33.0, ""), ("", 82.0, 30.0, "")];
+    assert_eq!(drawn(label(), &fen_first), [marker, None]);
+}
+
+#[test]
+fn a_cached_label_without_text_or_labelpnt_style_draws_and_reports_nothing() {
+    // msAddLabelGroup skips a label without text that has no labelpnt style (maplabel.c:267-277),
+    // a labelpoly one or none.
+    let empty = r#"{"type": "Feature", "properties": {"name": ""},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let no_text = Label {
+        text: None,
+        ..label_item()
+    };
+    for label in [label_item(), no_text] {
+        for styles in [vec![], vec![labelpoly(Bound::Value(GREEN))]] {
+            let (rendered, ops) = draw_square(
+                Label {
+                    styles,
+                    ..label.clone()
+                },
+                empty,
+            );
+            assert!(
+                rendered.diagnostics.is_empty(),
+                "{:?}",
+                rendered.diagnostics
+            );
+            assert_eq!(ops, []);
+            assert_eq!(rendered.labels, []);
+        }
+    }
+}
+
+#[test]
+fn a_label_styles_angle_auto_turns_it_by_its_angle_alone() {
+    // `ANGLE AUTO` sets only the style's autoangle, its angle left as it is (loadStyle,
+    // mapfile.c:2773-2775); computeMarkerBounds turns a labelpnt marker by the angle
+    // (mapdraw.c:3297), msDrawMarkerSymbol draws it at the angle (computeSymbolStyle,
+    // maprendering.c:76), and msDrawShadeSymbol hatches a labelpoly at it (maprendering.c:821):
+    // none reads autoangle. So a label's style of `ANGLE AUTO` draws as it does without it.
+    let turned = |auto_angle, angle: Option<f64>| Style {
+        auto_angle,
+        angle: angle.map(Bound::Value),
+        ..labelpoint()
+    };
+    for angle in [None, Some(30.0)] {
+        let with_auto = Label {
+            styles: vec![turned(true, angle), labelcenter(6.0)],
+            ..fen_at_lr_with_marker()
+        };
+        let without = Label {
+            styles: vec![turned(false, angle), labelcenter(6.0)],
+            ..fen_at_lr_with_marker()
+        };
+        let mut auto_center = labelcenter(6.0);
+        auto_center.auto_angle = true;
+        let with_auto_center = Label {
+            styles: vec![turned(false, angle), auto_center],
+            ..fen_at_lr_with_marker()
+        };
+        let (drawn, ops) = draw_fen_with_square(with_auto);
+        let (expected, expected_ops) = draw_fen_with_square(without);
+        assert_eq!(ops, expected_ops, "ANGLE {angle:?}");
+        assert_eq!(drawn.labels, expected.labels, "ANGLE {angle:?}");
+        assert_eq!(draw_fen_with_square(with_auto_center).1, expected_ops);
+    }
+}
+
+/// [`map`] with symbol 1 a hatch.
+fn map_with_hatch(label: Label) -> Map {
+    Map {
+        symbols: vec![Symbol {
+            kind: SymbolKind::Hatch,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            name: Some("hatch".to_owned()),
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }],
+        ..map(label)
+    }
+}
+
+/// A labelpoly of symbol 1 in `GREEN`, its lines `SIZE` 5 apart, `WIDTH` 1, dashed by `pattern`.
+fn hatched_labelpoly(pattern: Vec<f64>) -> Style {
+    Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: Some(Bound::Value(5.0)),
+        width: Some(Bound::Value(1.0)),
+        pattern,
+        ..labelpoly(Bound::Value(GREEN))
+    }
+}
+
+#[test]
+fn a_labelpoly_style_of_a_hatch_hatches_the_box_as_ms_draw_shade_symbol_does() {
+    // "Fen" at CC of the pixel (80, 29): msDrawLabelBounds gives msDrawShadeSymbol the ring of
+    // the labelpoly [64.40625, 22.046875, 95.59375, 35.953125] (see
+    // `a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text`), and its hatch
+    // branch (maprendering.c:803-822) calls msHatchPolygon at a spacing of 5 and a width of 1,
+    // the angle 0, the pattern as written. msHatchPolygon (mapagg.cpp:1133-1153) grows the box by
+    // 0.7072: ox = 63.69905, oy = 21.339675, pw = (int)(31.1875 + 1.4144) + 1 = 33. createHatch's
+    // case of angle 0 (mapagg.cpp:947-956) counts the lines from the image's refpt, the map's
+    // origin at the pixel (0, 59) (msPrepareImage, mapdraw.c:262-265): y0 = 5 - fmod(oy - 59, 5)
+    // = 7.660325, less 5 as oy - 59 < 0, so the lines at 2.660325, 7.660325, and 12.660325 below
+    // oy, below ph = 16: y = 24, 29, and 34, each from ox to ox + 33.
+    let label = Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        styles: vec![hatched_labelpoly(Vec::new())],
+        ..label_item()
+    };
+    assert_hatched(&map_with_hatch(label.clone()), [24.0, 29.0, 34.0]);
+    // A layer of LABELCACHE OFF and OPACITY 50 draws its labels at once into an image of its own
+    // (msDrawLayer), at the same box, as msDrawLabel computes it alike (mapdraw.c:2838-2860);
+    // that image's refpt stays at (0, 0) (agg2CreateImage), so y0 = 5 - fmod(oy, 5) = 3.660325:
+    // y = 25, 30, and 35.
+    let mut own = map_with_hatch(label);
+    own.layers[0].label_cache = false;
+    own.layers[0].opacity = Some(50.0);
+    assert_hatched(&own, [25.0, 30.0, 35.0]);
+}
+
+/// Asserts that `map` draws over [`FEN`], without a diagnostic, the hatch of
+/// [`hatched_labelpoly`] on the labelpoly of "Fen" at CC of (80, 29), its lines at `ys`, and then
+/// the text.
+fn assert_hatched(map: &Map, ys: [f64; 3]) {
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(FEN).unwrap())].into();
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let ops = recorder.0.take();
+    assert_eq!(ops.len(), 2, "{ops:?}");
+    let forager_render::DrawOp::Hatch(hatch) = &ops[0] else {
+        panic!("a hatch first: {:?}", ops[0]);
+    };
+    let p = |x, y| Point { x, y };
+    assert_eq!(
+        hatch.rings,
+        [vec![
+            p(64.40625, 22.046875),
+            p(64.40625, 35.953125),
+            p(95.59375, 35.953125),
+            p(95.59375, 22.046875),
+            p(64.40625, 22.046875),
+        ]]
+    );
+    let (ox, oy) = (64.40625 - 0.7072, 22.046875 - 0.7072);
+    let expected = ys.map(|y| [p(ox, y), p(ox + 33.0, y)]);
+    assert_eq!(hatch.lines.len(), expected.len(), "{:?}", hatch.lines);
+    for (line, want) in hatch.lines.iter().zip(&expected) {
+        for (got, want) in line.iter().zip(want) {
+            assert!(
+                (got.x - want.x).abs() < 1e-9 && (got.y - want.y).abs() < 1e-9,
+                "{line:?} is not {want:?} (oy {oy})"
+            );
+        }
+    }
+    assert_eq!(
+        (
+            hatch.color,
+            hatch.width,
+            hatch.pattern.as_slice(),
+            hatch.gamma
+        ),
+        (GREEN, 1.0, &[][..], Some(0.75))
+    );
+    assert!(matches!(ops[1], forager_render::DrawOp::Glyphs { .. }));
+}
+
+#[test]
+fn a_labelpoly_hatch_past_its_bounds_is_reported_with_its_layer_as_a_polygons_is() {
+    // Verifies: Q-9
+    // The same hatch dashed by 0.00001 and 0.00001: its three lines of 33 pixels walk some
+    // 9.9 million dashes and gaps, past Hatch::MAX_DASHES, so the hatch is refused, and the
+    // layer reports it with `hatch-not-drawn`, as it reports a polygon's; the text is drawn. So
+    // too where the label is drawn at once, of a layer of LABELCACHE OFF.
+    for cache in [true, false] {
+        let label = Label {
+            text: Some(Expr::String("Fen".to_owned())),
+            styles: vec![hatched_labelpoly(vec![0.00001, 0.00001])],
+            ..label_item()
+        };
+        let mut map = map_with_hatch(label);
+        map.layers[0].label_cache = cache;
+        map.layers[0].span = Some(Span::new("m.map", 3, 3));
+        let rendered = render(&map, FEN);
+        let codes: Vec<&str> = rendered
+            .diagnostics
+            .iter()
+            .map(|d| d.code.as_str())
+            .collect();
+        assert_eq!(codes, ["hatch-not-drawn"], "LABELCACHE {cache}");
+        let d = &rendered.diagnostics[0];
+        assert_eq!(d.span, Some(Span::new("m.map", 3, 3)));
+        assert!(
+            d.message
+                .starts_with("layer `places`: 1 hatch fill is not drawn (Q-9)"),
+            "{}",
+            d.message
+        );
+        // The text alone, in BLUE.
+        let image = rendered.image.unwrap();
+        assert_eq!(count(&image, [0, 255, 0, 255]), 0, "LABELCACHE {cache}");
+        assert!(
+            ink(&image, (0, 160), (0, 60)).is_some(),
+            "LABELCACHE {cache}"
+        );
+    }
 }
 
 /// A label's style with `GEOMTRANSFORM labelcenter`: symbol 1, a filled square of side 1, at
@@ -2187,6 +3145,57 @@ fn labelcenter(size: f64) -> Style {
         geom_transform: Some(forager_style_ir::GeomTransform::LabelCenter),
         ..labelpoint()
     }
+}
+
+#[test]
+fn a_label_styles_symbol_by_name_draws_as_the_same_symbol_by_index() {
+    // msGetSymbolIndex resolves a style's SYMBOL "name" to the first symbol of that name,
+    // without regard to case (mapsymbol.c), so a labelpoly of a hatch and a labelpnt or
+    // labelcenter of a vector draw the same by name as by index.
+    let by_name = |style: Style, name: &str| Style {
+        symbol: Some(Bound::Value(SymbolRef::Name(name.to_owned()))),
+        ..style
+    };
+    fn named_square(label: Label) -> Map {
+        let mut map = map_with_square(label);
+        map.symbols[0].name = Some("sq".to_owned());
+        map
+    }
+    let draw = |map: &Map| {
+        let sources: BTreeMap<String, GeoJsonSource> =
+            [("places".to_owned(), GeoJsonSource::parse(FEN).unwrap())].into();
+        let recorder = OpRecorder::default();
+        let rendered = ready(render_with_files(map, &sources, &Files, recorder.clone()));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        recorder.0.take()
+    };
+    let cases = [
+        (named_square as fn(Label) -> Map, labelpoint(), "SQ"),
+        (named_square, labelcenter(8.0), "Sq"),
+        (map_with_hatch, hatched_labelpoly(Vec::new()), "HATCH"),
+    ];
+    let mut drawn = Vec::new();
+    for (with_symbols, style, name) in cases {
+        let by_index = draw(&with_symbols(fen_styled(vec![style.clone()])));
+        let named = draw(&with_symbols(fen_styled(vec![by_name(style, name)])));
+        assert_eq!(by_index.len(), 2, "{name}: {by_index:?}");
+        assert_eq!(named, by_index, "{name}");
+        drawn.push(by_index);
+    }
+    // The labelpnt marker by index, as a_labelpoint_style_draws_its_marker_at_the_point_under_the
+    // _text_moved_off_it pins it: the square of 8 by 8 centred on the pixel (80, 29).
+    assert_eq!(
+        drawn[0][0],
+        forager_render::DrawOp::Fill {
+            rings: vec![square_at(80.0, 29.0)],
+            color: RED,
+            gamma: None,
+        }
+    );
 }
 
 /// The render of `label` over [`FEN`] with symbol 1 a square, with no diagnostic, and every
@@ -2438,12 +3447,50 @@ fn a_layer_of_labelcache_off_draws_every_label_in_the_order_of_its_features() {
         assert_eq!(count(&image, hidden), 0, "the earlier label lies under it");
     }
     // Moved apart by 3 pixels, each shows: the label cache would discard one of them.
-    let rendered = render(
-        &cache_off(),
-        &foragers(&[([80.0, 30.0], "255 0 0"), ([83.0, 30.0], "0 0 255")]),
-    );
+    let apart = foragers(&[([80.0, 30.0], "255 0 0"), ([83.0, 30.0], "0 0 255")]);
+    let rendered = render(&cache_off(), &apart);
     let image = rendered.image.unwrap();
     assert!(count(&image, red) > 0 && count(&image, blue) > 0);
+    // Drawn in the order of the features: "Fen", 29.1875 by 11.90625 pixels, at CC of the pixel
+    // (80, 29) in red, its box from (65.40625, 23.046875), then at CC of (83, 29), 3 pixels
+    // across, in blue (maplabel.c:1049-1051, 1109-1117). The F's outline starts at its box's top,
+    // 1.578125 right of its left edge, as Forager's text stack draws the test font; the font's
+    // own left side bearing, 201 of 2048 units at 16 pixels, is 1.5703125, so the value is
+    // Forager's, not one derived from MapServer, and pins the placement against a move.
+    let mut fen = cache_off();
+    fen.layers[0].classes[0].labels[0].text = Some(Expr::String("Fen".to_owned()));
+    let drawn: Vec<(Option<Rgba>, Vec<PathCommand>)> = recorded(&fen, &apart)
+        .iter()
+        .map(|op| match op {
+            forager_render::DrawOp::Glyphs { path, color, .. } => (*color, path.clone()),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    let starts: Vec<_> = drawn
+        .iter()
+        .map(|(color, path)| (*color, path[0]))
+        .collect();
+    assert_eq!(
+        starts,
+        [
+            (
+                Some(Rgba::opaque(255, 0, 0)),
+                PathCommand::MoveTo(Point {
+                    x: 66.984375,
+                    y: 23.046875
+                })
+            ),
+            (
+                Some(Rgba::opaque(0, 0, 255)),
+                PathCommand::MoveTo(Point {
+                    x: 69.984375,
+                    y: 23.046875
+                })
+            ),
+        ]
+    );
+    assert_eq!(drawn[0].1, expected("Fen", 12.0, Anchor::Cc, (0, 0), 0.0));
+    assert_eq!(drawn[1].1, expected("Fen", 12.0, Anchor::Cc, (3, 0), 0.0));
 }
 
 #[test]
@@ -2563,7 +3610,8 @@ fn a_label_of_labelcache_off_stands_by_its_position_and_offset_alone() {
     // msDrawLabel calls get_metrics with the label's OFFSET and no marker's: a class style's
     // marker of 30 pixels, which would move a cached label 15 pixels off, does not move it.
     // POSITION AUTO is a case get_metrics' switch does not name, x1 = y1 = 0, its offset unread.
-    // The label's labelpoly, filled, shows where get_metrics puts the text's box.
+    // The label's labelpoly, filled, shows where get_metrics puts the text's box: "Fen" at 12
+    // points, 29.1875 by 11.90625 pixels.
     let mut boxes = Vec::new();
     for (position, offset) in [
         (Position::Auto, [10.0, 10.0]),
@@ -2572,6 +3620,7 @@ fn a_label_of_labelcache_off_stands_by_its_position_and_offset_alone() {
     ] {
         let mut map = cache_off();
         let label = &mut map.layers[0].classes[0].labels[0];
+        label.text = Some(Expr::String("Fen".to_owned()));
         label.position = Some(Bound::Value(position));
         label.offset = Some([Bound::Value(offset[0]), Bound::Value(offset[1])]);
         label.styles = vec![labelpoly(Bound::Value(GREEN))];
@@ -2590,11 +3639,13 @@ fn a_label_of_labelcache_off_stands_by_its_position_and_offset_alone() {
     }
     // The point (40, 30) is pixel (40, 29): the extent's 159 units over 160 pixels give a cell of
     // one (msTransformPoint). At UR, x1 = ox and y1 = -oy (get_metrics), so the text's box has
-    // its lower left corner at (40 + ox, 29); the labelpoly is that box grown by 1, its left edge
-    // at x = 39 + ox and its bottom at y = 30, the pixels of columns from 39 + ox and of rows up
-    // to 29. Its top and right follow the font's metrics, which the relations hold.
-    assert_eq!([boxes[1][0], boxes[1][3]], [39, 29]);
-    assert_eq!([boxes[2][0], boxes[2][3]], [49, 29]);
+    // its lower left corner at (40 + ox, 29) (maplabel.c:1038-1040, 1109-1117); the labelpoly is
+    // that box grown by 1, [39 + ox, 16.09375, 70.1875 + ox, 30]. agg2RenderPolygon fills it
+    // through gamma_linear(0, 0.75), which turns a cover of 0.75 or more full (mapagg.cpp:275-283,
+    // 862): the row 16, covered 0.90625, is wholly green, the column 70 + ox, covered 0.1875, is
+    // not. The green box runs over the columns from 39 + ox to 69 + ox and the rows from 16 to 29.
+    assert_eq!(boxes[1], [39, 16, 69, 29]);
+    assert_eq!(boxes[2], [49, 16, 79, 29]);
     assert_eq!(boxes[0], boxes[1], "AUTO stands as UR at offset 0");
     assert_eq!(
         boxes[2],
@@ -2609,6 +3660,7 @@ fn a_label_of_labelcache_off_draws_its_styles_before_its_text() {
     // box grown by 1 pixel, and a labelcenter style's marker at that box's centre, in their
     // order, then the text.
     let mut map = map_with_square(Label {
+        text: Some(Expr::String("Fen".to_owned())),
         styles: vec![
             labelpoly(Bound::Value(GREEN)),
             labelpoint(),
@@ -2633,7 +3685,7 @@ fn a_label_of_labelcache_off_draws_its_styles_before_its_text() {
     // [`a_label_of_labelcache_off_stands_by_its_position_and_offset_alone`]: its left edge at
     // x = 39, its bottom at y = 30.
     let poly = boxed(&image, PURE_GREEN).expect("a labelpoly");
-    assert_eq!([poly[0], poly[3]], [39, 29]);
+    assert_eq!(poly, [39, 16, 69, 29]);
     // The square of 8 pixels centred on the point, from 36 to 44 and from 25 to 33, unmoved and
     // drawn over the labelpoly.
     assert_eq!(boxed(&image, [220, 20, 20, 255]), Some([36, 25, 43, 32]));
@@ -2642,6 +3694,57 @@ fn a_label_of_labelcache_off_draws_its_styles_before_its_text() {
     let centre = |a: u32, b: u32| f64::from(a + b + 1) / 2.0;
     assert!((centre(x0, x1) - centre(poly[0], poly[2])).abs() <= 1.0);
     assert!((centre(y0, y1) - centre(poly[1], poly[3])).abs() <= 1.0);
+    // As drawn: the labelpoly [39, 16.09375, 70.1875, 30] from its lower left corner
+    // (mapdraw.c:4093-4127), the square of 8 at the point, the square of 4 at the labelpoly's
+    // centre (54.59375, 23.046875), half its side 2 on each side, then the text.
+    let sources: BTreeMap<String, GeoJsonSource> = [(
+        "places".to_owned(),
+        GeoJsonSource::parse(&foragers(&[([40.0, 30.0], "")])).unwrap(),
+    )]
+    .into();
+    let recorder = OpRecorder::default();
+    ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+    let ops = recorder.0.take();
+    let p = |x, y| Point { x, y };
+    let fill = |ring: Vec<Point>, color: Rgba, gamma: Option<f64>| forager_render::DrawOp::Fill {
+        rings: vec![ring],
+        color,
+        gamma,
+    };
+    assert_eq!(ops.len(), 4, "{ops:?}");
+    assert_eq!(
+        ops[..3],
+        [
+            fill(
+                vec![
+                    p(39.0, 16.09375),
+                    p(39.0, 30.0),
+                    p(70.1875, 30.0),
+                    p(70.1875, 16.09375),
+                    p(39.0, 16.09375),
+                ],
+                GREEN,
+                Some(0.75)
+            ),
+            fill(square_at(40.0, 29.0), RED, None),
+            fill(
+                vec![
+                    p(52.59375, 21.046875),
+                    p(56.59375, 21.046875),
+                    p(56.59375, 25.046875),
+                    p(52.59375, 25.046875),
+                    p(52.59375, 21.046875),
+                ],
+                BLUE,
+                None
+            ),
+        ]
+    );
+    // The text at UR of (40, 29), [`expected`]'s point 40 pixels to the left.
+    assert_eq!(
+        glyph_path(&ops[3]),
+        expected("Fen", 12.0, Anchor::Ur, (-40, 0), 0.0)
+    );
 }
 
 #[test]
@@ -2672,7 +3775,8 @@ fn a_label_of_labelcache_off_draws_its_styles_bound_to_each_feature() {
 #[test]
 fn a_label_of_labelcache_off_without_text_draws_its_labelpnt_styles() {
     // msDrawLabel draws a labelpnt style at the point whatever the text (mapdraw.c:2714-2748),
-    // an empty one or one of line breaks; the cache draws neither.
+    // an empty one or one of line breaks; the cache draws the empty one's alike, and refuses the
+    // other (a_cached_label_of_line_breaks_only_with_a_labelpnt_style_is_refused).
     for text in ["", "\n"] {
         let label = || Label {
             text: Some(Expr::String(text.to_owned())),
@@ -2691,8 +3795,31 @@ fn a_label_of_labelcache_off_without_text_draws_its_labelpnt_styles() {
         assert_eq!(boxed(&image, [220, 20, 20, 255]), Some([36, 25, 43, 32]));
         assert_eq!(ink(&image, (0, 160), (0, 60)), Some([36, 25, 43, 32]));
         let cached = render(&map_with_square(label()), &foragers(&[([40.0, 30.0], "")]));
-        assert_eq!(ink(&cached.image.unwrap(), (0, 160), (0, 60)), None);
+        let square = text.is_empty().then_some([36, 25, 43, 32]);
+        assert_eq!(ink(&cached.image.unwrap(), (0, 160), (0, 60)), square);
     }
+}
+
+#[test]
+fn a_label_of_labelcache_off_with_no_text_set_draws_its_labelpnt_styles() {
+    // Without TEXT or LABELITEM, msShapeGetLabelAnnotation gives NULL (maputil.c:965-982), which
+    // pointLayerDrawShape passes to msDrawLabel (mapdraw.c:2087-2105), and msDrawLabel draws a
+    // labelpnt style at the point without a text (2714-2748).
+    let mut map = map_with_square(Label {
+        text: None,
+        ..fen_styled(vec![labelpoint()])
+    });
+    map.layers[0].label_cache = false;
+    let rendered = render(&map, &foragers(&[([40.0, 30.0], "")]));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    // The square of 8 pixels centred on pixel (40, 29), and nothing else.
+    assert_eq!(boxed(&image, [220, 20, 20, 255]), Some([36, 25, 43, 32]));
+    assert_eq!(ink(&image, (0, 160), (0, 60)), Some([36, 25, 43, 32]));
 }
 
 #[test]
@@ -2857,4 +3984,193 @@ fn a_layer_of_labelcache_off_with_an_opacity_draws_each_label_into_its_image_aft
             (Some(2), false),
         ]
     );
+}
+
+/// The map of a label "Fen" at LC over the pixmap `image` of SIZE `size` and ANGLE `angle`,
+/// symbol 1, which its class draws first.
+fn over_pixmap(image: &str, size: Option<f64>, angle: Option<f64>) -> Map {
+    let mut map = map(Label {
+        position: Some(Bound::Value(Position::Lc)),
+        ..label_item()
+    });
+    map.symbols = vec![Symbol {
+        name: Some("pin".to_owned()),
+        kind: SymbolKind::Pixmap,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: Some(image.to_owned()),
+        transparent: None,
+        span: None,
+    }];
+    map.layers[0].classes[0].styles = vec![Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: size.map(Bound::Value),
+        angle: angle.map(Bound::Value),
+        ..Style::default()
+    }];
+    map
+}
+
+/// The boxes the label cache drew `map`'s labels of `points` in, from the last added to the
+/// first, `None` for one it discarded.
+fn drawn_boxes(map: &Map, points: &[(&str, f64, f64, &str)]) -> Vec<Option<[f64; 4]>> {
+    let sources: BTreeMap<String, GeoJsonSource> = [(
+        "places".to_owned(),
+        GeoJsonSource::parse(&collection(points)).unwrap(),
+    )]
+    .into();
+    let rendered = ready(render_with_files(map, &sources, &Files, AggRenderer::new()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    rendered.labels.iter().map(|l| l.drawn).collect()
+}
+
+#[test]
+fn a_label_moves_away_from_a_pixmap_marker_of_the_size_of_its_image() {
+    // Verifies: G-10
+    // msAddLabelGroup (src/maplabel.c:343-376) holds the box of msGetMarkerSize
+    // (src/mapsymbol.c:720-799) of the class's first style about the point, here the pixel
+    // (80, 14). The 32 × 32 pin without a SIZE: msSymbolGetDefaultSize gives its height, 32, so
+    // `size` is 32 and the marker 32 / 32 × 32 = 32 wide and 32 high (776-781); its box
+    // [80 - 16, 14 - 16, 64 + 31, -2 + 31] = [64, -2, 95, 29]. At SIZE 55 ANGLE 45, the angle
+    // not read there, it is 55 / 32 × 32 = 55 by 55: [52.5, -13.5, 106.5, 40.5].
+    // msDrawLabelCache moves the label at LC down by half its box's span, 31 / 2 = 15.5 and
+    // 54 / 2 = 27, cut to 15 and 27 by get_metrics' int, and MARKER_SLOP's 2: its text, 11.90625
+    // high, from 14 + 15 + 2 = 31 and from 14 + 27 + 2 = 43. A circle of the same size gives the
+    // same box, and the label the same place.
+    let point = [("Fen", 80.0, 45.0, "")];
+    let circle = |size: f64| {
+        let mut map = over_pixmap("pin.png", Some(size), None);
+        map.symbols[0] = Symbol {
+            name: Some("circle".to_owned()),
+            kind: SymbolKind::Ellipse,
+            paths: vec![vec![[1.0, 1.0]]],
+            extent: Some([1.0, 1.0]),
+            filled: true,
+            image: None,
+            ..map.symbols[0].clone()
+        };
+        map
+    };
+    let unscaled = over_pixmap("pin.png", None, None);
+    let turned = over_pixmap("pin.png", Some(55.0), Some(45.0));
+    for (map, marker, same) in [
+        (&unscaled, [64.0_f64, -2.0, 95.0, 29.0], circle(32.0)),
+        (&turned, [52.5, -13.5, 106.5, 40.5], circle(55.0)),
+    ] {
+        let top = 14.0 + ((marker[3] - marker[1]) / 2.0).trunc() + 2.0;
+        let boxes = drawn_boxes(map, &point);
+        let label = Some([65.40625, top, 94.59375, top + 11.90625]);
+        assert_eq!(boxes, [label]);
+        assert_eq!(boxes, drawn_boxes(&same, &point));
+        // A second feature at the pixel row 40, added last, its marker as wide as the first's
+        // and as far right of the first label's far edge as its own centre is: its near edge
+        // just past that edge, 95, keeps the label; one pixel left, 94, meets it.
+        let half = (marker[2] - marker[0] + 1.0) / 2.0;
+        for (near, kept) in [(95.0, label), (94.0, None)] {
+            let two = [("Fen", 80.0, 45.0, ""), ("Fen", near + half, 19.0, "")];
+            assert_eq!(drawn_boxes(map, &two)[1], kept, "near edge {near}");
+        }
+    }
+    // A marker outside its scale range is not drawn, but msAddLabelGroup sizes it all the same
+    // (src/maplabel.c:344-352): the label stands where the unscaled pin puts it.
+    let mut unseen = over_pixmap("pin.png", None, None);
+    unseen.layers[0].classes[0].styles[0].max_scale_denom = Some(1.0);
+    assert_eq!(drawn_boxes(&unseen, &point), drawn_boxes(&unscaled, &point));
+}
+
+#[test]
+fn each_label_moves_away_from_its_own_feature_s_pixmap_marker() {
+    // Verifies: G-10
+    // A first style whose SIZE each feature binds sizes each feature's marker by its own value
+    // (src/maplabel.c:350): at the pixel row 14, a pin of 55 moves its label at LC down to 43, one
+    // of 32 to 31, whichever feature comes last.
+    let mut map = over_pixmap("pin.png", None, None);
+    map.layers[0].classes[0].styles[0].size = Some(binding("s"));
+    let features = |sizes: [&str; 2]| {
+        let [a, b] = sizes;
+        format!(
+            r#"{{"type": "FeatureCollection", "features": [
+                {{"type": "Feature", "properties": {{"name": "Fen", "s": "{a}"}},
+                  "geometry": {{"type": "Point", "coordinates": [40, 45]}}}},
+                {{"type": "Feature", "properties": {{"name": "Fen", "s": "{b}"}},
+                  "geometry": {{"type": "Point", "coordinates": [120, 45]}}}}]}}"#
+        )
+    };
+    for (sizes, tops) in [(["55", "32"], [31.0, 43.0]), (["32", "55"], [43.0, 31.0])] {
+        let sources: BTreeMap<String, GeoJsonSource> = [(
+            "places".to_owned(),
+            GeoJsonSource::parse(&features(sizes)).unwrap(),
+        )]
+        .into();
+        let rendered = ready(render_with_files(
+            &map,
+            &sources,
+            &Files,
+            AggRenderer::new(),
+        ));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        let found: Vec<_> = rendered
+            .labels
+            .iter()
+            .map(|l| l.drawn.map(|b| b[1]))
+            .collect();
+        assert_eq!(found, tops.map(Some), "sizes {sizes:?}");
+    }
+}
+
+#[test]
+fn the_label_over_a_pixmap_that_does_not_load_is_left_out_and_the_map_drawn() {
+    // Verifies: G-8
+    // msGetMarkerSize fails where msPreloadImageSymbol does (src/mapsymbol.c:736-738), and so
+    // msAddLabelGroup (src/maplabel.c:350-352) and the map; Forager leaves the label out, with
+    // a warning that names the symbol and its image, and draws the rest of the map.
+    let mut map = over_pixmap("missing.png", None, None);
+    map.layers.push(Layer {
+        name: Some("marks".into()),
+        classes: vec![Class {
+            styles: vec![Style {
+                size: Some(Bound::Value(9.0)),
+                color: Some(Bound::Value(BLUE)),
+                ..Style::default()
+            }],
+            ..Class::default()
+        }],
+        ..map.layers[0].clone()
+    });
+    let fen = collection(&[("Fen", 80.0, 30.0, "")]);
+    let sources: BTreeMap<String, GeoJsonSource> = ["places", "marks"]
+        .map(|name| (name.to_owned(), GeoJsonSource::parse(&fen).unwrap()))
+        .into();
+    let rendered = ready(render_with_files(
+        &map,
+        &sources,
+        &Files,
+        AggRenderer::new(),
+    ));
+    assert!(rendered.labels.is_empty(), "{:?}", rendered.labels);
+    let label = rendered
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "label-not-drawn")
+        .unwrap_or_else(|| panic!("{:?}", rendered.diagnostics));
+    assert!(
+        label.message.contains("symbol `pin`") && label.message.contains("missing.png"),
+        "{}",
+        label.message
+    );
+    let image = rendered.image.unwrap();
+    // The square of 9 at the pixel (80, 29).
+    assert_eq!(ink(&image, (0, 160), (0, 60)), Some([75, 24, 84, 33]));
 }

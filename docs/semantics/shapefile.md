@@ -32,8 +32,16 @@ separator, a leading `.` included, and ask the resource loader for `<name>.shp`,
 `<name>.dbf`, each as `<name>.SHP`, `<name>.SHX`, `<name>.DBF` where the lower-case name cannot be
 loaded, the `.dbf` in `msDBFOpen`; `data/roads.v2` asks for `data/roads.shp`. Only the extension
 changes case, never the name: `DATA "poly"` does not find `POLY.SHP`. A file that cannot be
-loaded under either name is an error
-(`a_missing_file_is_an_error_and_upper_case_names_are_tried`). Neither `.qix`, `.sbn`,
+loaded under either name is an error, naming the lower-case file and why it was not loaded
+(`a_missing_file_is_an_error_and_upper_case_names_are_tried`). MapServer tries the upper-case
+name only where the lower-case file cannot be opened (`msSHPOpen`, `src/mapshape.c` l.420–436;
+`msDBFOpen`, `src/mapxbase.c` l.321–326). Here it is tried wherever the lower-case file does not
+load, also where it exists and the loader refuses it, as past the data-file limit of Q-9: a
+refused `poly.shp` beside a valid `poly.SHP` reads `poly.SHP`, where MapServer, which has no such
+limit, reads `poly.shp`. The resource loader's error does not tell a missing file from a refused
+one, and giving it that kind would change a port's types for a pair of files that differ only in
+the case of their extension; each file read stays within its limit
+(`an_upper_case_name_is_tried_where_the_lower_case_file_is_refused`). Neither `.qix`, `.sbn`,
 `.cpg`, nor `.prj` is asked for.
 
 **Headers** (`msSHPOpenVirtualFile`, `msDBFOpenVirtualFile`). An error opens no layer:

@@ -34,8 +34,7 @@
 #
 # The threshold and the tolerance of the category geometry and symbols are those of G-6 (GEOMETRY
 # in msautotest.rs), above the noise MapServer shows against its own references on CI. Those of
-# the category text (TEXT in msautotest.rs) are provisional, until the noise measurement over the
-# text cases sets them.
+# the category text are those of G-13 (TEXT in msautotest.rs), above the same noise.
 
 misc/attrbind.map attrbind_test001.png text passes labels-hold
 misc/attrbind.map attrbind_test002.png out: a data source other than shapefiles, OGR
@@ -144,9 +143,9 @@ misc/scaletoken.map scaletoken_filteritem_192k.png out: SCALETOKEN, a runtime su
 misc/scaletoken.map scaletoken_filteritem_424k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_192k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_424k.png out: SCALETOKEN, a runtime substitution by scale
-misc/style_opacity.map style_opacity_test001.png geometry fails  # the outlines of the base layer differ along the county borders, cause not yet found
-misc/style_opacity.map style_opacity_test002.png geometry fails  # the outlines of the base layer differ along the county borders, cause not yet found
-misc/style_opacity.map style_opacity_test003.png geometry fails  # the outlines of the base layer differ along the county borders, cause not yet found
+misc/style_opacity.map style_opacity_test001.png geometry passes
+misc/style_opacity.map style_opacity_test002.png geometry passes
+misc/style_opacity.map style_opacity_test003.png geometry passes
 misc/testuppercase.map testuppercase.png blank geometry passes
 misc/tiles_scales_z2.map tile_scale_z2.png blank out: an OGC or CGI request
 misc/tiles_scales_z3.map tile_scale_z3.png out: an OGC or CGI request
@@ -352,7 +351,7 @@ renderers/line_label_follow_retry.map line_label_follow_retry.png out: labels on
 renderers/line_label_follow_retry.map line_label_follow_retry.pdf out: another output format, pdf
 renderers/line_label_follow_retry.map line_label_follow_retry.svg out: another output format, svg
 renderers/line_label_follow_retry.map line_label_follow_retry.cairo.png out: another output format, cairopng
-renderers/line_marker_pixmap.map line_marker_pixmap.png geometry fails  # not built yet: pixmap symbols
+renderers/line_marker_pixmap.map line_marker_pixmap.png geometry passes
 renderers/line_marker_pixmap.map line_marker_pixmap.pdf out: another output format, pdf
 renderers/line_marker_pixmap.map line_marker_pixmap.svg out: another output format, svg
 renderers/line_marker_pixmap.map line_marker_pixmap.cairo.png out: another output format, cairopng
@@ -368,7 +367,7 @@ renderers/line_marker_vector.map line_marker_vector.png geometry passes
 renderers/line_marker_vector.map line_marker_vector.pdf out: another output format, pdf
 renderers/line_marker_vector.map line_marker_vector.svg out: another output format, svg
 renderers/line_marker_vector.map line_marker_vector.cairo.png out: another output format, cairopng
-renderers/line_offset.map line_offset.png geometry fails  # not built yet: the offset curve as GEOS draws it of a line that crosses itself
+renderers/line_offset.map line_offset.png geometry passes
 renderers/line_offset.map line_offset.pdf out: another output format, pdf
 renderers/line_offset.map line_offset.svg out: another output format, svg
 renderers/line_offset.map line_offset.cairo.png out: another output format, cairopng
@@ -398,11 +397,11 @@ renderers/line_simple.map line_simple.cairo.png out: another output format, cair
 renderers/line_simple.map line_simple.cairo.jpg out: another output format, jpg
 renderers/lots_of_text.map lots_of_text.png text passes labels-hold
 renderers/lots_of_text.map lots_of_text.cairo.png out: another output format, cairopng
-renderers/marker_anchorpoint.map marker_anchorpoint.png geometry fails  # not built yet: pixmap symbols
+renderers/marker_anchorpoint.map marker_anchorpoint.png geometry fails  # not built yet: TrueType symbols
 renderers/marker_anchorpoint.map marker_anchorpoint.pdf out: another output format, pdf
 renderers/marker_anchorpoint.map marker_anchorpoint.svg out: another output format, svg
 renderers/marker_anchorpoint.map marker_anchorpoint.cairo.png out: another output format, cairopng
-renderers/marker_pixmap.map marker_pixmap.png text passes
+renderers/marker_pixmap.map marker_pixmap.png text passes labels-hold
 renderers/marker_pixmap.map marker_pixmap.pdf out: another output format, pdf
 renderers/marker_pixmap.map marker_pixmap.svg out: another output format, svg
 renderers/marker_pixmap.map marker_pixmap.cairo.png out: another output format, cairopng
@@ -443,7 +442,7 @@ renderers/point_ellipse.map gd_fallback.png out: another output format, gdpng
 renderers/point_ellipse.map gd_fallback_gif.png out: another output format, gif
 renderers/point_ellipse.map gd_fallback_pc256.png out: another output format, gdpc256
 renderers/point_ellipse.map gd_fallback_jpeg.png out: another output format, gdjpg
-renderers/point_pixmap.map point_pixmap.png geometry fails  # not built yet: pixmap symbols
+renderers/point_pixmap.map point_pixmap.png geometry fails  # a symbol fetched by URL
 renderers/point_pixmap.map point_pixmap.pdf out: another output format, pdf
 renderers/point_pixmap.map point_pixmap.svg out: another output format, svg
 renderers/point_pixmap.map point_pixmap.json out: another output format, json
@@ -494,7 +493,7 @@ renderers/polygon-hatch.map polygon-hatch.pdf out: another output format, pdf
 renderers/polygon-hatch.map polygon-hatch.svg out: another output format, svg
 renderers/polygon-hatch.map polygon-hatch.cairo.png out: another output format, cairopng
 renderers/polygon-hex-alpha.map polygon-hex-alpha.png geometry passes
-renderers/polygon-pixmap.map polygon-pixmap.png geometry fails  # not built yet: pixmap symbols
+renderers/polygon-pixmap.map polygon-pixmap.png geometry passes
 renderers/polygon-pixmap.map polygon-pixmap.pdf out: another output format, pdf
 renderers/polygon-pixmap.map polygon-pixmap.svg out: another output format, svg
 renderers/polygon-pixmap.map polygon-pixmap.cairo.png out: another output format, cairopng

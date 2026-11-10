@@ -1,7 +1,9 @@
 // The fitting of the extent to the image follows MapServer's msAdjustExtent(), src/maputil.c of
 // the release pinned in scripts/fetch-msautotest.sh, and its MS_CELLSIZE and MS_MAP2IMAGE
-// macros, src/mapserver.h; the pixel of a mark follows msTransformPoint, src/maputil.c, and
-// whether it is drawn msPointInRect, src/mapsearch.c.
+// macros, src/mapserver.h; the pixel of a mark follows msTransformPoint, src/maputil.c, the
+// pixels of a line or a polygon msTransformShapeSimplify, src/mapprimitive.cpp, the transform mode
+// msImageStartLayer, src/mapdraw.c, keeps for a layer without APPROXIMATION_SCALE from the AGG
+// renderer's default, src/mapagg.cpp, and whether a mark is drawn msPointInRect, src/mapsearch.c.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -66,6 +68,49 @@ impl View {
         }
     }
 
+    /// A line in pixels as msTransformShapeSimplify in `src/mapprimitive.cpp` gives it, each
+    /// vertex by the inverse of the cellsize: its first vertex, each further one but the last more
+    /// than a pixel from the one kept before it, and its last unless that equals the one kept
+    /// before; nothing for a line left with fewer than two vertices.
+    pub(crate) fn line_to_pixels(&self, line: &[Coord]) -> Vec<Point> {
+        if line.len() < 2 {
+            return Vec::new();
+        }
+        let mut kept = vec![self.point_to_pixel(line[0])];
+        for &c in &line[1..line.len() - 1] {
+            let p = self.point_to_pixel(c);
+            if far(kept[kept.len() - 1], p) {
+                kept.push(p);
+            }
+        }
+        let last = self.point_to_pixel(line[line.len() - 1]);
+        if last != kept[kept.len() - 1] {
+            kept.push(last);
+        }
+        if kept.len() < 2 { Vec::new() } else { kept }
+    }
+
+    /// A polygon's ring in pixels as msTransformShapeSimplify in `src/mapprimitive.cpp` gives
+    /// it, each vertex by the inverse of the cellsize: its first two vertices, each further one
+    /// but the last two more than a pixel from the one kept before it, and its last two, the
+    /// closing one among them; nothing for a ring of fewer than four vertices.
+    pub(crate) fn ring_to_pixels(&self, ring: &[Coord]) -> Vec<Point> {
+        if ring.len() < 4 {
+            return Vec::new();
+        }
+        let mut kept = vec![self.point_to_pixel(ring[0]), self.point_to_pixel(ring[1])];
+        let before_last = ring.len() - 2;
+        for &c in &ring[2..before_last] {
+            let p = self.point_to_pixel(c);
+            if far(kept[kept.len() - 1], p) {
+                kept.push(p);
+            }
+        }
+        kept.push(self.point_to_pixel(ring[before_last]));
+        kept.push(self.point_to_pixel(ring[before_last + 1]));
+        kept
+    }
+
     /// Whether `c` lies in the extent, its edges included, as msPointInRect in
     /// `src/mapsearch.c` decides it.
     pub fn contains(&self, c: Coord) -> bool {
@@ -74,22 +119,12 @@ impl View {
             || c.y < self.extent.min_y
             || c.y > self.extent.max_y)
     }
+}
 
-    /// The width and height of the image in pixels, as [`View::for_image`] fitted them.
-    pub fn image_size(&self) -> (f64, f64) {
-        let side = |span: f64| (span / self.cellsize).round() + 1.0;
-        (
-            side(self.extent.max_x - self.extent.min_x),
-            side(self.extent.max_y - self.extent.min_y),
-        )
-    }
-
-    pub fn to_pixel(&self, c: Coord) -> Point {
-        Point {
-            x: (c.x - self.extent.min_x) / self.cellsize,
-            y: (self.extent.max_y - c.y) / self.cellsize,
-        }
-    }
+/// Whether msTransformShapeSimplify keeps `p` after `kept`: when it lies more than a pixel away.
+fn far(kept: Point, p: Point) -> bool {
+    let (dx, dy) = (p.x - kept.x, p.y - kept.y);
+    dx * dx + dy * dy > 1.0
 }
 
 #[cfg(test)]
@@ -111,11 +146,11 @@ mod tests {
         assert_eq!(view.cellsize, 1.0);
         assert_eq!(view.extent, extent(-50.0, 0.0, 150.0, 100.0));
         assert_eq!(
-            view.to_pixel(Coord { x: -50.0, y: 100.0 }),
+            view.point_to_pixel(Coord { x: -50.0, y: 100.0 }),
             Point { x: 0.0, y: 0.0 }
         );
         assert_eq!(
-            view.to_pixel(Coord { x: 150.0, y: 0.0 }),
+            view.point_to_pixel(Coord { x: 150.0, y: 0.0 }),
             Point { x: 200.0, y: 100.0 }
         );
     }
@@ -128,7 +163,6 @@ mod tests {
         assert_eq!(view.cellsize, 0.1);
         let c = Coord { x: 0.3, y: 9.7 };
         assert_eq!(view.point_to_pixel(c).x, 3.0);
-        assert_eq!(view.to_pixel(c).x, 0.3 / 0.1);
     }
 
     #[test]

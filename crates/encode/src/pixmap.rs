@@ -100,12 +100,17 @@ pub fn pixmap_size(bytes: &[u8]) -> Result<(u32, u32), PixmapError> {
 /// which MapServer links in the noise build: `png_set_strip_16` keeps a sample's high byte
 /// (`png_do_chop`, `pngrtran.c`, 2491–2516), not the rounded value of `png_set_scale_16`; and
 /// `png_read_image`, where `png_set_interlace_handling` was not called, warns and turns it on
-/// itself (`pngread.c`, 722–741), so that an interlaced image comes out whole.
+/// itself (`pngread.c`, 722–741), so that an interlaced image comes out whole. A third is
+/// libpng's too: a palette of more entries than the bit depth can index is cut to those it can
+/// (`png_handle_PLTE`, `pngrutil.c`, 979–986), and a `tRNS` longer than the palette so cut is
+/// ignored (`png_handle_tRNS`, 1882–1888), its pixels opaque.
 ///
-/// Two malformed files decode otherwise than libpng decodes them: a grey or RGB `tRNS` chunk of
-/// the wrong length, which libpng ignores (`png_handle_tRNS`, `pngrutil.c`, 1843, 1859) and the
-/// `png` crate uses; and a grey key past the range of an image below 8 bits, which libpng masks
-/// to the depth (`png_do_expand`, `pngrtran.c`, 4449 and on) and the `png` crate does not.
+/// Three malformed files decode otherwise than libpng decodes them: a grey or RGB `tRNS` chunk
+/// of the wrong length, which libpng ignores (`png_handle_tRNS`, `pngrutil.c`, 1843, 1859) and
+/// the `png` crate uses; a grey key past the range of an image below 8 bits, which libpng masks
+/// to the depth (`png_do_expand`, `pngrtran.c`, 4449 and on) and the `png` crate does not; and a
+/// grey or RGB image with a `PLTE` of none or of more than 256 entries, whose palette libpng
+/// ignores with a benign error (`pngrutil.c`, 959–970) and the `png` crate refuses.
 pub fn decode_pixmap(bytes: &[u8]) -> Result<PremultipliedImage, PixmapError> {
     let (width, height) = pixmap_size(bytes)?;
     let broken = |e: png::DecodingError| PixmapError::Broken(e.to_string());
@@ -133,6 +138,28 @@ pub fn decode_pixmap(bytes: &[u8]) -> Result<PremultipliedImage, PixmapError> {
     decoder.set_ignore_iccp_chunk(true);
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = decoder.read_info().map_err(broken)?;
+    // libpng fails a palette image whose palette is not of whole entries (`png_handle_PLTE`,
+    // `pngrutil.c`, 959–970); the `png` crate reads it and panics expanding it. A palette of
+    // none or of more than 256 entries the `png` crate refuses itself, as libpng does.
+    let info = reader.info();
+    let mut opaque = false;
+    if info.color_type == png::ColorType::Indexed {
+        let length = info.palette.as_ref().map_or(0, |palette| palette.len());
+        if length % 3 != 0 {
+            return Err(PixmapError::Broken(format!(
+                "its palette of {length} bytes is not of whole entries of 3 bytes"
+            )));
+        }
+        // libpng cuts a palette to the entries the bit depth can index (`png_handle_PLTE`,
+        // 979–986) and ignores a `tRNS` longer than that (`png_handle_tRNS`, 1882–1888); the
+        // `png` crate ignores it only when longer than the palette uncut. Its colours are the
+        // palette's either way, so the alphas the crate applied are undone to opaque.
+        let entries = (length / 3).min(1 << info.bit_depth as u8);
+        opaque = info
+            .trns
+            .as_ref()
+            .is_some_and(|alphas| alphas.len() > entries);
+    }
     let channels = match reader.output_color_type() {
         (png::ColorType::Grayscale, png::BitDepth::Eight) => 1,
         (png::ColorType::GrayscaleAlpha, png::BitDepth::Eight) => 2,
@@ -161,6 +188,7 @@ pub fn decode_pixmap(bytes: &[u8]) -> Result<PremultipliedImage, PixmapError> {
             1 => [pixels[at], pixels[at], pixels[at], 255],
             2 => [pixels[at], pixels[at], pixels[at], pixels[at + 1]],
             3 => [pixels[at], pixels[at + 1], pixels[at + 2], 255],
+            _ if opaque => [pixels[at], pixels[at + 1], pixels[at + 2], 255],
             _ => [pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]],
         };
         pixels[i * 4..i * 4 + 4].copy_from_slice(&premultiplied(rgba));
@@ -335,6 +363,67 @@ mod tests {
         assert_eq!(decoded(&png), (3, 1, expected));
     }
 
+    /// A 2 × 1 palette image of bit depth `depth` whose pixels are entries 0 and 1, with a
+    /// palette of `entries` entries and the alphas `alphas` in its `tRNS`.
+    fn palette_with_trns(depth: u8, entries: usize, alphas: &[u8]) -> Vec<u8> {
+        let palette: Vec<u8> = (0..entries)
+            .flat_map(|i| [10 * i as u8 + 10, 20, 30])
+            .collect();
+        // Entries 0 and 1 packed from the high bits, as PNG packs a depth below 8.
+        let row = if depth == 8 {
+            vec![0, 1]
+        } else {
+            vec![1 << (8 - 2 * depth)]
+        };
+        let extra: [(&[u8; 4], &[u8]); 2] = [(b"PLTE", &palette), (b"tRNS", alphas)];
+        file((2, 1), PALETTE, depth, false, &extra, &[&row])
+    }
+
+    #[test]
+    fn a_trns_longer_than_the_palette_cut_to_the_bit_depth_is_ignored_as_libpng_ignores_it() {
+        // Verifies: ADR-0040
+        // libpng 1.6.43 cuts a palette to `1 << bit_depth` entries (`png_handle_PLTE`,
+        // `pngrutil.c`, 979–986), then ignores a `tRNS` longer than the palette with a benign
+        // error (`png_handle_tRNS`, 1882–1888), which `png_create_read_struct_2` makes a warning
+        // (`pngread.c`, 60–61): the pixels come out opaque.
+        let png = palette_with_trns(1, 4, &[0, 0, 0]);
+        assert_eq!(
+            decoded(&png),
+            (2, 1, vec![10, 20, 30, 255, 20, 20, 30, 255])
+        );
+        let png = palette_with_trns(2, 5, &[0, 0, 0, 0, 0]);
+        assert_eq!(
+            decoded(&png),
+            (2, 1, vec![10, 20, 30, 255, 20, 20, 30, 255])
+        );
+    }
+
+    #[test]
+    fn a_trns_within_the_palette_cut_to_the_bit_depth_is_applied() {
+        // Verifies: ADR-0040
+        let expected = vec![0, 0, 0, 0, 10, 10, 15, 128];
+        // A palette within the bit depth and a `tRNS` no longer than it, as before.
+        assert_eq!(
+            decoded(&palette_with_trns(1, 2, &[0, 128])),
+            (2, 1, expected.clone())
+        );
+        assert_eq!(
+            decoded(&palette_with_trns(8, 4, &[0, 128, 7])),
+            (2, 1, expected.clone())
+        );
+        // A palette past the bit depth, but a `tRNS` no longer than libpng's cut palette.
+        assert_eq!(
+            decoded(&palette_with_trns(1, 4, &[0, 128])),
+            (2, 1, expected)
+        );
+        // A `tRNS` longer than the palette the `png` crate ignores itself, as libpng does.
+        let png = palette_with_trns(8, 2, &[0, 0, 0]);
+        assert_eq!(
+            decoded(&png),
+            (2, 1, vec![10, 20, 30, 255, 20, 20, 30, 255])
+        );
+    }
+
     fn grey(levels: &[u8]) -> Vec<u8> {
         levels.iter().flat_map(|&v| [v, v, v, 255]).collect()
     }
@@ -484,6 +573,39 @@ mod tests {
             Err(PixmapError::Broken(_))
         ));
         assert_eq!(decode_pixmap(&png[..6]), Err(PixmapError::TooShort));
+    }
+
+    #[test]
+    fn a_palette_not_of_whole_entries_is_broken_as_libpng_refuses_it() {
+        // Verifies: Q-3
+        // The file the pixmap fuzz target found, with valid CRCs: a 1 × 1 palette image whose
+        // PLTE holds one entry and one byte over, which panicked in the `png` crate.
+        let png = file(
+            (1, 1),
+            PALETTE,
+            8,
+            false,
+            &[(b"PLTE", &[10, 20, 30, 40])],
+            &[&[0]],
+        );
+        assert!(matches!(decode_pixmap(&png), Err(PixmapError::Broken(_))));
+        // The guard refuses 5 bytes; 0 and 771 pin the `png` crate's own refusal.
+        for length in [0, 5, 768 + 3] {
+            let palette = vec![7; length];
+            let png = file((1, 1), PALETTE, 8, false, &[(b"PLTE", &palette)], &[&[0]]);
+            assert!(matches!(decode_pixmap(&png), Err(PixmapError::Broken(_))));
+        }
+        // Of an RGB image a palette is a suggestion, which libpng ignores whatever its length;
+        // the `png` crate ignores it of 3 to 768 bytes.
+        let png = file(
+            (1, 1),
+            RGB,
+            8,
+            false,
+            &[(b"PLTE", &[10, 20, 30, 40])],
+            &[&[1, 2, 3]],
+        );
+        assert_eq!(decoded(&png), (1, 1, vec![1, 2, 3, 255]));
     }
 
     #[test]

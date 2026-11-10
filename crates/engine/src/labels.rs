@@ -20,26 +20,27 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use forager_label::{
     Align, Anchor, Font, Glyphs, Layout, LineError, MAX_LABELS, MAX_PRIORITY, Member, Members,
     Offsets, Placement, PointLabel, Position, TextBox, TextPath, draw_label_cache, glyph_size,
     lines, member_box, pixel_size, placed_at,
 };
-use forager_ports::{Feature, Properties, ResourceLoader, Value};
+use forager_ports::{Coord, Feature, Properties, ResourceLoader};
 use forager_render::{DisplayItem, Draw, DrawOp, GlyphOutline, Point};
 use forager_style_ir::c::{atof, ms_nint};
 use forager_style_ir::{
-    Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Layer, Map, Op,
-    Position as IrPosition, Rgba, Span, Style, Units,
+    Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Map, Op,
+    Position as IrPosition, Rgba, Span, Style,
 };
-use forager_symbolize::{DEG_TO_RAD, View, marker_size_of, vertices};
+use forager_symbolize::{DEG_TO_RAD, Pixmaps, View, marker_size_of, vertices};
 
-use crate::CachedLabel;
-use crate::classes::{self, FeatureProperties, Selector, c_bytes, c_str, color};
+use crate::classes::{self, FeatureProperties, Selector, c_bytes, color};
 use crate::fonts::Fonts;
 use crate::inline::feature_text;
 use crate::label_styles::{self, LabelMarker, LabelStyles, Styled};
+use crate::{CachedLabel, quoted};
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
 const DEFAULT_SIZE: f64 = 10.0;
@@ -72,7 +73,8 @@ struct Fixed<'a> {
     /// The label's text, or `None` where the label, its class, and its layer's `LABELITEM` give
     /// none and the feature's own `TEXT` is read in their place (`msShapeGetLabelAnnotation`).
     text: Option<&'a Expr>,
-    fonts: &'a str,
+    /// The label's `FONT`, needed only where a text is laid out (`msComputeTextPath`).
+    fonts: Option<&'a str>,
     wrap: Option<char>,
     /// `MAXLENGTH` as MapServer holds it, an `int`, 0 where the label has none.
     max_length: i32,
@@ -87,8 +89,12 @@ struct Fixed<'a> {
     position: Prop<'a, Position>,
     align: Prop<'a, Align>,
     priority: Priority<'a>,
-    /// The layer's scale factor and the image's resolution factor, which are one here.
+    /// The layer's scale factor, which its labels inherit (msUpdateClassScaleFactor) and which
+    /// scales a label's size, offset, buffer, outline, and styles.
     factor: f64,
+    /// The image's resolution factor, which scales a label's `MINSIZE`, `MAXSIZE`, and
+    /// `MINDISTANCE`.
+    resolution: f64,
     buffer: f64,
     force: bool,
     partials: bool,
@@ -109,11 +115,38 @@ struct BoundLabel {
     priority: u8,
 }
 
-/// Why a label's text is not laid out: no font of its list draws a line, or its font cannot draw
-/// a glyph, nor its fallback.
+/// Why a label's text is not laid out: the label names no font, no font of its list draws a line,
+/// or its font cannot draw a glyph, nor its fallback.
 enum Unlaid {
+    NoFont,
     Font(String),
     Glyph(u32),
+}
+
+impl Unlaid {
+    /// The code and the outcome a label is reported with. Its font is needed only for a text, so
+    /// the label is still drawn for the features that give it none, and a glyph fails only the
+    /// texts that hold it.
+    fn code(&self) -> (&'static str, &'static str) {
+        const WHERE_TEXT: &str = "the label is not drawn where a feature gives it a text";
+        match self {
+            Self::NoFont => ("label-not-drawn", WHERE_TEXT),
+            Self::Font(_) => ("label-font-unusable", WHERE_TEXT),
+            Self::Glyph(_) => (
+                "label-glyph-unreadable",
+                "the label is not drawn for a text that holds it",
+            ),
+        }
+    }
+
+    /// The reason a label of `text` is reported with.
+    fn reason(self, text: &str) -> String {
+        match self {
+            Self::NoFont => "it names no FONT; MapServer's built-in font is not bundled".to_owned(),
+            Self::Font(why) => why,
+            Self::Glyph(glyph) => format!("its font cannot draw glyph {glyph} of {}", quoted(text)),
+        }
+    }
 }
 
 /// A label of the render by its layer's index, its class's, and its index in the class.
@@ -130,6 +163,13 @@ struct Def {
     min_distance: f64,
     /// What an outline adds to the offset from a marker: half its width, scaled.
     outline_grow: f64,
+    /// The label's scale factor, its layer's, by which a labelpnt marker its styles bind to a
+    /// feature is sized as the cache tests it.
+    factor: f64,
+    /// The width and height of the marker beneath each of its labels, where its class's first
+    /// style varies by no feature and so sizes every feature's marker alike; held once here, not
+    /// for each label (Q-9).
+    marker: Option<(f64, f64)>,
 }
 
 /// A path that stands for a text of line breaks only, which has no box.
@@ -175,20 +215,25 @@ pub(crate) struct Labels<'r, L> {
     defs: Vec<Def>,
     def_index: BTreeMap<LabelAt, u32>,
     cached: Vec<Cached>,
-    /// The text of each feature's label cached, for the render's report of its labels.
+    /// The text of each feature's label cached, held once whatever its points, which the label
+    /// cache compares under `MINDISTANCE` and the render's report of its labels shares.
     label_texts: Vec<Box<str>>,
     /// The styles of the labels cached and their markers.
     styles: LabelStyles,
-    /// The box of the marker beneath each label that has one, by the label's index, ascending.
-    markers: Vec<(u32, [f64; 4])>,
-    /// Each label's text, held only where a label of the map has a `MINDISTANCE`.
-    texts: Option<Vec<Box<[u8]>>>,
+    /// The width and height of the marker beneath each label whose class's first style varies by
+    /// feature, by the label's index, ascending; the marker of any other label is its
+    /// definition's.
+    markers: Vec<(u32, (f64, f64))>,
+    /// Whether a label of the map has a `MINDISTANCE`, under which the cache compares texts.
+    compares_texts: bool,
     /// The labels already reported, with the diagnostic's code.
     reported: BTreeSet<(LabelAt, &'static str)>,
     /// The labels left out past [`MAX_LABELS`], and the first of them.
     over_limit: (usize, Option<LabelAt>),
     /// The image the labels are drawn in, its width and height.
     size: (u32, u32),
+    /// The hatches of labelpoly styles refused (Q-9), by the index of their layer.
+    hatches_refused: BTreeMap<usize, usize>,
 }
 
 /// A feature the layer draws, the class that draws it, and the class's first style bound to it,
@@ -211,16 +256,16 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             label_texts: Vec::new(),
             styles: LabelStyles::default(),
             markers: Vec::new(),
-            texts: map
+            compares_texts: map
                 .layers
                 .iter()
                 .flat_map(|layer| &layer.classes)
                 .flat_map(|class| &class.labels)
-                .any(|label| label.min_distance.is_some_and(|d| d > 0.0))
-                .then(Vec::new),
+                .any(|label| label.min_distance.is_some_and(|d| d > 0.0)),
             reported: BTreeSet::new(),
             over_limit: (0, None),
             size,
+            hatches_refused: BTreeMap::new(),
         }
     }
 
@@ -230,17 +275,21 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// layer is not drawn yet. A label whose `EXPRESSION` does not match a feature is not
     /// collected for it, as `msGetLabelStatus` decides. With `at_once`, the layer's of
     /// `LABELCACHE OFF`, each label is drawn into it instead of cached (see
-    /// [`Self::draw_at_once`]).
+    /// [`Self::draw_at_once`]). A pixmap that a class's first style draws is sized by its image
+    /// among `pixmaps`, loaded before the layer's labels are collected.
     pub(crate) async fn collect<R: Draw>(
         &mut self,
         index: usize,
         point_layer: bool,
         drawn: &[Labelled<'_>],
+        pixmaps: &Pixmaps,
         selector: &mut Selector<'_, '_>,
         mut at_once: Option<&mut R>,
     ) {
         let map = self.map;
         let layer = &map.layers[index];
+        let scale = classes::scale_denom(map, self.view, self.size.0);
+        let factor = classes::layer_scale_factor(map, layer, self.view.cellsize, scale);
         // What of each label of the classes drawn is settled, or why it is not drawn.
         let mut fixed_labels = BTreeMap::new();
         // The classes that draw a feature with a TEXT of its own.
@@ -259,9 +308,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 // msShapeGetLabelAnnotation takes the label's TEXT, else its class's, else the
                 // LABELITEM's value, which the frontend has folded into the label's text, and
                 // last the feature's own TEXT, which only an inline feature has. Without any, and
-                // without a style to draw in its place, MapServer skips the label.
+                // without a labelpnt style to draw in its place, MapServer skips the label
+                // (maplabel.c:267-277).
                 let text = label.text.as_ref();
-                if text.is_none() && !with_text.contains(&class_index) {
+                if text.is_none()
+                    && !with_text.contains(&class_index)
+                    && !has_label_point(&label.styles)
+                {
                     fixed_labels.insert(at, None);
                     continue;
                 }
@@ -276,7 +329,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     }
                     .to_owned())
                 } else {
-                    fixed(map, layer, label, text)
+                    fixed(map, label, text, factor)
                 };
                 match fixed {
                     Ok(fixed) => {
@@ -312,15 +365,23 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                         Box::default()
                     };
                     let renderer = at_once.as_deref_mut();
-                    self.feature(at, fixed, feature, style, styles, selector, renderer)
-                        .await;
+                    self.feature(
+                        at, fixed, feature, style, pixmaps, styles, selector, renderer,
+                    )
+                    .await;
                 }
             }
         }
     }
 
+    /// Whether `c` lies inside the map's extent, where pointLayerDrawShape places a label.
+    fn inside(&self, c: Coord) -> bool {
+        let extent = self.view.extent;
+        (c.x >= extent.min_x && c.x <= extent.max_x) && (c.y >= extent.min_y && c.y <= extent.max_y)
+    }
+
     /// Lays out one label of one feature and places it at each of its points, or draws it there
-    /// into `at_once`.
+    /// into `at_once`, the first style of its class sized among the pixmaps beside it.
     #[allow(clippy::too_many_arguments)]
     async fn feature<R: Draw>(
         &mut self,
@@ -328,30 +389,59 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         fixed: &Fixed<'_>,
         feature: &Feature,
         style: Option<&Style>,
+        pixmaps: &Pixmaps,
         styles: Box<[Style]>,
         selector: &mut Selector<'_, '_>,
         at_once: Option<&mut R>,
     ) {
-        let Some((text, lines)) = self.text_lines(at, fixed, feature, selector.diagnostics) else {
+        let Some((text, lines)) = self.text_lines(at, fixed, feature, selector) else {
             return;
         };
-        // A text that is empty draws nothing from the cache; one of line breaks only is cached,
-        // its marker with it, but takes no box. Drawn at once, both draw their styles.
-        if text.is_empty() && at_once.is_none() {
+        // A text that is empty is none to msShapeGetLabelAnnotation (maputil.c:901-904, 929-932,
+        // 973-976): msAddLabelGroup skips its label but for a labelpnt style (maplabel.c:267-277),
+        // which the cache tests and draws alone. One of line breaks only and without styles is
+        // cached, its class's marker with it, but takes no box. Drawn at once, both draw their
+        // styles.
+        let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
+        if text.is_empty() && at_once.is_none() && !has_label_point(written) {
+            return;
+        }
+        // msDrawLabelCache draws a labelpoly or labelcenter style only with an annotext; without
+        // one it fails the map with "Labels only support LABELPNT, LABELPOLY and LABELCENTER
+        // GEOMTRANSFORMS" (mapdraw.c:4056-4133, 540, 593).
+        if text.is_empty() && at_once.is_none() && written.iter().any(boxed) {
+            let why = "its text is empty, where msDrawLabelCache fails the map on a labelpoly or \
+                       labelcenter style"
+                .to_owned();
+            self.report(selector.diagnostics, at, "label-not-drawn", why);
             return;
         }
         let blank = lines.iter().all(Vec::is_empty);
         let bound = bind(fixed, &feature.properties, |expr| {
             selector.label_number(expr, feature, at.1, at.2)
         });
-        let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
+        // msDrawLabelCache tests a labelpnt marker before the text and draws a member's labelpnt
+        // styles whatever its text (mapdraw.c:3607-3646, 4056-4065), but a text of line breaks is
+        // no NULL annotext: its path is laid out (3651, 3688-3693) on a box msLayoutTextSymbol
+        // leaves at FLT_MAX and -FLT_MAX (textlayout.c:817-819), which get_metrics places
+        // (maplabel.c:1019-1123) and msTestLabelCacheCollisions tests (mapdraw.c:3789, 3898)
+        // before any style is drawn, and on which a labelpoly or labelcenter style is drawn.
+        // Through the cache, that box is not ported.
+        if blank && !text.is_empty() && at_once.is_none() && !written.is_empty() {
+            let why = "its text is of line breaks only, whose box the label cache tests and \
+                       draws its styles by is not ported"
+                .to_owned();
+            self.report(selector.diagnostics, at, "label-not-drawn", why);
+            return;
+        }
         let label_styles: &[Style] = if styles.is_empty() { written } else { &styles };
         // msDrawLabel moves a label off no marker: the class's style is not read for it.
         let style = style.filter(|_| at_once.is_none());
-        let settled = settle(fixed, &bound, lines.len(), style, self.map).and_then(|settled| {
-            let marker = label_styles::label_marker(label_styles, self.map, fixed.factor);
-            Ok((settled, marker.map_err(|why| ("label-not-drawn", why))?))
-        });
+        let settled =
+            settle(fixed, &bound, lines.len(), style, pixmaps, self.map).and_then(|settled| {
+                let marker = label_styles::label_marker(label_styles, self.map, fixed.factor);
+                Ok((settled, marker.map_err(|why| ("label-not-drawn", why))?))
+            });
         let ((position, align, marker), label_marker) = match settled {
             Ok(settled) => settled,
             Err((code, why)) => {
@@ -364,20 +454,17 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             fixed.factor,
             fixed.min_size,
             fixed.max_size,
-            fixed.factor,
+            fixed.resolution,
         );
         let path = if blank {
             None
         } else {
-            match self.layout(fixed, &lines, glyph_size, align).await {
+            match self.layout(fixed, lines, glyph_size, align).await {
                 Ok(path) => Some(path),
-                Err(Unlaid::Font(why)) => {
-                    self.report(selector.diagnostics, at, "label-font-unusable", why);
-                    return;
-                }
-                Err(Unlaid::Glyph(glyph)) => {
-                    let why = format!("its font cannot draw glyph {glyph} of `{text}`");
-                    self.report(selector.diagnostics, at, "label-glyph-unreadable", why);
+                Err(unlaid) => {
+                    let (code, outcome) = unlaid.code();
+                    let why = || unlaid.reason(&text);
+                    self.report_with(selector.diagnostics, at, code, why, outcome);
                     return;
                 }
             }
@@ -417,7 +504,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 &styles,
                 selector,
             );
-        } else if self.cache(feature, &template, marker, &text) {
+        } else if self.cache(feature, &template, marker) {
             self.hold(&template, text, written, &styles, label_marker, path);
         }
     }
@@ -449,12 +536,6 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         selector: &mut Selector<'_, '_>,
     ) {
         let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
-        let boxed = |s: &Style| {
-            matches!(
-                s.geom_transform,
-                Some(GeomTransform::LabelPoly | GeomTransform::LabelCenter)
-            )
-        };
         if path.is_none() && written.iter().any(boxed) {
             let why = "its text is empty or of line breaks only, where msDrawLabel fails on a \
                        labelpoly or labelcenter style or draws it on a box of no size"
@@ -482,6 +563,10 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let (width, height) = self.size;
         let image = [0.0, 0.0, f64::from(width), f64::from(height)];
         let mut styled = Styled::new(self.map, self.view, &held, width, height);
+        // The layer's labels are drawn into its image, where it has one of its own.
+        if crate::layer_opacity(&self.map.layers[at.0]).is_some() {
+            styled.in_own_image();
+        }
         let extent = self.view.extent;
         let mut out_of_reach = 0;
         for c in vertices(&feature.geometry) {
@@ -508,6 +593,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 priority: label.priority,
                 point,
                 label: Some(point_label),
+                force: true,
                 partials: true,
                 test_point: false,
                 marker: None,
@@ -534,6 +620,20 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             );
         }
         self.out_of_reach(selector.diagnostics, at, out_of_reach);
+        self.hatches_refused(at, styled.take_hatches_refused());
+    }
+
+    /// Counts `count` hatches of labelpoly styles of `at` as refused (Q-9).
+    fn hatches_refused(&mut self, (layer, _, _): LabelAt, count: usize) {
+        if count > 0 {
+            *self.hatches_refused.entry(layer).or_default() += count;
+        }
+    }
+
+    /// Takes how many hatches of the labelpoly styles of layer `layer` were refused (Q-9), for
+    /// the layer's report.
+    pub(crate) fn take_hatches_refused(&mut self, layer: usize) -> usize {
+        self.hatches_refused.remove(&layer).unwrap_or(0)
     }
 
     /// The text of label `at` for `feature` and its lines, or `None` where it has none or it is
@@ -543,26 +643,39 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         at: LabelAt,
         fixed: &Fixed<'_>,
         feature: &Feature,
-        diagnostics: &mut Vec<Diagnostic>,
+        selector: &mut Selector<'_, '_>,
     ) -> Option<(String, Vec<Vec<char>>)> {
+        let diagnostics = &mut *selector.diagnostics;
         let text = match fixed.text {
-            Some(expr) => match text(expr, &feature.properties) {
-                Ok(text) => text,
-                Err(why) => {
-                    self.report(diagnostics, at, "label-text-unsupported", why);
-                    return None;
-                }
-            },
-            None => feature_text(&self.map.layers[at.0], feature.id)?.to_owned(),
+            Some(expr) if !is_text(expr) => {
+                let why = "its text is an expression, which is not evaluated yet".to_owned();
+                self.report(diagnostics, at, "label-text-unsupported", why);
+                return None;
+            }
+            Some(expr) => {
+                let (_, class, label) = at;
+                let bytes = selector.label_text(expr, feature, class, label)?;
+                String::from_utf8_lossy(&bytes).into_owned()
+            }
+            // A label of no text at all is kept for its labelpnt style.
+            None => feature_text(&self.map.layers[at.0], feature.id)
+                .unwrap_or_default()
+                .to_owned(),
         };
         match lines(&text, fixed.wrap, fixed.max_length) {
             Ok(lines) => Some((text, lines)),
-            Err(LineError::NotLatin(c)) => {
-                let why = format!(
-                    "the text `{text}` holds U+{:04X}, which needs a shaper",
-                    u32::from(c)
-                );
-                self.report(diagnostics, at, "label-line-unsupported", why);
+            Err(LineError::NotLatin { line, character }) => {
+                let why = || {
+                    format!(
+                        "line {} of the text {} holds U+{:04X}, which needs a shaper",
+                        line + 1,
+                        quoted(&text),
+                        u32::from(character)
+                    )
+                };
+                let code = "label-line-unsupported";
+                let outcome = "the label is not drawn";
+                self.report_with(selector.diagnostics, at, code, why, outcome);
                 None
             }
         }
@@ -580,31 +693,31 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         label_marker: Option<LabelMarker>,
         path: Option<TextPath>,
     ) {
-        self.label_texts.push(text.into_boxed_str());
+        push(&mut self.label_texts, text.into_boxed_str());
         self.styles
             .hold(template.def, template.text, written, styles, label_marker);
         if let Some(path) = path {
-            self.paths.push(path);
+            push(&mut self.paths, path);
         }
     }
 
     /// Caches `template` at each point of `feature` inside the map's extent, as
-    /// `pointLayerDrawShape` adds a label at each, with the marker of `marker`'s size beneath;
+    /// `pointLayerDrawShape` adds a label at each, with the marker of `marker`'s size beneath,
+    /// held by the label's definition where the class's first style varies by no feature;
     /// whether any was cached.
-    fn cache(
-        &mut self,
-        feature: &Feature,
-        template: &Cached,
-        marker: Option<(f64, f64)>,
-        text: &str,
-    ) -> bool {
-        let extent = self.view.extent;
+    fn cache(&mut self, feature: &Feature, template: &Cached, marker: Option<(f64, f64)>) -> bool {
+        let (layer, class, _) = self.defs[template.def as usize].at;
+        let per_label = self.map.layers[layer].classes[class]
+            .styles
+            .first()
+            .is_some_and(classes::varies);
+        if !per_label {
+            self.defs[template.def as usize].marker = marker;
+        }
         let mut cached = false;
         for c in vertices(&feature.geometry) {
             // pointLayerDrawShape skips a point outside the map's extent.
-            if !(c.x >= extent.min_x && c.x <= extent.max_x)
-                || !(c.y >= extent.min_y && c.y <= extent.max_y)
-            {
+            if !self.inside(c) {
                 continue;
             }
             // msTransformPoint: by the inverse of the cellsize, as the marker beneath is drawn.
@@ -619,17 +732,10 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 continue;
             }
             let index = self.cached.len() as u32;
-            // msAddLabelGroup caches the marker of the class's first style: its box, whose far
-            // corner lies `w - 1` and `h - 1` from its near one.
-            if let Some((w, h)) = marker {
-                let (min_x, min_y) = (point.x - 0.5 * w, point.y - 0.5 * h);
-                let bounds = [min_x, min_y, min_x + (w - 1.0), min_y + (h - 1.0)];
-                self.markers.push((index, bounds));
+            if let Some(size) = marker.filter(|_| per_label) {
+                push(&mut self.markers, (index, size));
             }
-            self.cached.push(Cached { point, ..*template });
-            if let Some(texts) = &mut self.texts {
-                texts.push(c_bytes(text).into());
-            }
+            push(&mut self.cached, Cached { point, ..*template });
             cached = true;
         }
         cached
@@ -645,19 +751,22 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 buffer: (fixed.buffer * fixed.factor) as i32,
                 force: fixed.force,
                 partials: fixed.partials,
-                min_distance: fixed.min_distance * fixed.factor,
+                min_distance: fixed.min_distance * fixed.resolution,
                 outline_grow: fixed.outline_width / 2.0 * fixed.factor,
+                factor: fixed.factor,
+                marker: None,
             });
             (defs.len() - 1) as u32
         })
     }
 
     /// Lays out `lines` at `glyph_size`, each in the font of the label's list that draws it, or
-    /// says why it cannot.
+    /// says why it cannot. Each line is let go once its glyphs are laid out, so that a long text
+    /// is not held as characters and as glyphs at once.
     async fn layout(
         &mut self,
         fixed: &Fixed<'_>,
-        lines: &[Vec<char>],
+        lines: Vec<Vec<char>>,
         glyph_size: f64,
         align: Align,
     ) -> Result<TextPath, Unlaid> {
@@ -668,9 +777,10 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 continue;
             }
             // get_face_for_run chooses a font for each line.
+            let fonts = fixed.fonts.ok_or(Unlaid::NoFont)?;
             let face = self
                 .fonts
-                .face(self.map, fixed.fonts, line, self.files)
+                .face(self.map, fonts, &line, self.files)
                 .await
                 .map_err(Unlaid::Font)?;
             let key = (face.path, pixel_size(glyph_size));
@@ -681,7 +791,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             Font::new(&face.bytes)
                 .map_err(|_| 0)
                 .and_then(|font| {
-                    layout.line(&font, &mut self.glyphs[cache], cache as u32, &face.glyphs)
+                    layout.line(&font, &mut self.glyphs[cache], cache as u32, face.glyphs)
                 })
                 .map_err(Unlaid::Glyph)?;
         }
@@ -707,7 +817,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let cached = std::mem::take(&mut self.cached);
         let markers = std::mem::take(&mut self.markers);
         let styles = std::mem::take(&mut self.styles);
-        let texts = self.texts.take();
+        let texts = std::mem::take(&mut self.label_texts);
         let defs = std::mem::take(&mut self.defs);
         let paths = std::mem::take(&mut self.paths);
         let glyphs = std::mem::take(&mut self.glyphs);
@@ -717,7 +827,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             defs: &defs,
             markers: &markers,
             styles: &styles,
-            texts: texts.as_deref(),
+            texts: self.compares_texts.then_some(&texts[..]),
             map: self.map,
         };
         let (width, height) = self.size;
@@ -733,7 +843,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             ));
             let label = &cached[i];
             let at = defs[label.def as usize].at;
-            let path = Some(&paths[label.path as usize]);
+            let path = (label.path != NO_PATH).then(|| &paths[label.path as usize]);
             let out_of_reach = draw_label(
                 renderer,
                 &mut styled,
@@ -747,8 +857,16 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 image,
             );
             self.out_of_reach(diagnostics, at, out_of_reach);
+            self.hatches_refused(at, styled.take_hatches_refused());
         });
-        // The report walks the cache as msDrawLabelCache does.
+        // The hatches refused of the labels the cache drew, reported for their layers as a
+        // layer's own (Q-9).
+        for (layer, refused) in std::mem::take(&mut self.hatches_refused) {
+            diagnostics.extend(crate::refused_hatches(&self.map.layers[layer], refused));
+        }
+        // The report walks the cache as msDrawLabelCache does, its labels sharing their
+        // feature's text.
+        let texts: Vec<Arc<str>> = texts.into_iter().map(Arc::from).collect();
         let mut labels = Vec::with_capacity(cached.len());
         for priority in (1..=MAX_PRIORITY).rev() {
             for (i, label) in cached.iter().enumerate().rev() {
@@ -760,7 +878,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     priority,
                     layer,
                     class,
-                    text: self.label_texts[label.text as usize].to_string(),
+                    text: Arc::clone(&texts[label.text as usize]),
                     drawn: boxes[i],
                 });
             }
@@ -776,7 +894,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 forager_render::clip::MAX_GLYPH_REACH
             );
             let outcome = "those glyphs are left out";
-            self.report_with(diagnostics, at, "label-glyph-out-of-reach", why, outcome);
+            self.report_with(diagnostics, at, "label-glyph-out-of-reach", || why, outcome);
         }
     }
 
@@ -788,21 +906,23 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         code: &'static str,
         why: String,
     ) {
-        self.report_with(diagnostics, at, code, why, "the label is not drawn");
+        self.report_with(diagnostics, at, code, || why, "the label is not drawn");
     }
 
-    /// Reports `why` with what follows from it, once per label and code.
+    /// Reports `why` with what follows from it, once per label and code; `why` is built only
+    /// where it is reported, so that a label refused for each of its features costs no message
+    /// for each.
     fn report_with(
         &mut self,
         diagnostics: &mut Vec<Diagnostic>,
         at: LabelAt,
         code: &'static str,
-        why: String,
+        why: impl FnOnce() -> String,
         outcome: &str,
     ) {
         if self.reported.insert((at, code)) {
             let span = self.span(at);
-            let message = format!("{why}; {outcome}");
+            let message = format!("{}; {outcome}", why());
             diagnostics.push(Diagnostic::warning(code, message, span));
         }
     }
@@ -836,6 +956,7 @@ fn draw_label<R: Draw>(
     if !written.is_empty() {
         styled.draw(
             renderer,
+            layer,
             member,
             placement,
             label.feature_id,
@@ -873,9 +994,10 @@ struct Cache<'c> {
     cached: &'c [Cached],
     paths: &'c [TextPath],
     defs: &'c [Def],
-    markers: &'c [(u32, [f64; 4])],
+    markers: &'c [(u32, (f64, f64))],
     styles: &'c LabelStyles,
-    texts: Option<&'c [Box<[u8]>]>,
+    /// The texts of the labels, where the cache compares them.
+    texts: Option<&'c [Box<str>]>,
     map: &'c Map,
 }
 
@@ -891,17 +1013,29 @@ impl Members for Cache<'_> {
     fn member(&self, index: usize) -> Member {
         let label = &self.cached[index];
         let def = &self.defs[label.def as usize];
+        // msAddLabelGroup caches the marker of the class's first style: its box about the
+        // label's point, whose far corner lies `w - 1` and `h - 1` from its near one.
         let marker = self
             .markers
             .binary_search_by_key(&(index as u32), |(i, _)| *i)
             .ok()
-            .map(|i| self.markers[i].1);
+            .map(|i| self.markers[i].1)
+            .or(def.marker)
+            .map(|(w, h)| {
+                let (min_x, min_y) = (label.point.x - 0.5 * w, label.point.y - 0.5 * h);
+                [min_x, min_y, min_x + (w - 1.0), min_y + (h - 1.0)]
+            });
         // computeMarkerBounds at the label's point.
         let (layer, class, n) = def.at;
         let written = &self.map.layers[layer].classes[class].labels[n].styles;
-        let label_marker =
-            self.styles
-                .marker_bounds(self.map, label.def, label.text, written, label.point);
+        let label_marker = self.styles.marker_bounds(
+            self.map,
+            label.def,
+            label.text,
+            written,
+            label.point,
+            def.factor,
+        );
         // msDrawLabelCache's offset from the marker: half the size of its box, or of its
         // labelpoint marker's where that is larger, grown by half the label's outline where it
         // has one.
@@ -941,6 +1075,7 @@ impl Members for Cache<'_> {
                 buffer: def.buffer,
                 force: def.force,
             }),
+            force: def.force,
             partials: def.partials,
             test_point: label.test_point,
             marker,
@@ -950,7 +1085,11 @@ impl Members for Cache<'_> {
     }
 
     fn same_text(&self, a: usize, b: usize) -> bool {
-        self.texts.is_some_and(|texts| texts[a] == texts[b])
+        // strcmp compares the texts up to their first NUL.
+        self.texts.is_some_and(|texts| {
+            let text = |i: usize| c_bytes(&texts[self.cached[i].text as usize]);
+            text(a) == text(b)
+        })
     }
 }
 
@@ -958,12 +1097,16 @@ impl Members for Cache<'_> {
 type Settled = (Position, Align, Option<(f64, f64)>);
 
 /// Where a label stands for one feature: its position, its alignment over `num_lines` lines, and
-/// the size of the marker it moves away from; or the diagnostic's code and why it is not drawn.
+/// the size of the marker it moves away from, that of `style`, a pixmap's by its image among
+/// `pixmaps`; or the diagnostic's code and why it is not drawn. A pixmap whose image does not
+/// load fails msAddLabelGroup and the map in MapServer (`src/maplabel.c:350-352`); its label is
+/// left out here, and the rest of the map drawn.
 fn settle(
     fixed: &Fixed<'_>,
     bound: &BoundLabel,
     num_lines: usize,
     style: Option<&Style>,
+    pixmaps: &Pixmaps,
     map: &Map,
 ) -> Result<Settled, (&'static str, String)> {
     let Some(position) = bound.position else {
@@ -985,7 +1128,7 @@ fn settle(
     // moves away from.
     let marker = match style {
         None => None,
-        Some(style) => match marker_size_of(style, &map.symbols, fixed.factor) {
+        Some(style) => match marker_size_of(style, &map.symbols, pixmaps, fixed.factor) {
             Ok(size) => Some(size),
             Err(what) => {
                 let why =
@@ -1163,16 +1306,14 @@ fn prop<'a, T, U>(
 /// computed by an expression, or one whose meaning is not drawn yet, is not guessed at.
 fn fixed<'a>(
     map: &Map,
-    layer: &Layer,
     label: &'a Label,
     text: Option<&'a Expr>,
+    factor: f64,
 ) -> Result<Fixed<'a>, String> {
     let fonts = match &label.font {
-        Some(Bound::Value(fonts)) => fonts.as_str(),
+        Some(Bound::Value(fonts)) => Some(fonts.as_str()),
         Some(_) => return Err("its FONT varies by feature, which is not drawn yet".to_owned()),
-        None => {
-            return Err("it names no FONT; MapServer's built-in font is not bundled".to_owned());
-        }
+        None => None,
     };
     let unsupported = [
         (
@@ -1185,14 +1326,6 @@ fn fixed<'a>(
             label.min_scale_denom.is_some() || label.max_scale_denom.is_some(),
             "a scale range",
         ),
-        (
-            layer.symbol_scale_denom.is_some(),
-            "a layer's SYMBOLSCALEDENOM",
-        ),
-        (
-            !matches!(layer.size_units, None | Some(Units::Pixels)),
-            "a layer's SIZEUNITS other than pixels",
-        ),
     ];
     if let Some((_, what)) = unsupported.iter().find(|(has, _)| *has) {
         return Err(format!("it has {what}, which is not drawn yet"));
@@ -1204,9 +1337,6 @@ fn fixed<'a>(
             prop(Some(y), "OFFSET", 0.0, |v| *v)?,
         ],
     };
-    // Without SYMBOLSCALEDENOM and SIZEUNITS, the scale factor and the resolution factor are both
-    // the map's resolution over its DEFRESOLUTION.
-    let factor = classes::scale_factor(map);
     Ok(Fixed {
         text,
         fonts,
@@ -1248,11 +1378,29 @@ fn fixed<'a>(
             Some(Bound::Expr(expr)) => Priority::Expr(expr),
         },
         factor,
+        resolution: classes::resolution_factor(map),
         buffer: label.buffer.unwrap_or(0.0),
         force: label.force == Some(Force::On),
         partials: label.partials.unwrap_or(false),
         min_distance: label.min_distance.unwrap_or(-1.0),
     })
+}
+
+/// Whether `styles` hold a `GEOMTRANSFORM labelpnt` style, for which msAddLabelGroup keeps a
+/// label without text (maplabel.c:267-277).
+fn has_label_point(styles: &[Style]) -> bool {
+    styles
+        .iter()
+        .any(|s| s.geom_transform == Some(GeomTransform::LabelPoint))
+}
+
+/// Whether `style` is drawn on the box of a label's text: `GEOMTRANSFORM labelpoly` or
+/// `labelcenter`.
+fn boxed(style: &Style) -> bool {
+    matches!(
+        style.geom_transform,
+        Some(GeomTransform::LabelPoly | GeomTransform::LabelCenter)
+    )
 }
 
 /// A literal `POSITION` as the label crate places it.
@@ -1272,33 +1420,145 @@ fn position(p: IrPosition) -> Position {
     Position::At(anchor)
 }
 
-/// A label's text for a feature, for the forms that need no expression evaluator: a string, a
-/// property as text, and their concatenation. A property the feature lacks, or whose value is
-/// null, reads as empty, as OGR gives an unset field. Any other form is an error.
-fn text(expr: &Expr, properties: &Properties) -> Result<String, String> {
+/// Whether a label's text is of the forms Forager evaluates for a label so far: a string, a
+/// property as text, and their concatenation. Any other is left out as not evaluated yet; this
+/// decides the form alone, and the selector's evaluator builds the text.
+fn is_text(expr: &Expr) -> bool {
     match expr {
-        Expr::String(text) => Ok(text.clone()),
+        Expr::String(_) => true,
         Expr::Call {
             op: Op::ToString,
             args,
-        } => match args.as_slice() {
-            [Expr::Property { property }] => match properties.get(property) {
-                None | Some(Value::Null) => Ok(String::new()),
-                Some(Value::Number(digits)) => Ok(digits.to_owned()),
-                // msEvalTextExpressionInternal (src/maputil.c) puts the value in place of its
-                // binding with msReplaceSubstring, which reads it as a C string: it ends at its
-                // first NUL, and the text around the binding goes on.
-                Some(Value::String(text)) => Ok(c_str(&text).to_owned()),
-                Some(Value::Bool(_)) => Err(format!(
-                    "the property `{property}` holds a boolean, whose text is not settled"
-                )),
-            },
-            _ => Err("its text is an expression, which is not evaluated yet".to_owned()),
-        },
+        } => matches!(args.as_slice(), [Expr::Property { .. }]),
         Expr::Call {
             op: Op::Concat,
             args,
-        } => args.iter().map(|arg| text(arg, properties)).collect(),
-        _ => Err("its text is an expression, which is not evaluated yet".to_owned()),
+        } => args.iter().all(is_text),
+        _ => false,
+    }
+}
+
+/// Makes room in `list`, a list of the label cache, for `more` entries as they are held, growing
+/// it by a quarter of its capacity, or by what they need where that is more. A list that
+/// doubled as it grew would hold up to three times what it fills while it moved, past what Q-9
+/// bounds per label; one sized ahead for the features of a layer would hold room for labels a
+/// feature's `EXPRESSION`, its empty text, or its layout leaves out. Grown by half, the lists
+/// hold 400 bytes per label without style just past a step, at 15,586 labels; by a quarter, 363
+/// at 5,262, the most measured, and 392 at 1,109, where the render's fixed cost counts more
+/// per label. Each entry moves about four times as the list grows.
+pub(crate) fn make_room<T>(list: &mut Vec<T>, more: usize) {
+    if list.capacity() - list.len() < more {
+        list.reserve_exact(more.max(list.capacity() / 4).max(MIN_ROOM));
+    }
+}
+
+/// Pushes `entry` onto `list`, a list of the label cache, grown as [`make_room`] grows it.
+pub(crate) fn push<T>(list: &mut Vec<T>, entry: T) {
+    make_room(list, 1);
+    list.push(entry);
+}
+
+/// The fewest entries a list of the label cache grows by, so that a small one is not moved at
+/// each entry.
+const MIN_ROOM: usize = 8;
+
+#[cfg(test)]
+mod tests {
+    use forager_ports::{ResourcePath, SourceError, Stored};
+    use forager_style_ir::{Class, Extent};
+
+    use super::*;
+    use forager_style_ir::Layer;
+
+    struct NoFiles;
+
+    impl ResourceLoader for NoFiles {
+        async fn load(&self, _: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+            Err(SourceError::new("no files"))
+        }
+    }
+
+    /// Whether `list` holds no more room than a quarter of what it fills, and the fewest entries
+    /// a list grows by, as [`make_room`] grows it.
+    fn grown_by_a_quarter<T>(list: &[T], capacity: usize) -> bool {
+        capacity <= list.len() + list.len() / 4 + MIN_ROOM
+    }
+
+    #[test]
+    fn the_texts_and_markers_of_the_labels_cached_grow_by_a_quarter() {
+        // Verifies: Q-9
+        // A list that doubled would hold up to three times what it fills while it moved.
+        let map = Map {
+            layers: vec![Layer {
+                classes: vec![Class {
+                    styles: vec![Style {
+                        size: Some(Bound::Binding {
+                            binding: "size".to_owned(),
+                        }),
+                        ..Style::default()
+                    }],
+                    ..Class::default()
+                }],
+                ..Layer::default()
+            }],
+            ..Map::default()
+        };
+        let extent = Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 100.0,
+            max_y: 100.0,
+        };
+        let view = View::for_image(extent, 100, 100).unwrap();
+        let mut labels = Labels::new(&map, &view, &NoFiles, (100, 100));
+        labels.defs.push(Def {
+            at: (0, 0, 0),
+            buffer: 0,
+            force: false,
+            partials: false,
+            min_distance: 0.0,
+            outline_grow: 0.0,
+            factor: 1.0,
+            marker: None,
+        });
+        let template = Cached {
+            point: Point { x: 0.0, y: 0.0 },
+            rotation: 0.0,
+            feature_id: 0,
+            path: NO_PATH,
+            def: 0,
+            text: 0,
+            offset: [0, 0],
+            color: None,
+            outline: None,
+            position: Position::Auto,
+            priority: 1,
+            test_point: true,
+        };
+        let feature = Feature {
+            id: 0,
+            geometry: forager_ports::Geometry::Point(Coord { x: 50.0, y: 50.0 }),
+            properties: Properties::list(vec![("size".into(), Stored::Number("4".into()))]),
+        };
+        for text in 0..5_000u32 {
+            let template = Cached { text, ..template };
+            assert!(labels.cache(&feature, &template, Some((4.0, 4.0))));
+            labels.hold(&template, format!("{text}"), &[], &[], None, None);
+            let (texts, markers) = (&labels.label_texts, &labels.markers);
+            assert_eq!(
+                (texts.len(), markers.len()),
+                (text as usize + 1, text as usize + 1)
+            );
+            assert!(
+                grown_by_a_quarter(texts, texts.capacity()),
+                "{}",
+                texts.capacity()
+            );
+            assert!(
+                grown_by_a_quarter(markers, markers.capacity()),
+                "{}",
+                markers.capacity()
+            );
+        }
     }
 }

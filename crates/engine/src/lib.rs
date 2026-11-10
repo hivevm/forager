@@ -1,3 +1,18 @@
+// The loading of a pixmap for the marker a label holds follows msGetMarkerSize, src/mapsymbol.c,
+// of MapServer at the release pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 //! The engine: renders the map of a style IR from the sources bound to its layers. It is the
 //! one core crate that awaits the ports (ADR-0009).
 
@@ -13,15 +28,18 @@ mod labels;
 mod plan;
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use forager_ports::{
     Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
 use forager_style_ir::c::ms_nint;
-use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
-use forager_symbolize::{Canvas, Pass, can_draw, draw_ops, marked_pixmap};
+use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol};
+use forager_symbolize::{
+    Canvas, Pass, Resolved, can_draw, clip_pixmaps, draw_ops, marked_pixmap, resolve,
+};
 
 use forager_expr::Evaluator;
 
@@ -57,6 +75,17 @@ pub struct Rendered {
     pub labels: Vec<CachedLabel>,
 }
 
+impl Rendered {
+    /// The result of a render whose map could not be drawn at all.
+    fn no_map(diagnostics: Vec<Diagnostic>) -> Self {
+        Self {
+            image: None,
+            diagnostics,
+            labels: Vec::new(),
+        }
+    }
+}
+
 /// A label of a render's label cache.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CachedLabel {
@@ -65,7 +94,8 @@ pub struct CachedLabel {
     /// The index of the layer in the map, and of the class in the layer.
     pub layer: usize,
     pub class: usize,
-    pub text: String,
+    /// The label's text, held once for a feature's label and shared by its labels at every point.
+    pub text: Arc<str>,
     /// The box the label was drawn in, `[min x, min y, max x, max y]` in pixels, its buffer
     /// included; `None` for a label the cache discarded.
     pub drawn: Option<[f64; 4]>,
@@ -106,11 +136,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
 ) -> Rendered {
     let mut diagnostics = Vec::new();
     let Some((width, height, view)) = view(map, &mut diagnostics) else {
-        return Rendered {
-            image: None,
-            diagnostics,
-            labels: Vec::new(),
-        };
+        return Rendered::no_map(diagnostics);
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
     let mut labels = Labels::new(map, &view, files, (width, height));
@@ -119,8 +145,6 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
     let scale = classes::scale_denom(map, &view, width);
-    // Each layer's scale factor, the same for every layer the engine draws.
-    let factor = classes::scale_factor(map);
     for (layer_index, layer) in map.layers.iter().enumerate() {
         if !shown(layer) || !classes::layer_in_scale(layer, scale) {
             continue;
@@ -157,8 +181,13 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         drawing
             .load_pixmaps(&selected, &map.symbols, &mut images, files)
             .await;
-        let mut canvas =
-            Canvas::new(&map.symbols, width, height, factor).with_pixmaps(images.decoded());
+        let (pixmaps, tiles) = images.drawing();
+        // The layer's scale factor sizes its styles, the image's resolution factor bounds them.
+        let factor = classes::layer_scale_factor(map, layer, view.cellsize, scale);
+        let mut canvas = Canvas::new(&map.symbols, width, height, factor)
+            .with_resolution(classes::resolution_factor(map))
+            .with_pixmaps(pixmaps)
+            .with_tiles(tiles);
         // Each feature is labelled by the class that draws it, in the order it is drawn.
         let point_layer = mode == RenderMode::Point;
         let drawn: Vec<labels::Labelled<'_>> = selected
@@ -178,6 +207,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                         layer_index,
                         true,
                         labelled,
+                        pixmaps,
                         &mut selector,
                         Some(&mut target),
                     )
@@ -188,13 +218,16 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         }
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
-        layer_reports(layer, &canvas, undrawn, selector.diagnostics);
+        let label_hatches = labels.take_hatches_refused(layer_index);
+        layer_reports(layer, &canvas, label_hatches, undrawn, selector.diagnostics);
+        unknown_symbols(layer, &map.symbols, selector.diagnostics);
         if !at_once {
             labels
                 .collect(
                     layer_index,
                     point_layer,
                     &drawn,
+                    pixmaps,
                     &mut selector,
                     None::<&mut R>,
                 )
@@ -229,17 +262,19 @@ fn drawable(
 }
 
 /// Reports what `layer` left undrawn on `canvas`: symbols past the budget of markers, hatches
-/// refused, and the geometries of `undrawn`, by kind, its render mode cannot draw.
+/// refused, those of the labelpoly styles of its labels drawn at once, `label_hatches`, among them,
+/// and the geometries of `undrawn`, by kind, its render mode cannot draw.
 fn layer_reports(
     layer: &Layer,
     canvas: &Canvas,
+    label_hatches: usize,
     undrawn: BTreeMap<&'static str, usize>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     if canvas.markers_spent() {
         let message = format!(
-            "layer {}: its symbols along lines or placed by a GEOMTRANSFORM exceed \
-             {MAX_MARKER_POINTS} points; those past the limit are not drawn",
+            "layer {}: its symbols at its features, along its lines, or placed by a \
+             GEOMTRANSFORM exceed {MAX_MARKER_POINTS} points; those past the limit are not drawn",
             name(layer)
         );
         diagnostics.push(Diagnostic::warning(
@@ -248,7 +283,10 @@ fn layer_reports(
             layer.span.clone(),
         ));
     }
-    diagnostics.extend(refused_hatches(layer, canvas.hatches_refused()));
+    diagnostics.extend(refused_hatches(
+        layer,
+        canvas.hatches_refused() + label_hatches,
+    ));
     for (index, symbol, why) in canvas.pixmaps_refused() {
         let symbol = symbol
             .name
@@ -354,7 +392,12 @@ impl Drawing<'_> {
     /// Loads into `images`, through `files`, the image of each pixmap symbol the styles of the
     /// `selected` features draw as a mark, those outside their scale range left out, so that the
     /// layer is drawn from them; one the store refuses leaves its style undrawn, as the canvas
-    /// records.
+    /// records. On a point layer of the label cache, the first style of a class with labels is
+    /// loaded at any scale, as msAddLabelGroup and msAddLabel (`src/maplabel.c:344-352, 604-608`)
+    /// size the marker the cache holds by msGetMarkerSize, which loads it
+    /// (`src/mapsymbol.c:736-738`) whatever the style's scale range. Those the clip buffer of a
+    /// hatched polygon's class counts are loaded whatever theirs too, as msDrawShape loads them
+    /// (see [`clip_pixmaps`]).
     async fn load_pixmaps<L: ResourceLoader>(
         &self,
         selected: &[Selected<'_>],
@@ -362,9 +405,13 @@ impl Drawing<'_> {
         images: &mut Images,
         files: &L,
     ) {
-        for (_, _, styles) in selected {
-            for style in styles {
-                if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
+        let holds_markers = self.mode == RenderMode::Point && self.layer.label_cache;
+        for (_, class, styles) in selected {
+            let marker = holds_markers && !self.layer.classes[*class].labels.is_empty();
+            for (place, style) in styles.iter().enumerate() {
+                if !(place == 0 && marker)
+                    && !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom)
+                {
                     continue;
                 }
                 if let Some(path) = marked_pixmap(self.mode, style, symbols)
@@ -372,6 +419,13 @@ impl Drawing<'_> {
                 {
                     // The image, or why it has none, is kept by the store for the canvas.
                     let _ = images.image(path, files).await;
+                }
+            }
+            if self.mode == RenderMode::Polygon {
+                for path in clip_pixmaps(&self.layer.classes[*class].styles, symbols) {
+                    if !images.decoded().contains_key(path) {
+                        let _ = images.image(path, files).await;
+                    }
                 }
             }
         }
@@ -602,6 +656,29 @@ async fn query<S: FeatureSource>(
     }
 }
 
+/// Warns once for each name that a style of `layer` gives its symbol and that none of `symbols`
+/// carries: such a style draws nothing, as a style document has no image file to read the name
+/// as. A mapfile's names never reach here, as its frontend resolves each to an index.
+fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diagnostic>) {
+    let mut reported = BTreeSet::new();
+    for style in layer.classes.iter().flat_map(|class| &class.styles) {
+        let Resolved::Unnamed(symbol) = resolve(&style.symbol, symbols) else {
+            continue;
+        };
+        if reported.insert(symbol) {
+            let message = format!(
+                "layer {}: no symbol is named `{symbol}`, so the styles that name it draw nothing",
+                name(layer)
+            );
+            diagnostics.push(Diagnostic::warning(
+                "symbol-unknown",
+                message,
+                style.span.clone().or_else(|| layer.span.clone()),
+            ));
+        }
+    }
+}
+
 /// The warning for the hatch fills of a layer refused to be drawn (Q-9), if any.
 fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnostic> {
     (refused > 0).then(|| {
@@ -634,4 +711,22 @@ fn name(layer: &Layer) -> String {
         .name
         .as_deref()
         .map_or("without NAME".to_owned(), |n| format!("`{n}`"))
+}
+
+/// The most characters of a text a diagnostic quotes, a feature's text or a pattern computed from
+/// one, so that a render keeps no copy of a long text for each label or expression it reports
+/// (Q-9).
+const QUOTED_CHARACTERS: usize = 64;
+
+/// `text` in backticks as a diagnostic quotes it: whole up to [`QUOTED_CHARACTERS`] characters,
+/// else cut there, followed by an ellipsis and the text's length in characters.
+fn quoted(text: &str) -> String {
+    match text.char_indices().nth(QUOTED_CHARACTERS) {
+        None => format!("`{text}`"),
+        Some((cut, _)) => format!(
+            "`{}\u{2026}` ({} characters)",
+            &text[..cut],
+            text.chars().count()
+        ),
+    }
 }

@@ -29,12 +29,18 @@
 //! MapServer's AGG renderer draws it at a point. Its trigonometry is libm's, the same code on
 //! every target, so that the native and the browser build draw the same bytes (Q-2).
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
-use forager_style_ir::c::lrint;
+use std::rc::Rc;
+
+use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_style_ir::c::{lrint, ms_nint};
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use crate::bounds;
 use crate::style::{DEG_TO_RAD, fixed};
+
+/// The images of a render's pixmap symbols by their resource path, each the decoded image or why
+/// it has none, as the engine's store of the render holds them (ADR-0040).
+pub type Pixmaps = std::collections::BTreeMap<String, Result<Rc<PremultipliedImage>, String>>;
 
 /// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16
 /// for a radius of 6, some 2000 for 100 000 pixels; this many are reached at a radius of some
@@ -50,27 +56,47 @@ pub enum Mark<'a> {
     Symbol(&'a Symbol),
     /// A pixmap symbol, and its index among MapServer's symbols, from 1.
     Pixmap(usize, &'a Symbol),
-    /// Nothing, for an index past the last symbol, as msDrawMarkerSymbol draws nothing.
+    /// Nothing, for an index past the last symbol, as msDrawMarkerSymbol draws nothing, and for a
+    /// name no symbol carries: an image MapServer would read by that name, which a style document
+    /// does not carry.
     Nothing,
 }
 
-/// What a style's symbol is among MapServer's symbols, from index 1.
-enum Resolved<'a> {
+/// What a style's symbol is among MapServer's symbols, from index 1: of the symbols' lifetime
+/// `'a` and the name's `'n`.
+pub enum Resolved<'a, 'n> {
     /// MapServer's default symbol: no symbol, or index 0.
     Default,
-    /// A name the frontend did not resolve to an index, or a binding not read yet.
+    /// A binding not read yet.
     Unresolved,
     /// An index past the last symbol.
     Missing(usize),
+    /// A name no symbol carries.
+    Unnamed(&'n str),
     /// The symbol at the index, and the index, from 1.
     Found(usize, &'a Symbol),
 }
 
-/// The symbol `symbol` names among `symbols`.
-fn resolve<'a>(symbol: &Option<Bound<SymbolRef>>, symbols: &'a [Symbol]) -> Resolved<'a> {
+/// The symbol `symbol` names among `symbols`: by its index, or by its name as msGetSymbolIndex
+/// finds it, the first symbol from index 1 whose name matches without regard to case.
+pub fn resolve<'a, 'n>(
+    symbol: &'n Option<Bound<SymbolRef>>,
+    symbols: &'a [Symbol],
+) -> Resolved<'a, 'n> {
     let index = match symbol {
         None => return Resolved::Default,
         Some(Bound::Value(SymbolRef::Index(index))) => *index as usize,
+        Some(Bound::Value(SymbolRef::Name(name))) => {
+            let found = symbols.iter().position(|symbol| {
+                symbol
+                    .name
+                    .as_ref()
+                    .is_some_and(|known| known.eq_ignore_ascii_case(name))
+            });
+            return found.map_or(Resolved::Unnamed(name), |position| {
+                Resolved::Found(position + 1, &symbols[position])
+            });
+        }
         Some(_) => return Resolved::Unresolved,
     };
     let Some(position) = index.checked_sub(1) else {
@@ -91,7 +117,7 @@ fn is_vector_or_ellipse(symbol: &Symbol) -> bool {
 /// The mark of `style` among `symbols`, MapServer's symbols from index 1.
 pub fn mark<'a>(style: &Style, symbols: &'a [Symbol]) -> Mark<'a> {
     match resolve(&style.symbol, symbols) {
-        Resolved::Missing(_) => Mark::Nothing,
+        Resolved::Missing(_) | Resolved::Unnamed(_) => Mark::Nothing,
         Resolved::Found(_, symbol) if is_vector_or_ellipse(symbol) => Mark::Symbol(symbol),
         Resolved::Found(index, symbol) if symbol.kind == SymbolKind::Pixmap => {
             Mark::Pixmap(index, symbol)
@@ -128,23 +154,35 @@ fn default_size(symbol: &Symbol) -> f64 {
 }
 
 /// msSymbolGetDefaultSize of the style's symbol: of a vector or an ellipse its height, or its
-/// width; 1 for MapServer's default symbol, for any other kind, and where none is found.
-pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol]) -> f64 {
+/// width; of a pixmap its image's height, the image among `pixmaps`, or 1 where it has none
+/// (`src/mapsymbol.c:74-79`); 1 for MapServer's default symbol, for any other kind, and where none
+/// is found.
+pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol], pixmaps: Option<&Pixmaps>) -> f64 {
     match resolve(&style.symbol, symbols) {
         Resolved::Found(_, symbol) if is_vector_or_ellipse(symbol) => default_size(symbol),
+        Resolved::Found(_, symbol) if symbol.kind == SymbolKind::Pixmap => symbol
+            .image
+            .as_ref()
+            .and_then(|path| pixmaps?.get(path)?.as_ref().ok())
+            .map_or(1.0, |image| f64::from(image.height())),
         _ => 1.0,
     }
 }
 
-/// computeSymbolStyle for a vector or ellipse symbol at `factor`, the style's scale factor and
-/// the image's resolution factor, which are one here (see the engine's `classes::scale_factor`). A
+/// computeSymbolStyle for a vector or ellipse symbol at `factor`, the style's scale factor, and
+/// `resolution`, the image's resolution factor (see the engine's `classes::layer_scale_factor`). A
 /// filled symbol is filled with the style's colour and outlined with its outline colour; one not
 /// filled is outlined with its colour, or its outline colour where it has none. The size is
 /// scaled by the scale factor and bounded by `MINSIZE` and `MAXSIZE` scaled by the resolution
 /// factor (see [`bounds::symbol_size`]); the outline is the style's width scaled and bounded alike
 /// by `MINWIDTH` and `MAXWIDTH` (see [`bounds::symbol_outline_width`]); the `GAP` is scaled as the
 /// size is.
-pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> SymbolStyle {
+pub(crate) fn symbol_style(
+    style: &Style,
+    symbol: &Symbol,
+    factor: f64,
+    resolution: f64,
+) -> SymbolStyle {
     let default_size = default_size(symbol);
     let style_size = fixed(&style.size).unwrap_or(default_size);
     let color = fixed(&style.color);
@@ -154,9 +192,13 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> Symbo
     } else {
         (None, color.or(outline_color))
     };
-    let target = bounds::symbol_size(style_size * factor, style, factor);
+    let target = bounds::symbol_size(style_size * factor, style, resolution);
     let outline_width = if outline.is_some() {
-        bounds::symbol_outline_width(fixed(&style.width).unwrap_or(1.0) * factor, style, factor)
+        bounds::symbol_outline_width(
+            fixed(&style.width).unwrap_or(1.0) * factor,
+            style,
+            resolution,
+        )
     } else {
         0.0
     };
@@ -170,18 +212,52 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> Symbo
     }
 }
 
-/// computeSymbolStyle for a pixmap symbol whose image is `height` pixels high, at `factor` (see
-/// [`symbol_style`]): the scale of the image, the style's size, its default the image's height
-/// (msSymbolGetDefaultSize), scaled and bounded by `MINSIZE` and `MAXSIZE`, over that height;
-/// and its rotation in radians, counter-clockwise.
-pub(crate) fn pixmap_style(style: &Style, height: u32, factor: f64) -> (f64, f64) {
+/// computeSymbolStyle, `src/maprendering.c:37-77`, for a pixmap symbol whose image is `height`
+/// pixels high, at `factor` and `resolution` (see [`symbol_style`]): the scale of the image, the style's size, its
+/// default the image's height (msSymbolGetDefaultSize), scaled and bounded by `MINSIZE` and
+/// `MAXSIZE`, over that height; its rotation in radians, counter-clockwise; and its `GAP` scaled
+/// as the size is (66), negative as the `GAP` is.
+pub(crate) fn pixmap_style(
+    style: &Style,
+    height: u32,
+    factor: f64,
+    resolution: f64,
+) -> (f64, f64, f64) {
     let default_size = if height > 0 { f64::from(height) } else { 1.0 };
     let style_size = fixed(&style.size).unwrap_or(default_size);
-    let target = bounds::symbol_size(style_size * factor, style, factor);
+    let target = bounds::symbol_size(style_size * factor, style, resolution);
     (
         target / default_size,
         fixed(&style.angle).unwrap_or(0.0) * DEG_TO_RAD,
+        style.gap.unwrap_or(0.0) * target / style_size,
     )
+}
+
+/// The drawing operation of a pixmap's `image` at the pixel `at`, at `scale` and turned by
+/// `rotation`, as agg2RenderPixmapSymbol, `src/mapagg.cpp:646-702`, draws it: unturned (a
+/// rotation of 0 or `MS_PI * 2.`) and at a scale of 1, blended with its top-left pixel at
+/// `MS_NINT(x - width / 2.)`, `MS_NINT(y - height / 2.)`; otherwise resampled into the square
+/// about the point (see [`pixmap_square`]).
+pub(crate) fn render_pixmap(
+    at: Point,
+    image: Rc<PremultipliedImage>,
+    scale: f64,
+    rotation: f64,
+) -> DrawOp {
+    if (rotation != 0.0 && rotation != std::f64::consts::PI * 2.0) || scale != 1.0 {
+        let (half, inverse) = pixmap_square(image.width(), image.height(), at, scale, rotation);
+        return DrawOp::ResampledPixmap {
+            image,
+            at,
+            half,
+            inverse,
+        };
+    }
+    DrawOp::Pixmap {
+        left: ms_nint(at.x - f64::from(image.width()) / 2.0),
+        top: ms_nint(at.y - f64::from(image.height()) / 2.0),
+        image,
+    }
 }
 
 /// What agg2RenderPixmapSymbol, `src/mapagg.cpp:656-683`, resamples an image of `width` by
@@ -239,14 +315,46 @@ fn marker_size_at(
     }
 }
 
+/// msGetMarkerSize, `src/mapsymbol.c:720-799`, for a pixmap symbol whose image is `width` by
+/// `height` pixels, of `style` at the size `size` and at `scale_factor`: the size, or the image's
+/// height without one (msSymbolGetDefaultSize), scaled and cut to whole pixels, then bounded by
+/// `MINSIZE` and `MAXSIZE` unscaled (750-755); at a size of 1 the image's own width and height,
+/// otherwise the size high and as wide as the image is at that height (772-782).
+pub fn pixmap_marker_size(
+    style: &Style,
+    size: Option<f64>,
+    width: u32,
+    height: u32,
+    scale_factor: f64,
+) -> (f64, f64) {
+    // msSymbolGetDefaultSize, src/mapsymbol.c:74-79 and 91-92: 1 for an image without height.
+    let default_size = if height > 0 { f64::from(height) } else { 1.0 };
+    // `size` is an int there: each assignment cuts the fraction.
+    let pixels = (size.unwrap_or(default_size) * scale_factor).trunc();
+    let pixels = bounds::marker_pixels(pixels, style);
+    if pixels == 1.0 {
+        (f64::from(width), f64::from(height))
+    } else {
+        // MS_MAX with the starting 0 of *width and *height.
+        (
+            bounds::ms_max(0.0, pixels / f64::from(height) * f64::from(width)),
+            bounds::ms_max(0.0, pixels),
+        )
+    }
+}
+
 /// msGetMarkerSize of `style` among `symbols` at `scale_factor`, the size of the marker a label
 /// of a point moves away from: 1 by 1 for MapServer's default symbol, a vector's, an ellipse's,
-/// or any other symbol's MapServer sizes by its extent as it sizes them; the error names a symbol
-/// whose size needs its image or its font, which is not read for it yet, or one the symbol set
-/// does not hold, for which MapServer fails the map.
+/// or any other symbol's MapServer sizes by its extent as it sizes them, and a pixmap's by its
+/// image among `pixmaps`, which msGetMarkerSize loads where it has not been
+/// (`src/mapsymbol.c:736-738`); the error names an SVG or a TrueType symbol, whose size is not
+/// computed yet, a pixmap that names no image or whose image is not among `pixmaps` or does not
+/// load, or a symbol the symbol set does not hold; for the pixmap and the missing symbol,
+/// MapServer fails the map.
 pub fn marker_size_of(
     style: &Style,
     symbols: &[Symbol],
+    pixmaps: &Pixmaps,
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
     marker_size_with(
@@ -254,34 +362,59 @@ pub fn marker_size_of(
         fixed(&style.size),
         &style.symbol,
         symbols,
+        Some(pixmaps),
         scale_factor,
     )
 }
 
 /// [`marker_size_of`] of `style` at the size `size` and of the symbol `symbol` in place of its
-/// own, as a feature binds them.
+/// own, as a feature binds them; without `pixmaps`, a pixmap's size is not computed.
 pub fn marker_size_with(
     style: &Style,
     size: Option<f64>,
     symbol: &Option<Bound<SymbolRef>>,
     symbols: &[Symbol],
+    pixmaps: Option<&Pixmaps>,
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
     match resolve(symbol, symbols) {
         Resolved::Default => Ok((1.0, 1.0)),
-        Resolved::Unresolved => Err("a symbol by a name that is not resolved".to_owned()),
+        Resolved::Unresolved => Err("a symbol bound to a property that is not read".to_owned()),
         Resolved::Missing(index) => Err(format!(
             "symbol {index}, which the symbol set does not hold"
         )),
-        Resolved::Found(_, symbol) => match symbol.kind {
-            SymbolKind::Pixmap | SymbolKind::Svg | SymbolKind::Truetype => Err(format!(
+        Resolved::Unnamed(name) => Err(format!("no symbol is named `{name}`")),
+        Resolved::Found(index, symbol) => match (symbol.kind, pixmaps) {
+            (SymbolKind::Pixmap, Some(pixmaps)) => {
+                let image = match &symbol.image {
+                    None => Err("the pixmap symbol names no image".to_owned()),
+                    Some(path) => pixmaps.get(path).cloned().unwrap_or_else(|| {
+                        Err(format!("the image {path} is not loaded for this render"))
+                    }),
+                };
+                let named = symbol
+                    .name
+                    .as_deref()
+                    .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"));
+                let image =
+                    image.map_err(|why| format!("{named}, whose size is not known: {why}"))?;
+                Ok(pixmap_marker_size(
+                    style,
+                    size,
+                    image.width(),
+                    image.height(),
+                    scale_factor,
+                ))
+            }
+            (SymbolKind::Pixmap | SymbolKind::Svg | SymbolKind::Truetype, _) => Err(format!(
                 "a {:?} symbol, whose size is not computed yet",
                 symbol.kind
             )
             .to_lowercase()),
-            SymbolKind::Vector | SymbolKind::Ellipse | SymbolKind::Simple | SymbolKind::Hatch => {
-                Ok(marker_size_at(style, size, symbol, scale_factor))
-            }
+            (
+                SymbolKind::Vector | SymbolKind::Ellipse | SymbolKind::Simple | SymbolKind::Hatch,
+                _,
+            ) => Ok(marker_size_at(style, size, symbol, scale_factor)),
         },
     }
 }
@@ -303,14 +436,20 @@ pub(crate) fn anchor_shift(anchor: [f64; 2], size: (f64, f64), rotation: f64) ->
     (ox * cos - oy * sin, ox * sin + oy * cos)
 }
 
-/// The rest of msAdjustMarkerPos after [`shifted`]: the point moved so that the symbol's anchor
-/// point, turned with the symbol, lies on `at`, of the size msGetMarkerSize gives at `factor`.
-fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64, factor: f64) -> Point {
+/// The rest of msAdjustMarkerPos after [`shifted`], `src/maprendering.c:1024-1046`: the point
+/// moved so that the symbol's anchor point, turned with the symbol, lies on `at`, of the size
+/// msGetMarkerSize gives, which `size` computes only for an anchor other than the centre.
+pub(crate) fn anchored(
+    at: Point,
+    symbol: &Symbol,
+    rotation: f64,
+    size: impl FnOnce() -> (f64, f64),
+) -> Point {
     let anchor = symbol.anchor_point.unwrap_or([0.5, 0.5]);
     if anchor == [0.5, 0.5] {
         return at;
     }
-    let (ox, oy) = anchor_shift(anchor, marker_size(style, symbol, factor), rotation);
+    let (ox, oy) = anchor_shift(anchor, size(), rotation);
     Point {
         x: at.x + ox,
         y: at.y + oy,
@@ -346,18 +485,21 @@ pub(crate) fn shifted(at: Point, style: &Style, factor: f64) -> Point {
     at
 }
 
-/// The drawing operations of `symbol` at the pixel `at` in `style` at `factor`, as
-/// msDrawMarkerSymbol and the AGG renderer draw a vector or an ellipse symbol: moved by
-/// msAdjustMarkerPos, filled first, then outlined.
-pub fn symbol_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbol: &Symbol, factor: f64) {
-    let s = symbol_style(style, symbol, factor);
-    let at = anchored(
-        shifted(at, style, factor),
-        style,
-        symbol,
-        s.rotation,
-        factor,
-    );
+/// The drawing operations of `symbol` at the pixel `at` in `style` at the scale factor `factor`
+/// and the resolution factor `resolution`, as msDrawMarkerSymbol and the AGG renderer draw a
+/// vector or an ellipse symbol: moved by msAdjustMarkerPos, filled first, then outlined.
+pub fn symbol_ops(
+    ops: &mut Vec<DrawOp>,
+    at: Point,
+    style: &Style,
+    symbol: &Symbol,
+    factor: f64,
+    resolution: f64,
+) {
+    let s = symbol_style(style, symbol, factor, resolution);
+    let at = anchored(shifted(at, style, factor), symbol, s.rotation, || {
+        marker_size(style, symbol, factor)
+    });
     render(ops, at, symbol, &s);
 }
 

@@ -19,10 +19,10 @@ use forager_cli::FileLoader;
 use forager_engine::CachedLabel;
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
-use forager_style_ir::StyleDocument;
+use forager_style_ir::{Map, StyleDocument};
 use serde_json::Value;
 
-use crate::conformance::{Case, Category, Entry, Listed, Tally, Verdict, labels};
+use crate::conformance::{Case, Category, Entry, Listed, Tally, Verdict, labels, wasm};
 use crate::metric::Metric;
 
 /// The cases of the suite and the list that scopes them, for the harness.
@@ -403,9 +403,10 @@ const GEOMETRY: Metric = Metric {
     tolerance: 0.001,
 };
 
-/// The metric of the category text, provisional: no criterion states its numbers yet, so the
-/// harness compares the category by those of geometry and symbols until the noise measurement over
-/// the text cases sets its own.
+/// The metric of the category text, as G-13 states it: that of G-6, a pixel differs when one of its
+/// channels differs by more than 16, and a case passes when at most 0.1 % of its pixels differ.
+/// MapServer at the pin reproduces its own references of the category bit for bit on CI
+/// ([`mapserver_renders_the_cases_in_scope_within_its_noise`]), so the numbers lie above its noise.
 const TEXT: Metric = Metric {
     threshold: 16,
     tolerance: 0.001,
@@ -443,6 +444,7 @@ fn every_label_record_is_that_of_a_text_case_in_scope() {
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_case_in_scope_holds_its_outcome() {
     // Verifies: G-6
+    // Verifies: G-13, for the category text
     // Verifies: G-10, for the text cases the list marks labels-hold
     let suite = suite();
     let cases = conformance::cases(&suite, conformance::DIRECTORIES);
@@ -546,6 +548,78 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
         out.display(),
         failures.join("\n")
     );
+}
+
+/// The module the comparison of G-9 runs, which `scripts/check-rust.sh` builds and names.
+fn conformance_module() -> PathBuf {
+    PathBuf::from(std::env::var("FORAGER_CONFORMANCE_WASM").expect(
+        "FORAGER_CONFORMANCE_WASM names the browser bindings' module built with the feature \
+         conformance; scripts/check-rust.sh builds it and sets it",
+    ))
+}
+
+/// G-9: every case in scope, its shapefiles' features written into its map, renders natively and
+/// on wasm32 to the same RGBA buffer, byte for byte (Q-2). The module is the browser bindings'
+/// wasm32 build, of the same core crates and profile as the bundle, run in wasmi (ADR-0043).
+#[test]
+#[ignore = "needs the msautotest suite and the conformance module; scripts/check-rust.sh builds \
+            them and runs this test"]
+fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
+    // Verifies: G-9
+    // Verifies: Q-2
+    // Verifies: ADR-0043
+    let suite = suite();
+    let module = std::fs::read(conformance_module()).expect("the conformance module reads");
+    let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
+    let cases = conformance::cases(&suite, conformance::DIRECTORIES);
+    let entries = conformance::list(CASES).unwrap();
+    let resolver = stand_in();
+    let loader = Suite(suite.clone());
+    let (mut in_scope, mut compared, mut differences) = (0, 0, Vec::new());
+    for case in &cases {
+        let Some(Listed {
+            entry: Entry::InScope { .. },
+            ..
+        }) = entries.get(&case.key())
+        else {
+            continue;
+        };
+        in_scope += 1;
+        let named = format!("{} {}", case.mapfile, case.result);
+        let mut map = match map_of(case, &loader, &resolver) {
+            Ok(map) => map,
+            Err(why) => {
+                differences.push(format!("{named}: {why}"));
+                continue;
+            }
+        };
+        if let Err(why) = wasm::inline(&mut map, &loader) {
+            differences.push(format!("{named}: {why}"));
+            continue;
+        }
+        let document = StyleDocument::new(map).to_json().unwrap();
+        let (native, files) = wasm::native(&document, &loader);
+        match module.render(&document, &files) {
+            Ok(rendered) => {
+                compared += 1;
+                if let Some(difference) = wasm::difference(&native, &rendered) {
+                    differences.push(format!("{named}: {difference}"));
+                }
+            }
+            Err(why) => differences.push(format!("{named}: the module fails: {why}")),
+        }
+    }
+    assert!(
+        differences.is_empty(),
+        "{} of the cases in scope render differently on wasm32:\n{}",
+        differences.len(),
+        differences.join("\n")
+    );
+    assert!(compared > 0, "no case in scope was compared");
+    assert_eq!(compared, in_scope, "every case in scope is compared");
+    count(&format!(
+        "{compared} of {in_scope} cases in scope render alike natively and on wasm32"
+    ));
 }
 
 /// The thresholds the noise measurement reports the share of differing pixels at.
@@ -953,6 +1027,24 @@ fn render(
     loader: &Suite,
     resolver: &StandIn,
 ) -> Result<(RgbaImage, RenderLabels), String> {
+    let map = map_of(case, loader, resolver)?;
+    let (base, _) = FileLoader::for_mapfile(&loader.0.join(&case.mapfile), Some(&loader.0))
+        .map_err(|e| format!("its base context: {e}"))?;
+    let rendered = forager_cli::render(&map, &[], &base);
+    let Some(image) = rendered.image else {
+        let errors: Vec<_> = rendered
+            .diagnostics
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        return Err(format!("it renders no image: {}", errors.join("; ")));
+    };
+    Ok((image, (rendered.labels, labels::uncompared(&map))))
+}
+
+/// The style IR of `case`, its mapfile loaded through the stand-in table of the G-1 test with
+/// `-i` applied, and the other options of its `map2img` line applied to it.
+fn map_of(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<Map, String> {
     let path = ResourcePath::new(&case.mapfile).map_err(|e| e.to_string())?;
     let options = case.options()?;
     let loaded = match conformance::image_type(&options) {
@@ -975,16 +1067,5 @@ fn render(
     })?;
     let mut map = document.map;
     conformance::apply(&options, &mut map, &loaded.diagnostics)?;
-    let (base, _) = FileLoader::for_mapfile(&loader.0.join(&case.mapfile), Some(&loader.0))
-        .map_err(|e| format!("its base context: {e}"))?;
-    let rendered = forager_cli::render(&map, &[], &base);
-    let Some(image) = rendered.image else {
-        let errors: Vec<_> = rendered
-            .diagnostics
-            .iter()
-            .map(ToString::to_string)
-            .collect();
-        return Err(format!("it renders no image: {}", errors.join("; ")));
-    };
-    Ok((image, (rendered.labels, labels::uncompared(&map))))
+    Ok(map)
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Dev Container check for this repository (ADR-0004).
+# Dev Container check for this repository (ADR-0004, ADR-0042).
 #
 # ADR-0004 keeps the host container engine out of the Dev Container's reach and pins its Features.
 # This check reads the files the decision names and fails on what would break it:
@@ -18,6 +18,10 @@
 #   4. Host side: .vscode/settings.json pins the container-management extension to the host
 #      ('"ms-azuretools.vscode-containers": ["ui"]' inside the 'remote.extensionKind' object),
 #      which is how host containers are managed without the socket.
+#   5. GitHub CLI login (ADR-0042): devcontainer.json binds no host path ending in '.config/gh',
+#      the host's own configuration, whose token may sit in a keyring the container cannot read;
+#      and what it binds to the container's /home/vscode/.config/gh comes from a host path ending
+#      in '.config/gh-devcontainer', the directory of the container's login.
 #
 # Only the default definition is read; a variant under a subdirectory of .devcontainer/ is not.
 # devcontainer.json allows comments, so full-line '//' comments are dropped before reading; a
@@ -94,6 +98,17 @@ else
     [[ "$id" =~ :[0-9]+$ ]] \
       || add_error "$CONFIG: Feature '$id' is not pinned by its major version tag alone ('<ref>:N') — an untagged, mutable, or fully versioned reference is not what the lock resolves (ADR-0004)"
   done
+
+  # 5. GitHub CLI login: each mount is a 'source=…,target=…' string on a line of its own.
+  while IFS= read -r mount; do
+    source="$(grep -oE 'source=[^,"]*' <<< "$mount")"
+    target="$(grep -oE 'target=[^,"]*' <<< "$mount")"
+    if [[ "$source" =~ \.config/gh/?$ ]]; then
+      add_error "$CONFIG: binds the host's own '.config/gh' — the container keeps its login in '~/.config/gh-devcontainer' on the host (ADR-0042)"
+    elif [[ "$target" =~ ^target=/home/vscode/\.config/gh/?$ && ! "$source" =~ \.config/gh-devcontainer/?$ ]]; then
+      add_error "$CONFIG: binds /home/vscode/.config/gh from '${source#source=}' — it comes from '~/.config/gh-devcontainer' on the host (ADR-0042)"
+    fi
+  done < <(uncommented "$ROOT/$CONFIG" | grep -E 'source=[^,]*,[[:space:]]*target=')
 
   # 3. Lock.
   if [[ ! -f "$ROOT/$LOCK" ]]; then

@@ -233,11 +233,17 @@ fn only_a_line_below_u_02b0_is_laid_out() {
     assert_eq!(lines("a\u{2AF}", None, 0), Ok(vec![vec!['a', '\u{2AF}']]));
     assert_eq!(
         lines("a\u{2B0}", None, 0),
-        Err(LineError::NotLatin('\u{2B0}'))
+        Err(LineError::NotLatin {
+            line: 0,
+            character: '\u{2B0}'
+        })
     );
     assert_eq!(
         lines("ok\nit\u{2019}s", None, 0),
-        Err(LineError::NotLatin('\u{2019}'))
+        Err(LineError::NotLatin {
+            line: 1,
+            character: '\u{2019}'
+        })
     );
     // `\r` is skipped, a last `\n` closes the line, any other starts a second one.
     assert_eq!(lines("a\r\nb\r", None, 0), Ok(vec![vec!['a'], vec!['b']]));
@@ -275,7 +281,10 @@ fn a_text_longer_than_maxlength_breaks_at_its_wrap_character_once_a_line_is_full
     assert_eq!(broken("abcd efgh\u{200B}ij", None, 3), ["abcd efgh", "ij"]);
     assert_eq!(
         lines("ab\u{200B}c", None, 3),
-        Err(LineError::NotLatin('\u{200B}'))
+        Err(LineError::NotLatin {
+            line: 0,
+            character: '\u{200B}'
+        })
     );
     // A `\n` of the text is counted and resets nothing; `\r` is left out before counting.
     assert_eq!(broken("ab\ncd e", Some(' '), 4), ["ab", "cd", "e"]);
@@ -437,6 +446,26 @@ fn a_glyph_that_cannot_be_drawn_takes_the_fonts_question_mark_or_fails() {
     assert!(TextPath::new(&font, &mut Glyphs::new(10.0), &two).is_ok());
 }
 
+#[test]
+fn a_line_height_past_any_integer_lays_out_without_a_panic() {
+    // Verifies: Q-3
+    // A glyph size past what an i64 holds makes the line height saturate, and the pen of a line
+    // two or more rows above the last a multiple of it, which overflowed (found by the render
+    // fuzz target). C computes it in an int, where the overflow is undefined; the pen saturates,
+    // so the line stands past any image and its glyphs are left out as they are drawn.
+    let data = fixture("dejavu-sans-subset.ttf");
+    let font = Font::new(&data).unwrap();
+    let ids = font.glyphs(&['1'], true).unwrap().unwrap();
+    for glyph_size in [1e300, f64::INFINITY] {
+        let mut glyphs = Glyphs::new(10.0);
+        let mut layout = Layout::new(glyph_size, 3);
+        for _ in 0..3 {
+            layout.line(&font, &mut glyphs, 0, ids.as_slice()).unwrap();
+        }
+        layout.finish(Align::Left);
+    }
+}
+
 /// The text of `lines` in `font` at a glyph size of 10, aligned by `align`, its glyphs in one
 /// cache.
 fn laid_lines(font: &Font<'_>, text: &[&str], align: Align) -> Laid {
@@ -448,7 +477,7 @@ fn laid_lines(font: &Font<'_>, text: &[&str], align: Align) -> Laid {
             layout.empty_line();
         } else {
             let ids = font.glyphs(&chars, true).unwrap().unwrap();
-            layout.line(font, &mut glyphs, 0, &ids).unwrap();
+            layout.line(font, &mut glyphs, 0, ids).unwrap();
         }
     }
     Laid {

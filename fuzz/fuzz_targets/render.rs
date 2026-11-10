@@ -9,7 +9,10 @@
 //! as it was. The points carry a label of arbitrary text, size, bounds, and resolution, in a test
 //! font of the label crate, drawn through the text path (ADR-0028). The second half of the bytes
 //! is read once more for the features' properties, a filter, a class expression, and a computed
-//! size and colour, as arbitrary trees (ADR-0031), which every layer evaluates.
+//! size and colour, as arbitrary trees (ADR-0031), which every layer evaluates. A pixmap symbol,
+//! a small PNG every image path loads as, is drawn at the points, along the lines at a gap, and
+//! tiled over the polygons, at an arbitrary size, angle, and gap, so that its resampling and the
+//! tiled fill are fuzzed too (ADR-0040, ADR-0041).
 // Verifies: Q-3, ADR-0015, ADR-0031
 #![no_main]
 
@@ -43,16 +46,36 @@ struct Input {
     min_size: f64,
     max_size: f64,
     resolution: f64,
+    pixmap: PixmapInput,
+}
+
+/// The pixmap symbol's style: its `SIZE`, `ANGLE`, `GAP`, `MINSIZE`, `MAXSIZE`, and `OFFSET`.
+#[derive(Arbitrary, Debug)]
+struct PixmapInput {
+    size: Option<f64>,
+    angle: f64,
+    gap: Option<f64>,
+    min_size: Option<f64>,
+    max_size: Option<f64>,
+    offset: Option<(f64, f64)>,
 }
 
 /// A subset of DejaVu Sans, whose licence lies beside it, as the one font of the font set.
 const SANS: &[u8] = include_bytes!("../../crates/label/tests/fixtures/dejavu-sans-subset.ttf");
 
-struct Font;
+/// A PNG of 3 × 3 RGBA pixels, one of the pixmap target's seeds, as every pixmap's image.
+const PIN: &[u8] = include_bytes!("../seeds/pixmap/rgba.png");
 
-impl ResourceLoader for Font {
-    async fn load(&self, _: &ResourcePath) -> Result<Vec<u8>, SourceError> {
-        Ok(SANS.to_vec())
+/// The font for every font path, and the PNG for every image path.
+struct Files;
+
+impl ResourceLoader for Files {
+    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        if path.as_str().ends_with(".png") {
+            Ok(PIN.to_vec())
+        } else {
+            Ok(SANS.to_vec())
+        }
     }
 }
 
@@ -270,6 +293,27 @@ fuzz_target!(|data: &[u8]| {
         anchor_point: None,
         ..symbols[0].clone()
     });
+    symbols.push(Symbol {
+        kind: SymbolKind::Pixmap,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        image: Some("pin.png".to_owned()),
+        ..symbols[0].clone()
+    });
+    let pixmap = &input.pixmap;
+    let pixmap_style = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(3))),
+        size: pixmap.size.map(Bound::Value),
+        angle: Some(Bound::Value(pixmap.angle)),
+        gap: pixmap.gap,
+        min_size: pixmap.min_size,
+        max_size: pixmap.max_size,
+        offset: pixmap
+            .offset
+            .map(|(x, y)| [Bound::Value(x), Bound::Value(y)]),
+        ..Style::default()
+    };
     let symbol_style = Style {
         symbol: Some(Bound::Value(SymbolRef::Index(1))),
         angle: Some(Bound::Value(symbol.angle)),
@@ -305,14 +349,41 @@ fuzz_target!(|data: &[u8]| {
             points,
             layer("symbols", RenderMode::Point, vec![symbol_style], &exprs),
             layer("hatches", RenderMode::Polygon, vec![hatch_style], &exprs),
+            layer(
+                "pixmap-points",
+                RenderMode::Point,
+                vec![pixmap_style.clone()],
+                &exprs,
+            ),
+            layer(
+                "pixmap-lines",
+                RenderMode::Line,
+                vec![pixmap_style.clone()],
+                &exprs,
+            ),
+            layer(
+                "pixmap-fills",
+                RenderMode::Polygon,
+                vec![pixmap_style],
+                &exprs,
+            ),
         ],
         symbols,
         ..Map::default()
     };
-    let sources: BTreeMap<String, Shapes> = ["polygons", "lines", "points", "symbols", "hatches"]
-        .into_iter()
-        .map(|name| (name.to_owned(), Shapes(features.clone())))
-        .collect();
-    let render = forager_engine::render_with_files(&map, &sources, &Font, AggRenderer::new());
+    let sources: BTreeMap<String, Shapes> = [
+        "polygons",
+        "lines",
+        "points",
+        "symbols",
+        "hatches",
+        "pixmap-points",
+        "pixmap-lines",
+        "pixmap-fills",
+    ]
+    .into_iter()
+    .map(|name| (name.to_owned(), Shapes(features.clone())))
+    .collect();
+    let render = forager_engine::render_with_files(&map, &sources, &Files, AggRenderer::new());
     let _ = forager_ports::poll_once(render).expect("the engine waited on a port that never waits");
 });

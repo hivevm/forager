@@ -1,7 +1,8 @@
 name: Checks
 
-# Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed
-# (ShellCheck, used by the shell job, ships preinstalled on the GitHub-hosted runner image).
+# Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed but
+# ShellCheck, which the shell job installs at the version scripts/install-shellcheck.sh pins
+# (ADR-0044).
 # scripts/check-all.sh is the local equivalent; check 9 of scripts/check-docs.sh holds the two
 # lists and the required checks named in README.md together. Each job runs a check after its own
 # self-test, and each script's header says what it checks:
@@ -162,6 +163,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Install ShellCheck at its pinned version
+        run: |
+          bash scripts/install-shellcheck.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Self-test the git hooks
         run: bash scripts/test-git-hooks.sh
       - name: Self-test the ADR index's merge driver

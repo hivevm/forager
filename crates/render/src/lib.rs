@@ -8,9 +8,11 @@ use std::rc::Rc;
 use forager_style_ir::Rgba;
 pub use forager_style_ir::{LineCap, LineJoin};
 pub use hatch::Hatch;
+pub use tile::Tile;
 
 pub mod clip;
 mod hatch;
+mod tile;
 
 /// A position in pixels, from the top-left corner of the image.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -75,6 +77,15 @@ pub enum DrawOp {
         at: Point,
         half: i32,
         inverse: Affine,
+    },
+    /// Fills the area the rings enclose under the even-odd rule without a gamma, each pixel's
+    /// colour the pixel of `tile` at its position modulo the tile's size, as
+    /// `agg2RenderPolygonTiled` repeats a tile from the image's origin. The rings are clipped to
+    /// the image as every path is (ADR-0039). The tile is the one the render holds, shared by
+    /// every item it fills (ADR-0040).
+    TiledFill {
+        rings: Vec<Vec<Point>>,
+        tile: Rc<Tile>,
     },
 }
 

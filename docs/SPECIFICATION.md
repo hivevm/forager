@@ -58,8 +58,8 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
 4. **G-4** — When a style document of a newer minor format version is loaded, the system shall
    ignore its unknown fields with a diagnostic naming the field and its location; a newer major
    version shall be a load error, and an older major version shall be migrated to the current one.
-5. **G-5** — When the WASM bindings receive a style, GeoJSON features, and a viewport, they shall
-   return the rendered RGBA image, and the HTML example shall display it.
+5. **G-5** — When the WASM bindings receive a style, GeoJSON features, and a viewport, they
+   shall return the rendered RGBA image.
 6. **G-6** — When a msautotest case of the category geometry and symbols is rendered, its RGBA
    buffer shall match the reference image: a pixel differs when one of its channels differs by more
    than 16, and the case passes when at most 0.1 % of its pixels differ.
@@ -77,7 +77,12 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
     identical buffer.
 13. **G-13** — When a msautotest case of the categories raster nearest neighbour, raster bilinear
     or average, or text is rendered, its RGBA buffer shall match the reference image within the
-    tolerance of its category.
+    tolerance of its category. The category text takes the metric of G-6: a pixel differs when one
+    of its channels differs by more than 16, and a case passes when at most 0.1 % of its pixels
+    differ.
+14. **G-14** — When the HTML example is opened in a browser with the bundle served, it shall
+    display the image the bindings return for its sample mapfile and GeoJSON, and list their
+    diagnostics.
 
 ## Quality Goals
 
@@ -96,7 +101,9 @@ from the threats below.
 - **Q-3** — Robustness: mapfiles and data come from users, and a panic in the browser loses the
   whole map. Invalid geometries, broken files, and errors of third-party crates become
   diagnostics. Measured by a weekly scheduled fuzz run of 5 minutes per target — the mapfile
-  parser, the YAML/JSON loader, and the renderer — that ends without a panic.
+  parser, the YAML/JSON loader, the reader of each data format a source adapter reads, the
+  expression evaluator, the reader of fonts, the decoder of symbol images, and the renderer — that
+  ends without a panic.
 - **Q-4** — Fidelity: the point of Forager is MapServer's semantics. The share of in-scope
   msautotest cases that pass G-6 and G-13 does not fall from one release to the next.
 - **Q-5** — Bundle size: the core is downloaded by every browser that shows a map. The gzipped
@@ -117,9 +124,10 @@ from the threats below.
   total), the pixels of a symbol image, read from its header before it is decoded, a GIF's from
   its logical screen (4096 × 4096), the pixels of the tile a polygon is filled with, whatever its
   size or gap asks (4096 × 4096), the images one render holds decoded, its fill tiles among them
-  (256 MiB), the points of the symbols one layer places along its lines (1,000,000), the labels
-  one render's label cache holds
-  (100,000), expression nesting (24 levels), the length of a text an expression reads or computes
+  (256 MiB), the points of the symbols one layer places at its features, along its lines, or
+  where a style's geometry transformation puts them (1,000,000), the labels one render's label
+  cache holds (100,000), expression nesting (24 levels), the length of a text an expression reads
+  or computes
   (16 MiB), the values a style document of a newer minor drops (100), and regular-expression
   length (64 KiB) and size are limited, and exceeding a limit is a diagnostic. A test per limit
   feeds an input past it and expects the diagnostic. A label the label cache holds keeps at most
@@ -186,12 +194,12 @@ maintained.
 - There is demand for rendering existing mapfiles in the browser; no evidence for it is recorded
   yet (see *Problem*).
 - The pure-Rust crates the work leans on — agg-rust, proj4rs, harfrust, unicode-bidi, skrifa,
-  i_overlay, shapefile, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and
-  stay maintained. The ADR that picks each one verifies it.
+  i_overlay, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and stay
+  maintained. The ADR that picks each one verifies it.
 - The msautotest reference images are reproducible enough that the tolerances of G-6 and G-13 lie
   above their platform noise; the noise is measured before the first rendering criterion of a
-  category is held. For geometry and symbols, MapServer at the pin, built on CI, reproduces the
-  references of the cases in scope bit for bit.
+  category is held. For geometry and symbols, and for text, MapServer at the pin, built on CI,
+  reproduces the references of the cases in scope bit for bit.
 - proj4 strings cover the projections that client-side maps need.
 - Browser hosts can serve HTTP range requests for COG and FlatGeobuf.
 - The expected scale — features per viewport, image size, layer count — is not known yet; the

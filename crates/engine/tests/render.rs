@@ -11,12 +11,12 @@ mod bless;
 
 use bless::assert_matches_reference;
 use forager_adapter_geojson::GeoJsonSource;
-use forager_engine::{MAX_IMAGE_SIDE, Rendered, render};
-use forager_render::RgbaImage;
+use forager_engine::{MAX_FEATURES_PER_LAYER, MAX_IMAGE_SIDE, Rendered, render};
+use forager_render::{DrawOp, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
-    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
+    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -500,6 +500,62 @@ fn a_source_that_skips_none_yields_no_such_warning() {
     );
 }
 
+/// A source that delivers `count` points, all at one place.
+struct Many {
+    count: usize,
+}
+
+impl forager_ports::FeatureSource for Many {
+    async fn features(
+        &self,
+        _query: &forager_ports::FeatureQuery,
+    ) -> Result<forager_ports::Features, forager_ports::SourceError> {
+        let point = forager_ports::Feature {
+            id: 0,
+            geometry: forager_style_ir::Geometry::Point(forager_style_ir::Coord {
+                x: 50.0,
+                y: 50.0,
+            }),
+            properties: forager_ports::Properties::default(),
+        };
+        Ok(vec![point; self.count].into())
+    }
+}
+
+#[test]
+fn a_layer_of_more_features_than_the_limit_is_skipped() {
+    // Verifies: Q-9
+    // Q-9 bounds a layer to 1,000,000 features.
+    assert_eq!(MAX_FEATURES_PER_LAYER, 1_000_000);
+    let map = map(
+        RenderMode::Point,
+        Style {
+            size: Some(Bound::Value(9.0)),
+            color: Some(Bound::Value(BLUE)),
+            ..Style::default()
+        },
+    );
+    let white = |image: &RgbaImage| image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]);
+    // The style paints its point, so a white image is a layer not drawn.
+    let one = BTreeMap::from([("data".to_owned(), Many { count: 1 })]);
+    let rendered = ready(render(&map, &one, AggRenderer::new()));
+    assert!(!white(&rendered.image.unwrap()));
+    let count = MAX_FEATURES_PER_LAYER + 1;
+    let sources = BTreeMap::from([("data".to_owned(), Many { count })]);
+    let rendered = ready(render(&map, &sources, AggRenderer::new()));
+    assert_eq!(rendered.diagnostics.len(), 1, "{:?}", rendered.diagnostics);
+    let d = &rendered.diagnostics[0];
+    assert_eq!(d.code, "layer-skipped");
+    let reason = format!("{count} features exceed the limit of {MAX_FEATURES_PER_LAYER}");
+    assert!(
+        d.message.contains("`data`") && d.message.contains(&reason),
+        "{}",
+        d.message
+    );
+    assert_eq!(d.span, Some(Span::new("m.map", 5, 3)));
+    assert!(white(&rendered.image.unwrap()));
+}
+
 /// An arrow 4 wide and 6 high, pointing up, with its pen lifted between shaft and head; and a
 /// circle and an ellipse twice as wide as high.
 fn symbols() -> Vec<Symbol> {
@@ -656,6 +712,94 @@ fn at_resolution_144_a_marker_is_drawn_twice_its_size_at_72() {
         "twice the size at 72"
     );
     assert!(at_144 != drawn(head(10.0, 1.5), None), "not the size at 72");
+    // At 144, computeSymbolStyle's scale is SIZE 10 × 2 over the head's sizey 3, 20 / 3, and its
+    // outline WIDTH 1.5 × 2 = 3 (maprendering.c:62-65, 69). agg2RenderVectorSymbol moves the
+    // head's centre (2, 1.5) to the origin, scales it, and moves it to the pixel (50, 50)
+    // (mapagg.cpp:615-623): (0, 3), (2, 0), (4, 3), (2, 2) become (36.67, 60), (50, 40),
+    // (63.33, 60), (50, 53.33), filled, then stroked open 3 wide.
+    let mut map = map(RenderMode::Point, head(10.0, 1.5));
+    map.symbols = symbols();
+    map.resolution = Some(144.0);
+    map.layers[0].classes[0].styles[0].symbol = Some(Bound::Value(SymbolRef::Index(2)));
+    let ops = recorded(&map, r#"{"type": "Point", "coordinates": [50, 50]}"#);
+    let head_at_144 = [
+        (36.666_666_666_666_664, 60.0),
+        (50.0, 40.0),
+        (63.333_333_333_333_336, 60.0),
+        (50.0, 53.333_333_333_333_336),
+    ];
+    let near = |path: &[forager_render::Point]| {
+        path.len() == head_at_144.len()
+            && path
+                .iter()
+                .zip(head_at_144)
+                .all(|(p, (x, y))| (p.x - x).abs() < 1e-9 && (p.y - y).abs() < 1e-9)
+    };
+    match &ops[..] {
+        [
+            DrawOp::Fill { rings, color, .. },
+            DrawOp::Stroke {
+                paths,
+                closed: false,
+                color: outline,
+                width,
+                ..
+            },
+        ] => {
+            assert!(
+                *color == GREEN && rings.len() == 1 && near(&rings[0]),
+                "{ops:?}"
+            );
+            assert!(
+                *outline == BLACK && paths.len() == 1 && near(&paths[0]),
+                "{ops:?}"
+            );
+            assert_eq!(*width, 3.0);
+        }
+        _ => panic!("{ops:?}"),
+    }
+}
+
+/// A renderer that keeps every operation it is asked to draw.
+#[derive(Clone, Default)]
+struct OpRecorder(std::rc::Rc<std::cell::RefCell<Vec<DrawOp>>>);
+
+impl forager_render::Draw for OpRecorder {
+    fn draw(&mut self, item: &forager_render::DisplayItem) {
+        self.0.borrow_mut().push(item.op.clone());
+    }
+}
+
+/// A layer's items are drawn as if onto the map.
+impl forager_render::Renderer for OpRecorder {
+    type Layer<'a> = &'a mut Self;
+
+    fn begin(&mut self, _: u32, _: u32, _: Rgba) {}
+
+    fn layer(&mut self, _: u8) -> &mut Self {
+        self
+    }
+    fn finish(self) -> RgbaImage {
+        RgbaImage {
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        }
+    }
+}
+
+/// The operations the render of `map` over `geojson` draws, with no diagnostic.
+fn recorded(map: &Map, geojson: &str) -> Vec<DrawOp> {
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("data".to_owned(), GeoJsonSource::parse(geojson).unwrap())].into();
+    let recorder = OpRecorder::default();
+    let rendered = ready(render(map, &sources, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    recorder.0.take()
 }
 
 #[test]
@@ -819,6 +963,64 @@ fn a_tiny_gap_draws_no_markers_and_says_so() {
     assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
 
+#[test]
+fn the_markers_of_a_point_layer_past_the_budget_are_left_out_and_said_so() {
+    // Verifies: Q-9
+    // A filled head of 4 points at each of 2,000,000 vertices of one feature inside the map: 8
+    // million points, past the million a layer's markers may amount to, and none is drawn.
+    let head = Style {
+        color: Some(Bound::Value(BLUE)),
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        size: Some(Bound::Value(9.0)),
+        ..Style::default()
+    };
+    let mut map = map(RenderMode::Point, head);
+    map.symbols = symbols();
+    let coordinates = vec!["[50, 50]"; 2_000_000].join(",");
+    let geojson = format!(r#"{{"type": "MultiPoint", "coordinates": [{coordinates}]}}"#);
+    let rendered = render_with(&map, Some(&geojson));
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, vec!["line-markers-over-limit"]);
+    let image = rendered.image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
+
+#[test]
+fn the_stand_in_squares_of_a_point_layer_spend_none_of_the_budget() {
+    // Verifies: Q-9
+    // A style without a symbol, which MapServer does not draw, and for which Forager draws its
+    // square of 4 points: at 260,000 features, 1,040,000 points, past the million a layer's
+    // markers may amount to, every square is drawn, the last feature's at (10, 10) among them.
+    let square = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(3.0)),
+        ..Style::default()
+    };
+    const FEATURES: usize = 260_000;
+    let point = |at: &str| {
+        format!(r#"{{"type": "Feature", "geometry": {{"type": "Point", "coordinates": {at}}}}}"#)
+    };
+    let mut features = vec![point("[50, 50]"); FEATURES - 1];
+    features.push(point("[10, 10]"));
+    let geojson = format!(
+        r#"{{"type": "FeatureCollection", "features": [{}]}}"#,
+        features.join(",")
+    );
+    let rendered = render_with(&map(RenderMode::Point, square), Some(&geojson));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 50), Some(BLUE));
+    assert_eq!(image.pixel(10, 90), Some(BLUE), "the last feature's square");
+}
+
 /// A polygon layer of [`SQUARE_WITH_HOLE`] whose class draws `styles`, with a hatch symbol at
 /// index 1.
 fn render_hatched(styles: Vec<Style>) -> Rendered {
@@ -922,18 +1124,21 @@ fn a_hatch_past_its_bound_is_not_drawn_and_reported() {
 #[test]
 fn a_hatch_of_a_polygon_past_its_bound_on_vertices_is_not_drawn_and_reported() {
     // Verifies: Q-9
-    // A circle of 17 000 vertices, past the bound of 16 384, under a hatch 10 apart.
-    let points: Vec<String> = (0..=17_000)
+    // A comb of 17 000 teeth, 17 002 vertices past the bound of 16 384, under a hatch 10 apart:
+    // each vertex 80 pixels from the one before, so that msTransformShapeSimplify keeps them all.
+    let mut points: Vec<String> = (0..=17_000)
         .map(|i| {
-            let t = f64::from(i % 17_000) / 17_000.0 * std::f64::consts::TAU;
-            format!("[{}, {}]", 50.0 + 40.0 * t.cos(), 50.0 + 40.0 * t.sin())
+            let x = 10.0 + 80.0 * f64::from(i) / 17_000.0;
+            let y = if i % 2 == 0 { 10.0 } else { 90.0 };
+            format!("[{x}, {y}]")
         })
         .collect();
-    let circle = format!(
+    points.push("[10, 10]".into());
+    let comb = format!(
         r#"{{"type": "Polygon", "coordinates": [[{}]]}}"#,
         points.join(", ")
     );
-    let rendered = render_hatched_on(vec![hatch_style(BLACK, 10.0, 1.0, 45.0, vec![])], &circle);
+    let rendered = render_hatched_on(vec![hatch_style(BLACK, 10.0, 1.0, 45.0, vec![])], &comb);
     let codes: Vec<&str> = rendered
         .diagnostics
         .iter()
@@ -1375,4 +1580,144 @@ fn a_bless_reports_an_image_that_changed_its_size_is_new_or_replaces_a_broken_on
         square,
         "the bless repaired the reference"
     );
+}
+
+/// The image of a line layer drawing a thin green line along [`ELL`], then `style`.
+fn render_after_a_line(style: Style) -> RgbaImage {
+    let rendered = render_markers(vec![line_style(GREEN, 1.0), style]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    rendered.image.unwrap()
+}
+
+#[test]
+fn a_later_transformed_style_with_only_an_outlinecolor_draws_its_marker_once_as_written() {
+    // lineLayerDrawShape hands every style with a GEOMTRANSFORM to msDrawTransformedShape in the
+    // cached layer's first pass, with no test of its colour, and the cache's passes skip it, so
+    // the condition of the later passes does not apply: the style is drawn once, as written, its
+    // marker at the corner outlined in its OUTLINECOLOR and not filled. No outline pass prepares
+    // it, which would swap its colours and fill the head in black: msDrawVectorLayer prepares
+    // only the first style, and only with an OUTLINEWIDTH above 0.
+    let line = render_after_a_line(Style::default());
+    let head = Style {
+        color: None,
+        outline_color: Some(Bound::Value(BLACK)),
+        ..transformed(GeomTransform::Vertices, 2, BLUE, 12.0)
+    };
+    let image = render_after_a_line(head);
+    assert!(image != line, "the head is drawn");
+    assert_eq!(image.pixel(91, 28), Some(BLACK), "the head's outline");
+    assert_eq!(
+        image.pixel(91, 21),
+        Some(WHITE),
+        "the head's inside, unfilled"
+    );
+}
+
+#[test]
+fn a_documents_symbol_name_that_no_symbol_carries_draws_nothing_and_warns_once() {
+    // A style document has no image file to read an unknown name as, so the style draws
+    // nothing, also over a polygon with a COLOR; the layer warns once for the name, however many
+    // of its styles name it.
+    let unknown = || Style {
+        color: Some(Bound::Value(GREEN)),
+        symbol: Some(Bound::Value(SymbolRef::Name("nowhere".to_owned()))),
+        ..Style::default()
+    };
+    let map = map_with(RenderMode::Polygon, vec![unknown(), unknown()]);
+    let rendered = render_with(&map, Some(SQUARE_WITH_HOLE));
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["symbol-unknown"]);
+    assert!(
+        rendered.diagnostics[0].message.contains("`nowhere`"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(25, 75), Some(WHITE));
+}
+
+/// The height in pixels of what is not white in `image`.
+fn ink_height(image: &RgbaImage) -> u32 {
+    let rows: Vec<u32> = (0..image.height)
+        .filter(|&y| (0..image.width).any(|x| image.pixel(x, y) != Some(WHITE)))
+        .collect();
+    rows.last().map_or(0, |last| last - rows[0] + 1)
+}
+
+/// A point layer of the filled circle of [`symbols`] at `SIZE` 10 in red, at the centre of a map
+/// of 101 × 101 pixels over `side` map units, at `resolution`, its layer changed by `layer`.
+fn circle_at_scale(side: f64, resolution: f64, layer: impl Fn(&mut Layer)) -> RgbaImage {
+    let style = Style {
+        color: Some(Bound::Value(RED)),
+        symbol: Some(Bound::Value(SymbolRef::Index(3))),
+        size: Some(Bound::Value(10.0)),
+        ..Style::default()
+    };
+    let mut map = map(RenderMode::Point, style);
+    map.symbols = symbols();
+    map.extent = Some(Extent {
+        min_x: 0.0,
+        min_y: 0.0,
+        max_x: side,
+        max_y: side,
+    });
+    map.resolution = Some(resolution);
+    layer(&mut map.layers[0]);
+    let centre = side / 2.0;
+    let point = format!(r#"{{"type": "Point", "coordinates": [{centre}, {centre}]}}"#);
+    let rendered = render_with(&map, Some(&point));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    rendered.image.unwrap()
+}
+
+#[test]
+fn a_symbolscaledenom_scales_a_layers_styles_by_the_maps_scale() {
+    // msPrepareImage (mapdraw.c): a layer's scale factor is its SYMBOLSCALEDENOM over the map's
+    // scale, times RESOLUTION over DEFRESOLUTION. At 1:50000, 101 pixels across, 144 dpi, and
+    // meters: 25000 / 50000 × 144 / 72 = 1, so the circle of SIZE 10 is 10 pixels high, where the
+    // resolution factor alone, 2, would make it 20.
+    let side = 50_000.0 * 100.0 / (144.0 * 39.3701);
+    let scaled = circle_at_scale(side, 144.0, |layer| {
+        layer.symbol_scale_denom = Some(25_000.0);
+    });
+    assert!(
+        (9..=11).contains(&ink_height(&scaled)),
+        "{}",
+        ink_height(&scaled)
+    );
+    let unscaled = circle_at_scale(side, 144.0, |_| {});
+    assert!(
+        (19..=21).contains(&ink_height(&unscaled)),
+        "{}",
+        ink_height(&unscaled)
+    );
+}
+
+#[test]
+fn sizeunits_size_a_layers_styles_in_map_units_by_the_cellsize() {
+    // msPrepareImage: a layer of SIZEUNITS other than pixels scales its styles by the inches of
+    // its unit over those of the map's, over the cellsize: 50 meters over 100 pixels is 0.5 per
+    // pixel, so a SIZE of 10 meters is 20 pixels, whatever the resolution.
+    for resolution in [72.0, 144.0] {
+        let sized = circle_at_scale(50.0, resolution, |layer| {
+            layer.size_units = Some(Units::Meters);
+        });
+        assert!(
+            (19..=21).contains(&ink_height(&sized)),
+            "{}",
+            ink_height(&sized)
+        );
+    }
 }

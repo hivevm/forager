@@ -11,6 +11,11 @@ publish.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# The module the conformance test runs in wasmi and compares with the native render (G-9,
+# ADR-0043): exports of plain integers beside the browser API, which the bundle leaves out.
+conformance = []
+
 [dependencies]
 forager-style-ir.workspace = true
 forager-ports.workspace = true

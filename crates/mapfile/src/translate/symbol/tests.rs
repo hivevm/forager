@@ -90,8 +90,18 @@ fn a_symbol_set_or_image_outside_the_base_context_is_refused() {
 
 #[test]
 fn an_unknown_symbol_is_a_warning() {
-    let (loaded, _) = first_style("MAP LAYER CLASS STYLE SYMBOL 'nowhere' END END END END");
-    assert_eq!(codes(&loaded), ["symbol-unknown"]);
+    use forager_style_ir::{SymbolKind, SymbolRef};
+    // A name no symbol carries is an image file (msAddImageSymbol), whether it exists is known
+    // only as it is drawn: no warning at load.
+    let (loaded, style) = first_style("MAP LAYER CLASS STYLE SYMBOL 'nowhere' END END END END");
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        style.unwrap().symbol,
+        Some(Bound::Value(SymbolRef::Index(1)))
+    );
+    let symbols = loaded.document.unwrap().map.symbols;
+    assert_eq!(symbols[0].kind, SymbolKind::Pixmap);
+    assert_eq!(symbols[0].name.as_deref(), Some("nowhere"));
     let (loaded, _) = first_style("MAP LAYER CLASS STYLE SYMBOL 3 END END END END");
     assert_eq!(codes(&loaded), ["symbol-unknown"]);
     for text in [
@@ -397,12 +407,18 @@ fn an_index_past_the_symbols_or_a_quoted_number_warns_and_a_negative_one_is_refu
         style.unwrap().symbol,
         Some(Bound::Value(SymbolRef::Index(2)))
     );
-    // A quoted number is a name (MS_STRING), which no symbol has.
+    // A quoted number is a name (MS_STRING), which no symbol has: the pixmap `1` appended after
+    // the ellipse, as msAddImageSymbol makes it.
     let (loaded, style) = first_style(format!("{one} '1' END END END END").leak());
-    assert_eq!(codes(&loaded), ["symbol-unknown"]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
     assert_eq!(
         style.unwrap().symbol,
-        Some(Bound::Value(SymbolRef::Name("1".to_owned())))
+        Some(Bound::Value(SymbolRef::Index(2)))
+    );
+    let appended = &loaded.document.unwrap().map.symbols[1];
+    assert_eq!(
+        (appended.name.as_deref(), appended.image.as_deref()),
+        (Some("1"), Some("1"))
     );
     // "Invalid SYMBOL id, must be greater than or equal to 0" (loadStyle).
     let (loaded, _) = first_style(format!("{one} -1 END END END END").leak());
@@ -446,4 +462,163 @@ fn a_symbol_file_reads_nested_and_successive_symbolsets_in_order() {
         .map(|s| s.name.as_deref().unwrap())
         .collect();
     assert_eq!(names, ["a", "b", "c", "d"]);
+}
+
+#[test]
+fn a_style_naming_an_image_file_appends_its_symbol_in_mapservers_order() {
+    use forager_style_ir::{SymbolKind, SymbolRef};
+    // classResolveSymbolNames resolves a class's styles before its labels' styles,
+    // msGetSymbolIndex finds a name without regard to case from index 1 or has msAddImageSymbol
+    // append it: SVG for a `.svg` extension and a pixmap otherwise, named by the file name, its
+    // path against the map's.
+    let loaded = load_files(&[
+        (
+            "maps/m.map",
+            "MAP SYMBOLSET 'sym/s.sym'
+               LAYER CLASS
+                 LABEL STYLE SYMBOL 'b.svg' END END
+                 STYLE SYMBOL 'a.png' END STYLE SYMBOL 'A.PNG' END
+               END END
+             END",
+        ),
+        ("maps/sym/s.sym", SYMBOLS),
+    ]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let map = loaded.document.unwrap().map;
+    let appended: Vec<_> = map.symbols[3..]
+        .iter()
+        .map(|s| (s.kind, s.name.as_deref(), s.image.as_deref()))
+        .collect();
+    assert_eq!(
+        appended,
+        [
+            (SymbolKind::Pixmap, Some("a.png"), Some("maps/a.png")),
+            (SymbolKind::Svg, Some("b.svg"), Some("maps/b.svg")),
+        ]
+    );
+    let class = &map.layers[0].classes[0];
+    let index = |i| Some(Bound::Value(SymbolRef::Index(i)));
+    let refs: Vec<_> = class.styles.iter().map(|s| s.symbol.clone()).collect();
+    assert_eq!(refs, [index(4), index(4)]);
+    assert_eq!(class.labels[0].styles[0].symbol, index(5));
+}
+
+#[test]
+fn an_image_file_outside_the_base_context_is_refused_and_one_by_url_warns() {
+    // Verifies: Q-8
+    use forager_style_ir::SymbolRef;
+    for name in ["../../outside.png", "/abs.png"] {
+        let text = format!("MAP LAYER CLASS STYLE SYMBOL '{name}' END END END END");
+        let (loaded, _) = first_style(text.leak());
+        assert_eq!(codes(&loaded), ["image-refused"], "{name}");
+    }
+    // msAddImageSymbol fetches a name that begins with `http`, without regard to case, with curl;
+    // Forager reads nothing past the base context and warns. The name still takes its index, as
+    // msAddImageSymbol grows the symbols before it fetches: a symbol of that name without an
+    // image, which draws nothing.
+    for name in ["http://localhost:8000/x.png", "HTTPS://example.com/x.svg"] {
+        let text = format!("MAP LAYER CLASS STYLE SYMBOL '{name}' END END END END");
+        let (loaded, style) = first_style(text.leak());
+        assert_eq!(codes(&loaded), ["symbol-unknown"], "{name}");
+        let message = &loaded.diagnostics[0].message;
+        assert!(message.ends_with("so its image is not drawn"), "{message}");
+        assert_eq!(
+            style.unwrap().symbol,
+            Some(Bound::Value(SymbolRef::Index(1)))
+        );
+        let symbols = loaded.document.unwrap().map.symbols;
+        assert_eq!(symbols.len(), 1, "{name}");
+        assert_eq!(symbols[0].name.as_deref(), Some(name));
+        assert_eq!(symbols[0].image, None, "{name}");
+        assert_eq!(
+            symbols[0].kind,
+            forager_style_ir::SymbolKind::Pixmap,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_symbol_by_url_takes_its_index_so_that_the_next_image_is_numbered_after_it() {
+    use forager_style_ir::SymbolRef;
+    // After the symbol file's three, the URL is symbol 4 and `b.png` symbol 5, as MapServer
+    // numbers them: `SYMBOL 5` is `b.png`, past the symbols read with the map but not past
+    // those its styles append, and the URL in another case is symbol 4 again.
+    let loaded = load_files(&[
+        (
+            "m.map",
+            "MAP SYMBOLSET 's.sym'
+               LAYER CLASS
+                 STYLE SYMBOL 'http://localhost/x.png' END STYLE SYMBOL 'b.png' END
+                 STYLE SYMBOL 5 END STYLE SYMBOL 'HTTP://LOCALHOST/X.PNG' END
+               END END
+             END",
+        ),
+        ("s.sym", SYMBOLS),
+    ]);
+    assert_eq!(codes(&loaded), ["symbol-unknown", "symbol-unknown"]);
+    let map = loaded.document.unwrap().map;
+    let names: Vec<_> = map.symbols[3..]
+        .iter()
+        .map(|s| (s.name.as_deref(), s.image.as_deref()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            (Some("http://localhost/x.png"), None),
+            (Some("b.png"), Some("b.png"))
+        ]
+    );
+    let refs: Vec<_> = map.layers[0].classes[0]
+        .styles
+        .iter()
+        .map(|s| s.symbol.clone().unwrap())
+        .collect();
+    let index = |i| Bound::Value(SymbolRef::Index(i));
+    assert_eq!(refs, [index(4), index(5), index(5), index(4)]);
+}
+
+#[test]
+fn an_index_is_past_the_symbols_only_past_those_the_styles_append() {
+    // `SYMBOL 1` names the image `a.png` a later style appends, as MapServer resolves the names
+    // once the map is read; `SYMBOL 2` is past it.
+    let styles = "STYLE SYMBOL 'a.png' END END END END";
+    let (loaded, _) = first_style(format!("MAP LAYER CLASS STYLE SYMBOL 1 END {styles}").leak());
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let (loaded, _) = first_style(format!("MAP LAYER CLASS STYLE SYMBOL 2 END {styles}").leak());
+    assert_eq!(codes(&loaded), ["symbol-unknown"]);
+}
+
+#[test]
+fn an_empty_symbol_name_is_refused() {
+    // msAddImageSymbol returns -1 for an empty name, and classResolveSymbolNames fails the load
+    // with "Undefined symbol", as loadStyle fails it for a negative index.
+    let (loaded, _) = first_style("MAP LAYER CLASS STYLE SYMBOL '' END END END END");
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+    assert!(loaded.diagnostics[0].message.contains("empty"));
+    assert!(loaded.document.is_none());
+}
+
+#[test]
+fn half_a_million_image_names_load_and_a_name_resolves_to_its_first_match_whatever_its_case() {
+    // Verifies: Q-9
+    // Each style names an image file of its own, which msAddImageSymbol appends; a name is
+    // looked up once per style, so the load is linear in the names. Scanning the symbols for
+    // each, as msGetSymbolIndex does, took 300 s for this mapfile. The last style names the
+    // first image in other case, which msGetSymbolIndex finds without regard to case.
+    const NAMES: usize = 500_000;
+    let mut text = String::from("MAP LAYER CLASS\n");
+    for i in 0..NAMES {
+        text.push_str(&format!("STYLE SYMBOL 'i{i}.png' END\n"));
+    }
+    text.push_str("STYLE SYMBOL 'I0.PNG' END\nEND END END\n");
+    assert!(text.len() <= crate::MAX_TOTAL_BYTES, "{}", text.len());
+    let (loaded, _) = first_style(text.leak());
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let map = loaded.document.unwrap().map;
+    assert_eq!(map.symbols.len(), NAMES);
+    let styles = &map.layers[0].classes[0].styles;
+    let index = |i| Some(Bound::Value(forager_style_ir::SymbolRef::Index(i)));
+    assert_eq!(styles[NAMES - 1].symbol, index(NAMES as u32));
+    assert_eq!(styles[NAMES].symbol, index(1));
 }

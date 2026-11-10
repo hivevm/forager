@@ -121,9 +121,10 @@ impl Reports {
         let layer_name = crate::name(layer);
         let message = match failure {
             Failure::Pattern { pattern, construct } => format!(
-                "layer {layer_name}: the pattern `{pattern}` of {what} uses {construct}, which \
+                "layer {layer_name}: the pattern {} of {what} uses {construct}, which \
                  Forager cannot match as MapServer does; the expression that holds it never \
-                 matches"
+                 matches",
+                crate::quoted(pattern)
             ),
             _ => format!(
                 "layer {layer_name}: an expression of {what} reads or computes a text past {} \
@@ -220,6 +221,30 @@ impl<'a> Selector<'a, '_> {
                 0.0
             }
         }
+    }
+
+    /// The text the expression `expr` of label `label` of class `class` gives for `feature`, as
+    /// msEvalTextExpression gives it, its properties read as `bind` reads them; `None` where it
+    /// fails, as for a text past Q-9's bound, which is reported.
+    pub fn label_text(
+        &mut self,
+        expr: &Expr,
+        feature: &Feature,
+        class: usize,
+        label: usize,
+    ) -> Option<Vec<u8>> {
+        self.evaluator
+            .text(expr, &FeatureProperties(&feature.properties))
+            .map_err(|failure| {
+                self.reports.report(
+                    &failure,
+                    self.layer_index,
+                    self.layer,
+                    Carrier::Label(class, label),
+                    self.diagnostics,
+                );
+            })
+            .ok()
     }
 
     /// Each of `features` the layer draws, with the place of its class and its styles bound to
@@ -418,28 +443,59 @@ pub(crate) fn layer_in_scale(layer: &Layer, scale: f64) -> bool {
 /// of its unit, as src/mapscale.c computes it without `ENABLE_VARIABLE_INCHES_PER_DEGREE`, which
 /// the build at the pin leaves off; -1, which bounds nothing, for pixels.
 pub(crate) fn scale_denom(map: &Map, view: &View, width: u32) -> f64 {
-    let inches_per_unit = match map.units.unwrap_or(Units::Meters) {
-        Units::Inches => 1.0,
+    let units = map_units(map);
+    if units == Units::Pixels {
+        return -1.0;
+    }
+    let resolution = map.resolution.unwrap_or(72.0);
+    let md = f64::from(width - 1) / (resolution * inches_per_unit(units));
+    (view.extent.max_x - view.extent.min_x) / md
+}
+
+/// The map's `UNITS`, meters unless written, as initMap sets them.
+fn map_units(map: &Map) -> Units {
+    map.units.unwrap_or(Units::Meters)
+}
+
+/// msInchesPerUnit (src/mapscale.c) of `units`, without `ENABLE_VARIABLE_INCHES_PER_DEGREE`,
+/// which the build at the pin leaves off: the inches of one unit, and 1 for pixels, which its
+/// table does not name.
+fn inches_per_unit(units: Units) -> f64 {
+    match units {
+        Units::Inches | Units::Pixels => 1.0,
         Units::Feet => 12.0,
         Units::Miles => 63360.0,
         Units::Meters => 39.3701,
         Units::Kilometers => 39370.1,
         Units::Degrees => 4_374_754.0,
         Units::NauticalMiles => 72913.3858,
-        Units::Pixels => return -1.0,
-    };
-    let resolution = map.resolution.unwrap_or(72.0);
-    let md = f64::from(width - 1) / (resolution * inches_per_unit);
-    (view.extent.max_x - view.extent.min_x) / md
+    }
 }
 
-/// msPrepareImage's scale factor of a layer and of its classes, styles, and labels, and its
-/// resolution factor of the image: the map's `RESOLUTION` over its `DEFRESOLUTION`, both 72
-/// unless written. The two are one number for sizes in pixels without a `SYMBOLSCALEDENOM`,
-/// msPrepareImage's last branch, which is the one the engine draws; a label of a layer with
-/// either is not drawn yet, and a style draws as if it had neither.
-pub(crate) fn scale_factor(map: &Map) -> f64 {
+/// The image's resolution factor: the map's `RESOLUTION` over its `DEFRESOLUTION`, both 72
+/// unless written (msPrepareImage). It scales the bounds of every style, its `MINSIZE`,
+/// `MAXSIZE`, `MINWIDTH`, and `MAXWIDTH`, and a label's.
+pub(crate) fn resolution_factor(map: &Map) -> f64 {
     map.resolution.unwrap_or(72.0) / map.def_resolution.unwrap_or(72.0)
+}
+
+/// msPrepareImage's scale factor of `layer`, at the map's `cellsize` and scale `scale_denom`
+/// (see [`scale_denom`]): for `SIZEUNITS` other than pixels, the inches of that unit over those
+/// of the map's, over the cellsize; with a `SYMBOLSCALEDENOM` above 0 at a scale above 0, that
+/// over the scale, times the resolution factor; otherwise the resolution factor. Its classes,
+/// styles, labels, and labels' styles inherit it (msUpdateClassScaleFactor), as the mapfile
+/// gives none of them a `SIZEUNITS` of its own (loadClass, loadStyle, and loadLabel read none).
+pub(crate) fn layer_scale_factor(map: &Map, layer: &Layer, cellsize: f64, scale_denom: f64) -> f64 {
+    let resolution = resolution_factor(map);
+    match layer.size_units {
+        Some(units) if units != Units::Pixels => {
+            inches_per_unit(units) / inches_per_unit(map_units(map)) / cellsize
+        }
+        _ => match layer.symbol_scale_denom {
+            Some(denom) if denom > 0.0 && scale_denom > 0.0 => denom / scale_denom * resolution,
+            _ => resolution,
+        },
+    }
 }
 
 /// A symbol by its name, as msGetSymbolIndex finds it, without regard to case; 0, the default

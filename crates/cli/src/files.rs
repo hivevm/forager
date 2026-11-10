@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
@@ -17,6 +18,16 @@ pub struct FileLoader {
 pub(crate) struct DataLoader {
     files: FileLoader,
     limit: u64,
+}
+
+/// Reads the files of one load of a mapfile from the base context, each read limited to what
+/// remains of the bound on them all (Q-9), so that the files of a load never hold much more than
+/// the bound together. A read is cut one byte past what remains, which brings the frontend's
+/// own count past the bound: it, not this loader, reports `mapfile-too-large`. A loader of its
+/// own for each load, since a second load through this one would read cut files as whole.
+pub struct MapfileLoader {
+    files: FileLoader,
+    remaining: Cell<u64>,
 }
 
 impl FileLoader {
@@ -54,6 +65,12 @@ impl FileLoader {
         DataLoader { files: self, limit }
     }
 
+    /// The loader of the same base context for one load of a mapfile, within the bound on all
+    /// the files of a load (Q-9).
+    pub fn for_load(&self) -> MapfileLoader {
+        MapfileLoader::within(self.clone(), forager_mapfile::MAX_TOTAL_BYTES as u64)
+    }
+
     /// The canonical path of `path` where it is a file inside the base context; `None` for one
     /// that is missing or that a link leads out of, alike.
     fn inside(&self, path: &ResourcePath) -> Option<PathBuf> {
@@ -69,9 +86,20 @@ impl FileLoader {
     }
 }
 
-impl ResourceLoader for FileLoader {
+impl MapfileLoader {
+    fn within(files: FileLoader, total: u64) -> Self {
+        let remaining = Cell::new(total);
+        Self { files, remaining }
+    }
+}
+
+impl ResourceLoader for MapfileLoader {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
-        self.read(path, forager_mapfile::MAX_TOTAL_BYTES as u64)
+        let bytes = self.files.read(path, self.remaining.get())?;
+        let read = bytes.len() as u64;
+        self.remaining
+            .set(self.remaining.get().saturating_sub(read));
+        Ok(bytes)
     }
 }
 
@@ -95,20 +123,32 @@ impl ResourceLoader for DataLoader {
     }
 }
 
-/// The bytes of a regular file, at most one past the limit of a load, which then reports it
-/// (Q-9). A pipe or a device is refused unopened, since opening or reading one may wait or never
-/// end; the file opened is checked again.
-fn read_bounded(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
+/// The bytes of a regular file, at most one past `limit`, which the caller then reports (Q-9): the
+/// one reader of every file the CLI is handed. A pipe or a device is refused unopened, since
+/// opening or reading one may wait or never end; the file opened is checked on its handle, since
+/// the path may name another file by then.
+///
+/// A residual risk stays, low, for one who can write into the base context during a load, or to
+/// a file named on the command line: between its checks by path and the open, in the path
+/// [`FileLoader::read`] checked to lie inside the base context as well, a file can be swapped for
+/// a FIFO, on which the open blocks before the check on the handle, or a directory for a link out
+/// of the base context, which the check on the handle does not see. Closing it takes opening
+/// without following links and without blocking, which on unix needs a dependency of its own
+/// (`libc`, ADR-0012); the maintainer decided against it (2026-11-07).
+pub(crate) fn read_bounded(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
     let not_regular = || std::io::Error::other("not a regular file");
     if !std::fs::metadata(path)?.is_file() {
         return Err(not_regular());
     }
     let file = std::fs::File::open(path)?;
-    if !file.metadata()?.is_file() {
+    let opened = file.metadata()?;
+    if !opened.is_file() {
         return Err(not_regular());
     }
-    let mut bytes = Vec::new();
+    // Room for what the file holds now, or one past the limit, so that its bytes are not moved
+    // as they are read; a file that grows meanwhile is read on as any. The limits are a few MiB.
+    let mut bytes = Vec::with_capacity(opened.len().min(limit + 1) as usize);
     file.take(limit + 1).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
@@ -137,5 +177,43 @@ mod tests {
             error.message.contains("exceeds the limit of 10 bytes"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn a_read_takes_no_more_than_what_remains_of_the_total_bound() {
+        // Verifies: Q-9
+        let dir = std::env::temp_dir().join(format!("forager-total-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("m.map"), "MAP END").unwrap();
+        std::fs::write(dir.join("a"), [0u8; 6]).unwrap();
+        std::fs::write(dir.join("b"), [0u8; 8]).unwrap();
+        let (loader, _) = FileLoader::for_mapfile(&dir.join("m.map"), None).unwrap();
+        let loader = MapfileLoader::within(loader, 10);
+        let load = |name: &str| {
+            forager_ports::poll_once(loader.load(&ResourcePath::new(name).unwrap()))
+                .unwrap()
+                .unwrap()
+                .len()
+        };
+        let sizes = (load("a"), load("b"), load("a"));
+        std::fs::remove_dir_all(&dir).unwrap();
+        // 6 of 10, then 4 remain: the second file is cut one past them, which is how the frontend
+        // sees that the bound is passed, and nothing remains for a third.
+        assert_eq!(sizes, (6, 5, 1));
+    }
+
+    #[test]
+    fn a_read_reserves_what_the_file_holds_up_to_one_past_the_limit() {
+        // Verifies: Q-9
+        // A read that grew its buffer as it went would reserve up to twice what it reads.
+        let dir = std::env::temp_dir().join(format!("forager-reserve-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("small"), [0u8; 1001]).unwrap();
+        std::fs::write(dir.join("past"), [0u8; 5001]).unwrap();
+        let read = |name: &str| read_bounded(&dir.join(name), 4000).unwrap();
+        let (small, past) = (read("small"), read("past"));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!((small.len(), small.capacity()), (1001, 1001));
+        assert_eq!((past.len(), past.capacity()), (4001, 4001));
     }
 }
