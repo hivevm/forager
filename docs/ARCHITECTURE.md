@@ -129,13 +129,16 @@ golden path and the test pattern an agent copies from are named here.
   Every host binds its sources to the layers by name through the engine's `bind_sources`, which
   reports a source no layer is named for and one that cannot be read the same way for each.
 - **`symbolize`** — the symbolization of a style, synchronous and without I/O: a feature's geometry
-  in a style bound to it turned into drawing operations, as MapServer draws it. A line's dashes, a
-  polygon's fill through MapServer's default gamma, a point's marker, a pixmap's image placed at a
-  point, unscaled at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol`
-  fills about the point and the inverse of the image's transformation, a polygon filled with its
-  pixmap's tile, the canvas a layer draws on, which the images of the render's pixmaps are handed
-  on, and the paths of the images a layer's styles will draw, which the engine loads before it
-  draws the layer (`draw.rs`); a style's width
+  in a style bound to it turned into drawing operations, as MapServer draws it. The dispatch of a
+  style by the layer's render mode, the symbols a `GEOMTRANSFORM` places, and the paths of the
+  images a layer's styles will draw, which the engine loads before it draws the layer
+  (`draw.rs`); a polygon's fill through MapServer's default gamma, and a polygon filled with its
+  pixmap's tile (`shade.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
+  at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol` fills about the
+  point and the inverse of the image's transformation (`marker.rs`); a line's dashes, and the
+  style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
+  canvas a layer draws on, which the images of the render's pixmaps are handed on
+  (`canvas.rs`); a style's width
   and size bounds, one function per site of MapServer's that bounds them, with the constants they
   bound by (`bounds.rs`); a property's value as bound, the gamma, and degrees to radians
   (`style.rs`); the view that maps the extent to the image, and a line's or a ring's vertices to
@@ -152,7 +155,8 @@ golden path and the test pattern an agent copies from are named here.
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`
-  at the top and `bounds.rs`, `style.rs`, `extent.rs`, and `offset.rs` the leaves; ADR-0008
+  at the top, then `shade.rs`, `marker.rs`, `line.rs`, and `canvas.rs`, and `bounds.rs`,
+  `style.rs`, `extent.rs`, and `offset.rs` the leaves; ADR-0008
   decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs` holds
   this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its

@@ -10,17 +10,38 @@ const ALLOWED: &[(&str, &[&str])] = &[
     (
         "draw",
         &[
-            "bounds",
+            "canvas",
             "extent",
             "geom_transform",
             "hatch",
+            "line",
+            "marker",
+            "shade",
+            "symbol",
+        ],
+    ),
+    (
+        "shade",
+        &[
+            "bounds", "canvas", "extent", "hatch", "line", "style", "symbol", "tile",
+        ],
+    ),
+    (
+        "marker",
+        &["bounds", "canvas", "line", "line_marker", "style", "symbol"],
+    ),
+    (
+        "line",
+        &[
+            "bounds",
+            "canvas",
             "line_marker",
             "offset",
             "style",
             "symbol",
-            "tile",
         ],
     ),
+    ("canvas", &["hatch", "line_marker", "symbol", "tile"]),
     ("hatch", &["bounds", "extent", "style", "symbol"]),
     ("line_marker", &["bounds", "symbol"]),
     ("tile", &["bounds", "symbol"]),
