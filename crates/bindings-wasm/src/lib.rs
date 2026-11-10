@@ -4,6 +4,8 @@
 //!
 //! [`render_map`] holds the logic and is tested natively; [`render`] is its JavaScript face.
 
+#[cfg(feature = "conformance")]
+pub mod conformance;
 mod credentials;
 
 use std::collections::BTreeMap;

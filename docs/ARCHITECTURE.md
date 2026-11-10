@@ -202,7 +202,10 @@ golden path and the test pattern an agent copies from are named here.
   EPSG table, a viewport, and the files the mapfile names, such as its font set and fonts, in, the
   RGBA image and the diagnostics out; it keeps a layer's source reference only when that is a
   `DATA` without credentials, and drops and unbinds every other (Q-7).
-  `scripts/build-web.sh` builds it into `target/web/`.
+  `scripts/build-web.sh` builds it into `target/web/`. Its feature `conformance` adds exports of
+  plain integers that render a style document with inline features and the files of a render, for
+  the comparison of G-9; `scripts/check-rust.sh` builds that module into `target/conformance/`
+  ([ADR-0043](adr/0043-wasm-renders-compared-in-wasmi.md)).
 - **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out. The
   page shows the image, and a Leaflet map whose tiles each call the bindings with the tile's
   extent, grown by a buffer of a tile on every side that it cuts away, so that the label cache
@@ -276,6 +279,11 @@ the C reader `conformance/mapserver_labels.c` beside `map2img`, which `scripts/b
 compiles against the pinned build (ADR-0029); it holds the reader's image byte for byte equal to
 `map2img`'s and fails when the labels the reader takes from MapServer's label cache differ from the
 record, and keeps them in the run's artifact, from which a record is taken again.
+
+The same harness holds G-9 (ADR-0043): its module `conformance/wasm.rs` writes the features of each
+case's shapefiles into its map, renders the style document natively and in the bindings' wasm32
+module, which wasmi runs, with the files the native render read, and compares the two RGBA buffers
+byte for byte, naming the case and the first pixel that differs.
 
 The crates and their allowed edges are [ADR-0009](adr/0009-ports-and-adapters-crates.md); the
 toolchain and its checks are [ADR-0008](adr/0008-rust-toolchain.md).

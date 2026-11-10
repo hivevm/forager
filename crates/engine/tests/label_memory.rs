@@ -440,7 +440,10 @@ fn labels_most_features_refuse() {
 /// 10,000 points the coordinates outweigh the text, so the bound leaves room for some copies of it
 /// besides. At 2,000 points and 64 KiB the text weighs more: laid out, a line is held as its
 /// characters and its glyph indices, 4 bytes each per byte of an ASCII text, once each; a third
-/// copy of the indices, into the layout, held 6.4 times the input. The bound cannot hold where a
+/// copy of the indices, into the layout, held 6.4 times the input. That case holds 5.0 times the
+/// text against a bound of about 5.15 times it, a margin of 3 %, which an allocation more on the
+/// label path takes up: a failure there is a copy to look for, or the maintainer's answer to the
+/// question below. The bound cannot hold where a
 /// text far outweighs its input's coordinates, as its glyph indices alone take 4 bytes for each of
 /// its bytes; that question is the maintainer's.
 fn a_long_text_is_held_once_for_all_its_points() {

@@ -823,3 +823,32 @@ fn the_records_are_the_files_under_their_directory_relative_to_it() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn a_difference_between_the_native_and_the_wasm32_image_names_the_first_differing_pixel() {
+    // Verifies: ADR-0043
+    use super::wasm::difference;
+    let image = |pixels: &[u8]| Ok((2, 2, pixels.to_vec()));
+    let native = [0; 16];
+    let mut changed = native;
+    changed[13] = 7;
+    changed[5] = 1;
+    assert_eq!(difference(&image(&native), &image(&native)), None);
+    assert_eq!(
+        difference(&image(&native), &image(&changed)).as_deref(),
+        Some("pixel (1, 0) is [0, 0, 0, 0] natively and [0, 1, 0, 0] in the module")
+    );
+    assert_eq!(
+        difference(&image(&native), &Ok((4, 1, native.to_vec()))).as_deref(),
+        Some("the native image is 2x2, the module's 4x1")
+    );
+    assert_eq!(
+        difference(&image(&native), &Err("a trap".to_owned())).as_deref(),
+        Some("the module renders no image: a trap")
+    );
+    assert_eq!(
+        difference(&Err("no map".to_owned()), &Err("no map".to_owned())),
+        None
+    );
+    assert!(difference(&Err("no map".to_owned()), &Err("a trap".to_owned())).is_some());
+}

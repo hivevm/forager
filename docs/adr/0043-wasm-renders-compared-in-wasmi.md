@@ -1,9 +1,9 @@
 # ADR-0043: The conformance test runs the engine's wasm32 build in wasmi and compares it with the native render
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-07
 - **Deciders:** Markus Brigl
-- **Applies to:** the test of G-9 in `crates/cli/tests/`, its `wasmi` dev-dependency, the C-ABI exports of `crates/bindings-wasm` behind its feature `conformance`, the build of that module in `scripts/check-rust.sh`, and `deny.toml` for the crates it adds
+- **Applies to:** the test of G-9 in `crates/cli/tests/`, its `wasmi` dev-dependency and wasmi's optimization in the dev profile, the exports of `crates/bindings-wasm` behind its feature `conformance`, the build of that module in `scripts/check-rust.sh`, and `cargo deny` for the crates it adds
 
 ## Context
 
@@ -26,14 +26,21 @@ month), wasmer 7.5.0 (several compiler backends, the largest tree), and Node wit
 glue (no Node in the container; the browser runner ADR-0008 left out). None of the Rust runtimes
 runs wasm-bindgen's glue without stubbing its imports, which follow wasm-bindgen's internals.
 
+The workspace denies `unsafe` code outside `render-agg` ([ADR-0015](0015-agg-rust-rasterizer.md)),
+and an export of the C ABI needs `#[unsafe(no_mangle)]`; `wasm_bindgen` exports a function without
+it in the crate's code. Its exports in the module `cargo` builds carry a hash in their names, which
+the wasm-bindgen CLI removes, as it does for the bundle (read 2026-11-10, wasm-bindgen 0.2.129).
+
 ## Decision
 
 We will run the engine's `wasm32-unknown-unknown` build in `wasmi`, a dev-dependency of the
-conformance test, through plain C-ABI exports (`alloc`, `dealloc`, `render`) that
-`crates/bindings-wasm` compiles behind its feature `conformance` with the browser bundle's `wasm`
-profile, handing them each case as a style document with its features inline
-([ADR-0033](0033-inline-features-in-the-style-ir.md)) and the fonts its labels name, and compare
-the RGBA buffer byte for byte with the native render of the same document.
+conformance test, through exports of plain integers (`conformance_input`, `conformance_render`,
+`conformance_output`) that `crates/bindings-wasm` compiles with `wasm_bindgen` behind its feature
+`conformance` with the browser bundle's `wasm` profile, passed through the wasm-bindgen CLI as the
+bundle is, each import of the module a function that traps; handing them each case as a style
+document with its features inline ([ADR-0033](0033-inline-features-in-the-style-ir.md)) and the
+files its native render read, its fonts and images, and compare the RGBA buffer byte for byte with
+the native render of the same document.
 
 **Out of scope:** the browser bundle and its JavaScript API, which the feature leaves unchanged
 (Q-5); the mapfile frontend and the readers of data files on wasm32, which the inline document
@@ -51,7 +58,12 @@ which G-14 waits for.
   and takes up what ADR-0008 left out, and the module has no file system, so every case would be
   embedded and the native buffers passed between processes.
 - **Stubbing wasm-bindgen's imports in a Rust runtime** — no new exports, but bound to
-  wasm-bindgen's internals, which change with its versions.
+  wasm-bindgen's internals, which change with its versions. The exports chosen call none of the
+  imports, so a stub that traps stands for each, whatever wasm-bindgen imports.
+- **C-ABI exports with `#[unsafe(no_mangle)]`** — no wasm-bindgen in the comparison, but `unsafe`
+  code in a second crate, against ADR-0015.
+- **The exports of the module `cargo` builds, found by their names' prefix** — no pass of the
+  wasm-bindgen CLI, but bound to the hash it appends, an internal of wasm-bindgen.
 - **A host crate of its own for the exports** — keeps `bindings-wasm` as it is, but supersedes
   [ADR-0009](0009-ports-and-adapters-crates.md) to add a crate for the same logic.
 - **Mapfile and GeoJSON as the input** — covers the frontend on wasm32 too, but the shapefile cases
@@ -71,24 +83,29 @@ which G-14 waits for.
   <https://wasm-bindgen.github.io/wasm-bindgen/wasm-bindgen-test/usage.html>.
 - rustc, `wasm32-unknown-unknown`:
   <https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html>.
-- The ticket `docs/plan/conformance-harness/10-native-and-wasm-alike.md` and the maintainer's
-  answers of 2026-11-07.
+- The ticket `docs/plan/conformance-harness/10-native-and-wasm-alike.md`, deleted with its
+  implementation, and the maintainer's answers of 2026-11-07.
+- wasmi's features `auto-dispatch` and `portable-dispatch`, in its crate documentation at 2.0.0.
 
 ## Consequences
 
 - Positive: G-9 gets its test, run in the Dev Container as on CI, with no second toolchain and no
   licence exception; a difference points at the engine or the renderer.
 - Positive: no new crate, so ADR-0009 stands; the browser bundle does not change.
-- Negative / trade-offs: an interpreter runs the renders several times slower than native; the
-  test may have to run in a scheduled workflow rather than on every push, which its first run
-  decides.
-- Negative / trade-offs: the C-ABI exports are a second, test-only face of `bindings-wasm`, built
-  only with its feature.
+- Negative / trade-offs: an interpreter runs the renders several times slower than native. The
+  first run compared the 74 cases in scope in 14 s, with wasmi optimized in the dev profile and its
+  portable dispatch, so the test runs on every push; unoptimized it took nine minutes, and the
+  dispatch by tail calls overflowed the stack.
+- Negative / trade-offs: the exports are a second, test-only face of `bindings-wasm`, built only
+  with its feature; the comparison reaches the engine through `wasm_bindgen`'s export of integers,
+  not through the bundle's JavaScript API.
 - Follow-ups: whether `render-agg` and `render` take their mathematical functions from `libm` on
-  both targets, as `symbolize` does, should the test find a difference there.
+  both targets, as `symbolize` does, should the test find a difference there; its first run found
+  none (2026-11-10).
 
 ## Enforcement
 
 The test that renders every case in scope through the module and compares the buffers cites G-9
-and this ADR with `Verifies: G-9, ADR-0043`. `crates/arch-test` refuses `wasmi` outside the
+and Q-2 and this ADR with `Verifies:`; a unit test decides that a difference names the first
+differing pixel. `crates/arch-test` refuses `wasmi` outside the
 dev-dependencies of `crates/cli`, and `cargo deny` holds its licence.

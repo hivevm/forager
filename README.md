@@ -106,7 +106,7 @@ use; edit the mapfile or the GeoJSON and press **Render**. At the top of the pag
 [Leaflet](https://leafletjs.com/) map pans and zooms over the same map, from zoom 0, one map unit
 a pixel, with streets and houses a few levels in, each tile rendered by Forager for its extent;
 Leaflet and the font DejaVu Sans are checked copies under `examples/web/vendor/`
-([ADR-0021](docs/adr/0021-vendored-leaflet.md)).
+([ADR-0045](docs/adr/0045-vendored-third-party-files-of-the-example.md)).
 
 ```console
 $ bash scripts/build-web.sh
