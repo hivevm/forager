@@ -32,7 +32,7 @@ mod symbol;
 mod tile;
 
 pub use crate::canvas::Canvas;
-pub use crate::draw::{can_draw, clip_pixmaps, draw_ops, marked_pixmap, vertices};
+pub use crate::draw::{can_draw, clip_pixmaps, draw_ops, marked_pixmap, point_markers, vertices};
 pub use crate::extent::View;
 pub use crate::line::{Pass, outlined};
 pub use crate::line_marker::MAX_MARKER_POINTS;

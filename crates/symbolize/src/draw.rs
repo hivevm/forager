@@ -116,22 +116,11 @@ pub fn draw_ops(
             }
         }
         (RenderMode::Point, _) => {
-            // pointLayerDrawShape: a point outside the map's extent draws nothing. It draws every
-            // style at every point, whatever its GEOMTRANSFORM.
-            // The markers' points are taken from the canvas's budget (Q-9): where they would
-            // exceed what is left, none of the shape's is drawn, nor any after them. The square
-            // Forager draws for symbol 0, which MapServer does not draw, takes nothing.
-            let points = vertices(geometry);
-            let inside = points.iter().filter(|&&c| view.contains(c)).count();
-            if inside > 0
-                && (of_symbol_zero(style)
-                    || marker_price(style, canvas)
-                        .is_some_and(|price| canvas.markers.take(inside, price)))
-            {
-                for c in points.into_iter().filter(|&c| view.contains(c)) {
-                    marker_ops(&mut ops, view.point_to_pixel(c), style, canvas);
-                }
-            }
+            ops.extend(
+                point_markers(geometry, style, view, canvas)
+                    .into_iter()
+                    .flatten(),
+            );
         }
         (RenderMode::Polygon, Geometry::Polygon(_) | Geometry::MultiPolygon(_))
             if symbol::is_hatch(style, canvas.symbols) =>
@@ -170,6 +159,45 @@ pub fn draw_ops(
         _ => {}
     }
     ops
+}
+
+/// The markers a point layer draws of `style` at each vertex of `geometry` inside the map's
+/// extent, in order, one list for each such vertex: pointLayerDrawShape draws every style at
+/// every point, whatever its GEOMTRANSFORM, and nothing at a point outside the map's extent. The
+/// markers' points are taken from the canvas's budget (Q-9): where they would exceed what is
+/// left, none of the shape's is drawn, nor any after them, its lists left empty; a collection's
+/// parts are each a shape. The square Forager draws for symbol 0, which MapServer does not draw,
+/// takes nothing.
+pub fn point_markers(
+    geometry: &Geometry,
+    style: &Style,
+    view: &View,
+    canvas: &mut Canvas,
+) -> Vec<Vec<DrawOp>> {
+    if let Geometry::Collection(geometries) = geometry {
+        return geometries
+            .iter()
+            .flat_map(|g| point_markers(g, style, view, canvas))
+            .collect();
+    }
+    let points: Vec<Coord> = vertices(geometry)
+        .into_iter()
+        .filter(|&c| view.contains(c))
+        .collect();
+    let drawn = !points.is_empty()
+        && (of_symbol_zero(style)
+            || marker_price(style, canvas)
+                .is_some_and(|price| canvas.markers.take(points.len(), price)));
+    points
+        .into_iter()
+        .map(|c| {
+            let mut ops = Vec::new();
+            if drawn {
+                marker_ops(&mut ops, view.point_to_pixel(c), style, canvas);
+            }
+            ops
+        })
+        .collect()
 }
 
 /// Every vertex of a geometry, in order.

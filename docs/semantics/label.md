@@ -138,10 +138,11 @@ markers, and the others, whose text MapServer lays out in its built-in font, whi
 are left out with `label-not-drawn` ("it names no FONT"). A text of line breaks only lays out no
 glyph and so needs no font either.
 
-MapServer draws a feature point by point: the markers at its first point, then the labels there,
-then the markers at its next point. The engine draws all of a feature's markers, then its labels at
-each of its points, then the next feature; so where a feature of several points is drawn, a marker
-at a later point does not cover a label at an earlier one, as it does in MapServer. MapServer's line
+The engine draws a feature point by point, as `pointLayerDrawShape` does
+(`src/mapdraw.c:2062-2105`): at each point inside the map's extent, every class style's marker,
+whatever its `GEOMTRANSFORM`, then the labels there, then the markers at its next point; so a
+marker at a later point of a multipoint covers a label at an earlier one. A point outside the
+extent draws neither. MapServer's line
 and polygon layers draw their labels at once too, which the engine does not draw yet: it leaves
 them out with `label-not-drawn`. MapServer labels no such feature that its simplification to
 pixels ([line.md](line.md), **Vertices**) leaves without a part: `msDrawShape` in `src/mapdraw.c`

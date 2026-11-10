@@ -3986,6 +3986,93 @@ fn a_layer_of_labelcache_off_with_an_opacity_draws_each_label_into_its_image_aft
     );
 }
 
+/// What a layer of `LABELCACHE OFF` draws of one multipoint at `points`: its class's square of 20
+/// pixels in green, of the `GEOMTRANSFORM` `transform`, and the label "Fen" at each point. Each
+/// operation in order, a marker as `M` at the x of its centre, the label's glyphs as `L` at the x
+/// of their first point.
+fn multipoint_off(
+    points: &[[f64; 2]],
+    transform: Option<forager_style_ir::GeomTransform>,
+) -> Vec<(char, f64)> {
+    let mut map = map(Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        ..label_item()
+    });
+    map.layers[0].label_cache = false;
+    map.layers[0].classes[0].styles = vec![Style {
+        color: Some(Bound::Value(GREEN)),
+        size: Some(Bound::Value(20.0)),
+        geom_transform: transform,
+        ..Style::default()
+    }];
+    let coordinates: Vec<String> = points.iter().map(|[x, y]| format!("[{x}, {y}]")).collect();
+    let geojson = format!(
+        r#"{{"type": "FeatureCollection", "features": [{{"type": "Feature", "properties": {{}},
+            "geometry": {{"type": "MultiPoint", "coordinates": [{}]}}}}]}}"#,
+        coordinates.join(", ")
+    );
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    recorder
+        .0
+        .take()
+        .iter()
+        .map(|op| match op {
+            forager_render::DrawOp::Fill { rings, .. } => {
+                ('M', f64::midpoint(rings[0][0].x, rings[0][2].x))
+            }
+            forager_render::DrawOp::Glyphs { path, .. } => match path[0] {
+                PathCommand::MoveTo(p) => ('L', p.x),
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        })
+        .collect()
+}
+
+/// The operations a multipoint at x 40 and 45 is drawn by: each point's marker, then its label,
+/// the label 5 pixels further at the second point.
+fn each_point_marker_then_label(drawn: &[(char, f64)]) {
+    let first = drawn.get(1).map_or(0.0, |(_, x)| *x);
+    assert_eq!(
+        drawn,
+        [('M', 40.0), ('L', first), ('M', 45.0), ('L', first + 5.0)]
+    );
+}
+
+#[test]
+fn a_multipoint_of_labelcache_off_draws_each_points_marker_then_its_label() {
+    // pointLayerDrawShape (src/mapdraw.c:2062-2105) draws at each point of the shape every
+    // style's marker by msDrawMarkerSymbol, then each label msGetLabelStatus passes by
+    // msDrawLabel, then the next point's markers: the second point's marker, 5 pixels on and
+    // 20 pixels across, covers the first point's label.
+    each_point_marker_then_label(&multipoint_off(&[[40.0, 30.0], [45.0, 30.0]], None));
+}
+
+#[test]
+fn a_multipoint_of_labelcache_off_draws_a_styles_marker_at_each_point_whatever_its_transform() {
+    // msDrawMarkerSymbol draws every style at every point whatever its GEOMTRANSFORM
+    // (src/mapdraw.c:2072-2085): a style of GEOMTRANSFORM "start" too, each before that point's
+    // label.
+    let start = Some(forager_style_ir::GeomTransform::Start);
+    each_point_marker_then_label(&multipoint_off(&[[40.0, 30.0], [45.0, 30.0]], start));
+}
+
+#[test]
+fn a_point_of_a_multipoint_outside_the_extent_draws_neither_marker_nor_label() {
+    // msPointInRect skips a point outside the map's extent before its markers and its labels
+    // (src/mapdraw.c:2065-2066).
+    let drawn = multipoint_off(&[[40.0, 30.0], [200.0, 30.0], [45.0, 30.0]], None);
+    each_point_marker_then_label(&drawn);
+}
+
 /// The map of a label "Fen" at LC over the pixmap `image` of SIZE `size` and ANGLE `angle`,
 /// symbol 1, which its class draws first.
 fn over_pixmap(image: &str, size: Option<f64>, angle: Option<f64>) -> Map {

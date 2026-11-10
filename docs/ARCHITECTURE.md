@@ -103,10 +103,10 @@ golden path and the test pattern an agent copies from are named here.
   render's images and fill tiles come to (`images.rs`,
   [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0031), and
-  those of a point layer of `LABELCACHE OFF` after each feature, without a test against other
-  labels, markers, or the image's edge, where `pointLayerDrawShape` draws them after each point
-  ([label.md](semantics/label.md)): it holds each label as its glyphs' indices and its point,
-  draws each glyph once per font and size, and
+  those of a point layer of `LABELCACHE OFF` at each point after its markers, before the next
+  point's, as `pointLayerDrawShape` draws them, without a test against other labels, markers, or
+  the image's edge ([label.md](semantics/label.md)): it holds each label as its glyphs' indices
+  and its point, draws each glyph once per font and size, and
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
   diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does: a
   `labelpoly` style on the box around the text, a `labelpoint` style's marker at the label's

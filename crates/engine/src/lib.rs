@@ -37,12 +37,12 @@ use std::sync::Arc;
 use forager_ports::{
     Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
 };
-use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::ms_nint;
 use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol};
 use forager_symbolize::{
     Canvas, Pass, Pixmaps, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops, marked_pixmap,
-    resolve,
+    point_markers, resolve, vertices,
 };
 
 use forager_expr::Evaluator;
@@ -188,24 +188,25 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .iter()
             .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
             .collect();
-        // A point layer of LABELCACHE OFF draws each feature's labels after the feature, before
-        // the next feature, into the layer's image; pointLayerDrawShape draws them after each
-        // point, before the markers of the next.
+        // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
+        // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
         let at_once = point_layer && !layer.label_cache;
         let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
-            for (one, labelled) in selected.chunks(1).zip(drawn.chunks(1)) {
-                drawing.draw(&mut target, &mut canvas, one);
-                labels
-                    .collect(
-                        layer_index,
-                        true,
-                        labelled,
-                        pixmaps,
-                        &mut selector.binder,
-                        Some(&mut target),
-                    )
+            for (one, labelled) in selected.iter().zip(drawn.chunks(1)) {
+                let binder = &mut selector.binder;
+                let laid = labels
+                    .collect(layer_index, true, labelled, pixmaps, binder, true)
                     .await;
+                let mut out_of_reach = vec![0; laid.len()];
+                drawing.draw_points(&mut target, &mut canvas, one, |target, point| {
+                    for (label, count) in laid.iter().zip(&mut out_of_reach) {
+                        *count += labels.draw_at_once(target, label, point);
+                    }
+                });
+                for (label, count) in laid.iter().zip(out_of_reach) {
+                    labels.drawn_at_once(binder.diagnostics, label, count);
+                }
             }
         } else {
             drawing.draw(&mut target, &mut canvas, &selected);
@@ -229,7 +230,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                     &drawn,
                     pixmaps,
                     &mut selector.binder,
-                    None::<&mut R>,
+                    false,
                 )
                 .await;
         }
@@ -458,6 +459,39 @@ impl Drawing<'_> {
                     }
                 }
             }
+        }
+    }
+
+    /// Draws the markers of a point layer's feature `selected` at each of its points inside the
+    /// map's extent, every style of its class in its scale range, each point's followed by what
+    /// `label` draws at that point, as pointLayerDrawShape draws a layer of `LABELCACHE OFF`
+    /// (src/mapdraw.c:2062-2105): the markers of a point, then its labels, then the next point's.
+    fn draw_points<R: Draw>(
+        &self,
+        renderer: &mut R,
+        canvas: &mut Canvas,
+        (feature, class, styles): &Selected<'_>,
+        mut label: impl FnMut(&mut R, Point),
+    ) {
+        canvas.class(&self.layer.classes[*class].styles);
+        let mut markers: Vec<Vec<Vec<DrawOp>>> = styles
+            .iter()
+            .filter(|s| classes::in_scale(self.scale, s.min_scale_denom, s.max_scale_denom))
+            .map(|style| point_markers(&feature.geometry, style, self.view, canvas))
+            .collect();
+        let points = vertices(&feature.geometry)
+            .into_iter()
+            .filter(|&c| self.view.contains(c));
+        for (k, c) in points.enumerate() {
+            for style in &mut markers {
+                for op in std::mem::take(&mut style[k]) {
+                    renderer.draw(&DisplayItem {
+                        op,
+                        feature_id: Some(feature.id),
+                    });
+                }
+            }
+            label(renderer, self.view.point_to_pixel(c));
         }
     }
 
