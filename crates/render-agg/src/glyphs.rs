@@ -1,5 +1,5 @@
 // The drawing of glyphs follows agg2RenderGlyphsPath of MapServer's src/mapagg.cpp, at the release
-// pinned in scripts/fetch-msautotest.sh (ADR-0028).
+// pinned in scripts/fetch-msautotest.sh (ADR-0031).
 // Copyright (c) 1996-2007 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -79,7 +79,7 @@ impl AggRenderer {
             let mut scanline = ScanlineU8::new();
             rasterizer.filling_rule(FillingRule::NonZero);
             // A glyph's curves cannot be clipped as a polygon is, so the rasterizer clips its
-            // flattened lines to the image enlarged by the margin, as ADR-0015 clips every path;
+            // flattened lines to the image enlarged by the margin, as ADR-0025 clips every path;
             // the cells of a glyph far larger than the image then stay within it.
             let [min_x, min_y, max_x, max_y] = rect.bounds();
             rasterizer.clip_box(min_x, min_y, max_x, max_y);

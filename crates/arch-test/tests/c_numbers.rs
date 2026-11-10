@@ -1,4 +1,4 @@
-//! C's reading of numbers is ported once (ADR-0037): `atof`, `atoi`, `strtod`, `lrint`, and
+//! C's reading of numbers is ported once (ADR-0017): `atof`, `atoi`, `strtod`, `lrint`, and
 //! MapServer's `MS_NINT` are defined in the module of `style-ir` and nowhere else in the workspace.
 
 use std::path::{Path, PathBuf};
@@ -52,7 +52,7 @@ fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
 
 #[test]
 fn c_number_reading_is_defined_only_in_the_module_of_style_ir() {
-    // Verifies: ADR-0037
+    // Verifies: ADR-0017
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
     rust_files(&root.join("crates"), &mut files);

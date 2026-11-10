@@ -56,7 +56,7 @@ point inside the map's extent, as `msDrawMarkerSymbolInternal` in `src/maprender
 loader the first time a feature the layer draws names it, in a style within its scale range,
 from the path its `IMAGE` names, within 32 MiB, the bound of a font file, and decoded once for
 the whole render, which every point draws from
-([ADR-0040](../adr/0040-a-decoded-pixmap-is-held-once-per-render.md)); a PNG is read as `readPNG`
+([ADR-0029](../adr/0029-pixmaps-held-once-per-render.md)); a PNG is read as `readPNG`
 in `src/mapimageio.c` reads it, its colours premultiplied by their alpha. The image is read, and
 counted against the bytes of the render's images, even where none of the feature's points lies
 inside the map's extent; MapServer reads it only when `msDrawMarkerSymbol` runs, so there a pixmap
@@ -83,10 +83,10 @@ transparent beyond it, at the position the inverse of the image's transformation
 centre to: a translation by minus half the image, a rotation by minus the angle, so
 counter-clockwise on the map, the scaling, and a translation to the point, in the order of
 operations of AGG's `trans_affine`. The filter and the interpolator are AGG 2.4's, ported
-([ADR-0041](../adr/0041-render-agg-resamples-pixmaps-as-agg-2-4.md)). A 32 × 32 image at
+([ADR-0026](../adr/0026-agg-blender-and-resampler.md)). A 32 × 32 image at
 `SIZE 55` has the half-side `lrint(77.825) / 2 + 1 = 40`. The square is clipped to the image
 grown by its margin, as every path is
-([ADR-0039](../adr/0039-the-clip-to-the-image-is-one-module-of-render.md)); MapServer
+([ADR-0027](../adr/0027-clip-to-the-image.md)); MapServer
 rasterizes it whole. Where the square reaches more than that margin past the image, each row's
 span of full cover then starts at the margin, not at the square's edge, and the interpolator,
 which rounds a span's two ends to 256ths of a pixel and steps between them, may sample a pixel
@@ -133,12 +133,12 @@ size with the image drawn in it as at a point at its centre, at `(width / 2., he
 and turned as there and unmoved by the symbol's `ANCHORPOINT`. The polygon is filled under the
 even-odd rule, without the gamma of a polygon's fill, each pixel the tile's at its position modulo
 the tile's size, so that the tiles start at the image's origin wherever the polygon lies, and a
-tile's translucent pixels blend as a pixmap's do (ADR-0034). A tile's transparent pixels, the
+tile's translucent pixels blend as a pixmap's do (ADR-0026). A tile's transparent pixels, the
 image's or those a `GAP` adds around it, leave what lies beneath.
 
 **Its bounds** (Q-9). A tile past 4096 × 4096 pixels, whatever its size or gap asks, and one that
 would bring the images and fill tiles one render holds decoded past 256 MiB
-([ADR-0040](../adr/0040-a-decoded-pixmap-is-held-once-per-render.md)) are not built: nothing is
+([ADR-0029](../adr/0029-pixmaps-held-once-per-render.md)) are not built: nothing is
 allocated for them, the style is not drawn, and the layer warns with `pixmap-not-drawn`, once per
 symbol, naming the limit. MapServer has neither: it allocates what is asked, and a size past an
 `int` that `MS_NINT` rounds wraps there, while one it only truncates, at a scale of 1 or the larger
@@ -177,7 +177,7 @@ largest of the styles, plus 2. It is clipped in map units, or, where a style of 
 the clipped polygon's bounding box grown by 0.7072 widths, so that the box sets where its dashes
 fall, is dashed by `PATTERN` from its first point, the lengths scaled by the factor the bounds
 applied to the width, and is stroked with butt caps. The stroke is cut from the polygon as
-MapServer's Clipper cuts it ([ADR-0032](../adr/0032-hatch-cut-by-i-overlay.md)): the intersection of
+MapServer's Clipper cuts it ([ADR-0028](../adr/0028-hatch-cut-by-i-overlay.md)): the intersection of
 the polygon with the stroke's rectangles, both read under the even-odd rule, every coordinate
 rounded to a hundredth of a pixel; so where stroked lines overlap, at a `SIZE` below the `WIDTH`,
 and where the polygon's rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the

@@ -77,7 +77,7 @@ const SKIPPED: &[(&str, &str)] = &[
     ),
 ];
 
-/// The EPSG codes the suite names beyond those built into the resolver (ADR-0023). Their
+/// The EPSG codes the suite names beyond those built into the resolver (ADR-0019). Their
 /// definitions here are stand-ins, so that the test carries no EPSG data: G-1 decides that a
 /// mapfile loads; whether a projection is right is G-11's.
 const EPSG_CODES: &[u32] = &[
@@ -85,7 +85,7 @@ const EPSG_CODES: &[u32] = &[
 ];
 
 /// The suite's own init file, `wxs/data/epsg2`. Named by a path, as in `init=./data/epsg2:42304`,
-/// the frontend reads it (ADR-0023); named bare, as `init=epsg2:42304`, PROJ finds it through
+/// the frontend reads it (ADR-0019); named bare, as `init=epsg2:42304`, PROJ finds it through
 /// `PROJ_DATA`, which msautotest's run sets and the CLI has no counterpart of, so the CLI fails
 /// that mapfile and the test loads it again with a stand-in for the file.
 const INIT_FILE: &str = "epsg2";
@@ -161,7 +161,7 @@ fn epsg_table() -> String {
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_mapfile_loads_without_an_error() {
     // Verifies: G-1
-    // Verifies: ADR-0023
+    // Verifies: ADR-0019
     let suite = suite();
     let table =
         std::env::temp_dir().join(format!("forager-msautotest-{}.epsg", std::process::id()));
@@ -216,7 +216,7 @@ fn every_msautotest_mapfile_loads_without_an_error() {
     std::fs::remove_file(&table).unwrap();
     assert_eq!(
         with_init_file, 1,
-        "only the mapfile that names the init file bare needs the stand-in (ADR-0023)"
+        "only the mapfile that names the init file bare needs the stand-in (ADR-0019)"
     );
 
     assert_eq!(
@@ -560,14 +560,14 @@ fn conformance_module() -> PathBuf {
 
 /// G-9: every case in scope, its shapefiles' features written into its map, renders natively and
 /// on wasm32 to the same RGBA buffer, byte for byte (Q-2). The module is the browser bindings'
-/// wasm32 build, of the same core crates and profile as the bundle, run in wasmi (ADR-0043).
+/// wasm32 build, of the same core crates and profile as the bundle, run in wasmi (ADR-0034).
 #[test]
 #[ignore = "needs the msautotest suite and the conformance module; scripts/check-rust.sh builds \
             them and runs this test"]
 fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
     // Verifies: G-9
     // Verifies: Q-2
-    // Verifies: ADR-0043
+    // Verifies: ADR-0034
     let suite = suite();
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
@@ -626,14 +626,14 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
 const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 
 /// The noise of G-6 and G-13: MapServer at the pinned release, which `.github/workflows/noise.yml`
-/// builds (ADR-0027), renders every case the list puts in scope, of every category, as
+/// builds (ADR-0033), renders every case the list puts in scope, of every category, as
 /// msautotest's test library runs it, and each rendering is compared with its reference at each of
 /// [`NOISE_THRESHOLDS`]. The report, a table of the share per case and threshold and its maximum
 /// over each category, goes to standard output and to the job summary; it names apart each case
 /// MapServer does not reproduce: `map2img` fails, writes no PNG, writes one of another size, or
 /// differs beyond its category's tolerance at every threshold of the set. The list moves such a
 /// case out of scope, so the test fails when one is in scope. For each text case the reader of
-/// MapServer's label cache (ADR-0029) renders it beside `map2img`, its image byte for byte the
+/// MapServer's label cache (ADR-0033) renders it beside `map2img`, its image byte for byte the
 /// same, and its labels must hold the record beside the list, each box within [`labels::NOISE`] and
 /// every other field exactly; the test fails on a record that differs or is missing, and the
 /// reader's labels stay in `noise/labels/` to take the record from. The renderings stay in
@@ -641,7 +641,7 @@ const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test"]
 fn mapserver_renders_the_cases_in_scope_within_its_noise() {
-    // Verifies: ADR-0029
+    // Verifies: ADR-0033
     let suite = suite();
     let map2img = PathBuf::from(
         std::env::var("FORAGER_MAP2IMG")
@@ -1006,7 +1006,7 @@ fn render_and_compare(
 }
 
 /// What differs between the labels of `case` Forager renders and MapServer's, as the record
-/// beside the list holds them (G-10, ADR-0029); an error is a record missing or unreadable.
+/// beside the list holds them (G-10, ADR-0033); an error is a record missing or unreadable.
 fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<String>, String> {
     let path = labels::record_path(case);
     let text = std::fs::read_to_string(&path)

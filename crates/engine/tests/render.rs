@@ -463,7 +463,7 @@ fn render_skipping(count: u64) -> Rendered {
 
 #[test]
 fn a_source_that_skips_records_yields_one_warning_for_its_layer() {
-    // Verifies: ADR-0025
+    // Verifies: ADR-0022
     let rendered = render_skipping(3);
     let skipped: Vec<_> = rendered
         .diagnostics
@@ -488,7 +488,7 @@ fn a_source_that_skips_records_yields_one_warning_for_its_layer() {
 
 #[test]
 fn a_source_that_skips_none_yields_no_such_warning() {
-    // Verifies: ADR-0025
+    // Verifies: ADR-0022
     let rendered = render_skipping(0);
     assert!(
         rendered

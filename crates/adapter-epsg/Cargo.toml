@@ -1,6 +1,6 @@
 [package]
 name = "forager-adapter-epsg"
-description = "Resolves EPSG codes to proj4 strings for Forager: a minimal built-in set and a host-supplied table (ADR-0023)."
+description = "Resolves EPSG codes to proj4 strings for Forager: a minimal built-in set and a host-supplied table (ADR-0019)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

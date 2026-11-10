@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of how MapServer runs on CI. Verifies: ADR-0027, ADR-0029
+# Self-test of how MapServer runs on CI. Verifies: ADR-0033
 #
 # The rules hold scripts/build-mapserver.sh and .github/workflows/noise.yml: the build script
 # reads the pin from scripts/fetch-msautotest.sh and names no tag or commit of its own, refuses to

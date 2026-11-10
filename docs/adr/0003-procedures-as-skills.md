@@ -8,58 +8,68 @@
 ## Context
 
 [`AGENTS.md`](../../AGENTS.md) states rules. Several of them are procedures — developing an ADR
-([§3](../../AGENTS.md#3-adr-rules), rule 3), planning work larger than one session and working
-its tickets ([§4](../../AGENTS.md#4-working-style)), reviewing a change, and revising the design
-when a feature spec closes or a number of changes has passed
-([§5](../../AGENTS.md#5-quality-bar--definition-of-done)) — and each was written out in the rule
-file and again where it is used: the ADR template, the issue templates, the pull request template.
-The copies drift, and every sharpening lands in a file that every session reads in full whether
-it reviews, plans, or fixes a typo.
+([§3](../../AGENTS.md#3-adr-rules), rule 3), normalizing the record (rule 5), planning work
+larger than one session and working its tickets ([§4](../../AGENTS.md#4-working-style)),
+reviewing a change, and revising the design when a feature spec closes or a number of changes
+has passed ([§5](../../AGENTS.md#5-quality-bar--definition-of-done)). Written out in the rule
+file and again where they are used — the ADR template, the issue templates, the pull request
+template — the copies drift, and every sharpening lands in a file that every session reads in
+full whether it reviews, plans, or fixes a typo.
 
 Two forces limit the answer. The rule file is the single source of working rules, and no other
-document may state one (ADR-0001) — so wherever a procedure moves, it must carry the *how* and
-cite the rule, never restate it. And the template is vendor-neutral: a format one agent reads is a
-pointer file's worth of accommodation, not a home for process.
+document may state one ([ADR-0001](0001-agent-governance-model.md)) — so wherever a procedure
+moves, it must carry the *how* and cite the rule, never restate it. And the rule file is
+vendor-neutral: a format one agent reads is a pointer file's worth of accommodation, not a home
+for process.
 
 Agent Skills — a directory with a `SKILL.md` whose front matter names it and says when it applies,
-loaded in full only when a task matches — are an open specification adopted by every agent this
-template names and some forty others. The location is not part of the specification: Codex, Gemini
-CLI, and Cursor read `.agents/skills/`; Claude Code reads only `.claude/skills/`, and the request
-to read the neutral path is open upstream. Tried on Claude Code 2.1.274 in this container: a
-`.claude/skills` that is itself a symlink loads nothing; a real `.claude/skills/` directory
-holding one symlink per skill loads all of them.
+loaded in full only when a task matches — are an open specification adopted by every agent the
+template names and some forty others. The location is not part of the specification: Codex,
+Gemini CLI, and Cursor read `.agents/skills/`; Claude Code reads only `.claude/skills/`, and the
+request to read the neutral path is open upstream. Tried on Claude Code 2.1.274 in the Dev
+Container: a `.claude/skills` that is itself a symlink loads nothing; a real `.claude/skills/`
+directory holding one symlink per skill loads all of them. Forager works its tickets with Claude
+Code ([ADR-0006](0006-harness.md)), so the pointers are what its sessions read.
 
 ## Decision
 
-We will keep the procedures of the rule file — developing an ADR, planning work larger than one
-session, working its tickets alone or in parallel, reviewing a change, revising the design — as
-Agent Skills under `.agents/skills/`, one directory with a `SKILL.md` each, reached by Claude Code
-through one symlink per skill under `.claude/skills/`. The walk through `TEMPLATE-SETUP.md` is a
-skill of the same kind, deleted together with that file. A skill carries the steps of one
-procedure, cites the section of `AGENTS.md`, the ADR, or the setup step that requires it, and
-states no rule of its own; the rule file and the templates name the skill and drop the steps. A
-skill may carry reference files its procedure reads, such as the catalogue of concepts of
-`propose-adr`; they hold knowledge and no rule. It may carry a script a step runs where the step
-is a sequence of commands whose order decides its outcome, such as the claim of `work-tickets`;
-the script is a how like the steps, and a self-test under `scripts/` runs it (ADR-0002).
+We will keep the procedures of the rule file — developing an ADR, normalizing the record,
+planning work larger than one session, working its tickets alone or in parallel, reviewing a
+change, revising the design — as Agent Skills under `.agents/skills/`, one directory with a
+`SKILL.md` each, reached by Claude Code through one symlink per skill under `.claude/skills/`.
 
-**Out of scope:** skills a derived project adds for its own domain; whether a skill may run
-unattended, which its ticket decides ([§4](../../AGENTS.md#4-working-style)); the checks that
-verify a skill's front matter; and what happens to the pointers once Claude Code reads the
-neutral path — they are deleted then, as the `CLAUDE.md` pointer will be.
+- **The setup walk.** The walk through `TEMPLATE-SETUP.md` is a skill of the same kind, deleted
+  together with that file; in this repository both are gone.
+- **A skill carries a how.** A skill carries the steps of one procedure, cites the section of
+  `AGENTS.md`, the ADR, or the setup step that requires it, and states no rule of its own. The
+  rule file and the templates name the skill and drop the steps.
+- **Reference files.** A skill may carry reference files its procedure reads, such as the
+  catalogue of concepts of `propose-adr`. They hold knowledge and no rule.
+- **Scripts.** A skill may carry a script a step runs where the step is a sequence of commands
+  whose order decides its outcome, such as the claim of `work-tickets` or the map script of
+  `normalize`. The script is a how like the steps, and a self-test under `scripts/` runs it
+  ([ADR-0002](0002-decisions-verified-by-tests.md)).
+
+**Out of scope:** skills a project adds for its own domain; whether a skill may run unattended,
+which its ticket decides ([§4](../../AGENTS.md#4-working-style)); the checks that verify a skill's
+front matter; and what happens to the pointers once Claude Code reads the neutral path — they are
+deleted then, as the `CLAUDE.md` pointer will be.
 
 ## Alternatives considered
 
-- **Procedures stay in prose** — the state this ADR ends: four copies, and a rule file paid for in
-  full by every session.
+- **Procedures stay in prose** — the state this ADR ended: four copies, and a rule file paid for
+  in full by every session.
 - **One agent's native commands** — Claude Code commands, Cursor rules — put the process in one
-  vendor's format, against ADR-0001's reason for one rule file.
+  vendor's format, against the reason for one rule file
+  ([ADR-0001](0001-agent-governance-model.md)).
 - **A published skills collection or plugin** — brings a process in one piece, with its own
-  artifacts and vocabulary; ADR-0006 declined the same trade for the same reason.
+  artifacts and vocabulary; [ADR-0005](0005-feature-layer.md) declined the same trade for the same
+  reason.
 - **Procedures as plain files under `docs/`, loaded by pointer** — no progressive disclosure and no
   invocation by name; every session pays for all of them or for none.
 - **A copy per agent directory** — `.claude/skills/` and `.agents/skills/` both tracked — is two
-  sources that drift, the thing ADR-0001 exists to prevent; a symlink is one.
+  sources that drift, the thing [ADR-0001](0001-agent-governance-model.md) exists to prevent; a
+  symlink is one.
 - **One symlink for the whole directory** — a single pointer instead of one per skill, and the
   obvious first try; Claude Code does not follow it (see Context).
 
@@ -85,20 +95,28 @@ neutral path — they are deleted then, as the `CLAUDE.md` pointer will be.
   when it runs; a human starts a review or an ADR by name instead of by hoping a paragraph is
   followed; the templates' comments become pointers.
 - Negative / trade-offs: a fifth kind of tracked artifact, and one that can smuggle a rule past
-  ADR-0001, a skill's reference file as much as its steps — only review sees that. A skill is
-  Markdown and is followed as reliably as Markdown is; what the template enforces, it enforces
-  through git hooks, CI checks, and repository settings as before, and this decision adds
-  nothing to that. The pointers rest on observed behaviour of one Claude Code version, not on
-  documented behaviour.
+  [ADR-0001](0001-agent-governance-model.md), a skill's reference file as much as its steps — only
+  review sees that. A skill is Markdown and is followed as reliably as Markdown is; what the
+  repository enforces, it enforces through git hooks, CI checks, and repository settings, and this
+  decision adds nothing to that. The pointers rest on observed behaviour of one Claude Code
+  version, not on documented behaviour.
 - Follow-ups: delete the pointers and their check once Claude Code reads the neutral path; a
   check on skill front matter once the reference validator is a dependency worth taking.
 
 ## Enforcement
 
-**Not mechanically decidable:** that a skill carries a procedure and no rule, and that the rule
-file names the skill instead of the steps, is review. What is checkable is already checked:
-[`scripts/check-docs.sh`](../../scripts/check-docs.sh) resolves every link and every section
-reference a skill makes, and fails when a skill under `.agents/skills/` has no pointer under
-`.claude/skills/`, when a pointer there resolves to no skill, when the pointer is a copy rather
-than a symlink, or when a skill lives only in the pointer directory: a skill without its pointer
-is invisible to Claude Code and to no other agent, and nothing but this check notices.
+Check 11 of [`scripts/check-docs.sh`](../../scripts/check-docs.sh) (job `docs` in
+[`checks.yml`](../../.github/workflows/checks.yml)) fails in each of these cases:
+
+- a skill under `.agents/skills/` has no pointer under `.claude/skills/`;
+- a pointer there resolves to no skill;
+- the pointer is a copy rather than a symlink;
+- a skill lives only in the pointer directory.
+
+A skill without its pointer is invisible to Claude Code and to no other agent, and nothing but
+this check notices. Checks 3 and 4 resolve every link and every section reference a skill makes.
+The self-test of `scripts/check-docs.sh` cites this ADR
+([ADR-0002](0002-decisions-verified-by-tests.md)).
+
+**Not mechanically decidable:** the review decides that a skill carries a procedure and no rule,
+and that the rule file names the skill instead of the steps.

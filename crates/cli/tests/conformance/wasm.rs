@@ -1,5 +1,5 @@
-//! The comparison of G-9 (ADR-0043): a case's map, its shapefiles' features written into its
-//! layers (ADR-0033), rendered natively and by the browser bindings' wasm32 build, which
+//! The comparison of G-9 (ADR-0034): a case's map, its shapefiles' features written into its
+//! layers (ADR-0018), rendered natively and by the browser bindings' wasm32 build, which
 //! `crates/bindings-wasm` compiles with its feature `conformance` and wasmi runs here. The module's
 //! exports and the format of its input and output are those `crates/bindings-wasm/src/
 //! conformance.rs` states; it renders the document with no source bound and reads the files of

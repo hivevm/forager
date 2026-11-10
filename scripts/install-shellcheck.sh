@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Installs ShellCheck at the version scripts/check-shell.sh holds the shell lint to (ADR-0044):
+# Installs ShellCheck at the version scripts/check-shell.sh holds the shell lint to (ADR-0007):
 # the release binary of koalaman/shellcheck for this machine's architecture, verified against the
 # SHA-256 GitHub records for the release asset, which is pinned here, into a directory on PATH,
 # ~/.local/bin unless SHELLCHECK_BIN_DIR names another. A ShellCheck already at the version there
-# is kept. scripts/install-tools.sh runs it in the Dev Container (ADR-0010), and the shell job of
+# is kept. scripts/install-tools.sh runs it in the Dev Container (ADR-0009), and the shell job of
 # CI runs it before the lint.
 #
 # Usage: bash scripts/install-shellcheck.sh

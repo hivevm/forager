@@ -1,7 +1,7 @@
 //! The text path on an arbitrary font file: the input is the one font of the font set, and a
 //! label of every printable ASCII character and `í`, the `?` among them, is drawn with it at a
-//! point and at a size large enough to reach past the image (Q-3, ADR-0028).
-// Verifies: Q-3, ADR-0028
+//! point and at a size large enough to reach past the image (Q-3, ADR-0031).
+// Verifies: Q-3, ADR-0031
 #![no_main]
 
 use std::collections::BTreeMap;

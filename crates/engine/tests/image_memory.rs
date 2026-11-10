@@ -32,7 +32,7 @@ impl ResourceLoader for Same {
 
 #[test]
 fn the_image_that_would_pass_256_mib_is_refused_before_it_is_decoded() {
-    // Verifies: Q-9, ADR-0040
+    // Verifies: Q-9, ADR-0029
     let side = 4096;
     let file = forager_encode::png(&RgbaImage {
         width: side,

@@ -20,5 +20,5 @@ schemars = { workspace = true, optional = true }
 workspace = true
 
 [features]
-# The JSON Schema of the style document (ADR-0020); never enabled by the browser bindings (Q-5).
+# The JSON Schema of the style document (ADR-0014); never enabled by the browser bindings (Q-5).
 schema = ["dep:schemars"]

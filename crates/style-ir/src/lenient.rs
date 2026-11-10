@@ -1,5 +1,5 @@
-//! The reader of a newer minor's document that does not read as this build's version (ADR-0020,
-//! ADR-0022): it finds where the typed read failed, drops what this build does not know there
+//! The reader of a newer minor's document that does not read as this build's version (ADR-0014,
+//! ADR-0014): it finds where the typed read failed, drops what this build does not know there
 //! with a warning, keeps a condition that does not read as one that never matches, and reads
 //! again, at most [`MAX_DROPPED_VALUES`] times.
 
@@ -217,7 +217,7 @@ fn remove(value: &mut Value, at: &Pointer) {
 /// Reads `value`, a document of a newer minor that does not read as this build's version,
 /// dropping each value this build does not know with a warning naming it and its path: an enum
 /// value unsets its field, and an expression with an unknown operator or function becomes one
-/// that never matches, so that its class, label, or filter is kept (ADR-0030, ADR-0020). Anything else
+/// that never matches, so that its class, label, or filter is kept (ADR-0015, ADR-0014). Anything else
 /// that does not read is the error `code`, naming its path.
 pub(crate) fn read(mut value: Value, code: &str) -> Result<Read, Diagnostic> {
     let mut dropped = Vec::new();

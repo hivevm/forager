@@ -1,5 +1,5 @@
 //! The images of a render's pixmap symbols, loaded through the host's resource loader and
-//! decoded once per render and path (ADR-0040).
+//! decoded once per render and path (ADR-0029).
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -51,7 +51,7 @@ fn png(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
 
 #[test]
 fn an_image_is_loaded_and_decoded_once_however_often_it_is_asked_for() {
-    // Verifies: ADR-0040
+    // Verifies: ADR-0029
     let files = Files::default().with("icons/pin.png", png(2, 3, [200, 100, 50, 128]));
     let mut images = Images::default();
     let first = ready(images.image("icons/pin.png", &files)).unwrap();

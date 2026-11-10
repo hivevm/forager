@@ -1,4 +1,4 @@
-//! A layer's inline features drawn as its source (ADR-0033).
+//! A layer's inline features drawn as its source (ADR-0018).
 
 use std::collections::BTreeMap;
 
@@ -89,7 +89,7 @@ fn render_with(map: &Map, geojson: Option<&str>) -> forager_engine::Rendered {
 
 #[test]
 fn a_layers_inline_features_are_drawn_in_place_of_a_bound_source() {
-    // Verifies: ADR-0033
+    // Verifies: ADR-0018
     let map = map(vec![
         feature(vec![square(10.0, 30.0)], "a"),
         feature(vec![square(60.0, 80.0)], "b"),

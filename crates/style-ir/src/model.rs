@@ -205,7 +205,7 @@ pub struct Layer {
     pub label_cache: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
-    /// The features written into the layer (ADR-0033). A layer with any is read from them alone,
+    /// The features written into the layer (ADR-0018). A layer with any is read from them alone,
     /// whatever source it names or a host binds to it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub features: Vec<InlineFeature>,
@@ -244,7 +244,7 @@ fn is_true(value: &bool) -> bool {
     *value
 }
 
-/// A feature written into a layer, a shape as MapServer holds one (ADR-0033).
+/// A feature written into a layer, a shape as MapServer holds one (ADR-0018).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InlineFeature {
@@ -718,7 +718,7 @@ pub enum Units {
 }
 
 /// A style property that may vary by feature: a value, a property bound as MapServer binds an
-/// attribute, or an expression (ADR-0030). It is read as an untagged enum would read it, a value
+/// attribute, or an expression (ADR-0015). It is read as an untagged enum would read it, a value
 /// before an expression, but an object by its keys, so that a key it does not know is named.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]

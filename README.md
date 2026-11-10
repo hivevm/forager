@@ -44,7 +44,7 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml); rustup installs it on
 first use. [`scripts/install-tools.sh`](scripts/install-tools.sh) installs it with the cargo
-tools the checks need, and the Dev Container runs it after creation (ADR-0008, ADR-0010).
+tools the checks need, and the Dev Container runs it after creation (ADR-0007, ADR-0009).
 
 - **Build:** `cargo build --workspace`
 - **Test:** `cargo test --workspace`
@@ -58,7 +58,7 @@ tools the checks need, and the Dev Container runs it after creation (ADR-0008, A
 - **Fuzz:** `bash scripts/fuzz.sh [seconds per target]` — the weekly fuzz run of Q-3, locally; it
   installs its nightly toolchain and cargo-fuzz
 - **Mutants:** `bash scripts/mutants.sh [shard such as 1/20]` — the weekly mutation testing of
-  ADR-0008, locally; it reports the mutants no test caught
+  ADR-0007, locally; it reports the mutants no test caught
 
 ## Usage
 
@@ -104,7 +104,7 @@ use; edit the mapfile or the GeoJSON and press **Render**. At the top of the pag
 [Leaflet](https://leafletjs.com/) map pans and zooms over the same map, from zoom 0, one map unit
 a pixel, with streets and houses a few levels in, each tile rendered by Forager for its extent;
 Leaflet and the font DejaVu Sans are checked copies under `examples/web/vendor/`
-([ADR-0045](docs/adr/0045-vendored-third-party-files-of-the-example.md)).
+([ADR-0035](docs/adr/0035-vendored-third-party-files.md)).
 
 ```console
 $ bash scripts/build-web.sh
@@ -122,7 +122,7 @@ is refused in the browser.
 
 - **Template release:** v0.8.1 — the release of [NUC](https://github.com/hivevm/nuc) this
   repository carries; a project moves the line when it takes up a later one
-  ([ADR-0005](docs/adr/0005-template-releases.md)).
+  ([ADR-0004](docs/adr/0004-template-releases.md)).
 
 ## Contributing
 
@@ -131,12 +131,6 @@ reviewable changes), the project layout, the Dev Container, the coding agents, t
 integration branches, and the repository settings, and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 for the community standards we expect of everyone taking part. Security issues: please follow
 [`SECURITY.md`](SECURITY.md) instead of opening a public issue.
-
-## Repository settings
-
-The settings of the GitHub repository that no file can enforce are listed under
-[Repository settings](CONTRIBUTING.md#repository-settings) in `CONTRIBUTING.md`; this pointer
-keeps the anchor ADR-0001 links to until a normalization restates it.
 
 ## License
 

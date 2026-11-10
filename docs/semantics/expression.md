@@ -1,7 +1,7 @@
 # `EXPRESSION`
 
 **Where:** `CLASS`, `LABEL`. **IR:** the class's or the label's `expression`, a CQL2 tree
-([ADR-0030](../adr/0030-cql2-expressions.md)).
+([ADR-0015](../adr/0015-expressions-as-cql2.md)).
 
 **Meaning.** Which features the class draws. A class without one draws every feature that reaches
 it; MapServer tries a layer's classes in order and draws a feature with the first that matches. A
@@ -84,11 +84,11 @@ four times that, fail the load. A chain of `AND` or `OR` counts once.
 ## Evaluation
 
 The core crate `expr` evaluates the tree as `msEvalExpression` (`src/maputil.c`) and the grammar of
-`src/mapparser.y` evaluate MapServer's ([ADR-0031](../adr/0031-expression-evaluator.md)). The engine
-tries a layer's `FILTER` first; a feature that fails it is not drawn. It then draws the feature
-with the first class in the map's scale whose expression matches, a class without one matching
-every feature; a feature no class matches is not drawn (`msShapeGetClass`). Before it reads a
-layer's features, it skips the layer outside its own scale range, and one none of whose classes
+`src/mapparser.y` evaluate MapServer's ([ADR-0016](../adr/0016-expression-evaluation.md)). The
+engine tries a layer's `FILTER` first; a feature that fails it is not drawn. It then draws the
+feature with the first class in the map's scale whose expression matches, a class without one
+matching every feature; a feature no class matches is not drawn (`msShapeGetClass`). Before it reads
+a layer's features, it skips the layer outside its own scale range, and one none of whose classes
 might draw at the scale, as `msLayerIsVisible` does with the bounds [scale-range.md](scale-range.md)
 states. Each feature is labelled by the class that draws it, in the order the features are
 drawn. A class is in scale as
@@ -103,14 +103,14 @@ shapefile's `.dbf` (`msDBFGetItemIndex`, `strcasecmp`) and in an OGR source
 (`OGR_FD_GetFieldIndex`): by the source's own lookup, then the first property whose name equals it
 in ASCII case. A feature that has no value for it, or a null one, reads as the empty text, as a
 shape whose source has the field but no value for it gives `""`. A boolean reads as `1` or `0`, as
-OGR gives one; a number as the text its source gives (ADR-0026). A value ends at its first NUL
+OGR gives one; a number as the text its source gives (ADR-0023). A value ends at its first NUL
 byte, as a C string does.
 
 **A missing attribute.** MapServer asks the source for every attribute a layer's classes, styles,
 labels, and filter read before it draws (`msLayerWhichItems`, which collects them with
 `string2list`, again without regard to case), and a source whose schema has no such field fails
 the layer with an error, and with it the map; a field of the schema a feature has no value for
-reads as `""`. No source states its fields to the engine (ADR-0026), so Forager cannot tell a
+reads as `""`. No source states its fields to the engine (ADR-0023), so Forager cannot tell a
 field the schema lacks from one a feature leaves unset: it reads every name a feature does not
 hold as the empty text and draws the layer, whatever the features in view hold. Where MapServer
 fails the map for a name no field has, Forager draws it as if the field were empty.
@@ -153,25 +153,25 @@ expression. Times compare as `msTimeCompare`, field by field from the year to th
 time zones.
 
 **Patterns.** `regexp_like` reads its pattern in PCRE2's syntax in byte mode
-([ADR-0030](../adr/0030-cql2-expressions.md)) and matches it with the `regex` crate's byte matcher,
-its Unicode features off: `.` is one byte, `\d \w \s \b` and the flag `i` are ASCII. An empty value
-never matches, before the pattern is read. A pattern PCRE2 refuses makes the term false where it
-stands. A brace is a quantifier only as `{n}`, `{n,}`, or `{n,m}`, up to 65535, as PCRE2 10.42 reads
-it; any other brace is a literal one (`a{,3}`). Option settings are read as PCRE2 reads them, `(?)`,
-`(?-)`, `(?i-)`, `(?ii)`, and `(?i-i)`, which turns `i` off, included; groups nest at most 250 deep,
-PCRE2's `PARENS_NEST_LIMIT`, and a group left open or a `)` without one is refused. A pattern with a
-construct PCRE2 reads and the crate cannot match as PCRE2 does — a back-reference, a look-around, an
-atomic group, recursion or a subroutine call, `\Q…\E`, `\K`, a possessive quantifier, a branch
-reset, a comment group, the option `x`, `\h`, `\v`, `\R`, `\e`, `\cX`, `\N`, `\p`, `\Z`, `\G`, an
-octal escape, a verb `(*…)`, a range with a class as an end, `^` under the option `m`, which PCRE2
-does not match after a newline that ends the value, groups and repetitions nested deeper than the
-crate's limit of 250, which counts both, and any other the crate refuses where PCRE2 does not — a
-pattern longer than 64 KiB, which is not read at all, and a pattern compiled past 1 MiB (Q-9) make
-the whole expression not match, and the engine reports each once per render with the class, style,
-or filter that holds it (`pattern-unsupported`). `$` matches at the very end only, where PCRE2's
-matches before a final newline too. A pattern written in the tree is compiled once per render; one
-computed per feature, from a property say, is compiled each time it is used, as `mapparser.y`
-compiles and frees one for each `~`.
+([ADR-0015](../adr/0015-expressions-as-cql2.md)) and matches it with the `regex` crate's byte
+matcher, its Unicode features off: `.` is one byte, `\d \w \s \b` and the flag `i` are ASCII. An
+empty value never matches, before the pattern is read. A pattern PCRE2 refuses makes the term false
+where it stands. A brace is a quantifier only as `{n}`, `{n,}`, or `{n,m}`, up to 65535, as PCRE2
+10.42 reads it; any other brace is a literal one (`a{,3}`). Option settings are read as PCRE2 reads
+them, `(?)`, `(?-)`, `(?i-)`, `(?ii)`, and `(?i-i)`, which turns `i` off, included; groups nest at
+most 250 deep, PCRE2's `PARENS_NEST_LIMIT`, and a group left open or a `)` without one is refused. A
+pattern with a construct PCRE2 reads and the crate cannot match as PCRE2 does — a back-reference, a
+look-around, an atomic group, recursion or a subroutine call, `\Q…\E`, `\K`, a possessive
+quantifier, a branch reset, a comment group, the option `x`, `\h`, `\v`, `\R`, `\e`, `\cX`, `\N`,
+`\p`, `\Z`, `\G`, an octal escape, a verb `(*…)`, a range with a class as an end, `^` under the
+option `m`, which PCRE2 does not match after a newline that ends the value, groups and repetitions
+nested deeper than the crate's limit of 250, which counts both, and any other the crate refuses
+where PCRE2 does not — a pattern longer than 64 KiB, which is not read at all, and a pattern
+compiled past 1 MiB (Q-9) make the whole expression not match, and the engine reports each once per
+render with the class, style, or filter that holds it (`pattern-unsupported`). `$` matches at the
+very end only, where PCRE2's matches before a final newline too. A pattern written in the tree is
+compiled once per render; one computed per feature, from a property say, is compiled each time it is
+used, as `mapparser.y` compiles and frees one for each `~`.
 
 **Bound and computed style properties.** For each feature the engine binds `COLOR`,
 `OUTLINECOLOR`, `SIZE`, `WIDTH`, `OUTLINEWIDTH`, `ANGLE`, `OFFSET`, and a `SYMBOL` bound by name as

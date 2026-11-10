@@ -1,6 +1,6 @@
 [package]
 name = "forager-adapter-shapefile"
-description = "The ESRI shapefile feature source of Forager, read as MapServer reads it (ADR-0024)."
+description = "The ESRI shapefile feature source of Forager, read as MapServer reads it (ADR-0021)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,7 +13,7 @@ forager-style-ir.workspace = true
 forager-ports.workspace = true
 
 [dev-dependencies]
-# The counting allocator of the memory tests (ADR-0024).
+# The counting allocator of the memory tests (ADR-0021).
 peak_alloc = "0.3.0"
 
 [lints]

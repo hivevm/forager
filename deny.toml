@@ -1,5 +1,5 @@
-# cargo-deny configuration (ADR-0012): permissive licences only, RustSec advisories, crates.io as
-# the only source. A licence added to `allow` is decided by the maintainer in review (ADR-0007).
+# cargo-deny configuration (ADR-0011): permissive licences only, RustSec advisories, crates.io as
+# the only source. A licence added to `allow` is decided by the maintainer in review (ADR-0006).
 
 [licenses]
 allow = [

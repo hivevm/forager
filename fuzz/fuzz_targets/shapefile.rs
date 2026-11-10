@@ -1,6 +1,6 @@
 //! The shapefile adapter on arbitrary files: a `.shp`, a `.shx`, and a `.dbf` opened through an
 //! in-memory loader and queried with an arbitrary extent — an error, never a panic or a hang
-//! (Q-3, ADR-0024). The target checks no memory bound itself; the memory limit of
+//! (Q-3, ADR-0021). The target checks no memory bound itself; the memory limit of
 //! `scripts/fuzz.sh` fails a run that takes too much.
 //!
 //! The input is split as follows, every number little-endian and a part the input cuts short
@@ -79,7 +79,7 @@ fuzz_target!(|data: &[u8]| {
         let features = forager_ports::poll_once(source.features(&FeatureQuery { extent }))
             .expect("the shapefile source waited although it never waits");
         // Every property of every feature is read, by its name as well, so that the reading of
-        // the .dbf's records is fuzzed with the rest (ADR-0026).
+        // the .dbf's records is fuzzed with the rest (ADR-0023).
         for feature in features.iter().flat_map(|f| &f.features) {
             feature.properties.each(|name, _| {
                 let _ = feature.properties.get(name);

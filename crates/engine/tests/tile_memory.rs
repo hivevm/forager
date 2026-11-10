@@ -1,4 +1,4 @@
-//! A polygon fill's tile within its bounds (Q-9, ADR-0040), measured under a counting allocator:
+//! A polygon fill's tile within its bounds (Q-9, ADR-0029), measured under a counting allocator:
 //! a tile past 4096 × 4096 pixels allocates nothing, and the tile that would bring a render's
 //! decoded images and tiles past 256 MiB is not built. One test, so that no other test's
 //! allocations are counted with it.
@@ -274,7 +274,7 @@ fn the_tile_that_would_pass_256_mib_is_not_built(files: &Files) {
 
 #[test]
 fn a_tile_is_held_to_its_side_and_to_the_bytes_of_the_render() {
-    // Verifies: Q-9, ADR-0040
+    // Verifies: Q-9, ADR-0029
     let side = 4096;
     let big = forager_encode::png(&RgbaImage {
         width: side,

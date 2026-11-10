@@ -1,6 +1,6 @@
 name: Mutants
 
-# The mutation testing of ADR-0008: scripts/mutants.sh over the workspace, once a week and on
+# The mutation testing of ADR-0007: scripts/mutants.sh over the workspace, once a week and on
 # demand; about 800 mutants take some 15 minutes. A sensor: the surviving mutants are reported in the job summary and kept as an
 # artifact; the run fails only when it breaks.
 

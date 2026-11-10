@@ -41,7 +41,7 @@ pub struct Loaded {
 /// Loads the mapfile at `path` inside the base context of `loader`. As in MapServer, every
 /// `INCLUDE` is resolved against the main mapfile's directory, nested ones too; a `..` may leave
 /// that directory but not the base context (Q-8).
-/// `init=` projections are resolved by `resolver` (ADR-0023); without one they are load errors,
+/// `init=` projections are resolved by `resolver` (ADR-0019); without one they are load errors,
 /// unless they name an init file by a path, which is read against the main mapfile's directory
 /// as an `INCLUDE` is.
 pub async fn load<L: ResourceLoader>(
@@ -131,7 +131,7 @@ impl<L: ResourceLoader> Reading<'_, L> {
     }
 
     /// The init files the map's projections name by a path, each read once and bounded as an
-    /// `INCLUDE` is (ADR-0023), keyed by the name as written. One that is refused or cannot be
+    /// `INCLUDE` is (ADR-0019), keyed by the name as written. One that is refused or cannot be
     /// read is the reason, which the projection that names it reports.
     async fn init_files(
         &mut self,

@@ -1,4 +1,4 @@
-//! The memory the shapefile source takes follows the files' size (ADR-0024): each case of the
+//! The memory the shapefile source takes follows the files' size (ADR-0021): each case of the
 //! ADR's *Enforcement* is opened and queried under a counting allocator, and its peak may not
 //! pass four times the files' size plus one mebibyte. One test, so that no other test's
 //! allocations are counted with it.
@@ -48,7 +48,7 @@ fn long_arc(points: usize) -> Vec<u8> {
 
 #[test]
 fn memory_follows_the_files_size() {
-    // Verifies: ADR-0024, ADR-0026
+    // Verifies: ADR-0021, ADR-0023
     const BOUNDS: [f64; 4] = [0.0, 0.0, 10.0, 10.0];
 
     // A record with counts under the guards but past its size.
@@ -93,7 +93,7 @@ fn memory_follows_the_files_size() {
     assert_eq!(bounded("many parts", &files), 1);
 
     // A .dbf header of the most zero-wide fields it can hold, over a record for every point:
-    // the features share the file and its fields and copy nothing per field (ADR-0026).
+    // the features share the file and its fields and copy nothing per field (ADR-0023).
     let fields: Vec<(&[u8], u8, u8)> = vec![(b"Z", b'C', 0); 2046];
     let records: Vec<&[u8]> = vec![b""; 100_000];
     let mut files = Files::new(POINT, BOUNDS, &points);

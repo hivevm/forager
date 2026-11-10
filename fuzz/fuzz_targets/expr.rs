@@ -1,8 +1,8 @@
 //! The evaluator on arbitrary trees, patterns, and properties: every operator and function on
 //! values of any type, with any `f64` and any text, read as a condition, a number, and a text
-//! (Q-3, ADR-0031). A pattern of a tree is a string of the fuzzed bytes, so that `regexp_like`
+//! (Q-3, ADR-0016). A pattern of a tree is a string of the fuzzed bytes, so that `regexp_like`
 //! reads arbitrary patterns, each bounded in size (Q-9).
-// Verifies: Q-3, ADR-0031
+// Verifies: Q-3, ADR-0016
 #![no_main]
 
 mod expr_input;

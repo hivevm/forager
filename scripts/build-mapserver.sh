@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Builds map2img of the reference release of MapServer, the instrument of the noise measurement
-# of G-6 (ADR-0027): from the commit scripts/fetch-msautotest.sh pins, which this script reads and
+# of G-6 (ADR-0033): from the commit scripts/fetch-msautotest.sh pins, which this script reads and
 # never names itself, with MapServer's default build options, SVG symbols through librsvg, and
 # curl, as MapServer's own CI builds the references, and the Ubuntu archive's packages below, into
 # target/mapserver/<commit>/. It then compiles the reader of MapServer's label cache,
 # crates/cli/tests/conformance/mapserver_labels.c, against that build's unmodified library and
-# headers, outside the cached build, into target/mapserver-labels/<commit>/ (ADR-0029), and prints
+# headers, outside the cached build, into target/mapserver-labels/<commit>/ (ADR-0033), and prints
 # the path of map2img and, on a second line, that of the reader. It adds no apt source. It runs on a
 # GitHub-hosted runner only, where .github/workflows/noise.yml calls it, and refuses anywhere else,
 # the dev container included.
@@ -24,7 +24,7 @@ set -euo pipefail
 unset $(git rev-parse --local-env-vars)
 
 if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
-  echo "build-mapserver: runs on a GitHub-hosted runner only, never in the dev container (ADR-0027)" >&2
+  echo "build-mapserver: runs on a GitHub-hosted runner only, never in the dev container (ADR-0033)" >&2
   exit 2
 fi
 

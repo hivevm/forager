@@ -2,7 +2,7 @@
 //! RGBA buffers of the same size. A pixel differs when one of its channels differs by more than
 //! the threshold; a case passes when the share of differing pixels is at most the tolerance. A
 //! reference image of another mode, palette or RGB, is expanded to RGBA by the `png` crate here
-//! (ADR-0017); the encoder's own decoding stays the strict one of G-12.
+//! (ADR-0030); the encoder's own decoding stays the strict one of G-12.
 
 use std::fmt;
 use std::path::Path;

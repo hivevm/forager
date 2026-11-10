@@ -1,5 +1,5 @@
 //! The class that draws each feature, the layer's filter, and the properties bound to each
-//! feature, through the engine's display list (ADR-0031).
+//! feature, through the engine's display list (ADR-0016).
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -141,7 +141,7 @@ fn text(name: &str) -> Expr {
 
 #[test]
 fn each_feature_is_drawn_with_the_first_class_that_matches() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let classes = vec![
         class(
             Some(Expr::call(Op::Gt, vec![number("n"), Expr::Number(1.0)])),
@@ -197,7 +197,7 @@ fn a_class_without_an_expression_draws_every_feature_that_reaches_it() {
 
 #[test]
 fn features_that_fail_the_layer_s_filter_are_not_drawn() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let filter = Expr::call(
         Op::Eq,
         vec![
@@ -213,7 +213,7 @@ fn features_that_fail_the_layer_s_filter_are_not_drawn() {
 
 #[test]
 fn bound_and_computed_sizes_and_colours_are_each_feature_s_own() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let bound = Style {
         color: Some(Bound::Binding {
             binding: "color".into(),
@@ -298,7 +298,7 @@ fn a_line_layer_draws_cached_styles_after_every_feature_whatever_its_class() {
 
 #[test]
 fn a_pattern_the_crate_cannot_match_is_reported_once_per_render() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let classes = vec![
         class(
             Some(Expr::call(
@@ -546,7 +546,7 @@ fn a_line_class_whose_outline_width_is_bound_is_cached_whatever_its_value() {
 
 #[test]
 fn a_pattern_of_a_style_s_expression_is_reported_once_per_render() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let size = Expr::call(
         Op::ToNumber,
         vec![Expr::call(
@@ -717,7 +717,7 @@ fn a_layer_without_an_opacity_is_recorded_as_items_onto_the_map() {
 
 #[test]
 fn an_opacity_past_an_int_is_rounded_as_ms_nint_rounds_at_the_pin() {
-    // Verifies: ADR-0037
+    // Verifies: ADR-0017
     // bindIntegerAttribute stores MS_NINT(atof("3e9")), lrint's long 3000000000, in an int, which
     // keeps its low 32 bits: -1294967296, below 100, so bindStyle sets the alpha to
     // MS_NINT(-1294967296 × 2.55), -3302166605, whose low bits are 992800691, 179 in a byte.

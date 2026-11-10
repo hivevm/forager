@@ -54,7 +54,7 @@ mod tests {
 
     #[test]
     fn the_glyph_size_is_held_between_its_bounds_and_rounded_half_to_even() {
-        // Verifies: ADR-0028
+        // Verifies: ADR-0031
         assert_eq!(glyph_size(10.0, 1.0, 4.0, 256.0, 1.0), 10.0);
         assert_eq!(glyph_size(10.5, 1.0, 4.0, 256.0, 1.0), 10.0);
         assert_eq!(glyph_size(11.5, 1.0, 4.0, 256.0, 1.0), 12.0);
@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn the_pixel_size_is_rounded_half_to_even_and_held_as_freetype_holds_it() {
-        // Verifies: ADR-0028
+        // Verifies: ADR-0031
         assert_eq!(pixel_size(10.0), 13); // 13.33
         assert_eq!(pixel_size(9.0), 12); // 12.0
         assert_eq!(pixel_size(15.0), 20); // 20.0

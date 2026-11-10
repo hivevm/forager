@@ -1,6 +1,6 @@
 //! The images a render's pixmap symbols name, loaded through the resource loader the first time
 //! the render needs each, decoded once, and held until the render ends, as the fonts are
-//! (ADR-0040, ADR-0028).
+//! (ADR-0029, ADR-0031).
 
 use std::rc::Rc;
 
@@ -13,7 +13,7 @@ use forager_symbolize::{Pixmaps, Tiles};
 use crate::fonts::MAX_FONT_BYTES;
 
 /// The images of one render, by their path, each the decoded image or why it has none, and the
-/// tiles of its polygons' fills, whose bytes count with the images' (ADR-0040).
+/// tiles of its polygons' fills, whose bytes count with the images' (ADR-0029).
 #[derive(Default)]
 pub struct Images {
     loaded: Pixmaps,

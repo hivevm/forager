@@ -33,7 +33,7 @@ use crate::font::Font;
 use crate::place::TextBox;
 use crate::size::pixel_size;
 
-/// Why a label's text is not laid out as Latin lines (ADR-0028).
+/// Why a label's text is not laid out as Latin lines (ADR-0031).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LineError {
     /// A code point at or above U+02B0, which MapServer shapes with HarfBuzz, and the index of

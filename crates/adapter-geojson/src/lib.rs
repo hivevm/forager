@@ -1,4 +1,4 @@
-//! The GeoJSON feature source (ADR-0016): an RFC 7946 document, parsed once, delivered as the
+//! The GeoJSON feature source (ADR-0020): an RFC 7946 document, parsed once, delivered as the
 //! features that touch a query's extent.
 
 use forager_ports::{
@@ -62,12 +62,12 @@ impl FeatureSource for GeoJsonSource {
             .map(|(feature, _)| feature.clone())
             .collect();
         // JSON holds no number that is not finite, and an empty geometry, which RFC 7946 allows,
-        // is a feature with nothing to draw, not a skipped record (ADR-0025).
+        // is a feature with nothing to draw, not a skipped record (ADR-0022).
         Ok(features.into())
     }
 }
 
-/// A feature's `properties` as values of the port (ADR-0026), sorted by name as the parser keeps
+/// A feature's `properties` as values of the port (ADR-0023), sorted by name as the parser keeps
 /// them, of two of one name the last: a number as the text `serde_json` prints for it, an array or
 /// object as its JSON text.
 fn properties(object: JsonObject) -> Properties {
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn every_geometry_type_is_read_in_document_order() {
-        // Verifies: ADR-0016
+        // Verifies: ADR-0020
         let source = GeoJsonSource::parse(ALL_TYPES).unwrap();
         let features = ready(source.features(&query(-100.0, -100.0, 100.0, 100.0)))
             .unwrap()
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn a_feature_carries_each_property_of_its_kind() {
-        // Verifies: ADR-0026
+        // Verifies: ADR-0023
         let source = GeoJsonSource::parse(
             r#"{"type": "FeatureCollection", "features": [
                 {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2]},
@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn a_feature_with_an_empty_geometry_is_left_out_and_not_reported() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0022
         let source = GeoJsonSource::parse(
             r#"{"type": "FeatureCollection", "features": [
                 {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [1, 2]}},
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn malformed_documents_are_errors_not_panics() {
-        // Verifies: ADR-0016, Q-3
+        // Verifies: ADR-0020, Q-3
         for text in [
             "",
             "{",

@@ -123,7 +123,7 @@ fn shapefile_exists(loader: &DataLoader, data: &str) -> bool {
 }
 
 /// The shapefiles the CLI opened, by the name the adapter cuts from a layer's `DATA`, so that the
-/// layers naming one shapefile share it and its files are read once (ADR-0024: a layer costs
+/// layers naming one shapefile share it and its files are read once (ADR-0021: a layer costs
 /// memory in proportion to its files, not to the layers that name them). A shapefile that failed
 /// to open is not tried again.
 struct Shapefiles<'a, L> {
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn layers_that_name_one_shapefile_read_its_files_once() {
         // Verifies: Q-9
-        // ADR-0024: a layer costs memory in proportion to its files, so a shapefile that several
+        // ADR-0021: a layer costs memory in proportion to its files, so a shapefile that several
         // layers name is read, and held, once.
         let loader = CountingLoader::new();
         let mut shapefiles = Shapefiles::new(&loader);

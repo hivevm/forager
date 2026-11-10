@@ -1,4 +1,4 @@
-//! The shape of the code (ADR-0009): the dependency edges allowed between workspace crates, and
+//! The shape of the code (ADR-0008): the dependency edges allowed between workspace crates, and
 //! no crate that links C code under the IR, the core, the ports, or the frontend (Q-1).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -6,7 +6,7 @@ use std::process::Command;
 
 use serde_json::Value;
 
-/// The groups of ADR-0009's table.
+/// The groups of ADR-0008's table.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Group {
     Ir,
@@ -29,11 +29,11 @@ enum Edges {
     OfItsGroup,
 }
 
-/// A row of ADR-0009's table: a crate by name without the `forager-` prefix, where a name ending
+/// A row of ADR-0008's table: a crate by name without the `forager-` prefix, where a name ending
 /// in `*` stands for every crate it prefixes, its group, and its edges.
 type Row = (&'static str, Group, Edges);
 
-/// ADR-0009's table, the one place a crate is named; crates not yet created are named too.
+/// ADR-0008's table, the one place a crate is named; crates not yet created are named too.
 const TABLE: &[Row] = &[
     ("style-ir", Group::Ir, Edges::To(&[])),
     ("expr", Group::Core, Edges::To(&["style-ir"])),
@@ -112,7 +112,7 @@ fn may_depend(table: &[Row], from: &str, to: &str) -> Option<bool> {
 }
 
 /// Whether a crate must link no C code, directly or transitively: the IR, the core, the ports,
-/// and the frontend (ADR-0009, Q-1).
+/// and the frontend (ADR-0008, Q-1).
 fn must_be_pure_rust(table: &[Row], name: &str) -> bool {
     matches!(
         group(table, name),
@@ -214,12 +214,12 @@ fn string(value: &Value) -> String {
 
 #[test]
 fn workspace_crates_depend_only_along_the_allowed_edges() {
-    // Verifies: ADR-0009
+    // Verifies: ADR-0008
     let ws = workspace();
     let mut violations = Vec::new();
     for (id, from) in &ws.members {
         if may_depend(TABLE, from, "style-ir").is_none() {
-            violations.push(format!("{from} is not a crate ADR-0009 names"));
+            violations.push(format!("{from} is not a crate ADR-0008 names"));
             continue;
         }
         for dep in &ws.deps[id] {
@@ -232,13 +232,13 @@ fn workspace_crates_depend_only_along_the_allowed_edges() {
     }
     assert!(
         violations.is_empty(),
-        "edges ADR-0009 does not allow: {violations:?}"
+        "edges ADR-0008 does not allow: {violations:?}"
     );
 }
 
 #[test]
 fn the_ir_core_ports_and_frontend_link_no_c_code() {
-    // Verifies: ADR-0009, Q-1
+    // Verifies: ADR-0008, Q-1
     let ws = workspace();
     let mut violations = BTreeSet::new();
     for (id, name) in ws
@@ -275,7 +275,7 @@ fn dependents(ws: &Workspace, dependency: &str) -> Vec<String> {
 
 #[test]
 fn only_label_reads_fonts_with_skrifa() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let ws = workspace();
     assert_eq!(dependents(&ws, "skrifa"), ["label"]);
     // The check itself sees a dependency: label depends on forager-render.
@@ -284,7 +284,7 @@ fn only_label_reads_fonts_with_skrifa() {
 
 #[test]
 fn the_browser_bindings_bind_no_shapefile() {
-    // Verifies: ADR-0038
+    // Verifies: ADR-0024
     let ws = workspace();
     let binders = dependents(&ws, "forager-adapter-shapefile");
     assert!(
@@ -298,7 +298,7 @@ fn the_browser_bindings_bind_no_shapefile() {
 
 #[test]
 fn only_the_cli_s_tests_run_wasm_in_wasmi() {
-    // Verifies: ADR-0043
+    // Verifies: ADR-0034
     let ws = workspace();
     let declaring: Vec<_> = ws
         .declared
@@ -319,14 +319,14 @@ fn only_the_cli_s_tests_run_wasm_in_wasmi() {
 
 #[test]
 fn only_render_agg_cuts_polygons_with_i_overlay() {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0028
     let ws = workspace();
     assert_eq!(dependents(&ws, "i_overlay"), ["render-agg"]);
 }
 
 #[test]
 fn only_expr_depends_on_the_regex_crates() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     // The patterns of the style IR are read as PCRE2 reads them and matched in one place; a crate
     // that reached for `regex` itself would match them otherwise.
     let ws = workspace();
@@ -391,7 +391,7 @@ fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
 
 #[test]
 fn only_render_agg_allows_unsafe_code() {
-    // Verifies: ADR-0015
+    // Verifies: ADR-0025
     // The workspace denies `unsafe_code`; any mention of the lint in a crate's code or manifest is
     // a way to lift it (`allow`, `expect`, a lint table), so it may appear in render-agg alone,
     // and every crate must take the workspace's lints.

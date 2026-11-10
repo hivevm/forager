@@ -11,7 +11,7 @@
 // implied warranty, and with no claim as to its suitability for any purpose.
 
 //! A pixmap resampled as MapServer's AGG 2.4 resamples one it draws turned or scaled
-//! (ADR-0041): `span_image_filter_rgba_bilinear_clip` over `span_interpolator_linear`, `iround`
+//! (ADR-0026): `span_image_filter_rgba_bilinear_clip` over `span_interpolator_linear`, `iround`
 //! being `lrint` narrowed to an `int`, as MapServer's build defines it under `HAVE_LRINT`.
 //!
 //! agg-rust has both, as AGG 2.6 has them: its filter truncates where AGG 2.4 rounds, and its
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn a_pixel_weighted_half_and_half_between_0_and_1_rounds_to_1_inside_the_image() {
-        // Verifies: ADR-0041
+        // Verifies: ADR-0026
         // Through the identity moved half a pixel right and half a pixel down, the pixel (0, 0)
         // is sampled at its centre (0.5, 0.5) plus (0.5, 0.5): x_hr = iround(256) = 256, less
         // filter_dx_int 128, is 128, so x_lr 0 at the fraction 128; y_hr likewise 128 less 128,
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn a_pixel_weighted_half_and_half_between_0_and_1_rounds_to_1_at_the_edge() {
-        // Verifies: ADR-0041
+        // Verifies: ADR-0026
         // Through the identity moved a pixel and a half right, the pixel (0, 0) is sampled at
         // x_hr = iround(2 × 256) - 128 = 384: x_lr 1, past maxx - 1, at the edge, at the fraction
         // 128; y_lr 0 at 0. The weight 32768 falls on (1, 0), of channels 1, and 32768 on (2, 0),
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn a_resampled_pixel_sums_its_four_weighted_neighbours() {
-        // Verifies: ADR-0041
+        // Verifies: ADR-0026
         // A 2 × 2 image of channels 0, 100 above and 200, 40 below, through the identity moved
         // by (0.3, 0.1): the centre (0.5, 0.5) of the pixel (0, 0) goes to (0.8, 0.6), x_hr =
         // iround(204.8) = 205 less 128 = 77, y_hr = iround(153.6) = 154 less 128 = 26, all four
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn an_interpolator_span_at_a_scale_of_0_5_rounds_its_ends_half_to_even() {
-        // Verifies: ADR-0041
+        // Verifies: ADR-0026
         // At a scale of 0.5, a span of 2 pixels from x = 1/256 has its ends at 0.5 × 1/256 × 256
         // = 0.5 and 0.5 × (1/256 + 2) × 256 = 256.5: lrint gives 0 and 256, half to even, where
         // agg-rust's iround gives 1 and 257. Its y, 5/256, at 2.5: 2, where agg-rust gives 3.

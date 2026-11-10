@@ -1,4 +1,4 @@
-//! The one clip to the image (ADR-0039): segments, lines, and rings cut by one module of
+//! The one clip to the image (ADR-0027): segments, lines, and rings cut by one module of
 //! `render`, the image grown by its margin written once, and the hatch's bound measuring what the
 //! clip leaves.
 
@@ -17,7 +17,7 @@ fn length((a, b): (Point, Point)) -> f64 {
 
 #[test]
 fn the_image_is_grown_by_the_margin_and_the_reach_past_it() {
-    // Verifies: ADR-0039
+    // Verifies: ADR-0027
     assert_eq!(
         Rect::around_image(100, 50, 0.0).bounds(),
         [-2.0, -2.0, 102.0, 52.0]
@@ -30,7 +30,7 @@ fn the_image_is_grown_by_the_margin_and_the_reach_past_it() {
 
 #[test]
 fn segments_lines_and_rings_with_both_ends_far_out_are_cut_to_the_image() {
-    // Verifies: ADR-0039
+    // Verifies: ADR-0027
     let r = Rect::around_image(100, 100, 0.0);
     let (a, b) = (p(-1e150, 5.0), p(1e150, 5.0));
     assert_eq!(clip::segment(a, b, &r), Some((p(-2.0, 5.0), p(102.0, 5.0))));
@@ -56,7 +56,7 @@ fn segments_lines_and_rings_with_both_ends_far_out_are_cut_to_the_image() {
 
 #[test]
 fn the_hatch_s_measure_is_the_length_of_what_the_clip_leaves() {
-    // Verifies: ADR-0039, Q-9
+    // Verifies: ADR-0027, Q-9
     // Lines from -1e150 to 1e150, two pixels apart under a stroke one pixel wide, so that no two
     // bands overlap: the bound lets through as many as the clip's part of each fits into
     // `Hatch::MAX_LENGTH`, and not one more.
@@ -86,7 +86,7 @@ fn the_hatch_s_measure_is_the_length_of_what_the_clip_leaves() {
 
 #[test]
 fn the_reach_of_a_glyph_stands_beside_the_clip() {
-    // Verifies: ADR-0039
+    // Verifies: ADR-0027
     let image = [0.0, 0.0, 100.0, 100.0];
     let at = |x: f64| [PathCommand::MoveTo(p(x, 50.0)), PathCommand::Close];
     assert!(within_glyph_reach(image, &at(100.0 + MAX_GLYPH_REACH)));

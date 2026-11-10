@@ -1,4 +1,4 @@
-// C's reading of numbers, ported once for the frontend and the core (ADR-0037): glibc's strtod
+// C's reading of numbers, ported once for the frontend and the core (ADR-0017): glibc's strtod
 // in the C locale and the atof and atoi it backs, its lrint on x86-64, and MapServer's MS_NINT of
 // src/mapserver.h, of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
@@ -15,7 +15,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! C's reading of numbers as MapServer's build at the pin runs it: `strtod`, `atof`, and `atoi` of
-//! glibc in the C locale, and `MS_NINT`, which is `lrint` on x86-64 (ADR-0037).
+//! glibc in the C locale, and `MS_NINT`, which is `lrint` on x86-64 (ADR-0017).
 
 /// C's `isspace` in the C locale.
 fn is_space(b: u8) -> bool {
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     fn atof_reads_the_longest_number_strtod_reads() {
-        // Verifies: ADR-0037
+        // Verifies: ADR-0017
         let cases: &[(&str, f64)] = &[
             ("12abc", 12.0),
             ("abc", 0.0),
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn strtod_reads_up_to_where_glibc_stops() {
-        // Verifies: ADR-0037
+        // Verifies: ADR-0017
         let cases: &[(&str, usize)] = &[
             ("", 0),
             ("abc", 0),
@@ -333,7 +333,7 @@ mod tests {
 
     #[test]
     fn atoi_reads_an_int_as_glibc_does() {
-        // Verifies: ADR-0037
+        // Verifies: ADR-0017
         assert_eq!(atoi(b" 42x"), 42);
         assert_eq!(atoi(b"-7"), -7);
         assert_eq!(atoi(b"\t255"), 255);
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn lrint_rounds_half_to_even_and_gives_long_min_past_a_long() {
-        // Verifies: ADR-0037
+        // Verifies: ADR-0017
         assert_eq!(lrint(2.5), 2);
         assert_eq!(lrint(3.5), 4);
         assert_eq!(lrint(-2.5), -2);
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn ms_nint_keeps_the_low_32_bits_of_lrint() {
-        // Verifies: ADR-0037
+        // Verifies: ADR-0017
         assert_eq!(ms_nint(2.5), 2);
         assert_eq!(ms_nint(-2_147_483_648.5), i32::MIN);
         assert_eq!(ms_nint(2_147_483_648.0), i32::MIN);

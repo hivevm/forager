@@ -2,7 +2,7 @@
 
 **Where:** `LAYER`. **IR:** the layer's `features`, each with its `type` (`point`, `line`, or
 `polygon`), its `parts`, each a list of `[x, y]`, its `properties`, each a `name` and a string
-`value`, and its `text` ([ADR-0033](../adr/0033-inline-features-in-the-style-ir.md)).
+`value`, and its `text` ([ADR-0018](../adr/0018-inline-features.md)).
 
 **Meaning.** A `FEATURE` block writes one feature into the layer. `loadLayer` in `src/mapfile.c`
 refuses one before the layer's `TYPE`, and gives its shape the type of the `TYPE` read so far:

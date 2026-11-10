@@ -134,7 +134,7 @@ impl ResourceLoader for DataLoader {
 /// a FIFO, on which the open blocks before the check on the handle, or a directory for a link out
 /// of the base context, which the check on the handle does not see. Closing it takes opening
 /// without following links and without blocking, which on unix needs a dependency of its own
-/// (`libc`, ADR-0012); the maintainer decided against it (2026-11-07).
+/// (`libc`, ADR-0011); the maintainer decided against it (2026-11-07).
 pub(crate) fn read_bounded(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
     let not_regular = || std::io::Error::other("not a regular file");

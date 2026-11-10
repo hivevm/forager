@@ -3,7 +3,7 @@
 // msComputeTextPath, src/maplabel.c, bindLabel, bindIntegerAttribute, and
 // msShapeGetLabelAnnotation, src/maputil.c, msGetMarkerSize, src/mapsymbol.c, and
 // msDrawTextSymbol, src/maprendering.c, of MapServer at the release pinned in
-// scripts/fetch-msautotest.sh, with the label cache of the label crate (ADR-0028).
+// scripts/fetch-msautotest.sh, with the label cache of the label crate (ADR-0031).
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Copyright (c) 1996-2013 Regents of the University of Minnesota.
@@ -722,7 +722,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             }
             // msTransformPoint: by the inverse of the cellsize, as the marker beneath is drawn.
             let point = self.view.point_to_pixel(c);
-            // The label cache holds at most MAX_LABELS labels a render (Q-9, ADR-0035).
+            // The label cache holds at most MAX_LABELS labels a render (Q-9, ADR-0032).
             if self.cached.len() >= MAX_LABELS {
                 let first = self
                     .over_limit

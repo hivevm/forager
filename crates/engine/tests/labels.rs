@@ -15,7 +15,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The labels of point layers, drawn through the reference renderer and compared with a reference
-//! image of Forager's own, as the geometry of render.rs is (ADR-0028). Set FORAGER_BLESS=1 to write
+//! image of Forager's own, as the geometry of render.rs is (ADR-0031). Set FORAGER_BLESS=1 to write
 //! the reference after a deliberate change, and review the image before committing it; the bless
 //! reports how far it moved each image, as render.rs does.
 
@@ -147,7 +147,7 @@ fn ink(image: &RgbaImage, (x0, x1): (u32, u32), (y0, y1): (u32, u32)) -> Option<
 
 #[test]
 fn a_point_layer_draws_each_features_label_centred_on_its_point() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let rendered = render(&map(label_item()), PLACES);
     assert!(
         rendered.diagnostics.is_empty(),
@@ -454,7 +454,7 @@ fn a_label_finds_its_features_text_by_the_features_place_among_all_the_layers_fe
 
 #[test]
 fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let with = |change: fn(&mut Label)| {
         let mut label = label_item();
         change(&mut label);
@@ -555,7 +555,7 @@ fn named_at_40_30(name: &str) -> String {
 
 #[test]
 fn a_label_refused_for_its_text_quotes_at_most_64_characters_of_it() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // A text of 1 MiB, 1,048,574 characters, whose second line ends in U+2019, read by the label
     // of each of 100 layers of one source: each label is reported once, and its message names the
     // line and the character and quotes the text's first 64 characters, its length after them,
@@ -862,7 +862,7 @@ fn an_inline_features_text_ends_at_its_first_nul() {
 
 #[test]
 fn a_glyph_reaching_too_far_from_the_image_is_left_out_with_a_diagnostic() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // The `1` of this test font, a square around its origin with no advance, stands 16,000,000
     // pixels wide at 6000 points; the `2` beside it, about 650,000 pixels, is drawn.
     let label = Label {
@@ -897,7 +897,7 @@ fn a_glyph_reaching_too_far_from_the_image_is_left_out_with_a_diagnostic() {
 
 #[test]
 fn a_glyph_at_the_reach_with_an_outline_is_drawn_or_left_out_with_a_diagnostic() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // The `1` of the huge test font, a square about 8,000,000 pixels wide at 3000 points, outlined
     // 3 wide, moved right step by step across the reach: its right edge passes `MAX_GLYPH_REACH`
     // beyond the image, where the outline once let the text path keep a glyph the renderer then
@@ -988,7 +988,7 @@ impl forager_render::Renderer for LabelRecorder {
 
 #[test]
 fn each_feature_is_labelled_by_the_class_that_draws_it() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     // The first feature takes the second class, the second the first, and the third no class:
     // it is not labelled. The labels are added in the order of the features, not of the classes,
     // as msDrawShape adds them, and draw last added first, as the label cache draws them.
@@ -1113,7 +1113,7 @@ fn glyph_path(op: &forager_render::DrawOp) -> &[PathCommand] {
 
 #[test]
 fn a_label_stands_at_its_position_offset_and_angle_as_the_placement_puts_it() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let fen = || Label {
         text: Some(Expr::String("Fen".to_owned())),
         ..label_item()
@@ -1149,7 +1149,7 @@ fn a_label_stands_at_its_position_offset_and_angle_as_the_placement_puts_it() {
 
 #[test]
 fn a_label_moves_away_from_the_marker_its_class_draws_first() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // A circle 9 pixels across: its box in the marker cache spans 8, so the label at UR stands
     // 4 + 3 = 7 across and 4 + 2 = 6 up; at CC the marker does not count. An outline adds half
     // its width, 2 / 2.
@@ -1202,7 +1202,7 @@ fn a_label_moves_away_from_the_marker_its_class_draws_first() {
 
 #[test]
 fn at_resolution_144_a_label_moves_away_from_the_marker_as_it_is_drawn() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // msPrepareImage's scale factor, RESOLUTION 144 over DEFRESOLUTION 72, scales the marker
     // msDrawMarkerSymbol draws and the one msGetMarkerSize gives the label cache alike, and the
     // label's size and offset: a circle of SIZE 9 under a label of SIZE 6 offset (3, 2) at 144
@@ -1341,7 +1341,7 @@ fn a_label_stands_by_the_point_pixel_ms_transform_point_computes() {
 
 #[test]
 fn bound_properties_draw_as_their_values_do_once_bound_label_reads_them() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let fen = || Label {
         text: Some(Expr::String("Fen".to_owned())),
         ..label_item()
@@ -1424,7 +1424,7 @@ fn a_bound_position_or_alignment_that_names_none_is_not_drawn_yet() {
 
 #[test]
 fn a_wrapped_turned_and_outlined_label_matches_its_reference() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // Three lines centred, turned by 15 degrees, at LR with an offset, outlined 2 pixels wide in
     // yellow: the outline is drawn first, as the contour of the glyphs, then the fill.
     let label = Label {
@@ -1469,7 +1469,7 @@ fn binding<T>(name: &str) -> Bound<T> {
 
 #[test]
 fn the_outline_of_a_glyph_just_outside_the_image_still_paints_its_edge() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // An `l` left of the image's left edge, at CL of the pixel (0, 29), its box ending a pixel
     // left of the image: its glyph lies wholly outside, yet its outline, 7 wide, reaches
     // 3.5 pixels beyond it, into column 0.
@@ -1514,7 +1514,7 @@ fn the_outline_of_a_glyph_just_outside_the_image_still_paints_its_edge() {
 
 #[test]
 fn the_outline_width_is_scaled_by_the_glyph_size_over_the_size_and_rounded_half_to_even() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // SIZE 10 held at MINSIZE 15: 3 × (15 / 10) = 4.5, MS_NINT gives 4, AGG's contour 5.
     let label = Label {
         text: Some(Expr::String("Fen".to_owned())),
@@ -1533,7 +1533,7 @@ fn the_outline_width_is_scaled_by_the_glyph_size_over_the_size_and_rounded_half_
 
 #[test]
 fn a_label_moves_away_from_a_simple_marker_without_points_as_from_one_pixel_a_size() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // initSymbol sizes a symbol without POINTS 1 by 1: SIZE 10 draws it 10 by 10, so the label
     // at UR stands (10 - 1) / 2 + 3 = 7.5, cut to 7, across and up.
     let mut map = map(Label {
@@ -1909,7 +1909,7 @@ fn a_label_over_a_marker_whose_size_is_not_computed_yet_is_not_drawn() {
 
 #[test]
 fn the_label_cache_holds_at_most_100000_labels_and_reports_those_past_it_once() {
-    // Verifies: Q-9, ADR-0035
+    // Verifies: Q-9, ADR-0032
     // One feature of 100,001 points: the first 100,000 at one point, where all but one collide,
     // and the last alone, where it would be drawn first. Past the limit it is left out untested.
     let mut points = vec!["[40, 30]"; forager_label::MAX_LABELS];
@@ -2158,7 +2158,7 @@ fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
 
 #[test]
 fn a_label_styles_opacity_past_an_int_is_rounded_as_a_class_styles_is() {
-    // Verifies: ADR-0037
+    // Verifies: ADR-0017
     // bindStyle rounds a label's style as it rounds a class's: MS_NINT(atof("3e9")) in an int is
     // -1294967296, and the alpha MS_NINT(-1294967296 × 2.55) keeps 179 in a byte.
     let style = Style {

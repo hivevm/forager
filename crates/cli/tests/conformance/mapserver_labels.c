@@ -1,5 +1,5 @@
 /*
- * The reader of MapServer's label cache for the noise measurement (ADR-0029): it renders a case
+ * The reader of MapServer's label cache for the noise measurement (ADR-0033): it renders a case
  * as map2img renders it, following main of src/apps/map2img.c at the pin for the options the
  * harness applies, -m, -o, -i, -e, -s, and -l, and then writes each label of the cache to standard
  * output, one line per member, tab-separated, in the order msDrawLabelCache in src/mapdraw.c

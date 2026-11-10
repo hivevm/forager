@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Builds, tests, and lints the Rust workspace (ADR-0008): formatting, clippy with warnings as
-# errors, the tests, the style document's JSON Schema against its checked-in file (ADR-0020),
+# Builds, tests, and lints the Rust workspace (ADR-0007): formatting, clippy with warnings as
+# errors, the tests, the style document's JSON Schema against its checked-in file (ADR-0014),
 # the load of the msautotest suite at the pinned MapServer release (G-1, fetched once into
 # target/ by scripts/fetch-msautotest.sh) and the conformance harness over its cases, whose share
 # of passing cases scripts/check-fidelity.sh holds against the last release (Q-4), and which render
-# alike natively and in the bindings' wasm32 module run in wasmi (G-9, ADR-0043), the build
+# alike natively and in the bindings' wasm32 module run in wasmi (G-9, ADR-0034), the build
 # of every crate that must run in the browser for wasm32-unknown-unknown (Q-1), the WebAssembly
-# bindings and their size (Q-5) once they exist, and cargo deny (ADR-0012). scripts/check-all.sh
+# bindings and their size (Q-5) once they exist, and cargo deny (ADR-0011). scripts/check-all.sh
 # and the `rust` job of checks.yml run it; the tools come from scripts/install-tools.sh. Two
 # fixture workspaces show that cargo deny refuses a non-permissive licence and that clippy bans
 # hash maps, clocks, and randomness in the core alone (Q-2).
@@ -33,7 +33,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 step "Tests"
 cargo test --workspace --locked
 
-step "The style document's JSON Schema is the one the IR derives (ADR-0020)"
+step "The style document's JSON Schema is the one the IR derives (ADR-0014)"
 cargo clippy -p forager-style-ir --features schema --all-targets --locked -- -D warnings
 cargo test -p forager-style-ir --features schema --locked --test schema
 # The schema stays out of the browser bundle (Q-5): no crate the bindings build enables it.
@@ -41,7 +41,7 @@ if grep -q '^.*schemars ' <<< "$(cargo tree -p forager-bindings-wasm --locked -e
   echo "check-rust: the browser bindings depend on schemars; the schema feature is enabled" >&2
   exit 1
 fi
-step "The browser bindings' module of the conformance test (G-9, ADR-0043)"
+step "The browser bindings' module of the conformance test (G-9, ADR-0034)"
 # The bundle's crate and profile with the feature `conformance`, in a target directory of its own
 # so that the bundle built below stays without it, then through the wasm-bindgen CLI as the bundle
 # is, which gives its exports their names. Its exports for wasm32 alone are linted here, its input
@@ -62,7 +62,7 @@ step "msautotest: mapfiles load (G-1), cases hold their outcome and render alike
 suite="$(bash scripts/fetch-msautotest.sh)"
 fidelity="$ROOT/target/fidelity-counts.txt"
 rm -f "$fidelity"
-# The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (ADR-0027).
+# The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (ADR-0033).
 FORAGER_MSAUTOTEST="$suite" FORAGER_FIDELITY="$fidelity" \
   FORAGER_CONFORMANCE_WASM="$ROOT/target/conformance/web/forager_bindings_wasm_bg.wasm" \
   cargo test -p forager-cli --locked --test msautotest -- --ignored \
@@ -149,7 +149,7 @@ step "cargo deny"
 cargo deny --locked check
 
 step "cargo deny refuses a non-permissive licence"
-# Verifies: ADR-0012, Q-6
+# Verifies: ADR-0011, Q-6
 # A fixture workspace whose dependency declares GPL-3.0-only; the licence check must fail on it.
 fixture="$(mktemp -d)"
 trap 'rm -rf "$lints" "$fixture"' EXIT

@@ -640,7 +640,7 @@ fn a_polygon_s_pixmap_that_does_not_load_is_not_drawn_nor_its_colour_and_warns()
 
 #[test]
 fn a_thousand_polygons_of_one_pixmap_style_share_one_tile() {
-    // Verifies: ADR-0040
+    // Verifies: ADR-0029
     // searchTileCache finds the tile getTile built for the first polygon.
     let features: Vec<_> = (0..1000)
         .map(|i| {
@@ -710,7 +710,7 @@ impl Renderer for TilesAlive {
 
 #[test]
 fn seven_styles_of_distinct_tiles_hold_at_most_six_at_once() {
-    // Verifies: Q-9, ADR-0040
+    // Verifies: Q-9, ADR-0029
     // addTileCache holds MS_IMAGECACHESIZE, 6, of them. Each new tile drops the one built longest
     // ago, so a second polygon through the same seven styles, in the same order, finds none: 14.
     let styles = (10..17)
@@ -748,7 +748,7 @@ fn a_polygon_s_pixmap_at_a_size_of_0_has_a_tile_of_a_pixel_and_draws_without_a_f
 
 #[test]
 fn a_pixmap_of_a_hatched_class_counts_in_the_clip_buffer_loaded_outside_its_scale_range() {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0028
     // msDrawShape loads every pixmap of the class before the clip, whatever its scale range: the
     // style of the 16 × 48 image never draws, yet it counts at its height: MS_NINT(48 + 1) + 2 =
     // 51 pixels around the extent, where the hatch of SIZE 10 alone would give 13.

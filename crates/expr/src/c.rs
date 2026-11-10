@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn to_string_formats_as_printf() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0016
         assert_eq!(s("%g", 0.0001), "0.0001");
         assert_eq!(s("%g", 0.00001), "1e-05");
         assert_eq!(s("%g", 123456.0), "123456");
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn to_string_applies_flags_width_and_exponents_as_printf() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0016
         assert_eq!(s("%e", 1234.5), "1.234500e+03");
         assert_eq!(s("%E", 1e-300), "1.000000E-300");
         assert_eq!(s("%+08.2f", 1.23456), "+0001.23");
@@ -377,7 +377,7 @@ mod tests {
 
     #[test]
     fn to_string_refuses_what_ms_to_string_refuses() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0016
         for format in [
             "%d",
             "%s",
@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn commify_places_commas_as_ms_commify_string() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0016
         let c = |t: &str| String::from_utf8(commify(t.as_bytes())).unwrap();
         assert_eq!(c("1234567"), "1,234,567");
         assert_eq!(c("123"), "123");
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn the_case_functions_change_ascii_byte_by_byte() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0016
         let mut text = b"hELLO wORLD  \xc3\xa9t\xc3\xa9".to_vec();
         initcap(&mut text);
         assert_eq!(text, b"Hello World  \xc3\xa9t\xc3\xa9");

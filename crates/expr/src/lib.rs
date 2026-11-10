@@ -13,7 +13,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The evaluator of the style IR's expressions (ADR-0031): synchronous, without I/O, reading a
+//! The evaluator of the style IR's expressions (ADR-0016): synchronous, without I/O, reading a
 //! feature's properties through [`Lookup`]. Each operator and function means what MapServer's
 //! grammar means by it; `docs/semantics/expression.md` states each.
 //!
@@ -48,7 +48,7 @@ pub enum Failure {
     /// operands of types the grammar does not combine, a tree past the depth the IR allows.
     Undefined,
     /// A pattern with a construct PCRE2 reads and the `regex` crate cannot match as PCRE2 does
-    /// (ADR-0031), to be reported once per render with what carries it.
+    /// (ADR-0016), to be reported once per render with what carries it.
     Pattern {
         pattern: String,
         construct: &'static str,

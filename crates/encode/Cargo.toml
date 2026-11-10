@@ -1,6 +1,6 @@
 [package]
 name = "forager-encode"
-description = "PNG encoding of Forager's RGBA images, and the decoding of pixmap symbols (ADR-0017)."
+description = "PNG encoding of Forager's RGBA images, and the decoding of pixmap symbols (ADR-0030)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

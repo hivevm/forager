@@ -1,4 +1,4 @@
-//! MapServer's label cache as the reader of ADR-0029, `mapserver_labels.c`, writes it, the record
+//! MapServer's label cache as the reader of ADR-0033, `mapserver_labels.c`, writes it, the record
 //! of it the list keeps for each text case under `labels/`, and the comparison of Forager's labels
 //! with it that G-10 asks for.
 
@@ -14,7 +14,7 @@ use super::{Case, Category, Entry, Listed};
 pub const TOLERANCE: f64 = 1.0;
 
 /// How far each edge of a box the reader writes may lie from the record's, in pixels: far below a
-/// pixel, so that an update of the unpinned text libraries that moves no label holds (ADR-0029).
+/// pixel, so that an update of the unpinned text libraries that moves no label holds (ADR-0033).
 pub const NOISE: f64 = 1e-6;
 
 /// A label of MapServer's cache, one line of the reader's output.
@@ -173,7 +173,7 @@ fn unescape(field: &str) -> String {
     out
 }
 
-/// What differs between Forager's labels and MapServer's, one line per label, as ADR-0029 pairs
+/// What differs between Forager's labels and MapServer's, one line per label, as ADR-0033 pairs
 /// them: by priority, layer, class, and text, the n-th of a key in Forager's walk with the n-th in
 /// MapServer's. A pair matches when both are drawn with each edge finite and within
 /// [`TOLERANCE`], or when both are discarded; a label without a partner does not match. Empty when
@@ -249,7 +249,7 @@ pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
 }
 
 /// What differs between MapServer's labels as the record holds them, `record`, and as the reader
-/// writes them in the noise measurement, `output`, one line each, named by its line: ADR-0029
+/// writes them in the noise measurement, `output`, one line each, named by its line: ADR-0033
 /// holds the priority, the layer's index and name, the class, the drawn state, the texts, and the
 /// order exactly, and each edge of each box finite and within [`NOISE`]. Empty when the output
 /// holds the record.

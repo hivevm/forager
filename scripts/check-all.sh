@@ -172,7 +172,7 @@ run() {
 }
 
 # The weekly workflows measure rather than gate, and a push cannot wait for them: the fuzz run of
-# Q-3, the mutation testing of ADR-0008, and the noise measurement of G-6. Their scripts run on a
+# Q-3, the mutation testing of ADR-0007, and the noise measurement of G-6. Their scripts run on a
 # human's instruction locally, and their self-tests run here.
 # Not a gate: .github/workflows/fuzz.yml
 # Not a gate: .github/workflows/mutants.yml
@@ -219,12 +219,12 @@ run "Plan frontier sensor" scripts/sensor-plan-frontier.sh
 run "Backlog sensor self-test" scripts/test-sensor-backlog.sh
 run "Backlog sensor" scripts/sensor-backlog.sh
 run "Action references sensor self-test" scripts/test-sensor-action-refs.sh
-# The check of ADR-0011: every action by its major version tag.
-# Verifies: ADR-0011
+# The check of ADR-0010: every action by its major version tag.
+# Verifies: ADR-0010
 run "Action references" scripts/sensor-action-refs.sh --require major-tag
 run "Mutation sensor self-test" scripts/test-mutants.sh
 # How MapServer runs on CI for the noise measurement of G-6.
-# Verifies: ADR-0027
+# Verifies: ADR-0033
 run "MapServer build self-test" scripts/test-build-mapserver.sh
 run "Vendor check self-test" scripts/test-check-vendor.sh
 run "Vendor check" scripts/check-vendor.sh

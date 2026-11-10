@@ -13,7 +13,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The ESRI shapefile feature source (ADR-0024): a `.shp` with its `.shx` and `.dbf`, read from
+//! The ESRI shapefile feature source (ADR-0021): a `.shp` with its `.shx` and `.dbf`, read from
 //! the bytes the resource loader hands over, with the records MapServer reads and drops, and in
 //! memory that follows the files' size. `docs/semantics/shapefile.md` states each rule.
 //!
@@ -52,7 +52,7 @@ pub struct ShapefileSource {
     entries: usize,
     /// The file's bounds, from the `.shx` header.
     bounds: Rect,
-    /// The `.dbf`, whose records the features share as their properties (ADR-0026).
+    /// The `.dbf`, whose records the features share as their properties (ADR-0023).
     dbf: Rc<Dbf>,
 }
 
@@ -139,7 +139,7 @@ impl ShapefileSource {
     /// Calls `f` with each record the extent selects and its shape, in record order, the records
     /// read as no shape skipped (`msShapefileWhichShapes`, `msSHPLayerNextShape`), and returns the
     /// records skipped as broken: each one the query visits once, a null shape not among them
-    /// (ADR-0025).
+    /// (ADR-0022).
     fn each_shape<'a>(&'a self, extent: &Rect, mut f: impl FnMut(usize, Shape<'a>)) -> Skipped {
         let mut skipped = Skipped::default();
         // The file's bounds outside the extent select none; inside it, all; across its edge,
@@ -148,7 +148,7 @@ impl ShapefileSource {
             return skipped;
         }
         let by_box = !self.bounds.contained_in(extent);
-        // The records read from the .shp add up to no more bytes than it holds (ADR-0024).
+        // The records read from the .shp add up to no more bytes than it holds (ADR-0021).
         let mut budget = self.shp.len() as u64;
         for i in 0..self.entries {
             if by_box {
@@ -172,7 +172,7 @@ impl ShapefileSource {
 
     /// Record `i`'s stored box (`msSHPReadBounds`), `None` for a null shape. A record whose box
     /// cannot be read is no shape: MapServer skips it where the `.shx` size is 4, a null shape,
-    /// and fails the layer otherwise, where the adapter reads on (ADR-0024) and counts it.
+    /// and fails the layer otherwise, where the adapter reads on (ADR-0021) and counts it.
     fn stored_box(&self, i: usize) -> Result<Option<Rect>, &'static str> {
         let (offset, size) = self.entry(i);
         if size == 4 {

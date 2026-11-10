@@ -14,7 +14,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A layer's `FEATURE` blocks, its inline features (ADR-0033).
+//! A layer's `FEATURE` blocks, its inline features (ADR-0018).
 
 use forager_style_ir::{FeatureProperty, InlineFeature, ShapeType};
 
