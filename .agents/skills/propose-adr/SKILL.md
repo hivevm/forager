@@ -1,6 +1,6 @@
 ---
 name: propose-adr
-description: Develop and submit an Architecture Decision Record. Use when a change is architecture-relevant, when a decision is costly to reverse or constrains future choices, when a reader without this conversation would take a choice for a mistake, when a change takes an early decision no ADR decides, such as the shape of the code, the environment, or the supply chain (it carries a catalogue of architecture and project concepts to propose from), or when the human asks for an ADR.
+description: Develop and submit an Architecture Decision Record, with a catalogue of concepts to propose from. Use when a change is architecture-relevant, costly to reverse, constrains future choices, or would look like a mistake to a reader without this conversation, when it takes an early decision no ADR decides, such as the shape of the code, the environment, or the supply chain, or when the human asks for an ADR.
 ---
 
 # Propose an ADR
@@ -42,8 +42,10 @@ in the record.
 
 ## 3. Write the record
 
-1. Copy [`docs/adr/template.md`](../../../docs/adr/template.md) to `NNNN-short-title.md` with the
-   next free number. Complete the header and delete the instruction paragraph.
+1. Copy [`docs/adr/template.md`](../../../docs/adr/template.md) to `draft-<slug>.md` and head it
+   `# ADR-draft-<slug>`; the number comes with the pull request into `main`
+   ([mechanics](../../../docs/adr/README.md#mechanics)). Complete the header and delete the
+   instruction paragraph.
 2. One decision per ADR: one "We will …" sentence. A second one is a second ADR, unless the
    decision is the interplay of an integration ([§3](../../../AGENTS.md#3-adr-rules), rule 1).
 3. **Alternatives:** every one the interrogation surfaced, each with why not. For a concept of
@@ -59,7 +61,9 @@ in the record.
    starting `**Not mechanically decidable:**` with the reason
    ([ADR-0002](../../../docs/adr/0002-decisions-verified-by-tests.md)).
 7. Add the index row in [`docs/adr/README.md`](../../../docs/adr/README.md), status and *Applies
-   to* mirrored verbatim. For a supersession, flip the old ADR's status line in the same change.
+   to* mirrored verbatim. For a supersession, name the old ADR in `Supersedes` and leave its
+   status line: the human flips it when accepting this one
+   ([mechanics](../../../docs/adr/README.md#mechanics)).
 8. Run [`scripts/check-docs.sh`](../../../scripts/check-docs.sh).
 
 ## 4. Submit

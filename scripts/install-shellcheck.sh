@@ -28,7 +28,7 @@ case "$(uname -s).$(uname -m)" in
     ;;
 esac
 
-if "$BIN_DIR/shellcheck" --version 2> /dev/null | grep -qx "version: $SHELLCHECK_VERSION"; then
+if grep -qx "version: $SHELLCHECK_VERSION" <<< "$("$BIN_DIR/shellcheck" --version 2> /dev/null)"; then
   echo "install-shellcheck: shellcheck $SHELLCHECK_VERSION is installed in $BIN_DIR"
 else
   name="shellcheck-v$SHELLCHECK_VERSION.$asset.tar.xz"

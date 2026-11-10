@@ -44,7 +44,7 @@ for target in "${targets[@]}"; do
 done
 
 rustup toolchain install "$NIGHTLY" --profile minimal
-if ! cargo fuzz --version 2> /dev/null | grep -qF " $CARGO_FUZZ_VERSION"; then
+if ! grep -qF " $CARGO_FUZZ_VERSION" <<< "$(cargo fuzz --version 2> /dev/null)"; then
   cargo install --locked cargo-fuzz --version "$CARGO_FUZZ_VERSION"
 fi
 cargo deny --manifest-path fuzz/Cargo.toml --config deny.toml --locked check advisories sources

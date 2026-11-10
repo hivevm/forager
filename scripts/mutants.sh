@@ -73,7 +73,7 @@ if [[ -n "$BASE" ]]; then
 fi
 [[ -n "$SHARD" ]] && args+=(--shard "$SHARD")
 
-if ! cargo mutants --version 2> /dev/null | grep -qF " $CARGO_MUTANTS_VERSION"; then
+if ! grep -qF " $CARGO_MUTANTS_VERSION" <<< "$(cargo mutants --version 2> /dev/null)"; then
   cargo install --locked cargo-mutants --version "$CARGO_MUTANTS_VERSION" || exit 1
 fi
 

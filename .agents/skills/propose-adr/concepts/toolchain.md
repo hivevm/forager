@@ -34,7 +34,11 @@ The sensors come in three kinds:
 Whichever fits, the ADR names the build, test, and lint commands of the README; the one script
 under `scripts/` that runs them, which `scripts/check-all.sh` invokes with a `run` line and a job
 of `checks.yml` runs after setting up the toolchain; and, for each column of the table below, a
-tool or "none" and why, and where it runs.
+tool or "none" and why, and where it runs. A job with a matrix, such as one per operating
+system, reports one check run per entry, so the required checks of `CONTRIBUTING.md` name those,
+`build (ubuntu-latest)`, and not the job. A job of `checks.yml` keeps the name GitHub gives it,
+with no `name:` of its own, since check 9 holds the required checks to the job's id. A workflow
+that publishes, such as a release, is named on a `# Not a gate:` line of `scripts/check-all.sh`.
 
 ## Does not fit
 
@@ -48,7 +52,7 @@ tool or "none" and why, and where it runs.
 
 The golden path's tests cite the toolchain ADR with a `Verifies:` marker, and the ADR flips to
 accepted with them. Check 9 of `scripts/check-docs.sh` holds the build job, the local runner, and
-the required checks of the README together.
+the required checks of `CONTRIBUTING.md` together.
 
 ## Sensors
 

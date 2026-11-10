@@ -7,11 +7,17 @@
 # script in it, and asserts the exit code and the files afterwards. The cases cover a swap of two
 # ADRs and of two criteria, a merge of two ADRs into one, the record left untouched, a criterion
 # outside Markdown and outside a marker line, a reference to an ADR with no successor, an ignored
-# file, an invalid map that changes nothing, and a cycle of every ADR and criterion in a copy of
-# this repository after which the other self-tests still pass.
+# file, files without a final newline and a binary one, an invalid map that changes nothing, and
+# a cycle of every ADR and criterion in a copy of this repository after which the other
+# self-tests still pass.
 #
 # The identifiers in the fixtures are assembled at run time: a literal one would be a reference
 # that check-docs.sh and check-traceability.sh hold against this repository.
+#
+# Inputs: .agents/skills/normalize/
+# The cycle of the real tree runs every other self-test again, the costliest case of the local
+# gate. Before a push it runs only when the map script changes; a self-test that took up a
+# literal identifier fails it in CI, which runs it on every pull request.
 #
 # Usage:
 #     scripts/test-normalize-remap.sh
@@ -23,14 +29,9 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/selftest.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/selftest.sh"
 REMAP="$ROOT/.agents/skills/normalize/remap.sh"
-
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
-
-failed=0
-passed=0
 
 A="ADR"
 V="Verifies"
@@ -127,6 +128,23 @@ printf '%s\n' "$(id 1)" > "$d/notes.md"
 run "$d" "0001-alpha.md 0002-alpha.md"; rc=$?
 check "an ignored file is left alone" "[[ $rc -eq 0 ]] && grep -qxF '$(id 1)' '$d/notes.md'"
 
+# A file the map does not change keeps its bytes, a binary one and one without a final newline
+# among them, and a file it changes keeps a missing final newline.
+d="$(repo bytes)"
+printf '\001\002\377' > "$d/seed.bin"
+printf 'no final newline' > "$d/drawing.txt"
+printf 'see %s' "$(id 1)" > "$d/open.md"
+cp "$d/seed.bin" "$work/seed.bin"
+cp "$d/drawing.txt" "$work/drawing.txt"
+run "$d" "0001-alpha.md 0002-alpha.md"; rc=$?
+check "a map over files without a final newline exits 0" "[[ $rc -eq 0 ]]"
+check "a binary file the map does not change keeps its bytes" "cmp -s '$d/seed.bin' '$work/seed.bin'"
+check "a text file the map does not change keeps its bytes" \
+  "cmp -s '$d/drawing.txt' '$work/drawing.txt'"
+check "only the file the map changes is printed" "[[ \"\$(cat '$work/out')\" == open.md ]]"
+check "a changed file keeps a missing final newline" \
+  "[[ \"\$(od -An -c '$d/open.md' | tr -d ' \n')\" == \"see\$(id 2)\" ]]"
+
 # An invalid map changes nothing.
 d="$(repo invalid)"
 printf '%s\n' "$(id 1)" > "$d/README.md"
@@ -193,8 +211,4 @@ for i in "${!pids[@]}"; do
   ((rc == 0)) || sed 's/^/    /' "$work/${names[$i]}.log" >&2
 done
 
-if ((failed)); then
-  echo "Normalize map self-test FAILED ($failed of $((passed + failed)) cases)." >&2
-  exit 1
-fi
-echo "Normalize map self-test passed ($passed cases)."
+summary "Normalize map self-test"

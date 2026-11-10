@@ -37,7 +37,7 @@ step "The style document's JSON Schema is the one the IR derives (ADR-0020)"
 cargo clippy -p forager-style-ir --features schema --all-targets --locked -- -D warnings
 cargo test -p forager-style-ir --features schema --locked --test schema
 # The schema stays out of the browser bundle (Q-5): no crate the bindings build enables it.
-if cargo tree -p forager-bindings-wasm --locked -e normal | grep -q '^.*schemars '; then
+if grep -q '^.*schemars ' <<< "$(cargo tree -p forager-bindings-wasm --locked -e normal)"; then
   echo "check-rust: the browser bindings depend on schemars; the schema feature is enabled" >&2
   exit 1
 fi

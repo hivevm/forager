@@ -9,6 +9,9 @@
 # The marker text inside fixtures is assembled by 'mark', never written literally, so that the
 # check does not read this script's own fixtures as citations when it runs over the repository.
 #
+# No '# Inputs:' line: while TEMPLATE-SETUP.md exists, a case reads the whole tree, so
+# scripts/check-all.sh runs this self-test in its --changed mode too.
+#
 # Usage:
 #     scripts/test-check-traceability.sh
 # Exit code 0 when every case passes, 1 otherwise.
@@ -19,14 +22,9 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/selftest.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/selftest.sh"
 CHECK="$ROOT/scripts/check-traceability.sh"
-
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
-
-failed=0
-passed=0
 
 # mark <ids...> — the marker line for the given identifiers.
 mark() { printf 'Verifies: %s\n' "$*"; }
@@ -188,6 +186,23 @@ adr "$d" 0002 "🟢 accepted"
 mark "G-1 $(adr_id 1) $(adr_id 2)" > "$d/tests/t.txt"
 expect fail "marker citing a superseded ADR" "$d" "'$(adr_id 1)', which is superseded or rejected"
 
+# Verifies: ADR-0002
+# A draft is cited by its draft identifier, assembled for the same reason as adr_id.
+draft_id() { printf 'ADR-%s-%s' draft "$1"; }
+
+d="$(repo draft-cited)"
+spec "$d" "**G-1** — it works."
+adr "$d" 0001 "🟢 accepted"
+printf '# %s: next\n\n- **Status:** 🟡 proposed\n' "$(draft_id next)" > "$d/docs/adr/draft-next.md"
+mark "$(adr_id 1) $(draft_id next) G-1" > "$d/tests/t.txt"
+expect pass "a marker citing a draft that exists" "$d"
+
+d="$(repo draft-unknown)"
+spec "$d" "**G-1** — it works."
+adr "$d" 0001 "🟢 accepted"
+mark "$(adr_id 1) $(draft_id gone) G-1" > "$d/tests/t.txt"
+expect fail "a marker citing a draft that does not exist" "$d" "'$(draft_id gone)', which does not exist"
+
 d="$(repo markdown-not-counted)"
 spec "$d" "**G-1** — it works."
 adr "$d" 0001 "🟢 accepted"
@@ -245,9 +260,4 @@ fi
 
 # --- summary -------------------------------------------------------------------------------
 
-if ((failed)); then
-  echo "Traceability self-test FAILED ($failed of $((passed + failed)) cases)." >&2
-  exit 1
-fi
-echo "Traceability self-test passed ($passed cases)."
-exit 0
+summary "Traceability self-test"

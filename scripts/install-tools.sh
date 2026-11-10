@@ -26,7 +26,7 @@ rustup toolchain install
 # reports <version>.
 install_tool() {
   local crate="$1" version="$2" binary="$3"
-  if "$binary" --version 2> /dev/null | grep -qF " $version"; then
+  if grep -qF " $version" <<< "$("$binary" --version 2> /dev/null)"; then
     echo "install-tools: $binary $version is installed"
     return
   fi

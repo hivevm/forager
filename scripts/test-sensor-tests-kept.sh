@@ -8,6 +8,9 @@
 # unchanged repository reports nothing; every other case is one thing the sensor reports, or one
 # it must stay silent on.
 #
+# Verifies: ADR-0002
+# Inputs: scripts/sensor-tests-kept.sh scripts/lib/ .agents/skills/propose-adr/concepts/toolchain.md
+#
 # Usage:
 #     scripts/test-sensor-tests-kept.sh
 # Exit code 0 when every case passes, 1 otherwise.
@@ -18,17 +21,9 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/selftest.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/selftest.sh"
 SENSOR="$ROOT/scripts/sensor-tests-kept.sh"
-
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
-
-failed=0
-passed=0
-
-# fixture <dir> — refuse an empty fixture path: 'git -C ""' would act on this repository.
-fixture() { [[ -n "${1:-}" && -d "$1/.git" ]] || { echo "fixture: '$1' is no fixture repository" >&2; exit 1; }; }
 
 # commit <dir> <message> — stage everything and commit with a fixed identity.
 commit() {
@@ -56,7 +51,7 @@ expect() {
   local want="$1" name="$2" dir="$3" needle="$4" base="${5-base}"
   local out rc
   fixture "$dir"
-  out="$(cd "$dir" && bash "$SENSOR" "$base" 2>&1)"; rc=$?
+  out="$(bash "$SENSOR" --root "$dir" "$base" 2>&1)"; rc=$?
   if [[ $rc -eq "$want" && "$out" == *"$needle"* ]]; then
     passed=$((passed + 1))
     return
@@ -123,6 +118,76 @@ printf '@Disabled\nvoid z() {}\n' > "$d/tests/ZTest.java"
 commit "$d" "three toolchains"
 expect 0 "the Go, Rust, and Java markers" "$d" "3 finding(s)"
 
+# The catalogue's table names the markers a diff rule catches, for a reader choosing a toolchain;
+# MARKERS of the sensor is what it matches, in the files of each toolchain. Every marker the table
+# names is one the sensor finds in a file of its row's toolchain; a row this case knows no file of
+# fails it, rather than leave its markers unchecked.
+d="$(repo catalogue-markers)"
+named=0
+unknown=()
+while IFS='|' read -r _ toolchain _ _ _ _ skipped _; do
+  toolchain="${toolchain# }"
+  # shellcheck disable=SC2016  # the backticks are literal Markdown, not a command substitution
+  mapfile -t markers < <(grep -o 'diff rule ([^)]*)' <<< "$skipped" | grep -oE '`[^`]+`' | tr -d '`')
+  ((${#markers[@]})) || continue
+  case "$toolchain" in
+    *TypeScript*) file=tests/catalogue.test.ts ;;
+    *Java*) file=tests/CatalogueTest.java ;;
+    *Python*) file=tests/catalogue_test.py ;;
+    Go*) file=tests/catalogue_test.go ;;
+    *Rust*) file=tests/catalogue_test.rs ;;
+    *C#*) file=tests/CatalogueTest.cs ;;
+    *) unknown+=("$toolchain"); continue ;;
+  esac
+  printf '%s\n' "${markers[@]}" >> "$d/$file"
+  named=$((named + ${#markers[@]}))
+done < <(grep '^| ' "$ROOT/.agents/skills/propose-adr/concepts/toolchain.md" | grep -v '^| Toolchain |')
+commit "$d" "every marker the catalogue names, each in a file of its toolchain"
+if ((${#unknown[@]})); then
+  failed=$((failed + 1)); echo "FAIL: catalogue rows with a diff rule and no file here:${unknown[*]}" >&2
+else
+  expect 0 "every marker the catalogue's table names is one the sensor finds" "$d" "$named finding(s)"
+fi
+
+# A marker is read only in the files of its toolchain: a Rust method named fit is no focused
+# JavaScript test, nor is a method call on an object in TypeScript; the same names where they
+# are markers are reported.
+d="$(repo marker-in-another-language)"
+printf 'fn g() {\n    let fits = self.content.fit(count);\n}\n' > "$d/src/g.rs"
+printf 'const h = shape.fit(box);\n' > "$d/src/h.ts"
+printf 'fit("x", () => {})\n' >> "$d/src/b.spec.ts"
+printf '#[ignore]\nfn y() {}\n' > "$d/tests/y_test.rs"
+printf '#[ignore]\n' > "$d/src/notes.md"
+commit "$d" "fit in Rust and as a method, a focus and an ignore where they are markers"
+expect 0 "a marker is read only in the files of its toolchain" "$d" "2 finding(s)"
+expect 0 "a focus marker in TypeScript is reported" "$d" "src/b.spec.ts:2: fit("
+expect 0 "an ignore in Rust is reported" "$d" "tests/y_test.rs:1: #[ignore]"
+
+# The extension of a path git quotes or ends with a tab, a name with a space or a letter beyond
+# ASCII, is read as the path's own.
+d="$(repo marker-in-an-odd-path)"
+printf '#[ignore]\nfn y() {}\n' > "$d/tests/a b_test.rs"
+printf '#[ignore]\nfn z() {}\n' > "$d/tests/ü_test.rs"
+commit "$d" "ignores in paths with a space and beyond ASCII"
+expect 0 "a marker in a path with a space or beyond ASCII is reported" "$d" "2 finding(s)"
+
+# Called by its path from a subdirectory of another repository, the sensor reads the one it lives
+# in, as the checks do: the tag 'base' exists only there.
+# Verifies: ADR-0002
+d="$(repo own-repository)"
+mkdir -p "$d/scripts/lib" && cp "$SENSOR" "$d/scripts/" && cp "$ROOT/scripts/lib/git.sh" "$d/scripts/lib/"
+git -C "${d:?}" rm -q tests/a_test.py
+commit "$d" "drop a test"
+other="$work/other"
+mkdir -p "$other/sub" && git -C "$other" init -q -b main
+out="$(cd "$other/sub" && bash "$d/scripts/sensor-tests-kept.sh" base 2>&1)"; rc=$?
+if ((rc == 0)) && [[ "$out" == *"deleted test file: tests/a_test.py"* ]]; then
+  passed=$((passed + 1))
+else
+  failed=$((failed + 1)); echo "FAIL: a sensor called from another repository reads its own (exit $rc)" >&2
+  while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
+fi
+
 d="$(repo same-commit)"
 expect 0 "base and head the same commit" "$d" "base and head are the same commit"
 
@@ -140,9 +205,4 @@ expect 0 "no base and no main" "$d" "no main to compare with" ""
 
 # --- summary ---------------------------------------------------------------------------------
 
-if ((failed)); then
-  echo "Tests kept sensor self-test FAILED ($failed of $((passed + failed)) cases)." >&2
-  exit 1
-fi
-echo "Tests kept sensor self-test passed ($passed cases)."
-exit 0
+summary "Tests kept sensor self-test"

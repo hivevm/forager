@@ -2,7 +2,9 @@
 
 > **The single rule file of this project** ([ADR-0001](docs/adr/0001-agent-governance-model.md)).
 > Every working rule lives here. Where another document repeats one, this wording governs. The
-> file belongs to the template and is not edited per project. Project conventions go into
+> file belongs to the template and is not edited per project, except the ADR rules of
+> [§3](#3-adr-rules): a derived project changes them by an ADR on the ADR process, which edits
+> them in the change that lands it. Project conventions go into
 > [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md), into checks, and into ADRs. A procedure is a skill
 > under [`.agents/skills/`](.agents/skills/). It cites a rule here and states none of its own
 > ([ADR-0003](docs/adr/0003-procedures-as-skills.md)).
@@ -23,26 +25,31 @@ over speed and cleverness:
 - **Reflection.** Weigh alternatives and consequences, and write the reasoning down.
 - **Critical stance.** Take nothing at face value: not the human's framing, not your own earlier
   output, not the existing code. Verify against the specification, the ADRs, the code, and
-  authoritative sources. Put disagreement, with its evidence, into the pull request. Put what you
-  could not confirm there too; "none" is a claim the reviewer checks.
+  authoritative sources. Put disagreement, with its evidence, into the hand-off of the change
+  ([§6](#6-project-rules)). Put what you could not confirm there too; "none" is a claim the
+  reviewer checks.
 
 ## 2. Start here
 
-Before any non-trivial work, read:
+Before any non-trivial work, read the decisions that bind it, and of the rest only what the work
+needs.
 
-1. [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md): problem, goals, success criteria, in the
-   vocabulary of [`docs/GLOSSARY.md`](docs/GLOSSARY.md).
-2. [`docs/adr/README.md`](docs/adr/README.md): the ADR index. **Accepted ADRs are binding.** Read
-   every one whose *Applies to* names what your change touches.
-   [`scripts/sensor-binding-adrs.sh`](scripts/sensor-binding-adrs.sh) lists those that name one
-   of its paths. An *Applies to* written in prose you match yourself. Of each binding ADR, read
-   the header, the *Decision*, and the *Enforcement*. Read the rest when the change questions,
-   revises, or supersedes it. A `proposed` ADR binds the work that implements it. Rejected and
-   superseded ADRs explain *why*; they are not rules.
-3. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the system as it stands today. Where it and an
-   accepted ADR disagree, the ADR is right.
+1. **The ADRs.** Run [`scripts/sensor-binding-adrs.sh`](scripts/sensor-binding-adrs.sh)
+   `--sections`, with a `--path` for each path the work will touch while nothing has changed yet.
+   Read what it prints, from the index [`docs/adr/README.md`](docs/adr/README.md) and the ADRs.
+   **Accepted ADRs are binding.** Match an *Applies to* written in prose against the work yourself,
+   and read the header, *Decision*, and *Enforcement* of each that binds it. Read the rest of an ADR
+   when the change questions, revises, or supersedes it, and the mechanics of the index when the
+   change writes one. A `proposed` ADR binds the work that implements it. Rejected and superseded
+   ADRs explain *why*; they are not rules.
+2. [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md): problem, goals, success criteria, in the
+   vocabulary of [`docs/GLOSSARY.md`](docs/GLOSSARY.md). Read it when the work serves or moves a
+   goal (`G-n`, `Q-n`), plans a feature, or decides an ADR.
+3. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): the system as it stands today. Read it when the
+   work changes the structure or has to find its way in it. Where it and an accepted ADR
+   disagree, the ADR is right.
 
-Scaffold text in those documents is the first work: a placeholder title, an empty section, a
+Scaffold text in what the work reads is the first work: a placeholder title, an empty section, a
 `TODO`. Say so, and elaborate it with the human before implementing.
 
 ## 3. ADR rules
@@ -64,15 +71,22 @@ restates nothing. A rule this file does not state is not a rule of this project.
    last however cheap it is to reverse. No ADR is needed for implementing within an ADR in force,
    for bug fixes, interface-preserving refactorings, tests, docs, formatting, or dev-only tooling.
    When genuinely unsure, prefer a short `proposed` ADR over a silent decision.
-3. **Develop the ADR with the human, critically.** Submit it with status `proposed` **in a
-   pull request of ADRs only**, never mixed with implementation. ADRs the same human decides may
-   travel together in one pull request, as the founding decisions of a new project do. Each stays
-   one decision. One the human sends back leaves that pull request for one of its own. Skill:
-   `propose-adr`. The normalization of rule 5 is the one exception: its pull request carries the
-   restated ADRs and the references that move with them.
-4. **After human review, implement while the ADR is still `proposed`.** Findings return as
-   revisions, each in its own ADR-only pull request. **Only a human changes the status.** The
-   flip to `accepted` may land with the implementation.
+3. **Develop the ADR with the human, critically.** Submit it with status `proposed` **in
+   commits of ADRs only**, and hand those commits to the human before anything is implemented
+   against them. They go on the branch of the work they belong to, or on a branch of their own
+   for an ADR that waits for its decision while other work goes on. ADRs the same human decides
+   may travel together, as the founding decisions of a new project do. Each stays one decision.
+   One the human sends back leaves the work's branch for a branch of its own, so the work's pull
+   request does not carry it, and nothing is implemented against it until it is settled. Skill:
+   `propose-adr`. The two exceptions of rule 5, a normalization and the template repository's
+   correction of its own ADRs, carry the restated or corrected ADRs with the text that cites
+   them.
+4. **After human review, implement while the ADR is still `proposed`,** after its commits on
+   the same branch, or on a branch stacked on the ADR's. A commit that changes the text of an
+   ADR changes nothing else, and a sensor lists one that does. Findings return as revisions,
+   each a commit of ADRs only. The hand-off names the commit of ADRs the human reviewed before
+   the implementation. **Only a human changes the status.** The flip to `accepted`, a header
+   line and no text, may land with the implementation.
 5. **Accepted ADRs are binding and immutable.** Never violate or work around one; change it only
    by superseding it. Outside a normalization, never rewrite or delete one. Two edits are
    permitted, both by a human. One flips the `Status` line. The other adds the project's decider
@@ -99,17 +113,28 @@ restates nothing. A rule this file does not state is not a rule of this project.
 - **Reply to the human in their own language.** Everything else is English: code, comments,
   commits, docs, ADRs, pull requests.
 - **Prefer small, reviewable changes.** Plan and explore before a larger one. Commits and pull
-  requests name the ADR they implement (`Implements ADR-NNNN`).
+  requests name the ADR they implement (`Implements ADR-NNNN`, a draft by its `ADR-draft-<slug>`).
 - **Cut work into vertical slices.** Each slice is a thin, tested path through every layer it
   touches. The first slice through new ground is the tracer bullet. The one exception is a wide
   mechanical refactor: expand, migrate in batches, contract, every step green.
 - **Write to [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md).** Settle a new judgement call there,
   in the same change that raised it. A judgement call a check can decide becomes the check
   ([§5](#5-quality-bar--definition-of-done)). One that constrains future choices becomes an ADR.
+- **Write a rule plainly.** This covers the rules of this file and the *Decision* and
+  *Enforcement* of an ADR. Write one statement per sentence. Name who acts, in the active voice.
+  Use the terms of the glossary. Write several items as a list. State a duty with *must* or *must
+  not*, and a permission with *may*. *Should*, *could*, *might*, and *ideally* leave the reader
+  guessing.
+  [`scripts/sensor-plain-rules.sh`](scripts/sensor-plain-rules.sh) reports each sentence over 25
+  words, each soft modal verb, and each word the glossary lists under _Avoid:_ on the lines a
+  change adds.
 - **Plan work larger than one session in the tree, under `docs/plan/`.** A feature spec is cut
   into tracer-bullet tickets. The change that lands a ticket's work deletes its file
   ([ADR-0006](docs/adr/0006-feature-layer.md)). Skill: `plan-feature`. The skill `work-tickets`
   works the tickets, one at a time or in parallel.
+- **Record a finding outside your ticket in the backlog.** A finding is a defect, a doubt, or an
+  idea that no ticket covers. Do not widen the ticket for it. The human decides which entry becomes
+  a ticket ([ADR-0006](docs/adr/0006-feature-layer.md)).
 - **Work with the human:** small steps, reasoning surfaced, feedback sought early. A task runs
   unattended only when its ticket answers for all of the following:
   - a test decides its criteria;
@@ -121,13 +146,22 @@ restates nothing. A rule this file does not state is not a rule of this project.
 
   The harness ADR is the project's founding decision on who decides, which agents work, and how
   much agent work may be open at once.
-- **Keep the context lean.** Subagents return conclusions, not file dumps. Alignment,
-  implementation, and review each start in a fresh session with only what they need. Never start
-  one by compacting the old session. The implementing session loads what its ticket's *Read
-  first* names. A degraded session hands off.
+- **Keep the context lean.** Besides a review, delegate to a subagent only work that is independent
+  of the rest or a search whose answer is a conclusion. Subagents return conclusions, not file
+  dumps, and are briefed with paths, not with the files' content. Alignment, implementation, and
+  review each start in a fresh session with only what they need. Never start one by compacting the
+  old session. The implementing session loads what its ticket's *Read first* names. Read a file by
+  the sections the work needs, and whole where a rule or a procedure names it so, or where the work
+  judges the file as a whole. Run a command whose output is longer than the work reads through a
+  filter for what it is run for, and read its exit status, and a failure, unfiltered. A degraded
+  session hands off, and so does one whose topic is done, with a note under `.scratch/` of what the
+  next session needs, not an account of this one: every turn resends the whole session. A review's
+  topic lasts until the fixes it asked for are judged.
 - **Session artifacts are not tracked.** Session plans, handoff notes, and scratch files live under
   `.scratch/` (gitignored) or outside the tree. What has to outlive the session becomes a ticket,
-  a `proposed` ADR, or a change to one of the six documents of ADR-0001.
+  a `proposed` ADR, or a change to one of the six documents of ADR-0001. An agent's own memory
+  keeps how the human works, not the state of the work, which the tree and its history hold:
+  every session loads that memory first.
 - **Research before a decision that is costly to reverse,** external sources included. Cite them
   in the ADR. Below that bar, research what you are actually unsure of. Never pass off recalled
   interfaces, versions, or defaults as verified.
@@ -155,10 +189,16 @@ restates nothing. A rule this file does not state is not a rule of this project.
 - **Never weaken the suite to make it pass. A flaky test is a defect, not noise:** no retries, no
   re-running until green.
 - **Review in a fresh context before handing off.** The session that wrote a change never reviews
-  it. The reviewer gets the diff, the task, the doubts, and the standards, never the reasoning.
-  It reports on two axes: does the change do what was asked, and does it meet this bar,
-  simplicity first. Findings are fixed before the pull request opens. Every existing test the
-  diff changes or removes needs a reason. Skill: `review`.
+  it. The reviewer gets the diff, the task, the doubts, and the standards, never the reasoning. It
+  reports on two axes: does the change do what was asked, and does it meet this bar, simplicity
+  first. A finding that must be fixed is fixed before the change is handed off; a lesser one is
+  fixed or named in the hand-off's doubts. Every existing test the diff changes or removes needs a
+  reason. The hand-off names the commit the review saw, and a sensor lists what landed after it. A
+  rework replaces the commits a review saw, so after one the review that binds is a review of the
+  whole branch at its head. The review scales with the change ([§1](#1-principles)): one that only
+  touches `.github/ISSUE_TEMPLATE/` or documents under `docs/` other than those ADR-0001 names and
+  `docs/plan/`, its checks green, gets a light review of the diff, the task, the doubts, and the
+  check output; every other change gets the full one. Skill: `review`.
 - **A feature spec closes only after a design revision.** A fresh session revisits the modules
   its tickets touched, the ADRs that bind them, and the criteria they serve. It files what it
   finds as tickets, checks, a `proposed` ADR, or a drafted specification change. With no spec
@@ -178,14 +218,30 @@ restates nothing. A rule this file does not state is not a rule of this project.
   Pushing, `gh`, and anything that rewrites or discards history (`reset`, `rebase`, `merge`,
   `restore`, `clean`) wait for an instruction. The instruction names the action and implies no
   next one. A standing instruction may cover one push only: the claim on a ticket across clones,
-  where the harness ADR grants it. A claim reserves a ticket by creating its branch, with an
-  empty commit and nothing else ([ADR-0006](docs/adr/0006-feature-layer.md)). Its push skips the
-  pre-push hook. The git hooks under [`.githooks/`](.githooks/) refuse a commit on `main`. They
-  refuse a push while the checks of [§5](#5-quality-bar--definition-of-done) are red.
+  where the harness ADR grants it. The session releases a local claim, a human one on a remote
+  ([ADR-0006](docs/adr/0006-feature-layer.md)). The git hooks under [`.githooks/`](.githooks/)
+  enforce what a file can of this section and of [§5](#5-quality-bar--definition-of-done); what
+  each refuses is under [Git hooks](CONTRIBUTING.md#git-hooks). **An agent never bypasses this
+  repository's hooks:** no `--no-verify`, no git run without them, no hand-moved `origin/main`, no
+  hand-written record of a green tree. The one exception is the push of a claim, which skips the
+  pre-push hook. A human may bypass one, deliberately.
+- **A rule is enforced only by what every agent hits:** the git hooks, the checks, and the
+  repository settings. A tool's own configuration enforces none, because a gate one agent
+  honours and the next does not looks like a rule and is not one. It may close a path for its
+  agent as defence in depth ([ADR-0001](docs/adr/0001-agent-governance-model.md)).
 - **Authenticate `gh` through its web flow;** a human enters the one-time code. Never request,
   store, or hard-code personal access tokens.
-- **Changes reach `main` through a pull request.** What no file can enforce is listed under
-  [Repository settings](README.md#repository-settings).
+- **Changes reach `main` through a pull request,** merged as a merge commit. The local `main`
+  only takes up the remote's, with `git merge --ff-only origin/main`. What no file can enforce
+  is listed under [Repository settings](CONTRIBUTING.md#repository-settings).
+- **Branches may integrate first on a `feat/` branch,** on the human's instruction, after the
+  review of [§5](#5-quality-bar--definition-of-done): by a local merge, or by a pull request
+  against the `feat/` branch. Each integrated branch is one merge commit, whose message is the
+  hand-off of the change and fills the sections of the
+  [pull request template](.github/PULL_REQUEST_TEMPLATE.md). Until the `feat/` branch's pull
+  request into `main` merges, all of it is the human's to rework and push again, what pull
+  requests merged into it included. What has reached `main` is never rewritten. The steps are
+  under [Integration branches](CONTRIBUTING.md#integration-branches).
 
 ## 7. Secrets
 
