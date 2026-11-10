@@ -56,63 +56,63 @@ pub(crate) fn ms_min(a: f64, b: f64) -> f64 {
 }
 
 /// The style's `MINWIDTH`, its default without one.
-pub(crate) fn min_width(style: &Style) -> f64 {
+pub(crate) fn min_width<T>(style: &Style<T>) -> f64 {
     style.min_width.unwrap_or(MIN_WIDTH)
 }
 
 /// The style's `MAXWIDTH`, its default without one.
-pub(crate) fn max_width(style: &Style) -> f64 {
+pub(crate) fn max_width<T>(style: &Style<T>) -> f64 {
     style.max_width.unwrap_or(MAX_WIDTH)
 }
 
 /// The style's `MINSIZE`, its default without one.
-pub(crate) fn min_size(style: &Style) -> f64 {
+pub(crate) fn min_size<T>(style: &Style<T>) -> f64 {
     style.min_size.unwrap_or(MIN_SIZE)
 }
 
 /// The style's `MAXSIZE`, its default without one.
-pub(crate) fn max_size(style: &Style) -> f64 {
+pub(crate) fn max_size<T>(style: &Style<T>) -> f64 {
     style.max_size.unwrap_or(MAX_SIZE)
 }
 
 /// msDrawLineSymbol(), `src/maprendering.c:622-624`: a line's `width`, scaled, bounded by the
 /// style's `MAXWIDTH` and then its `MINWIDTH`, both times the `resolution` factor.
-pub(crate) fn line_width(width: f64, style: &Style, resolution: f64) -> f64 {
+pub(crate) fn line_width<T>(width: f64, style: &Style<T>, resolution: f64) -> f64 {
     let width = ms_min(width, max_width(style) * resolution);
     ms_max(width, min_width(style) * resolution)
 }
 
 /// computeSymbolStyle(), `src/maprendering.c:62-64`: a symbol's `size`, scaled, bounded by the
 /// style's `MINSIZE` and then its `MAXSIZE`, both times the `resolution` factor.
-pub(crate) fn symbol_size(size: f64, style: &Style, resolution: f64) -> f64 {
+pub(crate) fn symbol_size<T>(size: f64, style: &Style<T>, resolution: f64) -> f64 {
     let size = ms_max(size, min_size(style) * resolution);
     ms_min(size, max_size(style) * resolution)
 }
 
 /// computeSymbolStyle(), `src/maprendering.c:69-71`: a symbol's outline `width`, scaled, bounded
 /// by the style's `MINWIDTH` and then its `MAXWIDTH`, both times the `resolution` factor.
-pub(crate) fn symbol_outline_width(width: f64, style: &Style, resolution: f64) -> f64 {
+pub(crate) fn symbol_outline_width<T>(width: f64, style: &Style<T>, resolution: f64) -> f64 {
     let width = ms_max(width, min_width(style) * resolution);
     ms_min(width, max_width(style) * resolution)
 }
 
 /// msDrawShadeSymbol(), `src/maprendering.c:796-799`: a plain polygon's outline `width`, scaled,
 /// bounded by the style's `MAXWIDTH` and then its `MINWIDTH`, neither scaled.
-pub(crate) fn shade_outline_width(width: f64, style: &Style) -> f64 {
+pub(crate) fn shade_outline_width<T>(width: f64, style: &Style<T>) -> f64 {
     let width = ms_min(width, max_width(style));
     ms_max(width, min_width(style))
 }
 
 /// msDrawShadeSymbol(), `src/maprendering.c:808-810`: a hatch's line `width`, scaled, bounded by
 /// the style's `MAXWIDTH` and then its `MINWIDTH`, both times the `resolution` factor.
-pub(crate) fn hatch_width(width: f64, style: &Style, resolution: f64) -> f64 {
+pub(crate) fn hatch_width<T>(width: f64, style: &Style<T>, resolution: f64) -> f64 {
     let width = ms_min(width, max_width(style) * resolution);
     ms_max(width, min_width(style) * resolution)
 }
 
 /// msDrawShadeSymbol(), `src/maprendering.c:811-813`: a hatch's `spacing`, scaled, bounded by the
 /// style's `MAXSIZE` and then its `MINSIZE`, both times the `resolution` factor.
-pub(crate) fn hatch_spacing(spacing: f64, style: &Style, resolution: f64) -> f64 {
+pub(crate) fn hatch_spacing<T>(spacing: f64, style: &Style<T>, resolution: f64) -> f64 {
     let spacing = ms_min(spacing, max_size(style) * resolution);
     ms_max(spacing, min_size(style) * resolution)
 }
@@ -120,7 +120,7 @@ pub(crate) fn hatch_spacing(spacing: f64, style: &Style, resolution: f64) -> f64
 /// msGetMarkerSize(), `src/mapsymbol.c:754-755`: a marker's size in whole `pixels`, bounded by the
 /// style's `MINSIZE` and then its `MAXSIZE`, neither scaled, and cut to whole pixels after each,
 /// as `size` is an int there.
-pub(crate) fn marker_pixels(pixels: f64, style: &Style) -> f64 {
+pub(crate) fn marker_pixels<T>(pixels: f64, style: &Style<T>) -> f64 {
     let pixels = ms_max(pixels, min_size(style)).trunc();
     ms_min(pixels, max_size(style)).trunc()
 }

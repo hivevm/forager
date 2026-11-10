@@ -115,7 +115,7 @@ fn is_vector_or_ellipse(symbol: &Symbol) -> bool {
 }
 
 /// The mark of `style` among `symbols`, MapServer's symbols from index 1.
-pub fn mark<'a>(style: &Style, symbols: &'a [Symbol]) -> Mark<'a> {
+pub fn mark<'a, T>(style: &Style<T>, symbols: &'a [Symbol]) -> Mark<'a> {
     match resolve(&style.symbol, symbols) {
         Resolved::Missing(_) | Resolved::Unnamed(_) => Mark::Nothing,
         Resolved::Found(_, symbol) if is_vector_or_ellipse(symbol) => Mark::Symbol(symbol),
@@ -127,7 +127,7 @@ pub fn mark<'a>(style: &Style, symbols: &'a [Symbol]) -> Mark<'a> {
 }
 
 /// Whether the style's symbol among `symbols` is a hatch.
-pub(crate) fn is_hatch(style: &Style, symbols: &[Symbol]) -> bool {
+pub(crate) fn is_hatch<T>(style: &Style<T>, symbols: &[Symbol]) -> bool {
     matches!(resolve(&style.symbol, symbols), Resolved::Found(_, symbol) if symbol.kind == SymbolKind::Hatch)
 }
 
@@ -177,8 +177,8 @@ pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol], pixmaps: Option
 /// factor (see [`bounds::symbol_size`]); the outline is the style's width scaled and bounded alike
 /// by `MINWIDTH` and `MAXWIDTH` (see [`bounds::symbol_outline_width`]); the `GAP` is scaled as the
 /// size is.
-pub(crate) fn symbol_style(
-    style: &Style,
+pub(crate) fn symbol_style<T>(
+    style: &Style<T>,
     symbol: &Symbol,
     factor: f64,
     resolution: f64,
@@ -217,8 +217,8 @@ pub(crate) fn symbol_style(
 /// default the image's height (msSymbolGetDefaultSize), scaled and bounded by `MINSIZE` and
 /// `MAXSIZE`, over that height; its rotation in radians, counter-clockwise; and its `GAP` scaled
 /// as the size is (66), negative as the `GAP` is.
-pub(crate) fn pixmap_style(
-    style: &Style,
+pub(crate) fn pixmap_style<T>(
+    style: &Style<T>,
     height: u32,
     factor: f64,
     resolution: f64,
@@ -293,13 +293,13 @@ pub(crate) fn pixmap_square(
 
 /// msGetMarkerSize for a vector or ellipse symbol at `scale_factor`: the width and height it is
 /// drawn at, from a size cut to whole pixels, or its own extent for a style without a size.
-fn marker_size(style: &Style, symbol: &Symbol, scale_factor: f64) -> (f64, f64) {
+fn marker_size<T>(style: &Style<T>, symbol: &Symbol, scale_factor: f64) -> (f64, f64) {
     marker_size_at(style, fixed(&style.size), symbol, scale_factor)
 }
 
 /// [`marker_size`] of `style` at the size `size` in place of its own.
-fn marker_size_at(
-    style: &Style,
+fn marker_size_at<T>(
+    style: &Style<T>,
     size: Option<f64>,
     symbol: &Symbol,
     scale_factor: f64,
@@ -320,8 +320,8 @@ fn marker_size_at(
 /// height without one (msSymbolGetDefaultSize), scaled and cut to whole pixels, then bounded by
 /// `MINSIZE` and `MAXSIZE` unscaled (750-755); at a size of 1 the image's own width and height,
 /// otherwise the size high and as wide as the image is at that height (772-782).
-pub fn pixmap_marker_size(
-    style: &Style,
+pub fn pixmap_marker_size<T>(
+    style: &Style<T>,
     size: Option<f64>,
     width: u32,
     height: u32,
@@ -369,8 +369,8 @@ pub fn marker_size_of(
 
 /// [`marker_size_of`] of `style` at the size `size` and of the symbol `symbol` in place of its
 /// own, as a feature binds them; without `pixmaps`, a pixmap's size is not computed.
-pub fn marker_size_with(
-    style: &Style,
+pub fn marker_size_with<T>(
+    style: &Style<T>,
     size: Option<f64>,
     symbol: &Option<Bound<SymbolRef>>,
     symbols: &[Symbol],
@@ -459,7 +459,7 @@ pub(crate) fn anchored(
 /// msAdjustMarkerPos before the anchor point, at the scale factor `factor`: `at` moved by the
 /// style's `POLAROFFSET`, where its distance or its angle is not 0, then by its `OFFSET`, each
 /// scaled. A line offset is the `OFFSET` it was written as, its `y` MapServer's −99 or −999.
-pub(crate) fn shifted(at: Point, style: &Style, factor: f64) -> Point {
+pub(crate) fn shifted<T>(at: Point, style: &Style<T>, factor: f64) -> Point {
     let mut at = at;
     if let Some([distance, angle]) = &style.polar_offset {
         let (distance, angle) = (
@@ -488,10 +488,10 @@ pub(crate) fn shifted(at: Point, style: &Style, factor: f64) -> Point {
 /// The drawing operations of `symbol` at the pixel `at` in `style` at the scale factor `factor`
 /// and the resolution factor `resolution`, as msDrawMarkerSymbol and the AGG renderer draw a
 /// vector or an ellipse symbol: moved by msAdjustMarkerPos, filled first, then outlined.
-pub fn symbol_ops(
+pub fn symbol_ops<T>(
     ops: &mut Vec<DrawOp>,
     at: Point,
-    style: &Style,
+    style: &Style<T>,
     symbol: &Symbol,
     factor: f64,
     resolution: f64,

@@ -231,12 +231,13 @@ impl Translator<'_> {
     pub(super) fn image_symbols(&mut self, map: &mut Map) {
         for class in map.layers.iter_mut().flat_map(|layer| &mut layer.classes) {
             let labels = class.labels.iter_mut().flat_map(|label| &mut label.styles);
-            for style in class.styles.iter_mut().chain(labels) {
-                let Some(Bound::Value(SymbolRef::Name(name))) = &style.symbol else {
+            let labels = labels.map(|style| &mut style.symbol);
+            for symbol in class.styles.iter_mut().map(|s| &mut s.symbol).chain(labels) {
+                let Some(Bound::Value(SymbolRef::Name(name))) = symbol else {
                     continue;
                 };
                 if let Some(index) = self.image_symbol(name) {
-                    style.symbol = Some(Bound::Value(SymbolRef::Index(index)));
+                    *symbol = Some(Bound::Value(SymbolRef::Index(index)));
                 }
             }
         }

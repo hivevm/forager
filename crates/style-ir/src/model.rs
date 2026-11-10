@@ -361,9 +361,13 @@ pub struct Class {
     pub span: Option<Span>,
 }
 
+/// A style of a class, whose transform may be absent, or, as `Style<LabelTransform>`, of a label,
+/// whose transform may not.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct Style {
+#[cfg_attr(feature = "schema", schemars(rename = "Style_{T}"))]
+#[serde(bound(serialize = "T: Serialize + Transform"))]
+pub struct Style<T = Option<GeomTransform>> {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<Bound<Rgba>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -427,9 +431,11 @@ pub struct Style {
     pub min_width: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_width: Option<f64>,
-    /// The geometry the style draws instead of the feature's own.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub geom_transform: Option<GeomTransform>,
+    /// The geometry the style draws instead of the feature's own: on a class's style, the
+    /// feature's own where it is absent; on a label's style, where the style draws about the
+    /// label, never absent.
+    #[serde(skip_serializing_if = "Transform::is_absent")]
+    pub geom_transform: T,
     /// The style draws at a scale from `min_scale_denom` up to below `max_scale_denom`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_scale_denom: Option<f64>,
@@ -439,7 +445,72 @@ pub struct Style {
     pub span: Option<Span>,
 }
 
-impl Style {
+impl<T> Style<T> {
+    /// A style of the transform `geom_transform`, without any other property.
+    pub fn new(geom_transform: T) -> Self {
+        Style::<Option<GeomTransform>>::default().with_transform(geom_transform)
+    }
+
+    /// The style with the transform `transform` in place of its own.
+    pub fn with_transform<U>(self, transform: U) -> Style<U> {
+        let Style {
+            color,
+            outline_color,
+            width,
+            size,
+            angle,
+            auto_angle,
+            symbol,
+            offset,
+            line_offset,
+            polar_offset,
+            gap,
+            initial_gap,
+            pattern,
+            line_cap,
+            line_join,
+            line_join_max_size,
+            opacity,
+            outline_width,
+            min_size,
+            max_size,
+            min_width,
+            max_width,
+            geom_transform: _,
+            min_scale_denom,
+            max_scale_denom,
+            span,
+        } = self;
+        Style {
+            color,
+            outline_color,
+            width,
+            size,
+            angle,
+            auto_angle,
+            symbol,
+            offset,
+            line_offset,
+            polar_offset,
+            gap,
+            initial_gap,
+            pattern,
+            line_cap,
+            line_join,
+            line_join_max_size,
+            opacity,
+            outline_width,
+            min_size,
+            max_size,
+            min_width,
+            max_width,
+            geom_transform: transform,
+            min_scale_denom,
+            max_scale_denom,
+            span,
+        }
+    }
+
     /// The expressions among the style's properties.
     pub(crate) fn expressions(&self) -> Vec<&Expr> {
         let colors = [&self.color, &self.outline_color].into_iter().flatten();
@@ -539,16 +610,51 @@ pub enum GeomTransform {
     /// Every point of a line but the first and the last.
     Vertices,
     Centroid,
-    /// Where a label is placed. A label's style is drawn only with a transform of its own: one
-    /// without a transform is not drawn, so a marker at the label's point names `labelpoint`.
+    /// A label's transform, [`LabelTransform::Point`], which a class's style of a line or a
+    /// polygon layer draws nothing at.
     #[serde(rename = "labelpoint")]
     LabelPoint,
-    /// The box around a label's text.
+    /// A label's transform, [`LabelTransform::Poly`], which a class's style of a line or a
+    /// polygon layer draws nothing at.
     #[serde(rename = "labelpoly")]
     LabelPoly,
-    /// The centre of the box around a label's text: a marker drawn there, before the text.
+    /// A label's transform, [`LabelTransform::Center`], which a class's style of a line or a
+    /// polygon layer draws nothing at.
     #[serde(rename = "labelcenter")]
     LabelCenter,
+}
+
+/// Where a label's style draws, which it always names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub enum LabelTransform {
+    /// At the label's point: a marker, before the text.
+    #[serde(rename = "labelpoint")]
+    Point,
+    /// The box around the label's text.
+    #[serde(rename = "labelpoly")]
+    Poly,
+    /// The centre of the box around the label's text: a marker drawn there, before the text.
+    #[serde(rename = "labelcenter")]
+    Center,
+}
+
+/// The transform of a style, [`Style::geom_transform`]: whether it is absent, and so left out of
+/// the document.
+pub trait Transform {
+    fn is_absent(&self) -> bool;
+}
+
+impl Transform for Option<GeomTransform> {
+    fn is_absent(&self) -> bool {
+        self.is_none()
+    }
+}
+
+impl Transform for LabelTransform {
+    fn is_absent(&self) -> bool {
+        false
+    }
 }
 
 /// A label a class draws for each feature.
@@ -648,9 +754,9 @@ pub struct Label {
     pub min_scale_denom: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_scale_denom: Option<f64>,
-    /// Drawn with the label, at its point unless a style names another transform.
+    /// Drawn with the label, each where its transform says.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub styles: Vec<Style>,
+    pub styles: Vec<Style<LabelTransform>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
 }

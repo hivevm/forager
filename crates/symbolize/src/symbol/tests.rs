@@ -97,7 +97,7 @@ fn a_style_marks_by_its_symbol() {
     }];
     let by = |symbol: Option<Bound<SymbolRef>>| Style {
         symbol,
-        ..Style::default()
+        ..<Style>::default()
     };
     let index = |i| by(Some(Bound::Value(SymbolRef::Index(i))));
     assert_eq!(mark(&by(None), &symbols), Mark::Square);
@@ -175,7 +175,7 @@ fn a_symbol_not_filled_is_outlined_with_the_colour_or_else_the_outline_colour() 
     // 1 by default.
     let s = symbol_style(&style(Some(10.0), None), &triangle(false), 1.0, 1.0);
     assert_eq!((s.fill, s.outline, s.outline_width), (None, Some(RED), 1.0));
-    let only_outline = Style {
+    let only_outline: Style = Style {
         outline_color: Some(Bound::Value(BLACK)),
         width: Some(Bound::Value(100.0)),
         ..Style::default()

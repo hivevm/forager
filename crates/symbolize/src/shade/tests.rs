@@ -246,7 +246,7 @@ fn a_polygon_of_a_symbol_past_the_last_or_of_a_name_no_symbol_carries_draws_noth
         symbol: Some(Bound::Value(symbol)),
         color: Some(Bound::Value(BLUE)),
         outline_color: Some(Bound::Value(BLACK)),
-        ..Style::default()
+        ..<Style>::default()
     };
     for (symbol, drawn) in [
         (SymbolRef::Index(2), false),
@@ -312,7 +312,7 @@ fn a_polygon_s_pixmap_is_moved_by_its_offset_and_draws_neither_colour_nor_outlin
     let image = Rc::new(PremultipliedImage::new(4, 3, vec![9; 48]).unwrap());
     let pixmaps: Pixmaps = [("pin.png".to_owned(), Ok(image))].into();
     let symbols = [pixmap_symbol(Some("pin.png"))];
-    let style = Style {
+    let style: Style = Style {
         symbol: Some(Bound::Value(SymbolRef::Index(1))),
         color: Some(Bound::Value(BLUE)),
         outline_color: Some(Bound::Value(BLACK)),

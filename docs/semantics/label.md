@@ -86,11 +86,14 @@ in `src/maprendering.c`, as a polygon's style is: filled without a symbol, and h
 symbol, its lines counted from the map's origin, or from the corner of a layer's own image for
 the labels of a layer of `LABELCACHE OFF` drawn there ([symbol.md](symbol.md)); a hatch past its
 bounds is not drawn, and the label's layer warns with `hatch-not-drawn`, as for a polygon's (Q-9).
-A `labelpoly` of any other symbol is not drawn yet, so its label is left out with
-`label-not-drawn`, as is a label with a style that reaches the IR without a transform (the
-diagnostic says so). `ANGLE AUTO` on a label's style changes nothing: `loadStyle` sets only the
-style's `autoangle`, which none of the functions drawing a label's styles reads, so the style turns
-by its `ANGLE` alone.
+A `labelpoly` of any other symbol is not drawn yet, so its label is left out with `label-not-drawn`.
+A label's style of any other `GEOMTRANSFORM`, `start`, `end`, `vertices`, `centroid`, `bbox`, an
+expression, or a name MapServer does not know, `msDrawLabelCache` fails the map's draw on; the IR's
+label style always names `labelpoint`, `labelpoly`, or `labelcenter`, so the frontend leaves such a
+label out with `label-not-drawn`. A class's other label is then drawn alone, where the engine leaves
+out every label of a class of several labels, not drawn yet. `ANGLE AUTO` on a label's style changes
+nothing: `loadStyle` sets only the style's `autoangle`, which none of the functions drawing a
+label's styles reads, so the style turns by its `ANGLE` alone.
 
 **The marker under a label.** The label cache holds beneath each label of a point layer the box
 of the marker its class's first style draws at the point, as `msAddLabelGroup` and `msAddLabel`

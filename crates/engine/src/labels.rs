@@ -30,7 +30,7 @@ use forager_label::{
 use forager_ports::{Feature, ResourceLoader};
 use forager_render::{DisplayItem, Draw, DrawOp, GlyphOutline, Point};
 use forager_style_ir::c::ms_nint;
-use forager_style_ir::{Diagnostic, Expr, GeomTransform, Map, Op, RenderMode, Rgba, Span, Style};
+use forager_style_ir::{Diagnostic, Expr, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style};
 use forager_symbolize::{DEG_TO_RAD, Pixmaps, View, marker_size_of};
 
 use crate::classes::{self, Binder, c_bytes};
@@ -160,7 +160,7 @@ pub(crate) struct Laid {
     /// The point is tested first: the label is neither forced nor offset.
     test_point: bool,
     /// Its styles bound to the feature where they vary by it, else none.
-    styles: Box<[Style]>,
+    styles: Box<[Style<LabelTransform>]>,
     /// The width and height of the marker the label cache holds beneath it, and its first
     /// labelpnt style's marker; neither for a label drawn at once.
     marker: Option<(f64, f64)>,
@@ -378,7 +378,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             // that vary by no feature are the same for all, and are read from the map where the
             // label is drawn; only those of a label whose styles vary are held.
             let written = &label.styles;
-            let styles: Box<[Style]> = if written.iter().any(classes::varies) {
+            let styles: Box<[Style<LabelTransform>]> = if written.iter().any(classes::varies) {
                 written
                     .iter()
                     .map(|s| {
@@ -409,7 +409,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         feature: &Feature,
         style: Option<&Style>,
         pixmaps: &Pixmaps,
-        styles: Box<[Style]>,
+        styles: Box<[Style<LabelTransform>]>,
         binder: &mut Binder<'_, '_>,
         at_once: bool,
     ) -> Option<Laid> {
@@ -451,7 +451,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             self.report(binder.diagnostics, at, "label-not-drawn", why);
             return None;
         }
-        let label_styles: &[Style] = if styles.is_empty() { written } else { &styles };
+        let label_styles: &[Style<LabelTransform>] =
+            if styles.is_empty() { written } else { &styles };
         // msDrawLabel moves a label off no marker: the class's style is not read for it.
         let style = style.filter(|_| !at_once);
         let settled =
@@ -686,8 +687,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         &mut self,
         template: &Cached,
         text: String,
-        written: &[Style],
-        styles: &[Style],
+        written: &[Style<LabelTransform>],
+        styles: &[Style<LabelTransform>],
         label_marker: Option<LabelMarker>,
         path: Option<TextPath>,
     ) {
@@ -1180,18 +1181,18 @@ fn settle(
 
 /// Whether `styles` hold a `GEOMTRANSFORM labelpnt` style, for which msAddLabelGroup keeps a
 /// label without text (maplabel.c:267-277).
-fn has_label_point(styles: &[Style]) -> bool {
+fn has_label_point(styles: &[Style<LabelTransform>]) -> bool {
     styles
         .iter()
-        .any(|s| s.geom_transform == Some(GeomTransform::LabelPoint))
+        .any(|s| s.geom_transform == LabelTransform::Point)
 }
 
 /// Whether `style` is drawn on the box of a label's text: `GEOMTRANSFORM labelpoly` or
 /// `labelcenter`.
-fn boxed(style: &Style) -> bool {
+fn boxed(style: &Style<LabelTransform>) -> bool {
     matches!(
         style.geom_transform,
-        Some(GeomTransform::LabelPoly | GeomTransform::LabelCenter)
+        LabelTransform::Poly | LabelTransform::Center
     )
 }
 

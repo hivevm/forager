@@ -47,7 +47,11 @@ impl Pass {
     /// The style this pass draws of `style` on `canvas`: an outline pass's as
     /// msOutlineRenderingPrepareStyle() prepares it (see [`outline_style`]), any other's as
     /// written.
-    pub(crate) fn style<'s>(self, style: &'s Style, canvas: &Canvas) -> Cow<'s, Style> {
+    pub(crate) fn style<'s, T: Clone>(
+        self,
+        style: &'s Style<T>,
+        canvas: &Canvas,
+    ) -> Cow<'s, Style<T>> {
         match self {
             Self::Plain | Self::PlainIfColored | Self::PlainIfColoredOrPixmap => {
                 Cow::Borrowed(style)
@@ -61,7 +65,7 @@ impl Pass {
 
 /// Whether msDrawLineSymbol draws the style's symbol along the line, `gap < 0` or `gap > 0`
 /// (`src/maprendering.c:679-688`), rather than as a brush: a gap that is not a number brushes it.
-pub(crate) fn gapped(style: &Style) -> bool {
+pub(crate) fn gapped<T>(style: &Style<T>) -> bool {
     matches!(style.gap, Some(gap) if gap.abs() > 0.0)
 }
 
@@ -71,14 +75,14 @@ pub fn outlined(style: &Style) -> bool {
 }
 
 /// The style's `OUTLINEWIDTH` in pixels; 0 without one.
-fn outline_width(style: &Style) -> f64 {
+fn outline_width<T>(style: &Style<T>) -> f64 {
     fixed(&style.outline_width).unwrap_or(0.0)
 }
 
 /// The style's `WIDTH` scaled by the scale factor `factor` and bounded by its `MINWIDTH` and
 /// `MAXWIDTH` scaled by the resolution factor `resolution`, as msDrawLineSymbol() bounds it (see
 /// [`bounds::line_width`]). With the width as written.
-fn bounded_width(style: &Style, factor: f64, resolution: f64) -> (f64, f64) {
+fn bounded_width<T>(style: &Style<T>, factor: f64, resolution: f64) -> (f64, f64) {
     let written = fixed(&style.width).unwrap_or(1.0);
     (
         bounds::line_width(written * factor, style, resolution),
@@ -87,7 +91,7 @@ fn bounded_width(style: &Style, factor: f64, resolution: f64) -> (f64, f64) {
 }
 
 /// The offset of the style, its numbers multiplied by `factor`; `None` when it moves nothing.
-pub(crate) fn style_offset(style: &Style, factor: f64) -> Option<Offset> {
+pub(crate) fn style_offset<T>(style: &Style<T>, factor: f64) -> Option<Offset> {
     if let Some(line) = &style.line_offset {
         let distance = line.distance.value()? * factor;
         return Some(if line.both_sides {
@@ -145,10 +149,10 @@ pub(crate) fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
 /// symbol and a `GAP` draws the symbol along the line instead, its markers' points taken from the
 /// canvas's budget, a pixmap without a colour and not at all where its image is refused; one whose
 /// symbol index is past the last draws nothing.
-pub(crate) fn line_symbol(
+pub(crate) fn line_symbol<T: Clone>(
     ops: &mut Vec<DrawOp>,
     paths: Vec<Vec<Point>>,
-    style: &Style,
+    style: &Style<T>,
     pass: Pass,
     canvas: &mut Canvas,
 ) {
@@ -243,7 +247,7 @@ pub(crate) fn line_symbol(
 /// by the scale factor and multiplies it by the resolution factor, so that, scaled as the drawing
 /// scales them after, both grow by the outline width at the resolution; the bounds grow by it as
 /// written.
-fn outline_style(style: &Style, factor: f64, resolution: f64) -> Style {
+fn outline_style<T: Clone>(style: &Style<T>, factor: f64, resolution: f64) -> Style<T> {
     let outline = outline_width(style);
     Style {
         color: style.outline_color.clone(),

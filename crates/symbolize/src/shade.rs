@@ -34,10 +34,10 @@ use crate::tile;
 /// `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width scaled, the factor
 /// itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled, as MapServer
 /// bounds it there. False where a hatch is refused (Q-9).
-pub fn shade(
+pub fn shade<T: Clone>(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
-    style: &Style,
+    style: &Style<T>,
     view: &View,
     canvas: &mut Canvas,
 ) -> bool {
@@ -107,10 +107,10 @@ pub fn shade(
 /// Where the image has not loaded or its tile is refused (Q-9), nothing is drawn, and the canvas
 /// records why. A polygon moved wholly off the image builds no tile, which would draw nothing
 /// and take bytes from the tiles of the polygons on it.
-fn tiled(
+fn tiled<T>(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
-    style: &Style,
+    style: &Style<T>,
     index: usize,
     symbol: &Symbol,
     canvas: &mut Canvas,

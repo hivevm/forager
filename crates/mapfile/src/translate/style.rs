@@ -213,8 +213,8 @@ impl Translator<'_> {
             .find(|(prefix, _)| name.starts_with(prefix))
             .and_then(|(_, transform)| transform);
         if transform.is_none() {
-            let message = "this GEOMTRANSFORM is not yet supported, and the style is drawn as \
-                           if it had none";
+            let message = "this GEOMTRANSFORM is not yet supported; a class's style is drawn as \
+                           if it had none, a label's leaves its label out";
             self.warn("unsupported-value", message, &d.span);
         }
         transform

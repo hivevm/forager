@@ -229,26 +229,26 @@ impl Binder<'_, '_> {
 
     /// `style` of label `label` of class `class`, bound to `feature` as bindLabel binds a
     /// label's styles, through bindStyle as a class's.
-    pub fn bind_label_style<'s>(
+    pub fn bind_label_style<'s, T: Clone>(
         &mut self,
-        style: &'s Style,
+        style: &'s Style<T>,
         feature: &Feature,
         symbols: &[Symbol],
         (class, label): (usize, usize),
-    ) -> Cow<'s, Style> {
+    ) -> Cow<'s, Style<T>> {
         self.bind(style, feature, symbols, Carrier::Label(class, label))
     }
 
     /// `style`, which `carrier` carries, with each property bound to a property or computed by
     /// an expression given its value for `feature`, as bindStyle binds it; the style itself
     /// where none is.
-    fn bind<'s>(
+    fn bind<'s, T: Clone>(
         &mut self,
-        style: &'s Style,
+        style: &'s Style<T>,
         feature: &Feature,
         symbols: &[Symbol],
         carrier: Carrier,
-    ) -> Cow<'s, Style> {
+    ) -> Cow<'s, Style<T>> {
         if !varies(style) {
             return with_opacity(Cow::Borrowed(style));
         }
@@ -339,7 +339,7 @@ impl<'a> Selector<'a, '_> {
 /// and its outline colour with `opacity × 2.55` rounded as `MS_NINT` rounds, kept in a byte as
 /// AGG keeps it. The opacity is rounded first, as bindIntegerAttribute rounds a bound one, and is
 /// not bounded to 0 to 100.
-pub(crate) fn with_opacity(style: Cow<'_, Style>) -> Cow<'_, Style> {
+pub(crate) fn with_opacity<T: Clone>(style: Cow<'_, Style<T>>) -> Cow<'_, Style<T>> {
     let Some(opacity) = style.opacity.as_ref().and_then(Bound::value) else {
         return style;
     };
@@ -359,12 +359,12 @@ pub(crate) fn with_opacity(style: Cow<'_, Style>) -> Cow<'_, Style> {
 
 /// `style`, which [`varies`] by no feature, as bindStyle leaves it for any: its opacity applied
 /// to its colours.
-pub(crate) fn unbound(style: &Style) -> Cow<'_, Style> {
+pub(crate) fn unbound<T: Clone>(style: &Style<T>) -> Cow<'_, Style<T>> {
     with_opacity(Cow::Borrowed(style))
 }
 
 /// Whether a property the engine draws varies by feature.
-pub(crate) fn varies(style: &Style) -> bool {
+pub(crate) fn varies<T>(style: &Style<T>) -> bool {
     Field::of(style).next().is_some()
 }
 
@@ -511,7 +511,7 @@ pub(crate) fn c_str(text: &str) -> &str {
 impl StyleBinder<'_> {
     /// The value of `field` of `style`, which varies by feature, bound to the feature as
     /// bindStyle binds it, a symbol's name found among `symbols`.
-    fn value(&mut self, field: Field, style: &Style, symbols: &[Symbol]) -> bindable::Value {
+    fn value<T>(&mut self, field: Field, style: &Style<T>, symbols: &[Symbol]) -> bindable::Value {
         match field.written(style) {
             Written::Number {
                 property: Some(Bound::Expr(_)),

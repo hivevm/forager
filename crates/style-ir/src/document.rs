@@ -313,9 +313,9 @@ mod tests {
     use crate::Step;
     use crate::{
         Align, AngleMode, Bound, Class, Expr, Extent, FeatureProperty, Force, GeomTransform,
-        InlineFeature, Label, Layer, LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset,
-        MinFeatureSize, Op, Position, RenderMode, Rgba, ShapeType, SourceRef, Span, Style, Symbol,
-        SymbolKind, SymbolRef, Units,
+        InlineFeature, Label, LabelTransform, Layer, LayerProjection, LayerStatus, LineCap,
+        LineJoin, LineOffset, MinFeatureSize, Op, Position, RenderMode, Rgba, ShapeType, SourceRef,
+        Span, Style, Symbol, SymbolKind, SymbolRef, Units,
     };
     use serde_json::Value;
 
@@ -484,10 +484,7 @@ mod tests {
             min_feature_size: Some(MinFeatureSize::Pixels(8.0)),
             force: Some(Force::Group),
             priority: Some(Bound::Value(5.0)),
-            styles: vec![Style {
-                geom_transform: Some(GeomTransform::LabelPoly),
-                ..Style::default()
-            }],
+            styles: vec![Style::new(LabelTransform::Poly)],
             ..Label::default()
         }
     }
@@ -610,6 +607,44 @@ mod tests {
         }
         let read = StyleDocument::from_yaml("version: \"1.0\"\nmap: {}\n").unwrap();
         assert!(read.warnings.is_empty());
+    }
+
+    #[test]
+    fn a_labels_style_cannot_be_written_without_a_label_transform() {
+        // Verifies: ADR-0014
+        let document = |label: &str, class: &str| {
+            format!(
+                r#"{{"version":"1.0","map":{{"layers":[{{"classes":[{{"styles":[{class}],"labels":[{{"styles":[{label}]}}]}}]}}]}}}}"#
+            )
+        };
+        let read = StyleDocument::from_json(&document(r#"{"geom_transform":"labelcenter"}"#, "{}"))
+            .unwrap();
+        let class = &read.document.map.layers[0].classes[0];
+        assert_eq!(class.styles[0].geom_transform, None);
+        assert_eq!(
+            class.labels[0].styles[0].geom_transform,
+            LabelTransform::Center
+        );
+        let written: Value = serde_json::from_str(&read.document.to_json().unwrap()).unwrap();
+        let transform = "/map/layers/0/classes/0/labels/0/styles/0/geom_transform";
+        assert_eq!(
+            written.pointer(transform),
+            Some(&Value::from("labelcenter"))
+        );
+        for (style, reason) in [
+            ("{}", "geom_transform"),
+            (r#"{"geom_transform":"start"}"#, "start"),
+        ] {
+            let error = StyleDocument::from_json(&document(style, "{}")).unwrap_err();
+            assert!(
+                error
+                    .message
+                    .starts_with("/map/layers/0/classes/0/labels/0/styles/0")
+                    && error.message.contains(reason),
+                "{style}: {}",
+                error.message
+            );
+        }
     }
 
     #[test]

@@ -33,7 +33,10 @@ golden path and the test pattern an agent copies from are named here.
 - **`style-ir`** — the data model of a map, its expressions a CQL2 tree
   ([ADR-0015](adr/0015-expressions-as-cql2.md)), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
-  ([ADR-0013](adr/0013-style-document-serde.md)). Its readers
+  ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
+  class's `Style` may leave it out, a label's `Style<LabelTransform>` always names `labelpoint`,
+  `labelpoly`, or `labelcenter`, and `symbolize` and the engine draw both through functions
+  generic over it. Its readers
   ([ADR-0014](adr/0014-style-document-versions.md)) name each field they do not know by its
   JSON Pointer; a document of a newer minor that does not read is read again from its value tree
   with each unknown value dropped and each condition that does not read kept as `false`, at most

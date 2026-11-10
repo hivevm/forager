@@ -235,7 +235,7 @@ fn arrow() -> Symbol {
 #[test]
 fn the_gap_scales_with_the_size_as_computesymbolstyle_scales_it() {
     // s->gap = gap · target_size / style_size: SIZE 5 bounded by MAXSIZE 2.5 halves it.
-    let style = Style {
+    let style: Style = Style {
         color: Some(Bound::Value(Rgba::opaque(0, 0, 0))),
         symbol: Some(Bound::Value(SymbolRef::Index(1))),
         size: Some(Bound::Value(5.0)),
@@ -266,7 +266,7 @@ fn the_markers_of_a_layer_share_one_budget_of_points() {
     // Five arrows a line, each an outline of 3 points: 15 points a line. Of a budget of 20, the
     // first line takes 15; the second, 15 more, would pass it and draws nothing, and nor does any
     // line after, however few its markers.
-    let style = Style {
+    let style: Style = Style {
         color: Some(Bound::Value(Rgba::opaque(0, 0, 0))),
         symbol: Some(Bound::Value(SymbolRef::Index(1))),
         gap: Some(10.0),
@@ -310,7 +310,7 @@ fn the_markers_of_a_layer_share_one_budget_of_points() {
 
 #[test]
 fn a_symbol_that_draws_nothing_places_nothing() {
-    let style = Style {
+    let style: Style = Style {
         symbol: Some(Bound::Value(SymbolRef::Index(1))),
         gap: Some(0.000_001),
         ..Style::default()

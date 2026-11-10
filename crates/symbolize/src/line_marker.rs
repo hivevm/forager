@@ -134,9 +134,9 @@ pub(crate) struct Placement {
 /// resolution factor: `initial_gap` is the `INITIALGAP` scaled as the width is. The markers'
 /// points are taken from the layer's `budget`; where they would exceed what is left, none is
 /// drawn, and none after them once it is spent.
-pub(crate) fn draw(
+pub(crate) fn draw<T>(
     paths: &[Vec<Point>],
-    style: &Style,
+    style: &Style<T>,
     symbol: &Symbol,
     initial_gap: f64,
     image: (f64, f64),
@@ -181,9 +181,9 @@ pub(crate) fn draw(
     clippy::too_many_arguments,
     reason = "msDrawLineSymbol's inputs, as draw takes them, and the image"
 )]
-pub(crate) fn draw_pixmap(
+pub(crate) fn draw_pixmap<T>(
     paths: &[Vec<Point>],
-    style: &Style,
+    style: &Style<T>,
     symbol: &Symbol,
     pixmap: &Rc<PremultipliedImage>,
     initial_gap: f64,
@@ -231,8 +231,8 @@ impl Placement {
     /// with computeSymbolStyle's gap and rotation: the spacing the gap's size, turned with the
     /// line for a negative `GAP`; and the marker's size, the symbol's width and height scaled, at
     /// least 1 each way (400-401), anchored at `anchor`, the centre without one.
-    fn of(
-        style: &Style,
+    fn of<T>(
+        style: &Style<T>,
         (gap, rotation): (f64, f64),
         (width, height): (f64, f64),
         anchor: Option<[f64; 2]>,

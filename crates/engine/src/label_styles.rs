@@ -20,7 +20,7 @@ use std::borrow::Cow;
 
 use forager_label::{Bounds, Member, Placement, label_poly_at, marker_bounds};
 use forager_render::{DisplayItem, Draw, Point};
-use forager_style_ir::{Bound, GeomTransform, Label, Map, Style, Symbol, SymbolKind, SymbolRef};
+use forager_style_ir::{Bound, Label, LabelTransform, Map, Style, Symbol, SymbolKind, SymbolRef};
 use forager_symbolize::{
     Canvas, Mark, Resolved, View, mark, marker_size_with, resolve, shade, symbol_ops,
 };
@@ -37,35 +37,27 @@ enum Kind {
 }
 
 /// The kind of a label's `style`, or why it is not drawn: a labelpoly with a symbol other than a
-/// hatch, a labelpoint or labelcenter whose marker is not drawn, a style of any other transform,
-/// or one without a transform. `ANGLE AUTO` changes none of them: `loadStyle` sets only the
+/// hatch, or a labelpoint or labelcenter whose marker is not drawn. `ANGLE AUTO` changes none of them: `loadStyle` sets only the
 /// style's `autoangle` for it (mapfile.c:2773-2775), which neither msDrawLabelCache nor
 /// computeMarkerBounds (mapdraw.c:3284-3353, 4056-4135), msDrawMarkerSymbol through
 /// computeSymbolStyle (maprendering.c:76), nor msDrawShadeSymbol (maprendering.c:821) reads; they
 /// turn by its `ANGLE` alone.
-fn kind(style: &Style, symbols: &[Symbol]) -> Result<Kind, &'static str> {
+fn kind(style: &Style<LabelTransform>, symbols: &[Symbol]) -> Result<Kind, &'static str> {
     match style.geom_transform {
-        Some(GeomTransform::LabelPoly) if !shade_drawn(style, symbols) => {
+        LabelTransform::Poly if !shade_drawn(style, symbols) => {
             Err("a STYLE of GEOMTRANSFORM labelpoly whose SYMBOL is no hatch of the symbol set")
         }
-        Some(GeomTransform::LabelPoly) => Ok(Kind::Poly),
-        Some(GeomTransform::LabelPoint) if !marker_drawn(style, symbols) => Err(
+        LabelTransform::Poly => Ok(Kind::Poly),
+        LabelTransform::Point if !marker_drawn(style, symbols) => Err(
             "a STYLE of GEOMTRANSFORM labelpnt whose SYMBOL is no vector or ellipse of the \
              symbol set",
         ),
-        Some(GeomTransform::LabelPoint) => Ok(Kind::Point),
-        Some(GeomTransform::LabelCenter) if !marker_drawn(style, symbols) => Err(
+        LabelTransform::Point => Ok(Kind::Point),
+        LabelTransform::Center if !marker_drawn(style, symbols) => Err(
             "a STYLE of GEOMTRANSFORM labelcenter whose SYMBOL is no vector or ellipse of the \
              symbol set",
         ),
-        Some(GeomTransform::LabelCenter) => Ok(Kind::Center),
-        Some(
-            GeomTransform::Start
-            | GeomTransform::End
-            | GeomTransform::Vertices
-            | GeomTransform::Centroid,
-        ) => Err("a STYLE of a GEOMTRANSFORM other than labelpoly, labelpnt, or labelcenter"),
-        None => Err("a STYLE without a GEOMTRANSFORM"),
+        LabelTransform::Center => Ok(Kind::Center),
     }
 }
 
@@ -77,7 +69,7 @@ pub(crate) fn unsupported(label: &Label, symbols: &[Symbol]) -> Option<&'static 
 /// Whether a label's `labelpoly` style is drawn: without a symbol, or with symbol 0, which
 /// msDrawShadeSymbol fills, or with a hatch of the set, which it hatches (maprendering.c:787-822);
 /// the tile of any other symbol is not drawn yet.
-fn shade_drawn(style: &Style, symbols: &[Symbol]) -> bool {
+fn shade_drawn(style: &Style<LabelTransform>, symbols: &[Symbol]) -> bool {
     match resolve(&style.symbol, symbols) {
         Resolved::Default => true,
         Resolved::Found(_, symbol) => symbol.kind == SymbolKind::Hatch,
@@ -88,7 +80,7 @@ fn shade_drawn(style: &Style, symbols: &[Symbol]) -> bool {
 /// Whether a label's `labelpoint` or `labelcenter` style is drawn: without a symbol, or with
 /// symbol 0, which MapServer sizes as 1 by 1 and draws nothing of, or with a vector or an ellipse
 /// of the set.
-fn marker_drawn(style: &Style, symbols: &[Symbol]) -> bool {
+fn marker_drawn(style: &Style<LabelTransform>, symbols: &[Symbol]) -> bool {
     match resolve(&style.symbol, symbols) {
         Resolved::Default => true,
         Resolved::Found(_, symbol) => {
@@ -112,13 +104,13 @@ pub(crate) struct LabelMarker {
 /// The marker of the first `labelpoint` style of a label's `styles`, as computeMarkerBounds sizes
 /// it at the label's scale factor `factor`; `None` without one; or why it is not drawn.
 pub(crate) fn label_marker(
-    styles: &[Style],
+    styles: &[Style<LabelTransform>],
     map: &Map,
     factor: f64,
 ) -> Result<Option<LabelMarker>, String> {
     let Some(style) = styles
         .iter()
-        .find(|s| s.geom_transform == Some(GeomTransform::LabelPoint))
+        .find(|s| s.geom_transform == LabelTransform::Point)
     else {
         return Ok(None);
     };
@@ -136,7 +128,7 @@ struct MarkerValues {
 
 impl MarkerValues {
     /// The values of `style` as written, a value that varies by feature taken as none.
-    fn of(style: &Style) -> Self {
+    fn of(style: &Style<LabelTransform>) -> Self {
         Self::read(|field| field.written_value(style))
     }
 
@@ -158,7 +150,7 @@ impl MarkerValues {
 /// The marker of the `labelpoint` style `style` of the values `values` and the symbol `symbol`
 /// at the scale factor `factor`, as computeMarkerBounds sizes it; or why it is not drawn.
 fn marker_of(
-    style: &Style,
+    style: &Style<LabelTransform>,
     values: MarkerValues,
     symbol: &Option<Bound<SymbolRef>>,
     map: &Map,
@@ -218,8 +210,8 @@ impl LabelStyles {
         &mut self,
         def: u32,
         text: u32,
-        written: &[Style],
-        styles: &[Style],
+        written: &[Style<LabelTransform>],
+        styles: &[Style<LabelTransform>],
         marker: Option<LabelMarker>,
     ) {
         if styles.is_empty() {
@@ -275,14 +267,14 @@ impl LabelStyles {
         map: &Map,
         def: u32,
         text: u32,
-        written: &[Style],
+        written: &[Style<LabelTransform>],
         at: Point,
         factor: f64,
     ) -> Option<Bounds> {
         let marker = if self.run(text).is_some() {
             let i = written
                 .iter()
-                .position(|s| s.geom_transform == Some(GeomTransform::LabelPoint))?;
+                .position(|s| s.geom_transform == LabelTransform::Point)?;
             self.bound_marker(text, i, &written[i], map, factor)?
         } else {
             let i = self
@@ -307,7 +299,7 @@ impl LabelStyles {
         &self,
         text: u32,
         i: usize,
-        style: &Style,
+        style: &Style<LabelTransform>,
         map: &Map,
         factor: f64,
     ) -> Option<LabelMarker> {
@@ -341,7 +333,12 @@ impl LabelStyles {
 
     /// The style `i` of the label of text `text`, written `style`, bound to its feature where its
     /// styles vary by it, as `bindLabel` binds it, else as written.
-    fn style<'s>(&self, text: u32, i: usize, style: &'s Style) -> Cow<'s, Style> {
+    fn style<'s>(
+        &self,
+        text: u32,
+        i: usize,
+        style: &'s Style<LabelTransform>,
+    ) -> Cow<'s, Style<LabelTransform>> {
         let Some(run) = self.run(text) else {
             return classes::unbound(style);
         };
@@ -364,13 +361,17 @@ impl LabelStyles {
 /// of its text, or bound for a label drawn at once, none where they vary by no feature.
 pub(crate) enum StylesOf<'a> {
     Held { styles: &'a LabelStyles, text: u32 },
-    Bound(&'a [Style]),
+    Bound(&'a [Style<LabelTransform>]),
 }
 
 impl StylesOf<'_> {
     /// The style `i`, written `style`, bound to the label's feature where its styles vary by it,
     /// as `bindLabel` binds it, else as written.
-    fn style<'s>(&'s self, i: usize, style: &'s Style) -> Cow<'s, Style> {
+    fn style<'s>(
+        &'s self,
+        i: usize,
+        style: &'s Style<LabelTransform>,
+    ) -> Cow<'s, Style<LabelTransform>> {
         match self {
             Self::Held { styles, text } => styles.style(*text, i, style),
             Self::Bound([]) => classes::unbound(style),
@@ -445,7 +446,7 @@ impl<'a> Styled<'a> {
         placement: &Placement,
         feature_id: u64,
         styles: &StylesOf<'_>,
-        written: &[Style],
+        written: &[Style<LabelTransform>],
     ) {
         // A label without text draws its labelpoint styles alone (mapdraw.c:4056-4069); one with a
         // labelpoly or labelcenter style is refused before it is cached.
@@ -505,7 +506,7 @@ impl<'a> Styled<'a> {
 fn draw_label_poly<R: Draw>(
     renderer: &mut R,
     poly: &Bounds,
-    style: &Style,
+    style: &Style<LabelTransform>,
     view: &View,
     canvas: &mut Canvas<'_>,
     feature_id: u64,
@@ -542,7 +543,7 @@ fn draw_label_poly<R: Draw>(
 fn draw_label_marker<R: Draw>(
     renderer: &mut R,
     at: Point,
-    style: &Style,
+    style: &Style<LabelTransform>,
     map: &Map,
     (factor, resolution): (f64, f64),
     feature_id: u64,
@@ -577,7 +578,11 @@ mod tests {
     /// A definition's three styles: the first and the third with every property
     /// `classes::varies` checks bound between them, beside one that varies by none; a second
     /// definition of one bound width; and the symbols they name.
-    fn written() -> (Vec<Style>, Vec<Style>, Vec<Symbol>) {
+    fn written() -> (
+        Vec<Style<LabelTransform>>,
+        Vec<Style<LabelTransform>>,
+        Vec<Symbol>,
+    ) {
         let first = vec![
             Style {
                 color: Some(bound("c")),
@@ -586,13 +591,12 @@ mod tests {
                 symbol: Some(bound("sym")),
                 offset: Some([Bound::Value(1.0), bound("y")]),
                 opacity: Some(Bound::Value(50.0)),
-                geom_transform: Some(GeomTransform::LabelPoint),
-                ..Style::default()
+                ..Style::new(LabelTransform::Point)
             },
             Style {
                 color: Some(Bound::Value(Rgba::opaque(1, 2, 3))),
                 opacity: Some(Bound::Value(30.0)),
-                ..Style::default()
+                ..Style::new(LabelTransform::Poly)
             },
             Style {
                 color: Some(Bound::Value(Rgba::opaque(4, 5, 6))),
@@ -608,12 +612,12 @@ mod tests {
                     both_sides: true,
                 }),
                 symbol: Some(bound("sym")),
-                ..Style::default()
+                ..Style::new(LabelTransform::Poly)
             },
         ];
         let second = vec![Style {
             width: Some(bound("w")),
-            ..Style::default()
+            ..Style::new(LabelTransform::Poly)
         }];
         let symbols: Vec<Symbol> = ["dot", "square"]
             .map(|name| Symbol {
@@ -699,7 +703,7 @@ mod tests {
             } else {
                 (0, &first)
             };
-            let bound: Vec<Style> = written
+            let bound: Vec<Style<LabelTransform>> = written
                 .iter()
                 .map(|s| {
                     binder
@@ -772,7 +776,7 @@ mod tests {
     ];
 
     /// `style` with `field` bound to the feature's property `p`.
-    fn bound_to(field: Field, style: &mut Style) {
+    fn bound_to(field: Field, style: &mut Style<LabelTransform>) {
         match field {
             Field::Color => style.color = Some(bound("p")),
             Field::OutlineColor => style.outline_color = Some(bound("p")),
@@ -840,8 +844,7 @@ mod tests {
                     distance: Bound::Value(5.0),
                     both_sides: false,
                 }),
-                geom_transform: Some(GeomTransform::LabelPoint),
-                ..Style::default()
+                ..Style::new(LabelTransform::Point)
             };
             bound_to(field, &mut style);
             assert!(classes::varies(&style), "{field:?} varies");
@@ -887,8 +890,7 @@ mod tests {
         let marker = |symbol: SymbolRef| {
             let style = Style {
                 symbol: Some(Bound::Value(symbol)),
-                geom_transform: Some(GeomTransform::LabelPoint),
-                ..Style::default()
+                ..Style::new(LabelTransform::Point)
             };
             label_marker(&[style], &map, 1.0)
                 .unwrap()

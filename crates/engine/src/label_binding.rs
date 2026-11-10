@@ -366,7 +366,7 @@ mod tests {
         let p = || Bound::Binding {
             binding: "p".to_owned(),
         };
-        let style = Style {
+        let style: Style = Style {
             size: Some(p()),
             ..Style::default()
         };

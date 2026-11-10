@@ -573,7 +573,7 @@ impl Translator<'_> {
                 Node::Block(b) if b.keyword == "LABEL" => {
                     class
                         .labels
-                        .push(self.label(b, fallback.as_ref(), label_item));
+                        .extend(self.label(b, fallback.as_ref(), label_item));
                 }
                 Node::Directive(d) => self.unhandled_directive(d),
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
