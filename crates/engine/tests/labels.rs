@@ -482,7 +482,6 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
 
 #[test]
 fn a_labelpoly_of_a_symbol_that_is_no_hatch_is_left_out() {
-    // Verifies: ADR-0028
     // A labelpoly whose symbol is in the set but is no hatch: msDrawShadeSymbol tiles it
     // (maprendering.c:823-), which is not drawn yet, so it is refused rather than filled plain.
     let mut tiled = map(label_item());
@@ -2987,6 +2986,57 @@ fn labelcenter(size: f64) -> Style {
         geom_transform: Some(forager_style_ir::GeomTransform::LabelCenter),
         ..labelpoint()
     }
+}
+
+#[test]
+fn a_label_styles_symbol_by_name_draws_as_the_same_symbol_by_index() {
+    // msGetSymbolIndex resolves a style's SYMBOL "name" to the first symbol of that name,
+    // without regard to case (mapsymbol.c), so a labelpoly of a hatch and a labelpnt or
+    // labelcenter of a vector draw the same by name as by index.
+    let by_name = |style: Style, name: &str| Style {
+        symbol: Some(Bound::Value(SymbolRef::Name(name.to_owned()))),
+        ..style
+    };
+    fn named_square(label: Label) -> Map {
+        let mut map = map_with_square(label);
+        map.symbols[0].name = Some("sq".to_owned());
+        map
+    }
+    let draw = |map: &Map| {
+        let sources: BTreeMap<String, GeoJsonSource> =
+            [("places".to_owned(), GeoJsonSource::parse(FEN).unwrap())].into();
+        let recorder = OpRecorder::default();
+        let rendered = ready(render_with_files(map, &sources, &Files, recorder.clone()));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        recorder.0.take()
+    };
+    let cases = [
+        (named_square as fn(Label) -> Map, labelpoint(), "SQ"),
+        (named_square, labelcenter(8.0), "Sq"),
+        (map_with_hatch, hatched_labelpoly(Vec::new()), "HATCH"),
+    ];
+    let mut drawn = Vec::new();
+    for (with_symbols, style, name) in cases {
+        let by_index = draw(&with_symbols(fen_styled(vec![style.clone()])));
+        let named = draw(&with_symbols(fen_styled(vec![by_name(style, name)])));
+        assert_eq!(by_index.len(), 2, "{name}: {by_index:?}");
+        assert_eq!(named, by_index, "{name}");
+        drawn.push(by_index);
+    }
+    // The labelpnt marker by index, as a_labelpoint_style_draws_its_marker_at_the_point_under_the
+    // _text_moved_off_it pins it: the square of 8 by 8 centred on the pixel (80, 29).
+    assert_eq!(
+        drawn[0][0],
+        forager_render::DrawOp::Fill {
+            rings: vec![square_at(80.0, 29.0)],
+            color: RED,
+            gamma: None,
+        }
+    );
 }
 
 /// The render of `label` over [`FEN`] with symbol 1 a square, with no diagnostic, and every

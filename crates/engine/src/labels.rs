@@ -1441,3 +1441,102 @@ pub(crate) fn push<T>(list: &mut Vec<T>, entry: T) {
 /// The fewest entries a list of the label cache grows by, so that a small one is not moved at
 /// each entry.
 const MIN_ROOM: usize = 8;
+
+#[cfg(test)]
+mod tests {
+    use forager_ports::{ResourcePath, SourceError, Stored};
+    use forager_style_ir::{Class, Extent};
+
+    use super::*;
+
+    struct NoFiles;
+
+    impl ResourceLoader for NoFiles {
+        async fn load(&self, _: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+            Err(SourceError::new("no files"))
+        }
+    }
+
+    /// Whether `list` holds no more room than a quarter of what it fills, and the fewest entries
+    /// a list grows by, as [`make_room`] grows it.
+    fn grown_by_a_quarter<T>(list: &[T], capacity: usize) -> bool {
+        capacity <= list.len() + list.len() / 4 + MIN_ROOM
+    }
+
+    #[test]
+    fn the_texts_and_markers_of_the_labels_cached_grow_by_a_quarter() {
+        // Verifies: Q-9
+        // A list that doubled would hold up to three times what it fills while it moved.
+        let map = Map {
+            layers: vec![Layer {
+                classes: vec![Class {
+                    styles: vec![Style {
+                        size: Some(Bound::Binding {
+                            binding: "size".to_owned(),
+                        }),
+                        ..Style::default()
+                    }],
+                    ..Class::default()
+                }],
+                ..Layer::default()
+            }],
+            ..Map::default()
+        };
+        let extent = Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 100.0,
+            max_y: 100.0,
+        };
+        let view = View::for_image(extent, 100, 100).unwrap();
+        let mut labels = Labels::new(&map, &view, &NoFiles, (100, 100));
+        labels.defs.push(Def {
+            at: (0, 0, 0),
+            buffer: 0,
+            force: false,
+            partials: false,
+            min_distance: 0.0,
+            outline_grow: 0.0,
+            marker: None,
+        });
+        let template = Cached {
+            point: Point { x: 0.0, y: 0.0 },
+            rotation: 0.0,
+            feature_id: 0,
+            path: NO_PATH,
+            def: 0,
+            text: 0,
+            offset: [0, 0],
+            color: None,
+            outline: None,
+            position: Position::Auto,
+            priority: 1,
+            test_point: true,
+        };
+        let feature = Feature {
+            id: 0,
+            geometry: forager_ports::Geometry::Point(Coord { x: 50.0, y: 50.0 }),
+            properties: Properties::list(vec![("size".into(), Stored::Number("4".into()))]),
+        };
+        for text in 0..5_000u32 {
+            let template = Cached { text, ..template };
+            assert!(labels.cache(&feature, &template, Some((4.0, 4.0))));
+            labels.hold(&template, format!("{text}"), &[], &[], None, None);
+            let (texts, markers) = (&labels.label_texts, &labels.markers);
+            assert_eq!(
+                (texts.len(), markers.len()),
+                (text as usize + 1, text as usize + 1)
+            );
+            assert!(
+                grown_by_a_quarter(texts, texts.capacity()),
+                "{}",
+                texts.capacity()
+            );
+            assert!(
+                grown_by_a_quarter(markers, markers.capacity()),
+                "{}",
+                markers.capacity()
+            );
+        }
+    }
+}

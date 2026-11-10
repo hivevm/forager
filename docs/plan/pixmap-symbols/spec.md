@@ -231,10 +231,10 @@ What Forager does:
   inside the base context (Q-8). The style document's shape does not change: the symbol is one more
   entry of the map's symbols. The `symbol-unknown` warning such a name raises at load today goes:
   whether its file exists is known at draw time, where a missing one warns. A name that starts with
-  `http` is not fetched; the style draws nothing and the frontend warns, so that the load still has
-  no error (G-1). `point_pixmap` stays `fails` with "a symbol fetched by URL". A symbol bound to a
-  property whose value names a file, which `bindStyle` (`src/maputil.c`, 145–153) adds at draw time,
-  stays as it is today.
+  `http` is not fetched: it takes its index as a pixmap symbol without an image, which is not
+  drawn, and the frontend warns, so that the load still has no error (G-1). `point_pixmap` stays
+  `fails` with "a symbol fetched by URL". A symbol bound to a property whose value names a file,
+  which `bindStyle` (`src/maputil.c`, 145–153) adds at draw time, stays as it is today.
 - **Hosts.** The CLI reads images from its base context through the loader it hands the engine.
   The browser bindings take them among the files a page passes, by the path the mapfile names; the
   binding of feature sources, which ADR-0038 decides, does not change.

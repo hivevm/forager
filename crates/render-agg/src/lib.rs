@@ -6,7 +6,9 @@
 // msHatchPolygon(), src/mapagg.cpp, there; how a layer's image is laid over the map follows
 // aggCompositeRasterBufferNoPixman(), src/mapagg.cpp, and the blend_from() of the AGG it bundles;
 // how a pixmap is blended or, turned or scaled, filled as a square follows agg2RenderPixmapSymbol(),
-// src/mapagg.cpp; how the alpha is divided out follows saveAsPNG(), src/mapimageio.c.
+// src/mapagg.cpp; how a polygon is filled with a tile follows agg2RenderPolygonTiled(),
+// src/mapagg.cpp, and the wrap_mode_repeat and span_pattern_rgba of the AGG it bundles; how the
+// alpha is divided out follows saveAsPNG(), src/mapimageio.c.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2007 Regents of the University of Minnesota (src/mapagg.cpp).
 // Copyright (c) 2009 Thomas Bonfort (src/mapimageio.c).
@@ -50,7 +52,7 @@ use agg_rust::scanline_u::ScanlineU8;
 use forager_render::clip::{self, Rect, drawn_width};
 use forager_render::{
     Affine, Dashes, DisplayItem, Draw, DrawOp, Hatch, LineCap, LineJoin, Point, PremultipliedImage,
-    Renderer, RgbaImage,
+    Renderer, RgbaImage, Tile,
 };
 use forager_style_ir::Rgba;
 
@@ -415,6 +417,7 @@ impl Draw for AggRenderer {
                 half,
                 inverse,
             } => self.resampled_pixmap(image, *at, *half, inverse),
+            DrawOp::TiledFill { rings, tile } => self.tiled_fill(rings, tile),
         }
     }
 }
@@ -483,6 +486,32 @@ impl AggRenderer {
         area.filling_rule(FillingRule::NonZero);
         area.add_path(&mut path, 0);
         let mut interpolator = Interpolator::new(*inverse);
+        self.paint_spans(&mut area, |colors, x, y| {
+            resample::generate(colors, x, y, image, &mut interpolator);
+        });
+    }
+
+    /// Fills the rings with `tile` repeated from the image's origin, as agg2RenderPolygonTiled
+    /// does: under the even-odd rule without a gamma, through `render_scanlines_aa` over
+    /// MapServer's packed scanline, each span's colours those of the tile's pixels at their
+    /// positions modulo its size (`image_accessor_wrap` with `wrap_mode_repeat`,
+    /// `span_pattern_rgba` at offset 0, 0). The tile is built here the first time it fills.
+    fn tiled_fill(&mut self, rings: &[Vec<Point>], tile: &Tile) {
+        let image = tile.image(built_tile);
+        let mut area = RasterizerScanlineAa::new();
+        area.filling_rule(FillingRule::EvenOdd);
+        area.add_path(&mut self.area(rings), 0);
+        self.paint_spans(&mut area, |colors, x, y| repeat(colors, x, y, image));
+    }
+
+    /// Blends the scanlines of `area`, as `render_scanlines_aa` renders them over MapServer's
+    /// packed scanline: `generate` gives each span's colours from its first pixel, and they are
+    /// blended with the span's covers through `blend_color_hspan`.
+    fn paint_spans(
+        &mut self,
+        area: &mut RasterizerScanlineAa,
+        mut generate: impl FnMut(&mut [Rgba8], i32, i32),
+    ) {
         self.with_agg(|renderer| {
             if !area.rewind_scanlines() {
                 return;
@@ -497,7 +526,7 @@ impl AggRenderer {
                     let len = span.len.unsigned_abs() as usize;
                     colors.clear();
                     colors.resize(len, Rgba8::default());
-                    resample::generate(&mut colors, span.x, y, image, &mut interpolator);
+                    generate(&mut colors, span.x, y);
                     if span.len < 0 {
                         let cover = covers[span.cover_offset];
                         renderer.blend_color_hspan(span.x, y, len as i32, &colors, &[], cover);
@@ -509,6 +538,43 @@ impl AggRenderer {
                 }
             }
         });
+    }
+}
+
+/// The image of `tile`, as getTile makes it: its mark drawn in a new transparent image of the
+/// tile's size, as agg2CreateImage clears one, its colours left premultiplied.
+fn built_tile(tile: &Tile) -> PremultipliedImage {
+    let mut renderer = AggRenderer::new();
+    renderer.begin(
+        tile.width(),
+        tile.height(),
+        Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0,
+        },
+    );
+    renderer.draw(&DisplayItem {
+        op: tile.mark().clone(),
+        feature_id: None,
+    });
+    PremultipliedImage::new(tile.width(), tile.height(), renderer.pixels)
+        .expect("a tile is within the sizes an image holds")
+}
+
+/// `span_pattern_rgba::generate` over `image_accessor_wrap` with `wrap_mode_repeat`: the colours
+/// of `span` from (`x`, `y`), each the pixel of `tile` at its position modulo the tile's size.
+/// `wrap_mode_repeat` adds a multiple of the size to a position that may be negative; so this
+/// takes the remainder of least magnitude above 0.
+fn repeat(span: &mut [Rgba8], x: i32, y: i32, tile: &PremultipliedImage) {
+    let width = i64::from(tile.width());
+    let row = i64::from(y).rem_euclid(i64::from(tile.height()));
+    let pixels = tile.pixels();
+    for (color, x) in span.iter_mut().zip(i64::from(x)..) {
+        let i = ((row * width + x.rem_euclid(width)) * 4) as usize;
+        let p = &pixels[i..i + 4];
+        *color = Rgba8::new(p[0].into(), p[1].into(), p[2].into(), p[3].into());
     }
 }
 
@@ -547,6 +613,8 @@ fn unpremultiply(p: &mut [u8]) {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use super::*;
 
     #[test]
@@ -1201,5 +1269,139 @@ mod tests {
             let image = at(left, top);
             assert!(image.pixels.chunks(4).all(|px| px == [255, 255, 255, 255]));
         }
+    }
+
+    /// A tile of `width` by `height` pixels holding `pixels`, its image laid in at its corner.
+    fn tile(width: u32, height: u32, pixels: Vec<u8>) -> Rc<Tile> {
+        let image = PremultipliedImage::new(width, height, pixels).unwrap();
+        let mark = DrawOp::Pixmap {
+            image: Rc::new(image),
+            left: 0,
+            top: 0,
+        };
+        Rc::new(Tile::new(width, height, mark).unwrap())
+    }
+
+    fn square(a: f64, b: f64) -> Vec<Point> {
+        vec![p(a, a), p(b, a), p(b, b), p(a, b), p(a, a)]
+    }
+
+    fn at(image: &RgbaImage, x: u32, y: u32) -> [u8; 4] {
+        let c = image.pixel(x, y).unwrap();
+        [c.r, c.g, c.b, c.a]
+    }
+
+    /// Four opaque pixels of red, green, blue, and black.
+    fn four() -> Vec<u8> {
+        #[rustfmt::skip]
+        let pixels = vec![
+            255, 0, 0, 255,  0, 255, 0, 255,
+            0, 0, 255, 255,  0, 0, 0, 255,
+        ];
+        pixels
+    }
+
+    #[test]
+    fn a_tile_repeats_from_the_image_s_origin_not_the_polygon_s() {
+        // Verifies: ADR-0034
+        // wrap_mode_repeat over the image's positions: the pixel (x, y) takes the tile's
+        // (x % 2, y % 2), wherever the polygon begins.
+        let image = render(&[DrawOp::TiledFill {
+            rings: vec![square(3.0, 9.0)],
+            tile: tile(2, 2, four()),
+        }]);
+        assert_eq!(at(&image, 2, 3), [255, 255, 255, 255], "outside");
+        assert_eq!(at(&image, 4, 4), [255, 0, 0, 255]);
+        assert_eq!(at(&image, 5, 4), [0, 255, 0, 255]);
+        assert_eq!(at(&image, 4, 5), [0, 0, 255, 255]);
+        assert_eq!(at(&image, 5, 5), [0, 0, 0, 255]);
+        assert_eq!(at(&image, 3, 3), [0, 0, 0, 255]);
+        assert_eq!(at(&image, 8, 8), [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn a_tile_fills_under_the_even_odd_rule_so_a_hole_stays_empty() {
+        // Whichever way the rings wind.
+        let mut hole = square(20.0, 40.0);
+        for rings in [vec![square(10.0, 50.0), hole.clone()], {
+            hole.reverse();
+            vec![square(10.0, 50.0), hole]
+        }] {
+            let image = render(&[DrawOp::TiledFill {
+                rings,
+                tile: tile(1, 1, vec![255, 0, 0, 255]),
+            }]);
+            assert_eq!(at(&image, 15, 15), [255, 0, 0, 255]);
+            assert_eq!(at(&image, 30, 30), [255, 255, 255, 255], "the hole");
+        }
+    }
+
+    #[test]
+    fn a_tile_blends_premultiplied_as_agg_2_4_blends_without_a_gamma() {
+        // Verifies: ADR-0034
+        // The pixel (64, 0, 0, 128), blended into the transparent tile at full cover, keeps its
+        // colour and takes the alpha 255 - (127 × 255 >> 8) = 129; over white, each channel
+        // 255 × (255 - 129) >> 8 = 125, plus its colour.
+        let image = render(&[DrawOp::TiledFill {
+            rings: vec![square(0.0, 64.0)],
+            tile: tile(1, 1, vec![64, 0, 0, 128]),
+        }]);
+        assert_eq!(at(&image, 5, 5), [189, 125, 125, 255]);
+        // At the covers of a slanted edge, the bytes of the same colour filled without a gamma,
+        // and through the polygon's gamma, others: agg2RenderPolygonTiled's rasterizer has none.
+        let rings = vec![vec![p(3.3, 2.7), p(60.1, 11.2), p(21.4, 58.9), p(3.3, 2.7)]];
+        let filled = |gamma| {
+            render(&[DrawOp::Fill {
+                rings: rings.clone(),
+                color: RED,
+                gamma,
+            }])
+        };
+        let [r, g, b, a] = [RED.r, RED.g, RED.b, RED.a];
+        let tiled = render(&[DrawOp::TiledFill {
+            rings: rings.clone(),
+            tile: tile(1, 1, vec![r, g, b, a]),
+        }]);
+        assert!(tiled == filled(None));
+        assert!(tiled != filled(Some(0.75)));
+    }
+
+    #[test]
+    fn a_tile_is_its_mark_in_a_new_transparent_image_built_at_its_first_fill_once() {
+        // The image of 2 × 2 at (1, 1) of a tile of 4 × 4: the rest stays transparent, and what
+        // lies under the tile's transparent pixels stays as it was.
+        let image = PremultipliedImage::new(2, 2, four()).unwrap();
+        let mark = DrawOp::Pixmap {
+            image: Rc::new(image),
+            left: 1,
+            top: 1,
+        };
+        let tile = Rc::new(Tile::new(4, 4, mark).unwrap());
+        let fill = DrawOp::TiledFill {
+            rings: vec![square(0.0, 64.0)],
+            tile: Rc::clone(&tile),
+        };
+        let image = render(&[fill.clone(), fill]);
+        assert_eq!(at(&image, 0, 0), [255, 255, 255, 255]);
+        assert_eq!(at(&image, 1, 1), [255, 0, 0, 255]);
+        assert_eq!(at(&image, 2, 2), [0, 0, 0, 255]);
+        assert_eq!(at(&image, 3, 3), [255, 255, 255, 255]);
+        assert_eq!(at(&image, 5, 5), [255, 0, 0, 255]);
+        let built = tile.image(|_| panic!("built again"));
+        assert_eq!(built.pixels()[..4], [0, 0, 0, 0]);
+        assert_eq!(built.pixels()[(4 + 1) * 4..(4 + 2) * 4], [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn a_tiled_polygon_far_out_or_of_no_numbers_draws_within_the_image() {
+        // Verifies: ADR-0015
+        let image = render(&[DrawOp::TiledFill {
+            rings: vec![
+                square(-1e15, 1e15),
+                vec![p(f64::NAN, 1.0), p(3.0, f64::INFINITY), p(5.0, 5.0)],
+            ],
+            tile: tile(2, 2, four()),
+        }]);
+        assert_eq!(at(&image, 4, 4), [255, 0, 0, 255]);
     }
 }

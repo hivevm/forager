@@ -139,6 +139,8 @@ pub fn translate(
         init_files: files.init_files,
         diagnostics,
         symbols: Vec::new(),
+        names: BTreeMap::new(),
+        numbered: Vec::new(),
         fonts: BTreeMap::new(),
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
@@ -151,14 +153,16 @@ pub fn translate(
     if let Some((path, set)) = symbol_set {
         set_symbols(path, set, &mut blocks);
     }
-    t.symbols = blocks
-        .into_iter()
-        .filter_map(|(beside, b)| t.symbol_block(b, beside))
-        .collect();
+    for (beside, b) in blocks {
+        if let Some(symbol) = t.symbol_block(b, beside) {
+            t.push_symbol(symbol);
+        }
+    }
     if let Some((path, text)) = files.font_set {
         t.fonts = t.fonts(path, text);
     }
     let mut map = t.map(map);
+    t.image_symbols(&mut map);
     map.symbols = std::mem::take(&mut t.symbols);
     map.fonts = std::mem::take(&mut t.fonts);
     map
@@ -174,6 +178,12 @@ struct Translator<'a> {
     diagnostics: &'a mut Report,
     /// The map's symbols, read before its layers so that a style's reference resolves.
     symbols: Vec<Symbol>,
+    /// The position among `symbols` of the first of each name, lower-cased, so that a name is
+    /// found without scanning them (Q-9).
+    names: BTreeMap<String, usize>,
+    /// The symbol indexes the styles give, each with its directive's span, checked against the
+    /// symbols once those the styles name are appended.
+    numbered: Vec<(u32, Span)>,
     /// The map's fonts, read before its layers so that a label's font is checked.
     fonts: BTreeMap<String, String>,
 }

@@ -28,7 +28,7 @@ mod labels;
 mod plan;
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use forager_ports::{
@@ -36,8 +36,10 @@ use forager_ports::{
 };
 use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
 use forager_style_ir::c::ms_nint;
-use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style};
-use forager_symbolize::{Canvas, Pass, can_draw, draw_ops, marked_pixmap};
+use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol};
+use forager_symbolize::{
+    Canvas, Pass, Resolved, can_draw, clip_pixmaps, draw_ops, marked_pixmap, resolve,
+};
 
 use forager_expr::Evaluator;
 
@@ -71,6 +73,17 @@ pub struct Rendered {
     /// walks them: from the highest priority down, and within a priority from the last added to
     /// the first. The labels of a layer of `LABELCACHE OFF`, drawn at once, are not among them.
     pub labels: Vec<CachedLabel>,
+}
+
+impl Rendered {
+    /// The result of a render whose map could not be drawn at all.
+    fn no_map(diagnostics: Vec<Diagnostic>) -> Self {
+        Self {
+            image: None,
+            diagnostics,
+            labels: Vec::new(),
+        }
+    }
 }
 
 /// A label of a render's label cache.
@@ -123,11 +136,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
 ) -> Rendered {
     let mut diagnostics = Vec::new();
     let Some((width, height, view)) = view(map, &mut diagnostics) else {
-        return Rendered {
-            image: None,
-            diagnostics,
-            labels: Vec::new(),
-        };
+        return Rendered::no_map(diagnostics);
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
     let mut labels = Labels::new(map, &view, files, (width, height));
@@ -174,8 +183,10 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         drawing
             .load_pixmaps(&selected, &map.symbols, &mut images, files)
             .await;
-        let mut canvas =
-            Canvas::new(&map.symbols, width, height, factor).with_pixmaps(images.decoded());
+        let (pixmaps, tiles) = images.drawing();
+        let mut canvas = Canvas::new(&map.symbols, width, height, factor)
+            .with_pixmaps(pixmaps)
+            .with_tiles(tiles);
         // Each feature is labelled by the class that draws it, in the order it is drawn.
         let point_layer = mode == RenderMode::Point;
         let drawn: Vec<labels::Labelled<'_>> = selected
@@ -195,7 +206,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                         layer_index,
                         true,
                         labelled,
-                        images.decoded(),
+                        pixmaps,
                         &mut selector,
                         Some(&mut target),
                     )
@@ -208,13 +219,14 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         drop(target);
         let label_hatches = labels.take_hatches_refused(layer_index);
         layer_reports(layer, &canvas, label_hatches, undrawn, selector.diagnostics);
+        unknown_symbols(layer, &map.symbols, selector.diagnostics);
         if !at_once {
             labels
                 .collect(
                     layer_index,
                     point_layer,
                     &drawn,
-                    images.decoded(),
+                    pixmaps,
                     &mut selector,
                     None::<&mut R>,
                 )
@@ -260,8 +272,8 @@ fn layer_reports(
 ) {
     if canvas.markers_spent() {
         let message = format!(
-            "layer {}: its symbols along lines or placed by a GEOMTRANSFORM exceed \
-             {MAX_MARKER_POINTS} points; those past the limit are not drawn",
+            "layer {}: its symbols at its features, along its lines, or placed by a \
+             GEOMTRANSFORM exceed {MAX_MARKER_POINTS} points; those past the limit are not drawn",
             name(layer)
         );
         diagnostics.push(Diagnostic::warning(
@@ -382,7 +394,9 @@ impl Drawing<'_> {
     /// records. On a point layer of the label cache, the first style of a class with labels is
     /// loaded at any scale, as msAddLabelGroup and msAddLabel (`src/maplabel.c:344-352, 604-608`)
     /// size the marker the cache holds by msGetMarkerSize, which loads it
-    /// (`src/mapsymbol.c:736-738`) whatever the style's scale range.
+    /// (`src/mapsymbol.c:736-738`) whatever the style's scale range. Those the clip buffer of a
+    /// hatched polygon's class counts are loaded whatever theirs too, as msDrawShape loads them
+    /// (see [`clip_pixmaps`]).
     async fn load_pixmaps<L: ResourceLoader>(
         &self,
         selected: &[Selected<'_>],
@@ -404,6 +418,13 @@ impl Drawing<'_> {
                 {
                     // The image, or why it has none, is kept by the store for the canvas.
                     let _ = images.image(path, files).await;
+                }
+            }
+            if self.mode == RenderMode::Polygon {
+                for path in clip_pixmaps(&self.layer.classes[*class].styles, symbols) {
+                    if !images.decoded().contains_key(path) {
+                        let _ = images.image(path, files).await;
+                    }
                 }
             }
         }
@@ -630,6 +651,29 @@ async fn query<S: FeatureSource>(
         Err(e) => {
             diagnostics.push(skip(e.message));
             None
+        }
+    }
+}
+
+/// Warns once for each name that a style of `layer` gives its symbol and that none of `symbols`
+/// carries: such a style draws nothing, as a style document has no image file to read the name
+/// as. A mapfile's names never reach here, as its frontend resolves each to an index.
+fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diagnostic>) {
+    let mut reported = BTreeSet::new();
+    for style in layer.classes.iter().flat_map(|class| &class.styles) {
+        let Resolved::Unnamed(symbol) = resolve(&style.symbol, symbols) else {
+            continue;
+        };
+        if reported.insert(symbol) {
+            let message = format!(
+                "layer {}: no symbol is named `{symbol}`, so the styles that name it draw nothing",
+                name(layer)
+            );
+            diagnostics.push(Diagnostic::warning(
+                "symbol-unknown",
+                message,
+                style.span.clone().or_else(|| layer.span.clone()),
+            ));
         }
     }
 }

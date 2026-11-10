@@ -32,6 +32,11 @@ to invent.
 - **Feature source** — The port through which the host supplies a layer's features, implemented by
   an adapter the host binds to the layer by its name; the engine asks it for the features in view.
   A layer with inline features is read from those instead.
+- **Fill tile** — The image a polygon's pixmap symbol is repeated from: the pixmap scaled and
+  turned, centred in a transparent image of the size `msDrawShadeSymbol` computes. Built once per
+  symbol, size, scale, and rotation in a render, and counted with its decoded images
+  ([ADR-0040](adr/0040-a-decoded-pixmap-is-held-once-per-render.md)). The code's `Tile`.
+  _Avoid:_ tile alone beside a map's raster tiles, pattern.
 - **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
   crate versions and of the core's API.
 - **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through

@@ -351,7 +351,7 @@ renderers/line_label_follow_retry.map line_label_follow_retry.png out: labels on
 renderers/line_label_follow_retry.map line_label_follow_retry.pdf out: another output format, pdf
 renderers/line_label_follow_retry.map line_label_follow_retry.svg out: another output format, svg
 renderers/line_label_follow_retry.map line_label_follow_retry.cairo.png out: another output format, cairopng
-renderers/line_marker_pixmap.map line_marker_pixmap.png geometry fails  # not built yet: pixmap symbols
+renderers/line_marker_pixmap.map line_marker_pixmap.png geometry passes
 renderers/line_marker_pixmap.map line_marker_pixmap.pdf out: another output format, pdf
 renderers/line_marker_pixmap.map line_marker_pixmap.svg out: another output format, svg
 renderers/line_marker_pixmap.map line_marker_pixmap.cairo.png out: another output format, cairopng
@@ -442,7 +442,7 @@ renderers/point_ellipse.map gd_fallback.png out: another output format, gdpng
 renderers/point_ellipse.map gd_fallback_gif.png out: another output format, gif
 renderers/point_ellipse.map gd_fallback_pc256.png out: another output format, gdpc256
 renderers/point_ellipse.map gd_fallback_jpeg.png out: another output format, gdjpg
-renderers/point_pixmap.map point_pixmap.png geometry fails  # not built yet: pixmap symbols
+renderers/point_pixmap.map point_pixmap.png geometry fails  # a symbol fetched by URL
 renderers/point_pixmap.map point_pixmap.pdf out: another output format, pdf
 renderers/point_pixmap.map point_pixmap.svg out: another output format, svg
 renderers/point_pixmap.map point_pixmap.json out: another output format, json
@@ -493,7 +493,7 @@ renderers/polygon-hatch.map polygon-hatch.pdf out: another output format, pdf
 renderers/polygon-hatch.map polygon-hatch.svg out: another output format, svg
 renderers/polygon-hatch.map polygon-hatch.cairo.png out: another output format, cairopng
 renderers/polygon-hex-alpha.map polygon-hex-alpha.png geometry passes
-renderers/polygon-pixmap.map polygon-pixmap.png geometry fails  # not built yet: pixmap symbols
+renderers/polygon-pixmap.map polygon-pixmap.png geometry passes
 renderers/polygon-pixmap.map polygon-pixmap.pdf out: another output format, pdf
 renderers/polygon-pixmap.map polygon-pixmap.svg out: another output format, svg
 renderers/polygon-pixmap.map polygon-pixmap.cairo.png out: another output format, cairopng

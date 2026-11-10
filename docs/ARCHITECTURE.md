@@ -91,7 +91,7 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0025](adr/0025-source-reports-skipped-records.md)); the fonts a label names it loads once
   per render through the host's resource loader, each bounded, and so the images its pixmap
   symbols name, each decoded once per render and path and held within Q-9's bounds on the file
-  and on the bytes one render's images come to (`images.rs`,
+  and on the bytes one render's images and fill tiles come to (`images.rs`,
   [ADR-0040](adr/0040-a-decoded-pixmap-is-held-once-per-render.md)); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0028), and
   those of a point layer of `LABELCACHE OFF` after each feature, without a test against other
@@ -110,32 +110,35 @@ golden path and the test pattern an agent copies from are named here.
   `symbolize`, in the order MapServer's shape cache draws a line layer's styles and their outlines
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
-  a label's `labelpoly` hatches among them, pixmaps whose image the store refused, and geometries
-  its render mode cannot draw (Q-9). It loads the images of a layer's pixmap marks into the
-  render's store before it draws the layer, since `symbolize` does no I/O, and hands them to it on
-  the canvas, and to the labels, which size the marker a class's first style holds beneath each
-  label by them. It is the one core crate
-  that awaits the ports. Every host binds its sources to the layers by name through the engine's
-  `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
-  way for each.
+  a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
+  refused, and geometries its render mode cannot draw (Q-9). It loads the images of a layer's
+  pixmap marks and fills into the render's store before it draws the layer, since `symbolize` does
+  no I/O, and hands them to it on the canvas, and to the labels, which size the marker a class's
+  first style holds beneath each label by them. It is the one core crate that awaits the ports.
+  Every host binds its sources to the layers by name through the engine's `bind_sources`, which
+  reports a source no layer is named for and one that cannot be read the same way for each.
 - **`symbolize`** — the symbolization of a style, synchronous and without I/O: a feature's geometry
   in a style bound to it turned into drawing operations, as MapServer draws it. A line's dashes, a
   polygon's fill through MapServer's default gamma, a point's marker, a pixmap's image placed at a
   point, unscaled at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol`
   fills about the point and the inverse of the image's transformation, and the canvas a layer
-  draws on, with the images of the render's pixmaps (`draw.rs`); a
-  style's width and size bounds, one function per site of MapServer's that bounds them, with the
-  constants they bound by (`bounds.rs`); a property's value as bound, the gamma, and
-  degrees to radians (`style.rs`); the view that maps the extent to the image (`extent.rs`); its
-  vector and ellipse symbols, a marker's size and anchor point, and a pixmap's scale, square, and
-  transformation, in the order of operations of AGG's `trans_affine` (`symbol.rs`); hatches, the
+  draws on, which the images of the render's pixmaps are handed on (`draw.rs`); a style's width
+  and size bounds, one function per site of MapServer's that bounds them, with the constants they
+  bound by (`bounds.rs`); a property's value as bound, the gamma, and degrees to radians
+  (`style.rs`); the view that maps the extent to the image (`extent.rs`); a style's symbol
+  resolved, its vector and ellipse symbols, a marker's size and anchor point, a pixmap's scale,
+  square, and transformation, in the order of operations of AGG's `trans_affine`, and the images
+  of a render's pixmaps by their path (`symbol.rs`); hatches, the
   clip of a hatched polygon, and the reference point its lines count from (`hatch.rs`); symbols
-  along a line (`line_marker.rs`); line offsets (`offset.rs`); and the style's `GEOMTRANSFORM` and
-  `POLAROFFSET` (`geom_transform.rs`). A line style's symbol with a `GAP` it places along the line;
-  those markers and the ones a `GEOMTRANSFORM` places share one budget per layer,
-  `MAX_MARKER_POINTS` (Q-9). Its modules import one another in one direction only, `draw.rs` at the
-  top and `bounds.rs`, `style.rs`, `extent.rs`, and `offset.rs` the leaves; no check holds that
-  direction, which ADR-0009 decides only between crates.
+  along a line (`line_marker.rs`); a polygon's tile, its size held to Q-9's bound, and the render's
+  cache of six tiles, counted with the decoded images (`tile.rs`); line offsets (`offset.rs`); and
+  the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`). A line style's symbol with a
+  `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
+  `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
+  taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
+  does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`
+  at the top and `bounds.rs`, `style.rs`, `extent.rs`, and `offset.rs` the leaves; no check holds
+  that direction, which ADR-0009 decides only between crates.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
   FreeType's arithmetic, laid out by their advances, broken into lines at the label's `WRAP`
@@ -148,7 +151,9 @@ golden path and the test pattern an agent copies from are named here.
   that depends on skrifa, and does no I/O (ADR-0028).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
   or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
-  transformation, each by a counted reference to the one image, the
+  transformation, each by a counted reference to the one image, a polygon filled with a tile, by
+  a counted reference to the tile, which holds its size within Q-9's bound, the drawing that makes
+  it, and its image once the renderer has built it (`tile.rs`), the
   renderer trait, the RGBA image, and the premultiplied image a pixmap is decoded to
   (`PremultipliedImage`, ADR-0040); the cost model that bounds a hatch before it is cut
   (`Hatch::is_bounded`, ADR-0032, `hatch.rs`); and the clip of every path to the image, its
@@ -164,9 +169,10 @@ golden path and the test pattern an agent copies from are named here.
   pixmap's image as `blend_from` does, resamples a scaled or turned one with a port of AGG 2.4's
   bilinear clip filter and linear interpolator, `iround` being `style-ir`'s `lrint` narrowed to an
   `int`, over the packed scanlines of the square it fills (`resample.rs`,
-  [ADR-0041](adr/0041-render-agg-resamples-pixmaps-as-agg-2-4.md)), and is the one
-  crate that may use `unsafe` ([ADR-0015](adr/0015-agg-rust-rasterizer.md)); it cuts a hatch from
-  its polygon with i_overlay, the one crate that depends on it (ADR-0032).
+  [ADR-0041](adr/0041-render-agg-resamples-pixmaps-as-agg-2-4.md)), builds a tile the first time
+  it fills with it, in a transparent image of its own, and repeats it from the image's origin, and
+  is the one crate that may use `unsafe` ([ADR-0015](adr/0015-agg-rust-rasterizer.md)); it cuts a
+  hatch from its polygon with i_overlay, the one crate that depends on it (ADR-0032).
 - **`encode`** — PNG from and to an RGBA image, and a pixmap symbol's PNG decoded as MapServer's
   `readPNG` decodes it, premultiplied, its header held to Q-9's 4096 × 4096 before anything is
   allocated for it (`pixmap.rs`, [ADR-0017](adr/0017-png-crate.md),
@@ -186,9 +192,12 @@ golden path and the test pattern an agent copies from are named here.
 - **`cli`** — the `forager` command, a host with a file loader rooted at the base context — the
   mapfile's directory, or the directory `--base` names — that also refuses symbolic links out of
   it, and that hands the frontend an `adapter-epsg` table, extended by the file `--epsg` names;
-  `forager render` binds GeoJSON files to layers and writes a PNG. Its binding of a map's sources
-  and fonts to a base context is the crate's library (`src/lib.rs`), on which the binary is built
-  and through which the conformance harness renders.
+  `forager render` binds GeoJSON files to layers and writes a PNG. A file is checked by its path
+  before it is opened, so one who can write into the base context during a load can swap it in
+  the window between, for a link out of the base or for a FIFO; `read_bounded` in `src/files.rs`
+  names the risk the maintainer accepted. Its binding of a map's sources and fonts to a base
+  context is the crate's library (`src/lib.rs`), on which the binary is built and through which
+  the conformance harness renders.
 - **`bindings-wasm`** — the host for the browser: a mapfile, GeoJSON per layer name, an optional
   EPSG table, a viewport, and the files the mapfile names, such as its font set and fonts, in, the
   RGBA image and the diagnostics out; it keeps a layer's source reference only when that is a
@@ -222,12 +231,12 @@ Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz tar
 mapfile frontend, the style document readers with and without a migration step, the renderer on
 structured shapes with a label of arbitrary text and size and with expressions built from the same
 bytes, the expression evaluator on arbitrary trees, patterns, and properties, the browser path on
-GeoJSON, the shapefile adapter on arbitrary `.shp`, `.shx`, and `.dbf` files, and the text path on
-an arbitrary font file — run by `scripts/fuzz.sh`, which reads them from the manifest, every
-Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out of
-the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
-`scripts/mutants.sh` runs cargo-mutants over the workspace every week through
-`.github/workflows/mutants.yml` and reports the edits no test notices.
+GeoJSON, the shapefile adapter on arbitrary `.shp`, `.shx`, and `.dbf` files, the text path on an
+arbitrary font file, and the pixmap decoder on an arbitrary image file — run by `scripts/fuzz.sh`,
+which reads them from the manifest, every Sunday through `.github/workflows/fuzz.yml`; it keeps
+libFuzzer and the nightly toolchain out of the product's build, and `scripts/check-rust.sh` lints
+it on every push. Beside it, `scripts/mutants.sh` runs cargo-mutants over the workspace every week
+through `.github/workflows/mutants.yml` and reports the edits no test notices.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
 pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles, fonts,

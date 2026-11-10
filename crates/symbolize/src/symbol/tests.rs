@@ -106,8 +106,52 @@ fn a_style_marks_by_its_symbol() {
     assert_eq!(mark(&index(2), &symbols), Mark::Symbol(&symbols[1]));
     assert_eq!(mark(&index(3), &symbols), Mark::Pixmap(3, &symbols[2]));
     assert_eq!(mark(&index(4), &symbols), Mark::Nothing, "past the last");
-    let name = by(Some(Bound::Value(SymbolRef::Name("x.png".into()))));
-    assert_eq!(mark(&name, &symbols), Mark::Square);
+}
+
+#[test]
+fn a_style_s_symbol_by_name_is_the_first_of_that_name_whatever_its_case() {
+    // msGetSymbolIndex: the first symbol from index 1 whose name matches without regard to case.
+    // A name no symbol carries, which MapServer would read as an image file, draws nothing.
+    let named = |name: &str, symbol: Symbol| Symbol {
+        name: Some(name.to_owned()),
+        ..symbol
+    };
+    let mut pin = named("pin", triangle(false));
+    pin.kind = SymbolKind::Pixmap;
+    let symbols = [
+        triangle(true),
+        named("dot", circle(true)),
+        named("DOT", triangle(false)),
+        pin,
+    ];
+    let by_name = |name: &str| Style {
+        symbol: Some(Bound::Value(SymbolRef::Name(name.to_owned()))),
+        ..style(Some(10.0), None)
+    };
+    assert_eq!(mark(&by_name("Dot"), &symbols), Mark::Symbol(&symbols[1]));
+    assert_eq!(
+        mark(&by_name("PIN"), &symbols),
+        Mark::Pixmap(4, &symbols[3])
+    );
+    assert_eq!(
+        default_size_of(&by_name("Dot"), &[named("dot", triangle(true))], None),
+        2.0
+    );
+    assert_eq!(
+        marker_size_of(&by_name("dot"), &symbols, &Pixmaps::new(), 1.0),
+        Ok((10.0, 10.0))
+    );
+    let mut hatch = named("lines", triangle(false));
+    hatch.kind = SymbolKind::Hatch;
+    assert!(is_hatch(&by_name("Lines"), &[hatch]));
+    let unknown = by_name("x.png");
+    assert_eq!(mark(&unknown, &symbols), Mark::Nothing);
+    assert!(!is_hatch(&unknown, &symbols));
+    assert_eq!(default_size_of(&unknown, &symbols, None), 1.0);
+    assert_eq!(
+        marker_size_of(&unknown, &symbols, &Pixmaps::new(), 1.0),
+        Err("no symbol is named `x.png`".to_owned())
+    );
 }
 
 #[test]
@@ -586,7 +630,7 @@ fn a_symbol_bounds_its_size_and_outline_as_compute_symbol_style_does() {
 fn each_reader_of_a_styles_symbol_tells_the_default_the_missing_the_unresolved_and_the_found() {
     // msDrawMarkerSymbol, msSymbolGetDefaultSize, and msGetMarkerSize each read the symbol by
     // its index from 1: index 0 is MapServer's default symbol, an index past the set is none, a
-    // name the frontend did not resolve, or a binding, is not an index yet.
+    // binding is not an index yet.
     let mut hatch = triangle(false);
     hatch.kind = SymbolKind::Hatch;
     let symbols = [triangle(true), hatch];
@@ -598,22 +642,16 @@ fn each_reader_of_a_styles_symbol_tells_the_default_the_missing_the_unresolved_a
     let none = by(None);
     let zero = index(0);
     let past = index(3);
-    let name = by(Some(Bound::Value(SymbolRef::Name("x.png".into()))));
     let binding = by(Some(Bound::Binding {
         binding: "sym".into(),
     }));
     let vector = index(1);
     let hatched = index(2);
 
-    for (style, case) in [
-        (&none, "none"),
-        (&zero, "0"),
-        (&name, "a name"),
-        (&binding, "a binding"),
-    ] {
+    for (style, case) in [(&none, "none"), (&zero, "0"), (&binding, "a binding")] {
         assert_eq!(mark(style, &symbols), Mark::Square, "{case}");
         assert!(!is_hatch(style, &symbols), "{case}");
-        assert_eq!(default_size_of(style, &symbols), 1.0, "{case}");
+        assert_eq!(default_size_of(style, &symbols, None), 1.0, "{case}");
     }
     assert_eq!(mark(&past, &symbols), Mark::Nothing);
     assert_eq!(mark(&vector, &symbols), Mark::Symbol(&symbols[0]));
@@ -623,9 +661,9 @@ fn each_reader_of_a_styles_symbol_tells_the_default_the_missing_the_unresolved_a
     assert!(!is_hatch(&vector, &symbols));
     assert!(is_hatch(&hatched, &symbols));
 
-    assert_eq!(default_size_of(&past, &symbols), 1.0);
-    assert_eq!(default_size_of(&vector, &symbols), 2.0);
-    assert_eq!(default_size_of(&hatched, &symbols), 1.0);
+    assert_eq!(default_size_of(&past, &symbols, None), 1.0);
+    assert_eq!(default_size_of(&vector, &symbols, None), 2.0);
+    assert_eq!(default_size_of(&hatched, &symbols, None), 1.0);
 
     assert_eq!(
         marker_size_of(&none, &symbols, &Pixmaps::new(), 1.0),
@@ -639,12 +677,10 @@ fn each_reader_of_a_styles_symbol_tells_the_default_the_missing_the_unresolved_a
         marker_size_of(&past, &symbols, &Pixmaps::new(), 1.0),
         Err("symbol 3, which the symbol set does not hold".to_owned())
     );
-    for unresolved in [&name, &binding] {
-        assert_eq!(
-            marker_size_of(unresolved, &symbols, &Pixmaps::new(), 1.0),
-            Err("a symbol by a name that is not resolved".to_owned())
-        );
-    }
+    assert_eq!(
+        marker_size_of(&binding, &symbols, &Pixmaps::new(), 1.0),
+        Err("a symbol bound to a property that is not read".to_owned())
+    );
     assert_eq!(
         marker_size_of(&vector, &symbols, &Pixmaps::new(), 1.0),
         Ok((10.0, 10.0))

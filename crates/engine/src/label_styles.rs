@@ -23,7 +23,9 @@ use forager_render::{DisplayItem, Draw, Point};
 use forager_style_ir::{
     Bound, GeomTransform, Label, Map, Rgba, Style, Symbol, SymbolKind, SymbolRef,
 };
-use forager_symbolize::{Canvas, Mark, View, mark, marker_size_with, shade, symbol_ops};
+use forager_symbolize::{
+    Canvas, Mark, Resolved, View, mark, marker_size_with, resolve, shade, symbol_ops,
+};
 
 use crate::classes::{self, scale_factor};
 
@@ -77,12 +79,10 @@ pub(crate) fn unsupported(label: &Label, symbols: &[Symbol]) -> Option<&'static 
 /// msDrawShadeSymbol fills, or with a hatch of the set, which it hatches (maprendering.c:787-822);
 /// the tile of any other symbol is not drawn yet.
 fn shade_drawn(style: &Style, symbols: &[Symbol]) -> bool {
-    match &style.symbol {
-        None | Some(Bound::Value(SymbolRef::Index(0))) => true,
-        Some(Bound::Value(SymbolRef::Index(index))) => symbols
-            .get(*index as usize - 1)
-            .is_some_and(|s| s.kind == SymbolKind::Hatch),
-        Some(_) => false,
+    match resolve(&style.symbol, symbols) {
+        Resolved::Default => true,
+        Resolved::Found(_, symbol) => symbol.kind == SymbolKind::Hatch,
+        Resolved::Unresolved | Resolved::Missing(_) | Resolved::Unnamed(_) => false,
     }
 }
 
@@ -90,12 +90,12 @@ fn shade_drawn(style: &Style, symbols: &[Symbol]) -> bool {
 /// symbol 0, which MapServer sizes as 1 by 1 and draws nothing of, or with a vector or an ellipse
 /// of the set.
 fn marker_drawn(style: &Style, symbols: &[Symbol]) -> bool {
-    match &style.symbol {
-        None | Some(Bound::Value(SymbolRef::Index(0))) => true,
-        Some(Bound::Value(SymbolRef::Index(index))) => symbols
-            .get(*index as usize - 1)
-            .is_some_and(|s| matches!(s.kind, SymbolKind::Vector | SymbolKind::Ellipse)),
-        Some(_) => false,
+    match resolve(&style.symbol, symbols) {
+        Resolved::Default => true,
+        Resolved::Found(_, symbol) => {
+            matches!(symbol.kind, SymbolKind::Vector | SymbolKind::Ellipse)
+        }
+        Resolved::Unresolved | Resolved::Missing(_) | Resolved::Unnamed(_) => false,
     }
 }
 
@@ -160,12 +160,8 @@ fn marker_of(
 ) -> Result<LabelMarker, String> {
     let size = marker_size_with(style, values.size, symbol, &map.symbols, None, factor)
         .map_err(|what| format!("its labelpoint style draws {what}"))?;
-    let anchor_point = match symbol {
-        Some(Bound::Value(SymbolRef::Index(index))) if *index > 0 => map
-            .symbols
-            .get(*index as usize - 1)
-            .and_then(|s| s.anchor_point)
-            .unwrap_or([0.5, 0.5]),
+    let anchor_point = match resolve(symbol, &map.symbols) {
+        Resolved::Found(_, symbol) => symbol.anchor_point.unwrap_or([0.5, 0.5]),
         _ => [0.5, 0.5],
     };
     Ok(LabelMarker {
@@ -242,6 +238,7 @@ impl Field {
             Field::Offset(i) => pair(&style.offset, i),
             Field::PolarOffset(i) => pair(&style.polar_offset, i),
             Field::LineOffset => number(style.line_offset.as_ref().map(|l| &l.distance)),
+            // A bound symbol is an index: binding resolves a name (classes::symbol_index).
             Field::Symbol => Value::Symbol(match &style.symbol {
                 Some(Bound::Value(SymbolRef::Index(index))) => *index,
                 _ => 0,
@@ -847,5 +844,31 @@ mod tests {
             assert_eq!(len, text as usize + 1);
             assert!(capacity <= len + len / 4 + 8, "{len} runs in {capacity}");
         }
+    }
+
+    #[test]
+    fn a_labelpnt_markers_symbol_by_name_takes_its_anchor_point_as_by_index() {
+        // computeMarkerBounds places the marker by its symbol's ANCHORPOINT, the symbol found by
+        // name as by index (msGetSymbolIndex).
+        let (_, _, mut symbols) = written();
+        symbols[1].anchor_point = Some([0.0, 0.25]);
+        let map = Map {
+            symbols,
+            ..Map::default()
+        };
+        let marker = |symbol: SymbolRef| {
+            let style = Style {
+                symbol: Some(Bound::Value(symbol)),
+                geom_transform: Some(GeomTransform::LabelPoint),
+                ..Style::default()
+            };
+            label_marker(&[style], &map, 1.0)
+                .unwrap()
+                .unwrap()
+                .anchor_point
+        };
+        assert_eq!(marker(SymbolRef::Index(2)), [0.0, 0.25]);
+        assert_eq!(marker(SymbolRef::Name("SQUARE".to_owned())), [0.0, 0.25]);
+        assert_eq!(marker(SymbolRef::Name("dot".to_owned())), [0.5, 0.5]);
     }
 }

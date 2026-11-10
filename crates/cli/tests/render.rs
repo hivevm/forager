@@ -309,3 +309,67 @@ fn a_pixmap_file_past_32_mib_is_not_drawn_and_the_map_is() {
     assert_eq!(image.pixel(10, 10), Some(Rgba::opaque(0, 0, 255)));
     assert_eq!(image.pixel(1, 1), Some(Rgba::opaque(255, 255, 255)));
 }
+
+#[test]
+fn a_style_naming_an_image_file_draws_it_and_one_missing_or_by_url_draws_nothing() {
+    // MapServer's msAddImageSymbol reads a name no symbol carries as an image file beside the
+    // mapfile: `pin.png` is drawn at (10, 10); `nowhere` and the quoted `'1'`, files that do not
+    // exist, warn as they are drawn and are not, and the square of the layer after them is; a
+    // name by URL warns at load, is never fetched, and takes its index as a symbol without an
+    // image, which warns as it is drawn and draws nothing.
+    let dir = std::env::temp_dir().join(format!("forager-by-file-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("maps")).unwrap();
+    std::fs::copy(fixture("pin.png"), dir.join("maps/pin.png")).unwrap();
+    let point = |at: &str, styles: &str| {
+        format!("LAYER TYPE POINT STATUS ON FEATURE POINTS {at} END END CLASS {styles} END END\n")
+    };
+    let map = [
+        "MAP SIZE 41 41 EXTENT 0 0 40 40 IMAGECOLOR 255 255 255\n".to_owned(),
+        point("10 10", "STYLE SYMBOL 'pin.png' END"),
+        point(
+            "30 10",
+            "STYLE SYMBOL 'http://localhost:8000/x.png' COLOR 255 0 0 SIZE 5 END",
+        ),
+        point(
+            "10 30",
+            "STYLE SYMBOL 'nowhere' SIZE 5 END STYLE SYMBOL '1' SIZE 5 END",
+        ),
+        point("30 30", "STYLE COLOR 0 0 255 SIZE 5 END"),
+        "END\n".to_owned(),
+    ];
+    std::fs::write(dir.join("maps/m.map"), map.concat()).unwrap();
+    let output = dir.join("m.png");
+    let result = Command::new(env!("CARGO_BIN_EXE_forager"))
+        .arg("render")
+        .arg(dir.join("maps/m.map"))
+        .arg("-o")
+        .arg(&output)
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    let image = std::fs::read(&output).map(|png| forager_encode::decode_png(&png).unwrap());
+    std::fs::remove_dir_all(&dir).unwrap();
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(result.status.success(), "{stderr}");
+    assert_eq!(
+        stderr.matches("warning [symbol-unknown]").count(),
+        1,
+        "{stderr}"
+    );
+    assert!(stderr.contains("http://localhost:8000/x.png"), "{stderr}");
+    for name in ["`nowhere`", "`1`"] {
+        assert!(stderr.contains(name), "{name}: {stderr}");
+    }
+    assert_eq!(
+        stderr.matches("warning [pixmap-not-drawn]").count(),
+        3,
+        "{stderr}"
+    );
+    let image = image.unwrap();
+    let white = Some(Rgba::opaque(255, 255, 255));
+    let pin = (0..20).any(|x| (21..41).any(|y| image.pixel(x, y) != white));
+    assert!(pin, "the pin");
+    assert_eq!(image.pixel(30, 30), white, "the name by URL");
+    assert_eq!(image.pixel(10, 10), white, "the files that do not exist");
+    assert_eq!(image.pixel(30, 10), Some(Rgba::opaque(0, 0, 255)));
+}

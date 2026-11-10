@@ -963,6 +963,64 @@ fn a_tiny_gap_draws_no_markers_and_says_so() {
     assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
 
+#[test]
+fn the_markers_of_a_point_layer_past_the_budget_are_left_out_and_said_so() {
+    // Verifies: Q-9
+    // A filled head of 4 points at each of 2,000,000 vertices of one feature inside the map: 8
+    // million points, past the million a layer's markers may amount to, and none is drawn.
+    let head = Style {
+        color: Some(Bound::Value(BLUE)),
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        size: Some(Bound::Value(9.0)),
+        ..Style::default()
+    };
+    let mut map = map(RenderMode::Point, head);
+    map.symbols = symbols();
+    let coordinates = vec!["[50, 50]"; 2_000_000].join(",");
+    let geojson = format!(r#"{{"type": "MultiPoint", "coordinates": [{coordinates}]}}"#);
+    let rendered = render_with(&map, Some(&geojson));
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, vec!["line-markers-over-limit"]);
+    let image = rendered.image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
+
+#[test]
+fn the_stand_in_squares_of_a_point_layer_spend_none_of_the_budget() {
+    // Verifies: Q-9
+    // A style without a symbol, which MapServer does not draw, and for which Forager draws its
+    // square of 4 points: at 260,000 features, 1,040,000 points, past the million a layer's
+    // markers may amount to, every square is drawn, the last feature's at (10, 10) among them.
+    let square = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(3.0)),
+        ..Style::default()
+    };
+    const FEATURES: usize = 260_000;
+    let point = |at: &str| {
+        format!(r#"{{"type": "Feature", "geometry": {{"type": "Point", "coordinates": {at}}}}}"#)
+    };
+    let mut features = vec![point("[50, 50]"); FEATURES - 1];
+    features.push(point("[10, 10]"));
+    let geojson = format!(
+        r#"{{"type": "FeatureCollection", "features": [{}]}}"#,
+        features.join(",")
+    );
+    let rendered = render_with(&map(RenderMode::Point, square), Some(&geojson));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 50), Some(BLUE));
+    assert_eq!(image.pixel(10, 90), Some(BLUE), "the last feature's square");
+}
+
 /// A polygon layer of [`SQUARE_WITH_HOLE`] whose class draws `styles`, with a hatch symbol at
 /// index 1.
 fn render_hatched(styles: Vec<Style>) -> Rendered {
@@ -1554,4 +1612,31 @@ fn a_later_transformed_style_with_only_an_outlinecolor_draws_its_marker_once_as_
         Some(WHITE),
         "the head's inside, unfilled"
     );
+}
+
+#[test]
+fn a_documents_symbol_name_that_no_symbol_carries_draws_nothing_and_warns_once() {
+    // A style document has no image file to read an unknown name as, so the style draws
+    // nothing, also over a polygon with a COLOR; the layer warns once for the name, however many
+    // of its styles name it.
+    let unknown = || Style {
+        color: Some(Bound::Value(GREEN)),
+        symbol: Some(Bound::Value(SymbolRef::Name("nowhere".to_owned()))),
+        ..Style::default()
+    };
+    let map = map_with(RenderMode::Polygon, vec![unknown(), unknown()]);
+    let rendered = render_with(&map, Some(SQUARE_WITH_HOLE));
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["symbol-unknown"]);
+    assert!(
+        rendered.diagnostics[0].message.contains("`nowhere`"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(25, 75), Some(WHITE));
 }

@@ -285,6 +285,7 @@ dependencies = [
  "arbitrary",
  "forager-adapter-shapefile",
  "forager-bindings-wasm",
+ "forager-encode",
  "forager-engine",
  "forager-expr",
  "forager-mapfile",

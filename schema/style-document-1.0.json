@@ -1041,7 +1041,7 @@
           ]
         },
         "symbols": {
-          "description": "The map's symbols in MapServer's order: those of its `SYMBOL` blocks, then those of its\nsymbol set. The one at position `i` has MapServer's index `i + 1`; index 0 is MapServer's\ndefault symbol, a filled circle of size 1, which the list leaves out.",
+          "description": "The map's symbols in MapServer's order: those of its `SYMBOL` blocks, then those of its\nsymbol set, then the image files its styles name. The one at position `i` has MapServer's\nindex `i + 1`; index 0 is MapServer's default symbol, a filled circle of size 1, which the\nlist leaves out.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/Symbol"
@@ -1579,7 +1579,7 @@
       ]
     },
     "SymbolRef": {
-      "description": "A symbol of the map's symbol set: by its name, or by MapServer's index, in which 0 is the\ndefault symbol.",
+      "description": "A symbol of the map's symbol set: by MapServer's index, in which 0 is the default symbol, or by\nits name: the first symbol of that name, without regard to case, as MapServer's\n`msGetSymbolIndex` finds it. A name no symbol carries draws nothing.",
       "anyOf": [
         {
           "type": "integer",

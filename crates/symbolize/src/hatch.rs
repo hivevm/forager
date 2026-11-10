@@ -29,7 +29,7 @@ use forager_style_ir::{Rgba, Style, Symbol};
 use crate::bounds::{self, ms_max};
 use crate::extent::View;
 use crate::style::{DEG_TO_RAD, GAMMA, fixed};
-use crate::symbol;
+use crate::symbol::{self, Pixmaps};
 
 /// The most lines one hatch lays over the image (Q-9): a hatch a pixel apart over the largest
 /// image has some 5800.
@@ -55,12 +55,18 @@ impl Hatching {
     /// larger, plus 1, rounded as `lrint`; the largest of the styles, plus 2 for a polygon. A size
     /// or width bound to a property or an expression counts as unset, MapServer's -1 and 1;
     /// MapServer computes the buffer before msBindLayerToShape() binds the feature's values, so it
-    /// counts the values bound for the feature drawn before. The default size of a pixmap or SVG
-    /// symbol counts as 1, where MapServer takes its image's height, which is not read.
-    pub fn for_class(styles: &[Style], symbols: &[Symbol], factor: f64) -> Self {
+    /// counts the values bound for the feature drawn before. The default size of a pixmap symbol
+    /// is its image's height, the image among `pixmaps`; of one not among them, and of an SVG
+    /// symbol, 1.
+    pub fn for_class(
+        styles: &[Style],
+        symbols: &[Symbol],
+        pixmaps: Option<&Pixmaps>,
+        factor: f64,
+    ) -> Self {
         let mut buffer = 0.0_f64;
         for style in styles {
-            let default_size = symbol::default_size_of(style, symbols);
+            let default_size = symbol::default_size_of(style, symbols, pixmaps);
             let size = fixed(&style.size).unwrap_or(-1.0);
             let width = fixed(&style.width).unwrap_or(1.0);
             let mut largest = ms_max(default_size, ms_max(size, width));

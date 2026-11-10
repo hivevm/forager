@@ -1,6 +1,10 @@
-use forager_style_ir::Bound;
+use std::rc::Rc;
+
+use forager_render::PremultipliedImage;
+use forager_style_ir::{Bound, SymbolKind, SymbolRef};
 
 use super::*;
+use crate::draw::clip_pixmaps;
 
 const BLACK: Rgba = Rgba::opaque(0, 0, 0);
 const ORIGIN: Point = Point { x: 0.0, y: 0.0 };
@@ -321,7 +325,7 @@ fn the_clip_buffer_is_msdrawshape_s() {
         offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
         ..style(Some(10.0), Some(3.0))
     };
-    let hatching = Hatching::for_class(&[plain, hatched], &[], 1.0);
+    let hatching = Hatching::for_class(&[plain, hatched], &[], None, 1.0);
     assert_eq!(hatching.clip_buffer, 18.0);
     assert!(!hatching.clip_in_pixels);
     // MINSIZE above the rest counts as it is: 12.5 + 1 rounds half to even, to 14, and 16 with
@@ -330,7 +334,10 @@ fn the_clip_buffer_is_msdrawshape_s() {
         min_size: Some(12.5),
         ..style(None, None)
     };
-    assert_eq!(Hatching::for_class(&[small], &[], 1.0).clip_buffer, 16.0);
+    assert_eq!(
+        Hatching::for_class(&[small], &[], None, 1.0).clip_buffer,
+        16.0
+    );
 }
 
 #[test]
@@ -378,15 +385,21 @@ fn at_a_factor_the_clip_buffer_is_scaled() {
         offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
         ..style(Some(10.0), Some(3.0))
     };
-    let hatching = Hatching::for_class(&[plain.clone(), hatched], &[], 2.0);
+    let hatching = Hatching::for_class(&[plain.clone(), hatched], &[], None, 2.0);
     assert_eq!(hatching.clip_buffer, 33.0);
-    assert_eq!(Hatching::for_class(&[plain], &[], 2.0).clip_buffer, 5.0);
+    assert_eq!(
+        Hatching::for_class(&[plain], &[], None, 2.0).clip_buffer,
+        5.0
+    );
     // MINSIZE 6.25 is 12.5: + 1 rounds half to even, to 14, and 16 with the 2.
     let small = Style {
         min_size: Some(6.25),
         ..style(None, None)
     };
-    assert_eq!(Hatching::for_class(&[small], &[], 2.0).clip_buffer, 16.0);
+    assert_eq!(
+        Hatching::for_class(&[small], &[], None, 2.0).clip_buffer,
+        16.0
+    );
 }
 
 #[test]
@@ -399,7 +412,10 @@ fn minwidth_counts_toward_the_clip_buffer_as_minsize_does() {
         min_size: Some(3.0),
         ..style(None, None)
     };
-    assert_eq!(Hatching::for_class(&[wide], &[], 2.0).clip_buffer, 23.0);
+    assert_eq!(
+        Hatching::for_class(&[wide], &[], None, 2.0).clip_buffer,
+        23.0
+    );
 }
 
 #[test]
@@ -444,4 +460,47 @@ fn a_diagonal_hatch_is_bounded_by_the_lines_the_renderer_clips_it_to() {
     };
     assert!(matches!(at(0.4807), Hatched::Drawn(_)));
     assert_eq!(at(0.48), Hatched::Refused);
+}
+
+#[test]
+fn a_pixmap_counts_in_the_clip_buffer_at_its_image_s_height() {
+    // msDrawShape's maxsize takes msSymbolGetDefaultSize, for a pixmap the image's height, 48 of
+    // an image 16 wide: MS_NINT(48 + 1), plus 2 for a polygon. Without its image, 1 counts, and
+    // the hatch's SIZE 10 is the largest: MS_NINT(10 + 1) + 2.
+    let tall = Rc::new(PremultipliedImage::new(16, 48, vec![0; 16 * 48 * 4]).unwrap());
+    let pixmaps: Pixmaps = [("tall.png".to_owned(), Ok(tall))].into();
+    let refused: Pixmaps = [("tall.png".to_owned(), Err("gone".to_owned()))].into();
+    let symbol = |kind, image: Option<&str>| Symbol {
+        name: None,
+        kind,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: image.map(str::to_owned),
+        transparent: None,
+        span: None,
+    };
+    let symbols = [
+        symbol(SymbolKind::Hatch, None),
+        symbol(SymbolKind::Pixmap, Some("tall.png")),
+    ];
+    let style = |index, size| Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(index))),
+        size,
+        ..Style::default()
+    };
+    let class = [style(1, Some(Bound::Value(10.0))), style(2, None)];
+    let buffer = |pixmaps| Hatching::for_class(&class, &symbols, pixmaps, 1.0).clip_buffer;
+    assert_eq!(buffer(Some(&pixmaps)), 51.0);
+    assert_eq!(buffer(Some(&refused)), 13.0);
+    assert_eq!(buffer(None), 13.0);
+    // At a factor it is scaled as every size is: MS_NINT(48 × 2 + 1) + 2.
+    let scaled = Hatching::for_class(&class, &symbols, Some(&pixmaps), 2.0).clip_buffer;
+    assert_eq!(scaled, 99.0);
+    // The engine loads those a hatched class counts, and none of another class.
+    assert_eq!(clip_pixmaps(&class, &symbols), ["tall.png"]);
+    assert!(clip_pixmaps(&class[1..], &symbols).is_empty());
 }

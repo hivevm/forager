@@ -98,12 +98,59 @@ wider than 32,767 pixels. Forager clips first and models neither; a square that 
 that wide, draws as the clip leaves it, not as MapServer would.
 
 **A pixmap that does not load** — its file missing, past 32 MiB, of a format other than PNG, broken,
-past 4096 × 4096 pixels by its header, or past what the images one render holds decoded may come
-to (Q-9) — leaves its style undrawn, and the layer warns with `pixmap-not-drawn`, once per symbol,
-naming the symbol, its path, and why; the rest of the map draws. This deviates on purpose, by the
-maintainer's decision, from MapServer: there the symbol fails to load, so the layer fails to draw,
-and `msDrawMap` (`src/mapdraw.c`) returns no map at all. The label over such a pixmap, its class's
-first style, is left out with `label-not-drawn` ([label.md](label.md)).
+past 4096 × 4096 pixels by its header, or past what the images and fill tiles one render holds
+decoded may come to (Q-9) — leaves its style undrawn, and the layer warns with `pixmap-not-drawn`,
+once per symbol, naming the symbol, its path, and why; the rest of the map draws. This deviates on
+purpose, by the maintainer's decision, from MapServer: there the symbol fails to load, so the layer
+fails to draw, and `msDrawMap` (`src/mapdraw.c`) returns no map at all. The label over such a
+pixmap, its class's first style, is left out with `label-not-drawn` ([label.md](label.md)).
+
+**A pixmap along a line** is drawn every `GAP` pixels as [`line.md`](line.md) places symbols,
+each image as at a point. A pixmap along a line without a `GAP` is drawn as a line in the
+style's `COLOR`, or, for the first style of a class, in its `OUTLINECOLOR` without a `COLOR`, and
+nothing otherwise, where MapServer tiles the image along the line (`msDrawLineSymbol`,
+`src/maprendering.c`). It does not read the image, so it warns with `pixmap-not-drawn`, once per
+symbol and layer, naming it, its path, and the colour drawn in its place: a file that does not
+exist is not passed over unseen.
+
+**A pixmap over a polygon.** A polygon layer's style whose symbol is a pixmap fills the polygon with
+the image repeated, as `msDrawShadeSymbol` and `getTile` in `src/maprendering.c` and
+`agg2RenderPolygonTiled` in `src/mapagg.cpp` fill it. It needs no `COLOR`, and draws neither that
+nor an `OUTLINECOLOR`; the `OFFSET` moves the polygon, as it moves a fill. The image loads as at a
+point. The tile's width and height are whole pixels, of the scale and the `GAP` a point's image
+takes, the `GAP` scaled as the size is; each side:
+
+| scale | positive `GAP` | side |
+|---|---|---|
+| not 1 | no | the image's side times the scale, `MS_NINT`, half to even |
+| not 1 | yes | the larger of the `GAP`, `MS_NINT`, and the image's side times the scale, truncated |
+| 1 | no | the image's side |
+| 1 | yes | the larger of the `GAP` and the image's side, truncated |
+
+and at least 1. So a 32 × 32 image at `SIZE 15.5` has tiles of 16 × 16, at `SIZE 15.5 GAP 10` of
+15 × 15, and at `GAP 40.7` without a size of 40 × 40. The tile is a new transparent image of that
+size with the image drawn in it as at a point at its centre, at `(width / 2., height / 2.)`, scaled
+and turned as there and unmoved by the symbol's `ANCHORPOINT`. The polygon is filled under the
+even-odd rule, without the gamma of a polygon's fill, each pixel the tile's at its position modulo
+the tile's size, so that the tiles start at the image's origin wherever the polygon lies, and a
+tile's translucent pixels blend as a pixmap's do (ADR-0034). A tile's transparent pixels, the
+image's or those a `GAP` adds around it, leave what lies beneath.
+
+**Its bounds** (Q-9). A tile past 4096 × 4096 pixels, whatever its size or gap asks, and one that
+would bring the images and fill tiles one render holds decoded past 256 MiB
+([ADR-0040](../adr/0040-a-decoded-pixmap-is-held-once-per-render.md)) are not built: nothing is
+allocated for them, the style is not drawn, and the layer warns with `pixmap-not-drawn`, once per
+symbol, naming the limit. MapServer has neither: it allocates what is asked, and a size past an
+`int` that `MS_NINT` rounds wraps there, while one it only truncates, at a scale of 1 or the
+larger of a gap and the image, is past what C defines. A tile is built once for a symbol, its
+size, its scale, and its rotation, the first time a polygon is filled with it, and six are held,
+as `MS_IMAGECACHESIZE` holds them in `addTileCache`: a seventh drops the one built longest ago,
+wherever else that was used, so that styles cycling through more than six build theirs again;
+only the cost differs. MapServer keeps its six per image, one of a layer with an opacity its own;
+Forager keeps them per render. A tile counts from when it exists to when nothing refers to it, an
+image's bytes with them, so an image a later layer names can be refused for the tiles before it. A
+polygon its offset moves wholly off the image builds no tile, so that it takes nothing from the
+polygons on it.
 
 **A hatch over a polygon.** A polygon layer's style whose symbol is a hatch fills the polygon
 with parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprendering.c` and
@@ -146,16 +193,21 @@ takes on the rest. Only the lines that cross the image are laid; the others draw
 **Not yet as MapServer draws a hatch.** A size, width, or angle bound to a property or given by
 an expression is drawn as if unset, and counts so in the clip buffer too, where MapServer counts
 the values bound for the feature drawn before, since it computes the buffer before it binds the
-feature's. A pixmap or SVG symbol of the class counts in the clip buffer at a default size of 1,
-where MapServer takes its image's height. i_overlay snaps points that come within a hundredth of
-a pixel of an edge, which Clipper does not. The polygon of any other style is not clipped, which
-draws the same.
+feature's. An SVG symbol of the class counts in the clip buffer at a default size of 1, where
+MapServer takes its image's height. A pixmap of the class counts at its image's height, the image
+loaded before the clip whatever the style's scale range, as `msDrawShape` loads it; one that does
+not load counts at 1, where MapServer fails the layer, and warns only where its style is in its
+scale range and draws, with `pixmap-not-drawn`; out of it, nothing names it. i_overlay snaps
+points that come within a hundredth of a pixel of an edge, which Clipper does not. The polygon of
+any other style is not clipped, which draws the same.
 
 **Not yet as MapServer draws it at a point.** A point layer's style without a symbol it draws —
-none, 0, a TrueType, SVG, hatch, or simple symbol, or a name no symbol carries — draws a square of
-its size, where MapServer draws nothing for none and 0 and the symbol or image otherwise. A style a
-`GEOMTRANSFORM` places ([`style-symbol.md`](style-symbol.md)) draws nothing for none and 0, as
-MapServer does, its pixmap as at a point, and the square for the others, at a scale factor of 1. A
-symbol, a line, a polygon's offset and outline, and a hatch are scaled by `RESOLUTION` over
-`DEFRESOLUTION`; `SIZEUNITS` other than `pixels` and `SYMBOLSCALEDENOM` do not scale them yet
+none, 0, a TrueType, SVG, hatch, or simple symbol — draws a square of its size, where MapServer
+draws nothing for none and 0 and the symbol otherwise; the square for none and 0 takes none of the
+layer's million points of markers (Q-9). A style of a style document whose name no symbol carries
+([`style-symbol.md`](style-symbol.md)) draws nothing. A style a `GEOMTRANSFORM` places
+([`style-symbol.md`](style-symbol.md)) draws nothing for none and 0, as MapServer does, its
+pixmap as at a point, and the square for the others, at a scale factor of 1. A symbol, a line, a
+polygon's offset and outline, and a hatch are scaled by `RESOLUTION` over `DEFRESOLUTION`;
+`SIZEUNITS` other than `pixels` and `SYMBOLSCALEDENOM` do not scale them yet
 ([`scale.md`](scale.md)).

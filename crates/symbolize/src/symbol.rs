@@ -29,13 +29,18 @@
 //! MapServer's AGG renderer draws it at a point. Its trigonometry is libm's, the same code on
 //! every target, so that the native and the browser build draw the same bytes (Q-2).
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
-use forager_style_ir::c::lrint;
+use std::rc::Rc;
+
+use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_style_ir::c::{lrint, ms_nint};
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use crate::bounds;
-use crate::draw::Pixmaps;
 use crate::style::{DEG_TO_RAD, fixed};
+
+/// The images of a render's pixmap symbols by their resource path, each the decoded image or why
+/// it has none, as the engine's store of the render holds them (ADR-0040).
+pub type Pixmaps = std::collections::BTreeMap<String, Result<Rc<PremultipliedImage>, String>>;
 
 /// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16
 /// for a radius of 6, some 2000 for 100 000 pixels; this many are reached at a radius of some
@@ -51,27 +56,47 @@ pub enum Mark<'a> {
     Symbol(&'a Symbol),
     /// A pixmap symbol, and its index among MapServer's symbols, from 1.
     Pixmap(usize, &'a Symbol),
-    /// Nothing, for an index past the last symbol, as msDrawMarkerSymbol draws nothing.
+    /// Nothing, for an index past the last symbol, as msDrawMarkerSymbol draws nothing, and for a
+    /// name no symbol carries: an image MapServer would read by that name, which a style document
+    /// does not carry.
     Nothing,
 }
 
-/// What a style's symbol is among MapServer's symbols, from index 1.
-enum Resolved<'a> {
+/// What a style's symbol is among MapServer's symbols, from index 1: of the symbols' lifetime
+/// `'a` and the name's `'n`.
+pub enum Resolved<'a, 'n> {
     /// MapServer's default symbol: no symbol, or index 0.
     Default,
-    /// A name the frontend did not resolve to an index, or a binding not read yet.
+    /// A binding not read yet.
     Unresolved,
     /// An index past the last symbol.
     Missing(usize),
+    /// A name no symbol carries.
+    Unnamed(&'n str),
     /// The symbol at the index, and the index, from 1.
     Found(usize, &'a Symbol),
 }
 
-/// The symbol `symbol` names among `symbols`.
-fn resolve<'a>(symbol: &Option<Bound<SymbolRef>>, symbols: &'a [Symbol]) -> Resolved<'a> {
+/// The symbol `symbol` names among `symbols`: by its index, or by its name as msGetSymbolIndex
+/// finds it, the first symbol from index 1 whose name matches without regard to case.
+pub fn resolve<'a, 'n>(
+    symbol: &'n Option<Bound<SymbolRef>>,
+    symbols: &'a [Symbol],
+) -> Resolved<'a, 'n> {
     let index = match symbol {
         None => return Resolved::Default,
         Some(Bound::Value(SymbolRef::Index(index))) => *index as usize,
+        Some(Bound::Value(SymbolRef::Name(name))) => {
+            let found = symbols.iter().position(|symbol| {
+                symbol
+                    .name
+                    .as_ref()
+                    .is_some_and(|known| known.eq_ignore_ascii_case(name))
+            });
+            return found.map_or(Resolved::Unnamed(name), |position| {
+                Resolved::Found(position + 1, &symbols[position])
+            });
+        }
         Some(_) => return Resolved::Unresolved,
     };
     let Some(position) = index.checked_sub(1) else {
@@ -92,7 +117,7 @@ fn is_vector_or_ellipse(symbol: &Symbol) -> bool {
 /// The mark of `style` among `symbols`, MapServer's symbols from index 1.
 pub fn mark<'a>(style: &Style, symbols: &'a [Symbol]) -> Mark<'a> {
     match resolve(&style.symbol, symbols) {
-        Resolved::Missing(_) => Mark::Nothing,
+        Resolved::Missing(_) | Resolved::Unnamed(_) => Mark::Nothing,
         Resolved::Found(_, symbol) if is_vector_or_ellipse(symbol) => Mark::Symbol(symbol),
         Resolved::Found(index, symbol) if symbol.kind == SymbolKind::Pixmap => {
             Mark::Pixmap(index, symbol)
@@ -129,10 +154,17 @@ fn default_size(symbol: &Symbol) -> f64 {
 }
 
 /// msSymbolGetDefaultSize of the style's symbol: of a vector or an ellipse its height, or its
-/// width; 1 for MapServer's default symbol, for any other kind, and where none is found.
-pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol]) -> f64 {
+/// width; of a pixmap its image's height, the image among `pixmaps`, or 1 where it has none
+/// (`src/mapsymbol.c:74-79`); 1 for MapServer's default symbol, for any other kind, and where none
+/// is found.
+pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol], pixmaps: Option<&Pixmaps>) -> f64 {
     match resolve(&style.symbol, symbols) {
         Resolved::Found(_, symbol) if is_vector_or_ellipse(symbol) => default_size(symbol),
+        Resolved::Found(_, symbol) if symbol.kind == SymbolKind::Pixmap => symbol
+            .image
+            .as_ref()
+            .and_then(|path| pixmaps?.get(path)?.as_ref().ok())
+            .map_or(1.0, |image| f64::from(image.height())),
         _ => 1.0,
     }
 }
@@ -171,18 +203,47 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> Symbo
     }
 }
 
-/// computeSymbolStyle for a pixmap symbol whose image is `height` pixels high, at `factor` (see
-/// [`symbol_style`]): the scale of the image, the style's size, its default the image's height
-/// (msSymbolGetDefaultSize), scaled and bounded by `MINSIZE` and `MAXSIZE`, over that height;
-/// and its rotation in radians, counter-clockwise.
-pub(crate) fn pixmap_style(style: &Style, height: u32, factor: f64) -> (f64, f64) {
+/// computeSymbolStyle, `src/maprendering.c:37-77`, for a pixmap symbol whose image is `height`
+/// pixels high, at `factor` (see [`symbol_style`]): the scale of the image, the style's size, its
+/// default the image's height (msSymbolGetDefaultSize), scaled and bounded by `MINSIZE` and
+/// `MAXSIZE`, over that height; its rotation in radians, counter-clockwise; and its `GAP` scaled
+/// as the size is (66), negative as the `GAP` is.
+pub(crate) fn pixmap_style(style: &Style, height: u32, factor: f64) -> (f64, f64, f64) {
     let default_size = if height > 0 { f64::from(height) } else { 1.0 };
     let style_size = fixed(&style.size).unwrap_or(default_size);
     let target = bounds::symbol_size(style_size * factor, style, factor);
     (
         target / default_size,
         fixed(&style.angle).unwrap_or(0.0) * DEG_TO_RAD,
+        style.gap.unwrap_or(0.0) * target / style_size,
     )
+}
+
+/// The drawing operation of a pixmap's `image` at the pixel `at`, at `scale` and turned by
+/// `rotation`, as agg2RenderPixmapSymbol, `src/mapagg.cpp:646-702`, draws it: unturned (a
+/// rotation of 0 or `MS_PI * 2.`) and at a scale of 1, blended with its top-left pixel at
+/// `MS_NINT(x - width / 2.)`, `MS_NINT(y - height / 2.)`; otherwise resampled into the square
+/// about the point (see [`pixmap_square`]).
+pub(crate) fn render_pixmap(
+    at: Point,
+    image: Rc<PremultipliedImage>,
+    scale: f64,
+    rotation: f64,
+) -> DrawOp {
+    if (rotation != 0.0 && rotation != std::f64::consts::PI * 2.0) || scale != 1.0 {
+        let (half, inverse) = pixmap_square(image.width(), image.height(), at, scale, rotation);
+        return DrawOp::ResampledPixmap {
+            image,
+            at,
+            half,
+            inverse,
+        };
+    }
+    DrawOp::Pixmap {
+        left: ms_nint(at.x - f64::from(image.width()) / 2.0),
+        top: ms_nint(at.y - f64::from(image.height()) / 2.0),
+        image,
+    }
 }
 
 /// What agg2RenderPixmapSymbol, `src/mapagg.cpp:656-683`, resamples an image of `width` by
@@ -304,10 +365,11 @@ pub fn marker_size_with(
 ) -> Result<(f64, f64), String> {
     match resolve(symbol, symbols) {
         Resolved::Default => Ok((1.0, 1.0)),
-        Resolved::Unresolved => Err("a symbol by a name that is not resolved".to_owned()),
+        Resolved::Unresolved => Err("a symbol bound to a property that is not read".to_owned()),
         Resolved::Missing(index) => Err(format!(
             "symbol {index}, which the symbol set does not hold"
         )),
+        Resolved::Unnamed(name) => Err(format!("no symbol is named `{name}`")),
         Resolved::Found(index, symbol) => match (symbol.kind, pixmaps) {
             (SymbolKind::Pixmap, Some(pixmaps)) => {
                 let image = match &symbol.image {

@@ -330,3 +330,23 @@ fn a_symbol_that_draws_nothing_places_nothing() {
     assert!(ops.is_empty());
     assert!(!budget.spent());
 }
+
+#[test]
+fn a_symbol_of_no_points_is_priced_one_point() {
+    // Verifies: Q-9
+    // A symbol whose one operation has no points, a fill of no ring, still costs a point: priced
+    // 0, its markers would take nothing of the budget, and the count of those left would divide
+    // by 0. Of a budget of 3, three such markers are taken, and a fourth is refused.
+    let probe = [DrawOp::Fill {
+        rings: Vec::new(),
+        color: Rgba::opaque(0, 0, 0),
+        gamma: None,
+    }];
+    let price = MarkerBudget::price(&probe);
+    assert_eq!(price, Some(1));
+    let mut budget = MarkerBudget::of(3);
+    assert_eq!(budget.most(1), 3);
+    assert!(budget.take(3, 1));
+    assert!(!budget.take(1, 1));
+    assert!(budget.spent());
+}

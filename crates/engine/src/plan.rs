@@ -75,7 +75,9 @@ impl Plan {
 
     /// The passes a feature draws in `styles`, the class's styles bound to it. A line layer
     /// draws the first style as its outline when it has an `OUTLINEWIDTH`, then that first style
-    /// itself, then each further style with its outline before it. lineLayerDrawShape draws
+    /// itself, then each further style with its outline before it. The cache draws the first
+    /// style again only with a `COLOR`, and a later one with a `COLOR` or a pixmap symbol
+    /// (`src/mapdraw.c:1453-1456`, 1487-1494). lineLayerDrawShape draws
     /// every later style with a `GEOMTRANSFORM` in the first pass, as written, and the cache's
     /// passes skip every style with one.
     pub fn passes<'s, S: Borrow<Style>>(&self, styles: &'s [S]) -> Passes<'s> {
@@ -107,10 +109,10 @@ impl Plan {
                 passes.push((
                     i,
                     style,
-                    vec![Pass::OutlineIfOutlined, Pass::PlainIfColored],
+                    vec![Pass::OutlineIfOutlined, Pass::PlainIfColoredOrPixmap],
                 ));
             } else {
-                passes.push((i, style, vec![Pass::PlainIfColored]));
+                passes.push((i, style, vec![Pass::PlainIfColoredOrPixmap]));
             }
         }
         if !self.cached {
@@ -178,8 +180,11 @@ mod tests {
                 vec![vec![Pass::Outline]],
                 vec![
                     (0, vec![Pass::PlainIfColored]),
-                    (1, vec![Pass::PlainIfColored]),
-                    (2, vec![Pass::OutlineIfOutlined, Pass::PlainIfColored]),
+                    (1, vec![Pass::PlainIfColoredOrPixmap]),
+                    (
+                        2,
+                        vec![Pass::OutlineIfOutlined, Pass::PlainIfColoredOrPixmap]
+                    ),
                 ]
             )
         );
@@ -189,7 +194,7 @@ mod tests {
             kinds(&plan, &plain_first),
             (
                 vec![vec![Pass::Plain]],
-                vec![(1, vec![Pass::PlainIfColored])]
+                vec![(1, vec![Pass::PlainIfColoredOrPixmap])]
             )
         );
         // One style without an outline is not cached and draws once.
@@ -242,7 +247,7 @@ mod tests {
             kinds(&plan, &styles),
             (
                 vec![vec![Pass::Outline], vec![Pass::Plain]],
-                vec![(1, vec![Pass::PlainIfColored])]
+                vec![(1, vec![Pass::PlainIfColoredOrPixmap])]
             )
         );
     }

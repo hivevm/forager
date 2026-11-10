@@ -33,6 +33,7 @@ forager-engine = { path = "../crates/engine" }
 forager-expr = { path = "../crates/expr" }
 forager-render-agg = { path = "../crates/render-agg" }
 forager-adapter-shapefile = { path = "../crates/adapter-shapefile" }
+forager-encode = { path = "../crates/encode" }
 
 [[bin]]
 name = "mapfile"
@@ -79,6 +80,13 @@ bench = false
 [[bin]]
 name = "font"
 path = "fuzz_targets/font.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pixmap"
+path = "fuzz_targets/pixmap.rs"
 test = false
 doc = false
 bench = false
