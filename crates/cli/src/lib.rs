@@ -32,7 +32,9 @@ const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
 pub fn render(map: &Map, named: &[(String, PathBuf)], base: &FileLoader) -> Rendered {
     // The fonts of the labels and the images of the pixmap symbols come from the same base
     // context, each bounded by the engine's limit for a font, read no further than that (Q-9).
-    let fonts = base.clone().for_data(forager_engine::MAX_FONT_BYTES as u64);
+    let fonts = base
+        .clone()
+        .for_data(forager_engine::MAX_FONT_OR_IMAGE_FILE_BYTES as u64);
     let data = base.clone().for_data(MAX_SOURCE_BYTES);
     let mut shapefiles = Shapefiles::new(&data);
     let mut diagnostics = Vec::new();
@@ -215,7 +217,7 @@ mod tests {
         std::fs::copy(sans, dir.join("fonts/sans.ttf")).unwrap();
         // One byte past the limit, sparse on disk.
         std::fs::File::create(dir.join("fonts/huge.ttf"))
-            .and_then(|f| f.set_len(forager_engine::MAX_FONT_BYTES as u64 + 1))
+            .and_then(|f| f.set_len(forager_engine::MAX_FONT_OR_IMAGE_FILE_BYTES as u64 + 1))
             .unwrap();
         std::fs::write(
             dir.join("fonts.lst"),
@@ -248,7 +250,7 @@ mod tests {
         // The CLI's loader refuses the font, with its own reason, before the engine sees it.
         let limit = format!(
             "the file exceeds the limit of {} bytes",
-            forager_engine::MAX_FONT_BYTES
+            forager_engine::MAX_FONT_OR_IMAGE_FILE_BYTES
         );
         assert!(
             huge.diagnostics

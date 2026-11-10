@@ -95,10 +95,11 @@ golden path and the test pattern an agent copies from are named here.
   and turns each feature and style into display items
   by the layer's render mode. A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer
-  ([ADR-0022](adr/0022-skipped-records.md)); the fonts a label names it loads once
-  per render through the host's resource loader, each bounded, and so the images its pixmap
-  symbols name, each decoded once per render and path and held within Q-9's bounds on the file
-  and on the bytes one render's images and fill tiles come to (`images.rs`,
+  ([ADR-0022](adr/0022-skipped-records.md)); the fonts a label names and the images its
+  pixmap symbols name it loads by one load, once per render and path through the host's resource
+  loader, each file held to the 32 MiB of Q-9 that a font file and a symbol image's file share
+  (`resource.rs`); each image it decodes once and holds within Q-9's bound on the bytes one
+  render's images and fill tiles come to (`images.rs`,
   [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0031), and
   those of a point layer of `LABELCACHE OFF` after each feature, without a test against other

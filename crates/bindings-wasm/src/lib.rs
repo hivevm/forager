@@ -47,7 +47,7 @@ pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &V
 /// Renders as [`render_map`] does, with `files` beside the mapfile in its base context, by the
 /// path the mapfile names them: a font set and its fonts, an `INCLUDE`, a symbol set (ADR-0031),
 /// the image of a pixmap symbol (ADR-0029). Nothing else is read; a font or an image past
-/// [`forager_engine::MAX_FONT_BYTES`] is refused by the engine.
+/// [`forager_engine::MAX_FONT_OR_IMAGE_FILE_BYTES`] is refused by the engine.
 pub fn render_map_with_files(
     mapfile: &str,
     sources: &str,
@@ -469,7 +469,10 @@ mod tests {
                        LAYER NAME 'p' TYPE POINT STATUS ON FEATURE POINTS 10 10 END END\n\
                        CLASS STYLE SYMBOL 'big' END STYLE COLOR 0 0 255 SIZE 5 END END END END\n";
         let mut page = Files::new();
-        assert!(page.add("big.png", vec![0; forager_engine::MAX_FONT_BYTES + 1]));
+        assert!(page.add(
+            "big.png",
+            vec![0; forager_engine::MAX_FONT_OR_IMAGE_FILE_BYTES + 1]
+        ));
         let output = render_map_with_files(mapfile, "{}", None, &Viewport::default(), &page.files);
         assert_eq!(codes(&output), ["pixmap-not-drawn"]);
         let message = &output.diagnostics[0].message;

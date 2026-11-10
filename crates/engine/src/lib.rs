@@ -21,11 +21,12 @@
 mod bind;
 mod classes;
 mod fonts;
-pub mod images;
+mod images;
 mod inline;
 mod label_styles;
 mod labels;
 mod plan;
+mod resource;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -48,8 +49,8 @@ use crate::images::Images;
 use crate::plan::Plan;
 
 pub use crate::bind::bind_sources;
-pub use crate::fonts::MAX_FONT_BYTES;
 pub use crate::inline::is_inline;
+pub use crate::resource::MAX_FONT_OR_IMAGE_FILE_BYTES;
 pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
