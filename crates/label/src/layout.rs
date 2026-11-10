@@ -222,9 +222,11 @@ impl Layout {
         glyphs: &[u32],
     ) -> Result<(), u32> {
         let number = self.lengths.len();
-        // (1 - numlines + line_number) * line_height, in C's int before the double.
+        // (1 - numlines + line_number) * line_height, in C's int before the double. Where that
+        // overflows, which C leaves undefined, the pen saturates: such a line stands past any
+        // image, and its glyphs are left out as they are drawn.
         let rows = 1 - self.num_lines as i64 + number as i64;
-        let pen_y = (rows * self.line_height) as f64;
+        let pen_y = rows.saturating_mul(self.line_height) as f64;
         let mut pen_x = 0.0;
         for &id in glyphs {
             let glyph = cache.get(font, id).ok_or(id)?;

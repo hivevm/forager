@@ -437,6 +437,26 @@ fn a_glyph_that_cannot_be_drawn_takes_the_fonts_question_mark_or_fails() {
     assert!(TextPath::new(&font, &mut Glyphs::new(10.0), &two).is_ok());
 }
 
+#[test]
+fn a_line_height_past_any_integer_lays_out_without_a_panic() {
+    // Verifies: Q-3
+    // A glyph size past what an i64 holds makes the line height saturate, and the pen of a line
+    // two or more rows above the last a multiple of it, which overflowed (found by the render
+    // fuzz target). C computes it in an int, where the overflow is undefined; the pen saturates,
+    // so the line stands past any image and its glyphs are left out as they are drawn.
+    let data = fixture("dejavu-sans-subset.ttf");
+    let font = Font::new(&data).unwrap();
+    let ids = font.glyphs(&['1'], true).unwrap().unwrap();
+    for glyph_size in [1e300, f64::INFINITY] {
+        let mut glyphs = Glyphs::new(10.0);
+        let mut layout = Layout::new(glyph_size, 3);
+        for _ in 0..3 {
+            layout.line(&font, &mut glyphs, 0, &ids).unwrap();
+        }
+        layout.finish(Align::Left);
+    }
+}
+
 /// The text of `lines` in `font` at a glyph size of 10, aligned by `align`, its glyphs in one
 /// cache.
 fn laid_lines(font: &Font<'_>, text: &[&str], align: Align) -> Laid {
