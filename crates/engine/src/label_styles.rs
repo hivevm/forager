@@ -360,6 +360,25 @@ impl LabelStyles {
     }
 }
 
+/// Where a label's styles bound to its feature are found: held for the label cache by the index
+/// of its text, or bound for a label drawn at once, none where they vary by no feature.
+pub(crate) enum StylesOf<'a> {
+    Held { styles: &'a LabelStyles, text: u32 },
+    Bound(&'a [Style]),
+}
+
+impl StylesOf<'_> {
+    /// The style `i`, written `style`, bound to the label's feature where its styles vary by it,
+    /// as `bindLabel` binds it, else as written.
+    fn style<'s>(&'s self, i: usize, style: &'s Style) -> Cow<'s, Style> {
+        match self {
+            Self::Held { styles, text } => styles.style(*text, i, style),
+            Self::Bound([]) => classes::unbound(style),
+            Self::Bound(bound) => Cow::Borrowed(&bound[i]),
+        }
+    }
+}
+
 /// What the styles of the labels drawn are drawn with.
 pub(crate) struct Styled<'a> {
     view: &'a View,
@@ -368,7 +387,6 @@ pub(crate) struct Styled<'a> {
     factors: Vec<f64>,
     /// The image's resolution factor.
     resolution: f64,
-    styles: &'a LabelStyles,
     canvas: Canvas<'a>,
     /// The hatches of labelpoly styles refused since last taken (Q-9).
     hatches_refused: usize,
@@ -376,13 +394,7 @@ pub(crate) struct Styled<'a> {
 
 impl<'a> Styled<'a> {
     /// What the styles of the labels drawn in an image `width` by `height` draw with.
-    pub(crate) fn new(
-        map: &'a Map,
-        view: &'a View,
-        styles: &'a LabelStyles,
-        width: u32,
-        height: u32,
-    ) -> Self {
+    pub(crate) fn new(map: &'a Map, view: &'a View, width: u32, height: u32) -> Self {
         // A label's styles inherit its scale factor, which is its layer's
         // (msUpdateClassScaleFactor), as each label's `Fixed` holds it.
         let scale = classes::scale_denom(map, view, width);
@@ -397,7 +409,6 @@ impl<'a> Styled<'a> {
             map,
             factors,
             resolution,
-            styles,
             canvas: Canvas::new(&map.symbols, width, height, resolution)
                 .with_resolution(resolution),
             hatches_refused: 0,
@@ -416,8 +427,9 @@ impl<'a> Styled<'a> {
         std::mem::take(&mut self.hatches_refused)
     }
 
-    /// Draws the styles of the label of text `text` of feature `feature_id`, `member` placed at
-    /// `placement`, in their order, bound to its feature where they vary by it, else `written`, as
+    /// Draws the styles of a label of feature `feature_id`, `member` placed at `placement`, in
+    /// their order, as `styles` gives them bound to its feature where they vary by it, else
+    /// `written`, as
     /// msDrawLabelCache draws them before the text (mapdraw.c:4056-4127): a labelpoint style's
     /// marker at its point, a labelpoly style on the labelpoly it computes at `placement`
     /// (mapdraw.c:3799-3860), and a labelcenter style's marker at the centre of the labelpoly's
@@ -432,7 +444,7 @@ impl<'a> Styled<'a> {
         member: &Member,
         placement: &Placement,
         feature_id: u64,
-        text: u32,
+        styles: &StylesOf<'_>,
         written: &[Style],
     ) {
         // A label without text draws its labelpoint styles alone (mapdraw.c:4056-4069); one with a
@@ -446,7 +458,7 @@ impl<'a> Styled<'a> {
             let Ok(kind) = kind(style, &self.map.symbols) else {
                 continue;
             };
-            let style = self.styles.style(text, i, style);
+            let style = styles.style(i, style);
             match (kind, &poly) {
                 (Kind::Point, _) => {
                     draw_label_marker(

@@ -193,15 +193,16 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let at_once = point_layer && !layer.label_cache;
         let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
-            for (one, labelled) in selected.iter().zip(drawn.chunks(1)) {
-                let binder = &mut selector.binder;
+            let binder = &mut selector.binder;
+            let mut settled = labels.layer(layer_index, mode, &drawn, binder);
+            for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
                 let laid = labels
-                    .collect(layer_index, true, labelled, pixmaps, binder, true)
+                    .label(&settled, feature, class, None, pixmaps, binder)
                     .await;
                 let mut out_of_reach = vec![0; laid.len()];
                 drawing.draw_points(&mut target, &mut canvas, one, |target, point| {
                     for (label, count) in laid.iter().zip(&mut out_of_reach) {
-                        *count += labels.draw_at_once(target, label, point);
+                        *count += labels.draw_at_once(&mut settled, target, label, point);
                     }
                 });
                 for (label, count) in laid.iter().zip(out_of_reach) {
@@ -223,16 +224,9 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         );
         unknown_symbols(layer, &map.symbols, selector.binder.diagnostics);
         if !at_once {
-            labels
-                .collect(
-                    layer_index,
-                    point_layer,
-                    &drawn,
-                    pixmaps,
-                    &mut selector.binder,
-                    false,
-                )
-                .await;
+            let binder = &mut selector.binder;
+            let settled = labels.layer(layer_index, mode, &drawn, binder);
+            labels.collect(&settled, &drawn, pixmaps, binder).await;
         }
     }
     // The labels of the cache are drawn after every layer, as MapServer's label cache draws
@@ -243,6 +237,16 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         labels,
         diagnostics,
     }
+}
+
+/// The points of `geometry` inside the map's extent, in pixels, in order: where
+/// pointLayerDrawShape draws a point layer's markers and labels, which skips a point outside
+/// (msPointInRect) and transforms the others by the inverse of the cellsize (msTransformPoint).
+fn points_in_view(view: &View, geometry: &Geometry) -> impl Iterator<Item = Point> {
+    vertices(geometry)
+        .into_iter()
+        .filter(|&c| view.contains(c))
+        .map(|c| view.point_to_pixel(c))
 }
 
 /// The render mode `layer` is drawn in at the map's scale `scale`; none where it is hidden, out
@@ -479,10 +483,7 @@ impl Drawing<'_> {
             .filter(|s| classes::in_scale(self.scale, s.min_scale_denom, s.max_scale_denom))
             .map(|style| point_markers(&feature.geometry, style, self.view, canvas))
             .collect();
-        let points = vertices(&feature.geometry)
-            .into_iter()
-            .filter(|&c| self.view.contains(c));
-        for (k, c) in points.enumerate() {
+        for (k, point) in points_in_view(self.view, &feature.geometry).enumerate() {
             for style in &mut markers {
                 for op in std::mem::take(&mut style[k]) {
                     renderer.draw(&DisplayItem {
@@ -491,7 +492,7 @@ impl Drawing<'_> {
                     });
                 }
             }
-            label(renderer, self.view.point_to_pixel(c));
+            label(renderer, point);
         }
     }
 
