@@ -1,6 +1,6 @@
 # ADR-0042: The Dev Container keeps the GitHub CLI's login in a directory of its own on the host
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-07
 - **Deciders:** Markus Brigl
 - **Applies to:** the `mounts`, `initializeCommand`, and `postCreateCommand` of `.devcontainer/devcontainer.json` that concern the GitHub CLI, and `scripts/check-devcontainer.sh`

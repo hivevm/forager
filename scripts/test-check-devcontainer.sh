@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-devcontainer.sh. Verifies: ADR-0004
+# Self-test of scripts/check-devcontainer.sh. Verifies: ADR-0004, ADR-0042
 #
 # Each case builds a fixture under a temporary directory — a devcontainer.json with comments and
 # one pinned Feature, the lock that resolves it, and the editor settings that pin the
@@ -169,6 +169,31 @@ d="$(repo extension-under-other-key)"
   echo '}'
 } > "$d/.vscode/settings.json"
 expect fail "the pair under a key other than remote.extensionKind" "$d" "does not pin 'ms-azuretools.vscode-containers'"
+
+d="$(repo gh-login-kept)"
+# ${localEnv:HOME} is written into the fixture as it stands in devcontainer.json.
+# shellcheck disable=SC2016
+config "$d" "ghcr.io/devcontainers/features/github-cli:1" \
+  '"mounts": [' \
+  '  "source=${localEnv:HOME}/.config/gh-devcontainer,target=/home/vscode/.config/gh,type=bind"' \
+  '],'
+expect pass "gh's login kept in a host directory of its own passes" "$d" "1 Features pinned and locked"
+
+d="$(repo gh-host-config)"
+# ${localEnv:HOME} is written into the fixture as it stands in devcontainer.json.
+# shellcheck disable=SC2016
+config "$d" "ghcr.io/devcontainers/features/github-cli:1" \
+  '"mounts": [' \
+  '  "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind"' \
+  '],'
+expect fail "the host's own gh configuration bound into the container" "$d" "binds the host's own '.config/gh'"
+
+d="$(repo gh-other-source)"
+config "$d" "ghcr.io/devcontainers/features/github-cli:1" \
+  '"mounts": [' \
+  '  "source=/tmp/gh,target=/home/vscode/.config/gh,type=bind"' \
+  '],'
+expect fail "the container's gh configuration bound from another host path" "$d" "binds /home/vscode/.config/gh from '/tmp/gh'"
 
 d="$(repo no-devcontainer)"
 rm -r "$d/.devcontainer"

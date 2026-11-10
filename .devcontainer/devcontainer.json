@@ -13,8 +13,11 @@
   // The host's agent config directory. HOME is set on Linux and macOS, USERPROFILE on Windows;
   // exactly one of the two is non-empty, so concatenating both yields the home directory on every
   // host (the pattern the Dev Containers documentation recommends).
+  // And gh's login, in a host directory of its own, so that one login outlives every rebuild
+  // (ADR-0042); not the host's own ~/.config/gh, whose token may sit in a keyring.
   "mounts": [
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind"
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh-devcontainer,target=/home/vscode/.config/gh,type=bind"
   ],
 
   "shutdownAction": "stopContainer",
@@ -25,7 +28,13 @@
   // plain `mkdir` (cmd.exe knows no `-p`; the parent is the home directory and always exists) and
   // `|| exit 0` so an already existing directory — an error for both shells — does not abort the
   // container build.
-  "initializeCommand": "mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.claude\" || exit 0",
+  // The same holds for gh's directory (ADR-0042); its parent .config may be missing, which
+  // `mkdir -p` creates in a POSIX shell, and which cmd.exe leaves to be created once by hand.
+  // The object form runs the two side by side.
+  "initializeCommand": {
+    "claude": "mkdir \"${localEnv:HOME}${localEnv:USERPROFILE}/.claude\" || exit 0",
+    "gh": "mkdir -p \"${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh-devcontainer\" || exit 0"
+  },
 
   // Runs inside the container once it is created. Git does not version its hooks, so the
   // repository keeps them under .githooks/ and this points git at them: pre-commit refuses a
@@ -39,7 +48,10 @@
     "adr-index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'",
     "shellcheck": "sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck",
     // The pinned toolchain, cargo-deny, and the wasm-bindgen CLI (ADR-0008, ADR-0010).
-    "tools": "bash scripts/install-tools.sh"
+    "tools": "bash scripts/install-tools.sh",
+    // git authenticates through gh's stored login, not through VS Code's helper of an earlier
+    // container (ADR-0042); before the first login it has nothing to set up.
+    "gh-git": "gh auth setup-git || true"
   },
 
   // DevContainer Features layered on top of the base image. The container intentionally has NO
