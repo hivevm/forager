@@ -496,7 +496,7 @@ fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, canvas: &mut Canv
         symbol::Mark::Symbol(s) => symbol::symbol_ops(ops, at, style, s, canvas.factor),
         symbol::Mark::Pixmap(index, s) => {
             if let Some(image) = canvas.pixmap(index, s) {
-                pixmap_ops(ops, at, style, image, canvas.factor);
+                pixmap_ops(ops, at, style, s, image, canvas.factor);
             }
         }
         symbol::Mark::Nothing => {}
@@ -504,7 +504,8 @@ fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, canvas: &mut Canv
 }
 
 /// A pixmap's `image` at the pixel `at` in `style` at `factor`, as msDrawMarkerSymbol draws it:
-/// nothing at a scale of 0; moved by the style's offsets; then, unturned (an angle of 0 or 360)
+/// nothing at a scale of 0; moved by the style's offsets and by the symbol's anchor point, of
+/// the size msGetMarkerSize gives the image (msAdjustMarkerPos); then, unturned (an angle of 0 or 360)
 /// and at a scale of 1, blended with its top-left pixel at `MS_NINT(x - width / 2.)`,
 /// `MS_NINT(y - height / 2.)`, and otherwise resampled into the square about the point, as
 /// agg2RenderPixmapSymbol draws it (see [`symbol::pixmap_square`]). A style's colour and opacity
@@ -513,6 +514,7 @@ fn pixmap_ops(
     ops: &mut Vec<DrawOp>,
     at: Point,
     style: &Style,
+    symbol: &Symbol,
     image: Rc<PremultipliedImage>,
     factor: f64,
 ) {
@@ -520,7 +522,15 @@ fn pixmap_ops(
     if scale == 0.0 {
         return;
     }
-    let at = symbol::shifted(at, style, factor);
+    let at = symbol::anchored(symbol::shifted(at, style, factor), symbol, rotation, || {
+        symbol::pixmap_marker_size(
+            style,
+            fixed(&style.size),
+            image.width(),
+            image.height(),
+            factor,
+        )
+    });
     if (rotation != 0.0 && rotation != std::f64::consts::PI * 2.0) || scale != 1.0 {
         let (half, inverse) =
             symbol::pixmap_square(image.width(), image.height(), at, scale, rotation);

@@ -1,3 +1,18 @@
+// The loading of a pixmap for the marker a label holds follows msGetMarkerSize, src/mapsymbol.c,
+// of MapServer at the release pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 //! The engine: renders the map of a style IR from the sources bound to its layers. It is the
 //! one core crate that awaits the ports (ADR-0009).
 
@@ -178,6 +193,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                         layer_index,
                         true,
                         labelled,
+                        images.decoded(),
                         &mut selector,
                         Some(&mut target),
                     )
@@ -195,6 +211,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                     layer_index,
                     point_layer,
                     &drawn,
+                    images.decoded(),
                     &mut selector,
                     None::<&mut R>,
                 )
@@ -354,7 +371,10 @@ impl Drawing<'_> {
     /// Loads into `images`, through `files`, the image of each pixmap symbol the styles of the
     /// `selected` features draw as a mark, those outside their scale range left out, so that the
     /// layer is drawn from them; one the store refuses leaves its style undrawn, as the canvas
-    /// records.
+    /// records. On a point layer of the label cache, the first style of a class with labels is
+    /// loaded at any scale, as msAddLabelGroup and msAddLabel (`src/maplabel.c:344-352, 604-608`)
+    /// size the marker the cache holds by msGetMarkerSize, which loads it
+    /// (`src/mapsymbol.c:736-738`) whatever the style's scale range.
     async fn load_pixmaps<L: ResourceLoader>(
         &self,
         selected: &[Selected<'_>],
@@ -362,9 +382,13 @@ impl Drawing<'_> {
         images: &mut Images,
         files: &L,
     ) {
-        for (_, _, styles) in selected {
-            for style in styles {
-                if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
+        let holds_markers = self.mode == RenderMode::Point && self.layer.label_cache;
+        for (_, class, styles) in selected {
+            let marker = holds_markers && !self.layer.classes[*class].labels.is_empty();
+            for (place, style) in styles.iter().enumerate() {
+                if !(place == 0 && marker)
+                    && !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom)
+                {
                     continue;
                 }
                 if let Some(path) = marked_pixmap(self.mode, style, symbols)

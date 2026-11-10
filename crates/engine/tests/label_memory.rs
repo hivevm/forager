@@ -27,11 +27,15 @@ fn ready<F: Future>(future: F) -> F::Output {
     forager_ports::poll_once(future).expect("the engine waited on a port that never waits")
 }
 
-/// The test font of the label crate, a subset of DejaVu Sans whose licence lies beside it.
+/// The test font of the label crate, a subset of DejaVu Sans whose licence lies beside it, and
+/// `pin.png`, the test icon of the command line, 32 × 32.
 struct Files;
 
 impl ResourceLoader for Files {
-    async fn load(&self, _: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        if path.as_str() == "pin.png" {
+            return Ok(include_bytes!("../../cli/tests/fixtures/pin.png").to_vec());
+        }
         let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
         Ok(std::fs::read(file).unwrap())
@@ -86,26 +90,41 @@ fn map(labelled: bool, styled: Option<Style>) -> Map {
         }),
         size: Some([1000, 1000]),
         fonts: [("sans".to_owned(), "sans.ttf".to_owned())].into(),
-        // Symbol 1, a vector square of side 1, which a style's SIZE scales.
-        symbols: vec![Symbol {
-            kind: SymbolKind::Vector,
-            paths: vec![vec![
-                [0.0, 0.0],
-                [1.0, 0.0],
-                [1.0, 1.0],
-                [0.0, 1.0],
-                [0.0, 0.0],
-            ]],
-            extent: Some([1.0, 1.0]),
-            filled: true,
-            name: None,
-            anchor_point: None,
-            character: None,
-            font: None,
-            image: None,
-            transparent: None,
-            span: None,
-        }],
+        // Symbol 1, a vector square of side 1, which a style's SIZE scales; symbol 2, the pin.
+        symbols: vec![
+            Symbol {
+                kind: SymbolKind::Vector,
+                paths: vec![vec![
+                    [0.0, 0.0],
+                    [1.0, 0.0],
+                    [1.0, 1.0],
+                    [0.0, 1.0],
+                    [0.0, 0.0],
+                ]],
+                extent: Some([1.0, 1.0]),
+                filled: true,
+                name: None,
+                anchor_point: None,
+                character: None,
+                font: None,
+                image: None,
+                transparent: None,
+                span: None,
+            },
+            Symbol {
+                kind: SymbolKind::Pixmap,
+                paths: Vec::new(),
+                extent: None,
+                filled: false,
+                name: Some("pin".to_owned()),
+                anchor_point: None,
+                character: None,
+                font: None,
+                image: Some("pin.png".to_owned()),
+                transparent: None,
+                span: None,
+            },
+        ],
         layers: vec![Layer {
             name: Some("places".into()),
             render_mode: Some(RenderMode::Point),
@@ -224,6 +243,31 @@ fn a_render_holds_little_per_label_until_the_labels_are_drawn() {
         assert!(
             per_label < 400 + 32 * values,
             "styled {styled:?}: {per_label} bytes per label ({with} with labels, {without} without)"
+        );
+    }
+    // The pin under each label, its class's first style, sized from the image the render holds
+    // once, as every point draws it: the label's definition holds its marker where the style is
+    // the same for every feature, and each label its own where the feature binds its size: an
+    // entry of 24 bytes, its index and its width and height, in a vector that may hold up to
+    // twice what it fills as it grows.
+    let pinned = |labelled, size: Option<Bound<f64>>| {
+        let mut map = map(labelled, None);
+        map.layers[0].classes[0].styles = vec![Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(2))),
+            size,
+            ..Style::default()
+        }];
+        map
+    };
+    for (size, marker) in [(None, 0), (Some(bound("size")), 2 * 24)] {
+        let (without, none) = peak(&pinned(false, size.clone()), &sources);
+        assert_eq!(none, 0);
+        let (with, drawn) = peak(&pinned(true, size.clone()), &sources);
+        assert_eq!(drawn, POINTS, "every label is drawn");
+        let per_label = with.saturating_sub(without) / POINTS;
+        assert!(
+            per_label < 400 + marker,
+            "pinned at {size:?}: {per_label} bytes per label ({with} with labels, {without} without)"
         );
     }
 }

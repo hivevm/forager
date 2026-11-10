@@ -144,7 +144,7 @@ fn marker_of(
     map: &Map,
     factor: f64,
 ) -> Result<LabelMarker, String> {
-    let size = marker_size_with(style, values.size, symbol, &map.symbols, factor)
+    let size = marker_size_with(style, values.size, symbol, &map.symbols, None, factor)
         .map_err(|what| format!("its labelpoint style draws {what}"))?;
     let anchor_point = match symbol {
         Some(Bound::Value(SymbolRef::Index(index))) if *index > 0 => map

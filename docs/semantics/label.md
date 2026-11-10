@@ -78,6 +78,21 @@ of that box, the box of the turned polygon where the label is turned. They are d
 order, before the text; the marker of the first `labelpoint` style takes room from other labels,
 a `labelpoly` and a `labelcenter` marker take none.
 
+**The marker under a label.** The label cache holds beneath each label of a point layer the box
+of the marker its class's first style draws at the point, as `msAddLabelGroup` and `msAddLabel`
+in `src/maplabel.c` hold the box of `msGetMarkerSize` in `src/mapsymbol.c`: `w` by `h` about the
+point, its far corner `w - 1` and `h - 1` from its near one. A label at any position but `CC` moves
+off it by half that span, cut to whole pixels, and other labels are tested against it. A vector or
+ellipse symbol is sized by its extent, MapServer's default symbol at 1 by 1, and a pixmap by its
+image, loaded before the layer's labels are collected, at any scale, as `msGetMarkerSize` loads
+it: a 32 × 32 image is 32 × 32 without a `SIZE` and 55 × 55 at `SIZE 55`, whatever its `ANGLE`
+([symbol.md](symbol.md)). An SVG or a TrueType symbol has no size yet, so its label is left out
+with `label-not-drawn`. The label of a pixmap that does not load is left out too, with
+`label-not-drawn` naming the symbol and its image, and the rest of the map drawn; in MapServer
+`msGetMarkerSize` fails, and with it `msAddLabelGroup`, the layer, and the map. A class whose first
+style varies by no feature sizes every label's marker alike, held once for the label, not for
+each feature's (Q-9). A layer of `LABELCACHE OFF` holds no marker.
+
 **`LABELCACHE`.** A layer's `LABELCACHE`, `ON` or `OFF` as `loadLayer` in `src/mapfile.c` reads
 it and `ON` without one (`initLayer`), is the IR's `label_cache`, true where it is absent. A point
 layer of `LABELCACHE OFF` draws its labels at once, as `pointLayerDrawShape` in `src/mapdraw.c`

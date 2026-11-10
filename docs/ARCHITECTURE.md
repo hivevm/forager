@@ -112,7 +112,8 @@ golden path and the test pattern an agent copies from are named here.
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   pixmaps whose image the store refused, and geometries its render mode cannot draw (Q-9). It
   loads the images of a layer's pixmap marks into the render's store before it draws the layer,
-  since `symbolize` does no I/O, and hands them to it on the canvas. It is the one core crate
+  since `symbolize` does no I/O, and hands them to it on the canvas, and to the labels, which
+  size the marker a class's first style holds beneath each label by them. It is the one core crate
   that awaits the ports. Every host binds its sources to the layers by name through the engine's
   `bind_sources`, which reports a source no layer is named for and one that cannot be read the same
   way for each.
@@ -125,15 +126,15 @@ golden path and the test pattern an agent copies from are named here.
   style's width and size bounds, one function per site of MapServer's that bounds them, with the
   constants they bound by (`bounds.rs`); a property's value as bound, the gamma, and
   degrees to radians (`style.rs`); the view that maps the extent to the image (`extent.rs`); its
-  vector and ellipse symbols, and a pixmap's scale, square, and transformation, in the order of
-  operations of AGG's `trans_affine` (`symbol.rs`); hatches, the clip of a hatched polygon, and the
-  reference point its lines count from (`hatch.rs`); symbols along a line (`line_marker.rs`); line
-  offsets (`offset.rs`); and the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`).
-  A line style's symbol with a `GAP` it places along the line; those markers and the ones a
-  `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS` (Q-9). Its modules import
-  one another in one direction only, `draw.rs` at the top and `bounds.rs`, `style.rs`,
-  `extent.rs`, and `offset.rs` the leaves; no check holds that direction, which ADR-0009 decides
-  only between crates.
+  vector and ellipse symbols, a marker's size and anchor point, and a pixmap's scale, square, and
+  transformation, in the order of operations of AGG's `trans_affine` (`symbol.rs`); hatches, the
+  clip of a hatched polygon, and the reference point its lines count from (`hatch.rs`); symbols
+  along a line (`line_marker.rs`); line offsets (`offset.rs`); and the style's `GEOMTRANSFORM` and
+  `POLAROFFSET` (`geom_transform.rs`). A line style's symbol with a `GAP` it places along the line;
+  those markers and the ones a `GEOMTRANSFORM` places share one budget per layer,
+  `MAX_MARKER_POINTS` (Q-9). Its modules import one another in one direction only, `draw.rs` at the
+  top and `bounds.rs`, `style.rs`, `extent.rs`, and `offset.rs` the leaves; no check holds that
+  direction, which ADR-0009 decides only between crates.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
   FreeType's arithmetic, laid out by their advances, broken into lines at the label's `WRAP`

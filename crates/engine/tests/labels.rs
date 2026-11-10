@@ -1,3 +1,19 @@
+// The tests of the marker a pixmap holds under a label work their values out from MapServer's
+// msAddLabelGroup, src/maplabel.c, and msGetMarkerSize, src/mapsymbol.c, of the release pinned in
+// scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 //! The labels of point layers, drawn through the reference renderer and compared with a reference
 //! image of Forager's own, as the geometry of render.rs is (ADR-0028). Set FORAGER_BLESS=1 to write
 //! the reference after a deliberate change, and review the image before committing it; the bless
@@ -32,11 +48,14 @@ fn ready<F: Future>(future: F) -> F::Output {
 
 /// The font set's files, test fonts of the label crate whose licence lies beside them:
 /// `fonts/sans.ttf` a subset of DejaVu Sans, and `fonts/<name>.ttf` its variant
-/// `dejavu-sans-<name>.ttf`.
+/// `dejavu-sans-<name>.ttf`; and `pin.png`, the test icon of the command line, 32 × 32.
 struct Files;
 
 impl ResourceLoader for Files {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        if path.as_str() == "pin.png" {
+            return Ok(include_bytes!("../../cli/tests/fixtures/pin.png").to_vec());
+        }
         let fixture = match path.as_str() {
             "fonts/sans.ttf" => "dejavu-sans-subset.ttf".to_owned(),
             other => match other.strip_prefix("fonts/") {
@@ -1559,9 +1578,9 @@ fn min_distance_leaves_out_a_label_near_one_of_the_same_text() {
 fn a_label_over_a_marker_whose_size_is_not_computed_yet_is_not_drawn() {
     // Verifies: G-10
     // The label cache holds the box of the marker of the class's first style beneath every
-    // label of a point layer, at CC too; a pixmap, SVG, or TrueType symbol has no size yet, so
+    // label of a point layer, at CC too; an SVG or TrueType symbol has no size yet, so
     // the label is left out rather than placed without that box.
-    for kind in [SymbolKind::Pixmap, SymbolKind::Svg, SymbolKind::Truetype] {
+    for kind in [SymbolKind::Svg, SymbolKind::Truetype] {
         let mut map = map(label_item());
         map.symbols = vec![Symbol {
             name: Some("unsized".to_owned()),
@@ -2857,4 +2876,193 @@ fn a_layer_of_labelcache_off_with_an_opacity_draws_each_label_into_its_image_aft
             (Some(2), false),
         ]
     );
+}
+
+/// The map of a label "Fen" at LC over the pixmap `image` of SIZE `size` and ANGLE `angle`,
+/// symbol 1, which its class draws first.
+fn over_pixmap(image: &str, size: Option<f64>, angle: Option<f64>) -> Map {
+    let mut map = map(Label {
+        position: Some(Bound::Value(Position::Lc)),
+        ..label_item()
+    });
+    map.symbols = vec![Symbol {
+        name: Some("pin".to_owned()),
+        kind: SymbolKind::Pixmap,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: Some(image.to_owned()),
+        transparent: None,
+        span: None,
+    }];
+    map.layers[0].classes[0].styles = vec![Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: size.map(Bound::Value),
+        angle: angle.map(Bound::Value),
+        ..Style::default()
+    }];
+    map
+}
+
+/// The boxes the label cache drew `map`'s labels of `points` in, from the last added to the
+/// first, `None` for one it discarded.
+fn drawn_boxes(map: &Map, points: &[(&str, f64, f64, &str)]) -> Vec<Option<[f64; 4]>> {
+    let sources: BTreeMap<String, GeoJsonSource> = [(
+        "places".to_owned(),
+        GeoJsonSource::parse(&collection(points)).unwrap(),
+    )]
+    .into();
+    let rendered = ready(render_with_files(map, &sources, &Files, AggRenderer::new()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    rendered.labels.iter().map(|l| l.drawn).collect()
+}
+
+#[test]
+fn a_label_moves_away_from_a_pixmap_marker_of_the_size_of_its_image() {
+    // Verifies: G-10
+    // msAddLabelGroup (src/maplabel.c:343-376) holds the box of msGetMarkerSize
+    // (src/mapsymbol.c:720-799) of the class's first style about the point, here the pixel
+    // (80, 14). The 32 × 32 pin without a SIZE: msSymbolGetDefaultSize gives its height, 32, so
+    // `size` is 32 and the marker 32 / 32 × 32 = 32 wide and 32 high (776-781); its box
+    // [80 - 16, 14 - 16, 64 + 31, -2 + 31] = [64, -2, 95, 29]. At SIZE 55 ANGLE 45, the angle
+    // not read there, it is 55 / 32 × 32 = 55 by 55: [52.5, -13.5, 106.5, 40.5].
+    // msDrawLabelCache moves the label at LC down by half its box's span, 31 / 2 = 15.5 and
+    // 54 / 2 = 27, cut to 15 and 27 by get_metrics' int, and MARKER_SLOP's 2: its text, 11.90625
+    // high, from 14 + 15 + 2 = 31 and from 14 + 27 + 2 = 43. A circle of the same size gives the
+    // same box, and the label the same place.
+    let point = [("Fen", 80.0, 45.0, "")];
+    let circle = |size: f64| {
+        let mut map = over_pixmap("pin.png", Some(size), None);
+        map.symbols[0] = Symbol {
+            name: Some("circle".to_owned()),
+            kind: SymbolKind::Ellipse,
+            paths: vec![vec![[1.0, 1.0]]],
+            extent: Some([1.0, 1.0]),
+            filled: true,
+            image: None,
+            ..map.symbols[0].clone()
+        };
+        map
+    };
+    let unscaled = over_pixmap("pin.png", None, None);
+    let turned = over_pixmap("pin.png", Some(55.0), Some(45.0));
+    for (map, marker, same) in [
+        (&unscaled, [64.0_f64, -2.0, 95.0, 29.0], circle(32.0)),
+        (&turned, [52.5, -13.5, 106.5, 40.5], circle(55.0)),
+    ] {
+        let top = 14.0 + ((marker[3] - marker[1]) / 2.0).trunc() + 2.0;
+        let boxes = drawn_boxes(map, &point);
+        let label = Some([65.40625, top, 94.59375, top + 11.90625]);
+        assert_eq!(boxes, [label]);
+        assert_eq!(boxes, drawn_boxes(&same, &point));
+        // A second feature at the pixel row 40, added last, its marker as wide as the first's
+        // and as far right of the first label's far edge as its own centre is: its near edge
+        // just past that edge, 95, keeps the label; one pixel left, 94, meets it.
+        let half = (marker[2] - marker[0] + 1.0) / 2.0;
+        for (near, kept) in [(95.0, label), (94.0, None)] {
+            let two = [("Fen", 80.0, 45.0, ""), ("Fen", near + half, 19.0, "")];
+            assert_eq!(drawn_boxes(map, &two)[1], kept, "near edge {near}");
+        }
+    }
+    // A marker outside its scale range is not drawn, but msAddLabelGroup sizes it all the same
+    // (src/maplabel.c:344-352): the label stands where the unscaled pin puts it.
+    let mut unseen = over_pixmap("pin.png", None, None);
+    unseen.layers[0].classes[0].styles[0].max_scale_denom = Some(1.0);
+    assert_eq!(drawn_boxes(&unseen, &point), drawn_boxes(&unscaled, &point));
+}
+
+#[test]
+fn each_label_moves_away_from_its_own_feature_s_pixmap_marker() {
+    // Verifies: G-10
+    // A first style whose SIZE each feature binds sizes each feature's marker by its own value
+    // (src/maplabel.c:350): at the pixel row 14, a pin of 55 moves its label at LC down to 43, one
+    // of 32 to 31, whichever feature comes last.
+    let mut map = over_pixmap("pin.png", None, None);
+    map.layers[0].classes[0].styles[0].size = Some(binding("s"));
+    let features = |sizes: [&str; 2]| {
+        let [a, b] = sizes;
+        format!(
+            r#"{{"type": "FeatureCollection", "features": [
+                {{"type": "Feature", "properties": {{"name": "Fen", "s": "{a}"}},
+                  "geometry": {{"type": "Point", "coordinates": [40, 45]}}}},
+                {{"type": "Feature", "properties": {{"name": "Fen", "s": "{b}"}},
+                  "geometry": {{"type": "Point", "coordinates": [120, 45]}}}}]}}"#
+        )
+    };
+    for (sizes, tops) in [(["55", "32"], [31.0, 43.0]), (["32", "55"], [43.0, 31.0])] {
+        let sources: BTreeMap<String, GeoJsonSource> = [(
+            "places".to_owned(),
+            GeoJsonSource::parse(&features(sizes)).unwrap(),
+        )]
+        .into();
+        let rendered = ready(render_with_files(
+            &map,
+            &sources,
+            &Files,
+            AggRenderer::new(),
+        ));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        let found: Vec<_> = rendered
+            .labels
+            .iter()
+            .map(|l| l.drawn.map(|b| b[1]))
+            .collect();
+        assert_eq!(found, tops.map(Some), "sizes {sizes:?}");
+    }
+}
+
+#[test]
+fn the_label_over_a_pixmap_that_does_not_load_is_left_out_and_the_map_drawn() {
+    // Verifies: G-8
+    // msGetMarkerSize fails where msPreloadImageSymbol does (src/mapsymbol.c:736-738), and so
+    // msAddLabelGroup (src/maplabel.c:350-352) and the map; Forager leaves the label out, with
+    // a warning that names the symbol and its image, and draws the rest of the map.
+    let mut map = over_pixmap("missing.png", None, None);
+    map.layers.push(Layer {
+        name: Some("marks".into()),
+        classes: vec![Class {
+            styles: vec![Style {
+                size: Some(Bound::Value(9.0)),
+                color: Some(Bound::Value(BLUE)),
+                ..Style::default()
+            }],
+            ..Class::default()
+        }],
+        ..map.layers[0].clone()
+    });
+    let fen = collection(&[("Fen", 80.0, 30.0, "")]);
+    let sources: BTreeMap<String, GeoJsonSource> = ["places", "marks"]
+        .map(|name| (name.to_owned(), GeoJsonSource::parse(&fen).unwrap()))
+        .into();
+    let rendered = ready(render_with_files(
+        &map,
+        &sources,
+        &Files,
+        AggRenderer::new(),
+    ));
+    assert!(rendered.labels.is_empty(), "{:?}", rendered.labels);
+    let label = rendered
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "label-not-drawn")
+        .unwrap_or_else(|| panic!("{:?}", rendered.diagnostics));
+    assert!(
+        label.message.contains("symbol `pin`") && label.message.contains("missing.png"),
+        "{}",
+        label.message
+    );
+    let image = rendered.image.unwrap();
+    // The square of 9 at the pixel (80, 29).
+    assert_eq!(ink(&image, (0, 160), (0, 60)), Some([75, 24, 84, 33]));
 }

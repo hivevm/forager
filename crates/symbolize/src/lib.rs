@@ -26,4 +26,6 @@ pub use crate::draw::{
 pub use crate::extent::View;
 pub use crate::line_marker::MAX_MARKER_POINTS;
 pub use crate::style::DEG_TO_RAD;
-pub use crate::symbol::{Mark, mark, marker_size_of, marker_size_with, symbol_ops};
+pub use crate::symbol::{
+    Mark, mark, marker_size_of, marker_size_with, pixmap_marker_size, symbol_ops,
+};

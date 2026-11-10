@@ -1,3 +1,20 @@
+// The tests of a pixmap's anchor point work their values out from MapServer's msAdjustMarkerPos,
+// src/maprendering.c, and msGetMarkerSize, src/mapsymbol.c, of the release pinned in
+// scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Copyright (c) 1996-2011 Regents of the University of Minnesota (src/maprendering.c).
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 //! A pixmap symbol drawn at a point, end to end: a style IR, its image through the resource
 //! loader, and GeoJSON in, an RGBA image out, compared with a reference image of Forager's own
 //! (docs/plan/pixmap-symbols/spec.md, Testing decisions). The positions are read from
@@ -516,4 +533,78 @@ fn a_square_far_outside_the_image_draws_nothing_and_one_far_around_it_samples_th
         assert_eq!(rgb(&image, x, y), Rgba::opaque(171, 170, 194), "({x}, {y})");
     }
     assert!(image.pixels.chunks(4).all(|p| p == [171, 170, 194, 255]));
+}
+
+#[test]
+fn a_pixmap_s_anchor_point_turned_with_it_lies_on_its_point() {
+    // msAdjustMarkerPos, src/maprendering.c:1013-1050, moves the point by (0.5 - anchor) times
+    // the marker's size, turned by sin(-rotation) and cos(-rotation) where the rotation is not 0.
+    // msGetMarkerSize, src/mapsymbol.c:720-799, of the 32 × 32 pin at SIZE 10: size = 10, not 1,
+    // so the width 10 / 32 × 32 = 10 and the height 10 (772-782). ANGLE 45 is the rotation 45 ×
+    // MS_DEG_TO_RAD, sin(-r) = -0.7071067811865475, cos(-r) = 0.7071067811865476.
+    // ANCHORPOINT 0 0: (5, 5), turned (7.0710678118654755, 4.440892098500626e-16).
+    // ANCHORPOINT 0.2 0.7: (0.5 - 0.2) × 10 = 3 and (0.5 - 0.7) × 10 = -1.9999999999999996,
+    // turned (0.7071067811865481, -3.5355339059327373).
+    // ANCHORPOINT 1 1: (-5, -5), turned (-7.0710678118654755, -4.440892098500626e-16).
+    // Unturned at the pixels (20, 25), (50, 25), (80, 25); at ANGLE 45 at (20, 70), (50, 70), (80,
+    // 70). Each is resampled at the scale 10 / 32, the half-side MS_NINT(32 × 0.3125 × 1.415) =
+    // lrint(14.15) = 14, 14 / 2 + 1 = 8 (agg2RenderPixmapSymbol, src/mapagg.cpp:656-683).
+    let files = Files([("icons/pin.png", PIN.to_vec())].into());
+    let anchored = |name: &str, anchor: [f64; 2]| Symbol {
+        anchor_point: Some(anchor),
+        ..pixmap(name, "icons/pin.png")
+    };
+    let symbols = vec![
+        anchored("top-left", [0.0, 0.0]),
+        anchored("inside", [0.2, 0.7]),
+        anchored("bottom-right", [1.0, 1.0]),
+    ];
+    let names = ["a", "b", "c", "d", "e", "f"];
+    let mut layers = Vec::new();
+    for (i, name) in names.iter().enumerate() {
+        let style = Style {
+            size: Some(Bound::Value(10.0)),
+            angle: (i >= 3).then_some(Bound::Value(45.0)),
+            ..symbol_style(i as u32 % 3 + 1)
+        };
+        layers.push(layer(name, RenderMode::Point, vec![style]));
+    }
+    let map = map(symbols, layers);
+    // The pixel (x, y) is the map's (x, 100 - y).
+    let point = |x: u32, y: u32| format!(r#"{{"type": "Point", "coordinates": [{x}, {y}]}}"#);
+    let points = [
+        point(20, 75),
+        point(50, 75),
+        point(80, 75),
+        point(20, 30),
+        point(50, 30),
+        point(80, 30),
+    ];
+    let sources: Vec<(&str, &str)> = names
+        .iter()
+        .copied()
+        .zip(points.iter().map(String::as_str))
+        .collect();
+    let (resampled, blended) = recorded(&map, &files, &sources);
+    assert_eq!(blended, 0);
+    let placed: Vec<(Point, i32)> = resampled.iter().map(|&(at, half, _)| (at, half)).collect();
+    let at = |x: f64, y: f64| (Point { x, y }, 8);
+    assert_eq!(
+        placed,
+        [
+            at(25.0, 30.0),
+            at(53.0, 23.0),
+            at(75.0, 20.0),
+            at(27.071_067_811_865_476, 70.0),
+            at(50.707_106_781_186_546, 66.464_466_094_067_26),
+            at(72.928_932_188_134_52, 70.0),
+        ]
+    );
+    let rendered = render(&map, &files, &sources);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_matches_reference(&rendered.image.unwrap(), "pixmap_anchor_point.png");
 }

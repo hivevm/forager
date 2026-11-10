@@ -33,7 +33,7 @@ use forager_style_ir::{
     Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Layer, Map, Op,
     Position as IrPosition, Rgba, Span, Style, Units,
 };
-use forager_symbolize::{DEG_TO_RAD, View, marker_size_of, vertices};
+use forager_symbolize::{DEG_TO_RAD, Pixmaps, View, marker_size_of, vertices};
 
 use crate::CachedLabel;
 use crate::classes::{self, FeatureProperties, Selector, c_bytes, c_str, color};
@@ -130,6 +130,10 @@ struct Def {
     min_distance: f64,
     /// What an outline adds to the offset from a marker: half its width, scaled.
     outline_grow: f64,
+    /// The width and height of the marker beneath each of its labels, where its class's first
+    /// style varies by no feature and so sizes every feature's marker alike; held once here, not
+    /// for each label (Q-9).
+    marker: Option<(f64, f64)>,
 }
 
 /// A path that stands for a text of line breaks only, which has no box.
@@ -179,8 +183,10 @@ pub(crate) struct Labels<'r, L> {
     label_texts: Vec<Box<str>>,
     /// The styles of the labels cached and their markers.
     styles: LabelStyles,
-    /// The box of the marker beneath each label that has one, by the label's index, ascending.
-    markers: Vec<(u32, [f64; 4])>,
+    /// The width and height of the marker beneath each label whose class's first style varies by
+    /// feature, by the label's index, ascending; the marker of any other label is its
+    /// definition's.
+    markers: Vec<(u32, (f64, f64))>,
     /// Each label's text, held only where a label of the map has a `MINDISTANCE`.
     texts: Option<Vec<Box<[u8]>>>,
     /// The labels already reported, with the diagnostic's code.
@@ -230,12 +236,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// layer is not drawn yet. A label whose `EXPRESSION` does not match a feature is not
     /// collected for it, as `msGetLabelStatus` decides. With `at_once`, the layer's of
     /// `LABELCACHE OFF`, each label is drawn into it instead of cached (see
-    /// [`Self::draw_at_once`]).
+    /// [`Self::draw_at_once`]). A pixmap that a class's first style draws is sized by its image
+    /// among `pixmaps`, loaded before the layer's labels are collected.
     pub(crate) async fn collect<R: Draw>(
         &mut self,
         index: usize,
         point_layer: bool,
         drawn: &[Labelled<'_>],
+        pixmaps: &Pixmaps,
         selector: &mut Selector<'_, '_>,
         mut at_once: Option<&mut R>,
     ) {
@@ -312,15 +320,17 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                         Box::default()
                     };
                     let renderer = at_once.as_deref_mut();
-                    self.feature(at, fixed, feature, style, styles, selector, renderer)
-                        .await;
+                    self.feature(
+                        at, fixed, feature, style, pixmaps, styles, selector, renderer,
+                    )
+                    .await;
                 }
             }
         }
     }
 
     /// Lays out one label of one feature and places it at each of its points, or draws it there
-    /// into `at_once`.
+    /// into `at_once`, the first style of its class sized among the pixmaps beside it.
     #[allow(clippy::too_many_arguments)]
     async fn feature<R: Draw>(
         &mut self,
@@ -328,6 +338,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         fixed: &Fixed<'_>,
         feature: &Feature,
         style: Option<&Style>,
+        pixmaps: &Pixmaps,
         styles: Box<[Style]>,
         selector: &mut Selector<'_, '_>,
         at_once: Option<&mut R>,
@@ -348,10 +359,11 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let label_styles: &[Style] = if styles.is_empty() { written } else { &styles };
         // msDrawLabel moves a label off no marker: the class's style is not read for it.
         let style = style.filter(|_| at_once.is_none());
-        let settled = settle(fixed, &bound, lines.len(), style, self.map).and_then(|settled| {
-            let marker = label_styles::label_marker(label_styles, self.map, fixed.factor);
-            Ok((settled, marker.map_err(|why| ("label-not-drawn", why))?))
-        });
+        let settled =
+            settle(fixed, &bound, lines.len(), style, pixmaps, self.map).and_then(|settled| {
+                let marker = label_styles::label_marker(label_styles, self.map, fixed.factor);
+                Ok((settled, marker.map_err(|why| ("label-not-drawn", why))?))
+            });
         let ((position, align, marker), label_marker) = match settled {
             Ok(settled) => settled,
             Err((code, why)) => {
@@ -589,7 +601,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 
     /// Caches `template` at each point of `feature` inside the map's extent, as
-    /// `pointLayerDrawShape` adds a label at each, with the marker of `marker`'s size beneath;
+    /// `pointLayerDrawShape` adds a label at each, with the marker of `marker`'s size beneath,
+    /// held by the label's definition where the class's first style varies by no feature;
     /// whether any was cached.
     fn cache(
         &mut self,
@@ -598,6 +611,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         marker: Option<(f64, f64)>,
         text: &str,
     ) -> bool {
+        let (layer, class, _) = self.defs[template.def as usize].at;
+        let per_label = self.map.layers[layer].classes[class]
+            .styles
+            .first()
+            .is_some_and(classes::varies);
+        if !per_label {
+            self.defs[template.def as usize].marker = marker;
+        }
         let extent = self.view.extent;
         let mut cached = false;
         for c in vertices(&feature.geometry) {
@@ -619,12 +640,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 continue;
             }
             let index = self.cached.len() as u32;
-            // msAddLabelGroup caches the marker of the class's first style: its box, whose far
-            // corner lies `w - 1` and `h - 1` from its near one.
-            if let Some((w, h)) = marker {
-                let (min_x, min_y) = (point.x - 0.5 * w, point.y - 0.5 * h);
-                let bounds = [min_x, min_y, min_x + (w - 1.0), min_y + (h - 1.0)];
-                self.markers.push((index, bounds));
+            if let Some(size) = marker.filter(|_| per_label) {
+                self.markers.push((index, size));
             }
             self.cached.push(Cached { point, ..*template });
             if let Some(texts) = &mut self.texts {
@@ -647,6 +664,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 partials: fixed.partials,
                 min_distance: fixed.min_distance * fixed.factor,
                 outline_grow: fixed.outline_width / 2.0 * fixed.factor,
+                marker: None,
             });
             (defs.len() - 1) as u32
         })
@@ -873,7 +891,7 @@ struct Cache<'c> {
     cached: &'c [Cached],
     paths: &'c [TextPath],
     defs: &'c [Def],
-    markers: &'c [(u32, [f64; 4])],
+    markers: &'c [(u32, (f64, f64))],
     styles: &'c LabelStyles,
     texts: Option<&'c [Box<[u8]>]>,
     map: &'c Map,
@@ -891,11 +909,18 @@ impl Members for Cache<'_> {
     fn member(&self, index: usize) -> Member {
         let label = &self.cached[index];
         let def = &self.defs[label.def as usize];
+        // msAddLabelGroup caches the marker of the class's first style: its box about the
+        // label's point, whose far corner lies `w - 1` and `h - 1` from its near one.
         let marker = self
             .markers
             .binary_search_by_key(&(index as u32), |(i, _)| *i)
             .ok()
-            .map(|i| self.markers[i].1);
+            .map(|i| self.markers[i].1)
+            .or(def.marker)
+            .map(|(w, h)| {
+                let (min_x, min_y) = (label.point.x - 0.5 * w, label.point.y - 0.5 * h);
+                [min_x, min_y, min_x + (w - 1.0), min_y + (h - 1.0)]
+            });
         // computeMarkerBounds at the label's point.
         let (layer, class, n) = def.at;
         let written = &self.map.layers[layer].classes[class].labels[n].styles;
@@ -958,12 +983,16 @@ impl Members for Cache<'_> {
 type Settled = (Position, Align, Option<(f64, f64)>);
 
 /// Where a label stands for one feature: its position, its alignment over `num_lines` lines, and
-/// the size of the marker it moves away from; or the diagnostic's code and why it is not drawn.
+/// the size of the marker it moves away from, that of `style`, a pixmap's by its image among
+/// `pixmaps`; or the diagnostic's code and why it is not drawn. A pixmap whose image does not
+/// load fails msAddLabelGroup and the map in MapServer (`src/maplabel.c:350-352`); its label is
+/// left out here, and the rest of the map drawn.
 fn settle(
     fixed: &Fixed<'_>,
     bound: &BoundLabel,
     num_lines: usize,
     style: Option<&Style>,
+    pixmaps: &Pixmaps,
     map: &Map,
 ) -> Result<Settled, (&'static str, String)> {
     let Some(position) = bound.position else {
@@ -985,7 +1014,7 @@ fn settle(
     // moves away from.
     let marker = match style {
         None => None,
-        Some(style) => match marker_size_of(style, &map.symbols, fixed.factor) {
+        Some(style) => match marker_size_of(style, &map.symbols, pixmaps, fixed.factor) {
             Ok(size) => Some(size),
             Err(what) => {
                 let why =

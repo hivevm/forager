@@ -34,6 +34,7 @@ use forager_style_ir::c::lrint;
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use crate::bounds;
+use crate::draw::Pixmaps;
 use crate::style::{DEG_TO_RAD, fixed};
 
 /// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16
@@ -239,14 +240,46 @@ fn marker_size_at(
     }
 }
 
+/// msGetMarkerSize, `src/mapsymbol.c:720-799`, for a pixmap symbol whose image is `width` by
+/// `height` pixels, of `style` at the size `size` and at `scale_factor`: the size, or the image's
+/// height without one (msSymbolGetDefaultSize), scaled and cut to whole pixels, then bounded by
+/// `MINSIZE` and `MAXSIZE` unscaled (750-755); at a size of 1 the image's own width and height,
+/// otherwise the size high and as wide as the image is at that height (772-782).
+pub fn pixmap_marker_size(
+    style: &Style,
+    size: Option<f64>,
+    width: u32,
+    height: u32,
+    scale_factor: f64,
+) -> (f64, f64) {
+    // msSymbolGetDefaultSize, src/mapsymbol.c:74-79 and 91-92: 1 for an image without height.
+    let default_size = if height > 0 { f64::from(height) } else { 1.0 };
+    // `size` is an int there: each assignment cuts the fraction.
+    let pixels = (size.unwrap_or(default_size) * scale_factor).trunc();
+    let pixels = bounds::marker_pixels(pixels, style);
+    if pixels == 1.0 {
+        (f64::from(width), f64::from(height))
+    } else {
+        // MS_MAX with the starting 0 of *width and *height.
+        (
+            bounds::ms_max(0.0, pixels / f64::from(height) * f64::from(width)),
+            bounds::ms_max(0.0, pixels),
+        )
+    }
+}
+
 /// msGetMarkerSize of `style` among `symbols` at `scale_factor`, the size of the marker a label
 /// of a point moves away from: 1 by 1 for MapServer's default symbol, a vector's, an ellipse's,
-/// or any other symbol's MapServer sizes by its extent as it sizes them; the error names a symbol
-/// whose size needs its image or its font, which is not read for it yet, or one the symbol set
-/// does not hold, for which MapServer fails the map.
+/// or any other symbol's MapServer sizes by its extent as it sizes them, and a pixmap's by its
+/// image among `pixmaps`, which msGetMarkerSize loads where it has not been
+/// (`src/mapsymbol.c:736-738`); the error names an SVG or a TrueType symbol, whose size is not
+/// computed yet, a pixmap that names no image or whose image is not among `pixmaps` or does not
+/// load, or a symbol the symbol set does not hold; for the pixmap and the missing symbol,
+/// MapServer fails the map.
 pub fn marker_size_of(
     style: &Style,
     symbols: &[Symbol],
+    pixmaps: &Pixmaps,
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
     marker_size_with(
@@ -254,17 +287,19 @@ pub fn marker_size_of(
         fixed(&style.size),
         &style.symbol,
         symbols,
+        Some(pixmaps),
         scale_factor,
     )
 }
 
 /// [`marker_size_of`] of `style` at the size `size` and of the symbol `symbol` in place of its
-/// own, as a feature binds them.
+/// own, as a feature binds them; without `pixmaps`, a pixmap's size is not computed.
 pub fn marker_size_with(
     style: &Style,
     size: Option<f64>,
     symbol: &Option<Bound<SymbolRef>>,
     symbols: &[Symbol],
+    pixmaps: Option<&Pixmaps>,
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
     match resolve(symbol, symbols) {
@@ -273,15 +308,37 @@ pub fn marker_size_with(
         Resolved::Missing(index) => Err(format!(
             "symbol {index}, which the symbol set does not hold"
         )),
-        Resolved::Found(_, symbol) => match symbol.kind {
-            SymbolKind::Pixmap | SymbolKind::Svg | SymbolKind::Truetype => Err(format!(
+        Resolved::Found(index, symbol) => match (symbol.kind, pixmaps) {
+            (SymbolKind::Pixmap, Some(pixmaps)) => {
+                let image = match &symbol.image {
+                    None => Err("the pixmap symbol names no image".to_owned()),
+                    Some(path) => pixmaps.get(path).cloned().unwrap_or_else(|| {
+                        Err(format!("the image {path} is not loaded for this render"))
+                    }),
+                };
+                let named = symbol
+                    .name
+                    .as_deref()
+                    .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"));
+                let image =
+                    image.map_err(|why| format!("{named}, whose size is not known: {why}"))?;
+                Ok(pixmap_marker_size(
+                    style,
+                    size,
+                    image.width(),
+                    image.height(),
+                    scale_factor,
+                ))
+            }
+            (SymbolKind::Pixmap | SymbolKind::Svg | SymbolKind::Truetype, _) => Err(format!(
                 "a {:?} symbol, whose size is not computed yet",
                 symbol.kind
             )
             .to_lowercase()),
-            SymbolKind::Vector | SymbolKind::Ellipse | SymbolKind::Simple | SymbolKind::Hatch => {
-                Ok(marker_size_at(style, size, symbol, scale_factor))
-            }
+            (
+                SymbolKind::Vector | SymbolKind::Ellipse | SymbolKind::Simple | SymbolKind::Hatch,
+                _,
+            ) => Ok(marker_size_at(style, size, symbol, scale_factor)),
         },
     }
 }
@@ -303,14 +360,20 @@ pub(crate) fn anchor_shift(anchor: [f64; 2], size: (f64, f64), rotation: f64) ->
     (ox * cos - oy * sin, ox * sin + oy * cos)
 }
 
-/// The rest of msAdjustMarkerPos after [`shifted`]: the point moved so that the symbol's anchor
-/// point, turned with the symbol, lies on `at`, of the size msGetMarkerSize gives at `factor`.
-fn anchored(at: Point, style: &Style, symbol: &Symbol, rotation: f64, factor: f64) -> Point {
+/// The rest of msAdjustMarkerPos after [`shifted`], `src/maprendering.c:1024-1046`: the point
+/// moved so that the symbol's anchor point, turned with the symbol, lies on `at`, of the size
+/// msGetMarkerSize gives, which `size` computes only for an anchor other than the centre.
+pub(crate) fn anchored(
+    at: Point,
+    symbol: &Symbol,
+    rotation: f64,
+    size: impl FnOnce() -> (f64, f64),
+) -> Point {
     let anchor = symbol.anchor_point.unwrap_or([0.5, 0.5]);
     if anchor == [0.5, 0.5] {
         return at;
     }
-    let (ox, oy) = anchor_shift(anchor, marker_size(style, symbol, factor), rotation);
+    let (ox, oy) = anchor_shift(anchor, size(), rotation);
     Point {
         x: at.x + ox,
         y: at.y + oy,
@@ -351,13 +414,9 @@ pub(crate) fn shifted(at: Point, style: &Style, factor: f64) -> Point {
 /// msAdjustMarkerPos, filled first, then outlined.
 pub fn symbol_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbol: &Symbol, factor: f64) {
     let s = symbol_style(style, symbol, factor);
-    let at = anchored(
-        shifted(at, style, factor),
-        style,
-        symbol,
-        s.rotation,
-        factor,
-    );
+    let at = anchored(shifted(at, style, factor), symbol, s.rotation, || {
+        marker_size(style, symbol, factor)
+    });
     render(ops, at, symbol, &s);
 }
 

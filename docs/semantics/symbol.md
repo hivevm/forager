@@ -62,9 +62,15 @@ counted against the bytes of the render's images, even where none of the feature
 inside the map's extent; MapServer reads it only when `msDrawMarkerSymbol` runs, so there a pixmap
 no point draws is never read, and one that does not load fails nothing. Its scale is the
 style's size, its default the image's height, bounded by `MINSIZE` and `MAXSIZE`, over the
-image's height; so without a size, and with `MAXSIZE` not below the height, it is 1. Unturned and
-at a scale of 1, the image is moved by the style's `OFFSET` and `POLAROFFSET` as a symbol is, and
-blended unscaled, every pixel at full cover, its top-left pixel at `MS_NINT(x - width / 2.)` and
+image's height; so without a size, and with `MAXSIZE` not below the height, it is 1. The point is
+moved by the style's `OFFSET` and `POLAROFFSET` as a symbol's is, and by the symbol's anchor point,
+turned with the image, as a vector symbol's (`msAdjustMarkerPos`), at the size `msGetMarkerSize`
+gives a pixmap: the style's size, or the image's height without one, times the scale factor, cut to
+whole pixels, then bounded by `MINSIZE` and `MAXSIZE` unscaled and cut again; at a size of 1 the
+image's own width and height, otherwise that size high and as wide as the image is at that height. A
+40 × 20 image is 40 × 20 at `SIZE 1`, 20 × 10 at `SIZE 10.9`, and 60 × 30 without a size at a scale
+factor of 1.5. Unturned and at a scale of 1, the image is blended unscaled at the point so moved,
+every pixel at full cover, its top-left pixel at `MS_NINT(x - width / 2.)` and
 `MS_NINT(y - height / 2.)`: a point at the pixel (50.5, 41.5) puts a 32 × 32 image's top-left
 pixel at (34, 26), `lrint` rounding 34.5 and 25.5 half to even. Neither the style's colour nor
 its opacity reaches the image (`computeSymbolStyle`). A scale of 0 draws nothing
@@ -96,7 +102,8 @@ past 4096 × 4096 pixels by its header, or past what the images one render holds
 to (Q-9) — leaves its style undrawn, and the layer warns with `pixmap-not-drawn`, once per symbol,
 naming the symbol, its path, and why; the rest of the map draws. This deviates on purpose, by the
 maintainer's decision, from MapServer: there the symbol fails to load, so the layer fails to draw,
-and `msDrawMap` (`src/mapdraw.c`) returns no map at all.
+and `msDrawMap` (`src/mapdraw.c`) returns no map at all. The label over such a pixmap, its class's
+first style, is left out with `label-not-drawn` ([label.md](label.md)).
 
 **A hatch over a polygon.** A polygon layer's style whose symbol is a hatch fills the polygon
 with parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprendering.c` and
@@ -146,11 +153,9 @@ draws the same.
 
 **Not yet as MapServer draws it at a point.** A point layer's style without a symbol it draws —
 none, 0, a TrueType, SVG, hatch, or simple symbol, or a name no symbol carries — draws a square of
-its size, where MapServer draws nothing for none and 0 and the symbol or image otherwise. A
-pixmap's `ANCHORPOINT` is not applied
-yet: its image is centred on the point. A style a `GEOMTRANSFORM` places
-([`style-symbol.md`](style-symbol.md)) draws nothing for none and 0, as MapServer does, its pixmap
-as at a point, and the square for the others, at a scale factor of 1. A
+its size, where MapServer draws nothing for none and 0 and the symbol or image otherwise. A style a
+`GEOMTRANSFORM` places ([`style-symbol.md`](style-symbol.md)) draws nothing for none and 0, as
+MapServer does, its pixmap as at a point, and the square for the others, at a scale factor of 1. A
 symbol, a line, a polygon's offset and outline, and a hatch are scaled by `RESOLUTION` over
 `DEFRESOLUTION`; `SIZEUNITS` other than `pixels` and `SYMBOLSCALEDENOM` do not scale them yet
 ([`scale.md`](scale.md)).
