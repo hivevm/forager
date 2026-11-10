@@ -255,7 +255,7 @@ fn an_unusable_epsg_table_is_reported() {
 
 #[cfg(unix)]
 #[test]
-fn an_endless_epsg_file_is_cut_at_the_limit() {
+fn an_endless_epsg_file_is_refused_unread() {
     // Verifies: Q-9
     let mapfile = fixture("wgs84.map");
     let output = forager(&["read", mapfile.to_str().unwrap(), "--epsg", "/dev/zero"]);
@@ -263,6 +263,6 @@ fn an_endless_epsg_file_is_cut_at_the_limit() {
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
-            .contains("exceeds the limit")
+            .contains("not a regular file")
     );
 }

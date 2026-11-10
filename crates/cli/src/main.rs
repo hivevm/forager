@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use forager_adapter_epsg::EpsgTable;
-use forager_cli::{FileLoader, now, read_bounded};
+use forager_cli::{FileLoader, now, read_text};
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath};
 use forager_style_ir::{Diagnostic, StyleDocument};
 
@@ -164,7 +164,7 @@ fn load(
     let path = ResourcePath::new(&name)
         .map_err(|e| eprintln!("forager: {}: {e}", mapfile.display()))
         .ok()?;
-    let document = load_document(&path, &loader, &resolver)
+    let document = load_document(&path, &loader.for_load(), &resolver)
         .map_err(|diagnostic| eprintln!("{diagnostic}"))
         .ok()??;
     Some((document, loader))
@@ -251,7 +251,7 @@ fn report(diagnostic: &Diagnostic) -> ExitCode {
 /// The EPSG table a host file supplies (ADR-0023), within the size limit of a source. Each
 /// unusable line is a line of the message.
 fn read_epsg(file: &Path) -> Result<EpsgTable, String> {
-    EpsgTable::with_table(&read_bounded(file)?).map_err(|errors| {
+    EpsgTable::with_table(&read_text(file)?).map_err(|errors| {
         errors
             .iter()
             .map(ToString::to_string)

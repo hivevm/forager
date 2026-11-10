@@ -6,7 +6,7 @@
 
 mod files;
 
-pub use crate::files::FileLoader;
+pub use crate::files::{FileLoader, MapfileLoader};
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -19,7 +19,7 @@ use forager_ports::{FeatureQuery, FeatureSource, ResourceLoader, ResourcePath, S
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{Diagnostic, Map};
 
-use crate::files::DataLoader;
+use crate::files::{DataLoader, read_bounded};
 
 /// The largest data file the CLI reads, a GeoJSON file or one of a shapefile's files (Q-9).
 const MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
@@ -175,21 +175,17 @@ impl FeatureSource for Source {
 }
 
 fn read_source(file: &Path) -> Result<GeoJsonSource, String> {
-    GeoJsonSource::parse(&read_bounded(file)?).map_err(|e| e.message)
+    GeoJsonSource::parse(&read_text(file)?).map_err(|e| e.message)
 }
 
-/// A text file of at most the limit of a data source (Q-9). The limit bounds what is read, not only
-/// what the file system reports, so that a device or a pipe cannot exhaust memory.
+/// A text file of at most the limit of a data source (Q-9), read as every file the CLI is handed
+/// is: a device or a pipe is refused, and the limit bounds what is read.
 ///
 /// # Errors
 ///
-/// A file that cannot be read, that exceeds the limit, or that is not UTF-8 text.
-pub fn read_bounded(file: &Path) -> Result<String, String> {
-    use std::io::Read;
-    let mut bytes = Vec::new();
-    std::fs::File::open(file)
-        .and_then(|f| f.take(MAX_SOURCE_BYTES + 1).read_to_end(&mut bytes))
-        .map_err(|e| e.to_string())?;
+/// A file that cannot be read or is not regular, that exceeds the limit, or that is not UTF-8 text.
+pub fn read_text(file: &Path) -> Result<String, String> {
+    let bytes = read_bounded(file, MAX_SOURCE_BYTES).map_err(|e| e.to_string())?;
     if bytes.len() as u64 > MAX_SOURCE_BYTES {
         return Err(format!(
             "the file exceeds the limit of {MAX_SOURCE_BYTES} bytes"
@@ -238,7 +234,7 @@ mod tests {
             .unwrap();
             let (base, name) = FileLoader::for_mapfile(&dir.join("m.map"), None).unwrap();
             let path = ResourcePath::new(&name).unwrap();
-            let loaded = now(forager_mapfile::load(&path, &base, None)).unwrap();
+            let loaded = now(forager_mapfile::load(&path, &base.for_load(), None)).unwrap();
             let map = loaded.document.expect("the mapfile loads").map;
             render(&map, &[], &base)
         };
