@@ -25,9 +25,9 @@ use std::collections::BTreeSet;
 use forager_expr::{Evaluator, Failure, Lookup};
 use forager_ports::{Feature, Properties, Value};
 use forager_style_ir::c::{atof, atoi, ms_nint};
-use forager_style_ir::{
-    Bound, Diagnostic, Expr, Layer, LineOffset, Map, Rgba, Span, Style, Symbol, SymbolRef, Units,
-};
+use forager_style_ir::{Bound, Diagnostic, Expr, Layer, Map, Rgba, Span, Style, Symbol, Units};
+
+use crate::bindable::{self, Field, Written};
 use forager_symbolize::View;
 
 /// A feature's properties as the evaluator reads them. A name is found without regard to ASCII
@@ -306,39 +306,9 @@ impl<'a> Selector<'a, '_> {
             failures: Vec::new(),
         };
         let mut bound = style.clone();
-        bound.color = bind.color(&style.color);
-        bound.outline_color = bind.color(&style.outline_color);
-        // bindStyle sets an OPACITY bound to an empty value to 100.
-        bound.opacity = bind.number(&style.opacity, 100.0);
-        bound.angle = bind.number(&style.angle, 360.0);
-        bound.size = bind.number(&style.size, 1.0);
-        bound.width = bind.number(&style.width, 1.0);
-        // bindStyle computes no OUTLINEWIDTH from an expression: the style keeps its 0.
-        bound.outline_width = match &style.outline_width {
-            Some(Bound::Expr(_)) => Some(Bound::Value(0.0)),
-            other => bind.number(other, 1.0),
-        };
-        bound.offset = style.offset.as_ref().map(|[x, y]| {
-            [
-                bind.number(&Some(x.clone()), 0.0).expect("a value"),
-                bind.number(&Some(y.clone()), 0.0).expect("a value"),
-            ]
-        });
-        bound.polar_offset = style.polar_offset.as_ref().map(|[d, a]| {
-            [
-                bind.number(&Some(d.clone()), 0.0).expect("a value"),
-                bind.number(&Some(a.clone()), 0.0).expect("a value"),
-            ]
-        });
-        bound.line_offset = style.line_offset.as_ref().map(|line| LineOffset {
-            distance: bind
-                .number(&Some(line.distance.clone()), 0.0)
-                .expect("a value"),
-            both_sides: line.both_sides,
-        });
-        if let Some(Bound::Binding { binding }) = &style.symbol {
-            let name = properties.text(binding).unwrap_or_default();
-            bound.symbol = Some(Bound::Value(symbol_index(&name, symbols)));
+        for field in Field::of(style) {
+            let value = bind.value(field, style, symbols);
+            field.set(value, &mut bound);
         }
         for failure in std::mem::take(&mut bind.failures) {
             self.reports.report(
@@ -384,31 +354,7 @@ pub(crate) fn unbound(style: &Style) -> Cow<'_, Style> {
 
 /// Whether a property the engine draws varies by feature.
 pub(crate) fn varies(style: &Style) -> bool {
-    fn bound<T>(property: &Option<Bound<T>>) -> bool {
-        property
-            .as_ref()
-            .is_some_and(|p| !matches!(p, Bound::Value(_)))
-    }
-    bound(&style.color)
-        || bound(&style.outline_color)
-        || bound(&style.opacity)
-        || bound(&style.angle)
-        || bound(&style.size)
-        || bound(&style.width)
-        || bound(&style.outline_width)
-        || style
-            .offset
-            .as_ref()
-            .is_some_and(|pair| pair.iter().any(|p| !matches!(p, Bound::Value(_))))
-        || style
-            .polar_offset
-            .as_ref()
-            .is_some_and(|pair| pair.iter().any(|p| !matches!(p, Bound::Value(_))))
-        || style
-            .line_offset
-            .as_ref()
-            .is_some_and(|line| !matches!(line.distance, Bound::Value(_)))
-        || matches!(style.symbol, Some(Bound::Binding { .. }))
+    Field::of(style).next().is_some()
 }
 
 /// msScaleInBounds: whether `scale` lies in `[min, max)`; any scale where it is not above 0.
@@ -498,16 +444,16 @@ pub(crate) fn layer_scale_factor(map: &Map, layer: &Layer, cellsize: f64, scale_
     }
 }
 
-/// A symbol by its name, as msGetSymbolIndex finds it, without regard to case; 0, the default
+/// The index of a symbol by its name, as msGetSymbolIndex finds it, without regard to case; 0, the default
 /// symbol, for a name the symbol set does not hold, which MapServer would next read as an image
 /// file, not drawn yet.
-fn symbol_index(name: &str, symbols: &[Symbol]) -> SymbolRef {
+fn symbol_index(name: &str, symbols: &[Symbol]) -> u32 {
     let position = symbols.iter().position(|s| {
         s.name
             .as_deref()
             .is_some_and(|n| n.eq_ignore_ascii_case(name))
     });
-    SymbolRef::Index(position.map_or(0, |p| p as u32 + 1))
+    position.map_or(0, |p| p as u32 + 1)
 }
 
 struct Binder<'a> {
@@ -528,32 +474,55 @@ pub(crate) fn c_str(text: &str) -> &str {
 }
 
 impl Binder<'_> {
+    /// The value of `field` of `style`, which varies by feature, bound to the feature as
+    /// bindStyle binds it, a symbol's name found among `symbols`.
+    fn value(&mut self, field: Field, style: &Style, symbols: &[Symbol]) -> bindable::Value {
+        match field.written(style) {
+            Written::Number {
+                property: Some(Bound::Expr(_)),
+                computes: false,
+                ..
+            } => bindable::Value::Number(0.0),
+            Written::Number {
+                property, unset, ..
+            } => bindable::Value::Number(self.number(property, unset)),
+            Written::Color(property) => bindable::Value::Color(self.color(property)),
+            Written::Symbol(property) => {
+                let name = match property {
+                    Some(Bound::Binding { binding }) => self.properties.text(binding),
+                    _ => None,
+                };
+                bindable::Value::Symbol(symbol_index(&name.unwrap_or_default(), symbols))
+            }
+        }
+    }
+
     /// A number: a binding as bindDoubleAttribute reads it, `unset` where the value is empty; an
     /// expression as msEvalDoubleExpression gives it, 0 where it fails.
-    fn number(&mut self, property: &Option<Bound<f64>>, unset: f64) -> Option<Bound<f64>> {
-        let value = match property.as_ref()? {
-            Bound::Value(v) => *v,
-            Bound::Binding { binding } => {
+    fn number(&mut self, property: Option<&Bound<f64>>, unset: f64) -> f64 {
+        match property {
+            None => 0.0,
+            Some(Bound::Value(v)) => *v,
+            Some(Bound::Binding { binding }) => {
                 let text = self.properties.text(binding).unwrap_or_default();
                 let bytes = c_bytes(&text);
                 if bytes.is_empty() { unset } else { atof(bytes) }
             }
-            Bound::Expr(expr) => match self.evaluator.number(expr, self.properties) {
+            Some(Bound::Expr(expr)) => match self.evaluator.number(expr, self.properties) {
                 Ok(value) => value,
                 Err(failure) => {
                     self.failures.push(failure);
                     0.0
                 }
             },
-        };
-        Some(Bound::Value(value))
+        }
     }
 
     /// A colour: a binding's value or an expression's text as bindColorAttribute reads it; none
     /// where it does not read.
-    fn color(&mut self, property: &Option<Bound<Rgba>>) -> Option<Bound<Rgba>> {
-        let text = match property.as_ref()? {
-            Bound::Value(v) => return Some(Bound::Value(*v)),
+    fn color(&mut self, property: Option<&Bound<Rgba>>) -> Option<Rgba> {
+        let text = match property? {
+            Bound::Value(v) => return Some(*v),
             Bound::Binding { binding } => self
                 .properties
                 .text(binding)
@@ -567,7 +536,7 @@ impl Binder<'_> {
                 }
             },
         };
-        color(&text).map(Bound::Value)
+        color(&text)
     }
 }
 

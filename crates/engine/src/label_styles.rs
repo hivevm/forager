@@ -20,13 +20,12 @@ use std::borrow::Cow;
 
 use forager_label::{Bounds, Member, Placement, label_poly_at, marker_bounds};
 use forager_render::{DisplayItem, Draw, Point};
-use forager_style_ir::{
-    Bound, GeomTransform, Label, Map, Rgba, Style, Symbol, SymbolKind, SymbolRef,
-};
+use forager_style_ir::{Bound, GeomTransform, Label, Map, Style, Symbol, SymbolKind, SymbolRef};
 use forager_symbolize::{
     Canvas, Mark, Resolved, View, mark, marker_size_with, resolve, shade, symbol_ops,
 };
 
+use crate::bindable::{Field, Value};
 use crate::classes;
 
 /// The kind of a label's style that is drawn: by its `GEOMTRANSFORM`, on the box around the text,
@@ -138,13 +137,20 @@ struct MarkerValues {
 impl MarkerValues {
     /// The values of `style` as written, a value that varies by feature taken as none.
     fn of(style: &Style) -> Self {
-        let value = |p: &Option<Bound<f64>>| p.as_ref().and_then(Bound::value);
+        Self::read(|field| field.written_value(style))
+    }
+
+    /// The values `value` gives by the properties of [`Field::ALL`], each that gives none taken
+    /// as unset.
+    fn read(value: impl Fn(Field) -> Option<Value>) -> Self {
+        let number = |field| match value(field) {
+            Some(Value::Number(n)) => Some(n),
+            _ => None,
+        };
         Self {
-            size: value(&style.size),
-            angle: value(&style.angle).unwrap_or(0.0),
-            offset: style.offset.as_ref().map_or([0.0, 0.0], |[x, y]| {
-                [x, y].map(|o| o.value().unwrap_or(0.0))
-            }),
+            size: number(Field::Size),
+            angle: number(Field::Angle).unwrap_or(0.0),
+            offset: [0, 1].map(|i| number(Field::Offset(i)).unwrap_or(0.0)),
         }
     }
 }
@@ -170,132 +176,6 @@ fn marker_of(
         angle: values.angle,
         offset: values.offset.map(|o| o * factor),
     })
-}
-
-/// A property of a label's style that varies by feature, as [`classes::varies`] finds it: one
-/// whose written value is a binding or an expression, which `bindLabel` binds to each feature.
-#[derive(Clone, Copy)]
-enum Field {
-    Color,
-    OutlineColor,
-    Opacity,
-    Angle,
-    Size,
-    Width,
-    OutlineWidth,
-    Offset(usize),
-    PolarOffset(usize),
-    LineOffset,
-    Symbol,
-}
-
-impl Field {
-    /// The properties of `style` that vary by feature, in the order they are held.
-    fn of(style: &Style) -> impl Iterator<Item = Field> {
-        fn varies<T>(p: Option<&Bound<T>>) -> bool {
-            p.is_some_and(|p| !matches!(p, Bound::Value(_)))
-        }
-        let pair = |p: &Option<[Bound<f64>; 2]>, i| varies(p.as_ref().map(|p| &p[i]));
-        [
-            (varies(style.color.as_ref()), Field::Color),
-            (varies(style.outline_color.as_ref()), Field::OutlineColor),
-            (varies(style.opacity.as_ref()), Field::Opacity),
-            (varies(style.angle.as_ref()), Field::Angle),
-            (varies(style.size.as_ref()), Field::Size),
-            (varies(style.width.as_ref()), Field::Width),
-            (varies(style.outline_width.as_ref()), Field::OutlineWidth),
-            (pair(&style.offset, 0), Field::Offset(0)),
-            (pair(&style.offset, 1), Field::Offset(1)),
-            (pair(&style.polar_offset, 0), Field::PolarOffset(0)),
-            (pair(&style.polar_offset, 1), Field::PolarOffset(1)),
-            (
-                varies(style.line_offset.as_ref().map(|l| &l.distance)),
-                Field::LineOffset,
-            ),
-            (
-                matches!(style.symbol, Some(Bound::Binding { .. })),
-                Field::Symbol,
-            ),
-        ]
-        .into_iter()
-        .filter_map(|(varies, field)| varies.then_some(field))
-    }
-
-    /// The field's value in `style`, bound to a feature.
-    fn value(self, style: &Style) -> Value {
-        let number =
-            |p: Option<&Bound<f64>>| Value::Number(p.and_then(Bound::value).unwrap_or(0.0));
-        let color = |c: &Option<Bound<Rgba>>| Value::Color(c.as_ref().and_then(Bound::value));
-        let pair = |p: &Option<[Bound<f64>; 2]>, i: usize| number(p.as_ref().map(|p| &p[i]));
-        match self {
-            Field::Color => color(&style.color),
-            Field::OutlineColor => color(&style.outline_color),
-            Field::Opacity => number(style.opacity.as_ref()),
-            Field::Angle => number(style.angle.as_ref()),
-            Field::Size => number(style.size.as_ref()),
-            Field::Width => number(style.width.as_ref()),
-            Field::OutlineWidth => number(style.outline_width.as_ref()),
-            Field::Offset(i) => pair(&style.offset, i),
-            Field::PolarOffset(i) => pair(&style.polar_offset, i),
-            Field::LineOffset => number(style.line_offset.as_ref().map(|l| &l.distance)),
-            // A bound symbol is an index: binding resolves a name (classes::symbol_index).
-            Field::Symbol => Value::Symbol(match &style.symbol {
-                Some(Bound::Value(SymbolRef::Index(index))) => *index,
-                _ => 0,
-            }),
-        }
-    }
-
-    /// Sets the field of `style` to `value`, as [`Field::value`] took it.
-    fn set(self, value: Value, style: &mut Style) {
-        let number = || match value {
-            Value::Number(n) => Bound::Value(n),
-            _ => unreachable!("a number field holds a number"),
-        };
-        let color = || match value {
-            Value::Color(c) => c.map(Bound::Value),
-            _ => unreachable!("a colour field holds a colour"),
-        };
-        match self {
-            Field::Color => style.color = color(),
-            Field::OutlineColor => style.outline_color = color(),
-            Field::Opacity => style.opacity = Some(number()),
-            Field::Angle => style.angle = Some(number()),
-            Field::Size => style.size = Some(number()),
-            Field::Width => style.width = Some(number()),
-            Field::OutlineWidth => style.outline_width = Some(number()),
-            Field::Offset(i) => {
-                if let Some(pair) = &mut style.offset {
-                    pair[i] = number();
-                }
-            }
-            Field::PolarOffset(i) => {
-                if let Some(pair) = &mut style.polar_offset {
-                    pair[i] = number();
-                }
-            }
-            Field::LineOffset => {
-                if let Some(line) = &mut style.line_offset {
-                    line.distance = number();
-                }
-            }
-            Field::Symbol => {
-                let Value::Symbol(index) = value else {
-                    unreachable!("a symbol field holds a symbol")
-                };
-                style.symbol = Some(Bound::Value(SymbolRef::Index(index)));
-            }
-        }
-    }
-}
-
-/// A value of a style's property bound to a feature: a colour, `None` where it does not read, a
-/// number, or a symbol's index.
-#[derive(Clone, Copy)]
-enum Value {
-    Color(Option<Rgba>),
-    Number(f64),
-    Symbol(u32),
 }
 
 /// The fields of a definition's styles that vary by feature, each with its style's index.
@@ -434,23 +314,17 @@ impl LabelStyles {
         let run = self.run(text)?;
         let fields = &self.layouts[run.layout as usize].1;
         let at = run.at + (text - run.text) as usize * fields.len();
-        let mut values = MarkerValues::of(style);
-        let mut symbol = None;
-        for (&(s, field), &value) in fields.iter().zip(&self.values[at..]) {
-            match (s == i, field, value) {
-                (true, Field::Size, Value::Number(n)) => values.size = Some(n),
-                (true, Field::Angle, Value::Number(n)) => values.angle = n,
-                (true, Field::Offset(k), Value::Number(n)) => values.offset[k] = n,
-                (true, Field::Symbol, Value::Symbol(index)) => {
-                    symbol = Some(Bound::Value(SymbolRef::Index(index)));
-                }
-                _ => {}
-            }
-        }
-        let symbol = if symbol.is_some() {
-            &symbol
-        } else {
-            &style.symbol
+        let held = |field| {
+            fields
+                .iter()
+                .zip(&self.values[at..])
+                .find(|&(&(s, f), _)| s == i && f == field)
+                .map(|(_, &value)| value)
+        };
+        let values = MarkerValues::read(|field| held(field).or_else(|| field.written_value(style)));
+        let symbol = match held(Field::Symbol) {
+            Some(Value::Symbol(index)) => &Some(Bound::Value(SymbolRef::Index(index))),
+            _ => &style.symbol,
         };
         // The label was cached with this marker, which it computed from the same values.
         marker_of(style, values, symbol, map, factor).ok()
@@ -680,7 +554,7 @@ mod tests {
     use crate::classes::{Reports, Selector};
     use forager_expr::Evaluator;
     use forager_ports::{Coord, Feature, Geometry, Properties, Stored};
-    use forager_style_ir::{Layer, LineOffset};
+    use forager_style_ir::{Layer, LineOffset, Rgba};
 
     fn bound<T>(name: &str) -> Bound<T> {
         Bound::Binding {
@@ -866,6 +740,128 @@ mod tests {
             assert_eq!(len, text as usize + 1);
             assert!(capacity <= len + len / 4 + 8, "{len} runs in {capacity}");
         }
+    }
+
+    /// Every property a feature may bind, written out apart from `Field::ALL`, so that a property
+    /// left out of that is found.
+    const PROPERTIES: [Field; 13] = [
+        Field::Color,
+        Field::OutlineColor,
+        Field::Opacity,
+        Field::Angle,
+        Field::Size,
+        Field::Width,
+        Field::OutlineWidth,
+        Field::Offset(0),
+        Field::Offset(1),
+        Field::PolarOffset(0),
+        Field::PolarOffset(1),
+        Field::LineOffset,
+        Field::Symbol,
+    ];
+
+    /// `style` with `field` bound to the feature's property `p`.
+    fn bound_to(field: Field, style: &mut Style) {
+        match field {
+            Field::Color => style.color = Some(bound("p")),
+            Field::OutlineColor => style.outline_color = Some(bound("p")),
+            Field::Opacity => style.opacity = Some(bound("p")),
+            Field::Angle => style.angle = Some(bound("p")),
+            Field::Size => style.size = Some(bound("p")),
+            Field::Width => style.width = Some(bound("p")),
+            Field::OutlineWidth => style.outline_width = Some(bound("p")),
+            Field::Offset(i) => style.offset.as_mut().unwrap()[i] = bound("p"),
+            Field::PolarOffset(i) => style.polar_offset.as_mut().unwrap()[i] = bound("p"),
+            Field::LineOffset => style.line_offset.as_mut().unwrap().distance = bound("p"),
+            Field::Symbol => style.symbol = Some(bound("p")),
+        }
+    }
+
+    /// The value of `field` the feature's property holds, and the value it binds to.
+    fn expected(field: Field) -> (&'static str, Value) {
+        match field {
+            Field::Color | Field::OutlineColor => {
+                ("#0a0b0c", Value::Color(Some(Rgba::opaque(10, 11, 12))))
+            }
+            Field::Opacity => ("70", Value::Number(70.0)),
+            Field::Angle => ("12.5", Value::Number(12.5)),
+            Field::Size => ("9.5", Value::Number(9.5)),
+            Field::Width => ("3.25", Value::Number(3.25)),
+            Field::OutlineWidth => ("2.5", Value::Number(2.5)),
+            Field::Offset(0) => ("-4", Value::Number(-4.0)),
+            Field::Offset(_) => ("6", Value::Number(6.0)),
+            Field::PolarOffset(0) => ("8", Value::Number(8.0)),
+            Field::PolarOffset(_) => ("45", Value::Number(45.0)),
+            Field::LineOffset => ("1.5", Value::Number(1.5)),
+            Field::Symbol => ("SQUARE", Value::Symbol(2)),
+        }
+    }
+
+    #[test]
+    fn each_bindable_property_takes_its_bound_value_bound_varied_held_and_drawn() {
+        // Each property of the list, bound alone in a labelpnt style: the style varies, binding
+        // gives the property its bound value, and the style held for a label and drawn from it,
+        // and its marker, are those of the bound style. The matches name every property, so one
+        // added to the enum is stated here too.
+        let (_, _, symbols) = written();
+        let map = Map {
+            symbols,
+            ..Map::default()
+        };
+        let layer = Layer::default();
+        let mut evaluator = Evaluator::new();
+        let mut reports = Reports::default();
+        let mut diagnostics = Vec::new();
+        let mut selector = Selector {
+            layer: &layer,
+            layer_index: 0,
+            scale: 1.0,
+            evaluator: &mut evaluator,
+            reports: &mut reports,
+            diagnostics: &mut diagnostics,
+        };
+        let at = Point { x: 10.0, y: 20.0 };
+        for (text, field) in PROPERTIES.into_iter().enumerate() {
+            let text = text as u32;
+            let mut style = Style {
+                offset: Some([Bound::Value(1.0), Bound::Value(2.0)]),
+                polar_offset: Some([Bound::Value(3.0), Bound::Value(4.0)]),
+                line_offset: Some(LineOffset {
+                    distance: Bound::Value(5.0),
+                    both_sides: false,
+                }),
+                geom_transform: Some(GeomTransform::LabelPoint),
+                ..Style::default()
+            };
+            bound_to(field, &mut style);
+            assert!(classes::varies(&style), "{field:?} varies");
+            assert_eq!(Field::of(&style).collect::<Vec<_>>(), [field]);
+            let (property, value) = expected(field);
+            let feature = Feature {
+                id: u64::from(text),
+                geometry: Geometry::Point(Coord { x: 0.0, y: 0.0 }),
+                properties: Properties::list(vec![("p".into(), Stored::String(property.into()))]),
+            };
+            let bound = selector
+                .bind_label_style(&style, &feature, &map.symbols, (0, 0))
+                .into_owned();
+            assert_eq!(field.value(&bound), value, "{field:?} bound");
+            let mut styles = LabelStyles::default();
+            let written = [style];
+            styles.hold(0, text, &written, std::slice::from_ref(&bound), None);
+            let drawn = styles.style(text, 0, &written[0]);
+            assert_eq!(field.value(&drawn), value, "{field:?} drawn");
+            assert_eq!(drawn.as_ref(), &bound, "{field:?} drawn");
+            let marker = label_marker(std::slice::from_ref(&bound), &map, 1.0)
+                .unwrap()
+                .map(|m| marker_bounds(at, m.size, m.anchor_point, m.angle, m.offset));
+            assert_eq!(
+                styles.marker_bounds(&map, 0, text, &written, at, 1.0),
+                marker,
+                "{field:?} marker"
+            );
+        }
+        assert!(diagnostics.is_empty());
     }
 
     #[test]

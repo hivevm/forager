@@ -91,7 +91,8 @@ golden path and the test pattern an agent copies from are named here.
   filter with the first class whose expression matches it, its styles' bound and computed
   properties bound to it and every style and label scaled by its layer's scale factor, which
   `SIZEUNITS` or `SYMBOLSCALEDENOM` set and the map's `RESOLUTION` over its `DEFRESOLUTION`
-  otherwise, the bounds of a style and a label by that resolution factor alone (`classes.rs`),
+  otherwise, the bounds of a style and a label by that resolution factor alone (`classes.rs`,
+  the properties of a style a feature may bind listed once in `bindable.rs`),
   and turns each feature and style into display items
   by the layer's render mode. A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer

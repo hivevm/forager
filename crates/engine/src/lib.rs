@@ -19,6 +19,7 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod bind;
+mod bindable;
 mod classes;
 mod fonts;
 mod images;
