@@ -1,6 +1,6 @@
 [package]
 name = "forager-adapter-geojson"
-description = "The GeoJSON feature source of Forager (ADR-0016)."
+description = "The GeoJSON feature source of Forager (ADR-0020)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

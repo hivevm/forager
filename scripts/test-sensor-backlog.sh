@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/sensor-backlog.sh. Verifies: ADR-0006
+# Self-test of scripts/sensor-backlog.sh. Verifies: ADR-0005
 #
 # Verifies: ADR-0002
 #

@@ -39,7 +39,7 @@ skimmed. The design revision drops what prevented nothing
   reserved for it, so that memory follows the input's size and Q-9's limit on it means something.
   Its test states counts past the bytes present and bounds the peak allocation under a counting
   allocator, as the shapefile adapter's tests do; the same test, run against a crate's reader,
-  shows whether that reader keeps to it ([ADR-0024](adr/0024-shapefile-reader.md)).
+  shows whether that reader keeps to it ([ADR-0021](adr/0021-shapefile-adapter.md)).
 - **A change that gives a target of Q-3 a new reader or a new path brings the fuzz seed that
   reaches it** — a decoder, a parser, or a path of the renderer is fuzzed from the change that
   adds it, not from a ticket after it, because a fuzz target reaches only what its harness builds
@@ -99,8 +99,8 @@ skimmed. The design revision drops what prevented nothing
   harness was found on 2026-11-10 holding such a box within its tolerance.
 - **An ADR that decides how code is written is tried against the workspace's lints before it is
   proposed** — an attribute, an export, or a pattern it names is compiled once under
-  `[workspace.lints]` and the ADRs that bind the crate, because ADR-0043 first decided exports of
-  the C ABI, which need the `unsafe` that ADR-0015 denies outside `render-agg`, and was found
+  `[workspace.lints]` and the ADRs that bind the crate, because ADR-0034 first decided exports of
+  the C ABI, which need the `unsafe` that ADR-0025 denies outside `render-agg`, and was found
   unworkable only by its implementation.
 - **A rule changes everywhere it is stated** — a change to a rule, a step, or a name searches
   the tree for its old wording and for every citation of its anchor, and corrects them in the

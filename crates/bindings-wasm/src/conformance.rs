@@ -1,5 +1,5 @@
 //! The module the conformance test runs in an interpreter and compares with the native render
-//! (G-9, ADR-0043): a style document with its features inline (ADR-0033) and the files its render
+//! (G-9, ADR-0034): a style document with its features inline (ADR-0018) and the files its render
 //! reads, rendered by the engine and the reference renderer, built only with the feature
 //! `conformance`. The workspace denies `unsafe` code, so the exports take and give plain integers
 //! through `wasm_bindgen`, and the host writes the input into, and reads the output from, the

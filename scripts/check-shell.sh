@@ -9,7 +9,7 @@
 # are the repository's entire enforcement layer, so they are held to a lint gate themselves.
 #
 # ShellCheck is the one check dependency beyond bash + coreutils/git, held to the one version
-# scripts/install-shellcheck.sh pins (ADR-0044), which the Dev Container installs on creation
+# scripts/install-shellcheck.sh pins (ADR-0007), which the Dev Container installs on creation
 # through scripts/install-tools.sh and the shell job of CI before the lint, so that a script
 # passes or fails alike in both. Elsewhere, when shellcheck is not on PATH, the check skips itself
 # with a notice instead of failing (CI remains the enforcing gate); in a CI run (CI=true) a

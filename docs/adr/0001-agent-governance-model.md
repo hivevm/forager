@@ -1,15 +1,16 @@
 # ADR-0001: The document set: one specification, one ADR record, one `AGENTS.md`, one overview, one glossary, one conventions file
 
 - **Status:** 🟢 accepted
-- **Date:** 2026-09-05
+- **Date:** 2026-11-10
 - **Deciders:** NUC maintainer, Markus Brigl
-- **Applies to:** every document that carries rules for humans or agents, `AGENTS.md` among them, the architecture overview, the glossary, the conventions, `scripts/check-docs.sh`, `scripts/sensor-binding-adrs.sh`, and the map script of the `normalize` skill, `.agents/skills/normalize/remap.sh`
+- **Applies to:** every document that carries rules for humans or agents, `AGENTS.md` among them, the architecture overview, the glossary, the conventions, `scripts/check-docs.sh`, `scripts/sensor-binding-adrs.sh`, `scripts/sensor-plain-rules.sh`, and the map script of the `normalize` skill, `.agents/skills/normalize/remap.sh`
 
 ## Context
 
 Several coding agents may work in the same repository, and each looks for its instructions in a
 different place. Without one written governance their behaviour drifts, rule sets are duplicated
-and diverge, and structural decisions are made silently.
+and diverge, and structural decisions are made silently. Forager took its governance from the
+NUC template, release v0.8.1, and keeps it as its own.
 
 Three document roles follow from that: what the project is *for*, what has been *decided*, and what
 the working *rules* are. Two more are easy to overlook. The ADR record is a log, and nothing in it
@@ -18,10 +19,10 @@ it, and an agent starting without memory pays it every session. And the vocabula
 the specification that changes most often — a term is sharpened in almost every design
 conversation — which sits badly in the document meant to change least.
 
-A third shows up once the project is old: how it writes code and tests where no check decides it.
+A third shows up once a project is old: how it writes code and tests where no check decides it.
 The rule file is the template's, the specification must not churn, and an ADR is for decisions —
-so a convention became an ADR it did not deserve, or stayed in someone's head, and a reviewer held
-the diff against nothing.
+so without a place of its own a convention becomes an ADR it does not deserve, or stays in
+someone's head, and a reviewer holds the diff against nothing.
 
 Two things limit the answer. Every further document is a candidate second source of truth that can
 go stale. And the specification outranks every ADR while nothing protects it: editing a goal would
@@ -65,15 +66,26 @@ Every other document — [`README.md`](../../README.md), [`CONTRIBUTING.md`](../
 [`SECURITY.md`](../../SECURITY.md), `TEMPLATE-SETUP.md` while it exists, issue and pull
 request templates, per-agent pointers, the catalogue of concepts in the `propose-adr` skill —
 points at the rule file and holds no rule of its own. The exception is a document holding the
-mechanics of a record the rule file delegates to it: [`docs/adr/README.md`](README.md) and its
-[`template.md`](template.md), delegated by [`AGENTS.md` §3](../../AGENTS.md#3-adr-rules).
+mechanics the rule file delegates to it: [`docs/adr/README.md`](README.md) and its
+[`template.md`](template.md), delegated by [`AGENTS.md` §3](../../AGENTS.md#3-adr-rules), and the
+sections *Git hooks*, *Integration branches*, and *Repository settings* of
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md), delegated by
+[`AGENTS.md` §6](../../AGENTS.md#6-project-rules). The README is for those who use the project,
+the contributing guide for those who work on it, so a user reads none of the mechanics. They say
+how the rule is carried out, what each hook refuses, the steps of an integration, the
+settings, and add no rule the rule file does not state. A per-agent configuration may close a
+path for its one agent as defence in depth, such as reading `.env` files; it enforces no rule,
+and no rule rests on it.
 
 **The load-bearing clause is that there is exactly one rule file.** An ADR that supersedes any other
 part of this record restates it. The ADR rules of [`AGENTS.md` §3](../../AGENTS.md#3-adr-rules)
-are the one block with no ADR behind it — accepted here, and reversible by an ADR on the ADR
-process. Rules 1 and 3 of that block belong to it like the rest: the catalogue is what a decision
-is proposed from, and ADRs the same human decides may travel together in a pull request of ADRs
-only, the founding decisions of a new project always, so that they are proposed as one start and
+are the one block with no ADR behind it — accepted here. In the template repository the block
+changes as this ADR is corrected in place, and the release notes say so
+([ADR-0004](0004-template-releases.md)); in a derived project such as this one, by an ADR on the
+ADR process, which edits the block in the change that lands it, so the rule file stays true as it
+is read. Rules 1 and 3 of that block belong to it like the rest: the catalogue is what a decision
+is proposed from, and ADRs the same human decides may travel together in commits of ADRs only,
+the founding decisions of a new project always, so that they are proposed as one start and
 revised while proposed. Rule 5 belongs to it with its normalization: on a human's instruction the
 record is restated in reading order, without its dead ADRs, and no decision changes. A record
 that only grows costs every session the reconstruction the overview exists to spare it.
@@ -81,7 +93,7 @@ that only grows costs every session the reconstruction the overview exists to sp
 **Out of scope:** what `AGENTS.md` says and how other documents cite it; which agents a project uses
 and which need a pointer file; how the ADR record is kept; the notation and depth of the overview;
 the vocabulary of a repository with more than one bounded context; and which documents a project
-created from this template drops.
+created from the template drops.
 
 ## Alternatives considered
 
@@ -156,15 +168,29 @@ that the ADR record and its index agree, that links between the documents resolv
 references point at the section they name — which is why a document cites a rule as a link to
 its section anchor and never restates it: a renumbering breaks the link, and the check catches
 it, where a restated rule would drift unseen.
+[`scripts/sensor-plain-rules.sh`](../../scripts/sensor-plain-rules.sh) (job `sensors`) holds the
+glossary's _Avoid:_ lists. It reports a listed word on a line a change adds to `AGENTS.md`, or to
+the *Decision* or *Enforcement* of an ADR. It names the term to use instead. It does not read a
+word in a code span or in italics, where a rule names the word. It fails nothing.
 [`scripts/sensor-binding-adrs.sh`](../../scripts/sensor-binding-adrs.sh) (job `sensors`) lists
-the ADRs in force whose *Applies to* names a path a change touches, so that the session and its
-reviewer start from the same list; it reads paths only, never fails, and its self-test cites
-this ADR. The self-test of the `normalize` skill's map script
+the ADRs in force whose *Applies to* names a path a change touches, or a path a session names
+before its first change, so that the session and its reviewer start from the same list; with
+`--sections` it prints, of each ADR it lists, the header, the *Decision*, and the *Enforcement*,
+the parts a session reads, so that none opens a whole ADR to read three of its parts, and from
+the **Binding** table of the index the *Applies to* of every other ADR in force that is not
+paths alone. It reads paths only, never fails, and its self-test cites this ADR.
+The self-test of the `normalize` skill's map script
 ([`scripts/test-normalize-remap.sh`](../../scripts/test-normalize-remap.sh), job `docs`) cites
 this ADR too: it decides that a map moves every reference once, a swap included, and leaves the
 record it describes to the normalization. One gate routes a specification change to a human
-without judging it: [`.github/CODEOWNERS`](../../.github/CODEOWNERS) requires the owner's review
-once the repository enables it ([**Repository settings**](../../README.md#repository-settings)).
-That no other document holds a rule, that the
-overview matches the system, that the glossary's terms are the ones in use, that no convention
-stands where a check could, and that a normalization changed no decision, is review only.
+without judging it. [`.github/CODEOWNERS`](../../.github/CODEOWNERS) requires the owner's review
+once the repository enables it, as **Repository settings** in
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md) says.
+
+The review alone decides the following:
+
+- that no other document holds a rule;
+- that the overview matches the system;
+- that the glossary's terms are the ones in use, beyond what the sensor reports;
+- that no convention stands where a check can decide it;
+- that a normalization changed no decision.

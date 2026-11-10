@@ -1,6 +1,6 @@
 [package]
 name = "forager-label"
-description = "Lays out and draws a label's text: glyphs read with skrifa as MapServer reads them with FreeType (ADR-0028)."
+description = "Lays out and draws a label's text: glyphs read with skrifa as MapServer reads them with FreeType (ADR-0031)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,7 +11,7 @@ publish.workspace = true
 [dependencies]
 forager-render.workspace = true
 libm.workspace = true
-# The one crate that reads fonts (ADR-0028); without its default autohinter shaping, which an
+# The one crate that reads fonts (ADR-0031); without its default autohinter shaping, which an
 # unhinted glyph never uses.
 skrifa = { version = "0.49.0", default-features = false, features = ["std"] }
 

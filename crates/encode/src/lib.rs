@@ -1,5 +1,5 @@
 //! Encodes an RGBA image as PNG, and decodes one back; decodes a pixmap symbol's image
-//! (ADR-0017).
+//! (ADR-0030).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn an_image_survives_png_unchanged() {
-        // Verifies: G-12, ADR-0017
+        // Verifies: G-12, ADR-0030
         let pixels: Vec<u8> = (0..7 * 5 * 4).map(|i| (i * 37 % 256) as u8).collect();
         let image = RgbaImage {
             width: 7,

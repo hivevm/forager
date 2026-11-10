@@ -14,7 +14,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The frontend's own reader of the WKT of an inline feature (ADR-0033): it re-implements the
+//! The frontend's own reader of the WKT of an inline feature (ADR-0018): it re-implements the
 //! grammar GEOS's `WKTReader` accepts for two-dimensional points, lines, polygons, their multi
 //! forms, and collections, no GEOS code, and converts what it reads into a shape as
 //! `msGEOSGeometry2Shape` does, an inner ring that is not simple left out. An empty geometry,
@@ -747,7 +747,7 @@ mod tests {
 
     #[test]
     fn an_inner_ring_that_crosses_itself_is_left_out() {
-        // Verifies: ADR-0033
+        // Verifies: ADR-0018
         let square = vec![[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [1.0, 2.0], [1.0, 1.0]];
         let exterior = vec![
             [0.0, 0.0],

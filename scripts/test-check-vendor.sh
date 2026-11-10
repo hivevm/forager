@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-vendor.sh. Verifies: ADR-0045
+# Self-test of scripts/check-vendor.sh. Verifies: ADR-0035
 #
 # Each case writes a fixture repository with a vendored file, its checksum list, and a page, runs
 # the check against it, and asserts the exit code and the line that names the problem. The

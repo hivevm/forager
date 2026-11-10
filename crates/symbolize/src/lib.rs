@@ -1,6 +1,6 @@
 //! The symbolization of a style: a feature's geometry drawn in a style, bound to the feature,
 //! turned into the drawing operations of the display list, as MapServer draws it. It is
-//! synchronous and does no I/O (ADR-0009); the engine orders what it draws, as MapServer's shape
+//! synchronous and does no I/O (ADR-0008); the engine orders what it draws, as MapServer's shape
 //! cache orders it, and reports what a layer left undrawn.
 //!
 //! Its modules import one another in one direction only: `draw` imports every other; `hatch`

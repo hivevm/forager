@@ -14,7 +14,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The in-memory feature source of a layer's inline features (ADR-0033).
+//! The in-memory feature source of a layer's inline features (ADR-0018).
 
 use std::borrow::Cow;
 use std::rc::Rc;
@@ -25,7 +25,7 @@ use forager_ports::{
 };
 use forager_style_ir::{Extent, InlineFeature, Layer, ShapeType};
 
-/// Whether `layer` is read from its inline features (ADR-0033): it has some, whatever its
+/// Whether `layer` is read from its inline features (ADR-0018): it has some, whatever its
 /// source's kind; the frontend leaves out the features of a source whose kind does not read
 /// them.
 pub fn is_inline(layer: &Layer) -> bool {

@@ -38,15 +38,15 @@ pub struct Output {
 /// Renders `mapfile` with the GeoJSON in `sources`, a JSON object from layer name to a GeoJSON
 /// object or to GeoJSON text. Source references that carry credentials are dropped (Q-7).
 /// `init=` projections resolve with the built-in EPSG codes and those of `epsg`, a table in the
-/// format of PROJ's former `epsg` init file (ADR-0023). The mapfile is the only file of its base
+/// format of PROJ's former `epsg` init file (ADR-0019). The mapfile is the only file of its base
 /// context.
 pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &Viewport) -> Output {
     render_map_with_files(mapfile, sources, epsg, viewport, &BTreeMap::new())
 }
 
 /// Renders as [`render_map`] does, with `files` beside the mapfile in its base context, by the
-/// path the mapfile names them: a font set and its fonts, an `INCLUDE`, a symbol set (ADR-0028),
-/// the image of a pixmap symbol (ADR-0040). Nothing else is read; a font or an image past
+/// path the mapfile names them: a font set and its fonts, an `INCLUDE`, a symbol set (ADR-0031),
+/// the image of a pixmap symbol (ADR-0029). Nothing else is read; a font or an image past
 /// [`forager_engine::MAX_FONT_BYTES`] is refused by the engine.
 pub fn render_map_with_files(
     mapfile: &str,
@@ -252,7 +252,7 @@ impl RenderResult {
 /// Renders a mapfile in the browser. `sources` is a JSON object from layer name to GeoJSON (an
 /// object or its text). `width`, `height`, and `extent` (`[minx, miny, maxx, maxy]`) override
 /// the mapfile's SIZE and EXTENT when given. `epsg` is a table of further EPSG definitions
-/// (ADR-0023). The mapfile is the only file of its base context; [`render_with`] adds others.
+/// (ADR-0019). The mapfile is the only file of its base context; [`render_with`] adds others.
 #[wasm_bindgen]
 pub fn render(
     mapfile: &str,
@@ -342,7 +342,7 @@ mod tests {
     /// there, and from nowhere else.
     #[test]
     fn the_fonts_a_page_hands_in_reach_the_engine() {
-        // Verifies: ADR-0028
+        // Verifies: ADR-0031
         let mapfile = |font: &str| {
             format!(
                 "MAP SIZE 10 10 EXTENT 0 0 10 10 FONTSET 'fonts.lst'\n\
@@ -402,7 +402,7 @@ mod tests {
     /// skipped as unbound, so the bytes of its files need not be a shapefile.
     #[test]
     fn a_shapefile_among_the_pages_files_leaves_its_layer_skipped() {
-        // Verifies: ADR-0038
+        // Verifies: ADR-0024
         let mapfile = "MAP SIZE 10 10 EXTENT 0 0 10 10\n\
                        LAYER NAME 'roads' TYPE POINT STATUS ON DATA 'data/roads.shp'\n\
                        CLASS STYLE COLOR 0 0 0 SIZE 3 END END END END\n";
@@ -699,7 +699,7 @@ mod projections {
 
     #[test]
     fn the_browser_resolves_built_in_codes_and_takes_a_table_for_others() {
-        // Verifies: ADR-0023
+        // Verifies: ADR-0019
         let wgs84 = render_map(
             "MAP SIZE 10 10 EXTENT 0 0 1 1 PROJECTION 'init=epsg:4326' END END",
             "{}",

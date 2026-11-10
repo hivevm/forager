@@ -26,10 +26,10 @@ forager-adapter-shapefile.workspace = true
 [dev-dependencies]
 forager-render.workspace = true
 # Decodes the reference images, palette and RGB ones included, for the metric, as the
-# conformance-harness spec decides; the same crate and version the encoder uses (ADR-0017).
+# conformance-harness spec decides; the same crate and version the encoder uses (ADR-0030).
 png.workspace = true
 serde_json.workspace = true
-# Runs the wasm32 module of the conformance test (G-9, ADR-0043).
+# Runs the wasm32 module of the conformance test (G-9, ADR-0034).
 wasmi.workspace = true
 
 [lints]

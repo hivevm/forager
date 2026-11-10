@@ -14,7 +14,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The engine: renders the map of a style IR from the sources bound to its layers. It is the
-//! one core crate that awaits the ports (ADR-0009).
+//! one core crate that awaits the ports (ADR-0008).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -126,8 +126,8 @@ impl ResourceLoader for NoFiles {
 
 /// Renders as [`render`] does, and reads the files the map names beyond its sources, the fonts
 /// of its labels and the images of its pixmap symbols, through `files`, the host's resource
-/// loader rooted at the base context (ADR-0028). The images are decoded once each and held until
-/// the render ends (ADR-0040).
+/// loader rooted at the base context (ADR-0031). The images are decoded once each and held until
+/// the render ends (ADR-0029).
 pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>(
     map: &Map,
     sources: &BTreeMap<String, S>,
@@ -140,7 +140,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
     let mut labels = Labels::new(map, &view, files, (width, height));
-    // The images of the render's pixmap symbols, dropped with the render (ADR-0040).
+    // The images of the render's pixmap symbols, dropped with the render (ADR-0029).
     let mut images = Images::default();
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
@@ -555,7 +555,7 @@ fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<Ren
 }
 
 /// The features of a layer in view: those of its inline features where it is read from them
-/// ([`is_inline`], ADR-0033), whatever source is bound to it, which is not read and is reported;
+/// ([`is_inline`], ADR-0018), whatever source is bound to it, which is not read and is reported;
 /// otherwise those of the source bound to its name.
 async fn features<S: FeatureSource>(
     layer: &Layer,
@@ -616,7 +616,7 @@ async fn query<S: FeatureSource>(
         extent: view.extent,
     };
     let delivered = source.features(&query).await.map(|delivered| {
-        // The records the source skipped, one warning for the layer however many (ADR-0025).
+        // The records the source skipped, one warning for the layer however many (ADR-0022).
         let skipped = &delivered.skipped;
         if skipped.count > 0 {
             let first = skipped.first.as_deref().unwrap_or("no reason given");

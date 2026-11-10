@@ -44,7 +44,7 @@ fn measured(base: i32, content: Vec<u8>, points: usize) -> Vec<u8> {
 
 #[test]
 fn every_shape_type_mapserver_reads_is_read_as_its_geometry() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     for offset in [0, 10, 20] {
         let point = read_as(POINT + offset, &measured(POINT, point(1.0, 2.0), 1));
         assert_eq!(ids(&point), [0, 2], "type {}", POINT + offset);
@@ -79,7 +79,7 @@ fn every_shape_type_mapserver_reads_is_read_as_its_geometry() {
 
 #[test]
 fn a_shape_type_mapserver_does_not_read_yields_no_feature() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     for shape_type in [0, 2, 31, 255] {
         let files = Files::new(shape_type, BOUNDS, &[lines(POLYGON, &[SQUARE])]);
         assert_eq!(files.ids(), [] as [u64; 0], "type {shape_type}");
@@ -88,7 +88,7 @@ fn a_shape_type_mapserver_does_not_read_yields_no_feature() {
 
 #[test]
 fn the_shape_type_is_the_one_byte_of_the_shx_header() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // The .shp says polygon, the records say polygon; the .shx's byte says point.
     let mut files = Files::new(POLYGON, BOUNDS, &[lines(POLYGON, &[SQUARE])]);
     files.shx[32] = POINT as u8;
@@ -100,7 +100,7 @@ fn the_shape_type_is_the_one_byte_of_the_shx_header() {
 
 #[test]
 fn the_record_header_and_type_are_not_read() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let mut record = point(1.0, 2.0);
     record[..4].copy_from_slice(&MULTIPOINT.to_le_bytes());
     let mut files = Files::new(POINT, BOUNDS, &[record]);
@@ -114,7 +114,7 @@ fn the_record_header_and_type_are_not_read() {
 
 #[test]
 fn an_arc_or_polygon_of_no_parts_is_a_shape_without_lines() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let arc = read_as(ARC, &raw_lines(ARC, BOUNDS, &[], &[(1.0, 1.0)]));
     assert_eq!(arc[0].geometry, Geometry::MultiLineString(vec![]));
     let polygon = read_as(POLYGON, &raw_lines(POLYGON, BOUNDS, &[], &[]));
@@ -125,7 +125,7 @@ fn an_arc_or_polygon_of_no_parts_is_a_shape_without_lines() {
 
 #[test]
 fn points_are_taken_in_sequence_from_the_first_whatever_a_part_starts_at() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let points = [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0), (3.0, 3.0)];
     // Parts at 1 and 2: the first holds one point, the second two; the points read are 0, 1, 2.
     let features = read_as(ARC, &raw_lines(ARC, BOUNDS, &[1, 2], &points));
@@ -148,7 +148,7 @@ fn three_points() -> Files {
 
 #[test]
 fn an_extent_outside_the_file_bounds_selects_nothing() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let files = three_points();
     assert!(files.query([11.0, 11.0, 20.0, 20.0]).is_empty());
     assert!(files.query([-5.0, 0.0, -0.5, 10.0]).is_empty());
@@ -160,7 +160,7 @@ fn an_extent_outside_the_file_bounds_selects_nothing() {
 
 #[test]
 fn an_extent_that_contains_the_file_bounds_selects_every_record() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // The bounds of the .shx, not of the .shp, decide; the records' own boxes are not read.
     let mut files = Files::new(
         POLYGON,
@@ -173,7 +173,7 @@ fn an_extent_that_contains_the_file_bounds_selects_every_record() {
 
 #[test]
 fn an_extent_across_the_file_bounds_selects_by_each_records_box() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // Boxes [0, 0, 4, 4] and [6, 6, 7, 8]; edges that touch overlap.
     let files = Files::new(
         POLYGON,
@@ -198,7 +198,7 @@ fn an_extent_across_the_file_bounds_selects_by_each_records_box() {
 
 #[test]
 fn a_point_file_is_selected_by_the_point_itself() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let files = three_points();
     assert_eq!(ids(&files.query([4.0, 4.0, 11.0, 11.0])), [1, 2]);
     assert_eq!(ids(&files.query([-1.0, -1.0, 5.0, 5.0])), [0, 1]);
@@ -206,7 +206,7 @@ fn a_point_file_is_selected_by_the_point_itself() {
 
 #[test]
 fn a_point_whose_x_is_not_a_number_is_selected() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // msSHPReadBounds checks the least x only for files other than points; a NaN point compares
     // as overlapping any extent across the file's bounds.
     let files = Files::new(POINT, BOUNDS, &[point(f64::NAN, 5.0), point(9.0, 9.0)]);
@@ -215,7 +215,7 @@ fn a_point_whose_x_is_not_a_number_is_selected() {
 
 #[test]
 fn a_nan_in_a_box_beyond_its_least_x_compares_as_overlapping() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // Only the least x is checked; a NaN least y compares false, so the box reaches below.
     let mut record = lines(POLYGON, &[SQUARE]);
     record[12..20].copy_from_slice(&f64::NAN.to_le_bytes());
@@ -245,7 +245,7 @@ fn is_no_shape(shape_type: i32, bad: Vec<u8>) {
 
 #[test]
 fn a_record_too_short_for_its_type_is_no_shape() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // Records are a whole number of 16-bit words.
     is_no_shape(POINT, point(1.0, 1.0)[..18].to_vec());
     is_no_shape(MULTIPOINT, multipoint(&[])[..38].to_vec());
@@ -257,7 +257,7 @@ fn a_record_too_short_for_its_type_is_no_shape() {
 
 #[test]
 fn a_count_below_zero_or_past_the_caps_is_no_shape() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let at = |mut r: Vec<u8>, offset: usize, value: i32| {
         r[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
         r
@@ -275,7 +275,7 @@ fn a_count_below_zero_or_past_the_caps_is_no_shape() {
 
 #[test]
 fn counts_that_need_more_bytes_than_the_record_holds_are_no_shape() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // 44 + 4 × parts + 16 × points against the content: one word short.
     let polygon = lines(POLYGON, &[SQUARE]);
     is_no_shape(POLYGON, polygon[..polygon.len() - 2].to_vec());
@@ -290,7 +290,7 @@ fn counts_that_need_more_bytes_than_the_record_holds_are_no_shape() {
 
 #[test]
 fn a_multipoint_with_a_measure_or_height_needs_its_values_too() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     for shape_type in [MULTIPOINT + 10, MULTIPOINT + 20] {
         let short = measured(MULTIPOINT, multipoint(LINE), 2);
         let files = Files::new(
@@ -307,7 +307,7 @@ fn a_multipoint_with_a_measure_or_height_needs_its_values_too() {
 
 #[test]
 fn a_part_that_starts_below_zero_ends_past_the_points_or_holds_none_is_no_shape() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let points = [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)];
     for starts in [
         &[-1, 1][..],
@@ -339,7 +339,7 @@ fn with_middle_entry(entry: (i32, i32)) -> Files {
 
 #[test]
 fn an_index_entry_without_a_record_in_the_shp_is_no_shape() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let past = i32::try_from(three_points().shp.len() / 2).unwrap();
     for entry in [
         // A size under 4 bytes, or of 4: a null shape.
@@ -364,7 +364,7 @@ fn an_index_entry_without_a_record_in_the_shp_is_no_shape() {
 
 #[test]
 fn a_shx_page_the_file_cuts_short_is_lost_as_a_whole() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let records: Vec<Vec<u8>> = (0..1500).map(|i| point(f64::from(i), 0.0)).collect();
     let mut files = Files::new(POINT, [0.0, 0.0, 1500.0, 0.0], &records);
     // The header claims 2000 records; the file holds 1500 entries.
@@ -380,7 +380,7 @@ fn a_shx_page_the_file_cuts_short_is_lost_as_a_whole() {
 
 #[test]
 fn records_past_the_byte_total_of_the_shp_are_no_shape() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // One arc of 160 bytes with its header, named three times: the .shp holds 260 bytes, so the
     // second reading would exceed them.
     let mut files = Files::new(ARC, BOUNDS, &[lines(ARC, &[LINE, OTHER, LINE])]);
@@ -399,7 +399,7 @@ fn records_past_the_byte_total_of_the_shp_are_no_shape() {
 
 #[test]
 fn a_record_whose_box_cannot_be_read_is_no_shape_and_the_layer_reads_on() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // MapServer fails the layer on each of these when it selects by boxes.
     let cut = [1.5, 1.5, 3.5, 3.5];
     let past = i32::try_from(three_points().shp.len() / 2).unwrap();
@@ -445,7 +445,7 @@ fn refused(files: &Files) -> String {
 
 #[test]
 fn a_shp_or_shx_header_mapserver_refuses_is_an_error() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let good = three_points();
     let mut f = good.clone();
     f.shp.truncate(99);
@@ -468,7 +468,7 @@ fn a_shp_or_shx_header_mapserver_refuses_is_an_error() {
 
 #[test]
 fn what_mapserver_does_not_check_in_the_headers_opens() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let mut f = three_points();
     // The other file code MapServer accepts.
     f.shx[3] = 0x0d;
@@ -486,7 +486,7 @@ fn what_mapserver_does_not_check_in_the_headers_opens() {
 
 #[test]
 fn a_dbf_header_mapserver_refuses_is_an_error() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let good = three_points();
     let with = |dbf: Vec<u8>| Files {
         dbf,
@@ -509,7 +509,7 @@ fn a_dbf_header_mapserver_refuses_is_an_error() {
 
 #[test]
 fn a_dbf_header_mapserver_accepts_opens() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let good = three_points();
     let opens = |dbf: Vec<u8>| {
         assert!(
@@ -542,7 +542,7 @@ fn a_dbf_header_mapserver_accepts_opens() {
 
 #[test]
 fn a_missing_file_is_an_error_and_upper_case_names_are_tried() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     let files = three_points();
     for missing in ["data/layer.shp", "data/layer.shx", "data/layer.dbf"] {
         let mut loader = files.loader();
@@ -583,7 +583,7 @@ impl forager_ports::ResourceLoader for Refusing {
 
 #[test]
 fn an_upper_case_name_is_tried_where_the_lower_case_file_is_refused() {
-    // Verifies: ADR-0024
+    // Verifies: ADR-0021
     // MapServer tries `.SHP` only where `.shp` cannot be opened (msSHPOpen, msDBFOpen). The
     // port's error tells no missing file from a refused one, so a refused `.shp` beside a valid
     // `.SHP` reads the `.SHP`, a departure docs/semantics/shapefile.md states.
@@ -622,7 +622,7 @@ fn an_upper_case_name_is_tried_where_the_lower_case_file_is_refused() {
 
 #[test]
 fn no_mutation_of_a_shapefile_panics() {
-    // Verifies: ADR-0024, Q-3
+    // Verifies: ADR-0021, Q-3
     let base = Files::new(
         POLYGON,
         BOUNDS,
@@ -690,7 +690,7 @@ fn text(value: &str) -> Option<Value<'_>> {
 
 #[test]
 fn each_field_reads_as_msdbfreadattribute_reads_it() {
-    // Verifies: ADR-0026
+    // Verifies: ADR-0023
     let fields: &[(&[u8], u8, u8)] = &[
         (b"NAME", b'C', 8),
         (b"POP", b'N', 8),
@@ -745,7 +745,7 @@ fn each_field_reads_as_msdbfreadattribute_reads_it() {
 
 #[test]
 fn a_field_is_found_by_its_name_as_msdbfgetitemindex_finds_it() {
-    // Verifies: ADR-0026
+    // Verifies: ADR-0023
     let fields: &[(&[u8], u8, u8)] = &[
         (b"Name", b'C', 2),
         (b"NAME", b'C', 2),
@@ -775,7 +775,7 @@ fn a_field_is_found_by_its_name_as_msdbfgetitemindex_finds_it() {
 
 #[test]
 fn a_record_the_file_cuts_short_carries_no_properties() {
-    // Verifies: ADR-0026
+    // Verifies: ADR-0023
     let mut dbf = table(&[(b"NAME", b'C', 4)], &[b"aaaa", b"bbbb"]);
     dbf.truncate(dbf.len() - 1);
     let features = points_with(dbf);
@@ -785,7 +785,7 @@ fn a_record_the_file_cuts_short_carries_no_properties() {
 
 #[test]
 fn a_record_count_whose_last_byte_is_128_or_more_counts_no_records() {
-    // Verifies: ADR-0026
+    // Verifies: ADR-0023
     let mut dbf = table(&[(b"NAME", b'C', 4)], &[b"aaaa", b"bbbb"]);
     dbf[7] = 0x80;
     let features = points_with(dbf);
@@ -815,7 +815,7 @@ fn two_broken() -> Files {
 
 #[test]
 fn a_query_reports_each_broken_record_it_visits_once() {
-    // Verifies: ADR-0025
+    // Verifies: ADR-0022
     let source = two_broken().open().unwrap();
     let across = [0.0, 0.0, 7.0, 7.0];
     for _ in 0..2 {
@@ -835,7 +835,7 @@ fn a_query_reports_each_broken_record_it_visits_once() {
 
 #[test]
 fn a_null_shape_is_not_a_skipped_record() {
-    // Verifies: ADR-0025
+    // Verifies: ADR-0022
     let files = Files::new(POLYGON, BOUNDS, &[null(), lines(POLYGON, &[SQUARE])]);
     let source = files.open().unwrap();
     for extent in [EVERYWHERE, [0.0, 0.0, 7.0, 7.0]] {

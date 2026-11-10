@@ -1,4 +1,4 @@
-//! The text of labels (ADR-0028): a label's sizes, the fonts of its font list in the order
+//! The text of labels (ADR-0031): a label's sizes, the fonts of its font list in the order
 //! MapServer tries them, its glyphs read with skrifa, laid out and drawn as MapServer lays out
 //! and draws Latin lines, where a label stands about its point, and which labels the label cache
 //! draws. It does no I/O: the engine loads the font files and hands their bytes here. It is the

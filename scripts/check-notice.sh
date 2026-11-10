@@ -3,7 +3,7 @@
 # Check: a Rust or C file whose logic follows MapServer's C code keeps MapServer's copyright and
 # permission notice, as the specification's licence constraint requires, and one that follows
 # W. Randolph Franklin's pnpoly keeps his; the C file is the reader of the label cache, which
-# follows src/apps/map2img.c (ADR-0029).
+# follows src/apps/map2img.c (ADR-0033).
 #
 # A Rust or C file under crates/ or fuzz/ that names a MapServer source file — src/map….c, .h,
 # .l, or .y, or a program's src/apps/….c — follows that code, and must hold the notice of those

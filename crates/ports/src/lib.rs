@@ -1,5 +1,5 @@
 //! The ports: the traits at the edge of the core through which a host supplies data and
-//! resources (ADR-0009), and `poll_once`, which runs a future over them that never waits. They
+//! resources (ADR-0008), and `poll_once`, which runs a future over them that never waits. They
 //! are the only place async appears, and none of them requires `Send`, because the browser is
 //! single-threaded.
 
@@ -8,7 +8,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use forager_style_ir::Extent;
-/// The geometry of a feature, a type of the IR, which the symbolization reads too (ADR-0009).
+/// The geometry of a feature, a type of the IR, which the symbolization reads too (ADR-0008).
 pub use forager_style_ir::{Coord, Geometry};
 
 /// A path inside the base context: relative, normalized, and unable to leave it (Q-8).
@@ -310,7 +310,7 @@ pub struct Feature {
     pub properties: Properties,
 }
 
-/// The value of a property as a reader gets it (ADR-0026). A number keeps the text its source
+/// The value of a property as a reader gets it (ADR-0023). A number keeps the text its source
 /// gives it, so that a reader that wants a string gets those digits and one that wants a number
 /// parses them.
 #[derive(Clone, Debug, PartialEq)]
@@ -352,7 +352,7 @@ pub trait Table: fmt::Debug {
     fn each(&self, record: u64, f: &mut dyn FnMut(&str, Value<'_>));
 }
 
-/// The properties of a feature (ADR-0026): none, a list of its own, or a record of a table its
+/// The properties of a feature (ADR-0023): none, a list of its own, or a record of a table its
 /// source shares.
 #[derive(Clone, Default)]
 pub struct Properties(Held);
@@ -454,7 +454,7 @@ pub struct FeatureQuery {
     pub extent: Extent,
 }
 
-/// What a source delivers for a query: its features, and the records it skipped (ADR-0025).
+/// What a source delivers for a query: its features, and the records it skipped (ADR-0022).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Features {
     pub features: Vec<Feature>,
@@ -472,7 +472,7 @@ impl From<Vec<Feature>> for Features {
 }
 
 /// The records a query would have considered had they been readable: how many, and why the first
-/// was skipped. Each record counts once per query (ADR-0025).
+/// was skipped. Each record counts once per query (ADR-0022).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Skipped {
     pub count: u64,
@@ -497,7 +497,7 @@ pub trait FeatureSource {
 }
 
 /// Resolves a projection a style names by authority and code, as `init=epsg:4326` does, to a
-/// proj4 string (ADR-0023). Synchronous: a host that fetches its definitions loads them before it
+/// proj4 string (ADR-0019). Synchronous: a host that fetches its definitions loads them before it
 /// loads the style.
 pub trait ProjectionResolver {
     /// The proj4 string for `code` of `authority` (such as `epsg`, case-insensitive), or `None`

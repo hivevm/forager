@@ -33,8 +33,9 @@ test oracle.
 
 Translate mapfiles at load time into a MapServer-free style IR whose expressions are CQL2. Keep
 the core synchronous, free of I/O, and deterministic, with all data behind async ports and
-adapters. Grow it in phases, each ending with a running WASM build and green conformance tests
-against msautotest.
+adapters. Grow it in phases, each ending with a running WASM build, green conformance tests
+against msautotest at the pinned MapServer release, and the native and wasm32 renders alike
+(G-9).
 
 ## Goals / Success Criteria
 
@@ -58,8 +59,8 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
 4. **G-4** — When a style document of a newer minor format version is loaded, the system shall
    ignore its unknown fields with a diagnostic naming the field and its location; a newer major
    version shall be a load error, and an older major version shall be migrated to the current one.
-5. **G-5** — When the WASM bindings receive a style, GeoJSON features, and a viewport, they
-   shall return the rendered RGBA image.
+5. **G-5** — When the WASM bindings receive a mapfile, GeoJSON features per layer, the files the
+   mapfile names, and a viewport, they shall return the rendered RGBA image and the diagnostics.
 6. **G-6** — When a msautotest case of the category geometry and symbols is rendered, its RGBA
    buffer shall match the reference image: a pixel differs when one of its channels differs by more
    than 16, and the case passes when at most 0.1 % of its pixels differ.
@@ -125,13 +126,15 @@ from the threats below.
   its logical screen (4096 × 4096), the pixels of the tile a polygon is filled with, whatever its
   size or gap asks (4096 × 4096), the images one render holds decoded, its fill tiles among them
   (256 MiB), the points of the symbols one layer places at its features, along its lines, or
-  where a style's geometry transformation puts them (1,000,000), the labels one render's label
-  cache holds (100,000), expression nesting (24 levels), the length of a text an expression reads
-  or computes
+  where a style's geometry transformation puts them (1,000,000), the stand-in square of a style
+  without a symbol, or of symbol 0, not counted, the labels one render's label cache holds
+  (100,000), expression nesting (24 levels), the length of a text an expression reads or computes
   (16 MiB), the values a style document of a newer minor drops (100), and regular-expression
   length (64 KiB) and size are limited, and exceeding a limit is a diagnostic. A test per limit
   feeds an input past it and expects the diagnostic. A label the label cache holds keeps at most
   400 bytes apart from its text, and at most 32 more for each style value a feature binds to it; a
+  test measures it. What one render holds for its labels' texts comes to at most four times the
+  size of the input that gives them and 12 bytes for each byte of text, whatever their size; a
   test measures it.
 
 ## Non-Goals
@@ -194,7 +197,7 @@ maintained.
 - There is demand for rendering existing mapfiles in the browser; no evidence for it is recorded
   yet (see *Problem*).
 - The pure-Rust crates the work leans on — agg-rust, proj4rs, harfrust, unicode-bidi, skrifa,
-  i_overlay, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and stay
+  i_overlay, png, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and stay
   maintained. The ADR that picks each one verifies it.
 - The msautotest reference images are reproducible enough that the tolerances of G-6 and G-13 lie
   above their platform noise; the noise is measured before the first rendering criterion of a

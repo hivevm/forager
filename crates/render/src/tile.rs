@@ -6,7 +6,7 @@ use std::cell::OnceCell;
 use crate::{DrawOp, PremultipliedImage};
 
 /// A polygon fill's tile, a display item's counted reference to one image however many polygons
-/// it fills (ADR-0040): `width` by `height` pixels, transparent but for the drawing `mark` in
+/// it fills (ADR-0029): `width` by `height` pixels, transparent but for the drawing `mark` in
 /// them. Whoever keeps count of the bytes of a render's images counts [`Tile::bytes`] from the
 /// moment the tile exists, so that one past the bound is refused before anything is allocated
 /// for it; the renderer builds the pixels from the mark when it first fills with the tile.

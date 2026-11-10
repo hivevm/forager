@@ -1,6 +1,6 @@
 [package]
 name = "forager-arch-test"
-description = "The dependency test of ADR-0009: the allowed edges between the workspace crates."
+description = "The dependency test of ADR-0008: the allowed edges between the workspace crates."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

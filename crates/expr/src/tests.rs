@@ -1,4 +1,4 @@
-//! Each operator and function against values worked from MapServer's source (ADR-0031).
+//! Each operator and function against values worked from MapServer's source (ADR-0016).
 
 use std::collections::BTreeMap;
 
@@ -52,7 +52,7 @@ fn text(expr: &Expr) -> String {
 
 #[test]
 fn comparisons_compare_numbers_as_doubles_and_strings_as_strcmp() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let feature = props(&[("a", "12abc"), ("b", "B"), ("c", "b"), ("e", "\u{e9}")]);
     let yes = |e: Expr| assert!(eval(&e, &feature).unwrap(), "{e:?}");
     let no = |e: Expr| assert!(!eval(&e, &feature).unwrap(), "{e:?}");
@@ -91,7 +91,7 @@ fn comparisons_compare_numbers_as_doubles_and_strings_as_strcmp() {
 
 #[test]
 fn in_compares_each_item_untrimmed() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let feature = props(&[("a", "b"), ("n", "2.0")]);
     let list = |items: &[&str]| Expr::List(items.iter().map(|i| s(i)).collect());
     let is_in = |value: Expr, items: Expr| eval(&call(Op::In, vec![value, items]), &feature);
@@ -105,7 +105,7 @@ fn in_compares_each_item_untrimmed() {
 
 #[test]
 fn arithmetic_follows_the_grammar() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     assert_eq!(number(&call(Op::Mod, vec![num(7.9), num(2.5)])), Ok(1.0));
     assert_eq!(number(&call(Op::Mod, vec![num(-7.0), num(2.0)])), Ok(-1.0));
     assert_eq!(
@@ -130,7 +130,7 @@ fn arithmetic_follows_the_grammar() {
 
 #[test]
 fn a_failure_anywhere_fails_the_whole_expression() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     // `false AND 1/0 <> 0`: the grammar evaluates both sides before AND.
     let expr = call(
         Op::Or,
@@ -147,7 +147,7 @@ fn a_failure_anywhere_fails_the_whole_expression() {
 
 #[test]
 fn the_functions_follow_mapserver() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     assert_eq!(number(&call(Op::Length, vec![s("\u{e9}t\u{e9}")])), Ok(5.0));
     assert_eq!(number(&call(Op::Round, vec![num(2.5)])), Ok(2.0));
     assert_eq!(number(&call(Op::Round, vec![num(3.5)])), Ok(4.0));
@@ -161,7 +161,7 @@ fn the_functions_follow_mapserver() {
         Ok(40.0)
     );
     // MS_NINT is lrint, which on the x86-64 build at the pin gives LONG_MIN past a long and for
-    // no number; ROUND keeps that long as a double (ADR-0037).
+    // no number; ROUND keeps that long as a double (ADR-0017).
     let long_min = -9_223_372_036_854_775_808.0;
     assert_eq!(number(&call(Op::Round, vec![num(1e19)])), Ok(long_min));
     assert_eq!(number(&call(Op::Round, vec![num(-1e300)])), Ok(long_min));
@@ -214,7 +214,7 @@ fn the_functions_follow_mapserver() {
 
 #[test]
 fn a_unary_minus_is_carried_as_its_operand() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     // The frontend writes `-[a]` as `to_number(a)`, as mapparser.y's `$$ = $2` does not negate;
     // the evaluator holds no negation that could apply.
     let feature = props(&[("a", "5")]);
@@ -223,7 +223,7 @@ fn a_unary_minus_is_carried_as_its_operand() {
 
 #[test]
 fn times_compare_as_ms_time_compare() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let feature = props(&[("t", "2010-12-01T10:00:00"), ("bad", "yesterday")]);
     let at = |text: &str| Expr::Timestamp {
         timestamp: text.to_owned(),
@@ -260,7 +260,7 @@ fn like(value: Expr, pattern: &str, flags: &str) -> Expr {
 
 #[test]
 fn an_empty_value_never_matches_a_pattern() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let feature = props(&[("a", "")]);
     assert_eq!(eval(&like(prop_str("a"), "^$", ""), &feature), Ok(false));
     assert_eq!(eval(&like(prop_str("a"), ".*", ""), &feature), Ok(false));
@@ -270,7 +270,7 @@ fn an_empty_value_never_matches_a_pattern() {
 
 #[test]
 fn a_pattern_pcre2_refuses_is_false_where_it_stands() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let feature = props(&[("a", "x")]);
     let refused = like(prop_str("a"), "(", "");
     assert_eq!(eval(&refused, &feature), Ok(false));
@@ -279,7 +279,7 @@ fn a_pattern_pcre2_refuses_is_false_where_it_stands() {
 
 #[test]
 fn the_flag_i_and_the_classes_are_ascii() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let feature = props(&[("a", "ROAD"), ("digit", "\u{663}"), ("e", "\u{c9}")]);
     assert_eq!(
         eval(&like(prop_str("a"), "^road$", "i"), &feature),
@@ -302,7 +302,7 @@ fn the_flag_i_and_the_classes_are_ascii() {
 
 #[test]
 fn a_pattern_past_the_size_limit_does_not_match() {
-    // Verifies: ADR-0031, Q-9
+    // Verifies: ADR-0016, Q-9
     let feature = props(&[("a", "x")]);
     let result = eval(
         &like(prop_str("a"), r"\w{1000}[a-z]{1000}x{60000}", ""),
@@ -313,7 +313,7 @@ fn a_pattern_past_the_size_limit_does_not_match() {
 
 #[test]
 fn unsupported_constructs_fail_the_expression_for_every_feature() {
-    // Verifies: ADR-0031
+    // Verifies: ADR-0016
     let mut evaluator = Evaluator::new();
     for pattern in ["a*+", r"(a)\1"] {
         let expr = call(Op::Not, vec![like(prop_str("a"), pattern, "")]);
@@ -358,7 +358,7 @@ fn a_nul_ends_a_string_as_in_c() {
 
 #[test]
 fn only_patterns_written_in_the_tree_are_kept() {
-    // Verifies: ADR-0031, Q-9
+    // Verifies: ADR-0016, Q-9
     let mut evaluator = Evaluator::new();
     let literal = like(prop_str("a"), "^x", "");
     let computed = call(Op::RegexpLike, vec![prop_str("a"), prop_str("p"), s("")]);

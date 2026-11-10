@@ -637,7 +637,7 @@ fn labels_match_when_both_are_drawn_within_a_pixel_or_both_discarded() {
 #[test]
 fn labels_of_another_priority_at_the_same_box_do_not_match() {
     // Verifies: G-10
-    // Verifies: ADR-0029
+    // Verifies: ADR-0033
     use forager_engine::CachedLabel;
     let recorded = super::labels::read("3\t0\tp\t0\t1\t10 10 40 20\tFen\n").unwrap();
     let ours = CachedLabel {
@@ -661,7 +661,7 @@ const RECORD: &str = "2\t0\tplaces\t1\t1\t1.5 2 30.25 14\tFen\n1\t1\troads\t0\t0
 
 #[test]
 fn the_readers_labels_hold_the_record_within_a_millionth_of_a_pixel() {
-    // Verifies: ADR-0029
+    // Verifies: ADR-0033
     let read = |text: &str| super::labels::read(text).unwrap();
     let record = read(RECORD);
     let nudged = |by: f64| {
@@ -685,7 +685,7 @@ fn the_readers_labels_hold_the_record_within_a_millionth_of_a_pixel() {
 
 #[test]
 fn the_readers_labels_differ_from_the_record_in_any_field_but_the_box() {
-    // Verifies: ADR-0029
+    // Verifies: ADR-0033
     let record = super::labels::read(RECORD).unwrap();
     let changed = [
         // The priority, the layer's index and name, the class, the drawn state, the texts.
@@ -826,7 +826,7 @@ fn the_records_are_the_files_under_their_directory_relative_to_it() {
 
 #[test]
 fn a_difference_between_the_native_and_the_wasm32_image_names_the_first_differing_pixel() {
-    // Verifies: ADR-0043
+    // Verifies: ADR-0034
     use super::wasm::difference;
     let image = |pixels: &[u8]| Ok((2, 2, pixels.to_vec()));
     let native = [0; 16];
@@ -865,7 +865,7 @@ impl forager_ports::ResourceLoader for Empty {
 
 #[test]
 fn a_shapefile_the_loader_does_not_hold_is_an_error_naming_it_rather_than_an_empty_layer() {
-    // Verifies: ADR-0043
+    // Verifies: ADR-0034
     let mut map = Map {
         layers: vec![Layer {
             render_mode: Some(forager_style_ir::RenderMode::Polygon),
@@ -884,7 +884,7 @@ fn a_shapefile_the_loader_does_not_hold_is_an_error_naming_it_rather_than_an_emp
 
 #[test]
 fn a_case_that_renders_no_image_natively_differs_whatever_the_module_renders() {
-    // Verifies: ADR-0043
+    // Verifies: ADR-0034
     use super::wasm::difference;
     let none = || Err::<(u32, u32, Vec<u8>), _>("no map".to_owned());
     for wasm in [none(), Err("a trap".to_owned()), Ok((1, 1, vec![0; 4]))] {
@@ -899,7 +899,7 @@ fn a_case_that_renders_no_image_natively_differs_whatever_the_module_renders() {
 #[test]
 fn a_label_box_with_an_edge_that_is_no_number_never_matches() {
     // Verifies: G-10
-    // Verifies: ADR-0029
+    // Verifies: ADR-0033
     use forager_engine::CachedLabel;
     let recorded = |bbox: &str| super::labels::read(&format!("1\t0\tp\t0\t1\t{bbox}\tFen\n"));
     let ours = |drawn: [f64; 4]| CachedLabel {
@@ -941,7 +941,7 @@ fn a_label_box_with_an_edge_that_is_no_number_never_matches() {
 
 #[test]
 fn a_reader_box_with_an_edge_that_is_no_number_never_holds_the_record() {
-    // Verifies: ADR-0029
+    // Verifies: ADR-0033
     let read = |bbox: &str| super::labels::read(&format!("1\t0\tp\t0\t1\t{bbox}\tFen\n")).unwrap();
     let finite = read("10 10 40 20");
     for (record, output, says) in [

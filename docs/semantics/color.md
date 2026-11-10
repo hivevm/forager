@@ -15,7 +15,7 @@
   is an error and 254.9 is 254. In a style or a label, a channel of −1 means no colour:
   MapServer's `MS_VALID_COLOR` (`src/mapserver.h`) refuses a colour with any channel −1.
   MapServer leaves another negative channel as it is, and AGG, the renderer Forager follows
-  ([ADR-0015](../adr/0015-agg-rust-rasterizer.md)), stores it in a byte — `aggColor` in
+  ([ADR-0025](../adr/0025-agg-rust-rasterizer.md)), stores it in a byte — `aggColor` in
   `src/mapagg.cpp` hands it to `rgba8`, which takes `unsigned` and keeps an `int8u` — so it draws
   as the channel modulo 256: −255 is 1, −2 is 254. The frontend stores that byte. Cairo divides
   the channel by 255 instead (`msCairoSetSourceColor`, `src/mapcairo.c`), which clamps a negative

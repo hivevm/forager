@@ -15,7 +15,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The label cache against MapServer's pairwise test (ADR-0035): labels of arbitrary boxes, of no
+//! The label cache against MapServer's pairwise test (ADR-0032): labels of arbitrary boxes, of no
 //! number, infinite, inside out, and larger than a cell among them, go through the cache and
 //! through a reference that tests every marker and every drawn label, pair by pair, as
 //! `msTestLabelCacheCollisions` does, and the two must draw the same labels at the same positions
@@ -542,7 +542,7 @@ fn intersect_segments(a: &Point, b: &Point, c: &Point, d: &Point) -> bool {
 
 #[test]
 fn the_cache_draws_what_the_pairwise_test_draws_on_arbitrary_labels() {
-    // Verifies: ADR-0035
+    // Verifies: ADR-0032
     let mut rng = Rng(SEED);
     let mut drawn = 0;
     for input in 0..INPUTS {

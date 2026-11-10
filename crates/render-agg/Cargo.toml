@@ -1,6 +1,6 @@
 [package]
 name = "forager-render-agg"
-description = "The reference renderer of Forager, on agg-rust (ADR-0015)."
+description = "The reference renderer of Forager, on agg-rust (ADR-0025)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

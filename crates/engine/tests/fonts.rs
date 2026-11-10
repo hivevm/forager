@@ -1,4 +1,4 @@
-//! The fonts of a render's labels, loaded through the host's resource loader (ADR-0028).
+//! The fonts of a render's labels, loaded through the host's resource loader (ADR-0031).
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -108,7 +108,7 @@ fn codes(rendered: &Rendered) -> Vec<&str> {
 
 #[test]
 fn a_font_is_loaded_once_per_render_through_the_loader() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let files = files(&[("fonts/sans.ttf", sans())]);
     let rendered = render(&map("sans", &[("sans", "fonts/sans.ttf")]), &files);
     assert_eq!(codes(&rendered), Vec::<&str>::new());
@@ -117,7 +117,7 @@ fn a_font_is_loaded_once_per_render_through_the_loader() {
 
 #[test]
 fn the_first_usable_entry_of_the_font_list_is_taken_as_get_face_for_run_tries_them() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // An entry the font set lacks is skipped; an `xx:` prefix is stripped; a later entry is not
     // loaded once one is usable.
     let files = files(&[("serif.ttf", sans())]);
@@ -140,7 +140,7 @@ fn the_first_usable_entry_of_the_font_list_is_taken_as_get_face_for_run_tries_th
 
 #[test]
 fn a_label_none_of_whose_fonts_can_be_used_is_not_drawn_with_a_diagnostic() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let files = files(&[]);
     let rendered = render(
         &map(
@@ -166,7 +166,7 @@ fn a_label_none_of_whose_fonts_can_be_used_is_not_drawn_with_a_diagnostic() {
 
 #[test]
 fn a_file_the_font_set_names_twice_is_loaded_once() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let files = files(&[("same.ttf", sans())]);
     let fonts = [("one", "same.ttf"), ("two", "same.ttf")];
     let mut map = map("one", &fonts);
@@ -178,7 +178,7 @@ fn a_file_the_font_set_names_twice_is_loaded_once() {
 
 #[test]
 fn a_font_past_the_size_bound_or_outside_the_base_context_is_not_used() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // Verifies: Q-9
     let files = files(&[("big.ttf", vec![0; MAX_FONT_BYTES + 1])]);
     let rendered = render(&map("big", &[("big", "big.ttf")]), &files);
@@ -219,7 +219,7 @@ fn a_label_without_text_loads_no_font() {
 
 #[test]
 fn a_file_that_is_no_font_is_passed_over_as_one_that_does_not_load() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let files = files(&[("junk.ttf", b"font".to_vec()), ("sans.ttf", sans())]);
     let rendered = render(
         &map("junk,sans", &[("junk", "junk.ttf"), ("sans", "sans.ttf")]),
@@ -237,7 +237,7 @@ fn a_file_that_is_no_font_is_passed_over_as_one_that_does_not_load() {
 
 #[test]
 fn a_font_that_lacks_a_glyph_gives_way_to_the_next_unless_it_is_the_last() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let fonts = [("digits", "digits.ttf"), ("sans", "sans.ttf")];
     let files = files(&[
         ("digits.ttf", font("dejavu-sans-digits.ttf")),
@@ -260,7 +260,7 @@ fn a_font_that_lacks_a_glyph_gives_way_to_the_next_unless_it_is_the_last() {
 
 #[test]
 fn a_font_this_renderer_cannot_read_ends_the_search_with_a_diagnostic() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let fonts = [("mac", "mac.ttf"), ("cff", "cff.otf"), ("sans", "sans.ttf")];
     let files = files(&[
         ("mac.ttf", font("dejavu-sans-mac.ttf")),
@@ -286,7 +286,7 @@ fn a_font_this_renderer_cannot_read_ends_the_search_with_a_diagnostic() {
 
 #[test]
 fn a_font_with_only_a_symbol_map_gives_way_lacking_a_glyph_and_is_not_drawn_with() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let fonts = [("symbol", "symbol.ttf"), ("sans", "sans.ttf")];
     let files = files(&[
         ("symbol.ttf", font("dejavu-sans-symbol.ttf")),
@@ -312,7 +312,7 @@ fn a_font_with_only_a_symbol_map_gives_way_lacking_a_glyph_and_is_not_drawn_with
 
 #[test]
 fn a_font_whose_glyph_names_freetype_would_read_is_not_drawn_with() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // Only an Apple Roman map, and a `post` table that names the glyphs: FreeType builds a Unicode
     // map from the names, which is not built here, so the search ends with a diagnostic.
     let fonts = [("named", "named.ttf"), ("sans", "sans.ttf")];

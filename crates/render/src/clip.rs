@@ -1,7 +1,7 @@
 //! The clip of every path to the image grown by a margin, and the reach of a glyph past the image
-//! (ADR-0039): properties of the display list, which the bounds of a hatch measure with and every
+//! (ADR-0027): properties of the display list, which the bounds of a hatch measure with and every
 //! renderer clips with, so that a bound and a renderer measure the same part of a path. They keep
-//! the coordinates a renderer is handed within agg-rust's fixed-point limits (ADR-0015).
+//! the coordinates a renderer is handed within agg-rust's fixed-point limits (ADR-0025).
 
 use crate::{PathCommand, Point};
 
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn a_ring_far_outside_is_cut_to_the_rectangle() {
-        // Verifies: ADR-0015
+        // Verifies: ADR-0025
         let r = Rect::around_image(64, 64, 0.0);
         let ring = ring(&[p(-1e15, -1e15), p(1e15, 5.0), p(30.0, 1e15)], &r);
         assert!(ring.len() >= 3);
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn coordinates_near_the_limit_of_f64_never_yield_non_finite_points() {
-        // Verifies: ADR-0015
+        // Verifies: ADR-0025
         let r = Rect::around_image(64, 64, 0.0);
         for big in [1e200, 1e300, f64::MAX] {
             let ring = ring(&[p(-big, -big), p(big, 5.0), p(30.0, big)], &r);
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn a_segment_that_misses_the_rectangle_far_out_yields_nothing() {
-        // Verifies: ADR-0015, Q-3
+        // Verifies: ADR-0025, Q-3
         // Inputs of the render fuzz target: one end lies so much farther out than the other that
         // the parameters at which the segment meets the edges round to 1.0, the other end, which
         // lies outside too; the segment misses the rectangle.
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn a_segment_from_far_out_crosses_where_it_crosses() {
-        // Verifies: ADR-0015
+        // Verifies: ADR-0025
         let r = Rect::around_image(64, 64, 0.0);
         assert_eq!(
             line(&[p(-1e19, 30.0), p(100.0, 30.0)], &r),

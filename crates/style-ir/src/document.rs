@@ -43,7 +43,7 @@ fn newer_minor(version_text: Option<&str>) -> bool {
     }
 }
 
-/// A text format of the style document, YAML or JSON (ADR-0014): how its text reads into a
+/// A text format of the style document, YAML or JSON (ADR-0013): how its text reads into a
 /// value, how it reads typed, and the code of its read errors.
 trait Format {
     const CODE: &'static str;
@@ -106,7 +106,7 @@ impl Format for Json {
     }
 }
 
-/// The style IR as a document: a format version and the map (ADR-0014).
+/// The style IR as a document: a format version and the map (ADR-0013).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct StyleDocument {
@@ -133,12 +133,12 @@ impl StyleDocument {
             .map_err(|e| Diagnostic::error("json-write", e.to_string(), None))
     }
 
-    /// Reads a document from YAML, with the warnings of reading it (ADR-0020).
+    /// Reads a document from YAML, with the warnings of reading it (ADR-0014).
     pub fn from_yaml(text: &str) -> Result<Read, Diagnostic> {
         Self::from_yaml_with(text, STEPS)
     }
 
-    /// Reads a document from JSON, with the warnings of reading it (ADR-0020).
+    /// Reads a document from JSON, with the warnings of reading it (ADR-0014).
     pub fn from_json(text: &str) -> Result<Read, Diagnostic> {
         Self::from_json_with(text, STEPS)
     }
@@ -156,7 +156,7 @@ impl StyleDocument {
         Self::read::<Json>(text, steps)
     }
 
-    /// Reads a document of the format `F` (ADR-0020): its version first, an older major
+    /// Reads a document of the format `F` (ADR-0014): its version first, an older major
     /// migrated from the value tree, else a typed read that names the fields it does not know,
     /// and for a newer minor that does not read so, the lenient read of its value tree.
     fn read<F: Format>(text: &str, steps: &[migration::Step]) -> Result<Read, Diagnostic> {
@@ -468,7 +468,7 @@ mod tests {
 
     #[test]
     fn a_document_reads_back_equal_from_yaml_and_from_json() {
-        // Verifies: ADR-0014
+        // Verifies: ADR-0013
         let document = sample();
         let from_yaml = StyleDocument::from_yaml(&document.to_yaml().unwrap())
             .unwrap()
@@ -500,7 +500,7 @@ mod tests {
 
     #[test]
     fn numbers_read_back_from_json_bit_for_bit() {
-        // Verifies: ADR-0014
+        // Verifies: ADR-0013
         // The first of 15,585 in 200,000 coordinate-like decimals that serde_json's default
         // float parser read back one unit in the last place off.
         let x = 27374987.048899982_f64;
@@ -523,7 +523,7 @@ mod tests {
 
     #[test]
     fn an_expression_past_the_nesting_limit_is_refused_and_one_at_it_reads() {
-        // Verifies: Q-9, ADR-0030
+        // Verifies: Q-9, ADR-0015
         let nested = |depth: usize| {
             let mut expr = Expr::Bool(true);
             for _ in 1..depth {
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_fields_are_named_by_their_path() {
-        // Verifies: ADR-0020
+        // Verifies: ADR-0014
         let json = r#"{"version":"1.9","map":{"layers":[{"name":"a","glow":1}],"a/b~":2}}"#;
         let yaml = "version: \"1.9\"\nmap:\n  layers:\n  - name: a\n    glow: 1\n  a/b~: 2\n";
         for read in [
@@ -571,7 +571,7 @@ mod tests {
 
     #[test]
     fn an_unknown_field_in_the_current_or_an_older_minor_is_a_load_error() {
-        // Verifies: ADR-0020
+        // Verifies: ADR-0014
         for version in ["1.0", "1"] {
             let json = format!(r#"{{"version":"{version}","map":{{"layers":[{{"glow":1}}]}}}}"#);
             let error = StyleDocument::from_json(&json).unwrap_err();
@@ -626,7 +626,7 @@ mod tests {
 
     #[test]
     fn an_older_major_is_migrated_step_by_step() {
-        // Verifies: ADR-0020
+        // Verifies: ADR-0014
         let json = r##"{"version":"0.3","map":{"name":"m","colour":"#010203"}}"##;
         let yaml = "version: \"0.3\"\nmap:\n  name: m\n  colour: \"#010203\"\n";
         for read in [
@@ -696,8 +696,8 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_enum_value_is_dropped_with_a_warning() {
-        // Verifies: ADR-0022
-        // Verifies: ADR-0020
+        // Verifies: ADR-0014
+        // Verifies: ADR-0014
         let read = StyleDocument::from_yaml(&with_unknowns("1.9", "hologram", "=")).unwrap();
         let layer = &read.document.map.layers[0];
         assert_eq!(layer.render_mode, None);
@@ -720,7 +720,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_operator_keeps_its_class_which_never_matches() {
-        // Verifies: ADR-0030
+        // Verifies: ADR-0015
         let read = StyleDocument::from_yaml(&with_unknowns("1.9", "polygon", "s_buffer")).unwrap();
         let class = &read.document.map.layers[0].classes[0];
         assert_eq!(class.name.as_deref(), Some("c"));
@@ -750,7 +750,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_function_never_matches_in_a_class_a_label_or_a_filter() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0014
         // A condition a newer minor adds is a CQL2 function inside an existing expression; this
         // build does not know `glows`, so each element it sits on never matches, in YAML and JSON.
         let in_yaml = r#"{op: or, args: [{op: "=", args: [{property: a}, 1]}, {op: glows, args: [{property: a}]}]}"#;
@@ -812,7 +812,7 @@ mod tests {
 
     #[test]
     fn in_the_current_minor_an_unknown_value_or_operator_is_a_load_error_naming_its_path() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0014
         let error = StyleDocument::from_yaml(&with_unknowns("1.0", "hologram", "=")).unwrap_err();
         assert!(
             error.message.starts_with("/map/layers/0/render_mode: "),
@@ -839,7 +839,7 @@ mod tests {
 
     #[test]
     fn a_newer_minor_drops_a_bounded_number_of_values() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0014
         // Verifies: Q-9
         let layers = |n: usize| {
             let layer = r#"{"status":"dim"}"#;
@@ -854,7 +854,7 @@ mod tests {
 
     #[test]
     fn a_newer_minor_keeps_a_condition_it_cannot_read_and_loses_nothing_else() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0014
         // A filter of a shape this build does not know never matches; dropped, it would match all.
         let json = r#"{"version":"1.9","map":{"layers":[{"filter":{"op":"=","args":[{"property":"a"},{"interval":["a","b"]}]}}]}}"#;
         let read = StyleDocument::from_json(json).unwrap();
@@ -912,7 +912,7 @@ mod tests {
 
     #[test]
     fn an_unknown_key_inside_an_expression_or_a_binding_is_an_unknown_field() {
-        // Verifies: ADR-0020
+        // Verifies: ADR-0014
         let json = unknown_keys_inside("1.0");
         let error = StyleDocument::from_json(&json).unwrap_err();
         assert_eq!(error.code, "unknown-field");
@@ -962,7 +962,7 @@ mod tests {
 
     #[test]
     fn a_newer_minor_neutralizes_what_does_not_read_inside_a_list_of_an_expression() {
-        // Verifies: ADR-0022
+        // Verifies: ADR-0014
         let json = r#"{"version":"1.9","map":{"layers":[{"filter":{"op":"in","args":[{"property":"a"},[1,null]]},
             "classes":[{"styles":[{"width":{"op":"+","args":[[1,null],2]}}]}]}]}}"#;
         let read = StyleDocument::from_json(json).unwrap();

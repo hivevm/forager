@@ -22,7 +22,7 @@
 #     CHANGELOG.md linguist-generated
 
 # Vendored third-party files keep the bytes their release published, CRLF included: their SHA-256
-# checksums in examples/web/vendor/SHA256SUMS are of those bytes (ADR-0045).
+# checksums in examples/web/vendor/SHA256SUMS are of those bytes (ADR-0035).
 examples/web/vendor/** -text
 
 # The ADR index merges its table rows by keeping the lines of both sides, and its prose as text: two

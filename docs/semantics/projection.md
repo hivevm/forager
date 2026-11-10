@@ -10,7 +10,7 @@ difference). Reprojection itself is not yet drawn.
 
 **Parameters.** MapServer hands every parameter to PROJ, so the frontend writes each one with a
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the
-host passes in (ADR-0023); without one, or for a code it does not know, it is a load error. As in
+host passes in (ADR-0019); without one, or for a code it does not know, it is a load error. As in
 PROJ's `pj_expand_init`, there is at most one `init=`, it is matched case-sensitively, and its
 expansion follows the explicit parameters, which take precedence.
 
@@ -27,7 +27,7 @@ lines, `#` starting a comment, the first definition of a code holding, and the c
 `:` of the reference. A file outside the base context, one that cannot be
 read, a code it does not hold, and a definition that names a grid file or refers on with `init=`
 are each the load error `projection-unresolved`, naming the file or the code. A name without a
-`/`, such as `epsg2`, is an authority like `epsg` and goes to the resolver (ADR-0023).
+`/`, such as `epsg2`, is an authority like `epsg` and goes to the resolver (ADR-0019).
 
 **`AUTO`.** A first parameter that is `AUTO` and nothing else, in any case, leaves the projection to
 the layer's source: `msProcessProjection` sets no PROJ object for it, and the source declares one

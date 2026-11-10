@@ -28,23 +28,23 @@ serde = { version = "1", features = ["derive"] }
 # float_roundtrip: every number of a style document reads back bit for bit (G-3).
 serde_json = { version = "1", features = ["float_roundtrip"] }
 serde-saphyr = "2"
-# Reports each key a reader ignores with its path (ADR-0020).
+# Reports each key a reader ignores with its path (ADR-0014).
 serde_ignored = "0.1.14"
 # Names the path at which a typed read failed, so that a newer minor's unknown value is dropped
-# there and any other read error names its place (ADR-0020).
+# there and any other read error names its place (ADR-0014).
 serde_path_to_error = "0.1.20"
-# Derives the JSON Schema of the style document, behind style-ir's `schema` feature (ADR-0020).
+# Derives the JSON Schema of the style document, behind style-ir's `schema` feature (ADR-0014).
 schemars = "1.2.3"
 wasm-bindgen = "0.2.129"
 # The same pure-Rust sin, cos, and acos on every target, where std's call the platform's libm and
 # may differ in the last bit between the native and the browser build (Q-2). Without `arch`, its
 # default, every target runs the same generic code.
 libm = { version = "0.2.16", default-features = false }
-# Encodes and decodes PNG in `encode` (ADR-0017); the CLI's tests decode the reference images with
+# Encodes and decodes PNG in `encode` (ADR-0030); the CLI's tests decode the reference images with
 # it, so that the encoder and the harness read one version.
 png = "0.18.1"
 # Runs the browser bindings' wasm32 build in the CLI's conformance test, compared with the native
-# render (G-9, ADR-0043); a dev-dependency of the CLI alone.
+# render (G-9, ADR-0034); a dev-dependency of the CLI alone.
 wasmi = { version = "2.0.0", default-features = false, features = ["std", "validate", "portable-dispatch"] }
 
 [workspace.lints.rust]
@@ -71,7 +71,7 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 
-# The interpreter of the conformance test's wasm32 module (ADR-0043) runs optimized in the test
+# The interpreter of the conformance test's wasm32 module (ADR-0034) runs optimized in the test
 # build; unoptimized it takes about nine minutes for the cases in scope.
 [profile.dev.package.wasmi]
 opt-level = 3

@@ -21,7 +21,7 @@
 // copyright notice appears in all copies. This software is provided "as is" without express or
 // implied warranty, and with no claim as to its suitability for any purpose.
 
-//! The geometry of a hatch (ADR-0015, ADR-0032): its lines cut into dashes, each stroked with
+//! The geometry of a hatch (ADR-0025, ADR-0028): its lines cut into dashes, each stroked with
 //! butt caps as a rectangle, and the rectangles intersected with the polygon by i_overlay, as
 //! msHatchPolygon intersects them by MapServer's Clipper: the polygon the subject, the stroke the
 //! clip, both read under the even-odd rule, and every coordinate rounded to a hundredth of a
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn the_rings_and_the_pieces_intersect_under_the_even_odd_rule() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0028
         // A square with a hole, cut to a band 2 high across both: the band less the hole.
         let outer = square(0.0, 0.0, 10.0, 10.0);
         let hole = square(3.0, 3.0, 5.0, 7.0);
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn coordinates_round_to_a_hundredth_of_a_pixel_half_away_from_zero() {
-        // Verifies: ADR-0032
+        // Verifies: ADR-0028
         // A band from y = 4.004 to 5.996 and a square from x = 0.125 to 9.875, exact in binary:
         // Clipper's Round makes them 4.00 to 6.00, and 12.5 and 987.5 hundredths 0.13 to 9.88.
         let thin = Piece {

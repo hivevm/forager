@@ -26,7 +26,7 @@ to invent.
 - **Display list** — The ordered sequence of drawing operations the core hands a renderer, each
   tagged with the feature it came from.
 - **Expression** — A condition or value over a feature's properties in the style IR: a CQL2
-  tree ([ADR-0030](adr/0030-cql2-expressions.md)) the mapfile frontend translates from an
+  tree ([ADR-0015](adr/0015-expressions-as-cql2.md)) the mapfile frontend translates from an
   `EXPRESSION`, a `FILTER`, a `TEXT`, or an attribute binding. Its semantics per parameter are in
   [`semantics/`](semantics/README.md).
 - **Feature source** — The port through which the host supplies a layer's features, implemented by
@@ -35,7 +35,7 @@ to invent.
 - **Fill tile** — The image a polygon's pixmap symbol is repeated from: the pixmap scaled and
   turned, centred in a transparent image of the size `msDrawShadeSymbol` computes. Built once per
   symbol, size, scale, and rotation in a render, and counted with its decoded images
-  ([ADR-0040](adr/0040-a-decoded-pixmap-is-held-once-per-render.md)). The code's `Tile`.
+  ([ADR-0029](adr/0029-pixmaps-held-once-per-render.md)). The code's `Tile`.
   _Avoid:_ tile alone beside a map's raster tiles, pattern.
 - **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
   crate versions and of the core's API.
@@ -43,7 +43,7 @@ to invent.
   the WASM bindings, or a server.
 - **Inline feature** — A feature written into a layer of the style IR, a mapfile's `FEATURE`: a
   shape's type and parts, its properties, and its text
-  ([ADR-0033](adr/0033-inline-features-in-the-style-ir.md)).
+  ([ADR-0018](adr/0018-inline-features.md)).
 - **Label cache** — MapServer's deferred placement of labels: labels are collected over all layers
   and placed in a separate pass, after the geometry.
 - **Labelpoly** — The box around a label's text grown by a pixel, or its turned polygon where the
@@ -66,7 +66,7 @@ to invent.
 - **Premultiplied image** — The image of a pixmap symbol as a render holds it decoded, each
   colour already multiplied by its alpha, as MapServer's `readPNG` premultiplies it: once per
   render and path, shared by every display item that draws it
-  ([ADR-0040](adr/0040-a-decoded-pixmap-is-held-once-per-render.md)). The code's
+  ([ADR-0029](adr/0029-pixmaps-held-once-per-render.md)). The code's
   `PremultipliedImage`, apart from the straight-alpha `RgbaImage` a render returns.
   _Avoid:_ pixmap buffer, for the decoded image.
 - **Property** — A named value of a feature, which a mapfile calls an item and binds as

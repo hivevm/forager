@@ -7,7 +7,7 @@ the layout tables dropped). They are modified versions of the Font Software unde
 below, whose names contain neither "Bitstream", "Vera", nor "Arev":
 
 - dejavu-sans-subset.ttf: printable ASCII and U+00ED; the left side bearing of `l` is lowered
-  from 193 to 93, so that it differs from the glyph's xMin, for the tests of ADR-0028.
+  from 193 to 93, so that it differs from the glyph's xMin, for the tests of ADR-0031.
 - dejavu-sans-digits.ttf: the digits and the space; it has no `?`.
 - dejavu-sans-symbol.ttf: the digits and the space, with only a Windows Symbol character map.
 - dejavu-sans-both.ttf: dejavu-sans-digits.ttf with a Windows Symbol map that maps each digit to

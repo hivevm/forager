@@ -1,7 +1,7 @@
 name: Noise
 
 # The noise measurement of G-6 and of G-13 for the category text: MapServer at the pinned release,
-# built as ADR-0027 decides, renders the cases the list crates/cli/tests/conformance/cases.txt puts
+# built as ADR-0033 decides, renders the cases the list crates/cli/tests/conformance/cases.txt puts
 # in scope, of every category, as the testing decisions of the point-label spec ask, and the
 # harness compares its renderings with the references by its metric at each threshold of a small
 # set, the maximum over each category apart. A sensor: the report goes into the job summary and

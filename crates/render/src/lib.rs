@@ -1,5 +1,5 @@
 //! The display list and the renderer trait: what is drawn, in pixel coordinates, independent of
-//! the backend that rasterizes it (ADR-0009). Only `style-ir` is known here.
+//! the backend that rasterizes it (ADR-0008). Only `style-ir` is known here.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -48,7 +48,7 @@ pub enum DrawOp {
     },
     /// Fills the part of the hatch's stroked lines that lies inside its rings.
     Hatch(Hatch),
-    /// Draws a label's glyph outlines as MapServer's AGG renderer draws text (ADR-0028), their
+    /// Draws a label's glyph outlines as MapServer's AGG renderer draws text (ADR-0031), their
     /// curves flattened: first its outline, where it has one, then its fill under the non-zero
     /// rule, where it has a colour.
     Glyphs {
@@ -60,7 +60,7 @@ pub enum DrawOp {
     /// pixel (`left`, `top`), every pixel at full cover, as AGG's `blend_from` lays one
     /// premultiplied image over another; what lies outside the image drawn on is left out. The
     /// image is the one the render decoded, shared by every item that draws it, never a copy
-    /// (ADR-0040).
+    /// (ADR-0029).
     Pixmap {
         image: Rc<PremultipliedImage>,
         left: i32,
@@ -70,8 +70,8 @@ pub enum DrawOp {
     /// `agg2RenderPixmapSymbol` draws an image turned or scaled: the square filled under the
     /// non-zero rule without a gamma, each pixel's colour the image sampled at the position
     /// `inverse` takes the pixel's centre to, bilinearly, transparent beyond the image
-    /// (ADR-0041). The square is clipped to the image as every path is (ADR-0039). The image is
-    /// the one the render decoded, never a copy (ADR-0040).
+    /// (ADR-0026). The square is clipped to the image as every path is (ADR-0027). The image is
+    /// the one the render decoded, never a copy (ADR-0029).
     ResampledPixmap {
         image: Rc<PremultipliedImage>,
         at: Point,
@@ -81,8 +81,8 @@ pub enum DrawOp {
     /// Fills the area the rings enclose under the even-odd rule without a gamma, each pixel's
     /// colour the pixel of `tile` at its position modulo the tile's size, as
     /// `agg2RenderPolygonTiled` repeats a tile from the image's origin. The rings are clipped to
-    /// the image as every path is (ADR-0039). The tile is the one the render holds, shared by
-    /// every item it fills (ADR-0040).
+    /// the image as every path is (ADR-0027). The tile is the one the render holds, shared by
+    /// every item it fills (ADR-0029).
     TiledFill {
         rings: Vec<Vec<Point>>,
         tile: Rc<Tile>,
@@ -163,7 +163,7 @@ impl RgbaImage {
 }
 
 /// An image as rows of premultiplied RGBA bytes, top row first: each colour already multiplied
-/// by its alpha, as MapServer's `readPNG` premultiplies a pixmap (ADR-0040). A type apart from
+/// by its alpha, as MapServer's `readPNG` premultiplies a pixmap (ADR-0029). A type apart from
 /// [`RgbaImage`], whose alpha is straight, so that the one is never read as the other.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PremultipliedImage {

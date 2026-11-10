@@ -39,7 +39,7 @@ use crate::bounds;
 use crate::style::{DEG_TO_RAD, fixed};
 
 /// The images of a render's pixmap symbols by their resource path, each the decoded image or why
-/// it has none, as the engine's store of the render holds them (ADR-0040).
+/// it has none, as the engine's store of the render holds them (ADR-0029).
 pub type Pixmaps = std::collections::BTreeMap<String, Result<Rc<PremultipliedImage>, String>>;
 
 /// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16

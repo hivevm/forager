@@ -2,19 +2,19 @@ name: Checks
 
 # Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed but
 # ShellCheck, which the shell job installs at the version scripts/install-shellcheck.sh pins
-# (ADR-0044), and the toolchain of the rust job. scripts/check-all.sh is the local equivalent;
+# (ADR-0007), and the toolchain of the rust job. scripts/check-all.sh is the local equivalent;
 # check 9 of scripts/check-docs.sh holds its list, the jobs of this workflow, and the required
 # checks named in CONTRIBUTING.md together. Each job runs a check after its own self-test, and
 # each script's header says what it checks and which ADR it holds.
 #
 # The sensors report for the reviewer and fail on nothing they count, except the action
-# references, which this project runs with --require major-tag as the check of ADR-0011; their
+# references, which this project runs with --require major-tag as the check of ADR-0010; their
 # self-tests fail like any check's. The sensors job checks out the full history because five
 # sensors read it. The review binding sensor runs in review-binding.yml, the repository settings
 # sensor on a human's instruction (ADR-0002); this workflow runs the self-test of each.
 #
 # The build, test, and lint job runs scripts/check-rust.sh after scripts/install-tools.sh
-# (ADR-0008) and the self-test of scripts/fuzz.sh, which reads manifests with the toolchain
+# (ADR-0007) and the self-test of scripts/fuzz.sh, which reads manifests with the toolchain
 # installed; the one job of this workflow that installs a toolchain; ~/.cargo/bin and the
 # registry are cached, keyed on the files that decide their content, and so is the msautotest
 # suite check-rust.sh fetches, keyed on the script that holds its pin.
@@ -151,8 +151,8 @@ jobs:
         run: bash scripts/sensor-backlog.sh
       - name: Self-test the action references sensor
         run: bash scripts/test-sensor-action-refs.sh
-      # The check of ADR-0011: every action by its major version tag, kept current by Dependabot.
-      # Verifies: ADR-0011
+      # The check of ADR-0010: every action by its major version tag, kept current by Dependabot.
+      # Verifies: ADR-0010
       - name: Check that every action is referenced by its major version tag
         run: bash scripts/sensor-action-refs.sh --require major-tag
       # The mutation sensor itself runs weekly (mutants.yml) and in the review; its arguments are
@@ -160,7 +160,7 @@ jobs:
       - name: Self-test the mutation sensor's arguments
         run: bash scripts/test-mutants.sh
       # How MapServer runs on CI for the noise measurement (noise.yml), decided without building it.
-      # Verifies: ADR-0027
+      # Verifies: ADR-0033
       - name: Self-test how MapServer is built and run on CI
         run: bash scripts/test-build-mapserver.sh
       - name: Self-test the vendor check
@@ -215,7 +215,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # The schema check reads the release tags, whose schema files are frozen (ADR-0020), and
+          # The schema check reads the release tags, whose schema files are frozen (ADR-0014), and
           # refuses a shallow checkout, which has none.
           fetch-depth: 0
       # The tools are compiled by cargo install on a cache miss, which takes minutes; the key

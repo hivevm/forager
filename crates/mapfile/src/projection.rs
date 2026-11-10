@@ -1,5 +1,5 @@
 //! The parameters of a `PROJECTION` block, read once: for the init files the frontend reads before
-//! translation, and for the proj4 string the translation builds from them (ADR-0023).
+//! translation, and for the proj4 string the translation builds from them (ADR-0019).
 
 use forager_style_ir::Span;
 

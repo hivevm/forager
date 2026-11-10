@@ -49,17 +49,17 @@ docs/GLOSSARY.md      # the vocabulary everyone uses, kept current inline
 docs/CONVENTIONS.md   # how this project writes what no check decides, kept current inline
 docs/ARCHITECTURE.md  # the system as it currently stands
 docs/adr/             # Architecture Decision Records (+ template)
-docs/plan/            # open work: feature specs and their tickets, deleted as they land (ADR-0006)
+docs/plan/            # open work: feature specs and their tickets, deleted as they land (ADR-0005)
 docs/semantics/       # what each mapfile parameter means, read from MapServer's source
 examples/web/         # the browser example: a page, a sample mapfile, its generated GeoJSON, vendored Leaflet and font
 fuzz/                 # the fuzz targets of Q-3, run weekly by scripts/fuzz.sh (own workspace)
 schema/               # the JSON Schema of the style document, one file per format version
-Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0009)
+Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0008)
 Cargo.lock            # the resolved versions of every crate the workspace builds
 crates/               # the crates, one per responsibility: style-ir, mapfile, engine, cli, …
-rust-toolchain.toml   # the pinned Rust toolchain (ADR-0008)
+rust-toolchain.toml   # the pinned Rust toolchain (ADR-0007)
 clippy.toml           # clippy's configuration for the workspace
-deny.toml             # cargo-deny: licences, advisories, sources (ADR-0012)
+deny.toml             # cargo-deny: licences, advisories, sources (ADR-0011)
 scripts/check-all.sh  # runs the checks, sensors, self-tests, and the Rust build, as the hooks and CI do
 scripts/check-*.sh    # checks: each fails on what breaks a rule
 scripts/sensor-*.sh   # sensors: report for the reviewer; sensor-repo-settings.sh runs by hand
@@ -97,7 +97,7 @@ version cannot be repointed and a version suffix is VS Code-specific.
 ### Host container management
 
 The Dev Container deliberately has **no access to the host Docker daemon**: the socket is not
-mounted ([ADR-0004](docs/adr/0004-dev-container-runtime.md)). To manage the host's containers from
+mounted ([ADR-0009](docs/adr/0009-dev-container.md)). To manage the host's containers from
 VS Code, run the **Container Tools** extension (`ms-azuretools.vscode-containers`) on the **host**
 side: install it in your host VS Code. [`.vscode/settings.json`](.vscode/settings.json) already pins
 it to run locally via `remote.extensionKind`, so it keeps talking to the host engine even when this

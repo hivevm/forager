@@ -1,6 +1,6 @@
 //! The patterns of `regexp_like`, read in PCRE2's syntax in byte mode, as MapServer's ms_regcomp
-//! reads them through PCRE2's POSIX interface at the pin (ADR-0030), and matched by the `regex`
-//! crate's byte matcher with its Unicode features off (ADR-0031).
+//! reads them through PCRE2's POSIX interface at the pin (ADR-0015), and matched by the `regex`
+//! crate's byte matcher with its Unicode features off (ADR-0016).
 //!
 //! A pattern is read once into the `regex` crate's syntax, every literal byte written as `\xHH`
 //! so that the crate cannot read it otherwise. What PCRE2 reads and the crate cannot match as
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn constructs_pcre2_reads_and_the_crate_does_not_are_unsupported() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0016
         for pattern in [
             r"(a)\1", "(?=a)", "(?!a)", "(?<=a)b", "(?<!a)b", "(?>a)", "(?R)", "(?1)", "(?&n)",
             "(?|a)", "(?#x)", r"\Qa\E", r"a\Kb", "a*+", "a++", "a{2}+", r"\v", r"\h", r"\R", r"\e",
@@ -624,7 +624,7 @@ mod tests {
 
     #[test]
     fn a_pattern_past_the_length_bound_is_unsupported() {
-        // Verifies: ADR-0031, Q-9
+        // Verifies: ADR-0016, Q-9
         let long = "a".repeat(MAX_PATTERN_BYTES + 1);
         assert!(matches!(
             compile(long.as_bytes(), false),
@@ -640,7 +640,7 @@ mod tests {
 
     #[test]
     fn groups_nested_deeper_than_the_crate_reads_are_unsupported_and_past_pcre2_refused() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0016
         let nested = |depth: usize, open: &str, close: &str| {
             format!("{}a{}", open.repeat(depth), close.repeat(depth))
         };
@@ -687,7 +687,7 @@ mod tests {
 
     #[test]
     fn matching_is_byte_wise_and_ascii() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0016
         let matcher = |pattern: &str, caseless| match compile(pattern.as_bytes(), caseless) {
             Compiled::Matcher(regex) => regex,
             other => panic!("{pattern}: {other:?}"),
@@ -705,7 +705,7 @@ mod tests {
 
     #[test]
     fn a_pattern_past_the_size_limit_is_unsupported() {
-        // Verifies: ADR-0031, Q-9
+        // Verifies: ADR-0016, Q-9
         assert!(matches!(
             compile(br"\w{1000}[a-z]{1000}x{60000}", false),
             Compiled::Unsupported(_)

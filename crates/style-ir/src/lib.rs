@@ -1,6 +1,6 @@
 //! The style IR: the data model of a map, free of MapServer syntax, and the style document that
-//! serializes it as YAML or JSON (ADR-0009, ADR-0014); its expressions are a CQL2 tree
-//! (ADR-0030).
+//! serializes it as YAML or JSON (ADR-0008, ADR-0013); its expressions are a CQL2 tree
+//! (ADR-0015).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 

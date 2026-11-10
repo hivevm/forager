@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn times_read_as_ms_parse_time_reads_them() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0016
         assert_eq!(parse(b"2010-12-01"), Some([110, 11, 1, 0, 0, 0]));
         assert_eq!(
             parse(b"2010-12-01T10:20:30Z"),

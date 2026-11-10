@@ -368,7 +368,7 @@ fn a_link_out_of_the_base_context_tells_nothing_of_what_it_points_at() {
 
 #[test]
 fn a_layer_with_inline_features_draws_them_and_leaves_its_data_unread() {
-    // ADR-0033: an inline layer's DATA is not bound, so nothing is read and nothing reported,
+    // ADR-0018: an inline layer's DATA is not bound, so nothing is read and nothing reported,
     // as MapServer ignores it (msInitializeVirtualTable).
     let dir = scratch("inline");
     write_square(&dir, "poly", ["shp", "shx", "dbf"]);

@@ -1,7 +1,7 @@
 # Shapefiles
 
 **Where:** a layer whose `DATA` names an ESRI shapefile. **Adapter:** `adapter-shapefile`, a
-feature source ([ADR-0024](../adr/0024-shapefile-reader.md)).
+feature source ([ADR-0021](../adr/0021-shapefile-adapter.md)).
 
 **Path.** A layer without `CONNECTIONTYPE` is local, and its `DATA` lies beneath the map's last
 `SHAPEPATH`, wherever it stands, against the main mapfile's directory, as `msBuildPath3` in
@@ -64,7 +64,7 @@ the case of their extension; each file read stays within its limit
   the update date, the record count, and the language driver are not checked
   (`a_dbf_header_mapserver_refuses_is_an_error`, `a_dbf_header_mapserver_accepts_opens`).
 
-**Properties** (`msDBFReadAttribute`, `msDBFGetFieldInfo`, `msDBFGetItemIndex`; ADR-0026). Record
+**Properties** (`msDBFReadAttribute`, `msDBFGetFieldInfo`, `msDBFGetItemIndex`; ADR-0023). Record
 *i* of the `.dbf` holds the properties of the shape of entry *i*; it lies at the header length plus
 *i* times the record length. A shape whose record lies past the record count (bytes 4–7, read as 0
 where byte 7 is 128 or more) or past the end of the file carries no properties, as MapServer's shape
@@ -95,7 +95,7 @@ record whose stored box overlaps it, edges that touch overlapping. A box is the 
 the two doubles at byte 12. Only a comparison that holds separates two boxes, so a NaN anywhere but
 the least x of a record's box overlaps; the least x is checked only in files other than points, so a
 point whose x is not a number overlaps too. A record whose box cannot be read is not selected, and
-is counted as a skipped record (ADR-0025) where its `.shx` size is not 4
+is counted as a skipped record (ADR-0022) where its `.shx` size is not 4
 (`an_extent_outside_the_file_bounds_selects_nothing`,
 `an_extent_that_contains_the_file_bounds_selects_every_record`,
 `an_extent_across_the_file_bounds_selects_by_each_records_box`,
@@ -106,7 +106,7 @@ is counted as a skipped record (ADR-0025) where its `.shx` size is not 4
 no shape; no shape is skipped and the next record read. A record that is no shape, a null shape
 apart, is reported, as MapServer does not report it: each query counts the records it visits so,
 and why the first is no shape, and the engine warns once for the layer with
-`source-records-skipped` (ADR-0025; `a_query_reports_each_broken_record_it_visits_once`,
+`source-records-skipped` (ADR-0022; `a_query_reports_each_broken_record_it_visits_once`,
 `a_null_shape_is_not_a_skipped_record`). A feature's id is its record's number in the `.shx`,
 from 0. The record's 8-byte header and its own shape type are never read: the file's
 shape type decides (`the_record_header_and_type_are_not_read`). The size below is the content
@@ -145,7 +145,7 @@ The reading of each shape type is held by
 `every_shape_type_mapserver_reads_is_read_as_its_geometry`; no truncated or mutated file
 panics (`no_mutation_of_a_shapefile_panics`).
 
-**Departures from MapServer** (ADR-0024):
+**Departures from MapServer** (ADR-0021):
 
 - **A box that cannot be read.** Where the extent crosses the file's bounds and a record's box
   cannot be read — a size of 0 to 3, an offset of 0 or past the `.shp`, a box cut short by the end

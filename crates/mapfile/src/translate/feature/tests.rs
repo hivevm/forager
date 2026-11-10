@@ -44,7 +44,7 @@ fn props(pairs: &[(&str, &str)]) -> Vec<FeatureProperty> {
 
 #[test]
 fn inline_features_carry_their_shape_properties_and_text() {
-    // Verifies: ADR-0033
+    // Verifies: ADR-0018
     let (loaded, layer) = load_layer(
         r#"NAME "l" TYPE POLYGON PROCESSING "ITEMS=name,size"
            FEATURE POINTS 0 0 10 0 10 10 0 0 END POINTS 2 2 3 2 3 3 2 2 END
@@ -210,7 +210,7 @@ fn an_unreadable_wkt_is_quoted_in_part() {
 
 #[test]
 fn a_wkt_polygons_inner_ring_that_crosses_itself_is_left_out() {
-    // Verifies: ADR-0033
+    // Verifies: ADR-0018
     let features = features(
         r#"TYPE POLYGON
            FEATURE WKT "POLYGON((0 0,9 0,9 9,0 0),(5 5,7 7,7 5,5 7,5 5),(6 1,8 1,8 3,6 1))" END

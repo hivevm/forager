@@ -1,6 +1,6 @@
 //! The fonts a render's labels name, loaded through the resource loader once per render when a
 //! label first needs them, and the one a line is drawn in, chosen as `get_face_for_run` of
-//! MapServer's src/textlayout.c chooses it (ADR-0028).
+//! MapServer's src/textlayout.c chooses it (ADR-0031).
 
 use std::collections::BTreeMap;
 use std::rc::Rc;

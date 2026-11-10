@@ -27,7 +27,7 @@ Run in a fresh session. Name the entry point with the human:
   between the two tags is what enters. A template ADR the release corrected in place enters by
   the normalization, a correction that changes a decision as one of its
   [supersessions](#3-the-supersessions), never as an edit of an accepted ADR outside a normalization
-  ([ADR-0005](../../../docs/adr/0005-template-releases.md)). Where the project has normalized
+  ([ADR-0004](../../../docs/adr/0004-template-releases.md)). Where the project has normalized
   before, the maps in the commit bodies of its normalizations, read in order, say which of its
   ADRs restates which template ADR. `AGENTS.md` is taken up as the release has it, except the
   ADR rules of [§3](../../../AGENTS.md#3-adr-rules) that an ADR of the project on the ADR
@@ -116,5 +116,5 @@ cut, the clause table, and the review in its hand-off. One pull request lands th
 ([`AGENTS.md` §6](../../../AGENTS.md#6-project-rules)).
 
 In the template, the release that lands a normalization is a major, and its notes carry the map
-([ADR-0005](../../../docs/adr/0005-template-releases.md)). In a derived project that took up a
+([ADR-0004](../../../docs/adr/0004-template-releases.md)). In a derived project that took up a
 release, the `Template release` line moves to it in the same change.

@@ -1,4 +1,4 @@
-//! The hatch of the display list and the bounds on its cost (Q-9, ADR-0032).
+//! The hatch of the display list and the bounds on its cost (Q-9, ADR-0028).
 
 use std::collections::BTreeSet;
 

@@ -1,4 +1,4 @@
-//! The text of a label (ADR-0028): its font list, its glyphs read as FreeType reads them
+//! The text of a label (ADR-0031): its font list, its glyphs read as FreeType reads them
 //! unhinted, and its line laid out and centred as MapServer lays it out. The fonts are subsets of
 //! DejaVu Sans under `fixtures/`, whose licence and changes `fixtures/LICENSE` records.
 
@@ -85,7 +85,7 @@ const EVERYWHERE: [f64; 4] = [-1e6, -1e6, 1e6, 1e6];
 
 #[test]
 fn a_simple_glyph_whose_x_min_is_not_its_side_bearing_is_scaled_as_freetype_scales_it() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // The fixture's `l` has xMin 193 and, changed for this test, a left side bearing of 93 and an
     // advance of 569 in 2048 units; at a glyph size of 10 points its pixel size is 13.
     let data = fixture("dejavu-sans-subset.ttf");
@@ -107,7 +107,7 @@ fn a_simple_glyph_whose_x_min_is_not_its_side_bearing_is_scaled_as_freetype_scal
 
 #[test]
 fn a_composite_glyph_scales_its_component_offsets_apart_from_their_points() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // `í` is `acute` moved by (-227, 0) and `dotlessi`, whose metrics it uses.
     let data = fixture("dejavu-sans-subset.ttf");
     let font = Font::new(&data).unwrap();
@@ -134,7 +134,7 @@ fn a_composite_glyph_scales_its_component_offsets_apart_from_their_points() {
 
 #[test]
 fn a_line_is_laid_out_by_advances_and_centred_on_its_point_by_its_box() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let data = fixture("dejavu-sans-subset.ttf");
     let font = Font::new(&data).unwrap();
     let fl = laid(&font, "Fl", 10.0);
@@ -186,7 +186,7 @@ fn a_glyph_wholly_outside_the_visible_area_is_left_out() {
 
 #[test]
 fn a_glyph_reaching_too_far_from_the_visible_area_is_left_out_and_counted() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // A font of 16 units per em whose `1` is a square of 32,000 units around its origin: at a
     // glyph size of 6000 points it is 16,000,000 pixels wide, so that drawn into the image it
     // reaches past the reach.
@@ -229,7 +229,7 @@ fn a_glyph_reaching_too_far_from_the_visible_area_is_left_out_and_counted() {
 
 #[test]
 fn only_a_line_below_u_02b0_is_laid_out() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     assert_eq!(lines("a\u{2AF}", None, 0), Ok(vec![vec!['a', '\u{2AF}']]));
     assert_eq!(
         lines("a\u{2B0}", None, 0),
@@ -310,7 +310,7 @@ fn a_maxlength_past_an_int_breaks_at_every_wrap_character_and_u_200b() {
 
 #[test]
 fn the_font_list_is_tried_as_get_face_for_run_tries_it_for_a_latin_line() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let attempt = |names: &[&'static str], last| Attempt {
         names: names.to_vec(),
         last,
@@ -341,7 +341,7 @@ fn the_font_list_is_tried_as_get_face_for_run_tries_it_for_a_latin_line() {
 
 #[test]
 fn only_the_last_font_takes_its_question_mark_or_glyph_0_for_a_glyph_it_lacks() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let data = fixture("dejavu-sans-subset.ttf");
     let font = Font::new(&data).unwrap();
     let chars = line("aé");
@@ -362,7 +362,7 @@ fn only_the_last_font_takes_its_question_mark_or_glyph_0_for_a_glyph_it_lacks() 
 
 #[test]
 fn a_font_is_read_through_the_character_map_freetype_and_mapserver_select() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     let digits = fixture("dejavu-sans-digits.ttf");
     let plain = Font::new(&digits).unwrap();
     // Unicode before Symbol, whatever the order of the records; a glyph past the font's glyphs
@@ -373,7 +373,7 @@ fn a_font_is_read_through_the_character_map_freetype_and_mapserver_select() {
     assert_eq!(font.glyph_index('9'), 0);
     // A font with only a Symbol map is looked up at the code point | 0xF000, as
     // msGetGlyphIndex looks it up, so that lacking a glyph it gives way to the next font; one
-    // that would be used cannot be drawn (ADR-0028).
+    // that would be used cannot be drawn (ADR-0031).
     let symbol = fixture("dejavu-sans-symbol.ttf");
     let font = Font::new(&symbol).unwrap();
     assert_eq!(font.glyph_index('1'), plain.glyph_index('1'));
@@ -386,7 +386,7 @@ fn a_font_is_read_through_the_character_map_freetype_and_mapserver_select() {
 
 #[test]
 fn a_font_whose_glyphs_cannot_be_found_is_unusable_at_once() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // Without a Unicode or a Symbol map, FreeType reads a font whose `post` table names its
     // glyphs through a Unicode map it builds from the names.
     let named = fixture("dejavu-sans-mac-names.ttf");
@@ -406,7 +406,7 @@ fn a_font_whose_glyphs_cannot_be_found_is_unusable_at_once() {
 
 #[test]
 fn a_font_this_crate_cannot_draw_in_is_unusable_only_once_it_would_be_used() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     // An Apple Roman map, read where the `post` table names no glyph, is looked up as FreeType
     // looks it up, so that a font lacking a glyph is passed over as any other; one that has them
     // all cannot be drawn.
@@ -426,7 +426,7 @@ fn a_font_this_crate_cannot_draw_in_is_unusable_only_once_it_would_be_used() {
 
 #[test]
 fn glyph_sizes_follow_ms_compute_text_path() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0031
     assert_eq!(glyph_size(8.5, 1.0, 4.0, 256.0, 1.0), 8.0);
     assert_eq!(glyph_size(9.5, 1.0, 4.0, 256.0, 1.0), 10.0);
 }

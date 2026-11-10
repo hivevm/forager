@@ -75,7 +75,7 @@
 #      exists, a trailing '/' meaning a directory. The block is written by hand and nothing else
 #      tells a reader that one of its lines has gone stale. A path with a '*' matches at least one
 #      file, and docs/plan/ may be absent, since open work lives there only while there is some
-#      (ADR-0006). The reverse holds for the top level only: every tracked top-level file and
+#      (ADR-0005). The reverse holds for the top level only: every tracked top-level file and
 #      directory is named, by itself or by a path under it. Below it the block is a tour of the
 #      parts a newcomer needs, not a file listing.
 #  11. Skill pointer integrity: every skill under .agents/skills/ (a directory with a SKILL.md)
@@ -103,7 +103,7 @@
 #      placeholder that survives the setup describes the template, not the project. A file that
 #      does not exist has nothing to check.
 #  14. Template release named: README.md carries a '**Template release:**' line naming a
-#      'vX.Y.Z' tag or 'unreleased' (ADR-0005). Tags do not travel with GitHub's template
+#      'vX.Y.Z' tag or 'unreleased' (ADR-0004). Tags do not travel with GitHub's template
 #      mechanism, so the line is the one thing that tells a derived project which release of the
 #      template it carries; a release moves it, and a project that takes a release up moves it.
 #  15. Prose width: a line of Markdown prose is at most 100 columns, so a diff shows the sentence
@@ -1159,7 +1159,7 @@ check_project_layout() {
       compgen -G "$ROOT/$path" >/dev/null \
         || add_error "CONTRIBUTING.md: Project Layout lists '$path', which matches nothing in this repository"
     elif [[ "$path" == */ ]]; then
-      # Open work lives under docs/plan/ only while there is some (ADR-0006).
+      # Open work lives under docs/plan/ only while there is some (ADR-0005).
       [[ -d "$ROOT/${path%/}" || "$path" == "docs/plan/" ]] \
         || add_error "CONTRIBUTING.md: Project Layout lists '$path', which is not a directory of this repository"
     else
@@ -1328,17 +1328,17 @@ check_prose_width() {
 # bold label is allowed, the version may be written as a link or in backticks, and what follows
 # it — a sentence, a link target — is not read. After the version only a space, a punctuation
 # mark, or the end of the line may follow: a pre-release suffix, build metadata, and a fourth
-# number are not a tag ADR-0005 cuts, and SemVer allows no leading zero.
+# number are not a tag ADR-0004 cuts, and SemVer allows no leading zero.
 check_template_release() {
   local readme="$ROOT/README.md"
   if [[ ! -f "$readme" ]]; then
-    add_error "README.md: not found — the Template section names the release this repository carries (ADR-0005)"
+    add_error "README.md: not found — the Template section names the release this repository carries (ADR-0004)"
     return
   fi
   local line value
   line="$(grep -m1 -E '^[[:space:]]*([-*] )?\*\*Template release:\*\*' "$readme")"
   if [[ -z "$line" ]]; then
-    add_error "README.md: no '**Template release:**' line — the Template section names the release of the template this repository carries, or 'unreleased' (ADR-0005)"
+    add_error "README.md: no '**Template release:**' line — the Template section names the release of the template this repository carries, or 'unreleased' (ADR-0004)"
     return
   fi
   value="${line#*\*\*Template release:\*\*}"
@@ -1347,7 +1347,7 @@ check_template_release() {
   # shellcheck disable=SC2016  # the backticks are Markdown to match, not a command substitution
   local re='^[[`]?(v'"$num"'\.'"$num"'\.'"$num"'|unreleased)($|[][:space:],;:)`]|\.([[:space:]]|$))'
   [[ "$value" =~ $re ]] \
-    || add_error "README.md: the Template release line names neither a 'vX.Y.Z' tag nor 'unreleased' — a release moves it to the tag it cuts (ADR-0005)"
+    || add_error "README.md: the Template release line names neither a 'vX.Y.Z' tag nor 'unreleased' — a release moves it to the tag it cuts (ADR-0004)"
 }
 
 collect_text_files

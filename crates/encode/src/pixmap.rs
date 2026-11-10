@@ -14,7 +14,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! Decodes a pixmap symbol's image as MapServer's `readPNG` decodes it (`src/mapimageio.c`,
-//! 629–733, at the pin), within the size Q-9 allows, premultiplied (ADR-0017, ADR-0040).
+//! 629–733, at the pin), within the size Q-9 allows, premultiplied (ADR-0030, ADR-0029).
 
 use std::fmt;
 
@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn a_palette_is_expanded_opaque() {
-        // Verifies: ADR-0017
+        // Verifies: ADR-0030
         let png = file(
             (3, 1),
             PALETTE,
@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn a_palette_with_trns_takes_its_alphas_premultiplied() {
-        // Verifies: ADR-0040
+        // Verifies: ADR-0029
         // Two alphas for three entries: the third is opaque, as libpng reads it.
         let png = file(
             (3, 1),
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn a_trns_longer_than_the_palette_cut_to_the_bit_depth_is_ignored_as_libpng_ignores_it() {
-        // Verifies: ADR-0040
+        // Verifies: ADR-0029
         // libpng 1.6.43 cuts a palette to `1 << bit_depth` entries (`png_handle_PLTE`,
         // `pngrutil.c`, 979–986), then ignores a `tRNS` longer than the palette with a benign
         // error (`png_handle_tRNS`, 1882–1888), which `png_create_read_struct_2` makes a warning
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn a_trns_within_the_palette_cut_to_the_bit_depth_is_applied() {
-        // Verifies: ADR-0040
+        // Verifies: ADR-0029
         let expected = vec![0, 0, 0, 0, 10, 10, 15, 128];
         // A palette within the bit depth and a `tRNS` no longer than it, as before.
         assert_eq!(
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn grey_below_8_bits_is_scaled_as_png_do_expand_scales_it() {
-        // Verifies: ADR-0017
+        // Verifies: ADR-0030
         // 1 bit: 0 or 255, ten pixels across two bytes.
         let png = file((10, 1), GREY, 1, false, &[], &[&[0b1011_0001, 0b1000_0000]]);
         let expected = grey(&[255, 0, 255, 255, 0, 0, 0, 255, 255, 0]);
@@ -445,14 +445,14 @@ mod tests {
 
     #[test]
     fn grey_of_8_bits_turns_rgb_and_opaque() {
-        // Verifies: ADR-0017
+        // Verifies: ADR-0030
         let png = file((3, 1), GREY, 8, false, &[], &[&[0, 77, 255]]);
         assert_eq!(decoded(&png), (3, 1, grey(&[0, 77, 255])));
     }
 
     #[test]
     fn grey_with_alpha_turns_rgb_premultiplied() {
-        // Verifies: ADR-0040
+        // Verifies: ADR-0029
         let png = file(
             (4, 1),
             GREY_ALPHA,
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn rgb_gains_an_opaque_alpha() {
-        // Verifies: ADR-0017
+        // Verifies: ADR-0030
         let png = file((2, 1), RGB, 8, false, &[], &[&[1, 2, 3, 250, 251, 252]]);
         let expected = vec![1, 2, 3, 255, 250, 251, 252, 255];
         assert_eq!(decoded(&png), (2, 1, expected));
@@ -489,7 +489,7 @@ mod tests {
 
     #[test]
     fn rgba_is_premultiplied_where_its_alpha_is_below_255() {
-        // Verifies: ADR-0040
+        // Verifies: ADR-0029
         let rows: Vec<&[u8]> = RGBA_ROWS.iter().map(|r| &r[..]).collect();
         let png = file((3, 3), RGBA, 8, false, &[], &rows);
         assert_eq!(decoded(&png), (3, 3, RGBA_PREMULTIPLIED.to_vec()));
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn an_interlaced_image_yields_the_bytes_of_the_same_image_not_interlaced() {
-        // Verifies: ADR-0017
+        // Verifies: ADR-0030
         // libpng's png_read_image turns the interlace handling on itself (`decode_pixmap`).
         let rows: Vec<&[u8]> = RGBA_ROWS.iter().map(|r| &r[..]).collect();
         let png = file((3, 3), RGBA, 8, true, &[], &rows);
@@ -506,7 +506,7 @@ mod tests {
 
     #[test]
     fn sixteen_bits_keep_the_high_byte_as_png_set_strip_16_does() {
-        // Verifies: ADR-0017
+        // Verifies: ADR-0030
         let row: &[u8] = &[
             0x12, 0x34, 0xAB, 0xCD, 0xFF, 0x00, 0x80, 0xFF, // alpha 0x80: premultiplied
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0xFF, 0x00, // alpha 0xFF: opaque
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn an_rgb_trns_key_makes_its_colour_transparent() {
-        // Verifies: ADR-0017
+        // Verifies: ADR-0030
         // Of an 8-bit image, the key's low bytes are compared (png_do_expand).
         let png = file(
             (2, 1),
@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn a_16_bit_trns_key_is_matched_on_all_16_bits_before_the_chop() {
-        // Verifies: ADR-0017
+        // Verifies: ADR-0030
         let key: &[u8] = &[0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC];
         let row: &[u8] = &[
             0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, // the key: transparent

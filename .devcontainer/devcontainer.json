@@ -14,7 +14,7 @@
   // exactly one of the two is non-empty, so concatenating both yields the home directory on every
   // host (the pattern the Dev Containers documentation recommends).
   // And gh's login, in a host directory of its own, so that one login outlives every rebuild
-  // (ADR-0042); not the host's own ~/.config/gh, whose token may sit in a keyring.
+  // (ADR-0009); not the host's own ~/.config/gh, whose token may sit in a keyring.
   "mounts": [
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.claude,target=/home/vscode/.claude,type=bind",
     "source=${localEnv:HOME}${localEnv:USERPROFILE}/.config/gh-devcontainer,target=/home/vscode/.config/gh,type=bind"
@@ -28,7 +28,7 @@
   // plain `mkdir` (cmd.exe knows no `-p`; the parent is the home directory and always exists) and
   // `|| exit 0` so an already existing directory — an error for both shells — does not abort the
   // container build.
-  // The same holds for gh's directory (ADR-0042); its parent .config may be missing, which
+  // The same holds for gh's directory (ADR-0009); its parent .config may be missing, which
   // `mkdir -p` creates in a POSIX shell, and which cmd.exe leaves to be created once by hand.
   // The object form runs the two side by side.
   "initializeCommand": {
@@ -49,22 +49,22 @@
   // Runs inside the container once it is created.
   "postCreateCommand": {
     // The pinned toolchain, cargo-deny, the wasm-bindgen CLI, and ShellCheck at the version CI runs,
-    // so that the pre-push hook runs the shell lint CI runs (ADR-0008, ADR-0010, ADR-0044).
+    // so that the pre-push hook runs the shell lint CI runs (ADR-0007, ADR-0009).
     "tools": "bash scripts/install-tools.sh",
     // git authenticates through gh's stored login, not through VS Code's helper of an earlier
-    // container (ADR-0042); before the first login it has nothing to set up.
+    // container (ADR-0009); before the first login it has nothing to set up.
     "gh-git": "gh auth setup-git || true"
   },
 
   // DevContainer Features layered on top of the base image. The container intentionally has NO
-  // access to the host Docker daemon (no socket mount) — see ADR-0004. Manage the host's containers
+  // access to the host Docker daemon (no socket mount) — see ADR-0009. Manage the host's containers
   // from a host-side VS Code extension instead (CONTRIBUTING.md → "Host container management").
   "features": {
     // GitHub CLI (`gh`) — used by the coding agent for GitHub operations and as the git
     // credential helper. A push and every gh action wait for a human instruction
     // (AGENTS.md, section 6).
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    // rustup, which installs the toolchain rust-toolchain.toml pins (ADR-0010). The Feature also
+    // rustup, which installs the toolchain rust-toolchain.toml pins (ADR-0009). The Feature also
     // installs the latest stable, which the pin overrides.
     "ghcr.io/devcontainers/features/rust:1": {}
   },
