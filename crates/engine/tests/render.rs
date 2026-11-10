@@ -1124,18 +1124,21 @@ fn a_hatch_past_its_bound_is_not_drawn_and_reported() {
 #[test]
 fn a_hatch_of_a_polygon_past_its_bound_on_vertices_is_not_drawn_and_reported() {
     // Verifies: Q-9
-    // A circle of 17 000 vertices, past the bound of 16 384, under a hatch 10 apart.
-    let points: Vec<String> = (0..=17_000)
+    // A comb of 17 000 teeth, 17 002 vertices past the bound of 16 384, under a hatch 10 apart:
+    // each vertex 80 pixels from the one before, so that msTransformShapeSimplify keeps them all.
+    let mut points: Vec<String> = (0..=17_000)
         .map(|i| {
-            let t = f64::from(i % 17_000) / 17_000.0 * std::f64::consts::TAU;
-            format!("[{}, {}]", 50.0 + 40.0 * t.cos(), 50.0 + 40.0 * t.sin())
+            let x = 10.0 + 80.0 * f64::from(i) / 17_000.0;
+            let y = if i % 2 == 0 { 10.0 } else { 90.0 };
+            format!("[{x}, {y}]")
         })
         .collect();
-    let circle = format!(
+    points.push("[10, 10]".into());
+    let comb = format!(
         r#"{{"type": "Polygon", "coordinates": [[{}]]}}"#,
         points.join(", ")
     );
-    let rendered = render_hatched_on(vec![hatch_style(BLACK, 10.0, 1.0, 45.0, vec![])], &circle);
+    let rendered = render_hatched_on(vec![hatch_style(BLACK, 10.0, 1.0, 45.0, vec![])], &comb);
     let codes: Vec<&str> = rendered
         .diagnostics
         .iter()

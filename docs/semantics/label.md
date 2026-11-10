@@ -142,7 +142,12 @@ MapServer draws a feature point by point: the markers at its first point, then t
 then the markers at its next point. The engine draws all of a feature's markers, then its labels at
 each of its points, then the next feature; so where a feature of several points is drawn, a marker
 at a later point does not cover a label at an earlier one, as it does in MapServer. MapServer's line
-and polygon layers draw their labels at once too, which the engine does not draw yet.
+and polygon layers draw their labels at once too, which the engine does not draw yet: it leaves
+them out with `label-not-drawn`. MapServer labels no such feature that its simplification to
+pixels ([line.md](line.md), **Vertices**) leaves without a part: `msDrawShape` in `src/mapdraw.c`
+returns before `lineLayerDrawShape` or `polygonLayerDrawShape`, which draw the labels, once
+`msTransformShape` has left the shape no line (`src/mapdraw.c:2505-2507, 2577-2580`). The engine,
+which draws none of those labels, does not tell such a feature from the others yet.
 
 **`TRUE` and `ON`.** Wherever MapServer takes `ON` and `OFF` it takes `TRUE` and `FALSE` too, and
 the other way round: its lexer gives `MS_TRUE` and `MS_ON` the value 1, `MS_FALSE` and `MS_OFF`

@@ -6,7 +6,8 @@
 //! Its modules import one another in one direction only: `draw` imports every other; `hatch`
 //! imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile` import `bounds` and
 //! `symbol`; `symbol` imports `bounds` and `style`; `geom_transform` imports `extent`; `bounds`,
-//! `extent`, `offset`, and `style` import none.
+//! `extent`, `offset`, and `style` import none. The test `symbolize_modules.rs` of
+//! `crates/arch-test` holds that direction, its tests aside, by a table in this order.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 

@@ -274,7 +274,24 @@ pub fn draw_ops(
     view: &View,
     canvas: &mut Canvas,
 ) -> Vec<DrawOp> {
-    let pixels = |cs: &[Coord]| cs.iter().map(|&c| view.to_pixel(c)).collect::<Vec<_>>();
+    // The shape in pixels as msTransformShape gives it in the AGG renderer's mode, which
+    // msImageStartLayer keeps for a layer without APPROXIMATION_SCALE (`src/mapdraw.c:4201-4224`):
+    // msTransformShapeSimplify, its lines or its rings as the shape is a line or a polygon,
+    // whatever the layer, a part it leaves without points dropped.
+    let lines = |parts: &[Vec<Coord>]| -> Vec<Vec<Point>> {
+        parts
+            .iter()
+            .map(|l| view.line_to_pixels(l))
+            .filter(|l| !l.is_empty())
+            .collect()
+    };
+    let rings = |parts: &[Vec<Coord>]| -> Vec<Vec<Point>> {
+        parts
+            .iter()
+            .map(|r| view.ring_to_pixels(r))
+            .filter(|r| !r.is_empty())
+            .collect()
+    };
     let mut ops = Vec::new();
     match (mode, geometry) {
         // The whole shape, a collection's parts together, as msDrawTransformedShape takes it.
@@ -316,30 +333,27 @@ pub fn draw_ops(
             let drawn = shade(&mut ops, rings, style, view, canvas);
             canvas.hatching.refused += usize::from(!drawn);
         }
-        (RenderMode::Polygon, Geometry::Polygon(rings)) => {
-            let rings = rings.iter().map(|r| pixels(r)).collect();
-            shade(&mut ops, rings, style, view, canvas);
+        (RenderMode::Polygon, Geometry::Polygon(parts)) => {
+            shade(&mut ops, rings(parts), style, view, canvas);
         }
         (RenderMode::Polygon, Geometry::MultiPolygon(polygons)) => {
-            for rings in polygons {
-                let rings = rings.iter().map(|r| pixels(r)).collect();
-                shade(&mut ops, rings, style, view, canvas);
+            for parts in polygons {
+                shade(&mut ops, rings(parts), style, view, canvas);
             }
         }
         (RenderMode::Line, Geometry::LineString(points)) => {
-            line_symbol(&mut ops, vec![pixels(points)], style, pass, canvas);
-        }
-        (RenderMode::Line, Geometry::MultiLineString(lines) | Geometry::Polygon(lines)) => {
-            let paths: Vec<_> = lines.iter().map(|l| pixels(l)).collect();
-            let paths = match geometry {
-                Geometry::Polygon(_) => open_rings(paths),
-                _ => paths,
-            };
+            let paths = lines(std::slice::from_ref(points));
             line_symbol(&mut ops, paths, style, pass, canvas);
         }
+        (RenderMode::Line, Geometry::MultiLineString(parts)) => {
+            line_symbol(&mut ops, lines(parts), style, pass, canvas);
+        }
+        (RenderMode::Line, Geometry::Polygon(parts)) => {
+            line_symbol(&mut ops, open_rings(rings(parts)), style, pass, canvas);
+        }
         (RenderMode::Line, Geometry::MultiPolygon(polygons)) => {
-            let rings = polygons.iter().flatten().map(|r| pixels(r)).collect();
-            line_symbol(&mut ops, open_rings(rings), style, pass, canvas);
+            let paths = rings(&polygons.concat());
+            line_symbol(&mut ops, open_rings(paths), style, pass, canvas);
         }
         _ => {}
     }
@@ -2461,6 +2475,135 @@ mod tests {
         assert_eq!(
             marked_pixmap(RenderMode::Point, &Style::default(), &symbols),
             None
+        );
+    }
+
+    /// The paths of the strokes `draw_ops` draws for `geometry` in `mode`, outlined in black.
+    fn outline_paths(mode: RenderMode, geometry: &Geometry, view: &View) -> Vec<Vec<Point>> {
+        let style = colored(None, Some(BLACK));
+        let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+        draw_ops(mode, geometry, &style, Pass::Plain, view, &mut canvas)
+            .into_iter()
+            .flat_map(|op| match op {
+                DrawOp::Stroke { paths, .. } => paths,
+                _ => panic!("an outline is a stroke"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_polygon_s_outline_drops_the_vertices_less_than_a_pixel_from_the_one_kept_before() {
+        // msTransformShapeSimplify, src/mapprimitive.cpp:1002-1040: a ring keeps its first two
+        // vertices, (10, 10) and (10.5, 10) half a pixel on; drops (11.5, 10), exactly a pixel
+        // from the one kept before, as 1 > 1 fails, and (30, 10.5); keeps (30, 10), (30, 40), and
+        // (10, 40), more than a pixel from the one kept before; and keeps its last two, (10, 39.5)
+        // half a pixel from (10, 40), and the closing (10, 10).
+        let ring = coords(&[
+            (10.0, 90.0),
+            (10.5, 90.0),
+            (11.5, 90.0),
+            (30.0, 90.0),
+            (30.0, 89.5),
+            (30.0, 60.0),
+            (10.0, 60.0),
+            (10.0, 60.5),
+            (10.0, 90.0),
+        ]);
+        let expected = vec![vec![
+            p(10.0, 10.0),
+            p(10.5, 10.0),
+            p(30.0, 10.0),
+            p(30.0, 40.0),
+            p(10.0, 40.0),
+            p(10.0, 39.5),
+            p(10.0, 10.0),
+        ]];
+        let polygon = Geometry::Polygon(vec![ring.clone()]);
+        assert_eq!(
+            outline_paths(RenderMode::Polygon, &polygon, &unit_view()),
+            expected
+        );
+        // A polygon shape is simplified as a ring in a line layer too (958 against 1002: the
+        // shape's type decides, not the layer's), and in each polygon of a multipolygon.
+        assert_eq!(
+            outline_paths(RenderMode::Line, &polygon, &unit_view()),
+            expected
+        );
+        let multi = Geometry::MultiPolygon(vec![vec![ring]]);
+        assert_eq!(
+            outline_paths(RenderMode::Polygon, &multi, &unit_view()),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_ring_of_fewer_than_four_vertices_is_not_drawn() {
+        // msTransformShapeSimplify, src/mapprimitive.cpp:1012-1015: such a ring keeps no point;
+        // the ring of four beside it is drawn.
+        let three = coords(&[(10.0, 90.0), (50.0, 90.0), (10.0, 90.0)]);
+        let four = coords(&[(10.0, 50.0), (50.0, 50.0), (50.0, 10.0), (10.0, 50.0)]);
+        let polygon = Geometry::Polygon(vec![three, four]);
+        assert_eq!(
+            outline_paths(RenderMode::Polygon, &polygon, &unit_view()),
+            vec![vec![
+                p(10.0, 50.0),
+                p(50.0, 50.0),
+                p(50.0, 90.0),
+                p(10.0, 50.0)
+            ]]
+        );
+    }
+
+    #[test]
+    fn a_line_drops_the_vertices_less_than_a_pixel_from_the_one_kept_before() {
+        // msTransformShapeSimplify, src/mapprimitive.cpp:958-1001: a line keeps its first vertex,
+        // drops (10.5, 50) half a pixel on, keeps (30, 50), and keeps a last vertex half a pixel
+        // from it, (30.5, 50); a last vertex equal to the one kept before it is dropped; a line
+        // left with fewer than two vertices is not drawn.
+        let dense = Geometry::LineString(coords(&[
+            (10.0, 50.0),
+            (10.5, 50.0),
+            (30.0, 50.0),
+            (30.5, 50.0),
+        ]));
+        assert_eq!(
+            outline_paths(RenderMode::Line, &dense, &unit_view()),
+            vec![vec![p(10.0, 50.0), p(30.0, 50.0), p(30.5, 50.0)]]
+        );
+        let repeated = Geometry::MultiLineString(vec![
+            coords(&[(10.0, 50.0), (30.0, 50.0), (30.0, 50.0)]),
+            coords(&[(10.0, 20.0), (10.0, 20.0)]),
+            coords(&[(10.0, 20.0)]),
+        ]);
+        assert_eq!(
+            outline_paths(RenderMode::Line, &repeated, &unit_view()),
+            vec![vec![p(10.0, 50.0), p(30.0, 50.0)]]
+        );
+    }
+
+    #[test]
+    fn a_line_s_and_a_ring_s_vertices_are_placed_by_the_inverse_of_the_cellsize() {
+        // MS_MAP2IMAGE_X_IC_DBL multiplies by inv_cs = 1 / cellsize, src/mapprimitive.cpp:953:
+        // x = 0.3 on a cellsize of 0.1 is 0.3 × 10 = 3, where 0.3 / 0.1 is 2.9999999999999996.
+        let view = View::for_image(
+            Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 10.0,
+                max_y: 10.0,
+            },
+            101,
+            101,
+        )
+        .unwrap();
+        assert_eq!(view.cellsize, 0.1);
+        let line = Geometry::LineString(coords(&[(0.3, 5.0), (8.0, 5.0)]));
+        assert_eq!(outline_paths(RenderMode::Line, &line, &view)[0][0].x, 3.0);
+        let ring = coords(&[(0.3, 5.0), (8.0, 5.0), (8.0, 1.0), (0.3, 5.0)]);
+        let polygon = Geometry::Polygon(vec![ring]);
+        assert_eq!(
+            outline_paths(RenderMode::Polygon, &polygon, &view)[0][0].x,
+            3.0
         );
     }
 }

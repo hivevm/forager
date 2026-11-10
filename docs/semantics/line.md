@@ -35,6 +35,15 @@
   default), `round`, `miter`, `bevel`. `LINEJOINMAXSIZE`: how far a miter reaches as a multiple
   of the width, above 0, default 3.
 
+**Vertices.** A line or a polygon, outlined, stroked, or hatched, reaches pixels as
+`msTransformShapeSimplify` in `src/mapprimitive.cpp` puts it there, the transform mode
+`msImageStartLayer` in `src/mapdraw.c` keeps from the AGG renderer for a layer without
+`PROCESSING "APPROXIMATION_SCALE=…"`, which the style IR does not carry: each vertex by the
+inverse of the cellsize, and a vertex not more than a pixel from the one kept before it dropped. A
+line keeps its first vertex and its last unless that equals the one kept before; a polygon's ring,
+in a line layer too, its first two and its last two. A line left with fewer than two vertices and
+a ring of fewer than four draw nothing.
+
 **Not yet as MapServer places symbols along a line.**
 
 - `msDrawShape` in `src/mapdraw.c` clips a line that leaves the map's extent to the image grown by
@@ -43,9 +52,10 @@
   symbols start again at `INITIALGAP`, or at half the gap, and a piece on which none falls takes
   its own marker at half its length. Forager does not clip, and counts from the start of the
   whole line, so the symbols of a line that crosses the edge of the map can stand elsewhere.
-- `msTransformShapeSimplify` in `src/mapprimitive.cpp` drops each vertex of a line less than a
-  pixel from the one kept before it. Forager keeps every vertex, so on a line of dense vertices
-  its segments, and the angles of the symbols a negative `GAP` turns with them, can differ.
+- `msDrawShape` simplifies the clipped shape: the vertices a line or a polygon keeps (above)
+  are counted from where the clip leaves it to begin. Forager clips a hatch's polygon first, as
+  MapServer does, but simplifies the whole shape of a line, an outline, or a fill, so where one
+  crosses the edge of the map the vertices kept near the edge can differ.
 - With a `GAP` of 0, `msDrawLineSymbol` tiles a pixmap's image along the line
   (`renderLineTiled`). Forager strokes the line instead as a simple symbol's, in the `COLOR` or
   else the `OUTLINECOLOR` for the first style of a class, and a later style without a `COLOR` not

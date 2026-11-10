@@ -195,8 +195,9 @@ fn clip_edge(line: &mut Vec<Point>, a: Point, b: Point, min: Point, max: Point) 
 }
 
 /// The rings of a feature in pixels as msDrawShape() hands them to a hatch: all of its polygons
-/// as one shape, and, where the shape reaches beyond the map's extent, clipped first to the
-/// extent grown by the class's clip buffer (see [`Hatching::for_class`]) with
+/// as one shape, transformed to pixels as msTransformShapeSimplify() transforms a polygon's rings
+/// (see [`View::ring_to_pixels`]), and, where the shape reaches beyond the map's extent, clipped
+/// first to the extent grown by the class's clip buffer (see [`Hatching::for_class`]) with
 /// msClipPolygonRect(); in map units before the transformation to pixels, or, where a style of
 /// the class has a `GEOMTRANSFORM`, to the image so grown after it. The hatch's box, and so where
 /// its dashes fall, is the clipped shape's.
@@ -215,10 +216,10 @@ pub fn hatch_rings(
         rings
             .iter()
             .map(|r| {
-                r.iter()
-                    .map(|p| view.to_pixel(Coord { x: p.x, y: p.y }))
-                    .collect()
+                let ring: Vec<Coord> = r.iter().map(|p| Coord { x: p.x, y: p.y }).collect();
+                view.ring_to_pixels(&ring)
             })
+            .filter(|r| !r.is_empty())
             .collect()
     };
     let points: Vec<Vec<Point>> = rings

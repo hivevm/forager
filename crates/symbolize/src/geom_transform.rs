@@ -109,60 +109,13 @@ fn shape_in_pixels(geometry: &Geometry, view: &View) -> Vec<Vec<Point>> {
         .into_iter()
         .map(|part| {
             if polygon {
-                simplified_ring(part, view)
+                view.ring_to_pixels(part)
             } else {
-                simplified_line(part, view)
+                view.line_to_pixels(part)
             }
         })
         .filter(|part| !part.is_empty())
         .collect()
-}
-
-/// Whether msTransformShapeSimplify keeps `p` after `kept`: when it lies more than a pixel away.
-fn far(kept: Point, p: Point) -> bool {
-    let (dx, dy) = (p.x - kept.x, p.y - kept.y);
-    dx * dx + dy * dy > 1.0
-}
-
-/// msTransformShapeSimplify of a line: its first point, each further one more than a pixel from
-/// the one kept before it, and its last unless that equals the one kept before; nothing for a
-/// line left with fewer than two points.
-fn simplified_line(line: &[Coord], view: &View) -> Vec<Point> {
-    if line.len() < 2 {
-        return Vec::new();
-    }
-    let mut kept = vec![view.point_to_pixel(line[0])];
-    for &c in &line[1..line.len() - 1] {
-        let p = view.point_to_pixel(c);
-        if far(kept[kept.len() - 1], p) {
-            kept.push(p);
-        }
-    }
-    let last = view.point_to_pixel(line[line.len() - 1]);
-    if last != kept[kept.len() - 1] {
-        kept.push(last);
-    }
-    if kept.len() < 2 { Vec::new() } else { kept }
-}
-
-/// msTransformShapeSimplify of a ring: its first two points, each further one but the last two
-/// more than a pixel from the one kept before it, and its last two; nothing for a ring of fewer
-/// than four points.
-fn simplified_ring(ring: &[Coord], view: &View) -> Vec<Point> {
-    if ring.len() < 4 {
-        return Vec::new();
-    }
-    let mut kept = vec![view.point_to_pixel(ring[0]), view.point_to_pixel(ring[1])];
-    let before_last = ring.len() - 2;
-    for &c in &ring[2..before_last] {
-        let p = view.point_to_pixel(c);
-        if far(kept[kept.len() - 1], p) {
-            kept.push(p);
-        }
-    }
-    kept.push(view.point_to_pixel(ring[before_last]));
-    kept.push(view.point_to_pixel(ring[before_last + 1]));
-    kept
 }
 
 /// calcOrientation: the direction from `p1` to `p2` in degrees, counter-clockwise on the image.

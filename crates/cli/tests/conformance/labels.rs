@@ -176,7 +176,8 @@ fn unescape(field: &str) -> String {
 /// What differs between Forager's labels and MapServer's, one line per label, as ADR-0029 pairs
 /// them: by priority, layer, class, and text, the n-th of a key in Forager's walk with the n-th in
 /// MapServer's. A pair matches when both are drawn with each edge finite and within
-/// [`TOLERANCE`], or when both are discarded; a label without a partner does not match. Empty when every label matches.
+/// [`TOLERANCE`], or when both are discarded; a label without a partner does not match. Empty when
+/// every label matches.
 pub fn compare(forager: &[CachedLabel], mapserver: &[Recorded]) -> Vec<String> {
     type Key = (usize, usize, String, u8);
     let mut theirs: BTreeMap<Key, Vec<&Recorded>> = BTreeMap::new();

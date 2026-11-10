@@ -137,7 +137,8 @@ golden path and the test pattern an agent copies from are named here.
   draws the layer (`draw.rs`); a style's width
   and size bounds, one function per site of MapServer's that bounds them, with the constants they
   bound by (`bounds.rs`); a property's value as bound, the gamma, and degrees to radians
-  (`style.rs`); the view that maps the extent to the image (`extent.rs`); a style's symbol
+  (`style.rs`); the view that maps the extent to the image, and a line's or a ring's vertices to
+  the pixels msTransformShapeSimplify keeps (`extent.rs`); a style's symbol
   resolved, its vector and ellipse symbols, a marker's size and anchor point, a pixmap's scale,
   square, and transformation, in the order of operations of AGG's `trans_affine`, and the images
   of a render's pixmaps by their path (`symbol.rs`); hatches, the
@@ -150,8 +151,9 @@ golden path and the test pattern an agent copies from are named here.
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`
-  at the top and `bounds.rs`, `style.rs`, `extent.rs`, and `offset.rs` the leaves; no check holds
-  that direction, which ADR-0009 decides only between crates.
+  at the top and `bounds.rs`, `style.rs`, `extent.rs`, and `offset.rs` the leaves; ADR-0009
+  decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs` holds
+  this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
   FreeType's arithmetic, laid out by their advances, broken into lines at the label's `WRAP`
@@ -244,7 +246,9 @@ golden path and the test pattern an agent copies from are named here.
   random sources (Q-2) and to lift them nowhere but the one test time bound it names; the
   frontend, the ports, the adapters, and the hosts are not held to the ban. `tests/c_numbers.rs`
   refuses a function `atof`, `atoi`, `strtod`, `lrint`, or `ms_nint`, or one named `lrint_…` or
-  `ms_nint_…`, defined outside `style-ir`'s `c.rs` (ADR-0037).
+  `ms_nint_…`, defined outside `style-ir`'s `c.rs` (ADR-0037). `tests/symbolize_modules.rs`
+  refuses an import between the modules of `symbolize`, outside its tests, against the direction
+  its `lib.rs` states, and a module of the crate its table has no row for.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on

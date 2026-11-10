@@ -17,8 +17,8 @@
 
 //! A pixmap symbol drawn at a point, end to end: a style IR, its image through the resource
 //! loader, and GeoJSON in, an RGBA image out, compared with a reference image of Forager's own.
-//! The positions are read from
-//! `agg2RenderPixmapSymbol`, src/mapagg.cpp, at the pin, not from the engine.
+//! The positions are read from `agg2RenderPixmapSymbol`, src/mapagg.cpp, at the pin, not from the
+//! engine.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;

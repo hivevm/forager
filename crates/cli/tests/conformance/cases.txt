@@ -143,9 +143,9 @@ misc/scaletoken.map scaletoken_filteritem_192k.png out: SCALETOKEN, a runtime su
 misc/scaletoken.map scaletoken_filteritem_424k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_192k.png out: SCALETOKEN, a runtime substitution by scale
 misc/scaletoken.map scaletoken_filterexpression_424k.png out: SCALETOKEN, a runtime substitution by scale
-misc/style_opacity.map style_opacity_test001.png geometry fails  # the outlines of the base layer differ along the county borders, cause not yet found
-misc/style_opacity.map style_opacity_test002.png geometry fails  # the outlines of the base layer differ along the county borders, cause not yet found
-misc/style_opacity.map style_opacity_test003.png geometry fails  # the outlines of the base layer differ along the county borders, cause not yet found
+misc/style_opacity.map style_opacity_test001.png geometry passes
+misc/style_opacity.map style_opacity_test002.png geometry passes
+misc/style_opacity.map style_opacity_test003.png geometry passes
 misc/testuppercase.map testuppercase.png blank geometry passes
 misc/tiles_scales_z2.map tile_scale_z2.png blank out: an OGC or CGI request
 misc/tiles_scales_z3.map tile_scale_z3.png out: an OGC or CGI request
@@ -367,7 +367,7 @@ renderers/line_marker_vector.map line_marker_vector.png geometry passes
 renderers/line_marker_vector.map line_marker_vector.pdf out: another output format, pdf
 renderers/line_marker_vector.map line_marker_vector.svg out: another output format, svg
 renderers/line_marker_vector.map line_marker_vector.cairo.png out: another output format, cairopng
-renderers/line_offset.map line_offset.png geometry fails  # not built yet: the offset curve as GEOS draws it of a line that crosses itself
+renderers/line_offset.map line_offset.png geometry passes
 renderers/line_offset.map line_offset.pdf out: another output format, pdf
 renderers/line_offset.map line_offset.svg out: another output format, svg
 renderers/line_offset.map line_offset.cairo.png out: another output format, cairopng

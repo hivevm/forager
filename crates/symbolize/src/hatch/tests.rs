@@ -505,3 +505,42 @@ fn a_pixmap_counts_in_the_clip_buffer_at_its_image_s_height() {
     assert_eq!(clip_pixmaps(&class, &symbols), ["tall.png"]);
     assert!(clip_pixmaps(&class[1..], &symbols).is_empty());
 }
+
+#[test]
+fn a_hatched_polygon_s_rings_reach_pixels_as_ms_transform_shape_simplify_puts_them() {
+    // msTransformShapeSimplify, src/mapprimitive.cpp:1002-1040, on a view of cellsize 0.1:
+    // each vertex by inv_cs = 10 (953), x = 0.3 at 3 where 0.3 / 0.1 is 2.9999999999999996;
+    // (0.32, 9.7), a fifth of a pixel from the second vertex kept, is dropped; the last two are
+    // kept; a ring of fewer than four vertices keeps none.
+    let view = View::for_image(
+        forager_style_ir::Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 10.0,
+            max_y: 10.0,
+        },
+        101,
+        101,
+    )
+    .unwrap();
+    assert_eq!(view.cellsize, 0.1);
+    let c = |x: f64, y: f64| Coord { x, y };
+    let ring = vec![
+        c(5.0, 9.7),
+        c(0.3, 9.7),
+        c(0.32, 9.7),
+        c(0.3, 5.0),
+        c(5.0, 5.0),
+        c(5.0, 9.7),
+    ];
+    let three = vec![c(1.0, 1.0), c(2.0, 1.0), c(1.0, 1.0)];
+    let hatching = Hatching {
+        clip_buffer: 2.0,
+        clip_in_pixels: false,
+        refused: 0,
+    };
+    let rings = hatch_rings(&[ring, three], &view, (101.0, 101.0), &hatching);
+    assert_eq!(rings.len(), 1);
+    let xs: Vec<f64> = rings[0].iter().map(|p| p.x).collect();
+    assert_eq!(xs, vec![50.0, 3.0, 3.0, 50.0, 50.0]);
+}

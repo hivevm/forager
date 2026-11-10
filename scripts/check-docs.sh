@@ -654,8 +654,9 @@ check_adr_refs() {
 
 # A superseded or rejected ADR cited outside docs/adr/ sends a reader to a decision the project
 # has left: check 5 passes the reference, as the file exists, and the README went on citing an
-# ADR after its successor landed until a review found it. A line that names the successor as well, or says the ADR was rejected,
-# tells the history apart from the decision in force and passes.
+# ADR after its successor landed until a review found it. A line that names the successor as
+# well, or says the ADR was rejected, tells the history apart from the decision in force and
+# passes.
 check_inactive_adr_refs() {
   local f rel lineno text adr nr successor
   local -A inactive=()
