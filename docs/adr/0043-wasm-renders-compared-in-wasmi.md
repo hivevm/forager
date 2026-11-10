@@ -99,6 +99,11 @@ which G-14 waits for.
 - Negative / trade-offs: the exports are a second, test-only face of `bindings-wasm`, built only
   with its feature; the comparison reaches the engine through `wasm_bindgen`'s export of integers,
   not through the bundle's JavaScript API.
+- Negative / trade-offs: the native side's render of a document with its files, and the module's
+  input format, are written twice, in `bindings-wasm` and in the CLI's test, since ADR-0009 lets no
+  host depend on another. A drift of the format fails the comparison; a drift of the render, which
+  is a call of `forager_engine::render_with_files` with no source bound and a fresh
+  `AggRenderer` on both sides, a reviewer holds. The maintainer kept the copies (2026-11-10).
 - Follow-ups: whether `render-agg` and `render` take their mathematical functions from `libm` on
   both targets, as `symbolize` does, should the test find a difference there; its first run found
   none (2026-11-10).

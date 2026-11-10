@@ -16,8 +16,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! A pixmap symbol drawn at a point, end to end: a style IR, its image through the resource
-//! loader, and GeoJSON in, an RGBA image out, compared with a reference image of Forager's own
-//! (docs/plan/pixmap-symbols/spec.md, Testing decisions). The positions are read from
+//! loader, and GeoJSON in, an RGBA image out, compared with a reference image of Forager's own.
+//! The positions are read from
 //! `agg2RenderPixmapSymbol`, src/mapagg.cpp, at the pin, not from the engine.
 
 use std::cell::{Cell, RefCell};
