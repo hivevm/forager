@@ -40,3 +40,9 @@ there, which changes a port trait's types, or the departure is written down in
 
 with the human: a loader error kind changes a port trait's types, which the harness keeps with
 the maintainer ([ADR-0007](../../adr/0007-harness.md)).
+
+## Maintainer's decision (2026-11-07)
+
+Document the departure: `docs/semantics/shapefile.md` states that the adapter tries the upper-case
+name wherever the lower-case file does not load, not only where it is missing, and why; the port's
+error grows no kind.

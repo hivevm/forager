@@ -87,3 +87,9 @@ the ticket and whoever decided the number. Of the unattended conditions, tests w
 criteria and a revert undo them, but the third, touching nothing ADR-0007 keeps with the human,
 cannot be answered yes. The fill is not split from its bound, because an unbounded tile would leave
 Q-9 open between two pull requests.
+
+## Maintainer's go-ahead (2026-11-08)
+
+The ticket may be worked without a further question, with the bounds stated above (a tile of at
+most 4096 × 4096, tiles counted towards the 256 MiB of ADR-0040, six tiles held as MapServer holds
+them); the maintainer checks the bounds in the pull request.

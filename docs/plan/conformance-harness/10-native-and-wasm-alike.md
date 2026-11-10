@@ -33,3 +33,18 @@ host crate of its own, the ADR supersedes ADR-0009 to add it.
 with the human: it decides an ADR, may supersede ADR-0009, and its module stands beside the public
 API of the browser bindings, which the harness keeps with the maintainer
 ([ADR-0007](../../adr/0007-harness.md)).
+
+## Maintainer's decision (2026-11-07)
+
+Research the candidates for running the wasm32 module in a test (a Rust runtime such as wasmtime or
+wasmi inside the test, or a JavaScript runtime on CI), with their cost, licence, and maintenance,
+and put a `proposed` ADR to the maintainer before any code.
+
+On 2026-11-07 the maintainer chose the order: revision-2026-10-24/05, which brings in G-14, lands
+first, and the maintainer then accepts ADR-0043 as proposed. A last-bit difference of `libm`
+between the targets is decided later, as the ADR says; only the inline style document is compared.
+
+## Maintainer's go-ahead (2026-11-08)
+
+The agent drafts the ADR as Proposed; the maintainer sets it Accepted, and any ADR it supersedes to
+Superseded.

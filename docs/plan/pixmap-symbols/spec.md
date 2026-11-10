@@ -271,8 +271,7 @@ What Forager does:
     04 and `docs/plan/revision-2026-10-31b/12-symbol-resolved-once.md` have. Open together, they
     share files: 06 to 09 the symbolization of a style and the engine's image store, 05 and 06 the
     symbols' handling. Worked in parallel, their branches collide; the frontier sensor does not
-    report it yet (`docs/plan/revision-2026-10-31c/08-frontier-tickets-sharing-a-file.md` would make
-    it), so they are claimed one at a time, or in pairs that share no file.
+    report it, so they are claimed one at a time, or in pairs that share no file.
 
 ## Testing decisions
 

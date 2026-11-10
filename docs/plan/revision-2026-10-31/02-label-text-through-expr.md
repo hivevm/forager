@@ -35,3 +35,9 @@ so no decision moves, and a form the evaluator reads beyond them is the labels s
 
 with the human: it changes how a resource limit of Q-9 is held, which ADR-0007 keeps with the
 maintainer.
+
+## Maintainer's decision (2026-11-07)
+
+A label whose text would pass Q-9's 16 MiB is left out with Q-9's diagnostic. The text takes
+`bind`'s reading of a feature: a property matches whatever its case, and a boolean prints as 1 or
+0.

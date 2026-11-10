@@ -37,3 +37,14 @@ stays as it is unless the ADR asks more of it.
 ## Mode
 
 with the human: it is an ADR, and only the maintainer accepts it.
+
+## Maintainer's decision (2026-11-07)
+
+An ADR that supersedes ADR-0021 with the same rule for every third-party file of the browser
+example, scripts, stylesheets, and fonts, naming DejaVu Sans's source, release, checksum, and
+licence.
+
+## Maintainer's go-ahead (2026-11-08)
+
+The agent drafts the ADR as Proposed; the maintainer sets it Accepted, and any ADR it supersedes to
+Superseded.

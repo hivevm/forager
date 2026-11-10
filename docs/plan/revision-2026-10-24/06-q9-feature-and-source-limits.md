@@ -1,59 +1,41 @@
-# Ticket: Decide the feature and data file limits of Q-9 (drafted specification change)
+# Ticket: Test the feature and data file limits of Q-9
 
 ## What to build
 
-Q-9 names two of its numbers, 16 MiB of mapfile text and 1000 diagnostics, and its other limits
-are the implementer's: `MAX_FEATURES_PER_LAYER = 1_000_000` (`crates/engine/src/lib.rs`) and
-the CLI's `MAX_SOURCE_BYTES = 256 MiB` per GeoJSON file (`crates/cli/src/lib.rs`), which #5
-listed as awaiting the maintainer and no change since has decided. Q-9's assumption says its
-limits are set from a first measurement. Measured on `main` 9d2a9bc (release build): a GeoJSON
-file of 245 MiB with 2,200,000 line features peaks at 1.1 GB resident in `forager render`, and the
-layer is skipped with `layer-skipped` only after the source has delivered every feature. So the
-feature limit bounds the drawing, not the memory: memory is bounded by the host's file limit in
-the CLI, and in the browser by nothing but the page's own tab, since the bindings take GeoJSON
-text of any size. Neither limit has the test per limit Q-9 asks for: the limit tests of
-`crates/engine/tests/render.rs` hold the image size and the markers, not the features, and the
-CLI's hold a shapefile's file past the data limit (`crates/cli/src/files.rs`) and the fonts
-(`crates/cli/src/lib.rs`), not a GeoJSON file past `MAX_SOURCE_BYTES`.
+The specification part of this ticket has landed: Q-9 of `docs/SPECIFICATION.md` names the
+features one layer draws (1,000,000) and the size of a data file a host reads (256 MiB), the
+numbers in the code, `MAX_FEATURES_PER_LAYER` (`crates/engine/src/lib.rs`) and the CLI's
+`MAX_SOURCE_BYTES` (`crates/cli/src/lib.rs`). The ticket is narrowed to the test per limit Q-9
+asks for, which neither has:
 
-Draft for the maintainer, in Q-9 of `docs/SPECIFICATION.md`:
+- No engine test feeds a layer past `MAX_FEATURES_PER_LAYER`; the limit tests of
+  `crates/engine/tests/render.rs` hold the image size and the markers, not the features.
+- No CLI test binds a `--source` GeoJSON file past `MAX_SOURCE_BYTES`, which `read_bounded` in
+  `crates/cli/src/lib.rs` refuses; `crates/cli/tests/shapefile.rs` holds a shapefile's files past
+  the same limit, and `crates/cli/tests/render.rs` the fonts.
 
-> - **Q-9** — Bounded resources: `INCLUDE` depth and cycles, the total size of a mapfile with its
->   `INCLUDE`s (16 MiB of text), the number of diagnostics one load reports (1000), image size,
->   the features one layer draws (1,000,000), the size of a data file a host reads (256 MiB),
->   expression nesting, and regular-expression size are limited, and exceeding a limit is a
->   diagnostic. A test per limit feeds an input past it and expects the diagnostic.
-
-The numbers are the ones in the code; the maintainer may set others from the measurement above.
-The draft leaves two questions open. Whether a feature source should stop at the limit while it
-reads, rather than the engine after it; answering yes changes the `FeatureSource` port. And
-whether Q-9 adds a budget of bytes across one render: the file limit bounds one file, not a
-render. The CLI reads a shapefile layer's `.shp`, `.shx`, and `.dbf` within it, each, and opens a
-shapefile that several layers name once, but a mapfile can still name many distinct files, sparse
-copies or hard links inside the base context among them, each read and held in full.
-
-Accepted ADRs whose basis it moves, for the maintainer to confirm: none derive their decision
-from Q-9's numbers; [ADR-0007](../../adr/0007-harness.md) and
-[ADR-0015](../../adr/0015-agg-rust-rasterizer.md) cite Q-9 for the existence of limits.
+Measured on `main` 9d2a9bc (release build), a GeoJSON file of 245 MiB with 2,200,000 line
+features peaks at 1.1 GB resident in `forager render`, and the layer is skipped only after the
+source has delivered every feature: the feature limit bounds the drawing, not the memory. Two
+questions the draft left open stay the maintainer's and are not this ticket's: whether a feature
+source should stop at the limit while it reads, which changes the `FeatureSource` port, and
+whether Q-9 adds a budget of bytes across one render.
 
 ## Acceptance criteria
 
-- [x] Given the maintainer's decision, when it lands, then Q-9 names the two limits in a pull
-  request of its own, apart from code.
-- [ ] Given a source that delivers one feature more than the decided feature limit, when the
+- [ ] Given a source that delivers one feature more than `MAX_FEATURES_PER_LAYER`, when the
   engine renders its layer, then the layer is skipped with `layer-skipped` naming the limit
   (`crates/engine/tests/render.rs`, citing Q-9).
-- [ ] Given a GeoJSON file one byte past the decided file limit, when `forager render` binds it,
-  then the layer is skipped with `source-unreadable` naming the limit
+- [ ] Given a GeoJSON file one byte past `MAX_SOURCE_BYTES`, when `forager render` binds it with
+  `--source`, then the layer is skipped with `source-unreadable` naming the limit
   (`crates/cli/tests/render.rs`, citing Q-9; a sparse file keeps the fixture small).
-- [ ] Given decided numbers other than those in the code, when the change lands, then the
-  constants match them.
 
 ## Read first
 
-- Q-9 and *Assumptions* of `docs/SPECIFICATION.md`;
-  [`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules),
-  rule 7; the PR bodies of #5 (*Doubts*) and #9.
+- Q-9 of `docs/SPECIFICATION.md`; `MAX_FEATURES_PER_LAYER` and where it skips a layer in
+  `crates/engine/src/lib.rs`; `MAX_SOURCE_BYTES` and `read_bounded` in `crates/cli/src/lib.rs`.
+- `each_file_of_a_shapefile_past_the_data_file_limit_skips_its_layer` in
+  `crates/cli/tests/shapefile.rs`, the golden path of a test past the data file limit.
 
 ## Blocked by
 
@@ -61,5 +43,10 @@ from Q-9's numbers; [ADR-0007](../../adr/0007-harness.md) and
 
 ## Mode
 
-with the human: a specification change and the resource limits are the maintainer's
-([`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules), rule 7; [ADR-0007](../../adr/0007-harness.md)).
+unattended: the two tests decide its criteria; it adds tests only, so a wrong result costs one
+revert. It changes no resource limit, which [ADR-0007](../../adr/0007-harness.md) keeps with the
+maintainer: it tests two limits as the specification and the code already state them. Its branch
+counts against ADR-0007's cap of three open agent branches. A wrong result shows as a test that
+fails or does not cite Q-9; the diagnostics the tests assert prove it right. Stop: if either test
+needs a constant, a diagnostic, or a port to change, or past two hours, leave the state here and
+hand off.

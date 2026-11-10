@@ -79,3 +79,10 @@ hand.
 
 with the human: it resolves a resource path the mapfile names against the base context (Q-8),
 which [ADR-0007](../../adr/0007-harness.md) never lets run unattended.
+
+## Maintainer's decision (2026-11-07)
+
+A relative image path resolves against the directory of the main mapfile inside the base context,
+as MapServer's `mappath` does. A name that begins with `http` warns and draws nothing. A missing
+file warns as the symbol is drawn instead of with `symbol-unknown` as the mapfile loads, and the
+two frontend tests that pin the warning at load change with it.

@@ -38,3 +38,9 @@ today are short. The convention that memory follows the input's size, in
 ## Mode
 
 with the human: it is a resource limit of Q-9, which ADR-0007 keeps with the maintainer.
+
+## Maintainer's decision (2026-11-07)
+
+The text is shared, and `Rendered.labels[].text` becomes an `Arc<str>` in the engine's public API.
+No bound on the bytes of all labels is added to Q-9. The test holds what a render keeps of the
+texts to at most four times the input's.

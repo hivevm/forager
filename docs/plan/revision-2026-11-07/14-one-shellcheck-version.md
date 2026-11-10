@@ -45,3 +45,18 @@ maintainer, a `proposed` ADR or a revision if it binds.
 
 with the human: it adds a pinned tool and its source to the checks and the Dev Container, which
 ADR-0002 and ADR-0010 decide, and the check script is the template's.
+
+## Maintainer's decision (2026-11-07)
+
+ShellCheck's release binary of a named version, verified by its published checksum, installed by
+`scripts/install-tools.sh` and by a step of the `shell` job. The source of the tool is recorded
+first in a `proposed` ADR.
+
+On 2026-11-07 the maintainer chose ShellCheck 0.11.0, the findings of SC2329 fixed in the same
+change; Debian's package leaves `postCreateCommand`; the ADR is a new one beside ADR-0002 and
+ADR-0010, superseding neither.
+
+## Maintainer's go-ahead (2026-11-08)
+
+The agent drafts the ADR as Proposed; the maintainer sets it Accepted, and any ADR it supersedes to
+Superseded.

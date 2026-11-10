@@ -43,3 +43,14 @@ of which move with this ticket: `Styled::new` and `LabelStyles::bound_marker` in
 with the human: it either adds a diagnostic, a code users see, or widens what the frontend carries
 into the style IR for the scale factor of classes, styles, and labels; which of the two is a
 decision the ticket does not take.
+
+## Maintainer's decision (2026-11-07)
+
+Port the scale factor: compute the scale factor of each class, style, and label as
+`msUpdateClassScaleFactor` does, carrying into the style IR what it needs (a change of the style
+document's format, under ADR-0020 and ADR-0036), rather than leaving such styles out with a
+diagnostic.
+
+On 2026-11-07 the maintainer decided the format: the `sizeunits` fields lie on the class, the
+style, and the label, as MapServer has them, and they take a major version of the style document,
+since a reader that ignores them would draw at another size.

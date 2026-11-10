@@ -12,8 +12,11 @@ The pull requests of the spec `labels-2` left three points of a label's styles i
   drawn.
 - `ANGLE AUTO` on a label's style is not refused, and is drawn as some angle.
 - A label's style without a transform, which the style document now means "not drawn", is
-  refused as "a STYLE other than one of GEOMTRANSFORM labelpoly, labelpnt, or labelcenter",
-  which does not say that the transform is missing.
+  refused as "a STYLE other than one of GEOMTRANSFORM labelpoly, labelpnt, or labelcenter"
+  (`kind` in `crates/engine/src/label_styles.rs`), which does not say that the transform is
+  missing. Whether a label's style may be written without a transform at all is parked with
+  revision-2026-10-31c/11 on `parked/tickets-2026-11-07` until after the take-up of NUC v0.7.0;
+  until then the rule is kept, and the refusal is reworded here.
 - A `labelpoly` style with a `SYMBOL`, a hatch among them, is refused today ("a STYLE of
   GEOMTRANSFORM labelpoly with a SYMBOL"), so the label is not drawn; `msDrawLabelBounds` draws it
   through `msDrawShadeSymbol`, so MapServer hatches the box. Taken over from
@@ -27,7 +30,8 @@ The pull requests of the spec `labels-2` left three points of a label's styles i
 Read each in `msDrawLabelCache` and `computeMarkerBounds` (`src/mapdraw.c`) and `bindLabel`
 (`src/maputil.c`) at the pin, and `msDrawLabelBounds`; port the first two and the fourth, or
 refuse them with `label-not-drawn` where porting needs more than this ticket, and word the third
-refusal for what it is.
+refusal for what it is. The module of a label's styles this ticket waited for landed with
+ec1b873 (`crates/engine/src/label_styles.rs`).
 
 ## Acceptance criteria
 
@@ -50,19 +54,23 @@ refusal for what it is.
 - [ADR-0028](../../adr/0028-text-stack.md),
   [ADR-0035](../../adr/0035-label-cache-grid-and-bound.md);
   `docs/semantics/label.md` (Styles); `docs/CONVENTIONS.md` (behaviour ported from MapServer, a
-  refusal asserts its reason); `crates/engine/tests/labels.rs`.
+  refusal asserts its reason); `crates/engine/src/label_styles.rs`,
+  `crates/engine/tests/labels.rs`.
+- revision-2026-11-07/05, parked on `parked/tickets-2026-11-07`, which may later move the same
+  drawing into `crates/symbolize`.
 
 ## Blocked by
 
-- docs/plan/revision-2026-10-31c/01-label-styles-module.md
+- None (can start immediately)
 
 ## Mode
 
 unattended: engine tests whose values come from the C decide each point; the change stays in the
-engine's labels, undone by one revert. It touches nothing [ADR-0007](../../adr/0007-harness.md)
-keeps with the human: no resource limit, port, public interface, or style document format, only what
-the engine draws or refuses of a document it already reads. Its branch counts against ADR-0007's cap
-of three open agent branches. A wrong result shows as a case outcome or a `labels-hold` mark that
-moves, and is undone by the revert; the tests citing the C prove it right. Stop: if the source
-contradicts a point as stated here, or a port needs the style IR to change, record what the source
+engine's labels and their styles, undone by one revert. It touches nothing
+[ADR-0007](../../adr/0007-harness.md) keeps with the human: no resource limit, port, public
+interface, or style document format, only what the engine draws or refuses of a document it already
+reads. Its branch counts against ADR-0007's cap of three open agent branches. A wrong result shows
+as a case outcome or a `labels-hold` mark that moves, and is undone by the revert; the tests citing
+the C prove it right. Stop: if the source contradicts a point as stated here, a port needs the style
+IR to change, record what the source
 says here and hand off.

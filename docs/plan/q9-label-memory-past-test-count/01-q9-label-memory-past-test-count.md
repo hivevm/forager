@@ -42,3 +42,8 @@ measured again on it before the decision.
 
 with the human: what Q-9 means is the maintainer's
 ([`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules), rule 7).
+
+## Maintainer's decision (2026-11-08)
+
+Option 1: the bound holds at any count. The cache's lists are sized ahead of time or grow by less
+than double, and the test also measures at a count just past a power of two.
