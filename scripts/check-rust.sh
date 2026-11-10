@@ -62,11 +62,11 @@ step "msautotest: mapfiles load (G-1), cases hold their outcome and render alike
 suite="$(bash scripts/fetch-msautotest.sh)"
 fidelity="$ROOT/target/fidelity-counts.txt"
 rm -f "$fidelity"
-# The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (ADR-0033).
+# The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (ADR-0033);
+# without FORAGER_MAP2IMG and FORAGER_MAPSERVER_LABELS it skips itself.
 FORAGER_MSAUTOTEST="$suite" FORAGER_FIDELITY="$fidelity" \
   FORAGER_CONFORMANCE_WASM="$ROOT/target/conformance/web/forager_bindings_wasm_bg.wasm" \
-  cargo test -p forager-cli --locked --test msautotest -- --ignored \
-  --skip mapserver_renders_the_cases_in_scope_within_its_noise
+  cargo test -p forager-cli --locked --test msautotest -- --ignored
 
 step "The share of the cases in scope that pass does not fall below the last release's (Q-4)"
 # Verifies: Q-4

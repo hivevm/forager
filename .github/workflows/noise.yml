@@ -58,6 +58,7 @@ jobs:
         run: bash scripts/install-tools.sh
       # The path reaches the shell through the environment, not spliced into the script. The suite
       # is served on localhost:8000, as MapServer's CI serves it, for the symbols named by a URL.
+      # The filter runs the ignored tests of the harness's noise module, the measurement among them.
       - name: Measure MapServer's noise over the cases in scope
         env:
           FORAGER_MAP2IMG: ${{ steps.mapserver.outputs.map2img }}
@@ -66,8 +67,13 @@ jobs:
           suite="$(bash scripts/fetch-msautotest.sh)"
           python3 -m http.server 8000 --bind 127.0.0.1 --directory "$suite" >/dev/null 2>&1 &
           FORAGER_MSAUTOTEST="$suite" \
-            cargo test -p forager-cli --locked --test msautotest -- --ignored --exact \
-            mapserver_renders_the_cases_in_scope_within_its_noise --nocapture
+            cargo test -p forager-cli --locked --test msautotest -- --ignored \
+            conformance::noise:: --nocapture
+          # A filter that matches no test passes; the report in the summary shows the run measured.
+          if ! grep -qF "MapServer's noise over the cases in scope" "$GITHUB_STEP_SUMMARY"; then
+            echo "noise: no measurement ran; the filter conformance::noise:: matched no test" >&2
+            exit 1
+          fi
       - name: Keep the renderings
         if: always()
         uses: actions/upload-artifact@v7

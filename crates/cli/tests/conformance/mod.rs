@@ -16,6 +16,7 @@ use std::path::Path;
 use forager_style_ir::{Diagnostic, Extent, Layer, LayerStatus, Map};
 
 pub mod labels;
+pub mod noise;
 pub mod wasm;
 
 #[cfg(test)]

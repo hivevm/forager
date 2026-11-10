@@ -38,3 +38,26 @@ none of the parts [ADR-0006](../../adr/0006-harness.md) keeps with the maintaine
 its cap of three; a wrong result shows as a red push check or a noise run that measures nothing;
 stop: after two attempts that leave `scripts/check-all.sh` red, or when the noise workflow cannot be
 run to confirm it, the session leaves its state in this file and hands off.
+
+## Worker's findings (2026-11-10)
+
+Implemented on `work/group-1-2026-11-10`; the stop "when the noise workflow cannot be run to
+confirm it" is reached, since the session may not push, so this file stays until a run confirms it.
+
+- **Where the module lies.** It is `crates/cli/tests/conformance/noise/` (`mod.rs`, `tests.rs`), not
+  a top-level `noise/`: ADR-0033's *When* lists the paths a push triggers the workflow on, and
+  `scripts/test-build-mapserver.sh` holds the trigger to that list line by line. A top-level
+  `noise/` would need a new trigger path, which only a superseding ADR can add; under
+  `conformance/` the trigger `crates/cli/tests/conformance/**` covers it unchanged.
+- **The one rule.** `noise::mapserver` decides from `FORAGER_MAP2IMG` and
+  `FORAGER_MAPSERVER_LABELS`: neither set skips the measurement, both naming a file runs it, one
+  missing or empty fails it. The unit test
+  `the_noise_measurement_runs_only_where_mapserver_is_named` holds it. `scripts/check-rust.sh` no
+  longer passes `--skip`; the workflow runs `--ignored conformance::noise::` and fails when its job
+  summary holds no report, so a test renamed out of the module does not pass unmeasured.
+- **Confirmed locally.** Without the variables the ignored test passes after printing that it
+  skipped; with both set to `/bin/false`, as a stand-in for a build, it measures and fails on all
+  74 cases with `map2img fails` and writes the report to `GITHUB_STEP_SUMMARY`.
+- **Left to confirm.** One run of `.github/workflows/noise.yml` on the branch's push, which the
+  change triggers through `crates/cli/tests/conformance/**`, must measure as before. Delete this
+  file once it does.
