@@ -34,8 +34,7 @@
 #
 # The threshold and the tolerance of the category geometry and symbols are those of G-6 (GEOMETRY
 # in msautotest.rs), above the noise MapServer shows against its own references on CI. Those of
-# the category text (TEXT in msautotest.rs) are provisional, until the noise measurement over the
-# text cases sets them.
+# the category text are those of G-13 (TEXT in msautotest.rs), above the same noise.
 
 misc/attrbind.map attrbind_test001.png text passes labels-hold
 misc/attrbind.map attrbind_test002.png out: a data source other than shapefiles, OGR

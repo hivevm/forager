@@ -403,9 +403,10 @@ const GEOMETRY: Metric = Metric {
     tolerance: 0.001,
 };
 
-/// The metric of the category text, provisional: no criterion states its numbers yet, so the
-/// harness compares the category by those of geometry and symbols until the noise measurement over
-/// the text cases sets its own.
+/// The metric of the category text, as G-13 states it: that of G-6, a pixel differs when one of its
+/// channels differs by more than 16, and a case passes when at most 0.1 % of its pixels differ.
+/// MapServer at the pin reproduces its own references of the category bit for bit on CI
+/// ([`mapserver_renders_the_cases_in_scope_within_its_noise`]), so the numbers lie above its noise.
 const TEXT: Metric = Metric {
     threshold: 16,
     tolerance: 0.001,
@@ -443,6 +444,7 @@ fn every_label_record_is_that_of_a_text_case_in_scope() {
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_case_in_scope_holds_its_outcome() {
     // Verifies: G-6
+    // Verifies: G-13, for the category text
     // Verifies: G-10, for the text cases the list marks labels-hold
     let suite = suite();
     let cases = conformance::cases(&suite, conformance::DIRECTORIES);
