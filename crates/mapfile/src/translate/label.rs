@@ -91,7 +91,7 @@ impl Translator<'_> {
                         let message = "SHADOWCOLOR takes a colour, not an attribute";
                         self.error("invalid-value", message, &d.span);
                     }
-                    "SHADOWCOLOR" => label.shadow_color = self.color(d).map(Bound::Value),
+                    "SHADOWCOLOR" => label.shadow_color = self.color(d),
                     "OUTLINEWIDTH" => {
                         label.outline_width = self.number(d, Range::above(0.0)).map(f64::trunc);
                     }

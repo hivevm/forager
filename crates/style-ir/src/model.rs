@@ -467,7 +467,7 @@ impl Label {
             .into_iter()
             .flatten()
             .flatten();
-        let colors = [&self.color, &self.outline_color, &self.shadow_color];
+        let colors = [&self.color, &self.outline_color];
         let mut found: Vec<&Expr> = self.text.iter().collect();
         found.extend(numbers.chain(pairs).filter_map(Bound::expression));
         found.extend(colors.into_iter().flatten().filter_map(Bound::expression));
@@ -570,10 +570,10 @@ pub struct Label {
     pub outline_color: Option<Bound<Rgba>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outline_width: Option<f64>,
-    /// The mapfile frontend gives a value only, never a binding or an expression: MapServer's
-    /// `loadLabel` reads it with `loadColor` and no binding, and refuses a mapfile that binds it.
+    /// A colour only, never a binding or an expression: MapServer's `loadLabel` reads it with
+    /// `loadColor` and no binding, and refuses a mapfile that binds it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub shadow_color: Option<Bound<Rgba>>,
+    pub shadow_color: Option<Rgba>,
     /// The shadow's offset, `[x, y]`. A bound value is rounded to an integer as a bound `size`
     /// is; an empty one is 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]

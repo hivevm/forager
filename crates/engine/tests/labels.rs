@@ -462,7 +462,7 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
     };
     let not_drawn: [fn(&mut Label); 15] = [
         |l| l.angle_mode = Some(AngleMode::Follow),
-        |l| l.shadow_color = Some(Bound::Value(WHITE)),
+        |l| l.shadow_color = Some(WHITE),
         |l| l.styles = vec![Style::default()],
         |l| {
             l.styles = vec![Style {

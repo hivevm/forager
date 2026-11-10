@@ -676,10 +676,10 @@
           "format": "double"
         },
         "shadow_color": {
-          "description": "The mapfile frontend gives a value only, never a binding or an expression: MapServer's\n`loadLabel` reads it with `loadColor` and no binding, and refuses a mapfile that binds it.",
+          "description": "A colour only, never a binding or an expression: MapServer's `loadLabel` reads it with\n`loadColor` and no binding, and refuses a mapfile that binds it.",
           "anyOf": [
             {
-              "$ref": "#/$defs/Bound3"
+              "$ref": "#/$defs/Rgba"
             },
             {
               "type": "null"

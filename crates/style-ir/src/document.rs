@@ -587,6 +587,27 @@ mod tests {
     }
 
     #[test]
+    fn a_labels_shadow_color_is_a_colour_never_a_binding() {
+        // Verifies: ADR-0014
+        let label = |shadow: &str| {
+            format!(
+                r#"{{"version":"1.0","map":{{"layers":[{{"classes":[{{"labels":[{{"shadow_color":{shadow}}}]}}]}}]}}}}"#
+            )
+        };
+        let read = StyleDocument::from_json(&label(r##""#010203""##)).unwrap();
+        let shadow = read.document.map.layers[0].classes[0].labels[0].shadow_color;
+        assert_eq!(shadow, Some(Rgba::opaque(1, 2, 3)));
+        let error = StyleDocument::from_json(&label(r#"{"binding":"c"}"#)).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("/map/layers/0/classes/0/labels/0/shadow_color"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
     fn a_newer_major_version_is_a_load_error() {
         let error = StyleDocument::from_json(r#"{"version": "2.0", "map": {}}"#).unwrap_err();
         assert_eq!(error.code, "format-version-unsupported");
