@@ -11,13 +11,13 @@
 //! as they need the network once.
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use forager_adapter_epsg::EpsgTable;
-use forager_cli::FileLoader;
+use forager_cli::{FileLoader, MapfileLoader};
 use forager_engine::CachedLabel;
+use forager_mapfile::Loaded;
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
 use forager_style_ir::{Map, StyleDocument};
@@ -169,7 +169,6 @@ fn every_msautotest_mapfile_loads_without_an_error() {
     std::fs::write(&table, epsg_table()).unwrap();
 
     let resolver = stand_in();
-    let loader = Suite(suite.clone());
     let mut found = Vec::new();
     mapfiles(&suite, &mut found);
     let mut skipped = 0;
@@ -201,13 +200,9 @@ fn every_msautotest_mapfile_loads_without_an_error() {
         if output.status.success() {
             loaded += 1;
         } else if only_init_file
-            && ready(forager_mapfile::load(
-                &ResourcePath::new(name).unwrap(),
-                &loader,
-                Some(&resolver),
-            ))
-            .document
-            .is_some()
+            && base_context(&suite, name)
+                .and_then(|(base, path)| load(&path, &base.for_load(), &resolver))
+                .is_ok_and(|loaded| loaded.document.is_some())
         {
             with_init_file += 1;
         } else {
@@ -286,18 +281,29 @@ fn the_fetched_suite_holds_the_data_and_the_non_cairo_references() {
     );
 }
 
-/// The suite's files, read inside its directory.
-struct Suite(PathBuf);
-
-impl ResourceLoader for Suite {
-    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
-        std::fs::read(self.0.join(path.as_str())).map_err(|e| SourceError::new(e.to_string()))
-    }
+/// The suite's directory as the base context, and the path of `mapfile` inside it, as
+/// `forager render <mapfile> --base <suite>` takes them.
+fn base_context(suite: &Path, mapfile: &str) -> Result<(FileLoader, ResourcePath), String> {
+    let (base, name) = FileLoader::for_mapfile(&suite.join(mapfile), Some(suite))
+        .map_err(|e| format!("its base context: {e}"))?;
+    let path = ResourcePath::new(&name).map_err(|e| e.to_string())?;
+    Ok((base, path))
 }
 
-/// The suite with the text of its main mapfile replaced, to which `-i` has been applied.
+/// Loads the mapfile at `path` through `loader` in one poll, as the CLI loads one; a read that
+/// waited is the error.
+fn load(
+    path: &ResourcePath,
+    loader: &impl ResourceLoader,
+    resolver: &StandIn,
+) -> Result<Loaded, String> {
+    forager_cli::now(forager_mapfile::load(path, loader, Some(resolver))).map_err(|e| e.to_string())
+}
+
+/// The files of one load of a mapfile from the base context, with the text of the main mapfile
+/// replaced by the one to which `-i` has been applied.
 struct MainReplaced<'a> {
-    suite: &'a Suite,
+    files: &'a MapfileLoader,
     path: &'a ResourcePath,
     main: String,
 }
@@ -307,13 +313,9 @@ impl ResourceLoader for MainReplaced<'_> {
         if path == self.path {
             Ok(self.main.clone().into_bytes())
         } else {
-            self.suite.load(path).await
+            self.files.load(path).await
         }
     }
-}
-
-fn ready<F: Future>(future: F) -> F::Output {
-    forager_ports::poll_once(future).expect("the suite's loader never waits")
 }
 
 /// The JSON Pointer of the first place where `a` and `b` differ.
@@ -342,7 +344,6 @@ fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
     // Verifies: G-3
     let suite = suite();
     let resolver = stand_in();
-    let loader = Suite(suite.clone());
     let mut found = Vec::new();
     mapfiles(&suite, &mut found);
     let mut checked = 0;
@@ -352,9 +353,10 @@ fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
         if SKIPPED.iter().any(|(skip, _)| *skip == name) {
             continue;
         }
-        let path = ResourcePath::new(name).unwrap();
-        let first = ready(forager_mapfile::load(&path, &loader, Some(&resolver)))
-            .document
+        let first = base_context(&suite, name)
+            .and_then(|(base, path)| load(&path, &base.for_load(), &resolver))
+            .ok()
+            .and_then(|loaded| loaded.document)
             .unwrap_or_else(|| panic!("{name} does not load; see the G-1 test"));
         let yaml = first.to_yaml().unwrap();
         let from_yaml = StyleDocument::from_yaml(&yaml).unwrap().document;
@@ -463,7 +465,6 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("msautotest");
     let _ = std::fs::remove_dir_all(&out);
     let resolver = stand_in();
-    let loader = Suite(suite.clone());
     let mut tally = Tally::default();
     let mut failures = Vec::new();
     let mut broken = Vec::new();
@@ -481,7 +482,7 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
         let name = case.result.trim_end_matches(".png");
         let metric = metric_of(*category);
         let (outcome, labels) =
-            match render_and_compare(&suite, case, &loader, &resolver, metric, &dir, name) {
+            match render_and_compare(&suite, case, &resolver, metric, &dir, name) {
                 Ok((outcome, labels)) => (Ok(outcome), Some(labels)),
                 Err(why) => (Err(why), None),
             };
@@ -577,7 +578,6 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
     let cases = conformance::cases(&suite, conformance::DIRECTORIES);
     let entries = conformance::list(CASES).unwrap();
     let resolver = stand_in();
-    let loader = Suite(suite.clone());
     let (mut in_scope, mut compared, mut differences) = (0, 0, Vec::new());
     for case in &cases {
         let Some(Listed {
@@ -589,19 +589,21 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
         };
         in_scope += 1;
         let named = format!("{} {}", case.mapfile, case.result);
-        let mut map = match map_of(case, &loader, &resolver) {
-            Ok(map) => map,
+        let (base, mut map) = match base_context(&suite, &case.mapfile)
+            .and_then(|(base, path)| Ok((map_of(case, &base, &path, &resolver)?, base)))
+        {
+            Ok((map, base)) => (base, map),
             Err(why) => {
                 differences.push(format!("{named}: {why}"));
                 continue;
             }
         };
-        if let Err(why) = wasm::inline(&mut map, &loader) {
+        if let Err(why) = wasm::inline(&mut map, &base.for_load()) {
             differences.push(format!("{named}: {why}"));
             continue;
         }
         let document = StyleDocument::new(map).to_json().unwrap();
-        let (native, files) = wasm::native(&document, &loader);
+        let (native, files) = wasm::native(&document, &base.for_load());
         match module.render(&document, &files) {
             Ok(rendered) => {
                 compared += 1;
@@ -675,7 +677,6 @@ type RenderLabels = (Vec<CachedLabel>, Vec<String>);
 fn render_and_compare(
     suite: &Path,
     case: &Case,
-    loader: &Suite,
     resolver: &StandIn,
     metric: &Metric,
     dir: &Path,
@@ -686,7 +687,7 @@ fn render_and_compare(
     let reference = std::fs::read(&reference)
         .map_err(|e| format!("its reference {}: {e}", reference.display()))
         .and_then(|bytes| metric::decode(&bytes).map_err(|e| format!("its reference: {e}")))?;
-    let (rendering, labels) = render(case, loader, resolver)?;
+    let (rendering, labels) = render(case, suite, resolver)?;
     let comparison = metric::compare_and_keep(&rendering, &reference, metric, dir, name)
         .map_err(|e| format!("{}: {e}", dir.display()))?;
     Ok(((comparison.passes(), comparison.to_string()), labels))
@@ -706,17 +707,17 @@ fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<St
 /// The rendering of `case`, the labels of its cache, and the layers whose labels are not compared,
 /// the options of its `map2img` line applied to its style IR, its sources bound and the fonts of
 /// its labels read by the CLI's library from the suite's directory as the base context, as
-/// `forager render` binds and reads them. Unlike there, the mapfile loads through the stand-in
-/// table of the G-1 test and with `-i` applied, and the binding's diagnostics are reported only
-/// with a rendering that gives no image.
+/// `forager render` binds and reads them. The mapfile loads through the same base context, as
+/// `forager render` loads it; unlike there, through the stand-in table of the G-1 test and with
+/// `-i` applied, and the binding's diagnostics are reported only with a rendering that gives no
+/// image.
 fn render(
     case: &Case,
-    loader: &Suite,
+    suite: &Path,
     resolver: &StandIn,
 ) -> Result<(RgbaImage, RenderLabels), String> {
-    let map = map_of(case, loader, resolver)?;
-    let (base, _) = FileLoader::for_mapfile(&loader.0.join(&case.mapfile), Some(&loader.0))
-        .map_err(|e| format!("its base context: {e}"))?;
+    let (base, path) = base_context(suite, &case.mapfile)?;
+    let map = map_of(case, &base, &path, resolver)?;
     let rendered = forager_cli::render(&map, &[], &base);
     let Some(image) = rendered.image else {
         let errors: Vec<_> = rendered
@@ -729,24 +730,31 @@ fn render(
     Ok((image, (rendered.labels, labels::uncompared(&map))))
 }
 
-/// The style IR of `case`, its mapfile loaded through the stand-in table of the G-1 test with
-/// `-i` applied, and the other options of its `map2img` line applied to it.
-fn map_of(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<Map, String> {
-    let path = ResourcePath::new(&case.mapfile).map_err(|e| e.to_string())?;
+/// The style IR of `case`, its mapfile at `path` loaded from `base` through the stand-in table of
+/// the G-1 test with `-i` applied, and the other options of its `map2img` line applied to it.
+fn map_of(
+    case: &Case,
+    base: &FileLoader,
+    path: &ResourcePath,
+    resolver: &StandIn,
+) -> Result<Map, String> {
     let options = case.options()?;
     let loaded = match conformance::image_type(&options) {
         Some(image_type) => {
-            let text = std::fs::read_to_string(loader.0.join(&case.mapfile))
+            let text = forager_cli::now(base.for_load().load(path))
+                .map_err(|e| e.to_string())?
                 .map_err(|e| format!("its mapfile: {e}"))?;
+            let text = String::from_utf8(text).map_err(|e| format!("its mapfile: {e}"))?;
             let main = conformance::with_image_type(&text, image_type)?;
+            let files = base.for_load();
             let loader = MainReplaced {
-                suite: loader,
-                path: &path,
+                files: &files,
+                path,
                 main,
             };
-            ready(forager_mapfile::load(&path, &loader, Some(resolver)))
+            load(path, &loader, resolver)?
         }
-        None => ready(forager_mapfile::load(&path, loader, Some(resolver))),
+        None => load(path, &base.for_load(), resolver)?,
     };
     let document = loaded.document.ok_or_else(|| {
         let errors: Vec<_> = loaded.diagnostics.iter().map(ToString::to_string).collect();

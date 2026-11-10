@@ -283,14 +283,15 @@ the workflow runs the ignored tests of that module and fails when its job summar
 The conformance harness there reads the cases of `misc` and `renderers`, their
 `RUN_PARMS` lines, in its module `conformance/`, whose list `cases.txt` names each in scope with its
 category and expected outcome, passing or failing, or out of scope with its reason, and marks those
-whose reference is blank; it renders each case in scope in-process: the mapfile loads through the
-harness's own loader of the suite, with the stand-in EPSG table and the case's `-i` applied, and the
-CLI's library binds its shapefiles and reads the fonts of its labels as `forager render` does, with
-the suite's directory as the base context; it compares the rendering by the metric of its category,
-geometry and symbols or text, and holds its outcome, leaving the renderings of failing cases under
-Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that pass, the blank ones
-apart, and `scripts/check-fidelity.sh` holds the share of passing cases without a blank reference
-against that of the last release tag `v<semver>` in the record
+whose reference is blank; it renders each case in scope in-process: with the suite's directory as
+the base context, the mapfile loads through the CLI's `FileLoader`, as `forager render --base`
+loads it, with the stand-in EPSG table and the case's `-i` applied, and the CLI's library binds its
+shapefiles and reads the fonts of its labels from the same `FileLoader` as `forager render` does;
+G-1's in-process load and G-3's round trips load through it too; it compares the rendering by the
+metric of its category, geometry and symbols or text, and holds its outcome, leaving the renderings
+of failing cases under Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that
+pass, the blank ones apart, and `scripts/check-fidelity.sh` holds the share of passing cases
+without a blank reference against that of the last release tag `v<semver>` in the record
 `crates/cli/tests/conformance/fidelity.txt`, to which each release adds its line (Q-4); no release
 is recorded yet, and until one is the check passes. For each text case it compares the labels the
 engine reports in its `Rendered` with MapServer's, recorded under `conformance/labels/`, and holds
