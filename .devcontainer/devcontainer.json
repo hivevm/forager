@@ -40,14 +40,12 @@
   // repository keeps them under .githooks/ and this points git at them: pre-commit refuses a
   // commit on main (AGENTS.md, section 6), pre-push runs the checks first (AGENTS.md, section 5).
   // Outside the container, run the same command once per clone (README → "Getting Started").
-  // ShellCheck comes from the base image's signed Debian archive, so the pre-push hook runs the
-  // shell lint CI runs; without it the lint skips itself locally.
   "postCreateCommand": {
     "hooks": "git config core.hooksPath .githooks",
     // The merge driver of the ADR index, which .gitattributes names (.githooks/merge-adr-index).
     "adr-index": "git config merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'",
-    "shellcheck": "sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck",
-    // The pinned toolchain, cargo-deny, and the wasm-bindgen CLI (ADR-0008, ADR-0010).
+    // The pinned toolchain, cargo-deny, the wasm-bindgen CLI, and ShellCheck at the version CI runs,
+    // so that the pre-push hook runs the shell lint CI runs (ADR-0008, ADR-0010, ADR-0044).
     "tools": "bash scripts/install-tools.sh",
     // git authenticates through gh's stored login, not through VS Code's helper of an earlier
     // container (ADR-0042); before the first login it has nothing to set up.

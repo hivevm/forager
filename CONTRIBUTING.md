@@ -27,8 +27,9 @@ Authority runs **specification → accepted ADRs → task**
    runs on every pull request, in the same order. With the repository's git hooks enabled (the Dev
    Container does it; otherwise `git config core.hooksPath .githooks`) a push runs them for you
    and stops while they are red. They need only bash and coreutils, already in the Dev Container.
-   Only the shell lint additionally needs [ShellCheck](https://www.shellcheck.net), which the Dev
-   Container installs; elsewhere it skips itself where that is missing, and CI runs it always.
+   Only the shell lint additionally needs [ShellCheck](https://www.shellcheck.net), at the version
+   `scripts/install-shellcheck.sh` pins and installs, as the Dev Container and CI do; elsewhere
+   the lint skips itself where it is missing, and warns where another version runs.
    Outside the container, also enable the ADR index's merge driver as Getting Started in the
    [README](README.md) says, so that rows two branches append do not conflict
    ([`.githooks/merge-adr-index`](.githooks/merge-adr-index)).

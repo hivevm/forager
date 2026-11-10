@@ -8,11 +8,13 @@
 # directory the project ignores is no part of the gate. The scripts under scripts/ and the hooks
 # are the repository's entire enforcement layer, so they are held to a lint gate themselves.
 #
-# ShellCheck is the one check dependency beyond bash + coreutils/git. CI does not install it — the
-# GitHub-hosted runner image ships it preinstalled, and the Dev Container installs it on creation
-# (.devcontainer/devcontainer.json). Elsewhere, when shellcheck is not on PATH, the
-# check skips itself with a notice instead of failing (CI remains the enforcing gate); in a CI
-# run (CI=true) a missing shellcheck is an error, never a silent skip.
+# ShellCheck is the one check dependency beyond bash + coreutils/git, held to the one version
+# scripts/install-shellcheck.sh pins (ADR-0044), which the Dev Container installs on creation
+# through scripts/install-tools.sh and the shell job of CI before the lint, so that a script
+# passes or fails alike in both. Elsewhere, when shellcheck is not on PATH, the check skips itself
+# with a notice instead of failing (CI remains the enforcing gate); in a CI run (CI=true) a
+# missing shellcheck is an error, never a silent skip. A shellcheck of another version names both
+# versions; in a CI run it fails the lint, elsewhere it runs with a warning.
 #
 # Beyond ShellCheck it refuses GNU sed's in-place flag, `sed -i`, which BSD sed on macOS reads as
 # taking a suffix: check-all.sh, and with it the pre-push hook, runs on any host. Comment lines are
@@ -38,10 +40,24 @@ ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
 have_shellcheck=1
 if ! command -v shellcheck >/dev/null 2>&1; then
   if [[ "${CI:-}" == "true" ]]; then
-    echo "ERROR: shellcheck not found in a CI run — the runner image is expected to ship it." >&2
+    echo "ERROR: shellcheck not found in a CI run — scripts/install-shellcheck.sh installs it." >&2
     exit 1
   fi
   have_shellcheck=0
+fi
+
+# The version scripts/install-shellcheck.sh pins, beside this script, not under the root it lints.
+pinned="$(sed -n 's/^SHELLCHECK_VERSION="\(.*\)"$/\1/p' \
+  "$(dirname "${BASH_SOURCE[0]}")/install-shellcheck.sh" 2>/dev/null)"
+if ((have_shellcheck)) && [[ -n "$pinned" ]]; then
+  running="$(shellcheck --version 2>/dev/null | sed -n 's/^version: //p')"
+  if [[ "$running" != "$pinned" ]]; then
+    echo "Shell lint: shellcheck ${running:-of no version} runs, where $pinned is pinned" \
+      "(scripts/install-shellcheck.sh installs it)." >&2
+    if [[ "${CI:-}" == "true" ]]; then
+      exit 1
+    fi
+  fi
 fi
 
 # A list git cannot give is an error, not an empty gate.

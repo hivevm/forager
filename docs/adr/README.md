@@ -118,6 +118,7 @@ is the table a session reads.
 | [0041](0041-render-agg-resamples-pixmaps-as-agg-2-4.md) | `render-agg` resamples a scaled or turned pixmap with a port of AGG 2.4's bilinear clip filter and linear interpolator | the resampling of a pixmap that `crates/render-agg` draws scaled or turned: its span generator, its interpolator, and the rounding of both | 🟢 accepted |
 | [0042](0042-dev-container-keeps-gh-login-on-the-host.md) | The Dev Container keeps the GitHub CLI's login in a directory of its own on the host | the `mounts`, `initializeCommand`, and `postCreateCommand` of `.devcontainer/devcontainer.json` that concern the GitHub CLI, and `scripts/check-devcontainer.sh` | 🟢 accepted |
 | [0043](0043-wasm-renders-compared-in-wasmi.md) | The conformance test runs the engine's wasm32 build in wasmi and compares it with the native render | the test of G-9 in `crates/cli/tests/`, its `wasmi` dev-dependency, the C-ABI exports of `crates/bindings-wasm` behind its feature `conformance`, the build of that module in `scripts/check-rust.sh`, and `deny.toml` for the crates it adds | 🟡 proposed |
+| [0044](0044-shellcheck-pinned-release-binary.md) | The shell lint runs one ShellCheck, the release binary of a pinned version checked by its SHA-256 | `scripts/install-shellcheck.sh`, the ShellCheck of `scripts/check-shell.sh` and its self-test, the call in `scripts/install-tools.sh`, the `postCreateCommand` of `.devcontainer/devcontainer.json`, and the `shell` job of `.github/workflows/checks.yml` | 🟢 accepted |
 
 ### Superseded and rejected
 

@@ -8,7 +8,7 @@
 # lists them, and a directory that is no repository fails rather than passing empty. GNU sed's
 # in-place flag fails and names the line, while a temporary file and a comment pass. Where
 # ShellCheck is not on PATH the lint skips ShellCheck, and so does this test with the cases that
-# need it.
+# need it. A shellcheck of another version than the pinned is named with it, and fails in CI.
 #
 # Usage:
 #     scripts/test-check-shell.sh
@@ -115,6 +115,31 @@ d="$(repo sed-comment)"
 printf '#!/usr/bin/env bash\n# Never %s here.\necho ok\n' "$IN_PLACE" > "$d/edit.sh"
 git -C "${d:?}" add edit.sh
 expect 0 "a comment naming the flag passes" "$d"
+
+# A shellcheck of another version: named beside the pinned one, failing in CI and warning
+# elsewhere (ADR-0044).
+# Verifies: ADR-0044 A stand-in reports the version and finds nothing.
+fake="$work/fake-bin"
+mkdir -p "$fake"
+# The stand-in's own "$1" is written as it stands, unexpanded.
+# shellcheck disable=SC2016
+printf '#!/usr/bin/env bash\n[[ "$1" == --version ]] && echo "version: 0.0.1"\nexit 0\n' \
+  > "$fake/shellcheck"
+chmod +x "$fake/shellcheck"
+pinned="$(sed -n 's/^SHELLCHECK_VERSION="\(.*\)"$/\1/p' "$ROOT/scripts/install-shellcheck.sh")"
+d="$(repo other-version)"
+printf '#!/usr/bin/env bash\necho ok\n' > "$d/ok.sh"
+for ci in true false; do
+  out="$(PATH="$fake:$PATH" CI="$ci" bash "$CHECK" "$d" 2>&1)"; rc=$?
+  want=$([[ "$ci" == true ]] && echo 1 || echo 0)
+  if ((rc == want)) && [[ -n "$pinned" && "$out" == *"0.0.1"* && "$out" == *"$pinned"* ]]; then
+    passed=$((passed + 1))
+  else
+    failed=$((failed + 1))
+    echo "FAIL: another shellcheck version, CI=$ci (expected exit $want naming both, got $rc)" >&2
+    while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
+  fi
+done
 
 if ((failed)); then
   echo "Shell lint self-test FAILED ($failed of $((passed + failed)) cases)." >&2
