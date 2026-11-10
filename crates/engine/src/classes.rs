@@ -136,18 +136,17 @@ impl Reports {
     }
 }
 
-/// The selection of one layer's classes for its features.
-pub(crate) struct Selector<'a, 'm> {
+/// The binding of one layer's features: their expressions evaluated and the styles and labels
+/// of their classes bound to them, each failure reported once.
+pub(crate) struct Binder<'a, 'm> {
     pub layer: &'a Layer,
     pub layer_index: usize,
-    /// The map's scale, as msCalculateScale computes it.
-    pub scale: f64,
     pub evaluator: &'m mut Evaluator,
     pub reports: &'m mut Reports,
     pub diagnostics: &'m mut Vec<Diagnostic>,
 }
 
-impl<'a> Selector<'a, '_> {
+impl Binder<'_, '_> {
     fn matches(&mut self, expr: &Expr, feature: &Feature, carrier: Carrier) -> bool {
         match self
             .evaluator
@@ -165,25 +164,6 @@ impl<'a> Selector<'a, '_> {
                 false
             }
         }
-    }
-
-    /// The class that draws `feature`: none where it fails the layer's filter, else the first
-    /// in the map's scale whose expression matches it, a class without one matching every
-    /// feature; none where no class matches.
-    pub fn class(&mut self, feature: &Feature) -> Option<usize> {
-        if let Some(filter) = &self.layer.filter
-            && !self.matches(filter, feature, Carrier::Filter)
-        {
-            return None;
-        }
-        (0..self.layer.classes.len()).find(|&i| {
-            let class = &self.layer.classes[i];
-            in_scale(self.scale, class.min_scale_denom, class.max_scale_denom)
-                && match &class.expression {
-                    None => true,
-                    Some(expression) => self.matches(expression, feature, Carrier::Class(i)),
-                }
-        })
     }
 
     /// Whether label `label` of class `class` is drawn for `feature`, as `msGetLabelStatus`
@@ -247,33 +227,6 @@ impl<'a> Selector<'a, '_> {
             .ok()
     }
 
-    /// Each of `features` the layer draws, with the place of its class and its styles bound to
-    /// it, in the source's order.
-    pub fn select<'f>(
-        &mut self,
-        features: Vec<&'f Feature>,
-        symbols: &[Symbol],
-    ) -> Vec<crate::Selected<'f>>
-    where
-        'a: 'f,
-    {
-        let mut selected = Vec::with_capacity(features.len());
-        for feature in features {
-            let Some(index) = self.class(feature) else {
-                continue;
-            };
-            let layer: &'a Layer = self.layer;
-            let styles = layer.classes[index]
-                .styles
-                .iter()
-                .enumerate()
-                .map(|(s, style)| self.bind(style, feature, symbols, Carrier::Style(index, s)))
-                .collect();
-            selected.push((feature, index, styles));
-        }
-        selected
-    }
-
     /// `style` of label `label` of class `class`, bound to `feature` as bindLabel binds a
     /// label's styles, through bindStyle as a class's.
     pub fn bind_label_style<'s>(
@@ -300,7 +253,7 @@ impl<'a> Selector<'a, '_> {
             return with_opacity(Cow::Borrowed(style));
         }
         let properties = FeatureProperties(&feature.properties);
-        let mut bind = Binder {
+        let mut bind = StyleBinder {
             properties: &properties,
             evaluator: self.evaluator,
             failures: Vec::new(),
@@ -320,6 +273,64 @@ impl<'a> Selector<'a, '_> {
             );
         }
         with_opacity(Cow::Owned(bound))
+    }
+}
+
+/// The selection of one layer's classes for its features.
+pub(crate) struct Selector<'a, 'm> {
+    pub binder: Binder<'a, 'm>,
+    /// The map's scale, as msCalculateScale computes it.
+    pub scale: f64,
+}
+
+impl<'a> Selector<'a, '_> {
+    /// The class that draws `feature`: none where it fails the layer's filter, else the first
+    /// in the map's scale whose expression matches it, a class without one matching every
+    /// feature; none where no class matches.
+    pub fn class(&mut self, feature: &Feature) -> Option<usize> {
+        if let Some(filter) = &self.binder.layer.filter
+            && !self.binder.matches(filter, feature, Carrier::Filter)
+        {
+            return None;
+        }
+        (0..self.binder.layer.classes.len()).find(|&i| {
+            let class = &self.binder.layer.classes[i];
+            in_scale(self.scale, class.min_scale_denom, class.max_scale_denom)
+                && match &class.expression {
+                    None => true,
+                    Some(expression) => self.binder.matches(expression, feature, Carrier::Class(i)),
+                }
+        })
+    }
+
+    /// Each of `features` the layer draws, with the place of its class and its styles bound to
+    /// it, in the source's order.
+    pub fn select<'f>(
+        &mut self,
+        features: Vec<&'f Feature>,
+        symbols: &[Symbol],
+    ) -> Vec<crate::Selected<'f>>
+    where
+        'a: 'f,
+    {
+        let mut selected = Vec::with_capacity(features.len());
+        for feature in features {
+            let Some(index) = self.class(feature) else {
+                continue;
+            };
+            let layer: &'a Layer = self.binder.layer;
+            let styles = layer.classes[index]
+                .styles
+                .iter()
+                .enumerate()
+                .map(|(s, style)| {
+                    self.binder
+                        .bind(style, feature, symbols, Carrier::Style(index, s))
+                })
+                .collect();
+            selected.push((feature, index, styles));
+        }
+        selected
     }
 }
 
@@ -456,11 +467,35 @@ fn symbol_index(name: &str, symbols: &[Symbol]) -> u32 {
     position.map_or(0, |p| p as u32 + 1)
 }
 
-struct Binder<'a> {
+struct StyleBinder<'a> {
     properties: &'a FeatureProperties<'a>,
     evaluator: &'a mut Evaluator,
     /// The failures of the style's expressions, to be reported.
     failures: Vec<Failure>,
+}
+
+/// The value of a feature's property `binding` as the `bind*Attribute` functions read it: the
+/// bytes of its text up to the first NUL, where a C string of it ends; empty where it has none.
+pub(crate) fn attribute(properties: &FeatureProperties<'_>, binding: &str) -> Vec<u8> {
+    properties
+        .text(binding)
+        .map(|t| c_bytes(&t).to_vec())
+        .unwrap_or_default()
+}
+
+/// `bindDoubleAttribute` into `unset`: `atof(value)`, or `unset` where the value is empty.
+pub(crate) fn bind_double(text: &[u8], unset: f64) -> f64 {
+    if text.is_empty() { unset } else { atof(text) }
+}
+
+/// `bindIntegerAttribute` into `unset`: `MS_NINT(atof(value))`, or `unset` where the value is
+/// empty.
+pub(crate) fn bind_integer(text: &[u8], unset: i32) -> i32 {
+    if text.is_empty() {
+        unset
+    } else {
+        ms_nint(atof(text))
+    }
 }
 
 /// A C string's bytes: up to the first NUL.
@@ -473,7 +508,7 @@ pub(crate) fn c_str(text: &str) -> &str {
     text.split('\0').next().unwrap_or_default()
 }
 
-impl Binder<'_> {
+impl StyleBinder<'_> {
     /// The value of `field` of `style`, which varies by feature, bound to the feature as
     /// bindStyle binds it, a symbol's name found among `symbols`.
     fn value(&mut self, field: Field, style: &Style, symbols: &[Symbol]) -> bindable::Value {
@@ -504,9 +539,7 @@ impl Binder<'_> {
             None => 0.0,
             Some(Bound::Value(v)) => *v,
             Some(Bound::Binding { binding }) => {
-                let text = self.properties.text(binding).unwrap_or_default();
-                let bytes = c_bytes(&text);
-                if bytes.is_empty() { unset } else { atof(bytes) }
+                bind_double(&attribute(self.properties, binding), unset)
             }
             Some(Bound::Expr(expr)) => match self.evaluator.number(expr, self.properties) {
                 Ok(value) => value,
@@ -523,11 +556,7 @@ impl Binder<'_> {
     fn color(&mut self, property: Option<&Bound<Rgba>>) -> Option<Rgba> {
         let text = match property? {
             Bound::Value(v) => return Some(*v),
-            Bound::Binding { binding } => self
-                .properties
-                .text(binding)
-                .map(|t| c_bytes(&t).to_vec())
-                .unwrap_or_default(),
+            Bound::Binding { binding } => attribute(self.properties, binding),
             Bound::Expr(expr) => match self.evaluator.text(expr, self.properties) {
                 Ok(text) => text,
                 Err(failure) => {

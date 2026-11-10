@@ -27,93 +27,18 @@ use forager_label::{
     Offsets, Placement, PointLabel, Position, TextBox, TextPath, draw_label_cache, glyph_size,
     lines, member_box, pixel_size, placed_at,
 };
-use forager_ports::{Coord, Feature, Properties, ResourceLoader};
+use forager_ports::{Coord, Feature, ResourceLoader};
 use forager_render::{DisplayItem, Draw, DrawOp, GlyphOutline, Point};
-use forager_style_ir::c::{atof, ms_nint};
-use forager_style_ir::{
-    Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Map, Op,
-    Position as IrPosition, Rgba, Span, Style,
-};
+use forager_style_ir::c::ms_nint;
+use forager_style_ir::{Diagnostic, Expr, GeomTransform, Map, Op, Rgba, Span, Style};
 use forager_symbolize::{DEG_TO_RAD, Pixmaps, View, marker_size_of, vertices};
 
-use crate::classes::{self, FeatureProperties, Selector, c_bytes, color};
+use crate::classes::{self, Binder, c_bytes};
 use crate::fonts::Fonts;
 use crate::inline::feature_text;
+use crate::label_binding::{BoundLabel, Fixed, bind, fixed};
 use crate::label_styles::{self, LabelMarker, LabelStyles, Styled};
 use crate::{CachedLabel, quoted};
-
-/// A label's size where none is given, MapServer's `MS_MEDIUM`.
-const DEFAULT_SIZE: f64 = 10.0;
-/// The bounds of a label's size where none are given, `MS_MINFONTSIZE` and `MS_MAXFONTSIZE`.
-const DEFAULT_MIN_SIZE: f64 = 4.0;
-const DEFAULT_MAX_SIZE: f64 = 256.0;
-/// A label's colour where none is given.
-const DEFAULT_COLOR: Rgba = Rgba::opaque(0, 0, 0);
-/// A label's `OUTLINEWIDTH` where none is given.
-const DEFAULT_OUTLINE_WIDTH: f64 = 1.0;
-
-/// A property of a label as it is drawn: a value, or the feature's property it is bound to.
-#[derive(Clone, Copy)]
-enum Prop<'a, T> {
-    Value(T),
-    Binding(&'a str),
-}
-
-/// A label's `PRIORITY` as it is drawn: a value from 1 to [`MAX_PRIORITY`], the feature's property
-/// it is bound to, or the expression that computes it.
-#[derive(Clone, Copy)]
-enum Priority<'a> {
-    Value(u8),
-    Binding(&'a str),
-    Expr(&'a Expr),
-}
-
-/// What of a label is settled before its features, once checked to be drawable.
-struct Fixed<'a> {
-    /// The label's text, or `None` where the label, its class, and its layer's `LABELITEM` give
-    /// none and the feature's own `TEXT` is read in their place (`msShapeGetLabelAnnotation`).
-    text: Option<&'a Expr>,
-    /// The label's `FONT`, needed only where a text is laid out (`msComputeTextPath`).
-    fonts: Option<&'a str>,
-    wrap: Option<char>,
-    /// `MAXLENGTH` as MapServer holds it, an `int`, 0 where the label has none.
-    max_length: i32,
-    size: Prop<'a, f64>,
-    min_size: f64,
-    max_size: f64,
-    color: Prop<'a, Option<Rgba>>,
-    outline_color: Prop<'a, Option<Rgba>>,
-    outline_width: f64,
-    offset: [Prop<'a, f64>; 2],
-    angle: Prop<'a, f64>,
-    position: Prop<'a, Position>,
-    align: Prop<'a, Align>,
-    priority: Priority<'a>,
-    /// The layer's scale factor, which its labels inherit (msUpdateClassScaleFactor) and which
-    /// scales a label's size, offset, buffer, outline, and styles.
-    factor: f64,
-    /// The image's resolution factor, which scales a label's `MINSIZE`, `MAXSIZE`, and
-    /// `MINDISTANCE`.
-    resolution: f64,
-    buffer: f64,
-    force: bool,
-    partials: bool,
-    min_distance: f64,
-}
-
-/// A label's properties for one feature, as `bindLabel` leaves them.
-struct BoundLabel {
-    size: f64,
-    color: Option<Rgba>,
-    outline_color: Option<Rgba>,
-    offset: [i32; 2],
-    angle: f64,
-    /// `None` where a bound value names no position or alignment.
-    position: Option<Position>,
-    align: Option<Align>,
-    /// From 1 to [`MAX_PRIORITY`].
-    priority: u8,
-}
 
 /// Why a label's text is not laid out: the label names no font, no font of its list draws a line,
 /// or its font cannot draw a glyph, nor its fallback.
@@ -283,7 +208,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         point_layer: bool,
         drawn: &[Labelled<'_>],
         pixmaps: &Pixmaps,
-        selector: &mut Selector<'_, '_>,
+        binder: &mut Binder<'_, '_>,
         mut at_once: Option<&mut R>,
     ) {
         let map = self.map;
@@ -336,7 +261,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                         fixed_labels.insert(at, Some(fixed));
                     }
                     Err(why) => {
-                        self.report(selector.diagnostics, at, "label-not-drawn", why);
+                        self.report(binder.diagnostics, at, "label-not-drawn", why);
                         fixed_labels.insert(at, None);
                     }
                 }
@@ -346,7 +271,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             for n in 0..layer.classes[class_index].labels.len() {
                 let at = (index, class_index, n);
                 if let Some(Some(fixed)) = fixed_labels.get(&at)
-                    && selector.label_matches(feature, class_index, n)
+                    && binder.label_matches(feature, class_index, n)
                 {
                     // bindLabel binds the label's styles to the feature with its properties. Styles
                     // that vary by no feature are the same for all, and are read from the map
@@ -356,7 +281,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                         written
                             .iter()
                             .map(|s| {
-                                selector
+                                binder
                                     .bind_label_style(s, feature, &map.symbols, (class_index, n))
                                     .into_owned()
                             })
@@ -365,10 +290,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                         Box::default()
                     };
                     let renderer = at_once.as_deref_mut();
-                    self.feature(
-                        at, fixed, feature, style, pixmaps, styles, selector, renderer,
-                    )
-                    .await;
+                    self.feature(at, fixed, feature, style, pixmaps, styles, binder, renderer)
+                        .await;
                 }
             }
         }
@@ -391,10 +314,10 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         style: Option<&Style>,
         pixmaps: &Pixmaps,
         styles: Box<[Style]>,
-        selector: &mut Selector<'_, '_>,
+        binder: &mut Binder<'_, '_>,
         at_once: Option<&mut R>,
     ) {
-        let Some((text, lines)) = self.text_lines(at, fixed, feature, selector) else {
+        let Some((text, lines)) = self.text_lines(at, fixed, feature, binder) else {
             return;
         };
         // A text that is empty is none to msShapeGetLabelAnnotation (maputil.c:901-904, 929-932,
@@ -413,12 +336,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let why = "its text is empty, where msDrawLabelCache fails the map on a labelpoly or \
                        labelcenter style"
                 .to_owned();
-            self.report(selector.diagnostics, at, "label-not-drawn", why);
+            self.report(binder.diagnostics, at, "label-not-drawn", why);
             return;
         }
         let blank = lines.iter().all(Vec::is_empty);
         let bound = bind(fixed, &feature.properties, |expr| {
-            selector.label_number(expr, feature, at.1, at.2)
+            binder.label_number(expr, feature, at.1, at.2)
         });
         // msDrawLabelCache tests a labelpnt marker before the text and draws a member's labelpnt
         // styles whatever its text (mapdraw.c:3607-3646, 4056-4065), but a text of line breaks is
@@ -431,7 +354,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let why = "its text is of line breaks only, whose box the label cache tests and \
                        draws its styles by is not ported"
                 .to_owned();
-            self.report(selector.diagnostics, at, "label-not-drawn", why);
+            self.report(binder.diagnostics, at, "label-not-drawn", why);
             return;
         }
         let label_styles: &[Style] = if styles.is_empty() { written } else { &styles };
@@ -445,7 +368,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let ((position, align, marker), label_marker) = match settled {
             Ok(settled) => settled,
             Err((code, why)) => {
-                self.report(selector.diagnostics, at, code, why);
+                self.report(binder.diagnostics, at, code, why);
                 return;
             }
         };
@@ -464,7 +387,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 Err(unlaid) => {
                     let (code, outcome) = unlaid.code();
                     let why = || unlaid.reason(&text);
-                    self.report_with(selector.diagnostics, at, code, why, outcome);
+                    self.report_with(binder.diagnostics, at, code, why, outcome);
                     return;
                 }
             }
@@ -502,7 +425,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 &template,
                 path.as_ref(),
                 &styles,
-                selector,
+                binder,
             );
         } else if self.cache(feature, &template, marker) {
             self.hold(&template, text, written, &styles, label_marker, path);
@@ -533,14 +456,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         label: &Cached,
         path: Option<&TextPath>,
         styles: &[Style],
-        selector: &mut Selector<'_, '_>,
+        binder: &mut Binder<'_, '_>,
     ) {
         let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
         if path.is_none() && written.iter().any(boxed) {
             let why = "its text is empty or of line breaks only, where msDrawLabel fails on a \
                        labelpoly or labelcenter style or draws it on a box of no size"
                 .to_owned();
-            self.report(selector.diagnostics, at, "label-not-drawn", why);
+            self.report(binder.diagnostics, at, "label-not-drawn", why);
             return;
         }
         // The text's box, which a label without one draws no style on.
@@ -619,7 +542,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 image,
             );
         }
-        self.out_of_reach(selector.diagnostics, at, out_of_reach);
+        self.out_of_reach(binder.diagnostics, at, out_of_reach);
         self.hatches_refused(at, styled.take_hatches_refused());
     }
 
@@ -643,9 +566,9 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         at: LabelAt,
         fixed: &Fixed<'_>,
         feature: &Feature,
-        selector: &mut Selector<'_, '_>,
+        binder: &mut Binder<'_, '_>,
     ) -> Option<(String, Vec<Vec<char>>)> {
-        let diagnostics = &mut *selector.diagnostics;
+        let diagnostics = &mut *binder.diagnostics;
         let text = match fixed.text {
             Some(expr) if !is_text(expr) => {
                 let why = "its text is an expression, which is not evaluated yet".to_owned();
@@ -654,7 +577,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             }
             Some(expr) => {
                 let (_, class, label) = at;
-                let bytes = selector.label_text(expr, feature, class, label)?;
+                let bytes = binder.label_text(expr, feature, class, label)?;
                 String::from_utf8_lossy(&bytes).into_owned()
             }
             // A label of no text at all is kept for its labelpnt style.
@@ -675,7 +598,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 };
                 let code = "label-line-unsupported";
                 let outcome = "the label is not drawn";
-                self.report_with(selector.diagnostics, at, code, why, outcome);
+                self.report_with(binder.diagnostics, at, code, why, outcome);
                 None
             }
         }
@@ -1140,252 +1063,6 @@ fn settle(
     Ok((position, align, marker))
 }
 
-/// A C `(int)` cast of a `double`, as the x86-64 build at the pin computes it: `cvttsd2si`
-/// truncates toward zero, and gives `INT_MIN` for a value past an `int` or no number.
-fn int_cast(x: f64) -> i32 {
-    if x > -2_147_483_649.0 && x < 2_147_483_648.0 {
-        x as i32
-    } else {
-        i32::MIN
-    }
-}
-
-/// `bindIntegerAttribute` into `unset`: `MS_NINT(atof(value))`, or `unset` where the value is
-/// empty.
-fn bound_integer(text: &[u8], unset: i32) -> i32 {
-    if text.is_empty() {
-        unset
-    } else {
-        ms_nint(atof(text))
-    }
-}
-
-/// A label's properties for a feature with `properties`, as `bindLabel` binds them, with
-/// `evaluate` giving the number an expression computes for the feature.
-fn bind(
-    fixed: &Fixed<'_>,
-    properties: &Properties,
-    evaluate: impl FnOnce(&Expr) -> f64,
-) -> BoundLabel {
-    let lookup = FeatureProperties(properties);
-    let read = |binding: &str| -> Vec<u8> {
-        use forager_expr::Lookup;
-        lookup
-            .text(binding)
-            .map(|t| c_bytes(&t).to_vec())
-            .unwrap_or_default()
-    };
-    let number = |prop: Prop<'_, f64>, unset: i32| match prop {
-        Prop::Value(v) => v,
-        Prop::Binding(b) => f64::from(bound_integer(&read(b), unset)),
-    };
-    let colour = |prop: Prop<'_, Option<Rgba>>| match prop {
-        Prop::Value(c) => c,
-        Prop::Binding(b) => color(&read(b)),
-    };
-    let position = match fixed.position {
-        Prop::Value(p) => Some(p),
-        Prop::Binding(b) => bound_position(&read(b)),
-    };
-    let align = match fixed.align {
-        Prop::Value(a) => Some(a),
-        Prop::Binding(b) => bound_align(&read(b)),
-    };
-    BoundLabel {
-        size: number(fixed.size, 1),
-        color: colour(fixed.color),
-        outline_color: colour(fixed.outline_color),
-        offset: fixed.offset.map(|o| number(o, 0) as i32),
-        angle: match fixed.angle {
-            Prop::Value(a) => a,
-            // bindDoubleAttribute after the angle is set to 0.
-            Prop::Binding(b) => {
-                let text = read(b);
-                if text.is_empty() { 0.0 } else { atof(&text) }
-            }
-        },
-        position,
-        align,
-        // bindIntegerAttribute after the priority is set to 1, or msEvalDoubleExpression's
-        // value assigned to the int, then msAddLabelGroup's bounds.
-        priority: match fixed.priority {
-            Priority::Value(p) => p,
-            Priority::Binding(b) => bounded_priority(bound_integer(&read(b), 1)),
-            Priority::Expr(expr) => bounded_priority(int_cast(evaluate(expr))),
-        },
-    }
-}
-
-/// A priority bounded to 1 to [`MAX_PRIORITY`], as `msAddLabelGroup` bounds it.
-fn bounded_priority(priority: i32) -> u8 {
-    priority.clamp(1, i32::from(MAX_PRIORITY)) as u8
-}
-
-/// A bound `POSITION` as `bindLabel` reads it: a number rounded to an integer, which where it is
-/// not 0 is MapServer's position constant, unchecked; else two characters naming a position,
-/// without regard to case. `None` where it names none.
-fn bound_position(text: &[u8]) -> Option<Position> {
-    let anchors = [
-        Anchor::Ul,
-        Anchor::Lr,
-        Anchor::Ur,
-        Anchor::Ll,
-        Anchor::Cr,
-        Anchor::Cl,
-        Anchor::Uc,
-        Anchor::Lc,
-        Anchor::Cc,
-    ];
-    match bound_integer(text, 0) {
-        0 => {
-            let names = [
-                b"ul", b"lr", b"ur", b"ll", b"cr", b"cl", b"uc", b"lc", b"cc",
-            ];
-            if text.len() != 2 {
-                return None;
-            }
-            names
-                .iter()
-                .position(|name| text.eq_ignore_ascii_case(*name))
-                .map(|i| Position::At(anchors[i]))
-        }
-        // MS_UL (101) to MS_CC (109), and MS_AUTO.
-        n @ 101..=109 => Some(Position::At(anchors[(n - 101) as usize])),
-        110 => Some(Position::Auto),
-        _ => Some(Position::At(Anchor::Other)),
-    }
-}
-
-/// A bound `ALIGN` as `bindLabel` reads it: a number rounded to an integer, which where it is not
-/// 0 is MapServer's alignment constant, `MS_ALIGN_CENTER` 2 and `MS_ALIGN_RIGHT` 3 and any other
-/// the left of a line read left to right; else a value of at least four characters that begins
-/// with `cente`, `left`, or `right`, without regard to case. `None` where it names none.
-fn bound_align(text: &[u8]) -> Option<Align> {
-    match bound_integer(text, 0) {
-        0 => {
-            let starts = |prefix: &[u8]| {
-                text.len() >= prefix.len() && text[..prefix.len()].eq_ignore_ascii_case(prefix)
-            };
-            if text.len() < 4 {
-                None
-            } else if starts(b"cente") {
-                Some(Align::Center)
-            } else if starts(b"left") {
-                Some(Align::Left)
-            } else if starts(b"right") {
-                Some(Align::Right)
-            } else {
-                None
-            }
-        }
-        2 => Some(Align::Center),
-        3 => Some(Align::Right),
-        _ => Some(Align::Left),
-    }
-}
-
-/// A property that is a value or bound to a feature's property, or why it is not drawn: one
-/// computed by an expression is not evaluated yet.
-fn prop<'a, T, U>(
-    property: Option<&'a Bound<T>>,
-    what: &str,
-    default: U,
-    value: impl Fn(&T) -> U,
-) -> Result<Prop<'a, U>, String> {
-    match property {
-        None => Ok(Prop::Value(default)),
-        Some(Bound::Value(v)) => Ok(Prop::Value(value(v))),
-        Some(Bound::Binding { binding }) => Ok(Prop::Binding(binding)),
-        Some(Bound::Expr(_)) => Err(format!(
-            "its {what} is computed by an expression, which is not drawn yet"
-        )),
-    }
-}
-
-/// What of `label` is settled before its features, or why the label is not drawn: a property
-/// computed by an expression, or one whose meaning is not drawn yet, is not guessed at.
-fn fixed<'a>(
-    map: &Map,
-    label: &'a Label,
-    text: Option<&'a Expr>,
-    factor: f64,
-) -> Result<Fixed<'a>, String> {
-    let fonts = match &label.font {
-        Some(Bound::Value(fonts)) => Some(fonts.as_str()),
-        Some(_) => return Err("its FONT varies by feature, which is not drawn yet".to_owned()),
-        None => None,
-    };
-    let unsupported = [
-        (
-            label.angle_mode.is_some(),
-            "an ANGLE AUTO, AUTO2, or FOLLOW",
-        ),
-        (label.shadow_color.is_some(), "a SHADOWCOLOR"),
-        label_styles::unsupported(label, &map.symbols).map_or((false, ""), |what| (true, what)),
-        (
-            label.min_scale_denom.is_some() || label.max_scale_denom.is_some(),
-            "a scale range",
-        ),
-    ];
-    if let Some((_, what)) = unsupported.iter().find(|(has, _)| *has) {
-        return Err(format!("it has {what}, which is not drawn yet"));
-    }
-    let offset = match &label.offset {
-        None => [Prop::Value(0.0), Prop::Value(0.0)],
-        Some([x, y]) => [
-            prop(Some(x), "OFFSET", 0.0, |v| *v)?,
-            prop(Some(y), "OFFSET", 0.0, |v| *v)?,
-        ],
-    };
-    Ok(Fixed {
-        text,
-        fonts,
-        // WRAP is the first character of its string.
-        wrap: label.wrap.as_deref().and_then(|w| w.chars().next()),
-        // labelObj's maxlength starts at 0 (initLabel); getInteger checks the double above 0,
-        // then stores it as `(int)` (mapfile.c:312-318).
-        max_length: label.max_length.map_or(0, int_cast),
-        size: prop(label.size.as_ref(), "SIZE", DEFAULT_SIZE, |v| *v)?,
-        min_size: label.min_size.unwrap_or(DEFAULT_MIN_SIZE),
-        max_size: label.max_size.unwrap_or(DEFAULT_MAX_SIZE),
-        color: prop(label.color.as_ref(), "COLOR", Some(DEFAULT_COLOR), |c| {
-            Some(*c)
-        })?,
-        outline_color: prop(label.outline_color.as_ref(), "OUTLINECOLOR", None, |c| {
-            Some(*c)
-        })?,
-        outline_width: label.outline_width.unwrap_or(DEFAULT_OUTLINE_WIDTH),
-        offset,
-        angle: prop(label.angle.as_ref(), "ANGLE", 0.0, |v| *v)?,
-        position: prop(
-            label.position.as_ref(),
-            "POSITION",
-            Position::At(Anchor::Cc),
-            |p| position(*p),
-        )?,
-        align: prop(label.align.as_ref(), "ALIGN", Align::Left, |a| match a {
-            IrAlign::Left => Align::Left,
-            IrAlign::Center => Align::Center,
-            IrAlign::Right => Align::Right,
-        })?,
-        priority: match &label.priority {
-            None => Priority::Value(1),
-            // A value held as an int and bounded as msAddLabelGroup bounds it, such as the 0 the
-            // frontend gives a condition, which MapServer evaluates to `true` or `false` and
-            // `atof` reads as 0.
-            Some(Bound::Value(p)) => Priority::Value(bounded_priority(int_cast(*p))),
-            Some(Bound::Binding { binding }) => Priority::Binding(binding),
-            Some(Bound::Expr(expr)) => Priority::Expr(expr),
-        },
-        factor,
-        resolution: classes::resolution_factor(map),
-        buffer: label.buffer.unwrap_or(0.0),
-        force: label.force == Some(Force::On),
-        partials: label.partials.unwrap_or(false),
-        min_distance: label.min_distance.unwrap_or(-1.0),
-    })
-}
-
 /// Whether `styles` hold a `GEOMTRANSFORM labelpnt` style, for which msAddLabelGroup keeps a
 /// label without text (maplabel.c:267-277).
 fn has_label_point(styles: &[Style]) -> bool {
@@ -1403,26 +1080,9 @@ fn boxed(style: &Style) -> bool {
     )
 }
 
-/// A literal `POSITION` as the label crate places it.
-fn position(p: IrPosition) -> Position {
-    let anchor = match p {
-        IrPosition::Ul => Anchor::Ul,
-        IrPosition::Uc => Anchor::Uc,
-        IrPosition::Ur => Anchor::Ur,
-        IrPosition::Cl => Anchor::Cl,
-        IrPosition::Cc => Anchor::Cc,
-        IrPosition::Cr => Anchor::Cr,
-        IrPosition::Ll => Anchor::Ll,
-        IrPosition::Lc => Anchor::Lc,
-        IrPosition::Lr => Anchor::Lr,
-        IrPosition::Auto => return Position::Auto,
-    };
-    Position::At(anchor)
-}
-
 /// Whether a label's text is of the forms Forager evaluates for a label so far: a string, a
 /// property as text, and their concatenation. Any other is left out as not evaluated yet; this
-/// decides the form alone, and the selector's evaluator builds the text.
+/// decides the form alone, and the binder's evaluator builds the text.
 fn is_text(expr: &Expr) -> bool {
     match expr {
         Expr::String(_) => true,
@@ -1464,8 +1124,8 @@ const MIN_ROOM: usize = 8;
 
 #[cfg(test)]
 mod tests {
-    use forager_ports::{ResourcePath, SourceError, Stored};
-    use forager_style_ir::{Class, Extent};
+    use forager_ports::{Properties, ResourcePath, SourceError, Stored};
+    use forager_style_ir::{Bound, Class, Extent};
 
     use super::*;
     use forager_style_ir::Layer;

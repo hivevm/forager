@@ -110,7 +110,8 @@ golden path and the test pattern an agent copies from are named here.
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
   diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does: a
   `labelpoly` style on the box around the text, a `labelpoint` style's marker at the label's
-  point, and a `labelcenter` style's at the centre of that box (`labels.rs`, its styles
+  point, and a `labelcenter` style's at the centre of that box (`labels.rs`, its binding to a
+  feature `label_binding.rs`, which reads a bound value as `classes.rs` does, its styles
   `label_styles.rs`); a label's `PRIORITY` it may compute per feature through `expr`. A label
   takes its text from the label, the class, the `LABELITEM`, or last its inline feature's own
   `TEXT`, which the port's `Feature` does not carry: the labels read it beside the port, from the

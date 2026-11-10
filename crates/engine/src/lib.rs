@@ -24,6 +24,7 @@ mod classes;
 mod fonts;
 mod images;
 mod inline;
+mod label_binding;
 mod label_styles;
 mod labels;
 mod plan;
@@ -40,12 +41,13 @@ use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
 use forager_style_ir::c::ms_nint;
 use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol};
 use forager_symbolize::{
-    Canvas, Pass, Resolved, can_draw, clip_pixmaps, draw_ops, marked_pixmap, resolve,
+    Canvas, Pass, Pixmaps, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops, marked_pixmap,
+    resolve,
 };
 
 use forager_expr::Evaluator;
 
-use crate::classes::{Reports, Selector};
+use crate::classes::{Binder, Reports, Selector};
 use crate::images::Images;
 use crate::plan::Plan;
 
@@ -148,14 +150,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut reports = Reports::default();
     let scale = classes::scale_denom(map, &view, width);
     for (layer_index, layer) in map.layers.iter().enumerate() {
-        if !shown(layer) || !classes::layer_in_scale(layer, scale) {
-            continue;
-        }
-        // msDrawLayer skips a layer of no opacity, its labels too.
-        if checked_opacity(layer, &mut diagnostics) == Some(0) {
-            continue;
-        }
-        let Some(mode) = drawable_mode(layer, &mut diagnostics) else {
+        let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
         };
         let Some(features) = features(layer, sources, &view, &mut diagnostics).await else {
@@ -166,12 +161,14 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         }
         let (drawable, undrawn) = drawable(mode, &features);
         let mut selector = Selector {
-            layer,
-            layer_index,
+            binder: Binder {
+                layer,
+                layer_index,
+                evaluator: &mut evaluator,
+                reports: &mut reports,
+                diagnostics: &mut diagnostics,
+            },
             scale,
-            evaluator: &mut evaluator,
-            reports: &mut reports,
-            diagnostics: &mut diagnostics,
         };
         let selected = selector.select(drawable, &map.symbols);
         let drawing = Drawing {
@@ -184,12 +181,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .load_pixmaps(&selected, &map.symbols, &mut images, files)
             .await;
         let (pixmaps, tiles) = images.drawing();
-        // The layer's scale factor sizes its styles, the image's resolution factor bounds them.
-        let factor = classes::layer_scale_factor(map, layer, view.cellsize, scale);
-        let mut canvas = Canvas::new(&map.symbols, width, height, factor)
-            .with_resolution(classes::resolution_factor(map))
-            .with_pixmaps(pixmaps)
-            .with_tiles(tiles);
+        let mut canvas = drawing.canvas(map, (width, height), pixmaps, tiles);
         // Each feature is labelled by the class that draws it, in the order it is drawn.
         let point_layer = mode == RenderMode::Point;
         let drawn: Vec<labels::Labelled<'_>> = selected
@@ -210,7 +202,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                         true,
                         labelled,
                         pixmaps,
-                        &mut selector,
+                        &mut selector.binder,
                         Some(&mut target),
                     )
                     .await;
@@ -221,8 +213,14 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
         let label_hatches = labels.take_hatches_refused(layer_index);
-        layer_reports(layer, &canvas, label_hatches, undrawn, selector.diagnostics);
-        unknown_symbols(layer, &map.symbols, selector.diagnostics);
+        layer_reports(
+            layer,
+            &canvas,
+            label_hatches,
+            undrawn,
+            selector.binder.diagnostics,
+        );
+        unknown_symbols(layer, &map.symbols, selector.binder.diagnostics);
         if !at_once {
             labels
                 .collect(
@@ -230,7 +228,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                     point_layer,
                     &drawn,
                     pixmaps,
-                    &mut selector,
+                    &mut selector.binder,
                     None::<&mut R>,
                 )
                 .await;
@@ -244,6 +242,19 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         labels,
         diagnostics,
     }
+}
+
+/// The render mode `layer` is drawn in at the map's scale `scale`; none where it is hidden, out
+/// of scale, or of no opacity, where msDrawLayer skips it and its labels, or of a mode not drawn.
+fn layer_mode(layer: &Layer, scale: f64, diagnostics: &mut Vec<Diagnostic>) -> Option<RenderMode> {
+    if !shown(layer) || !classes::layer_in_scale(layer, scale) {
+        return None;
+    }
+    // msDrawLayer skips a layer of no opacity, its labels too.
+    if checked_opacity(layer, diagnostics) == Some(0) {
+        return None;
+    }
+    drawable_mode(layer, diagnostics)
 }
 
 /// The features a layer of `mode` draws, and how many of each kind of geometry it cannot.
@@ -378,6 +389,23 @@ struct Drawing<'a> {
 }
 
 impl Drawing<'_> {
+    /// The canvas the layer is drawn on, in an image `width` by `height`, with the images of
+    /// `pixmaps` and the fill tiles of `tiles`: the layer's scale factor sizes its styles, the
+    /// image's resolution factor bounds them.
+    fn canvas<'c>(
+        &self,
+        map: &'c Map,
+        (width, height): (u32, u32),
+        pixmaps: &'c Pixmaps,
+        tiles: &'c mut Tiles,
+    ) -> Canvas<'c> {
+        let factor = classes::layer_scale_factor(map, self.layer, self.view.cellsize, self.scale);
+        Canvas::new(&map.symbols, width, height, factor)
+            .with_resolution(classes::resolution_factor(map))
+            .with_pixmaps(pixmaps)
+            .with_tiles(tiles)
+    }
+
     /// Where the layer is drawn: into an image of its own, laid over the map, where the layer has
     /// an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block, and straight onto the
     /// map otherwise.

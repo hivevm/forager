@@ -551,7 +551,7 @@ fn draw_label_marker<R: Draw>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::classes::{Reports, Selector};
+    use crate::classes::{Binder, Reports};
     use forager_expr::Evaluator;
     use forager_ports::{Coord, Feature, Geometry, Properties, Stored};
     use forager_style_ir::{Layer, LineOffset, Rgba};
@@ -666,10 +666,9 @@ mod tests {
         let mut evaluator = Evaluator::new();
         let mut reports = Reports::default();
         let mut diagnostics = Vec::new();
-        let mut selector = Selector {
+        let mut binder = Binder {
             layer: &layer,
             layer_index: 0,
-            scale: 1.0,
             evaluator: &mut evaluator,
             reports: &mut reports,
             diagnostics: &mut diagnostics,
@@ -691,7 +690,7 @@ mod tests {
             let bound: Vec<Style> = written
                 .iter()
                 .map(|s| {
-                    selector
+                    binder
                         .bind_label_style(s, &feature, &symbols, (0, 0))
                         .into_owned()
                 })
@@ -812,10 +811,9 @@ mod tests {
         let mut evaluator = Evaluator::new();
         let mut reports = Reports::default();
         let mut diagnostics = Vec::new();
-        let mut selector = Selector {
+        let mut binder = Binder {
             layer: &layer,
             layer_index: 0,
-            scale: 1.0,
             evaluator: &mut evaluator,
             reports: &mut reports,
             diagnostics: &mut diagnostics,
@@ -842,7 +840,7 @@ mod tests {
                 geometry: Geometry::Point(Coord { x: 0.0, y: 0.0 }),
                 properties: Properties::list(vec![("p".into(), Stored::String(property.into()))]),
             };
-            let bound = selector
+            let bound = binder
                 .bind_label_style(&style, &feature, &map.symbols, (0, 0))
                 .into_owned();
             assert_eq!(field.value(&bound), value, "{field:?} bound");
