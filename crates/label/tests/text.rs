@@ -233,11 +233,17 @@ fn only_a_line_below_u_02b0_is_laid_out() {
     assert_eq!(lines("a\u{2AF}", None, 0), Ok(vec![vec!['a', '\u{2AF}']]));
     assert_eq!(
         lines("a\u{2B0}", None, 0),
-        Err(LineError::NotLatin('\u{2B0}'))
+        Err(LineError::NotLatin {
+            line: 0,
+            character: '\u{2B0}'
+        })
     );
     assert_eq!(
         lines("ok\nit\u{2019}s", None, 0),
-        Err(LineError::NotLatin('\u{2019}'))
+        Err(LineError::NotLatin {
+            line: 1,
+            character: '\u{2019}'
+        })
     );
     // `\r` is skipped, a last `\n` closes the line, any other starts a second one.
     assert_eq!(lines("a\r\nb\r", None, 0), Ok(vec![vec!['a'], vec!['b']]));
@@ -275,7 +281,10 @@ fn a_text_longer_than_maxlength_breaks_at_its_wrap_character_once_a_line_is_full
     assert_eq!(broken("abcd efgh\u{200B}ij", None, 3), ["abcd efgh", "ij"]);
     assert_eq!(
         lines("ab\u{200B}c", None, 3),
-        Err(LineError::NotLatin('\u{200B}'))
+        Err(LineError::NotLatin {
+            line: 0,
+            character: '\u{200B}'
+        })
     );
     // A `\n` of the text is counted and resets nothing; `\r` is left out before counting.
     assert_eq!(broken("ab\ncd e", Some(' '), 4), ["ab", "cd", "e"]);

@@ -712,3 +712,21 @@ fn name(layer: &Layer) -> String {
         .as_deref()
         .map_or("without NAME".to_owned(), |n| format!("`{n}`"))
 }
+
+/// The most characters of a text a diagnostic quotes, a feature's text or a pattern computed from
+/// one, so that a render keeps no copy of a long text for each label or expression it reports
+/// (Q-9).
+const QUOTED_CHARACTERS: usize = 64;
+
+/// `text` in backticks as a diagnostic quotes it: whole up to [`QUOTED_CHARACTERS`] characters,
+/// else cut there, followed by an ellipsis and the text's length in characters.
+fn quoted(text: &str) -> String {
+    match text.char_indices().nth(QUOTED_CHARACTERS) {
+        None => format!("`{text}`"),
+        Some((cut, _)) => format!(
+            "`{}\u{2026}` ({} characters)",
+            &text[..cut],
+            text.chars().count()
+        ),
+    }
+}

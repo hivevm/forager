@@ -36,11 +36,11 @@ use forager_style_ir::{
 };
 use forager_symbolize::{DEG_TO_RAD, Pixmaps, View, marker_size_of, vertices};
 
-use crate::CachedLabel;
 use crate::classes::{self, FeatureProperties, Selector, c_bytes, color};
 use crate::fonts::Fonts;
 use crate::inline::feature_text;
 use crate::label_styles::{self, LabelMarker, LabelStyles, Styled};
+use crate::{CachedLabel, quoted};
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
 const DEFAULT_SIZE: f64 = 10.0;
@@ -124,23 +124,27 @@ enum Unlaid {
 }
 
 impl Unlaid {
-    /// The code, the reason, and the outcome a label of `text` is reported with. Its font is
-    /// needed only for a text, so the label is still drawn for the features that give it none,
-    /// and a glyph fails only the texts that hold it.
-    fn reason(self, text: &str) -> (&'static str, String, &'static str) {
+    /// The code and the outcome a label is reported with. Its font is needed only for a text, so
+    /// the label is still drawn for the features that give it none, and a glyph fails only the
+    /// texts that hold it.
+    fn code(&self) -> (&'static str, &'static str) {
         const WHERE_TEXT: &str = "the label is not drawn where a feature gives it a text";
         match self {
-            Self::NoFont => (
-                "label-not-drawn",
-                "it names no FONT; MapServer's built-in font is not bundled".to_owned(),
-                WHERE_TEXT,
-            ),
-            Self::Font(why) => ("label-font-unusable", why, WHERE_TEXT),
-            Self::Glyph(glyph) => (
+            Self::NoFont => ("label-not-drawn", WHERE_TEXT),
+            Self::Font(_) => ("label-font-unusable", WHERE_TEXT),
+            Self::Glyph(_) => (
                 "label-glyph-unreadable",
-                format!("its font cannot draw glyph {glyph} of `{text}`"),
                 "the label is not drawn for a text that holds it",
             ),
+        }
+    }
+
+    /// The reason a label of `text` is reported with.
+    fn reason(self, text: &str) -> String {
+        match self {
+            Self::NoFont => "it names no FONT; MapServer's built-in font is not bundled".to_owned(),
+            Self::Font(why) => why,
+            Self::Glyph(glyph) => format!("its font cannot draw glyph {glyph} of {}", quoted(text)),
         }
     }
 }
@@ -458,7 +462,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             match self.layout(fixed, lines, glyph_size, align).await {
                 Ok(path) => Some(path),
                 Err(unlaid) => {
-                    let (code, why, outcome) = unlaid.reason(&text);
+                    let (code, outcome) = unlaid.code();
+                    let why = || unlaid.reason(&text);
                     self.report_with(selector.diagnostics, at, code, why, outcome);
                     return;
                 }
@@ -659,12 +664,18 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         };
         match lines(&text, fixed.wrap, fixed.max_length) {
             Ok(lines) => Some((text, lines)),
-            Err(LineError::NotLatin(c)) => {
-                let why = format!(
-                    "the text `{text}` holds U+{:04X}, which needs a shaper",
-                    u32::from(c)
-                );
-                self.report(selector.diagnostics, at, "label-line-unsupported", why);
+            Err(LineError::NotLatin { line, character }) => {
+                let why = || {
+                    format!(
+                        "line {} of the text {} holds U+{:04X}, which needs a shaper",
+                        line + 1,
+                        quoted(&text),
+                        u32::from(character)
+                    )
+                };
+                let code = "label-line-unsupported";
+                let outcome = "the label is not drawn";
+                self.report_with(selector.diagnostics, at, code, why, outcome);
                 None
             }
         }
@@ -883,7 +894,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 forager_render::clip::MAX_GLYPH_REACH
             );
             let outcome = "those glyphs are left out";
-            self.report_with(diagnostics, at, "label-glyph-out-of-reach", why, outcome);
+            self.report_with(diagnostics, at, "label-glyph-out-of-reach", || why, outcome);
         }
     }
 
@@ -895,21 +906,23 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         code: &'static str,
         why: String,
     ) {
-        self.report_with(diagnostics, at, code, why, "the label is not drawn");
+        self.report_with(diagnostics, at, code, || why, "the label is not drawn");
     }
 
-    /// Reports `why` with what follows from it, once per label and code.
+    /// Reports `why` with what follows from it, once per label and code; `why` is built only
+    /// where it is reported, so that a label refused for each of its features costs no message
+    /// for each.
     fn report_with(
         &mut self,
         diagnostics: &mut Vec<Diagnostic>,
         at: LabelAt,
         code: &'static str,
-        why: String,
+        why: impl FnOnce() -> String,
         outcome: &str,
     ) {
         if self.reported.insert((at, code)) {
             let span = self.span(at);
-            let message = format!("{why}; {outcome}");
+            let message = format!("{}; {outcome}", why());
             diagnostics.push(Diagnostic::warning(code, message, span));
         }
     }

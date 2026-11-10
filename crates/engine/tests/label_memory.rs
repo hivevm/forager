@@ -3,7 +3,10 @@
 //! it; a test measures it." What a render holds per label until the labels are drawn after the
 //! last layer is measured under a counting allocator, as the difference between a render of many
 //! labelled points and the same render with no label, its text counted with it, so that the test
-//! is stricter than Q-9. One test, so that no other test's allocations are counted with it.
+//! is stricter than Q-9. What a render holds of its labels' texts is held to four times the size
+//! of the input that gives them and 12 bytes for each byte of text, at every size, the
+//! maintainer's decision of 2026-11-10 that Q-9 is to state; the test holds the stricter
+//! [`BYTES_PER_TEXT_BYTE`]. One test, so that no other test's allocations are counted with it.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -429,25 +432,35 @@ fn labels_most_features_refuse() {
     );
 }
 
+/// What a render may hold of a label's text for each of its bytes beyond four times the input's
+/// size, which holds the text once and so covers 4 of the bytes it costs. Laid out, each byte of
+/// an ASCII text is held as a character of its line, 4 bytes (`lines` of the label crate), and as
+/// a glyph index, 4 bytes (`Font::glyphs`), which the layout takes rather than copies, beside
+/// the text itself, 1 byte: 9 bytes, of which 5 are left past the input's four times. The
+/// maintainer's bound of 2026-11-10 is 12 bytes, which counted a layout's own copy of the glyph
+/// indices; held to 5, such a copy, which 53a6b4d removed, fails the test.
+const BYTES_PER_TEXT_BYTE: usize = 5;
+
 /// A label of a long text on a feature of many points, with and without `MINDISTANCE`: the render
 /// holds its text once for the feature, not once for each point, in the label cache and in the
 /// labels it reports, which share it (Q-9, the convention that memory follows the input's size).
 /// What the long text adds over a text of one word is measured, so that what each point holds
 /// apart from its text, which Q-9 bounds, is not counted with it, and held to four times the
-/// input's size, the maintainer's bound; a copy of the text for each point would be over a
-/// thousand times its size. The text and the points are few enough that such a copy, of 160 MiB,
-/// fails the assertion rather than exhaust the memory of the machine that runs the test. At
-/// 10,000 points the coordinates outweigh the text, so the bound leaves room for some copies of it
-/// besides. At 2,000 points and 64 KiB the text weighs more: laid out, a line is held as its
-/// characters and its glyph indices, 4 bytes each per byte of an ASCII text, once each; a third
-/// copy of the indices, into the layout, held 6.4 times the input. That case holds 5.0 times the
-/// text against a bound of about 5.15 times it, a margin of 3 %, which an allocation more on the
-/// label path takes up: a failure there is a copy to look for, or the maintainer's answer to the
-/// question below. The bound cannot hold where a
-/// text far outweighs its input's coordinates, as its glyph indices alone take 4 bytes for each of
-/// its bytes; that question is the maintainer's.
+/// input's size and [`BYTES_PER_TEXT_BYTE`] for each byte of text: the maintainer's decision of
+/// 2026-11-10 bounds it so, with 12 bytes, at every size. The cases run from points whose
+/// coordinates outweigh the text, at 10,000 points and 16 KiB, through 2,000 points and 64 KiB,
+/// where the text weighs more, to a text that outweighs its coordinates thousands of times, at 10
+/// points and 1 MiB and at 2 points and 4 MiB. A copy of the text for each point would be over a
+/// thousand times its size in the first case; the text and the points are few enough that such a
+/// copy, of 160 MiB, fails the assertion rather than exhaust the memory of the machine that runs
+/// the test.
 fn a_long_text_is_held_once_for_all_its_points() {
-    for (vertices, text) in [(10_000, 1 << 14), (2_000, 1 << 16)] {
+    for (vertices, text) in [
+        (10_000, 1 << 14),
+        (2_000, 1 << 16),
+        (10, 1 << 20),
+        (2, 1 << 22),
+    ] {
         // Words of a glyph each, so that the text is laid out as any other.
         let long = "Forager ".repeat(text / 8);
         for min_distance in [None, Some(10.0)] {
@@ -455,7 +468,7 @@ fn a_long_text_is_held_once_for_all_its_points() {
             let (with, input) = held(vertices, &long, min_distance);
             let kept = with.saturating_sub(short);
             assert!(
-                kept <= 4 * input,
+                kept <= 4 * input + BYTES_PER_TEXT_BYTE * long.len(),
                 "{vertices} points, {text} bytes, MINDISTANCE {min_distance:?}: {kept} bytes for \
                  the text, for an input of {input} bytes"
             );

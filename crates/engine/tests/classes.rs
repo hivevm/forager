@@ -324,6 +324,75 @@ fn a_pattern_the_crate_cannot_match_is_reported_once_per_render() {
 }
 
 #[test]
+fn a_computed_pattern_is_quoted_at_most_64_characters_long() {
+    // Verifies: Q-9
+    // A pattern computed from a feature's property may be as long as a text the expression reads;
+    // each layer reports it once, quoting only its start.
+    let pattern = format!("é{}", "a".repeat(1 << 20));
+    let computed = Expr::call(
+        Op::RegexpLike,
+        vec![text("name"), text("pattern"), "".into()],
+    );
+    let geojson = points(&[&format!(r#"{{"name": "a", "pattern": "{pattern}"}}"#)]);
+    let layers = 100;
+    let map = Map {
+        extent: Some(Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 100.0,
+            max_y: 100.0,
+        }),
+        size: Some([101, 101]),
+        layers: vec![
+            layer(
+                RenderMode::Point,
+                None,
+                vec![class(Some(computed), vec![filled(RED, 2.0)])]
+            );
+            layers
+        ],
+        ..Map::default()
+    };
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("data".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
+    let rendered = forager_ports::poll_once(render(&map, &sources, Recorder::default())).unwrap();
+    let expected = format!(
+        "layer `data`: the pattern `é{}\u{2026}` ({} characters) of its class 1 uses a pattern \
+         past 65536 bytes, which Forager cannot match as MapServer does; the expression that \
+         holds it never matches",
+        "a".repeat(63),
+        (1 << 20) + 1
+    );
+    assert_eq!(rendered.diagnostics.len(), layers);
+    for diagnostic in &rendered.diagnostics {
+        assert_eq!(diagnostic.code, "pattern-unsupported");
+        assert_eq!(diagnostic.message, expected);
+    }
+    // A short pattern is quoted whole.
+    let short = Expr::call(
+        Op::RegexpLike,
+        vec![text("name"), text("pattern"), "".into()],
+    );
+    let geojson = points(&[r#"{"name": "a", "pattern": "(a)\\1"}"#]);
+    let (_, rendered) = draw(
+        layer(
+            RenderMode::Point,
+            None,
+            vec![class(Some(short), vec![filled(RED, 2.0)])],
+        ),
+        &geojson,
+    );
+    let messages: Vec<_> = rendered.diagnostics.iter().map(|d| &d.message).collect();
+    assert_eq!(
+        messages,
+        [
+            "layer `data`: the pattern `(a)\\1` of its class 1 uses a back-reference, which \
+             Forager cannot match as MapServer does; the expression that holds it never matches"
+        ]
+    );
+}
+
+#[test]
 fn a_property_no_feature_has_reads_as_empty_and_the_layer_draws() {
     // MapServer reads "" for a field of the source's schema a feature has no value for; without a
     // schema, Forager reads every name a feature lacks so, whatever the features in view hold.

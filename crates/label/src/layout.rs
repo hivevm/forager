@@ -36,8 +36,9 @@ use crate::size::pixel_size;
 /// Why a label's text is not laid out as Latin lines (ADR-0028).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LineError {
-    /// A code point at or above U+02B0, which MapServer shapes with HarfBuzz.
-    NotLatin(char),
+    /// A code point at or above U+02B0, which MapServer shapes with HarfBuzz, and the index of
+    /// the first line that holds one among the text's lines.
+    NotLatin { line: usize, character: char },
 }
 
 /// The lines of a label's text as `msLayoutTextSymbol` reads them: each `\r` left out, its wrap
@@ -91,8 +92,10 @@ pub fn lines(text: &str, wrap: Option<char>, max_length: i32) -> Result<Vec<Vec<
     } else {
         vec![chars]
     };
-    if let Some(&c) = lines.iter().flatten().find(|&&c| u32::from(c) >= 0x2B0) {
-        return Err(LineError::NotLatin(c));
+    for (line, chars) in lines.iter().enumerate() {
+        if let Some(&character) = chars.iter().find(|&&c| u32::from(c) >= 0x2B0) {
+            return Err(LineError::NotLatin { line, character });
+        }
     }
     Ok(lines)
 }

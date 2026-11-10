@@ -121,9 +121,10 @@ impl Reports {
         let layer_name = crate::name(layer);
         let message = match failure {
             Failure::Pattern { pattern, construct } => format!(
-                "layer {layer_name}: the pattern `{pattern}` of {what} uses {construct}, which \
+                "layer {layer_name}: the pattern {} of {what} uses {construct}, which \
                  Forager cannot match as MapServer does; the expression that holds it never \
-                 matches"
+                 matches",
+                crate::quoted(pattern)
             ),
             _ => format!(
                 "layer {layer_name}: an expression of {what} reads or computes a text past {} \

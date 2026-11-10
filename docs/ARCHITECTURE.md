@@ -111,9 +111,12 @@ golden path and the test pattern an agent copies from are named here.
   point, and a `labelcenter` style's at the centre of that box (`labels.rs`, its styles
   `label_styles.rs`); a label's `PRIORITY` it may compute per feature through `expr`. A label
   takes its text from the label, the class, the `LABELITEM`, or last its inline feature's own
-  `TEXT` (`inline.rs`). It reports every label of its cache in `Rendered.labels`, in the order
-  the cache walks them, with its member box, that of its text and its `labelpoint` marker, where
-  it was drawn, or none where it was discarded. It draws each feature in its styles through
+  `TEXT`, which the port's `Feature` does not carry: the labels read it beside the port, from the
+  layer's inline features in the style IR at the place the feature's id names, which holds while
+  the in-memory source numbers every feature by its place (`inline.rs`, ADR-0033). It
+  reports every label of its cache in `Rendered.labels`, in the order the cache walks them, with
+  its member box, that of its text and its `labelpoint` marker, where it was drawn, or none where
+  it was discarded. It draws each feature in its styles through
   `symbolize`, in the order MapServer's shape cache draws a line layer's styles and their outlines
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,

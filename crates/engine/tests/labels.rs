@@ -397,6 +397,62 @@ fn a_label_reads_the_text_of_the_features_its_class_draws_by_their_place() {
 }
 
 #[test]
+fn a_label_finds_its_features_text_by_the_features_place_among_all_the_layers_features() {
+    // The labels read an inline feature's TEXT beside the port, at the place its id names among
+    // the layer's features (ARCHITECTURE.md, inline.rs); this holds only while the inline source
+    // numbers every feature by that place, those out of view included (msINLINELayerNextShape).
+    let sources = BTreeMap::<String, GeoJsonSource>::new();
+    let one = r#"{"type": "Feature", "properties": {"name": "Fen"},
+        "geometry": {"type": "Point", "coordinates": [80, 30]}}"#;
+    let reference = render(&map(label_item()), one).image.unwrap();
+    let without_text = || {
+        let mut map = map(Label {
+            text: None,
+            ..label_item()
+        });
+        map.layers[0].source = None;
+        map
+    };
+    let render = |features: Vec<InlineFeature>| {
+        let mut map = without_text();
+        map.layers[0].features = features;
+        ready(render_with_files(
+            &map,
+            &sources,
+            &Files,
+            AggRenderer::new(),
+        ))
+    };
+    // Two features out of view with a TEXT, then the one in view with its own: its text is drawn.
+    let rendered = render(vec![
+        inline_point([500.0, 500.0], "a", Some("Other")),
+        inline_point([600.0, 600.0], "a", Some("Others")),
+        inline_point([80.0, 30.0], "a", Some("Fen")),
+    ]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image.unwrap(), reference);
+    // A feature out of view with a TEXT, then the one in view without: nothing is drawn, the
+    // text of the first lending its class no label.
+    let rendered = render(vec![
+        inline_point([500.0, 500.0], "a", Some("Other")),
+        inline_point([80.0, 30.0], "a", None),
+    ]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        ink(rendered.image.as_ref().unwrap(), (0, 160), (0, 60)),
+        None
+    );
+}
+
+#[test]
 fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
     // Verifies: ADR-0028
     let with = |change: fn(&mut Label)| {
@@ -478,6 +534,80 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
             "{code}"
         );
     }
+}
+
+/// The messages of the diagnostics of `rendered`, each with its code.
+fn messages(rendered: &Rendered) -> Vec<(&str, &str)> {
+    rendered
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.as_str(), d.message.as_str()))
+        .collect()
+}
+
+/// A feature of one point whose `name` is the JSON string `name`, escaped as JSON writes it.
+fn named_at_40_30(name: &str) -> String {
+    format!(
+        r#"{{"type": "Feature", "properties": {{"name": "{name}"}},
+            "geometry": {{"type": "Point", "coordinates": [40, 30]}}}}"#
+    )
+}
+
+#[test]
+fn a_label_refused_for_its_text_quotes_at_most_64_characters_of_it() {
+    // Verifies: ADR-0028
+    // A text of 1 MiB, 1,048,574 characters, whose second line ends in U+2019, read by the label
+    // of each of 100 layers of one source: each label is reported once, and its message names the
+    // line and the character and quotes the text's first 64 characters, its length after them,
+    // rather than the whole text for every label.
+    const LAYERS: usize = 100;
+    let geojson = named_at_40_30(&format!("Forager\\n{}\u{2019}", "x".repeat((1 << 20) - 11)));
+    let mut layers = map(label_item());
+    layers.layers = vec![layers.layers[0].clone(); LAYERS];
+    let rendered = render(&layers, &geojson);
+    // Each message's size first, so that a failure does not print the texts it quotes.
+    for (code, message) in messages(&rendered) {
+        assert!(message.len() < 200, "{code}: {} bytes", message.len());
+    }
+    let quote = format!("Forager\n{}", "x".repeat(56));
+    let expected = format!(
+        "line 2 of the text `{quote}\u{2026}` (1048574 characters) holds U+2019, which needs a \
+         shaper; the label is not drawn"
+    );
+    assert_eq!(
+        messages(&rendered),
+        vec![("label-line-unsupported", expected.as_str()); LAYERS]
+    );
+    // A text of 64 characters or fewer is quoted whole.
+    let short = map(Label {
+        text: Some(Expr::String("two\nlin\u{2019}s".to_owned())),
+        ..label_item()
+    });
+    assert_eq!(
+        messages(&render(&short, PLACES)),
+        [(
+            "label-line-unsupported",
+            "line 2 of the text `two\nlin\u{2019}s` holds U+2019, which needs a shaper; the \
+             label is not drawn"
+        )]
+    );
+    // A glyph its font cannot draw quotes the text the same way: `1`, glyph 3 of the font
+    // `broken`, which cannot read it.
+    let mut broken = map(label_item());
+    broken.layers[0].classes[0].labels[0].font = Some(Bound::Value("broken".to_owned()));
+    let rendered = render(&broken, &named_at_40_30(&"1".repeat(1 << 20)));
+    for (code, message) in messages(&rendered) {
+        assert!(message.len() < 200, "{code}: {} bytes", message.len());
+    }
+    let expected = format!(
+        "its font cannot draw glyph 3 of `{}\u{2026}` (1048576 characters); the label is not \
+         drawn for a text that holds it",
+        "1".repeat(64)
+    );
+    assert_eq!(
+        messages(&rendered),
+        [("label-glyph-unreadable", expected.as_str())]
+    );
 }
 
 #[test]
