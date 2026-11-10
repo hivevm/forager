@@ -84,7 +84,7 @@ fn close(actual: &[Point], expected: &[(f64, f64)]) {
 
 fn ops(style: &Style, symbol: &Symbol) -> Vec<DrawOp> {
     let mut ops = Vec::new();
-    symbol_ops(&mut ops, AT, style, symbol, 1.0);
+    symbol_ops(&mut ops, AT, style, symbol, 1.0, 1.0);
     ops
 }
 
@@ -160,12 +160,12 @@ fn a_filled_symbol_fills_with_the_colour_and_outlines_with_the_outline_colour() 
     let mut outlined = style(Some(10.0), None);
     outlined.outline_color = Some(Bound::Value(BLACK));
     outlined.width = Some(Bound::Value(3.0));
-    let s = symbol_style(&outlined, &triangle(true), 1.0);
+    let s = symbol_style(&outlined, &triangle(true), 1.0, 1.0);
     assert_eq!(
         (s.fill, s.outline, s.outline_width),
         (Some(RED), Some(BLACK), 3.0)
     );
-    let s = symbol_style(&style(Some(10.0), None), &triangle(true), 1.0);
+    let s = symbol_style(&style(Some(10.0), None), &triangle(true), 1.0, 1.0);
     assert_eq!((s.fill, s.outline, s.outline_width), (Some(RED), None, 0.0));
 }
 
@@ -173,14 +173,14 @@ fn a_filled_symbol_fills_with_the_colour_and_outlines_with_the_outline_colour() 
 fn a_symbol_not_filled_is_outlined_with_the_colour_or_else_the_outline_colour() {
     // computeSymbolStyle, the branch of a symbol not filled: the outline is the style's width,
     // 1 by default.
-    let s = symbol_style(&style(Some(10.0), None), &triangle(false), 1.0);
+    let s = symbol_style(&style(Some(10.0), None), &triangle(false), 1.0, 1.0);
     assert_eq!((s.fill, s.outline, s.outline_width), (None, Some(RED), 1.0));
     let only_outline = Style {
         outline_color: Some(Bound::Value(BLACK)),
         width: Some(Bound::Value(100.0)),
         ..Style::default()
     };
-    let s = symbol_style(&only_outline, &triangle(false), 1.0);
+    let s = symbol_style(&only_outline, &triangle(false), 1.0, 1.0);
     assert_eq!(
         (s.fill, s.outline, s.outline_width),
         (None, Some(BLACK), 32.0)
@@ -209,24 +209,24 @@ fn the_size_is_the_symbols_height_and_bounded() {
     assert_eq!(default_size(&point), 1.0);
     // Without SIZE, the symbol's own size: a scale of 1.
     assert_eq!(
-        symbol_style(&style(None, None), &triangle(true), 1.0).scale,
+        symbol_style(&style(None, None), &triangle(true), 1.0, 1.0).scale,
         1.0
     );
     assert_eq!(
-        symbol_style(&style(Some(10.0), None), &triangle(true), 1.0).scale,
+        symbol_style(&style(Some(10.0), None), &triangle(true), 1.0, 1.0).scale,
         5.0
     );
     let mut bounded = style(Some(10.0), None);
     bounded.max_size = Some(4.0);
-    assert_eq!(symbol_style(&bounded, &triangle(true), 1.0).scale, 2.0);
+    assert_eq!(symbol_style(&bounded, &triangle(true), 1.0, 1.0).scale, 2.0);
     bounded.min_size = Some(8.0);
     assert_eq!(
-        symbol_style(&bounded, &triangle(true), 1.0).scale,
+        symbol_style(&bounded, &triangle(true), 1.0, 1.0).scale,
         2.0,
         "MAXSIZE applies last"
     );
     assert_eq!(
-        symbol_style(&style(None, Some(90.0)), &triangle(true), 1.0).rotation,
+        symbol_style(&style(None, Some(90.0)), &triangle(true), 1.0, 1.0).rotation,
         90.0 * DEG_TO_RAD
     );
 }
@@ -238,7 +238,7 @@ fn minsize_raises_the_size_and_minwidth_the_outline() {
     small.min_size = Some(6.0);
     small.width = Some(Bound::Value(0.5));
     small.min_width = Some(2.0);
-    let s = symbol_style(&small, &triangle(false), 1.0);
+    let s = symbol_style(&small, &triangle(false), 1.0, 1.0);
     assert_eq!((s.scale, s.outline_width), (3.0, 2.0));
 }
 
@@ -533,44 +533,44 @@ fn at_a_factor_the_size_and_outline_are_scaled_and_their_bounds_by_the_resolutio
     // the outline width alike; the GAP scaled as the size is.
     let triangle = triangle(false);
     assert_eq!(
-        symbol_style(&style(Some(10.0), None), &triangle, 2.0).scale,
+        symbol_style(&style(Some(10.0), None), &triangle, 2.0, 2.0).scale,
         10.0
     );
     assert_eq!(
-        symbol_style(&style(None, None), &triangle, 2.0).scale,
+        symbol_style(&style(None, None), &triangle, 2.0, 2.0).scale,
         2.0,
         "without SIZE, the symbol's own size scaled"
     );
     let mut capped = style(Some(10.0), None);
     capped.max_size = Some(4.0);
     assert_eq!(
-        symbol_style(&capped, &triangle, 2.0).scale,
+        symbol_style(&capped, &triangle, 2.0, 2.0).scale,
         4.0,
         "MAXSIZE 4 is 8"
     );
     let mut raised = style(Some(2.0), None);
     raised.min_size = Some(6.0);
     assert_eq!(
-        symbol_style(&raised, &triangle, 2.0).scale,
+        symbol_style(&raised, &triangle, 2.0, 2.0).scale,
         6.0,
         "MINSIZE 6 is 12"
     );
     let mut wide = style(Some(10.0), None);
     wide.width = Some(Bound::Value(20.0));
     assert_eq!(
-        symbol_style(&wide, &triangle, 2.0).outline_width,
+        symbol_style(&wide, &triangle, 2.0, 2.0).outline_width,
         40.0,
         "the default MAXWIDTH 32 is 64"
     );
     wide.max_width = Some(15.0);
-    assert_eq!(symbol_style(&wide, &triangle, 2.0).outline_width, 30.0);
+    assert_eq!(symbol_style(&wide, &triangle, 2.0, 2.0).outline_width, 30.0);
     let mut thin = style(Some(10.0), None);
     thin.width = Some(Bound::Value(0.5));
     thin.min_width = Some(2.0);
-    assert_eq!(symbol_style(&thin, &triangle, 2.0).outline_width, 4.0);
+    assert_eq!(symbol_style(&thin, &triangle, 2.0, 2.0).outline_width, 4.0);
     let mut gapped = style(Some(10.0), None);
     gapped.gap = Some(5.0);
-    assert_eq!(symbol_style(&gapped, &triangle, 2.0).gap, 10.0);
+    assert_eq!(symbol_style(&gapped, &triangle, 2.0, 2.0).gap, 10.0);
 }
 
 #[test]
@@ -616,13 +616,13 @@ fn a_symbol_bounds_its_size_and_outline_as_compute_symbol_style_does() {
         ..style(None, None)
     };
     let triangle = triangle(false);
-    let s = symbol_style(&bounded(nan, nan, 2.0, 5.0), &triangle, 2.0);
+    let s = symbol_style(&bounded(nan, nan, 2.0, 5.0), &triangle, 2.0, 2.0);
     assert_eq!(
         (s.scale, s.outline_width),
         (2.0, 4.0),
         "MINSIZE 2 is a size of 4"
     );
-    let s = symbol_style(&bounded(4.0, 4.0, 6.0, 3.0), &triangle, 2.0);
+    let s = symbol_style(&bounded(4.0, 4.0, 6.0, 3.0), &triangle, 2.0, 2.0);
     assert_eq!((s.scale, s.outline_width), (3.0, 6.0), "the maximum last");
 }
 

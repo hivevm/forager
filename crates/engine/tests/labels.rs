@@ -526,22 +526,51 @@ fn a_labelpoly_of_a_symbol_that_is_no_hatch_is_left_out() {
 }
 
 #[test]
-fn a_layer_whose_sizes_are_not_pixels_or_whose_class_has_several_labels_is_not_drawn_yet() {
-    let mut sized = map(label_item());
-    sized.layers[0].size_units = Some(Units::Meters);
+fn a_class_with_several_labels_is_not_drawn_yet() {
     let mut several = map(label_item());
     several.layers[0].classes[0].labels.push(label_item());
+    let rendered = render(&several, PLACES);
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, vec!["label-not-drawn"; 2]);
+}
+
+#[test]
+fn a_labels_size_is_scaled_by_its_layers_scale_factor() {
+    // msPrepareImage: a label inherits its layer's scale factor (msUpdateClassScaleFactor), and
+    // msPopulateTextSymbolForLabelAndString scales its SIZE by it, bounded by MINSIZE and MAXSIZE
+    // times the resolution factor. The map is at 1 : 72 × 39.3701 (159 meters over 159 pixels).
+    let scale = 72.0 * 39.3701;
+    let drawn = |map: &Map| {
+        let rendered = render(map, PLACES);
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        rendered.image
+    };
+    // A SYMBOLSCALEDENOM of twice the map's scale: a factor of 2, so SIZE 12 draws as 24.
     let mut symbol_scaled = map(label_item());
-    symbol_scaled.layers[0].symbol_scale_denom = Some(10_000.0);
-    for (map, count) in [(sized, 1), (several, 2), (symbol_scaled, 1)] {
-        let rendered = render(&map, PLACES);
-        let codes: Vec<&str> = rendered
-            .diagnostics
-            .iter()
-            .map(|d| d.code.as_str())
-            .collect();
-        assert_eq!(codes, vec!["label-not-drawn"; count]);
-    }
+    symbol_scaled.layers[0].symbol_scale_denom = Some(2.0 * scale);
+    let twice = map(Label {
+        size: Some(Bound::Value(24.0)),
+        ..label_item()
+    });
+    assert_eq!(drawn(&symbol_scaled), drawn(&twice));
+    // SIZEUNITS meters at a meter a pixel: a factor of 1 at any RESOLUTION, so at 144 dpi the
+    // label draws as at 72, where the resolution factor alone would double it.
+    let mut sized = map(label_item());
+    sized.resolution = Some(144.0);
+    sized.layers[0].size_units = Some(Units::Meters);
+    assert_eq!(drawn(&sized), drawn(&map(label_item())));
+}
+
+#[test]
+fn a_layer_of_pixels_and_the_default_priority_draw_as_without_them() {
     // A layer of pixels, and a PRIORITY of 1, the default, draw as without them.
     let mut pixels = map(label_item());
     pixels.layers[0].size_units = Some(Units::Pixels);

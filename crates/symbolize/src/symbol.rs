@@ -169,15 +169,20 @@ pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol], pixmaps: Option
     }
 }
 
-/// computeSymbolStyle for a vector or ellipse symbol at `factor`, the style's scale factor and
-/// the image's resolution factor, which are one here (see the engine's `classes::scale_factor`). A
+/// computeSymbolStyle for a vector or ellipse symbol at `factor`, the style's scale factor, and
+/// `resolution`, the image's resolution factor (see the engine's `classes::layer_scale_factor`). A
 /// filled symbol is filled with the style's colour and outlined with its outline colour; one not
 /// filled is outlined with its colour, or its outline colour where it has none. The size is
 /// scaled by the scale factor and bounded by `MINSIZE` and `MAXSIZE` scaled by the resolution
 /// factor (see [`bounds::symbol_size`]); the outline is the style's width scaled and bounded alike
 /// by `MINWIDTH` and `MAXWIDTH` (see [`bounds::symbol_outline_width`]); the `GAP` is scaled as the
 /// size is.
-pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> SymbolStyle {
+pub(crate) fn symbol_style(
+    style: &Style,
+    symbol: &Symbol,
+    factor: f64,
+    resolution: f64,
+) -> SymbolStyle {
     let default_size = default_size(symbol);
     let style_size = fixed(&style.size).unwrap_or(default_size);
     let color = fixed(&style.color);
@@ -187,9 +192,13 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> Symbo
     } else {
         (None, color.or(outline_color))
     };
-    let target = bounds::symbol_size(style_size * factor, style, factor);
+    let target = bounds::symbol_size(style_size * factor, style, resolution);
     let outline_width = if outline.is_some() {
-        bounds::symbol_outline_width(fixed(&style.width).unwrap_or(1.0) * factor, style, factor)
+        bounds::symbol_outline_width(
+            fixed(&style.width).unwrap_or(1.0) * factor,
+            style,
+            resolution,
+        )
     } else {
         0.0
     };
@@ -204,14 +213,19 @@ pub(crate) fn symbol_style(style: &Style, symbol: &Symbol, factor: f64) -> Symbo
 }
 
 /// computeSymbolStyle, `src/maprendering.c:37-77`, for a pixmap symbol whose image is `height`
-/// pixels high, at `factor` (see [`symbol_style`]): the scale of the image, the style's size, its
+/// pixels high, at `factor` and `resolution` (see [`symbol_style`]): the scale of the image, the style's size, its
 /// default the image's height (msSymbolGetDefaultSize), scaled and bounded by `MINSIZE` and
 /// `MAXSIZE`, over that height; its rotation in radians, counter-clockwise; and its `GAP` scaled
 /// as the size is (66), negative as the `GAP` is.
-pub(crate) fn pixmap_style(style: &Style, height: u32, factor: f64) -> (f64, f64, f64) {
+pub(crate) fn pixmap_style(
+    style: &Style,
+    height: u32,
+    factor: f64,
+    resolution: f64,
+) -> (f64, f64, f64) {
     let default_size = if height > 0 { f64::from(height) } else { 1.0 };
     let style_size = fixed(&style.size).unwrap_or(default_size);
-    let target = bounds::symbol_size(style_size * factor, style, factor);
+    let target = bounds::symbol_size(style_size * factor, style, resolution);
     (
         target / default_size,
         fixed(&style.angle).unwrap_or(0.0) * DEG_TO_RAD,
@@ -471,11 +485,18 @@ pub(crate) fn shifted(at: Point, style: &Style, factor: f64) -> Point {
     at
 }
 
-/// The drawing operations of `symbol` at the pixel `at` in `style` at `factor`, as
-/// msDrawMarkerSymbol and the AGG renderer draw a vector or an ellipse symbol: moved by
-/// msAdjustMarkerPos, filled first, then outlined.
-pub fn symbol_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, symbol: &Symbol, factor: f64) {
-    let s = symbol_style(style, symbol, factor);
+/// The drawing operations of `symbol` at the pixel `at` in `style` at the scale factor `factor`
+/// and the resolution factor `resolution`, as msDrawMarkerSymbol and the AGG renderer draw a
+/// vector or an ellipse symbol: moved by msAdjustMarkerPos, filled first, then outlined.
+pub fn symbol_ops(
+    ops: &mut Vec<DrawOp>,
+    at: Point,
+    style: &Style,
+    symbol: &Symbol,
+    factor: f64,
+    resolution: f64,
+) {
+    let s = symbol_style(style, symbol, factor, resolution);
     let at = anchored(shifted(at, style, factor), symbol, s.rotation, || {
         marker_size(style, symbol, factor)
     });

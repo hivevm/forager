@@ -63,6 +63,7 @@ impl Hatching {
         symbols: &[Symbol],
         pixmaps: Option<&Pixmaps>,
         factor: f64,
+        resolution: f64,
     ) -> Self {
         let mut buffer = 0.0_f64;
         for style in styles {
@@ -70,7 +71,7 @@ impl Hatching {
             let size = fixed(&style.size).unwrap_or(-1.0);
             let width = fixed(&style.width).unwrap_or(1.0);
             let mut largest = ms_max(default_size, ms_max(size, width));
-            let unscaled = bounds::clip_buffer_minimum(style, factor);
+            let unscaled = bounds::clip_buffer_minimum(style, resolution);
             if style.line_offset.is_none()
                 && let Some([x, y]) = &style.offset
             {
@@ -291,6 +292,7 @@ pub(crate) fn hatch(
     image: (u32, u32),
     reference: Point,
     factor: f64,
+    resolution: f64,
 ) -> Hatched {
     let written_width = fixed(&style.width).unwrap_or(1.0);
     let width = if written_width <= 0.0 {
@@ -298,10 +300,10 @@ pub(crate) fn hatch(
     } else {
         written_width * factor
     };
-    let width = bounds::hatch_width(width, style, factor);
+    let width = bounds::hatch_width(width, style, resolution);
     let size = fixed(&style.size).unwrap_or(-1.0);
     let spacing = if size <= 0.0 { factor } else { size * factor };
-    let spacing = bounds::hatch_spacing(spacing, style, factor);
+    let spacing = bounds::hatch_spacing(spacing, style, resolution);
     let pattern = if written_width == 0.0 {
         Vec::new()
     } else {

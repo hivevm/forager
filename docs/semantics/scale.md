@@ -11,7 +11,10 @@ them, and these parameters state how they are scaled when a map is drawn. MapSer
 scale while it draws, from the map's scale, so the frontend resolves nothing here; the engine
 applies the formulas below.
 
-**The scale factor** of a style, `msUpdateClassScaleFactor` in `src/mapdraw.c`:
+**The scale factor** of a layer, `msPrepareImage` in `src/mapdraw.c`, which its classes, their
+styles and labels, and the labels' styles inherit (`msUpdateClassScaleFactor`): the mapfile gives
+none of them a `SIZEUNITS` of its own, as `loadClass`, `loadStyle`, and `loadLabel` read none, so
+each is `MS_INHERIT`. The layer's factor is:
 
 - `SIZEUNITS` other than `pixels`: the inches per size unit over the inches per map unit, divided
   by the size of a pixel in map units. The resolution does not enter it.
@@ -37,15 +40,20 @@ multiplied by the bounded width over the width as written, or by 1 for a width o
 lower bound exceeds the upper, a size takes the upper (`MAXSIZE` applies last) and a width the
 lower (`MINWIDTH` applies last). A symbol's outline is the style's width, scaled and bounded as a
 line's (`computeSymbolStyle`). A bound value or an expression is scaled after
-it is evaluated.
+it is evaluated. A line's outline pass, `msOutlineRenderingPrepareStyle`, widens the width by
+twice the `OUTLINEWIDTH` over the scale factor and times the resolution factor, so that it grows
+by the outline width at the resolution once scaled, and its bounds by twice the outline width as
+written. A label's `SIZE` is `size × factor`, bounded by its `MINSIZE` and `MAXSIZE` times the
+resolution factor (`msPopulateTextSymbolForLabelAndString` in `src/maplabel.c`); its `OFFSET`,
+`BUFFER`, the outline's growth of its offset from a marker, and its styles are scaled by the
+factor, its `MINDISTANCE` by the resolution factor (`msDrawLabelCache`). The size of a marker
+under a label is `msGetMarkerSize`'s, the factor and the bounds as written.
 
 `MINSIZE` and `MAXSIZE` take numbers of at least 0 and above 0, `MINWIDTH` and `MAXWIDTH` the
 same, as `loadStyle` in `src/mapfile.c` checks; `SYMBOLSCALEDENOM` takes a number of at least 1,
 as `loadLayer` checks. `SIZEUNITS` takes `pixels`, `inches`, `feet`, `miles`, `meters`,
 `kilometers`, `nauticalmiles`, and `dd`; the map's `UNITS` the same without `pixels`.
 
-**Not yet as MapServer scales.** The engine computes the last branch only, `RESOLUTION /
-DEFRESOLUTION`, and applies it to every style and label. A label of a layer with `SIZEUNITS`
-other than `pixels` or with a `SYMBOLSCALEDENOM` is not drawn and says so; a style of such a layer
-is drawn at `RESOLUTION / DEFRESOLUTION` without a word, where MapServer takes the first or the
-second branch.
+The size of a pixel in map units is the map's cellsize, as `msGetGeoCellSize` takes it for a map
+that is not rotated. Decimal degrees take no correction by latitude, as the build at the pin leaves
+`ENABLE_VARIABLE_INCHES_PER_DEGREE` off.

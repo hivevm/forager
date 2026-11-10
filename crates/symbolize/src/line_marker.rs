@@ -140,13 +140,13 @@ pub(crate) fn draw(
     symbol: &Symbol,
     initial_gap: f64,
     image: (f64, f64),
-    factor: f64,
+    (factor, resolution): (f64, f64),
     budget: &mut MarkerBudget,
 ) -> Vec<DrawOp> {
     if budget.spent() {
         return Vec::new();
     }
-    let s = symbol::symbol_style(style, symbol, factor);
+    let s = symbol::symbol_style(style, symbol, factor, resolution);
     // What one marker costs; a symbol that draws nothing has no markers to place.
     let mut probe = Vec::new();
     symbol::render(&mut probe, Point { x: 0.0, y: 0.0 }, symbol, &s);
@@ -188,13 +188,13 @@ pub(crate) fn draw_pixmap(
     pixmap: &Rc<PremultipliedImage>,
     initial_gap: f64,
     image: (f64, f64),
-    factor: f64,
+    (factor, resolution): (f64, f64),
     budget: &mut MarkerBudget,
 ) -> Vec<DrawOp> {
     if budget.spent() {
         return Vec::new();
     }
-    let (scale, rotation, gap) = symbol::pixmap_style(style, pixmap.height(), factor);
+    let (scale, rotation, gap) = symbol::pixmap_style(style, pixmap.height(), factor, resolution);
     if scale == 0.0 {
         return Vec::new();
     }

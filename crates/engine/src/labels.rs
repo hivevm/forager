@@ -31,8 +31,8 @@ use forager_ports::{Coord, Feature, Properties, ResourceLoader};
 use forager_render::{DisplayItem, Draw, DrawOp, GlyphOutline, Point};
 use forager_style_ir::c::{atof, ms_nint};
 use forager_style_ir::{
-    Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Layer, Map, Op,
-    Position as IrPosition, Rgba, Span, Style, Units,
+    Align as IrAlign, Bound, Diagnostic, Expr, Force, GeomTransform, Label, Map, Op,
+    Position as IrPosition, Rgba, Span, Style,
 };
 use forager_symbolize::{DEG_TO_RAD, Pixmaps, View, marker_size_of, vertices};
 
@@ -89,8 +89,12 @@ struct Fixed<'a> {
     position: Prop<'a, Position>,
     align: Prop<'a, Align>,
     priority: Priority<'a>,
-    /// The layer's scale factor and the image's resolution factor, which are one here.
+    /// The layer's scale factor, which its labels inherit (msUpdateClassScaleFactor) and which
+    /// scales a label's size, offset, buffer, outline, and styles.
     factor: f64,
+    /// The image's resolution factor, which scales a label's `MINSIZE`, `MAXSIZE`, and
+    /// `MINDISTANCE`.
+    resolution: f64,
     buffer: f64,
     force: bool,
     partials: bool,
@@ -155,6 +159,9 @@ struct Def {
     min_distance: f64,
     /// What an outline adds to the offset from a marker: half its width, scaled.
     outline_grow: f64,
+    /// The label's scale factor, its layer's, by which a labelpnt marker its styles bind to a
+    /// feature is sized as the cache tests it.
+    factor: f64,
     /// The width and height of the marker beneath each of its labels, where its class's first
     /// style varies by no feature and so sizes every feature's marker alike; held once here, not
     /// for each label (Q-9).
@@ -277,6 +284,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     ) {
         let map = self.map;
         let layer = &map.layers[index];
+        let scale = classes::scale_denom(map, self.view, self.size.0);
+        let factor = classes::layer_scale_factor(map, layer, self.view.cellsize, scale);
         // What of each label of the classes drawn is settled, or why it is not drawn.
         let mut fixed_labels = BTreeMap::new();
         // The classes that draw a feature with a TEXT of its own.
@@ -316,7 +325,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     }
                     .to_owned())
                 } else {
-                    fixed(map, layer, label, text)
+                    fixed(map, label, text, factor)
                 };
                 match fixed {
                     Ok(fixed) => {
@@ -441,7 +450,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             fixed.factor,
             fixed.min_size,
             fixed.max_size,
-            fixed.factor,
+            fixed.resolution,
         );
         let path = if blank {
             None
@@ -731,8 +740,9 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 buffer: (fixed.buffer * fixed.factor) as i32,
                 force: fixed.force,
                 partials: fixed.partials,
-                min_distance: fixed.min_distance * fixed.factor,
+                min_distance: fixed.min_distance * fixed.resolution,
                 outline_grow: fixed.outline_width / 2.0 * fixed.factor,
+                factor: fixed.factor,
                 marker: None,
             });
             (defs.len() - 1) as u32
@@ -933,6 +943,7 @@ fn draw_label<R: Draw>(
     if !written.is_empty() {
         styled.draw(
             renderer,
+            layer,
             member,
             placement,
             label.feature_id,
@@ -1004,9 +1015,14 @@ impl Members for Cache<'_> {
         // computeMarkerBounds at the label's point.
         let (layer, class, n) = def.at;
         let written = &self.map.layers[layer].classes[class].labels[n].styles;
-        let label_marker =
-            self.styles
-                .marker_bounds(self.map, label.def, label.text, written, label.point);
+        let label_marker = self.styles.marker_bounds(
+            self.map,
+            label.def,
+            label.text,
+            written,
+            label.point,
+            def.factor,
+        );
         // msDrawLabelCache's offset from the marker: half the size of its box, or of its
         // labelpoint marker's where that is larger, grown by half the label's outline where it
         // has one.
@@ -1277,9 +1293,9 @@ fn prop<'a, T, U>(
 /// computed by an expression, or one whose meaning is not drawn yet, is not guessed at.
 fn fixed<'a>(
     map: &Map,
-    layer: &Layer,
     label: &'a Label,
     text: Option<&'a Expr>,
+    factor: f64,
 ) -> Result<Fixed<'a>, String> {
     let fonts = match &label.font {
         Some(Bound::Value(fonts)) => Some(fonts.as_str()),
@@ -1297,14 +1313,6 @@ fn fixed<'a>(
             label.min_scale_denom.is_some() || label.max_scale_denom.is_some(),
             "a scale range",
         ),
-        (
-            layer.symbol_scale_denom.is_some(),
-            "a layer's SYMBOLSCALEDENOM",
-        ),
-        (
-            !matches!(layer.size_units, None | Some(Units::Pixels)),
-            "a layer's SIZEUNITS other than pixels",
-        ),
     ];
     if let Some((_, what)) = unsupported.iter().find(|(has, _)| *has) {
         return Err(format!("it has {what}, which is not drawn yet"));
@@ -1316,9 +1324,6 @@ fn fixed<'a>(
             prop(Some(y), "OFFSET", 0.0, |v| *v)?,
         ],
     };
-    // Without SYMBOLSCALEDENOM and SIZEUNITS, the scale factor and the resolution factor are both
-    // the map's resolution over its DEFRESOLUTION.
-    let factor = classes::scale_factor(map);
     Ok(Fixed {
         text,
         fonts,
@@ -1360,6 +1365,7 @@ fn fixed<'a>(
             Some(Bound::Expr(expr)) => Priority::Expr(expr),
         },
         factor,
+        resolution: classes::resolution_factor(map),
         buffer: label.buffer.unwrap_or(0.0),
         force: label.force == Some(Force::On),
         partials: label.partials.unwrap_or(false),
@@ -1449,6 +1455,7 @@ mod tests {
     use forager_style_ir::{Class, Extent};
 
     use super::*;
+    use forager_style_ir::Layer;
 
     struct NoFiles;
 
@@ -1498,6 +1505,7 @@ mod tests {
             partials: false,
             min_distance: 0.0,
             outline_grow: 0.0,
+            factor: 1.0,
             marker: None,
         });
         let template = Cached {

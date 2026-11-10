@@ -145,8 +145,6 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
     let scale = classes::scale_denom(map, &view, width);
-    // Each layer's scale factor, the same for every layer the engine draws.
-    let factor = classes::scale_factor(map);
     for (layer_index, layer) in map.layers.iter().enumerate() {
         if !shown(layer) || !classes::layer_in_scale(layer, scale) {
             continue;
@@ -184,7 +182,10 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .load_pixmaps(&selected, &map.symbols, &mut images, files)
             .await;
         let (pixmaps, tiles) = images.drawing();
+        // The layer's scale factor sizes its styles, the image's resolution factor bounds them.
+        let factor = classes::layer_scale_factor(map, layer, view.cellsize, scale);
         let mut canvas = Canvas::new(&map.symbols, width, height, factor)
+            .with_resolution(classes::resolution_factor(map))
             .with_pixmaps(pixmaps)
             .with_tiles(tiles);
         // Each feature is labelled by the class that draws it, in the order it is drawn.

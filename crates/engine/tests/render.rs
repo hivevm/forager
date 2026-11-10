@@ -16,7 +16,7 @@ use forager_render::{DrawOp, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
-    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
+    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -1639,4 +1639,82 @@ fn a_documents_symbol_name_that_no_symbol_carries_draws_nothing_and_warns_once()
     );
     let image = rendered.image.unwrap();
     assert_eq!(image.pixel(25, 75), Some(WHITE));
+}
+
+/// The height in pixels of what is not white in `image`.
+fn ink_height(image: &RgbaImage) -> u32 {
+    let rows: Vec<u32> = (0..image.height)
+        .filter(|&y| (0..image.width).any(|x| image.pixel(x, y) != Some(WHITE)))
+        .collect();
+    rows.last().map_or(0, |last| last - rows[0] + 1)
+}
+
+/// A point layer of the filled circle of [`symbols`] at `SIZE` 10 in red, at the centre of a map
+/// of 101 × 101 pixels over `side` map units, at `resolution`, its layer changed by `layer`.
+fn circle_at_scale(side: f64, resolution: f64, layer: impl Fn(&mut Layer)) -> RgbaImage {
+    let style = Style {
+        color: Some(Bound::Value(RED)),
+        symbol: Some(Bound::Value(SymbolRef::Index(3))),
+        size: Some(Bound::Value(10.0)),
+        ..Style::default()
+    };
+    let mut map = map(RenderMode::Point, style);
+    map.symbols = symbols();
+    map.extent = Some(Extent {
+        min_x: 0.0,
+        min_y: 0.0,
+        max_x: side,
+        max_y: side,
+    });
+    map.resolution = Some(resolution);
+    layer(&mut map.layers[0]);
+    let centre = side / 2.0;
+    let point = format!(r#"{{"type": "Point", "coordinates": [{centre}, {centre}]}}"#);
+    let rendered = render_with(&map, Some(&point));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    rendered.image.unwrap()
+}
+
+#[test]
+fn a_symbolscaledenom_scales_a_layers_styles_by_the_maps_scale() {
+    // msPrepareImage (mapdraw.c): a layer's scale factor is its SYMBOLSCALEDENOM over the map's
+    // scale, times RESOLUTION over DEFRESOLUTION. At 1:50000, 101 pixels across, 144 dpi, and
+    // meters: 25000 / 50000 × 144 / 72 = 1, so the circle of SIZE 10 is 10 pixels high, where the
+    // resolution factor alone, 2, would make it 20.
+    let side = 50_000.0 * 100.0 / (144.0 * 39.3701);
+    let scaled = circle_at_scale(side, 144.0, |layer| {
+        layer.symbol_scale_denom = Some(25_000.0);
+    });
+    assert!(
+        (9..=11).contains(&ink_height(&scaled)),
+        "{}",
+        ink_height(&scaled)
+    );
+    let unscaled = circle_at_scale(side, 144.0, |_| {});
+    assert!(
+        (19..=21).contains(&ink_height(&unscaled)),
+        "{}",
+        ink_height(&unscaled)
+    );
+}
+
+#[test]
+fn sizeunits_size_a_layers_styles_in_map_units_by_the_cellsize() {
+    // msPrepareImage: a layer of SIZEUNITS other than pixels scales its styles by the inches of
+    // its unit over those of the map's, over the cellsize: 50 meters over 100 pixels is 0.5 per
+    // pixel, so a SIZE of 10 meters is 20 pixels, whatever the resolution.
+    for resolution in [72.0, 144.0] {
+        let sized = circle_at_scale(50.0, resolution, |layer| {
+            layer.size_units = Some(Units::Meters);
+        });
+        assert!(
+            (19..=21).contains(&ink_height(&sized)),
+            "{}",
+            ink_height(&sized)
+        );
+    }
 }

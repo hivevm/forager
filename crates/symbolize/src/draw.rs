@@ -63,7 +63,7 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
 /// What a layer draws its features on beside the view: the map's symbols, the images of its
 /// pixmap symbols and the render's tiles of them, the image's width and height in pixels, the
 /// layer's scale factor and the image's resolution factor (see the engine's
-/// `classes::scale_factor`), what is left to the layer of [`line_marker::MAX_MARKER_POINTS`],
+/// `classes::layer_scale_factor`), what is left to the layer of [`line_marker::MAX_MARKER_POINTS`],
 /// the hatching of the class drawn, which counts the hatches refused (Q-9), the pixmap symbols
 /// left undrawn, and whether the layer is drawn into an image of its own.
 pub struct Canvas<'a> {
@@ -72,7 +72,12 @@ pub struct Canvas<'a> {
     tiles: Option<&'a mut Tiles>,
     /// The image's width and height in pixels, as the renderer is handed them.
     size: (u32, u32),
+    /// The layer's scale factor, by which the sizes, widths, gaps, patterns, and offsets of its
+    /// styles are scaled.
     pub(crate) factor: f64,
+    /// The image's resolution factor, by which the bounds of its styles, their `MINSIZE`,
+    /// `MAXSIZE`, `MINWIDTH`, and `MAXWIDTH`, are scaled.
+    pub(crate) resolution: f64,
     pub(crate) markers: MarkerBudget,
     hatching: Hatching,
     /// Each pixmap symbol left undrawn, by its index from 1, and why.
@@ -81,7 +86,8 @@ pub struct Canvas<'a> {
 }
 
 impl<'a> Canvas<'a> {
-    /// A canvas for one layer at `factor`, its budget of markers whole.
+    /// A canvas for one layer at the scale factor `factor`, its budget of markers whole, its
+    /// resolution factor the same until [`Self::with_resolution`] sets it.
     pub fn new(symbols: &'a [Symbol], width: u32, height: u32, factor: f64) -> Self {
         Self {
             symbols,
@@ -89,6 +95,7 @@ impl<'a> Canvas<'a> {
             tiles: None,
             size: (width, height),
             factor,
+            resolution: factor,
             markers: MarkerBudget::new(),
             hatching: Hatching::default(),
             refused_pixmaps: BTreeMap::new(),
@@ -103,6 +110,18 @@ impl<'a> Canvas<'a> {
             pixmaps: Some(pixmaps),
             ..self
         }
+    }
+
+    /// Sets the scale factor the next styles are drawn at, as the labels of several layers, each
+    /// at its layer's, are drawn on one canvas.
+    pub fn set_factor(&mut self, factor: f64) {
+        self.factor = factor;
+    }
+
+    /// The canvas at the image's resolution factor `resolution`, which bounds its styles, apart
+    /// from the layer's scale factor, which sizes them (msPrepareImage).
+    pub fn with_resolution(self, resolution: f64) -> Self {
+        Self { resolution, ..self }
     }
 
     /// The canvas, the polygons of its pixmap symbols filled with the tiles of `tiles`; without
@@ -126,7 +145,13 @@ impl<'a> Canvas<'a> {
     pub fn class(&mut self, styles: &[Style]) {
         self.hatching = Hatching {
             refused: self.hatching.refused,
-            ..Hatching::for_class(styles, self.symbols, self.pixmaps, self.factor)
+            ..Hatching::for_class(
+                styles,
+                self.symbols,
+                self.pixmaps,
+                self.factor,
+                self.resolution,
+            )
         };
     }
 
@@ -342,12 +367,15 @@ fn outline_width(style: &Style) -> f64 {
     fixed(&style.outline_width).unwrap_or(0.0)
 }
 
-/// The style's `WIDTH` scaled by the scale factor and bounded by its `MINWIDTH` and `MAXWIDTH`
-/// scaled by the resolution factor, both `factor` here, as msDrawLineSymbol() bounds it (see
+/// The style's `WIDTH` scaled by the scale factor `factor` and bounded by its `MINWIDTH` and
+/// `MAXWIDTH` scaled by the resolution factor `resolution`, as msDrawLineSymbol() bounds it (see
 /// [`bounds::line_width`]). With the width as written.
-fn bounded_width(style: &Style, factor: f64) -> (f64, f64) {
+fn bounded_width(style: &Style, factor: f64, resolution: f64) -> (f64, f64) {
     let written = fixed(&style.width).unwrap_or(1.0);
-    (bounds::line_width(written * factor, style, factor), written)
+    (
+        bounds::line_width(written * factor, style, resolution),
+        written,
+    )
 }
 
 /// The offset of the style, its numbers multiplied by `factor`; `None` when it moves nothing.
@@ -420,7 +448,7 @@ fn line_symbol(
     let style = match pass {
         Pass::Plain | Pass::PlainIfColored | Pass::PlainIfColoredOrPixmap => style,
         Pass::Outline | Pass::OutlineIfOutlined => {
-            prepared = outline_style(style);
+            prepared = outline_style(style, canvas.factor, canvas.resolution);
             &prepared
         }
     };
@@ -442,7 +470,7 @@ fn line_symbol(
     if skipped {
         return;
     }
-    let (width, written) = bounded_width(style, canvas.factor);
+    let (width, written) = bounded_width(style, canvas.factor, canvas.resolution);
     let factor = if written != 0.0 { width / written } else { 1.0 };
     let initial_gap = style.initial_gap.unwrap_or(-1.0);
     match mark {
@@ -459,7 +487,7 @@ fn line_symbol(
                     &pixmap,
                     initial_gap * factor,
                     canvas.image(),
-                    canvas.factor,
+                    (canvas.factor, canvas.resolution),
                     &mut canvas.markers,
                 ));
             }
@@ -474,7 +502,7 @@ fn line_symbol(
                 symbol,
                 initial_gap,
                 canvas.image(),
-                canvas.factor,
+                (canvas.factor, canvas.resolution),
                 &mut canvas.markers,
             ));
             return;
@@ -510,20 +538,23 @@ fn line_symbol(
 /// The style of an outline pass as msOutlineRenderingPrepareStyle() prepares it: its width and
 /// its bounds widened by twice its `OUTLINEWIDTH`, its size, MapServer's -1 where it has none,
 /// grown by it, and its colours swapped. MapServer divides the width's growth by the layer's
-/// scale factor over the image's resolution factor, and divides the size's by the scale factor
-/// and multiplies it by the resolution factor; the two factors are one here, so that both grow by
-/// the outline width as written, and the drawing scales them after.
-fn outline_style(style: &Style) -> Style {
+/// scale factor `factor` over the image's resolution factor `resolution`, and divides the size's
+/// by the scale factor and multiplies it by the resolution factor, so that, scaled as the drawing
+/// scales them after, both grow by the outline width at the resolution; the bounds grow by it as
+/// written.
+fn outline_style(style: &Style, factor: f64, resolution: f64) -> Style {
     let outline = outline_width(style);
     Style {
         color: style.outline_color.clone(),
         outline_color: style.color.clone(),
         width: Some(Bound::Value(
-            fixed(&style.width).unwrap_or(1.0) + 2.0 * outline,
+            fixed(&style.width).unwrap_or(1.0) + outline / (factor / resolution) * 2.0,
         )),
         min_width: Some(bounds::min_width(style) + 2.0 * outline),
         max_width: Some(bounds::max_width(style) + 2.0 * outline),
-        size: Some(Bound::Value(fixed(&style.size).unwrap_or(-1.0) + outline)),
+        size: Some(Bound::Value(
+            fixed(&style.size).unwrap_or(-1.0) + outline / factor * resolution,
+        )),
         ..style.clone()
     }
 }
@@ -567,6 +598,7 @@ pub fn shade(
             canvas.size,
             hatch::reference(canvas.own_image, view),
             factor,
+            canvas.resolution,
         ) {
             Hatched::Drawn(hatch) => {
                 ops.push(DrawOp::Hatch(hatch));
@@ -624,7 +656,7 @@ fn tiled(
     if !meets_image(&rings, canvas.image()) {
         return;
     }
-    let drawn = symbol::pixmap_style(style, image.height(), factor);
+    let drawn = symbol::pixmap_style(style, image.height(), factor, canvas.resolution);
     // The engine's canvas always keeps tiles; one made without them, as a test's is, refuses the
     // fill rather than build a tile that nothing would hold or count (Q-9).
     let tile = match canvas.tiles.as_deref_mut() {
@@ -661,10 +693,12 @@ fn meets_image(rings: &[Vec<Point>], (width, height): (f64, f64)) -> bool {
 fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, canvas: &mut Canvas) {
     match symbol::mark(style, canvas.symbols) {
         symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style, 1.0), style),
-        symbol::Mark::Symbol(s) => symbol::symbol_ops(ops, at, style, s, canvas.factor),
+        symbol::Mark::Symbol(s) => {
+            symbol::symbol_ops(ops, at, style, s, canvas.factor, canvas.resolution);
+        }
         symbol::Mark::Pixmap(index, s) => {
             if let Some(image) = canvas.pixmap(index, s) {
-                pixmap_ops(ops, at, style, s, image, canvas.factor);
+                pixmap_ops(ops, at, style, s, image, canvas.factor, canvas.resolution);
             }
         }
         symbol::Mark::Nothing => {}
@@ -697,8 +731,9 @@ fn pixmap_ops(
     symbol: &Symbol,
     image: Rc<PremultipliedImage>,
     factor: f64,
+    resolution: f64,
 ) {
-    let (scale, rotation, _) = symbol::pixmap_style(style, image.height(), factor);
+    let (scale, rotation, _) = symbol::pixmap_style(style, image.height(), factor, resolution);
     if scale == 0.0 {
         return;
     }
@@ -749,7 +784,7 @@ fn transformed(
     let style = match pass {
         Pass::Plain | Pass::PlainIfColored | Pass::PlainIfColoredOrPixmap => style,
         Pass::Outline | Pass::OutlineIfOutlined => {
-            prepared = outline_style(style);
+            prepared = outline_style(style, canvas.factor, canvas.resolution);
             &prepared
         }
     };
@@ -908,7 +943,7 @@ mod tests {
             outline_width: Some(Bound::Value(1.5)),
             ..colored(Some(BLUE), Some(BLACK))
         };
-        let prepared = outline_style(&style);
+        let prepared = outline_style(&style, 1.0, 1.0);
         assert_eq!(fixed(&prepared.width), Some(5.0));
         assert_eq!(
             (prepared.min_width, prepared.max_width),
@@ -923,7 +958,10 @@ mod tests {
             size: None,
             ..style
         };
-        assert_eq!(fixed(&outline_style(&without_size).size), Some(0.5));
+        assert_eq!(
+            fixed(&outline_style(&without_size, 1.0, 1.0).size),
+            Some(0.5)
+        );
     }
 
     #[test]
@@ -936,16 +974,20 @@ mod tests {
             outline_width: Some(Bound::Value(1.5)),
             ..colored(Some(BLUE), Some(BLACK))
         };
-        let prepared = outline_style(&style);
+        let prepared = outline_style(&style, 1.0, 1.0);
         assert_eq!(
             (prepared.min_width, prepared.max_width),
             (Some(7.0), Some(13.0))
         );
-        let defaults = outline_style(&Style {
-            min_width: None,
-            max_width: None,
-            ..style
-        });
+        let defaults = outline_style(
+            &Style {
+                min_width: None,
+                max_width: None,
+                ..style
+            },
+            1.0,
+            1.0,
+        );
         assert_eq!(
             (defaults.min_width, defaults.max_width),
             (Some(3.0), Some(35.0))
@@ -1275,7 +1317,7 @@ mod tests {
         };
         let at_corner = |style: &Style| {
             let mut ops = Vec::new();
-            symbol::symbol_ops(&mut ops, p(90.0, 20.0), style, &arrow, 1.0);
+            symbol::symbol_ops(&mut ops, p(90.0, 20.0), style, &arrow, 1.0, 1.0);
             ops
         };
         let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
@@ -1442,7 +1484,7 @@ mod tests {
         let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
         let drawn = transformed_ops(&collection, &style, &mut canvas);
         let mut expected = Vec::new();
-        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &symbols[0], 1.0);
+        symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &symbols[0], 1.0, 1.0);
         assert_eq!(drawn, expected);
     }
 

@@ -27,7 +27,7 @@ use forager_symbolize::{
     Canvas, Mark, Resolved, View, mark, marker_size_with, resolve, shade, symbol_ops,
 };
 
-use crate::classes::{self, scale_factor};
+use crate::classes;
 
 /// The kind of a label's style that is drawn: by its `GEOMTRANSFORM`, on the box around the text,
 /// at the label's point, or at the centre of that box.
@@ -397,12 +397,13 @@ impl LabelStyles {
         text: u32,
         written: &[Style],
         at: Point,
+        factor: f64,
     ) -> Option<Bounds> {
         let marker = if self.run(text).is_some() {
             let i = written
                 .iter()
                 .position(|s| s.geom_transform == Some(GeomTransform::LabelPoint))?;
-            self.bound_marker(text, i, &written[i], map)?
+            self.bound_marker(text, i, &written[i], map, factor)?
         } else {
             let i = self
                 .def_markers
@@ -422,7 +423,14 @@ impl LabelStyles {
     /// The marker of the `labelpoint` style `i`, written `style`, of the label of text `text`
     /// whose styles vary by feature, of the values bound to its feature, without the style
     /// rebuilt: the cache asks for it as often as it tests the label.
-    fn bound_marker(&self, text: u32, i: usize, style: &Style, map: &Map) -> Option<LabelMarker> {
+    fn bound_marker(
+        &self,
+        text: u32,
+        i: usize,
+        style: &Style,
+        map: &Map,
+        factor: f64,
+    ) -> Option<LabelMarker> {
         let run = self.run(text)?;
         let fields = &self.layouts[run.layout as usize].1;
         let at = run.at + (text - run.text) as usize * fields.len();
@@ -445,7 +453,7 @@ impl LabelStyles {
             &style.symbol
         };
         // The label was cached with this marker, which it computed from the same values.
-        marker_of(style, values, symbol, map, scale_factor(map)).ok()
+        marker_of(style, values, symbol, map, factor).ok()
     }
 
     /// The run that holds the values of the label of text `text`, where its styles vary by
@@ -482,8 +490,10 @@ impl LabelStyles {
 pub(crate) struct Styled<'a> {
     view: &'a View,
     map: &'a Map,
-    /// The labels' scale factor.
-    factor: f64,
+    /// The scale factor of each layer's labels, by the layer's index.
+    factors: Vec<f64>,
+    /// The image's resolution factor.
+    resolution: f64,
     styles: &'a LabelStyles,
     canvas: Canvas<'a>,
     /// The hatches of labelpoly styles refused since last taken (Q-9).
@@ -499,15 +509,23 @@ impl<'a> Styled<'a> {
         width: u32,
         height: u32,
     ) -> Self {
-        // The labels' scale factor: `fixed` refuses SYMBOLSCALEDENOM and a SIZEUNITS other than
-        // pixels, so every label's factor is the map's, as each label's `Fixed` holds it.
-        let factor = scale_factor(map);
+        // A label's styles inherit its scale factor, which is its layer's
+        // (msUpdateClassScaleFactor), as each label's `Fixed` holds it.
+        let scale = classes::scale_denom(map, view, width);
+        let factors = map
+            .layers
+            .iter()
+            .map(|layer| classes::layer_scale_factor(map, layer, view.cellsize, scale))
+            .collect();
+        let resolution = classes::resolution_factor(map);
         Self {
             view,
             map,
-            factor,
+            factors,
+            resolution,
             styles,
-            canvas: Canvas::new(&map.symbols, width, height, factor),
+            canvas: Canvas::new(&map.symbols, width, height, resolution)
+                .with_resolution(resolution),
             hatches_refused: 0,
         }
     }
@@ -532,9 +550,11 @@ impl<'a> Styled<'a> {
     /// box, the box of the turned polygon where the label is turned; it never tests the labelpoly
     /// or the labelcenter marker for collisions (maplabel.c:781). Each style is drawn by the kind
     /// of its written style, which `fixed` has checked; one of no kind is not drawn.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn draw<R: Draw>(
         &mut self,
         renderer: &mut R,
+        layer: usize,
         member: &Member,
         placement: &Placement,
         feature_id: u64,
@@ -546,6 +566,8 @@ impl<'a> Styled<'a> {
         let poly = member
             .label
             .map(|label| label_poly_at(member.point, &label, placement.anchor));
+        let factor = self.factors[layer];
+        self.canvas.set_factor(factor);
         for (i, style) in written.iter().enumerate() {
             let Ok(kind) = kind(style, &self.map.symbols) else {
                 continue;
@@ -558,7 +580,7 @@ impl<'a> Styled<'a> {
                         member.point,
                         &style,
                         self.map,
-                        self.factor,
+                        (factor, self.resolution),
                         feature_id,
                     );
                 }
@@ -568,7 +590,8 @@ impl<'a> Styled<'a> {
                         x: (max_x + min_x) / 2.0,
                         y: (max_y + min_y) / 2.0,
                     };
-                    draw_label_marker(renderer, center, &style, self.map, self.factor, feature_id);
+                    let factors = (factor, self.resolution);
+                    draw_label_marker(renderer, center, &style, self.map, factors, feature_id);
                 }
                 (Kind::Poly, Some(poly)) => {
                     let drawn = draw_label_poly(
@@ -591,9 +614,8 @@ impl<'a> Styled<'a> {
 
 /// A label's `GEOMTRANSFORM labelpoly` style drawn on its polygon `poly`, as `msDrawLabelBounds`
 /// draws it through msDrawShadeSymbol (see [`shade`]): the polygon where the label is turned,
-/// else the ring of its box from its lower left corner up, at the canvas's factor: the map's
-/// scale factor, which is every label's while `fixed` refuses SYMBOLSCALEDENOM and a SIZEUNITS
-/// other than pixels. False where its hatch is refused (Q-9).
+/// else the ring of its box from its lower left corner up, at the canvas's factors: the label's
+/// scale factor, its layer's, and the image's resolution factor. False where its hatch is refused (Q-9).
 fn draw_label_poly<R: Draw>(
     renderer: &mut R,
     poly: &Bounds,
@@ -636,14 +658,14 @@ fn draw_label_marker<R: Draw>(
     at: Point,
     style: &Style,
     map: &Map,
-    factor: f64,
+    (factor, resolution): (f64, f64),
     feature_id: u64,
 ) {
     let Mark::Symbol(s) = mark(style, &map.symbols) else {
         return;
     };
     let mut ops = Vec::new();
-    symbol_ops(&mut ops, at, style, s, factor);
+    symbol_ops(&mut ops, at, style, s, factor, resolution);
     for op in ops {
         renderer.draw(&DisplayItem {
             op,
@@ -819,11 +841,11 @@ mod tests {
             }
             // The marker the cache asks for is the one of the bound labelpoint style.
             let def = u32::from(!std::ptr::eq(*written, &first));
-            let marker = label_marker(bound, &map, scale_factor(&map))
+            let marker = label_marker(bound, &map, classes::resolution_factor(&map))
                 .unwrap()
                 .map(|m| marker_bounds(at, m.size, m.anchor_point, m.angle, m.offset));
             assert_eq!(
-                styles.marker_bounds(&map, def, text as u32, written, at),
+                styles.marker_bounds(&map, def, text as u32, written, at, 1.0),
                 marker,
                 "text {text}"
             );
