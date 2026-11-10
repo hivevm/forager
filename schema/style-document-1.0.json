@@ -955,12 +955,14 @@
       "type": "object",
       "properties": {
         "def_resolution": {
-          "description": "The resolution the map's pixel lengths are written for, in dpi; MapServer's default is 72.\nEvery length in pixels is drawn scaled by `resolution` over this.",
+          "description": "The resolution the map's pixel lengths are written for, in dpi; MapServer's default is 72.\nEvery length in pixels is drawn scaled by `resolution` over this. A reader drops a value\noutside 10 to 1000 with a warning, as MapServer's loader refuses one.",
           "type": [
             "number",
             "null"
           ],
-          "format": "double"
+          "format": "double",
+          "maximum": 1000.0,
+          "minimum": 10.0
         },
         "extent": {
           "anyOf": [
@@ -1009,12 +1011,14 @@
           ]
         },
         "resolution": {
-          "description": "The resolution of the image in dpi; MapServer's default is 72.",
+          "description": "The resolution of the image in dpi; MapServer's default is 72. A reader drops a value\noutside 10 to 1000 with a warning, as MapServer's loader refuses one.",
           "type": [
             "number",
             "null"
           ],
-          "format": "double"
+          "format": "double",
+          "maximum": 1000.0,
+          "minimum": 10.0
         },
         "size": {
           "description": "Width and height of the image in pixels.",

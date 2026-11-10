@@ -21,8 +21,12 @@ use std::collections::BTreeMap;
 use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::{
     Bound, Class, Diagnostic, Expr, Extent, GeomTransform, Layer, LayerProjection, LayerStatus,
-    Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol, Units,
+    MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol,
+    Units,
 };
+
+/// The range MapServer's loader holds `RESOLUTION` and `DEFRESOLUTION` to, the style document's.
+const RESOLUTION: Range = Range::Within(MIN_RESOLUTION, MAX_RESOLUTION);
 
 use crate::expression;
 use crate::init_file::InitFile;
@@ -206,11 +210,8 @@ impl Translator<'_> {
                     }
                     "IMAGECOLOR" => map.image_color = self.image_color(d),
                     "IMAGETYPE" => self.output_format(&d.keyword, &d.span),
-                    // MS_RESOLUTION_MIN and MS_RESOLUTION_MAX.
-                    "RESOLUTION" => map.resolution = self.number(d, Range::within(10.0, 1000.0)),
-                    "DEFRESOLUTION" => {
-                        map.def_resolution = self.number(d, Range::within(10.0, 1000.0));
-                    }
+                    "RESOLUTION" => map.resolution = self.number(d, RESOLUTION),
+                    "DEFRESOLUTION" => map.def_resolution = self.number(d, RESOLUTION),
                     "UNITS" => map.units = self.choice(d, &UNITS[1..]),
                     // Read with the map, before translation.
                     "SYMBOLSET" | "FONTSET" => {}

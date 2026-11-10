@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::lenient::{self, Pointer, read_error};
 use crate::migration::{self, STEPS};
-use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, Map};
+use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, MAX_RESOLUTION, MIN_RESOLUTION, Map};
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
 pub const FORMAT_VERSION: &str = "1.0";
@@ -230,7 +230,7 @@ impl StyleDocument {
                     );
                     return Err(Diagnostic::error("unknown-field", message, None));
                 }
-                let warnings = ignored
+                let mut warnings: Vec<Diagnostic> = ignored
                     .into_iter()
                     .map(|field| {
                         let message = format!(
@@ -239,10 +239,9 @@ impl StyleDocument {
                         Diagnostic::warning("unknown-field", message, None)
                     })
                     .collect();
-                Ok(Read {
-                    document: self.bounded()?,
-                    warnings,
-                })
+                let mut document = self.bounded()?;
+                warnings.extend(document.map.ranged());
+                Ok(Read { document, warnings })
             }
             (Some(theirs), Some(ours)) if theirs.0 > ours.0 => Err(Diagnostic::error(
                 "format-version-unsupported",
@@ -261,6 +260,33 @@ impl StyleDocument {
                 None,
             )),
         }
+    }
+}
+
+impl Map {
+    /// Drops a `resolution` or `def_resolution` outside [`MIN_RESOLUTION`] to
+    /// [`MAX_RESOLUTION`], each with a warning, so that its default applies: MapServer's loader
+    /// refuses such a value, and the engine's resolution factor is only finite and positive
+    /// within the range.
+    fn ranged(&mut self) -> Vec<Diagnostic> {
+        let mut warnings = Vec::new();
+        let fields = [
+            ("resolution", &mut self.resolution),
+            ("def_resolution", &mut self.def_resolution),
+        ];
+        for (name, field) in fields {
+            if let Some(value) = *field
+                && !(MIN_RESOLUTION..=MAX_RESOLUTION).contains(&value)
+            {
+                *field = None;
+                let message = format!(
+                    "/map/{name}: {value} is outside {MIN_RESOLUTION} to {MAX_RESOLUTION} \
+                     and is ignored; the default 72 applies"
+                );
+                warnings.push(Diagnostic::warning("value-out-of-range", message, None));
+            }
+        }
+        warnings
     }
 }
 
@@ -605,6 +631,46 @@ mod tests {
             "{}",
             error.message
         );
+    }
+
+    fn with_map(fields: &str) -> Read {
+        StyleDocument::from_json(&format!(r#"{{"version":"1.0","map":{{{fields}}}}}"#)).unwrap()
+    }
+
+    #[test]
+    fn a_def_resolution_outside_10_to_1000_is_dropped_with_a_warning() {
+        for value in ["0", "-72", "1e9"] {
+            let read = with_map(&format!(r#""def_resolution":{value}"#));
+            assert_eq!(read.document.map.def_resolution, None, "{value}");
+            let [warning] = read.warnings.as_slice() else {
+                panic!("{value}: {:?}", read.warnings)
+            };
+            assert_eq!(warning.code, "value-out-of-range");
+            assert!(
+                warning.message.contains("/map/def_resolution"),
+                "{warning:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_resolution_outside_10_to_1000_is_dropped_with_a_warning() {
+        let read = with_map(r#""resolution":5,"def_resolution":96"#);
+        assert_eq!(read.document.map.resolution, None);
+        assert_eq!(read.document.map.def_resolution, Some(96.0));
+        assert_eq!(read.warnings.len(), 1, "{:?}", read.warnings);
+        assert!(read.warnings[0].message.contains("/map/resolution"));
+        let read = StyleDocument::from_yaml("version: \"1.0\"\nmap: {resolution: .nan}\n").unwrap();
+        assert_eq!(read.document.map.resolution, None);
+        assert_eq!(read.warnings.len(), 1, "{:?}", read.warnings);
+    }
+
+    #[test]
+    fn a_resolution_at_either_end_of_its_range_reads() {
+        let read = with_map(r#""resolution":10,"def_resolution":1000"#);
+        assert!(read.warnings.is_empty(), "{:?}", read.warnings);
+        assert_eq!(read.document.map.resolution, Some(10.0));
+        assert_eq!(read.document.map.def_resolution, Some(1000.0));
     }
 
     #[test]

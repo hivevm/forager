@@ -6,6 +6,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::expression::Keys;
 use crate::{Expr, Span};
 
+/// The least `resolution` and `def_resolution` a map may have, in dpi: MapServer's
+/// `MS_RESOLUTION_MIN`, which its loader holds both to.
+pub const MIN_RESOLUTION: f64 = 10.0;
+/// The greatest `resolution` and `def_resolution` a map may have, in dpi: MapServer's
+/// `MS_RESOLUTION_MAX`.
+pub const MAX_RESOLUTION: f64 = 1000.0;
+
 /// A map: its image, its extent, and its layers in drawing order.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -22,12 +29,16 @@ pub struct Map {
     /// The map's projection as a proj4 string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projection: Option<String>,
-    /// The resolution of the image in dpi; MapServer's default is 72.
+    /// The resolution of the image in dpi; MapServer's default is 72. A reader drops a value
+    /// outside 10 to 1000 with a warning, as MapServer's loader refuses one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(range(min = MIN_RESOLUTION, max = MAX_RESOLUTION)))]
     pub resolution: Option<f64>,
     /// The resolution the map's pixel lengths are written for, in dpi; MapServer's default is 72.
-    /// Every length in pixels is drawn scaled by `resolution` over this.
+    /// Every length in pixels is drawn scaled by `resolution` over this. A reader drops a value
+    /// outside 10 to 1000 with a warning, as MapServer's loader refuses one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(range(min = MIN_RESOLUTION, max = MAX_RESOLUTION)))]
     pub def_resolution: Option<f64>,
     /// The unit of the map's coordinates, which the scale and sizes in other units are computed
     /// in; MapServer's default is meters.
