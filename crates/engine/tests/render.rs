@@ -1413,6 +1413,55 @@ fn transforms_draw_symbols_at_the_start_the_end_and_the_vertices_of_a_line() {
 }
 
 #[test]
+fn a_bbox_transform_strokes_the_line_s_bounds_held_near_the_image() {
+    // msDrawTransformedShape's bbox: the line runs from pixel
+    // (-50, -20) to (150, 60), its bounds held by the padding (int)(MAX(5, -1) + 3) = 8 to
+    // x = -8 and 101 + 8 = 109 and y = -8, and kept at y = 60 below; msDrawShadeSymbol strokes
+    // the ring of an OUTLINECOLOR without a COLOR as a line 5 pixels wide. Only its lower side,
+    // y = 60, falls on the image, rows 58 to 61 covered whole and 57 and 62 by half; the line
+    // itself, drawn after it in green, crosses it.
+    let ring = Style {
+        outline_color: Some(Bound::Value(BLACK)),
+        width: Some(Bound::Value(5.0)),
+        geom_transform: Some(GeomTransform::Bbox),
+        ..Style::default()
+    };
+    let rendered = render_with(
+        &map_with(RenderMode::Line, vec![ring, line_style(GREEN, 1.0)]),
+        Some(r#"{"type": "LineString", "coordinates": [[-50, 120], [150, 40]]}"#),
+    );
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    for x in [0, 20, 100] {
+        for y in 58..=61 {
+            assert_eq!(
+                image.pixel(x, y),
+                Some(BLACK),
+                "the lower side at ({x}, {y})"
+            );
+        }
+        assert_eq!(
+            image.pixel(x, 56),
+            Some(WHITE),
+            "above the lower side at {x}"
+        );
+        assert_eq!(
+            image.pixel(x, 64),
+            Some(WHITE),
+            "below the lower side at {x}"
+        );
+    }
+    for (x, y) in [(0, 45), (50, 0), (100, 0), (100, 50)] {
+        assert_eq!(image.pixel(x, y), Some(WHITE), "no side within ({x}, {y})");
+    }
+    assert_matches_reference(&image, "geomtransform_bbox.png");
+}
+
+#[test]
 fn a_centroid_transform_draws_at_the_centre_of_a_polygon_s_rings() {
     // msGetPolygonCentroid: the square and its hole, both centred on (50, 50).
     let fill = Style {

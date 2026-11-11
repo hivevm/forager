@@ -181,8 +181,7 @@ impl Translator<'_> {
         }
     }
 
-    /// `GEOMTRANSFORM` by name; MapServer's other transforms and its expressions are not yet
-    /// carried over.
+    /// `GEOMTRANSFORM` by name; MapServer's expressions are not yet carried over.
     fn geom_transform(&mut self, d: &Directive) -> Option<GeomTransform> {
         // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION): a string, a bare word that is no
         // keyword among them, or an expression.
@@ -198,24 +197,25 @@ impl Translator<'_> {
             return None;
         };
         // msStyleSetGeomTransform, src/mapgeomtransform.c: the first of its names the transform
-        // begins with, in its order; `bbox` is not carried over.
+        // begins with, in its order.
         let names = [
-            ("start", Some(GeomTransform::Start)),
-            ("end", Some(GeomTransform::End)),
-            ("vertices", Some(GeomTransform::Vertices)),
-            ("bbox", None),
-            ("labelpnt", Some(GeomTransform::LabelPoint)),
-            ("labelpoly", Some(GeomTransform::LabelPoly)),
-            ("labelcenter", Some(GeomTransform::LabelCenter)),
-            ("centroid", Some(GeomTransform::Centroid)),
+            ("start", GeomTransform::Start),
+            ("end", GeomTransform::End),
+            ("vertices", GeomTransform::Vertices),
+            ("bbox", GeomTransform::Bbox),
+            ("labelpnt", GeomTransform::LabelPoint),
+            ("labelpoly", GeomTransform::LabelPoly),
+            ("labelcenter", GeomTransform::LabelCenter),
+            ("centroid", GeomTransform::Centroid),
         ];
         let transform = names
             .into_iter()
             .find(|(prefix, _)| name.starts_with(prefix))
-            .and_then(|(_, transform)| transform);
+            .map(|(_, transform)| transform);
         if transform.is_none() {
-            let message = "this GEOMTRANSFORM is not yet supported; a class's style is drawn as \
-                           if it had none, a label's leaves its label out";
+            let message = "this GEOMTRANSFORM names no transform, or is an expression, which is \
+                           not yet supported; a class's style is drawn as if it had none, a \
+                           label's leaves its label out";
             self.warn("unsupported-value", message, &d.span);
         }
         transform

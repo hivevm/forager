@@ -168,7 +168,7 @@ fn style_values_outside_loadstyles_checks_are_errors() {
         style.unwrap().geom_transform,
         Some(forager_style_ir::GeomTransform::Vertices)
     );
-    let (loaded, style) = first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM bbox END END END END");
+    let (loaded, style) = first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM nosuch END END END END");
     assert_eq!(codes(&loaded), ["unsupported-value"]);
     assert_eq!(style.unwrap().geom_transform, None);
 }
@@ -423,6 +423,9 @@ fn a_geomtransform_name_is_matched_on_its_prefix_as_msstylesetgeomtransform_matc
         ("'vertices2'", GeomTransform::Vertices),
         ("'labelpolygon'", GeomTransform::LabelPoly),
         ("'centroids'", GeomTransform::Centroid),
+        ("bbox", GeomTransform::Bbox),
+        ("'BBOX'", GeomTransform::Bbox),
+        ("'bboxes'", GeomTransform::Bbox),
     ] {
         assert_eq!(
             style_of(&format!("GEOMTRANSFORM {name}")).geom_transform,
@@ -448,7 +451,7 @@ fn a_geomtransform_name_is_matched_on_its_prefix_as_msstylesetgeomtransform_matc
         assert_eq!(style.unwrap().geom_transform, None, "{name}");
     }
     // A later unknown transform resets an earlier one.
-    let text = "MAP LAYER CLASS STYLE GEOMTRANSFORM 'start' GEOMTRANSFORM 'bbox' END END END END";
+    let text = "MAP LAYER CLASS STYLE GEOMTRANSFORM 'start' GEOMTRANSFORM 'box' END END END END";
     let (_, style) = first_style(text);
     assert_eq!(style.unwrap().geom_transform, None);
 }

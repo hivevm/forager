@@ -3,8 +3,8 @@
 ## What to build
 
 A style's `GEOMTRANSFORM` `start`, `end`, `vertices`, and `centroid` and its `POLAROFFSET` landed
-in #115 (b7243d4, `crates/symbolize/src/geom_transform.rs`), and `bbox` is
-`docs/plan/geomtransform-bbox/01-geomtransform-bbox.md`'s; this ticket is narrowed to what is left,
+in #115 (b7243d4, `crates/symbolize/src/geom_transform.rs`), and `bbox` with the ticket
+`geomtransform-bbox/01`; this ticket is narrowed to what is left,
 each part of which needs the style IR's format to change (ADR-0014):
 
 - **A layer's `MAXFEATURES`,** and the metadata `maxfeaturestodraw` and the output format's

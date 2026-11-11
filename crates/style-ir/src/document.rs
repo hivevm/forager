@@ -832,6 +832,26 @@ mod tests {
         )
     }
 
+    /// The maintainer's decision of 2026-11-10: while the format is unreleased, a value it gains,
+    /// `bbox` among them, keeps it at 1.0 (ADR-0014's freeze); a reader of 1.0 reads it, and one
+    /// built before it would read the document as of a minor it knows, refusing the value as
+    /// [`in_the_current_minor_an_unknown_value_or_operator_is_a_load_error_naming_its_path`]
+    /// shows.
+    #[test]
+    fn bbox_is_a_transform_of_format_1_0_and_reads_back() {
+        // Verifies: ADR-0014
+        assert_eq!(FORMAT_VERSION, "1.0");
+        let mut document = sample();
+        document.map.layers[0].classes[0].styles[0].geom_transform = Some(GeomTransform::Bbox);
+        let json = document.to_json().unwrap();
+        assert!(json.contains(r#""geom_transform": "bbox""#), "{json}");
+        let read = StyleDocument::from_json(&json).unwrap();
+        assert!(read.warnings.is_empty());
+        assert_eq!(read.document, document);
+        let from_yaml = StyleDocument::from_yaml(&document.to_yaml().unwrap()).unwrap();
+        assert_eq!(from_yaml.document, document);
+    }
+
     #[test]
     fn a_newer_minors_unknown_enum_value_is_dropped_with_a_warning() {
         // Verifies: ADR-0014
