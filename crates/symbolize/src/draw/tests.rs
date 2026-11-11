@@ -206,6 +206,197 @@ fn a_transformed_style_without_a_symbol_or_with_symbol_0_draws_nothing() {
     assert!(!transformed_ops(&ell(), &style, &mut canvas).is_empty());
 }
 
+/// The ring msDrawTransformedShape builds for `bbox`, from the lower left of its bounds in pixels
+/// up, around, and back (`src/mapgeomtransform.c:170-187`).
+fn ring(min_x: f64, min_y: f64, max_x: f64, max_y: f64) -> Vec<Point> {
+    vec![
+        p(min_x, min_y),
+        p(min_x, max_y),
+        p(max_x, max_y),
+        p(max_x, min_y),
+        p(min_x, min_y),
+    ]
+}
+
+/// A line from pixel (-50, -20) to (150, 60) on the image of 101 × 101 pixels.
+fn past_the_image() -> Geometry {
+    Geometry::LineString(coords(&[(-50.0, 120.0), (150.0, 40.0)]))
+}
+
+#[test]
+fn bbox_fills_and_outlines_the_bounds_held_by_the_padding_with_symbol_0() {
+    // The padding (int)(MAX(5, -1) + 3) = 8 holds x = -50 at -8 and 150 at 101 + 8 = 109, y = -20
+    // at -8, and keeps y = 60. msDrawShadeSymbol fills the ring of symbol 0 in the COLOR and
+    // strokes it in the OUTLINECOLOR, at the colour's alpha, 5 pixels wide.
+    let style = Style {
+        width: Some(Bound::Value(5.0)),
+        geom_transform: Some(GeomTransform::Bbox),
+        ..colored(Some(BLUE), Some(BLACK))
+    };
+    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let ops = transformed_ops(&past_the_image(), &style, &mut canvas);
+    let expected = ring(-8.0, -8.0, 109.0, 60.0);
+    let [
+        DrawOp::Fill { rings, color, .. },
+        DrawOp::Stroke {
+            paths,
+            color: outline,
+            width,
+            ..
+        },
+    ] = ops.as_slice()
+    else {
+        panic!("{ops:?}");
+    };
+    assert_eq!((rings, *color), (&vec![expected.clone()], BLUE));
+    assert_eq!((paths, *outline, *width), (&vec![expected], BLACK, 5.0));
+}
+
+#[test]
+fn bbox_strokes_the_ring_of_an_outline_colour_without_a_colour() {
+    let style = Style {
+        width: Some(Bound::Value(5.0)),
+        geom_transform: Some(GeomTransform::Bbox),
+        ..colored(None, Some(BLACK))
+    };
+    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let ops = transformed_ops(&past_the_image(), &style, &mut canvas);
+    let [DrawOp::Stroke { paths, color, .. }] = ops.as_slice() else {
+        panic!("{ops:?}");
+    };
+    assert_eq!(
+        (paths, *color),
+        (&vec![ring(-8.0, -8.0, 109.0, 60.0)], BLACK)
+    );
+    // Neither colour: msDrawShadeSymbol draws nothing.
+    let style = Style {
+        outline_color: None,
+        ..style
+    };
+    assert!(transformed_ops(&past_the_image(), &style, &mut canvas).is_empty());
+}
+
+#[test]
+fn bbox_pads_by_the_larger_of_width_and_size_cut_to_an_int() {
+    // SIZE 10.7 over the default WIDTH 1: (int)13.7 = 13; WIDTH 2.9 without a SIZE, which
+    // initStyle sets to -1: (int)5.9 = 5. A shape within the image keeps its bounds.
+    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    for (width, size, pad) in [(None, Some(10.7), 13.0), (Some(2.9), None, 5.0)] {
+        let style = Style {
+            width: width.map(Bound::Value),
+            size: size.map(Bound::Value),
+            geom_transform: Some(GeomTransform::Bbox),
+            ..colored(Some(BLUE), None)
+        };
+        let ops = transformed_ops(&past_the_image(), &style, &mut canvas);
+        let [DrawOp::Fill { rings, .. }] = ops.as_slice() else {
+            panic!("{ops:?}");
+        };
+        assert_eq!(rings, &vec![ring(-pad, -pad, 101.0 + pad, 60.0)], "{pad}");
+        let ops = transformed_ops(&ell(), &style, &mut canvas);
+        let [DrawOp::Fill { rings, .. }] = ops.as_slice() else {
+            panic!("{ops:?}");
+        };
+        assert_eq!(rings, &vec![ring(10.0, 20.0, 90.0, 90.0)], "{pad}");
+    }
+}
+
+#[test]
+fn bbox_pads_as_the_pin_s_int_does_past_an_int() {
+    // A WIDTH past an `int`: cvttsd2si gives INT_MIN, whose negation wraps to INT_MIN again, so
+    // the lower bounds stay and the upper ones are held at 101 + INT_MIN, as the x86-64 build at
+    // the pin computes them; no panic.
+    let style = Style {
+        width: Some(Bound::Value(1e12)),
+        geom_transform: Some(GeomTransform::Bbox),
+        ..colored(Some(BLUE), None)
+    };
+    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let ops = transformed_ops(&ell(), &style, &mut canvas);
+    let [DrawOp::Fill { rings, .. }] = ops.as_slice() else {
+        panic!("{ops:?}");
+    };
+    let high = 101.0 + f64::from(i32::MIN);
+    assert_eq!(rings, &vec![ring(10.0, 20.0, high, high)]);
+}
+
+#[test]
+fn bbox_in_an_outline_pass_pads_by_the_style_the_outline_prepares() {
+    // msOutlineRenderingPrepareStyle runs before msDrawTransformedShape: WIDTH 5 and the default
+    // SIZE -1 grow by OUTLINEWIDTH 2 to 9 and 1, so the padding is (int)(9 + 3) = 12, and the
+    // colours swap: the ring is filled in the OUTLINECOLOR and stroked in the COLOR.
+    let style = Style {
+        width: Some(Bound::Value(5.0)),
+        outline_width: Some(Bound::Value(2.0)),
+        geom_transform: Some(GeomTransform::Bbox),
+        ..colored(Some(BLUE), Some(BLACK))
+    };
+    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let ops = draw_ops(
+        RenderMode::Line,
+        &past_the_image(),
+        &style,
+        Pass::Outline,
+        &unit_view(),
+        &mut canvas,
+    );
+    let [
+        DrawOp::Fill { rings, color, .. },
+        DrawOp::Stroke {
+            color: outline,
+            width,
+            ..
+        },
+    ] = ops.as_slice()
+    else {
+        panic!("{ops:?}");
+    };
+    assert_eq!(rings, &vec![ring(-12.0, -12.0, 113.0, 60.0)]);
+    assert_eq!((*color, *outline, *width), (BLACK, BLUE, 9.0));
+}
+
+#[test]
+fn bbox_on_a_polygon_layer_hatches_and_counts_a_hatch_refused() {
+    // Verifies: Q-9
+    // The square from pixel (10, 10) to (90, 90) of a polygon layer: its ring hatched with
+    // SIZE 10; with MAXSIZE 0 the spacing is 0, a hatch that would not end, refused and counted.
+    let symbols = [hatch_symbol()];
+    let square = Geometry::Polygon(vec![coords(&[
+        (10.0, 10.0),
+        (90.0, 10.0),
+        (90.0, 90.0),
+        (10.0, 90.0),
+        (10.0, 10.0),
+    ])]);
+    let style = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: Some(Bound::Value(10.0)),
+        geom_transform: Some(GeomTransform::Bbox),
+        ..colored(Some(BLUE), None)
+    };
+    let polygon_ops = |style: &Style, canvas: &mut Canvas| {
+        draw_ops(
+            RenderMode::Polygon,
+            &square,
+            style,
+            Pass::Plain,
+            &unit_view(),
+            canvas,
+        )
+    };
+    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let ops = polygon_ops(&style, &mut canvas);
+    assert!(matches!(ops.as_slice(), [DrawOp::Hatch(_)]), "{ops:?}");
+    assert_eq!(canvas.hatching.refused, 0);
+    let refused = Style {
+        min_size: Some(0.0),
+        max_size: Some(0.0),
+        ..style
+    };
+    assert!(polygon_ops(&refused, &mut canvas).is_empty());
+    assert_eq!(canvas.hatching.refused, 1);
+}
+
 #[test]
 fn without_angle_auto_a_transformed_symbol_keeps_its_angle() {
     // The arrow at the corner of the L: at its own ANGLE 30 without AUTO, turned by -45°, as

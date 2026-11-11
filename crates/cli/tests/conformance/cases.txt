@@ -472,7 +472,7 @@ renderers/poly-label-pos-auto.map poly-label-pos-auto.png out: labels in polygon
 renderers/poly-label-pos-auto.map poly-label-pos-auto.pdf out: another output format, pdf
 renderers/poly-label-pos-auto.map poly-label-pos-auto.svg out: another output format, svg
 renderers/poly-label-pos-auto.map poly-label-pos-auto.cairo.png out: another output format, cairopng
-renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.png geometry fails  # not built yet: pixmap symbols and GEOMTRANSFORM bbox
+renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.png geometry passes
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.pdf out: another output format, pdf
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.svg out: another output format, svg
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.cairo.png out: another output format, cairopng

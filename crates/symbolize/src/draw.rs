@@ -17,7 +17,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use forager_render::{DrawOp, Point};
-use forager_style_ir::{Bound, Coord, Geometry, RenderMode, Style, Symbol};
+use forager_style_ir::{Bound, Coord, GeomTransform, Geometry, RenderMode, Style, Symbol};
 
 use crate::canvas::Canvas;
 use crate::extent::View;
@@ -212,9 +212,10 @@ pub fn vertices(geometry: &Geometry) -> Vec<Coord> {
 }
 
 /// A style with a `GEOMTRANSFORM` on a shape of a line or a polygon layer, as
-/// msDrawTransformedShape draws it: its symbol at each point the transform places, turned there
-/// where the style's angle is `AUTO` and the transform gives one; nothing for a style without a
-/// symbol or with symbol 0, as msDrawMarkerSymbol draws none. The outline pass of a line layer's
+/// msDrawTransformedShape draws it: with `bbox`, a polygon (see [`bbox`]); otherwise its symbol at
+/// each point the transform places, turned there where the style's angle is `AUTO` and the
+/// transform gives one; nothing for a style without a symbol or with symbol 0, as
+/// msDrawMarkerSymbol draws none. The outline pass of a line layer's
 /// first style draws the style its outline prepares, as msDrawVectorLayer prepares the style
 /// before msDrawShape draws the transform. The symbols' points are taken from the canvas's
 /// budget of markers (Q-9): where they would exceed what is left, none of the shape's is drawn,
@@ -230,6 +231,10 @@ fn transformed(
     let Some(transform) = style.geom_transform else {
         return;
     };
+    if transform == GeomTransform::Bbox {
+        bbox(ops, geometry, &pass.style(style, canvas), view, canvas);
+        return;
+    }
     if of_symbol_zero(style) {
         return;
     }
@@ -264,6 +269,28 @@ fn transformed(
             _ => marker_ops(ops, at, style, canvas),
         }
     }
+}
+
+/// A style transformed by `bbox` on a shape of a line or a polygon layer, as
+/// msDrawTransformedShape hands its bounding box to msDrawShadeSymbol
+/// (`src/mapgeomtransform.c:161-188`): the ring of [`geom_transform::bbox`] shaded as a polygon,
+/// filled, outlined, hatched, or tiled with a pixmap as [`shade`] draws one, symbol 0 among them;
+/// the padding takes the style's width, 1 where it has none, and its size, -1 where it has none,
+/// as initStyle sets them. A hatch refused is counted (Q-9).
+fn bbox(
+    ops: &mut Vec<DrawOp>,
+    geometry: &Geometry,
+    style: &Style,
+    view: &View,
+    canvas: &mut Canvas,
+) {
+    let width = style.width.as_ref().and_then(Bound::value).unwrap_or(1.0);
+    let size = style.size.as_ref().and_then(Bound::value).unwrap_or(-1.0);
+    let Some(ring) = geom_transform::bbox(geometry, view, canvas.size, width, size) else {
+        return;
+    };
+    let drawn = shade(ops, vec![ring], style, view, canvas);
+    canvas.hatching.refused += usize::from(!drawn);
 }
 
 #[cfg(test)]

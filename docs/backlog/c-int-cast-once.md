@@ -17,6 +17,8 @@ C's `atof`, `strtod`, `atoi`, `lrint`, and `MS_NINT` once, in `forager_style_ir:
   makes an operand past an `int` undefined.
 - crates/symbolize/src/hatch.rs: the size of a hatch's box, MapServer's `(int)`, as `.trunc()` in
   `hatch_polygon`.
+- crates/symbolize/src/geom_transform.rs: the padding of `bbox`, in `bbox`, which writes the
+  pin's conversion inline, as `int_cast` does, with the `int` sums around it wrapping.
 - crates/symbolize/src/symbol.rs: a marker's size, C's assignment to an `int`, as `.trunc()` in
   `marker_size_at`; and AGG's `uround`, `unsigned(v + 0.5)`, as `as u32` in `agg_ellipse`.
 
