@@ -18,7 +18,7 @@ use forager_engine::render_with_files;
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
 use forager_style_ir::{
-    Bound, Class, Expr, Extent, Force, GeomTransform, Label, Layer, LayerStatus, Map, Op,
+    Bound, Class, Expr, Extent, Force, Label, LabelTransform, Layer, LayerStatus, Map, Op,
     RenderMode, Rgba, SourceRef, Style, Symbol, SymbolKind, SymbolRef,
 };
 use peak_alloc::PeakAlloc;
@@ -75,7 +75,7 @@ impl Renderer for Discard {
 /// The map of the points, its label drawn where `labelled`, with the style `styled` where one is
 /// given: a `labelpnt` or `labelcenter` style of symbol 0, which is sized 1 by 1 and draws
 /// nothing, unless the style names symbol 1, a square its size scales.
-fn map(labelled: bool, styled: Option<Style>) -> Map {
+fn map(labelled: bool, styled: Option<Style<LabelTransform>>) -> Map {
     let styles = styled.into_iter().collect();
     let label = Label {
         styles,
@@ -238,22 +238,21 @@ fn styled_labels(points: usize, sources: &BTreeMap<String, GeoJsonSource>) {
     // a `labelpnt` marker those values size is computed from them as the cache tests it.
     let style = |transform, color: Bound<Rgba>| Style {
         color: Some(color),
-        geom_transform: Some(transform),
-        ..Style::default()
+        ..Style::new(transform)
     };
     let fixed = || Bound::Value(Rgba::opaque(0, 255, 0));
     // Each style, and the values a feature binds to it.
     for (styled, values) in [
         (None, 0),
-        (Some(style(GeomTransform::LabelPoly, fixed())), 0),
-        (Some(style(GeomTransform::LabelPoint, fixed())), 0),
-        (Some(style(GeomTransform::LabelCenter, fixed())), 0),
-        (Some(style(GeomTransform::LabelPoly, bound("color"))), 1),
-        (Some(style(GeomTransform::LabelPoint, bound("color"))), 1),
+        (Some(style(LabelTransform::Poly, fixed())), 0),
+        (Some(style(LabelTransform::Point, fixed())), 0),
+        (Some(style(LabelTransform::Center, fixed())), 0),
+        (Some(style(LabelTransform::Poly, bound("color"))), 1),
+        (Some(style(LabelTransform::Point, bound("color"))), 1),
         (
             Some(Style {
                 size: Some(bound("size")),
-                ..style(GeomTransform::LabelPoly, fixed())
+                ..style(LabelTransform::Poly, fixed())
             }),
             1,
         ),
@@ -262,14 +261,14 @@ fn styled_labels(points: usize, sources: &BTreeMap<String, GeoJsonSource>) {
             Some(Style {
                 size: Some(bound("size")),
                 symbol: Some(Bound::Value(SymbolRef::Index(1))),
-                ..style(GeomTransform::LabelPoint, fixed())
+                ..style(LabelTransform::Point, fixed())
             }),
             1,
         ),
         (
             Some(Style {
                 width: Some(bound("width")),
-                ..style(GeomTransform::LabelPoly, bound("color"))
+                ..style(LabelTransform::Poly, bound("color"))
             }),
             2,
         ),
@@ -323,8 +322,7 @@ fn alternating_classes(points: usize, sources: &BTreeMap<String, GeoJsonSource>)
             labelled,
             Some(Style {
                 color: Some(bound("color")),
-                geom_transform: Some(GeomTransform::LabelPoly),
-                ..Style::default()
+                ..Style::new(LabelTransform::Poly)
             }),
         );
         let odd = |value: &str| {
@@ -364,8 +362,7 @@ fn labels_over_two_layers() {
     let styled = Style {
         color: Some(bound("color")),
         width: Some(bound("width")),
-        geom_transform: Some(GeomTransform::LabelPoly),
-        ..Style::default()
+        ..Style::new(LabelTransform::Poly)
     };
     for (styled, values) in [(None, 0), (Some(styled), 2)] {
         let two_layers = |labelled| {

@@ -86,11 +86,14 @@ in `src/maprendering.c`, as a polygon's style is: filled without a symbol, and h
 symbol, its lines counted from the map's origin, or from the corner of a layer's own image for
 the labels of a layer of `LABELCACHE OFF` drawn there ([symbol.md](symbol.md)); a hatch past its
 bounds is not drawn, and the label's layer warns with `hatch-not-drawn`, as for a polygon's (Q-9).
-A `labelpoly` of any other symbol is not drawn yet, so its label is left out with
-`label-not-drawn`, as is a label with a style that reaches the IR without a transform (the
-diagnostic says so). `ANGLE AUTO` on a label's style changes nothing: `loadStyle` sets only the
-style's `autoangle`, which none of the functions drawing a label's styles reads, so the style turns
-by its `ANGLE` alone.
+A `labelpoly` of any other symbol is not drawn yet, so its label is left out with `label-not-drawn`.
+A label's style of any other `GEOMTRANSFORM`, `start`, `end`, `vertices`, `centroid`, `bbox`, an
+expression, or a name MapServer does not know, `msDrawLabelCache` fails the map's draw on; the IR's
+label style always names `labelpoint`, `labelpoly`, or `labelcenter`, so the frontend leaves such a
+label out with `label-not-drawn`, and its class's other labels with it, as the engine leaves out
+every label of a class of several labels, not drawn yet. `ANGLE AUTO` on a label's style changes
+nothing: `loadStyle` sets only the style's `autoangle`, which none of the functions drawing a
+label's styles reads, so the style turns by its `ANGLE` alone.
 
 **The marker under a label.** The label cache holds beneath each label of a point layer the box
 of the marker its class's first style draws at the point, as `msAddLabelGroup` and `msAddLabel`
@@ -138,10 +141,11 @@ markers, and the others, whose text MapServer lays out in its built-in font, whi
 are left out with `label-not-drawn` ("it names no FONT"). A text of line breaks only lays out no
 glyph and so needs no font either.
 
-MapServer draws a feature point by point: the markers at its first point, then the labels there,
-then the markers at its next point. The engine draws all of a feature's markers, then its labels at
-each of its points, then the next feature; so where a feature of several points is drawn, a marker
-at a later point does not cover a label at an earlier one, as it does in MapServer. MapServer's line
+The engine draws a feature point by point, as `pointLayerDrawShape` does
+(`src/mapdraw.c:2062-2105`): at each point inside the map's extent, every class style's marker,
+whatever its `GEOMTRANSFORM`, then the labels there, then the markers at its next point; so a
+marker at a later point of a multipoint covers a label at an earlier one. A point outside the
+extent draws neither. MapServer's line
 and polygon layers draw their labels at once too, which the engine does not draw yet: it leaves
 them out with `label-not-drawn`. MapServer labels no such feature that its simplification to
 pixels ([line.md](line.md), **Vertices**) leaves without a part: `msDrawShape` in `src/mapdraw.c`

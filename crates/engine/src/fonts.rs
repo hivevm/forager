@@ -6,11 +6,10 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use forager_label::{Font, Unusable, attempts};
-use forager_ports::{ResourceLoader, ResourcePath};
+use forager_ports::ResourceLoader;
 use forager_style_ir::Map;
 
-/// The largest font file a render loads (Q-9).
-pub const MAX_FONT_BYTES: usize = 32 * 1024 * 1024;
+use crate::resource::load_once;
 
 /// The fonts loaded during one render, by their path, each its bytes or why it does not open.
 #[derive(Default)]
@@ -101,23 +100,13 @@ impl Fonts {
         path: &str,
         loader: &L,
     ) -> Result<Rc<[u8]>, String> {
-        if let Some(loaded) = self.loaded.get(path) {
-            return loaded.clone();
-        }
-        let loaded = match ResourcePath::new(path) {
-            Err(e) => Err(format!("is no path inside the base context: {e}")),
-            Ok(resource) => match loader.load(&resource).await {
-                Err(e) => Err(format!("does not load: {e}")),
-                Ok(bytes) if bytes.len() > MAX_FONT_BYTES => Err(format!(
-                    "exceeds the limit of {MAX_FONT_BYTES} bytes for a font"
-                )),
-                Ok(bytes) => match Font::new(&bytes) {
-                    Err(e) => Err(format!("is no font: {e}")),
-                    Ok(_) => Ok(Rc::from(bytes)),
-                },
-            },
-        };
-        self.loaded.insert(path.to_owned(), loaded.clone());
-        loaded
+        load_once(&mut self.loaded, path, loader, |file| {
+            let bytes = file?;
+            match Font::new(&bytes) {
+                Err(e) => Err(format!("is no font: {e}")),
+                Ok(_) => Ok(Rc::from(bytes)),
+            }
+        })
+        .await
     }
 }

@@ -39,8 +39,9 @@ warns with `symbol-unknown` once for each such name of its classes' styles.
 `start`, `end`, `vertices`, `bbox`, `labelpnt`, `labelpoly`, `labelcenter`, `centroid`, that the
 value begins with, without regard to case, so `'startpoint'` is `start`; a value that begins with
 none is no transform, and the frontend warns. A label's style draws at its `labelpnt` unless it
-names another ([`label.md`](label.md)). MapServer's other transform, `bbox`, and its expressions
-are not yet carried over, and are a warning; the style draws the feature's own geometry.
+names another, and a label with a style of any other transform is left out
+([`label.md`](label.md)). MapServer's other transform, `bbox`, and its expressions are not yet
+carried over, and are a warning; a class's style draws the feature's own geometry.
 
 **Drawing a transform.** On a line or a polygon layer, `msDrawTransformedShape` in
 `src/mapgeomtransform.c` draws the style's symbol, as at a point, on the feature's unclipped

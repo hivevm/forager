@@ -33,7 +33,10 @@ golden path and the test pattern an agent copies from are named here.
 - **`style-ir`** — the data model of a map, its expressions a CQL2 tree
   ([ADR-0015](adr/0015-expressions-as-cql2.md)), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
-  ([ADR-0013](adr/0013-style-document-serde.md)). Its readers
+  ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
+  class's `Style` may leave it out, a label's `Style<LabelTransform>` always names `labelpoint`,
+  `labelpoly`, or `labelcenter`, and `symbolize` and the engine draw both through functions
+  generic over it. Its readers
   ([ADR-0014](adr/0014-style-document-versions.md)) name each field they do not know by its
   JSON Pointer; a document of a newer minor that does not read is read again from its value tree
   with each unknown value dropped and each condition that does not read kept as `false`, at most
@@ -91,24 +94,27 @@ golden path and the test pattern an agent copies from are named here.
   filter with the first class whose expression matches it, its styles' bound and computed
   properties bound to it and every style and label scaled by its layer's scale factor, which
   `SIZEUNITS` or `SYMBOLSCALEDENOM` set and the map's `RESOLUTION` over its `DEFRESOLUTION`
-  otherwise, the bounds of a style and a label by that resolution factor alone (`classes.rs`),
+  otherwise, the bounds of a style and a label by that resolution factor alone (`classes.rs`,
+  the properties of a style a feature may bind listed once in `bindable.rs`),
   and turns each feature and style into display items
   by the layer's render mode. A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer
-  ([ADR-0022](adr/0022-skipped-records.md)); the fonts a label names it loads once
-  per render through the host's resource loader, each bounded, and so the images its pixmap
-  symbols name, each decoded once per render and path and held within Q-9's bounds on the file
-  and on the bytes one render's images and fill tiles come to (`images.rs`,
+  ([ADR-0022](adr/0022-skipped-records.md)); the fonts a label names and the images its
+  pixmap symbols name it loads by one load, once per render and path through the host's resource
+  loader, each file held to the 32 MiB of Q-9 that a font file and a symbol image's file share
+  (`resource.rs`); each image it decodes once and holds within Q-9's bound on the bytes one
+  render's images and fill tiles come to (`images.rs`,
   [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0031), and
-  those of a point layer of `LABELCACHE OFF` after each feature, without a test against other
-  labels, markers, or the image's edge, where `pointLayerDrawShape` draws them after each point
-  ([label.md](semantics/label.md)): it holds each label as its glyphs' indices and its point,
-  draws each glyph once per font and size, and
+  those of a point layer of `LABELCACHE OFF` at each point after its markers, before the next
+  point's, as `pointLayerDrawShape` draws them, without a test against other labels, markers, or
+  the image's edge ([label.md](semantics/label.md)): it holds each label as its glyphs' indices
+  and its point, draws each glyph once per font and size, and
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
   diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does: a
   `labelpoly` style on the box around the text, a `labelpoint` style's marker at the label's
-  point, and a `labelcenter` style's at the centre of that box (`labels.rs`, its styles
+  point, and a `labelcenter` style's at the centre of that box (`labels.rs`, its binding to a
+  feature `label_binding.rs`, which reads a bound value as `classes.rs` does, its styles
   `label_styles.rs`); a label's `PRIORITY` it may compute per feature through `expr`. A label
   takes its text from the label, the class, the `LABELITEM`, or last its inline feature's own
   `TEXT`, which the port's `Feature` does not carry: the labels read it beside the port, from the
@@ -128,13 +134,16 @@ golden path and the test pattern an agent copies from are named here.
   Every host binds its sources to the layers by name through the engine's `bind_sources`, which
   reports a source no layer is named for and one that cannot be read the same way for each.
 - **`symbolize`** — the symbolization of a style, synchronous and without I/O: a feature's geometry
-  in a style bound to it turned into drawing operations, as MapServer draws it. A line's dashes, a
-  polygon's fill through MapServer's default gamma, a point's marker, a pixmap's image placed at a
-  point, unscaled at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol`
-  fills about the point and the inverse of the image's transformation, a polygon filled with its
-  pixmap's tile, the canvas a layer draws on, which the images of the render's pixmaps are handed
-  on, and the paths of the images a layer's styles will draw, which the engine loads before it
-  draws the layer (`draw.rs`); a style's width
+  in a style bound to it turned into drawing operations, as MapServer draws it. The dispatch of a
+  style by the layer's render mode, the symbols a `GEOMTRANSFORM` places, and the paths of the
+  images a layer's styles will draw, which the engine loads before it draws the layer
+  (`draw.rs`); a polygon's fill through MapServer's default gamma, and a polygon filled with its
+  pixmap's tile (`shade.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
+  at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol` fills about the
+  point and the inverse of the image's transformation (`marker.rs`); a line's dashes, and the
+  style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
+  canvas a layer draws on, which the images of the render's pixmaps are handed on
+  (`canvas.rs`); a style's width
   and size bounds, one function per site of MapServer's that bounds them, with the constants they
   bound by (`bounds.rs`); a property's value as bound, the gamma, and degrees to radians
   (`style.rs`); the view that maps the extent to the image, and a line's or a ring's vertices to
@@ -151,7 +160,8 @@ golden path and the test pattern an agent copies from are named here.
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`
-  at the top and `bounds.rs`, `style.rs`, `extent.rs`, and `offset.rs` the leaves; ADR-0008
+  at the top, then `shade.rs`, `marker.rs`, `line.rs`, and `canvas.rs`, and `bounds.rs`,
+  `style.rs`, `extent.rs`, and `offset.rs` the leaves; ADR-0008
   decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs` holds
   this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
@@ -274,20 +284,24 @@ stand-in for it. Its module `metric/` compares a rendering with a reference imag
 decoding the reference by the `png` crate whatever its colour type, and writes the rendering and a
 difference image when a case fails. Beside them, `.github/workflows/noise.yml` measures MapServer's
 own noise against the same references: `scripts/build-mapserver.sh` builds `map2img` from the pinned
-commit on the runner ([ADR-0033](adr/0033-noise-measurement.md)), and the harness's
-ignored test `mapserver_renders_the_cases_in_scope_within_its_noise` runs it over the cases in scope
-and reports the share of differing pixels per case at each threshold of a set, and its maximum over
-each category. The conformance harness there reads the cases of `misc` and `renderers`, their
+commit on the runner ([ADR-0033](adr/0033-noise-measurement.md)), and the harness's module
+`conformance/noise/` runs it over the cases in scope and reports the share of differing pixels per
+case at each threshold of a set, and its maximum over each category. Its ignored test runs where
+`FORAGER_MAP2IMG` and `FORAGER_MAPSERVER_LABELS` name MapServer's build and skips itself where
+neither is set, so `scripts/check-rust.sh` runs it without naming it and it measures nothing there;
+the workflow runs the ignored tests of that module and fails when its job summary holds no report.
+The conformance harness there reads the cases of `misc` and `renderers`, their
 `RUN_PARMS` lines, in its module `conformance/`, whose list `cases.txt` names each in scope with its
 category and expected outcome, passing or failing, or out of scope with its reason, and marks those
-whose reference is blank; it renders each case in scope in-process: the mapfile loads through the
-harness's own loader of the suite, with the stand-in EPSG table and the case's `-i` applied, and the
-CLI's library binds its shapefiles and reads the fonts of its labels as `forager render` does, with
-the suite's directory as the base context; it compares the rendering by the metric of its category,
-geometry and symbols or text, and holds its outcome, leaving the renderings of failing cases under
-Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that pass, the blank ones
-apart, and `scripts/check-fidelity.sh` holds the share of passing cases without a blank reference
-against that of the last release tag `v<semver>` in the record
+whose reference is blank; it renders each case in scope in-process: with the suite's directory as
+the base context, the mapfile loads through the CLI's `FileLoader`, as `forager render --base`
+loads it, with the stand-in EPSG table and the case's `-i` applied, and the CLI's library binds its
+shapefiles and reads the fonts of its labels from the same `FileLoader` as `forager render` does;
+G-1's in-process load and G-3's round trips load through it too; it compares the rendering by the
+metric of its category, geometry and symbols or text, and holds its outcome, leaving the renderings
+of failing cases under Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that
+pass, the blank ones apart, and `scripts/check-fidelity.sh` holds the share of passing cases
+without a blank reference against that of the last release tag `v<semver>` in the record
 `crates/cli/tests/conformance/fidelity.txt`, to which each release adds its line (Q-4); no release
 is recorded yet, and until one is the check passes. For each text case it compares the labels the
 engine reports in its `Rendered` with MapServer's, recorded under `conformance/labels/`, and holds

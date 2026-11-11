@@ -191,7 +191,7 @@ fn a_text_is_evaluated_as_mapserver_evaluates_it() {
 
 #[test]
 fn a_label_carries_what_placement_and_drawing_need() {
-    use forager_style_ir::{AngleMode, Force, GeomTransform, MinFeatureSize, Position};
+    use forager_style_ir::{AngleMode, Force, LabelTransform, MinFeatureSize, Position};
     let (loaded, label) = first_label(&[(
         "m.map",
         "MAP LAYER CLASS LABEL
@@ -219,10 +219,7 @@ fn a_label_carries_what_placement_and_drawing_need() {
     let transforms: Vec<_> = label.styles.iter().map(|s| s.geom_transform).collect();
     assert_eq!(
         transforms,
-        [
-            Some(GeomTransform::LabelPoint),
-            Some(GeomTransform::LabelPoly)
-        ],
+        [LabelTransform::Point, LabelTransform::Poly],
         "a label's style draws at the label point unless it says otherwise"
     );
     // A label's labelcenter style keeps its transform, without a warning.
@@ -234,21 +231,40 @@ fn a_label_carries_what_placement_and_drawing_need() {
         .iter()
         .map(|s| s.geom_transform)
         .collect();
-    assert_eq!(transforms, [Some(GeomTransform::LabelCenter)]);
-    // A GEOMTRANSFORM the frontend does not carry over leaves the style without one, not at the
-    // label point: msDrawLabelCache fails on bbox and others.
-    for transform in ["bbox", "'nosuch'", "(buffer([shape], 2))"] {
-        let (_, label) = label_of(&format!("STYLE GEOMTRANSFORM {transform} END"));
-        let transforms: Vec<_> = label
-            .unwrap()
-            .styles
-            .iter()
-            .map(|s| s.geom_transform)
-            .collect();
-        assert_eq!(transforms, [None], "{transform}");
-    }
+    assert_eq!(transforms, [LabelTransform::Center]);
     let loaded = load_files(&[("m.map", "MAP LAYER CLASS LABEL PRIORITY 11 END END END END")]);
     assert_eq!(codes(&loaded), ["invalid-value"]);
+}
+
+/// msDrawLabelCache draws a label's style by labelpnt, labelpoly, and labelcenter alone, and
+/// fails the map's draw on bbox and others: a label with a style of any other GEOMTRANSFORM is
+/// left out with a warning, never drawn at the label point, and its class's other labels with it,
+/// as the engine leaves out every label of a class of several: leaving one out must not draw another.
+#[test]
+fn a_label_with_a_style_of_another_transform_is_left_out() {
+    for transform in [
+        "start",
+        "centroid",
+        "bbox",
+        "'nosuch'",
+        "(buffer([shape], 2))",
+    ] {
+        let text: &'static str = format!(
+            "MAP LAYER CLASS
+               LABEL TEXT 'a' STYLE GEOMTRANSFORM {transform} END END
+               LABEL TEXT 'b' STYLE SIZE 3 END END
+             END END END"
+        )
+        .leak();
+        let loaded = load_files(&[("m.map", text)]);
+        assert!(
+            codes(&loaded).contains(&"label-not-drawn"),
+            "{transform}: {:?}",
+            codes(&loaded)
+        );
+        let labels = &loaded.document.as_ref().unwrap().map.layers[0].classes[0].labels;
+        assert!(labels.is_empty(), "{transform}: {labels:?}");
+    }
 }
 
 /// The label of `body`, a label's directives, with the codes of the load.

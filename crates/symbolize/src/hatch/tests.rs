@@ -451,7 +451,7 @@ fn a_diagonal_hatch_is_bounded_by_the_lines_the_renderer_clips_it_to() {
     // refused. The maintainer accepted that shift of what Q-9 refuses on 2026-11-08.
     let huge = || vec![vec![p(-1e6, -1e6), p(1e6, -1e6), p(1e6, 1e6), p(-1e6, 1e6)]];
     let at = |size: f64| {
-        let style = Style {
+        let style: Style = Style {
             size: Some(Bound::Value(size)),
             width: Some(Bound::Value(32.0)),
             angle: Some(Bound::Value(45.0)),

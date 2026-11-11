@@ -25,9 +25,9 @@ use std::collections::BTreeSet;
 use forager_expr::{Evaluator, Failure, Lookup};
 use forager_ports::{Feature, Properties, Value};
 use forager_style_ir::c::{atof, atoi, ms_nint};
-use forager_style_ir::{
-    Bound, Diagnostic, Expr, Layer, LineOffset, Map, Rgba, Span, Style, Symbol, SymbolRef, Units,
-};
+use forager_style_ir::{Bound, Diagnostic, Expr, Layer, Map, Rgba, Span, Style, Symbol, Units};
+
+use crate::bindable::{self, Field, Written};
 use forager_symbolize::View;
 
 /// A feature's properties as the evaluator reads them. A name is found without regard to ASCII
@@ -136,18 +136,17 @@ impl Reports {
     }
 }
 
-/// The selection of one layer's classes for its features.
-pub(crate) struct Selector<'a, 'm> {
+/// The binding of one layer's features: their expressions evaluated and the styles and labels
+/// of their classes bound to them, each failure reported once.
+pub(crate) struct Binder<'a, 'm> {
     pub layer: &'a Layer,
     pub layer_index: usize,
-    /// The map's scale, as msCalculateScale computes it.
-    pub scale: f64,
     pub evaluator: &'m mut Evaluator,
     pub reports: &'m mut Reports,
     pub diagnostics: &'m mut Vec<Diagnostic>,
 }
 
-impl<'a> Selector<'a, '_> {
+impl Binder<'_, '_> {
     fn matches(&mut self, expr: &Expr, feature: &Feature, carrier: Carrier) -> bool {
         match self
             .evaluator
@@ -165,25 +164,6 @@ impl<'a> Selector<'a, '_> {
                 false
             }
         }
-    }
-
-    /// The class that draws `feature`: none where it fails the layer's filter, else the first
-    /// in the map's scale whose expression matches it, a class without one matching every
-    /// feature; none where no class matches.
-    pub fn class(&mut self, feature: &Feature) -> Option<usize> {
-        if let Some(filter) = &self.layer.filter
-            && !self.matches(filter, feature, Carrier::Filter)
-        {
-            return None;
-        }
-        (0..self.layer.classes.len()).find(|&i| {
-            let class = &self.layer.classes[i];
-            in_scale(self.scale, class.min_scale_denom, class.max_scale_denom)
-                && match &class.expression {
-                    None => true,
-                    Some(expression) => self.matches(expression, feature, Carrier::Class(i)),
-                }
-        })
     }
 
     /// Whether label `label` of class `class` is drawn for `feature`, as `msGetLabelStatus`
@@ -247,6 +227,82 @@ impl<'a> Selector<'a, '_> {
             .ok()
     }
 
+    /// `style` of label `label` of class `class`, bound to `feature` as bindLabel binds a
+    /// label's styles, through bindStyle as a class's.
+    pub fn bind_label_style<'s, T: Clone>(
+        &mut self,
+        style: &'s Style<T>,
+        feature: &Feature,
+        symbols: &[Symbol],
+        (class, label): (usize, usize),
+    ) -> Cow<'s, Style<T>> {
+        self.bind(style, feature, symbols, Carrier::Label(class, label))
+    }
+
+    /// `style`, which `carrier` carries, with each property bound to a property or computed by
+    /// an expression given its value for `feature`, as bindStyle binds it; the style itself
+    /// where none is.
+    fn bind<'s, T: Clone>(
+        &mut self,
+        style: &'s Style<T>,
+        feature: &Feature,
+        symbols: &[Symbol],
+        carrier: Carrier,
+    ) -> Cow<'s, Style<T>> {
+        if !varies(style) {
+            return with_opacity(Cow::Borrowed(style));
+        }
+        let properties = FeatureProperties(&feature.properties);
+        let mut bind = StyleBinder {
+            properties: &properties,
+            evaluator: self.evaluator,
+            failures: Vec::new(),
+        };
+        let mut bound = style.clone();
+        for field in Field::of(style) {
+            let value = bind.value(field, style, symbols);
+            field.set(value, &mut bound);
+        }
+        for failure in std::mem::take(&mut bind.failures) {
+            self.reports.report(
+                &failure,
+                self.layer_index,
+                self.layer,
+                carrier,
+                self.diagnostics,
+            );
+        }
+        with_opacity(Cow::Owned(bound))
+    }
+}
+
+/// The selection of one layer's classes for its features.
+pub(crate) struct Selector<'a, 'm> {
+    pub binder: Binder<'a, 'm>,
+    /// The map's scale, as msCalculateScale computes it.
+    pub scale: f64,
+}
+
+impl<'a> Selector<'a, '_> {
+    /// The class that draws `feature`: none where it fails the layer's filter, else the first
+    /// in the map's scale whose expression matches it, a class without one matching every
+    /// feature; none where no class matches.
+    pub fn class(&mut self, feature: &Feature) -> Option<usize> {
+        if let Some(filter) = &self.binder.layer.filter
+            && !self.binder.matches(filter, feature, Carrier::Filter)
+        {
+            return None;
+        }
+        (0..self.binder.layer.classes.len()).find(|&i| {
+            let class = &self.binder.layer.classes[i];
+            in_scale(self.scale, class.min_scale_denom, class.max_scale_denom)
+                && match &class.expression {
+                    None => true,
+                    Some(expression) => self.binder.matches(expression, feature, Carrier::Class(i)),
+                }
+        })
+    }
+
     /// Each of `features` the layer draws, with the place of its class and its styles bound to
     /// it, in the source's order.
     pub fn select<'f>(
@@ -262,94 +318,19 @@ impl<'a> Selector<'a, '_> {
             let Some(index) = self.class(feature) else {
                 continue;
             };
-            let layer: &'a Layer = self.layer;
+            let layer: &'a Layer = self.binder.layer;
             let styles = layer.classes[index]
                 .styles
                 .iter()
                 .enumerate()
-                .map(|(s, style)| self.bind(style, feature, symbols, Carrier::Style(index, s)))
+                .map(|(s, style)| {
+                    self.binder
+                        .bind(style, feature, symbols, Carrier::Style(index, s))
+                })
                 .collect();
             selected.push((feature, index, styles));
         }
         selected
-    }
-
-    /// `style` of label `label` of class `class`, bound to `feature` as bindLabel binds a
-    /// label's styles, through bindStyle as a class's.
-    pub fn bind_label_style<'s>(
-        &mut self,
-        style: &'s Style,
-        feature: &Feature,
-        symbols: &[Symbol],
-        (class, label): (usize, usize),
-    ) -> Cow<'s, Style> {
-        self.bind(style, feature, symbols, Carrier::Label(class, label))
-    }
-
-    /// `style`, which `carrier` carries, with each property bound to a property or computed by
-    /// an expression given its value for `feature`, as bindStyle binds it; the style itself
-    /// where none is.
-    fn bind<'s>(
-        &mut self,
-        style: &'s Style,
-        feature: &Feature,
-        symbols: &[Symbol],
-        carrier: Carrier,
-    ) -> Cow<'s, Style> {
-        if !varies(style) {
-            return with_opacity(Cow::Borrowed(style));
-        }
-        let properties = FeatureProperties(&feature.properties);
-        let mut bind = Binder {
-            properties: &properties,
-            evaluator: self.evaluator,
-            failures: Vec::new(),
-        };
-        let mut bound = style.clone();
-        bound.color = bind.color(&style.color);
-        bound.outline_color = bind.color(&style.outline_color);
-        // bindStyle sets an OPACITY bound to an empty value to 100.
-        bound.opacity = bind.number(&style.opacity, 100.0);
-        bound.angle = bind.number(&style.angle, 360.0);
-        bound.size = bind.number(&style.size, 1.0);
-        bound.width = bind.number(&style.width, 1.0);
-        // bindStyle computes no OUTLINEWIDTH from an expression: the style keeps its 0.
-        bound.outline_width = match &style.outline_width {
-            Some(Bound::Expr(_)) => Some(Bound::Value(0.0)),
-            other => bind.number(other, 1.0),
-        };
-        bound.offset = style.offset.as_ref().map(|[x, y]| {
-            [
-                bind.number(&Some(x.clone()), 0.0).expect("a value"),
-                bind.number(&Some(y.clone()), 0.0).expect("a value"),
-            ]
-        });
-        bound.polar_offset = style.polar_offset.as_ref().map(|[d, a]| {
-            [
-                bind.number(&Some(d.clone()), 0.0).expect("a value"),
-                bind.number(&Some(a.clone()), 0.0).expect("a value"),
-            ]
-        });
-        bound.line_offset = style.line_offset.as_ref().map(|line| LineOffset {
-            distance: bind
-                .number(&Some(line.distance.clone()), 0.0)
-                .expect("a value"),
-            both_sides: line.both_sides,
-        });
-        if let Some(Bound::Binding { binding }) = &style.symbol {
-            let name = properties.text(binding).unwrap_or_default();
-            bound.symbol = Some(Bound::Value(symbol_index(&name, symbols)));
-        }
-        for failure in std::mem::take(&mut bind.failures) {
-            self.reports.report(
-                &failure,
-                self.layer_index,
-                self.layer,
-                carrier,
-                self.diagnostics,
-            );
-        }
-        with_opacity(Cow::Owned(bound))
     }
 }
 
@@ -358,7 +339,7 @@ impl<'a> Selector<'a, '_> {
 /// and its outline colour with `opacity × 2.55` rounded as `MS_NINT` rounds, kept in a byte as
 /// AGG keeps it. The opacity is rounded first, as bindIntegerAttribute rounds a bound one, and is
 /// not bounded to 0 to 100.
-pub(crate) fn with_opacity(style: Cow<'_, Style>) -> Cow<'_, Style> {
+pub(crate) fn with_opacity<T: Clone>(style: Cow<'_, Style<T>>) -> Cow<'_, Style<T>> {
     let Some(opacity) = style.opacity.as_ref().and_then(Bound::value) else {
         return style;
     };
@@ -378,37 +359,13 @@ pub(crate) fn with_opacity(style: Cow<'_, Style>) -> Cow<'_, Style> {
 
 /// `style`, which [`varies`] by no feature, as bindStyle leaves it for any: its opacity applied
 /// to its colours.
-pub(crate) fn unbound(style: &Style) -> Cow<'_, Style> {
+pub(crate) fn unbound<T: Clone>(style: &Style<T>) -> Cow<'_, Style<T>> {
     with_opacity(Cow::Borrowed(style))
 }
 
 /// Whether a property the engine draws varies by feature.
-pub(crate) fn varies(style: &Style) -> bool {
-    fn bound<T>(property: &Option<Bound<T>>) -> bool {
-        property
-            .as_ref()
-            .is_some_and(|p| !matches!(p, Bound::Value(_)))
-    }
-    bound(&style.color)
-        || bound(&style.outline_color)
-        || bound(&style.opacity)
-        || bound(&style.angle)
-        || bound(&style.size)
-        || bound(&style.width)
-        || bound(&style.outline_width)
-        || style
-            .offset
-            .as_ref()
-            .is_some_and(|pair| pair.iter().any(|p| !matches!(p, Bound::Value(_))))
-        || style
-            .polar_offset
-            .as_ref()
-            .is_some_and(|pair| pair.iter().any(|p| !matches!(p, Bound::Value(_))))
-        || style
-            .line_offset
-            .as_ref()
-            .is_some_and(|line| !matches!(line.distance, Bound::Value(_)))
-        || matches!(style.symbol, Some(Bound::Binding { .. }))
+pub(crate) fn varies<T>(style: &Style<T>) -> bool {
+    Field::of(style).next().is_some()
 }
 
 /// msScaleInBounds: whether `scale` lies in `[min, max)`; any scale where it is not above 0.
@@ -498,23 +455,47 @@ pub(crate) fn layer_scale_factor(map: &Map, layer: &Layer, cellsize: f64, scale_
     }
 }
 
-/// A symbol by its name, as msGetSymbolIndex finds it, without regard to case; 0, the default
+/// The index of a symbol by its name, as msGetSymbolIndex finds it, without regard to case; 0, the default
 /// symbol, for a name the symbol set does not hold, which MapServer would next read as an image
 /// file, not drawn yet.
-fn symbol_index(name: &str, symbols: &[Symbol]) -> SymbolRef {
+fn symbol_index(name: &str, symbols: &[Symbol]) -> u32 {
     let position = symbols.iter().position(|s| {
         s.name
             .as_deref()
             .is_some_and(|n| n.eq_ignore_ascii_case(name))
     });
-    SymbolRef::Index(position.map_or(0, |p| p as u32 + 1))
+    position.map_or(0, |p| p as u32 + 1)
 }
 
-struct Binder<'a> {
+struct StyleBinder<'a> {
     properties: &'a FeatureProperties<'a>,
     evaluator: &'a mut Evaluator,
     /// The failures of the style's expressions, to be reported.
     failures: Vec<Failure>,
+}
+
+/// The value of a feature's property `binding` as the `bind*Attribute` functions read it: the
+/// bytes of its text up to the first NUL, where a C string of it ends; empty where it has none.
+pub(crate) fn attribute(properties: &FeatureProperties<'_>, binding: &str) -> Vec<u8> {
+    properties
+        .text(binding)
+        .map(|t| c_bytes(&t).to_vec())
+        .unwrap_or_default()
+}
+
+/// `bindDoubleAttribute` into `unset`: `atof(value)`, or `unset` where the value is empty.
+pub(crate) fn bind_double(text: &[u8], unset: f64) -> f64 {
+    if text.is_empty() { unset } else { atof(text) }
+}
+
+/// `bindIntegerAttribute` into `unset`: `MS_NINT(atof(value))`, or `unset` where the value is
+/// empty.
+pub(crate) fn bind_integer(text: &[u8], unset: i32) -> i32 {
+    if text.is_empty() {
+        unset
+    } else {
+        ms_nint(atof(text))
+    }
 }
 
 /// A C string's bytes: up to the first NUL.
@@ -527,38 +508,55 @@ pub(crate) fn c_str(text: &str) -> &str {
     text.split('\0').next().unwrap_or_default()
 }
 
-impl Binder<'_> {
+impl StyleBinder<'_> {
+    /// The value of `field` of `style`, which varies by feature, bound to the feature as
+    /// bindStyle binds it, a symbol's name found among `symbols`.
+    fn value<T>(&mut self, field: Field, style: &Style<T>, symbols: &[Symbol]) -> bindable::Value {
+        match field.written(style) {
+            Written::Number {
+                property: Some(Bound::Expr(_)),
+                computes: false,
+                ..
+            } => bindable::Value::Number(0.0),
+            Written::Number {
+                property, unset, ..
+            } => bindable::Value::Number(self.number(property, unset)),
+            Written::Color(property) => bindable::Value::Color(self.color(property)),
+            Written::Symbol(property) => {
+                let name = match property {
+                    Some(Bound::Binding { binding }) => self.properties.text(binding),
+                    _ => None,
+                };
+                bindable::Value::Symbol(symbol_index(&name.unwrap_or_default(), symbols))
+            }
+        }
+    }
+
     /// A number: a binding as bindDoubleAttribute reads it, `unset` where the value is empty; an
     /// expression as msEvalDoubleExpression gives it, 0 where it fails.
-    fn number(&mut self, property: &Option<Bound<f64>>, unset: f64) -> Option<Bound<f64>> {
-        let value = match property.as_ref()? {
-            Bound::Value(v) => *v,
-            Bound::Binding { binding } => {
-                let text = self.properties.text(binding).unwrap_or_default();
-                let bytes = c_bytes(&text);
-                if bytes.is_empty() { unset } else { atof(bytes) }
+    fn number(&mut self, property: Option<&Bound<f64>>, unset: f64) -> f64 {
+        match property {
+            None => 0.0,
+            Some(Bound::Value(v)) => *v,
+            Some(Bound::Binding { binding }) => {
+                bind_double(&attribute(self.properties, binding), unset)
             }
-            Bound::Expr(expr) => match self.evaluator.number(expr, self.properties) {
+            Some(Bound::Expr(expr)) => match self.evaluator.number(expr, self.properties) {
                 Ok(value) => value,
                 Err(failure) => {
                     self.failures.push(failure);
                     0.0
                 }
             },
-        };
-        Some(Bound::Value(value))
+        }
     }
 
     /// A colour: a binding's value or an expression's text as bindColorAttribute reads it; none
     /// where it does not read.
-    fn color(&mut self, property: &Option<Bound<Rgba>>) -> Option<Bound<Rgba>> {
-        let text = match property.as_ref()? {
-            Bound::Value(v) => return Some(Bound::Value(*v)),
-            Bound::Binding { binding } => self
-                .properties
-                .text(binding)
-                .map(|t| c_bytes(&t).to_vec())
-                .unwrap_or_default(),
+    fn color(&mut self, property: Option<&Bound<Rgba>>) -> Option<Rgba> {
+        let text = match property? {
+            Bound::Value(v) => return Some(*v),
+            Bound::Binding { binding } => attribute(self.properties, binding),
             Bound::Expr(expr) => match self.evaluator.text(expr, self.properties) {
                 Ok(text) => text,
                 Err(failure) => {
@@ -567,7 +565,7 @@ impl Binder<'_> {
                 }
             },
         };
-        color(&text).map(Bound::Value)
+        color(&text)
     }
 }
 

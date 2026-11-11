@@ -327,7 +327,9 @@ pub(crate) fn read(mut value: Value, code: &str) -> Result<Read, Diagnostic> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Bound, Class, Expr, Label, Layer, Map, Op, RenderMode, Style, Symbol};
+    use crate::{
+        Bound, Class, Expr, Label, LabelTransform, Layer, Map, Op, RenderMode, Style, Symbol,
+    };
 
     /// What serde says when `T` does not read from `json`.
     fn reason<T: serde::de::DeserializeOwned + fmt::Debug>(json: &str) -> String {
@@ -370,7 +372,7 @@ mod tests {
                     labels: vec![Label {
                         text: Some(Expr::property("t")),
                         expression: Some(shown.clone()),
-                        styles: vec![style],
+                        styles: vec![style.with_transform(LabelTransform::Point)],
                         ..Label::default()
                     }],
                     ..Class::default()

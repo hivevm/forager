@@ -20,7 +20,9 @@ each is `MS_INHERIT`. The layer's factor is:
   by the size of a pixel in map units. The resolution does not enter it.
 - else, with a layer's `SYMBOLSCALEDENOM` and a map scale: `SYMBOLSCALEDENOM / scale ×
   RESOLUTION / DEFRESOLUTION`.
-- else `RESOLUTION / DEFRESOLUTION`. Both default to 72 dpi and take 10 to 1000.
+- else `RESOLUTION / DEFRESOLUTION`. Both default to 72 dpi and take 10 to 1000, as `msLoadMap`
+  checks. A style document's reader drops a `resolution` or `def_resolution` outside that range
+  with the warning `value-out-of-range`, and the default applies.
 
 The map's scale is its scale denominator as `msCalculateScale` in `src/mapscale.c` computes it.
 So with `SYMBOLSCALEDENOM 25000`, a style of `SIZE 10` is drawn 10 pixels high at 1:25000, 20 at

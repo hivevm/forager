@@ -286,9 +286,9 @@ pub(crate) enum Hatched {
 /// MapServer divides by the width as written; where that is 0, the lengths are infinite, and AGG
 /// draws a line whose first dash is infinite as solid, so the pattern is dropped. A size, width, or
 /// angle bound to a property or an expression is drawn as if unset.
-pub(crate) fn hatch(
+pub(crate) fn hatch<T>(
     rings: Vec<Vec<Point>>,
-    style: &Style,
+    style: &Style<T>,
     color: Rgba,
     image: (u32, u32),
     reference: Point,

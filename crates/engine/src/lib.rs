@@ -19,13 +19,16 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod bind;
+mod bindable;
 mod classes;
 mod fonts;
-pub mod images;
+mod images;
 mod inline;
+mod label_binding;
 mod label_styles;
 mod labels;
 mod plan;
+mod resource;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,22 +37,23 @@ use std::sync::Arc;
 use forager_ports::{
     Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
 };
-use forager_render::{DisplayItem, Draw, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::ms_nint;
 use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol};
 use forager_symbolize::{
-    Canvas, Pass, Resolved, can_draw, clip_pixmaps, draw_ops, marked_pixmap, resolve,
+    Canvas, Pass, Pixmaps, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops, marked_pixmap,
+    point_markers, resolve, vertices,
 };
 
 use forager_expr::Evaluator;
 
-use crate::classes::{Reports, Selector};
+use crate::classes::{Binder, Reports, Selector};
 use crate::images::Images;
 use crate::plan::Plan;
 
 pub use crate::bind::bind_sources;
-pub use crate::fonts::MAX_FONT_BYTES;
 pub use crate::inline::is_inline;
+pub use crate::resource::MAX_FONT_OR_IMAGE_FILE_BYTES;
 pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
@@ -146,14 +150,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut reports = Reports::default();
     let scale = classes::scale_denom(map, &view, width);
     for (layer_index, layer) in map.layers.iter().enumerate() {
-        if !shown(layer) || !classes::layer_in_scale(layer, scale) {
-            continue;
-        }
-        // msDrawLayer skips a layer of no opacity, its labels too.
-        if checked_opacity(layer, &mut diagnostics) == Some(0) {
-            continue;
-        }
-        let Some(mode) = drawable_mode(layer, &mut diagnostics) else {
+        let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
         };
         let Some(features) = features(layer, sources, &view, &mut diagnostics).await else {
@@ -164,12 +161,14 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         }
         let (drawable, undrawn) = drawable(mode, &features);
         let mut selector = Selector {
-            layer,
-            layer_index,
+            binder: Binder {
+                layer,
+                layer_index,
+                evaluator: &mut evaluator,
+                reports: &mut reports,
+                diagnostics: &mut diagnostics,
+            },
             scale,
-            evaluator: &mut evaluator,
-            reports: &mut reports,
-            diagnostics: &mut diagnostics,
         };
         let selected = selector.select(drawable, &map.symbols);
         let drawing = Drawing {
@@ -182,36 +181,33 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .load_pixmaps(&selected, &map.symbols, &mut images, files)
             .await;
         let (pixmaps, tiles) = images.drawing();
-        // The layer's scale factor sizes its styles, the image's resolution factor bounds them.
-        let factor = classes::layer_scale_factor(map, layer, view.cellsize, scale);
-        let mut canvas = Canvas::new(&map.symbols, width, height, factor)
-            .with_resolution(classes::resolution_factor(map))
-            .with_pixmaps(pixmaps)
-            .with_tiles(tiles);
+        let mut canvas = drawing.canvas(map, (width, height), pixmaps, tiles);
         // Each feature is labelled by the class that draws it, in the order it is drawn.
         let point_layer = mode == RenderMode::Point;
         let drawn: Vec<labels::Labelled<'_>> = selected
             .iter()
             .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
             .collect();
-        // A point layer of LABELCACHE OFF draws each feature's labels after the feature, before
-        // the next feature, into the layer's image; pointLayerDrawShape draws them after each
-        // point, before the markers of the next.
+        // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
+        // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
         let at_once = point_layer && !layer.label_cache;
         let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
-            for (one, labelled) in selected.chunks(1).zip(drawn.chunks(1)) {
-                drawing.draw(&mut target, &mut canvas, one);
-                labels
-                    .collect(
-                        layer_index,
-                        true,
-                        labelled,
-                        pixmaps,
-                        &mut selector,
-                        Some(&mut target),
-                    )
+            let binder = &mut selector.binder;
+            let mut settled = labels.layer(layer_index, mode, &drawn, binder);
+            for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
+                let laid = labels
+                    .label(&settled, feature, class, None, pixmaps, binder)
                     .await;
+                let mut out_of_reach = vec![0; laid.len()];
+                drawing.draw_points(&mut target, &mut canvas, one, |target, point| {
+                    for (label, count) in laid.iter().zip(&mut out_of_reach) {
+                        *count += labels.draw_at_once(&mut settled, target, label, point);
+                    }
+                });
+                for (label, count) in laid.iter().zip(out_of_reach) {
+                    labels.drawn_at_once(binder.diagnostics, label, count);
+                }
             }
         } else {
             drawing.draw(&mut target, &mut canvas, &selected);
@@ -219,19 +215,18 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
         let label_hatches = labels.take_hatches_refused(layer_index);
-        layer_reports(layer, &canvas, label_hatches, undrawn, selector.diagnostics);
-        unknown_symbols(layer, &map.symbols, selector.diagnostics);
+        layer_reports(
+            layer,
+            &canvas,
+            label_hatches,
+            undrawn,
+            selector.binder.diagnostics,
+        );
+        unknown_symbols(layer, &map.symbols, selector.binder.diagnostics);
         if !at_once {
-            labels
-                .collect(
-                    layer_index,
-                    point_layer,
-                    &drawn,
-                    pixmaps,
-                    &mut selector,
-                    None::<&mut R>,
-                )
-                .await;
+            let binder = &mut selector.binder;
+            let settled = labels.layer(layer_index, mode, &drawn, binder);
+            labels.collect(&settled, &drawn, pixmaps, binder).await;
         }
     }
     // The labels of the cache are drawn after every layer, as MapServer's label cache draws
@@ -242,6 +237,29 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         labels,
         diagnostics,
     }
+}
+
+/// The points of `geometry` inside the map's extent, in pixels, in order: where
+/// pointLayerDrawShape draws a point layer's markers and labels, which skips a point outside
+/// (msPointInRect) and transforms the others by the inverse of the cellsize (msTransformPoint).
+fn points_in_view(view: &View, geometry: &Geometry) -> impl Iterator<Item = Point> {
+    vertices(geometry)
+        .into_iter()
+        .filter(|&c| view.contains(c))
+        .map(|c| view.point_to_pixel(c))
+}
+
+/// The render mode `layer` is drawn in at the map's scale `scale`; none where it is hidden, out
+/// of scale, or of no opacity, where msDrawLayer skips it and its labels, or of a mode not drawn.
+fn layer_mode(layer: &Layer, scale: f64, diagnostics: &mut Vec<Diagnostic>) -> Option<RenderMode> {
+    if !shown(layer) || !classes::layer_in_scale(layer, scale) {
+        return None;
+    }
+    // msDrawLayer skips a layer of no opacity, its labels too.
+    if checked_opacity(layer, diagnostics) == Some(0) {
+        return None;
+    }
+    drawable_mode(layer, diagnostics)
 }
 
 /// The features a layer of `mode` draws, and how many of each kind of geometry it cannot.
@@ -376,6 +394,23 @@ struct Drawing<'a> {
 }
 
 impl Drawing<'_> {
+    /// The canvas the layer is drawn on, in an image `width` by `height`, with the images of
+    /// `pixmaps` and the fill tiles of `tiles`: the layer's scale factor sizes its styles, the
+    /// image's resolution factor bounds them.
+    fn canvas<'c>(
+        &self,
+        map: &'c Map,
+        (width, height): (u32, u32),
+        pixmaps: &'c Pixmaps,
+        tiles: &'c mut Tiles,
+    ) -> Canvas<'c> {
+        let factor = classes::layer_scale_factor(map, self.layer, self.view.cellsize, self.scale);
+        Canvas::new(&map.symbols, width, height, factor)
+            .with_resolution(classes::resolution_factor(map))
+            .with_pixmaps(pixmaps)
+            .with_tiles(tiles)
+    }
+
     /// Where the layer is drawn: into an image of its own, laid over the map, where the layer has
     /// an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block, and straight onto the
     /// map otherwise.
@@ -428,6 +463,36 @@ impl Drawing<'_> {
                     }
                 }
             }
+        }
+    }
+
+    /// Draws the markers of a point layer's feature `selected` at each of its points inside the
+    /// map's extent, every style of its class in its scale range, each point's followed by what
+    /// `label` draws at that point, as pointLayerDrawShape draws a layer of `LABELCACHE OFF`
+    /// (src/mapdraw.c:2062-2105): the markers of a point, then its labels, then the next point's.
+    fn draw_points<R: Draw>(
+        &self,
+        renderer: &mut R,
+        canvas: &mut Canvas,
+        (feature, class, styles): &Selected<'_>,
+        mut label: impl FnMut(&mut R, Point),
+    ) {
+        canvas.class(&self.layer.classes[*class].styles);
+        let mut markers: Vec<Vec<Vec<DrawOp>>> = styles
+            .iter()
+            .filter(|s| classes::in_scale(self.scale, s.min_scale_denom, s.max_scale_denom))
+            .map(|style| point_markers(&feature.geometry, style, self.view, canvas))
+            .collect();
+        for (k, point) in points_in_view(self.view, &feature.geometry).enumerate() {
+            for style in &mut markers {
+                for op in std::mem::take(&mut style[k]) {
+                    renderer.draw(&DisplayItem {
+                        op,
+                        feature_id: Some(feature.id),
+                    });
+                }
+            }
+            label(renderer, point);
         }
     }
 

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 
 use forager_adapter_geojson::GeoJsonSource;
-use forager_engine::{MAX_FONT_BYTES, Rendered, render_with_files};
+use forager_engine::{MAX_FONT_OR_IMAGE_FILE_BYTES, Rendered, render_with_files};
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
@@ -180,7 +180,7 @@ fn a_file_the_font_set_names_twice_is_loaded_once() {
 fn a_font_past_the_size_bound_or_outside_the_base_context_is_not_used() {
     // Verifies: ADR-0031
     // Verifies: Q-9
-    let files = files(&[("big.ttf", vec![0; MAX_FONT_BYTES + 1])]);
+    let files = files(&[("big.ttf", vec![0; MAX_FONT_OR_IMAGE_FILE_BYTES + 1])]);
     let rendered = render(&map("big", &[("big", "big.ttf")]), &files);
     assert_eq!(
         codes(&rendered),

@@ -9,7 +9,6 @@ use std::future::Future;
 use std::rc::Rc;
 
 use forager_adapter_geojson::GeoJsonSource;
-use forager_engine::images::MAX_DECODED_IMAGE_BYTES;
 use forager_engine::{Rendered, render_with_files};
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::{DisplayItem, Draw, DrawOp, Renderer, RgbaImage};
@@ -18,6 +17,7 @@ use forager_style_ir::{
     Bound, Class, Extent, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef, Style, Symbol,
     SymbolKind, SymbolRef,
 };
+use forager_symbolize::MAX_DECODED_IMAGE_BYTES;
 use peak_alloc::PeakAlloc;
 
 // Counts the bytes allocated, and their peak, around the system allocator.

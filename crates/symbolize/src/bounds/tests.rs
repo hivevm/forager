@@ -37,14 +37,14 @@ fn ms_min_and_ms_max_keep_their_second_operand_where_they_cannot_compare() {
 fn marker_pixels_are_bounded_unscaled_and_cut_to_whole() {
     // msGetMarkerSize, src/mapsymbol.c:754-755: MS_MAX with MINSIZE, then MS_MIN with MAXSIZE,
     // into an int each time.
-    let style = Style {
+    let style: Style = Style {
         min_size: Some(4.5),
         max_size: Some(9.5),
         ..Style::default()
     };
     assert_eq!(marker_pixels(3.0, &style), 4.0);
     assert_eq!(marker_pixels(12.0, &style), 9.0);
-    assert_eq!(marker_pixels(800.0, &Style::default()), 500.0);
+    assert_eq!(marker_pixels(800.0, &<Style>::default()), 500.0);
 }
 
 #[test]

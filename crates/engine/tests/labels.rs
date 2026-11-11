@@ -34,9 +34,9 @@ use forager_render::RgbaImage;
 use forager_render::{PathCommand, Point};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    AngleMode, Bound, Class, Expr, Extent, FeatureProperty, InlineFeature, Label, Layer,
-    LayerStatus, Map, Op, Position, RenderMode, Rgba, ShapeType, SourceRef, Span, Style, Symbol,
-    SymbolKind, SymbolRef, Units,
+    AngleMode, Bound, Class, Expr, Extent, FeatureProperty, InlineFeature, Label, LabelTransform,
+    Layer, LayerStatus, Map, Op, Position, RenderMode, Rgba, ShapeType, SourceRef, Span, Style,
+    Symbol, SymbolKind, SymbolRef, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -460,10 +460,9 @@ fn a_label_that_cannot_be_drawn_yet_is_left_out_with_its_reason() {
         change(&mut label);
         label
     };
-    let not_drawn: [fn(&mut Label); 15] = [
+    let not_drawn: [fn(&mut Label); 14] = [
         |l| l.angle_mode = Some(AngleMode::Follow),
-        |l| l.shadow_color = Some(Bound::Value(WHITE)),
-        |l| l.styles = vec![Style::default()],
+        |l| l.shadow_color = Some(WHITE),
         |l| {
             l.styles = vec![Style {
                 symbol: Some(Bound::Value(SymbolRef::Index(1))),
@@ -2082,18 +2081,17 @@ impl forager_render::Renderer for OpRecorder {
 }
 
 /// A label's style with `GEOMTRANSFORM labelpoly` in `color`.
-fn labelpoly(color: Bound<Rgba>) -> Style {
+fn labelpoly(color: Bound<Rgba>) -> Style<LabelTransform> {
     Style {
         color: Some(color),
-        geom_transform: Some(forager_style_ir::GeomTransform::LabelPoly),
-        ..Style::default()
+        ..Style::new(LabelTransform::Poly)
     }
 }
 
 const GREEN: Rgba = Rgba::opaque(0, 255, 0);
 
 /// The label "Fen" with `styles`.
-fn fen_styled(styles: Vec<Style>) -> Label {
+fn fen_styled(styles: Vec<Style<LabelTransform>>) -> Label {
     Label {
         text: Some(Expr::String("Fen".to_owned())),
         styles,
@@ -2327,13 +2325,12 @@ fn a_labels_maxlength_decides_where_its_text_breaks() {
 
 /// A label's style with `GEOMTRANSFORM labelpnt`: symbol 1, a filled square of side 1, at `SIZE`
 /// 8, in `RED`.
-fn labelpoint() -> Style {
+fn labelpoint() -> Style<LabelTransform> {
     Style {
         color: Some(Bound::Value(RED)),
         symbol: Some(Bound::Value(SymbolRef::Index(1))),
         size: Some(Bound::Value(8.0)),
-        geom_transform: Some(forager_style_ir::GeomTransform::LabelPoint),
-        ..Style::default()
+        ..Style::new(LabelTransform::Point)
     }
 }
 
@@ -2494,33 +2491,6 @@ fn a_labelpoint_marker_takes_room_from_the_labels_after_it() {
     // With b 8 pixels further right, its marker [86, 25, 94, 33] is clear of a's text too.
     let apart = [("a", 50.0, 33.0, ""), ("b", 90.0, 30.0, "")];
     assert_eq!(labelled(&map_with_square(fen), &apart), [1, 0]);
-}
-
-#[test]
-fn a_label_style_whose_transform_the_frontend_dropped_is_refused_not_drawn_at_the_point() {
-    // `GEOMTRANSFORM bbox` or an expression reach the IR as no transform, which msDrawLabelCache
-    // fails on (mapdraw.c:4128): the label is left out with its reason, and nothing of it is
-    // drawn.
-    let dropped = Style {
-        geom_transform: None,
-        ..labelpoint()
-    };
-    let rendered = render(&map_with_square(fen_styled(vec![dropped])), FEN);
-    let codes: Vec<&str> = rendered
-        .diagnostics
-        .iter()
-        .map(|d| d.code.as_str())
-        .collect();
-    assert_eq!(codes, ["label-not-drawn"]);
-    assert!(
-        rendered.diagnostics[0]
-            .message
-            .contains("it has a STYLE without a GEOMTRANSFORM"),
-        "{}",
-        rendered.diagnostics[0].message
-    );
-    assert!(rendered.labels.is_empty());
-    assert_eq!(ink(&rendered.image.unwrap(), (0, 160), (0, 60)), None);
 }
 
 #[test]
@@ -3006,7 +2976,7 @@ fn map_with_hatch(label: Label) -> Map {
 }
 
 /// A labelpoly of symbol 1 in `GREEN`, its lines `SIZE` 5 apart, `WIDTH` 1, dashed by `pattern`.
-fn hatched_labelpoly(pattern: Vec<f64>) -> Style {
+fn hatched_labelpoly(pattern: Vec<f64>) -> Style<LabelTransform> {
     Style {
         symbol: Some(Bound::Value(SymbolRef::Index(1))),
         size: Some(Bound::Value(5.0)),
@@ -3139,10 +3109,10 @@ fn a_labelpoly_hatch_past_its_bounds_is_reported_with_its_layer_as_a_polygons_is
 
 /// A label's style with `GEOMTRANSFORM labelcenter`: symbol 1, a filled square of side 1, at
 /// `SIZE` `size`, in `RED`.
-fn labelcenter(size: f64) -> Style {
+fn labelcenter(size: f64) -> Style<LabelTransform> {
     Style {
         size: Some(Bound::Value(size)),
-        geom_transform: Some(forager_style_ir::GeomTransform::LabelCenter),
+        geom_transform: LabelTransform::Center,
         ..labelpoint()
     }
 }
@@ -3152,7 +3122,7 @@ fn a_label_styles_symbol_by_name_draws_as_the_same_symbol_by_index() {
     // msGetSymbolIndex resolves a style's SYMBOL "name" to the first symbol of that name,
     // without regard to case (mapsymbol.c), so a labelpoly of a hatch and a labelpnt or
     // labelcenter of a vector draw the same by name as by index.
-    let by_name = |style: Style, name: &str| Style {
+    let by_name = |style: Style<LabelTransform>, name: &str| Style {
         symbol: Some(Bound::Value(SymbolRef::Name(name.to_owned()))),
         ..style
     };
@@ -3984,6 +3954,93 @@ fn a_layer_of_labelcache_off_with_an_opacity_draws_each_label_into_its_image_aft
             (Some(2), false),
         ]
     );
+}
+
+/// What a layer of `LABELCACHE OFF` draws of one multipoint at `points`: its class's square of 20
+/// pixels in green, of the `GEOMTRANSFORM` `transform`, and the label "Fen" at each point. Each
+/// operation in order, a marker as `M` at the x of its centre, the label's glyphs as `L` at the x
+/// of their first point.
+fn multipoint_off(
+    points: &[[f64; 2]],
+    transform: Option<forager_style_ir::GeomTransform>,
+) -> Vec<(char, f64)> {
+    let mut map = map(Label {
+        text: Some(Expr::String("Fen".to_owned())),
+        ..label_item()
+    });
+    map.layers[0].label_cache = false;
+    map.layers[0].classes[0].styles = vec![Style {
+        color: Some(Bound::Value(GREEN)),
+        size: Some(Bound::Value(20.0)),
+        geom_transform: transform,
+        ..Style::default()
+    }];
+    let coordinates: Vec<String> = points.iter().map(|[x, y]| format!("[{x}, {y}]")).collect();
+    let geojson = format!(
+        r#"{{"type": "FeatureCollection", "features": [{{"type": "Feature", "properties": {{}},
+            "geometry": {{"type": "MultiPoint", "coordinates": [{}]}}}}]}}"#,
+        coordinates.join(", ")
+    );
+    let sources: BTreeMap<String, GeoJsonSource> =
+        [("places".to_owned(), GeoJsonSource::parse(&geojson).unwrap())].into();
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    recorder
+        .0
+        .take()
+        .iter()
+        .map(|op| match op {
+            forager_render::DrawOp::Fill { rings, .. } => {
+                ('M', f64::midpoint(rings[0][0].x, rings[0][2].x))
+            }
+            forager_render::DrawOp::Glyphs { path, .. } => match path[0] {
+                PathCommand::MoveTo(p) => ('L', p.x),
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        })
+        .collect()
+}
+
+/// The operations a multipoint at x 40 and 45 is drawn by: each point's marker, then its label,
+/// the label 5 pixels further at the second point.
+fn each_point_marker_then_label(drawn: &[(char, f64)]) {
+    let first = drawn.get(1).map_or(0.0, |(_, x)| *x);
+    assert_eq!(
+        drawn,
+        [('M', 40.0), ('L', first), ('M', 45.0), ('L', first + 5.0)]
+    );
+}
+
+#[test]
+fn a_multipoint_of_labelcache_off_draws_each_points_marker_then_its_label() {
+    // pointLayerDrawShape (src/mapdraw.c:2062-2105) draws at each point of the shape every
+    // style's marker by msDrawMarkerSymbol, then each label msGetLabelStatus passes by
+    // msDrawLabel, then the next point's markers: the second point's marker, 5 pixels on and
+    // 20 pixels across, covers the first point's label.
+    each_point_marker_then_label(&multipoint_off(&[[40.0, 30.0], [45.0, 30.0]], None));
+}
+
+#[test]
+fn a_multipoint_of_labelcache_off_draws_a_styles_marker_at_each_point_whatever_its_transform() {
+    // msDrawMarkerSymbol draws every style at every point whatever its GEOMTRANSFORM
+    // (src/mapdraw.c:2072-2085): a style of GEOMTRANSFORM "start" too, each before that point's
+    // label.
+    let start = Some(forager_style_ir::GeomTransform::Start);
+    each_point_marker_then_label(&multipoint_off(&[[40.0, 30.0], [45.0, 30.0]], start));
+}
+
+#[test]
+fn a_point_of_a_multipoint_outside_the_extent_draws_neither_marker_nor_label() {
+    // msPointInRect skips a point outside the map's extent before its markers and its labels
+    // (src/mapdraw.c:2065-2066).
+    let drawn = multipoint_off(&[[40.0, 30.0], [200.0, 30.0], [45.0, 30.0]], None);
+    each_point_marker_then_label(&drawn);
 }
 
 /// The map of a label "Fen" at LC over the pixmap `image` of SIZE `size` and ANGLE `angle`,

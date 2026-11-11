@@ -4,19 +4,20 @@
 //! with a stand-in for that file. G-3: the style IR of every one survives YAML and JSON unchanged.
 //! The conformance harness: every case of `misc` and `renderers` that `conformance/cases.txt`
 //! puts in scope is rendered in-process and compared with its reference image by the metric of
-//! its category.
+//! its category. The noise measurement, in `conformance/noise/`, runs MapServer itself over the
+//! same cases where `.github/workflows/noise.yml` builds it, and skips itself elsewhere.
 //! `scripts/check-rust.sh` fetches the suite with `scripts/fetch-msautotest.sh`, which holds the
 //! pin, and runs these tests with `FORAGER_MSAUTOTEST` naming it; `cargo test` alone skips them,
 //! as they need the network once.
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use forager_adapter_epsg::EpsgTable;
-use forager_cli::FileLoader;
+use forager_cli::{FileLoader, MapfileLoader};
 use forager_engine::CachedLabel;
+use forager_mapfile::Loaded;
 use forager_ports::{ProjectionResolver, ResourceLoader, ResourcePath, SourceError};
 use forager_render::RgbaImage;
 use forager_style_ir::{Map, StyleDocument};
@@ -168,7 +169,6 @@ fn every_msautotest_mapfile_loads_without_an_error() {
     std::fs::write(&table, epsg_table()).unwrap();
 
     let resolver = stand_in();
-    let loader = Suite(suite.clone());
     let mut found = Vec::new();
     mapfiles(&suite, &mut found);
     let mut skipped = 0;
@@ -200,13 +200,9 @@ fn every_msautotest_mapfile_loads_without_an_error() {
         if output.status.success() {
             loaded += 1;
         } else if only_init_file
-            && ready(forager_mapfile::load(
-                &ResourcePath::new(name).unwrap(),
-                &loader,
-                Some(&resolver),
-            ))
-            .document
-            .is_some()
+            && base_context(&suite, name)
+                .and_then(|(base, path)| load(&path, &base.for_load(), &resolver))
+                .is_ok_and(|loaded| loaded.document.is_some())
         {
             with_init_file += 1;
         } else {
@@ -285,18 +281,29 @@ fn the_fetched_suite_holds_the_data_and_the_non_cairo_references() {
     );
 }
 
-/// The suite's files, read inside its directory.
-struct Suite(PathBuf);
-
-impl ResourceLoader for Suite {
-    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
-        std::fs::read(self.0.join(path.as_str())).map_err(|e| SourceError::new(e.to_string()))
-    }
+/// The suite's directory as the base context, and the path of `mapfile` inside it, as
+/// `forager render <mapfile> --base <suite>` takes them.
+fn base_context(suite: &Path, mapfile: &str) -> Result<(FileLoader, ResourcePath), String> {
+    let (base, name) = FileLoader::for_mapfile(&suite.join(mapfile), Some(suite))
+        .map_err(|e| format!("its base context: {e}"))?;
+    let path = ResourcePath::new(&name).map_err(|e| e.to_string())?;
+    Ok((base, path))
 }
 
-/// The suite with the text of its main mapfile replaced, to which `-i` has been applied.
+/// Loads the mapfile at `path` through `loader` in one poll, as the CLI loads one; a read that
+/// waited is the error.
+fn load(
+    path: &ResourcePath,
+    loader: &impl ResourceLoader,
+    resolver: &StandIn,
+) -> Result<Loaded, String> {
+    forager_cli::now(forager_mapfile::load(path, loader, Some(resolver))).map_err(|e| e.to_string())
+}
+
+/// The files of one load of a mapfile from the base context, with the text of the main mapfile
+/// replaced by the one to which `-i` has been applied.
 struct MainReplaced<'a> {
-    suite: &'a Suite,
+    files: &'a MapfileLoader,
     path: &'a ResourcePath,
     main: String,
 }
@@ -306,13 +313,9 @@ impl ResourceLoader for MainReplaced<'_> {
         if path == self.path {
             Ok(self.main.clone().into_bytes())
         } else {
-            self.suite.load(path).await
+            self.files.load(path).await
         }
     }
-}
-
-fn ready<F: Future>(future: F) -> F::Output {
-    forager_ports::poll_once(future).expect("the suite's loader never waits")
 }
 
 /// The JSON Pointer of the first place where `a` and `b` differ.
@@ -341,7 +344,6 @@ fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
     // Verifies: G-3
     let suite = suite();
     let resolver = stand_in();
-    let loader = Suite(suite.clone());
     let mut found = Vec::new();
     mapfiles(&suite, &mut found);
     let mut checked = 0;
@@ -351,9 +353,10 @@ fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
         if SKIPPED.iter().any(|(skip, _)| *skip == name) {
             continue;
         }
-        let path = ResourcePath::new(name).unwrap();
-        let first = ready(forager_mapfile::load(&path, &loader, Some(&resolver)))
-            .document
+        let first = base_context(&suite, name)
+            .and_then(|(base, path)| load(&path, &base.for_load(), &resolver))
+            .ok()
+            .and_then(|loaded| loaded.document)
             .unwrap_or_else(|| panic!("{name} does not load; see the G-1 test"));
         let yaml = first.to_yaml().unwrap();
         let from_yaml = StyleDocument::from_yaml(&yaml).unwrap().document;
@@ -397,7 +400,8 @@ fn the_first_difference_is_named_by_its_json_pointer() {
 /// The metric of the category geometry and symbols, as G-6 states it: a pixel differs when one of
 /// its channels differs by more than 16, and a case passes when at most 0.1 % of its pixels
 /// differ. MapServer at the pin reproduces its own references of the category bit for bit on CI
-/// ([`mapserver_renders_the_cases_in_scope_within_its_noise`]), so the numbers lie above its noise.
+/// ([`conformance::noise::mapserver_renders_the_cases_in_scope_within_its_noise`]), so the numbers
+/// lie above its noise.
 const GEOMETRY: Metric = Metric {
     threshold: 16,
     tolerance: 0.001,
@@ -406,7 +410,8 @@ const GEOMETRY: Metric = Metric {
 /// The metric of the category text, as G-13 states it: that of G-6, a pixel differs when one of its
 /// channels differs by more than 16, and a case passes when at most 0.1 % of its pixels differ.
 /// MapServer at the pin reproduces its own references of the category bit for bit on CI
-/// ([`mapserver_renders_the_cases_in_scope_within_its_noise`]), so the numbers lie above its noise.
+/// ([`conformance::noise::mapserver_renders_the_cases_in_scope_within_its_noise`]), so the numbers
+/// lie above its noise.
 const TEXT: Metric = Metric {
     threshold: 16,
     tolerance: 0.001,
@@ -460,7 +465,6 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("msautotest");
     let _ = std::fs::remove_dir_all(&out);
     let resolver = stand_in();
-    let loader = Suite(suite.clone());
     let mut tally = Tally::default();
     let mut failures = Vec::new();
     let mut broken = Vec::new();
@@ -478,7 +482,7 @@ fn every_msautotest_case_in_scope_holds_its_outcome() {
         let name = case.result.trim_end_matches(".png");
         let metric = metric_of(*category);
         let (outcome, labels) =
-            match render_and_compare(&suite, case, &loader, &resolver, metric, &dir, name) {
+            match render_and_compare(&suite, case, &resolver, metric, &dir, name) {
                 Ok((outcome, labels)) => (Ok(outcome), Some(labels)),
                 Err(why) => (Err(why), None),
             };
@@ -574,7 +578,6 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
     let cases = conformance::cases(&suite, conformance::DIRECTORIES);
     let entries = conformance::list(CASES).unwrap();
     let resolver = stand_in();
-    let loader = Suite(suite.clone());
     let (mut in_scope, mut compared, mut differences) = (0, 0, Vec::new());
     for case in &cases {
         let Some(Listed {
@@ -586,19 +589,21 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
         };
         in_scope += 1;
         let named = format!("{} {}", case.mapfile, case.result);
-        let mut map = match map_of(case, &loader, &resolver) {
-            Ok(map) => map,
+        let (base, mut map) = match base_context(&suite, &case.mapfile)
+            .and_then(|(base, path)| Ok((map_of(case, &base, &path, &resolver)?, base)))
+        {
+            Ok((map, base)) => (base, map),
             Err(why) => {
                 differences.push(format!("{named}: {why}"));
                 continue;
             }
         };
-        if let Err(why) = wasm::inline(&mut map, &loader) {
+        if let Err(why) = wasm::inline(&mut map, &base.for_load()) {
             differences.push(format!("{named}: {why}"));
             continue;
         }
         let document = StyleDocument::new(map).to_json().unwrap();
-        let (native, files) = wasm::native(&document, &loader);
+        let (native, files) = wasm::native(&document, &base.for_load());
         match module.render(&document, &files) {
             Ok(rendered) => {
                 compared += 1;
@@ -620,322 +625,6 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
     count(&format!(
         "{compared} of {in_scope} cases in scope render alike natively and on wasm32"
     ));
-}
-
-/// The thresholds the noise measurement reports the share of differing pixels at.
-const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
-
-/// The noise of G-6 and G-13: MapServer at the pinned release, which `.github/workflows/noise.yml`
-/// builds (ADR-0033), renders every case the list puts in scope, of every category, as
-/// msautotest's test library runs it, and each rendering is compared with its reference at each of
-/// [`NOISE_THRESHOLDS`]. The report, a table of the share per case and threshold and its maximum
-/// over each category, goes to standard output and to the job summary; it names apart each case
-/// MapServer does not reproduce: `map2img` fails, writes no PNG, writes one of another size, or
-/// differs beyond its category's tolerance at every threshold of the set. The list moves such a
-/// case out of scope, so the test fails when one is in scope. For each text case the reader of
-/// MapServer's label cache (ADR-0033) renders it beside `map2img`, its image byte for byte the
-/// same, and its labels must hold the record beside the list, each box within [`labels::NOISE`] and
-/// every other field exactly; the test fails on a record that differs or is missing, and the
-/// reader's labels stay in `noise/labels/` to take the record from. The renderings stay in
-/// `noise/` under the test's target directory.
-#[test]
-#[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test"]
-fn mapserver_renders_the_cases_in_scope_within_its_noise() {
-    // Verifies: ADR-0033
-    let suite = suite();
-    let map2img = PathBuf::from(
-        std::env::var("FORAGER_MAP2IMG")
-            .expect("FORAGER_MAP2IMG names map2img; .github/workflows/noise.yml sets it"),
-    );
-    let reader = PathBuf::from(std::env::var("FORAGER_MAPSERVER_LABELS").expect(
-        "FORAGER_MAPSERVER_LABELS names the reader of the label cache; .github/workflows/noise.yml \
-         sets it",
-    ));
-    let cases = conformance::cases(&suite, conformance::DIRECTORIES);
-    let entries = conformance::list(CASES).unwrap();
-    let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("noise");
-    let _ = std::fs::remove_dir_all(&out);
-    let mut measured = Vec::new();
-    let mut unreproduced = Vec::new();
-    let mut records = Vec::new();
-    for case in &cases {
-        let Some(Entry::InScope { category, .. }) = entries.get(&case.key()).map(|l| &l.entry)
-        else {
-            continue;
-        };
-        let name = format!("{} {}", case.mapfile, case.result);
-        let rendering = out
-            .join(case.mapfile.trim_end_matches(".map"))
-            .join(&case.result);
-        match measure(&suite, case, metric_of(*category), &map2img, &rendering) {
-            Ok(shares) => {
-                if *category == Category::Text
-                    && let Err(why) = read_labels(&suite, case, &reader, &rendering, &out)
-                {
-                    records.push(format!("{name}: {why}"));
-                }
-                measured.push((name, *category, shares));
-            }
-            Err(reason) => unreproduced.push(format!("{name}: {reason}")),
-        }
-    }
-    let report = noise_report(&measured, &unreproduced);
-    self::report(&report);
-    if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY") {
-        use std::io::Write;
-        std::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(summary)
-            .and_then(|mut file| file.write_all(report.as_bytes()))
-            .unwrap();
-    }
-    assert!(
-        unreproduced.is_empty(),
-        "{} cases in scope are not reproduced by MapServer itself; the list moves each out of \
-         scope with its reason:\n{}",
-        unreproduced.len(),
-        unreproduced.join("\n")
-    );
-    assert!(
-        records.is_empty(),
-        "{} text cases do not hold the record of MapServer's labels beside the list; the reader's \
-         labels are in {}:\n{}",
-        records.len(),
-        out.join("labels").display(),
-        records.join("\n")
-    );
-}
-
-/// Renders `case` with the reader of MapServer's label cache beside `map2img`'s `rendering`,
-/// holds the two images byte for byte equal, keeps the reader's labels in `out/labels/`, and
-/// holds them to the record beside the list as [`labels::beyond_noise`] does; the error says what
-/// does not hold.
-fn read_labels(
-    suite: &Path,
-    case: &Case,
-    reader: &Path,
-    rendering: &Path,
-    out: &Path,
-) -> Result<(), String> {
-    let image = rendering.with_extension("reader.png");
-    let mapfile = suite.join(&case.mapfile);
-    let output = Command::new(reader)
-        .args(case.map2img_arguments(&image)?)
-        .current_dir(mapfile.parent().unwrap())
-        .output()
-        .map_err(|e| format!("the reader does not start: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "the reader fails, {}: {}",
-            output.status,
-            stderr.trim()
-        ));
-    }
-    let ours = std::fs::read(&image).map_err(|e| format!("the reader writes no image: {e}"))?;
-    let theirs = std::fs::read(rendering).map_err(|e| e.to_string())?;
-    if ours != theirs {
-        return Err("the reader's image differs from map2img's".to_owned());
-    }
-    let text = String::from_utf8(output.stdout)
-        .map_err(|_| "the reader's labels are not UTF-8".to_owned())?;
-    let read = labels::read(&text).map_err(|e| format!("the reader's labels: {e}"))?;
-    let record = labels::record_path(case);
-    let relative = record.strip_prefix(labels::records_dir()).unwrap();
-    let kept = out.join("labels").join(relative);
-    std::fs::create_dir_all(kept.parent().unwrap()).map_err(|e| e.to_string())?;
-    std::fs::write(&kept, &text).map_err(|e| e.to_string())?;
-    let recorded =
-        std::fs::read_to_string(&record).map_err(|e| format!("{}: {e}", record.display()))?;
-    let recorded = labels::read(&recorded).map_err(|e| format!("{}: {e}", record.display()))?;
-    let differences = labels::beyond_noise(&recorded, &read);
-    if differences.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "MapServer's labels differ from {}:\n  {}",
-            record.display(),
-            differences.join("\n  ")
-        ))
-    }
-}
-
-/// Runs `map2img` for `case` in its mapfile's directory, writing `rendering`, and compares the
-/// rendering with the reference at each of [`NOISE_THRESHOLDS`]. The shares are in their order;
-/// the error is why MapServer does not reproduce the case at all, by `metric`.
-fn measure(
-    suite: &Path,
-    case: &Case,
-    metric: &Metric,
-    map2img: &Path,
-    rendering: &Path,
-) -> Result<Vec<f64>, String> {
-    std::fs::create_dir_all(rendering.parent().unwrap()).map_err(|e| e.to_string())?;
-    let mapfile = suite.join(&case.mapfile);
-    let output = Command::new(map2img)
-        .args(case.map2img_arguments(rendering)?)
-        .current_dir(mapfile.parent().unwrap())
-        .output()
-        .map_err(|e| format!("map2img does not start: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "map2img fails, {}: {}",
-            output.status,
-            stderr.trim()
-        ));
-    }
-    let rendering = std::fs::read(rendering)
-        .map_err(|e| format!("map2img writes no image: {e}"))
-        .and_then(|bytes| metric::decode(&bytes).map_err(|e| format!("map2img's image: {e}")))?;
-    let directory = &case.mapfile[..case.mapfile.find('/').unwrap()];
-    let reference = suite.join(directory).join("expected").join(&case.result);
-    let reference = std::fs::read(&reference)
-        .map_err(|e| format!("its reference {}: {e}", reference.display()))
-        .and_then(|bytes| metric::decode(&bytes).map_err(|e| format!("its reference: {e}")))?;
-    let shares = NOISE_THRESHOLDS
-        .iter()
-        .map(|&threshold| {
-            let metric = Metric {
-                threshold,
-                tolerance: 0.0,
-            };
-            let comparison = metric::compare(&rendering, &reference, &metric);
-            comparison.share().ok_or_else(|| comparison.to_string())
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    reproduced(shares, metric)
-}
-
-/// The shares of a case MapServer reproduces: one at some threshold of the set within the
-/// tolerance of `metric`. The shares fall as the threshold rises, so the last decides; the error
-/// names a case that differs beyond the tolerance at every threshold.
-fn reproduced(shares: Vec<f64>, metric: &Metric) -> Result<Vec<f64>, String> {
-    match shares.last() {
-        Some(&share) if share > metric.tolerance => Err(format!(
-            "{share:.6} of its pixels differ by more than {}, above the tolerance {}",
-            NOISE_THRESHOLDS[NOISE_THRESHOLDS.len() - 1],
-            metric.tolerance
-        )),
-        _ => Ok(shares),
-    }
-}
-
-#[test]
-fn a_case_beyond_the_tolerance_at_every_threshold_is_not_reproduced() {
-    let loose = Metric {
-        threshold: 16,
-        tolerance: 0.01,
-    };
-    for metric in [&GEOMETRY, &TEXT, &loose] {
-        let mut shares = vec![0.5; NOISE_THRESHOLDS.len()];
-        assert!(
-            reproduced(shares.clone(), metric)
-                .unwrap_err()
-                .contains(&format!("above the tolerance {}", metric.tolerance))
-        );
-        *shares.last_mut().unwrap() = metric.tolerance;
-        assert_eq!(reproduced(shares.clone(), metric), Ok(shares));
-    }
-    // The tolerance is the case's category's: a share within the loose one is beyond the strict.
-    let mut shares = vec![0.5; NOISE_THRESHOLDS.len()];
-    *shares.last_mut().unwrap() = 0.005;
-    assert!(reproduced(shares.clone(), &loose).is_ok());
-    assert!(reproduced(shares, &GEOMETRY).is_err());
-}
-
-#[test]
-fn the_noise_report_holds_each_share_the_maximum_and_the_cases_not_reproduced() {
-    let mut low = vec![0.0; NOISE_THRESHOLDS.len()];
-    low[0] = 0.25;
-    let mut high = vec![0.0; NOISE_THRESHOLDS.len()];
-    high[0] = 0.5;
-    high[1] = 0.125;
-    let mut text = vec![0.0; NOISE_THRESHOLDS.len()];
-    text[0] = 0.75;
-    let measured = [
-        ("a.map a.png".to_owned(), Category::Geometry, low),
-        ("b.map b.png".to_owned(), Category::Geometry, high),
-        ("t.map t.png".to_owned(), Category::Text, text),
-    ];
-    let report = noise_report(&measured, &["c.map c.png: map2img fails".to_owned()]);
-    assert!(
-        report.contains("| a.map a.png | geometry and symbols | 0.250000 | 0.000000 |"),
-        "{report}"
-    );
-    assert!(
-        report.contains("| t.map t.png | text | 0.750000 | 0.000000 |"),
-        "{report}"
-    );
-    // Each category's maximum is over its own cases alone.
-    assert!(
-        report.contains("| **maximum, geometry and symbols** | | **0.500000** | **0.125000** |"),
-        "{report}"
-    );
-    assert!(
-        report.contains("| **maximum, text** | | **0.750000** | **0.000000** |"),
-        "{report}"
-    );
-    assert!(report.contains("3 of 4 cases measured."), "{report}");
-    assert!(
-        report.contains("### Not reproduced by MapServer\n\n- c.map c.png: map2img fails\n"),
-        "{report}"
-    );
-    let clean = noise_report(&measured, &[]);
-    assert!(!clean.contains("Not reproduced"), "{clean}");
-    // A category with no case measured has no maximum.
-    let geometry = noise_report(&measured[..2], &[]);
-    assert!(!geometry.contains("maximum, text"), "{geometry}");
-}
-
-/// The report of the noise measurement, as Markdown: a row per measured case with its category and
-/// its share of differing pixels at each of [`NOISE_THRESHOLDS`], the maximum of each column over
-/// each category that has a case measured, and the cases MapServer does not reproduce, each with
-/// its reason.
-fn noise_report(measured: &[(String, Category, Vec<f64>)], unreproduced: &[String]) -> String {
-    let mut report =
-        String::from("## MapServer's noise over the cases in scope\n\n| Case | Category |");
-    for threshold in NOISE_THRESHOLDS {
-        report.push_str(&format!(" > {threshold} |"));
-    }
-    report.push_str("\n| --- | --- |");
-    report.push_str(&" ---: |".repeat(NOISE_THRESHOLDS.len()));
-    report.push('\n');
-    let mut maxima = BTreeMap::new();
-    for (name, category, shares) in measured {
-        report.push_str(&format!("| {name} | {} |", category.name()));
-        let maximum = maxima
-            .entry(*category)
-            .or_insert_with(|| vec![0.0_f64; NOISE_THRESHOLDS.len()]);
-        for (max, share) in maximum.iter_mut().zip(shares) {
-            *max = max.max(*share);
-            report.push_str(&format!(" {share:.6} |"));
-        }
-        report.push('\n');
-    }
-    for (category, maximum) in Category::ALL
-        .iter()
-        .filter_map(|c| maxima.get(c).map(|m| (c, m)))
-    {
-        report.push_str(&format!("| **maximum, {}** | |", category.name()));
-        for max in maximum {
-            report.push_str(&format!(" **{max:.6}** |"));
-        }
-        report.push('\n');
-    }
-    report.push_str(&format!(
-        "\n{} of {} cases measured.\n",
-        measured.len(),
-        measured.len() + unreproduced.len()
-    ));
-    if !unreproduced.is_empty() {
-        report.push_str("\n### Not reproduced by MapServer\n\n");
-        for line in unreproduced {
-            report.push_str(&format!("- {line}\n"));
-        }
-    }
-    report
 }
 
 /// The cases whose `blank` marker in the list disagrees with their reference: a case is blank
@@ -988,7 +677,6 @@ type RenderLabels = (Vec<CachedLabel>, Vec<String>);
 fn render_and_compare(
     suite: &Path,
     case: &Case,
-    loader: &Suite,
     resolver: &StandIn,
     metric: &Metric,
     dir: &Path,
@@ -999,7 +687,7 @@ fn render_and_compare(
     let reference = std::fs::read(&reference)
         .map_err(|e| format!("its reference {}: {e}", reference.display()))
         .and_then(|bytes| metric::decode(&bytes).map_err(|e| format!("its reference: {e}")))?;
-    let (rendering, labels) = render(case, loader, resolver)?;
+    let (rendering, labels) = render(case, suite, resolver)?;
     let comparison = metric::compare_and_keep(&rendering, &reference, metric, dir, name)
         .map_err(|e| format!("{}: {e}", dir.display()))?;
     Ok(((comparison.passes(), comparison.to_string()), labels))
@@ -1019,17 +707,17 @@ fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<St
 /// The rendering of `case`, the labels of its cache, and the layers whose labels are not compared,
 /// the options of its `map2img` line applied to its style IR, its sources bound and the fonts of
 /// its labels read by the CLI's library from the suite's directory as the base context, as
-/// `forager render` binds and reads them. Unlike there, the mapfile loads through the stand-in
-/// table of the G-1 test and with `-i` applied, and the binding's diagnostics are reported only
-/// with a rendering that gives no image.
+/// `forager render` binds and reads them. The mapfile loads through the same base context, as
+/// `forager render` loads it; unlike there, through the stand-in table of the G-1 test and with
+/// `-i` applied, and the binding's diagnostics are reported only with a rendering that gives no
+/// image.
 fn render(
     case: &Case,
-    loader: &Suite,
+    suite: &Path,
     resolver: &StandIn,
 ) -> Result<(RgbaImage, RenderLabels), String> {
-    let map = map_of(case, loader, resolver)?;
-    let (base, _) = FileLoader::for_mapfile(&loader.0.join(&case.mapfile), Some(&loader.0))
-        .map_err(|e| format!("its base context: {e}"))?;
+    let (base, path) = base_context(suite, &case.mapfile)?;
+    let map = map_of(case, &base, &path, resolver)?;
     let rendered = forager_cli::render(&map, &[], &base);
     let Some(image) = rendered.image else {
         let errors: Vec<_> = rendered
@@ -1042,24 +730,31 @@ fn render(
     Ok((image, (rendered.labels, labels::uncompared(&map))))
 }
 
-/// The style IR of `case`, its mapfile loaded through the stand-in table of the G-1 test with
-/// `-i` applied, and the other options of its `map2img` line applied to it.
-fn map_of(case: &Case, loader: &Suite, resolver: &StandIn) -> Result<Map, String> {
-    let path = ResourcePath::new(&case.mapfile).map_err(|e| e.to_string())?;
+/// The style IR of `case`, its mapfile at `path` loaded from `base` through the stand-in table of
+/// the G-1 test with `-i` applied, and the other options of its `map2img` line applied to it.
+fn map_of(
+    case: &Case,
+    base: &FileLoader,
+    path: &ResourcePath,
+    resolver: &StandIn,
+) -> Result<Map, String> {
     let options = case.options()?;
     let loaded = match conformance::image_type(&options) {
         Some(image_type) => {
-            let text = std::fs::read_to_string(loader.0.join(&case.mapfile))
+            let text = forager_cli::now(base.for_load().load(path))
+                .map_err(|e| e.to_string())?
                 .map_err(|e| format!("its mapfile: {e}"))?;
+            let text = String::from_utf8(text).map_err(|e| format!("its mapfile: {e}"))?;
             let main = conformance::with_image_type(&text, image_type)?;
+            let files = base.for_load();
             let loader = MainReplaced {
-                suite: loader,
-                path: &path,
+                files: &files,
+                path,
                 main,
             };
-            ready(forager_mapfile::load(&path, &loader, Some(resolver)))
+            load(path, &loader, resolver)?
         }
-        None => ready(forager_mapfile::load(&path, loader, Some(resolver))),
+        None => load(path, &base.for_load(), resolver)?,
     };
     let document = loaded.document.ok_or_else(|| {
         let errors: Vec<_> = loaded.diagnostics.iter().map(ToString::to_string).collect();

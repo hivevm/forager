@@ -36,7 +36,8 @@ check; where the value reads as 0, `ALIGN` takes a value of at least four charac
 with `left`, `cente`, or `right`, and `POSITION` one of exactly two characters among `ul` … `lr` and
 `cc`, each compared without case. MapServer binds no `SHADOWCOLOR`: `loadLabel` reads it with
 `loadColor` and no binding, so a `SHADOWCOLOR [name]` is an error at the directive, as the mapfile
-is one MapServer refuses. The style IR states each of these readings at the property.
+is one MapServer refuses, and the style IR's `shadow_color` is a colour that takes none. The
+style IR states each of these readings at the property.
 
 A binding is not an expression: MapServer keeps the two apart (`bindings` and `exprBindings` of a
 style), and a binding has the empty-value rule that an expression's `to_number` does not, which

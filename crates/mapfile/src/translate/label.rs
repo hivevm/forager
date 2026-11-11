@@ -16,7 +16,8 @@
 //! A class's `LABEL` blocks and the `TEXT` they draw.
 
 use forager_style_ir::{
-    Align, AngleMode, Bound, Expr, Force, GeomTransform, Label, MinFeatureSize, Position,
+    Align, AngleMode, Bound, Expr, Force, GeomTransform, Label, LabelTransform, MinFeatureSize,
+    Position, Style,
 };
 
 use super::{Range, Translator, binding_of, kept_binding, kept_bindings};
@@ -59,18 +60,20 @@ impl Translator<'_> {
         }
     }
 
-    /// A `LABEL` as loadLabel reads it, its text falling back on `fallback`.
+    /// A `LABEL` as loadLabel reads it, its text falling back on `fallback`; `None` for one left
+    /// out, with a warning, for a style the IR cannot hold.
     pub(super) fn label(
         &mut self,
         block: &Block,
         fallback: Option<&Expr>,
         label_item: Option<&str>,
-    ) -> Label {
+    ) -> Option<Label> {
         let mut label = Label {
             span: Some(block.span.clone()),
             ..Label::default()
         };
         let mut text = None;
+        let mut dropped = false;
         // PRIORITY's binding, which a later PRIORITY's expression hides but does not free.
         let mut priority_binding = None;
         for node in &block.nodes {
@@ -91,7 +94,7 @@ impl Translator<'_> {
                         let message = "SHADOWCOLOR takes a colour, not an attribute";
                         self.error("invalid-value", message, &d.span);
                     }
-                    "SHADOWCOLOR" => label.shadow_color = self.color(d).map(Bound::Value),
+                    "SHADOWCOLOR" => label.shadow_color = self.color(d),
                     "OUTLINEWIDTH" => {
                         label.outline_width = self.number(d, Range::above(0.0)).map(f64::trunc);
                     }
@@ -142,24 +145,41 @@ impl Translator<'_> {
                     "ANTIALIAS" => {}
                     _ => self.unhandled_directive(d),
                 },
-                Node::Block(b) if b.keyword == "STYLE" => {
-                    let mut style = self.style(b);
-                    // loadLabel's default for a label's style, which a GEOMTRANSFORM replaces;
-                    // one the frontend does not carry over, as `bbox`, stays without a
-                    // transform, so that it is not taken for the default.
-                    let transformed = b.nodes.iter().any(
-                        |node| matches!(node, Node::Directive(d) if d.keyword == "GEOMTRANSFORM"),
-                    );
-                    if !transformed {
-                        style.geom_transform = Some(GeomTransform::LabelPoint);
-                    }
-                    label.styles.push(style);
-                }
+                Node::Block(b) if b.keyword == "STYLE" => match self.label_style(b) {
+                    Some(style) => label.styles.push(style),
+                    None => dropped = true,
+                },
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
             }
         }
         label.text = text.or_else(|| fallback.cloned());
-        label
+        (!dropped).then_some(label)
+    }
+
+    /// A label's `STYLE`, at the label's point without a `GEOMTRANSFORM`, the default loadLabel
+    /// gives it; `None`, with a warning, for any transform but labelpnt, labelpoly, and
+    /// labelcenter, by which alone msDrawLabelCache draws a label's style, failing the map's draw
+    /// on bbox and others: a label's style holds no other, so its label is left out, and the caller
+    /// leaves out its class's other labels with it.
+    fn label_style(&mut self, b: &Block) -> Option<Style<LabelTransform>> {
+        let style = self.style(b);
+        let transformed = b
+            .nodes
+            .iter()
+            .any(|node| matches!(node, Node::Directive(d) if d.keyword == "GEOMTRANSFORM"));
+        let transform = match (transformed, style.geom_transform) {
+            (false, _) | (true, Some(GeomTransform::LabelPoint)) => LabelTransform::Point,
+            (true, Some(GeomTransform::LabelPoly)) => LabelTransform::Poly,
+            (true, Some(GeomTransform::LabelCenter)) => LabelTransform::Center,
+            (true, _) => {
+                let message = "a LABEL's STYLE of a GEOMTRANSFORM other than labelpnt, \
+                               labelpoly, or labelcenter is not drawn; the label is left out, and \
+                               its class's other labels with it";
+                self.warn("label-not-drawn", message, &b.span);
+                return None;
+            }
+        };
+        Some(style.with_transform(transform))
     }
 
     /// A property that may take a binding, `true` once `d` is one; `priority_binding` is the binding

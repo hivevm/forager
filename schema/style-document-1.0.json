@@ -236,7 +236,7 @@
         "styles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Style"
+            "$ref": "#/$defs/Style_Nullable_GeomTransform"
           }
         }
       }
@@ -397,17 +397,17 @@
           "const": "vertices"
         },
         {
-          "description": "Where a label is placed. A label's style is drawn only with a transform of its own: one\nwithout a transform is not drawn, so a marker at the label's point names `labelpoint`.",
+          "description": "A label's transform, [`LabelTransform::Point`], which a class's style of a line or a\npolygon layer draws nothing at.",
           "type": "string",
           "const": "labelpoint"
         },
         {
-          "description": "The box around a label's text.",
+          "description": "A label's transform, [`LabelTransform::Poly`], which a class's style of a line or a\npolygon layer draws nothing at.",
           "type": "string",
           "const": "labelpoly"
         },
         {
-          "description": "The centre of the box around a label's text: a marker drawn there, before the text.",
+          "description": "A label's transform, [`LabelTransform::Center`], which a class's style of a line or a\npolygon layer draws nothing at.",
           "type": "string",
           "const": "labelcenter"
         }
@@ -676,10 +676,10 @@
           "format": "double"
         },
         "shadow_color": {
-          "description": "The mapfile frontend gives a value only, never a binding or an expression: MapServer's\n`loadLabel` reads it with `loadColor` and no binding, and refuses a mapfile that binds it.",
+          "description": "A colour only, never a binding or an expression: MapServer's `loadLabel` reads it with\n`loadColor` and no binding, and refuses a mapfile that binds it.",
           "anyOf": [
             {
-              "$ref": "#/$defs/Bound3"
+              "$ref": "#/$defs/Rgba"
             },
             {
               "type": "null"
@@ -720,10 +720,10 @@
           ]
         },
         "styles": {
-          "description": "Drawn with the label, at its point unless a style names another transform.",
+          "description": "Drawn with the label, each where its transform says.",
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Style"
+            "$ref": "#/$defs/Style_LabelTransform"
           }
         },
         "text": {
@@ -745,6 +745,26 @@
           ]
         }
       }
+    },
+    "LabelTransform": {
+      "description": "Where a label's style draws, which it always names.",
+      "oneOf": [
+        {
+          "description": "At the label's point: a marker, before the text.",
+          "type": "string",
+          "const": "labelpoint"
+        },
+        {
+          "description": "The box around the label's text.",
+          "type": "string",
+          "const": "labelpoly"
+        },
+        {
+          "description": "The centre of the box around the label's text: a marker drawn there, before the text.",
+          "type": "string",
+          "const": "labelcenter"
+        }
+      ]
     },
     "Layer": {
       "type": "object",
@@ -955,12 +975,14 @@
       "type": "object",
       "properties": {
         "def_resolution": {
-          "description": "The resolution the map's pixel lengths are written for, in dpi; MapServer's default is 72.\nEvery length in pixels is drawn scaled by `resolution` over this.",
+          "description": "The resolution the map's pixel lengths are written for, in dpi; MapServer's default is 72.\nEvery length in pixels is drawn scaled by `resolution` over this. A reader drops a value\noutside 10 to 1000 with a warning, as MapServer's loader refuses one.",
           "type": [
             "number",
             "null"
           ],
-          "format": "double"
+          "format": "double",
+          "maximum": 1000.0,
+          "minimum": 10.0
         },
         "extent": {
           "anyOf": [
@@ -1009,12 +1031,14 @@
           ]
         },
         "resolution": {
-          "description": "The resolution of the image in dpi; MapServer's default is 72.",
+          "description": "The resolution of the image in dpi; MapServer's default is 72. A reader drops a value\noutside 10 to 1000 with a warning, as MapServer's loader refuses one.",
           "type": [
             "number",
             "null"
           ],
-          "format": "double"
+          "format": "double",
+          "maximum": 1000.0,
+          "minimum": 10.0
         },
         "size": {
           "description": "Width and height of the image in pixels.",
@@ -1216,7 +1240,8 @@
       "description": "file:line:column",
       "type": "string"
     },
-    "Style": {
+    "Style_LabelTransform": {
+      "description": "A style of a class, whose transform may be absent, or, as `Style<LabelTransform>`, of a label,\nwhose transform may not.",
       "type": "object",
       "properties": {
         "angle": {
@@ -1253,7 +1278,251 @@
           "format": "double"
         },
         "geom_transform": {
-          "description": "The geometry the style draws instead of the feature's own.",
+          "description": "The geometry the style draws instead of the feature's own: on a class's style, the\nfeature's own where it is absent; on a label's style, where the style draws about the\nlabel, never absent.",
+          "$ref": "#/$defs/LabelTransform"
+        },
+        "initial_gap": {
+          "description": "The distance before the first symbol or dash along a line.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "line_cap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LineCap"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line_join": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LineJoin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line_join_max_size": {
+          "description": "How far a miter join may reach, as a multiple of the width.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "line_offset": {
+          "description": "A line drawn parallel to the feature's line at this distance, positive to its right in\nthe direction of drawing on the image, as MapServer's offset curve places it; MapServer\nwrites it as `OFFSET d -99`, or `-999` for both sides.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LineOffset"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_scale_denom": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_size": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_width": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_scale_denom": {
+          "description": "The style draws at a scale from `min_scale_denom` up to below `max_scale_denom`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_size": {
+          "description": "The bounds of the scaled size and width, in pixels at the map's `def_resolution`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_width": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "offset": {
+          "description": "A shift of what is drawn, `[x, y]`, y downwards.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/Bound2"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "opacity": {
+          "description": "Opacity in percent, 0 to 100.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outline_color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outline_width": {
+          "description": "The width of a symbol's outline in pixels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pattern": {
+          "description": "Dash and gap lengths, alternating, 2 to 10 of them.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "polar_offset": {
+          "description": "A shift by distance and angle in degrees, `[distance, angle]`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/Bound2"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "size": {
+          "description": "Symbol size in pixels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "symbol": {
+          "description": "The symbol drawn, by its name or MapServer's index into the symbol set.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound6"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "width": {
+          "description": "Line width in pixels.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "geom_transform"
+      ]
+    },
+    "Style_Nullable_GeomTransform": {
+      "description": "A style of a class, whose transform may be absent, or, as `Style<LabelTransform>`, of a label,\nwhose transform may not.",
+      "type": "object",
+      "properties": {
+        "angle": {
+          "description": "Rotation in degrees, counter-clockwise.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "auto_angle": {
+          "description": "Whether the symbol turns with the direction of the line it is drawn on, MapServer's\n`ANGLE AUTO`.",
+          "type": "boolean"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Bound3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gap": {
+          "description": "The distance between symbols drawn along a line; a negative one turns them with the line,\na positive one keeps them upright.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "geom_transform": {
+          "description": "The geometry the style draws instead of the feature's own: on a class's style, the\nfeature's own where it is absent; on a label's style, where the style draws about the\nlabel, never absent.",
           "anyOf": [
             {
               "$ref": "#/$defs/GeomTransform"
