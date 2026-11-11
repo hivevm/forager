@@ -292,6 +292,7 @@ impl Translator<'_> {
         let label_item = item(block, "LABELITEM");
         let filter_item = item(block, "FILTERITEM");
         let defaults = Defaults::of([block]);
+        let tables = [&defaults, web];
         let mut composites = Vec::new();
         // A layer with features is an inline layer (msInitializeVirtualTable), whose item names
         // its PROCESSING "ITEMS=…" gives (msLayerGetItems), unless its connection type is one
@@ -332,10 +333,7 @@ impl Translator<'_> {
                         self.string(d);
                     }
                     "LABELCACHE" => self.label_cache(&mut layer, d),
-                    "FILTER" => {
-                        let tables = [&defaults, web];
-                        layer.filter = self.defaulted(d, filter_item.as_deref(), &tables);
-                    }
+                    "FILTER" => layer.filter = self.defaulted(d, filter_item.as_deref(), &tables),
                     "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
                     "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
                     "MAXSCALE" | "MAXSCALEDENOM" => layer.max_scale_denom = self.scale_denom(d),
@@ -358,12 +356,8 @@ impl Translator<'_> {
                 },
                 Node::Block(b) => match b.keyword.as_str() {
                     "CLASS" => {
-                        let class = self.class(
-                            b,
-                            class_item.as_deref(),
-                            label_item.as_deref(),
-                            [&defaults, web],
-                        );
+                        let class =
+                            self.class(b, class_item.as_deref(), label_item.as_deref(), tables);
                         layer.classes.push(class);
                     }
                     "PROJECTION" => layer.projection = self.projection(b),
