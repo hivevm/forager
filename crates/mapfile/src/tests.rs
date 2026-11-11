@@ -1610,3 +1610,84 @@ fn the_image_starts_transparent_where_the_selected_output_format_is() {
     assert_eq!(image_color(&format!("MAP IMAGETYPE a {jpeg} END")), None);
     assert_eq!(image_color("MAP IMAGETYPE png END"), None);
 }
+
+#[test]
+fn a_bare_keyword_is_no_item_name_and_a_quoted_one_is() {
+    // `name` is the keyword NAME to MapServer's lexer, which loadLayer's getString refuses
+    // (src/mapfile.c:264-273), failing the load; quoted, it is a string.
+    let loaded = load_files(&[("m.map", "MAP LAYER CLASSITEM name END END")]);
+    assert!(loaded.document.is_none());
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+    let loaded = load_files(&[("m.map", "MAP LAYER CLASSITEM 'name' END END")]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let loaded = load_files(&[("m.map", "MAP LAYER CLASSITEM kind END END")]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+}
+
+#[test]
+fn a_layer_and_a_symbol_type_are_any_keyword_of_their_token_value() {
+    // loadLayer's TYPE takes MS_LAYER_POINT, 0, so `off` is a point layer; loadSymbol's takes
+    // MS_TRUETYPE, also 0 (src/mapserver.h), so `false` is a TrueType symbol. loadSymbol passes
+    // getSymbol 8 for its seven choices; the eighth argument it reads is undefined, and Forager
+    // takes only the seven.
+    let loaded = load_files(&[("m.map", "MAP LAYER TYPE off END END")]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        loaded.document.unwrap().map.layers[0].render_mode,
+        Some(RenderMode::Point)
+    );
+    let loaded = load_files(&[("m.map", "MAP LAYER TYPE miles END END")]);
+    assert_eq!(
+        loaded.document.unwrap().map.layers[0].render_mode,
+        Some(RenderMode::Polygon)
+    );
+    let loaded = load_files(&[("m.map", "MAP SYMBOL TYPE false END END")]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(
+        loaded.document.unwrap().map.symbols[0].kind,
+        forager_style_ir::SymbolKind::Truetype
+    );
+}
+
+#[test]
+fn a_lone_point_is_a_number_atof_reads_as_0_in_a_mapfile_as_in_an_expression() {
+    // The number rule of src/maplexer.l matches `.` and `-.`, which atof() reads as 0, the same
+    // in the INITIAL state as in an expression's; one function measures the token for both.
+    let loaded = load_files(&[("m.map", "MAP EXTENT . -. 1 1 END")]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let extent = loaded.document.unwrap().map.extent.unwrap();
+    assert_eq!((extent.min_x, extent.min_y), (0.0, 0.0));
+    for text in [".", "-.", ".5", "-1.e2", "1e"] {
+        let at = |i: usize| text.as_bytes().get(i).copied();
+        let len = crate::lexer::number_len(at);
+        assert_eq!(len, text.len() - usize::from(text == "1e"), "{text}");
+    }
+}
+
+#[test]
+fn an_output_format_reads_transparent_by_token_value_and_its_name_as_any_token() {
+    // loadOutputFormat, src/mapfile.c: TRANSPARENT is getSymbol(2, MS_ON, MS_OFF), so `feet` and
+    // `line`, 1, are on and `point`, 0, is off; NAME is getToken, so the keyword `tiny` names the
+    // format.
+    let image_color = |text: &str| {
+        let loaded = load_files(&[("m.map", text.to_owned().leak())]);
+        loaded.document.unwrap().map.image_color
+    };
+    let clear = Some(Rgba {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    });
+    for word in ["feet", "line", "true"] {
+        let text = format!(
+            "MAP IMAGETYPE 'a' OUTPUTFORMAT NAME 'a' DRIVER AGG/PNG TRANSPARENT {word} END END"
+        );
+        assert_eq!(image_color(&text), clear, "{word}");
+    }
+    let text = "MAP IMAGETYPE 'a' OUTPUTFORMAT NAME 'a' DRIVER AGG/PNG IMAGEMODE RGBA \
+                TRANSPARENT point END END";
+    assert_eq!(image_color(text), None);
+    let text = "MAP IMAGETYPE 'tiny' OUTPUTFORMAT NAME tiny DRIVER AGG/PNG TRANSPARENT on END END";
+    assert_eq!(image_color(text), clear);
+}

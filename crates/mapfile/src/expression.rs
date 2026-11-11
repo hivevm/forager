@@ -25,7 +25,7 @@
 use forager_style_ir::c::atof;
 use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
 
-use crate::lexer::{Token, TokenKind};
+use crate::lexer::{Token, TokenKind, number_len};
 
 /// Why an expression was not carried over. A warning keeps its class, label, or filter as one that
 /// never matches, as MapServer, which parses an expression only when it evaluates it, never matches
@@ -436,7 +436,8 @@ impl<'a> Scanner<'a> {
         if c == b'\n' || c == 0 || (c == b'|' && bytes.get(start + 1) != Some(&b'|')) {
             return None;
         }
-        if let Some(len) = number_len(&bytes[start..]) {
+        let len = number_len(|i| bytes.get(start + i).copied());
+        if len > 0 {
             let literal = &self.text[start..start + len];
             return Some((
                 Lexeme::Tok(Tok::Number(atof(literal.as_bytes()))),
@@ -566,38 +567,6 @@ fn tokenize(text: &str) -> Result<Vec<Tok>, Problem> {
         }
     }
     Ok(tokens)
-}
-
-/// The length of the number at the start of `bytes`, by the lexer's rule
-/// `-?[0-9]+|-?[0-9]+\.[0-9]*|-?\.[0-9]*|…[eE][+-]?[0-9]+`.
-fn number_len(bytes: &[u8]) -> Option<usize> {
-    let digits = |from: usize| {
-        (from..=bytes.len())
-            .find(|&j| !bytes.get(j).is_some_and(u8::is_ascii_digit))
-            .unwrap_or(bytes.len())
-    };
-    let mut i = usize::from(bytes.first() == Some(&b'-'));
-    let int_end = digits(i);
-    let has_int = int_end > i;
-    i = int_end;
-    let has_dot = bytes.get(i) == Some(&b'.');
-    if has_dot {
-        i = digits(i + 1);
-    }
-    if !has_int && !has_dot {
-        return None;
-    }
-    if matches!(bytes.get(i), Some(b'e' | b'E')) {
-        let mut j = i + 1;
-        if matches!(bytes.get(j), Some(b'+' | b'-')) {
-            j += 1;
-        }
-        let end = digits(j);
-        if end > j {
-            i = end;
-        }
-    }
-    Some(i)
 }
 
 /// A number literal, which the IR can hold only when it is finite: JSON has no infinity.

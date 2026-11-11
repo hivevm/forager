@@ -22,6 +22,7 @@ use forager_style_ir::{
 
 use super::{Range, Translator, binding_of, kept_binding, kept_bindings};
 use crate::expression;
+use crate::keywords;
 use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
 
@@ -238,7 +239,8 @@ impl Translator<'_> {
     }
 
     /// A label's `SIZE`: a number above 0, cut to an integer as loadLabel stores it in the
-    /// label's `int`, MapServer's bitmap sizes, an attribute, or an expression.
+    /// label's `int`, MapServer's bitmap sizes, or a word of the same token value, such as `dd`
+    /// for `tiny`, an attribute, or an expression.
     fn label_size(&mut self, d: &Directive) -> Option<Bound<f64>> {
         // MS_TINY to MS_GIANT, src/mapserver.h.
         let bitmap = [
@@ -250,7 +252,9 @@ impl Translator<'_> {
         ];
         if let [token] = d.values.as_slice()
             && let Some(word) = token.keyword()
-            && let Some((_, size)) = bitmap.iter().find(|(name, _)| *name == word)
+            && let Some((_, size)) = bitmap
+                .iter()
+                .find(|(name, _)| keywords::stands_for(&word, name))
         {
             return Some(Bound::Value(*size));
         }
@@ -266,7 +270,9 @@ impl Translator<'_> {
         ];
         if let [token] = d.values.as_slice()
             && let Some(word) = token.keyword()
-            && let Some((_, mode)) = modes.iter().find(|(name, _)| *name == word)
+            && let Some((_, mode)) = modes
+                .iter()
+                .find(|(name, _)| keywords::stands_for(&word, name))
         {
             label.angle_mode = Some(*mode);
             return;

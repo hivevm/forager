@@ -15,8 +15,10 @@
 
 use std::sync::Arc;
 
+use forager_style_ir::c::atof;
 use forager_style_ir::{Diagnostic, Span};
 
+use crate::keywords;
 use crate::report::Report;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -59,11 +61,21 @@ impl Token {
         matches!(&self.kind, TokenKind::Word(w) if w.eq_ignore_ascii_case(keyword))
     }
 
-    /// The value of a string or of a bare word, which MapServer's lexer reads as a string where
-    /// a string is expected.
-    pub fn string(&self) -> Option<&str> {
+    /// The text of a string or of any bare word, keywords included, as `getToken` reads it.
+    pub fn text(&self) -> Option<&str> {
         match &self.kind {
             TokenKind::Str { value, .. } | TokenKind::Word(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    /// The value of a string or of a bare word that is no keyword, which MapServer's lexer reads
+    /// as a string; a keyword, such as `circle` or `name`, is a token of its own, which
+    /// `getString` refuses (`src/mapfile.c:264-273`).
+    pub fn string(&self) -> Option<&str> {
+        match &self.kind {
+            TokenKind::Str { value, .. } => Some(value),
+            TokenKind::Word(value) if keywords::token_value(value).is_none() => Some(value),
             _ => None,
         }
     }
@@ -261,7 +273,7 @@ impl Lexer<'_> {
     /// A number, a regular expression, or a bare word: the longest match wins, and on a tie the
     /// rule MapServer's lexer lists first — number, then regular expression, then word.
     fn atom(&mut self, span: Span) {
-        let number = self.number_len();
+        let number = number_len(|i| self.peek(i).and_then(|c| u8::try_from(c).ok()));
         let regex = self.regex_len();
         let word = self.word_len();
         let longest = number.max(regex).max(word);
@@ -277,10 +289,10 @@ impl Lexer<'_> {
         let text = self.text(self.pos, self.pos + longest);
         self.advance(longest);
         if longest == number {
-            match text.parse::<f64>() {
-                Ok(n) if n.is_finite() => self.push(TokenKind::Number(n), span),
-                // MapServer reads `.` with atof(), as 0, and `1e999` as infinity; Forager refuses
-                // both, since JSON cannot carry a non-finite number.
+            // The lexer's rule reads the token with atof(), `.` and `-.` as 0 and `1e999` as
+            // infinity, which Forager refuses, since JSON cannot carry a non-finite number.
+            match atof(text.as_bytes()) {
+                n if n.is_finite() => self.push(TokenKind::Number(n), span),
                 _ => self.error("invalid-number", &format!("`{text}` is not a number"), span),
             }
         } else if longest == regex {
@@ -297,31 +309,6 @@ impl Lexer<'_> {
         } else {
             self.push(TokenKind::Word(text), span);
         }
-    }
-
-    /// `-?[0-9]+`, `-?[0-9]+\.[0-9]*`, `-?\.[0-9]*`, each with an optional exponent.
-    fn number_len(&self) -> usize {
-        let digits = |from: usize| {
-            (from..)
-                .take_while(|&i| self.peek(i).is_some_and(|c| c.is_ascii_digit()))
-                .count()
-        };
-        let mut i = usize::from(self.peek(0) == Some('-'));
-        let integer = digits(i);
-        i += integer;
-        if self.peek(i) == Some('.') {
-            i += 1 + digits(i + 1);
-        } else if integer == 0 {
-            return 0;
-        }
-        if matches!(self.peek(i), Some('e' | 'E')) {
-            let sign = usize::from(matches!(self.peek(i + 1), Some('+' | '-')));
-            let exponent = digits(i + 1 + sign);
-            if exponent > 0 {
-                i += 1 + sign + exponent;
-            }
-        }
-        i
     }
 
     /// `/[^*][^/]*/` with an optional trailing `i`.
@@ -354,6 +341,34 @@ impl Lexer<'_> {
             .take_while(|&i| self.peek(i).is_some_and(is_word_continue))
             .count()
     }
+}
+
+/// The length of the number at the start of a text whose byte at `i` `byte` gives, by the rule of
+/// MapServer's lexer for a number, the same in a mapfile and in an expression:
+/// `-?[0-9]+|-?[0-9]+\.[0-9]*|-?\.[0-9]*`, each with an optional exponent `[eE][+-]?[0-9]+`; 0
+/// where none begins there. `.` alone is a number, which atof() reads as 0.
+pub(crate) fn number_len(byte: impl Fn(usize) -> Option<u8>) -> usize {
+    let digits = |from: usize| {
+        (from..)
+            .take_while(|&i| byte(i).is_some_and(|c| c.is_ascii_digit()))
+            .count()
+    };
+    let mut i = usize::from(byte(0) == Some(b'-'));
+    let integer = digits(i);
+    i += integer;
+    if byte(i) == Some(b'.') {
+        i += 1 + digits(i + 1);
+    } else if integer == 0 {
+        return 0;
+    }
+    if matches!(byte(i), Some(b'e' | b'E')) {
+        let sign = usize::from(matches!(byte(i + 1), Some(b'+' | b'-')));
+        let exponent = digits(i + 1 + sign);
+        if exponent > 0 {
+            i += 1 + sign + exponent;
+        }
+    }
+    i
 }
 
 fn is_word_continue(c: char) -> bool {

@@ -28,6 +28,7 @@ use forager_style_ir::{
 use crate::MAX_TOTAL_BYTES;
 use crate::expression;
 use crate::init_file::InitFile;
+use crate::keywords;
 use crate::lexer::{Token, TokenKind};
 use crate::report::Report;
 use crate::syntax::{Block, Directive, Node};
@@ -451,7 +452,22 @@ impl Translator<'_> {
     /// (loadLayer): polygon for `POLYGON`, line for `LINE`, point for every other. `None` for a
     /// `QUERY` layer, which is discarded.
     fn layer_type(&mut self, layer: &mut Layer, d: &Directive) -> Option<Option<ShapeType>> {
-        let word = self.word(d);
+        // loadLayer's getSymbol, src/mapfile.c: a word of the token value of one of its choices
+        // stands for it, so `TYPE off` is a point layer.
+        let types = [
+            "POINT",
+            "LINE",
+            "RASTER",
+            "POLYGON",
+            "ANNOTATION",
+            "QUERY",
+            "CIRCLE",
+            "CHART",
+            "TILEINDEX",
+        ];
+        let word = self
+            .word(d)
+            .map(|w| keywords::chosen(&w, &types).map_or(w, str::to_owned));
         let shape_type = word.as_deref().map(|w| match w {
             "POLYGON" => ShapeType::Polygon,
             "LINE" => ShapeType::Line,
@@ -874,21 +890,14 @@ impl Translator<'_> {
         }
     }
 
-    /// One of the keywords `choices` names. `TRUE` and `ON`, and `FALSE` and `OFF`, stand for
-    /// each other, as MapServer's lexer gives them the same token values (`MS_TRUE` and `MS_ON`
-    /// are 1, `MS_FALSE` and `MS_OFF` 0, src/mapserver.h) and its parser compares those.
+    /// One of the keywords `choices` names, compared by token value as `getSymbol` compares it, so
+    /// that the words MapServer's lexer gives one value stand for each other: `OFF`, `FALSE`,
+    /// `INCHES`, and `POINT` all for `NONE` (see [`keywords::stands_for`]).
     fn choice<T: Copy>(&mut self, d: &Directive, choices: &[(&str, T)]) -> Option<T> {
         let word = self.word(d)?;
-        let alias = match word.as_str() {
-            "TRUE" => "ON",
-            "ON" => "TRUE",
-            "FALSE" => "OFF",
-            "OFF" => "FALSE",
-            other => other,
-        };
         let found = choices
             .iter()
-            .find(|(name, _)| *name == word || *name == alias)
+            .find(|(name, _)| keywords::stands_for(&word, name))
             .map(|(_, v)| *v);
         if found.is_none() {
             let names: Vec<&str> = choices.iter().map(|(name, _)| *name).collect();
