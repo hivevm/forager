@@ -911,7 +911,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
         // The labels of the report share their feature's text.
         let texts: Vec<Arc<str>> = texts.into_iter().map(Arc::from).collect();
-        let labels = walked
+        walked
             .into_iter()
             .map(|(i, drawn)| {
                 let label = &cached[i as usize];
@@ -924,8 +924,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     drawn,
                 }
             })
-            .collect();
-        labels
+            .collect()
     }
 
     /// Reports the glyphs of `at` left out for reaching too far from the image, once per label.
