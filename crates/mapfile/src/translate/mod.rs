@@ -25,6 +25,7 @@ use forager_style_ir::{
     Units,
 };
 
+use crate::MAX_TOTAL_BYTES;
 use crate::expression;
 use crate::init_file::InitFile;
 use crate::lexer::{Token, TokenKind};
@@ -796,6 +797,11 @@ impl Translator<'_> {
         item: Option<&str>,
         tables: &[&Defaults],
     ) -> Option<Expr> {
+        // The load has failed on the defaults' bound and said so once; charging on could wrap the
+        // count on wasm32 and let them through again (Q-9).
+        if self.default_bytes > MAX_TOTAL_BYTES {
+            return None;
+        }
         let [token] = d.values.as_slice() else {
             self.invalid(d, "one expression");
             return None;

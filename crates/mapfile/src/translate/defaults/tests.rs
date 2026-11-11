@@ -213,10 +213,10 @@ fn the_text_after_the_last_tag_counts_toward_the_limit() {
 }
 
 #[test]
-fn a_default_named_by_many_expressions_counts_once_for_each_toward_one_limit() {
+fn a_default_named_by_many_expressions_counts_each_time_toward_one_limit_reported_once() {
     // Verifies: Q-9
     let value = "x".repeat(1024 * 1024);
-    let classes = "CLASS EXPRESSION '%v%' END ".repeat(17);
+    let classes = "CLASS EXPRESSION '%v%' END ".repeat(40);
     let loaded = load(&format!(
         r#"MAP LAYER CLASSITEM 'a' VALIDATION "default_v" "{value}" END {classes} END END"#
     ));
