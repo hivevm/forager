@@ -26,7 +26,6 @@ use crate::hatch;
 use crate::line::{Pass, gapped, line_symbol, open_rings};
 use crate::marker::{marker_ops, marker_price, of_symbol_zero};
 use crate::shade::shade;
-use crate::style::fixed;
 use crate::symbol;
 
 /// Whether a layer of the render mode draws the geometry. As in MapServer, a line layer draws
@@ -284,8 +283,8 @@ fn bbox(
     view: &View,
     canvas: &mut Canvas,
 ) {
-    let width = fixed(&style.width).unwrap_or(1.0);
-    let size = fixed(&style.size).unwrap_or(-1.0);
+    let width = style.width.as_ref().and_then(Bound::value).unwrap_or(1.0);
+    let size = style.size.as_ref().and_then(Bound::value).unwrap_or(-1.0);
     let Some(ring) = geom_transform::bbox(geometry, view, canvas.size, width, size) else {
         return;
     };

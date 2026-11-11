@@ -1414,7 +1414,7 @@ fn transforms_draw_symbols_at_the_start_the_end_and_the_vertices_of_a_line() {
 
 #[test]
 fn a_bbox_transform_strokes_the_line_s_bounds_held_near_the_image() {
-    // msDrawTransformedShape, src/mapgeomtransform.c:161-188: the line runs from pixel
+    // msDrawTransformedShape's bbox: the line runs from pixel
     // (-50, -20) to (150, 60), its bounds held by the padding (int)(MAX(5, -1) + 3) = 8 to
     // x = -8 and 101 + 8 = 109 and y = -8, and kept at y = 60 below; msDrawShadeSymbol strokes
     // the ring of an OUTLINECOLOR without a COLOR as a line 5 pixels wide. Only its lower side,
