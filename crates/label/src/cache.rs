@@ -83,43 +83,62 @@ pub trait Members {
 }
 
 /// Walks `members` as `msDrawLabelCache` walks its slots, and hands `draw` each label drawn with
-/// its placement, in the order MapServer draws them, into an image of `size` pixels. The caller
-/// holds at most [`MAX_LABELS`] members.
+/// its placement, in the order MapServer draws them, into an image of `size` pixels; see
+/// [`walk_label_cache`], whose count of the members left out past [`MAX_LABELS`] it returns.
 pub fn draw_label_cache<M: Members + ?Sized>(
     members: &M,
     size: (u32, u32),
     mut draw: impl FnMut(usize, &Placement),
-) {
+) -> usize {
+    walk_label_cache(members, size, |i, placement| {
+        if let Some(placement) = placement {
+            draw(i, placement);
+        }
+    })
+}
+
+/// Walks the first [`MAX_LABELS`] of `members` as `msDrawLabelCache` walks its slots, from the
+/// highest priority down and within a priority from the last added to the first, into an image of
+/// `size` pixels, and hands `visit` each member it visits, in that order, with its placement where
+/// it is drawn and `None` where it is left out. Returns how many members past [`MAX_LABELS`] it
+/// left out untested (Q-9).
+pub fn walk_label_cache<M: Members + ?Sized>(
+    members: &M,
+    size: (u32, u32),
+    mut visit: impl FnMut(usize, Option<&Placement>),
+) -> usize {
+    let taken = members.count().min(MAX_LABELS);
     let image = [f64::from(size.0), f64::from(size.1)];
     let mut markers: Vec<Grid<u32>> = (0..MAX_PRIORITY).map(|_| Grid::new(size)).collect();
-    for i in 0..members.count() {
+    let mut min_distance = false;
+    for i in 0..taken {
         let member = members.member(i);
+        min_distance |= member.min_distance > 0.0;
         if let Some(marker) = member.marker {
-            markers[slot(member.priority)].insert(&marker, None, i as u32);
+            markers[slot(member.priority)].insert(&marker, i as u32);
         }
     }
     let mut cache = Cache {
         members,
         image,
         markers,
-        drawn: Grid::new(size),
+        boxes: Grid::new(size),
+        points: min_distance.then(|| Grid::new(size)),
     };
     for priority in (1..=MAX_PRIORITY).rev() {
-        for i in (0..members.count()).rev() {
+        for i in (0..taken).rev() {
             if members.priority(i) != priority {
                 continue;
             }
-            if let Some(placement) = cache.place(i) {
-                let member = members.member(i);
-                cache.drawn.insert(
-                    &member_box(&placement.bounds.bbox, member.label_marker.as_ref()),
-                    Some(member.point),
-                    (i as u32, placement.anchor),
-                );
-                draw(i, &placement);
+            let member = members.member(i);
+            let placement = cache.place(i, &member);
+            if let Some(placement) = &placement {
+                cache.file(i, &member, placement);
             }
+            visit(i, placement.as_ref());
         }
     }
+    members.count() - taken
 }
 
 /// The index of a priority's slot.
@@ -131,22 +150,36 @@ struct Cache<'m, M: ?Sized> {
     members: &'m M,
     /// The image's width and height.
     image: [f64; 2],
-    /// The markers of each slot.
+    /// The markers of each slot, by the member's index.
     markers: Vec<Grid<u32>>,
-    /// The labels drawn, with the position each stands at.
-    drawn: Grid<(u32, Anchor)>,
+    /// The labels drawn, by their members' boxes alone (ADR-0032), with the position each stands
+    /// at.
+    boxes: Grid<(u32, Anchor)>,
+    /// The labels drawn with a text, by the points they stand at, for the `MINDISTANCE` test;
+    /// none where no member has a minimum distance.
+    points: Option<Grid<(u32, Anchor)>>,
 }
 
 impl<M: Members + ?Sized> Cache<'_, M> {
+    /// Files member `i`, drawn at `placement`, by its box, and by its point where it has a text.
+    fn file(&mut self, i: usize, member: &Member, placement: &Placement) {
+        let entry = (i as u32, placement.anchor);
+        let bbox = member_box(&placement.bounds.bbox, member.label_marker.as_ref());
+        self.boxes.insert(&bbox, entry);
+        if let Some(points) = self.points.as_mut().filter(|_| member.label.is_some()) {
+            let p = member.point;
+            points.insert(&[p.x, p.y, p.x, p.y], entry);
+        }
+    }
+
     /// Places member `i`, or `None` where it is left out.
-    fn place(&self, i: usize) -> Option<Placement> {
-        let member = self.members.member(i);
+    fn place(&self, i: usize, member: &Member) -> Option<Placement> {
         let Some(label) = member.label else {
             // A label without text, of its marker alone: msDrawLabelCache tests the marker
             // unless the label is forced, and skips the text and the minimum distance
             // (mapdraw.c:3607-3650, 4035-4037).
             let marker = member.label_marker?;
-            if !member.force && !self.fits(&member, &marker, Some((member.priority, i))) {
+            if !member.force && !self.fits(member, &marker, Some((member.priority, i))) {
                 return None;
             }
             return Some(Placement {
@@ -158,7 +191,7 @@ impl<M: Members + ?Sized> Cache<'_, M> {
         // The marker of a labelpoint style is tested first, at the label's priority, unless the
         // label is forced; where it has one, the point is not tested.
         if let Some(marker) = &member.label_marker {
-            if !label.force && !self.fits(&member, marker, Some((member.priority, i))) {
+            if !label.force && !self.fits(member, marker, Some((member.priority, i))) {
                 return None;
             }
         } else if member.test_point {
@@ -168,12 +201,12 @@ impl<M: Members + ?Sized> Cache<'_, M> {
                 poly: None,
                 bbox: [p.x - 0.1, p.y - 0.1, p.x + 0.1, p.y + 0.1],
             };
-            if !self.fits(&member, &point, None) {
+            if !self.fits(member, &point, None) {
                 return None;
             }
         }
         let placement = place(member.point, &label, |bounds| {
-            self.fits(&member, bounds, Some((member.priority, i)))
+            self.fits(member, bounds, Some((member.priority, i)))
         })?;
         if member.min_distance > 0.0
             && !label.force
@@ -217,9 +250,10 @@ impl<M: Members + ?Sized> Cache<'_, M> {
                 &lb.bbox,
             )
         };
-        !self.drawn.any(&lb.bbox, |&(j, anchor)| {
-            let marker = self.members.member(j as usize).label_marker;
-            let text = self.bounds(j as usize, anchor);
+        !self.boxes.any(&lb.bbox, |&(j, anchor)| {
+            let theirs = self.members.member(j as usize);
+            let marker = theirs.label_marker;
+            let text = text_bounds(&theirs, anchor);
             let bbox = match (&text, &marker) {
                 (Some(text), marker) => member_box(&text.bbox, marker.as_ref()),
                 (None, Some(marker)) => marker.bbox,
@@ -231,7 +265,9 @@ impl<M: Members + ?Sized> Cache<'_, M> {
     }
 
     /// `msCheckLabelMinDistance`: whether a label drawn with the text of member `i` stands, by its
-    /// point or its member's box, within `distance` of `bbox`, member `i`'s box.
+    /// point or its member's box, within `distance` of `bbox`, member `i`'s box. The drawn labels
+    /// are looked up by their points and by their boxes, so one may be visited twice, each lookup
+    /// visiting it at most once.
     fn too_close(&self, i: usize, bbox: &[f64; 4], distance: f64) -> bool {
         let buffered = [
             bbox[0] - distance,
@@ -239,27 +275,34 @@ impl<M: Members + ?Sized> Cache<'_, M> {
             bbox[2] + distance,
             bbox[3] + distance,
         ];
-        self.drawn.any(&buffered, |&(j, anchor)| {
+        let close = |&(j, anchor): &(u32, Anchor)| {
             let j = j as usize;
-            let theirs = self.members.member(j);
             // A label without text is not measured from (mapdraw.c:3384-3385).
-            let Some(text) = self.bounds(j, anchor) else {
+            if !self.members.same_text(i, j) {
+                return false;
+            }
+            let theirs = self.members.member(j);
+            let Some(text) = text_bounds(&theirs, anchor) else {
                 return false;
             };
-            let text = text.bbox;
-            self.members.same_text(i, j)
-                && (point_in_rect(&theirs.point, &buffered)
-                    || rect_overlap(&member_box(&text, theirs.label_marker.as_ref()), &buffered))
-        })
+            point_in_rect(&theirs.point, &buffered)
+                || rect_overlap(
+                    &member_box(&text.bbox, theirs.label_marker.as_ref()),
+                    &buffered,
+                )
+        };
+        self.points
+            .as_ref()
+            .is_some_and(|points| points.any(&buffered, close))
+            || self.boxes.any(&buffered, close)
     }
+}
 
-    /// The box of the text of the drawn member `j` at `anchor`, computed again as it was placed;
-    /// `None` for a label without text.
-    fn bounds(&self, j: usize, anchor: Anchor) -> Option<Bounds> {
-        let member = self.members.member(j);
-        let label = member.label?;
-        Some(placed_at(member.point, &label, anchor).1)
-    }
+/// The box of the text of the drawn `member` at `anchor`, computed again as it was placed; `None`
+/// for a label without text.
+fn text_bounds(member: &Member, anchor: Anchor) -> Option<Bounds> {
+    let label = member.label?;
+    Some(placed_at(member.point, &label, anchor).1)
 }
 
 /// `labelInImage` with no gutter: whether the box, or where it is turned its corners, lie in the
@@ -468,20 +511,12 @@ impl<E: Copy> Grid<E> {
         Some((held, usize::from(x_out) + 2 * usize::from(y_out)))
     }
 
-    /// Holds `entry` for `bbox`, grown to `point` where one is given.
-    fn insert(&mut self, bbox: &[f64; 4], point: Option<Point>, entry: E) {
-        let placed = self
-            .place(bbox)
-            .filter(|_| point.is_none_or(|p| !p.x.is_nan() && !p.y.is_nan()));
-        let Some((mut b, store)) = placed else {
+    /// Holds `entry` for `bbox`.
+    fn insert(&mut self, bbox: &[f64; 4], entry: E) {
+        let Some((b, store)) = self.place(bbox) else {
             self.anywhere.push(entry);
             return;
         };
-        if let Some(p) = point {
-            let [w, h] = self.size;
-            let (px, py) = (p.x.clamp(0.0, w), p.y.clamp(0.0, h));
-            b = [b[0].min(px), b[1].min(py), b[2].max(px), b[3].max(py)];
-        }
         let size = self.size;
         let levels = self.stores[store].get_or_insert_with(|| Levels::new(size));
         let level = levels
