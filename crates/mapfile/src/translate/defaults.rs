@@ -38,8 +38,8 @@ impl Defaults {
             if b.keyword != "VALIDATION" {
                 continue;
             }
-            for pair in b.values.chunks_exact(2) {
-                if let (Some(key), Some(value)) = (pair[0].string(), pair[1].string())
+            for [key, value] in b.values.as_chunks::<2>().0 {
+                if let (Some(key), Some(value)) = (key.string(), value.string())
                     && key
                         .as_bytes()
                         .get(..8)

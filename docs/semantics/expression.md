@@ -80,10 +80,10 @@ MapServer substitutes are left out, as runtime substitution is a non-goal. A cla
 takes its class's `VALIDATION` first, then its layer's, then that of `WEB`, and a `FILTER` its
 layer's and then that of `WEB`; each block's `VALIDATION` holds wherever it stands. Keys and tags
 are read without case, the last key of a name is kept, and every tag is replaced in the
-expression's text before it is parsed, so a default that does not parse is that expression's own warning. Within
-one block's `VALIDATION` the replacement is one pass from the left, where MapServer takes the keys
-in the order of its hash table: a value naming another default of the same block is not read
-again. An expression that its defaults take past 16 MiB fails the load with `mapfile-too-large`
+expression's text before it is parsed, so a default that does not parse is that expression's own
+warning. Within one block's `VALIDATION` the replacement is one pass from the left, where MapServer
+takes the keys in the order of its hash table: a value naming another default of the same block is
+not read again. An expression that its defaults take past 16 MiB fails the load with `mapfile-too-large`
 (Q-9).
 
 **Not carried over.** `[shape]`, `[map_cellsize]`, `[data_cellsize]`, the geometry functions and
