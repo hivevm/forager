@@ -1,0 +1,13 @@
+MAP
+  WEB VALIDATION "default_c" "2" END END
+  LAYER
+    NAME "a"
+    TYPE POINT
+    VALIDATION "default_v" "3" "DEFAULT_W" "%c%" END
+    FILTER ([a] % 2 = %v%)
+    CLASS
+      VALIDATION "default_x" "%w%" END
+      EXPRESSION ([b] = %x%)
+    END
+  END
+END

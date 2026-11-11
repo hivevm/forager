@@ -83,7 +83,9 @@ are read without case, the last key of a name is kept, and every tag is replaced
 text before it is parsed, so a default that does not parse is that expression's own warning. Within
 one block's `VALIDATION` the replacement is one pass from the left, where MapServer takes the keys
 in the order of its hash table: a value naming another default of the same block is not read again.
-An expression that its defaults take past 16 MiB fails the load with `mapfile-too-large` (Q-9).
+An expression that its defaults take past 16 MiB, or defaults that add more than 16 MiB of text to a
+load's expressions together, fail the load with `mapfile-too-large` (Q-9). A pair in a `VALIDATION`
+that is not two strings gives no default, where MapServer's `loadHashTable` fails the load.
 
 **Not carried over.** `[shape]`, `[map_cellsize]`, `[data_cellsize]`, the geometry functions and
 spatial predicates, `IN` against a computed string, a number past the range of a double, which JSON

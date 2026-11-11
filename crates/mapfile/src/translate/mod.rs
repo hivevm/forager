@@ -149,6 +149,7 @@ pub fn translate(
         names: BTreeMap::new(),
         numbered: Vec::new(),
         fonts: BTreeMap::new(),
+        default_bytes: 0,
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
     // its symbol set after the whole map (loadMap, loadSymbolSet).
@@ -193,6 +194,8 @@ struct Translator<'a> {
     numbered: Vec<(u32, Span)>,
     /// The map's fonts, read before its layers so that a label's font is checked.
     fonts: BTreeMap<String, String>,
+    /// The bytes the defaults of `VALIDATION` have put into the load's expressions (Q-9).
+    default_bytes: usize,
 }
 
 impl Translator<'_> {
@@ -355,8 +358,12 @@ impl Translator<'_> {
                 },
                 Node::Block(b) => match b.keyword.as_str() {
                     "CLASS" => {
-                        let items = (class_item.as_deref(), label_item.as_deref());
-                        let class = self.class(b, items, [&defaults, web]);
+                        let class = self.class(
+                            b,
+                            class_item.as_deref(),
+                            label_item.as_deref(),
+                            [&defaults, web],
+                        );
                         layer.classes.push(class);
                     }
                     "PROJECTION" => layer.projection = self.projection(b),
@@ -544,7 +551,8 @@ impl Translator<'_> {
     fn class(
         &mut self,
         block: &Block,
-        (class_item, label_item): (Option<&str>, Option<&str>),
+        class_item: Option<&str>,
+        label_item: Option<&str>,
         outer: [&Defaults; 2],
     ) -> Class {
         let mut class = Class {
@@ -798,7 +806,9 @@ impl Translator<'_> {
             self.invalid(d, "one expression");
             return None;
         };
-        match substituted(token, tables).and_then(|token| expression::translate(&token, item)) {
+        let translated = substituted(token, tables, &mut self.default_bytes)
+            .and_then(|token| expression::translate(&token, item));
+        match translated {
             Ok(expr) => Some(expr),
             Err(problem) if problem.error => {
                 self.error(problem.code, &problem.message, &d.span);

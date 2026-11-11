@@ -54,9 +54,10 @@ impl Defaults {
 
     /// `text` with each `%name%` of a default replaced, one pass from the left, the tag found
     /// without case as msCaseReplaceSubstring finds it, and a replaced value not read again.
-    /// Scanning for the tags rather than for each default keeps the work to the text's length
-    /// (Q-9).
-    fn applied(&self, text: &str) -> Result<String, Problem> {
+    /// Scanning for the tags rather than for each default keeps the work to the text's length, and
+    /// `added` holds to Q-9's 16 MiB what the defaults put into all of a load's expressions, as one
+    /// default may be named many times.
+    fn applied(&self, text: &str, added: &mut usize) -> Result<String, Problem> {
         let mut out = String::with_capacity(text.len());
         let mut rest = text;
         while let Some(open) = rest.find('%') {
@@ -64,13 +65,15 @@ impl Defaults {
             let Some(close) = after.find('%') else { break };
             match self.0.get(&after[..close].to_ascii_lowercase()) {
                 Some(value) => {
-                    if out.len() + open + value.len() > MAX_TOTAL_BYTES {
+                    *added += value.len();
+                    let whole = out.len() + open + value.len() + after.len() - close - 1;
+                    if *added > MAX_TOTAL_BYTES || whole > MAX_TOTAL_BYTES {
                         return Err(Problem {
                             error: true,
                             code: "mapfile-too-large",
                             message: format!(
-                                "the expression with its VALIDATION defaults exceeds \
-                                 {MAX_TOTAL_BYTES} bytes"
+                                "the text the VALIDATION defaults add to the mapfile, or an \
+                                 expression with them, exceeds {MAX_TOTAL_BYTES} bytes"
                             ),
                         });
                     }
@@ -94,7 +97,11 @@ impl Defaults {
 /// layer's before the map's, as msApplyDefaultSubstitutions applies them. The token is one of
 /// loadExpression's; MapServer substitutes in its text before parsing it, so a default that does
 /// not parse is that expression's own warning.
-pub(super) fn substituted(token: &Token, tables: &[&Defaults]) -> Result<Token, Problem> {
+pub(super) fn substituted(
+    token: &Token,
+    tables: &[&Defaults],
+    added: &mut usize,
+) -> Result<Token, Problem> {
     let mut token = token.clone();
     let text = match &mut token.kind {
         TokenKind::Str { value, .. }
@@ -105,9 +112,7 @@ pub(super) fn substituted(token: &Token, tables: &[&Defaults]) -> Result<Token, 
         TokenKind::Number(_) | TokenKind::Binding(_) => return Ok(token),
     };
     for table in tables {
-        if !table.0.is_empty() {
-            *text = table.applied(text)?;
-        }
+        *text = table.applied(text, added)?;
     }
     Ok(token)
 }

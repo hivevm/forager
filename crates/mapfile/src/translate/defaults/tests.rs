@@ -33,6 +33,16 @@ fn filter(text: &str) -> (Vec<String>, Option<Expr>) {
     (codes, filter)
 }
 
+/// That `tree` is the condition of a filter written as `written`, one that can match.
+fn is_as_written(tree: &Option<Expr>, written: &str) {
+    let expected = filter(&format!("MAP LAYER FILTER {written} END END")).1;
+    assert!(
+        expected.is_some() && expected != Some(Expr::Bool(false)),
+        "{written}"
+    );
+    assert_eq!(json(tree), json(&expected), "{written}");
+}
+
 fn class_expression(text: &str) -> Option<Expr> {
     let loaded = load(text);
     loaded.document.as_ref().unwrap().map.layers[0].classes[0]
@@ -44,9 +54,12 @@ fn class_expression(text: &str) -> Option<Expr> {
 fn a_filter_takes_the_default_of_its_layers_validation() {
     let (with_default, tree) =
         filter(r#"MAP LAYER VALIDATION "default_v" "3" END FILTER ([v] = %v%) END END"#);
-    let (written, expected) = filter("MAP LAYER FILTER ([v] = 3) END END");
-    assert_eq!(with_default, written);
-    assert_eq!(json(&tree), json(&expected));
+    assert_eq!(with_default, Vec::<String>::new());
+    assert_eq!(
+        json(&tree),
+        r#"{"op":"=","args":[{"op":"to_number","args":[{"property":"v"}]},3.0]}"#
+    );
+    is_as_written(&tree, "([v] = 3)");
 }
 
 #[test]
@@ -66,7 +79,7 @@ fn a_name_without_a_default_stays_the_warning_it_is_and_never_matches() {
         filter(r#"MAP LAYER VALIDATION "default_v" "3" END FILTER ([v] = %w%) END END"#);
     let (written, _) = filter("MAP LAYER FILTER ([v] = %w%) END END");
     assert_eq!(with_other, written);
-    assert!(!with_other.is_empty());
+    assert_eq!(with_other, ["invalid-expression"]);
     assert_eq!(tree, Some(Expr::Bool(false)));
 }
 
@@ -76,7 +89,7 @@ fn a_default_that_does_not_parse_is_that_expressions_warning() {
         filter(r#"MAP LAYER VALIDATION "default_v" "3 +" END FILTER ([v] = %v%) END END"#);
     let (written, _) = filter("MAP LAYER FILTER ([v] = 3 +) END END");
     assert_eq!(with_default, written);
-    assert!(!with_default.is_empty());
+    assert_eq!(with_default, ["invalid-expression"]);
     assert_eq!(tree, Some(Expr::Bool(false)));
 }
 
@@ -107,7 +120,7 @@ fn the_last_default_of_a_name_is_the_one_kept() {
 fn a_key_that_is_no_default_gives_no_value() {
     let (codes, tree) =
         filter(r#"MAP LAYER VALIDATION "v" "^[0-9]+$" END FILTER ([v] = %v%) END END"#);
-    assert!(!codes.is_empty());
+    assert_eq!(codes, ["invalid-expression"]);
     assert_eq!(tree, Some(Expr::Bool(false)));
 }
 
@@ -150,10 +163,7 @@ fn a_classs_default_does_not_reach_the_filter_and_the_maps_does() {
         !codes.contains(&"invalid-expression".to_owned()),
         "{codes:?}"
     );
-    assert_eq!(
-        json(&reached),
-        json(&filter("MAP LAYER FILTER ([v] = 3) END END").1)
-    );
+    is_as_written(&reached, "([v] = 3)");
 }
 
 #[test]
@@ -180,6 +190,7 @@ fn a_labels_expression_takes_no_default() {
 
 #[test]
 fn a_filter_that_defaults_multiply_past_the_limit_fails_the_load() {
+    // Verifies: Q-9
     let value = "x".repeat(1024 * 1024);
     let tags = "%v%".repeat(MAX_TOTAL_BYTES / value.len() + 1);
     let loaded = load(&format!(
@@ -187,4 +198,62 @@ fn a_filter_that_defaults_multiply_past_the_limit_fails_the_load() {
     ));
     assert_eq!(codes(&loaded), ["mapfile-too-large"]);
     assert!(loaded.document.is_none());
+}
+
+#[test]
+fn the_text_after_the_last_tag_counts_toward_the_limit() {
+    // Verifies: Q-9
+    let value = "x".repeat(600 * 1024);
+    let tail = "y".repeat(15 * 1024 * 1024);
+    let loaded = load(&format!(
+        r#"MAP LAYER FILTERITEM 'a' VALIDATION "default_v" "{value}" END FILTER '%v%%v%%v%{tail}' END END"#
+    ));
+    assert_eq!(codes(&loaded), ["mapfile-too-large"]);
+    assert!(loaded.document.is_none());
+}
+
+#[test]
+fn a_default_named_by_many_expressions_counts_once_for_each_toward_one_limit() {
+    // Verifies: Q-9
+    let value = "x".repeat(1024 * 1024);
+    let classes = "CLASS EXPRESSION '%v%' END ".repeat(17);
+    let loaded = load(&format!(
+        r#"MAP LAYER CLASSITEM 'a' VALIDATION "default_v" "{value}" END {classes} END END"#
+    ));
+    assert_eq!(codes(&loaded), ["mapfile-too-large"]);
+    assert!(loaded.document.is_none());
+    let classes = "CLASS EXPRESSION '%v%' END ".repeat(16);
+    let loaded = load(&format!(
+        r#"MAP LAYER CLASSITEM 'a' VALIDATION "default_v" "{value}" END {classes} END END"#
+    ));
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+}
+
+/// A `%` that opens no tag leaves the `%` after it free to open one, as msCaseReplaceSubstring,
+/// looking for the whole tag, finds it wherever it stands.
+#[test]
+fn a_percent_that_opens_no_tag_leaves_the_next_free_to() {
+    let (codes, tree) =
+        filter(r#"MAP LAYER VALIDATION "default_v" "3" END FILTER ([a] % 2 = %v%) END END"#);
+    assert_eq!(codes, Vec::<String>::new());
+    is_as_written(&tree, "([a] % 2 = 3)");
+    let of = |value: &str| {
+        format!(
+            r#"MAP LAYER FILTERITEM 'a' VALIDATION "default_v" "3" END FILTER '{value}' END END"#
+        )
+    };
+    assert_eq!(json(&filter(&of("%x%v%")).1), json(&filter(&of("%x3")).1));
+    assert!(json(&filter(&of("%x%v%")).1).contains("%x3"));
+}
+
+#[test]
+fn a_percent_never_closed_stays_as_written() {
+    let of = |value: &str| {
+        format!(
+            r#"MAP LAYER FILTERITEM 'a' VALIDATION "default_v" "3" END FILTER '{value}' END END"#
+        )
+    };
+    let (codes, tree) = filter(&of("%v"));
+    assert_eq!(codes, Vec::<String>::new());
+    assert!(json(&tree).contains(r#""%v""#), "{}", json(&tree));
 }
