@@ -10,4 +10,7 @@ layer without one reads every feature. `FILTER` takes the same four kinds of exp
 `CLASSITEM`, `FILTERITEM` holds wherever it stands, and the last one is kept.
 
 **Not carried over.** A `FILTER` written as a database's own query, which MapServer hands to the
-source unparsed, and `%name%` runtime substitutions, are warnings, and the filter keeps `false`.
+source unparsed, and a `%name%` without a default, are warnings, and the filter keeps `false`.
+
+**Defaults.** A `%name%` for which the layer's `VALIDATION`, or else the `VALIDATION` of `WEB`, gives
+`default_name` is replaced before the filter is read: see [`EXPRESSION`](expression.md).
