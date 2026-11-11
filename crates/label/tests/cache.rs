@@ -3,7 +3,8 @@
 //! `msTestLabelCacheCollisions`, and `msCheckLabelMinDistance` at the pin.
 
 use forager_label::{
-    Anchor, MAX_PRIORITY, Member, Members, Offsets, PointLabel, Position, TextBox, draw_label_cache,
+    Anchor, MAX_PRIORITY, Member, Members, Offsets, PointLabel, Position, TextBox,
+    draw_label_cache, walk_label_cache,
 };
 use forager_render::Point;
 
@@ -309,4 +310,31 @@ fn a_turned_label_whose_box_is_no_number_meets_a_label_in_another_cell() {
         |i, _| cache.push(i),
     );
     assert_eq!(cache, [1]);
+}
+
+#[test]
+fn every_member_visited_is_handed_out_in_the_walk_s_order_drawn_or_not() {
+    // msDrawLabelCache walks priority 10 down to 1, and within one from the last label added to
+    // the first. Labels 0 and 3 are of priority 5, 1 and 4 of 2, and 2 of 8; label 3, at 60, is
+    // walked before label 0, at 50, which it covers, and label 4, at 150, before label 1, at
+    // 160, which it covers.
+    let p = |x, priority| with(at(x, 50.0), |m, _| m.priority = priority);
+    let members = vec![
+        p(50.0, 5),
+        p(160.0, 2),
+        p(100.0, 8),
+        p(60.0, 5),
+        p(150.0, 2),
+    ];
+    let mut visited = Vec::new();
+    let left_out = walk_label_cache(
+        &Cache(members.into_iter().map(|m| (m, "text")).collect()),
+        SIZE,
+        |i, placement| visited.push((i, placement.is_some())),
+    );
+    assert_eq!(left_out, 0);
+    assert_eq!(
+        visited,
+        [(2, true), (3, true), (0, false), (4, true), (1, false)]
+    );
 }

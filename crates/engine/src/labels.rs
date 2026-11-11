@@ -23,9 +23,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use forager_label::{
-    Align, Anchor, Font, Glyphs, Layout, LineError, MAX_LABELS, MAX_PRIORITY, Member, Members,
-    Offsets, Placement, PointLabel, Position, TextBox, TextPath, draw_label_cache, glyph_size,
-    lines, member_box, pixel_size, placed_at,
+    Align, Anchor, Font, Glyphs, Layout, LineError, MAX_LABELS, Member, Members, Offsets,
+    Placement, PointLabel, Position, TextBox, TextPath, glyph_size, lines, member_box, pixel_size,
+    placed_at, walk_label_cache,
 };
 use forager_ports::{Feature, ResourceLoader};
 use forager_render::{DisplayItem, Draw, DrawOp, GlyphOutline, Point};
@@ -839,14 +839,6 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         renderer: &mut R,
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<CachedLabel> {
-        if let (left_out, Some(first)) = self.over_limit {
-            let message = format!(
-                "the label cache of a render holds at most {MAX_LABELS} labels; {left_out} \
-                 labels past it, this one the first, are left out untested"
-            );
-            let span = self.span(first);
-            diagnostics.push(Diagnostic::warning("labels-over-limit", message, span));
-        }
         let cached = std::mem::take(&mut self.cached);
         let markers = std::mem::take(&mut self.markers);
         let styles = std::mem::take(&mut self.styles);
@@ -866,16 +858,19 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let (width, height) = self.size;
         let image = [0.0, 0.0, f64::from(width), f64::from(height)];
         let mut styled = Styled::new(self.map, self.view, width, height);
-        let mut boxes: Vec<Option<[f64; 4]>> = vec![None; cached.len()];
-        draw_label_cache(&cache, self.size, |i, placement| {
-            let member = cache.member(i);
-            // The member's box, of its text and its labelpoint marker (mapdraw.c:3976-4030).
-            boxes[i] = Some(member_box(
-                &placement.bounds.bbox,
-                member.label_marker.as_ref(),
-            ));
+        // The report follows the cache's walk, every member it visits with whether it was drawn.
+        let mut walked: Vec<(u32, Option<[f64; 4]>)> = Vec::with_capacity(cached.len());
+        let left_out = walk_label_cache(&cache, self.size, |i, placement| {
             let label = &cached[i];
             let at = defs[label.def as usize].at;
+            let Some(placement) = placement else {
+                walked.push((i as u32, None));
+                return;
+            };
+            let member = cache.member(i);
+            // The member's box, of its text and its labelpoint marker (mapdraw.c:3976-4030).
+            let drawn = member_box(&placement.bounds.bbox, member.label_marker.as_ref());
+            walked.push((i as u32, Some(drawn)));
             let path = (label.path != NO_PATH).then(|| &paths[label.path as usize]);
             let out_of_reach = draw_label(
                 renderer,
@@ -898,30 +893,38 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             self.out_of_reach(diagnostics, at, out_of_reach);
             self.hatches_refused(at, styled.take_hatches_refused());
         });
+        // The engine holds no more than MAX_LABELS, so the cache leaves none out of what it is
+        // handed; any it did are counted with the engine's own.
+        self.over_limit.0 += left_out;
+        if let (left_out, Some(first)) = self.over_limit {
+            let message = format!(
+                "the label cache of a render holds at most {MAX_LABELS} labels; {left_out} \
+                 labels past it, this one the first, are left out untested"
+            );
+            let span = self.span(first);
+            diagnostics.push(Diagnostic::warning("labels-over-limit", message, span));
+        }
         // The hatches refused of the labels the cache drew, reported for their layers as a
         // layer's own (Q-9).
         for (layer, refused) in std::mem::take(&mut self.hatches_refused) {
             diagnostics.extend(crate::refused_hatches(&self.map.layers[layer], refused));
         }
-        // The report walks the cache as msDrawLabelCache does, its labels sharing their
-        // feature's text.
+        // The labels of the report share their feature's text.
         let texts: Vec<Arc<str>> = texts.into_iter().map(Arc::from).collect();
-        let mut labels = Vec::with_capacity(cached.len());
-        for priority in (1..=MAX_PRIORITY).rev() {
-            for (i, label) in cached.iter().enumerate().rev() {
-                if label.priority != priority {
-                    continue;
-                }
+        let labels = walked
+            .into_iter()
+            .map(|(i, drawn)| {
+                let label = &cached[i as usize];
                 let (layer, class, _) = defs[label.def as usize].at;
-                labels.push(CachedLabel {
-                    priority,
+                CachedLabel {
+                    priority: label.priority,
                     layer,
                     class,
                     text: Arc::clone(&texts[label.text as usize]),
-                    drawn: boxes[i],
-                });
-            }
-        }
+                    drawn,
+                }
+            })
+            .collect();
         labels
     }
 

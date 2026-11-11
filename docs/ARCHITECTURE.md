@@ -173,7 +173,10 @@ golden path and the test pattern an agent copies from are named here.
   its labelpoly and the bounds of its `labelpoint` marker, as a pure function of the text's box
   (`place.rs`); and which labels MapServer's label cache draws, by priority, collisions with the
   labels drawn, their `labelpoint` markers among them, and the markers cached, the image's edge,
-  and `MINDISTANCE`, each test bounded by a grid over the image (`cache.rs`). It is the one crate
+  and `MINDISTANCE`, each test bounded by a grid over the image that files a drawn label by its
+  box and, for `MINDISTANCE`, by its point apart; the cache takes the first `MAX_LABELS`, reports
+  how many it left out, and hands its caller every label it visits, drawn or not, in its walk's
+  order, which the engine's report of the labels follows (`cache.rs`). It is the one crate
   that depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
   or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
