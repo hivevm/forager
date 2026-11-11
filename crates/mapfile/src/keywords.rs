@@ -24,7 +24,7 @@
 /// Each keyword in lower case, sorted, with its token value: a block or directive's keyword from
 /// 1000 up (`src/mapfile.h`), a value of one of MapServer's enums below that, or the symbol types
 /// from 1000 up, `MS_SYMBOL_SIMPLE` first (`src/mapsymbol.h`).
-pub(crate) const KEYWORDS: [(&str, i32); 262] = [
+pub(crate) const KEYWORDS: [(&str, i32); 263] = [
     ("align", 1203),              // ALIGN
     ("anchorpoint", 1230),        // ANCHORPOINT
     ("angle", 1000),              // ANGLE
@@ -74,6 +74,7 @@ pub(crate) const KEYWORDS: [(&str, i32); 262] = [
     ("embed", 3),                 // MS_EMBED
     ("empty", 1010),              // EMPTY
     ("encoding", 1162),           // ENCODING
+    ("end", 1011),                // END, a rule of the CONFIG_FILE state too
     ("error", 1012),              // ERROR
     ("expression", 1013),         // EXPRESSION
     ("extension", 1155),          // EXTENSION

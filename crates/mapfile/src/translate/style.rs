@@ -184,7 +184,8 @@ impl Translator<'_> {
     /// `GEOMTRANSFORM` by name; MapServer's other transforms and its expressions are not yet
     /// carried over.
     fn geom_transform(&mut self, d: &Directive) -> Option<GeomTransform> {
-        // An unquoted word is a string to MapServer's lexer.
+        // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION): a string, a bare word that is no
+        // keyword among them, or an expression.
         let name = match d.values.as_slice() {
             [token] => token
                 .string()

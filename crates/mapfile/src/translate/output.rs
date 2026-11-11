@@ -72,8 +72,13 @@ fn format(block: &Block) -> Format {
     for node in &block.nodes {
         let Node::Directive(d) = node else { continue };
         match d.keyword.as_str() {
-            // getSymbol(2, MS_STRING, TEMPLATE): a string, or the keyword `template`.
-            "DRIVER" => driver = token(d),
+            // getSymbol(2, MS_STRING, TEMPLATE): a string, or the keyword `template`, no other.
+            "DRIVER" => {
+                driver = token(d).filter(|v| {
+                    keywords::token_value(v).is_none() || v.eq_ignore_ascii_case("template")
+                });
+            }
+            // getToken: any token's text, a keyword's included.
             "NAME" => name = token(d),
             "MIMETYPE" => mime_type = value(d),
             "IMAGEMODE" => image_mode = token(d).map(|m| m.to_ascii_uppercase()),

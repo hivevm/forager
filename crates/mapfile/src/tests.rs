@@ -1663,3 +1663,31 @@ fn a_lone_point_is_a_number_atof_reads_as_0_in_a_mapfile_as_in_an_expression() {
         assert_eq!(len, text.len() - usize::from(text == "1e"), "{text}");
     }
 }
+
+#[test]
+fn an_output_format_reads_transparent_by_token_value_and_its_name_as_any_token() {
+    // loadOutputFormat, src/mapfile.c: TRANSPARENT is getSymbol(2, MS_ON, MS_OFF), so `feet` and
+    // `line`, 1, are on and `point`, 0, is off; NAME is getToken, so the keyword `tiny` names the
+    // format.
+    let image_color = |text: &str| {
+        let loaded = load_files(&[("m.map", text.to_owned().leak())]);
+        loaded.document.unwrap().map.image_color
+    };
+    let clear = Some(Rgba {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    });
+    for word in ["feet", "line", "true"] {
+        let text = format!(
+            "MAP IMAGETYPE 'a' OUTPUTFORMAT NAME 'a' DRIVER AGG/PNG TRANSPARENT {word} END END"
+        );
+        assert_eq!(image_color(&text), clear, "{word}");
+    }
+    let text = "MAP IMAGETYPE 'a' OUTPUTFORMAT NAME 'a' DRIVER AGG/PNG IMAGEMODE RGBA \
+                TRANSPARENT point END END";
+    assert_eq!(image_color(text), None);
+    let text = "MAP IMAGETYPE 'tiny' OUTPUTFORMAT NAME tiny DRIVER AGG/PNG TRANSPARENT on END END";
+    assert_eq!(image_color(text), clear);
+}
