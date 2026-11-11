@@ -65,7 +65,8 @@ golden path and the test pattern an agent copies from are named here.
   a path, read through the resource loader against the same directory within the same bounds
   (`init_file.rs`, [ADR-0019](adr/0019-projection-resolver.md)), and the
   translation into the style IR (`translate/`, a module per block it reads: symbols, font set,
-  labels, styles, projections, the output format's transparency, inline features), which appends
+  labels, styles, projections, the output format's transparency, inline features, and the
+  defaults of `VALIDATION`), which appends
   to the map's symbols a pixmap or SVG symbol for each name a style's `SYMBOL` gives that no
   symbol carries, as `msAddImageSymbol` appends it, a name beginning `http` aside, its path
   inside the base context and its file not read

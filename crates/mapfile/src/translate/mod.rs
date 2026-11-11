@@ -25,12 +25,16 @@ use forager_style_ir::{
     Units,
 };
 
+use crate::MAX_TOTAL_BYTES;
 use crate::expression;
 use crate::init_file::InitFile;
 use crate::lexer::{Token, TokenKind};
 use crate::report::Report;
 use crate::syntax::{Block, Directive, Node};
 
+use self::defaults::{Defaults, substituted};
+
+mod defaults;
 mod feature;
 mod fonts;
 mod label;
@@ -146,6 +150,7 @@ pub fn translate(
         names: BTreeMap::new(),
         numbered: Vec::new(),
         fonts: BTreeMap::new(),
+        default_bytes: 0,
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
     // its symbol set after the whole map (loadMap, loadSymbolSet).
@@ -190,6 +195,8 @@ struct Translator<'a> {
     numbered: Vec<(u32, Span)>,
     /// The map's fonts, read before its layers so that a label's font is checked.
     fonts: BTreeMap<String, String>,
+    /// The bytes the defaults of `VALIDATION` have put into the load's expressions (Q-9).
+    default_bytes: usize,
 }
 
 impl Translator<'_> {
@@ -198,6 +205,11 @@ impl Translator<'_> {
             span: Some(block.span.clone()),
             ..Map::default()
         };
+        // MapServer applies them after the whole map is read, so each holds wherever it stands.
+        let web = Defaults::of(block.nodes.iter().filter_map(|node| match node {
+            Node::Block(b) if b.keyword == "WEB" => Some(b),
+            _ => None,
+        }));
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -225,7 +237,7 @@ impl Translator<'_> {
                     "SYMBOL" => {}
                     "OUTPUTFORMAT" => self.output_format(&b.keyword, &b.span),
                     "LAYER" => {
-                        if let Some(layer) = self.layer(b) {
+                        if let Some(layer) = self.layer(b, &web) {
                             self.class_labelcenter(&layer);
                             map.layers.push(layer);
                         }
@@ -267,7 +279,7 @@ impl Translator<'_> {
         self.warn("unsupported-keyword", &message, span);
     }
 
-    fn layer(&mut self, block: &Block) -> Option<Layer> {
+    fn layer(&mut self, block: &Block, web: &Defaults) -> Option<Layer> {
         let mut layer = Layer {
             span: Some(block.span.clone()),
             ..Layer::default()
@@ -280,6 +292,8 @@ impl Translator<'_> {
         let class_item = item(block, "CLASSITEM");
         let label_item = item(block, "LABELITEM");
         let filter_item = item(block, "FILTERITEM");
+        let defaults = Defaults::of([block]);
+        let tables = [&defaults, web];
         let mut composites = Vec::new();
         // A layer with features is an inline layer (msInitializeVirtualTable), whose item names
         // its PROCESSING "ITEMS=…" gives (msLayerGetItems), unless its connection type is one
@@ -320,7 +334,7 @@ impl Translator<'_> {
                         self.string(d);
                     }
                     "LABELCACHE" => self.label_cache(&mut layer, d),
-                    "FILTER" => layer.filter = self.expression(d, filter_item.as_deref()),
+                    "FILTER" => layer.filter = self.defaulted(d, filter_item.as_deref(), &tables),
                     "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
                     "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
                     "MAXSCALE" | "MAXSCALEDENOM" => layer.max_scale_denom = self.scale_denom(d),
@@ -343,10 +357,13 @@ impl Translator<'_> {
                 },
                 Node::Block(b) => match b.keyword.as_str() {
                     "CLASS" => {
-                        let class = self.class(b, class_item.as_deref(), label_item.as_deref());
+                        let class =
+                            self.class(b, class_item.as_deref(), label_item.as_deref(), tables);
                         layer.classes.push(class);
                     }
                     "PROJECTION" => layer.projection = self.projection(b),
+                    // Read by Defaults; its other keys only check a runtime substitution.
+                    "VALIDATION" => {}
                     "COMPOSITE" => composites.push(b),
                     "FEATURE" => {
                         let feature = self.feature(b, shape_type, &item_names);
@@ -531,6 +548,7 @@ impl Translator<'_> {
         block: &Block,
         class_item: Option<&str>,
         label_item: Option<&str>,
+        outer: [&Defaults; 2],
     ) -> Class {
         let mut class = Class {
             span: Some(block.span.clone()),
@@ -546,12 +564,13 @@ impl Translator<'_> {
             Some(d) => self.text(d),
             None => label_item.map(|name| Expr::call(Op::ToString, vec![Expr::property(name)])),
         };
+        let own = Defaults::of([block]);
         let mut label_left_out = false;
         for node in &block.nodes {
             match node {
                 Node::Directive(d) if d.keyword == "NAME" => class.name = self.string(d),
                 Node::Directive(d) if d.keyword == "EXPRESSION" => {
-                    class.expression = self.expression(d, class_item);
+                    class.expression = self.defaulted(d, class_item, &[&own, outer[0], outer[1]]);
                 }
                 // loadClass refuses each TEXT that is neither a string nor an expression, the
                 // ones a later TEXT replaces included.
@@ -571,6 +590,7 @@ impl Translator<'_> {
                     class.max_scale_denom = self.scale_denom(d);
                 }
                 Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b)),
+                Node::Block(b) if b.keyword == "VALIDATION" => {}
                 Node::Block(b) if b.keyword == "LABEL" => {
                     match self.label(b, fallback.as_ref(), label_item) {
                         Some(label) => class.labels.push(label),
@@ -767,11 +787,28 @@ impl Translator<'_> {
     /// `FILTERITEM`. One that cannot be carried over is a warning and a condition that never
     /// matches.
     fn expression(&mut self, d: &Directive, item: Option<&str>) -> Option<Expr> {
+        self.defaulted(d, item, &[])
+    }
+
+    /// [`Self::expression`] with the `%name%`s the defaults of `tables` give replaced first.
+    fn defaulted(
+        &mut self,
+        d: &Directive,
+        item: Option<&str>,
+        tables: &[&Defaults],
+    ) -> Option<Expr> {
+        // The load has failed on the defaults' bound and said so once; charging on could wrap the
+        // count on wasm32 and let them through again (Q-9).
+        if self.default_bytes > MAX_TOTAL_BYTES {
+            return None;
+        }
         let [token] = d.values.as_slice() else {
             self.invalid(d, "one expression");
             return None;
         };
-        match expression::translate(token, item) {
+        let translated = substituted(token, tables, &mut self.default_bytes)
+            .and_then(|token| expression::translate(&token, item));
+        match translated {
             Ok(expr) => Some(expr),
             Err(problem) if problem.error => {
                 self.error(problem.code, &problem.message, &d.span);
