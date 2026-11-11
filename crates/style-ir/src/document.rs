@@ -636,6 +636,7 @@ mod tests {
             (r#"{"geom_transform":"start"}"#, "start"),
         ] {
             let error = StyleDocument::from_json(&document(style, "{}")).unwrap_err();
+            assert_eq!(error.code, "json-read", "{style}");
             assert!(
                 error
                     .message
@@ -659,6 +660,7 @@ mod tests {
         let shadow = read.document.map.layers[0].classes[0].labels[0].shadow_color;
         assert_eq!(shadow, Some(Rgba::opaque(1, 2, 3)));
         let error = StyleDocument::from_json(&label(r#"{"binding":"c"}"#)).unwrap_err();
+        assert_eq!(error.code, "json-read");
         assert!(
             error
                 .message
@@ -698,6 +700,20 @@ mod tests {
         let read = StyleDocument::from_yaml("version: \"1.0\"\nmap: {resolution: .nan}\n").unwrap();
         assert_eq!(read.document.map.resolution, None);
         assert_eq!(read.warnings.len(), 1, "{:?}", read.warnings);
+    }
+
+    #[test]
+    fn a_resolution_outside_10_to_1000_is_dropped_in_a_newer_minor_version_too() {
+        let read =
+            StyleDocument::from_json(r#"{"version":"1.9","map":{"def_resolution":0}}"#).unwrap();
+        assert_eq!(read.document.map.def_resolution, None);
+        assert!(
+            read.warnings.iter().any(
+                |w| w.code == "value-out-of-range" && w.message.contains("/map/def_resolution")
+            ),
+            "{:?}",
+            read.warnings
+        );
     }
 
     #[test]

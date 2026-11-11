@@ -90,8 +90,8 @@ A `labelpoly` of any other symbol is not drawn yet, so its label is left out wit
 A label's style of any other `GEOMTRANSFORM`, `start`, `end`, `vertices`, `centroid`, `bbox`, an
 expression, or a name MapServer does not know, `msDrawLabelCache` fails the map's draw on; the IR's
 label style always names `labelpoint`, `labelpoly`, or `labelcenter`, so the frontend leaves such a
-label out with `label-not-drawn`. A class's other label is then drawn alone, where the engine leaves
-out every label of a class of several labels, not drawn yet. `ANGLE AUTO` on a label's style changes
+label out with `label-not-drawn`, and its class's other labels with it, as the engine leaves out
+every label of a class of several labels, not drawn yet. `ANGLE AUTO` on a label's style changes
 nothing: `loadStyle` sets only the style's `autoangle`, which none of the functions drawing a
 label's styles reads, so the style turns by its `ANGLE` alone.
 

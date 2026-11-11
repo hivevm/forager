@@ -25,9 +25,6 @@ use forager_style_ir::{
     Units,
 };
 
-/// The range MapServer's loader holds `RESOLUTION` and `DEFRESOLUTION` to, the style document's.
-const RESOLUTION: Range = Range::Within(MIN_RESOLUTION, MAX_RESOLUTION);
-
 use crate::expression;
 use crate::init_file::InitFile;
 use crate::lexer::{Token, TokenKind};
@@ -41,6 +38,9 @@ mod output;
 mod projection;
 mod style;
 mod symbol;
+
+/// The range MapServer's loader holds `RESOLUTION` and `DEFRESOLUTION` to, the style document's.
+const RESOLUTION: Range = Range::Within(MIN_RESOLUTION, MAX_RESOLUTION);
 
 /// Keywords out of Forager's scope (specification, Non-Goals): read and discarded.
 const DISCARDED: &[&str] = &[
@@ -546,6 +546,7 @@ impl Translator<'_> {
             Some(d) => self.text(d),
             None => label_item.map(|name| Expr::call(Op::ToString, vec![Expr::property(name)])),
         };
+        let mut label_left_out = false;
         for node in &block.nodes {
             match node {
                 Node::Directive(d) if d.keyword == "NAME" => class.name = self.string(d),
@@ -571,13 +572,19 @@ impl Translator<'_> {
                 }
                 Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b)),
                 Node::Block(b) if b.keyword == "LABEL" => {
-                    class
-                        .labels
-                        .extend(self.label(b, fallback.as_ref(), label_item));
+                    match self.label(b, fallback.as_ref(), label_item) {
+                        Some(label) => class.labels.push(label),
+                        None => label_left_out = true,
+                    }
                 }
                 Node::Directive(d) => self.unhandled_directive(d),
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
             }
+        }
+        // Leaving out one of a class's labels must not draw another: the engine draws no label of
+        // a class of several.
+        if label_left_out {
+            class.labels.clear();
         }
         class
     }

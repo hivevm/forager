@@ -238,7 +238,8 @@ fn a_label_carries_what_placement_and_drawing_need() {
 
 /// msDrawLabelCache draws a label's style by labelpnt, labelpoly, and labelcenter alone, and
 /// fails the map's draw on bbox and others: a label with a style of any other GEOMTRANSFORM is
-/// left out with a warning, never drawn at the label point, and its class's other labels stay.
+/// left out with a warning, never drawn at the label point, and its class's other labels with it,
+/// as the engine leaves out every label of a class of several: leaving one out must not draw another.
 #[test]
 fn a_label_with_a_style_of_another_transform_is_left_out() {
     for transform in [
@@ -262,8 +263,7 @@ fn a_label_with_a_style_of_another_transform_is_left_out() {
             codes(&loaded)
         );
         let labels = &loaded.document.as_ref().unwrap().map.layers[0].classes[0].labels;
-        assert_eq!(labels.len(), 1, "{transform}");
-        assert_eq!(json(&labels[0].text), r#""b""#, "{transform}");
+        assert!(labels.is_empty(), "{transform}: {labels:?}");
     }
 }
 

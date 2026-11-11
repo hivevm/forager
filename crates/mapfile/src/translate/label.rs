@@ -159,7 +159,8 @@ impl Translator<'_> {
     /// A label's `STYLE`, at the label's point without a `GEOMTRANSFORM`, the default loadLabel
     /// gives it; `None`, with a warning, for any transform but labelpnt, labelpoly, and
     /// labelcenter, by which alone msDrawLabelCache draws a label's style, failing the map's draw
-    /// on bbox and others: a label's style holds no other, so its label is left out.
+    /// on bbox and others: a label's style holds no other, so its label is left out, and the caller
+    /// leaves out its class's other labels with it.
     fn label_style(&mut self, b: &Block) -> Option<Style<LabelTransform>> {
         let style = self.style(b);
         let transformed = b
@@ -173,7 +174,7 @@ impl Translator<'_> {
             (true, _) => {
                 let message = "a LABEL's STYLE of a GEOMTRANSFORM other than labelpnt, \
                                labelpoly, or labelcenter is not drawn; the label is left out, and \
-                               its class's other labels are drawn without it";
+                               its class's other labels with it";
                 self.warn("label-not-drawn", message, &b.span);
                 return None;
             }
