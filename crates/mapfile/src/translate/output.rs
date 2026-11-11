@@ -20,6 +20,7 @@
 //! and `msOutputFormatValidate` set it. `agg2CreateImage`, src/mapagg.cpp, clears the image of a
 //! transparent format to no colour, whatever the map's `IMAGECOLOR`.
 
+use crate::keywords;
 use crate::syntax::{Block, Directive, Node};
 
 /// What an `OUTPUTFORMAT` block contributes to the selection: the names it is found by, and
@@ -30,10 +31,18 @@ struct Format {
     transparent: bool,
 }
 
-/// The single string or word of a directive, as `getString` reads it.
+/// The single string or word of a directive, as `getString` reads it: a keyword is none.
 fn value(d: &Directive) -> Option<String> {
     match d.values.as_slice() {
         [token] => token.string().map(str::to_owned),
+        _ => None,
+    }
+}
+
+/// The text of a directive's single token, a keyword's included, as `getToken` reads it.
+fn token(d: &Directive) -> Option<String> {
+    match d.values.as_slice() {
+        [token] => token.text().map(str::to_owned),
         _ => None,
     }
 }
@@ -63,14 +72,16 @@ fn format(block: &Block) -> Format {
     for node in &block.nodes {
         let Node::Directive(d) = node else { continue };
         match d.keyword.as_str() {
-            "DRIVER" => driver = value(d),
-            "NAME" => name = value(d),
+            // getSymbol(2, MS_STRING, TEMPLATE): a string, or the keyword `template`.
+            "DRIVER" => driver = token(d),
+            "NAME" => name = token(d),
             "MIMETYPE" => mime_type = value(d),
-            "IMAGEMODE" => image_mode = value(d).map(|m| m.to_ascii_uppercase()),
+            "IMAGEMODE" => image_mode = token(d).map(|m| m.to_ascii_uppercase()),
+            // getSymbol(2, MS_ON, MS_OFF), by token value: `TRUE`, `FEET`, or `LINE` is `ON`.
             "TRANSPARENT" => {
-                transparent = match value(d).map(|v| v.to_ascii_uppercase()).as_deref() {
-                    Some("ON" | "TRUE") => Some(true),
-                    Some("OFF" | "FALSE") => Some(false),
+                transparent = match token(d) {
+                    Some(v) if keywords::stands_for(&v, "ON") => Some(true),
+                    Some(v) if keywords::stands_for(&v, "OFF") => Some(false),
                     _ => transparent,
                 };
             }

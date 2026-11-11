@@ -62,6 +62,11 @@ const SKIPPED: &[(&str, &str)] = &[
         "php/maps/include/indx_q100kpy4_shapefile.map",
         "an include fragment",
     ),
+    (
+        "php/maps/wms_simple.map",
+        "malformed at the pin: `SHAPEPATH data` gives getString the keyword DATA, which it \
+         refuses, so loadMapInternal fails the load too",
+    ),
     ("query/include/bdry_counpy2_ogr.map", "an include fragment"),
     (
         "query/include/bdry_counpy2_postgis.map",

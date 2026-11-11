@@ -572,3 +572,75 @@ fn a_class_style_of_labelcenter_warns_and_a_label_style_does_not() {
         ["unsupported-value"]
     );
 }
+
+/// The keywords of MapServer's lexer whose token value is that of `name`.
+fn of_the_value_of(name: &str) -> Vec<&'static str> {
+    let value = crate::keywords::token_value(name).unwrap();
+    crate::keywords::KEYWORDS
+        .iter()
+        .filter(|(_, v)| *v == value)
+        .map(|(word, _)| *word)
+        .collect()
+}
+
+#[test]
+fn a_line_cap_or_join_is_any_keyword_of_its_token_value_as_getsymbol_compares_it() {
+    use forager_style_ir::{LineCap, LineJoin};
+    // loadStyle's getSymbol, src/mapfile.c: LINECAP takes MS_CJC_BUTT, ROUND, SQUARE, and
+    // TRIANGLE, 2, 4, 5, and 6; LINEJOIN MS_CJC_NONE, ROUND, MITER, and BEVEL, 0, 4, 3, and 1
+    // (src/mapserver.h). Every word the lexer gives one of those values stands for it: `polygon`,
+    // `default`, `miles`, and `center` for butt, `off`, `false`, `inches`, and `point` for none.
+    for (name, cap) in [
+        ("butt", LineCap::Butt),
+        ("round", LineCap::Round),
+        ("square", LineCap::Square),
+        ("triangle", LineCap::Triangle),
+    ] {
+        let words = of_the_value_of(name);
+        assert!(words.len() > 1, "{name}: {words:?}");
+        for word in words {
+            assert_eq!(
+                style_of(&format!("LINECAP {word}")).line_cap,
+                Some(cap),
+                "{word}"
+            );
+        }
+    }
+    for (name, join) in [
+        ("none", LineJoin::None),
+        ("round", LineJoin::Round),
+        ("miter", LineJoin::Miter),
+        ("bevel", LineJoin::Bevel),
+    ] {
+        let words = of_the_value_of(name);
+        assert!(words.len() > 1, "{name}: {words:?}");
+        for word in words {
+            assert_eq!(
+                style_of(&format!("LINEJOIN {word}")).line_join,
+                Some(join),
+                "{word}"
+            );
+        }
+    }
+    assert!(of_the_value_of("polygon").contains(&"miles"));
+    assert!(of_the_value_of("off").contains(&"point"));
+    // A keyword of no value among the choices, and a word that is no keyword, are refused.
+    refused("LINECAP miter");
+    refused("LINEJOIN butt");
+    refused("LINECAP roads");
+}
+
+#[test]
+fn a_bare_keyword_is_no_symbol_name_and_a_quoted_one_is() {
+    // `circle` is MS_LAYER_CIRCLE to MapServer's lexer, which loadStyle's getSymbol(3,
+    // MS_NUMBER, MS_STRING, MS_BINDING) refuses, failing the load; quoted, it is a string.
+    let (loaded, _) = first_style("MAP LAYER CLASS STYLE SYMBOL circle END END END END");
+    assert!(loaded.document.is_none());
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+    let (loaded, style) = first_style("MAP LAYER CLASS STYLE SYMBOL 'circle' END END END END");
+    assert!(loaded.document.is_some(), "{:?}", codes(&loaded));
+    assert!(style.unwrap().symbol.is_some());
+    // A bare word that is no keyword is a string.
+    let (loaded, _) = first_style("MAP LAYER CLASS STYLE SYMBOL dot END END END END");
+    assert!(loaded.document.is_some(), "{:?}", codes(&loaded));
+}

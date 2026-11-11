@@ -21,8 +21,9 @@ The IR lists them in that order without the default, so the symbol at position `
 the centre; `CHARACTER` and `FONT` for a TrueType symbol; `IMAGE` for a pixmap or SVG, a resource
 path resolved beside the file that holds the symbol — the mapfile or the symbol file — and not read
 at load (Q-8); `TRANSPARENT`, a palette index from 0 to 255; `POINTS`, at most 100 pairs in all, as
-a second `POINTS` block appends to the first. `TYPE` and `FILLED` are bare words, `TRUE` and `ON`,
-`FALSE` and `OFF` alike for `FILLED`; a later statement replaces an earlier one. A pixmap or SVG
+a second `POINTS` block appends to the first. `TYPE` and `FILLED` are bare words, each word of a
+choice's token value alike, `TRUE` and `ON` for `FILLED`, `FALSE` or `OFF` for `TYPE truetype`
+([`tokens.md`](tokens.md)); a later statement replaces an earlier one. A pixmap or SVG
 without `IMAGE`, and a vector or ellipse without `POINTS`, are load errors. `ANTIALIAS` is read and
 ignored, as MapServer ignores it.
 

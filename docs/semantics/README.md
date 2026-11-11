@@ -6,6 +6,7 @@ on the way in. One page per parameter; the reference is the MapServer release th
 pins, named in [`scripts/fetch-msautotest.sh`](../../scripts/fetch-msautotest.sh). These pages
 describe and decide nothing: the decisions are the ADRs they cite.
 
+- [Tokens](tokens.md): bare words, keywords, keyword choices, and numbers
 - [`CLASSITEM`](classitem.md)
 - [`EXPRESSION`](expression.md) — and the expression language every parameter below shares
 - [`FILTER` and `FILTERITEM`](filter.md)

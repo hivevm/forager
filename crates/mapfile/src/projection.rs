@@ -1,3 +1,18 @@
+// The reading of a PROJECTION block follows MapServer's loadProjection, src/mapfile.c, of the
+// release pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 //! The parameters of a `PROJECTION` block, read once: for the init files the frontend reads before
 //! translation, and for the proj4 string the translation builds from them (ADR-0019).
 
@@ -47,7 +62,9 @@ pub fn read(block: &Block) -> Result<Projection, Invalid> {
     let mut explicit = Vec::new();
     let mut init: Option<Init> = None;
     for token in &block.values {
-        let Some(text) = token.string().map(str::trim) else {
+        // loadProjection, src/mapfile.c, takes a string or the keyword `auto`, MS_AUTO.
+        let auto = token.text().filter(|w| w.eq_ignore_ascii_case("auto"));
+        let Some(text) = token.string().or(auto).map(str::trim) else {
             return Err(Invalid {
                 message: "a projection parameter is a string",
                 span: token.span.clone(),

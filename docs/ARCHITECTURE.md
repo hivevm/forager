@@ -58,7 +58,8 @@ golden path and the test pattern an agent copies from are named here.
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`;
   `poll_once` runs a future whose ports never wait in one poll, as every host and test that runs
   the frontend or the engine synchronously does.
-- **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, a generic parser of
+- **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, its keywords and their
+  token values in one table (`keywords.rs`), a generic parser of
   blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
   against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), the
   symbol file and font set `SYMBOLSET` and `FONTSET` name and the init files an `init=` names by

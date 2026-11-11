@@ -1,0 +1,16 @@
+MAP
+  EXTENT . -. 100 100
+  SIZE 101 101
+  SYMBOL NAME 'a' TYPE false END
+  LAYER
+    NAME 'l'
+    TYPE miles
+    STATUS true
+    CLASSITEM 'name'
+    CLASS
+      EXPRESSION ([a] = .)
+      STYLE LINECAP default LINEJOIN inches COLOR 1 2 3 END
+      LABEL TEXT 'x' ALIGN on SIZE dd END
+    END
+  END
+END

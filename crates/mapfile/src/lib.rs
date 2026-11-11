@@ -4,6 +4,7 @@
 
 mod expression;
 mod init_file;
+mod keywords;
 mod lexer;
 mod projection;
 mod report;

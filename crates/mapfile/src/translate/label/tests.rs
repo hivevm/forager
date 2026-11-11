@@ -554,3 +554,37 @@ fn a_shadow_colour_takes_no_attribute() {
         "at the directive"
     );
 }
+
+#[test]
+fn a_labels_align_and_bitmap_size_are_any_keyword_of_their_token_value() {
+    // loadLabel's getSymbol, src/mapfile.c, compares the lexer's token value: ALIGN takes
+    // MS_ALIGN_LEFT, CENTER, and RIGHT, 1, 2, and 3, so `on` is left, `default` center, and
+    // `meters` right; SIZE takes MS_TINY to MS_GIANT, 5 to 16, so `dd` is tiny and `wms` small
+    // (src/mapserver.h).
+    for (word, align) in [
+        ("on", Align::Left),
+        ("true", Align::Left),
+        ("feet", Align::Left),
+        ("default", Align::Center),
+        ("polygon", Align::Center),
+        ("meters", Align::Right),
+        ("raster", Align::Right),
+    ] {
+        let (codes, label) = label_of(&format!("TEXT 'a' ALIGN {word}"));
+        assert!(codes.is_empty(), "{word}: {codes:?}");
+        assert_eq!(label.unwrap().align, Some(Bound::Value(align)), "{word}");
+    }
+    for (word, size) in [
+        ("dd", 5.0),
+        ("square", 5.0),
+        ("wms", 7.0),
+        ("percentages", 7.0),
+        ("medium", 10.0),
+        ("plugin", 13.0),
+        ("contour", 16.0),
+    ] {
+        let (codes, label) = label_of(&format!("TEXT 'a' SIZE {word}"));
+        assert!(codes.is_empty(), "{word}: {codes:?}");
+        assert_eq!(label.unwrap().size, Some(Bound::Value(size)), "{word}");
+    }
+}
