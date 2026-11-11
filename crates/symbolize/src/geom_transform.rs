@@ -40,7 +40,8 @@ pub(crate) type Placed = (Point, Option<f64>);
 /// The points at which a style transformed by `transform` draws its symbol on `geometry`, a
 /// shape of a line or a polygon layer, as msDrawTransformedShape places them on the unclipped
 /// shape in pixels; `image` is the image's width and height. `labelpoint` and `labelpoly` draw
-/// nothing there, as msDrawTransformedShape draws nothing for them.
+/// nothing there, as msDrawTransformedShape draws nothing for them; `bbox` draws no symbol at a
+/// point, but a polygon (see [`bbox`]).
 pub(crate) fn placed(
     transform: GeomTransform,
     geometry: &Geometry,
@@ -83,9 +84,81 @@ pub(crate) fn placed(
                 placed.push((c, None));
             }
         }
-        GeomTransform::LabelPoint | GeomTransform::LabelPoly | GeomTransform::LabelCenter => {}
+        GeomTransform::Bbox
+        | GeomTransform::LabelPoint
+        | GeomTransform::LabelPoly
+        | GeomTransform::LabelCenter => {}
     }
     placed
+}
+
+/// The ring a style transformed by `bbox` draws on `geometry`, a shape of a line or a polygon
+/// layer, as msDrawTransformedShape builds it (`src/mapgeomtransform.c:161-187`): the bounds of
+/// the unclipped shape in pixels, each side held within the image grown by `padding`, the larger
+/// of the style's width and size and 3 pixels, cut to an `int`, so that the clipped ring's edges
+/// stay off the image; its five points from the bounds' lower left up, around, and back. `None`
+/// for a shape without points; `image_size` is the image's width and height, whole pixels.
+pub(crate) fn bbox(
+    geometry: &Geometry,
+    view: &View,
+    image_size: (u32, u32),
+    width: f64,
+    size: f64,
+) -> Option<Vec<Point>> {
+    let lines = shape_in_pixels(geometry, view);
+    let mut points = lines.iter().flatten();
+    let first = *points.next()?;
+    let (mut min, mut max) = (first, first);
+    for p in points {
+        min = Point {
+            x: min.x.min(p.x),
+            y: min.y.min(p.y),
+        };
+        max = Point {
+            x: max.x.max(p.x),
+            y: max.y.max(p.y),
+        };
+    }
+    // `int padding = MS_MAX(style->width, style->size) + 3`, as the x86-64 build at the pin
+    // computes it: `cvttsd2si` cuts toward zero and gives `INT_MIN` for a value past an `int` or
+    // no number; the `int` sums and negation around it wrap as that build's do.
+    let larger = if width > size { width } else { size } + 3.0;
+    let padding = if larger > -2_147_483_649.0 && larger < 2_147_483_648.0 {
+        #[allow(clippy::cast_possible_truncation)]
+        let padding = larger as i32;
+        padding
+    } else {
+        i32::MIN
+    };
+    let below = f64::from(padding.wrapping_neg());
+    // An image is far smaller than an `int` (Q-9).
+    let image = |side: u32| {
+        f64::from(
+            i32::try_from(side)
+                .unwrap_or(i32::MAX)
+                .wrapping_add(padding),
+        )
+    };
+    let min_x = if min.x < below { below } else { min.x };
+    let max_x = if max.x > image(image_size.0) {
+        image(image_size.0)
+    } else {
+        max.x
+    };
+    let min_y = if min.y < below { below } else { min.y };
+    let max_y = if max.y > image(image_size.1) {
+        image(image_size.1)
+    } else {
+        max.y
+    };
+    let at = |x, y| Point { x, y };
+    Some(vec![
+        at(min_x, min_y),
+        at(min_x, max_y),
+        at(max_x, max_y),
+        at(max_x, min_y),
+        at(min_x, min_y),
+    ])
 }
 
 /// The parts of a line or a polygon shape in pixels, as msTransformShapeSimplify gives them, the

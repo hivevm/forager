@@ -609,6 +609,9 @@ pub enum GeomTransform {
     End,
     /// Every point of a line but the first and the last.
     Vertices,
+    /// The bounding box of the shape in pixels, each side held within the image grown by the
+    /// style's width or size, whichever is larger, and 3 pixels, drawn as a polygon is.
+    Bbox,
     Centroid,
     /// A label's transform, [`LabelTransform::Point`], which a class's style of a line or a
     /// polygon layer draws nothing at.

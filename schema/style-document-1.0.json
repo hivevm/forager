@@ -397,6 +397,11 @@
           "const": "vertices"
         },
         {
+          "description": "The bounding box of the shape in pixels, each side held within the image grown by the\nstyle's width or size, whichever is larger, and 3 pixels, drawn as a polygon is.",
+          "type": "string",
+          "const": "bbox"
+        },
+        {
           "description": "A label's transform, [`LabelTransform::Point`], which a class's style of a line or a\npolygon layer draws nothing at.",
           "type": "string",
           "const": "labelpoint"

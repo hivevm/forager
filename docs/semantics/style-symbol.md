@@ -33,15 +33,15 @@ name no symbol carries draws nothing, as a document has no image file to read it
 warns with `symbol-unknown` once for each such name of its classes' styles.
 
 `GEOMTRANSFORM` draws the style on another geometry than the feature's: `start`, `end`,
-`vertices` (every point of a line but its ends), `centroid`, `labelpnt` (the IR's `labelpoint`),
-`labelpoly`, and `labelcenter` are carried over, written quoted or bare.
+`vertices` (every point of a line but its ends), `bbox`, `centroid`, `labelpnt` (the IR's
+`labelpoint`), `labelpoly`, and `labelcenter` are carried over, written quoted or bare.
 `msStyleSetGeomTransform` in `src/mapgeomtransform.c` takes the first of its names, in the order
 `start`, `end`, `vertices`, `bbox`, `labelpnt`, `labelpoly`, `labelcenter`, `centroid`, that the
 value begins with, without regard to case, so `'startpoint'` is `start`; a value that begins with
 none is no transform, and the frontend warns. A label's style draws at its `labelpnt` unless it
 names another, and a label with a style of any other transform is left out
-([`label.md`](label.md)). MapServer's other transform, `bbox`, and its expressions are not yet
-carried over, and are a warning; a class's style draws the feature's own geometry.
+([`label.md`](label.md)). MapServer's expressions are not yet carried over, and are a warning;
+a class's style draws the feature's own geometry.
 
 **Drawing a transform.** On a line or a polygon layer, `msDrawTransformedShape` in
 `src/mapgeomtransform.c` draws the style's symbol, as at a point, on the feature's unclipped
@@ -55,7 +55,16 @@ at `start` and `end`, and at a vertex halfway between its two segments (`calcOri
 `calcMidAngle`). `labelpnt` and `labelpoly` draw nothing there, nor does `labelcenter`, on which
 `msDrawTransformedShape` fails the layer's draw, so the frontend warns of it on a class's style
 of a line or polygon layer; nor does a style without a symbol or with symbol 0, as
-`msDrawMarkerSymbol` draws none. A line layer that draws its features style
+`msDrawMarkerSymbol` draws none. `bbox` draws no symbol at a point but a polygon, the bounds of the
+shape in pixels as a ring of five points from their lower left corner up and around: each side
+is held within the image grown by a padding, the larger of the style's `WIDTH` (1 by default)
+and `SIZE` (-1 by default) and 3 pixels, cut to an `int`, so the left and the upper side at no
+less than minus the padding and the right and the lower at no more than the image's width or
+height and the padding. `msDrawShadeSymbol` draws that ring as a polygon of a polygon layer is
+drawn, below, symbol 0 included: without a `COLOR`, stroked in the `OUTLINECOLOR`, and with
+neither, not at all. A `WIDTH` or `SIZE` past an `int` gives the padding `INT_MIN`, as the x86-64
+build at the pin converts it; the lower bounds then hold nothing and the upper ones fall far below
+the image. A line layer that draws its features style
 by style draws the transformed styles with its first style, before the rest, and its first style,
 when it has an outline, as its outline prepares it. A point layer draws every style at its points,
 whatever its transform. The symbols a transform places count towards a layer's bound on the
