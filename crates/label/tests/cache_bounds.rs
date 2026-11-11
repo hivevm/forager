@@ -125,10 +125,11 @@ fn large_and_inside_out_boxes_cost_the_cache_little_per_label() {
     let left_out = draw_label_cache(&offset, SIZE, |_, _| drawn += 1);
     let asked = offset.asked.get() / MAX_LABELS;
     assert_eq!(left_out, 0);
-    assert!(drawn > 1000, "{drawn} drawn");
+    assert_eq!(drawn, 2844);
     // Dense, each label's box near hundreds of others, a test visits a few more of them than in
     // the sparse cases above; filed by its box grown to its point, as before this change, every
-    // test visited every label drawn, 2844 of them here, 2840 boxes asked for per label.
+    // test visited every label drawn, 2844 of them here, 2840 boxes asked for per label. The
+    // counter counts the members asked for, which a visit now asks once and asked twice before.
     assert!(asked < 12, "{asked} boxes asked for per offset label");
     // One label past MAX_LABELS: the cache takes the first MAX_LABELS and reports the one it
     // left out, untested, without the engine.

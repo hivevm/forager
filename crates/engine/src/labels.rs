@@ -839,6 +839,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         renderer: &mut R,
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<CachedLabel> {
+        if let (left_out, Some(first)) = self.over_limit {
+            let message = format!(
+                "the label cache of a render holds at most {MAX_LABELS} labels; {left_out} \
+                 labels past it, this one the first, are left out untested"
+            );
+            let span = self.span(first);
+            diagnostics.push(Diagnostic::warning("labels-over-limit", message, span));
+        }
         let cached = std::mem::take(&mut self.cached);
         let markers = std::mem::take(&mut self.markers);
         let styles = std::mem::take(&mut self.styles);
@@ -893,17 +901,9 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             self.out_of_reach(diagnostics, at, out_of_reach);
             self.hatches_refused(at, styled.take_hatches_refused());
         });
-        // The engine holds no more than MAX_LABELS, so the cache leaves none out of what it is
-        // handed; any it did are counted with the engine's own.
-        self.over_limit.0 += left_out;
-        if let (left_out, Some(first)) = self.over_limit {
-            let message = format!(
-                "the label cache of a render holds at most {MAX_LABELS} labels; {left_out} \
-                 labels past it, this one the first, are left out untested"
-            );
-            let span = self.span(first);
-            diagnostics.push(Diagnostic::warning("labels-over-limit", message, span));
-        }
+        // The engine holds no more than MAX_LABELS while it caches, which bounds its memory (Q-9),
+        // so the cache leaves none out of what it is handed.
+        debug_assert_eq!(left_out, 0, "the engine holds at most MAX_LABELS labels");
         // The hatches refused of the labels the cache drew, reported for their layers as a
         // layer's own (Q-9).
         for (layer, refused) in std::mem::take(&mut self.hatches_refused) {

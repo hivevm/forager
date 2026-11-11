@@ -26,8 +26,10 @@
 //! out where a drawn label of the same text lies within its minimum distance.
 //!
 //! The tests are MapServer's, pair by pair; which pairs are tested is bounded by a loose grid
-//! over the image (Q-9): every label and marker is held once, and a test visits each entry near
-//! its box at most once, and none that cannot meet it by lying inside out along the same axis.
+//! over the image (Q-9): every marker and every drawn label is held once by its box, and a test
+//! visits each entry near its box at most once, and none that cannot meet it by lying inside out
+//! along the same axis. Where a member has a `MINDISTANCE`, a drawn label with a text is held a
+//! second time, by its point, in a grid of its own, and that test may visit it once in each.
 
 use forager_render::Point;
 
