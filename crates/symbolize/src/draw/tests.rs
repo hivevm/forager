@@ -321,6 +321,83 @@ fn bbox_pads_as_the_pin_s_int_does_past_an_int() {
 }
 
 #[test]
+fn bbox_in_an_outline_pass_pads_by_the_style_the_outline_prepares() {
+    // msOutlineRenderingPrepareStyle runs before msDrawTransformedShape: WIDTH 5 and the default
+    // SIZE -1 grow by OUTLINEWIDTH 2 to 9 and 1, so the padding is (int)(9 + 3) = 12, and the
+    // colours swap: the ring is filled in the OUTLINECOLOR and stroked in the COLOR.
+    let style = Style {
+        width: Some(Bound::Value(5.0)),
+        outline_width: Some(Bound::Value(2.0)),
+        geom_transform: Some(GeomTransform::Bbox),
+        ..colored(Some(BLUE), Some(BLACK))
+    };
+    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let ops = draw_ops(
+        RenderMode::Line,
+        &past_the_image(),
+        &style,
+        Pass::Outline,
+        &unit_view(),
+        &mut canvas,
+    );
+    let [
+        DrawOp::Fill { rings, color, .. },
+        DrawOp::Stroke {
+            color: outline,
+            width,
+            ..
+        },
+    ] = ops.as_slice()
+    else {
+        panic!("{ops:?}");
+    };
+    assert_eq!(rings, &vec![ring(-12.0, -12.0, 113.0, 60.0)]);
+    assert_eq!((*color, *outline, *width), (BLACK, BLUE, 9.0));
+}
+
+#[test]
+fn bbox_on_a_polygon_layer_hatches_and_counts_a_hatch_refused() {
+    // Verifies: Q-9
+    // The square from pixel (10, 10) to (90, 90) of a polygon layer: its ring hatched with
+    // SIZE 10; with MAXSIZE 0 the spacing is 0, a hatch that would not end, refused and counted.
+    let symbols = [hatch_symbol()];
+    let square = Geometry::Polygon(vec![coords(&[
+        (10.0, 10.0),
+        (90.0, 10.0),
+        (90.0, 90.0),
+        (10.0, 90.0),
+        (10.0, 10.0),
+    ])]);
+    let style = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: Some(Bound::Value(10.0)),
+        geom_transform: Some(GeomTransform::Bbox),
+        ..colored(Some(BLUE), None)
+    };
+    let polygon_ops = |style: &Style, canvas: &mut Canvas| {
+        draw_ops(
+            RenderMode::Polygon,
+            &square,
+            style,
+            Pass::Plain,
+            &unit_view(),
+            canvas,
+        )
+    };
+    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let ops = polygon_ops(&style, &mut canvas);
+    assert!(matches!(ops.as_slice(), [DrawOp::Hatch(_)]), "{ops:?}");
+    assert_eq!(canvas.hatching.refused, 0);
+    let refused = Style {
+        min_size: Some(0.0),
+        max_size: Some(0.0),
+        ..style
+    };
+    assert!(polygon_ops(&refused, &mut canvas).is_empty());
+    assert_eq!(canvas.hatching.refused, 1);
+}
+
+#[test]
 fn without_angle_auto_a_transformed_symbol_keeps_its_angle() {
     // The arrow at the corner of the L: at its own ANGLE 30 without AUTO, turned by -45°, as
     // calcMidAngle gives it, with.

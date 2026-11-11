@@ -212,9 +212,10 @@ pub fn vertices(geometry: &Geometry) -> Vec<Coord> {
 }
 
 /// A style with a `GEOMTRANSFORM` on a shape of a line or a polygon layer, as
-/// msDrawTransformedShape draws it: with `bbox`, a polygon (see [`bbox`]); otherwise its symbol at each point the transform places, turned there
-/// where the style's angle is `AUTO` and the transform gives one; nothing for a style without a
-/// symbol or with symbol 0, as msDrawMarkerSymbol draws none. The outline pass of a line layer's
+/// msDrawTransformedShape draws it: with `bbox`, a polygon (see [`bbox`]); otherwise its symbol at
+/// each point the transform places, turned there where the style's angle is `AUTO` and the
+/// transform gives one; nothing for a style without a symbol or with symbol 0, as
+/// msDrawMarkerSymbol draws none. The outline pass of a line layer's
 /// first style draws the style its outline prepares, as msDrawVectorLayer prepares the style
 /// before msDrawShape draws the transform. The symbols' points are taken from the canvas's
 /// budget of markers (Q-9): where they would exceed what is left, none of the shape's is drawn,

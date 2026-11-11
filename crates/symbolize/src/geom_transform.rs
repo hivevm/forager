@@ -122,7 +122,7 @@ pub(crate) fn bbox(
     // `int padding = MS_MAX(style->width, style->size) + 3`, as the x86-64 build at the pin
     // computes it: `cvttsd2si` cuts toward zero and gives `INT_MIN` for a value past an `int` or
     // no number; the `int` sums and negation around it wrap as that build's do.
-    let larger = if width > size { width } else { size } + 3.0;
+    let larger = (if width > size { width } else { size }) + 3.0;
     let padding = if larger > -2_147_483_649.0 && larger < 2_147_483_648.0 {
         #[allow(clippy::cast_possible_truncation)]
         let padding = larger as i32;
