@@ -8,7 +8,8 @@ loader, resolved against the main mapfile's directory inside the base context (Q
 `loadSymbolSet` in `src/mapsymbol.c` resolves it against the map's path; it reads it within the
 limits of `INCLUDE` (Q-9), and it must start with `SYMBOLSET`. Of several `SYMBOLSET`s in the map,
 the last names the file. `loadSymbolSet` counts `SYMBOLSET` and `END` levels and reads to the end
-of the file, so a set nested in the set, and a set that follows it, add their symbols too.
+of the file, so a set nested in the set, and a set that follows it, add their symbols too. The
+end of the file ends a set left open, at any level, without an error; a symbol needs its `END`.
 
 **Order and index.** MapServer numbers its symbols: 0 is its default symbol, a filled circle of
 size 1; then come the map's `SYMBOL` blocks in the order they stand, which `loadMap` appends as it

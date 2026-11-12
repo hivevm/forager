@@ -47,6 +47,8 @@ pub struct Map {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<Layer>,
     /// The map's fonts by name, each a resource path inside the base context, not read at load.
+    /// Names match without regard to case, as MapServer's font set compares them, so no two
+    /// differ only in case.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fonts: BTreeMap<String, String>,
     /// The map's symbols in MapServer's order: those of its `SYMBOL` blocks, then those of its

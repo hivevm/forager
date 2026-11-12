@@ -1000,7 +1000,7 @@
           ]
         },
         "fonts": {
-          "description": "The map's fonts by name, each a resource path inside the base context, not read at load.",
+          "description": "The map's fonts by name, each a resource path inside the base context, not read at load.\nNames match without regard to case, as MapServer's font set compares them, so no two\ndiffer only in case.",
           "type": "object",
           "additionalProperties": {
             "type": "string"

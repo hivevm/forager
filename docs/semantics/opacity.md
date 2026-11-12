@@ -8,6 +8,10 @@ number or a [binding](binding.md).
 the result. An opacity below 100 replaces the alpha of the style's colours, a `#rrggbbaa`'s
 included, with `opacity × 2.55` rounded (`loadStyle` at its `END`, and `bindStyle` in
 `src/maputil.c` for a bound one); an opacity of 100 leaves the colours' alpha as written.
+`loadStyle` keeps a number and a binding side by side, `OPACITY [o] OPACITY 50` in either order,
+and applies the number at its `END`; `bindStyle` replaces that alpha only for a bound value below
+100. The IR holds the binding, so the frontend applies the number's alpha to the colours it
+holds as values at load.
 
 The engine applies it as it binds the style to a feature: a bound opacity is the property's
 number rounded as `bindIntegerAttribute` rounds it, 100 where the property is empty, and is not

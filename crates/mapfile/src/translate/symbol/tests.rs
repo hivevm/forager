@@ -465,6 +465,27 @@ fn a_symbol_file_reads_nested_and_successive_symbolsets_in_order() {
 }
 
 #[test]
+fn a_symbol_file_without_its_last_end_reads_but_a_symbol_without_its_end_does_not() {
+    // loadSymbolSet returns success at the end of the file, whatever the level of its sets; a
+    // symbol's loadSymbol needs its END.
+    for text in [
+        "SYMBOLSET SYMBOL NAME 'a' TYPE HATCH END",
+        "SYMBOLSET SYMBOL NAME 'a' TYPE HATCH END SYMBOLSET",
+    ] {
+        let loaded = load_files(&[("m.map", "MAP SYMBOLSET 's.sym' END"), ("s.sym", text)]);
+        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{text}");
+        let map = loaded.document.unwrap().map;
+        assert_eq!(map.symbols.len(), 1, "{text}");
+        assert_eq!(map.symbols[0].name.as_deref(), Some("a"));
+    }
+    let loaded = load_files(&[
+        ("m.map", "MAP SYMBOLSET 's.sym' END"),
+        ("s.sym", "SYMBOLSET SYMBOL NAME 'a' TYPE HATCH"),
+    ]);
+    assert_eq!(codes(&loaded), ["unterminated-block"]);
+}
+
+#[test]
 fn a_style_naming_an_image_file_appends_its_symbol_in_mapservers_order() {
     use forager_style_ir::{SymbolKind, SymbolRef};
     // classResolveSymbolNames resolves a class's styles before its labels' styles,

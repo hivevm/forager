@@ -15,6 +15,7 @@
 
 //! A class's or a label's `STYLE` blocks.
 
+use forager_style_ir::c::ms_nint;
 use forager_style_ir::{Bound, GeomTransform, LineCap, LineJoin, LineOffset, Style};
 
 use super::{Range, Translator, kept_binding, kept_bindings};
@@ -29,6 +30,8 @@ impl Translator<'_> {
         };
         // SIZE's binding, which a later SIZE's expression hides but does not free.
         let mut size_binding = None;
+        // The last OPACITY number, which loadStyle keeps beside a binding.
+        let mut opacity_value = None;
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -96,6 +99,9 @@ impl Translator<'_> {
                             Bound::Value(n) => Bound::Value(n.trunc().clamp(0.0, 100.0)),
                             bound => bound,
                         });
+                        if let Some(Bound::Value(n)) = opacity {
+                            opacity_value = Some(n);
+                        }
                         style.opacity = kept_binding(style.opacity.take(), opacity);
                     }
                     "OUTLINEWIDTH" => {
@@ -115,6 +121,7 @@ impl Translator<'_> {
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
             }
         }
+        opacity_beside_binding(&mut style, opacity_value);
         style
     }
 
@@ -219,6 +226,23 @@ impl Translator<'_> {
             self.warn("unsupported-value", message, &d.span);
         }
         transform
+    }
+}
+
+/// loadStyle applies an opacity below 100 to the alpha of the colours at its END, the number's
+/// even where a binding of OPACITY stands beside it, and bindStyle replaces that alpha only for a
+/// bound value below 100. The engine applies a value the IR holds, so the number is applied here
+/// only where the IR holds the binding instead.
+fn opacity_beside_binding(style: &mut Style, opacity: Option<f64>) {
+    if let (Some(Bound::Binding { .. }), Some(opacity)) = (&style.opacity, opacity)
+        && opacity < 100.0
+    {
+        let alpha = u8::try_from(ms_nint(opacity * 2.55)).unwrap_or(u8::MAX);
+        for color in [&mut style.color, &mut style.outline_color] {
+            if let Some(Bound::Value(c)) = color {
+                c.a = alpha;
+            }
+        }
     }
 }
 

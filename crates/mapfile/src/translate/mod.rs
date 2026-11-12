@@ -16,7 +16,7 @@
 //! Translates the syntax tree of a mapfile into the style IR. What the IR cannot hold yet is
 //! reported, never silently dropped.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::{
@@ -151,6 +151,7 @@ pub fn translate(
         names: BTreeMap::new(),
         numbered: Vec::new(),
         fonts: BTreeMap::new(),
+        font_names: BTreeSet::new(),
         defaults_added: Budget::new(MAX_DEFAULT_BYTES),
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
@@ -170,6 +171,11 @@ pub fn translate(
     }
     if let Some((path, text)) = files.font_set {
         t.fonts = t.fonts(path, text);
+        t.font_names = t
+            .fonts
+            .keys()
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
     }
     let mut map = t.map(map);
     t.image_symbols(&mut map);
@@ -196,6 +202,8 @@ struct Translator<'a> {
     numbered: Vec<(u32, Span)>,
     /// The map's fonts, read before its layers so that a label's font is checked.
     fonts: BTreeMap<String, String>,
+    /// Their names in lower case, which a label's font is looked up by at once (Q-9).
+    font_names: BTreeSet<String>,
     /// What the defaults of `VALIDATION` have put into the load's expressions, held to
     /// [`MAX_DEFAULT_BYTES`] (Q-9).
     defaults_added: Budget,
