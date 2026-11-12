@@ -57,7 +57,6 @@ const DISCARDED: &[&str] = &[
     "TEMPLATE",
     "TOLERANCE",
     "TOLERANCEUNITS",
-    "WEB",
 ];
 
 /// The string value of the last `keyword` directive of a block, the one MapServer keeps, read
@@ -207,10 +206,11 @@ impl Translator<'_> {
             ..Map::default()
         };
         // MapServer applies them after the whole map is read, so each holds wherever it stands.
-        let web = Defaults::of(block.nodes.iter().filter_map(|node| match node {
+        let webs = block.nodes.iter().filter_map(|node| match node {
             Node::Block(b) if b.keyword == "WEB" => Some(b),
             _ => None,
-        }));
+        });
+        let web = Defaults::of(webs, self.diagnostics);
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -243,6 +243,7 @@ impl Translator<'_> {
                             map.layers.push(layer);
                         }
                     }
+                    "WEB" => self.web(b),
                     "PROJECTION" => {
                         map.projection = match self.projection(b) {
                             Some(LayerProjection::Proj4(proj4)) => Some(proj4),
@@ -270,6 +271,26 @@ impl Translator<'_> {
         map
     }
 
+    /// `WEB`, read for its `VALIDATION` alone. Its `METADATA` may set what MapServer draws, so it
+    /// is not yet supported; its other keywords serve MapServer's CGI and templates and are out of
+    /// scope.
+    fn web(&mut self, block: &Block) {
+        for node in &block.nodes {
+            match node {
+                // Read by Defaults; its other keys only check a runtime substitution.
+                Node::Block(b) if b.keyword == "VALIDATION" => {}
+                Node::Block(b) if b.keyword == "METADATA" => self.unhandled(&b.keyword, &b.span),
+                Node::Directive(d) if !d.known => {}
+                Node::Directive(Directive { keyword, span, .. })
+                | Node::Block(Block { keyword, span, .. }) => {
+                    let message =
+                        format!("{keyword} of WEB is out of Forager's scope and is discarded");
+                    self.warn("discarded-keyword", &message, span);
+                }
+            }
+        }
+    }
+
     /// `IMAGETYPE` and `OUTPUTFORMAT`, of which only whether the selected format is transparent
     /// is carried, as the map's background ([`output::transparent`]).
     fn output_format(&mut self, keyword: &str, span: &Span) {
@@ -293,7 +314,7 @@ impl Translator<'_> {
         let class_item = item(block, "CLASSITEM");
         let label_item = item(block, "LABELITEM");
         let filter_item = item(block, "FILTERITEM");
-        let defaults = Defaults::of([block]);
+        let defaults = Defaults::of([block], self.diagnostics);
         let tables = [&defaults, web];
         let mut composites = Vec::new();
         // A layer with features is an inline layer (msInitializeVirtualTable), whose item names
@@ -580,7 +601,7 @@ impl Translator<'_> {
             Some(d) => self.text(d),
             None => label_item.map(|name| Expr::call(Op::ToString, vec![Expr::property(name)])),
         };
-        let own = Defaults::of([block]);
+        let own = Defaults::of([block], self.diagnostics);
         let mut label_left_out = false;
         for node in &block.nodes {
             match node {

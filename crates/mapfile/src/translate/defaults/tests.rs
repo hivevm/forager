@@ -257,3 +257,69 @@ fn a_percent_never_closed_stays_as_written() {
     assert_eq!(codes, Vec::<String>::new());
     assert!(json(&tree).contains(r#""%v""#), "{}", json(&tree));
 }
+
+/// `WEB` is read for its `VALIDATION`, so a load reports only what of `WEB` it leaves out.
+#[test]
+fn a_web_block_warns_only_of_what_it_leaves_out() {
+    let validation = r#"VALIDATION "default_x" "1" END"#;
+    let layer = "LAYER FILTER ([v] = %x%) END";
+    let (codes, tree) = filter(&format!("MAP WEB {validation} END {layer} END"));
+    assert_eq!(codes, Vec::<String>::new());
+    is_as_written(&tree, "([v] = 1)");
+    let loaded = load(&format!(
+        "MAP WEB {validation} TEMPLATE 'x.html' IMAGEPATH '/tmp/' METADATA 'a' 'b' END END \
+         {layer} END"
+    ));
+    let warned: Vec<(&str, &str)> = loaded
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.as_str(), d.message.as_str()))
+        .collect();
+    assert_eq!(
+        warned,
+        [
+            (
+                "discarded-keyword",
+                "TEMPLATE of WEB is out of Forager's scope and is discarded"
+            ),
+            (
+                "discarded-keyword",
+                "IMAGEPATH of WEB is out of Forager's scope and is discarded"
+            ),
+            (
+                "unsupported-keyword",
+                "METADATA is not yet supported and is ignored"
+            ),
+        ]
+    );
+}
+
+/// A pair `loadHashTable` fails the load on gives no default and is a warning, and the block's
+/// other pairs still hold (the maintainer's choice of 2026-11-11).
+#[test]
+fn a_pair_that_is_not_two_strings_is_a_warning_and_the_others_hold() {
+    for (validation, named) in [
+        (r#""default_a" "1" "default_b""#, r#""default_b""#),
+        (r#""default_b" 2 "default_a" "1""#, r#""default_b""#),
+        (r#"3 "x" "default_a" "1""#, "3"),
+    ] {
+        let loaded = load(&format!(
+            "MAP LAYER VALIDATION {validation} END FILTER ([v] = %a%) END END"
+        ));
+        assert_eq!(codes(&loaded), ["unsupported-value"], "{validation}");
+        let message = &loaded.diagnostics[0].message;
+        assert!(message.contains(named), "{validation}: {message}");
+        let tree = &loaded.document.as_ref().unwrap().map.layers[0].filter;
+        is_as_written(tree, "([v] = 1)");
+    }
+}
+
+#[test]
+fn a_pair_skipped_in_web_or_a_class_is_a_warning_too() {
+    for text in [
+        r#"MAP WEB VALIDATION "default_b" END END LAYER END END"#,
+        r#"MAP LAYER CLASS VALIDATION "default_b" END END END END"#,
+    ] {
+        assert_eq!(codes(&load(text)), ["unsupported-value"], "{text}");
+    }
+}

@@ -18,9 +18,12 @@
 
 use std::collections::BTreeMap;
 
+use forager_style_ir::Diagnostic;
+
 use crate::MAX_TOTAL_BYTES;
 use crate::expression::Problem;
 use crate::lexer::{Token, TokenKind};
+use crate::report::Report;
 use crate::syntax::{Block, Node};
 
 /// The `default_name` values of a block's `VALIDATION`, by the name in lower case: MapServer's hash
@@ -29,8 +32,10 @@ use crate::syntax::{Block, Node};
 pub(super) struct Defaults(BTreeMap<String, String>);
 
 impl Defaults {
-    /// The defaults of the `VALIDATION` blocks in `blocks`, wherever in them they stand.
-    pub(super) fn of<'b>(blocks: impl IntoIterator<Item = &'b Block>) -> Self {
+    /// The defaults of the `VALIDATION` blocks in `blocks`, wherever in them they stand. A pair
+    /// that is not two strings, or a last key without a value, gives no default and a warning in
+    /// `report`, where `loadHashTable` fails the load; the block's other pairs still hold.
+    pub(super) fn of<'b>(blocks: impl IntoIterator<Item = &'b Block>, report: &mut Report) -> Self {
         let mut defaults = BTreeMap::new();
         let validation = blocks.into_iter().flat_map(|block| &block.nodes);
         for node in validation {
@@ -38,15 +43,22 @@ impl Defaults {
             if b.keyword != "VALIDATION" {
                 continue;
             }
-            for [key, value] in b.values.as_chunks::<2>().0 {
-                if let (Some(key), Some(value)) = (key.string(), value.string())
-                    && let Some(name) = key
-                        .get(..8)
-                        .filter(|prefix| prefix.eq_ignore_ascii_case("default_"))
-                        .and(key.get(8..))
+            let (pairs, rest) = b.values.as_chunks::<2>();
+            for [key, value] in pairs {
+                let (Some(key_text), Some(value)) = (key.string(), value.string()) else {
+                    skipped(report, key, "is not two strings");
+                    continue;
+                };
+                if let Some(name) = key_text
+                    .get(..8)
+                    .filter(|prefix| prefix.eq_ignore_ascii_case("default_"))
+                    .and(key_text.get(8..))
                 {
                     defaults.insert(name.to_ascii_lowercase(), value.to_owned());
                 }
+            }
+            if let [key] = rest {
+                skipped(report, key, "has no value");
             }
         }
         Self(defaults)
@@ -93,6 +105,24 @@ impl Defaults {
         out.push_str(rest);
         Ok(out)
     }
+}
+
+/// The warning of a `VALIDATION` pair that gives no default, named by its key.
+fn skipped(report: &mut Report, key: &Token, why: &str) {
+    let named = match &key.kind {
+        TokenKind::Str { value, .. } | TokenKind::Word(value) => format!("\"{value}\""),
+        TokenKind::Number(n) => n.to_string(),
+        _ => "a value that is not a string".to_owned(),
+    };
+    let message = format!(
+        "the VALIDATION pair of the key {named} {why} and gives no default; MapServer fails the \
+         load on it"
+    );
+    report.push(Diagnostic::warning(
+        "unsupported-value",
+        &message,
+        Some(key.span.clone()),
+    ));
 }
 
 /// `token` with the defaults of `tables` applied, each table in turn, a class's before its

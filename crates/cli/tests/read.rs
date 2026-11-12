@@ -39,7 +39,7 @@ fn a_mapfile_is_printed_as_a_style_document_with_its_warnings() {
     );
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(
-        stderr.contains("world.map:11:3: warning [discarded-keyword]"),
+        stderr.contains("world.map:12:5: warning [unsupported-keyword]"),
         "{stderr}"
     );
     assert!(
