@@ -28,7 +28,7 @@ use forager_render::{DrawOp, Point, PremultipliedImage};
 use forager_style_ir::{Style, Symbol};
 
 use crate::bounds;
-use crate::symbol;
+use crate::symbol::{self, Factors};
 
 /// The most points the markers along the lines of one layer, those at the points of a point
 /// layer's features, and the symbols a `GEOMTRANSFORM` places on its lines and polygons, amount
@@ -130,7 +130,7 @@ pub(crate) struct Placement {
 
 /// The drawing operations of the markers of `style` with its vector or ellipse `symbol` along
 /// `paths`, in pixels already offset, as msDrawLineSymbol draws a symbol with a `GAP` on an image of `image` width and
-/// height, with computeSymbolStyle at `factor`, the layer's scale factor and the image's
+/// height, with computeSymbolStyle at `factors`, the layer's scale factor and the image's
 /// resolution factor: `initial_gap` is the `INITIALGAP` scaled as the width is. The markers'
 /// points are taken from the layer's `budget`; where they would exceed what is left, none is
 /// drawn, and none after them once it is spent.
@@ -140,13 +140,13 @@ pub(crate) fn draw<T>(
     symbol: &Symbol,
     initial_gap: f64,
     image: (f64, f64),
-    (factor, resolution): (f64, f64),
+    factors: Factors,
     budget: &mut MarkerBudget,
 ) -> Vec<DrawOp> {
     if budget.spent() {
         return Vec::new();
     }
-    let s = symbol::symbol_style(style, symbol, factor, resolution);
+    let s = symbol::symbol_style(style, symbol, factors);
     // What one marker costs; a symbol that draws nothing has no markers to place.
     let mut probe = Vec::new();
     symbol::render(&mut probe, Point { x: 0.0, y: 0.0 }, symbol, &s);
@@ -188,13 +188,13 @@ pub(crate) fn draw_pixmap<T>(
     pixmap: &Rc<PremultipliedImage>,
     initial_gap: f64,
     image: (f64, f64),
-    (factor, resolution): (f64, f64),
+    factors: Factors,
     budget: &mut MarkerBudget,
 ) -> Vec<DrawOp> {
     if budget.spent() {
         return Vec::new();
     }
-    let (scale, rotation, gap) = symbol::pixmap_style(style, pixmap.height(), factor, resolution);
+    let (scale, rotation, gap) = symbol::pixmap_style(style, pixmap.height(), factors);
     if scale == 0.0 {
         return Vec::new();
     }

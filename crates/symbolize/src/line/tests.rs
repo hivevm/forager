@@ -116,7 +116,7 @@ fn an_outline_pass_of_symbols_grows_their_width_and_size_and_swaps_their_colors(
         outline_width: Some(Bound::Value(1.5)),
         ..colored(Some(BLUE), Some(BLACK))
     };
-    let prepared = outline_style(&style, 1.0, 1.0);
+    let prepared = outline_style(&style, Factors::new(1.0, 1.0));
     assert_eq!(fixed(&prepared.width), Some(5.0));
     assert_eq!(
         (prepared.min_width, prepared.max_width),
@@ -132,7 +132,7 @@ fn an_outline_pass_of_symbols_grows_their_width_and_size_and_swaps_their_colors(
         ..style
     };
     assert_eq!(
-        fixed(&outline_style(&without_size, 1.0, 1.0).size),
+        fixed(&outline_style(&without_size, Factors::new(1.0, 1.0)).size),
         Some(0.5)
     );
 }
@@ -147,7 +147,7 @@ fn an_outline_pass_grows_the_style_s_own_width_bounds() {
         outline_width: Some(Bound::Value(1.5)),
         ..colored(Some(BLUE), Some(BLACK))
     };
-    let prepared = outline_style(&style, 1.0, 1.0);
+    let prepared = outline_style(&style, Factors::new(1.0, 1.0));
     assert_eq!(
         (prepared.min_width, prepared.max_width),
         (Some(7.0), Some(13.0))
@@ -158,8 +158,7 @@ fn an_outline_pass_grows_the_style_s_own_width_bounds() {
             max_width: None,
             ..style
         },
-        1.0,
-        1.0,
+        Factors::new(1.0, 1.0),
     );
     assert_eq!(
         (defaults.min_width, defaults.max_width),

@@ -37,7 +37,7 @@ use crate::classes::{self, Binder, c_bytes};
 use crate::fonts::Fonts;
 use crate::inline::feature_text;
 use crate::label_binding::{BoundLabel, Fixed, bind, fixed};
-use crate::label_styles::{self, LabelMarker, LabelStyles, Styled, StylesOf};
+use crate::label_styles::{self, LabelMarker, LabelStyles, Placed, Styled, StylesOf};
 use crate::{CachedLabel, quoted};
 
 /// Why a label's text is not laid out: the label names no font, no font of its list draws a line,
@@ -75,7 +75,7 @@ impl Unlaid {
 }
 
 /// A label of the render by its layer's index, its class's, and its index in the class.
-type LabelAt = (usize, usize, usize);
+pub(crate) type LabelAt = (usize, usize, usize);
 
 /// What of a label is the same for all its features, as the label cache reads it.
 struct Def {
@@ -679,14 +679,17 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             bounds,
             anchor,
         };
+        let placed = Placed {
+            at: label.at,
+            member: &member,
+            placement: &placement,
+            styles: &StylesOf::Bound(&label.styles),
+        };
         let out_of_reach = draw_label(
             renderer,
             styled,
-            self.map,
-            label.at,
-            &member,
-            &placement,
-            (label.ink, &StylesOf::Bound(&label.styles)),
+            &placed,
+            label.ink,
             label.path.as_ref(),
             &self.glyphs,
             self.image(),
@@ -961,20 +964,20 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let drawn = member_box(&placement.bounds.bbox, member.label_marker.as_ref());
             walked.push((i as u32, Some(drawn)));
             let path = (label.path != NO_PATH).then(|| &paths[label.path as usize]);
+            let placed = Placed {
+                at,
+                member: &member,
+                placement,
+                styles: &StylesOf::Held {
+                    styles: &styles,
+                    text: label.text,
+                },
+            };
             let out_of_reach = draw_label(
                 renderer,
                 &mut styled,
-                self.map,
-                at,
-                &member,
-                placement,
-                (
-                    Ink::of(label),
-                    &StylesOf::Held {
-                        styles: &styles,
-                        text: label.text,
-                    },
-                ),
+                &placed,
+                Ink::of(label),
                 path,
                 &glyphs,
                 image,
@@ -1063,36 +1066,21 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 }
 
-/// Draws `label` of definition `at`, `member` placed at `placement`, into `renderer`: its styles,
-/// then its text of `path` in its colour and outline, as msDrawLabelCache and msDrawLabel draw
-/// them, each glyph that reaches into `image` or near it; the count of glyphs left out for reaching
-/// too far from it.
-#[allow(clippy::too_many_arguments)]
+/// Draws `placed` into `renderer`: its styles, then its text of `path` in the colour and outline
+/// of `label`, as msDrawLabelCache and msDrawLabel draw them, each glyph that reaches into `image`
+/// or near it; the count of glyphs left out for reaching too far from it.
 fn draw_label<R: Draw>(
     renderer: &mut R,
     styled: &mut Styled<'_>,
-    map: &Map,
-    (layer, class, n): LabelAt,
-    member: &Member,
-    placement: &Placement,
-    (label, styles): (Ink, &StylesOf<'_>),
+    placed: &Placed<'_>,
+    label: Ink,
     path: Option<&TextPath>,
     glyphs: &[Glyphs],
     image: [f64; 4],
 ) -> usize {
     // The label's styles, before its text.
-    let written = &map.layers[layer].classes[class].labels[n].styles;
-    if !written.is_empty() {
-        styled.draw(
-            renderer,
-            layer,
-            member,
-            placement,
-            label.feature_id,
-            styles,
-            written,
-        );
-    }
+    styled.draw(renderer, placed, label.feature_id);
+    let placement = placed.placement;
     let Some(path) = path else {
         return 0;
     };

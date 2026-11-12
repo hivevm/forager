@@ -23,7 +23,7 @@ use forager_style_ir::{Style, Symbol};
 
 use crate::hatch::Hatching;
 use crate::line_marker::MarkerBudget;
-use crate::symbol::{self, Pixmaps};
+use crate::symbol::{self, Factors, Pixmaps};
 use crate::tile::Tiles;
 
 /// What a layer draws its features on beside the view: the map's symbols, the images of its
@@ -39,12 +39,8 @@ pub struct Canvas<'a> {
     pub(crate) tiles: Option<&'a mut Tiles>,
     /// The image's width and height in pixels, as the renderer is handed them.
     pub(crate) size: (u32, u32),
-    /// The layer's scale factor, by which the sizes, widths, gaps, patterns, and offsets of its
-    /// styles are scaled.
-    pub(crate) factor: f64,
-    /// The image's resolution factor, by which the bounds of its styles, their `MINSIZE`,
-    /// `MAXSIZE`, `MINWIDTH`, and `MAXWIDTH`, are scaled.
-    pub(crate) resolution: f64,
+    /// The layer's scale factor and the image's resolution factor.
+    pub(crate) factors: Factors,
     pub(crate) markers: MarkerBudget,
     pub(crate) hatching: Hatching,
     /// Each pixmap symbol left undrawn, by its index from 1, and why.
@@ -61,8 +57,7 @@ impl<'a> Canvas<'a> {
             pixmaps: None,
             tiles: None,
             size: (width, height),
-            factor,
-            resolution: factor,
+            factors: Factors::new(factor, factor),
             markers: MarkerBudget::new(),
             hatching: Hatching::default(),
             refused_pixmaps: BTreeMap::new(),
@@ -82,13 +77,19 @@ impl<'a> Canvas<'a> {
     /// Sets the scale factor the next styles are drawn at, as the labels of several layers, each
     /// at its layer's, are drawn on one canvas.
     pub fn set_factor(&mut self, factor: f64) {
-        self.factor = factor;
+        self.factors.scale = factor;
     }
 
     /// The canvas at the image's resolution factor `resolution`, which bounds its styles, apart
     /// from the layer's scale factor, which sizes them (msPrepareImage).
     pub fn with_resolution(self, resolution: f64) -> Self {
-        Self { resolution, ..self }
+        Self {
+            factors: Factors {
+                resolution,
+                ..self.factors
+            },
+            ..self
+        }
     }
 
     /// The canvas, the polygons of its pixmap symbols filled with the tiles of `tiles`; without
@@ -112,13 +113,7 @@ impl<'a> Canvas<'a> {
     pub fn class(&mut self, styles: &[Style]) {
         self.hatching = Hatching {
             refused: self.hatching.refused,
-            ..Hatching::for_class(
-                styles,
-                self.symbols,
-                self.pixmaps,
-                self.factor,
-                self.resolution,
-            )
+            ..Hatching::for_class(styles, self.symbols, self.pixmaps, self.factors)
         };
     }
 
