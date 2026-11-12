@@ -56,6 +56,11 @@ skimmed. The design revision drops what prevented nothing
   adds the case that holds it to the memory test of Q-9, such as
   `crates/engine/tests/label_memory.rs`, because that test measures only the maps it builds and
   says nothing of a field none of them sets.
+- **A count held to a bound of Q-9 stops at the bound** — a load or a render charges nothing more
+  to a count once it has passed its bound, because a sum of `usize` wraps on `wasm32` and lets
+  through what it bounds: the defaults of `VALIDATION` did so until 94610e9.
+- **A bound of Q-9 reports once** — the first excess is the one diagnostic, because a check made
+  per item repeats its error for each: the defaults of `VALIDATION` did so until 94610e9.
 - **A script that points git at a repository runs git without git's repository variables** — a
   test, a self-test, or a script under `scripts/` that drives git on a repository it names, a
   fixture or a checkout, removes what `git rev-parse --local-env-vars` names from git's
