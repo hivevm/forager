@@ -288,8 +288,8 @@ fn a_web_block_warns_only_of_what_it_leaves_out() {
             ),
             (
                 "unsupported-keyword",
-                "METADATA of WEB is read for labelcache_map_edge_buffer alone; its other keys are not yet \
-                 supported and are ignored"
+                "METADATA of WEB is read for labelcache_map_edge_buffer and maxfeaturestodraw alone; its \
+                 other keys are not yet supported and are ignored"
             ),
         ]
     );

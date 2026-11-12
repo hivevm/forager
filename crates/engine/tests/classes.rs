@@ -739,3 +739,38 @@ fn an_opacity_past_an_int_is_rounded_as_ms_nint_rounds_at_the_pin() {
         ]
     );
 }
+
+#[test]
+fn maxfeatures_counts_the_features_once_their_class_is_found() {
+    // msDrawVectorLayer finds a feature's class first, skipping one of none, and only then counts
+    // it against the layer's limit: with a limit of 1, the first feature matches no class and is
+    // not counted, and of the next two only the first is drawn. A feature the FILTER leaves out
+    // never reaches the count either.
+    let classes = || {
+        vec![class(
+            Some(Expr::call(Op::Gt, vec![number("n"), Expr::Number(1.0)])),
+            vec![filled(BLUE, 2.0)],
+        )]
+    };
+    let geojson = points(&[r#"{"n": 1}"#, r#"{"n": 2}"#, r#"{"n": 3}"#]);
+    let mut unclassed = layer(RenderMode::Point, None, classes());
+    unclassed.max_features = Some(1);
+    let (items, rendered) = draw(unclassed, &geojson);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let drawn: Vec<u64> = fills(&items).iter().map(|&(id, _, _)| id).collect();
+    assert_eq!(drawn, [2], "the first classed feature alone");
+    let filter = Expr::call(Op::Gt, vec![number("n"), Expr::Number(1.0)]);
+    let mut filtered = layer(
+        RenderMode::Point,
+        Some(filter),
+        vec![class(None, vec![filled(BLUE, 2.0)])],
+    );
+    filtered.max_features = Some(1);
+    let (items, _) = draw(filtered, &geojson);
+    let drawn: Vec<u64> = fills(&items).iter().map(|&(id, _, _)| id).collect();
+    assert_eq!(drawn, [2], "the first feature the FILTER keeps alone");
+}

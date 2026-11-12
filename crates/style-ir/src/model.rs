@@ -226,6 +226,18 @@ pub struct Layer {
     /// its own labels drawn at once, never cached. Absent, it is false.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub post_label_cache: bool,
+    /// The most features the layer draws, MapServer's limit of `msLayerGetMaxFeaturesToDraw`:
+    /// the layer's `MAXFEATURES`, or its `maxfeaturestodraw` metadata, or the map's, or the output
+    /// format's `MAXFEATURESTODRAW`. The features past it, in the order the source returns them and
+    /// counted once their class is found, are not drawn, nor their labels. Absent, there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_features: Option<u32>,
+    /// MapServer's expression of the layer's `GEOMTRANSFORM`, as written, which replaces each
+    /// feature's shape before it is classed and drawn (RFC 89, `msGeomTransformShape`). The engine
+    /// draws `generalize`, `smoothsia`, `densify`, `outer`, and `inner`; a layer of any other, as
+    /// one that needs a geometry library, draws nothing, with a warning. Absent, there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geom_transform: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     /// The features written into the layer (ADR-0018). A layer with any is read from them alone,
@@ -253,6 +265,8 @@ impl Default for Layer {
             opacity: None,
             label_cache: true,
             post_label_cache: false,
+            max_features: None,
+            geom_transform: None,
             classes: Vec::new(),
             features: Vec::new(),
             span: None,
@@ -612,7 +626,7 @@ pub enum LineJoin {
     Bevel,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum GeomTransform {
@@ -638,6 +652,13 @@ pub enum GeomTransform {
     /// polygon layer draws nothing at.
     #[serde(rename = "labelcenter")]
     LabelCenter,
+    /// One of MapServer's expressions, `(buffer([shape], 5))` and the like, as written, which
+    /// the engine does not draw: a class's style of it in a line or a polygon layer draws nothing
+    /// and is reported, its class's other styles drawn as before; a point layer draws the style at
+    /// its points, as it draws every style whatever its transform; a label of a style of it is
+    /// left out.
+    #[serde(rename = "expression")]
+    Expression(String),
 }
 
 /// Where a label's style draws, which it always names.

@@ -85,7 +85,7 @@ misc/map2img-argparse.map map2img-argparse-c.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-d.txt out: another output format, txt
 misc/map2img-argparse.map map2img-argparse-layer_debug.txt out: another output format, txt
 misc/map2img-size.map map2img-size.png out: a bitmap font
-misc/maxfeatures.map maxfeatures.png geometry fails  # not built yet: MAXFEATURES
+misc/maxfeatures.map maxfeatures.png geometry passes
 misc/maxfeatures.map maxfeatures-of.png out: another output format, pngmf
 misc/mode_tile.map mode_tile_output.png out: an OGC or CGI request
 misc/mode_tile.map mode_tile_output_512.png out: an OGC or CGI request

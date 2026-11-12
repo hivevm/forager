@@ -194,12 +194,14 @@ impl Translator<'_> {
     /// warning on a class's style.
     fn geom_transform(&mut self, d: &Directive, of_label: bool) -> Option<GeomTransform> {
         // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION): a string, a bare word that is no
-        // keyword among them, or an expression.
+        // keyword among them, or an expression, which the engine does not draw and reports.
+        if let [token] = d.values.as_slice()
+            && let TokenKind::Expression(text) = &token.kind
+        {
+            return Some(GeomTransform::Expression(text.clone()));
+        }
         let name = match d.values.as_slice() {
-            [token] => token
-                .string()
-                .map(str::to_ascii_lowercase)
-                .or_else(|| matches!(token.kind, TokenKind::Expression(_)).then(String::new)),
+            [token] => token.string().map(str::to_ascii_lowercase),
             _ => None,
         };
         let Some(name) = name else {
@@ -223,8 +225,8 @@ impl Translator<'_> {
             .find(|(prefix, _)| name.starts_with(prefix))
             .map(|(_, transform)| transform);
         if transform.is_none() && !of_label {
-            let message = "this GEOMTRANSFORM names no transform, or is an expression, which is \
-                           not yet supported; a class's style is drawn as if it had none";
+            let message = "this GEOMTRANSFORM names no transform; a class's style is drawn as if \
+                           it had none";
             self.warn("unsupported-value", message, &d.span);
         }
         transform

@@ -38,9 +38,13 @@ warns with `symbol-unknown` once for each such name of its classes' styles.
 `msStyleSetGeomTransform` in `src/mapgeomtransform.c` takes the first of its names, in the order
 `start`, `end`, `vertices`, `bbox`, `labelpnt`, `labelpoly`, `labelcenter`, `centroid`, that the
 value begins with, without regard to case, so `'startpoint'` is `start`; a value that begins with
-none is no transform. MapServer's expressions are not yet carried over. A class's style of either
-draws the feature's own geometry, and the frontend warns with `unsupported-value`. A label's style
-draws at its `labelpnt` unless it names another. A label with a style of any other transform, of
+none is no transform; a class's style of it draws the feature's own geometry, and the frontend
+warns with `unsupported-value`. A style's expression, `(buffer([shape], 5))` and the like, is
+carried as written. Of a line or a polygon layer, the engine draws nothing of a class's style of
+one and warns `geomtransform-not-drawn` naming it, the class's other styles drawn in their passes
+as before. A point layer draws the style at its points without a warning, as
+`pointLayerDrawShape` draws every style whatever its transform. A label's style draws at its
+`labelpnt` unless it names another. A label with a style of any other transform, of
 a name that is no transform, or of an expression is left out, and its class's other labels with
 it, with the one warning `label-not-drawn` ([`label.md`](label.md)).
 
@@ -70,6 +74,56 @@ by style draws the transformed styles with its first style, before the rest, and
 when it has an outline, as its outline prepares it. A point layer draws every style at its points,
 whatever its transform. The symbols a transform places count towards a layer's bound on the
 points of its markers ([`line.md`](line.md), Q-9).
+
+**A layer's `GEOMTRANSFORM`.** A layer's `GEOMTRANSFORM` is an expression alone (RFC 89), carried
+as written; `msLayerNextShape` in `src/maplayer.c` replaces each shape it reads by it, before the
+shape is classed or drawn (`msGeomTransformShape`, `src/mapgeomtransform.c`). The engine reads it
+as MapServer's lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`), function names
+without regard to case, and draws these functions of `[shape]`, nested in one another:
+
+- `generalize(s, t)` (`msGeneralize`, `src/maputil.c`): the first part of `s` alone, of its points
+  the first, each at least `t` from the last kept, and the last. A polygon's other rings and a
+  line's other parts are dropped.
+- `densify(s, t)` (`msDensify`, `src/mapprimitive.cpp`): each segment of a line or a polygon
+  longer than `t` cut into `floor(length / t) + 1` equal ones. It fails a point and a `t` not
+  above 0.
+- `outer(s)` and `inner(s)` (`msRings2Shape`, `msIsOuterRing`, `src/mapprimitive.cpp`): the rings
+  of a polygon that are outer, or inner, in their order. A ring alone is outer; another is outer
+  where its first point lies in an even number of the other rings by `msPointInPolygon`. Where its
+  first and second points disagree, its third decides. They fail any shape that is no polygon.
+- `smoothsia(s[, size[, iterations[, preprocessing]]])` (`msSmoothShapeSIA`, `src/mapsmoothing.c`),
+  of size 3 and 1 iteration by default. Each part of three points or more is smoothed by a window
+  of `size` points, at least 3, odd, and at most one below the part's count, weighed by halves away
+  from its centre and wrapped around a closed ring. A point whose window runs off a line is kept.
+  The passes are as many as `iterations` less one where it is above 1: the C smooths the shape it
+  was given on both its first and its second pass. The preprocessing `all` adds the midpoints
+  towards both neighbours of each point whose window of five is whole. `angle` adds them only
+  where that window's path is over 1.3 times the distance between its ends. Another text adds none.
+
+A number is written, `[map_cellsize]`, or computed of those by `+ - * / % ^` and parentheses, as
+the grammar reduces them. A unary `-` leaves its operand as it is, as the rule
+`'-' math_exp %prec NEG { $$ = $2; }` does, while `-3` written together is one negative number.
+`%` takes its operands cut to `int`s. `[map_cellsize]` is the map's cellsize times the inches of
+the map's `UNITS` over those of the layer's. The frontend does not carry a layer's `UNITS` and
+warns of one, so the layer's unit is `initLayer`'s, meters. A size or a number of iterations past
+an `int` is `INT_MIN`, as the x86-64 build converts it, which `msSmoothShapeSIA` raises to its
+least.
+
+Any other function, `simplify`, `simplifypt`, `buffer`, `centerline`, and `difference` among them,
+needs a geometry library, and `javascript` a JavaScript engine. With one of those, an attribute's
+binding, `[data_cellsize]`, a quoted text with a backslash, or any other form the engine does not
+read, the layer draws nothing, with the warning `geomtransform-not-drawn`. So does a function that
+fails as MapServer's fails, a division by zero, or a `%` by 0. The engine treats a geometry
+collection, or a multipoint, whose parts the IR does not keep, the same way. MapServer fails
+`msGeomTransformShape` on these: `msDrawVectorLayer` returns a failure (`src/mapdraw.c`,
+1427–1434), and `msDrawMap` frees the image and returns none (508–519), so MapServer makes no map
+at all. Forager deviates: the layer draws nothing, with the warning, and the rest of the map is
+drawn. The maintainer decided so for the expressions that need a geometry library; the engine
+takes it over for those MapServer's parser fails, such as `densify` of a point, a division by
+zero, or `outer` of a line. A layer
+draws nothing, with `geomtransform-over-limit`, where its transforms add more than 1,000,000 points
+or visit more than 100,000,000, or where the expression nests past 24 levels (Q-9). The smoothing
+passes and the tests of `outer` and `inner` count as visits.
 
 A part the simplification empties draws nothing in Forager: a line of fewer than two points, or
 one simplified to fewer, and a ring of fewer than four. MapServer keeps such a part with no points

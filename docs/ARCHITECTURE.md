@@ -131,13 +131,14 @@ golden path and the test pattern an agent copies from are named here.
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
-  refused, and geometries its render mode cannot draw (Q-9). It loads the images of a layer's
-  pixmap marks and fills into the render's store before it draws the layer, since `symbolize` does
-  no I/O, and hands them to it on the canvas, and to the labels, which size the marker a class's
-  first style holds beneath each label by them. It is the one core crate that awaits the ports.
-  Every host binds its sources to the layers by name through the engine's `bind_sources`
-  (`bind.rs`), which reports a source no layer is named for and one that cannot be read the same
-  way for each.
+  refused, and geometries its render mode cannot draw (Q-9); a layer whose `GEOMTRANSFORM` it does
+  not draw, or whose transforms pass their budget, it draws nothing of, with a warning. It loads
+  the images of a layer's pixmap marks and fills into the render's store before it draws the
+  layer, since `symbolize` does no I/O, and hands them to it on the canvas, and to the labels,
+  which size the marker a class's first style holds beneath each label by them. It is the one
+  core crate that awaits the ports. Every host binds its sources to the layers by name through the
+  engine's `bind_sources` (`bind.rs`), which reports a source no layer is named for and one that
+  cannot be read the same way for each.
 - **`symbolize`** — the symbolization of a style, synchronous and without I/O: a feature's geometry
   in a style bound to it turned into drawing operations, as MapServer draws it. The dispatch of a
   style by the layer's render mode, the symbols a `GEOMTRANSFORM` places, and the paths of the
@@ -160,13 +161,16 @@ golden path and the test pattern an agent copies from are named here.
   ellipse, and pixmap symbols along a line, and the layer's budget of markers
   (`line_marker.rs`); a polygon's tile, its size held to Q-9's bound, and the render's
   cache of six tiles, counted with the decoded images (`tile.rs`); line offsets (`offset.rs`); and
-  the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`). A line style's symbol with a
+  the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a layer's
+  `GEOMTRANSFORM`, parsed once per layer and applied to each feature's shape before the engine
+  classes it, what its transforms add and visit held to a budget per layer (`layer_transform.rs`,
+  Q-9). A line style's symbol with a
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`
   at the top, then `shade.rs`, `marker.rs`, `line.rs`, and `canvas.rs`, and `bounds.rs`,
-  `style.rs`, `extent.rs`, and `offset.rs` the leaves; ADR-0008
+  `style.rs`, `extent.rs`, `layer_transform.rs`, and `offset.rs` the leaves; ADR-0008
   decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs` holds
   this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its

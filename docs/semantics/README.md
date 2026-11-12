@@ -16,7 +16,7 @@ describe and decide nothing: the decisions are the ADRs they cite.
 - [`LABEL`, `TEXT`, and `LABELITEM`](label.md)
 - [`FONTSET`](fontset.md)
 - [`SYMBOLSET` and `SYMBOL`](symbol.md)
-- [`SYMBOL` and `GEOMTRANSFORM`](style-symbol.md) of a style
+- [`SYMBOL` and `GEOMTRANSFORM`](style-symbol.md) of a style, and a layer's `GEOMTRANSFORM`
 - [`OFFSET` and `POLAROFFSET`](offset.md)
 - [`PATTERN`, `GAP`, `INITIALGAP`, `LINECAP`, `LINEJOIN`](line.md)
 - [`OPACITY`, `COMPOSITE`, `OUTLINEWIDTH`, and the transparent image](opacity.md)

@@ -1754,3 +1754,76 @@ fn the_maps_label_cache_edge_buffer_is_read_from_web_metadata_as_msdrawlabelcach
     assert_eq!(gutter("'labelcache_map_edge_buffer' '0'"), None);
     assert_eq!(gutter("'other' '10'"), None);
 }
+
+#[test]
+fn a_layers_limit_on_its_features_is_settled_as_ms_layer_get_max_features_to_draw_settles_it() {
+    // msLayerGetMaxFeaturesToDraw (src/maplayer.c): the layer's MAXFEATURES, replaced by its
+    // `maxfeaturestodraw` metadata or else the map's, read by atoi; below 0, the selected output
+    // format's MAXFEATURESTODRAW.
+    let layers = |text: &'static str| {
+        let loaded = load_files(&[("m.map", text)]);
+        // METADATA, IMAGETYPE, and OUTPUTFORMAT are read for this and little else.
+        let others: Vec<_> = codes(&loaded)
+            .into_iter()
+            .filter(|code| *code != "unsupported-keyword")
+            .collect();
+        assert_eq!(others, Vec::<&str>::new(), "{text}");
+        let map = loaded.document.unwrap().map;
+        map.layers
+            .iter()
+            .map(|l| l.max_features)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        layers(
+            "MAP LAYER NAME 'a' MAXFEATURES 2 END \
+             LAYER NAME 'b' MAXFEATURES 2 METADATA 'MaxFeaturesToDraw' '5x' END END \
+             LAYER NAME 'c' END END"
+        ),
+        [Some(2), Some(5), None]
+    );
+    assert_eq!(
+        layers(
+            "MAP WEB METADATA 'maxfeaturestodraw' '3' END END \
+             LAYER NAME 'a' MAXFEATURES 2 END \
+             LAYER NAME 'b' METADATA 'maxfeaturestodraw' '-1' END END END"
+        ),
+        [Some(3), None],
+        "the map's replaces the layer's MAXFEATURES; a negative one falls back on the format's"
+    );
+    assert_eq!(
+        layers(
+            "MAP IMAGETYPE 'mf' OUTPUTFORMAT NAME 'mf' DRIVER 'AGG/PNG' \
+             FORMATOPTION 'QUALITY=9' FORMATOPTION 'maxfeaturestodraw=1' \
+             FORMATOPTION 'MAXFEATURESTODRAW=7' END \
+             LAYER NAME 'a' END LAYER NAME 'b' MAXFEATURES 4 END \
+             LAYER NAME 'c' METADATA 'maxfeaturestodraw' '0' END END END"
+        ),
+        [Some(1), Some(4), Some(0)],
+        "the first option of the key holds, below the layer's own"
+    );
+}
+
+#[test]
+fn a_maxfeatures_of_zero_is_an_error() {
+    // getInteger(&maxfeatures, MS_NUM_CHECK_GT, 0, -1) refuses 0.
+    let loaded = load_files(&[("m.map", "MAP LAYER NAME 'a' MAXFEATURES 0 END END")]);
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+}
+
+#[test]
+fn a_layers_geomtransform_is_an_expression_kept_as_written() {
+    // loadLayer reads GEOMTRANSFORM by getSymbol(1, MS_EXPRESSION): an expression alone.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER NAME 'a' GEOMTRANSFORM (simplify([shape], 25)) END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let layers = loaded.document.unwrap().map.layers;
+    assert_eq!(
+        layers[0].geom_transform.as_deref(),
+        Some("(simplify([shape], 25))")
+    );
+    let loaded = load_files(&[("m.map", "MAP LAYER NAME 'a' GEOMTRANSFORM 'start' END END")]);
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+}

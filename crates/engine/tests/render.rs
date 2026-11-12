@@ -1806,3 +1806,152 @@ fn sizeunits_size_a_layers_styles_in_map_units_by_the_cellsize() {
         );
     }
 }
+
+#[test]
+fn a_style_of_a_geomtransform_expression_draws_nothing_and_is_reported() {
+    // MapServer evaluates such an expression by msGeomTransformShape, most of its functions through
+    // GEOS, which the engine has not: the style draws nothing, with a warning naming it, and the
+    // class's other style draws as alone.
+    let plain = line_style(BLUE, 3.0);
+    let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
+    let alone = render_with(&map_with(RenderMode::Line, vec![plain.clone()]), Some(line));
+    let transformed = Style {
+        geom_transform: Some(GeomTransform::Expression("(buffer([shape], 5))".to_owned())),
+        ..line_style(GREEN, 9.0)
+    };
+    let rendered = render_with(
+        &map_with(RenderMode::Line, vec![plain, transformed]),
+        Some(line),
+    );
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["geomtransform-not-drawn"]);
+    assert!(
+        rendered.diagnostics[0]
+            .message
+            .contains("`(buffer([shape], 5))`"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
+    assert_eq!(
+        rendered.image, alone.image,
+        "the other style draws as alone"
+    );
+}
+
+#[test]
+fn a_layer_of_a_geomtransform_the_engine_does_not_draw_draws_nothing_with_a_warning() {
+    // msLayerNextShape applies the layer's GEOMTRANSFORM to each shape it reads, and a failure ends
+    // msDrawVectorLayer's loop: simplify needs GEOS.
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    map.layers[0].geom_transform = Some("(simplify([shape], 25))".to_owned());
+    let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
+    let rendered = render_with(&map, Some(line));
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["geomtransform-not-drawn"]);
+    let image = rendered.image.unwrap();
+    assert_eq!(
+        image.pixel(50, 80),
+        Some(WHITE),
+        "nothing of the layer is drawn"
+    );
+}
+
+/// A line up from (0, 20) to (50, 60) and down to (100, 20).
+const PEAK: &str = r#"{"type": "LineString", "coordinates": [[0, 20], [50, 60], [100, 20]]}"#;
+
+#[test]
+fn a_layer_of_generalize_draws_the_generalized_line() {
+    // msGeneralize keeps the first point, each at least the tolerance from the last kept, and the
+    // last: by 200 the peak is dropped, and the line runs straight along y = 20, pixel row 80.
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    let plain = render_with(&map, Some(PEAK)).image.unwrap();
+    assert_ne!(
+        plain.pixel(25, 60),
+        Some(WHITE),
+        "the peak's slope is drawn"
+    );
+    assert_eq!(plain.pixel(50, 80), Some(WHITE));
+    map.layers[0].geom_transform = Some("(generalize([shape], 200))".to_owned());
+    let rendered = render_with(&map, Some(PEAK));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 80), Some(BLUE), "the generalized line");
+    assert_eq!(image.pixel(25, 60), Some(WHITE), "the peak is dropped");
+}
+
+#[test]
+fn map_cellsize_is_the_cellsize_in_meters_of_the_layer() {
+    // msGeomTransformShape binds [map_cellsize] to the map's cellsize, 1 here, times the inches
+    // of the map's unit over those of the layer's, meters as initLayer sets them: in a map of
+    // meters a tolerance of 10 keeps the peak; in one of degrees it is 10 * 4374754 / 39.3701,
+    // about 1.1 million, and drops it.
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    map.layers[0].geom_transform = Some("(generalize([shape], [map_cellsize] * 10))".to_owned());
+    let meters = render_with(&map, Some(PEAK)).image.unwrap();
+    assert_ne!(meters.pixel(25, 60), Some(WHITE), "the peak is kept");
+    map.units = Some(Units::Degrees);
+    let rendered = render_with(&map, Some(PEAK));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let degrees = rendered.image.unwrap();
+    assert_eq!(degrees.pixel(25, 60), Some(WHITE), "the peak is dropped");
+    assert_eq!(degrees.pixel(50, 80), Some(BLUE));
+}
+
+#[test]
+fn a_layer_whose_geomtransform_adds_too_many_points_draws_nothing_with_a_warning() {
+    // densify by 0.000001 would add a hundred million points to the line, past the 1 000 000 a
+    // layer's transforms may add (Q-9).
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    map.layers[0].geom_transform = Some("(densify([shape], 0.000001))".to_owned());
+    let rendered = render_with(&map, Some(PEAK));
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["geomtransform-over-limit"]);
+    let image = rendered.image.unwrap();
+    assert_eq!(
+        image.pixel(25, 60),
+        Some(WHITE),
+        "nothing of the layer is drawn"
+    );
+}
+
+#[test]
+fn a_point_layer_draws_a_style_of_a_geomtransform_expression_at_its_points() {
+    // pointLayerDrawShape draws every style at each point whatever its transform: a point layer's
+    // style of an expression draws its markers, and nothing is reported.
+    let style = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(5.0)),
+        geom_transform: Some(GeomTransform::Expression("(buffer([shape], 5))".to_owned())),
+        ..Style::default()
+    };
+    let line = r#"{"type": "LineString", "coordinates": [[20, 20], [80, 80]]}"#;
+    let rendered = render_with(&map(RenderMode::Point, style), Some(line));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(20, 80), Some(BLUE));
+    assert_eq!(image.pixel(80, 20), Some(BLUE));
+}

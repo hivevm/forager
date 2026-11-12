@@ -168,7 +168,7 @@ impl Translator<'_> {
             .nodes
             .iter()
             .any(|node| matches!(node, Node::Directive(d) if d.keyword == "GEOMTRANSFORM"));
-        let transform = match (transformed, style.geom_transform) {
+        let transform = match (transformed, &style.geom_transform) {
             (false, _) | (true, Some(GeomTransform::LabelPoint)) => LabelTransform::Point,
             (true, Some(GeomTransform::LabelPoly)) => LabelTransform::Poly,
             (true, Some(GeomTransform::LabelCenter)) => LabelTransform::Center,

@@ -74,7 +74,10 @@ fn item(block: &Block, keyword: &str) -> Option<String> {
 }
 
 /// The keys of `WEB` `METADATA` the map carries.
-const WEB_METADATA_READ: &[&str] = &["labelcache_map_edge_buffer"];
+const WEB_METADATA_READ: &[&str] = &["labelcache_map_edge_buffer", MAX_FEATURES_KEY];
+/// The key of the metadata and of the output format's option that limit the features a layer
+/// draws, as `msLayerGetMaxFeaturesToDraw` reads it.
+const MAX_FEATURES_KEY: &str = "maxfeaturestodraw";
 
 /// The value of `key` in the `METADATA` of `blocks`, as msLookupHashTable finds it: without
 /// regard to case, a later pair of a key replacing an earlier, as loadHashTable inserts them. A
@@ -175,6 +178,7 @@ pub fn translate(
         fonts: BTreeMap::new(),
         font_names: BTreeSet::new(),
         defaults_added: Budget::new(MAX_DEFAULT_BYTES),
+        max_features_fallback: (None, -1),
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
     // its symbol set after the whole map (loadMap, loadSymbolSet).
@@ -229,6 +233,10 @@ struct Translator<'a> {
     /// What the defaults of `VALIDATION` have put into the load's expressions, held to
     /// [`MAX_DEFAULT_BYTES`] (Q-9).
     defaults_added: Budget,
+    /// The limits on a layer's features that `msLayerGetMaxFeaturesToDraw` falls back on: the
+    /// map's `maxfeaturestodraw` metadata, and the selected output format's `MAXFEATURESTODRAW`,
+    /// -1 without one.
+    max_features_fallback: (Option<i32>, i32),
 }
 
 impl Translator<'_> {
@@ -242,7 +250,11 @@ impl Translator<'_> {
             Node::Block(b) if b.keyword == "WEB" => Some(b),
             _ => None,
         });
-        let web = Defaults::of(webs, self.diagnostics);
+        let web = Defaults::of(webs.clone(), self.diagnostics);
+        self.max_features_fallback = (
+            metadata(webs, MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes())),
+            output::format_option(block, MAX_FEATURES_KEY).map_or(-1, |v| atoi(v.as_bytes())),
+        );
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -355,6 +367,8 @@ impl Translator<'_> {
             ..Layer::default()
         };
         let mut connection_type = None;
+        // initLayer: no quota.
+        let mut max_features = -1;
         let mut props = BTreeMap::new();
         let mut source_span = None;
         let mut data_span = None;
@@ -405,6 +419,8 @@ impl Translator<'_> {
                     }
                     "LABELCACHE" => self.label_cache(&mut layer, d),
                     "POSTLABELCACHE" => self.post_label_cache(&mut layer, d),
+                    "MAXFEATURES" => max_features = self.max_features(d),
+                    "GEOMTRANSFORM" => layer.geom_transform = self.layer_geom_transform(d),
                     "FILTER" => layer.filter = self.defaulted(d, filter_item.as_deref(), &tables),
                     "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
                     "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
@@ -450,11 +466,7 @@ impl Translator<'_> {
                 },
             }
         }
-        layer.opacity = self.composite(&composites);
-        // loadLayer turns the label cache off where POSTLABELCACHE is TRUE (mapfile.c:4755-4759),
-        // and msDrawLayer turns it off again as it draws such a layer, whatever LABELCACHE says
-        // after it (mapdraw.c:854-856).
-        layer.label_cache &= !layer.post_label_cache;
+        self.settle_layer(&mut layer, block, &composites, max_features);
         layer.source = source_span.map(|span| self.source(connection_type, props, span, data_span));
         Some(layer)
     }
@@ -486,6 +498,51 @@ impl Translator<'_> {
             props,
             span: Some(span),
         }
+    }
+
+    /// What a layer settles once its block is read: its opacity from its `COMPOSITE`s; its label
+    /// cache off where it is drawn after the cache, as loadLayer turns it off where POSTLABELCACHE
+    /// is TRUE (mapfile.c:4755-4759) and msDrawLayer turns it off again as it draws such a layer,
+    /// whatever LABELCACHE says after it (mapdraw.c:854-856); and its limit on its features.
+    fn settle_layer(
+        &mut self,
+        layer: &mut Layer,
+        block: &Block,
+        composites: &[&Block],
+        max_features: i32,
+    ) {
+        layer.opacity = self.composite(composites);
+        layer.label_cache &= !layer.post_label_cache;
+        layer.max_features = self.features_to_draw(block, max_features);
+    }
+
+    /// A layer's `GEOMTRANSFORM`, read by `getSymbol(1, MS_EXPRESSION)`: an expression alone, kept
+    /// as written; anything else fails the load.
+    fn layer_geom_transform(&mut self, d: &Directive) -> Option<String> {
+        if let [token] = d.values.as_slice()
+            && let TokenKind::Expression(text) = &token.kind
+        {
+            return Some(text.clone());
+        }
+        self.invalid(d, "an expression");
+        None
+    }
+
+    /// A layer's `MAXFEATURES`, a number above 0 as getInteger checks it, truncated to an `int`;
+    /// -1, no quota, where it does not read, which fails the load.
+    fn max_features(&mut self, d: &Directive) -> i32 {
+        self.number(d, Range::above(0.0)).map_or(-1, |n| n as i32)
+    }
+
+    /// The most features the layer `block` draws, as `msLayerGetMaxFeaturesToDraw` of
+    /// src/maplayer.c settles it: its `MAXFEATURES`, replaced by its `maxfeaturestodraw` metadata
+    /// or else the map's, read by `atoi`; below 0, the output format's `MAXFEATURESTODRAW`; below 0
+    /// still, none.
+    fn features_to_draw(&self, block: &Block, max_features: i32) -> Option<u32> {
+        let (web, format) = self.max_features_fallback;
+        let layer = metadata([block], MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes()));
+        let n = layer.or(web).unwrap_or(max_features);
+        u32::try_from(if n < 0 { format } else { n }).ok()
     }
 
     /// Sets the layer's label cache by its `LABELCACHE`, `ON` or `OFF` as loadLayer reads it

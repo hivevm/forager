@@ -228,10 +228,14 @@ fn transformed(
     view: &View,
     canvas: &mut Canvas,
 ) {
-    let Some(transform) = style.geom_transform else {
+    let Some(transform) = &style.geom_transform else {
         return;
     };
-    if transform == GeomTransform::Bbox {
+    // An expression the engine does not draw draws nothing; the engine reports it.
+    if matches!(transform, GeomTransform::Expression(_)) {
+        return;
+    }
+    if *transform == GeomTransform::Bbox {
         bbox(ops, geometry, &pass.style(style, canvas), view, canvas);
         return;
     }
