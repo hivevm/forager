@@ -177,27 +177,27 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             scale,
             view: &view,
         };
+        // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
+        // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
+        // Any other layer's labels go through the label cache.
+        let at_once = mode == RenderMode::Point && !layer.label_cache;
         drawing
-            .load_pixmaps(&selected, &map.symbols, &mut images, files)
+            .load_pixmaps(&selected, &map.symbols, !at_once, &mut images, files)
             .await;
         let (pixmaps, tiles) = images.drawing();
         let mut canvas = drawing.canvas(map, (width, height), pixmaps, tiles);
         // Each feature is labelled by the class that draws it, in the order it is drawn.
-        let point_layer = mode == RenderMode::Point;
         let drawn: Vec<labels::Labelled<'_>> = selected
             .iter()
             .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
             .collect();
-        // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
-        // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
-        let at_once = point_layer && !layer.label_cache;
         let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
             let binder = &mut selector.binder;
-            let mut settled = labels.layer(layer_index, mode, &drawn, binder);
+            let mut settled = labels.layer_at_once(layer_index, &drawn, binder);
             for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
                 let laid = labels
-                    .label(&settled, feature, class, None, pixmaps, binder)
+                    .label_at_once(&settled, feature, class, pixmaps, binder)
                     .await;
                 let mut out_of_reach = vec![0; laid.len()];
                 drawing.draw_points(&mut target, &mut canvas, one, |target, point| {
@@ -206,7 +206,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                     }
                 });
                 for (label, count) in laid.iter().zip(out_of_reach) {
-                    labels.drawn_at_once(binder.diagnostics, label, count);
+                    labels.out_of_reach(binder.diagnostics, label.at, count);
                 }
             }
         } else {
@@ -432,15 +432,17 @@ impl Drawing<'_> {
     /// size the marker the cache holds by msGetMarkerSize, which loads it
     /// (`src/mapsymbol.c:736-738`) whatever the style's scale range. Those the clip buffer of a
     /// hatched polygon's class counts are loaded whatever theirs too, as msDrawShape loads them
-    /// (see [`clip_pixmaps`]).
+    /// (see [`clip_pixmaps`]). `cached` tells whether the layer's labels go through the label
+    /// cache.
     async fn load_pixmaps<L: ResourceLoader>(
         &self,
         selected: &[Selected<'_>],
         symbols: &[forager_style_ir::Symbol],
+        cached: bool,
         images: &mut Images,
         files: &L,
     ) {
-        let holds_markers = self.mode == RenderMode::Point && self.layer.label_cache;
+        let holds_markers = self.mode == RenderMode::Point && cached;
         for (_, class, styles) in selected {
             let marker = holds_markers && !self.layer.classes[*class].labels.is_empty();
             for (place, style) in styles.iter().enumerate() {
