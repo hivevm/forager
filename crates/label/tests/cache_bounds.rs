@@ -6,7 +6,8 @@
 use std::cell::Cell;
 
 use forager_label::{
-    Anchor, Member, Members, Offsets, PointLabel, Position, TextBox, draw_label_cache,
+    Anchor, MAX_LABELS, Member, Members, Offsets, PointLabel, Position, TextBox, draw_label_cache,
+    walk_label_cache,
 };
 use forager_render::Point;
 use peak_alloc::PeakAlloc;
@@ -116,4 +117,71 @@ fn large_and_inside_out_boxes_cost_the_cache_little_per_label() {
     let (drawn, asked, _) = run(&labels(10_000.0, 0, true, false));
     assert_eq!(drawn, 1);
     assert!(asked < 10, "{asked} boxes asked for per label");
+    // MAX_LABELS labels offset 3000 pixels from their points, within the image: each drawn
+    // label is filed by its box, not by its box grown to its point, which would put it in the
+    // coarsest level, where every later test visits it (ADR-0032).
+    let offset = offset_labels(MAX_LABELS);
+    let mut drawn = 0;
+    let left_out = draw_label_cache(&offset, SIZE, |_, _| drawn += 1);
+    let asked = offset.asked.get() / MAX_LABELS;
+    assert_eq!(left_out, 0);
+    assert_eq!(drawn, 2844);
+    // Dense, each label's box near hundreds of others, a test visits a few more of them than in
+    // the sparse cases above; filed by its box grown to its point, as before this change, every
+    // test visited every label drawn, 2844 of them here, 2840 boxes asked for per label. The
+    // counter counts the members asked for, which a visit now asks once and asked twice before.
+    assert!(asked < 12, "{asked} boxes asked for per offset label");
+    // One label past MAX_LABELS: the cache takes the first MAX_LABELS and reports the one it
+    // left out, untested, without the engine.
+    let over = offset_labels(MAX_LABELS + 1);
+    let mut visited = Vec::new();
+    let left_out = walk_label_cache(&over, SIZE, |i, _| visited.push(i));
+    assert_eq!(left_out, 1);
+    assert_eq!(visited.len(), MAX_LABELS);
+    assert!(
+        !visited.contains(&MAX_LABELS),
+        "the one past the limit is not visited"
+    );
+}
+
+/// `count` labels of a text 30 by 11 pixels, offset 3000 pixels right of and below points spread
+/// over the image's upper left 1078 pixels square, so that every label lies in the image; may be
+/// partial, not forced.
+fn offset_labels(count: usize) -> Counted {
+    let members = (0..count)
+        .map(|i| Member {
+            priority: 1,
+            point: Point {
+                x: (i % 317) as f64 * 3.4,
+                y: (i / 317) as f64 * 3.4,
+            },
+            label: Some(PointLabel {
+                position: Position::At(Anchor::Cc),
+                text: TextBox {
+                    min_x: 0.0,
+                    min_y: -9.0,
+                    max_x: 30.0,
+                    max_y: 2.0,
+                    num_lines: 1,
+                },
+                offsets: Offsets {
+                    marker: [0.0, 0.0],
+                    label: [3000, 3000],
+                },
+                rotation: 0.0,
+                buffer: 0,
+                force: false,
+            }),
+            force: false,
+            partials: true,
+            test_point: false,
+            marker: None,
+            label_marker: None,
+            min_distance: 0.0,
+        })
+        .collect();
+    Counted {
+        members,
+        asked: Cell::new(0),
+    }
 }
