@@ -120,12 +120,33 @@ fn must_be_pure_rust(table: &[Row], name: &str) -> bool {
     )
 }
 
-/// The crates of the IR and the core, held to the ban on hash maps, clocks, and randomness (Q-2).
-fn ir_and_core(table: &[Row]) -> impl Iterator<Item = &'static str> + '_ {
-    table
-        .iter()
-        .filter(|(_, group, _)| matches!(group, Group::Ir | Group::Core))
-        .map(|&(name, _, _)| name)
+/// Whether a crate is held to the ban on hash maps, clocks, and randomness (Q-2): every crate on
+/// the output path, the IR, the core, the ports, the frontend, and the adapters. The hosts and the
+/// tooling stay free.
+fn held_to_q2(table: &[Row], name: &str) -> bool {
+    matches!(
+        group(table, name),
+        Some(Group::Ir | Group::Core | Group::Ports | Group::Frontend | Group::Adapters)
+    )
+}
+
+/// The directories of the crates held to the ban (Q-2), by their names.
+fn held_crates(table: &[Row]) -> Vec<(String, std::path::PathBuf)> {
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut held: Vec<_> = std::fs::read_dir(&crates)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.join("Cargo.toml").is_file())
+        .map(|path| {
+            (
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                path,
+            )
+        })
+        .filter(|(name, _)| held_to_q2(table, name))
+        .collect();
+    held.sort();
+    held
 }
 
 struct Workspace {
@@ -359,8 +380,10 @@ fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
     assert_eq!(may_depend(t, "cli", "bindings-wasm"), Some(false));
     assert_eq!(may_depend(t, "bindings-wasm", "arch-test"), Some(false));
     assert!(must_be_pure_rust(t, "mapfile") && !must_be_pure_rust(t, "bindings-wasm"));
-    assert!(must_be_pure_rust(t, "render") && ir_and_core(t).any(|c| c == "render"));
-    assert!(must_be_pure_rust(t, "ports") && !ir_and_core(t).any(|c| c == "ports"));
+    assert!(must_be_pure_rust(t, "render") && held_to_q2(t, "render"));
+    assert!(must_be_pure_rust(t, "ports") && held_to_q2(t, "ports"));
+    assert!(held_to_q2(t, "mapfile") && held_to_q2(t, "adapter-geojson"));
+    assert!(!held_to_q2(t, "cli") && !held_to_q2(t, "arch-test"));
 
     // Every crate directory has exactly one row, so each rule above reaches it.
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
@@ -384,7 +407,7 @@ fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
         })
         .collect();
     assert!(!must_be_pure_rust(&moved, "render"));
-    assert!(!ir_and_core(&moved).any(|c| c == "render"));
+    assert!(!held_to_q2(&moved, "render"));
     assert_eq!(may_depend(&moved, "render", "adapter-geojson"), Some(true));
     assert_eq!(may_depend(&moved, "engine", "render"), Some(false));
 }
@@ -424,29 +447,30 @@ fn only_render_agg_allows_unsafe_code() {
 }
 
 #[test]
-fn the_ir_and_the_core_warn_the_lints_that_ban_hash_maps_clocks_and_randomness() {
+fn every_crate_on_the_output_path_warns_the_lints_that_ban_hash_maps_clocks_and_randomness() {
     // Verifies: Q-2
     // clippy.toml names the banned types and methods and the workspace allows their lints; a crate
-    // of the IR or the core turns them on at the top of its lib.rs, which scripts/check-rust.sh
-    // shows to bite on a fixture. A new core crate without the line would escape the ban.
-    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    // of the IR, the core, the ports, the frontend, or the adapters turns them on at the top of its
+    // lib.rs, which scripts/check-rust.sh shows to bite on a fixture. A new crate of those groups
+    // without the line would escape the ban.
     let line = "#![warn(clippy::disallowed_types, clippy::disallowed_methods)]";
-    let missing: Vec<_> = ir_and_core(TABLE)
-        .filter(|name| crates.join(name).is_dir())
-        .filter(|name| {
-            !std::fs::read_to_string(crates.join(name).join("src/lib.rs"))
+    let missing: Vec<_> = held_crates(TABLE)
+        .into_iter()
+        .filter(|(_, path)| {
+            !std::fs::read_to_string(path.join("src/lib.rs"))
                 .unwrap_or_default()
                 .lines()
                 .any(|l| l == line)
         })
+        .map(|(name, _)| name)
         .collect();
     assert!(
         missing.is_empty(),
-        "core crates without `{line}`: {missing:?}"
+        "crates on the output path without `{line}`: {missing:?}"
     );
 }
 
-/// The one place a core crate lifts the ban, with its reason: a test's time bound.
+/// The one place a crate on the output path lifts the ban, with its reason: a test's time bound.
 const LIFTED: &[(&str, &str)] = &[(
     "render-agg/src/lib.rs",
     "    #[expect(
@@ -457,16 +481,16 @@ const LIFTED: &[(&str, &str)] = &[(
 )];
 
 #[test]
-fn no_core_crate_lifts_the_ban_on_hash_maps_clocks_and_randomness() {
+fn no_crate_on_the_output_path_lifts_the_ban_on_hash_maps_clocks_and_randomness() {
     // Verifies: Q-2
-    // Any other mention of the two lints in a crate of the IR or the core is a way to lift them
+    // Any other mention of the two lints in a crate on the output path is a way to lift them
     // (`allow`, `expect`, a lint table), as for `unsafe_code`; the opt-in line and the places named
     // in LIFTED are the only ones.
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let line = "#![warn(clippy::disallowed_types, clippy::disallowed_methods)]";
     let mut offenders = Vec::new();
-    for name in ir_and_core(TABLE).filter(|name| crates.join(name).is_dir()) {
-        let mut stack = vec![crates.join(name)];
+    for (_, dir) in held_crates(TABLE) {
+        let mut stack = vec![dir];
         while let Some(path) = stack.pop() {
             if path.is_dir() {
                 stack.extend(std::fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));

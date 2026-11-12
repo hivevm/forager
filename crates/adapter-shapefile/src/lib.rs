@@ -20,6 +20,8 @@
 //! Nothing is allocated from a count or a size the files state: a record is a view into the
 //! `.shp`'s bytes, checked before its geometry is built, and the index is read where it lies.
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 mod dbf;
 mod record;
 

@@ -260,9 +260,9 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0024](adr/0024-browser-bindings-bind-geojson-only.md)), `wasmi` anywhere but among the
   dev-dependencies of `cli` ([ADR-0034](adr/0034-wasm-renders-compared-in-wasmi.md)), and a
   future polled with a no-op waker anywhere but `poll_once` of `ports`, and requires every crate
-  of the IR and the core to turn on the lints of `clippy.toml` that ban hash maps, clocks, and
-  random sources (Q-2) and to lift them nowhere but the one test time bound it names; the
-  frontend, the ports, the adapters, and the hosts are not held to the ban. `tests/c_numbers.rs`
+  on the output path, the IR, the core, the ports, the frontend, and the adapters, to turn on the
+  lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them
+  nowhere but the one test time bound it names; the hosts alone are free. `tests/c_numbers.rs`
   refuses a function `atof`, `atoi`, `strtod`, `lrint`, or `ms_nint`, or one named `lrint_…` or
   `ms_nint_…`, defined outside `style-ir`'s `c.rs` (ADR-0017). `tests/symbolize_modules.rs`
   refuses an import between the modules of `symbolize`, outside its tests, against the direction

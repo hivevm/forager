@@ -13,6 +13,9 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+use std::cell::Cell;
+use std::collections::BTreeMap;
+
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::{Bound, LayerStatus, RenderMode, Rgba, Severity, Span};
 
@@ -269,24 +272,44 @@ fn an_unknown_keyword_is_reported_once() {
     assert_eq!(codes(&loaded), ["unknown-keyword"]);
 }
 
+/// Files in memory whose loads are counted.
+struct Counted {
+    files: Files,
+    loads: Cell<usize>,
+}
+
+impl ResourceLoader for Counted {
+    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        self.loads.set(self.loads.get() + 1);
+        self.files.load(path).await
+    }
+}
+
 #[test]
 fn includes_that_multiply_past_the_size_limit_are_an_error() {
     // Verifies: Q-9
     // Each level includes the next 64 times: 64^4 copies of a 32 KiB file exceed the limit long
-    // before they are all read.
+    // before they are all read, which the count of the files loaded shows.
     let leaf: &'static str = format!("NAME '{}'\n", "x".repeat(32 * 1024)).leak();
     let fan = |next: &str| -> &'static str { format!("INCLUDE '{next}'\n").repeat(64).leak() };
-    let started = std::time::Instant::now();
-    let loaded = load_files(&[
-        ("m.map", "MAP INCLUDE '1' END"),
-        ("1", fan("2")),
-        ("2", fan("3")),
-        ("3", fan("4")),
-        ("4", leaf),
-    ]);
+    let files = Counted {
+        files: Files(BTreeMap::from([
+            ("m.map", "MAP INCLUDE '1' END"),
+            ("1", fan("2")),
+            ("2", fan("3")),
+            ("3", fan("4")),
+            ("4", leaf),
+        ])),
+        loads: Cell::new(0),
+    };
+    let path = ResourcePath::new("m.map").unwrap();
+    let loaded = ready(load(&path, &files, None));
     assert!(loaded.document.is_none());
     assert_eq!(codes(&loaded), ["mapfile-too-large"]);
-    assert!(started.elapsed().as_secs() < 10, "{:?}", started.elapsed());
+    // The limit holds 512 copies of the leaf, and the load stops once it is passed: about as
+    // many loads, not the 64^4 copies a load that read every file would ask for. A count, not a
+    // clock, bounds the work (Q-2).
+    assert!(files.loads.get() < 600, "{} loads", files.loads.get());
 }
 
 #[test]

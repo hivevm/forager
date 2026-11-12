@@ -2,6 +2,8 @@
 //! [`ResourceLoader`], and translates it into the style IR. It is the only crate that knows
 //! MapServer syntax.
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 mod expression;
 mod init_file;
 mod keywords;

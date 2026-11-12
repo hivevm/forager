@@ -1,6 +1,8 @@
 //! The GeoJSON feature source (ADR-0020): an RFC 7946 document, parsed once, delivered as the
 //! features that touch a query's extent.
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 use forager_ports::{
     Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
     Stored,

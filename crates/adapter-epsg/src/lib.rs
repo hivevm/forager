@@ -2,6 +2,8 @@
 //! the WGS84 UTM zones, derived from the zone number; every other code comes from a table the host
 //! supplies in the format of PROJ's former `epsg` init file. The repository holds no EPSG data.
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 use std::collections::BTreeMap;
 use std::fmt;
 
