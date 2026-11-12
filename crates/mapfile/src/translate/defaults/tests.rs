@@ -16,7 +16,7 @@
 use forager_style_ir::Expr;
 
 use crate::Loaded;
-use crate::MAX_TOTAL_BYTES;
+use crate::MAX_DEFAULT_BYTES;
 use crate::test_support::{codes, json, load_files};
 
 fn load(text: &str) -> Loaded {
@@ -192,7 +192,7 @@ fn a_labels_expression_takes_no_default() {
 fn a_filter_that_defaults_multiply_past_the_limit_fails_the_load() {
     // Verifies: Q-9
     let value = "x".repeat(1024 * 1024);
-    let tags = "%v%".repeat(MAX_TOTAL_BYTES / value.len() + 1);
+    let tags = "%v%".repeat(MAX_DEFAULT_BYTES / value.len() + 1);
     let loaded = load(&format!(
         r#"MAP LAYER VALIDATION "default_v" "{value}" END FILTER ({tags}) END END"#
     ));

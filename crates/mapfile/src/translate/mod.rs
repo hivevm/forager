@@ -25,7 +25,8 @@ use forager_style_ir::{
     Units,
 };
 
-use crate::MAX_TOTAL_BYTES;
+use crate::MAX_DEFAULT_BYTES;
+use crate::budget::Budget;
 use crate::expression;
 use crate::init_file::InitFile;
 use crate::keywords;
@@ -150,7 +151,7 @@ pub fn translate(
         names: BTreeMap::new(),
         numbered: Vec::new(),
         fonts: BTreeMap::new(),
-        default_bytes: 0,
+        defaults_added: Budget::new(MAX_DEFAULT_BYTES),
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
     // its symbol set after the whole map (loadMap, loadSymbolSet).
@@ -195,8 +196,9 @@ struct Translator<'a> {
     numbered: Vec<(u32, Span)>,
     /// The map's fonts, read before its layers so that a label's font is checked.
     fonts: BTreeMap<String, String>,
-    /// The bytes the defaults of `VALIDATION` have put into the load's expressions (Q-9).
-    default_bytes: usize,
+    /// What the defaults of `VALIDATION` have put into the load's expressions, held to
+    /// [`MAX_DEFAULT_BYTES`] (Q-9).
+    defaults_added: Budget,
 }
 
 impl Translator<'_> {
@@ -834,16 +836,15 @@ impl Translator<'_> {
         item: Option<&str>,
         tables: &[&Defaults],
     ) -> Option<Expr> {
-        // The load has failed on the defaults' bound and said so once; charging on could wrap the
-        // count on wasm32 and let them through again (Q-9).
-        if self.default_bytes > MAX_TOTAL_BYTES {
+        // The load has failed on the defaults' bound and said so once (Q-9).
+        if self.defaults_added.passed() {
             return None;
         }
         let [token] = d.values.as_slice() else {
             self.invalid(d, "one expression");
             return None;
         };
-        let translated = substituted(token, tables, &mut self.default_bytes)
+        let translated = substituted(token, tables, &mut self.defaults_added)
             .and_then(|token| expression::translate(&token, item));
         match translated {
             Ok(expr) => Some(expr),

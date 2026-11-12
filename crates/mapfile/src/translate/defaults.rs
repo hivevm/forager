@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 
 use forager_style_ir::Diagnostic;
 
-use crate::MAX_TOTAL_BYTES;
+use crate::budget::{Budget, Charged};
 use crate::expression::Problem;
 use crate::lexer::{Token, TokenKind};
 use crate::report::Report;
@@ -67,9 +67,9 @@ impl Defaults {
     /// `text` with each `%name%` of a default replaced, one pass from the left, the tag found
     /// without case as msCaseReplaceSubstring finds it, and a replaced value not read again.
     /// Scanning for the tags rather than for each default keeps the work to the text's length, and
-    /// `added` holds to Q-9's 16 MiB what the defaults put into all of a load's expressions, as one
-    /// default may be named many times.
-    fn applied(&self, text: &str, added: &mut usize) -> Result<String, Problem> {
+    /// `added` holds to its bound what the defaults put into all of a load's expressions, as one
+    /// default may be named many times, and one expression with them (Q-9).
+    fn applied(&self, text: &str, added: &mut Budget) -> Result<String, Problem> {
         let mut out = String::with_capacity(text.len());
         let mut rest = text;
         while let Some((before, after)) = rest.split_once('%') {
@@ -78,15 +78,15 @@ impl Defaults {
             };
             match self.0.get(&name.to_ascii_lowercase()) {
                 Some(value) => {
-                    *added += value.len();
                     let whole = out.len() + before.len() + value.len() + tail.len();
-                    if *added > MAX_TOTAL_BYTES || whole > MAX_TOTAL_BYTES {
+                    if added.charge(value.len()) != Charged::Within || !added.admits(whole) {
                         return Err(Problem {
                             error: true,
                             code: "mapfile-too-large",
                             message: format!(
                                 "the text the VALIDATION defaults add to the mapfile, or an \
-                                 expression with them, exceeds {MAX_TOTAL_BYTES} bytes"
+                                 expression with them, exceeds {} bytes",
+                                added.bound()
                             ),
                         });
                     }
@@ -132,7 +132,7 @@ fn skipped(report: &mut Report, key: &Token, why: &str) {
 pub(super) fn substituted(
     token: &Token,
     tables: &[&Defaults],
-    added: &mut usize,
+    added: &mut Budget,
 ) -> Result<Token, Problem> {
     let mut token = token.clone();
     let text = match &mut token.kind {
