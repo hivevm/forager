@@ -266,7 +266,10 @@ golden path and the test pattern an agent copies from are named here.
   refuses a function `atof`, `atoi`, `strtod`, `lrint`, or `ms_nint`, or one named `lrint_…` or
   `ms_nint_…`, defined outside `style-ir`'s `c.rs` (ADR-0017). `tests/symbolize_modules.rs`
   refuses an import between the modules of `symbolize`, outside its tests, against the direction
-  its `lib.rs` states, and a module of the crate its table has no row for.
+  its `lib.rs` states, and a module of the crate its table has no row for. `tests/symbol_names.rs`
+  refuses an `eq_ignore_ascii_case` near a symbol's name outside `symbolize`'s `symbol.rs`, whose
+  `named_index` the engine's binding of a `SYMBOL` calls; the frontend keeps a lookup of its own
+  in another form, which ADR-0008 keeps from `symbolize`.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on

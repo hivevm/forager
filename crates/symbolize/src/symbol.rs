@@ -77,8 +77,22 @@ pub enum Resolved<'a, 'n> {
     Found(usize, &'a Symbol),
 }
 
-/// The symbol `symbol` names among `symbols`: by its index, or by its name as msGetSymbolIndex
-/// finds it, the first symbol from index 1 whose name matches without regard to case.
+/// The index, from 1, of the symbol named `name` among `symbols`, as msGetSymbolIndex finds it:
+/// the first whose name matches without regard to case; `None` for a name no symbol carries.
+pub fn named_index(name: &str, symbols: &[Symbol]) -> Option<usize> {
+    symbols
+        .iter()
+        .position(|symbol| {
+            symbol
+                .name
+                .as_ref()
+                .is_some_and(|known| known.eq_ignore_ascii_case(name))
+        })
+        .map(|position| position + 1)
+}
+
+/// The symbol `symbol` names among `symbols`: by its index, or by its name (see
+/// [`named_index`]).
 pub fn resolve<'a, 'n>(
     symbol: &'n Option<Bound<SymbolRef>>,
     symbols: &'a [Symbol],
@@ -86,17 +100,10 @@ pub fn resolve<'a, 'n>(
     let index = match symbol {
         None => return Resolved::Default,
         Some(Bound::Value(SymbolRef::Index(index))) => *index as usize,
-        Some(Bound::Value(SymbolRef::Name(name))) => {
-            let found = symbols.iter().position(|symbol| {
-                symbol
-                    .name
-                    .as_ref()
-                    .is_some_and(|known| known.eq_ignore_ascii_case(name))
-            });
-            return found.map_or(Resolved::Unnamed(name), |position| {
-                Resolved::Found(position + 1, &symbols[position])
-            });
-        }
+        Some(Bound::Value(SymbolRef::Name(name))) => match named_index(name, symbols) {
+            Some(index) => index,
+            None => return Resolved::Unnamed(name),
+        },
         Some(_) => return Resolved::Unresolved,
     };
     let Some(position) = index.checked_sub(1) else {

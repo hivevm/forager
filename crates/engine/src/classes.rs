@@ -455,16 +455,11 @@ pub(crate) fn layer_scale_factor(map: &Map, layer: &Layer, cellsize: f64, scale_
     }
 }
 
-/// The index of a symbol by its name, as msGetSymbolIndex finds it, without regard to case; 0, the default
-/// symbol, for a name the symbol set does not hold, which MapServer would next read as an image
-/// file, not drawn yet.
+/// The index of a symbol by its name, as msGetSymbolIndex finds it (see
+/// [`forager_symbolize::named_index`]); 0, the default symbol, for a name the symbol set does not
+/// hold, which MapServer would next read as an image file, not drawn yet.
 fn symbol_index(name: &str, symbols: &[Symbol]) -> u32 {
-    let position = symbols.iter().position(|s| {
-        s.name
-            .as_deref()
-            .is_some_and(|n| n.eq_ignore_ascii_case(name))
-    });
-    position.map_or(0, |p| p as u32 + 1)
+    forager_symbolize::named_index(name, symbols).map_or(0, |index| index as u32)
 }
 
 struct StyleBinder<'a> {
@@ -703,5 +698,39 @@ mod tests {
         assert_eq!(lookup.text("flag").as_deref(), Some("1"));
         assert_eq!(lookup.text("none"), None);
         assert_eq!(lookup.text("other"), None);
+    }
+
+    #[test]
+    fn a_bound_symbol_name_is_the_index_symbolize_resolves_it_to() {
+        use forager_style_ir::{SymbolKind, SymbolRef};
+        use forager_symbolize::{Resolved, resolve};
+        let named = |name: &str| Symbol {
+            name: Some(name.to_owned()),
+            kind: SymbolKind::Ellipse,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        };
+        let symbols = [named("square"), named("Circle"), named("circle")];
+        for name in ["circle", "CIRCLE", "cIrClE", "Square"] {
+            let style = Some(Bound::Value(SymbolRef::Name(name.to_owned())));
+            let Resolved::Found(resolved, _) = resolve(&style, &symbols) else {
+                panic!("symbolize finds no symbol named `{name}`");
+            };
+            assert_eq!(symbol_index(name, &symbols) as usize, resolved, "{name}");
+        }
+        // A name no symbol carries: the engine binds the default symbol, symbolize draws nothing.
+        let style = Some(Bound::Value(SymbolRef::Name("star".to_owned())));
+        assert!(matches!(
+            resolve(&style, &symbols),
+            Resolved::Unnamed("star")
+        ));
+        assert_eq!(symbol_index("star", &symbols), 0);
     }
 }
