@@ -1020,6 +1020,15 @@
             }
           ]
         },
+        "label_cache_edge_buffer": {
+          "description": "The pixels along the image's edges that no cached label reaches into unless it may be\npartial or is forced, MapServer's `labelcache_map_edge_buffer` of `WEB` `METADATA`. Absent,\nthere is none.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
         "layers": {
           "type": "array",
           "items": {

@@ -87,9 +87,10 @@ An expression that its defaults take past 16 MiB, or defaults that add more than
 load's expressions together, fail the load with `mapfile-too-large` (Q-9). A pair in a `VALIDATION`
 that is not two strings, or a last key without a value, gives no default and warns
 `unsupported-value` naming its key, where MapServer's `loadHashTable` fails the load; the block's
-other pairs still hold. `WEB` is read for its `VALIDATION` alone: its `METADATA` warns
-`unsupported-keyword`, and each of its other keywords, which serve MapServer's CGI and templates,
-warns `discarded-keyword`.
+other pairs still hold. `WEB` is read for its `VALIDATION` and, of its `METADATA`, for the keys
+the map carries ([label.md](label.md)): its `METADATA` warns `unsupported-keyword` for the others,
+and each of its other keywords, which serve MapServer's CGI and templates, warns
+`discarded-keyword`.
 
 **Not carried over.** `[shape]`, `[map_cellsize]`, `[data_cellsize]`, the geometry functions and
 spatial predicates, `IN` against a computed string, a number past the range of a double, which JSON

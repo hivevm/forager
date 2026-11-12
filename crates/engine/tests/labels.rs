@@ -4347,3 +4347,25 @@ fn layers_of_postlabelcache_are_drawn_after_the_others_in_their_listed_order() {
     assert_eq!(ops, [('M', 10.0), ('M', 20.0), ('M', 30.0)]);
     assert!(cached.is_empty());
 }
+
+#[test]
+fn the_maps_label_cache_edge_buffer_keeps_a_cached_label_from_the_edge() {
+    // msDrawLabelCache hands the map's gutter to labelInImage for every label that may not be
+    // partial: "Fen" at (80, 29), its box about 9 pixels high around y 29, is drawn without one
+    // and left out with a gutter of 29, which its top crosses.
+    let glyphs = |gutter: Option<u32>| {
+        let mut map = map(label_item());
+        map.label_cache_edge_buffer = gutter;
+        let sources: BTreeMap<String, GeoJsonSource> =
+            [("places".to_owned(), GeoJsonSource::parse(FEN).unwrap())].into();
+        let recorder = GlyphRecorder::default();
+        let rendered = ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+        (recorder.0.take().len(), rendered.labels.len())
+    };
+    let (drawn, cached) = glyphs(None);
+    assert!(
+        drawn > 0 && cached == 1,
+        "{drawn} glyph operations, {cached} labels"
+    );
+    assert_eq!(glyphs(Some(29)).0, 0, "left out inside the gutter");
+}

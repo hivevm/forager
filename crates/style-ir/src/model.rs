@@ -26,6 +26,11 @@ pub struct Map {
     pub size: Option<[u32; 2]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_color: Option<Rgba>,
+    /// The pixels along the image's edges that no cached label reaches into unless it may be
+    /// partial or is forced, MapServer's `labelcache_map_edge_buffer` of `WEB` `METADATA`. Absent,
+    /// there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_cache_edge_buffer: Option<u32>,
     /// The map's projection as a proj4 string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projection: Option<String>,

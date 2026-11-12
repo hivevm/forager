@@ -1737,3 +1737,20 @@ fn an_output_format_reads_transparent_by_token_value_and_its_name_as_any_token()
     let text = "MAP IMAGETYPE 'tiny' OUTPUTFORMAT NAME tiny DRIVER AGG/PNG TRANSPARENT on END END";
     assert_eq!(image_color(text), clear);
 }
+
+#[test]
+fn the_maps_label_cache_edge_buffer_is_read_from_web_metadata_as_msdrawlabelcache_reads_it() {
+    // msDrawLabelCache: gutter = MS_ABS(atoi(value)) of WEB METADATA's
+    // `labelcache_map_edge_buffer` (src/mapdraw.c:3488-3498), the key found without case.
+    let gutter = |metadata: &str| {
+        let text: &'static str = format!("MAP WEB METADATA {metadata} END END END").leak();
+        let loaded = load_files(&[("m.map", text)]);
+        loaded.document.unwrap().map.label_cache_edge_buffer
+    };
+    assert_eq!(gutter("'labelcache_map_edge_buffer' '10'"), Some(10));
+    assert_eq!(gutter("'LabelCache_Map_Edge_Buffer' '-10'"), Some(10));
+    assert_eq!(gutter("'labelcache_map_edge_buffer' '12px'"), Some(12));
+    assert_eq!(gutter("'labelcache_map_edge_buffer' 'x'"), None);
+    assert_eq!(gutter("'labelcache_map_edge_buffer' '0'"), None);
+    assert_eq!(gutter("'other' '10'"), None);
+}

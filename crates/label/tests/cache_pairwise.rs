@@ -34,8 +34,8 @@ const SIZE: (u32, u32) = (300, 200);
 const INPUTS: usize = 10_000;
 const SEED: u64 = 0x2026_1031_0024;
 
-/// Labels with the text each draws, as an index into a few texts.
-struct Cache(Vec<(Member, u8)>);
+/// Labels with the text each draws, as an index into a few texts, and the gutter in pixels.
+struct Cache(Vec<(Member, u8)>, u32);
 
 impl Members for Cache {
     fn count(&self) -> usize {
@@ -231,7 +231,7 @@ fn label_marker(rng: &mut Rng, point: Point) -> Option<Bounds> {
 /// The labels the cache draws, in order, with the position each takes.
 fn through_cache(cache: &Cache) -> Vec<(usize, Anchor)> {
     let mut out = Vec::new();
-    draw_label_cache(cache, SIZE, |i, p| out.push((i, p.anchor)));
+    draw_label_cache(cache, SIZE, cache.1, |i, p| out.push((i, p.anchor)));
     out
 }
 
@@ -309,7 +309,7 @@ fn global_bbox(text: &Bounds, marker: Option<&Bounds>) -> [f64; 4] {
     bbox
 }
 
-/// `msTestLabelCacheCollisions` with no gutter and no leader: false where `lb` leaves the image
+/// `msTestLabelCacheCollisions` with the cache's gutter and no leader: false where `lb` leaves the image
 /// of a label not partial, meets a marker of slot `current_priority` or above but the label's
 /// own, or, within a drawn label's global bbox, meets its text or its labelpoint marker.
 fn collisions(
@@ -320,7 +320,7 @@ fn collisions(
     current_priority: usize,
     current_label: usize,
 ) -> bool {
-    if !m.partials && !label_in_image(SIZE, lb) {
+    if !m.partials && !label_in_image(SIZE, cache.1, lb) {
         return false;
     }
     for p in current_priority..usize::from(MAX_PRIORITY) {
@@ -395,18 +395,20 @@ fn min_distance(
     })
 }
 
-/// `labelInImage` with a gutter of 0.
-fn label_in_image((width, height): (u32, u32), lb: &Bounds) -> bool {
-    let (width, height) = (f64::from(width), f64::from(height));
+/// `labelInImage` (src/maplabel.c:636-663), its int `gutter` compared with the doubles of the box
+/// and taken from the image's int width and height.
+fn label_in_image((width, height): (u32, u32), gutter: u32, lb: &Bounds) -> bool {
+    let g = f64::from(gutter);
+    let (right, bottom) = (f64::from(width) - g, f64::from(height) - g);
     let b = &lb.bbox;
-    if b[0] >= 0.0 && b[1] >= 0.0 && b[2] < width && b[3] < height {
+    if b[0] >= g && b[1] >= g && b[2] < right && b[3] < bottom {
         return true;
     }
     let Some(poly) = &lb.poly else {
         return false;
     };
     for p in &poly[1..] {
-        if p.x < 0.0 || p.x >= width || p.y < 0.0 || p.y >= height {
+        if p.x < g || p.x >= right || p.y < g || p.y >= bottom {
             return false;
         }
     }
@@ -547,7 +549,14 @@ fn the_cache_draws_what_the_pairwise_test_draws_on_arbitrary_labels() {
     let mut drawn = 0;
     for input in 0..INPUTS {
         let count = 1 + rng.below(16) as usize;
-        let cache = Cache((0..count).map(|_| member(&mut rng)).collect());
+        let members = (0..count).map(|_| member(&mut rng)).collect();
+        // Half the inputs have no gutter, the others one of 0 to 40 pixels.
+        let gutter = if rng.chance(50) {
+            0
+        } else {
+            rng.below(41) as u32
+        };
+        let cache = Cache(members, gutter);
         let expected = pairwise(&cache);
         assert_eq!(
             through_cache(&cache),

@@ -89,7 +89,7 @@ fn run(cache: &Counted) -> (usize, usize, usize) {
     let mut drawn = Vec::with_capacity(LABELS);
     let before = ALLOCATOR.current_usage();
     ALLOCATOR.reset_peak_usage();
-    draw_label_cache(cache, SIZE, |i, _| drawn.push(i));
+    draw_label_cache(cache, SIZE, 0, |i, _| drawn.push(i));
     let bytes = ALLOCATOR.peak_usage() - before;
     (drawn.len(), cache.asked.get() / LABELS, bytes / LABELS)
 }
@@ -122,7 +122,7 @@ fn large_and_inside_out_boxes_cost_the_cache_little_per_label() {
     // coarsest level, where every later test visits it (ADR-0032).
     let offset = offset_labels(MAX_LABELS);
     let mut drawn = 0;
-    let left_out = draw_label_cache(&offset, SIZE, |_, _| drawn += 1);
+    let left_out = draw_label_cache(&offset, SIZE, 0, |_, _| drawn += 1);
     let asked = offset.asked.get() / MAX_LABELS;
     assert_eq!(left_out, 0);
     assert_eq!(drawn, 2844);
@@ -135,7 +135,7 @@ fn large_and_inside_out_boxes_cost_the_cache_little_per_label() {
     // left out, untested, without the engine.
     let over = offset_labels(MAX_LABELS + 1);
     let mut visited = Vec::new();
-    let left_out = walk_label_cache(&over, SIZE, |i, _| visited.push(i));
+    let left_out = walk_label_cache(&over, SIZE, 0, |i, _| visited.push(i));
     assert_eq!(left_out, 1);
     assert_eq!(visited.len(), MAX_LABELS);
     assert!(

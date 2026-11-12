@@ -952,7 +952,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let mut styled = Styled::new(self.map, self.view, width, height);
         // The report follows the cache's walk, every member it visits with whether it was drawn.
         let mut walked: Vec<(u32, Option<[f64; 4]>)> = Vec::with_capacity(cached.len());
-        let left_out = walk_label_cache(&cache, self.size, |i, placement| {
+        let gutter = self.map.label_cache_edge_buffer.unwrap_or(0);
+        let left_out = walk_label_cache(&cache, self.size, gutter, |i, placement| {
             let label = &cached[i];
             let at = defs[label.def as usize].at;
             let Some(placement) = placement else {

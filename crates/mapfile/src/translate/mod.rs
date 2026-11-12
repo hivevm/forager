@@ -19,6 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use forager_ports::{ProjectionResolver, ResourcePath};
+use forager_style_ir::c::atoi;
 use forager_style_ir::{
     Bound, Class, Diagnostic, Expr, Extent, GeomTransform, Layer, LayerProjection, LayerStatus,
     MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol,
@@ -70,6 +71,27 @@ fn item(block: &Block, keyword: &str) -> Option<String> {
         },
         _ => None,
     })
+}
+
+/// The keys of `WEB` `METADATA` the map carries.
+const WEB_METADATA_READ: &[&str] = &["labelcache_map_edge_buffer"];
+
+/// The value of `key` in the `METADATA` of `blocks`, as msLookupHashTable finds it: without
+/// regard to case, a later pair of a key replacing an earlier, as loadHashTable inserts them. A
+/// pair that is not two strings is none.
+fn metadata<'b>(blocks: impl IntoIterator<Item = &'b Block>, key: &str) -> Option<&'b str> {
+    blocks
+        .into_iter()
+        .flat_map(|block| &block.nodes)
+        .filter_map(|node| match node {
+            Node::Block(b) if b.keyword == "METADATA" => Some(b.values.as_chunks::<2>().0),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|[k, v]| Some((k.string()?, v.string()?)))
+        .filter(|(k, _)| k.eq_ignore_ascii_case(key))
+        .last()
+        .map(|(_, v)| v)
 }
 
 /// Whether the layer `block`'s features are never read: a `FEATURE` makes the layer inline as
@@ -269,6 +291,14 @@ impl Translator<'_> {
                 },
             }
         }
+        // msDrawLabelCache reads the gutter as MS_ABS(atoi(value)) (src/mapdraw.c:3488-3498).
+        let webs = block.nodes.iter().filter_map(|node| match node {
+            Node::Block(b) if b.keyword == "WEB" => Some(b),
+            _ => None,
+        });
+        map.label_cache_edge_buffer = metadata(webs, "labelcache_map_edge_buffer")
+            .map(|v| atoi(v.as_bytes()).unsigned_abs())
+            .filter(|&gutter| gutter > 0);
         if output::transparent(block) {
             // agg2CreateImage clears the image of a transparent format to no colour.
             map.image_color = Some(Rgba {
@@ -281,15 +311,23 @@ impl Translator<'_> {
         map
     }
 
-    /// `WEB`, read for its `VALIDATION` alone. Its `METADATA` may set what MapServer draws, so it
-    /// is not yet supported; its other keywords serve MapServer's CGI and templates and are out of
-    /// scope.
+    /// `WEB`, read for its `VALIDATION` and, of its `METADATA`, for the keys the map carries
+    /// ([`WEB_METADATA_READ`]); the other keys of its `METADATA` may set what MapServer draws, so
+    /// they are not yet supported, and its other keywords serve MapServer's CGI and templates and
+    /// are out of scope.
     fn web(&mut self, block: &Block) {
         for node in &block.nodes {
             match node {
                 // Read by Defaults; its other keys only check a runtime substitution.
                 Node::Block(b) if b.keyword == "VALIDATION" => {}
-                Node::Block(b) if b.keyword == "METADATA" => self.unhandled(&b.keyword, &b.span),
+                Node::Block(b) if b.keyword == "METADATA" => {
+                    let message = format!(
+                        "METADATA of WEB is read for {} alone; its other keys are not yet \
+                         supported and are ignored",
+                        WEB_METADATA_READ.join(" and ")
+                    );
+                    self.warn("unsupported-keyword", &message, &b.span);
+                }
                 Node::Directive(d) if !d.known => {}
                 Node::Directive(Directive { keyword, span, .. })
                 | Node::Block(Block { keyword, span, .. }) => {

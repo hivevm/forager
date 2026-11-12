@@ -150,6 +150,15 @@ for such a layer whatever its `LABELCACHE`. `msDrawMap` draws the layers in thei
 over every cached label of the map; a point layer's labels are drawn at once, as above, and a line
 or polygon layer's are not drawn yet, each reported.
 
+**`labelcache_map_edge_buffer`.** The map's `WEB` `METADATA` may name a gutter along the image's
+edges that no cached label reaches into: `msDrawLabelCache` in `src/mapdraw.c` reads it as the
+absolute value of `atoi` of the text, the key found without case, and the IR's
+`label_cache_edge_buffer` carries it, none where it reads as 0. `labelInImage` in `src/maplabel.c`
+then requires a label that may not be partial to lie that many pixels inside each edge, by its box
+or, where it is turned, its corners; a label of `PARTIALS TRUE` is not tested against the image, and
+a forced one is drawn untested, but for a forced label of `POSITION AUTO`, whose positions before
+its last are tested.
+
 The engine draws a feature point by point, as `pointLayerDrawShape` does
 (`src/mapdraw.c:2062-2105`): at each point inside the map's extent, every class style's marker,
 whatever its `GEOMTRANSFORM`, then the labels there, then the markers at its next point; so a
