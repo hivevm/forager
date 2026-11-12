@@ -218,6 +218,13 @@ fn style_values_outside_loadstyles_checks_are_errors() {
     );
     let (loaded, style) = first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM nosuch END END END END");
     assert_eq!(codes(&loaded), ["unsupported-value"]);
+    assert!(
+        loaded.diagnostics[0]
+            .message
+            .contains("a class's style is drawn as if it had none"),
+        "{}",
+        loaded.diagnostics[0].message
+    );
     assert_eq!(style.unwrap().geom_transform, None);
 }
 

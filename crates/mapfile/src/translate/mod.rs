@@ -636,7 +636,7 @@ impl Translator<'_> {
                 {
                     class.max_scale_denom = self.scale_denom(d);
                 }
-                Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b)),
+                Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b, false)),
                 Node::Block(b) if b.keyword == "VALIDATION" => {}
                 Node::Block(b) if b.keyword == "LABEL" => {
                     match self.label(b, fallback.as_ref(), label_item) {

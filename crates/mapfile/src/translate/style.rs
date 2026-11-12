@@ -23,7 +23,9 @@ use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
 
 impl Translator<'_> {
-    pub(super) fn style(&mut self, block: &Block) -> Style {
+    /// A class's `STYLE`, or a label's where `of_label`; a label's reader reports the transform
+    /// that leaves its label out itself, so the style's reader does not warn of it again.
+    pub(super) fn style(&mut self, block: &Block, of_label: bool) -> Style {
         let mut style = Style {
             span: Some(block.span.clone()),
             ..Style::default()
@@ -114,7 +116,7 @@ impl Translator<'_> {
                     "MAXSIZE" => style.max_size = self.number(d, Range::above(0.0)),
                     "MINWIDTH" => style.min_width = self.number(d, Range::at_least(0.0)),
                     "MAXWIDTH" => style.max_width = self.number(d, Range::above(0.0)),
-                    "GEOMTRANSFORM" => style.geom_transform = self.geom_transform(d),
+                    "GEOMTRANSFORM" => style.geom_transform = self.geom_transform(d, of_label),
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) if b.keyword == "PATTERN" => style.pattern = self.pattern(b),
@@ -188,8 +190,9 @@ impl Translator<'_> {
         }
     }
 
-    /// `GEOMTRANSFORM` by name; MapServer's expressions are not yet carried over.
-    fn geom_transform(&mut self, d: &Directive) -> Option<GeomTransform> {
+    /// `GEOMTRANSFORM` by name; MapServer's expressions are not yet carried over, and are a
+    /// warning on a class's style.
+    fn geom_transform(&mut self, d: &Directive, of_label: bool) -> Option<GeomTransform> {
         // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION): a string, a bare word that is no
         // keyword among them, or an expression.
         let name = match d.values.as_slice() {
@@ -219,10 +222,9 @@ impl Translator<'_> {
             .into_iter()
             .find(|(prefix, _)| name.starts_with(prefix))
             .map(|(_, transform)| transform);
-        if transform.is_none() {
+        if transform.is_none() && !of_label {
             let message = "this GEOMTRANSFORM names no transform, or is an expression, which is \
-                           not yet supported; a class's style is drawn as if it had none, a \
-                           label's leaves its label out";
+                           not yet supported; a class's style is drawn as if it had none";
             self.warn("unsupported-value", message, &d.span);
         }
         transform

@@ -240,6 +240,8 @@ fn a_label_carries_what_placement_and_drawing_need() {
 /// fails the map's draw on bbox and others: a label with a style of any other GEOMTRANSFORM is
 /// left out with a warning, never drawn at the label point, and its class's other labels with it,
 /// as the engine leaves out every label of a class of several: leaving one out must not draw another.
+/// The one warning says so, also where the transform is a name MapServer does not know or an
+/// expression, which the style's reader does not warn of again.
 #[test]
 fn a_label_with_a_style_of_another_transform_is_left_out() {
     for transform in [
@@ -247,6 +249,7 @@ fn a_label_with_a_style_of_another_transform_is_left_out() {
         "centroid",
         "bbox",
         "'nosuch'",
+        "\"foo\"",
         "(buffer([shape], 2))",
     ] {
         let text: &'static str = format!(
@@ -257,10 +260,13 @@ fn a_label_with_a_style_of_another_transform_is_left_out() {
         )
         .leak();
         let loaded = load_files(&[("m.map", text)]);
+        assert_eq!(codes(&loaded), ["label-not-drawn"], "{transform}");
         assert!(
-            codes(&loaded).contains(&"label-not-drawn"),
-            "{transform}: {:?}",
-            codes(&loaded)
+            loaded.diagnostics[0]
+                .message
+                .contains("its class's other labels with it"),
+            "{transform}: {}",
+            loaded.diagnostics[0].message
         );
         let labels = &loaded.document.as_ref().unwrap().map.layers[0].classes[0].labels;
         assert!(labels.is_empty(), "{transform}: {labels:?}");

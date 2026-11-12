@@ -163,7 +163,7 @@ impl Translator<'_> {
     /// on bbox and others: a label's style holds no other, so its label is left out, and the caller
     /// leaves out its class's other labels with it.
     fn label_style(&mut self, b: &Block) -> Option<Style<LabelTransform>> {
-        let style = self.style(b);
+        let style = self.style(b, true);
         let transformed = b
             .nodes
             .iter()
