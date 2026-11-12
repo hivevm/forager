@@ -4007,13 +4007,24 @@ fn multipoint_off(
         .collect()
 }
 
-/// The operations a multipoint at x 40 and 45 is drawn by: each point's marker, then its label,
-/// the label 5 pixels further at the second point.
+/// The operations a multipoint at x 40 and 45 is drawn by: each point's marker, then its label.
 fn each_point_marker_then_label(drawn: &[(char, f64)]) {
-    let first = drawn.get(1).map_or(0.0, |(_, x)| *x);
+    // msDrawLabel puts the label at its position, CC by default (mapfile.c:1598), of its point
+    // and moves it nowhere for the marker (mapdraw.c:2803-2808): "Fen" at 12 points, 29.1875
+    // pixels across by its font's advances, its box from x - 14.59375 (maplabel.c:1049-1051,
+    // 1109-1117), from 25.40625 at the first point and 30.40625 at the second. The F's outline
+    // starts 1.578125 right of the box's left edge, as Forager's text stack draws the test font;
+    // the font's own left side bearing, 201 of 2048 units at 16 pixels, is 1.5703125, so that
+    // part of the value is Forager's, not one derived from MapServer, as in
+    // a_layer_of_labelcache_off_draws_every_label_in_the_order_of_its_features.
     assert_eq!(
         drawn,
-        [('M', 40.0), ('L', first), ('M', 45.0), ('L', first + 5.0)]
+        [
+            ('M', 40.0),
+            ('L', 26.984_375),
+            ('M', 45.0),
+            ('L', 31.984_375)
+        ]
     );
 }
 
