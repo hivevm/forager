@@ -83,10 +83,11 @@ skimmed. The design revision drops what prevented nothing
   resolution, one ordered before another, comes beside a pinned value and never in place of it,
   because a wrong implementation that both sides share passes the relation and the self-derived
   value alike.
-- **A commit typed `refactor` changes nothing a test can see** — a behaviour it fixes or moves on
-  the way, such as a bound that now measures what the renderer draws, is a commit of its own typed
-  `fix` with its regression test, because the type tells the reviewer and the history which change
-  to read as a decision.
+- **A commit typed `refactor` changes nothing a test can see** — a behaviour it moves on the way
+  is a `fix` of its own, because the type tells the reviewer and the history which change to read
+  as a decision. `scripts/sensor-refactor-tests.sh` lists a `refactor` commit that changes the
+  line of an assertion or a `#[test]`. An expected value it changes elsewhere is the reviewer's to
+  find: on a continuation line of a wrapped assertion, in a `let expected`, a fixture, or an image.
 - **A comparison fails when there is nothing to compare** — a test that holds two results equal,
   two renders, a rendering and its reference, a record and a reader, first asserts that each side
   holds what it is meant to compare, a layer's features, an image, a label, because two empty

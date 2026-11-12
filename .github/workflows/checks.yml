@@ -125,6 +125,12 @@ jobs:
         run: bash scripts/sensor-tests-kept.sh "$BASE"
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - name: Self-test the refactor tests sensor
+        run: bash scripts/test-sensor-refactor-tests.sh
+      - name: Report the commits typed refactor that change a test since the base
+        run: bash scripts/sensor-refactor-tests.sh "$BASE"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       - name: Self-test the binding ADRs sensor
         run: bash scripts/test-sensor-binding-adrs.sh
       - name: Report the ADRs in force whose Applies to names a path the change touches

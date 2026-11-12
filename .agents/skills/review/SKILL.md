@@ -33,7 +33,8 @@ The reviewer runs in a context that did not write the change and is handed only:
   test decides*: what the tests decide is checked there, and the rest is checked here;
 - the output of the sensors the toolchain ADR names, and of
   [`scripts/check-all.sh`](../../../scripts/check-all.sh) `--verbose`, whose tests-kept sensor
-  lists the test files deleted and the skip markers added since the base;
+  lists the test files deleted and the skip markers added since the base, and whose refactor
+  tests sensor lists each `refactor` commit that changes a test;
 - for a normalization, its map and its clause table, and the record at the base commit
   ([`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules), rule 5).
 
