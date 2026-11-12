@@ -104,9 +104,9 @@ pub fn draw_label_cache<M: Members + ?Sized>(
 /// Walks the first [`MAX_LABELS`] of `members` as `msDrawLabelCache` walks its slots, from the
 /// highest priority down and within a priority from the last added to the first, into an image of
 /// `size` pixels whose `gutter`, `labelcache_map_edge_buffer`, no label reaches into that may not
-/// be partial and is tested, and hands `visit` each member it visits, in that order, with its placement where
-/// it is drawn and `None` where it is left out. Returns how many members past [`MAX_LABELS`] it
-/// left out untested (Q-9).
+/// be partial and is tested, and hands `visit` each member it visits, in that order, with its
+/// placement where it is drawn and `None` where it is left out. Returns how many members past
+/// [`MAX_LABELS`] it left out untested (Q-9).
 pub fn walk_label_cache<M: Members + ?Sized>(
     members: &M,
     size: (u32, u32),

@@ -437,14 +437,6 @@ fn inches_per_unit(units: Units) -> f64 {
     }
 }
 
-/// The value msGeomTransformShape binds `[map_cellsize]` of a layer's `GEOMTRANSFORM` to
-/// (src/mapgeomtransform.c:283-284): the map's `cellsize` times the inches of the map's unit over
-/// those of the layer's. The frontend does not carry a layer's `UNITS`, and warns of one written;
-/// the layer's unit is initLayer's, meters (src/mapfile.c:3951).
-pub(crate) fn layer_cellsize(map: &Map, cellsize: f64) -> f64 {
-    cellsize * (inches_per_unit(map_units(map)) / inches_per_unit(Units::Meters))
-}
-
 /// The image's resolution factor: the map's `RESOLUTION` over its `DEFRESOLUTION`, both 72
 /// unless written (msPrepareImage). It scales the bounds of every style, its `MINSIZE`,
 /// `MAXSIZE`, `MINWIDTH`, and `MAXWIDTH`, and a label's.

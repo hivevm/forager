@@ -43,8 +43,8 @@ use forager_style_ir::{
     Diagnostic, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
 };
 use forager_symbolize::{
-    Canvas, Pass, Pixmaps, Resolved, Tiles, Undrawn, can_draw, clip_pixmaps, draw_ops,
-    marked_pixmap, point_markers, resolve, vertices,
+    Canvas, Pass, Pixmaps, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops, marked_pixmap,
+    point_markers, resolve, vertices,
 };
 
 use forager_expr::Evaluator;
@@ -160,9 +160,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
         };
-        let cellsize = classes::layer_cellsize(map, view.cellsize);
-        let Some(features) = features(layer, sources, &view, cellsize, &mut diagnostics).await
-        else {
+        let Some(features) = features(layer, sources, &view, &mut diagnostics).await else {
             continue;
         };
         if layer.classes.is_empty() {
@@ -673,59 +671,8 @@ fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<Ren
 
 /// The features of a layer in view: those of its inline features where it is read from them
 /// ([`is_inline`], ADR-0018), whatever source is bound to it, which is not read and is reported;
-/// otherwise those of the source bound to its name. Each is transformed by the layer's
-/// `GEOMTRANSFORM` with `[map_cellsize]` at `cellsize` ([`transformed`]).
+/// otherwise those of the source bound to its name.
 async fn features<S: FeatureSource>(
-    layer: &Layer,
-    sources: &BTreeMap<String, S>,
-    view: &View,
-    cellsize: f64,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Option<Vec<Feature>> {
-    let features = source_features(layer, sources, view, diagnostics).await?;
-    transformed(layer, features, cellsize, diagnostics)
-}
-
-/// `features` with each shape replaced by the layer's `GEOMTRANSFORM`, as msLayerNextShape applies
-/// it to each shape it reads (src/maplayer.c:444-449), `[map_cellsize]` bound to `cellsize`. Where
-/// the engine does not draw the expression, or MapServer's parser fails it on a shape (densify on
-/// a point, a division by zero, outer on a line), msGeomTransformShape fails, msDrawVectorLayer
-/// returns MS_FAILURE (src/mapdraw.c:1427-1434), and msDrawMap frees the image and returns none
-/// (src/mapdraw.c:508-519): MapServer makes no map. Forager deviates, as the maintainer decided for
-/// the expressions that need GEOS: the layer draws nothing, with a warning, and the rest of the
-/// map is drawn; and so where the layer's transforms pass a bound of Q-9.
-fn transformed(
-    layer: &Layer,
-    mut features: Vec<Feature>,
-    cellsize: f64,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Option<Vec<Feature>> {
-    let Some(expression) = &layer.geom_transform else {
-        return Some(features);
-    };
-    let mut budget = forager_symbolize::Budget::default();
-    let applied = forager_symbolize::LayerTransform::parse(expression).and_then(|transform| {
-        for feature in &mut features {
-            feature.geometry = transform.apply(&feature.geometry, cellsize, &mut budget)?;
-        }
-        Ok(())
-    });
-    let (code, why) = match applied {
-        Ok(()) => return Some(features),
-        Err(Undrawn::Unsupported(why)) => ("geomtransform-not-drawn", why),
-        Err(Undrawn::Limit(why)) => ("geomtransform-over-limit", why),
-    };
-    let message = format!(
-        "layer {} draws nothing: its GEOMTRANSFORM {} {why}",
-        name(layer),
-        quoted(expression)
-    );
-    diagnostics.push(Diagnostic::warning(code, message, layer.span.clone()));
-    None
-}
-
-/// The features of `layer`, from its inline features or the source bound to it.
-async fn source_features<S: FeatureSource>(
     layer: &Layer,
     sources: &BTreeMap<String, S>,
     view: &View,

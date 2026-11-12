@@ -352,11 +352,12 @@ impl Translator<'_> {
     }
 
     /// `IMAGETYPE` and `OUTPUTFORMAT`, of which only whether the selected format is transparent
-    /// is carried, as the map's background ([`output::transparent`]).
+    /// is carried, as the map's background ([`output::transparent`]), and its
+    /// `MAXFEATURESTODRAW`, as the layers' limit ([`Self::features_to_draw`]).
     fn output_format(&mut self, keyword: &str, span: &Span) {
         let message = format!(
-            "{keyword} is read only for whether the image starts transparent; the output format \
-             is not yet supported otherwise"
+            "{keyword} is read only for whether the image starts transparent and for its \
+             MAXFEATURESTODRAW; the output format is not yet supported otherwise"
         );
         self.warn("unsupported-keyword", &message, span);
     }
@@ -420,7 +421,6 @@ impl Translator<'_> {
                     "LABELCACHE" => self.label_cache(&mut layer, d),
                     "POSTLABELCACHE" => self.post_label_cache(&mut layer, d),
                     "MAXFEATURES" => max_features = self.max_features(d),
-                    "GEOMTRANSFORM" => layer.geom_transform = self.layer_geom_transform(d),
                     "FILTER" => layer.filter = self.defaulted(d, filter_item.as_deref(), &tables),
                     "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
                     "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
@@ -452,6 +452,7 @@ impl Translator<'_> {
                     // Read by Defaults; its other keys only check a runtime substitution.
                     "VALIDATION" => {}
                     "COMPOSITE" => composites.push(b),
+                    "METADATA" => self.layer_metadata(&b.span),
                     "FEATURE" => {
                         let feature = self.feature(b, shape_type, &item_names);
                         if exempt {
@@ -516,16 +517,14 @@ impl Translator<'_> {
         layer.max_features = self.features_to_draw(block, max_features);
     }
 
-    /// A layer's `GEOMTRANSFORM`, read by `getSymbol(1, MS_EXPRESSION)`: an expression alone, kept
-    /// as written; anything else fails the load.
-    fn layer_geom_transform(&mut self, d: &Directive) -> Option<String> {
-        if let [token] = d.values.as_slice()
-            && let TokenKind::Expression(text) = &token.kind
-        {
-            return Some(text.clone());
-        }
-        self.invalid(d, "an expression");
-        None
+    /// Warns of a layer's `METADATA`, read for [`MAX_FEATURES_KEY`] alone
+    /// ([`Self::features_to_draw`]).
+    fn layer_metadata(&mut self, span: &Span) {
+        let message = format!(
+            "METADATA of a layer is read for {MAX_FEATURES_KEY} alone; its other keys are not yet \
+             supported and are ignored"
+        );
+        self.warn("unsupported-keyword", &message, span);
     }
 
     /// A layer's `MAXFEATURES`, a number above 0 as getInteger checks it, truncated to an `int`;

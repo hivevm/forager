@@ -309,9 +309,9 @@ fn global_bbox(text: &Bounds, marker: Option<&Bounds>) -> [f64; 4] {
     bbox
 }
 
-/// `msTestLabelCacheCollisions` with the cache's gutter and no leader: false where `lb` leaves the image
-/// of a label not partial, meets a marker of slot `current_priority` or above but the label's
-/// own, or, within a drawn label's global bbox, meets its text or its labelpoint marker.
+/// `msTestLabelCacheCollisions` with the cache's gutter and no leader: false where `lb` leaves the
+/// image of a label not partial, meets a marker of slot `current_priority` or above but the
+/// label's own, or, within a drawn label's global bbox, meets its text or its labelpoint marker.
 fn collisions(
     cache: &Cache,
     drawn: &[(usize, Option<Bounds>)],

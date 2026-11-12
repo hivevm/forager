@@ -811,13 +811,6 @@
             }
           ]
         },
-        "geom_transform": {
-          "description": "MapServer's expression of the layer's `GEOMTRANSFORM`, as written, which replaces each\nfeature's shape before it is classed and drawn (RFC 89, `msGeomTransformShape`). The engine\ndraws `generalize`, `smoothsia`, `densify`, `outer`, and `inner`; a layer of any other, as\none that needs a geometry library, draws nothing, with a warning. Absent, there is none.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "label_cache": {
           "description": "Whether the layer's labels go to the label cache, MapServer's `LABELCACHE`: placed with\nthe labels of every layer and drawn after them. Without the cache, each label is drawn at\nonce after its feature, untested against any other. Absent, it is true, MapServer's\ndefault `LABELCACHE ON`.",
           "type": "boolean"

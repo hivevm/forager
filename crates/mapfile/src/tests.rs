@@ -1805,6 +1805,30 @@ fn a_layers_limit_on_its_features_is_settled_as_ms_layer_get_max_features_to_dra
 }
 
 #[test]
+fn a_layers_metadata_and_the_output_format_name_the_limit_they_are_read_for() {
+    // A layer's METADATA and the output format are read for maxfeaturestodraw, so their warnings
+    // say so rather than that they are ignored.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP IMAGETYPE 'mf' OUTPUTFORMAT NAME 'mf' DRIVER 'AGG/PNG' END \
+         LAYER NAME 'a' METADATA 'maxfeaturestodraw' '1' END END END",
+    )]);
+    let messages: Vec<&str> = loaded
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "unsupported-keyword")
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(messages.len(), 3, "{messages:?}");
+    for message in messages {
+        assert!(
+            message.to_ascii_lowercase().contains("maxfeaturestodraw"),
+            "{message}"
+        );
+    }
+}
+
+#[test]
 fn a_maxfeatures_of_zero_is_an_error() {
     // getInteger(&maxfeatures, MS_NUM_CHECK_GT, 0, -1) refuses 0.
     let loaded = load_files(&[("m.map", "MAP LAYER NAME 'a' MAXFEATURES 0 END END")]);
@@ -1812,18 +1836,13 @@ fn a_maxfeatures_of_zero_is_an_error() {
 }
 
 #[test]
-fn a_layers_geomtransform_is_an_expression_kept_as_written() {
-    // loadLayer reads GEOMTRANSFORM by getSymbol(1, MS_EXPRESSION): an expression alone.
+fn a_layers_geomtransform_is_reported_as_not_carried() {
+    // The style IR carries no layer GEOMTRANSFORM yet (docs/backlog/layer-geomtransform.md): the
+    // keyword is warned of, and the layer's shapes are drawn as read.
     let loaded = load_files(&[(
         "m.map",
         "MAP LAYER NAME 'a' GEOMTRANSFORM (simplify([shape], 25)) END END",
     )]);
-    assert_eq!(codes(&loaded), Vec::<&str>::new());
-    let layers = loaded.document.unwrap().map.layers;
-    assert_eq!(
-        layers[0].geom_transform.as_deref(),
-        Some("(simplify([shape], 25))")
-    );
-    let loaded = load_files(&[("m.map", "MAP LAYER NAME 'a' GEOMTRANSFORM 'start' END END")]);
-    assert_eq!(codes(&loaded), ["invalid-value"]);
+    assert_eq!(codes(&loaded), ["unsupported-keyword"]);
+    assert!(loaded.document.is_some());
 }

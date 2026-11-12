@@ -353,7 +353,6 @@ mod tests {
                 label_cache: false,
                 post_label_cache: true,
                 max_features: Some(3),
-                geom_transform: Some("(generalize([shape], 10))".into()),
                 filter: Some(Expr::call(
                     Op::In,
                     vec![

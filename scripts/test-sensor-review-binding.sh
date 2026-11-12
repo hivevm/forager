@@ -110,6 +110,20 @@ tip="$(g "$d" rev-parse --short topic)"
 merge "$d" topic "$(printf 'Merge topic\n\nReviewed at: `%s`\n' "$tip")"
 expect 0 "a short commit in backticks binds the review" "$d" "1 reviewed at the tip"
 
+d="$(repo trailing-comma)"
+g "$d" switch -q -c topic
+change "$d" src/a.py "work"
+tip="$(g "$d" rev-parse --short topic)"
+merge "$d" topic "$(printf 'Merge topic\n\n- Reviewed at: %s, a fresh-context subagent.\n' "$tip")"
+expect 0 "a commit followed by a comma binds the review" "$d" "1 reviewed at the tip"
+
+d="$(repo trailing-stop)"
+g "$d" switch -q -c topic
+change "$d" src/a.py "work"
+tip="$(g "$d" rev-parse --short topic)"
+merge "$d" topic "$(printf 'Merge topic\n\n- Reviewed at: %s.\n' "$tip")"
+expect 0 "a commit followed by a full stop binds the review" "$d" "1 reviewed at the tip"
+
 d="$(repo after-review)"
 g "$d" switch -q -c topic
 change "$d" src/a.py "reviewed work"

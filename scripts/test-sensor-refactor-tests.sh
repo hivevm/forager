@@ -80,7 +80,7 @@ git -C "${d:?}" config diff.noprefix true
 edit "$d/tests/two.rs" 's/assert_eq!(app::two(), 2)/assert_eq!(app::two(), 4)/'
 commit "$d" "refactor(app): two is four"
 expect 0 "a repository of diff.noprefix still lists the test file by its whole path" "$d" \
-  "refactor(app): two is four — changes a test in: tests/two.rs"
+  "$(short "$d") refactor(app): two is four — changes a test in: tests/two.rs"
 
 d="$(repo test-added)"
 printf '\n#[test]\nfn more() {}\n' >> "$d/tests/two.rs"

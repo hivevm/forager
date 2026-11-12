@@ -16,7 +16,7 @@ describe and decide nothing: the decisions are the ADRs they cite.
 - [`LABEL`, `TEXT`, and `LABELITEM`](label.md)
 - [`FONTSET`](fontset.md)
 - [`SYMBOLSET` and `SYMBOL`](symbol.md)
-- [`SYMBOL` and `GEOMTRANSFORM`](style-symbol.md) of a style, and a layer's `GEOMTRANSFORM`
+- [`SYMBOL` and `GEOMTRANSFORM`](style-symbol.md) of a style
 - [`OFFSET` and `POLAROFFSET`](offset.md)
 - [`PATTERN`, `GAP`, `INITIALGAP`, `LINECAP`, `LINEJOIN`](line.md)
 - [`OPACITY`, `COMPOSITE`, `OUTLINEWIDTH`, and the transparent image](opacity.md)
@@ -25,4 +25,5 @@ describe and decide nothing: the decisions are the ADRs they cite.
 - [Scale ranges: `MINSCALEDENOM` and `MAXSCALEDENOM`](scale-range.md)
 - [`PROJECTION`](projection.md) of the map and of a layer
 - [`FEATURE` and `PROCESSING "ITEMS=…"`](feature.md): a layer's inline features
+- [`MAXFEATURES` and `maxfeaturestodraw`](maxfeatures.md): the most features a layer draws
 - [Shapefiles](shapefile.md) a layer's `DATA` names: the records a shapefile source reads

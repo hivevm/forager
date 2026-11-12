@@ -232,12 +232,6 @@ pub struct Layer {
     /// counted once their class is found, are not drawn, nor their labels. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_features: Option<u32>,
-    /// MapServer's expression of the layer's `GEOMTRANSFORM`, as written, which replaces each
-    /// feature's shape before it is classed and drawn (RFC 89, `msGeomTransformShape`). The engine
-    /// draws `generalize`, `smoothsia`, `densify`, `outer`, and `inner`; a layer of any other, as
-    /// one that needs a geometry library, draws nothing, with a warning. Absent, there is none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub geom_transform: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     /// The features written into the layer (ADR-0018). A layer with any is read from them alone,
@@ -266,7 +260,6 @@ impl Default for Layer {
             label_cache: true,
             post_label_cache: false,
             max_features: None,
-            geom_transform: None,
             classes: Vec::new(),
             features: Vec::new(),
             span: None,

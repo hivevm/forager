@@ -90,7 +90,9 @@ findings=()
 bind() {
   local label="$1" message="$2" tip="$3" before="$4" what="$5" line reviewed sha n finding c
   line="$(grep -m1 -E '^[[:space:]]*([-*][[:space:]]+)?Reviewed at:[[:space:]]*[^[:space:]]' <<< "$message")"
-  reviewed="$(sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]].*$//; s/`//g' <<< "$line")"
+  # The commit may be followed by a comma, a semicolon, or a full stop, as in
+  # 'Reviewed at: <commit>, by …'.
+  reviewed="$(sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]].*$//; s/`//g; s/[,;.]+$//' <<< "$line")"
   if [[ -z "$reviewed" ]]; then
     findings+=("$label: no 'Reviewed at:' commit in its message — the review is bound to nothing")
     return 1
