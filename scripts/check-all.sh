@@ -148,7 +148,8 @@ settle() { wait; running=0; }
 
 # run <label> <script> [args...] — start one check, its output and exit code kept under $out. The
 # subshell passes a TERM on to the check and waits for it, so stop() returns once each has ended;
-# its trap stands before the check starts, so a TERM never finds the check without it.
+# its trap stands before the check starts and takes the check from the subshell's jobs, so a
+# TERM right after the check started still finds it.
 run() {
   local label="$1" script="$2" i="${#labels[@]}"
   shift 2
@@ -161,11 +162,10 @@ run() {
   fi
   while ((running >= max_jobs)); do wait -n; running=$((running - 1)); done
   {
-    check=""
-    trap '[[ -n "$check" ]] && kill "$check" 2>/dev/null && wait "$check"; exit 143' TERM
+    # shellcheck disable=SC2046 # one process id per word
+    trap 'kill $(jobs -p) 2>/dev/null; wait; exit 143' TERM
     bash "$ROOT/$script" "$@" > "$out/$i" 2>&1 &
-    check=$!
-    wait "$check"
+    wait $!
     echo $? > "$out/$i.rc"
   } &
   running=$((running + 1))

@@ -8,9 +8,10 @@ by `atoi`, the key without regard to case. Where that is below 0, the selected o
 `FORMATOPTION` `MAXFEATURESTODRAW` holds, read by `atoi`; below 0 still, there is no limit. The
 style IR carries the result as the layer's `max_features`.
 
-`msDrawVectorLayer` in `src/mapdraw.c` (1282–1286) stops at the first feature past the limit once
-its class is found, in the order the source returns the features, so a feature no class takes does
-not count. The features past it are not drawn, nor their labels.
+`msDrawVectorLayer` in `src/mapdraw.c` (lines 1282–1286 at `rel-8-6-6`, the tag
+`scripts/fetch-msautotest.sh` pins) stops at the first feature past the limit once its class is
+found, in the order the source returns the features, so a feature no class takes does not count. The
+features past it are not drawn, nor their labels.
 
 A layer's `METADATA` is read for `maxfeaturestodraw` alone, and the output format, besides whether
 the image starts transparent ([`opacity.md`](opacity.md)), for its `MAXFEATURESTODRAW` alone. Each

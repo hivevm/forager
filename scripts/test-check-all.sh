@@ -250,25 +250,34 @@ check "the checks run side by side" test "$(at_once "$d" "${#scripts[@]}")" -gt 
 d="$(repo jobs-zero)"
 CHECK_ALL_JOBS=0 expect_exit "CHECK_ALL_JOBS=0 exits 2" 2 "$d"
 
-# A runner stopped by TERM stops the checks it started and waits for them: none finishes after
-# it, and one that cleans up on TERM has done so when the runner returns.
+# A runner stopped by TERM stops the checks it started and waits for them: none outlives it, and
+# one that cleans up on TERM has done so when the runner returns. Each stub notes its process and
+# then waits far longer than a TERM takes, so the case waits on the runner's return and not on a
+# time a loaded machine can outrun. Each stub ends in its sleep by exec, so the process it noted is
+# the one the runner stops, and the cleaning stub stops its own sleep.
 d="$(repo stopped)"
-# shellcheck disable=SC2016 # the stub's variable, not this script's
-printf 'trap '\''sleep 0.3; touch "%s/cleaned"; exit 1'\'' TERM; sleep 5 & wait $!\n' "$d" \
-  >> "$d/${scripts[0]}"
 for s in "${scripts[@]}"; do
-  printf 'touch "%s/started"; sleep 1; touch "%s/finished"\n' "$d" "$d" >> "$d/$s"
+  # shellcheck disable=SC2016 # the stub's variable, not this script's
+  printf 'echo $$ >> "%s/stubs"\n' "$d" >> "$d/$s"
+done
+# shellcheck disable=SC2016 # the stub's variable, not this script's
+printf 'trap '\''kill $!; sleep 0.3; touch "%s/cleaned"; exit 1'\'' TERM; touch "%s/trapped"\n' \
+  "$d" "$d" >> "$d/${scripts[0]}"
+printf 'sleep 5 & wait $!\n' >> "$d/${scripts[0]}"
+for s in "${scripts[@]}"; do
+  printf 'touch "%s/started"; exec sleep 60\n' "$d" >> "$d/$s"
 done
 bash "$d/scripts/check-all.sh" > /dev/null 2>&1 &
 runner=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do [[ -e "$d/started" ]] && break; sleep 0.1; done
+for _ in $(seq 300); do [[ -e "$d/started" && -e "$d/trapped" ]] && break; sleep 0.1; done
 kill -TERM "$runner"
 wait "$runner"; rc=$?
+outlived=0
+while read -r pid; do kill -0 "$pid" 2>/dev/null && outlived=$((outlived + 1)); done < "$d/stubs"
 check "a runner stopped by TERM exits 143" test "$rc" -eq 143
 check "and had started a check" test -e "$d/started"
 check "and returns once a check that cleans up on TERM has done so" test -e "$d/cleaned"
-sleep 1.2
-check "and no check it started finishes after it" test ! -e "$d/finished"
+check "and no check it started outlives it" test "$outlived" -eq 0
 
 d="$(repo unknown)"
 expect_exit "an unknown argument exits 2" 2 "$d" --everything
