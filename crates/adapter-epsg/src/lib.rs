@@ -63,6 +63,13 @@ impl ProjectionResolver for EpsgTable {
     }
 }
 
+/// The EPSG number `code` writes: digits only, without a leading zero.
+fn epsg_number(code: &str) -> Option<u32> {
+    let digits =
+        code.bytes().all(|b| b.is_ascii_digit()) && !(code.len() > 1 && code.starts_with('0'));
+    digits.then(|| code.parse().ok()).flatten()
+}
+
 /// A table's definitions and its errors, read as the mapfile frontend reads an init file and as
 /// PROJ 9.5.0 reads one (`get_init_string` in its `src/init.cpp`): `<code>` at the start of a
 /// line, the code compared as written, and the parameters up to the next `<`, across lines, `#`
@@ -101,22 +108,24 @@ fn parse(text: &str) -> (BTreeMap<u32, String>, Vec<TableError>) {
         Definition { code: u32, line: usize },
         Skipped,
     }
+    let offset = |suffix: &str| joined.len() - suffix.len();
     let mut body = Body::Outside { at_start: true };
-    let mut pos = 0;
+    // The text not read yet: from the start, a code's `>`, or the break of a line skipped.
+    let mut rest = joined.as_str();
     loop {
-        let open = joined[pos..].find('<').map(|i| pos + i);
-        let end = open.unwrap_or(joined.len());
-        let text = &joined[pos..end];
+        let (text, after) = rest
+            .split_once('<')
+            .map_or((rest, None), |(text, after)| (text, Some(after)));
         match body {
             Body::Outside { at_start } => {
                 // Text on the line of a `<>` is ignored; on a later line it is no definition.
-                let skip = if at_start {
-                    0
+                let strays = if at_start {
+                    text
                 } else {
-                    text.find('\n').map_or(text.len(), |i| i + 1)
+                    text.split_once('\n').map_or("", |(_, later)| later)
                 };
-                let mut at = pos + skip;
-                for stray in text[skip..].split('\n') {
+                let mut at = offset(rest) + text.len() - strays.len();
+                for stray in strays.split('\n') {
                     if !stray.trim().is_empty() {
                         report(line_of(at), "a definition starts with <code>".to_owned());
                     }
@@ -137,34 +146,35 @@ fn parse(text: &str) -> (BTreeMap<u32, String>, Vec<TableError>) {
             }
             Body::Skipped => {}
         }
-        let Some(open) = open else { break };
-        let line = line_of(open);
-        let line_end = joined[open..].find('\n').map_or(joined.len(), |i| open + i);
-        let Some(close) = joined[open..line_end].find('>').map(|i| open + i) else {
+        let Some(after) = after else { break };
+        let line = line_of(offset(after) - 1);
+        // The code's `>` is the first after its `<`, on its line.
+        let Some((code, tail)) = after
+            .split_once('>')
+            .filter(|(code, _)| !code.contains('\n'))
+        else {
             report(line, "the code is not closed by > on its line".to_owned());
             body = Body::Skipped;
-            pos = line_end;
+            rest = after.trim_start_matches(|c| c != '\n');
             continue;
         };
-        let code = &joined[open + 1..close];
-        let line_start = starts[line - 1];
+        let starts_its_line = match text.rsplit_once('\n') {
+            Some((_, line)) => line.trim().is_empty(),
+            // On the line of the code before it, unless at the start.
+            None => offset(rest) == 0 && text.trim().is_empty(),
+        };
         body = if code.is_empty() {
             Body::Outside { at_start: false }
-        } else if !joined[line_start..open].trim().is_empty() {
+        } else if !starts_its_line {
             report(line, format!("`<{code}>` does not start its line"));
             Body::Skipped
-        } else if let Some(number) = Some(code)
-            .filter(|c| {
-                c.bytes().all(|b| b.is_ascii_digit()) && !(c.len() > 1 && c.starts_with('0'))
-            })
-            .and_then(|c| c.parse().ok())
-        {
+        } else if let Some(number) = epsg_number(code) {
             Body::Definition { code: number, line }
         } else {
             report(line, format!("`{code}` is not an EPSG code"));
             Body::Skipped
         };
-        pos = close + 1;
+        rest = tail;
     }
     if dropped > 0 {
         errors.push(TableError {

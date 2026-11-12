@@ -58,6 +58,9 @@ cognitive_complexity = "warn"
 print_stdout = "warn"
 print_stderr = "warn"
 dbg_macro = "warn"
+# A str sliced at an index that may not stand on a character's boundary panics; each slice states
+# its boundary or says in its #[expect] why the index stands on one. Test code may allow it.
+string_slice = "warn"
 # The bans of clippy.toml (Q-2) bind the IR and the core alone; each of their crates warns these
 # lints at the top of its lib.rs.
 disallowed_types = "allow"

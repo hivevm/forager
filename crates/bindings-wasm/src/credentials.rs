@@ -33,14 +33,14 @@ pub fn admissible(source: &SourceRef) -> bool {
 /// `name = value` anywhere, `name` ending in one of the secret keys, spaces around `=` allowed.
 fn has_secret_parameter(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
-    lower.match_indices('=').any(|(eq, _)| {
-        let before = lower[..eq].trim_end();
-        // Past the whole character that ends the name, which may take more than one byte.
-        let name_start = before
-            .char_indices()
-            .rfind(|&(_, c)| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
-            .map_or(0, |(i, c)| i + c.len_utf8());
-        let name = &before[name_start..];
+    // The text before each `=`: every piece the split gives but the last. A name holds no `=`, so
+    // it ends the piece before its `=`, spaces trimmed.
+    lower.split('=').rev().skip(1).any(|before| {
+        let name = before
+            .trim_end()
+            .rsplit(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+            .next()
+            .unwrap_or_default();
         !name.is_empty() && SECRET_KEYS.iter().any(|secret| name.ends_with(secret))
     })
 }

@@ -786,12 +786,11 @@ const QUOTED_CHARACTERS: usize = 64;
 /// `text` in backticks as a diagnostic quotes it: whole up to [`QUOTED_CHARACTERS`] characters,
 /// else cut there, followed by an ellipsis and the text's length in characters.
 fn quoted(text: &str) -> String {
-    match text.char_indices().nth(QUOTED_CHARACTERS) {
-        None => format!("`{text}`"),
-        Some((cut, _)) => format!(
-            "`{}\u{2026}` ({} characters)",
-            &text[..cut],
-            text.chars().count()
-        ),
+    let count = text.chars().count();
+    if count <= QUOTED_CHARACTERS {
+        format!("`{text}`")
+    } else {
+        let head: String = text.chars().take(QUOTED_CHARACTERS).collect();
+        format!("`{head}\u{2026}` ({count} characters)")
     }
 }

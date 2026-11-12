@@ -8,8 +8,9 @@
 # of every crate that must run in the browser for wasm32-unknown-unknown (Q-1), the WebAssembly
 # bindings and their size (Q-5) once they exist, and cargo deny (ADR-0011). scripts/check-all.sh
 # and the `rust` job of checks.yml run it; the tools come from scripts/install-tools.sh. Two
-# fixture workspaces show that cargo deny refuses a non-permissive licence and that clippy bans
-# hash maps, clocks, and randomness in the core alone (Q-2).
+# fixture workspaces show that cargo deny refuses a non-permissive licence, that clippy bans
+# hash maps, clocks, and randomness in the core alone (Q-2), and that it refuses a str sliced at
+# an index it cannot see is a character's boundary.
 #
 # Usage: bash scripts/check-rust.sh
 set -euo pipefail
@@ -79,13 +80,13 @@ step "Clippy bans hash maps, clocks, and randomness in the core alone (Q-2)"
 # adapter, must pass.
 lints="$(mktemp -d)"
 trap 'rm -rf "$lints"' EXIT
-mkdir -p "$lints/core/src" "$lints/host/src"
+mkdir -p "$lints/core/src" "$lints/host/src" "$lints/slice/src"
 cp clippy.toml rust-toolchain.toml "$lints/"
 {
-  printf '[workspace]\nmembers = ["core", "host"]\nresolver = "3"\n\n'
+  printf '[workspace]\nmembers = ["core", "host", "slice"]\nresolver = "3"\n\n'
   awk '/^\[/ { keep = ($0 ~ /^\[workspace\.lints\./) } keep' Cargo.toml
 } > "$lints/Cargo.toml"
-for member in core host; do
+for member in core host slice; do
   printf '[package]\nname = "%s"\nversion = "0.1.0"\nedition = "2024"\npublish = false\n[lints]\nworkspace = true\n' \
     "$member" > "$lints/$member/Cargo.toml"
 done
@@ -102,6 +103,7 @@ uses='pub fn uses() -> usize {
   printf '%s\n' "$uses"
 } > "$lints/core/src/lib.rs"
 printf '%s\n' "$uses" > "$lints/host/src/lib.rs"
+printf 'pub fn head(text: &str, at: usize) -> &str {\n    &text[..at]\n}\n' > "$lints/slice/src/lib.rs"
 (cd "$lints" && cargo generate-lockfile --offline -q)
 if output="$(cd "$lints" && cargo clippy -p core --offline -- -D warnings 2>&1)"; then
   echo "check-rust: clippy accepted hash maps, clocks, and randomness in a core crate" >&2
@@ -118,6 +120,18 @@ for banned in type:std::collections::HashMap type:std::collections::HashSet \
 done
 (cd "$lints" && cargo clippy -p host --offline -q -- -D warnings)
 echo "banned in the core, allowed in a host, as it should be"
+
+step "Clippy refuses a str sliced at an index it cannot see is a character's boundary"
+# The fixture workspace above, its crate that slices a str by a computed index.
+if output="$(cd "$lints" && cargo clippy -p slice --offline -- -D warnings 2>&1)"; then
+  echo "check-rust: clippy accepted a str sliced at a computed index" >&2
+  exit 1
+fi
+if ! grep -qF 'clippy::string_slice' <<< "$output"; then
+  printf 'check-rust: clippy did not name clippy::string_slice:\n%s\n' "$output" >&2
+  exit 1
+fi
+echo "refused, as it should be"
 
 step "Fuzz targets: formatting and clippy"
 # The fuzz workspace is not a member of the main one; built here, an API change of the crates it

@@ -42,7 +42,7 @@ pub struct Shape {
 
 /// Reads `text` into a shape, or says why it cannot.
 pub fn read(text: &str) -> Result<Shape, String> {
-    let mut reader = Reader { text, at: 0 };
+    let mut reader = Reader { rest: text };
     let shape = reader.tagged(0)?;
     match reader.next()? {
         Token::End => Ok(shape),
@@ -81,8 +81,8 @@ impl Token<'_> {
 }
 
 struct Reader<'a> {
-    text: &'a str,
-    at: usize,
+    /// The text not read yet.
+    rest: &'a str,
 }
 
 /// The characters that end a word or a number in the grammar GEOS accepts.
@@ -96,10 +96,10 @@ impl<'a> Reader<'a> {
     /// word otherwise. A number that is not finite, or that only `strtod` reads, such
     /// as a hexadecimal one, is refused where it is read.
     fn next(&mut self) -> Result<Token<'a>, String> {
-        let rest = &self.text[self.at..];
-        let trimmed = rest.trim_start_matches(['\n', '\r', '\t', ' ']);
-        self.at += rest.len() - trimmed.len();
-        let Some(c) = trimmed.chars().next() else {
+        let trimmed = self.rest.trim_start_matches(['\n', '\r', '\t', ' ']);
+        self.rest = trimmed;
+        let mut chars = trimmed.chars();
+        let Some(c) = chars.next() else {
             return Ok(Token::End);
         };
         let punct = match c {
@@ -109,12 +109,12 @@ impl<'a> Reader<'a> {
             _ => None,
         };
         if let Some(token) = punct {
-            self.at += 1;
+            self.rest = chars.as_str();
             return Ok(token);
         }
-        let len = trimmed.find(delimits).unwrap_or(trimmed.len());
-        let raw = &trimmed[..len];
-        self.at += len;
+        let after = trimmed.trim_start_matches(|c| !delimits(c));
+        let raw = trimmed.strip_suffix(after).unwrap_or(trimmed);
+        self.rest = after;
         Ok(match raw.parse::<f64>() {
             Ok(n) if n.is_finite() => Token::Number(n),
             Ok(_) => Token::Unread(raw),
@@ -124,9 +124,9 @@ impl<'a> Reader<'a> {
     }
 
     fn peek(&mut self) -> Result<Token<'a>, String> {
-        let at = self.at;
+        let rest = self.rest;
         let token = self.next();
-        self.at = at;
+        self.rest = rest;
         token
     }
 
@@ -308,9 +308,11 @@ impl<'a> Reader<'a> {
 /// The first [`EXCERPT_CHARS`] characters of `text` a message quotes, with `…` where it goes on,
 /// so that a message stays short whatever the text.
 pub fn excerpt(text: &str) -> Cow<'_, str> {
-    match text.char_indices().nth(EXCERPT_CHARS) {
-        Some((at, _)) => Cow::Owned(format!("{}…", &text[..at])),
-        None => Cow::Borrowed(text),
+    if text.chars().nth(EXCERPT_CHARS).is_some() {
+        let head: String = text.chars().take(EXCERPT_CHARS).collect();
+        Cow::Owned(format!("{head}…"))
+    } else {
+        Cow::Borrowed(text)
     }
 }
 

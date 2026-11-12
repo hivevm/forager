@@ -293,15 +293,9 @@ fn readable_entries(len: usize, records: usize) -> usize {
 /// of this name, so a host that looks for them first, or that opens one shapefile once for every
 /// layer naming it, cuts the name here.
 pub fn basename(name: &str) -> &str {
-    let bytes = name.as_bytes();
-    let mut i = bytes.len().saturating_sub(1);
-    while i > 0 && !matches!(bytes[i], b'.' | b'/' | b'\\') {
-        i -= 1;
-    }
-    if bytes.get(i) == Some(&b'.') {
-        &name[..i]
-    } else {
-        name
+    match name.rsplit_once('.') {
+        Some((stem, extension)) if !extension.contains(['/', '\\']) => stem,
+        _ => name,
     }
 }
 
@@ -325,5 +319,29 @@ async fn load(
                 "the shapefile file {first} cannot be read: {error}"
             ))
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::basename;
+
+    #[test]
+    fn the_name_is_cut_at_the_last_dot_after_the_last_separator() {
+        for (name, base) in [
+            ("a/b.shp", "a/b"),
+            ("a.b.c", "a.b"),
+            ("b", "b"),
+            ("", ""),
+            (".shp", ""),
+            ("dir/.hidden", "dir/"),
+            ("a.", "a"),
+            ("a.b/c", "a.b/c"),
+            ("a.b\\c", "a.b\\c"),
+            ("é.shp", "é"),
+            ("dé/€.dbf", "dé/€"),
+        ] {
+            assert_eq!(basename(name), base, "{name}");
+        }
     }
 }

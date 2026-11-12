@@ -297,8 +297,13 @@ impl Lexer<'_> {
             }
         } else if longest == regex {
             let ignore_case = text.ends_with('i');
-            let inner = text.trim_end_matches('i');
-            let pattern = inner[1..inner.len() - 1].to_owned();
+            let inner = text.strip_suffix('i').unwrap_or(&text);
+            // The rule above reads the slashes around the pattern.
+            let pattern = inner
+                .strip_prefix('/')
+                .and_then(|inner| inner.strip_suffix('/'))
+                .unwrap_or_default()
+                .to_owned();
             self.push(
                 TokenKind::Regex {
                     pattern,

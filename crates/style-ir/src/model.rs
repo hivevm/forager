@@ -956,7 +956,10 @@ impl Rgba {
         if !(hex.len() == 6 || hex.len() == 8) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
-        let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+        let byte = |i: usize| {
+            hex.get(i..i + 2)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+        };
         Some(Self {
             r: byte(0)?,
             g: byte(2)?,

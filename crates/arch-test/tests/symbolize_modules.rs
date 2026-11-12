@@ -2,6 +2,11 @@
 //! ADR-0008 decides the direction between crates, and this test holds the one inside the crate,
 //! which the pixmap work once broke by an alias `symbol` imported from `draw`, above it.
 
+#![expect(
+    clippy::string_slice,
+    reason = "test code may slice a str: a slice off a boundary panics, and the test fails"
+)]
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 

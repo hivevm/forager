@@ -40,12 +40,12 @@ impl Defaults {
             }
             for [key, value] in b.values.as_chunks::<2>().0 {
                 if let (Some(key), Some(value)) = (key.string(), value.string())
-                    && key
-                        .as_bytes()
+                    && let Some(name) = key
                         .get(..8)
-                        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"default_"))
+                        .filter(|prefix| prefix.eq_ignore_ascii_case("default_"))
+                        .and(key.get(8..))
                 {
-                    defaults.insert(key[8..].to_ascii_lowercase(), value.to_owned());
+                    defaults.insert(name.to_ascii_lowercase(), value.to_owned());
                 }
             }
         }
@@ -60,13 +60,14 @@ impl Defaults {
     fn applied(&self, text: &str, added: &mut usize) -> Result<String, Problem> {
         let mut out = String::with_capacity(text.len());
         let mut rest = text;
-        while let Some(open) = rest.find('%') {
-            let after = &rest[open + 1..];
-            let Some(close) = after.find('%') else { break };
-            match self.0.get(&after[..close].to_ascii_lowercase()) {
+        while let Some((before, after)) = rest.split_once('%') {
+            let Some((name, tail)) = after.split_once('%') else {
+                break;
+            };
+            match self.0.get(&name.to_ascii_lowercase()) {
                 Some(value) => {
                     *added += value.len();
-                    let whole = out.len() + open + value.len() + after.len() - close - 1;
+                    let whole = out.len() + before.len() + value.len() + tail.len();
                     if *added > MAX_TOTAL_BYTES || whole > MAX_TOTAL_BYTES {
                         return Err(Problem {
                             error: true,
@@ -77,13 +78,14 @@ impl Defaults {
                             ),
                         });
                     }
-                    out.push_str(&rest[..open]);
+                    out.push_str(before);
                     out.push_str(value);
-                    rest = &after[close + 1..];
+                    rest = tail;
                 }
                 // The closing `%` may open the next tag.
                 None => {
-                    out.push_str(&rest[..=open]);
+                    out.push_str(before);
+                    out.push('%');
                     rest = after;
                 }
             }
