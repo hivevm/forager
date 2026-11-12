@@ -141,6 +141,15 @@ markers, and the others, whose text MapServer lays out in its built-in font, whi
 are left out with `label-not-drawn` ("it names no FONT"). A text of line breaks only lays out no
 glyph and so needs no font either.
 
+**`POSTLABELCACHE`.** A layer's `POSTLABELCACHE`, `TRUE` or `FALSE` as `loadLayer` in
+`src/mapfile.c` reads it, `FALSE` without one, is the IR's `post_label_cache`, false where it is
+absent. `loadLayer` turns the layer's label cache off where it is `TRUE`, and `msDrawLayer` in
+`src/mapdraw.c` turns it off again as it draws the layer, so the frontend writes `label_cache` false
+for such a layer whatever its `LABELCACHE`. `msDrawMap` draws the layers in their order but those of
+`POSTLABELCACHE TRUE`, then the label cache, then those in their order, so such a layer is drawn
+over every cached label of the map; a point layer's labels are drawn at once, as above, and a line
+or polygon layer's are not drawn yet, each reported.
+
 The engine draws a feature point by point, as `pointLayerDrawShape` does
 (`src/mapdraw.c:2062-2105`): at each point inside the map's extent, every class style's marker,
 whatever its `GEOMTRANSFORM`, then the labels there, then the markers at its next point; so a

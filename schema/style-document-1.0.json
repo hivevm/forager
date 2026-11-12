@@ -831,6 +831,10 @@
           ],
           "format": "double"
         },
+        "post_label_cache": {
+          "description": "Whether the layer is drawn after the label cache, MapServer's `POSTLABELCACHE TRUE`: past\nevery other layer and over every cached label, in its order among the layers of this kind,\nits own labels drawn at once, never cached. Absent, it is false.",
+          "type": "boolean"
+        },
         "projection": {
           "description": "The projection of the layer's features; without one, the map's.",
           "anyOf": [

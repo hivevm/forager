@@ -216,6 +216,11 @@ pub struct Layer {
     /// default `LABELCACHE ON`.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub label_cache: bool,
+    /// Whether the layer is drawn after the label cache, MapServer's `POSTLABELCACHE TRUE`: past
+    /// every other layer and over every cached label, in its order among the layers of this kind,
+    /// its own labels drawn at once, never cached. Absent, it is false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub post_label_cache: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     /// The features written into the layer (ADR-0018). A layer with any is read from them alone,
@@ -242,6 +247,7 @@ impl Default for Layer {
             max_scale_denom: None,
             opacity: None,
             label_cache: true,
+            post_label_cache: false,
             classes: Vec::new(),
             features: Vec::new(),
             span: None,

@@ -366,6 +366,7 @@ impl Translator<'_> {
                         self.string(d);
                     }
                     "LABELCACHE" => self.label_cache(&mut layer, d),
+                    "POSTLABELCACHE" => self.post_label_cache(&mut layer, d),
                     "FILTER" => layer.filter = self.defaulted(d, filter_item.as_deref(), &tables),
                     "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
                     "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
@@ -412,6 +413,10 @@ impl Translator<'_> {
             }
         }
         layer.opacity = self.composite(&composites);
+        // loadLayer turns the label cache off where POSTLABELCACHE is TRUE (mapfile.c:4755-4759),
+        // and msDrawLayer turns it off again as it draws such a layer, whatever LABELCACHE says
+        // after it (mapdraw.c:854-856).
+        layer.label_cache &= !layer.post_label_cache;
         layer.source = source_span.map(|span| self.source(connection_type, props, span, data_span));
         Some(layer)
     }
@@ -450,6 +455,15 @@ impl Translator<'_> {
     fn label_cache(&mut self, layer: &mut Layer, d: &Directive) {
         if let Some(on) = self.choice(d, &[("ON", true), ("OFF", false)]) {
             layer.label_cache = on;
+        }
+    }
+
+    /// Sets whether the layer is drawn after the label cache by its `POSTLABELCACHE`, `TRUE` or
+    /// `FALSE` as loadLayer reads it with getSymbol (mapfile.c:4755-4759); initLayer starts it
+    /// false.
+    fn post_label_cache(&mut self, layer: &mut Layer, d: &Directive) {
+        if let Some(post) = self.choice(d, &[("TRUE", true), ("FALSE", false)]) {
+            layer.post_label_cache = post;
         }
     }
 

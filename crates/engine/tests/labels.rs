@@ -4242,3 +4242,108 @@ fn the_label_over_a_pixmap_that_does_not_load_is_left_out_and_the_map_drawn() {
     // The square of 9 at the pixel (80, 29).
     assert_eq!(ink(&image, (0, 160), (0, 60)), Some([75, 24, 84, 33]));
 }
+
+/// A point layer `name` of a square of `size` pixels in `color` at its points, of
+/// `POSTLABELCACHE TRUE` where `post`, labelled with `text` where one is given.
+fn post_layer(name: &str, post: bool, size: f64, color: Rgba, text: Option<&str>) -> Layer {
+    Layer {
+        name: Some(name.into()),
+        render_mode: Some(RenderMode::Point),
+        status: Some(LayerStatus::On),
+        source: Some(SourceRef {
+            kind: "local".into(),
+            ..SourceRef::default()
+        }),
+        // The frontend turns the label cache off where POSTLABELCACHE is TRUE.
+        label_cache: !post,
+        post_label_cache: post,
+        classes: vec![Class {
+            styles: vec![Style {
+                color: Some(Bound::Value(color)),
+                size: Some(Bound::Value(size)),
+                ..Style::default()
+            }],
+            labels: text
+                .map(|text| Label {
+                    text: Some(Expr::String(text.to_owned())),
+                    ..label_item()
+                })
+                .into_iter()
+                .collect(),
+            ..Class::default()
+        }],
+        ..Layer::default()
+    }
+}
+
+/// The operations of `layers` over one point at the pixel (80, 29), each layer reading it: a
+/// square's width for each marker, `L` for each label's text; and the render's cached labels by
+/// their layers.
+fn post_render(layers: Vec<Layer>) -> (Vec<(char, f64)>, Vec<usize>) {
+    let mut map = map(label_item());
+    let names: Vec<String> = layers.iter().filter_map(|l| l.name.clone()).collect();
+    map.layers = layers;
+    let point = r#"{"type": "FeatureCollection", "features": [{"type": "Feature",
+        "properties": {}, "geometry": {"type": "Point", "coordinates": [80, 30]}}]}"#;
+    let sources: BTreeMap<String, GeoJsonSource> = names
+        .into_iter()
+        .map(|name| (name, GeoJsonSource::parse(point).unwrap()))
+        .collect();
+    let recorder = OpRecorder::default();
+    let rendered = ready(render_with_files(&map, &sources, &Files, recorder.clone()));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let ops = recorder
+        .0
+        .take()
+        .iter()
+        .map(|op| match op {
+            forager_render::DrawOp::Fill { rings, .. } => ('M', rings[0][2].x - rings[0][0].x),
+            forager_render::DrawOp::Glyphs { .. } => ('L', 0.0),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    let cached = rendered.labels.iter().map(|label| label.layer).collect();
+    (ops, cached)
+}
+
+#[test]
+fn a_layer_of_postlabelcache_is_drawn_after_the_cached_labels_its_own_at_once() {
+    // msDrawMap skips a layer of POSTLABELCACHE TRUE in its first loop (src/mapdraw.c:456),
+    // draws the label cache (593), then draws it (604-611) through msDrawLayer, which turns its
+    // label cache off (854-856): listed first, its 20-pixel square is drawn after the plain
+    // layer's 10-pixel square and that layer's cached label, and its own label at once after its
+    // square, never cached.
+    let (ops, cached) = post_render(vec![
+        post_layer("over", true, 20.0, GREEN, Some("Up")),
+        post_layer("under", false, 10.0, BLUE, Some("Fen")),
+    ]);
+    assert_eq!(ops, [('M', 10.0), ('L', 0.0), ('M', 20.0), ('L', 0.0)]);
+    assert_eq!(cached, [1], "the plain layer's label alone is cached");
+    // A style document that leaves the layer's label cache on draws its labels at once alike, as
+    // msDrawLayer turns the cache off for it (src/mapdraw.c:850-856).
+    let mut over = post_layer("over", true, 20.0, GREEN, Some("Up"));
+    over.label_cache = true;
+    let (ops, cached) = post_render(vec![
+        over,
+        post_layer("under", false, 10.0, BLUE, Some("Fen")),
+    ]);
+    assert_eq!(ops, [('M', 10.0), ('L', 0.0), ('M', 20.0), ('L', 0.0)]);
+    assert_eq!(cached, [1]);
+}
+
+#[test]
+fn layers_of_postlabelcache_are_drawn_after_the_others_in_their_listed_order() {
+    // Listed post, plain, post: the plain layer first, then the cache, then the two others as
+    // the second loop of msDrawMap takes them, in their order (src/mapdraw.c:604-611).
+    let (ops, cached) = post_render(vec![
+        post_layer("first", true, 20.0, GREEN, None),
+        post_layer("plain", false, 10.0, BLUE, None),
+        post_layer("second", true, 30.0, GREEN, None),
+    ]);
+    assert_eq!(ops, [('M', 10.0), ('M', 20.0), ('M', 30.0)]);
+    assert!(cached.is_empty());
+}

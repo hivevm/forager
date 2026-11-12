@@ -109,6 +109,29 @@ fn a_layers_labelcache_is_carried_and_on_without_one() {
 }
 
 #[test]
+fn a_layer_of_postlabelcache_is_carried_its_label_cache_off() {
+    // loadLayer reads POSTLABELCACHE with getSymbol(MS_TRUE, MS_FALSE) and turns the label
+    // cache off where it is TRUE (mapfile.c:4755-4759); msDrawLayer turns it off again, so a
+    // LABELCACHE ON after it changes nothing (mapdraw.c:854-856).
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER NAME 'a' POSTLABELCACHE TRUE END \
+         LAYER NAME 'b' POSTLABELCACHE TRUE LABELCACHE ON END \
+         LAYER NAME 'c' POSTLABELCACHE FALSE END LAYER NAME 'd' END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let layers = &loaded.document.unwrap().map.layers;
+    let flags: Vec<(bool, bool)> = layers
+        .iter()
+        .map(|l| (l.post_label_cache, l.label_cache))
+        .collect();
+    assert_eq!(
+        flags,
+        [(true, false), (true, false), (false, true), (false, true)]
+    );
+}
+
+#[test]
 fn a_query_layer_is_discarded() {
     let loaded = load_files(&[("m.map", "MAP LAYER NAME 'q' TYPE QUERY END END")]);
     assert!(loaded.document.as_ref().unwrap().map.layers.is_empty());

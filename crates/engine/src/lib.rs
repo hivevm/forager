@@ -149,7 +149,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
     let scale = classes::scale_denom(map, &view, width);
-    for (layer_index, layer) in map.layers.iter().enumerate() {
+    let (order, cache_at) = drawing_order(map);
+    let mut cached_labels = None;
+    for (position, &(layer_index, layer)) in order.iter().enumerate() {
+        if position == cache_at {
+            cached_labels = Some(labels.finish(&mut renderer, &mut diagnostics));
+        }
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
         };
@@ -180,7 +185,9 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
         // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
         // Any other layer's labels go through the label cache.
-        let at_once = mode == RenderMode::Point && !layer.label_cache;
+        // A layer of POSTLABELCACHE TRUE draws its labels at once whatever its label_cache says,
+        // as msDrawLayer turns the cache off for it as it draws it (src/mapdraw.c:850-856).
+        let at_once = mode == RenderMode::Point && (!layer.label_cache || layer.post_label_cache);
         drawing
             .load_pixmaps(&selected, &map.symbols, !at_once, &mut images, files)
             .await;
@@ -223,20 +230,36 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             selector.binder.diagnostics,
         );
         unknown_symbols(layer, &map.symbols, selector.binder.diagnostics);
+        // Only a line, polygon, or annotation layer of POSTLABELCACHE TRUE comes here after the
+        // cache is drawn: its labels are not drawn yet, each reported, so none enters the cache.
         if !at_once {
             let binder = &mut selector.binder;
             let settled = labels.layer(layer_index, mode, &drawn, binder);
             labels.collect(&settled, &drawn, pixmaps, binder).await;
         }
     }
-    // The labels of the cache are drawn after every layer, as MapServer's label cache draws
-    // them.
-    let labels = labels.finish(&mut renderer, &mut diagnostics);
+    // The labels of the cache are drawn after every layer but those of POSTLABELCACHE TRUE, as
+    // MapServer's label cache draws them.
+    let labels = cached_labels.unwrap_or_else(|| labels.finish(&mut renderer, &mut diagnostics));
     Rendered {
         image: Some(renderer.finish()),
         labels,
         diagnostics,
     }
+}
+
+/// The map's layers with their indexes in the order msDrawMap draws them, and the position at which
+/// it draws the label cache: the layers in their order but those of `POSTLABELCACHE TRUE`, then
+/// the label cache, then those in their order (src/mapdraw.c:456, 593, 604-611).
+fn drawing_order(map: &Map) -> (Vec<(usize, &Layer)>, usize) {
+    let (mut order, post): (Vec<_>, Vec<_>) = map
+        .layers
+        .iter()
+        .enumerate()
+        .partition(|(_, layer)| !layer.post_label_cache);
+    let cache_at = order.len();
+    order.extend(post);
+    (order, cache_at)
 }
 
 /// The points of `geometry` inside the map's extent, in pixels, in order: where

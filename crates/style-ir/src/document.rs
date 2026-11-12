@@ -350,6 +350,7 @@ mod tests {
                 max_scale_denom: None,
                 opacity: Some(50.0),
                 label_cache: false,
+                post_label_cache: true,
                 filter: Some(Expr::call(
                     Op::In,
                     vec![

@@ -912,9 +912,11 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
 
     /// Draws the labels the label cache places, in the order it places them, each label's path
     /// built just before it is drawn. A glyph left out for reaching too far from the image is
-    /// reported once for its label, and the labels left out past [`MAX_LABELS`] once.
+    /// reported once for its label, and the labels left out past [`MAX_LABELS`] once. The cache is
+    /// emptied; the fonts and glyphs stay for the labels of the layers of `POSTLABELCACHE TRUE`,
+    /// drawn at once after it.
     pub(crate) fn finish<R: Draw>(
-        mut self,
+        &mut self,
         renderer: &mut R,
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<CachedLabel> {
@@ -990,7 +992,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
         // The labels of the report share their feature's text.
         let texts: Vec<Arc<str>> = texts.into_iter().map(Arc::from).collect();
-        walked
+        let report = walked
             .into_iter()
             .map(|(i, drawn)| {
                 let label = &cached[i as usize];
@@ -1003,7 +1005,9 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     drawn,
                 }
             })
-            .collect()
+            .collect();
+        self.glyphs = glyphs;
+        report
     }
 
     /// Reports the glyphs of `at` left out for reaching too far from the image, once per label.

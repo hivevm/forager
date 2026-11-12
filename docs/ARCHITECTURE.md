@@ -370,7 +370,8 @@ whatever its `LABELCACHE`, and a line layer style by style over all its features
 style's outline in a pass before the style, as MapServer's line layers do. The labels of point
 layers are placed by the label cache and drawn after the last layer, but for those of a point
 layer of `LABELCACHE OFF`, drawn after each of its features; a label of a line or a polygon layer
-is not drawn yet. The image is encoded as PNG.
+is not drawn yet. A layer of `POSTLABELCACHE TRUE` is drawn after the label cache, past every
+other layer, its labels at once. The image is encoded as PNG.
 
 In the browser, the page calls the bundle's `render`, or `renderWith`, with the mapfile text, a JSON
 object of GeoJSON by layer name, an optional viewport, and the files the mapfile names. The bindings
