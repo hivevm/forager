@@ -468,8 +468,10 @@ impl Drawing<'_> {
 
     /// Draws the markers of a point layer's feature `selected` at each of its points inside the
     /// map's extent, every style of its class in its scale range, each point's followed by what
-    /// `label` draws at that point, as pointLayerDrawShape draws a layer of `LABELCACHE OFF`
+    /// `label` draws at that point, as pointLayerDrawShape draws a point layer
     /// (src/mapdraw.c:2062-2105): the markers of a point, then its labels, then the next point's.
+    /// It decides the order of a point layer's markers whatever its `LABELCACHE`; a layer of the
+    /// label cache draws no label here.
     fn draw_points<R: Draw>(
         &self,
         renderer: &mut R,
@@ -498,9 +500,16 @@ impl Drawing<'_> {
 
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
     /// from the cache as the [`Plan`] of each class says. A style outside its scale range draws
-    /// nothing, where msDrawShape and the cache's pass skip it.
+    /// nothing, where msDrawShape and the cache's pass skip it. A point layer's features are
+    /// drawn point by point by [`Self::draw_points`], without their labels.
     fn draw<R: Draw>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
         let mode = self.mode;
+        if mode == RenderMode::Point {
+            for one in selected {
+                self.draw_points(renderer, canvas, one, |_, _| {});
+            }
+            return;
+        }
         let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {
             if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
                 return;

@@ -362,11 +362,12 @@ into a source bound to that layer instead, reads the fonts its labels name from 
 and runs the engine with the agg-rust renderer. For each layer that is ON or DEFAULT, in order, the
 engine queries the source with the fitted extent and draws its features in the styles of the first
 class whose expression matches: a point or polygon layer each feature in every style before the next
-feature, a line layer style by style over all its features, with each style's outline in a pass
-before the style, as MapServer's line layers do. The labels of point layers are placed by the label
-cache and drawn after the last layer, but for those of a point layer of `LABELCACHE OFF`, drawn
-after each of its features; a label of a line or a polygon layer is not drawn yet. The image is
-encoded as PNG.
+feature, a point layer's point by point, every style's marker at a point before the next point,
+whatever its `LABELCACHE`, and a line layer style by style over all its features, with each
+style's outline in a pass before the style, as MapServer's line layers do. The labels of point
+layers are placed by the label cache and drawn after the last layer, but for those of a point
+layer of `LABELCACHE OFF`, drawn after each of its features; a label of a line or a polygon layer
+is not drawn yet. The image is encoded as PNG.
 
 In the browser, the page calls the bundle's `render`, or `renderWith`, with the mapfile text, a JSON
 object of GeoJSON by layer name, an optional viewport, and the files the mapfile names. The bindings

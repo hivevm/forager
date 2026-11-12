@@ -850,6 +850,42 @@ fn a_point_outside_the_extent_draws_no_square() {
     assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
 
+/// The markers a point layer of `LABELCACHE` `label_cache` draws of a multipoint at x 40 and 45
+/// with a class of two squares, of 20 pixels in blue and of 10 in green: each operation in
+/// order, as the colour of its fill and the x of its centre.
+fn multipoint_markers(label_cache: bool) -> Vec<(Rgba, f64)> {
+    let square = |color, size| Style {
+        color: Some(Bound::Value(color)),
+        size: Some(Bound::Value(size)),
+        ..Style::default()
+    };
+    let mut map = map_with(
+        RenderMode::Point,
+        vec![square(BLUE, 20.0), square(GREEN, 10.0)],
+    );
+    map.layers[0].label_cache = label_cache;
+    let multipoint = r#"{"type": "MultiPoint", "coordinates": [[40, 50], [45, 50]]}"#;
+    recorded(&map, multipoint)
+        .iter()
+        .map(|op| match op {
+            DrawOp::Fill { rings, color, .. } => {
+                (*color, f64::midpoint(rings[0][0].x, rings[0][2].x))
+            }
+            other => panic!("{other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn a_multipoint_draws_each_points_markers_before_the_next_points_whatever_its_labelcache() {
+    // MapServer's pointLayerDrawShape draws every style's marker at one point before the next
+    // point's, whatever the layer's LABELCACHE: the second point's blue square, 5 pixels on and
+    // 20 across, covers the first point's green one.
+    let point_by_point = [(BLUE, 40.0), (GREEN, 40.0), (BLUE, 45.0), (GREEN, 45.0)];
+    assert_eq!(multipoint_markers(true), point_by_point);
+    assert_eq!(multipoint_markers(false), point_by_point);
+}
+
 /// An L from pixel (10, 20) right to (90, 20), then down to (90, 90).
 const ELL: &str = r#"{"type": "LineString", "coordinates": [[10, 80], [90, 80], [90, 10]]}"#;
 
