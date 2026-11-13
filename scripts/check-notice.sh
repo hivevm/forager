@@ -23,7 +23,8 @@
 # source without `src/`, one that names a C++ source (`src/map….cpp`), whose holders differ by
 # file, and a port of pnpoly that names neither word.
 #
-# Pure bash + grep. Usage:
+# Pure bash + grep; the notices' lines are in scripts/lib/notice.sh, which scripts/package.sh
+# shares. Usage:
 #     scripts/check-notice.sh [repository root]
 # The root defaults to this repository; scripts/test-check-notice.sh passes fixtures.
 # Exit code 0 when every such file holds the notice, 1 otherwise, 2 on a root that is no directory.
@@ -33,22 +34,8 @@ set -uo pipefail
 ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
   || { echo "Notice check: '${1:-}' is not a directory." >&2; exit 2; }
 
-COPYRIGHT='Copyright (c) 1996-2005 Regents of the University of Minnesota.'
-# The copyright line of src/apps/msencrypt.c, which a file that names it may hold instead.
-COPYRIGHT_2006='Copyright (c) 1996-2006 Regents of the University of Minnesota.'
-PERMISSION='Permission is hereby granted, free of charge, to any person obtaining a copy of this software'
-DISCLAIMER='OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.'
-# W. Randolph Franklin's pnpoly, which MapServer's msPointInPolygon is, under a notice of its own:
-# its copyright line, its first condition, and its third, which the other notices do not hold.
-PNPOLY_COPYRIGHT='Copyright (c) 1970-2003, Wm. Randolph Franklin'
-PNPOLY_CONDITION='Redistributions of source code must retain the above copyright notice'
-PNPOLY_ENDORSE='The name of W. Randolph Franklin may not be used to endorse or promote'
-
-# holds_pnpoly <file> — whether the file holds Franklin's notice.
-holds_pnpoly() {
-  grep -qF "$PNPOLY_COPYRIGHT" "$1" && grep -qF "$PNPOLY_CONDITION" "$1" \
-    && grep -qF "$PNPOLY_ENDORSE" "$1" && grep -qF "$DISCLAIMER" "$1"
-}
+# shellcheck source-path=SCRIPTDIR source=lib/notice.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/notice.sh"
 
 failures=0
 checked=0
@@ -82,8 +69,7 @@ done < <(find "$ROOT/crates" "$ROOT/fuzz" \( -name '*.rs' -o -name '*.c' \) -not
 
 # A binary carries the notices in THIRD-PARTY-NOTICES.md, pnpoly's condition 2.
 notices="$ROOT/THIRD-PARTY-NOTICES.md"
-if ((pnpoly)) && { [[ ! -f "$notices" ]] || ! holds_pnpoly "$notices" \
-  || ! grep -qF "$COPYRIGHT" "$notices"; }; then
+if ((pnpoly)) && { [[ ! -f "$notices" ]] || ! holds_third_party_notices "$notices"; }; then
   echo "ERROR: THIRD-PARTY-NOTICES.md does not reproduce W. Randolph Franklin's and MapServer's" \
     "notices" >&2
   pnpoly_failures=$((pnpoly_failures + 1))

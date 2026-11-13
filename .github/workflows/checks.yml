@@ -181,6 +181,9 @@ jobs:
       # The licence constraint: a file that follows MapServer's source keeps its notice.
       - name: Check that every file following MapServer's source keeps its notice
         run: bash scripts/check-notice.sh
+      # The packaging script itself builds the artefacts on a human's instruction.
+      - name: Self-test the check that every binary artefact carries the notices
+        run: bash scripts/test-package.sh
       # The fidelity check itself runs in the rust job, after the harness that counts the cases.
       - name: Self-test the fidelity check
         run: bash scripts/test-check-fidelity.sh
