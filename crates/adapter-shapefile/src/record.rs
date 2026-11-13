@@ -53,13 +53,8 @@ impl Rect {
 
     /// `msRectOverlap`: only a comparison that holds separates two boxes, so a NaN overlaps.
     pub fn overlaps(&self, other: &Rect) -> bool {
-        if self.min_x > other.max_x || self.max_x < other.min_x {
-            return false;
-        }
-        if self.min_y > other.max_y || self.max_y < other.min_y {
-            return false;
-        }
-        true
+        let corners = |r: &Rect| [r.min_x, r.min_y, r.max_x, r.max_y];
+        forager_style_ir::c::rect_overlap(corners(self), corners(other))
     }
 
     /// `msRectContained`: whether this box lies inside `other`; a NaN never does.

@@ -174,6 +174,8 @@ fn item_names_come_from_the_first_items_key_split_at_commas() {
         names(r#"PROCESSING "ITEMSX=z" PROCESSING "Items=x,Y" PROCESSING "ITEMS=w""#),
         ["x", "Y"]
     );
+    // msStringSplit reads the names as a C string, up to its first NUL.
+    assert_eq!(names("PROCESSING \"ITEMS=a\0,b\""), ["a"]);
     // Wherever the directive stands.
     let (_, layer) = load_layer(r#"TYPE POINT FEATURE POINTS 1 1 END END PROCESSING "ITEMS=late""#);
     assert_eq!(

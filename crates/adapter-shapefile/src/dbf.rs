@@ -151,7 +151,7 @@ impl Dbf {
     fn value<'a>(&self, record: &'a [u8], field: &Field) -> Value<'a> {
         let (offset, size) = (field.offset as usize, field.size as usize);
         let raw = &record[offset..offset + size];
-        let raw = &raw[..raw.iter().position(|&b| b == 0).unwrap_or(raw.len())];
+        let raw = forager_style_ir::c::c_bytes(raw);
         let raw = &raw[..raw.iter().rposition(|&b| b != b' ').map_or(0, |i| i + 1)];
         let numeric = matches!(field.kind, b'N' | b'F' | b'D');
         let raw = if numeric {

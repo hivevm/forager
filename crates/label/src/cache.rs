@@ -32,6 +32,7 @@
 //! second time, by its point, in a grid of its own, and that test may visit it once in each.
 
 use forager_render::Point;
+use forager_style_ir::c::{ms_max, ms_min, rect_overlap};
 
 use crate::place::{Anchor, Bounds, Placement, PointLabel, member_box, place, placed_at};
 
@@ -276,7 +277,7 @@ impl<M: Members + ?Sized> Cache<'_, M> {
                 (None, Some(marker)) => marker.bbox,
                 (None, None) => return false,
             };
-            rect_overlap(&bbox, &lb.bbox)
+            rect_overlap(bbox, lb.bbox)
                 && (text.as_ref().is_some_and(meets) || marker.as_ref().is_some_and(meets))
         })
     }
@@ -304,8 +305,8 @@ impl<M: Members + ?Sized> Cache<'_, M> {
             };
             point_in_rect(&theirs.point, &buffered)
                 || rect_overlap(
-                    &member_box(&text.bbox, theirs.label_marker.as_ref()),
-                    &buffered,
+                    member_box(&text.bbox, theirs.label_marker.as_ref()),
+                    buffered,
                 )
         };
         self.points
@@ -338,11 +339,6 @@ fn in_image([width, height]: [f64; 2], gutter: f64, lb: &Bounds) -> bool {
     }
 }
 
-/// `msRectOverlap`.
-fn rect_overlap(a: &[f64; 4], b: &[f64; 4]) -> bool {
-    !(a[0] > b[2] || a[2] < b[0] || a[1] > b[3] || a[3] < b[1])
-}
-
 /// `msPointInRect`.
 fn point_in_rect(p: &Point, r: &[f64; 4]) -> bool {
     !(p.x < r[0] || p.x > r[2] || p.y < r[1] || p.y > r[3])
@@ -368,7 +364,7 @@ fn intersect(
     l2: Option<&[Point; 5]>,
     r2: &[f64; 4],
 ) -> bool {
-    if !rect_overlap(r1, r2) {
+    if !rect_overlap(*r1, *r2) {
         return false;
     }
     if l1.is_none() && l2.is_none() {
@@ -421,15 +417,6 @@ fn point_in_polygon(p: &Point, c: &[Point; 5]) -> bool {
         j = i;
     }
     status
-}
-
-/// MapServer's `MS_MIN` and `MS_MAX`.
-fn ms_min(a: f64, b: f64) -> f64 {
-    if a < b { a } else { b }
-}
-
-fn ms_max(a: f64, b: f64) -> f64 {
-    if a > b { a } else { b }
 }
 
 /// `msIntersectSegments`: whether the segments a–b and c–d meet.

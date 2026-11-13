@@ -26,6 +26,7 @@ use forager_label::{
     draw_label_cache, marker_bounds, place,
 };
 use forager_render::Point;
+use forager_style_ir::c::{ms_max, ms_min, rect_overlap};
 
 /// The image: 5 by 4 cells of the grid's finest level, and four levels.
 const SIZE: (u32, u32) = (300, 200);
@@ -346,7 +347,7 @@ fn collisions(
             (None, Some(marker)) => marker.bbox,
             (None, None) => continue,
         };
-        if !rect_overlap(&bbox, &lb.bbox) {
+        if !rect_overlap(bbox, lb.bbox) {
             continue;
         }
         if let Some(theirs) = theirs
@@ -415,23 +416,6 @@ fn label_in_image((width, height): (u32, u32), gutter: u32, lb: &Bounds) -> bool
     true
 }
 
-/// `msRectOverlap`.
-fn rect_overlap(a: &[f64; 4], b: &[f64; 4]) -> bool {
-    if a[0] > b[2] {
-        return false;
-    }
-    if a[2] < b[0] {
-        return false;
-    }
-    if a[1] > b[3] {
-        return false;
-    }
-    if a[3] < b[1] {
-        return false;
-    }
-    true
-}
-
 /// `msPointInRect`.
 fn point_in_rect(p: &Point, rect: &[f64; 4]) -> bool {
     !(p.x < rect[0] || p.x > rect[2] || p.y < rect[1] || p.y > rect[3])
@@ -444,7 +428,7 @@ fn intersect_label_polygons(
     l2: Option<&[Point; 5]>,
     r2: &[f64; 4],
 ) -> bool {
-    if !rect_overlap(r1, r2) {
+    if !rect_overlap(*r1, *r2) {
         return false;
     }
     if l1.is_none() && l2.is_none() {
@@ -507,15 +491,6 @@ fn point_in_polygon(p: &Point, c: &[Point; 5]) -> bool {
         j = i;
     }
     status
-}
-
-/// `MS_MIN` and `MS_MAX`.
-fn ms_min(a: f64, b: f64) -> f64 {
-    if a < b { a } else { b }
-}
-
-fn ms_max(a: f64, b: f64) -> f64 {
-    if a > b { a } else { b }
 }
 
 /// `msIntersectSegments`.

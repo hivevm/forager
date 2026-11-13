@@ -24,9 +24,8 @@ use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
 
 use forager_render::{DrawOp, Point, PremultipliedImage, Tile};
-use forager_style_ir::c::lrint;
+use forager_style_ir::c::{lrint, ms_max};
 
-use crate::bounds::ms_max;
 use crate::symbol;
 
 /// The most bytes the images one render holds decoded come to, its fill tiles among them (Q-9).

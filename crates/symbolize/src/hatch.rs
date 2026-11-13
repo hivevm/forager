@@ -24,12 +24,12 @@
 
 use forager_render::{Hatch, Point};
 use forager_style_ir::Coord;
-use forager_style_ir::c::{int_cast, lrint, ms_nint};
+use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_max, ms_nint};
 use forager_style_ir::{Rgba, Style, Symbol};
 
-use crate::bounds::{self, ms_max};
+use crate::bounds;
 use crate::extent::View;
-use crate::style::{DEG_TO_RAD, GAMMA, fixed};
+use crate::style::{GAMMA, fixed};
 use crate::symbol::{self, Factors, Pixmaps};
 
 /// The most lines one hatch lays over the image (Q-9): a hatch a pixel apart over the largest

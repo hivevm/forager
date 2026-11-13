@@ -22,7 +22,7 @@
 
 use forager_render::Point;
 use forager_style_ir::GeomTransform;
-use forager_style_ir::c::int_cast;
+use forager_style_ir::c::{int_cast, ms_max};
 use forager_style_ir::{Coord, Geometry};
 
 use crate::extent::View;
@@ -123,7 +123,7 @@ pub(crate) fn bbox(
     }
     // `int padding = MS_MAX(style->width, style->size) + 3`, C's `(int)` of a double; the `int`
     // sums and negation around it wrap as the x86-64 build's at the pin do.
-    let larger = (if width > size { width } else { size }) + 3.0;
+    let larger = ms_max(width, size) + 3.0;
     let padding = int_cast(larger);
     let below = f64::from(padding.wrapping_neg());
     // An image is far smaller than an `int` (Q-9).

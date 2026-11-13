@@ -1,5 +1,6 @@
-//! C's reading of numbers is ported once (ADR-0017, ADR-0036): `atof`,
-//! `atoi`, `strtod`, `lrint`, C's `(int)` cast of a `double`, and MapServer's `MS_NINT` are defined
+//! C's and MapServer's small ports live once (ADR-0017, ADR-0036): `atof`,
+//! `atoi`, `strtod`, `lrint`, C's `(int)` cast of a `double` and its string end, and MapServer's
+//! `MS_NINT`, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, and `msStringSplit` are defined
 //! in the module of `style-ir` and nowhere else in the workspace.
 
 use std::path::{Path, PathBuf};
@@ -7,13 +8,25 @@ use std::path::{Path, PathBuf};
 /// The one module that may define them, from the workspace root.
 const MODULE: &str = "crates/style-ir/src/c.rs";
 
+/// The names of the module's ports.
+const PORTS: [&str; 12] = [
+    "atof",
+    "atoi",
+    "strtod",
+    "lrint",
+    "ms_nint",
+    "int_cast",
+    "ms_min",
+    "ms_max",
+    "rect_overlap",
+    "ms_string_split",
+    "c_bytes",
+    "c_str",
+];
+
 /// Whether a function of this name ports one of them, a variant such as `lrint_int` included.
 fn ports_a_c_number_reading(name: &str) -> bool {
-    matches!(
-        name,
-        "atof" | "atoi" | "strtod" | "lrint" | "ms_nint" | "int_cast"
-    ) || name.starts_with("lrint_")
-        || name.starts_with("ms_nint_")
+    PORTS.contains(&name) || name.starts_with("lrint_") || name.starts_with("ms_nint_")
 }
 
 /// The names of the functions `source` defines: each identifier after the keyword `fn`, outside
@@ -34,6 +47,21 @@ fn functions(source: &str) -> Vec<String> {
         }
     }
     names
+}
+
+/// The lines, from 1, whose code outside a line comment turns degrees to radians by `PI / 180`
+/// rather than by the module's `DEG_TO_RAD`, its spaces aside.
+fn degrees_to_radians(source: &str) -> impl Iterator<Item = usize> + '_ {
+    source.lines().enumerate().filter_map(|(i, line)| {
+        let code: String = line
+            .split("//")
+            .next()
+            .unwrap_or_default()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        code.contains(concat!("PI/", "180")).then_some(i + 1)
+    })
 }
 
 /// Every `.rs` file under `dir`, `target` directories left out.
@@ -77,16 +105,35 @@ fn c_number_reading_is_defined_only_in_the_module_of_style_ir() {
                 .display()
                 .to_string();
             copies.extend(names.map(|n| format!("{shown}: fn {n}")));
+            copies.extend(
+                degrees_to_radians(&source)
+                    .map(|l| format!("{shown}:{l}: degrees to radians outside DEG_TO_RAD")),
+            );
         }
     }
     assert!(copies.is_empty(), "ported outside {MODULE}: {copies:#?}");
     // The check itself sees a definition: the module defines each of them.
-    for name in ["atof", "atoi", "strtod", "lrint", "ms_nint", "int_cast"] {
+    for name in PORTS {
         assert!(
             in_module.iter().any(|n| n == name),
             "{MODULE} defines no `{name}`"
         );
     }
+}
+
+#[test]
+fn the_check_sees_pi_over_180_in_code_and_not_in_comments() {
+    let source = concat!(
+        "let r = a * (std::f64::consts::PI / 1",
+        "80.0);\n",
+        "// PI / 1",
+        "80\n",
+        "let r = a * DEG_TO_RAD; // not PI/1",
+        "80\n",
+        "let r = PI/1",
+        "80.0 * a;\n"
+    );
+    assert_eq!(degrees_to_radians(source).collect::<Vec<_>>(), [1, 4]);
 }
 
 #[test]

@@ -1,7 +1,9 @@
-// C's reading of numbers, ported once for the frontend and the core (ADR-0017, ADR-0036): glibc's
-// strtod in the C locale and the atof and atoi it backs, its lrint on x86-64, the (int) cast of a
-// double as x86-64 computes it, and MapServer's MS_NINT of src/mapserver.h, of the release pinned
-// in scripts/fetch-msautotest.sh.
+// C's and MapServer's small functions, ported once for the frontend, the core, and the adapters
+// (ADR-0017, ADR-0036): glibc's strtod in the C locale and the atof and atoi
+// it backs, its lrint on x86-64, and the (int) cast of a double as x86-64 computes it; MapServer's
+// MS_NINT, MS_MIN, MS_MAX, and MS_DEG_TO_RAD of src/mapserver.h, msRectOverlap of
+// src/mapsearch.c, and msStringSplit of src/mapstring.cpp, of the release pinned in
+// scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -15,9 +17,10 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! C's reading of numbers as MapServer's build at the pin runs it: `strtod`, `atof`, and `atoi` of
-//! glibc in the C locale, `MS_NINT`, which is `lrint` on x86-64, and the `(int)` cast of a `double`
-//! (ADR-0017, ADR-0036).
+//! C's and MapServer's small functions as MapServer's build at the pin runs them: `strtod`,
+//! `atof`, and `atoi` of glibc in the C locale, `MS_NINT`, which is `lrint` on x86-64, the `(int)`
+//! cast of a `double`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, and
+//! `msStringSplit` (ADR-0017, ADR-0036).
 
 /// C's `isspace` in the C locale.
 fn is_space(b: u8) -> bool {
@@ -272,6 +275,61 @@ pub fn int_cast(x: f64) -> i32 {
     }
 }
 
+/// `MS_MIN(a, b)`, `src/mapserver.h:78`: `a` where it compares below `b`, otherwise `b`, so `b`
+/// where either is no number.
+pub fn ms_min(a: f64, b: f64) -> f64 {
+    if a < b { a } else { b }
+}
+
+/// `MS_MAX(a, b)`, `src/mapserver.h:81`: `a` where it compares above `b`, otherwise `b`, so `b`
+/// where either is no number.
+pub fn ms_max(a: f64, b: f64) -> f64 {
+    if a > b { a } else { b }
+}
+
+/// `MS_DEG_TO_RAD`, `src/mapserver.h:251`, `.0174532925199432958`, read to the nearest double.
+pub const DEG_TO_RAD: f64 = 0.017_453_292_519_943_295;
+
+/// `msRectOverlap`, `src/mapsearch.c:44-54`, of two rectangles each given as
+/// `[min x, min y, max x, max y]`: whether they share a point, their edges included. A bound that
+/// is no number fails no comparison, so it overlaps.
+pub fn rect_overlap(a: [f64; 4], b: [f64; 4]) -> bool {
+    let [a_min_x, a_min_y, a_max_x, a_max_y] = a;
+    let [b_min_x, b_min_y, b_max_x, b_max_y] = b;
+    !(a_min_x > b_max_x || a_max_x < b_min_x || a_min_y > b_max_y || a_max_y < b_min_y)
+}
+
+/// `msStringSplit`, `src/mapstring.cpp:863-908`, of `text` at `separator`: one token more than
+/// the runs of separators, a run parting once; a leading or a trailing separator leaves an empty
+/// token, and an empty text is one empty token. `text` is read as C reads it, up to its first NUL.
+pub fn ms_string_split(text: &[u8], separator: u8) -> Vec<&[u8]> {
+    let text = c_bytes(text);
+    let mut tokens = Vec::new();
+    let mut start = 0;
+    let mut last = 0u8;
+    for (i, &b) in text.iter().enumerate() {
+        if b == separator {
+            if last != separator {
+                tokens.push(&text[start..i]);
+            }
+            start = i + 1;
+        }
+        last = b;
+    }
+    tokens.push(&text[start..]);
+    tokens
+}
+
+/// A C string's bytes: up to the first NUL, where `strlen` stops.
+pub fn c_bytes(bytes: &[u8]) -> &[u8] {
+    bytes.split(|&b| b == 0).next().unwrap_or_default()
+}
+
+/// `text` up to its first NUL, where a C string of it ends.
+pub fn c_str(text: &str) -> &str {
+    text.split('\0').next().unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,5 +471,63 @@ mod tests {
         ] {
             assert_eq!(int_cast(past), i32::MIN, "int_cast({past})");
         }
+    }
+
+    #[test]
+    fn ms_min_and_ms_max_keep_their_second_operand_where_they_cannot_compare() {
+        // Verifies: ADR-0036
+        // src/mapserver.h:78 and 81: `((a) < (b)) ? (a) : (b)` and `((a) > (b)) ? (a) : (b)`.
+        assert_eq!(ms_min(1.0, 2.0), 1.0);
+        assert_eq!(ms_max(1.0, 2.0), 2.0);
+        assert_eq!(ms_min(f64::NAN, 2.0), 2.0);
+        assert_eq!(ms_max(f64::NAN, 2.0), 2.0);
+        assert!(ms_min(2.0, f64::NAN).is_nan());
+        assert!(ms_max(2.0, f64::NAN).is_nan());
+        // -0.0 does not compare below 0.0: the second is kept.
+        assert!(ms_min(-0.0, 0.0).is_sign_positive());
+    }
+
+    #[test]
+    fn deg_to_rad_is_mapservers_constant() {
+        // Verifies: ADR-0036
+        assert_eq!(DEG_TO_RAD, ".0174532925199432958".parse::<f64>().unwrap());
+        assert_eq!(DEG_TO_RAD, std::f64::consts::PI / 180.0);
+    }
+
+    #[test]
+    fn rect_overlap_holds_edges_and_lets_no_number_through() {
+        // Verifies: ADR-0036
+        let a = [0.0, 0.0, 10.0, 10.0];
+        assert!(rect_overlap(a, [10.0, 10.0, 20.0, 20.0]));
+        assert!(rect_overlap(a, [2.0, 2.0, 3.0, 3.0]));
+        assert!(!rect_overlap(a, [10.5, 0.0, 20.0, 10.0]));
+        assert!(!rect_overlap(a, [0.0, -5.0, 10.0, -0.5]));
+        // No number across, but apart along y.
+        assert!(!rect_overlap(a, [f64::NAN, 50.0, f64::NAN, 60.0]));
+        assert!(rect_overlap(a, [f64::NAN; 4]));
+    }
+
+    #[test]
+    fn ms_string_split_parts_a_run_once_and_keeps_empty_ends() {
+        // Verifies: ADR-0036
+        fn split(text: &str) -> Vec<&[u8]> {
+            ms_string_split(text.as_bytes(), b',')
+        }
+        assert_eq!(split("a,b"), [b"a".as_slice(), b"b"]);
+        assert_eq!(split("a,,b"), [b"a".as_slice(), b"b"]);
+        assert_eq!(split(",a,"), [b"".as_slice(), b"a", b""]);
+        assert_eq!(split(""), [b"".as_slice()]);
+        assert_eq!(split(",,"), [b"".as_slice(), b""]);
+        assert_eq!(split("a\0,b"), [b"a".as_slice()]);
+    }
+
+    #[test]
+    fn a_c_string_ends_at_its_first_nul() {
+        // Verifies: ADR-0036
+        assert_eq!(c_str("ab\0cd"), "ab");
+        assert_eq!(c_str("ab"), "ab");
+        assert_eq!(c_str("\0"), "");
+        assert_eq!(c_bytes(b"ab\0cd"), b"ab");
+        assert_eq!(c_bytes(b""), b"");
     }
 }

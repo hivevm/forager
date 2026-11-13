@@ -22,7 +22,7 @@
 // syntax decides each operand's type, so every attribute is wrapped in a conversion that states
 // it.
 
-use forager_style_ir::c::atof;
+use forager_style_ir::c::{atof, c_str};
 use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
 
 use crate::lexer::{Token, TokenKind, number_len};
@@ -425,7 +425,7 @@ struct Scanner<'a> {
 
 impl<'a> Scanner<'a> {
     fn new(text: &'a str) -> Self {
-        let text = text.split('\0').next().unwrap_or_default();
+        let text = c_str(text);
         Self {
             text,
             at: 0,

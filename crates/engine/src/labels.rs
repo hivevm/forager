@@ -29,11 +29,11 @@ use forager_label::{
 };
 use forager_ports::{Feature, ResourceLoader};
 use forager_render::{Draw, DrawOp, GlyphOutline, Point};
-use forager_style_ir::c::{int_cast, ms_nint};
+use forager_style_ir::c::{DEG_TO_RAD, c_str, int_cast, ms_max, ms_nint};
 use forager_style_ir::{Diagnostic, Expr, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style};
-use forager_symbolize::{DEG_TO_RAD, Pixmaps, View, marker_size_of};
+use forager_symbolize::{Pixmaps, View, marker_size_of};
 
-use crate::classes::{self, Binder, c_bytes};
+use crate::classes::{self, Binder};
 use crate::fonts::Fonts;
 use crate::inline::feature_text;
 use crate::label_binding::{BoundLabel, Fixed, bind, fixed};
@@ -1221,19 +1221,7 @@ impl Members for Cache<'_> {
         let mut from_marker = marker.map_or([0.0, 0.0], half);
         if let Some(m) = &label_marker {
             let [x, y] = half(m.bbox);
-            // MS_MAX.
-            from_marker = [
-                if from_marker[0] > x {
-                    from_marker[0]
-                } else {
-                    x
-                },
-                if from_marker[1] > y {
-                    from_marker[1]
-                } else {
-                    y
-                },
-            ];
+            from_marker = [ms_max(from_marker[0], x), ms_max(from_marker[1], y)];
         }
         if from_marker[0] != 0.0 && label.outline.is_some() {
             from_marker = from_marker.map(|o| o + def.outline_grow);
@@ -1264,7 +1252,7 @@ impl Members for Cache<'_> {
     fn same_text(&self, a: usize, b: usize) -> bool {
         // strcmp compares the texts up to their first NUL.
         self.texts.is_some_and(|texts| {
-            let text = |i: usize| c_bytes(&texts[self.cached[i].text as usize]);
+            let text = |i: usize| c_str(&texts[self.cached[i].text as usize]).as_bytes();
             text(a) == text(b)
         })
     }

@@ -16,6 +16,7 @@
 
 //! A layer's `FEATURE` blocks, its inline features (ADR-0018).
 
+use forager_style_ir::c::ms_string_split;
 use forager_style_ir::{FeatureProperty, InlineFeature, ShapeType};
 
 use super::Translator;
@@ -51,19 +52,11 @@ pub(super) fn items_value(d: &Directive) -> Option<&str> {
 
 /// `msStringSplit` at `,`: one token more than the runs of commas, an empty one included.
 fn split_items(text: &str) -> Vec<String> {
-    let mut names = vec![String::new()];
-    let mut last = None;
-    for c in text.chars() {
-        if c == ',' {
-            if last != Some(',') {
-                names.push(String::new());
-            }
-        } else if let Some(name) = names.last_mut() {
-            name.push(c);
-        }
-        last = Some(c);
-    }
-    names
+    // Each token is whole characters, as a comma is one byte that no other character holds.
+    ms_string_split(text.as_bytes(), b',')
+        .into_iter()
+        .map(|t| String::from_utf8_lossy(t).into_owned())
+        .collect()
 }
 
 /// A feature's `ITEMS` split at `;`, as `msStringSplitComplex` with `MS_ALLOWEMPTYTOKENS` splits

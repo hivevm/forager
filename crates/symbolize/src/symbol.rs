@@ -32,11 +32,11 @@
 use std::rc::Rc;
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
-use forager_style_ir::c::{int_cast, lrint, ms_nint};
+use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_max, ms_nint};
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use crate::bounds;
-use crate::style::{DEG_TO_RAD, fixed};
+use crate::style::fixed;
 
 /// The images of a render's pixmap symbols by their resource path, each the decoded image or why
 /// it has none, as the engine's store of the render holds them (ADR-0029).
@@ -381,8 +381,8 @@ pub fn pixmap_marker_size<T>(
     } else {
         // MS_MAX with the starting 0 of *width and *height.
         (
-            bounds::ms_max(0.0, pixels / f64::from(height) * f64::from(width)),
-            bounds::ms_max(0.0, pixels),
+            ms_max(0.0, pixels / f64::from(height) * f64::from(width)),
+            ms_max(0.0, pixels),
         )
     }
 }

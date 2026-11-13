@@ -23,17 +23,6 @@ fn the_constants_are_mapservers() {
 }
 
 #[test]
-fn ms_min_and_ms_max_keep_their_second_operand_where_they_cannot_compare() {
-    // src/mapserver.h:78 and 81: `((a) < (b)) ? (a) : (b)` and `((a) > (b)) ? (a) : (b)`.
-    assert_eq!(ms_min(1.0, 2.0), 1.0);
-    assert_eq!(ms_max(1.0, 2.0), 2.0);
-    assert_eq!(ms_min(f64::NAN, 2.0), 2.0);
-    assert_eq!(ms_max(f64::NAN, 2.0), 2.0);
-    assert!(ms_min(2.0, f64::NAN).is_nan());
-    assert!(ms_max(2.0, f64::NAN).is_nan());
-}
-
-#[test]
 fn marker_pixels_are_bounded_unscaled_and_cut_to_whole() {
     // msGetMarkerSize, src/mapsymbol.c:754-755: MS_MAX with MINSIZE, then MS_MIN with MAXSIZE,
     // into an int each time.

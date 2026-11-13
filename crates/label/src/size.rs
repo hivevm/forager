@@ -15,7 +15,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use forager_style_ir::c::{int_cast, ms_nint};
+use forager_style_ir::c::{int_cast, ms_max, ms_min, ms_nint};
 
 /// The size a label's glyphs are drawn at, in points, as `msComputeTextPath` computes it
 /// (`src/maplabel.c:71-75`) into the `int` `glyph_size`: the label's size times the scale factor,
@@ -29,13 +29,10 @@ pub fn glyph_size(
     max_size: f64,
     resolution_factor: f64,
 ) -> f64 {
-    // Each assignment to the `int` cuts the fraction, the last rounds. MS_MAX and MS_MIN keep
-    // their second argument where a comparison fails.
+    // Each assignment to the `int` cuts the fraction, the last rounds.
     let scaled = f64::from(int_cast(size * scale_factor));
-    let least = min_size * resolution_factor;
-    let held = f64::from(int_cast(if scaled > least { scaled } else { least }));
-    let most = max_size * resolution_factor;
-    f64::from(ms_nint(if held < most { held } else { most }))
+    let held = f64::from(int_cast(ms_max(scaled, min_size * resolution_factor)));
+    f64::from(ms_nint(ms_min(held, max_size * resolution_factor)))
 }
 
 /// The pixel size, FreeType's ppem, of a glyph size: `MS_NINT(size * 96 / 72.0)` of the glyph size
