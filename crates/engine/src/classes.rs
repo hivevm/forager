@@ -355,6 +355,7 @@ pub(crate) fn with_opacity<T: Clone>(style: Cow<'_, Style<T>>) -> Cow<'_, Style<
     if opacity >= 100 {
         return style;
     }
+    #[expect(clippy::cast_possible_truncation, reason = "in 0..256")]
     let alpha = ms_nint(f64::from(opacity) * 2.55).rem_euclid(256) as u8;
     let mut style = style.into_owned();
     for color in [&mut style.color, &mut style.outline_color] {
@@ -467,7 +468,12 @@ pub(crate) fn layer_scale_factor(map: &Map, layer: &Layer, cellsize: f64, scale_
 /// [`forager_symbolize::named_index`]); 0, the default symbol, for a name the symbol set does not
 /// hold, which MapServer would next read as an image file, not drawn yet.
 fn symbol_index(name: &str, symbols: &[Symbol]) -> u32 {
-    forager_symbolize::named_index(name, symbols).map_or(0, |index| index as u32)
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "an index into the symbol set, held far below u32::MAX by the input's bounds (Q-9)"
+    )]
+    let index = forager_symbolize::named_index(name, symbols).map_or(0, |index| index as u32);
+    index
 }
 
 struct StyleBinder<'a> {
@@ -622,6 +628,7 @@ pub(crate) fn color(text: &[u8]) -> Option<Rgba> {
     if channels[..3].contains(&-1) {
         return None;
     }
+    #[expect(clippy::cast_possible_truncation, reason = "in 0..256")]
     let [r, g, b, a] = channels.map(|c| c.rem_euclid(256) as u8);
     Some(Rgba { r, g, b, a })
 }

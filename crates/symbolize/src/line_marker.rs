@@ -324,7 +324,12 @@ pub(crate) fn place(paths: &[Vec<Point>], p: &Placement, limit: usize) -> Option
                     if span > (limit - markers.len()) as f64 + 4.0 {
                         return None;
                     }
-                    for i in 0..span as usize {
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "a count of markers, held to the limit above (Q-9)"
+                    )]
+                    let span = span as usize;
+                    for i in 0..span {
                         // The first marker lies at the leftover itself, whatever the spacing.
                         let k = first + i as f64;
                         let distance = if k == 0.0 {

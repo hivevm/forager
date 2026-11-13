@@ -1,5 +1,6 @@
-//! C's reading of numbers is ported once (ADR-0017): `atof`, `atoi`, `strtod`, `lrint`, and
-//! MapServer's `MS_NINT` are defined in the module of `style-ir` and nowhere else in the workspace.
+//! C's reading of numbers is ported once (ADR-0017, ADR-0036): `atof`,
+//! `atoi`, `strtod`, `lrint`, C's `(int)` cast of a `double`, and MapServer's `MS_NINT` are defined
+//! in the module of `style-ir` and nowhere else in the workspace.
 
 use std::path::{Path, PathBuf};
 
@@ -8,8 +9,10 @@ const MODULE: &str = "crates/style-ir/src/c.rs";
 
 /// Whether a function of this name ports one of them, a variant such as `lrint_int` included.
 fn ports_a_c_number_reading(name: &str) -> bool {
-    matches!(name, "atof" | "atoi" | "strtod" | "lrint" | "ms_nint")
-        || name.starts_with("lrint_")
+    matches!(
+        name,
+        "atof" | "atoi" | "strtod" | "lrint" | "ms_nint" | "int_cast"
+    ) || name.starts_with("lrint_")
         || name.starts_with("ms_nint_")
 }
 
@@ -52,7 +55,7 @@ fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
 
 #[test]
 fn c_number_reading_is_defined_only_in_the_module_of_style_ir() {
-    // Verifies: ADR-0017
+    // Verifies: ADR-0017, ADR-0036
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
     rust_files(&root.join("crates"), &mut files);
@@ -78,7 +81,7 @@ fn c_number_reading_is_defined_only_in_the_module_of_style_ir() {
     }
     assert!(copies.is_empty(), "ported outside {MODULE}: {copies:#?}");
     // The check itself sees a definition: the module defines each of them.
-    for name in ["atof", "atoi", "strtod", "lrint", "ms_nint"] {
+    for name in ["atof", "atoi", "strtod", "lrint", "ms_nint", "int_cast"] {
         assert!(
             in_module.iter().any(|n| n == name),
             "{MODULE} defines no `{name}`"

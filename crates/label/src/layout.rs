@@ -24,6 +24,7 @@ use std::collections::btree_map::Entry;
 
 use forager_render::clip::within_glyph_reach;
 use forager_render::{PathCommand, Point};
+use forager_style_ir::c::int_cast;
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::DrawSettings;
 use skrifa::outline::pen::{OutlinePen, PathStyle};
@@ -208,7 +209,7 @@ impl Layout {
     /// apart, as `msComputeTextPath` sets the line height, in an `int`.
     pub fn new(glyph_size: f64, num_lines: usize) -> Self {
         Self {
-            line_height: (glyph_size.trunc() * 1.33).ceil() as i64,
+            line_height: i64::from(int_cast((glyph_size.trunc() * 1.33).ceil())),
             num_lines,
             ids: Vec::new(),
             lines: Vec::new(),
@@ -251,7 +252,7 @@ impl Layout {
             }
         }
         // A length is an int there: the fraction is cut.
-        self.lengths.push(pen_x as i32);
+        self.lengths.push(int_cast(pen_x));
         if pen_x > self.max_x {
             self.max_x = pen_x;
         }
@@ -265,7 +266,7 @@ impl Layout {
             }
             let line = Line {
                 cache: index,
-                end: self.ids.len() as u32,
+                end: u32::try_from(self.ids.len()).expect("a text's glyphs held to u32"),
                 x: 0.0,
                 y: pen_y,
             };

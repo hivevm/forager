@@ -29,7 +29,7 @@ mod time;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use forager_style_ir::c::{atof, lrint};
+use forager_style_ir::c::{atof, int_cast, lrint};
 use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
 
 /// The properties of one feature, as the evaluator reads them.
@@ -383,12 +383,13 @@ fn conditions(args: &[Val]) -> Result<Vec<bool>, Failure> {
 }
 
 /// C's `(int)a % (int)b`, undefined for a zero divisor, an operand past an `int`, and the one
-/// quotient past it.
+/// quotient past it. An operand past an `int` is C's undefined behaviour, which fails here
+/// (ADR-0016), where the cast's port gives the x86-64 build's `INT_MIN`.
 fn modulo(a: f64, b: f64) -> Result<i32, Failure> {
     let int = |x: f64| {
         let truncated = x.trunc();
         (truncated >= f64::from(i32::MIN) && truncated <= f64::from(i32::MAX))
-            .then_some(truncated as i32)
+            .then(|| int_cast(x))
             .ok_or(Failure::Undefined)
     };
     int(a)?.checked_rem(int(b)?).ok_or(Failure::Undefined)

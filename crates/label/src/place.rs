@@ -20,6 +20,7 @@
 //! on every target (Q-2).
 
 use forager_render::Point;
+use forager_style_ir::c::int_cast;
 
 /// MapServer's `MARKER_SLOP`: the pixels a label at an upper, lower, left, or right centre keeps
 /// from its point beyond its offset.
@@ -297,8 +298,8 @@ fn placed_with_buffer(
     } else {
         // The sum is a double passed as get_metrics' int: the fraction is cut.
         (
-            (label.offsets.marker[0] + f64::from(lx)) as i32,
-            (label.offsets.marker[1] + f64::from(ly)) as i32,
+            int_cast(label.offsets.marker[0] + f64::from(lx)),
+            int_cast(label.offsets.marker[1] + f64::from(ly)),
         )
     };
     metrics(at, anchor, &label.text, ox, oy, label.rotation, buffer)

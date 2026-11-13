@@ -32,6 +32,7 @@
 //! out as: the style's `MINWIDTH` in the one order, its `MAXWIDTH` in the other.
 
 use forager_style_ir::Style;
+use forager_style_ir::c::int_cast;
 
 /// A style's default `MINSIZE`, `MS_MINSYMBOLSIZE`, `src/mapserver.h:277`.
 pub(crate) const MIN_SIZE: f64 = 0.0;
@@ -121,8 +122,8 @@ pub(crate) fn hatch_spacing<T>(spacing: f64, style: &Style<T>, resolution: f64) 
 /// style's `MINSIZE` and then its `MAXSIZE`, neither scaled, and cut to whole pixels after each,
 /// as `size` is an int there.
 pub(crate) fn marker_pixels<T>(pixels: f64, style: &Style<T>) -> f64 {
-    let pixels = ms_max(pixels, min_size(style)).trunc();
-    ms_min(pixels, max_size(style)).trunc()
+    let pixels = f64::from(int_cast(ms_max(pixels, min_size(style))));
+    f64::from(int_cast(ms_min(pixels, max_size(style))))
 }
 
 /// msDrawShape(), `src/mapdraw.c:2491-2492`: the least size of a style's clip buffer, the larger of

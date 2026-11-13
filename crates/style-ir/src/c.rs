@@ -1,6 +1,7 @@
-// C's reading of numbers, ported once for the frontend and the core (ADR-0017): glibc's strtod
-// in the C locale and the atof and atoi it backs, its lrint on x86-64, and MapServer's MS_NINT of
-// src/mapserver.h, of the release pinned in scripts/fetch-msautotest.sh.
+// C's reading of numbers, ported once for the frontend and the core (ADR-0017, ADR-0036): glibc's
+// strtod in the C locale and the atof and atoi it backs, its lrint on x86-64, the (int) cast of a
+// double as x86-64 computes it, and MapServer's MS_NINT of src/mapserver.h, of the release pinned
+// in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -15,7 +16,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! C's reading of numbers as MapServer's build at the pin runs it: `strtod`, `atof`, and `atoi` of
-//! glibc in the C locale, and `MS_NINT`, which is `lrint` on x86-64 (ADR-0017).
+//! glibc in the C locale, `MS_NINT`, which is `lrint` on x86-64, and the `(int)` cast of a `double`
+//! (ADR-0017, ADR-0036).
 
 /// C's `isspace` in the C locale.
 fn is_space(b: u8) -> bool {
@@ -258,6 +260,18 @@ pub fn ms_nint(x: f64) -> i32 {
     lrint(x) as i32
 }
 
+/// C's `(int)` cast of a `double`, and its assignment to an `int`, as the x86-64 build at the pin
+/// computes it with `cvttsd2si`: toward zero, and `INT_MIN` for a value past an `int` and for no
+/// number, where Rust's `as` saturates and gives 0 for NaN.
+pub fn int_cast(x: f64) -> i32 {
+    if x > -2_147_483_649.0 && x < 2_147_483_648.0 {
+        // Within an `int` after truncation, so `as` truncates exactly as the C does.
+        x as i32
+    } else {
+        i32::MIN
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,5 +392,26 @@ mod tests {
         assert_eq!(ms_nint(4_294_967_297.0), 1);
         assert_eq!(ms_nint(1e19), 0);
         assert_eq!(ms_nint(f64::NAN), 0);
+    }
+
+    #[test]
+    fn int_cast_truncates_toward_zero_and_gives_int_min_past_an_int() {
+        // Verifies: ADR-0036
+        assert_eq!(int_cast(2.9), 2);
+        assert_eq!(int_cast(-2.9), -2);
+        assert_eq!(int_cast(-0.5), 0);
+        assert_eq!(int_cast(2_147_483_647.9), i32::MAX);
+        assert_eq!(int_cast(-2_147_483_648.9), i32::MIN);
+        for past in [
+            2_147_483_648.0,
+            -2_147_483_649.0,
+            3e9,
+            -3e9,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+        ] {
+            assert_eq!(int_cast(past), i32::MIN, "int_cast({past})");
+        }
     }
 }

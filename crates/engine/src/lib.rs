@@ -17,6 +17,8 @@
 //! one core crate that awaits the ports (ADR-0008).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0036).
+#![deny(clippy::cast_possible_truncation)]
 
 mod bind;
 mod bindable;
@@ -38,7 +40,7 @@ use forager_ports::{
     Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
-use forager_style_ir::c::ms_nint;
+use forager_style_ir::c::{int_cast, ms_nint};
 use forager_style_ir::{
     Diagnostic, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
 };
@@ -376,7 +378,7 @@ fn refused_pixmap(layer: &Layer, symbol: &str, why: &str) -> Diagnostic {
 /// number that is not finite.
 fn layer_opacity(layer: &Layer) -> Option<i32> {
     let opacity = layer.opacity.filter(|o| o.is_finite())?;
-    Some((opacity as i32).clamp(0, 100))
+    Some(int_cast(opacity).clamp(0, 100))
 }
 
 /// [`layer_opacity`], with a warning for an opacity outside 0 to 100, which a mapfile cannot give

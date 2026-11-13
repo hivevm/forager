@@ -121,6 +121,10 @@ pub fn walk_label_cache<M: Members + ?Sized>(
         let member = members.member(i);
         min_distance |= member.min_distance > 0.0;
         if let Some(marker) = member.marker {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a member's index, below MAX_LABELS"
+            )]
             markers[slot(member.priority)].insert(&marker, i as u32);
         }
     }
@@ -172,6 +176,10 @@ struct Cache<'m, M: ?Sized> {
 impl<M: Members + ?Sized> Cache<'_, M> {
     /// Files member `i`, drawn at `placement`, by its box, and by its point where it has a text.
     fn file(&mut self, i: usize, member: &Member, placement: &Placement) {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a member's index, below MAX_LABELS"
+        )]
         let entry = (i as u32, placement.anchor);
         let bbox = member_box(&placement.bounds.bbox, member.label_marker.as_ref());
         self.boxes.insert(&bbox, entry);
@@ -585,6 +593,10 @@ impl<E> Levels<E> {
         let mut side = CELL;
         loop {
             // Coordinates run from 0 to the image's edge, that edge included.
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a count of cells along the image, held to its side (Q-9)"
+            )]
             let count = |extent: f64| (extent / side).floor() as usize + 1;
             let (columns, rows) = (count(width), count(height));
             levels.push(Level {
@@ -605,6 +617,10 @@ impl<E> Levels<E> {
 
 impl<E> Level<E> {
     /// The cell of a coordinate held to the image, along an axis of `n` cells.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a cell along the image; a coordinate past it is held to the last"
+    )]
     fn cell(&self, v: f64, n: usize) -> usize {
         ((v / self.side).floor() as usize).min(n - 1)
     }

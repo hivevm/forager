@@ -29,7 +29,7 @@ use forager_symbolize::{
 
 use crate::bindable::{Field, Value};
 use crate::classes;
-use crate::labels::LabelAt;
+use crate::labels::{LabelAt, index};
 
 /// What `computeMarkerBounds` takes of a label's first `labelpoint` style: the width and height
 /// `msGetMarkerSize` gives its marker, its symbol's anchor point, its angle in degrees, and its
@@ -200,7 +200,7 @@ impl LabelStyles {
                 Run {
                     text,
                     len: 1,
-                    layout: layout as u32,
+                    layout: index(layout),
                     at: self.values.len(),
                 },
             ),
@@ -602,7 +602,7 @@ mod tests {
         for (text, (written, bound)) in held.iter().enumerate() {
             for (i, style) in written.iter().enumerate() {
                 assert_eq!(
-                    styles.style(text as u32, i, style).as_ref(),
+                    styles.style(index(text), i, style).as_ref(),
                     &bound[i],
                     "text {text}, style {i}"
                 );
@@ -618,7 +618,7 @@ mod tests {
             .unwrap()
             .map(|m| marker_bounds(at, m.size, m.anchor_point, m.angle, m.offset));
             assert_eq!(
-                styles.marker_bounds((&map, &Pixmaps::new()), def, text as u32, written, at, 1.0),
+                styles.marker_bounds((&map, &Pixmaps::new()), def, index(text), written, at, 1.0),
                 marker,
                 "text {text}"
             );
@@ -720,7 +720,7 @@ mod tests {
         };
         let at = Point { x: 10.0, y: 20.0 };
         for (text, field) in PROPERTIES.into_iter().enumerate() {
-            let text = text as u32;
+            let text = index(text);
             let mut style = Style {
                 offset: Some([Bound::Value(1.0), Bound::Value(2.0)]),
                 polar_offset: Some([Bound::Value(3.0), Bound::Value(4.0)]),

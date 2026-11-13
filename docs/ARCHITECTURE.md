@@ -47,10 +47,14 @@ golden path and the test pattern an agent copies from are named here.
   and, once a release tag `v<semver>` holds schema files, freezes them and asks for the bump the
   change since the last release needs. The browser bindings never enable the feature. Its
   module `c.rs` ports C's reading of numbers once for the frontend and the core: glibc's
-  `strtod`, `atof`, and `atoi`, and MapServer's `MS_NINT` as `lrint` on x86-64 narrowed to an
-  `int` ([ADR-0017](adr/0017-c-numbers-in-style-ir.md)). It holds the geometry of a
-  feature (`geometry.rs`), which the ports deliver and `symbolize` draws, the one crate both may
-  depend on. It depends on no other crate of the workspace.
+  `strtod`, `atof`, and `atoi`, MapServer's `MS_NINT` as `lrint` on x86-64 narrowed to an
+  `int`, and C's `(int)` cast of a `double`, `int_cast`, `INT_MIN` past an `int`
+  ([ADR-0017](adr/0017-c-numbers-in-style-ir.md),
+  [ADR-0036](adr/0036-c-ports-in-style-ir.md)). `engine`, `symbolize`, and
+  `label` deny clippy's `cast_possible_truncation`, so that such a cast is not written as `as`.
+  `style-ir` holds the geometry of a feature (`geometry.rs`), which the ports deliver and
+  `symbolize` draws, the one crate both may depend on. It depends on no other crate of the
+  workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
   resolver — with the features a source delivers, their geometries, re-exported from `style-ir`,
   and properties
@@ -270,8 +274,9 @@ golden path and the test pattern an agent copies from are named here.
   on the output path, the IR, the core, the ports, the frontend, and the adapters, to turn on the
   lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them
   nowhere but the one test time bound it names; the hosts alone are free. `tests/c_numbers.rs`
-  refuses a function `atof`, `atoi`, `strtod`, `lrint`, or `ms_nint`, or one named `lrint_…` or
-  `ms_nint_…`, defined outside `style-ir`'s `c.rs` (ADR-0017). `tests/symbolize_modules.rs`
+  refuses a function `atof`, `atoi`, `strtod`, `lrint`, `ms_nint`, or `int_cast`, or one named
+  `lrint_…` or `ms_nint_…`, defined outside `style-ir`'s `c.rs` (ADR-0017,
+  ADR-0036). `tests/symbolize_modules.rs`
   refuses an import between the modules of `symbolize`, outside its tests, against the direction
   its `lib.rs` states, and a module of the crate its table has no row for. `tests/symbol_names.rs`
   refuses an `eq_ignore_ascii_case` near a symbol's name outside `symbolize`'s `symbol.rs`, whose

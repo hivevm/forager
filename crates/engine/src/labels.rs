@@ -29,7 +29,7 @@ use forager_label::{
 };
 use forager_ports::{Feature, ResourceLoader};
 use forager_render::{Draw, DrawOp, GlyphOutline, Point};
-use forager_style_ir::c::ms_nint;
+use forager_style_ir::c::{int_cast, ms_nint};
 use forager_style_ir::{Diagnostic, Expr, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style};
 use forager_symbolize::{DEG_TO_RAD, Pixmaps, View, marker_size_of};
 
@@ -622,7 +622,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 outline,
             },
             // The offset scaled into an int.
-            offset: bound.offset.map(|o| (f64::from(o) * fixed.factor) as i32),
+            offset: bound.offset.map(|o| int_cast(f64::from(o) * fixed.factor)),
             position,
             priority: bound.priority,
             test_point: !fixed.force && bound.offset == [0, 0],
@@ -850,12 +850,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             rotation: ink.rotation,
             feature_id: ink.feature_id,
             path: if path.is_some() {
-                self.paths.len() as u32
+                index(self.paths.len())
             } else {
                 NO_PATH
             },
             def: self.def(at, fixed),
-            text: self.label_texts.len() as u32,
+            text: index(self.label_texts.len()),
             offset,
             color: ink.color,
             outline: ink.outline,
@@ -893,7 +893,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 self.over_limit = (self.over_limit.0 + 1, Some(first));
                 continue;
             }
-            let index = self.cached.len() as u32;
+            let index = index(self.cached.len());
             if let Some(size) = marker.filter(|_| per_label) {
                 push(&mut self.markers, (index, size));
             }
@@ -910,7 +910,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             defs.push(Def {
                 at,
                 // The buffer scaled into an int.
-                buffer: (fixed.buffer * fixed.factor) as i32,
+                buffer: int_cast(fixed.buffer * fixed.factor),
                 force: fixed.force,
                 partials: fixed.partials,
                 min_distance: fixed.min_distance * fixed.resolution,
@@ -918,7 +918,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 factor: fixed.factor,
                 marker: None,
             });
-            (defs.len() - 1) as u32
+            index(defs.len() - 1)
         })
     }
 
@@ -953,7 +953,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             Font::new(&face.bytes)
                 .map_err(|_| 0)
                 .and_then(|font| {
-                    layout.line(&font, &mut self.glyphs[cache], cache as u32, face.glyphs)
+                    layout.line(&font, &mut self.glyphs[cache], index(cache), face.glyphs)
                 })
                 .map_err(Unlaid::Glyph)?;
         }
@@ -1006,13 +1006,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let label = &cached[i];
             let at = defs[label.def as usize].at;
             let Some(placement) = placement else {
-                walked.push((i as u32, None));
+                walked.push((index(i), None));
                 return;
             };
             let member = cache.member(i);
             // The member's box, of its text and its labelpoint marker (mapdraw.c:3976-4030).
             let drawn = member_box(&placement.bounds.bbox, member.label_marker.as_ref());
-            walked.push((i as u32, Some(drawn)));
+            walked.push((index(i), Some(drawn)));
             let path = (label.path != NO_PATH).then(|| &paths[label.path as usize]);
             let placed = Placed {
                 at,
@@ -1194,7 +1194,7 @@ impl Members for Cache<'_> {
         // label's point, whose far corner lies `w - 1` and `h - 1` from its near one.
         let marker = self
             .markers
-            .binary_search_by_key(&(index as u32), |(i, _)| *i)
+            .binary_search_by_key(&self::index(index), |(i, _)| *i)
             .ok()
             .map(|i| self.markers[i].1)
             .or(def.marker)
@@ -1375,6 +1375,16 @@ pub(crate) fn push<T>(list: &mut Vec<T>, entry: T) {
 /// The fewest entries a list of the label cache grows by, so that a small one is not moved at
 /// each entry.
 const MIN_ROOM: usize = 8;
+
+/// An index into a render's labels, their texts, paths, or glyph caches, as the `u32` they are
+/// filed by.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the labels cached are held to MAX_LABELS, and their texts, paths, and defs with them"
+)]
+pub(crate) fn index(i: usize) -> u32 {
+    i as u32
+}
 
 #[cfg(test)]
 mod tests {

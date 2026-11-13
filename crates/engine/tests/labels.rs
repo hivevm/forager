@@ -4495,3 +4495,43 @@ fn the_maps_label_cache_edge_buffer_keeps_a_cached_label_from_the_edge() {
     );
     assert_eq!(glyphs(Some(29)).0, 0, "left out inside the gutter");
 }
+
+#[test]
+fn a_label_offset_past_an_int_is_cast_as_c_casts_it() {
+    // Verifies: ADR-0036
+    // `(int)` of an `OFFSET` past an `int` gives INT_MIN on x86-64, both where the label binds it
+    // and where its offset is scaled: the label stands 2^31 pixels left of the point, where `as`
+    // would saturate it to the right. Partial, so that the cache keeps it off the image.
+    let drawn = |offset: f64, resolution: Option<f64>| {
+        let label = Label {
+            offset: Some([Bound::Value(offset), Bound::Value(0.0)]),
+            partials: Some(true),
+            ..label_item()
+        };
+        let mut map = map(label);
+        map.resolution = resolution;
+        let rendered = render(&map, FEN);
+        rendered.labels[0].drawn.expect("the label is kept")
+    };
+    let left = [
+        -2_147_483_582.593_75,
+        23.046_875,
+        -2_147_483_553.406_25,
+        34.953_125,
+    ];
+    assert_eq!(drawn(3e9, None), left, "bound past an int");
+    assert_eq!(drawn(-3e9, None), left, "bound below an int");
+    // 1.5e9 binds within an int, and doubles past it at a resolution of 144.
+    let scaled = drawn(1.5e9, Some(144.0));
+    // The label doubles too, its box about the point INT_MIN pixels left.
+    assert_eq!(
+        scaled,
+        [
+            -2_147_483_597.187_5,
+            17.109_375,
+            -2_147_483_538.812_5,
+            40.890_625
+        ],
+        "scaled past an int"
+    );
+}
