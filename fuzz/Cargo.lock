@@ -301,6 +301,7 @@ name = "forager-label"
 version = "0.1.0"
 dependencies = [
  "forager-render",
+ "forager-style-ir",
  "libm",
  "skrifa",
 ]

@@ -133,16 +133,28 @@ impl<'a> Canvas<'a> {
         self.hatching.refused
     }
 
-    /// The pixmap symbols the layer left undrawn, their image refused: each by its index from 1,
-    /// with the symbol and why.
-    pub fn pixmaps_refused(&self) -> Vec<(usize, &'a Symbol, &str)> {
+    /// The pixmap symbols the layer left undrawn, their image refused: by the index from 1, each
+    /// named by its name or that index (see [`symbol::named`]), with why.
+    pub fn named_pixmaps_refused(&self) -> BTreeMap<usize, (String, String)> {
         self.refused_pixmaps
             .iter()
-            .filter_map(|(&index, why)| {
-                let symbol = self.symbols.get(index.checked_sub(1)?)?;
-                Some((index, symbol, why.as_str()))
-            })
+            .map(|(&index, why)| (index, (self.named(index), why.clone())))
             .collect()
+    }
+
+    /// The pixmap symbols left undrawn since this was last asked, as
+    /// [`Self::named_pixmaps_refused`] gives them.
+    pub fn take_pixmaps_refused(&mut self) -> BTreeMap<usize, (String, String)> {
+        std::mem::take(&mut self.refused_pixmaps)
+            .into_iter()
+            .map(|(index, why)| (index, (self.named(index), why)))
+            .collect()
+    }
+
+    /// The symbol at `index`, from 1, named for a report.
+    fn named(&self, index: usize) -> String {
+        let symbol = index.checked_sub(1).and_then(|i| self.symbols.get(i));
+        symbol::named(index, symbol)
     }
 
     /// Records the pixmap symbol of `mark`, if it is one, as not drawn where MapServer tiles its

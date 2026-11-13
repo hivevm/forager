@@ -23,6 +23,7 @@ use forager_ports::{
     Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
     Table, Value,
 };
+use forager_style_ir::c::rect_overlap;
 use forager_style_ir::{Extent, InlineFeature, Layer, ShapeType};
 
 /// Whether `layer` is read from its inline features (ADR-0018): it has some, whatever its
@@ -46,7 +47,7 @@ pub(crate) fn feature_text(layer: &Layer, id: u64) -> Option<&str> {
         .as_deref()
         // msShapeGetLabelAnnotation (src/maputil.c) takes shape->text with msStrdup, a C string
         // that ends at its first NUL.
-        .map(crate::classes::c_str)
+        .map(forager_style_ir::c::c_str)
 }
 
 /// The features of one layer, read from the style IR.
@@ -83,7 +84,7 @@ impl FeatureSource for InlineSource<'_> {
             .features
             .iter()
             .zip(0u64..)
-            .filter(|(f, _)| overlaps(&bounds(f), &query.extent))
+            .filter(|(f, _)| rect_overlap(corners(&bounds(f)), corners(&query.extent)))
             .map(|(f, id)| Feature {
                 id,
                 geometry: geometry(f),
@@ -122,9 +123,9 @@ fn bounds(feature: &InlineFeature) -> Extent {
     )
 }
 
-/// `msRectOverlap`: whether two rectangles meet, their edges included.
-fn overlaps(a: &Extent, b: &Extent) -> bool {
-    !(a.min_x > b.max_x || a.max_x < b.min_x || a.min_y > b.max_y || a.max_y < b.min_y)
+/// An extent as `[min x, min y, max x, max y]`, which `msRectOverlap`'s port reads.
+fn corners(e: &Extent) -> [f64; 4] {
+    [e.min_x, e.min_y, e.max_x, e.max_y]
 }
 
 /// The geometry the port delivers of a shape, as the shapefile source delivers a record: a point

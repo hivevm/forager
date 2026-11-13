@@ -5,6 +5,8 @@
 //! one crate that depends on skrifa.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0036).
+#![deny(clippy::cast_possible_truncation)]
 
 mod cache;
 mod font;

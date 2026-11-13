@@ -428,7 +428,8 @@ fn a_font_this_crate_cannot_draw_in_is_unusable_only_once_it_would_be_used() {
 fn glyph_sizes_follow_ms_compute_text_path() {
     // Verifies: ADR-0031
     assert_eq!(glyph_size(8.5, 1.0, 4.0, 256.0, 1.0), 8.0);
-    assert_eq!(glyph_size(9.5, 1.0, 4.0, 256.0, 1.0), 10.0);
+    // msComputeTextPath cuts the scaled size into the `int` before it holds and rounds it.
+    assert_eq!(glyph_size(9.5, 1.0, 4.0, 256.0, 1.0), 9.0);
 }
 
 #[test]

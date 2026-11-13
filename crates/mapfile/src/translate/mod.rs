@@ -19,7 +19,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use forager_ports::{ProjectionResolver, ResourcePath};
-use forager_style_ir::c::atoi;
+use forager_style_ir::c::{atoi, int_cast};
 use forager_style_ir::{
     Bound, Class, Diagnostic, Expr, Extent, GeomTransform, Layer, LayerProjection, LayerStatus,
     MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol,
@@ -530,7 +530,7 @@ impl Translator<'_> {
     /// A layer's `MAXFEATURES`, a number above 0 as getInteger checks it, truncated to an `int`;
     /// -1, no quota, where it does not read, which fails the load.
     fn max_features(&mut self, d: &Directive) -> i32 {
-        self.number(d, Range::above(0.0)).map_or(-1, |n| n as i32)
+        self.number(d, Range::above(0.0)).map_or(-1, int_cast)
     }
 
     /// The most features the layer `block` draws, as `msLayerGetMaxFeaturesToDraw` of

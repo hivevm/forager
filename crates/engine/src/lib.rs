@@ -17,6 +17,8 @@
 //! one core crate that awaits the ports (ADR-0008).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0036).
+#![deny(clippy::cast_possible_truncation)]
 
 mod bind;
 mod bindable;
@@ -38,13 +40,13 @@ use forager_ports::{
     Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
-use forager_style_ir::c::ms_nint;
+use forager_style_ir::c::{int_cast, ms_nint};
 use forager_style_ir::{
     Diagnostic, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
 };
 use forager_symbolize::{
-    Canvas, Pass, Pixmaps, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops, marked_pixmap,
-    point_markers, resolve, vertices,
+    Canvas, Pass, Pixmaps, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops, label_pixmap,
+    marked_pixmap, point_markers, resolve, vertices,
 };
 
 use forager_expr::Evaluator;
@@ -155,7 +157,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut cached_labels = None;
     for (position, &(layer_index, layer)) in order.iter().enumerate() {
         if position == cache_at {
-            cached_labels = Some(labels.finish(&mut renderer, &mut diagnostics));
+            cached_labels = Some(labels.finish(&mut renderer, images.decoded(), &mut diagnostics));
         }
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
@@ -203,7 +205,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
             let binder = &mut selector.binder;
-            let mut settled = labels.layer_at_once(layer_index, &drawn, binder);
+            let mut settled = labels.layer_at_once(layer_index, &drawn, pixmaps, binder);
             for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
                 let laid = labels
                     .label_at_once(&settled, feature, class, pixmaps, binder)
@@ -228,6 +230,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             layer,
             &canvas,
             label_hatches,
+            labels.pixmaps_reported(layer_index, canvas.named_pixmaps_refused()),
             undrawn,
             selector.binder.diagnostics,
         );
@@ -242,7 +245,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     }
     // The labels of the cache are drawn after every layer but those of POSTLABELCACHE TRUE, as
     // MapServer's label cache draws them.
-    let labels = cached_labels.unwrap_or_else(|| labels.finish(&mut renderer, &mut diagnostics));
+    let labels = cached_labels
+        .unwrap_or_else(|| labels.finish(&mut renderer, images.decoded(), &mut diagnostics));
     Rendered {
         image: Some(renderer.finish()),
         labels,
@@ -320,11 +324,13 @@ fn drawable(
 
 /// Reports what `layer` left undrawn on `canvas`: symbols past the budget of markers, hatches
 /// refused, those of the labelpoly styles of its labels drawn at once, `label_hatches`, among them,
-/// and the geometries of `undrawn`, by kind, its render mode cannot draw.
+/// the pixmaps of `pixmaps` refused, its features' and its labels' drawn at once, and the
+/// geometries of `undrawn`, by kind, its render mode cannot draw.
 fn layer_reports(
     layer: &Layer,
     canvas: &Canvas,
     label_hatches: usize,
+    pixmaps: BTreeMap<usize, (String, String)>,
     undrawn: BTreeMap<&'static str, usize>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -344,17 +350,8 @@ fn layer_reports(
         layer,
         canvas.hatches_refused() + label_hatches,
     ));
-    for (index, symbol, why) in canvas.pixmaps_refused() {
-        let symbol = symbol
-            .name
-            .as_deref()
-            .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"));
-        let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
-        diagnostics.push(Diagnostic::warning(
-            "pixmap-not-drawn",
-            message,
-            layer.span.clone(),
-        ));
+    for (symbol, why) in pixmaps.into_values() {
+        diagnostics.push(refused_pixmap(layer, &symbol, &why));
     }
     for (kind, count) in undrawn {
         let message = format!(
@@ -370,12 +367,18 @@ fn layer_reports(
     }
 }
 
+/// The report that `layer` left its pixmap symbol `symbol`, named, undrawn, and why.
+fn refused_pixmap(layer: &Layer, symbol: &str, why: &str) -> Diagnostic {
+    let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
+    Diagnostic::warning("pixmap-not-drawn", message, layer.span.clone())
+}
+
 /// A layer's opacity as MapServer holds it, an integer percent from 0 to 100: the IR's number
 /// truncated, as `loadLayerCompositer` truncates it, and bounded, as it checks it; none for a
 /// number that is not finite.
 fn layer_opacity(layer: &Layer) -> Option<i32> {
     let opacity = layer.opacity.filter(|o| o.is_finite())?;
-    Some((opacity as i32).clamp(0, 100))
+    Some(int_cast(opacity).clamp(0, 100))
 }
 
 /// [`layer_opacity`], with a warning for an opacity outside 0 to 100, which a mapfile cannot give
@@ -402,6 +405,20 @@ fn checked_opacity(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<i
         ));
     }
     opacity
+}
+
+/// Draws each of `ops` into `renderer` as a display item of feature `feature_id`, in order.
+pub(crate) fn draw_items<R: Draw>(
+    renderer: &mut R,
+    feature_id: u64,
+    ops: impl IntoIterator<Item = DrawOp>,
+) {
+    for op in ops {
+        renderer.draw(&DisplayItem {
+            op,
+            feature_id: Some(feature_id),
+        });
+    }
 }
 
 /// A feature drawn: it, the place of its class, and its styles bound to it.
@@ -471,8 +488,9 @@ impl Drawing<'_> {
     /// size the marker the cache holds by msGetMarkerSize, which loads it
     /// (`src/mapsymbol.c:736-738`) whatever the style's scale range. Those the clip buffer of a
     /// hatched polygon's class counts are loaded whatever theirs too, as msDrawShape loads them
-    /// (see [`clip_pixmaps`]). `cached` tells whether the layer's labels go through the label
-    /// cache.
+    /// (see [`clip_pixmaps`]), and those of the labelpoint and labelcenter styles of the classes'
+    /// labels (see [`label_pixmap`]). `cached` tells whether the layer's labels go through the
+    /// label cache.
     async fn load_pixmaps<L: ResourceLoader>(
         &self,
         selected: &[Selected<'_>],
@@ -495,6 +513,17 @@ impl Drawing<'_> {
                 {
                     // The image, or why it has none, is kept by the store for the canvas.
                     let _ = images.image(path, files).await;
+                }
+            }
+            // The pixmaps of its labels' labelpoint and labelcenter styles, which msDrawMarkerSymbol
+            // and msGetMarkerSize load as they draw and size them.
+            for label in &self.layer.classes[*class].labels {
+                for style in &label.styles {
+                    if let Some(path) = label_pixmap(style, symbols)
+                        && !images.decoded().contains_key(path)
+                    {
+                        let _ = images.image(path, files).await;
+                    }
                 }
             }
             if self.mode == RenderMode::Polygon {
@@ -528,12 +557,7 @@ impl Drawing<'_> {
             .collect();
         for (k, point) in points_in_view(self.view, &feature.geometry).enumerate() {
             for style in &mut markers {
-                for op in std::mem::take(&mut style[k]) {
-                    renderer.draw(&DisplayItem {
-                        op,
-                        feature_id: Some(feature.id),
-                    });
-                }
+                draw_items(renderer, feature.id, std::mem::take(&mut style[k]));
             }
             label(renderer, point);
         }
@@ -556,12 +580,8 @@ impl Drawing<'_> {
                 return;
             }
             for &pass in passes {
-                for op in draw_ops(mode, &feature.geometry, style, pass, self.view, canvas) {
-                    renderer.draw(&DisplayItem {
-                        op,
-                        feature_id: Some(feature.id),
-                    });
-                }
+                let ops = draw_ops(mode, &feature.geometry, style, pass, self.view, canvas);
+                draw_items(renderer, feature.id, ops);
             }
         };
         let plans: Vec<Plan> = self

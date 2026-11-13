@@ -577,3 +577,15 @@ fn a_hatched_polygon_s_rings_reach_pixels_as_ms_transform_shape_simplify_puts_th
     let xs: Vec<f64> = rings[0].iter().map(|p| p.x).collect();
     assert_eq!(xs, vec![50.0, 3.0, 3.0, 50.0, 50.0]);
 }
+
+#[test]
+fn a_hatch_over_a_box_past_an_int_lays_no_line() {
+    // Verifies: ADR-0036
+    // msHatchPolygon's `(int)` of the box's size gives INT_MIN past an `int`, so the hatch is laid
+    // over a box of negative size, and createHatch lays no line where `as` would lay them all.
+    let huge = vec![vec![p(-2e9, -2e9), p(2e9, -2e9), p(2e9, 2e9), p(-2e9, 2e9)]];
+    for angle in [0.0, 30.0, 90.0] {
+        let drawn = hatch_polygon(&huge, 1.0, 1.0, angle, IMAGE, ORIGIN).unwrap();
+        assert!(drawn.is_empty(), "{angle}: {} lines", drawn.len());
+    }
+}

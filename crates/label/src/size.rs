@@ -15,9 +15,13 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-/// The size a label's glyphs are drawn at, in points, as `msComputeTextPath` computes it: the
-/// label's size times the scale factor, held at least at its minimum and at most at its maximum
-/// size times the resolution factor, rounded half to even as `MS_NINT` (`lrint`) rounds.
+use forager_style_ir::c::{int_cast, ms_max, ms_min, ms_nint};
+
+/// The size a label's glyphs are drawn at, in points, as `msComputeTextPath` computes it
+/// (`src/maplabel.c:71-75`) into the `int` `glyph_size`: the label's size times the scale factor,
+/// cut to an `int`; held at least at its minimum size times the resolution factor, cut again; held
+/// at most at its maximum size times the resolution factor, rounded half to even as `MS_NINT`
+/// (`lrint`) rounds, and narrowed.
 pub fn glyph_size(
     size: f64,
     scale_factor: f64,
@@ -25,13 +29,10 @@ pub fn glyph_size(
     max_size: f64,
     resolution_factor: f64,
 ) -> f64 {
-    let scaled = size * scale_factor;
-    let least = min_size * resolution_factor;
-    // MS_MAX and MS_MIN, which keep their second argument where a comparison fails.
-    let held = if scaled > least { scaled } else { least };
-    let most = max_size * resolution_factor;
-    let held = if held < most { held } else { most };
-    held.round_ties_even()
+    // Each assignment to the `int` cuts the fraction, the last rounds.
+    let scaled = f64::from(int_cast(size * scale_factor));
+    let held = f64::from(int_cast(ms_max(scaled, min_size * resolution_factor)));
+    f64::from(ms_nint(ms_min(held, max_size * resolution_factor)))
 }
 
 /// The pixel size, FreeType's ppem, of a glyph size: `MS_NINT(size * 96 / 72.0)` of the glyph size
@@ -42,7 +43,9 @@ pub fn pixel_size(glyph_size: f64) -> u16 {
         u16::MAX
     } else if pixels >= 1.0 {
         // In 1..65535 and integral, so the conversion is exact.
-        pixels as u16
+        #[expect(clippy::cast_possible_truncation, reason = "in 1..65535 and integral")]
+        let pixels = pixels as u16;
+        pixels
     } else {
         1
     }
@@ -53,15 +56,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_glyph_size_is_held_between_its_bounds_and_rounded_half_to_even() {
-        // Verifies: ADR-0031
+    fn the_glyph_size_is_cut_twice_held_between_its_bounds_and_rounded_at_the_last() {
+        // Verifies: ADR-0031, ADR-0036
+        // src/maplabel.c:71-75, each value checked against the C compiled with gcc: `glyph_size`
+        // is an `int`, so the scaled size and its MS_MAX with the minimum are cut, and only the
+        // MS_MIN with the maximum is rounded by MS_NINT.
         assert_eq!(glyph_size(10.0, 1.0, 4.0, 256.0, 1.0), 10.0);
         assert_eq!(glyph_size(10.5, 1.0, 4.0, 256.0, 1.0), 10.0);
-        assert_eq!(glyph_size(11.5, 1.0, 4.0, 256.0, 1.0), 12.0);
+        assert_eq!(glyph_size(11.5, 1.0, 4.0, 256.0, 1.0), 11.0);
+        assert_eq!(glyph_size(23.0, 0.5, 4.0, 256.0, 1.0), 11.0);
+        assert_eq!(glyph_size(10.0, 1.07, 4.0, 256.0, 1.0), 10.0);
         assert_eq!(glyph_size(5.0, 2.5, 4.0, 256.0, 1.0), 12.0);
         assert_eq!(glyph_size(2.0, 1.0, 4.0, 256.0, 1.0), 4.0);
         assert_eq!(glyph_size(2.0, 1.0, 4.0, 256.0, 1.5), 6.0);
+        assert_eq!(glyph_size(2.0, 1.0, 5.0, 256.0, 1.3333), 6.0);
         assert_eq!(glyph_size(300.0, 1.0, 4.0, 256.0, 1.0), 256.0);
+        // The maximum alone is rounded, half to even.
+        assert_eq!(glyph_size(300.0, 1.0, 4.0, 10.5, 1.0), 10.0);
+        assert_eq!(glyph_size(300.0, 1.0, 4.0, 11.5, 1.0), 12.0);
+    }
+
+    #[test]
+    fn the_glyph_size_past_an_int_is_int_min_held_at_the_minimum() {
+        // Verifies: ADR-0036
+        // `(int)` of 3e9 is INT_MIN, which MS_MAX lifts to the minimum size.
+        assert_eq!(glyph_size(3e9, 1.0, 4.0, 4e9, 1.0), 4.0);
     }
 
     #[test]

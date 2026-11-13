@@ -87,6 +87,12 @@ symbol, its lines counted from the map's origin, or from the corner of a layer's
 the labels of a layer of `LABELCACHE OFF` drawn there ([symbol.md](symbol.md)); a hatch past its
 bounds is not drawn, and the label's layer warns with `hatch-not-drawn`, as for a polygon's (Q-9).
 A `labelpoly` of any other symbol is not drawn yet, so its label is left out with `label-not-drawn`.
+A `labelpoint` and a `labelcenter` marker are drawn by `msDrawMarkerSymbol`, as a point layer's
+marker is: a vector, an ellipse, or a pixmap symbol, nothing for symbol 0. A pixmap sizes the
+`labelpoint` marker by its image; one whose image does not load leaves the label out with
+`label-not-drawn` where it sizes that marker, and is otherwise left undrawn, its layer warning with
+`pixmap-not-drawn`. A marker of any other symbol, or of one the symbol set does not hold, is not
+drawn yet, so its label is left out with `label-not-drawn`.
 A label's style of any other `GEOMTRANSFORM`, `start`, `end`, `vertices`, `centroid`, `bbox`, an
 expression, or a name MapServer does not know, `msDrawLabelCache` fails the map's draw on; the IR's
 label style always names `labelpoint`, `labelpoly`, or `labelcenter`, so the frontend leaves such a

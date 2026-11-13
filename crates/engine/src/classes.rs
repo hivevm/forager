@@ -24,7 +24,7 @@ use std::collections::BTreeSet;
 
 use forager_expr::{Evaluator, Failure, Lookup};
 use forager_ports::{Feature, Properties, Value};
-use forager_style_ir::c::{atof, atoi, ms_nint};
+use forager_style_ir::c::{atof, atoi, c_str, ms_nint, ms_string_split};
 use forager_style_ir::{Bound, Diagnostic, Expr, Layer, Map, Rgba, Span, Style, Symbol, Units};
 
 use crate::bindable::{self, Field, Written};
@@ -355,6 +355,7 @@ pub(crate) fn with_opacity<T: Clone>(style: Cow<'_, Style<T>>) -> Cow<'_, Style<
     if opacity >= 100 {
         return style;
     }
+    #[expect(clippy::cast_possible_truncation, reason = "in 0..256")]
     let alpha = ms_nint(f64::from(opacity) * 2.55).rem_euclid(256) as u8;
     let mut style = style.into_owned();
     for color in [&mut style.color, &mut style.outline_color] {
@@ -467,7 +468,12 @@ pub(crate) fn layer_scale_factor(map: &Map, layer: &Layer, cellsize: f64, scale_
 /// [`forager_symbolize::named_index`]); 0, the default symbol, for a name the symbol set does not
 /// hold, which MapServer would next read as an image file, not drawn yet.
 fn symbol_index(name: &str, symbols: &[Symbol]) -> u32 {
-    forager_symbolize::named_index(name, symbols).map_or(0, |index| index as u32)
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "an index into the symbol set, held far below u32::MAX by the input's bounds (Q-9)"
+    )]
+    let index = forager_symbolize::named_index(name, symbols).map_or(0, |index| index as u32);
+    index
 }
 
 struct StyleBinder<'a> {
@@ -482,7 +488,7 @@ struct StyleBinder<'a> {
 pub(crate) fn attribute(properties: &FeatureProperties<'_>, binding: &str) -> Vec<u8> {
     properties
         .text(binding)
-        .map(|t| c_bytes(&t).to_vec())
+        .map(|t| c_str(&t).as_bytes().to_vec())
         .unwrap_or_default()
 }
 
@@ -499,16 +505,6 @@ pub(crate) fn bind_integer(text: &[u8], unset: i32) -> i32 {
     } else {
         ms_nint(atof(text))
     }
-}
-
-/// A C string's bytes: up to the first NUL.
-pub(crate) fn c_bytes(text: &str) -> &[u8] {
-    c_str(text).as_bytes()
-}
-
-/// `text` up to its first NUL, where a C string of it ends.
-pub(crate) fn c_str(text: &str) -> &str {
-    text.split('\0').next().unwrap_or_default()
 }
 
 impl StyleBinder<'_> {
@@ -585,25 +581,6 @@ fn hex_to_int(pair: [u8; 2]) -> i32 {
     digit(pair[0]) * 16 + digit(pair[1])
 }
 
-/// msStringSplit at spaces: several in a row part once, a leading or a trailing one leaves an
-/// empty token.
-fn split_spaces(text: &[u8]) -> Vec<&[u8]> {
-    let mut tokens = Vec::new();
-    let mut start = 0;
-    let mut last = 0u8;
-    for (i, &b) in text.iter().enumerate() {
-        if b == b' ' {
-            if last != b' ' {
-                tokens.push(&text[start..i]);
-            }
-            start = i + 1;
-        }
-        last = b;
-    }
-    tokens.push(&text[start..]);
-    tokens
-}
-
 /// bindColorAttribute: `#rrggbb` or `#rrggbbaa` by msHexToInt, or three integers parted by
 /// spaces by `atoi`; none for anything else, or for a channel of -1, which MS_VALID_COLOR refuses.
 /// Each channel is kept in a byte, as AGG keeps it.
@@ -613,7 +590,7 @@ pub(crate) fn color(text: &[u8]) -> Option<Rgba> {
         let alpha = if text.len() == 9 { pair(7) } else { 255 };
         [pair(1), pair(3), pair(5), alpha]
     } else {
-        let tokens = split_spaces(text);
+        let tokens = ms_string_split(text, b' ');
         if text.is_empty() || tokens.len() != 3 {
             return None;
         }
@@ -622,6 +599,7 @@ pub(crate) fn color(text: &[u8]) -> Option<Rgba> {
     if channels[..3].contains(&-1) {
         return None;
     }
+    #[expect(clippy::cast_possible_truncation, reason = "in 0..256")]
     let [r, g, b, a] = channels.map(|c| c.rem_euclid(256) as u8);
     Some(Rgba { r, g, b, a })
 }

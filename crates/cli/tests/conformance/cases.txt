@@ -447,7 +447,7 @@ renderers/point_pixmap.map point_pixmap.pdf out: another output format, pdf
 renderers/point_pixmap.map point_pixmap.svg out: another output format, svg
 renderers/point_pixmap.map point_pixmap.json out: another output format, json
 renderers/point_pixmap.map point_pixmap.cairo.png out: another output format, cairopng
-renderers/point_pixmap_gif.map point_pixmap_gif.png geometry fails  # not built yet: pixmap symbols
+renderers/point_pixmap_gif.map point_pixmap_gif.png geometry fails  # GIF pixmaps are not read (the maintainer's decision of 2026-11-13)
 renderers/point_pixmap_gif.map point_pixmap_gif.pdf out: another output format, pdf
 renderers/point_pixmap_gif.map point_pixmap_gif.svg out: another output format, svg
 renderers/point_pixmap_gif.map point_pixmap_gif.cairo.png out: another output format, cairopng

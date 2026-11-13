@@ -34,8 +34,8 @@ use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_render::{Affine, DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Extent, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, SourceRef,
-    Span, Style, Symbol, SymbolKind, SymbolRef,
+    Bound, Class, Extent, GeomTransform, Label, LabelTransform, Layer, LayerStatus, Map,
+    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -267,6 +267,62 @@ fn a_png_pixmap_is_blended_unturned_at_its_own_size_at_the_nearest_whole_pixel()
     let pins = [("pins", r#"{"type": "Point", "coordinates": [50.5, 58.5]}"#)];
     assert!(render(&colored, &files, &pins).image.unwrap() == image);
     assert_matches_reference(&image, "pixmap_point.png");
+}
+
+/// The pin of `SIZE` `size` and `ANGLE` `angle` where each is given: as a point layer's style, or
+/// as the labelpnt style of a label without text of a point layer without styles, its labels
+/// drawn through the label cache, or at once where `cached` is false.
+fn pin_by_label(by_label: bool, cached: bool, size: Option<f64>, angle: Option<f64>) -> Map {
+    let style = Style {
+        size: size.map(Bound::Value),
+        angle: angle.map(Bound::Value),
+        ..symbol_style(1)
+    };
+    let mut pins = layer("pins", RenderMode::Point, Vec::new());
+    pins.label_cache = cached;
+    if by_label {
+        pins.classes[0].labels = vec![Label {
+            styles: vec![style.with_transform(LabelTransform::Point)],
+            ..Label::default()
+        }];
+    } else {
+        pins.classes[0].styles = vec![style];
+    }
+    map(vec![pixmap("pin", "icons/pin.png")], vec![pins])
+}
+
+#[test]
+fn a_labelpnt_style_of_a_pixmap_draws_it_as_a_point_layer_draws_its_marker() {
+    // msDrawLabelCache draws a label's labelpnt style with msDrawMarkerSymbol at the label's
+    // point (src/mapdraw.c:4061-4065), as msDrawLabel does for a label drawn at once
+    // (2714-2748), the function that draws a point layer's marker, its pixmap among the
+    // symbols it draws (src/maprendering.c:980). A label without text draws its labelpnt style
+    // alone. Unturned at its own size the pin is blended; scaled and turned, resampled.
+    let files = Files([("icons/pin.png", PIN.to_vec())].into());
+    let pins = [("pins", r#"{"type": "Point", "coordinates": [50.5, 58.5]}"#)];
+    // The map without the pin, which neither render below may equal.
+    let mut bare = pin_by_label(false, true, None, None);
+    bare.layers[0].classes[0].styles.clear();
+    let bare = render(&bare, &files, &pins).image.unwrap();
+    for (size, angle) in [(None, None), (Some(20.0), Some(30.0))] {
+        let marker = render(&pin_by_label(false, true, size, angle), &files, &pins);
+        assert!(marker.diagnostics.is_empty(), "{:?}", marker.diagnostics);
+        let marker = marker.image.unwrap();
+        assert!(marker != bare, "size {size:?}: the pin is drawn");
+        // The pin's opaque top half covers the pixel (50, 36) above its point, the pixel
+        // (50.5, 41.5), at its own size and at SIZE 20 turned by 30 degrees alike; its top-left
+        // pixel (34, 26) only at its own size.
+        assert_ne!(rgb(&marker, 50, 36), WHITE, "size {size:?}");
+        assert_eq!(rgb(&marker, 34, 26) != WHITE, size.is_none());
+        for cached in [true, false] {
+            let label = render(&pin_by_label(true, cached, size, angle), &files, &pins);
+            assert!(label.diagnostics.is_empty(), "{:?}", label.diagnostics);
+            assert!(
+                label.image.unwrap() == marker,
+                "size {size:?}, angle {angle:?}, cached {cached}"
+            );
+        }
+    }
 }
 
 #[test]

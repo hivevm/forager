@@ -233,6 +233,10 @@ run "Vendor check" scripts/check-vendor.sh
 run "Example generator self-test" scripts/test-generate-example.sh
 run "Notice check self-test" scripts/test-check-notice.sh
 run "MapServer notice check" scripts/check-notice.sh
+# The packaging script builds the binary artefacts and checks each carries the notices; it runs on
+# a human's instruction, before a binary is distributed, and its self-test runs here.
+# On instruction: scripts/package.sh
+run "Package check self-test" scripts/test-package.sh
 # The fidelity check itself runs in the Rust checks, after the harness that counts the cases.
 run "Fidelity check self-test" scripts/test-check-fidelity.sh
 run "Review binding sensor self-test" scripts/test-sensor-review-binding.sh

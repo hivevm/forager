@@ -2156,7 +2156,7 @@ fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
 
 #[test]
 fn a_label_styles_opacity_past_an_int_is_rounded_as_a_class_styles_is() {
-    // Verifies: ADR-0017
+    // Verifies: ADR-0036
     // bindStyle rounds a label's style as it rounds a class's: MS_NINT(atof("3e9")) in an int is
     // -1294967296, and the alpha MS_NINT(-1294967296 × 2.55) keeps 179 in a byte.
     let style = Style {
@@ -3337,7 +3337,7 @@ fn a_labelcenter_marker_takes_no_room_and_stays_out_of_the_box_a_label_reports()
 #[test]
 fn a_labelcenter_style_whose_symbol_is_not_drawn_yet_is_refused() {
     // A labelcenter marker is msDrawMarkerSymbol's, as a labelpoint marker is: a SYMBOL that is
-    // no vector or ellipse of the set, here one past the set, leaves the label out.
+    // no vector, ellipse, or pixmap of the set, here one past the set, leaves the label out.
     let style = Style {
         symbol: Some(Bound::Value(SymbolRef::Index(2))),
         ..labelcenter(8.0)
@@ -3356,6 +3356,132 @@ fn a_labelcenter_style_whose_symbol_is_not_drawn_yet_is_refused() {
         "{}",
         rendered.diagnostics[0].message
     );
+}
+
+/// The map of the label "Fen" with a style of `transform` of the pixmap `pin`, symbol 2, whose
+/// image `missing.png` is not among the files.
+fn fen_over_missing_pixmap(transform: LabelTransform) -> Map {
+    let mut map = map_with_square(fen_styled(vec![Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        geom_transform: transform,
+        ..labelcenter(8.0)
+    }]));
+    map.symbols.push(Symbol {
+        name: Some("pin".to_owned()),
+        kind: SymbolKind::Pixmap,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        image: Some("missing.png".to_owned()),
+        ..map.symbols[0].clone()
+    });
+    map
+}
+
+/// The codes of `rendered`'s diagnostics, and whether the first names the symbol `pin` and its
+/// image `missing.png`.
+fn names_missing_pin(rendered: &Rendered) -> (Vec<&str>, bool) {
+    let codes = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    let named = rendered
+        .diagnostics
+        .first()
+        .is_some_and(|d| d.message.contains("symbol `pin`") && d.message.contains("missing.png"));
+    (codes, named)
+}
+
+#[test]
+fn a_labelcenter_pixmap_that_does_not_load_leaves_its_marker_out_and_warns() {
+    // Verifies: G-8
+    // msDrawMarkerSymbol draws a labelcenter style's pixmap (src/maprendering.c:980), and fails
+    // where msPreloadImageSymbol cannot load it; Forager leaves the marker out, draws the label's
+    // text as the label without the style draws it, and warns with the symbol and its image.
+    let rendered = render(&fen_over_missing_pixmap(LabelTransform::Center), FEN);
+    assert_eq!(
+        names_missing_pin(&rendered),
+        (vec!["pixmap-not-drawn"], true),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.labels.len(), 1);
+    assert!(rendered.labels[0].drawn.is_some());
+    let unstyled = render(&map_with_square(fen_styled(Vec::new())), FEN);
+    assert!(
+        unstyled.diagnostics.is_empty(),
+        "{:?}",
+        unstyled.diagnostics
+    );
+    let (image, unstyled) = (rendered.image.unwrap(), unstyled.image.unwrap());
+    assert!(
+        ink(&image, (0, 160), (0, 60)).is_some(),
+        "the text is drawn"
+    );
+    assert!(image == unstyled, "the marker is left out");
+}
+
+#[test]
+fn a_pixmap_neither_a_point_nor_its_label_drawn_at_once_draws_is_reported_once() {
+    // A point layer of LABELCACHE OFF draws its markers and its labels' styles into one image,
+    // each on a canvas of its own; a pixmap whose image does not load, left undrawn by both, is
+    // reported once for the layer.
+    let mut map = fen_over_missing_pixmap(LabelTransform::Center);
+    map.layers[0].label_cache = false;
+    map.layers[0].classes[0].styles = vec![Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        ..Style::default()
+    }];
+    let rendered = render(&map, FEN);
+    assert_eq!(
+        names_missing_pin(&rendered),
+        (vec!["pixmap-not-drawn"], true),
+        "{:?}",
+        rendered.diagnostics
+    );
+}
+
+#[test]
+fn a_pixmap_neither_a_point_nor_its_cached_label_draws_is_reported_once() {
+    // The label cache draws a label's styles after its layer, on a canvas of its own; a pixmap
+    // whose image does not load, left undrawn by a style of the layer and by the label, is
+    // reported once for the layer. The class's first style is not the pin, so the label holds no
+    // marker of it and is drawn.
+    let mut map = fen_over_missing_pixmap(LabelTransform::Center);
+    assert!(map.layers[0].label_cache);
+    map.layers[0].classes[0].styles = vec![
+        Style::default(),
+        Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(2))),
+            ..Style::default()
+        },
+    ];
+    let rendered = render(&map, FEN);
+    assert_eq!(
+        names_missing_pin(&rendered),
+        (vec!["pixmap-not-drawn"], true),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.labels.len(), 1);
+    assert!(rendered.labels[0].drawn.is_some());
+}
+
+#[test]
+fn a_labelpnt_pixmap_that_does_not_load_leaves_the_label_out() {
+    // Verifies: G-8
+    // msGetMarkerSize sizes a labelpnt style's marker in computeMarkerBounds and fails where
+    // msPreloadImageSymbol does (src/mapsymbol.c:736-738), and the map with it; Forager leaves
+    // the label out, with a warning that names the symbol and its image.
+    let rendered = render(&fen_over_missing_pixmap(LabelTransform::Point), FEN);
+    assert_eq!(
+        names_missing_pin(&rendered),
+        (vec!["label-not-drawn"], true),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert!(rendered.labels.is_empty(), "{:?}", rendered.labels);
 }
 
 /// Features of the name `Forager` at each of `points`, of the colour `colors`, as GeoJSON.
@@ -4368,4 +4494,44 @@ fn the_maps_label_cache_edge_buffer_keeps_a_cached_label_from_the_edge() {
         "{drawn} glyph operations, {cached} labels"
     );
     assert_eq!(glyphs(Some(29)).0, 0, "left out inside the gutter");
+}
+
+#[test]
+fn a_label_offset_past_an_int_is_cast_as_c_casts_it() {
+    // Verifies: ADR-0036
+    // `(int)` of an `OFFSET` past an `int` gives INT_MIN on x86-64, both where the label binds it
+    // and where its offset is scaled: the label stands 2^31 pixels left of the point, where `as`
+    // would saturate it to the right. Partial, so that the cache keeps it off the image.
+    let drawn = |offset: f64, resolution: Option<f64>| {
+        let label = Label {
+            offset: Some([Bound::Value(offset), Bound::Value(0.0)]),
+            partials: Some(true),
+            ..label_item()
+        };
+        let mut map = map(label);
+        map.resolution = resolution;
+        let rendered = render(&map, FEN);
+        rendered.labels[0].drawn.expect("the label is kept")
+    };
+    let left = [
+        -2_147_483_582.593_75,
+        23.046_875,
+        -2_147_483_553.406_25,
+        34.953_125,
+    ];
+    assert_eq!(drawn(3e9, None), left, "bound past an int");
+    assert_eq!(drawn(-3e9, None), left, "bound below an int");
+    // 1.5e9 binds within an int, and doubles past it at a resolution of 144.
+    let scaled = drawn(1.5e9, Some(144.0));
+    // The label doubles too, its box about the point INT_MIN pixels left.
+    assert_eq!(
+        scaled,
+        [
+            -2_147_483_597.187_5,
+            17.109_375,
+            -2_147_483_538.812_5,
+            40.890_625
+        ],
+        "scaled past an int"
+    );
 }

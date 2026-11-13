@@ -55,6 +55,9 @@ tools the checks need, and the Dev Container runs it after creation (ADR-0007, A
   `cargo run -p forager-cli -- render <mapfile> --source <layer>=<file.geojson> -o <image.png>`
 - **Browser example:** `bash scripts/build-web.sh`, then `cargo run -p forager-dev-server` and open
   <http://127.0.0.1:8000/>; in VS Code, the launch configuration *Browser example* does all three
+- **Package:** `bash scripts/package.sh` — the CLI's archive and the browser bindings' package
+  under `target/package/`, each carrying `THIRD-PARTY-NOTICES.md`, `LICENSE`, and
+  `LICENSE-APACHE`, and checked for them; nothing is published
 - **Fuzz:** `bash scripts/fuzz.sh [seconds per target]` — the weekly fuzz run of Q-3, locally; it
   installs its nightly toolchain and cargo-fuzz
 - **Mutants:** `bash scripts/mutants.sh [shard such as 1/20]` — the weekly mutation testing of

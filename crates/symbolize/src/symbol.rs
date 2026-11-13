@@ -32,11 +32,11 @@
 use std::rc::Rc;
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
-use forager_style_ir::c::{lrint, ms_nint};
+use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_max, ms_nint};
 use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use crate::bounds;
-use crate::style::{DEG_TO_RAD, fixed};
+use crate::style::fixed;
 
 /// The images of a render's pixmap symbols by their resource path, each the decoded image or why
 /// it has none, as the engine's store of the render holds them (ADR-0029).
@@ -75,6 +75,14 @@ pub enum Resolved<'a, 'n> {
     Unnamed(&'n str),
     /// The symbol at the index, and the index, from 1.
     Found(usize, &'a Symbol),
+}
+
+/// The symbol at `index`, from 1, as a report names it: by its name, or by its index where it has
+/// none or is not among the symbols.
+pub(crate) fn named(index: usize, symbol: Option<&Symbol>) -> String {
+    symbol
+        .and_then(|symbol| symbol.name.as_deref())
+        .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"))
 }
 
 /// The index, from 1, of the symbol named `name` among `symbols`, as msGetSymbolIndex finds it:
@@ -304,6 +312,10 @@ pub(crate) fn pixmap_square(
     rotation: f64,
 ) -> (i32, forager_render::Affine) {
     let side = f64::from(width.max(height)) * scale * 1.415;
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a `long` narrowed to an `int` keeps its low 32 bits, as GCC narrows it"
+    )]
     let half = (lrint(side) / 2 + 1) as i32;
     let m = Affine::translation(-(f64::from(width) / 2.0), -(f64::from(height) / 2.0))
         .then(Affine::rotation(-rotation))
@@ -337,7 +349,9 @@ fn marker_size_at<T>(
     // initSymbol's 1 by 1 for a symbol without points.
     let [size_x, size_y] = symbol.extent.unwrap_or([1.0, 1.0]);
     // `size` is an int there: each assignment cuts the fraction.
-    let pixels = (size.unwrap_or_else(|| default_size(symbol)) * scale_factor).trunc();
+    let pixels = f64::from(int_cast(
+        size.unwrap_or_else(|| default_size(symbol)) * scale_factor,
+    ));
     let pixels = bounds::marker_pixels(pixels, style);
     match size {
         Some(size) if size > 0.0 => (pixels / size_y * size_x, pixels),
@@ -360,15 +374,15 @@ pub fn pixmap_marker_size<T>(
     // msSymbolGetDefaultSize, src/mapsymbol.c:74-79 and 91-92: 1 for an image without height.
     let default_size = if height > 0 { f64::from(height) } else { 1.0 };
     // `size` is an int there: each assignment cuts the fraction.
-    let pixels = (size.unwrap_or(default_size) * scale_factor).trunc();
+    let pixels = f64::from(int_cast(size.unwrap_or(default_size) * scale_factor));
     let pixels = bounds::marker_pixels(pixels, style);
     if pixels == 1.0 {
         (f64::from(width), f64::from(height))
     } else {
         // MS_MAX with the starting 0 of *width and *height.
         (
-            bounds::ms_max(0.0, pixels / f64::from(height) * f64::from(width)),
-            bounds::ms_max(0.0, pixels),
+            ms_max(0.0, pixels / f64::from(height) * f64::from(width)),
+            ms_max(0.0, pixels),
         )
     }
 }
@@ -422,10 +436,7 @@ pub fn marker_size_with<T>(
                         Err(format!("the image {path} is not loaded for this render"))
                     }),
                 };
-                let named = symbol
-                    .name
-                    .as_deref()
-                    .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"));
+                let named = named(index, Some(symbol));
                 let image =
                     image.map_err(|why| format!("{named}, whose size is not known: {why}"))?;
                 Ok(pixmap_marker_size(
@@ -608,6 +619,10 @@ fn agg_ellipse(x: f64, y: f64, rx: f64, ry: f64) -> Vec<Point> {
     let ra = (rx.abs() + ry.abs()) / 2.0;
     let da = libm::acos(ra / (ra + 0.125)) * 2.0;
     // AGG's uround: `unsigned(v + 0.5)`; Rust's cast saturates where C's would not be defined.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "an unsigned conversion, held to MAX_ELLIPSE_STEPS (Q-9)"
+    )]
     let num = ((2.0 * PI / da + 0.5) as u32).min(MAX_ELLIPSE_STEPS);
     (0..num)
         .map(|step| {

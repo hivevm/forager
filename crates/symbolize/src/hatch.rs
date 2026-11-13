@@ -24,11 +24,12 @@
 
 use forager_render::{Hatch, Point};
 use forager_style_ir::Coord;
+use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_max, ms_nint};
 use forager_style_ir::{Rgba, Style, Symbol};
 
-use crate::bounds::{self, ms_max};
+use crate::bounds;
 use crate::extent::View;
-use crate::style::{DEG_TO_RAD, GAMMA, fixed};
+use crate::style::{GAMMA, fixed};
 use crate::symbol::{self, Factors, Pixmaps};
 
 /// The most lines one hatch lays over the image (Q-9): a hatch a pixel apart over the largest
@@ -67,7 +68,8 @@ impl Hatching {
             resolution,
         }: Factors,
     ) -> Self {
-        let mut buffer = 0.0_f64;
+        // `int clip_buf`, src/mapdraw.c:2463.
+        let mut buffer = 0_i32;
         for style in styles {
             let default_size = symbol::default_size_of(style, symbols, pixmaps);
             let size = fixed(&style.size).unwrap_or(-1.0);
@@ -80,13 +82,15 @@ impl Hatching {
                 let (x, y) = (x.value().unwrap_or(0.0), y.value().unwrap_or(0.0));
                 largest += ms_max(y.abs(), x.abs());
             }
-            buffer = ms_max(
-                buffer,
-                (ms_max(largest * factor, unscaled) + 1.0).round_ties_even(),
-            );
+            // MS_MAX of the `int` and MS_NINT's `long`, compared as a `long` and narrowed into the
+            // `int` (2497-2499).
+            let nint = ms_max(largest * factor, unscaled) + 1.0;
+            if i64::from(buffer) <= lrint(nint) {
+                buffer = ms_nint(nint);
+            }
         }
         Self {
-            clip_buffer: buffer + 2.0,
+            clip_buffer: f64::from(buffer) + 2.0,
             clip_in_pixels: styles.iter().any(|s| s.geom_transform.is_some()),
             refused: 0,
         }
@@ -376,9 +380,10 @@ pub(crate) fn hatch_polygon(
         max_y = max_y.max(p.y);
     }
     let grow = width * 0.7072;
-    // MapServer's `(int)` of the box's size, plus 1.
-    let size_x = (max_x - min_x + grow * 2.0).trunc() + 1.0;
-    let size_y = (max_y - min_y + grow * 2.0).trunc() + 1.0;
+    // MapServer's `(int)` of the box's size, plus 1, in an `int`: a box past an `int` gives a
+    // negative size, over which no line is laid.
+    let size_x = f64::from(int_cast(max_x - min_x + grow * 2.0).wrapping_add(1));
+    let size_y = f64::from(int_cast(max_y - min_y + grow * 2.0).wrapping_add(1));
     let (ox, oy) = (min_x - grow, min_y - grow);
     if !(size_x.is_finite() && size_y.is_finite()) {
         return Some(Vec::new());
@@ -441,6 +446,10 @@ fn steps(first: f64, step: f64, low: f64, high: f64) -> Option<impl Iterator<Ite
         return None;
     }
     // At most one more than counted, which rounding can add.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a count of lines, held to MAX_LINES above (Q-9)"
+    )]
     let count = count.max(0.0) as usize + 2;
     Some(
         std::iter::successors(Some(from), move |v| Some(v + step))

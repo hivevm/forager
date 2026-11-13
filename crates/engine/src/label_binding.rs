@@ -22,12 +22,13 @@
 
 use forager_label::{Align, Anchor, MAX_PRIORITY, Position};
 use forager_ports::Properties;
+use forager_style_ir::c::int_cast;
 use forager_style_ir::{
     Align as IrAlign, Bound, Expr, Force, Label, Map, Position as IrPosition, Rgba,
 };
 
 use crate::classes::{self, FeatureProperties, attribute, bind_double, bind_integer, color};
-use crate::label_styles;
+use forager_symbolize::label_style_refused;
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
 const DEFAULT_SIZE: f64 = 10.0;
@@ -102,16 +103,6 @@ pub(crate) struct BoundLabel {
     pub(crate) priority: u8,
 }
 
-/// A C `(int)` cast of a `double`, as the x86-64 build at the pin computes it: `cvttsd2si`
-/// truncates toward zero, and gives `INT_MIN` for a value past an `int` or no number.
-fn int_cast(x: f64) -> i32 {
-    if x > -2_147_483_649.0 && x < 2_147_483_648.0 {
-        x as i32
-    } else {
-        i32::MIN
-    }
-}
-
 /// A label's properties for a feature with `properties`, as `bindLabel` binds them, with
 /// `evaluate` giving the number an expression computes for the feature.
 pub(crate) fn bind(
@@ -141,7 +132,7 @@ pub(crate) fn bind(
         size: number(fixed.size, 1),
         color: colour(fixed.color),
         outline_color: colour(fixed.outline_color),
-        offset: fixed.offset.map(|o| number(o, 0) as i32),
+        offset: fixed.offset.map(|o| int_cast(number(o, 0))),
         angle: match fixed.angle {
             Prop::Value(a) => a,
             // bindDoubleAttribute after the angle is set to 0.
@@ -160,6 +151,10 @@ pub(crate) fn bind(
 }
 
 /// A priority bounded to 1 to [`MAX_PRIORITY`], as `msAddLabelGroup` bounds it.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "held to 1..=MAX_PRIORITY before it is converted"
+)]
 fn bounded_priority(priority: i32) -> u8 {
     priority.clamp(1, i32::from(MAX_PRIORITY)) as u8
 }
@@ -264,7 +259,11 @@ pub(crate) fn fixed<'a>(
             "an ANGLE AUTO, AUTO2, or FOLLOW",
         ),
         (label.shadow_color.is_some(), "a SHADOWCOLOR"),
-        label_styles::unsupported(label, &map.symbols).map_or((false, ""), |what| (true, what)),
+        label
+            .styles
+            .iter()
+            .find_map(|style| label_style_refused(style, &map.symbols))
+            .map_or((false, ""), |what| (true, what)),
         (
             label.min_scale_denom.is_some() || label.max_scale_denom.is_some(),
             "a scale range",

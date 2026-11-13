@@ -2,11 +2,13 @@
 
 Observed: ADR-0008 decides the dependency edges between crates only. `symbolize` holds its modules
 to one direction, stated in its `lib.rs` and held by `crates/arch-test/tests/symbolize_modules.rs`,
-and no ADR decides that rule. `engine` has none, and three of its modules import one another in a
-cycle: `labels` uses `label_binding`, `label_binding` uses `label_styles`, and `label_styles` calls
-`crate::labels::push` and `crate::labels::make_room`. Its modules also take helpers from the crate's
-root (`layer_opacity`, `points_in_view`, `quoted`, `Selected`), which leaves no leaf module for
-them.
+and no ADR decides that rule. `engine` has none, and two of its modules import each other: `labels`
+uses `label_styles`, and `label_styles` calls `crate::labels::push` and `crate::labels::make_room`
+and takes the type `crate::labels::LabelAt`. The move of a label's styles into `symbolize`
+(revision-2026-11-07/05) took `label_binding` out of the cycle, which needs `label_styles` no
+more, and left the two. Its modules also take helpers from the crate's root (`layer_opacity`,
+`points_in_view`, `quoted`, `Selected`, `draw_items`, `refused_pixmap`), which leaves no leaf
+module for them.
 
 The design revision of 2026-11-11 filed this as ticket 03, to decide with `propose-adr` whether
 modules within a crate import in one direction. The maintainer chose on 2026-11-12 the smallest

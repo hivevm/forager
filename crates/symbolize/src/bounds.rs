@@ -32,6 +32,7 @@
 //! out as: the style's `MINWIDTH` in the one order, its `MAXWIDTH` in the other.
 
 use forager_style_ir::Style;
+use forager_style_ir::c::{int_cast, ms_max, ms_min};
 
 /// A style's default `MINSIZE`, `MS_MINSYMBOLSIZE`, `src/mapserver.h:277`.
 pub(crate) const MIN_SIZE: f64 = 0.0;
@@ -44,16 +45,6 @@ pub(crate) const MIN_WIDTH: f64 = 0.0;
 
 /// A style's default `MAXWIDTH`, `MS_MAXSYMBOLWIDTH`, `src/mapserver.h:281`.
 pub(crate) const MAX_WIDTH: f64 = 32.0;
-
-/// `MS_MAX(a, b)`, `src/mapserver.h:81`, which keeps `b` where it cannot compare.
-pub(crate) fn ms_max(a: f64, b: f64) -> f64 {
-    if a > b { a } else { b }
-}
-
-/// `MS_MIN(a, b)`, `src/mapserver.h:78`, which keeps `b` where it cannot compare.
-pub(crate) fn ms_min(a: f64, b: f64) -> f64 {
-    if a < b { a } else { b }
-}
 
 /// The style's `MINWIDTH`, its default without one.
 pub(crate) fn min_width<T>(style: &Style<T>) -> f64 {
@@ -121,8 +112,8 @@ pub(crate) fn hatch_spacing<T>(spacing: f64, style: &Style<T>, resolution: f64) 
 /// style's `MINSIZE` and then its `MAXSIZE`, neither scaled, and cut to whole pixels after each,
 /// as `size` is an int there.
 pub(crate) fn marker_pixels<T>(pixels: f64, style: &Style<T>) -> f64 {
-    let pixels = ms_max(pixels, min_size(style)).trunc();
-    ms_min(pixels, max_size(style)).trunc()
+    let pixels = f64::from(int_cast(ms_max(pixels, min_size(style))));
+    f64::from(int_cast(ms_min(pixels, max_size(style))))
 }
 
 /// msDrawShape(), `src/mapdraw.c:2491-2492`: the least size of a style's clip buffer, the larger of

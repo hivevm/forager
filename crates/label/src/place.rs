@@ -20,6 +20,7 @@
 //! on every target (Q-2).
 
 use forager_render::Point;
+use forager_style_ir::c::{DEG_TO_RAD, int_cast, ms_max, ms_min};
 
 /// MapServer's `MARKER_SLOP`: the pixels a label at an upper, lower, left, or right centre keeps
 /// from its point beyond its offset.
@@ -170,10 +171,10 @@ fn fast_bounds(points: &[Point; 5]) -> [f64; 4] {
     let first = points[0];
     let mut b = [first.x, first.y, first.x, first.y];
     for p in points {
-        b[0] = if b[0] < p.x { b[0] } else { p.x };
-        b[2] = if b[2] > p.x { b[2] } else { p.x };
-        b[1] = if b[1] < p.y { b[1] } else { p.y };
-        b[3] = if b[3] > p.y { b[3] } else { p.y };
+        b[0] = ms_min(b[0], p.x);
+        b[2] = ms_max(b[2], p.x);
+        b[1] = ms_min(b[1], p.y);
+        b[3] = ms_max(b[3], p.y);
     }
     b
 }
@@ -236,8 +237,7 @@ pub fn marker_bounds(
                 point.y += aoy;
             }
         }
-        // MS_DEG_TO_RAD, MS_PI / 180.
-        let rot = -angle * (std::f64::consts::PI / 180.0);
+        let rot = -angle * DEG_TO_RAD;
         let (sin, cos) = (libm::sin(rot), libm::cos(rot));
         for point in &mut points {
             let x = point.x;
@@ -276,10 +276,10 @@ pub fn member_box(text: &[f64; 4], marker: Option<&Bounds>) -> [f64; 4] {
     let mut b = *text;
     if let Some(m) = marker {
         let m = &m.bbox;
-        b[0] = if b[0] < m[0] { b[0] } else { m[0] };
-        b[1] = if b[1] < m[1] { b[1] } else { m[1] };
-        b[2] = if b[2] > m[2] { b[2] } else { m[2] };
-        b[3] = if b[3] > m[3] { b[3] } else { m[3] };
+        b[0] = ms_min(b[0], m[0]);
+        b[1] = ms_min(b[1], m[1]);
+        b[2] = ms_max(b[2], m[2]);
+        b[3] = ms_max(b[3], m[3]);
     }
     b
 }
@@ -297,8 +297,8 @@ fn placed_with_buffer(
     } else {
         // The sum is a double passed as get_metrics' int: the fraction is cut.
         (
-            (label.offsets.marker[0] + f64::from(lx)) as i32,
-            (label.offsets.marker[1] + f64::from(ly)) as i32,
+            int_cast(label.offsets.marker[0] + f64::from(lx)),
+            int_cast(label.offsets.marker[1] + f64::from(ly)),
         )
     };
     metrics(at, anchor, &label.text, ox, oy, label.rotation, buffer)

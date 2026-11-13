@@ -190,7 +190,7 @@ fn the_fonts_a_label_names_are_read_from_the_base_context() {
 
 #[test]
 fn a_numeric_in_list_reads_its_items_as_atof_does() {
-    // Verifies: ADR-0017
+    // Verifies: ADR-0036
     // The grammar's `math_exp IN string_exp` compares the number with `atof` of
     // each item, so `0x10` reads 16, as the frontend folds it at load and `expr` reads it.
     let dir = std::env::temp_dir().join(format!("forager-in-hex-{}", std::process::id()));

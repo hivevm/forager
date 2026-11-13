@@ -29,7 +29,7 @@ mod time;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use forager_style_ir::c::{atof, lrint};
+use forager_style_ir::c::{atof, c_bytes, int_cast, lrint};
 use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
 
 /// The properties of one feature, as the evaluator reads them.
@@ -93,12 +93,6 @@ enum Val {
     List(Vec<Val>),
 }
 
-/// A C string: the bytes up to the first NUL.
-fn c_string(text: &str) -> Vec<u8> {
-    let bytes = text.as_bytes();
-    bytes[..bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len())].to_vec()
-}
-
 /// A number as `%g` prints it.
 fn g(number: f64) -> Vec<u8> {
     c::to_string(b"%g", number).expect("%g is a valid format")
@@ -150,15 +144,15 @@ impl Evaluator {
         Ok(match expr {
             Expr::Bool(b) => Val::Bool(*b),
             Expr::Number(n) => Val::Num(*n),
-            Expr::String(s) => Val::Str(c_string(s)),
+            Expr::String(s) => Val::Str(c_bytes(s.as_bytes()).to_vec()),
             Expr::Property { property } => bounded(Val::Str(
                 feature
                     .text(property)
-                    .map(|text| c_string(&text))
+                    .map(|text| c_bytes(text.as_bytes()).to_vec())
                     .unwrap_or_default(),
             ))?,
             Expr::Date { date: text } | Expr::Timestamp { timestamp: text } => {
-                Val::Time(time::parse(&c_string(text)).ok_or(Failure::Undefined)?)
+                Val::Time(time::parse(c_bytes(text.as_bytes())).ok_or(Failure::Undefined)?)
             }
             Expr::List(items) => Val::List(
                 items
@@ -383,12 +377,13 @@ fn conditions(args: &[Val]) -> Result<Vec<bool>, Failure> {
 }
 
 /// C's `(int)a % (int)b`, undefined for a zero divisor, an operand past an `int`, and the one
-/// quotient past it.
+/// quotient past it. An operand past an `int` is C's undefined behaviour, which fails here
+/// (ADR-0016), where the cast's port gives the x86-64 build's `INT_MIN`.
 fn modulo(a: f64, b: f64) -> Result<i32, Failure> {
     let int = |x: f64| {
         let truncated = x.trunc();
         (truncated >= f64::from(i32::MIN) && truncated <= f64::from(i32::MAX))
-            .then_some(truncated as i32)
+            .then(|| int_cast(x))
             .ok_or(Failure::Undefined)
     };
     int(a)?.checked_rem(int(b)?).ok_or(Failure::Undefined)

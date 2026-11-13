@@ -24,9 +24,8 @@ use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
 
 use forager_render::{DrawOp, Point, PremultipliedImage, Tile};
-use forager_style_ir::c::lrint;
+use forager_style_ir::c::{lrint, ms_max};
 
-use crate::bounds::ms_max;
 use crate::symbol;
 
 /// The most bytes the images one render holds decoded come to, its fill tiles among them (Q-9).
@@ -59,7 +58,12 @@ fn asked_side(side: u32, scale: f64, gap: f64) -> f64 {
 /// [`Tile::MAX_SIDE`], or where it is no number (Q-9).
 fn bounded_side(asked: f64) -> Option<u32> {
     let side = asked.trunc();
-    (side <= f64::from(Tile::MAX_SIDE)).then(|| side.max(1.0) as u32)
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "held to Tile::MAX_SIDE, and NaN refused, before it is converted (Q-9)"
+    )]
+    let side = (side <= f64::from(Tile::MAX_SIDE)).then(|| side.max(1.0) as u32);
+    side
 }
 
 /// A pixmap's tile, by what MapServer's searchTileCache compares of a pixmap's: its symbol, by
@@ -345,7 +349,7 @@ mod tests {
         let mut tiles = Tiles::default();
         let oldest = gapped(&mut tiles, 2).unwrap();
         for _ in 3..8 {
-            let side = 2 + tiles.held.len() as u32;
+            let side = 2 + u32::try_from(tiles.held.len()).unwrap();
             gapped(&mut tiles, side).unwrap();
         }
         tiles.count_images(MAX_DECODED_IMAGE_BYTES - tiles.bytes());

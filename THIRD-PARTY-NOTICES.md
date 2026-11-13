@@ -3,6 +3,8 @@
 Forager is licensed under `MIT OR Apache-2.0`. Parts of it follow code of others, whose notices
 must travel with every copy of Forager, in source and in binary form, the command-line tool and
 the browser bindings included: a distribution of a binary carries this file.
+`scripts/package.sh` builds both binary artefacts with this file and the licences, and holds
+each to it.
 
 ## MapServer
 

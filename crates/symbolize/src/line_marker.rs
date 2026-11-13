@@ -25,9 +25,9 @@
 use std::rc::Rc;
 
 use forager_render::{DrawOp, Point, PremultipliedImage};
+use forager_style_ir::c::ms_max;
 use forager_style_ir::{Style, Symbol};
 
-use crate::bounds;
 use crate::symbol::{self, Factors};
 
 /// The most points the markers along the lines of one layer, those at the points of a point
@@ -245,7 +245,7 @@ impl Placement {
             initial_gap,
             auto_angle: turned,
             rotation,
-            size: (bounds::ms_max(1.0, width), bounds::ms_max(1.0, height)),
+            size: (ms_max(1.0, width), ms_max(1.0, height)),
             anchor: anchor.unwrap_or([0.5, 0.5]),
             image,
         }
@@ -324,7 +324,12 @@ pub(crate) fn place(paths: &[Vec<Point>], p: &Placement, limit: usize) -> Option
                     if span > (limit - markers.len()) as f64 + 4.0 {
                         return None;
                     }
-                    for i in 0..span as usize {
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "a count of markers, held to the limit above (Q-9)"
+                    )]
+                    let span = span as usize;
+                    for i in 0..span {
                         // The first marker lies at the leftover itself, whatever the spacing.
                         let k = first + i as f64;
                         let distance = if k == 0.0 {
