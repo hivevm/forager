@@ -862,9 +862,9 @@ fn pixmap_ops_of(
         &mut canvas,
     );
     let refused = canvas
-        .pixmaps_refused()
+        .named_pixmaps_refused()
         .into_iter()
-        .map(|(index, _, why)| (index, why.to_owned()))
+        .map(|(index, (_, why))| (index, why))
         .collect();
     (ops, refused)
 }
@@ -988,7 +988,7 @@ fn a_pixmap_along_a_line_needs_no_colour_and_a_polygon_s_draws_no_line() {
                 other => panic!("{other:?}"),
             })
             .collect();
-        let refused: Vec<_> = canvas.pixmaps_refused().iter().map(|r| r.0).collect();
+        let refused: Vec<_> = canvas.named_pixmaps_refused().into_keys().collect();
         (placed, refused)
     };
     let along = (vec![(3, 48), (13, 48), (23, 48)], vec![]);
@@ -1032,7 +1032,7 @@ fn a_pixmap_along_a_line_needs_no_colour_and_a_polygon_s_draws_no_line() {
         &unit_view(),
         &mut canvas
     ));
-    assert!(canvas.pixmaps_refused().is_empty());
+    assert!(canvas.named_pixmaps_refused().is_empty());
     match ops.as_slice() {
         [DrawOp::TiledFill { tile, .. }] => {
             assert_eq!((tile.width(), tile.height()), (10, 10), "the GAP's");

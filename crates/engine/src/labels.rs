@@ -176,9 +176,9 @@ pub(crate) struct LayerLabels<'r> {
 
 /// What of a point layer of `LABELCACHE OFF` is settled before its features: its labels, drawn at
 /// once, and what they draw their styles with.
-pub(crate) struct AtOnce<'r> {
+pub(crate) struct AtOnce<'r, 'p> {
     labels: LayerLabels<'r>,
-    styled: Styled<'r>,
+    styled: Styled<'p>,
 }
 
 /// A label of a feature's class that the feature matches: where it is, what of it is settled,
@@ -232,6 +232,12 @@ pub(crate) struct Labels<'r, L> {
     size: (u32, u32),
     /// The hatches of labelpoly styles refused (Q-9), by the index of their layer.
     hatches_refused: BTreeMap<usize, usize>,
+    /// The pixmap symbols of labelpoint and labelcenter styles left undrawn, each named, with
+    /// why, by the index of their layer.
+    pixmaps_refused: BTreeMap<usize, BTreeMap<usize, (String, String)>>,
+    /// The pixmap symbols each layer's report named, by the index of the layer and the symbol's,
+    /// which the labels the cache draws after it do not report again.
+    pixmaps_reported: BTreeSet<(usize, usize)>,
 }
 
 /// A feature the layer draws, the class that draws it, and the class's first style bound to it,
@@ -264,6 +270,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             over_limit: (0, None),
             size,
             hatches_refused: BTreeMap::new(),
+            pixmaps_refused: BTreeMap::new(),
+            pixmaps_reported: BTreeSet::new(),
         }
     }
 
@@ -282,18 +290,23 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 
     /// Settles the labels of point layer `index` of `LABELCACHE OFF` as [`Self::layer`] does,
-    /// to be drawn at once, into the layer's image where it has one of its own.
-    pub(crate) fn layer_at_once(
+    /// to be drawn at once, into the layer's image where it has one of its own, a pixmap with
+    /// its image among `pixmaps`.
+    pub(crate) fn layer_at_once<'p>(
         &mut self,
         index: usize,
         drawn: &[Labelled<'_>],
+        pixmaps: &'p Pixmaps,
         binder: &mut Binder<'_, '_>,
-    ) -> AtOnce<'r> {
+    ) -> AtOnce<'r, 'p>
+    where
+        'r: 'p,
+    {
         let several = "its class has several labels, which MapServer draws each on its own under \
                        LABELCACHE OFF, and which are not drawn yet";
         let labels = self.settle_layer(index, RenderMode::Point, drawn, binder, several);
         let (width, height) = self.size;
-        let mut styled = Styled::new(self.map, self.view, width, height);
+        let mut styled = Styled::new(self.map, self.view, pixmaps, width, height);
         if crate::layer_opacity(&self.map.layers[index]).is_some() {
             styled.in_own_image();
         }
@@ -394,7 +407,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// once, each as [`Self::matched`] gives it.
     pub(crate) async fn label_at_once(
         &mut self,
-        layer: &AtOnce<'r>,
+        layer: &AtOnce<'r, '_>,
         feature: &Feature,
         class: usize,
         pixmaps: &Pixmaps,
@@ -561,7 +574,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             if styles.is_empty() { written } else { &styles };
         let settled =
             settle(fixed, &bound, lines.len(), style, pixmaps, self.map).and_then(|settled| {
-                let marker = label_styles::label_marker(label_styles, self.map, fixed.factor);
+                let marker =
+                    label_styles::label_marker(label_styles, self.map, pixmaps, fixed.factor);
                 Ok((settled, marker.map_err(|why| ("label-not-drawn", why))?))
             });
         let ((position, align, marker), label_marker) = match settled {
@@ -630,7 +644,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// (mapdraw.c:2714-2748). The count of glyphs left out for reaching too far from the image.
     pub(crate) fn draw_at_once<R: Draw>(
         &mut self,
-        layer: &mut AtOnce<'r>,
+        layer: &mut AtOnce<'r, '_>,
         renderer: &mut R,
         label: &Laid,
         point: Point,
@@ -695,6 +709,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             self.image(),
         );
         self.hatches_refused(label.at, styled.take_hatches_refused());
+        self.pixmaps_refused(label.at, styled.take_pixmaps_refused());
         out_of_reach
     }
 
@@ -709,6 +724,38 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         if count > 0 {
             *self.hatches_refused.entry(layer).or_default() += count;
         }
+    }
+
+    /// Records the pixmap symbols of `refused`, each named, with why, as left undrawn by the
+    /// styles of a label of `at`.
+    fn pixmaps_refused(
+        &mut self,
+        (layer, _, _): LabelAt,
+        refused: BTreeMap<usize, (String, String)>,
+    ) {
+        if !refused.is_empty() {
+            let held = self.pixmaps_refused.entry(layer).or_default();
+            for (index, named) in refused {
+                held.entry(index).or_insert(named);
+            }
+        }
+    }
+
+    /// The pixmap symbols layer `layer` left undrawn for its report: `refused`, its features', and
+    /// those the labelpoint and labelcenter styles of its labels drawn at once left undrawn, taken,
+    /// each by its index once, the first kept. Each is recorded as reported, so that the labels the
+    /// cache draws later do not report it again.
+    pub(crate) fn pixmaps_reported(
+        &mut self,
+        layer: usize,
+        mut refused: BTreeMap<usize, (String, String)>,
+    ) -> BTreeMap<usize, (String, String)> {
+        for (index, named) in self.pixmaps_refused.remove(&layer).unwrap_or_default() {
+            refused.entry(index).or_insert(named);
+        }
+        self.pixmaps_reported
+            .extend(refused.keys().map(|&index| (layer, index)));
+        refused
     }
 
     /// Takes how many hatches of the labelpoly styles of layer `layer` were refused (Q-9), for
@@ -921,6 +968,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     pub(crate) fn finish<R: Draw>(
         &mut self,
         renderer: &mut R,
+        pixmaps: &Pixmaps,
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<CachedLabel> {
         if let (left_out, Some(first)) = self.over_limit {
@@ -946,10 +994,11 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             styles: &styles,
             texts: self.compares_texts.then_some(&texts[..]),
             map: self.map,
+            pixmaps,
         };
         let (width, height) = self.size;
         let image = [0.0, 0.0, f64::from(width), f64::from(height)];
-        let mut styled = Styled::new(self.map, self.view, width, height);
+        let mut styled = Styled::new(self.map, self.view, pixmaps, width, height);
         // The report follows the cache's walk, every member it visits with whether it was drawn.
         let mut walked: Vec<(u32, Option<[f64; 4]>)> = Vec::with_capacity(cached.len());
         let gutter = self.map.label_cache_edge_buffer.unwrap_or(0);
@@ -985,6 +1034,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             );
             self.out_of_reach(diagnostics, at, out_of_reach);
             self.hatches_refused(at, styled.take_hatches_refused());
+            self.pixmaps_refused(at, styled.take_pixmaps_refused());
         });
         // The engine holds no more than MAX_LABELS while it caches, which bounds its memory (Q-9),
         // so the cache leaves none out of what it is handed.
@@ -993,6 +1043,15 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         // layer's own (Q-9).
         for (layer, refused) in std::mem::take(&mut self.hatches_refused) {
             diagnostics.extend(crate::refused_hatches(&self.map.layers[layer], refused));
+        }
+        // So are the pixmaps of their styles left undrawn, those their layer reported aside.
+        for (layer, refused) in std::mem::take(&mut self.pixmaps_refused) {
+            for (index, (symbol, why)) in refused {
+                if !self.pixmaps_reported.contains(&(layer, index)) {
+                    let layer = &self.map.layers[layer];
+                    diagnostics.push(crate::refused_pixmap(layer, &symbol, &why));
+                }
+            }
         }
         // The labels of the report share their feature's text.
         let texts: Vec<Arc<str>> = texts.into_iter().map(Arc::from).collect();
@@ -1115,6 +1174,8 @@ struct Cache<'c> {
     /// The texts of the labels, where the cache compares them.
     texts: Option<&'c [Box<str>]>,
     map: &'c Map,
+    /// The images of the render's pixmap symbols, which size a labelpoint style's marker.
+    pixmaps: &'c Pixmaps,
 }
 
 impl Members for Cache<'_> {
@@ -1145,7 +1206,7 @@ impl Members for Cache<'_> {
         let (layer, class, n) = def.at;
         let written = &self.map.layers[layer].classes[class].labels[n].styles;
         let label_marker = self.styles.marker_bounds(
-            self.map,
+            (self.map, self.pixmaps),
             label.def,
             label.text,
             written,

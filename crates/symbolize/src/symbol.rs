@@ -77,6 +77,14 @@ pub enum Resolved<'a, 'n> {
     Found(usize, &'a Symbol),
 }
 
+/// The symbol at `index`, from 1, as a report names it: by its name, or by its index where it has
+/// none or is not among the symbols.
+pub(crate) fn named(index: usize, symbol: Option<&Symbol>) -> String {
+    symbol
+        .and_then(|symbol| symbol.name.as_deref())
+        .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"))
+}
+
 /// The index, from 1, of the symbol named `name` among `symbols`, as msGetSymbolIndex finds it:
 /// the first whose name matches without regard to case; `None` for a name no symbol carries.
 pub fn named_index(name: &str, symbols: &[Symbol]) -> Option<usize> {
@@ -422,10 +430,7 @@ pub fn marker_size_with<T>(
                         Err(format!("the image {path} is not loaded for this render"))
                     }),
                 };
-                let named = symbol
-                    .name
-                    .as_deref()
-                    .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"));
+                let named = named(index, Some(symbol));
                 let image =
                     image.map_err(|why| format!("{named}, whose size is not known: {why}"))?;
                 Ok(pixmap_marker_size(

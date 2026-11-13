@@ -33,14 +33,15 @@ pub struct LabelGeometry<'a> {
     pub poly: Option<([f64; 4], Option<&'a [Point]>)>,
 }
 
-/// Why a label's `style` is not drawn, or `None` where it is: a labelpoly of a symbol other
-/// than MapServer's default or a hatch, whose tile is not drawn yet, or a labelpoint or
-/// labelcenter of a symbol other than a vector or an ellipse, or that the symbol set does not
-/// hold. MapServer's default symbol draws no marker but is no refusal. `ANGLE AUTO` refuses
-/// none of them: `loadStyle` sets only the style's `autoangle` for it (mapfile.c:2773-2775),
-/// which neither msDrawLabelCache nor computeMarkerBounds (mapdraw.c:3284-3353, 4056-4135),
-/// msDrawMarkerSymbol through computeSymbolStyle (maprendering.c:76), nor msDrawShadeSymbol
-/// (maprendering.c:821) reads; they turn by its `ANGLE` alone.
+/// Why a label's `style` is not drawn, or `None` where it is: a labelpoly of a symbol other than
+/// MapServer's default or a hatch, whose tile is not drawn yet, or a labelpoint or labelcenter of
+/// a symbol that is not drawn as a marker: a vector, an ellipse, or a pixmap, or that the symbol
+/// set does not hold. MapServer's default symbol draws no marker but is no refusal. `ANGLE AUTO`
+/// refuses none of them: `loadStyle` sets only the style's `autoangle` for it
+/// (mapfile.c:2773-2775), which neither msDrawLabelCache nor computeMarkerBounds
+/// (mapdraw.c:3284-3353, 4056-4135), msDrawMarkerSymbol through computeSymbolStyle
+/// (maprendering.c:76), nor msDrawShadeSymbol (maprendering.c:821) reads; they turn by its
+/// `ANGLE` alone.
 pub fn label_style_refused(
     style: &Style<LabelTransform>,
     symbols: &[Symbol],
@@ -55,23 +56,34 @@ pub fn label_style_refused(
         },
         LabelTransform::Point | LabelTransform::Center if marker_drawn(style, symbols) => None,
         LabelTransform::Point => Some(
-            "a STYLE of GEOMTRANSFORM labelpnt whose SYMBOL is no vector or ellipse of the \
-             symbol set",
+            "a STYLE of GEOMTRANSFORM labelpnt whose SYMBOL is no vector, ellipse, or pixmap of \
+             the symbol set",
         ),
         LabelTransform::Center => Some(
-            "a STYLE of GEOMTRANSFORM labelcenter whose SYMBOL is no vector or ellipse of the \
-             symbol set",
+            "a STYLE of GEOMTRANSFORM labelcenter whose SYMBOL is no vector, ellipse, or pixmap \
+             of the symbol set",
         ),
     }
 }
 
-/// Whether a label's marker `style` is drawn by msDrawMarkerSymbol: of a vector or an ellipse, or
-/// of MapServer's default symbol, of which it draws nothing; a pixmap is not drawn yet.
+/// Whether a label's marker `style` is drawn by msDrawMarkerSymbol: of a vector, an ellipse, or a
+/// pixmap, or of MapServer's default symbol, of which it draws nothing.
 fn marker_drawn(style: &Style<LabelTransform>, symbols: &[Symbol]) -> bool {
     match symbol::mark(style, symbols) {
-        Mark::Symbol(_) => true,
+        Mark::Symbol(_) | Mark::Pixmap(..) => true,
         Mark::Square => of_symbol_zero(style),
-        Mark::Pixmap(..) | Mark::Nothing => false,
+        Mark::Nothing => false,
+    }
+}
+
+/// The image path of the pixmap symbol a label's `style` draws as its marker, a labelpoint or a
+/// labelcenter, which the engine loads before the label is laid out and drawn.
+pub fn label_pixmap<'a>(style: &Style<LabelTransform>, symbols: &'a [Symbol]) -> Option<&'a str> {
+    match (style.geom_transform, symbol::mark(style, symbols)) {
+        (LabelTransform::Point | LabelTransform::Center, Mark::Pixmap(_, symbol)) => {
+            symbol.image.as_deref()
+        }
+        _ => None,
     }
 }
 

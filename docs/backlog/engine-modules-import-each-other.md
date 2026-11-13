@@ -7,7 +7,8 @@ uses `label_styles`, and `label_styles` calls `crate::labels::push` and `crate::
 and takes the type `crate::labels::LabelAt`. The move of a label's styles into `symbolize`
 (revision-2026-11-07/05) took `label_binding` out of the cycle, which needs `label_styles` no
 more, and left the two. Its modules also take helpers from the crate's root (`layer_opacity`,
-`points_in_view`, `quoted`, `Selected`, `draw_items`), which leaves no leaf module for them.
+`points_in_view`, `quoted`, `Selected`, `draw_items`, `refused_pixmap`), which leaves no leaf
+module for them.
 
 The design revision of 2026-11-11 filed this as ticket 03, to decide with `propose-adr` whether
 modules within a crate import in one direction. The maintainer chose on 2026-11-12 the smallest

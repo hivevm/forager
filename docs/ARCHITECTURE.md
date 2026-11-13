@@ -131,12 +131,13 @@ golden path and the test pattern an agent copies from are named here.
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
-  refused, and geometries its render mode cannot draw (Q-9). It loads the images of a layer's
-  pixmap marks and fills into the render's store before it draws the layer, since `symbolize` does
-  no I/O, and hands them to it on the canvas, and to the labels, which size the marker a class's
-  first style holds beneath each label by them. It turns every drawing operation into a display
-  item of its feature in one place (`draw_items` in `lib.rs`). It is the one core crate that
-  awaits the ports.
+  refused, a label's among them, and geometries its render mode cannot draw (Q-9). It loads the
+  images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
+  pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
+  hands them to it on the canvas, and to the labels, which size the marker a class's first style
+  holds beneath each label, and a `labelpoint` style's marker, by them. It turns every drawing
+  operation into a display item of its feature in one place (`draw_items` in `lib.rs`). It is the
+  one core crate that awaits the ports.
   Every host binds its sources to the layers by name through the engine's `bind_sources`
   (`bind.rs`), which reports a source no layer is named for and one that cannot be read the same
   way for each.
@@ -152,8 +153,8 @@ golden path and the test pattern an agent copies from are named here.
   canvas a layer draws on, which the images of the render's pixmaps are handed on
   (`canvas.rs`); a label's styles, which of them are drawn, and their operations on the label's
   point and the box around its text: a `labelpoly` style shaded on the box, a `labelpoint`
-  style's marker at the point, and a `labelcenter` style's at the centre of the box, a vector or
-  an ellipse drawn as a point's marker is, MapServer's default symbol as nothing
+  style's marker at the point, and a `labelcenter` style's at the centre of the box, a vector, an
+  ellipse, or a pixmap drawn as a point's marker is, MapServer's default symbol as nothing
   (`label.rs`); a style's width
   and size bounds, one function per site of MapServer's that bounds them, with the constants they
   bound by (`bounds.rs`); a property's value as bound, the gamma, and degrees to radians

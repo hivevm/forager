@@ -365,9 +365,9 @@ fn a_polygon_s_pixmap_without_its_image_or_past_its_bound_draws_nothing_and_says
         let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
         assert!(shade(&mut ops, ring, style, &unit_view(), &mut canvas));
         assert!(ops.is_empty(), "{ops:?}");
-        let refused = canvas.pixmaps_refused();
+        let refused = canvas.named_pixmaps_refused();
         assert_eq!(refused.len(), 1);
-        refused[0].2.to_owned()
+        refused.into_values().next().unwrap().1
     };
     let mut tiles = Tiles::default();
     assert_eq!(drawn(&style(1, 0.0), Some(&mut tiles)), "it does not load");
