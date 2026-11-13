@@ -1,6 +1,6 @@
 # ADR-0017: C's reading of numbers is ported once, in `style-ir`, for the frontend and the core alike
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by ADR-0036
 - **Date:** 2026-10-31
 - **Deciders:** Markus Brigl
 - **Applies to:** the ports of C's `atof`, `strtod`, `atoi`, and MapServer's `MS_NINT` in `crates/style-ir`, `crates/expr`, `crates/mapfile`, and `crates/engine`

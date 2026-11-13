@@ -1,6 +1,6 @@
 # ADR-0036: C's and MapServer's small ports, the `(int)` cast among them, live once in `style-ir`
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-13
 - **Deciders:** Markus Brigl
 - **Applies to:** the ports of C's `atof`, `strtod`, `atoi`, `(int)` cast of a `double`, and string end, and of MapServer's `MS_NINT`, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, and `msStringSplit`, in `crates/style-ir`, `crates/expr`, `crates/mapfile`, `crates/engine`, `crates/symbolize`, `crates/label`, and `crates/adapter-shapefile`; every conversion of a number that may truncate in `crates/engine`, `crates/symbolize`, and `crates/label`
