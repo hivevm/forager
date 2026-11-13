@@ -404,6 +404,20 @@ fn checked_opacity(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<i
     opacity
 }
 
+/// Draws each of `ops` into `renderer` as a display item of feature `feature_id`, in order.
+pub(crate) fn draw_items<R: Draw>(
+    renderer: &mut R,
+    feature_id: u64,
+    ops: impl IntoIterator<Item = DrawOp>,
+) {
+    for op in ops {
+        renderer.draw(&DisplayItem {
+            op,
+            feature_id: Some(feature_id),
+        });
+    }
+}
+
 /// A feature drawn: it, the place of its class, and its styles bound to it.
 pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
 
@@ -528,12 +542,7 @@ impl Drawing<'_> {
             .collect();
         for (k, point) in points_in_view(self.view, &feature.geometry).enumerate() {
             for style in &mut markers {
-                for op in std::mem::take(&mut style[k]) {
-                    renderer.draw(&DisplayItem {
-                        op,
-                        feature_id: Some(feature.id),
-                    });
-                }
+                draw_items(renderer, feature.id, std::mem::take(&mut style[k]));
             }
             label(renderer, point);
         }
@@ -556,12 +565,8 @@ impl Drawing<'_> {
                 return;
             }
             for &pass in passes {
-                for op in draw_ops(mode, &feature.geometry, style, pass, self.view, canvas) {
-                    renderer.draw(&DisplayItem {
-                        op,
-                        feature_id: Some(feature.id),
-                    });
-                }
+                let ops = draw_ops(mode, &feature.geometry, style, pass, self.view, canvas);
+                draw_items(renderer, feature.id, ops);
             }
         };
         let plans: Vec<Plan> = self

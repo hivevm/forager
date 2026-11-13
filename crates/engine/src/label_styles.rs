@@ -19,77 +19,16 @@
 use std::borrow::Cow;
 
 use forager_label::{Bounds, Member, Placement, label_poly_at, marker_bounds};
-use forager_render::{DisplayItem, Draw, Point};
-use forager_style_ir::{Bound, Label, LabelTransform, Map, Style, Symbol, SymbolKind, SymbolRef};
+use forager_render::{Draw, Point};
+use forager_style_ir::{Bound, LabelTransform, Map, Style, SymbolRef};
 use forager_symbolize::{
-    Canvas, Factors, Mark, Resolved, View, mark, marker_size_with, resolve, shade, symbol_ops,
+    Canvas, LabelGeometry, Resolved, View, label_style_ops, label_style_refused, marker_size_with,
+    resolve,
 };
 
 use crate::bindable::{Field, Value};
 use crate::classes;
 use crate::labels::LabelAt;
-
-/// The kind of a label's style that is drawn: by its `GEOMTRANSFORM`, on the box around the text,
-/// at the label's point, or at the centre of that box.
-enum Kind {
-    Poly,
-    Point,
-    Center,
-}
-
-/// The kind of a label's `style`, or why it is not drawn: a labelpoly with a symbol other than a
-/// hatch, or a labelpoint or labelcenter whose marker is not drawn. `ANGLE AUTO` changes none of them: `loadStyle` sets only the
-/// style's `autoangle` for it (mapfile.c:2773-2775), which neither msDrawLabelCache nor
-/// computeMarkerBounds (mapdraw.c:3284-3353, 4056-4135), msDrawMarkerSymbol through
-/// computeSymbolStyle (maprendering.c:76), nor msDrawShadeSymbol (maprendering.c:821) reads; they
-/// turn by its `ANGLE` alone.
-fn kind(style: &Style<LabelTransform>, symbols: &[Symbol]) -> Result<Kind, &'static str> {
-    match style.geom_transform {
-        LabelTransform::Poly if !shade_drawn(style, symbols) => {
-            Err("a STYLE of GEOMTRANSFORM labelpoly whose SYMBOL is no hatch of the symbol set")
-        }
-        LabelTransform::Poly => Ok(Kind::Poly),
-        LabelTransform::Point if !marker_drawn(style, symbols) => Err(
-            "a STYLE of GEOMTRANSFORM labelpnt whose SYMBOL is no vector or ellipse of the \
-             symbol set",
-        ),
-        LabelTransform::Point => Ok(Kind::Point),
-        LabelTransform::Center if !marker_drawn(style, symbols) => Err(
-            "a STYLE of GEOMTRANSFORM labelcenter whose SYMBOL is no vector or ellipse of the \
-             symbol set",
-        ),
-        LabelTransform::Center => Ok(Kind::Center),
-    }
-}
-
-/// The first of a label's styles that is not drawn yet, named.
-pub(crate) fn unsupported(label: &Label, symbols: &[Symbol]) -> Option<&'static str> {
-    label.styles.iter().find_map(|s| kind(s, symbols).err())
-}
-
-/// Whether a label's `labelpoly` style is drawn: without a symbol, or with symbol 0, which
-/// msDrawShadeSymbol fills, or with a hatch of the set, which it hatches (maprendering.c:787-822);
-/// the tile of any other symbol is not drawn yet.
-fn shade_drawn(style: &Style<LabelTransform>, symbols: &[Symbol]) -> bool {
-    match resolve(&style.symbol, symbols) {
-        Resolved::Default => true,
-        Resolved::Found(_, symbol) => symbol.kind == SymbolKind::Hatch,
-        Resolved::Unresolved | Resolved::Missing(_) | Resolved::Unnamed(_) => false,
-    }
-}
-
-/// Whether a label's `labelpoint` or `labelcenter` style is drawn: without a symbol, or with
-/// symbol 0, which MapServer sizes as 1 by 1 and draws nothing of, or with a vector or an ellipse
-/// of the set.
-fn marker_drawn(style: &Style<LabelTransform>, symbols: &[Symbol]) -> bool {
-    match resolve(&style.symbol, symbols) {
-        Resolved::Default => true,
-        Resolved::Found(_, symbol) => {
-            matches!(symbol.kind, SymbolKind::Vector | SymbolKind::Ellipse)
-        }
-        Resolved::Unresolved | Resolved::Missing(_) | Resolved::Unnamed(_) => false,
-    }
-}
 
 /// What `computeMarkerBounds` takes of a label's first `labelpoint` style: the width and height
 /// `msGetMarkerSize` gives its marker, its symbol's anchor point, its angle in degrees, and its
@@ -396,8 +335,6 @@ pub(crate) struct Styled<'a> {
     map: &'a Map,
     /// The scale factor of each layer's labels, by the layer's index.
     factors: Vec<f64>,
-    /// The image's resolution factor.
-    resolution: f64,
     canvas: Canvas<'a>,
     /// The hatches of labelpoly styles refused since last taken (Q-9).
     hatches_refused: usize,
@@ -419,7 +356,6 @@ impl<'a> Styled<'a> {
             view,
             map,
             factors,
-            resolution,
             canvas: Canvas::new(&map.symbols, width, height, resolution)
                 .with_resolution(resolution),
             hatches_refused: 0,
@@ -433,20 +369,17 @@ impl<'a> Styled<'a> {
     }
 
     /// How many hatches of labelpoly styles were refused since this was last asked (Q-9), as
-    /// [`shade`] refuses a polygon's.
+    /// a polygon's are refused.
     pub(crate) fn take_hatches_refused(&mut self) -> usize {
         std::mem::take(&mut self.hatches_refused)
     }
 
     /// Draws the styles of `label` of feature `feature_id`, written in its definition, in their
     /// order, as its `styles` gives them bound to its feature where they vary by it, else as
-    /// written, as msDrawLabelCache draws them before the text (mapdraw.c:4056-4127): a
-    /// labelpoint style's marker at its point, a labelpoly style on the labelpoly it computes at
-    /// its `placement` (mapdraw.c:3799-3860), and a labelcenter style's marker at the centre of
-    /// the labelpoly's box, the box of the turned polygon where the label is turned; it never
-    /// tests the labelpoly or the labelcenter marker for collisions (maplabel.c:781). Each style
-    /// is drawn by the kind of its written style, which `fixed` has checked; one of no kind is
-    /// not drawn.
+    /// written, as msDrawLabelCache draws them before the text (see [`label_style_ops`]): on the
+    /// labelpoly it computes at its `placement` (mapdraw.c:3799-3860), which it never tests for
+    /// collisions (maplabel.c:781). A style that `label_style_refused` refuses as written, which
+    /// `fixed` has checked, is not drawn.
     pub(crate) fn draw<R: Draw>(&mut self, renderer: &mut R, label: &Placed<'_>, feature_id: u64) {
         let (layer, class, n) = label.at;
         let written = &self.map.layers[layer].classes[class].labels[n].styles;
@@ -459,110 +392,23 @@ impl<'a> Styled<'a> {
         let poly = member
             .label
             .map(|label| label_poly_at(member.point, &label, placement.anchor));
-        let factors = Factors::new(self.factors[layer], self.resolution);
-        self.canvas.set_factor(factors.scale);
+        let at = LabelGeometry {
+            point: member.point,
+            poly: poly
+                .as_ref()
+                .map(|poly| (poly.bbox, poly.poly.as_ref().map(|p| &p[..]))),
+        };
+        self.canvas.set_factor(self.factors[layer]);
+        let mut ops = Vec::new();
         for (i, style) in written.iter().enumerate() {
-            let Ok(kind) = kind(style, &self.map.symbols) else {
+            if label_style_refused(style, &self.map.symbols).is_some() {
                 continue;
-            };
-            let style = label.styles.style(i, style);
-            match (kind, &poly) {
-                (Kind::Point, _) => {
-                    draw_label_marker(
-                        renderer,
-                        member.point,
-                        &style,
-                        self.map,
-                        factors,
-                        feature_id,
-                    );
-                }
-                (Kind::Center, Some(poly)) => {
-                    let [min_x, min_y, max_x, max_y] = poly.bbox;
-                    let center = Point {
-                        x: (max_x + min_x) / 2.0,
-                        y: (max_y + min_y) / 2.0,
-                    };
-                    draw_label_marker(renderer, center, &style, self.map, factors, feature_id);
-                }
-                (Kind::Poly, Some(poly)) => {
-                    let drawn = draw_label_poly(
-                        renderer,
-                        poly,
-                        &style,
-                        self.view,
-                        &mut self.canvas,
-                        feature_id,
-                    );
-                    self.hatches_refused += usize::from(!drawn);
-                }
-                // The label cache refuses a label without text that has such a style before it is
-                // cached; should one reach here, it draws nothing rather than fail the map (Q-3).
-                (Kind::Center | Kind::Poly, None) => {}
             }
+            let style = label.styles.style(i, style);
+            let drawn = label_style_ops(&mut ops, &style, &at, self.view, &mut self.canvas);
+            self.hatches_refused += usize::from(!drawn);
         }
-    }
-}
-
-/// A label's `GEOMTRANSFORM labelpoly` style drawn on its polygon `poly`, as `msDrawLabelBounds`
-/// draws it through msDrawShadeSymbol (see [`shade`]): the polygon where the label is turned,
-/// else the ring of its box from its lower left corner up, at the canvas's factors: the label's
-/// scale factor, its layer's, and the image's resolution factor. False where its hatch is refused (Q-9).
-fn draw_label_poly<R: Draw>(
-    renderer: &mut R,
-    poly: &Bounds,
-    style: &Style<LabelTransform>,
-    view: &View,
-    canvas: &mut Canvas<'_>,
-    feature_id: u64,
-) -> bool {
-    let ring = match &poly.poly {
-        Some(points) => points.to_vec(),
-        None => {
-            let [min_x, min_y, max_x, max_y] = poly.bbox;
-            let p = |x, y| Point { x, y };
-            vec![
-                p(min_x, min_y),
-                p(min_x, max_y),
-                p(max_x, max_y),
-                p(max_x, min_y),
-                p(min_x, min_y),
-            ]
-        }
-    };
-    let mut ops = Vec::new();
-    let drawn = shade(&mut ops, vec![ring], style, view, canvas);
-    for op in ops {
-        renderer.draw(&DisplayItem {
-            op,
-            feature_id: Some(feature_id),
-        });
-    }
-    drawn
-}
-
-/// A label's `GEOMTRANSFORM labelpoint` style drawn at the label's point `at`, or its
-/// `labelcenter` style at the centre of its labelpoly's box, as msDrawMarkerSymbol draws it at
-/// the label's `factors`, its layer's scale factor and the image's resolution factor: its vector
-/// or ellipse symbol, moved by msAdjustMarkerPos; nothing for symbol 0.
-fn draw_label_marker<R: Draw>(
-    renderer: &mut R,
-    at: Point,
-    style: &Style<LabelTransform>,
-    map: &Map,
-    factors: Factors,
-    feature_id: u64,
-) {
-    let Mark::Symbol(s) = mark(style, &map.symbols) else {
-        return;
-    };
-    let mut ops = Vec::new();
-    symbol_ops(&mut ops, at, style, s, factors);
-    for op in ops {
-        renderer.draw(&DisplayItem {
-            op,
-            feature_id: Some(feature_id),
-        });
+        crate::draw_items(renderer, feature_id, ops);
     }
 }
 
@@ -572,7 +418,7 @@ mod tests {
     use crate::classes::{Binder, Reports};
     use forager_expr::Evaluator;
     use forager_ports::{Coord, Feature, Geometry, Properties, Stored};
-    use forager_style_ir::{Layer, LineOffset, Rgba};
+    use forager_style_ir::{Layer, LineOffset, Rgba, Symbol, SymbolKind};
 
     fn bound<T>(name: &str) -> Bound<T> {
         Bound::Binding {

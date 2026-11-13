@@ -28,7 +28,7 @@ use forager_label::{
     placed_at, walk_label_cache,
 };
 use forager_ports::{Feature, ResourceLoader};
-use forager_render::{DisplayItem, Draw, DrawOp, GlyphOutline, Point};
+use forager_render::{Draw, DrawOp, GlyphOutline, Point};
 use forager_style_ir::c::ms_nint;
 use forager_style_ir::{Diagnostic, Expr, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style};
 use forager_symbolize::{DEG_TO_RAD, Pixmaps, View, marker_size_of};
@@ -1092,17 +1092,15 @@ fn draw_label<R: Draw>(
     let width = label.outline.map_or(0.0, |(_, width)| f64::from(width));
     let drawn = path.draw_outlined(glyphs, placement.origin, label.rotation, image, width);
     if !drawn.path.is_empty() {
-        renderer.draw(&DisplayItem {
-            op: DrawOp::Glyphs {
-                path: drawn.path,
-                color: label.color,
-                outline: label.outline.map(|(color, width)| GlyphOutline {
-                    color,
-                    width: f64::from(width),
-                }),
-            },
-            feature_id: Some(label.feature_id),
-        });
+        let glyphs = DrawOp::Glyphs {
+            path: drawn.path,
+            color: label.color,
+            outline: label.outline.map(|(color, width)| GlyphOutline {
+                color,
+                width: f64::from(width),
+            }),
+        };
+        crate::draw_items(renderer, label.feature_id, [glyphs]);
     }
     drawn.out_of_reach
 }

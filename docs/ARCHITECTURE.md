@@ -115,11 +115,11 @@ golden path and the test pattern an agent copies from are named here.
   the image's edge ([label.md](semantics/label.md)): it holds each label as its glyphs' indices
   and its point, draws each glyph once per font and size, and
   builds a label's path only as it draws it; a label it cannot draw yet is left out with a
-  diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does: a
-  `labelpoly` style on the box around the text, a `labelpoint` style's marker at the label's
-  point, and a `labelcenter` style's at the centre of that box (`labels.rs`, its binding to a
-  feature `label_binding.rs`, which reads a bound value as `classes.rs` does, its styles
-  `label_styles.rs`); a label's `PRIORITY` it may compute per feature through `expr`. A label
+  diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does, through
+  `symbolize`, which it hands the label's point and the box around its text (`labels.rs`, its
+  binding to a feature `label_binding.rs`, which reads a bound value as `classes.rs` does, its
+  styles held for the cache, their marker's bounds, and their drawing `label_styles.rs`); a
+  label's `PRIORITY` it may compute per feature through `expr`. A label
   takes its text from the label, the class, the `LABELITEM`, or last its inline feature's own
   `TEXT`, which the port's `Feature` does not carry: the labels read it beside the port, from the
   layer's inline features in the style IR at the place the feature's id names, which holds while
@@ -134,7 +134,9 @@ golden path and the test pattern an agent copies from are named here.
   refused, and geometries its render mode cannot draw (Q-9). It loads the images of a layer's
   pixmap marks and fills into the render's store before it draws the layer, since `symbolize` does
   no I/O, and hands them to it on the canvas, and to the labels, which size the marker a class's
-  first style holds beneath each label by them. It is the one core crate that awaits the ports.
+  first style holds beneath each label by them. It turns every drawing operation into a display
+  item of its feature in one place (`draw_items` in `lib.rs`). It is the one core crate that
+  awaits the ports.
   Every host binds its sources to the layers by name through the engine's `bind_sources`
   (`bind.rs`), which reports a source no layer is named for and one that cannot be read the same
   way for each.
@@ -148,7 +150,11 @@ golden path and the test pattern an agent copies from are named here.
   point and the inverse of the image's transformation (`marker.rs`); a line's dashes, and the
   style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
   canvas a layer draws on, which the images of the render's pixmaps are handed on
-  (`canvas.rs`); a style's width
+  (`canvas.rs`); a label's styles, which of them are drawn, and their operations on the label's
+  point and the box around its text: a `labelpoly` style shaded on the box, a `labelpoint`
+  style's marker at the point, and a `labelcenter` style's at the centre of the box, a vector or
+  an ellipse drawn as a point's marker is, MapServer's default symbol as nothing
+  (`label.rs`); a style's width
   and size bounds, one function per site of MapServer's that bounds them, with the constants they
   bound by (`bounds.rs`); a property's value as bound, the gamma, and degrees to radians
   (`style.rs`); the view that maps the extent to the image, and a line's or a ring's vertices to

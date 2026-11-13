@@ -27,7 +27,7 @@ use forager_style_ir::{
 };
 
 use crate::classes::{self, FeatureProperties, attribute, bind_double, bind_integer, color};
-use crate::label_styles;
+use forager_symbolize::label_style_refused;
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
 const DEFAULT_SIZE: f64 = 10.0;
@@ -264,7 +264,11 @@ pub(crate) fn fixed<'a>(
             "an ANGLE AUTO, AUTO2, or FOLLOW",
         ),
         (label.shadow_color.is_some(), "a SHADOWCOLOR"),
-        label_styles::unsupported(label, &map.symbols).map_or((false, ""), |what| (true, what)),
+        label
+            .styles
+            .iter()
+            .find_map(|style| label_style_refused(style, &map.symbols))
+            .map_or((false, ""), |what| (true, what)),
         (
             label.min_scale_denom.is_some() || label.max_scale_denom.is_some(),
             "a scale range",

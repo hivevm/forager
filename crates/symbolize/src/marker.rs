@@ -31,7 +31,12 @@ use crate::symbol::{self, Factors};
 /// moves it. The square is Forager's, not MapServer's, which draws nothing for symbol 0; it is
 /// drawn at a factor of 1. A pixmap whose image the canvas lacks draws nothing, and the canvas
 /// records why.
-pub(crate) fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, canvas: &mut Canvas) {
+pub(crate) fn marker_ops<T>(
+    ops: &mut Vec<DrawOp>,
+    at: Point,
+    style: &Style<T>,
+    canvas: &mut Canvas,
+) {
     match symbol::mark(style, canvas.symbols) {
         symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style, 1.0), style),
         symbol::Mark::Symbol(s) => {
@@ -48,7 +53,7 @@ pub(crate) fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, canvas
 
 /// Whether `style` names no symbol, or symbol 0, MapServer's default, which msDrawMarkerSymbol
 /// does not draw.
-pub(crate) fn of_symbol_zero(style: &Style) -> bool {
+pub(crate) fn of_symbol_zero<T>(style: &Style<T>) -> bool {
     matches!(style.symbol, None | Some(Bound::Value(SymbolRef::Index(0))))
 }
 
@@ -65,10 +70,10 @@ pub(crate) fn marker_price(style: &Style, canvas: &mut Canvas) -> Option<usize> 
 /// the size msGetMarkerSize gives the image (msAdjustMarkerPos); then drawn as
 /// agg2RenderPixmapSymbol draws it (see [`symbol::render_pixmap`]). A style's colour and opacity
 /// do not reach the image (computeSymbolStyle).
-fn pixmap_ops(
+fn pixmap_ops<T>(
     ops: &mut Vec<DrawOp>,
     at: Point,
-    style: &Style,
+    style: &Style<T>,
     symbol: &Symbol,
     image: Rc<PremultipliedImage>,
     factors: Factors,
@@ -93,7 +98,7 @@ fn pixmap_ops(
 /// A point as a square of the style's size, centred on it, filled in the `COLOR` and outlined
 /// in the `OUTLINECOLOR` at the style's width, bounded as computeSymbolStyle() bounds the outline
 /// of the symbol the square stands for, at a factor of 1 (see [`bounds::symbol_outline_width`]).
-fn point_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style) {
+fn point_ops<T>(ops: &mut Vec<DrawOp>, at: Point, style: &Style<T>) {
     let half = fixed(&style.size).unwrap_or(1.0).clamp(0.0, MAX_SIZE) / 2.0;
     let corner = |dx: f64, dy: f64| Point {
         x: at.x + dx,
