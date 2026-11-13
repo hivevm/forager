@@ -69,9 +69,9 @@ fn a_font_set_line_is_read_as_ms_load_font_set_reads_it() {
     let names: Vec<&str> = fonts.keys().map(String::as_str).collect();
     assert_eq!(
         names,
-        ["a", "f", "g", long.as_str()],
-        "a line led by a tab has no name; one without a file is skipped; the separator must \
-         fall in the alias buffer's first 63 bytes"
+        ["a", "c", "f", "g", long.as_str()],
+        "a line led by a tab has no name; a line feed and a carriage return end one line; one \
+         without a file is skipped; the separator must fall in the alias buffer's first 63 bytes"
     );
     assert_eq!(fonts["a"], "other.ttf", "a later line replaces a name");
     assert_eq!(fonts["f"], "f.ttf", "trimmed by isspace");
@@ -90,4 +90,96 @@ fn a_label_names_a_font_without_case() {
     ];
     let (loaded, _) = first_label(&files);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
+}
+
+#[test]
+fn font_names_match_without_case_and_the_last_path_wins() {
+    let files = [
+        (
+            "m.map",
+            "MAP FONTSET 'fonts.txt' LAYER CLASS LABEL FONT 'SANS' END END END END",
+        ),
+        ("fonts.txt", "Sans a.ttf\nmono m.ttf\nSANS b.ttf\n"),
+    ];
+    let (loaded, _) = first_label(&files);
+    assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
+    let fonts = loaded.document.unwrap().map.fonts;
+    assert_eq!(
+        fonts["Sans"], "b.ttf",
+        "the name as first written, the last path"
+    );
+    assert_eq!(fonts.len(), 2);
+}
+
+#[test]
+fn a_font_list_entry_with_a_script_prefix_is_looked_up_after_its_colon() {
+    let files = [
+        (
+            "m.map",
+            "MAP FONTSET 'fonts.txt' LAYER CLASS LABEL FONT 'sans,ar:arabic,cn:none' END END END \
+             END",
+        ),
+        ("fonts.txt", "sans s.ttf\narabic a.ttf\n"),
+    ];
+    let (loaded, _) = first_label(&files);
+    let unknown: Vec<_> = loaded
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "font-unknown")
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(unknown, ["the font set has no font `cn:none`"]);
+}
+
+#[test]
+fn a_font_set_s_lines_end_as_gdal_ends_them() {
+    // CPLReadLineL ends a line at a line feed, a carriage return, or a pair of the two in either
+    // order, which ends one line: a lone carriage return separates two fonts.
+    let files = [
+        ("m.map", "MAP FONTSET 'fonts.txt' END"),
+        (
+            "fonts.txt",
+            "a a.ttf\rb b.ttf\r\nc c.ttf\n\rd d.ttf\n\ne e.ttf",
+        ),
+    ];
+    let loaded = load_files(&files);
+    let fonts = loaded.document.unwrap().map.fonts;
+    let names: Vec<_> = fonts.keys().map(String::as_str).collect();
+    assert_eq!(names, ["a", "b", "c", "d", "e"]);
+    assert_eq!(fonts["a"], "a.ttf");
+    assert_eq!(fonts["e"], "e.ttf");
+}
+
+#[test]
+fn a_font_list_entry_is_looked_up_as_written_where_its_name_after_the_colon_is_unknown() {
+    // check_single_font tries the name after the first colon, then the entry as written.
+    let files = [
+        (
+            "m.map",
+            "MAP FONTSET 'fonts.txt' LAYER CLASS LABEL FONT 'a:b' END END END END",
+        ),
+        ("fonts.txt", "a:b ab.ttf\n"),
+    ];
+    let (loaded, _) = first_label(&files);
+    assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
+}
+
+#[test]
+fn a_large_font_set_is_read_in_time_that_grows_with_its_lines() {
+    // Verifies: Q-9
+    // Each line finds its name's key at once: 200,000 distinct names, which a scan of the names
+    // held for each line would take minutes over, and a label that names the last of them.
+    let count = 200_000;
+    let set: &'static str = (0..count)
+        .map(|i| format!("font{i} f{i}.ttf\n"))
+        .collect::<String>()
+        .leak();
+    let map: &'static str = format!(
+        "MAP FONTSET 'fonts.txt' LAYER CLASS LABEL FONT 'FONT{}' END END END END",
+        count - 1
+    )
+    .leak();
+    let (loaded, _) = first_label(&[("m.map", map), ("fonts.txt", set)]);
+    assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
+    assert_eq!(loaded.document.unwrap().map.fonts.len(), count);
 }

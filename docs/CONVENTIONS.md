@@ -56,6 +56,11 @@ skimmed. The design revision drops what prevented nothing
   adds the case that holds it to the memory test of Q-9, such as
   `crates/engine/tests/label_memory.rs`, because that test measures only the maps it builds and
   says nothing of a field none of them sets.
+- **A count held to a bound of Q-9 stops at the bound** — a load or a render charges nothing more
+  to a count once it has passed its bound, because a sum of `usize` wraps on `wasm32` and lets
+  through what it bounds: the defaults of `VALIDATION` did so until 94610e9.
+- **A bound of Q-9 reports once** — the first excess is the one diagnostic, because a check made
+  per item repeats its error for each: the defaults of `VALIDATION` did so until 94610e9.
 - **A script that points git at a repository runs git without git's repository variables** — a
   test, a self-test, or a script under `scripts/` that drives git on a repository it names, a
   fixture or a checkout, removes what `git rev-parse --local-env-vars` names from git's
@@ -78,10 +83,11 @@ skimmed. The design revision drops what prevented nothing
   resolution, one ordered before another, comes beside a pinned value and never in place of it,
   because a wrong implementation that both sides share passes the relation and the self-derived
   value alike.
-- **A commit typed `refactor` changes nothing a test can see** — a behaviour it fixes or moves on
-  the way, such as a bound that now measures what the renderer draws, is a commit of its own typed
-  `fix` with its regression test, because the type tells the reviewer and the history which change
-  to read as a decision.
+- **A commit typed `refactor` changes nothing a test can see** — a behaviour it moves on the way
+  is a `fix` of its own, because the type tells the reviewer and the history which change to read
+  as a decision. `scripts/sensor-refactor-tests.sh` lists a `refactor` commit that changes the
+  line of an assertion or a `#[test]`. An expected value it changes elsewhere is the reviewer's to
+  find: on a continuation line of a wrapped assertion, in a `let expected`, a fixture, or an image.
 - **A comparison fails when there is nothing to compare** — a test that holds two results equal,
   two renders, a rendering and its reference, a record and a reader, first asserts that each side
   holds what it is meant to compare, a layer's features, an image, a label, because two empty

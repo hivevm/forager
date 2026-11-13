@@ -243,7 +243,10 @@ fn the_gap_scales_with_the_size_as_computesymbolstyle_scales_it() {
         gap: Some(-20.0),
         ..Style::default()
     };
-    assert_eq!(symbol::symbol_style(&style, &arrow(), 1.0, 1.0).gap, -10.0);
+    assert_eq!(
+        symbol::symbol_style(&style, &arrow(), Factors::new(1.0, 1.0)).gap,
+        -10.0
+    );
     let mut ops = Vec::new();
     let line = [vec![p(0.0, 50.0), p(40.0, 50.0)]];
     let mut budget = MarkerBudget::new();
@@ -253,7 +256,7 @@ fn the_gap_scales_with_the_size_as_computesymbolstyle_scales_it() {
         &arrow(),
         0.0,
         (100.0, 100.0),
-        (1.0, 1.0),
+        Factors::new(1.0, 1.0),
         &mut budget,
     ));
     assert_eq!(ops.len(), 5, "at 0, 10, 20, 30, and 40");
@@ -281,7 +284,7 @@ fn the_markers_of_a_layer_share_one_budget_of_points() {
         &arrow(),
         0.0,
         (100.0, 100.0),
-        (1.0, 1.0),
+        Factors::new(1.0, 1.0),
         &mut budget,
     ));
     assert_eq!((ops.len(), budget.spent()), (5, false));
@@ -291,7 +294,7 @@ fn the_markers_of_a_layer_share_one_budget_of_points() {
         &arrow(),
         0.0,
         (100.0, 100.0),
-        (1.0, 1.0),
+        Factors::new(1.0, 1.0),
         &mut budget,
     ));
     assert_eq!((ops.len(), budget.spent()), (5, true));
@@ -302,7 +305,7 @@ fn the_markers_of_a_layer_share_one_budget_of_points() {
         &arrow(),
         0.0,
         (100.0, 100.0),
-        (1.0, 1.0),
+        Factors::new(1.0, 1.0),
         &mut budget,
     ));
     assert_eq!(ops.len(), 5, "nothing once the budget is spent");
@@ -324,7 +327,7 @@ fn a_symbol_that_draws_nothing_places_nothing() {
         &arrow(),
         0.0,
         (100.0, 100.0),
-        (1.0, 1.0),
+        Factors::new(1.0, 1.0),
         &mut budget,
     ));
     assert!(ops.is_empty());

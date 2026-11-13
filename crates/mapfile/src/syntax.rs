@@ -209,7 +209,7 @@ fn schema(block: &str) -> Option<Schema> {
 /// Parses the tokens of a mapfile, its `INCLUDE`s already spliced in, into the `MAP` block, its
 /// diagnostics into `report` (Q-9).
 pub fn parse_into(tokens: &[Token], report: &mut Report) -> Option<Block> {
-    parse_root(tokens, "MAP", "map", "mapfile", false, report)
+    parse_root(tokens, "MAP", "map", "mapfile", false, false, report)
 }
 
 /// [`parse_into`] with a report of its own, for the parser's tests.
@@ -230,24 +230,30 @@ pub fn parse_symbol_set(tokens: &[Token], report: &mut Report) -> Option<Block> 
         "symbolset",
         "symbol file",
         true,
+        // loadSymbolSet takes the end of the file as the end of a set left open, at any level
+        // (src/mapsymbol.c); a symbol's loadSymbol needs its END.
+        true,
         report,
     )
 }
 
 /// Parses `tokens` into the one block `root` that a file of the kind `file` starts with, and,
-/// where `repeated`, the further `root` blocks that follow it, merged into it.
+/// where `repeated`, the further `root` blocks that follow it, merged into it; where
+/// `closed_by_end_of_file`, the end of the tokens closes a `root` block left open as its END would.
 fn parse_root(
     tokens: &[Token],
     root: &str,
     code: &str,
     file: &str,
     repeated: bool,
+    closed_by_end_of_file: bool,
     report: &mut Report,
 ) -> Option<Block> {
     let mut parser = Parser {
         tokens,
         pos: 0,
         diagnostics: report,
+        closed_by_end_of_file: closed_by_end_of_file.then(|| root.to_owned()),
     };
     let expected = format!("expected-{code}");
     let mut block = match tokens.first() {
@@ -299,6 +305,8 @@ struct Parser<'a, 'r> {
     tokens: &'a [Token],
     pos: usize,
     diagnostics: &'r mut Report,
+    /// The block the end of the tokens closes as its END would, if any.
+    closed_by_end_of_file: Option<String>,
 }
 
 impl Parser<'_, '_> {
@@ -321,6 +329,9 @@ impl Parser<'_, '_> {
         let schema = schema(&block.keyword)?;
         loop {
             let Some(token) = self.tokens.get(self.pos) else {
+                if self.closed_by_end_of_file.as_deref() == Some(block.keyword.as_str()) {
+                    return Some(block);
+                }
                 let message = format!("{} is not closed by END", block.keyword);
                 self.error("unterminated-block", &message, block.span.clone());
                 return None;

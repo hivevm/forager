@@ -22,11 +22,12 @@ use forager_label::{Bounds, Member, Placement, label_poly_at, marker_bounds};
 use forager_render::{DisplayItem, Draw, Point};
 use forager_style_ir::{Bound, Label, LabelTransform, Map, Style, Symbol, SymbolKind, SymbolRef};
 use forager_symbolize::{
-    Canvas, Mark, Resolved, View, mark, marker_size_with, resolve, shade, symbol_ops,
+    Canvas, Factors, Mark, Resolved, View, mark, marker_size_with, resolve, shade, symbol_ops,
 };
 
 use crate::bindable::{Field, Value};
 use crate::classes;
+use crate::labels::LabelAt;
 
 /// The kind of a label's style that is drawn: by its `GEOMTRANSFORM`, on the box around the text,
 /// at the label's point, or at the centre of that box.
@@ -380,6 +381,15 @@ impl StylesOf<'_> {
     }
 }
 
+/// A label drawn: of definition `at`, `member` placed at `placement`, its styles bound to its
+/// feature as `styles` gives them.
+pub(crate) struct Placed<'l> {
+    pub(crate) at: LabelAt,
+    pub(crate) member: &'l Member,
+    pub(crate) placement: &'l Placement,
+    pub(crate) styles: &'l StylesOf<'l>,
+}
+
 /// What the styles of the labels drawn are drawn with.
 pub(crate) struct Styled<'a> {
     view: &'a View,
@@ -428,38 +438,34 @@ impl<'a> Styled<'a> {
         std::mem::take(&mut self.hatches_refused)
     }
 
-    /// Draws the styles of a label of feature `feature_id`, `member` placed at `placement`, in
-    /// their order, as `styles` gives them bound to its feature where they vary by it, else
-    /// `written`, as
-    /// msDrawLabelCache draws them before the text (mapdraw.c:4056-4127): a labelpoint style's
-    /// marker at its point, a labelpoly style on the labelpoly it computes at `placement`
-    /// (mapdraw.c:3799-3860), and a labelcenter style's marker at the centre of the labelpoly's
-    /// box, the box of the turned polygon where the label is turned; it never tests the labelpoly
-    /// or the labelcenter marker for collisions (maplabel.c:781). Each style is drawn by the kind
-    /// of its written style, which `fixed` has checked; one of no kind is not drawn.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn draw<R: Draw>(
-        &mut self,
-        renderer: &mut R,
-        layer: usize,
-        member: &Member,
-        placement: &Placement,
-        feature_id: u64,
-        styles: &StylesOf<'_>,
-        written: &[Style<LabelTransform>],
-    ) {
+    /// Draws the styles of `label` of feature `feature_id`, written in its definition, in their
+    /// order, as its `styles` gives them bound to its feature where they vary by it, else as
+    /// written, as msDrawLabelCache draws them before the text (mapdraw.c:4056-4127): a
+    /// labelpoint style's marker at its point, a labelpoly style on the labelpoly it computes at
+    /// its `placement` (mapdraw.c:3799-3860), and a labelcenter style's marker at the centre of
+    /// the labelpoly's box, the box of the turned polygon where the label is turned; it never
+    /// tests the labelpoly or the labelcenter marker for collisions (maplabel.c:781). Each style
+    /// is drawn by the kind of its written style, which `fixed` has checked; one of no kind is
+    /// not drawn.
+    pub(crate) fn draw<R: Draw>(&mut self, renderer: &mut R, label: &Placed<'_>, feature_id: u64) {
+        let (layer, class, n) = label.at;
+        let written = &self.map.layers[layer].classes[class].labels[n].styles;
+        if written.is_empty() {
+            return;
+        }
+        let (member, placement) = (label.member, label.placement);
         // A label without text draws its labelpoint styles alone (mapdraw.c:4056-4069); one with a
         // labelpoly or labelcenter style is refused before it is cached.
         let poly = member
             .label
             .map(|label| label_poly_at(member.point, &label, placement.anchor));
-        let factor = self.factors[layer];
-        self.canvas.set_factor(factor);
+        let factors = Factors::new(self.factors[layer], self.resolution);
+        self.canvas.set_factor(factors.scale);
         for (i, style) in written.iter().enumerate() {
             let Ok(kind) = kind(style, &self.map.symbols) else {
                 continue;
             };
-            let style = styles.style(i, style);
+            let style = label.styles.style(i, style);
             match (kind, &poly) {
                 (Kind::Point, _) => {
                     draw_label_marker(
@@ -467,7 +473,7 @@ impl<'a> Styled<'a> {
                         member.point,
                         &style,
                         self.map,
-                        (factor, self.resolution),
+                        factors,
                         feature_id,
                     );
                 }
@@ -477,7 +483,6 @@ impl<'a> Styled<'a> {
                         x: (max_x + min_x) / 2.0,
                         y: (max_y + min_y) / 2.0,
                     };
-                    let factors = (factor, self.resolution);
                     draw_label_marker(renderer, center, &style, self.map, factors, feature_id);
                 }
                 (Kind::Poly, Some(poly)) => {
@@ -538,21 +543,21 @@ fn draw_label_poly<R: Draw>(
 
 /// A label's `GEOMTRANSFORM labelpoint` style drawn at the label's point `at`, or its
 /// `labelcenter` style at the centre of its labelpoly's box, as msDrawMarkerSymbol draws it at
-/// the label's scale factor `factor`: its vector or ellipse symbol, moved by msAdjustMarkerPos;
-/// nothing for symbol 0.
+/// the label's `factors`, its layer's scale factor and the image's resolution factor: its vector
+/// or ellipse symbol, moved by msAdjustMarkerPos; nothing for symbol 0.
 fn draw_label_marker<R: Draw>(
     renderer: &mut R,
     at: Point,
     style: &Style<LabelTransform>,
     map: &Map,
-    (factor, resolution): (f64, f64),
+    factors: Factors,
     feature_id: u64,
 ) {
     let Mark::Symbol(s) = mark(style, &map.symbols) else {
         return;
     };
     let mut ops = Vec::new();
-    symbol_ops(&mut ops, at, style, s, factor, resolution);
+    symbol_ops(&mut ops, at, style, s, factors);
     for op in ops {
         renderer.draw(&DisplayItem {
             op,

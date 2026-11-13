@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-10, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-11, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0005](adr/0005-feature-layer.md)).
@@ -67,7 +67,8 @@ golden path and the test pattern an agent copies from are named here.
   (`init_file.rs`, [ADR-0019](adr/0019-projection-resolver.md)), and the
   translation into the style IR (`translate/`, a module per block it reads: symbols, font set,
   labels, styles, projections, the output format's transparency, inline features, and the
-  defaults of `VALIDATION`), which appends
+  defaults of `VALIDATION`, which a load substitutes into its expressions within a 16 MiB bound of
+  their own, apart from the total size (`translate/defaults.rs`, Q-9)), which appends
   to the map's symbols a pixmap or SVG symbol for each name a style's `SYMBOL` gives that no
   symbol carries, as `msAddImageSymbol` appends it, a name beginning `http` aside, its path
   inside the base context and its file not read
@@ -104,8 +105,9 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0022](adr/0022-skipped-records.md)); the fonts a label names and the images its
   pixmap symbols name it loads by one load, once per render and path through the host's resource
   loader, each file held to the 32 MiB of Q-9 that a font file and a symbol image's file share
-  (`resource.rs`); each image it decodes once and holds within Q-9's bound on the bytes one
-  render's images and fill tiles come to (`images.rs`,
+  (`resource.rs`, the fonts and the face a line is drawn in `fonts.rs`); each image it decodes
+  once and holds within Q-9's bound on the bytes one render's images and fill tiles come to
+  (`images.rs`,
   [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0031), and
   those of a point layer of `LABELCACHE OFF` at each point after its markers, before the next
@@ -133,8 +135,9 @@ golden path and the test pattern an agent copies from are named here.
   pixmap marks and fills into the render's store before it draws the layer, since `symbolize` does
   no I/O, and hands them to it on the canvas, and to the labels, which size the marker a class's
   first style holds beneath each label by them. It is the one core crate that awaits the ports.
-  Every host binds its sources to the layers by name through the engine's `bind_sources`, which
-  reports a source no layer is named for and one that cannot be read the same way for each.
+  Every host binds its sources to the layers by name through the engine's `bind_sources`
+  (`bind.rs`), which reports a source no layer is named for and one that cannot be read the same
+  way for each.
 - **`symbolize`** — the symbolization of a style, synchronous and without I/O: a feature's geometry
   in a style bound to it turned into drawing operations, as MapServer draws it. The dispatch of a
   style by the layer's render mode, the symbols a `GEOMTRANSFORM` places, and the paths of the
@@ -257,13 +260,16 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0024](adr/0024-browser-bindings-bind-geojson-only.md)), `wasmi` anywhere but among the
   dev-dependencies of `cli` ([ADR-0034](adr/0034-wasm-renders-compared-in-wasmi.md)), and a
   future polled with a no-op waker anywhere but `poll_once` of `ports`, and requires every crate
-  of the IR and the core to turn on the lints of `clippy.toml` that ban hash maps, clocks, and
-  random sources (Q-2) and to lift them nowhere but the one test time bound it names; the
-  frontend, the ports, the adapters, and the hosts are not held to the ban. `tests/c_numbers.rs`
+  on the output path, the IR, the core, the ports, the frontend, and the adapters, to turn on the
+  lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them
+  nowhere but the one test time bound it names; the hosts alone are free. `tests/c_numbers.rs`
   refuses a function `atof`, `atoi`, `strtod`, `lrint`, or `ms_nint`, or one named `lrint_…` or
   `ms_nint_…`, defined outside `style-ir`'s `c.rs` (ADR-0017). `tests/symbolize_modules.rs`
   refuses an import between the modules of `symbolize`, outside its tests, against the direction
-  its `lib.rs` states, and a module of the crate its table has no row for.
+  its `lib.rs` states, and a module of the crate its table has no row for. `tests/symbol_names.rs`
+  refuses an `eq_ignore_ascii_case` near a symbol's name outside `symbolize`'s `symbol.rs`, whose
+  `named_index` the engine's binding of a `SYMBOL` calls; the frontend keeps a lookup of its own
+  in another form, which ADR-0008 keeps from `symbolize`.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
@@ -359,11 +365,13 @@ into a source bound to that layer instead, reads the fonts its labels name from 
 and runs the engine with the agg-rust renderer. For each layer that is ON or DEFAULT, in order, the
 engine queries the source with the fitted extent and draws its features in the styles of the first
 class whose expression matches: a point or polygon layer each feature in every style before the next
-feature, a line layer style by style over all its features, with each style's outline in a pass
-before the style, as MapServer's line layers do. The labels of point layers are placed by the label
-cache and drawn after the last layer, but for those of a point layer of `LABELCACHE OFF`, drawn
-after each of its features; a label of a line or a polygon layer is not drawn yet. The image is
-encoded as PNG.
+feature, a point layer's point by point, every style's marker at a point before the next point,
+whatever its `LABELCACHE`, and a line layer style by style over all its features, with each
+style's outline in a pass before the style, as MapServer's line layers do. The labels of point
+layers are placed by the label cache and drawn after the last layer, but for those of a point
+layer of `LABELCACHE OFF`, drawn after each of its features; a label of a line or a polygon layer
+is not drawn yet. A layer of `POSTLABELCACHE TRUE` is drawn after the label cache, past every
+other layer, its labels at once. The image is encoded as PNG.
 
 In the browser, the page calls the bundle's `render`, or `renderWith`, with the mapfile text, a JSON
 object of GeoJSON by layer name, an optional viewport, and the files the mapfile names. The bindings

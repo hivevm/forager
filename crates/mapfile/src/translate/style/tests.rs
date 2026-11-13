@@ -13,7 +13,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use forager_style_ir::{Bound, Rgba};
+use forager_style_ir::{Bound, GeomTransform, Rgba};
 
 use crate::test_support::{binding, codes, first_style, load_files};
 
@@ -122,6 +122,54 @@ fn every_style_property_that_renders_is_carried_over() {
 }
 
 #[test]
+fn an_opacity_number_beside_its_binding_sets_the_colours_alpha_at_load() {
+    // loadStyle keeps both, and applies the number's alpha, MS_NINT(50 × 2.55) = 127 in a double, to
+    // the colours at its END; bindStyle replaces it only for a bound value below 100.
+    for text in [
+        "MAP LAYER CLASS STYLE COLOR 1 2 3 OUTLINECOLOR 4 5 6 OPACITY [o] OPACITY 50 END END END \
+         END",
+        "MAP LAYER CLASS STYLE OPACITY 50 COLOR 1 2 3 OUTLINECOLOR 4 5 6 OPACITY [o] END END END \
+         END",
+    ] {
+        let (loaded, style) = first_style(text);
+        assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
+        let style = style.unwrap();
+        assert_eq!(style.opacity, binding("o"), "{text}");
+        assert_eq!(
+            style.color,
+            Some(Bound::Value(Rgba {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 127
+            }))
+        );
+        assert_eq!(
+            style.outline_color,
+            Some(Bound::Value(Rgba {
+                r: 4,
+                g: 5,
+                b: 6,
+                a: 127
+            }))
+        );
+    }
+    // A number alone stays the IR's opacity, which the engine applies; the colours keep theirs.
+    let (_, style) = first_style("MAP LAYER CLASS STYLE COLOR 1 2 3 OPACITY 50 END END END END");
+    let style = style.unwrap();
+    assert_eq!(style.opacity, Some(Bound::Value(50.0)));
+    assert_eq!(
+        style.color,
+        Some(Bound::Value(Rgba {
+            r: 1,
+            g: 2,
+            b: 3,
+            a: 255
+        }))
+    );
+}
+
+#[test]
 fn an_offset_of_minus_99_is_a_line_offset() {
     use forager_style_ir::LineOffset;
     let offset = |text: &'static str| first_style(text).1.unwrap();
@@ -170,6 +218,13 @@ fn style_values_outside_loadstyles_checks_are_errors() {
     );
     let (loaded, style) = first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM nosuch END END END END");
     assert_eq!(codes(&loaded), ["unsupported-value"]);
+    assert!(
+        loaded.diagnostics[0]
+            .message
+            .contains("a class's style is drawn as if it had none"),
+        "{}",
+        loaded.diagnostics[0].message
+    );
     assert_eq!(style.unwrap().geom_transform, None);
 }
 
@@ -646,4 +701,18 @@ fn a_bare_keyword_is_no_symbol_name_and_a_quoted_one_is() {
     // A bare word that is no keyword is a string.
     let (loaded, _) = first_style("MAP LAYER CLASS STYLE SYMBOL dot END END END END");
     assert!(loaded.document.is_some(), "{:?}", codes(&loaded));
+}
+
+#[test]
+fn a_geomtransform_expression_is_carried_as_written_without_a_warning_at_load() {
+    // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION) keeps the expression; the engine reports
+    // it as it draws the layer, so the load does not.
+    let (loaded, style) = first_style(
+        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (buffer([shape], 5)) END END END END",
+    );
+    assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
+    assert_eq!(
+        style.unwrap().geom_transform,
+        Some(GeomTransform::Expression("(buffer([shape], 5))".to_owned()))
+    );
 }

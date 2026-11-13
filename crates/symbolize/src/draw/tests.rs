@@ -28,7 +28,7 @@ use crate::canvas::Canvas;
 use crate::extent::View;
 use crate::line::Pass;
 use crate::line_marker::MarkerBudget;
-use crate::symbol::{self, Pixmaps};
+use crate::symbol::{self, Factors, Pixmaps};
 use crate::tile::Tiles;
 
 const BLUE: Rgba = Rgba::opaque(30, 60, 200);
@@ -415,7 +415,13 @@ fn without_angle_auto_a_transformed_symbol_keeps_its_angle() {
     };
     let at_corner = |style: &Style| {
         let mut ops = Vec::new();
-        symbol::symbol_ops(&mut ops, p(90.0, 20.0), style, &arrow, 1.0, 1.0);
+        symbol::symbol_ops(
+            &mut ops,
+            p(90.0, 20.0),
+            style,
+            &arrow,
+            Factors::new(1.0, 1.0),
+        );
         ops
     };
     let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
@@ -582,7 +588,13 @@ fn a_centroid_of_a_collection_is_that_of_all_its_parts() {
     let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
     let drawn = transformed_ops(&collection, &style, &mut canvas);
     let mut expected = Vec::new();
-    symbol::symbol_ops(&mut expected, p(50.0, 50.0), &style, &symbols[0], 1.0, 1.0);
+    symbol::symbol_ops(
+        &mut expected,
+        p(50.0, 50.0),
+        &style,
+        &symbols[0],
+        Factors::new(1.0, 1.0),
+    );
     assert_eq!(drawn, expected);
 }
 

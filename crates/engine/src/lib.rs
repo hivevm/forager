@@ -39,7 +39,9 @@ use forager_ports::{
 };
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::ms_nint;
-use forager_style_ir::{Diagnostic, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol};
+use forager_style_ir::{
+    Diagnostic, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
+};
 use forager_symbolize::{
     Canvas, Pass, Pixmaps, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops, marked_pixmap,
     point_markers, resolve, vertices,
@@ -149,7 +151,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
     let scale = classes::scale_denom(map, &view, width);
-    for (layer_index, layer) in map.layers.iter().enumerate() {
+    let (order, cache_at) = drawing_order(map);
+    let mut cached_labels = None;
+    for (position, &(layer_index, layer)) in order.iter().enumerate() {
+        if position == cache_at {
+            cached_labels = Some(labels.finish(&mut renderer, &mut diagnostics));
+        }
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
         };
@@ -177,27 +184,29 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             scale,
             view: &view,
         };
+        // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
+        // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
+        // Any other layer's labels go through the label cache.
+        // A layer of POSTLABELCACHE TRUE draws its labels at once whatever its label_cache says,
+        // as msDrawLayer turns the cache off for it as it draws it (src/mapdraw.c:850-856).
+        let at_once = mode == RenderMode::Point && (!layer.label_cache || layer.post_label_cache);
         drawing
-            .load_pixmaps(&selected, &map.symbols, &mut images, files)
+            .load_pixmaps(&selected, &map.symbols, !at_once, &mut images, files)
             .await;
         let (pixmaps, tiles) = images.drawing();
         let mut canvas = drawing.canvas(map, (width, height), pixmaps, tiles);
         // Each feature is labelled by the class that draws it, in the order it is drawn.
-        let point_layer = mode == RenderMode::Point;
         let drawn: Vec<labels::Labelled<'_>> = selected
             .iter()
             .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
             .collect();
-        // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
-        // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
-        let at_once = point_layer && !layer.label_cache;
         let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
             let binder = &mut selector.binder;
-            let mut settled = labels.layer(layer_index, mode, &drawn, binder);
+            let mut settled = labels.layer_at_once(layer_index, &drawn, binder);
             for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
                 let laid = labels
-                    .label(&settled, feature, class, None, pixmaps, binder)
+                    .label_at_once(&settled, feature, class, pixmaps, binder)
                     .await;
                 let mut out_of_reach = vec![0; laid.len()];
                 drawing.draw_points(&mut target, &mut canvas, one, |target, point| {
@@ -206,7 +215,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                     }
                 });
                 for (label, count) in laid.iter().zip(out_of_reach) {
-                    labels.drawn_at_once(binder.diagnostics, label, count);
+                    labels.out_of_reach(binder.diagnostics, label.at, count);
                 }
             }
         } else {
@@ -222,21 +231,51 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             undrawn,
             selector.binder.diagnostics,
         );
-        unknown_symbols(layer, &map.symbols, selector.binder.diagnostics);
+        style_reports(layer, mode, &map.symbols, selector.binder.diagnostics);
+        // Only a line, polygon, or annotation layer of POSTLABELCACHE TRUE comes here after the
+        // cache is drawn: its labels are not drawn yet, each reported, so none enters the cache.
         if !at_once {
             let binder = &mut selector.binder;
             let settled = labels.layer(layer_index, mode, &drawn, binder);
             labels.collect(&settled, &drawn, pixmaps, binder).await;
         }
     }
-    // The labels of the cache are drawn after every layer, as MapServer's label cache draws
-    // them.
-    let labels = labels.finish(&mut renderer, &mut diagnostics);
+    // The labels of the cache are drawn after every layer but those of POSTLABELCACHE TRUE, as
+    // MapServer's label cache draws them.
+    let labels = cached_labels.unwrap_or_else(|| labels.finish(&mut renderer, &mut diagnostics));
     Rendered {
         image: Some(renderer.finish()),
         labels,
         diagnostics,
     }
+}
+
+/// The reports on the styles of a layer drawn in `mode`: the symbols no symbol is named, and, but
+/// in a point layer, which draws them at its points, the GEOMTRANSFORM expressions not drawn.
+fn style_reports(
+    layer: &Layer,
+    mode: RenderMode,
+    symbols: &[Symbol],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    unknown_symbols(layer, symbols, diagnostics);
+    if mode != RenderMode::Point {
+        expressions_not_drawn(layer, diagnostics);
+    }
+}
+
+/// The map's layers with their indexes in the order msDrawMap draws them, and the position at which
+/// it draws the label cache: the layers in their order but those of `POSTLABELCACHE TRUE`, then
+/// the label cache, then those in their order (src/mapdraw.c:456, 593, 604-611).
+fn drawing_order(map: &Map) -> (Vec<(usize, &Layer)>, usize) {
+    let (mut order, post): (Vec<_>, Vec<_>) = map
+        .layers
+        .iter()
+        .enumerate()
+        .partition(|(_, layer)| !layer.post_label_cache);
+    let cache_at = order.len();
+    order.extend(post);
+    (order, cache_at)
 }
 
 /// The points of `geometry` inside the map's extent, in pixels, in order: where
@@ -432,15 +471,17 @@ impl Drawing<'_> {
     /// size the marker the cache holds by msGetMarkerSize, which loads it
     /// (`src/mapsymbol.c:736-738`) whatever the style's scale range. Those the clip buffer of a
     /// hatched polygon's class counts are loaded whatever theirs too, as msDrawShape loads them
-    /// (see [`clip_pixmaps`]).
+    /// (see [`clip_pixmaps`]). `cached` tells whether the layer's labels go through the label
+    /// cache.
     async fn load_pixmaps<L: ResourceLoader>(
         &self,
         selected: &[Selected<'_>],
         symbols: &[forager_style_ir::Symbol],
+        cached: bool,
         images: &mut Images,
         files: &L,
     ) {
-        let holds_markers = self.mode == RenderMode::Point && self.layer.label_cache;
+        let holds_markers = self.mode == RenderMode::Point && cached;
         for (_, class, styles) in selected {
             let marker = holds_markers && !self.layer.classes[*class].labels.is_empty();
             for (place, style) in styles.iter().enumerate() {
@@ -468,8 +509,10 @@ impl Drawing<'_> {
 
     /// Draws the markers of a point layer's feature `selected` at each of its points inside the
     /// map's extent, every style of its class in its scale range, each point's followed by what
-    /// `label` draws at that point, as pointLayerDrawShape draws a layer of `LABELCACHE OFF`
+    /// `label` draws at that point, as pointLayerDrawShape draws a point layer
     /// (src/mapdraw.c:2062-2105): the markers of a point, then its labels, then the next point's.
+    /// It decides the order of a point layer's markers whatever its `LABELCACHE`; a layer of the
+    /// label cache draws no label here.
     fn draw_points<R: Draw>(
         &self,
         renderer: &mut R,
@@ -498,9 +541,16 @@ impl Drawing<'_> {
 
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
     /// from the cache as the [`Plan`] of each class says. A style outside its scale range draws
-    /// nothing, where msDrawShape and the cache's pass skip it.
+    /// nothing, where msDrawShape and the cache's pass skip it. A point layer's features are
+    /// drawn point by point by [`Self::draw_points`], without their labels.
     fn draw<R: Draw>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
         let mode = self.mode;
+        if mode == RenderMode::Point {
+            for one in selected {
+                self.draw_points(renderer, canvas, one, |_, _| {});
+            }
+            return;
+        }
         let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {
             if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
                 return;
@@ -744,6 +794,28 @@ fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diag
     }
 }
 
+/// Warns of each class style whose `GEOMTRANSFORM` is an expression, which the engine does not
+/// draw, of a line or a polygon layer: MapServer evaluates it by msGeomTransformShape, most of its
+/// functions through GEOS. The style draws nothing; the class's other styles draw in their passes
+/// as before. A point layer draws such a style at its points, as pointLayerDrawShape draws every
+/// style whatever its transform, and is not warned.
+fn expressions_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
+    for style in layer.classes.iter().flat_map(|class| &class.styles) {
+        if let Some(GeomTransform::Expression(expression)) = &style.geom_transform {
+            let message = format!(
+                "layer {}: the GEOMTRANSFORM expression {} is not drawn: the style draws nothing",
+                name(layer),
+                quoted(expression)
+            );
+            diagnostics.push(Diagnostic::warning(
+                "geomtransform-not-drawn",
+                message,
+                style.span.clone().or_else(|| layer.span.clone()),
+            ));
+        }
+    }
+}
+
 /// The warning for the hatch fills of a layer refused to be drawn (Q-9), if any.
 fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnostic> {
     (refused > 0).then(|| {
@@ -786,12 +858,11 @@ const QUOTED_CHARACTERS: usize = 64;
 /// `text` in backticks as a diagnostic quotes it: whole up to [`QUOTED_CHARACTERS`] characters,
 /// else cut there, followed by an ellipsis and the text's length in characters.
 fn quoted(text: &str) -> String {
-    match text.char_indices().nth(QUOTED_CHARACTERS) {
-        None => format!("`{text}`"),
-        Some((cut, _)) => format!(
-            "`{}\u{2026}` ({} characters)",
-            &text[..cut],
-            text.chars().count()
-        ),
+    let count = text.chars().count();
+    if count <= QUOTED_CHARACTERS {
+        format!("`{text}`")
+    } else {
+        let head: String = text.chars().take(QUOTED_CHARACTERS).collect();
+        format!("`{head}\u{2026}` ({count} characters)")
     }
 }

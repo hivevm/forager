@@ -75,7 +75,7 @@ fn drawn(members: Vec<Member>) -> Vec<(usize, Anchor)> {
 
 fn drawn_texts(members: Vec<(Member, &'static str)>) -> Vec<(usize, Anchor)> {
     let mut out = Vec::new();
-    draw_label_cache(&Cache(members), SIZE, |i, p| out.push((i, p.anchor)));
+    draw_label_cache(&Cache(members), SIZE, 0, |i, p| out.push((i, p.anchor)));
     out
 }
 
@@ -307,6 +307,7 @@ fn a_turned_label_whose_box_is_no_number_meets_a_label_in_another_cell() {
     draw_label_cache(
         &Cache(vec![(far, "a"), (nan, "b")]),
         (2000, 2000),
+        0,
         |i, _| cache.push(i),
     );
     assert_eq!(cache, [1]);
@@ -330,6 +331,7 @@ fn every_member_visited_is_handed_out_in_the_walk_s_order_drawn_or_not() {
     let left_out = walk_label_cache(
         &Cache(members.into_iter().map(|m| (m, "text")).collect()),
         SIZE,
+        0,
         |i, placement| visited.push((i, placement.is_some())),
     );
     assert_eq!(left_out, 0);
@@ -337,4 +339,25 @@ fn every_member_visited_is_handed_out_in_the_walk_s_order_drawn_or_not() {
         visited,
         [(2, true), (3, true), (0, false), (4, true), (1, false)]
     );
+}
+
+#[test]
+fn a_label_inside_the_gutter_is_left_out_unless_partial_or_forced() {
+    // MapServer's labelInImage requires a label that may not be partial to lie at least the
+    // gutter inside each edge; msTestLabelCacheCollisions does not test a partial one,
+    // and a forced one is drawn untested. The text, 30 pixels wide at CC of x 20, starts 5 pixels
+    // inside the image's left edge.
+    let near = at(20.0, 50.0);
+    let draw = |member: Member, gutter: u32| {
+        let mut out = Vec::new();
+        draw_label_cache(&Cache(vec![(member, "a")]), SIZE, gutter, |i, _| {
+            out.push(i)
+        });
+        out
+    };
+    assert_eq!(draw(near, 0), [0], "no gutter");
+    assert_eq!(draw(near, 5), [0], "5 pixels inside a gutter of 5");
+    assert!(draw(near, 10).is_empty(), "5 pixels inside a gutter of 10");
+    assert_eq!(draw(with(near, |m, _| m.partials = true), 10), [0]);
+    assert_eq!(draw(with(near, |_, l| l.force = true), 10), [0]);
 }

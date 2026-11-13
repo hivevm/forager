@@ -99,7 +99,11 @@ pub fn translate(token: &Token, item: Option<&str>) -> Result<Expr, Problem> {
             ],
         )),
         TokenKind::List(text) => {
-            let inner = &text[1..text.len() - 1];
+            // The lexer reads the braces around the list.
+            let inner = text
+                .strip_prefix('{')
+                .and_then(|inner| inner.strip_suffix('}'))
+                .unwrap_or_default();
             let values = inner.split(',').map(|v| Expr::String(v.to_owned()));
             Ok(Expr::call(
                 Op::In,
@@ -408,7 +412,8 @@ enum Lexeme {
 /// first, each with its span. White space is `[ \t\r]+`; a newline, a NUL, and a `|` that is no
 /// `||` end the tokens, as the rule `[\r|\n|\0]` returns 0 there. MapServer holds the text as a C
 /// string, so a NUL inside a token ends the text too: the scanner reads only what comes before
-/// the first one.
+/// the first one. It steps past an ASCII byte or a whole character, so where it stands is a
+/// character's boundary.
 struct Scanner<'a> {
     text: &'a str,
     at: usize,
@@ -438,6 +443,10 @@ impl<'a> Scanner<'a> {
         }
         let len = number_len(|i| bytes.get(start + i).copied());
         if len > 0 {
+            #[expect(
+                clippy::string_slice,
+                reason = "`start` is where the scanner stands, and a number counts ASCII bytes"
+            )]
             let literal = &self.text[start..start + len];
             return Some((
                 Lexeme::Tok(Tok::Number(atof(literal.as_bytes()))),
@@ -447,10 +456,11 @@ impl<'a> Scanner<'a> {
         let lexeme = match c {
             b'[' if self.last_close.is_some_and(|last| last > start) => {
                 bracketed(self.text, start + 1, b']', b"]").map(|(name, next)| {
-                    let token = &self.text[start..next];
-                    let special = ["[shape]", "[map_cellsize]", "[data_cellsize]"]
-                        .iter()
-                        .any(|special| token.eq_ignore_ascii_case(special));
+                    let special = self.text.get(start..next).is_some_and(|token| {
+                        ["[shape]", "[map_cellsize]", "[data_cellsize]"]
+                            .iter()
+                            .any(|special| token.eq_ignore_ascii_case(special))
+                    });
                     if special {
                         (Lexeme::Special(name), next)
                     } else {
@@ -480,6 +490,10 @@ impl<'a> Scanner<'a> {
             },
             b'`' => match bytes[start + 1..].iter().position(|&b| b == b'`') {
                 Some(len) => {
+                    #[expect(
+                        clippy::string_slice,
+                        reason = "`start` is an ASCII backquote and `len` ends at the next one"
+                    )]
                     let time = self.text[start + 1..start + 1 + len].to_owned();
                     (Lexeme::Tok(Tok::Time(time)), start + len + 2)
                 }
@@ -505,6 +519,7 @@ impl<'a> Scanner<'a> {
                 }
             }
             _ => {
+                #[expect(clippy::string_slice, reason = "`start` is where the scanner stands")]
                 let rest = &self.text[start..];
                 match SYMBOLS.iter().find(|s| rest.starts_with(**s)) {
                     Some(symbol) => (Lexeme::Tok(Tok::Symbol(symbol)), start + symbol.len()),
@@ -549,17 +564,22 @@ fn tokenize(text: &str) -> Result<Vec<Tok>, Problem> {
     let mut tokens = Vec::new();
     for (lexeme, span) in Scanner::new(text) {
         match lexeme {
+            #[expect(
+                clippy::string_slice,
+                reason = "a span runs between places the scanner stood"
+            )]
             Lexeme::Tok(Tok::Number(n)) => tokens.push(Tok::Number(finite(&text[span], n)?)),
             Lexeme::Tok(token) => tokens.push(token),
             Lexeme::Special(name) => return Err(Problem::unsupported(&format!("[{name}]"))),
             Lexeme::Char('[') => return Err(Problem::invalid("unterminated `[`")),
             Lexeme::Char('`') => return Err(Problem::invalid("unterminated '`'")),
             Lexeme::Char(c) if c.is_ascii_alphabetic() => {
+                #[expect(clippy::string_slice, reason = "a span starts where the scanner stood")]
                 let rest = &text[span.start..];
-                let end = rest
-                    .find(|c: char| !c.is_ascii_alphabetic())
-                    .unwrap_or(rest.len());
-                let word = &rest[..end];
+                let word = rest
+                    .split(|c: char| !c.is_ascii_alphabetic())
+                    .next()
+                    .unwrap_or_default();
                 return Err(Problem::invalid(format!("unknown word `{word}`")));
             }
             Lexeme::Char(c) => return Err(Problem::invalid(format!("unexpected `{c}`"))),
@@ -604,6 +624,10 @@ fn bracketed(text: &str, from: usize, escape: u8, end: &[u8]) -> Option<(String,
     }
     let close = last?;
     let escape = char::from(escape);
+    #[expect(
+        clippy::string_slice,
+        reason = "`from` is past an ASCII byte and `close` at the ASCII `end`"
+    )]
     let name = text[from..close].replace(&format!("{escape}{escape}"), &escape.to_string());
     Some((name, close + end.len()))
 }
@@ -621,11 +645,19 @@ fn string(text: &str, from: usize) -> Option<(String, usize)> {
         match bytes.get(i) {
             None => return None,
             Some(b'\\') if matches!(bytes.get(i + 1), Some(b'\'' | b'"' | b'\\')) => {
+                #[expect(
+                    clippy::string_slice,
+                    reason = "`held` is past an ASCII quote or backslash, `i` at an ASCII backslash"
+                )]
                 value.push_str(&text[held..i]);
                 held = i + 1;
                 i += 2;
             }
             Some(&b) if b == quote => {
+                #[expect(
+                    clippy::string_slice,
+                    reason = "`held` is past an ASCII quote or backslash, `i` at the closing quote"
+                )]
                 value.push_str(&text[held..i]);
                 let icase = bytes
                     .get(i + 1)

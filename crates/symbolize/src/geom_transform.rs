@@ -43,7 +43,7 @@ pub(crate) type Placed = (Point, Option<f64>);
 /// nothing there, as msDrawTransformedShape draws nothing for them; `bbox` draws no symbol at a
 /// point, but a polygon (see [`bbox`]).
 pub(crate) fn placed(
-    transform: GeomTransform,
+    transform: &GeomTransform,
     geometry: &Geometry,
     view: &View,
     image: (f64, f64),
@@ -87,7 +87,8 @@ pub(crate) fn placed(
         GeomTransform::Bbox
         | GeomTransform::LabelPoint
         | GeomTransform::LabelPoly
-        | GeomTransform::LabelCenter => {}
+        | GeomTransform::LabelCenter
+        | GeomTransform::Expression(_) => {}
     }
     placed
 }
@@ -275,9 +276,9 @@ mod tests {
     fn start_and_end_draw_at_the_ends_of_a_line_turned_with_its_end_segments() {
         // calcOrientation: atan2(dx, dy) − π/2 in degrees; rightwards is 0, downwards on the
         // image −90 (MapServer's angles turn counter-clockwise).
-        let start = placed(GeomTransform::Start, &ell(), &view(), IMAGE);
+        let start = placed(&GeomTransform::Start, &ell(), &view(), IMAGE);
         assert_eq!(start, vec![(p(10.0, 20.0), Some(0.0))]);
-        let end = placed(GeomTransform::End, &ell(), &view(), IMAGE);
+        let end = placed(&GeomTransform::End, &ell(), &view(), IMAGE);
         assert_eq!(end.len(), 1);
         assert_eq!(end[0].0, p(90.0, 90.0));
         assert!((end[0].1.unwrap() - (-90.0)).abs() < 1e-6, "{end:?}");
@@ -293,7 +294,7 @@ mod tests {
                 .map(|(x, y)| Coord { x, y })
                 .to_vec(),
         ]);
-        let drawn = placed(GeomTransform::Start, &two, &view(), IMAGE);
+        let drawn = placed(&GeomTransform::Start, &two, &view(), IMAGE);
         assert_eq!(drawn.len(), 2);
         assert_eq!(drawn[0], (p(10.0, 20.0), Some(0.0)));
         assert_eq!(drawn[1].0, p(60.0, 90.0));
@@ -306,7 +307,7 @@ mod tests {
     #[test]
     fn vertices_draw_at_every_inner_vertex_turned_halfway() {
         // The corner of the L bisects rightwards (0) and downwards (−90).
-        let drawn = placed(GeomTransform::Vertices, &ell(), &view(), IMAGE);
+        let drawn = placed(&GeomTransform::Vertices, &ell(), &view(), IMAGE);
         assert_eq!(drawn.len(), 1);
         assert_eq!(drawn[0].0, p(90.0, 20.0));
         assert!((drawn[0].1.unwrap() - (-45.0)).abs() < 1e-6, "{drawn:?}");
@@ -315,10 +316,10 @@ mod tests {
     #[test]
     fn a_point_outside_the_image_draws_nothing() {
         let leaving = line(&[(-20.0, 50.0), (50.0, 50.0), (150.0, 50.0)]);
-        assert!(placed(GeomTransform::Start, &leaving, &view(), IMAGE).is_empty());
-        assert!(placed(GeomTransform::End, &leaving, &view(), IMAGE).is_empty());
+        assert!(placed(&GeomTransform::Start, &leaving, &view(), IMAGE).is_empty());
+        assert!(placed(&GeomTransform::End, &leaving, &view(), IMAGE).is_empty());
         assert_eq!(
-            placed(GeomTransform::Vertices, &leaving, &view(), IMAGE),
+            placed(&GeomTransform::Vertices, &leaving, &view(), IMAGE),
             vec![(p(50.0, 50.0), Some(0.0))]
         );
     }
@@ -334,16 +335,16 @@ mod tests {
             (30.0, 50.0),
             (30.0, 50.0),
         ]);
-        let drawn = placed(GeomTransform::Vertices, &dense, &view(), IMAGE);
+        let drawn = placed(&GeomTransform::Vertices, &dense, &view(), IMAGE);
         assert_eq!(drawn, vec![(p(11.5, 50.0), Some(0.0))]);
-        let end = placed(GeomTransform::End, &dense, &view(), IMAGE);
+        let end = placed(&GeomTransform::End, &dense, &view(), IMAGE);
         assert_eq!(end[0].0, p(30.0, 50.0));
     }
 
     #[test]
     fn a_line_simplified_to_one_point_draws_nothing() {
         let short = line(&[(10.0, 50.0), (10.0, 50.0)]);
-        assert!(placed(GeomTransform::Start, &short, &view(), IMAGE).is_empty());
+        assert!(placed(&GeomTransform::Start, &short, &view(), IMAGE).is_empty());
     }
 
     #[test]
@@ -362,10 +363,10 @@ mod tests {
             .to_vec(),
         ]);
         assert_eq!(
-            placed(GeomTransform::Centroid, &square, &view(), IMAGE),
+            placed(&GeomTransform::Centroid, &square, &view(), IMAGE),
             vec![(p(30.0, 70.0), None)]
         );
-        let ell = placed(GeomTransform::Centroid, &ell(), &view(), IMAGE);
+        let ell = placed(&GeomTransform::Centroid, &ell(), &view(), IMAGE);
         // Segments of 80 and 70 with midpoints (50, 20) and (90, 55).
         let expected = p(
             (80.0 * 50.0 + 70.0 * 90.0) / 150.0,
@@ -375,7 +376,7 @@ mod tests {
         // Outside the image, the centroid draws all the same.
         let far_away = line(&[(200.0, 50.0), (300.0, 50.0)]);
         assert_eq!(
-            placed(GeomTransform::Centroid, &far_away, &view(), IMAGE),
+            placed(&GeomTransform::Centroid, &far_away, &view(), IMAGE),
             vec![(p(250.0, 50.0), None)]
         );
     }
@@ -395,7 +396,7 @@ mod tests {
             .to_vec(),
         ];
         let drawn = placed(
-            GeomTransform::Vertices,
+            &GeomTransform::Vertices,
             &Geometry::Polygon(ring),
             &view(),
             IMAGE,
@@ -410,8 +411,9 @@ mod tests {
             GeomTransform::LabelPoint,
             GeomTransform::LabelPoly,
             GeomTransform::LabelCenter,
+            GeomTransform::Expression("(buffer([shape], 5))".to_owned()),
         ] {
-            assert!(placed(transform, &ell(), &view(), IMAGE).is_empty());
+            assert!(placed(&transform, &ell(), &view(), IMAGE).is_empty());
         }
     }
 }

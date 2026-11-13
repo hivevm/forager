@@ -15,6 +15,7 @@
 
 //! A class's or a label's `STYLE` blocks.
 
+use forager_style_ir::c::ms_nint;
 use forager_style_ir::{Bound, GeomTransform, LineCap, LineJoin, LineOffset, Style};
 
 use super::{Range, Translator, kept_binding, kept_bindings};
@@ -22,13 +23,17 @@ use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
 
 impl Translator<'_> {
-    pub(super) fn style(&mut self, block: &Block) -> Style {
+    /// A class's `STYLE`, or a label's where `of_label`; a label's reader reports the transform
+    /// that leaves its label out itself, so the style's reader does not warn of it again.
+    pub(super) fn style(&mut self, block: &Block, of_label: bool) -> Style {
         let mut style = Style {
             span: Some(block.span.clone()),
             ..Style::default()
         };
         // SIZE's binding, which a later SIZE's expression hides but does not free.
         let mut size_binding = None;
+        // The last OPACITY number, which loadStyle keeps beside a binding.
+        let mut opacity_value = None;
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -96,6 +101,9 @@ impl Translator<'_> {
                             Bound::Value(n) => Bound::Value(n.trunc().clamp(0.0, 100.0)),
                             bound => bound,
                         });
+                        if let Some(Bound::Value(n)) = opacity {
+                            opacity_value = Some(n);
+                        }
                         style.opacity = kept_binding(style.opacity.take(), opacity);
                     }
                     "OUTLINEWIDTH" => {
@@ -108,13 +116,14 @@ impl Translator<'_> {
                     "MAXSIZE" => style.max_size = self.number(d, Range::above(0.0)),
                     "MINWIDTH" => style.min_width = self.number(d, Range::at_least(0.0)),
                     "MAXWIDTH" => style.max_width = self.number(d, Range::above(0.0)),
-                    "GEOMTRANSFORM" => style.geom_transform = self.geom_transform(d),
+                    "GEOMTRANSFORM" => style.geom_transform = self.geom_transform(d, of_label),
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) if b.keyword == "PATTERN" => style.pattern = self.pattern(b),
                 Node::Block(b) => self.unhandled(&b.keyword, &b.span),
             }
         }
+        opacity_beside_binding(&mut style, opacity_value);
         style
     }
 
@@ -181,15 +190,18 @@ impl Translator<'_> {
         }
     }
 
-    /// `GEOMTRANSFORM` by name; MapServer's expressions are not yet carried over.
-    fn geom_transform(&mut self, d: &Directive) -> Option<GeomTransform> {
+    /// `GEOMTRANSFORM` by name; MapServer's expressions are not yet carried over, and are a
+    /// warning on a class's style.
+    fn geom_transform(&mut self, d: &Directive, of_label: bool) -> Option<GeomTransform> {
         // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION): a string, a bare word that is no
-        // keyword among them, or an expression.
+        // keyword among them, or an expression, which the engine does not draw and reports.
+        if let [token] = d.values.as_slice()
+            && let TokenKind::Expression(text) = &token.kind
+        {
+            return Some(GeomTransform::Expression(text.clone()));
+        }
         let name = match d.values.as_slice() {
-            [token] => token
-                .string()
-                .map(str::to_ascii_lowercase)
-                .or_else(|| matches!(token.kind, TokenKind::Expression(_)).then(String::new)),
+            [token] => token.string().map(str::to_ascii_lowercase),
             _ => None,
         };
         let Some(name) = name else {
@@ -212,13 +224,29 @@ impl Translator<'_> {
             .into_iter()
             .find(|(prefix, _)| name.starts_with(prefix))
             .map(|(_, transform)| transform);
-        if transform.is_none() {
-            let message = "this GEOMTRANSFORM names no transform, or is an expression, which is \
-                           not yet supported; a class's style is drawn as if it had none, a \
-                           label's leaves its label out";
+        if transform.is_none() && !of_label {
+            let message = "this GEOMTRANSFORM names no transform; a class's style is drawn as if \
+                           it had none";
             self.warn("unsupported-value", message, &d.span);
         }
         transform
+    }
+}
+
+/// loadStyle applies an opacity below 100 to the alpha of the colours at its END, the number's
+/// even where a binding of OPACITY stands beside it, and bindStyle replaces that alpha only for a
+/// bound value below 100. The engine applies a value the IR holds, so the number is applied here
+/// only where the IR holds the binding instead.
+fn opacity_beside_binding(style: &mut Style, opacity: Option<f64>) {
+    if let (Some(Bound::Binding { .. }), Some(opacity)) = (&style.opacity, opacity)
+        && opacity < 100.0
+    {
+        let alpha = u8::try_from(ms_nint(opacity * 2.55)).unwrap_or(u8::MAX);
+        for color in [&mut style.color, &mut style.outline_color] {
+            if let Some(Bound::Value(c)) = color {
+                c.a = alpha;
+            }
+        }
     }
 }
 

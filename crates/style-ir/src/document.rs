@@ -330,6 +330,7 @@ mod tests {
             }),
             size: Some([400, 200]),
             image_color: Some(Rgba::opaque(255, 255, 255)),
+            label_cache_edge_buffer: Some(10),
             projection: Some("+proj=longlat +datum=WGS84".into()),
             resolution: Some(96.0),
             def_resolution: None,
@@ -350,6 +351,8 @@ mod tests {
                 max_scale_denom: None,
                 opacity: Some(50.0),
                 label_cache: false,
+                post_label_cache: true,
+                max_features: Some(3),
                 filter: Some(Expr::call(
                     Op::In,
                     vec![

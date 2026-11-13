@@ -13,6 +13,9 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+use std::cell::Cell;
+use std::collections::BTreeMap;
+
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::{Bound, LayerStatus, RenderMode, Rgba, Severity, Span};
 
@@ -103,6 +106,29 @@ fn a_layers_labelcache_is_carried_and_on_without_one() {
     let layers = &loaded.document.unwrap().map.layers;
     let cached: Vec<bool> = layers.iter().map(|l| l.label_cache).collect();
     assert_eq!(cached, [false, true, true, false]);
+}
+
+#[test]
+fn a_layer_of_postlabelcache_is_carried_its_label_cache_off() {
+    // loadLayer reads POSTLABELCACHE with getSymbol(MS_TRUE, MS_FALSE) and turns the label
+    // cache off where it is TRUE (mapfile.c:4755-4759); msDrawLayer turns it off again, so a
+    // LABELCACHE ON after it changes nothing (mapdraw.c:854-856).
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER NAME 'a' POSTLABELCACHE TRUE END \
+         LAYER NAME 'b' POSTLABELCACHE TRUE LABELCACHE ON END \
+         LAYER NAME 'c' POSTLABELCACHE FALSE END LAYER NAME 'd' END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let layers = &loaded.document.unwrap().map.layers;
+    let flags: Vec<(bool, bool)> = layers
+        .iter()
+        .map(|l| (l.post_label_cache, l.label_cache))
+        .collect();
+    assert_eq!(
+        flags,
+        [(true, false), (true, false), (false, true), (false, true)]
+    );
 }
 
 #[test]
@@ -269,24 +295,44 @@ fn an_unknown_keyword_is_reported_once() {
     assert_eq!(codes(&loaded), ["unknown-keyword"]);
 }
 
+/// Files in memory whose loads are counted.
+struct Counted {
+    files: Files,
+    loads: Cell<usize>,
+}
+
+impl ResourceLoader for Counted {
+    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        self.loads.set(self.loads.get() + 1);
+        self.files.load(path).await
+    }
+}
+
 #[test]
 fn includes_that_multiply_past_the_size_limit_are_an_error() {
     // Verifies: Q-9
     // Each level includes the next 64 times: 64^4 copies of a 32 KiB file exceed the limit long
-    // before they are all read.
+    // before they are all read, which the count of the files loaded shows.
     let leaf: &'static str = format!("NAME '{}'\n", "x".repeat(32 * 1024)).leak();
     let fan = |next: &str| -> &'static str { format!("INCLUDE '{next}'\n").repeat(64).leak() };
-    let started = std::time::Instant::now();
-    let loaded = load_files(&[
-        ("m.map", "MAP INCLUDE '1' END"),
-        ("1", fan("2")),
-        ("2", fan("3")),
-        ("3", fan("4")),
-        ("4", leaf),
-    ]);
+    let files = Counted {
+        files: Files(BTreeMap::from([
+            ("m.map", "MAP INCLUDE '1' END"),
+            ("1", fan("2")),
+            ("2", fan("3")),
+            ("3", fan("4")),
+            ("4", leaf),
+        ])),
+        loads: Cell::new(0),
+    };
+    let path = ResourcePath::new("m.map").unwrap();
+    let loaded = ready(load(&path, &files, None));
     assert!(loaded.document.is_none());
     assert_eq!(codes(&loaded), ["mapfile-too-large"]);
-    assert!(started.elapsed().as_secs() < 10, "{:?}", started.elapsed());
+    // The limit holds 512 copies of the leaf, and the load stops once it is passed: about as
+    // many loads, not the 64^4 copies a load that read every file would ask for. A count, not a
+    // clock, bounds the work (Q-2).
+    assert!(files.loads.get() < 600, "{} loads", files.loads.get());
 }
 
 #[test]
@@ -1690,4 +1736,113 @@ fn an_output_format_reads_transparent_by_token_value_and_its_name_as_any_token()
     assert_eq!(image_color(text), None);
     let text = "MAP IMAGETYPE 'tiny' OUTPUTFORMAT NAME tiny DRIVER AGG/PNG TRANSPARENT on END END";
     assert_eq!(image_color(text), clear);
+}
+
+#[test]
+fn the_maps_label_cache_edge_buffer_is_read_from_web_metadata_as_msdrawlabelcache_reads_it() {
+    // msDrawLabelCache: gutter = MS_ABS(atoi(value)) of WEB METADATA's
+    // `labelcache_map_edge_buffer` (src/mapdraw.c:3488-3498), the key found without case.
+    let gutter = |metadata: &str| {
+        let text: &'static str = format!("MAP WEB METADATA {metadata} END END END").leak();
+        let loaded = load_files(&[("m.map", text)]);
+        loaded.document.unwrap().map.label_cache_edge_buffer
+    };
+    assert_eq!(gutter("'labelcache_map_edge_buffer' '10'"), Some(10));
+    assert_eq!(gutter("'LabelCache_Map_Edge_Buffer' '-10'"), Some(10));
+    assert_eq!(gutter("'labelcache_map_edge_buffer' '12px'"), Some(12));
+    assert_eq!(gutter("'labelcache_map_edge_buffer' 'x'"), None);
+    assert_eq!(gutter("'labelcache_map_edge_buffer' '0'"), None);
+    assert_eq!(gutter("'other' '10'"), None);
+}
+
+#[test]
+fn a_layers_limit_on_its_features_is_settled_as_ms_layer_get_max_features_to_draw_settles_it() {
+    // msLayerGetMaxFeaturesToDraw (src/maplayer.c): the layer's MAXFEATURES, replaced by its
+    // `maxfeaturestodraw` metadata or else the map's, read by atoi; below 0, the selected output
+    // format's MAXFEATURESTODRAW.
+    let layers = |text: &'static str| {
+        let loaded = load_files(&[("m.map", text)]);
+        // METADATA, IMAGETYPE, and OUTPUTFORMAT are read for this and little else.
+        let others: Vec<_> = codes(&loaded)
+            .into_iter()
+            .filter(|code| *code != "unsupported-keyword")
+            .collect();
+        assert_eq!(others, Vec::<&str>::new(), "{text}");
+        let map = loaded.document.unwrap().map;
+        map.layers
+            .iter()
+            .map(|l| l.max_features)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        layers(
+            "MAP LAYER NAME 'a' MAXFEATURES 2 END \
+             LAYER NAME 'b' MAXFEATURES 2 METADATA 'MaxFeaturesToDraw' '5x' END END \
+             LAYER NAME 'c' END END"
+        ),
+        [Some(2), Some(5), None]
+    );
+    assert_eq!(
+        layers(
+            "MAP WEB METADATA 'maxfeaturestodraw' '3' END END \
+             LAYER NAME 'a' MAXFEATURES 2 END \
+             LAYER NAME 'b' METADATA 'maxfeaturestodraw' '-1' END END END"
+        ),
+        [Some(3), None],
+        "the map's replaces the layer's MAXFEATURES; a negative one falls back on the format's"
+    );
+    assert_eq!(
+        layers(
+            "MAP IMAGETYPE 'mf' OUTPUTFORMAT NAME 'mf' DRIVER 'AGG/PNG' \
+             FORMATOPTION 'QUALITY=9' FORMATOPTION 'maxfeaturestodraw=1' \
+             FORMATOPTION 'MAXFEATURESTODRAW=7' END \
+             LAYER NAME 'a' END LAYER NAME 'b' MAXFEATURES 4 END \
+             LAYER NAME 'c' METADATA 'maxfeaturestodraw' '0' END END END"
+        ),
+        [Some(1), Some(4), Some(0)],
+        "the first option of the key holds, below the layer's own"
+    );
+}
+
+#[test]
+fn a_layers_metadata_and_the_output_format_name_the_limit_they_are_read_for() {
+    // A layer's METADATA and the output format are read for maxfeaturestodraw, so their warnings
+    // say so rather than that they are ignored.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP IMAGETYPE 'mf' OUTPUTFORMAT NAME 'mf' DRIVER 'AGG/PNG' END \
+         LAYER NAME 'a' METADATA 'maxfeaturestodraw' '1' END END END",
+    )]);
+    let messages: Vec<&str> = loaded
+        .diagnostics
+        .iter()
+        .filter(|d| d.code == "unsupported-keyword")
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(messages.len(), 3, "{messages:?}");
+    for message in messages {
+        assert!(
+            message.to_ascii_lowercase().contains("maxfeaturestodraw"),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn a_maxfeatures_of_zero_is_an_error() {
+    // getInteger(&maxfeatures, MS_NUM_CHECK_GT, 0, -1) refuses 0.
+    let loaded = load_files(&[("m.map", "MAP LAYER NAME 'a' MAXFEATURES 0 END END")]);
+    assert_eq!(codes(&loaded), ["invalid-value"]);
+}
+
+#[test]
+fn a_layers_geomtransform_is_reported_as_not_carried() {
+    // The style IR carries no layer GEOMTRANSFORM yet (docs/backlog/layer-geomtransform.md): the
+    // keyword is warned of, and the layer's shapes are drawn as read.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER NAME 'a' GEOMTRANSFORM (simplify([shape], 25)) END END",
+    )]);
+    assert_eq!(codes(&loaded), ["unsupported-keyword"]);
+    assert!(loaded.document.is_some());
 }

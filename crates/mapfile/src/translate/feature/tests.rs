@@ -14,6 +14,11 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#![expect(
+    clippy::string_slice,
+    reason = "test code may slice a str: a slice off a boundary panics, and the test fails"
+)]
+
 use forager_style_ir::{FeatureProperty, InlineFeature, Layer, ShapeType};
 
 use crate::Loaded;

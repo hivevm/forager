@@ -37,7 +37,7 @@ use crate::classes::{self, Binder, c_bytes};
 use crate::fonts::Fonts;
 use crate::inline::feature_text;
 use crate::label_binding::{BoundLabel, Fixed, bind, fixed};
-use crate::label_styles::{self, LabelMarker, LabelStyles, Styled, StylesOf};
+use crate::label_styles::{self, LabelMarker, LabelStyles, Placed, Styled, StylesOf};
 use crate::{CachedLabel, quoted};
 
 /// Why a label's text is not laid out: the label names no font, no font of its list draws a line,
@@ -75,7 +75,7 @@ impl Unlaid {
 }
 
 /// A label of the render by its layer's index, its class's, and its index in the class.
-type LabelAt = (usize, usize, usize);
+pub(crate) type LabelAt = (usize, usize, usize);
 
 /// What of a label is the same for all its features, as the label cache reads it.
 struct Def {
@@ -148,7 +148,7 @@ impl Ink {
 /// A feature's label laid out, its properties bound to the feature, to be cached at each of the
 /// feature's points or drawn at once there.
 pub(crate) struct Laid {
-    at: LabelAt,
+    pub(crate) at: LabelAt,
     text: String,
     /// The text's path; none for a text that is empty or of line breaks only.
     path: Option<TextPath>,
@@ -168,12 +168,33 @@ pub(crate) struct Laid {
 }
 
 /// What of a layer's labels is settled before its features: what of each label of the classes
-/// drawn is settled, or none where it is not drawn, by its class's index and its own; whether
-/// they are drawn at once, under `LABELCACHE OFF`; and what those draw their styles with.
+/// drawn is settled, or none where it is not drawn, by its class's index and its own.
 pub(crate) struct LayerLabels<'r> {
     index: usize,
     fixed: BTreeMap<(usize, usize), Option<Fixed<'r>>>,
-    at_once: Option<Styled<'r>>,
+}
+
+/// What of a point layer of `LABELCACHE OFF` is settled before its features: its labels, drawn at
+/// once, and what they draw their styles with.
+pub(crate) struct AtOnce<'r> {
+    labels: LayerLabels<'r>,
+    styled: Styled<'r>,
+}
+
+/// A label of a feature's class that the feature matches: where it is, what of it is settled,
+/// and its styles bound to the feature where they vary by it, else none.
+struct Matched<'a, 'r> {
+    at: LabelAt,
+    fixed: &'a Fixed<'r>,
+    styles: Box<[Style<LabelTransform>]>,
+}
+
+/// A label's text for a feature, the text's lines, and the label's properties bound to the
+/// feature.
+struct Annotation {
+    text: String,
+    lines: Vec<Vec<char>>,
+    bound: BoundLabel,
 }
 
 /// The labels of one render, collected over its layers and drawn after them by MapServer's label
@@ -246,10 +267,9 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
     }
 
-    /// Settles the labels of layer `index`, drawn in `mode`, for the classes of `drawn` before
-    /// its features, each label not drawn reported once: a label of a layer other than a point
-    /// layer is not drawn yet. Under `LABELCACHE OFF` the labels are drawn at once, into the
-    /// layer's image where it has one of its own.
+    /// Settles the labels of layer `index`, drawn in `mode` with its labels cached, for the
+    /// classes of `drawn` before its features, each label not drawn reported once: a label of a
+    /// layer other than a point layer is not drawn yet.
     pub(crate) fn layer(
         &mut self,
         index: usize,
@@ -257,9 +277,41 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         drawn: &[Labelled<'_>],
         binder: &mut Binder<'_, '_>,
     ) -> LayerLabels<'r> {
+        let several = "its class has several labels, which MapServer places as a group";
+        self.settle_layer(index, mode, drawn, binder, several)
+    }
+
+    /// Settles the labels of point layer `index` of `LABELCACHE OFF` as [`Self::layer`] does,
+    /// to be drawn at once, into the layer's image where it has one of its own.
+    pub(crate) fn layer_at_once(
+        &mut self,
+        index: usize,
+        drawn: &[Labelled<'_>],
+        binder: &mut Binder<'_, '_>,
+    ) -> AtOnce<'r> {
+        let several = "its class has several labels, which MapServer draws each on its own under \
+                       LABELCACHE OFF, and which are not drawn yet";
+        let labels = self.settle_layer(index, RenderMode::Point, drawn, binder, several);
+        let (width, height) = self.size;
+        let mut styled = Styled::new(self.map, self.view, width, height);
+        if crate::layer_opacity(&self.map.layers[index]).is_some() {
+            styled.in_own_image();
+        }
+        AtOnce { labels, styled }
+    }
+
+    /// Settles the labels of layer `index` as [`Self::layer`] says, a label of a class with
+    /// several of them not drawn for the reason `several`.
+    fn settle_layer(
+        &mut self,
+        index: usize,
+        mode: RenderMode,
+        drawn: &[Labelled<'_>],
+        binder: &mut Binder<'_, '_>,
+        several: &str,
+    ) -> LayerLabels<'r> {
         let map = self.map;
         let layer = &map.layers[index];
-        let at_once = mode == RenderMode::Point && !layer.label_cache;
         let scale = classes::scale_denom(map, self.view, self.size.0);
         let factor = classes::layer_scale_factor(map, layer, self.view.cellsize, scale);
         let mut fixed_labels = BTreeMap::new();
@@ -291,13 +343,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 let fixed = if mode != RenderMode::Point {
                     Err("labels of line and polygon layers are not drawn yet".to_owned())
                 } else if class.labels.len() > 1 {
-                    Err(if at_once {
-                        "its class has several labels, which MapServer draws each on its own \
-                         under LABELCACHE OFF, and which are not drawn yet"
-                    } else {
-                        "its class has several labels, which MapServer places as a group"
-                    }
-                    .to_owned())
+                    Err(several.to_owned())
                 } else {
                     fixed(map, label, text, factor)
                 };
@@ -310,19 +356,9 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 fixed_labels.insert((class_index, n), fixed);
             }
         }
-        let at_once = at_once.then(|| {
-            let (width, height) = self.size;
-            let mut styled = Styled::new(map, self.view, width, height);
-            // The layer's labels are drawn into its image, where it has one of its own.
-            if crate::layer_opacity(layer).is_some() {
-                styled.in_own_image();
-            }
-            styled
-        });
         LayerLabels {
             index,
             fixed: fixed_labels,
-            at_once,
         }
     }
 
@@ -339,102 +375,116 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         binder: &mut Binder<'_, '_>,
     ) {
         for &(feature, class, style) in drawn {
-            for laid in self
-                .label(layer, feature, class, style, pixmaps, binder)
-                .await
-            {
-                let Some(Some(fixed)) = layer.fixed.get(&(laid.at.1, laid.at.2)) else {
+            let mut laid = Vec::new();
+            for n in 0..self.map.layers[layer.index].classes[class].labels.len() {
+                let Some(label) = self.matched(layer, feature, class, n, binder) else {
                     continue;
                 };
-                self.cache_label(feature, laid, fixed);
+                let fixed = label.fixed;
+                let one = self.lay_out_cached(label, feature, style, pixmaps, binder);
+                laid.extend(one.await.map(|one| (one, fixed)));
+            }
+            for (one, fixed) in laid {
+                self.cache_label(feature, one, fixed);
             }
         }
     }
 
-    /// The labels of `feature`, which class `class` of `layer` draws, laid out for the cache or
-    /// to be drawn at once: each label settled whose `EXPRESSION` matches it, as
-    /// `msGetLabelStatus` decides, its styles bound to it by `bindLabel`. The first style of the
-    /// class, `style`, is the marker a cached label moves away from, sized among `pixmaps`.
-    pub(crate) async fn label(
+    /// The labels of `feature`, which class `class` of `layer` draws, laid out to be drawn at
+    /// once, each as [`Self::matched`] gives it.
+    pub(crate) async fn label_at_once(
         &mut self,
-        layer: &LayerLabels<'r>,
+        layer: &AtOnce<'r>,
         feature: &Feature,
         class: usize,
-        style: Option<&Style>,
         pixmaps: &Pixmaps,
         binder: &mut Binder<'_, '_>,
     ) -> Vec<Laid> {
-        let map = self.map;
-        let labels = &map.layers[layer.index].classes[class].labels;
         let mut laid = Vec::new();
-        for (n, label) in labels.iter().enumerate() {
-            let Some(Some(fixed)) = layer.fixed.get(&(class, n)) else {
+        for n in 0..self.map.layers[layer.labels.index].classes[class]
+            .labels
+            .len()
+        {
+            let Some(label) = self.matched(&layer.labels, feature, class, n, binder) else {
                 continue;
             };
-            if !binder.label_matches(feature, class, n) {
-                continue;
-            }
-            // bindLabel binds the label's styles to the feature with its properties. Styles
-            // that vary by no feature are the same for all, and are read from the map where the
-            // label is drawn; only those of a label whose styles vary are held.
-            let written = &label.styles;
-            let styles: Box<[Style<LabelTransform>]> = if written.iter().any(classes::varies) {
-                written
-                    .iter()
-                    .map(|s| {
-                        binder
-                            .bind_label_style(s, feature, &map.symbols, (class, n))
-                            .into_owned()
-                    })
-                    .collect()
-            } else {
-                Box::default()
-            };
-            let at = (layer.index, class, n);
-            let at_once = layer.at_once.is_some();
-            let one = self.lay_out(at, fixed, feature, style, pixmaps, styles, binder, at_once);
-            laid.extend(one.await);
+            laid.extend(self.lay_out_at_once(label, feature, pixmaps, binder).await);
         }
         laid
     }
 
-    /// Lays out label `at` of `feature`, settled as `fixed`, its styles `styles` bound to the
-    /// feature where they vary by it; `at_once` to be drawn at once, else cached with the first
-    /// style of its class sized among the pixmaps beside it. None where it is not drawn.
-    #[allow(clippy::too_many_arguments)]
-    async fn lay_out(
+    /// Label `n` of class `class` of `layer` for `feature`, where it is settled and its
+    /// `EXPRESSION` matches the feature, as `msGetLabelStatus` decides, its styles bound to the
+    /// feature by `bindLabel`.
+    fn matched<'a>(
+        &self,
+        layer: &'a LayerLabels<'r>,
+        feature: &Feature,
+        class: usize,
+        n: usize,
+        binder: &mut Binder<'_, '_>,
+    ) -> Option<Matched<'a, 'r>> {
+        let map = self.map;
+        let Some(Some(fixed)) = layer.fixed.get(&(class, n)) else {
+            return None;
+        };
+        if !binder.label_matches(feature, class, n) {
+            return None;
+        }
+        // bindLabel binds the label's styles to the feature with its properties. Styles that vary
+        // by no feature are the same for all, and are read from the map where the label is
+        // drawn; only those of a label whose styles vary are held.
+        let written = &map.layers[layer.index].classes[class].labels[n].styles;
+        let styles: Box<[Style<LabelTransform>]> = if written.iter().any(classes::varies) {
+            written
+                .iter()
+                .map(|s| {
+                    binder
+                        .bind_label_style(s, feature, &map.symbols, (class, n))
+                        .into_owned()
+                })
+                .collect()
+        } else {
+            Box::default()
+        };
+        Some(Matched {
+            at: (layer.index, class, n),
+            fixed,
+            styles,
+        })
+    }
+
+    /// Lays out `label` of `feature` for the cache, with the first style of its class, `style`,
+    /// sized among `pixmaps`, the marker the label moves away from. None where it is not drawn.
+    async fn lay_out_cached(
         &mut self,
-        at: LabelAt,
-        fixed: &Fixed<'_>,
+        label: Matched<'_, '_>,
         feature: &Feature,
         style: Option<&Style>,
         pixmaps: &Pixmaps,
-        styles: Box<[Style<LabelTransform>]>,
         binder: &mut Binder<'_, '_>,
-        at_once: bool,
     ) -> Option<Laid> {
-        let (text, lines) = self.text_lines(at, fixed, feature, binder)?;
+        let at = label.at;
+        let (text, lines) = self.text_lines(at, label.fixed, feature, binder)?;
         // A text that is empty is none to msShapeGetLabelAnnotation (maputil.c:901-904, 929-932,
         // 973-976): msAddLabelGroup skips its label but for a labelpnt style (maplabel.c:267-277),
         // which the cache tests and draws alone. One of line breaks only and without styles is
-        // cached, its class's marker with it, but takes no box. Drawn at once, both draw their
-        // styles.
+        // cached, its class's marker with it, but takes no box.
         let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
-        if text.is_empty() && !at_once && !has_label_point(written) {
+        if text.is_empty() && !has_label_point(written) {
             return None;
         }
         // msDrawLabelCache draws a labelpoly or labelcenter style only with an annotext; without
         // one it fails the map with "Labels only support LABELPNT, LABELPOLY and LABELCENTER
         // GEOMTRANSFORMS" (mapdraw.c:4056-4133, 540, 593).
-        if text.is_empty() && !at_once && written.iter().any(boxed) {
+        if text.is_empty() && written.iter().any(boxed) {
             let why = "its text is empty, where msDrawLabelCache fails the map on a labelpoly or \
                        labelcenter style"
                 .to_owned();
             self.report(binder.diagnostics, at, "label-not-drawn", why);
             return None;
         }
-        let blank = lines.iter().all(Vec::is_empty);
-        let bound = bind(fixed, &feature.properties, |expr| {
+        let bound = bind(label.fixed, &feature.properties, |expr| {
             binder.label_number(expr, feature, at.1, at.2)
         });
         // msDrawLabelCache tests a labelpnt marker before the text and draws a member's labelpnt
@@ -444,17 +494,71 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         // (maplabel.c:1019-1123) and msTestLabelCacheCollisions tests (mapdraw.c:3789, 3898)
         // before any style is drawn, and on which a labelpoly or labelcenter style is drawn.
         // Through the cache, that box is not ported.
-        if blank && !text.is_empty() && !at_once && !written.is_empty() {
+        let blank = lines.iter().all(Vec::is_empty);
+        if blank && !text.is_empty() && !written.is_empty() {
             let why = "its text is of line breaks only, whose box the label cache tests and \
                        draws its styles by is not ported"
                 .to_owned();
             self.report(binder.diagnostics, at, "label-not-drawn", why);
             return None;
         }
+        let annotation = Annotation { text, lines, bound };
+        self.lay_out(label, annotation, style, pixmaps, feature, binder)
+            .await
+    }
+
+    /// Lays out `label` of `feature` to be drawn at once, a text that is empty or of line breaks
+    /// only drawing its styles. None where it is not drawn.
+    async fn lay_out_at_once(
+        &mut self,
+        label: Matched<'_, '_>,
+        feature: &Feature,
+        pixmaps: &Pixmaps,
+        binder: &mut Binder<'_, '_>,
+    ) -> Option<Laid> {
+        let at = label.at;
+        let (text, lines) = self.text_lines(at, label.fixed, feature, binder)?;
+        let bound = bind(label.fixed, &feature.properties, |expr| {
+            binder.label_number(expr, feature, at.1, at.2)
+        });
+        let annotation = Annotation { text, lines, bound };
+        // msDrawLabel moves a label off no marker: the class's style is not read for it.
+        let laid = self.lay_out(label, annotation, None, pixmaps, feature, binder);
+        let mut laid = laid.await?;
+        let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
+        if laid.path.is_none() && written.iter().any(boxed) {
+            // msDrawLabel fails on a labelpoly or labelcenter style where the text is empty, and
+            // draws it on a box of no size where it is of line breaks only.
+            let why = "its text is empty or of line breaks only, where msDrawLabel fails on a \
+                       labelpoly or labelcenter style or draws it on a box of no size"
+                .to_owned();
+            self.report(binder.diagnostics, at, "label-not-drawn", why);
+            return None;
+        }
+        // A label drawn at once is tested against no marker: its labelpnt marker is computed
+        // only for whether it is drawn, which msDrawLabel decides as the cache does.
+        laid.label_marker = None;
+        Some(laid)
+    }
+
+    /// Lays out `label` of `feature`, its text, lines, and bound properties `annotation`, moved
+    /// away from the marker of `style`, sized among `pixmaps`, where it has one. None where it is
+    /// not drawn.
+    async fn lay_out(
+        &mut self,
+        label: Matched<'_, '_>,
+        annotation: Annotation,
+        style: Option<&Style>,
+        pixmaps: &Pixmaps,
+        feature: &Feature,
+        binder: &mut Binder<'_, '_>,
+    ) -> Option<Laid> {
+        let Matched { at, fixed, styles } = label;
+        let Annotation { text, lines, bound } = annotation;
+        let written = &self.map.layers[at.0].classes[at.1].labels[at.2].styles;
+        let blank = lines.iter().all(Vec::is_empty);
         let label_styles: &[Style<LabelTransform>] =
             if styles.is_empty() { written } else { &styles };
-        // msDrawLabel moves a label off no marker: the class's style is not read for it.
-        let style = style.filter(|_| !at_once);
         let settled =
             settle(fixed, &bound, lines.len(), style, pixmaps, self.map).and_then(|settled| {
                 let marker = label_styles::label_marker(label_styles, self.map, fixed.factor);
@@ -467,9 +571,6 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 return None;
             }
         };
-        // A label drawn at once is tested against no marker: its labelpnt marker is computed
-        // only for whether it is drawn, which msDrawLabel decides as the cache does.
-        let label_marker = label_marker.filter(|_| !at_once);
         let glyph_size = glyph_size(
             bound.size,
             fixed.factor,
@@ -496,15 +597,6 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let ow = ms_nint(fixed.outline_width * (glyph_size / bound.size));
             (color, ow.wrapping_add(1))
         });
-        if at_once && path.is_none() && written.iter().any(boxed) {
-            // msDrawLabel fails on a labelpoly or labelcenter style where the text is empty, and
-            // draws it on a box of no size where it is of line breaks only.
-            let why = "its text is empty or of line breaks only, where msDrawLabel fails on a \
-                       labelpoly or labelcenter style or draws it on a box of no size"
-                .to_owned();
-            self.report(binder.diagnostics, at, "label-not-drawn", why);
-            return None;
-        }
         Some(Laid {
             at,
             text,
@@ -538,14 +630,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// (mapdraw.c:2714-2748). The count of glyphs left out for reaching too far from the image.
     pub(crate) fn draw_at_once<R: Draw>(
         &mut self,
-        layer: &mut LayerLabels<'r>,
+        layer: &mut AtOnce<'r>,
         renderer: &mut R,
         label: &Laid,
         point: Point,
     ) -> usize {
-        let Some(styled) = &mut layer.at_once else {
-            return 0;
-        };
+        let styled = &mut layer.styled;
         // The text's box, which a label without one draws no style on.
         let text = label.path.as_ref().map_or(
             TextBox {
@@ -589,31 +679,23 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             bounds,
             anchor,
         };
+        let placed = Placed {
+            at: label.at,
+            member: &member,
+            placement: &placement,
+            styles: &StylesOf::Bound(&label.styles),
+        };
         let out_of_reach = draw_label(
             renderer,
             styled,
-            self.map,
-            label.at,
-            &member,
-            &placement,
-            (label.ink, &StylesOf::Bound(&label.styles)),
+            &placed,
+            label.ink,
             label.path.as_ref(),
             &self.glyphs,
             self.image(),
         );
         self.hatches_refused(label.at, styled.take_hatches_refused());
         out_of_reach
-    }
-
-    /// Reports the glyphs of `label`, drawn at once at each of its feature's points, left out for
-    /// reaching too far from the image, `out_of_reach` of them.
-    pub(crate) fn drawn_at_once(
-        &mut self,
-        diagnostics: &mut Vec<Diagnostic>,
-        label: &Laid,
-        out_of_reach: usize,
-    ) {
-        self.out_of_reach(diagnostics, label.at, out_of_reach);
     }
 
     /// The image the labels are drawn in, from its corner to its far one.
@@ -833,9 +915,11 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
 
     /// Draws the labels the label cache places, in the order it places them, each label's path
     /// built just before it is drawn. A glyph left out for reaching too far from the image is
-    /// reported once for its label, and the labels left out past [`MAX_LABELS`] once.
+    /// reported once for its label, and the labels left out past [`MAX_LABELS`] once. The cache is
+    /// emptied; the fonts and glyphs stay for the labels of the layers of `POSTLABELCACHE TRUE`,
+    /// drawn at once after it.
     pub(crate) fn finish<R: Draw>(
-        mut self,
+        &mut self,
         renderer: &mut R,
         diagnostics: &mut Vec<Diagnostic>,
     ) -> Vec<CachedLabel> {
@@ -868,7 +952,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let mut styled = Styled::new(self.map, self.view, width, height);
         // The report follows the cache's walk, every member it visits with whether it was drawn.
         let mut walked: Vec<(u32, Option<[f64; 4]>)> = Vec::with_capacity(cached.len());
-        let left_out = walk_label_cache(&cache, self.size, |i, placement| {
+        let gutter = self.map.label_cache_edge_buffer.unwrap_or(0);
+        let left_out = walk_label_cache(&cache, self.size, gutter, |i, placement| {
             let label = &cached[i];
             let at = defs[label.def as usize].at;
             let Some(placement) = placement else {
@@ -880,20 +965,20 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let drawn = member_box(&placement.bounds.bbox, member.label_marker.as_ref());
             walked.push((i as u32, Some(drawn)));
             let path = (label.path != NO_PATH).then(|| &paths[label.path as usize]);
+            let placed = Placed {
+                at,
+                member: &member,
+                placement,
+                styles: &StylesOf::Held {
+                    styles: &styles,
+                    text: label.text,
+                },
+            };
             let out_of_reach = draw_label(
                 renderer,
                 &mut styled,
-                self.map,
-                at,
-                &member,
-                placement,
-                (
-                    Ink::of(label),
-                    &StylesOf::Held {
-                        styles: &styles,
-                        text: label.text,
-                    },
-                ),
+                &placed,
+                Ink::of(label),
                 path,
                 &glyphs,
                 image,
@@ -911,7 +996,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
         // The labels of the report share their feature's text.
         let texts: Vec<Arc<str>> = texts.into_iter().map(Arc::from).collect();
-        walked
+        let report = walked
             .into_iter()
             .map(|(i, drawn)| {
                 let label = &cached[i as usize];
@@ -924,11 +1009,18 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     drawn,
                 }
             })
-            .collect()
+            .collect();
+        self.glyphs = glyphs;
+        report
     }
 
     /// Reports the glyphs of `at` left out for reaching too far from the image, once per label.
-    fn out_of_reach(&mut self, diagnostics: &mut Vec<Diagnostic>, at: LabelAt, count: usize) {
+    pub(crate) fn out_of_reach(
+        &mut self,
+        diagnostics: &mut Vec<Diagnostic>,
+        at: LabelAt,
+        count: usize,
+    ) {
         if count > 0 {
             let why = format!(
                 "{count} of its glyphs reach farther than {} pixels from the image",
@@ -975,36 +1067,21 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 }
 
-/// Draws `label` of definition `at`, `member` placed at `placement`, into `renderer`: its styles,
-/// then its text of `path` in its colour and outline, as msDrawLabelCache and msDrawLabel draw
-/// them, each glyph that reaches into `image` or near it; the count of glyphs left out for reaching
-/// too far from it.
-#[allow(clippy::too_many_arguments)]
+/// Draws `placed` into `renderer`: its styles, then its text of `path` in the colour and outline
+/// of `label`, as msDrawLabelCache and msDrawLabel draw them, each glyph that reaches into `image`
+/// or near it; the count of glyphs left out for reaching too far from it.
 fn draw_label<R: Draw>(
     renderer: &mut R,
     styled: &mut Styled<'_>,
-    map: &Map,
-    (layer, class, n): LabelAt,
-    member: &Member,
-    placement: &Placement,
-    (label, styles): (Ink, &StylesOf<'_>),
+    placed: &Placed<'_>,
+    label: Ink,
     path: Option<&TextPath>,
     glyphs: &[Glyphs],
     image: [f64; 4],
 ) -> usize {
     // The label's styles, before its text.
-    let written = &map.layers[layer].classes[class].labels[n].styles;
-    if !written.is_empty() {
-        styled.draw(
-            renderer,
-            layer,
-            member,
-            placement,
-            label.feature_id,
-            styles,
-            written,
-        );
-    }
+    styled.draw(renderer, placed, label.feature_id);
+    let placement = placed.placement;
     let Some(path) = path else {
         return 0;
     };

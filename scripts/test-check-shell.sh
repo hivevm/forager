@@ -2,16 +2,19 @@
 #
 # Self-test of scripts/check-shell.sh.
 #
-# Each case builds a throwaway git repository with one shell script that ShellCheck flags, runs
-# the lint against it, and asserts the exit code: a tracked script and a new one git does not
-# ignore fail, a script under an ignored directory and a git hook in .githooks/ are read as git
-# lists them, and a directory that is no repository fails rather than passing empty. GNU sed's
-# in-place flag fails and names the line, while a temporary file and a comment pass. A pipe into
-# grep with -q fails and names the line, while a here-string, a comment, grep -c, and grep -q after
-# '||' pass; the forms that read the input whole report the match of a producer that writes on
-# after it, where the pipe reads none. Where
-# ShellCheck is not on PATH the lint skips ShellCheck, and so does this test with the cases that
-# need it. A shellcheck of another version than the pinned is named with it, and fails in CI.
+# Each case builds a throwaway git repository with one shell script that ShellCheck flags, runs the
+# lint against it, and asserts the exit code: a tracked script and a new one git does not ignore
+# fail, a script under an ignored directory and a git hook in .githooks/ are read as git lists them,
+# and a directory that is no repository fails rather than passing empty. GNU sed's in-place flag
+# fails and names the line, while a temporary file and a comment pass. A pipe into grep with -q
+# fails and names the line, while a here-string, a comment, grep -c, and grep -q after '||' pass;
+# the forms that read the input whole report the match of a producer that writes on after it, where
+# the pipe reads none. Where ShellCheck is not on PATH the lint skips ShellCheck, and so does this
+# test with the cases that need it. A shellcheck of another version than the pinned is named with
+# it, and fails in CI. A script under scripts/ with a shebang whose mode git tracks as 100644, its
+# path holding a space or not, or that is not executable on disk where git does not track it, fails
+# and names the file, while one tracked as 100755, one without a shebang, and a sourced one under
+# scripts/lib/ pass.
 #
 # Verifies: ADR-0002
 # Inputs: scripts/check-shell.sh scripts/lib/
@@ -144,6 +147,55 @@ d="$(repo grep-quiet-whole)"
 } > "$d/find.sh"
 git -C "${d:?}" add find.sh
 expect 0 "a here-string, a comment, grep -c, and grep -q after || pass" "$d"
+
+# A script under scripts/ with a shebang is run as a command, so it must be executable.
+OK_SCRIPT=$'#!/usr/bin/env bash\necho ok\n'
+d="$(repo mode-not-executable)"
+mkdir -p "$d/scripts"
+printf '%s' "$OK_SCRIPT" > "$d/scripts/run.sh"
+chmod -x "$d/scripts/run.sh"
+git -C "${d:?}" add scripts/run.sh
+expect 1 "a tracked script under scripts/ with mode 100644 fails" "$d"
+out="$(bash "$CHECK" "$d" 2>&1)"
+if [[ "$out" == *"scripts/run.sh: a script with a shebang"*"not executable"* ]]; then
+  passed=$((passed + 1))
+else
+  failed=$((failed + 1))
+  echo "FAIL: the finding on a script's mode names the file" >&2
+  printf '    %s\n' "$out" >&2
+fi
+git -C "$d" update-index --chmod=+x scripts/run.sh
+expect 0 "the same script tracked as 100755 passes, whatever its mode on disk" "$d"
+
+d="$(repo mode-untracked)"
+mkdir -p "$d/scripts"
+printf '%s' "$OK_SCRIPT" > "$d/scripts/new.sh"
+chmod -x "$d/scripts/new.sh"
+expect 1 "a new script under scripts/ that is not executable on disk fails" "$d"
+chmod +x "$d/scripts/new.sh"
+expect 0 "a new script under scripts/ that is executable on disk passes" "$d"
+
+d="$(repo mode-no-shebang)"
+mkdir -p "$d/scripts"
+printf '# shellcheck shell=bash\necho sourced\n' > "$d/scripts/part.sh"
+chmod -x "$d/scripts/part.sh"
+git -C "${d:?}" add scripts/part.sh
+expect 0 "a script under scripts/ without a shebang is no command and keeps mode 100644" "$d"
+
+d="$(repo mode-space)"
+mkdir -p "$d/scripts"
+printf '%s' "$OK_SCRIPT" > "$d/scripts/a b.sh"
+chmod -x "$d/scripts/a b.sh"
+git -C "${d:?}" add "scripts/a b.sh"
+chmod +x "$d/scripts/a b.sh"
+expect 1 "a tracked script whose path holds a space is read by its mode in git, not on disk" "$d"
+
+d="$(repo mode-sourced)"
+mkdir -p "$d/scripts/lib"
+printf '%s' "$OK_SCRIPT" > "$d/scripts/lib/shared.sh"
+chmod -x "$d/scripts/lib/shared.sh"
+git -C "${d:?}" add scripts/lib/shared.sh
+expect 0 "a sourced script under scripts/lib/ keeps mode 100644" "$d"
 
 # The forms the fixed sites use, under pipefail, against a producer that writes its second line
 # after a delay, after grep has matched the first: each reports the match every time. The pipe

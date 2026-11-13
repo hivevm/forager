@@ -26,6 +26,11 @@ pub struct Map {
     pub size: Option<[u32; 2]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_color: Option<Rgba>,
+    /// The pixels along the image's edges that no cached label reaches into unless it may be
+    /// partial or is forced, MapServer's `labelcache_map_edge_buffer` of `WEB` `METADATA`. Absent,
+    /// there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label_cache_edge_buffer: Option<u32>,
     /// The map's projection as a proj4 string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projection: Option<String>,
@@ -47,6 +52,8 @@ pub struct Map {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<Layer>,
     /// The map's fonts by name, each a resource path inside the base context, not read at load.
+    /// Names match without regard to case, as MapServer's font set compares them, so no two
+    /// differ only in case.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fonts: BTreeMap<String, String>,
     /// The map's symbols in MapServer's order: those of its `SYMBOL` blocks, then those of its
@@ -214,6 +221,17 @@ pub struct Layer {
     /// default `LABELCACHE ON`.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub label_cache: bool,
+    /// Whether the layer is drawn after the label cache, MapServer's `POSTLABELCACHE TRUE`: past
+    /// every other layer and over every cached label, in its order among the layers of this kind,
+    /// its own labels drawn at once, never cached. Absent, it is false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub post_label_cache: bool,
+    /// The most features the layer draws, MapServer's limit of `msLayerGetMaxFeaturesToDraw`:
+    /// the layer's `MAXFEATURES`, or its `maxfeaturestodraw` metadata, or the map's, or the output
+    /// format's `MAXFEATURESTODRAW`. The features past it, in the order the source returns them and
+    /// counted once their class is found, are not drawn, nor their labels. Absent, there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_features: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     /// The features written into the layer (ADR-0018). A layer with any is read from them alone,
@@ -240,6 +258,8 @@ impl Default for Layer {
             max_scale_denom: None,
             opacity: None,
             label_cache: true,
+            post_label_cache: false,
+            max_features: None,
             classes: Vec::new(),
             features: Vec::new(),
             span: None,
@@ -599,7 +619,7 @@ pub enum LineJoin {
     Bevel,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum GeomTransform {
@@ -625,6 +645,13 @@ pub enum GeomTransform {
     /// polygon layer draws nothing at.
     #[serde(rename = "labelcenter")]
     LabelCenter,
+    /// One of MapServer's expressions, `(buffer([shape], 5))` and the like, as written, which
+    /// the engine does not draw: a class's style of it in a line or a polygon layer draws nothing
+    /// and is reported, its class's other styles drawn as before; a point layer draws the style at
+    /// its points, as it draws every style whatever its transform; a label of a style of it is
+    /// left out.
+    #[serde(rename = "expression")]
+    Expression(String),
 }
 
 /// Where a label's style draws, which it always names.
@@ -956,7 +983,10 @@ impl Rgba {
         if !(hex.len() == 6 || hex.len() == 8) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
-        let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
+        let byte = |i: usize| {
+            hex.get(i..i + 2)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+        };
         Some(Self {
             r: byte(0)?,
             g: byte(2)?,

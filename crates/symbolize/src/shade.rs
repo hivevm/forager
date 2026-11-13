@@ -55,7 +55,7 @@ pub fn shade<T: Clone>(
         line_symbol(ops, open_rings(rings), style, Pass::Plain, canvas);
         return true;
     };
-    let factor = canvas.factor;
+    let factor = canvas.factors.scale;
     let rings = moved(rings, style_offset(style, factor));
     if symbol::is_hatch(style, canvas.symbols) {
         return match hatch::hatch(
@@ -64,8 +64,7 @@ pub fn shade<T: Clone>(
             color,
             canvas.size,
             hatch::reference(canvas.own_image, view),
-            factor,
-            canvas.resolution,
+            canvas.factors,
         ) {
             Hatched::Drawn(hatch) => {
                 ops.push(DrawOp::Hatch(hatch));
@@ -118,12 +117,11 @@ fn tiled<T>(
     let Some(image) = canvas.pixmap(index, symbol) else {
         return;
     };
-    let factor = canvas.factor;
-    let rings = moved(rings, style_offset(style, factor));
+    let rings = moved(rings, style_offset(style, canvas.factors.scale));
     if !meets_image(&rings, canvas.image()) {
         return;
     }
-    let drawn = symbol::pixmap_style(style, image.height(), factor, canvas.resolution);
+    let drawn = symbol::pixmap_style(style, image.height(), canvas.factors);
     // The engine's canvas always keeps tiles; one made without them, as a test's is, refuses the
     // fill rather than build a tile that nothing would hold or count (Q-9).
     let tile = match canvas.tiles.as_deref_mut() {

@@ -85,14 +85,16 @@ pub trait Members {
 }
 
 /// Walks `members` as `msDrawLabelCache` walks its slots, and hands `draw` each label drawn with
-/// its placement, in the order MapServer draws them, into an image of `size` pixels; see
-/// [`walk_label_cache`], whose count of the members left out past [`MAX_LABELS`] it returns.
+/// its placement, in the order MapServer draws them, into an image of `size` pixels with a
+/// `gutter` along its edges; see [`walk_label_cache`], whose count of the members left out past
+/// [`MAX_LABELS`] it returns.
 pub fn draw_label_cache<M: Members + ?Sized>(
     members: &M,
     size: (u32, u32),
+    gutter: u32,
     mut draw: impl FnMut(usize, &Placement),
 ) -> usize {
-    walk_label_cache(members, size, |i, placement| {
+    walk_label_cache(members, size, gutter, |i, placement| {
         if let Some(placement) = placement {
             draw(i, placement);
         }
@@ -101,12 +103,14 @@ pub fn draw_label_cache<M: Members + ?Sized>(
 
 /// Walks the first [`MAX_LABELS`] of `members` as `msDrawLabelCache` walks its slots, from the
 /// highest priority down and within a priority from the last added to the first, into an image of
-/// `size` pixels, and hands `visit` each member it visits, in that order, with its placement where
-/// it is drawn and `None` where it is left out. Returns how many members past [`MAX_LABELS`] it
-/// left out untested (Q-9).
+/// `size` pixels whose `gutter`, `labelcache_map_edge_buffer`, no label reaches into that may not
+/// be partial and is tested, and hands `visit` each member it visits, in that order, with its
+/// placement where it is drawn and `None` where it is left out. Returns how many members past
+/// [`MAX_LABELS`] it left out untested (Q-9).
 pub fn walk_label_cache<M: Members + ?Sized>(
     members: &M,
     size: (u32, u32),
+    gutter: u32,
     mut visit: impl FnMut(usize, Option<&Placement>),
 ) -> usize {
     let taken = members.count().min(MAX_LABELS);
@@ -123,6 +127,7 @@ pub fn walk_label_cache<M: Members + ?Sized>(
     let mut cache = Cache {
         members,
         image,
+        gutter: f64::from(gutter),
         markers,
         boxes: Grid::new(size),
         points: min_distance.then(|| Grid::new(size)),
@@ -152,6 +157,8 @@ struct Cache<'m, M: ?Sized> {
     members: &'m M,
     /// The image's width and height.
     image: [f64; 2],
+    /// The pixels along the image's edges no tested label reaches into that may not be partial.
+    gutter: f64,
     /// The markers of each slot, by the member's index.
     markers: Vec<Grid<u32>>,
     /// The labels drawn, by their members' boxes alone (ADR-0032), with the position each stands
@@ -227,7 +234,7 @@ impl<M: Members + ?Sized> Cache<'_, M> {
     /// partial, and meets no marker of `markers`' priority and above but the member's own, and no
     /// label drawn whose box it meets by its text's box or its `labelpoint` marker.
     fn fits(&self, member: &Member, lb: &Bounds, markers: Option<(u8, usize)>) -> bool {
-        if !member.partials && !in_image(self.image, lb) {
+        if !member.partials && !in_image(self.image, self.gutter, lb) {
             return false;
         }
         if let Some((priority, own)) = markers {
@@ -307,17 +314,18 @@ fn text_bounds(member: &Member, anchor: Anchor) -> Option<Bounds> {
     Some(placed_at(member.point, &label, anchor).1)
 }
 
-/// `labelInImage` with no gutter: whether the box, or where it is turned its corners, lie in the
-/// image.
-fn in_image([width, height]: [f64; 2], lb: &Bounds) -> bool {
+/// `labelInImage`: whether the box, or where it is turned its corners, lie in the image at least
+/// `gutter` pixels inside each edge (src/maplabel.c:636-663).
+fn in_image([width, height]: [f64; 2], gutter: f64, lb: &Bounds) -> bool {
     let [min_x, min_y, max_x, max_y] = lb.bbox;
-    if min_x >= 0.0 && min_y >= 0.0 && max_x < width && max_y < height {
+    let (right, bottom) = (width - gutter, height - gutter);
+    if min_x >= gutter && min_y >= gutter && max_x < right && max_y < bottom {
         return true;
     }
     match &lb.poly {
         Some(poly) => poly[1..]
             .iter()
-            .all(|p| !(p.x < 0.0 || p.x >= width || p.y < 0.0 || p.y >= height)),
+            .all(|p| !(p.x < gutter || p.x >= right || p.y < gutter || p.y >= bottom)),
         None => false,
     }
 }

@@ -38,10 +38,15 @@ warns with `symbol-unknown` once for each such name of its classes' styles.
 `msStyleSetGeomTransform` in `src/mapgeomtransform.c` takes the first of its names, in the order
 `start`, `end`, `vertices`, `bbox`, `labelpnt`, `labelpoly`, `labelcenter`, `centroid`, that the
 value begins with, without regard to case, so `'startpoint'` is `start`; a value that begins with
-none is no transform, and the frontend warns. A label's style draws at its `labelpnt` unless it
-names another, and a label with a style of any other transform is left out
-([`label.md`](label.md)). MapServer's expressions are not yet carried over, and are a warning;
-a class's style draws the feature's own geometry.
+none is no transform; a class's style of it draws the feature's own geometry, and the frontend
+warns with `unsupported-value`. A style's expression, `(buffer([shape], 5))` and the like, is
+carried as written. Of a line or a polygon layer, the engine draws nothing of a class's style of
+one and warns `geomtransform-not-drawn` naming it, the class's other styles drawn in their passes
+as before. A point layer draws the style at its points without a warning, as
+`pointLayerDrawShape` draws every style whatever its transform. A label's style draws at its
+`labelpnt` unless it names another. A label with a style of any other transform, of
+a name that is no transform, or of an expression is left out, and its class's other labels with
+it, with the one warning `label-not-drawn` ([`label.md`](label.md)).
 
 **Drawing a transform.** On a line or a polygon layer, `msDrawTransformedShape` in
 `src/mapgeomtransform.c` draws the style's symbol, as at a point, on the feature's unclipped

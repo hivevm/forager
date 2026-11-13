@@ -166,7 +166,14 @@ fn drawn(style: &Style) -> Hatch {
 }
 
 fn drawn_at(style: &Style, factor: f64) -> Hatch {
-    match hatch(square(), style, BLACK, IMAGE, ORIGIN, factor, factor) {
+    match hatch(
+        square(),
+        style,
+        BLACK,
+        IMAGE,
+        ORIGIN,
+        Factors::new(factor, factor),
+    ) {
         Hatched::Drawn(hatch) => hatch,
         other => panic!("{other:?}"),
     }
@@ -247,8 +254,16 @@ fn the_pattern_scales_with_the_bound_on_the_width() {
 #[test]
 fn a_hatch_that_would_not_end_or_cost_past_its_bound_is_refused() {
     // Verifies: Q-9
-    let refused =
-        |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN, 1.0, 1.0) == Hatched::Refused;
+    let refused = |style: &Style| {
+        hatch(
+            square(),
+            style,
+            BLACK,
+            IMAGE,
+            ORIGIN,
+            Factors::new(1.0, 1.0),
+        ) == Hatched::Refused
+    };
     // MAXSIZE 0 bounds the spacing to 0, where MapServer's loop never ends.
     assert!(refused(&Style {
         max_size: Some(0.0),
@@ -274,8 +289,16 @@ fn a_hatch_that_would_not_end_or_cost_past_its_bound_is_refused() {
 
 #[test]
 fn a_width_or_angle_that_is_no_number_draws_nothing() {
-    let nothing =
-        |style: &Style| hatch(square(), style, BLACK, IMAGE, ORIGIN, 1.0, 1.0) == Hatched::Nothing;
+    let nothing = |style: &Style| {
+        hatch(
+            square(),
+            style,
+            BLACK,
+            IMAGE,
+            ORIGIN,
+            Factors::new(1.0, 1.0),
+        ) == Hatched::Nothing
+    };
     assert!(nothing(&Style {
         angle: Some(Bound::Value(f64::NAN)),
         ..style(Some(10.0), None)
@@ -290,8 +313,7 @@ fn a_width_or_angle_that_is_no_number_draws_nothing() {
         BLACK,
         IMAGE,
         ORIGIN,
-        1.0,
-        1.0,
+        Factors::new(1.0, 1.0),
     );
     assert_eq!(empty, Hatched::Nothing);
 }
@@ -312,7 +334,7 @@ fn a_hatch_whose_steps_no_longer_move_is_refused() {
         ..style(None, None)
     };
     assert_eq!(
-        hatch(far, &style, BLACK, IMAGE, ORIGIN, 1.0, 1.0),
+        hatch(far, &style, BLACK, IMAGE, ORIGIN, Factors::new(1.0, 1.0)),
         Hatched::Refused
     );
 }
@@ -326,7 +348,7 @@ fn the_clip_buffer_is_msdrawshape_s() {
         offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
         ..style(Some(10.0), Some(3.0))
     };
-    let hatching = Hatching::for_class(&[plain, hatched], &[], None, 1.0, 1.0);
+    let hatching = Hatching::for_class(&[plain, hatched], &[], None, Factors::new(1.0, 1.0));
     assert_eq!(hatching.clip_buffer, 18.0);
     assert!(!hatching.clip_in_pixels);
     // MINSIZE above the rest counts as it is: 12.5 + 1 rounds half to even, to 14, and 16 with
@@ -336,7 +358,7 @@ fn the_clip_buffer_is_msdrawshape_s() {
         ..style(None, None)
     };
     assert_eq!(
-        Hatching::for_class(&[small], &[], None, 1.0, 1.0).clip_buffer,
+        Hatching::for_class(&[small], &[], None, Factors::new(1.0, 1.0)).clip_buffer,
         16.0
     );
 }
@@ -386,10 +408,11 @@ fn at_a_factor_the_clip_buffer_is_scaled() {
         offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
         ..style(Some(10.0), Some(3.0))
     };
-    let hatching = Hatching::for_class(&[plain.clone(), hatched], &[], None, 2.0, 2.0);
+    let hatching =
+        Hatching::for_class(&[plain.clone(), hatched], &[], None, Factors::new(2.0, 2.0));
     assert_eq!(hatching.clip_buffer, 33.0);
     assert_eq!(
-        Hatching::for_class(&[plain], &[], None, 2.0, 2.0).clip_buffer,
+        Hatching::for_class(&[plain], &[], None, Factors::new(2.0, 2.0)).clip_buffer,
         5.0
     );
     // MINSIZE 6.25 is 12.5: + 1 rounds half to even, to 14, and 16 with the 2.
@@ -398,7 +421,7 @@ fn at_a_factor_the_clip_buffer_is_scaled() {
         ..style(None, None)
     };
     assert_eq!(
-        Hatching::for_class(&[small], &[], None, 2.0, 2.0).clip_buffer,
+        Hatching::for_class(&[small], &[], None, Factors::new(2.0, 2.0)).clip_buffer,
         16.0
     );
 }
@@ -414,7 +437,7 @@ fn minwidth_counts_toward_the_clip_buffer_as_minsize_does() {
         ..style(None, None)
     };
     assert_eq!(
-        Hatching::for_class(&[wide], &[], None, 2.0, 2.0).clip_buffer,
+        Hatching::for_class(&[wide], &[], None, Factors::new(2.0, 2.0)).clip_buffer,
         23.0
     );
 }
@@ -457,7 +480,14 @@ fn a_diagonal_hatch_is_bounded_by_the_lines_the_renderer_clips_it_to() {
             angle: Some(Bound::Value(45.0)),
             ..Style::default()
         };
-        hatch(huge(), &style, BLACK, (300, 300), ORIGIN, 1.0, 1.0)
+        hatch(
+            huge(),
+            &style,
+            BLACK,
+            (300, 300),
+            ORIGIN,
+            Factors::new(1.0, 1.0),
+        )
     };
     assert!(matches!(at(0.4807), Hatched::Drawn(_)));
     assert_eq!(at(0.48), Hatched::Refused);
@@ -494,12 +524,15 @@ fn a_pixmap_counts_in_the_clip_buffer_at_its_image_s_height() {
         ..Style::default()
     };
     let class = [style(1, Some(Bound::Value(10.0))), style(2, None)];
-    let buffer = |pixmaps| Hatching::for_class(&class, &symbols, pixmaps, 1.0, 1.0).clip_buffer;
+    let buffer = |pixmaps| {
+        Hatching::for_class(&class, &symbols, pixmaps, Factors::new(1.0, 1.0)).clip_buffer
+    };
     assert_eq!(buffer(Some(&pixmaps)), 51.0);
     assert_eq!(buffer(Some(&refused)), 13.0);
     assert_eq!(buffer(None), 13.0);
     // At a factor it is scaled as every size is: MS_NINT(48 × 2 + 1) + 2.
-    let scaled = Hatching::for_class(&class, &symbols, Some(&pixmaps), 2.0, 2.0).clip_buffer;
+    let scaled =
+        Hatching::for_class(&class, &symbols, Some(&pixmaps), Factors::new(2.0, 2.0)).clip_buffer;
     assert_eq!(scaled, 99.0);
     // The engine loads those a hatched class counts, and none of another class.
     assert_eq!(clip_pixmaps(&class, &symbols), ["tall.png"]);

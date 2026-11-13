@@ -3,6 +3,8 @@
 //! are the only place async appears, and none of them requires `Send`, because the browser is
 //! single-threaded.
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
 use std::borrow::Cow;
 use std::fmt;
 use std::rc::Rc;

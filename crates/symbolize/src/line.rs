@@ -25,7 +25,7 @@ use crate::canvas::Canvas;
 use crate::line_marker;
 use crate::offset::{self, Offset};
 use crate::style::fixed;
-use crate::symbol;
+use crate::symbol::{self, Factors};
 
 /// One drawing of a style on a feature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,7 +57,7 @@ impl Pass {
                 Cow::Borrowed(style)
             }
             Self::Outline | Self::OutlineIfOutlined => {
-                Cow::Owned(outline_style(style, canvas.factor, canvas.resolution))
+                Cow::Owned(outline_style(style, canvas.factors))
             }
         }
     }
@@ -79,13 +79,13 @@ fn outline_width<T>(style: &Style<T>) -> f64 {
     fixed(&style.outline_width).unwrap_or(0.0)
 }
 
-/// The style's `WIDTH` scaled by the scale factor `factor` and bounded by its `MINWIDTH` and
-/// `MAXWIDTH` scaled by the resolution factor `resolution`, as msDrawLineSymbol() bounds it (see
+/// The style's `WIDTH` scaled by the scale factor of `factors` and bounded by its `MINWIDTH` and
+/// `MAXWIDTH` scaled by their resolution factor, as msDrawLineSymbol() bounds it (see
 /// [`bounds::line_width`]). With the width as written.
-fn bounded_width<T>(style: &Style<T>, factor: f64, resolution: f64) -> (f64, f64) {
+fn bounded_width<T>(style: &Style<T>, factors: Factors) -> (f64, f64) {
     let written = fixed(&style.width).unwrap_or(1.0);
     (
-        bounds::line_width(written * factor, style, resolution),
+        bounds::line_width(written * factors.scale, style, factors.resolution),
         written,
     )
 }
@@ -175,7 +175,7 @@ pub(crate) fn line_symbol<T: Clone>(
     if skipped {
         return;
     }
-    let (width, written) = bounded_width(style, canvas.factor, canvas.resolution);
+    let (width, written) = bounded_width(style, canvas.factors);
     let factor = if written != 0.0 { width / written } else { 1.0 };
     let initial_gap = style.initial_gap.unwrap_or(-1.0);
     match mark {
@@ -192,7 +192,7 @@ pub(crate) fn line_symbol<T: Clone>(
                     &pixmap,
                     initial_gap * factor,
                     canvas.image(),
-                    (canvas.factor, canvas.resolution),
+                    canvas.factors,
                     &mut canvas.markers,
                 ));
             }
@@ -207,7 +207,7 @@ pub(crate) fn line_symbol<T: Clone>(
                 symbol,
                 initial_gap,
                 canvas.image(),
-                (canvas.factor, canvas.resolution),
+                canvas.factors,
                 &mut canvas.markers,
             ));
             return;
@@ -243,11 +243,17 @@ pub(crate) fn line_symbol<T: Clone>(
 /// The style of an outline pass as msOutlineRenderingPrepareStyle() prepares it: its width and
 /// its bounds widened by twice its `OUTLINEWIDTH`, its size, MapServer's -1 where it has none,
 /// grown by it, and its colours swapped. MapServer divides the width's growth by the layer's
-/// scale factor `factor` over the image's resolution factor `resolution`, and divides the size's
+/// scale factor over the image's resolution factor, both of `factors`, and divides the size's
 /// by the scale factor and multiplies it by the resolution factor, so that, scaled as the drawing
 /// scales them after, both grow by the outline width at the resolution; the bounds grow by it as
 /// written.
-fn outline_style<T: Clone>(style: &Style<T>, factor: f64, resolution: f64) -> Style<T> {
+fn outline_style<T: Clone>(
+    style: &Style<T>,
+    Factors {
+        scale: factor,
+        resolution,
+    }: Factors,
+) -> Style<T> {
     let outline = outline_width(style);
     Style {
         color: style.outline_color.clone(),

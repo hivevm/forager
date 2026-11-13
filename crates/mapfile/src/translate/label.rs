@@ -163,12 +163,12 @@ impl Translator<'_> {
     /// on bbox and others: a label's style holds no other, so its label is left out, and the caller
     /// leaves out its class's other labels with it.
     fn label_style(&mut self, b: &Block) -> Option<Style<LabelTransform>> {
-        let style = self.style(b);
+        let style = self.style(b, true);
         let transformed = b
             .nodes
             .iter()
             .any(|node| matches!(node, Node::Directive(d) if d.keyword == "GEOMTRANSFORM"));
-        let transform = match (transformed, style.geom_transform) {
+        let transform = match (transformed, &style.geom_transform) {
             (false, _) | (true, Some(GeomTransform::LabelPoint)) => LabelTransform::Point,
             (true, Some(GeomTransform::LabelPoly)) => LabelTransform::Poly,
             (true, Some(GeomTransform::LabelCenter)) => LabelTransform::Center,

@@ -10,6 +10,11 @@
 //! pin, and runs these tests with `FORAGER_MSAUTOTEST` naming it; `cargo test` alone skips them,
 //! as they need the network once.
 
+#![expect(
+    clippy::string_slice,
+    reason = "test code may slice a str: a slice off a boundary panics, and the test fails"
+)]
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;

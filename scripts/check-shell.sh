@@ -28,6 +28,11 @@
 # A here-string, a variable, or grep -c reads the input whole. The same limits as for sed apply:
 # comment lines are not read, the rule reads text, and a pipe on the line before is not seen.
 #
+# And it refuses a script under scripts/, outside scripts/lib/ whose scripts are sourced, that
+# starts with a shebang but is not executable: its mode in git where git tracks it, its mode on
+# disk where not. The documents name such a script as a command, and a fresh clone would answer
+# "Permission denied" where check-all.sh, which calls them through bash, sees nothing.
+#
 # Usage:
 #     scripts/check-shell.sh [repository root]        (or: bash scripts/check-shell.sh)
 # The root defaults to this repository; scripts/test-check-shell.sh passes fixtures.
@@ -109,6 +114,20 @@ for f in "${scripts[@]}"; do
     echo "    $text"
     failed=1
   done < <(grep -nE "$QUIET_PIPE" "$f" | grep -vE '^[0-9]+:[[:space:]]*#')
+done
+
+# The modes git tracks, a line `mode object stage<TAB>path` each.
+modes="$(git -C "$ROOT" ls-files -s -- 'scripts/*')"
+for f in "${scripts[@]}"; do
+  rel="${f#"$ROOT"/}"
+  [[ "$rel" == scripts/* && "$rel" != scripts/lib/* ]] || continue
+  [[ "$(head -c 2 "$f")" == '#!' ]] || continue
+  mode="$(awk -F '\t' -v path="$rel" '$2 == path { split($1, f, " "); print f[1] }' <<< "$modes")"
+  if [[ -n "$mode" && "$mode" != 100755 ]] || [[ -z "$mode" && ! -x "$f" ]]; then
+    echo "$rel: a script with a shebang is run as a command, but it is not executable:" \
+      "chmod +x $rel, and git update-index --chmod=+x $rel where git tracks it"
+    failed=1
+  fi
 done
 
 if ((failed)); then

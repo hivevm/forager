@@ -79,34 +79,33 @@ fn parse(text: &str) -> BTreeMap<String, Result<String, String>> {
         .collect();
     let joined = lines.join("\n");
     let mut current: Option<&str> = None;
-    let mut definition = String::new();
-    let mut pos = 0;
+    // The text not read yet: from the start, a code's `>`, or the break of a line skipped.
+    let mut rest = joined.as_str();
     loop {
-        let open = joined[pos..].find('<').map(|i| pos + i);
-        let end = open.unwrap_or(joined.len());
-        if current.is_some() {
-            definition.push_str(&joined[pos..end]);
-            definition.push(' ');
-        }
+        let (before, after) = rest
+            .split_once('<')
+            .map_or((rest, None), |(before, after)| (before, Some(after)));
         if let Some(code) = current.take() {
             definitions
                 .entry(code.to_owned())
-                .or_insert_with(|| usable(code, definition.trim()));
+                .or_insert_with(|| usable(code, before.trim()));
         }
-        definition.clear();
-        let Some(open) = open else { break };
-        let line_start = joined[..open].rfind('\n').map_or(0, |i| i + 1);
-        let line_end = joined[open..].find('\n').map_or(joined.len(), |i| open + i);
-        let Some(close) = joined[open..line_end].find('>').map(|i| open + i) else {
-            pos = line_end;
-            continue;
+        let Some(after) = after else { break };
+        let starts_its_line = match before.rsplit_once('\n') {
+            Some((_, line)) => line.trim().is_empty(),
+            // On the line of the code before it, unless at the start.
+            None => rest.len() == joined.len() && before.trim().is_empty(),
         };
-        let code = &joined[open + 1..close];
-        let starts_its_line = joined[line_start..open].trim().is_empty();
-        if !code.is_empty() && starts_its_line {
-            current = Some(code);
+        // The code's `>` is the first after its `<`, on its line.
+        match after.split_once('>') {
+            Some((code, tail)) if !code.contains('\n') => {
+                if !code.is_empty() && starts_its_line {
+                    current = Some(code);
+                }
+                rest = tail;
+            }
+            _ => rest = after.trim_start_matches(|c| c != '\n'),
         }
-        pos = close + 1;
     }
     definitions
 }
@@ -143,4 +142,38 @@ fn usable(code: &str, definition: &str) -> Result<String, String> {
         ));
     }
     Ok(definition.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn codes_start_their_lines_close_on_them_and_the_first_definition_holds() {
+        let text = "<1> +proj=a # a comment\n +x=1\n<1> +proj=b\n<2 +proj=c\n<3> +proj=d <4> +e\n\
+                    x <5> +proj=f\n<6>\n<é> +proj=g <> <7> +proj=h\n  <8> +proj=i";
+        let read = parse(text);
+        let ok = |code: &str| read.get(code).and_then(|d| d.as_ref().ok()).cloned();
+        assert_eq!(
+            ok("1").as_deref(),
+            Some("+proj=a +x=1"),
+            "across lines, first holds"
+        );
+        assert!(!read.contains_key("2"), "a `<` without its `>` on its line");
+        assert_eq!(
+            ok("3").as_deref(),
+            Some("+proj=d"),
+            "a definition ends at the next `<`"
+        );
+        assert!(!read.contains_key("4"), "a code inside a line");
+        assert!(!read.contains_key("5"), "a code after text on its line");
+        assert!(
+            read.get("6").is_some_and(Result::is_err),
+            "an empty definition"
+        );
+        assert_eq!(ok("é").as_deref(), Some("+proj=g"));
+        assert!(!read.contains_key("7"), "a code after a `<>` on its line");
+        assert_eq!(ok("8").as_deref(), Some("+proj=i"), "spaces before a code");
+        assert_eq!(read.len(), 5);
+    }
 }

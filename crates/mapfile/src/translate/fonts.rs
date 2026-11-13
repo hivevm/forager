@@ -25,11 +25,16 @@ use super::Translator;
 impl Translator<'_> {
     /// A font set as msLoadFontSet reads it: a line `name path` per font, lines that start with
     /// `#`, a space, or nothing skipped; a path resolved beside the font set, and one outside the
-    /// base context a warning (Q-8).
+    /// base context a warning (Q-8). Names are keys of a hash table that compares them without
+    /// case (msInsertHashTable, src/maphash.c): a later line of a name the set holds in another
+    /// case gives it its path and keeps the name as first written.
     pub(super) fn fonts(&mut self, path: &ResourcePath, text: &str) -> BTreeMap<String, String> {
         let span = Span::new(path.as_str(), 1, 1);
         let mut fonts = BTreeMap::new();
-        for line in text.lines() {
+        // Each name as first written, by its lower case, so that a line finds its key at once
+        // whatever the set's size (Q-9).
+        let mut first_written: BTreeMap<String, String> = BTreeMap::new();
+        for line in gdal_lines(text) {
             if line.is_empty() || line.starts_with(['#', ' ', '\r']) {
                 continue;
             }
@@ -47,7 +52,11 @@ impl Translator<'_> {
             }
             match path.resolve(file) {
                 Ok(font) => {
-                    fonts.insert(name.to_owned(), font.as_str().to_owned());
+                    let key = first_written
+                        .entry(name.to_ascii_lowercase())
+                        .or_insert_with(|| name.to_owned())
+                        .clone();
+                    fonts.insert(key, font.as_str().to_owned());
                 }
                 // One font is needed only when it is drawn, so its refusal leaves it out of
                 // the map rather than failing the load.
@@ -62,19 +71,41 @@ impl Translator<'_> {
 
     /// Warns of each font of a `FONT` list, `a,b` naming fallbacks, that the font set lacks.
     /// MapServer's font set is a hash table that compares its keys without case
-    /// (msLookupHashTable, src/maphash.c).
+    /// (msLookupHashTable, src/maphash.c), and an entry with a script's prefix, `ar:font`, is
+    /// looked up after its first colon and then as written (check_single_font,
+    /// src/textlayout.c).
     pub(super) fn check_fonts(&mut self, names: &str, span: &Span) {
         for name in names.split(',') {
-            if !self
-                .fonts
-                .keys()
-                .any(|font| font.eq_ignore_ascii_case(name))
-            {
+            let after_prefix = name.split_once(':').map(|(_, font)| font);
+            let known = |font: &str| self.font_names.contains(&font.to_ascii_lowercase());
+            if !(after_prefix.is_some_and(known) || known(name)) {
                 let message = format!("the font set has no font `{name}`");
                 self.warn("font-unknown", &message, span);
             }
         }
     }
+}
+
+/// The lines of `text` as GDAL's `CPLReadLineL`, with which msLoadFontSet reads a font set,
+/// returns them: each ended by a line feed, a carriage return, or one of the two followed by the
+/// other, which ends one line, not two (`CPLReadLine3L`, port/cpl_conv.cpp).
+fn gdal_lines(text: &str) -> impl Iterator<Item = &str> {
+    let mut rest = text;
+    std::iter::from_fn(move || {
+        if rest.is_empty() {
+            return None;
+        }
+        let Some((line, after)) = rest.split_once(['\r', '\n']) else {
+            return Some(std::mem::take(&mut rest));
+        };
+        let other = if rest.as_bytes()[line.len()] == b'\r' {
+            '\n'
+        } else {
+            '\r'
+        };
+        rest = after.strip_prefix(other).unwrap_or(after);
+        Some(line)
+    })
 }
 
 /// The size of msLoadFontSet's `alias` buffer, the name and its separator.

@@ -29,7 +29,13 @@ struct Format {
     name: Option<String>,
     mime_type: Option<String>,
     transparent: bool,
+    /// Its `FORMATOPTION`s, `KEY=VALUE` each, the first [`MAX_FORMAT_OPTIONS`] as
+    /// `loadOutputFormat` keeps them.
+    options: Vec<String>,
 }
+
+/// How many `FORMATOPTION`s `loadOutputFormat` keeps of a format (`MAX_FORMATOPTIONS`).
+const MAX_FORMAT_OPTIONS: usize = 100;
 
 /// The single string or word of a directive, as `getString` reads it: a keyword is none.
 fn value(d: &Directive) -> Option<String> {
@@ -69,6 +75,7 @@ fn format(block: &Block) -> Format {
     let mut mime_type = None;
     let mut image_mode = None;
     let mut transparent = None;
+    let mut options = Vec::new();
     for node in &block.nodes {
         let Node::Directive(d) = node else { continue };
         match d.keyword.as_str() {
@@ -90,6 +97,13 @@ fn format(block: &Block) -> Format {
                     _ => transparent,
                 };
             }
+            "FORMATOPTION" => {
+                if let Some(option) = value(d)
+                    && options.len() < MAX_FORMAT_OPTIONS
+                {
+                    options.push(option);
+                }
+            }
             _ => {}
         }
     }
@@ -103,14 +117,29 @@ fn format(block: &Block) -> Format {
         name: name.or_else(|| default_name.map(str::to_owned)),
         mime_type: mime_type.or_else(|| default_mime_type.map(str::to_owned)),
         transparent,
+        options,
     }
 }
 
-/// Whether the output format the `MAP` block selects is transparent. Its `IMAGETYPE`, or without
-/// one the name of its first `OUTPUTFORMAT`, finds a format of the map first by its MIME type,
-/// then by its name, each without regard to case; one it does not find is a built-in format, and
-/// none of those is transparent.
+/// Whether the output format the `MAP` block selects is transparent; a built-in format is not.
 pub(super) fn transparent(map: &Block) -> bool {
+    selected(map).is_some_and(|f| f.transparent)
+}
+
+/// The value of the option `key` of the output format the `MAP` block selects, as
+/// `msGetOutputFormatOption` of src/mapoutput.c finds it: the first `KEY=VALUE` whose key is
+/// `key` without regard to case. A built-in format has none that this reads.
+pub(super) fn format_option(map: &Block, key: &str) -> Option<String> {
+    selected(map)?.options.into_iter().find_map(|option| {
+        let (name, value) = option.split_once('=')?;
+        name.eq_ignore_ascii_case(key).then(|| value.to_owned())
+    })
+}
+
+/// The output format of the map the `MAP` block selects. Its `IMAGETYPE`, or without one the name
+/// of its first `OUTPUTFORMAT`, finds a format of the map first by its MIME type, then by its
+/// name, each without regard to case; `None` for one it does not find, a built-in format.
+fn selected(map: &Block) -> Option<Format> {
     let formats: Vec<Format> = map
         .nodes
         .iter()
@@ -123,16 +152,12 @@ pub(super) fn transparent(map: &Block) -> bool {
         Node::Directive(d) if d.keyword == "IMAGETYPE" => value(d),
         _ => None,
     });
-    let Some(image_type) = image_type.or_else(|| formats.first().and_then(|f| f.name.clone()))
-    else {
-        return false;
-    };
+    let image_type = image_type.or_else(|| formats.first().and_then(|f| f.name.clone()))?;
     let by = |field: fn(&Format) -> Option<&String>| {
         formats
             .iter()
-            .find(|f| field(f).is_some_and(|value| value.eq_ignore_ascii_case(&image_type)))
+            .position(|f| field(f).is_some_and(|value| value.eq_ignore_ascii_case(&image_type)))
     };
-    by(|f| f.mime_type.as_ref())
-        .or_else(|| by(|f| f.name.as_ref()))
-        .is_some_and(|f| f.transparent)
+    let index = by(|f| f.mime_type.as_ref()).or_else(|| by(|f| f.name.as_ref()))?;
+    formats.into_iter().nth(index)
 }

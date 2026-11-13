@@ -29,7 +29,7 @@ use forager_style_ir::{Rgba, Style, Symbol};
 use crate::bounds::{self, ms_max};
 use crate::extent::View;
 use crate::style::{DEG_TO_RAD, GAMMA, fixed};
-use crate::symbol::{self, Pixmaps};
+use crate::symbol::{self, Factors, Pixmaps};
 
 /// The most lines one hatch lays over the image (Q-9): a hatch a pixel apart over the largest
 /// image has some 5800.
@@ -48,7 +48,7 @@ pub struct Hatching {
 }
 
 impl Hatching {
-    /// msDrawShape()'s clip buffer of a polygon drawn in the styles of a class at `factor`, the
+    /// msDrawShape()'s clip buffer of a polygon drawn in the styles of a class at `factors`, the
     /// styles' scale factor and the image's resolution factor, which are one here: per style, the
     /// largest of its symbol's default size, its `SIZE`, and its `WIDTH`, grown by its larger
     /// `OFFSET` unless that is a line offset, scaled, or its `MINSIZE` or `MINWIDTH` scaled where
@@ -62,8 +62,10 @@ impl Hatching {
         styles: &[Style],
         symbols: &[Symbol],
         pixmaps: Option<&Pixmaps>,
-        factor: f64,
-        resolution: f64,
+        Factors {
+            scale: factor,
+            resolution,
+        }: Factors,
     ) -> Self {
         let mut buffer = 0.0_f64;
         for style in styles {
@@ -278,7 +280,7 @@ pub(crate) enum Hatched {
     Refused,
 }
 
-/// msDrawShadeSymbol()'s parameters of a hatch at `factor`, the style's scale factor and the
+/// msDrawShadeSymbol()'s parameters of a hatch at `factors`, the style's scale factor and the
 /// image's resolution factor, which are one here: the spacing is the `SIZE` scaled, the factor
 /// itself without one, bounded by `MAXSIZE` and then `MINSIZE` scaled by the resolution factor; the
 /// width the `WIDTH` scaled, the factor without one, bounded alike by `MAXWIDTH` and then
@@ -292,8 +294,10 @@ pub(crate) fn hatch<T>(
     color: Rgba,
     image: (u32, u32),
     reference: Point,
-    factor: f64,
-    resolution: f64,
+    Factors {
+        scale: factor,
+        resolution,
+    }: Factors,
 ) -> Hatched {
     let written_width = fixed(&style.width).unwrap_or(1.0);
     let width = if written_width <= 0.0 {

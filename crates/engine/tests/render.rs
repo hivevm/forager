@@ -850,6 +850,42 @@ fn a_point_outside_the_extent_draws_no_square() {
     assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
 }
 
+/// The markers a point layer of `LABELCACHE` `label_cache` draws of a multipoint at x 40 and 45
+/// with a class of two squares, of 20 pixels in blue and of 10 in green: each operation in
+/// order, as the colour of its fill and the x of its centre.
+fn multipoint_markers(label_cache: bool) -> Vec<(Rgba, f64)> {
+    let square = |color, size| Style {
+        color: Some(Bound::Value(color)),
+        size: Some(Bound::Value(size)),
+        ..Style::default()
+    };
+    let mut map = map_with(
+        RenderMode::Point,
+        vec![square(BLUE, 20.0), square(GREEN, 10.0)],
+    );
+    map.layers[0].label_cache = label_cache;
+    let multipoint = r#"{"type": "MultiPoint", "coordinates": [[40, 50], [45, 50]]}"#;
+    recorded(&map, multipoint)
+        .iter()
+        .map(|op| match op {
+            DrawOp::Fill { rings, color, .. } => {
+                (*color, f64::midpoint(rings[0][0].x, rings[0][2].x))
+            }
+            other => panic!("{other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn a_multipoint_draws_each_points_markers_before_the_next_points_whatever_its_labelcache() {
+    // MapServer's pointLayerDrawShape draws every style's marker at one point before the next
+    // point's, whatever the layer's LABELCACHE: the second point's blue square, 5 pixels on and
+    // 20 across, covers the first point's green one.
+    let point_by_point = [(BLUE, 40.0), (GREEN, 40.0), (BLUE, 45.0), (GREEN, 45.0)];
+    assert_eq!(multipoint_markers(true), point_by_point);
+    assert_eq!(multipoint_markers(false), point_by_point);
+}
+
 /// An L from pixel (10, 20) right to (90, 20), then down to (90, 90).
 const ELL: &str = r#"{"type": "LineString", "coordinates": [[10, 80], [90, 80], [90, 10]]}"#;
 
@@ -1769,4 +1805,61 @@ fn sizeunits_size_a_layers_styles_in_map_units_by_the_cellsize() {
             ink_height(&sized)
         );
     }
+}
+
+#[test]
+fn a_style_of_a_geomtransform_expression_draws_nothing_and_is_reported() {
+    // MapServer evaluates such an expression by msGeomTransformShape, most of its functions through
+    // GEOS, which the engine has not: the style draws nothing, with a warning naming it, and the
+    // class's other style draws as alone.
+    let plain = line_style(BLUE, 3.0);
+    let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
+    let alone = render_with(&map_with(RenderMode::Line, vec![plain.clone()]), Some(line));
+    let transformed = Style {
+        geom_transform: Some(GeomTransform::Expression("(buffer([shape], 5))".to_owned())),
+        ..line_style(GREEN, 9.0)
+    };
+    let rendered = render_with(
+        &map_with(RenderMode::Line, vec![plain, transformed]),
+        Some(line),
+    );
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert_eq!(codes, ["geomtransform-not-drawn"]);
+    assert!(
+        rendered.diagnostics[0]
+            .message
+            .contains("`(buffer([shape], 5))`"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
+    assert_eq!(
+        rendered.image, alone.image,
+        "the other style draws as alone"
+    );
+}
+
+#[test]
+fn a_point_layer_draws_a_style_of_a_geomtransform_expression_at_its_points() {
+    // pointLayerDrawShape draws every style at each point whatever its transform: a point layer's
+    // style of an expression draws its markers, and nothing is reported.
+    let style = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(5.0)),
+        geom_transform: Some(GeomTransform::Expression("(buffer([shape], 5))".to_owned())),
+        ..Style::default()
+    };
+    let line = r#"{"type": "LineString", "coordinates": [[20, 20], [80, 80]]}"#;
+    let rendered = render_with(&map(RenderMode::Point, style), Some(line));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(20, 80), Some(BLUE));
+    assert_eq!(image.pixel(80, 20), Some(BLUE));
 }

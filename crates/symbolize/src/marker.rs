@@ -24,7 +24,7 @@ use crate::canvas::Canvas;
 use crate::line::line_ends;
 use crate::line_marker::MarkerBudget;
 use crate::style::fixed;
-use crate::symbol;
+use crate::symbol::{self, Factors};
 
 /// What msDrawMarkerSymbol draws of `style` at the pixel `at` at the canvas's factor: its
 /// symbol, or the square that stands for a symbol not drawn yet, moved as msAdjustMarkerPos
@@ -35,11 +35,11 @@ pub(crate) fn marker_ops(ops: &mut Vec<DrawOp>, at: Point, style: &Style, canvas
     match symbol::mark(style, canvas.symbols) {
         symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style, 1.0), style),
         symbol::Mark::Symbol(s) => {
-            symbol::symbol_ops(ops, at, style, s, canvas.factor, canvas.resolution);
+            symbol::symbol_ops(ops, at, style, s, canvas.factors);
         }
         symbol::Mark::Pixmap(index, s) => {
             if let Some(image) = canvas.pixmap(index, s) {
-                pixmap_ops(ops, at, style, s, image, canvas.factor, canvas.resolution);
+                pixmap_ops(ops, at, style, s, image, canvas.factors);
             }
         }
         symbol::Mark::Nothing => {}
@@ -60,7 +60,7 @@ pub(crate) fn marker_price(style: &Style, canvas: &mut Canvas) -> Option<usize> 
     MarkerBudget::price(&probe)
 }
 
-/// A pixmap's `image` at the pixel `at` in `style` at `factor`, as msDrawMarkerSymbol draws it:
+/// A pixmap's `image` at the pixel `at` in `style` at `factors`, as msDrawMarkerSymbol draws it:
 /// nothing at a scale of 0; moved by the style's offsets and by the symbol's anchor point, of
 /// the size msGetMarkerSize gives the image (msAdjustMarkerPos); then drawn as
 /// agg2RenderPixmapSymbol draws it (see [`symbol::render_pixmap`]). A style's colour and opacity
@@ -71,10 +71,10 @@ fn pixmap_ops(
     style: &Style,
     symbol: &Symbol,
     image: Rc<PremultipliedImage>,
-    factor: f64,
-    resolution: f64,
+    factors: Factors,
 ) {
-    let (scale, rotation, _) = symbol::pixmap_style(style, image.height(), factor, resolution);
+    let (scale, rotation, _) = symbol::pixmap_style(style, image.height(), factors);
+    let factor = factors.scale;
     if scale == 0.0 {
         return;
     }

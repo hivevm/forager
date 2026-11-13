@@ -41,9 +41,12 @@ pub(super) fn items_value(d: &Directive) -> Option<&str> {
         return None;
     };
     let value = token.string()?;
-    let key = value.get(..5)?;
-    let rest = &value[5..];
-    (key.eq_ignore_ascii_case("ITEMS") && rest.starts_with(['=', ':'])).then(|| &rest[1..])
+    let (key, rest) = (value.get(..5)?, value.get(5..)?);
+    if key.eq_ignore_ascii_case("ITEMS") {
+        rest.strip_prefix(['=', ':'])
+    } else {
+        None
+    }
 }
 
 /// `msStringSplit` at `,`: one token more than the runs of commas, an empty one included.

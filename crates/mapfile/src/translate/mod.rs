@@ -16,16 +16,18 @@
 //! Translates the syntax tree of a mapfile into the style IR. What the IR cannot hold yet is
 //! reported, never silently dropped.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use forager_ports::{ProjectionResolver, ResourcePath};
+use forager_style_ir::c::atoi;
 use forager_style_ir::{
     Bound, Class, Diagnostic, Expr, Extent, GeomTransform, Layer, LayerProjection, LayerStatus,
     MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol,
     Units,
 };
 
-use crate::MAX_TOTAL_BYTES;
+use crate::MAX_DEFAULT_BYTES;
+use crate::budget::Budget;
 use crate::expression;
 use crate::init_file::InitFile;
 use crate::keywords;
@@ -57,7 +59,6 @@ const DISCARDED: &[&str] = &[
     "TEMPLATE",
     "TOLERANCE",
     "TOLERANCEUNITS",
-    "WEB",
 ];
 
 /// The string value of the last `keyword` directive of a block, the one MapServer keeps, read
@@ -70,6 +71,30 @@ fn item(block: &Block, keyword: &str) -> Option<String> {
         },
         _ => None,
     })
+}
+
+/// The keys of `WEB` `METADATA` the map carries.
+const WEB_METADATA_READ: &[&str] = &["labelcache_map_edge_buffer", MAX_FEATURES_KEY];
+/// The key of the metadata and of the output format's option that limit the features a layer
+/// draws, as `msLayerGetMaxFeaturesToDraw` reads it.
+const MAX_FEATURES_KEY: &str = "maxfeaturestodraw";
+
+/// The value of `key` in the `METADATA` of `blocks`, as msLookupHashTable finds it: without
+/// regard to case, a later pair of a key replacing an earlier, as loadHashTable inserts them. A
+/// pair that is not two strings is none.
+fn metadata<'b>(blocks: impl IntoIterator<Item = &'b Block>, key: &str) -> Option<&'b str> {
+    blocks
+        .into_iter()
+        .flat_map(|block| &block.nodes)
+        .filter_map(|node| match node {
+            Node::Block(b) if b.keyword == "METADATA" => Some(b.values.as_chunks::<2>().0),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|[k, v]| Some((k.string()?, v.string()?)))
+        .filter(|(k, _)| k.eq_ignore_ascii_case(key))
+        .last()
+        .map(|(_, v)| v)
 }
 
 /// Whether the layer `block`'s features are never read: a `FEATURE` makes the layer inline as
@@ -151,7 +176,9 @@ pub fn translate(
         names: BTreeMap::new(),
         numbered: Vec::new(),
         fonts: BTreeMap::new(),
-        default_bytes: 0,
+        font_names: BTreeSet::new(),
+        defaults_added: Budget::new(MAX_DEFAULT_BYTES),
+        max_features_fallback: (None, -1),
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
     // its symbol set after the whole map (loadMap, loadSymbolSet).
@@ -170,6 +197,11 @@ pub fn translate(
     }
     if let Some((path, text)) = files.font_set {
         t.fonts = t.fonts(path, text);
+        t.font_names = t
+            .fonts
+            .keys()
+            .map(|name| name.to_ascii_lowercase())
+            .collect();
     }
     let mut map = t.map(map);
     t.image_symbols(&mut map);
@@ -196,8 +228,15 @@ struct Translator<'a> {
     numbered: Vec<(u32, Span)>,
     /// The map's fonts, read before its layers so that a label's font is checked.
     fonts: BTreeMap<String, String>,
-    /// The bytes the defaults of `VALIDATION` have put into the load's expressions (Q-9).
-    default_bytes: usize,
+    /// Their names in lower case, which a label's font is looked up by at once (Q-9).
+    font_names: BTreeSet<String>,
+    /// What the defaults of `VALIDATION` have put into the load's expressions, held to
+    /// [`MAX_DEFAULT_BYTES`] (Q-9).
+    defaults_added: Budget,
+    /// The limits on a layer's features that `msLayerGetMaxFeaturesToDraw` falls back on: the
+    /// map's `maxfeaturestodraw` metadata, and the selected output format's `MAXFEATURESTODRAW`,
+    /// -1 without one.
+    max_features_fallback: (Option<i32>, i32),
 }
 
 impl Translator<'_> {
@@ -207,10 +246,15 @@ impl Translator<'_> {
             ..Map::default()
         };
         // MapServer applies them after the whole map is read, so each holds wherever it stands.
-        let web = Defaults::of(block.nodes.iter().filter_map(|node| match node {
+        let webs = block.nodes.iter().filter_map(|node| match node {
             Node::Block(b) if b.keyword == "WEB" => Some(b),
             _ => None,
-        }));
+        });
+        let web = Defaults::of(webs.clone(), self.diagnostics);
+        self.max_features_fallback = (
+            metadata(webs, MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes())),
+            output::format_option(block, MAX_FEATURES_KEY).map_or(-1, |v| atoi(v.as_bytes())),
+        );
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -243,6 +287,7 @@ impl Translator<'_> {
                             map.layers.push(layer);
                         }
                     }
+                    "WEB" => self.web(b),
                     "PROJECTION" => {
                         map.projection = match self.projection(b) {
                             Some(LayerProjection::Proj4(proj4)) => Some(proj4),
@@ -258,6 +303,14 @@ impl Translator<'_> {
                 },
             }
         }
+        // msDrawLabelCache reads the gutter as MS_ABS(atoi(value)) (src/mapdraw.c:3488-3498).
+        let webs = block.nodes.iter().filter_map(|node| match node {
+            Node::Block(b) if b.keyword == "WEB" => Some(b),
+            _ => None,
+        });
+        map.label_cache_edge_buffer = metadata(webs, "labelcache_map_edge_buffer")
+            .map(|v| atoi(v.as_bytes()).unsigned_abs())
+            .filter(|&gutter| gutter > 0);
         if output::transparent(block) {
             // agg2CreateImage clears the image of a transparent format to no colour.
             map.image_color = Some(Rgba {
@@ -270,12 +323,41 @@ impl Translator<'_> {
         map
     }
 
+    /// `WEB`, read for its `VALIDATION` and, of its `METADATA`, for the keys the map carries
+    /// ([`WEB_METADATA_READ`]); the other keys of its `METADATA` may set what MapServer draws, so
+    /// they are not yet supported, and its other keywords serve MapServer's CGI and templates and
+    /// are out of scope.
+    fn web(&mut self, block: &Block) {
+        for node in &block.nodes {
+            match node {
+                // Read by Defaults; its other keys only check a runtime substitution.
+                Node::Block(b) if b.keyword == "VALIDATION" => {}
+                Node::Block(b) if b.keyword == "METADATA" => {
+                    let message = format!(
+                        "METADATA of WEB is read for {} alone; its other keys are not yet \
+                         supported and are ignored",
+                        WEB_METADATA_READ.join(" and ")
+                    );
+                    self.warn("unsupported-keyword", &message, &b.span);
+                }
+                Node::Directive(d) if !d.known => {}
+                Node::Directive(Directive { keyword, span, .. })
+                | Node::Block(Block { keyword, span, .. }) => {
+                    let message =
+                        format!("{keyword} of WEB is out of Forager's scope and is discarded");
+                    self.warn("discarded-keyword", &message, span);
+                }
+            }
+        }
+    }
+
     /// `IMAGETYPE` and `OUTPUTFORMAT`, of which only whether the selected format is transparent
-    /// is carried, as the map's background ([`output::transparent`]).
+    /// is carried, as the map's background ([`output::transparent`]), and its
+    /// `MAXFEATURESTODRAW`, as the layers' limit ([`Self::features_to_draw`]).
     fn output_format(&mut self, keyword: &str, span: &Span) {
         let message = format!(
-            "{keyword} is read only for whether the image starts transparent; the output format \
-             is not yet supported otherwise"
+            "{keyword} is read only for whether the image starts transparent and for its \
+             MAXFEATURESTODRAW; the output format is not yet supported otherwise"
         );
         self.warn("unsupported-keyword", &message, span);
     }
@@ -286,6 +368,8 @@ impl Translator<'_> {
             ..Layer::default()
         };
         let mut connection_type = None;
+        // initLayer: no quota.
+        let mut max_features = -1;
         let mut props = BTreeMap::new();
         let mut source_span = None;
         let mut data_span = None;
@@ -293,7 +377,7 @@ impl Translator<'_> {
         let class_item = item(block, "CLASSITEM");
         let label_item = item(block, "LABELITEM");
         let filter_item = item(block, "FILTERITEM");
-        let defaults = Defaults::of([block]);
+        let defaults = Defaults::of([block], self.diagnostics);
         let tables = [&defaults, web];
         let mut composites = Vec::new();
         // A layer with features is an inline layer (msInitializeVirtualTable), whose item names
@@ -335,6 +419,8 @@ impl Translator<'_> {
                         self.string(d);
                     }
                     "LABELCACHE" => self.label_cache(&mut layer, d),
+                    "POSTLABELCACHE" => self.post_label_cache(&mut layer, d),
+                    "MAXFEATURES" => max_features = self.max_features(d),
                     "FILTER" => layer.filter = self.defaulted(d, filter_item.as_deref(), &tables),
                     "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
                     "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
@@ -366,6 +452,7 @@ impl Translator<'_> {
                     // Read by Defaults; its other keys only check a runtime substitution.
                     "VALIDATION" => {}
                     "COMPOSITE" => composites.push(b),
+                    "METADATA" => self.layer_metadata(&b.span),
                     "FEATURE" => {
                         let feature = self.feature(b, shape_type, &item_names);
                         if exempt {
@@ -380,7 +467,7 @@ impl Translator<'_> {
                 },
             }
         }
-        layer.opacity = self.composite(&composites);
+        self.settle_layer(&mut layer, block, &composites, max_features);
         layer.source = source_span.map(|span| self.source(connection_type, props, span, data_span));
         Some(layer)
     }
@@ -414,11 +501,63 @@ impl Translator<'_> {
         }
     }
 
+    /// What a layer settles once its block is read: its opacity from its `COMPOSITE`s; its label
+    /// cache off where it is drawn after the cache, as loadLayer turns it off where POSTLABELCACHE
+    /// is TRUE (mapfile.c:4755-4759) and msDrawLayer turns it off again as it draws such a layer,
+    /// whatever LABELCACHE says after it (mapdraw.c:854-856); and its limit on its features.
+    fn settle_layer(
+        &mut self,
+        layer: &mut Layer,
+        block: &Block,
+        composites: &[&Block],
+        max_features: i32,
+    ) {
+        layer.opacity = self.composite(composites);
+        layer.label_cache &= !layer.post_label_cache;
+        layer.max_features = self.features_to_draw(block, max_features);
+    }
+
+    /// Warns of a layer's `METADATA`, read for [`MAX_FEATURES_KEY`] alone
+    /// ([`Self::features_to_draw`]).
+    fn layer_metadata(&mut self, span: &Span) {
+        let message = format!(
+            "METADATA of a layer is read for {MAX_FEATURES_KEY} alone; its other keys are not yet \
+             supported and are ignored"
+        );
+        self.warn("unsupported-keyword", &message, span);
+    }
+
+    /// A layer's `MAXFEATURES`, a number above 0 as getInteger checks it, truncated to an `int`;
+    /// -1, no quota, where it does not read, which fails the load.
+    fn max_features(&mut self, d: &Directive) -> i32 {
+        self.number(d, Range::above(0.0)).map_or(-1, |n| n as i32)
+    }
+
+    /// The most features the layer `block` draws, as `msLayerGetMaxFeaturesToDraw` of
+    /// src/maplayer.c settles it: its `MAXFEATURES`, replaced by its `maxfeaturestodraw` metadata
+    /// or else the map's, read by `atoi`; below 0, the output format's `MAXFEATURESTODRAW`; below 0
+    /// still, none.
+    fn features_to_draw(&self, block: &Block, max_features: i32) -> Option<u32> {
+        let (web, format) = self.max_features_fallback;
+        let layer = metadata([block], MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes()));
+        let n = layer.or(web).unwrap_or(max_features);
+        u32::try_from(if n < 0 { format } else { n }).ok()
+    }
+
     /// Sets the layer's label cache by its `LABELCACHE`, `ON` or `OFF` as loadLayer reads it
     /// (mapfile.c:4643-4646); initLayer starts it on.
     fn label_cache(&mut self, layer: &mut Layer, d: &Directive) {
         if let Some(on) = self.choice(d, &[("ON", true), ("OFF", false)]) {
             layer.label_cache = on;
+        }
+    }
+
+    /// Sets whether the layer is drawn after the label cache by its `POSTLABELCACHE`, `TRUE` or
+    /// `FALSE` as loadLayer reads it with getSymbol (mapfile.c:4755-4759); initLayer starts it
+    /// false.
+    fn post_label_cache(&mut self, layer: &mut Layer, d: &Directive) {
+        if let Some(post) = self.choice(d, &[("TRUE", true), ("FALSE", false)]) {
+            layer.post_label_cache = post;
         }
     }
 
@@ -580,7 +719,7 @@ impl Translator<'_> {
             Some(d) => self.text(d),
             None => label_item.map(|name| Expr::call(Op::ToString, vec![Expr::property(name)])),
         };
-        let own = Defaults::of([block]);
+        let own = Defaults::of([block], self.diagnostics);
         let mut label_left_out = false;
         for node in &block.nodes {
             match node {
@@ -605,7 +744,7 @@ impl Translator<'_> {
                 {
                     class.max_scale_denom = self.scale_denom(d);
                 }
-                Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b)),
+                Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b, false)),
                 Node::Block(b) if b.keyword == "VALIDATION" => {}
                 Node::Block(b) if b.keyword == "LABEL" => {
                     match self.label(b, fallback.as_ref(), label_item) {
@@ -813,16 +952,15 @@ impl Translator<'_> {
         item: Option<&str>,
         tables: &[&Defaults],
     ) -> Option<Expr> {
-        // The load has failed on the defaults' bound and said so once; charging on could wrap the
-        // count on wasm32 and let them through again (Q-9).
-        if self.default_bytes > MAX_TOTAL_BYTES {
+        // The load has failed on the defaults' bound and said so once (Q-9).
+        if self.defaults_added.passed() {
             return None;
         }
         let [token] = d.values.as_slice() else {
             self.invalid(d, "one expression");
             return None;
         };
-        let translated = substituted(token, tables, &mut self.default_bytes)
+        let translated = substituted(token, tables, &mut self.defaults_added)
             .and_then(|token| expression::translate(&token, item));
         match translated {
             Ok(expr) => Some(expr),

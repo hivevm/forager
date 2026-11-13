@@ -2,6 +2,9 @@
 //! [`ResourceLoader`], and translates it into the style IR. It is the only crate that knows
 //! MapServer syntax.
 
+#![warn(clippy::disallowed_types, clippy::disallowed_methods)]
+
+mod budget;
 mod expression;
 mod init_file;
 mod keywords;
@@ -12,6 +15,7 @@ mod syntax;
 mod translate;
 mod wkt;
 
+use budget::{Budget, Charged};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -28,6 +32,11 @@ pub const MAX_INCLUDE_DEPTH: usize = 5;
 /// How much text a mapfile with all its `INCLUDE`s may amount to (Q-9). Depth alone does not
 /// bound it: five levels of files that each include the next many times multiply.
 pub const MAX_TOTAL_BYTES: usize = 16 * 1024 * 1024;
+
+/// How much text the defaults of `VALIDATION` may add to all of a load's expressions, and to one
+/// expression with them (Q-9), beyond what [`MAX_TOTAL_BYTES`] bounds: one default may be named
+/// many times.
+pub const MAX_DEFAULT_BYTES: usize = 16 * 1024 * 1024;
 
 /// How many diagnostics one load reports (Q-9); the rest are counted in a last one.
 pub const MAX_DIAGNOSTICS: usize = 1000;
@@ -55,7 +64,7 @@ pub async fn load<L: ResourceLoader>(
         main: path.clone(),
         stack: Vec::new(),
         report: Report::default(),
-        bytes: 0,
+        read: Budget::new(MAX_TOTAL_BYTES),
     };
     let tokens = reading.read(path, None).await;
     let map = match tokens {
@@ -105,7 +114,8 @@ struct Reading<'a, L> {
     main: ResourcePath,
     stack: Vec<ResourcePath>,
     report: Report,
-    bytes: usize,
+    /// What the load has read, held to [`MAX_TOTAL_BYTES`].
+    read: Budget,
 }
 
 impl<L: ResourceLoader> Reading<'_, L> {
@@ -173,11 +183,6 @@ impl<L: ResourceLoader> Reading<'_, L> {
         files
     }
 
-    /// Whether what the load has read is past the bound on it (Q-9).
-    fn over_limit(&self) -> bool {
-        self.bytes > MAX_TOTAL_BYTES
-    }
-
     /// The bytes of `path`, within the bound on everything a load reads (Q-9): past it, the load
     /// error `mapfile-too-large` at `span`, what names the file, reported once, and every later
     /// file refused unread. A file that cannot be read is the caller's to report.
@@ -186,7 +191,7 @@ impl<L: ResourceLoader> Reading<'_, L> {
         path: &ResourcePath,
         span: Option<Span>,
     ) -> Result<Vec<u8>, Refused> {
-        if self.over_limit() {
+        if self.read.passed() {
             return Err(Refused::OverLimit);
         }
         let bytes = self
@@ -194,15 +199,17 @@ impl<L: ResourceLoader> Reading<'_, L> {
             .load(path)
             .await
             .map_err(|e| Refused::Unreadable(e.to_string()))?;
-        self.bytes += bytes.len();
-        if self.over_limit() {
-            let message =
-                format!("the mapfile with the files it names exceeds {MAX_TOTAL_BYTES} bytes");
-            self.report
-                .push(Diagnostic::error("mapfile-too-large", message, span));
-            return Err(Refused::OverLimit);
+        match self.read.charge(bytes.len()) {
+            Charged::Within => Ok(bytes),
+            Charged::PassedNow => {
+                let message =
+                    format!("the mapfile with the files it names exceeds {MAX_TOTAL_BYTES} bytes");
+                self.report
+                    .push(Diagnostic::error("mapfile-too-large", message, span));
+                Err(Refused::OverLimit)
+            }
+            Charged::Passed => Err(Refused::OverLimit),
         }
-        Ok(bytes)
     }
 
     /// The last `keyword` directive of the map and the file it names, resolved against the main

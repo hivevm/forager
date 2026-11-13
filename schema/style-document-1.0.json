@@ -415,6 +415,19 @@
           "description": "A label's transform, [`LabelTransform::Center`], which a class's style of a line or a\npolygon layer draws nothing at.",
           "type": "string",
           "const": "labelcenter"
+        },
+        {
+          "description": "One of MapServer's expressions, `(buffer([shape], 5))` and the like, as written, which\nthe engine does not draw: a class's style of it in a line or a polygon layer draws nothing\nand is reported, its class's other styles drawn as before; a point layer draws the style at\nits points, as it draws every style whatever its transform; a label of a style of it is\nleft out.",
+          "type": "object",
+          "properties": {
+            "expression": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "expression"
+          ]
         }
       ]
     },
@@ -802,6 +815,15 @@
           "description": "Whether the layer's labels go to the label cache, MapServer's `LABELCACHE`: placed with\nthe labels of every layer and drawn after them. Without the cache, each label is drawn at\nonce after its feature, untested against any other. Absent, it is true, MapServer's\ndefault `LABELCACHE ON`.",
           "type": "boolean"
         },
+        "max_features": {
+          "description": "The most features the layer draws, MapServer's limit of `msLayerGetMaxFeaturesToDraw`:\nthe layer's `MAXFEATURES`, or its `maxfeaturestodraw` metadata, or the map's, or the output\nformat's `MAXFEATURESTODRAW`. The features past it, in the order the source returns them and\ncounted once their class is found, are not drawn, nor their labels. Absent, there is none.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
         "max_scale_denom": {
           "type": [
             "number",
@@ -830,6 +852,10 @@
             "null"
           ],
           "format": "double"
+        },
+        "post_label_cache": {
+          "description": "Whether the layer is drawn after the label cache, MapServer's `POSTLABELCACHE TRUE`: past\nevery other layer and over every cached label, in its order among the layers of this kind,\nits own labels drawn at once, never cached. Absent, it is false.",
+          "type": "boolean"
         },
         "projection": {
           "description": "The projection of the layer's features; without one, the map's.",
@@ -1000,7 +1026,7 @@
           ]
         },
         "fonts": {
-          "description": "The map's fonts by name, each a resource path inside the base context, not read at load.",
+          "description": "The map's fonts by name, each a resource path inside the base context, not read at load.\nNames match without regard to case, as MapServer's font set compares them, so no two\ndiffer only in case.",
           "type": "object",
           "additionalProperties": {
             "type": "string"
@@ -1015,6 +1041,15 @@
               "type": "null"
             }
           ]
+        },
+        "label_cache_edge_buffer": {
+          "description": "The pixels along the image's edges that no cached label reaches into unless it may be\npartial or is forced, MapServer's `labelcache_map_edge_buffer` of `WEB` `METADATA`. Absent,\nthere is none.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
         },
         "layers": {
           "type": "array",
