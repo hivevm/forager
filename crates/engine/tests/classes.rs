@@ -717,7 +717,7 @@ fn a_layer_without_an_opacity_is_recorded_as_items_onto_the_map() {
 
 #[test]
 fn an_opacity_past_an_int_is_rounded_as_ms_nint_rounds_at_the_pin() {
-    // Verifies: ADR-0017
+    // Verifies: ADR-0036
     // bindIntegerAttribute stores MS_NINT(atof("3e9")), lrint's long 3000000000, in an int, which
     // keeps its low 32 bits: -1294967296, below 100, so bindStyle sets the alpha to
     // MS_NINT(-1294967296 × 2.55), -3302166605, whose low bits are 992800691, 179 in a byte.

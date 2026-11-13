@@ -50,8 +50,7 @@ golden path and the test pattern an agent copies from are named here.
   the adapters: glibc's `strtod`, `atof`, and `atoi`, MapServer's `MS_NINT` as `lrint` on
   x86-64 narrowed to an `int`, C's `(int)` cast of a `double`, `int_cast`, `INT_MIN` past an
   `int`, a C string's end, and `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, and
-  `msStringSplit` ([ADR-0017](adr/0017-c-numbers-in-style-ir.md),
-  [ADR-0036](adr/0036-c-ports-in-style-ir.md)). `engine`, `symbolize`, and
+  `msStringSplit` ([ADR-0036](adr/0036-c-ports-in-style-ir.md)). `engine`, `symbolize`, and
   `label` deny clippy's `cast_possible_truncation`, so that such a cast is not written as `as`.
   `style-ir` holds the geometry of a feature (`geometry.rs`), which the ports deliver and
   `symbolize` draws, the one crate both may depend on. It depends on no other crate of the
@@ -276,7 +275,7 @@ golden path and the test pattern an agent copies from are named here.
   lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them
   nowhere but the one test time bound it names; the hosts alone are free. `tests/c_numbers.rs`
   refuses a definition of one of `c.rs`'s ports, or one named `lrint_…` or `ms_nint_…`, outside
-  `style-ir`'s `c.rs`, and a `PI / 180` in code (ADR-0017, ADR-0036).
+  `style-ir`'s `c.rs`, and a `PI / 180` in code (ADR-0036).
   `tests/symbolize_modules.rs` refuses an import between the modules of `symbolize`, outside its
   tests, against the direction its `lib.rs` states, and a module of the crate its table has no row
   for. `tests/symbol_names.rs` refuses an `eq_ignore_ascii_case` near a symbol's name outside

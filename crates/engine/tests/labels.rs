@@ -2156,7 +2156,7 @@ fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
 
 #[test]
 fn a_label_styles_opacity_past_an_int_is_rounded_as_a_class_styles_is() {
-    // Verifies: ADR-0017
+    // Verifies: ADR-0036
     // bindStyle rounds a label's style as it rounds a class's: MS_NINT(atof("3e9")) in an int is
     // -1294967296, and the alpha MS_NINT(-1294967296 × 2.55) keeps 179 in a byte.
     let style = Style {
