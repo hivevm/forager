@@ -250,9 +250,10 @@ G-10 for the cases marked `labels-hold`. Unit tests of the harness in
 `crates/cli/tests/conformance/tests.rs` cite this ADR with `Verifies:`: labels of another priority
 at the same box do not match (`labels::compare`), and the reader's output holds the record within
 1e-6 px in its boxes and exactly in every other field (`labels::beyond_noise`). The noise
-measurement, the ignored test of `crates/cli/tests/msautotest.rs` that `noise.yml` runs, cites
-this ADR with `Verifies:`. It fails when the reader's image of a text case in scope differs from
-`map2img`'s, or its output from the record: a box by more than 1e-6 px, or any other field at all.
+measurement is the ignored test in `crates/cli/tests/conformance/noise/`, which cites this ADR with
+`Verifies:`. `noise.yml` runs it in the test target `crates/cli/tests/msautotest.rs`. It fails when
+the reader's image of a text case in scope differs from `map2img`'s, or its output from the record:
+a box by more than 1e-6 px, or any other field at all.
 
 **Not mechanically decidable:** no test runs the build or reads a run, so a reviewer holds:
 

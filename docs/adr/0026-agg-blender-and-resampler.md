@@ -123,7 +123,7 @@ at the pin, while agg-rust keeps rasterizing.
 - Positive: a scaled or turned pixmap matches MapServer's to the bit wherever the transform and
   the blend do, and every pixmap drawn at a point inherits it.
 - Positive: `render-agg` attaches its buffer without `unsafe`; the resampler reuses `style-ir`'s
-  `lrint` ([ADR-0017](0017-c-numbers-in-style-ir.md)), so C's rounding is still written once.
+  `lrint` ([ADR-0017](0017-c-ports-in-style-ir.md)), so C's rounding is still written once.
 - Negative / trade-offs: Forager owns some 240 lines of blending arithmetic and two span
   generators beside agg-rust, kept in step with AGG 2.4 rather than with agg-rust's releases; a
   fix agg-rust makes to its filter does not reach us. The blender moved every reference image of

@@ -1,4 +1,4 @@
-# ADR-0037: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, translated by the mapfile frontend
+# ADR-0036: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, translated by the mapfile frontend
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-13
@@ -39,7 +39,7 @@ transform's functions in the IR, which the frontend translates MapServer's expre
 
 - unary `-` is `{ $$ = $2; }`, so it leaves its operand un-negated, while the lexer reads `-5` as
   one number token;
-- `%` is `(int)$1 % (int)$3`, C's cast ([ADR-0036](0036-c-ports-in-style-ir.md));
+- `%` is `(int)$1 % (int)$3`, C's cast ([ADR-0017](0017-c-ports-in-style-ir.md));
 - `/` by zero is a parse error, `yyerror(p, "Division by zero.")`, so the transform fails.
 
 `smoothsia`'s text is its preprocessing; the port read `all` and `angle`, without regard to case,
@@ -171,7 +171,7 @@ Only the mapfile frontend translates it from MapServer's text.
 - Commit 44cc731: the earlier port, its parser, and its tests derived from the C. Commit 7f36bf6,
   which removed it.
 - [ADR-0015](0015-expressions-as-cql2.md), [ADR-0014](0014-style-document-versions.md),
-  [ADR-0008](0008-ports-and-adapters-crates.md), [ADR-0036](0036-c-ports-in-style-ir.md).
+  [ADR-0008](0008-ports-and-adapters-crates.md), [ADR-0017](0017-c-ports-in-style-ir.md).
 - `docs/backlog/layer-geomtransform.md`, `docs/plan/revision-2026-11-13/01-…` and `12-…`,
   `docs/semantics/style-symbol.md`.
 

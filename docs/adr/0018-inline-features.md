@@ -69,8 +69,8 @@ source, in place of any source a host binds to the layer.
   binds to the layer, and reports that with the warning `source-ignored`.
 
 **Out of scope:** a layer's `GEOMTRANSFORM` and `TRANSFORM` on inline features; inline features of
-other connection types, such as `GRATICULE`, which MapServer exempts; `PROCESSING` keys other than
-`ITEMS`.
+other connection types, such as `MS_GRATICULE`, which MapServer exempts and reads from the word
+`MEDIUM` (at the pin it refuses `CONNECTIONTYPE GRATICULE`); `PROCESSING` keys other than `ITEMS`.
 
 ## Alternatives considered
 
