@@ -18,7 +18,7 @@ PNPOLY_CONDITION='Redistributions of source code must retain the above copyright
 PNPOLY_ENDORSE='The name of W. Randolph Franklin may not be used to endorse or promote'
 
 # PROJ's notice, from its file COPYING, which a port of its formulas under crates/proj holds
-# (ADR-draft-reprojection-ported-in-proj): its terms' first words, which no other notice holds, and
+# (ADR-0037): its terms' first words, which no other notice holds, and
 # the permission sentence and the disclaimer of the MIT licence, which MapServer's share.
 PROJ_TERMS='All source, data files and other contents of the PROJ package are available'
 

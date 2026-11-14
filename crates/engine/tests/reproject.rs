@@ -1,6 +1,6 @@
 //! A layer in another projection than the map's, drawn in the map's: its features reprojected
 //! after its source delivers them, and its source asked for the map's extent in its own
-//! coordinates (ADR-draft-reprojection-ported-in-proj).
+//! coordinates (ADR-0037).
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -155,7 +155,7 @@ fn assert_square_drawn(rendered: &Rendered) {
 
 #[test]
 fn a_layer_in_another_projection_is_drawn_in_the_maps() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     let source = Recording::new(vec![Geometry::Polygon(vec![square_in(LCC)])]);
     let (rendered, _) = render_from(&map(LONGLAT, MAP_EXTENT, Some(LCC)), source);
     assert!(
@@ -168,7 +168,7 @@ fn a_layer_in_another_projection_is_drawn_in_the_maps() {
 
 #[test]
 fn a_layer_without_a_projection_or_in_the_maps_is_not_reprojected() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     let in_longlat = || Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
     for layer_projection in [None, Some(LONGLAT)] {
         let (rendered, asked) =
@@ -198,7 +198,7 @@ fn a_layer_without_a_projection_or_in_the_maps_is_not_reprojected() {
 
 #[test]
 fn the_source_is_asked_for_the_maps_extent_in_its_own_coordinates() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     let source = Recording::new(Vec::new());
     let (_, asked) = render_from(&map(LONGLAT, MAP_EXTENT, Some(LCC)), source);
     let [asked] = asked[..] else {
@@ -232,7 +232,7 @@ fn the_source_is_asked_for_the_maps_extent_in_its_own_coordinates() {
 
 #[test]
 fn a_point_that_does_not_reproject_is_left_out_with_a_warning_naming_the_layer() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj, Q-3
+    // Verifies: ADR-0037, Q-3
     // A map in the conic, a layer in longitude and latitude: the south pole, which the conic
     // opens away from, has no place on it.
     let extent = way(LONGLAT, LCC).extent(&MAP_EXTENT).unwrap();
@@ -262,7 +262,7 @@ fn a_point_that_does_not_reproject_is_left_out_with_a_warning_naming_the_layer()
 
 #[test]
 fn a_projection_not_supported_leaves_its_layer_undrawn_with_a_warning() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     let source = Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
     let (rendered, asked) = render_from(
         &map(
@@ -288,7 +288,7 @@ fn a_projection_not_supported_leaves_its_layer_undrawn_with_a_warning() {
 
 #[test]
 fn inline_features_in_another_projection_are_reprojected() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj, ADR-0018
+    // Verifies: ADR-0037, ADR-0018
     let mut inline_map = map(LONGLAT, MAP_EXTENT, Some(LCC));
     inline_map.layers[0].features = vec![InlineFeature {
         shape_type: ShapeType::Polygon,

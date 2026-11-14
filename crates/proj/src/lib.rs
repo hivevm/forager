@@ -38,7 +38,7 @@
 
 //! The reprojection of the core: its own port of PROJ's formulas, every transcendental function
 //! taken from `libm`, so that a coordinate reprojects to the same bits on every target
-//! (ADR-draft-reprojection-ported-in-proj, Q-2). It reads a projection as the proj4 string of the
+//! (ADR-0037, Q-2). It reads a projection as the proj4 string of the
 //! style IR and implements only what a case in scope or a ticket needs: longitude and latitude,
 //! `lcc`, and `merc`, and a datum's shift by `+towgs84`. Anything else is an [`Error`] naming it,
 //! and a point that does not transform is [`NotTransformed`], never a panic (Q-3).

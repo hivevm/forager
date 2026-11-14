@@ -139,7 +139,7 @@ impl Ellipsoid {
 
 /// The ellipsoids of PROJ's table, by their semimajor axis and reverse flattening, that the
 /// datums below and the cases in scope name; another `+ellps` is unsupported until a case or a
-/// ticket needs it (ADR-draft-reprojection-ported-in-proj).
+/// ticket needs it (ADR-0037).
 const ELLIPSOIDS: &[(&str, f64, f64)] = &[
     ("WGS84", 6_378_137.0, 298.257_223_563),
     ("GRS80", 6_378_137.0, 298.257_222_101),

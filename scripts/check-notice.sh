@@ -20,7 +20,7 @@
 # which a binary carries as his second condition asks, must then hold the same lines, and
 # MapServer's copyright line.
 # A Rust file under crates/proj that names a source file of PROJ — src/….cpp or .h, in a
-# subdirectory or not — ports PROJ's formulas (ADR-draft-reprojection-ported-in-proj) and must hold
+# subdirectory or not — ports PROJ's formulas (ADR-0037) and must hold
 # PROJ's notice: the first words of its terms, the permission sentence, and the disclaimer
 # (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then hold the same first words, as the MIT
 # licence asks of every copy, binaries included.

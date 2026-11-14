@@ -28,7 +28,7 @@ fn degrees(d: f64, m: f64) -> f64 {
 
 #[test]
 fn the_lambert_conic_of_two_parallels_matches_iogps_worked_example() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     // Guidance Note 7-2, Lambert Conic Conformal (2SP): NAD27 / Texas South Central on Clarke
     // 1866; 28°30'N 96°00'W is E 2963503.91 ftUS, N 254759.80 ftUS.
     let geographic = "+proj=longlat +a=6378206.4 +rf=294.9786982";
@@ -53,7 +53,7 @@ fn the_lambert_conic_of_two_parallels_matches_iogps_worked_example() {
 
 #[test]
 fn the_mercator_of_an_ellipsoid_matches_iogps_worked_example() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     // Guidance Note 7-2, Mercator (variant A): Makassar / NEIEZ on Bessel 1841; 3°S 120°E is
     // E 5009726.58 m, N 569150.82 m.
     let geographic = "+proj=longlat +a=6377397.155 +rf=299.1528128";
@@ -71,7 +71,7 @@ fn the_mercator_of_an_ellipsoid_matches_iogps_worked_example() {
 
 #[test]
 fn web_mercator_takes_wgs84_longitude_and_latitude_on_its_sphere_without_a_shift() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     let projected = way(LONGLAT_WGS84, EPSG_3857).point(at(10.0, 50.0)).unwrap();
     assert!(
         (projected.x - 1_113_194.907_932_735_7).abs() < 1e-6,
@@ -85,7 +85,7 @@ fn web_mercator_takes_wgs84_longitude_and_latitude_on_its_sphere_without_a_shift
 
 #[test]
 fn the_canadian_lambert_conic_of_the_suite_has_its_origin_at_49n_95w() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     // NAD83's GRS80 and WGS84 part by a tenth of a millimetre at the origin, which the change of
     // ellipsoid that PROJ makes for a zero `towgs84` keeps.
     let projected = way(LONGLAT_WGS84, EPSG_3978)
@@ -113,7 +113,7 @@ fn the_canadian_lambert_conic_of_the_suite_has_its_origin_at_49n_95w() {
 
 #[test]
 fn a_seven_parameter_shift_moves_a_point_by_some_metres_and_back() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     // OSGB36 on Airy 1830, as PROJ's table of datums defines it.
     let osgb36 = "+proj=longlat +a=6377563.396 +rf=299.3249646 \
                   +towgs84=446.448,-125.157,542.060,0.1502,0.2470,0.8421,-20.4894";
@@ -132,7 +132,7 @@ fn a_seven_parameter_shift_moves_a_point_by_some_metres_and_back() {
 
 #[test]
 fn an_unknown_projection_or_parameter_is_an_error_naming_it() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     let error = |text: &str| Projection::parse(text).unwrap_err();
     assert_eq!(
         error("+proj=tmerc +zone=32"),
@@ -181,7 +181,7 @@ fn an_unknown_projection_or_parameter_is_an_error_naming_it() {
 
 #[test]
 fn a_point_that_does_not_transform_is_an_error_not_a_panic() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj, Q-3
+    // Verifies: ADR-0037, Q-3
     let to_lcc = way(LONGLAT_WGS84, EPSG_3978);
     // The pole the cone opens away from has no place on it.
     assert_eq!(to_lcc.point(at(0.0, -90.0)), Err(NotTransformed));
@@ -208,14 +208,14 @@ fn a_point_that_does_not_transform_is_an_error_not_a_panic() {
 
 #[test]
 fn the_angles_of_proj_are_those_of_its_literals() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     assert_eq!(DEG_TO_RAD, ".017453292519943296".parse::<f64>().unwrap());
     assert_eq!(RAD_TO_DEG, "57.295779513082321".parse::<f64>().unwrap());
 }
 
 #[test]
 fn projections_differ_as_mapserver_compares_their_parameters() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     assert!(!differ("", LONGLAT_WGS84), "a layer without parameters");
     assert!(!differ(LONGLAT_WGS84, "  "), "a map without parameters");
     assert!(!differ(
@@ -228,7 +228,7 @@ fn projections_differ_as_mapserver_compares_their_parameters() {
 
 #[test]
 fn an_extent_reprojects_to_the_rectangle_that_holds_its_sides() {
-    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // Verifies: ADR-0037
     // misc/quoting.map's extent, in longitude and latitude, asked of its layer in EPSG:3978.
     let map = Extent {
         min_x: -67.5725,

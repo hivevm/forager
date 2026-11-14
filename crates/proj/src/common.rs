@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn a_longitude_past_the_dateline_comes_back_within_it() {
-        // Verifies: ADR-draft-reprojection-ported-in-proj
+        // Verifies: ADR-0037
         assert_eq!(adjlon(1.0), 1.0);
         assert!((adjlon(PI + 0.5) - (-PI + 0.5)).abs() < 1e-15);
         assert!((adjlon(-3.0 * PI - 0.25) - (PI - 0.25)).abs() < 1e-12);
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn phi2_inverts_tsfn() {
-        // Verifies: ADR-draft-reprojection-ported-in-proj
+        // Verifies: ADR-0037
         let e = 0.081_819_190_842_621_49;
         for degrees in [-89.0, -45.0, 0.0, 12.5, 49.0, 77.0, 89.9] {
             let phi: f64 = degrees * crate::params::DEG_TO_RAD;

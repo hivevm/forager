@@ -21,7 +21,7 @@ with fewer than three, and a feature left with nothing; MapServer finds a horizo
 instead, and wraps lines at the dateline, which Forager does not do yet. A projection the core does
 not implement leaves its layer undrawn with a warning. The core implements longitude and latitude,
 `lcc`, and `merc`, a datum's shift by `+towgs84`, and the datums WGS84 and NAD83, as PROJ 9.4.0
-computes them (ADR-draft-reprojection-ported-in-proj). A layer of `AUTO` is not reprojected yet.
+computes them (ADR-0037). A layer of `AUTO` is not reprojected yet.
 
 **Parameters.** MapServer hands every parameter to PROJ, so the frontend writes each one with a
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the

@@ -79,7 +79,7 @@ own longitude and latitude.
   specification the human lands. A distance in degrees is measured in metres on the ellipsoid.
 - `proj` ports PROJ's formulas itself, with `libm`'s transcendental functions and no crate but
   `style-ir` and `libm`, and implements a projection only when a case or a ticket needs it
-  (ADR-draft-reprojection-ported-in-proj); proj4rs binds itself to JavaScript on wasm32.
+  (ADR-0037); proj4rs binds itself to JavaScript on wasm32.
 - The msautotest harness takes its EPSG definitions from the suite's own `wxs/data/epsg2` and keeps
   a stand-in in longitude and latitude only for a code that file lacks; ADR-0019 rejected a subset
   of the EPSG dataset in the repository for its licence.
@@ -117,6 +117,6 @@ own longitude and latitude.
   - the reprojection in `proj` as a port of PROJ's formulas, its dependencies, its build for wasm32
     without C code, its bundle size, how its trigonometry stays bit-identical across targets, and
     where the harness's EPSG definitions come from (ticket 01,
-    ADR-draft-reprojection-ported-in-proj);
+    ADR-0037);
   - the projection a source declares: the port's change, and the WKT conversion in the shapefile
     adapter with its crate (ticket 04).

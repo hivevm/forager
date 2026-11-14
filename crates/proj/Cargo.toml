@@ -1,6 +1,6 @@
 [package]
 name = "forager-proj"
-description = "The reprojection of Forager: its own port of PROJ's formulas (ADR-draft-reprojection-ported-in-proj)."
+description = "The reprojection of Forager: its own port of PROJ's formulas (ADR-0037)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

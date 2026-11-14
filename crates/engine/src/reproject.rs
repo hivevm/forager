@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn a_polygon_whose_exterior_ring_does_not_reproject_is_left_out_with_its_holes() {
-        // Verifies: ADR-draft-reprojection-ported-in-proj
+        // Verifies: ADR-0037
         // Left in, the hole would stand first and be drawn as the exterior.
         let mut features = vec![polygon(vec![
             ring(&[(-64.0, 45.0), (0.0, -90.0), (-62.0, 47.0)]),
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn a_hole_that_does_not_reproject_leaves_its_polygon_drawn_without_it() {
-        // Verifies: ADR-draft-reprojection-ported-in-proj
+        // Verifies: ADR-0037
         let mut features = vec![polygon(vec![
             ring(SQUARE),
             ring(&[(-63.5, 45.5), (0.0, -90.0), (-63.5, 45.5)]),

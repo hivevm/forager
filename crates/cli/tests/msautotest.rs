@@ -90,7 +90,7 @@ const SKIPPED: &[(&str, &str)] = &[
 
 /// The EPSG codes the suite names beyond those built into the resolver (ADR-0019). The suite's own
 /// init file [`EPSG_FILE`] defines some; each code it lacks has a stand-in in longitude and
-/// latitude, so that the test carries no EPSG data (ADR-draft-reprojection-ported-in-proj): G-1
+/// latitude, so that the test carries no EPSG data (ADR-0037): G-1
 /// decides that a mapfile loads, and a case whose layer is in a stand-in is not drawn right.
 const EPSG_CODES: &[u32] = &[
     2157, 3347, 3395, 3978, 21781, 25833, 26711, 26915, 26917, 27700, 102977,
@@ -597,7 +597,7 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
     // Verifies: G-9
     // Verifies: Q-2
     // Verifies: ADR-0034
-    // Verifies: ADR-draft-reprojection-ported-in-proj, for misc/quoting.map, reprojected from the
+    // Verifies: ADR-0037, for misc/quoting.map, reprojected from the
     // suite's EPSG:3978 natively and on wasm32
     let suite = suite();
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");

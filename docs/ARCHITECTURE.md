@@ -118,7 +118,7 @@ golden path and the test pattern an agent copies from are named here.
   Synchronous, without I/O; the only crate that uses `regex`.
 - **`proj`** — the reprojection: its own port of PROJ 9.4.0's formulas, the version the pinned
   MapServer build links, every transcendental function from `libm`, so that a point reprojects to
-  the same bits on every target (ADR-draft-reprojection-ported-in-proj, Q-2). It reads a
+  the same bits on every target (ADR-0037, Q-2). It reads a
   projection as the style IR's proj4 string, parameters and tables as PROJ's `pj_init` reads them
   (`params.rs`), implements longitude and latitude, `lcc`, and `merc` (`lcc.rs`, `merc.rs`, their
   shared functions in `common.rs`), and shifts a datum through WGS84 as PROJ's cs2cs emulation
