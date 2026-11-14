@@ -14,7 +14,9 @@ A layer whose projection differs from the map's is drawn where MapServer draws i
 and on the server alike: its features are reprojected into the map's projection, and its source is
 asked for the area in view in the source's own coordinates. A layer of `PROJECTION AUTO` takes its
 projection from its source as MapServer does: a shapefile from the `.prj` beside it, GeoJSON as
-longitude and latitude in WGS84. A map of `PROJECTION AUTO` has no projection, as in MapServer.
+longitude and latitude in WGS84. A map of `PROJECTION AUTO` is read as MapServer reads it: a layer
+without a projection is not reprojected, and a layer in a projection is drawn in that projection's
+own longitude and latitude.
 
 ## Existing behaviour
 
@@ -25,8 +27,10 @@ longitude and latitude in WGS84. A map of `PROJECTION AUTO` has no projection, a
   feature source port asks for the area "in the source's coordinates". This changes.
 - A layer without a projection, or in the map's, is drawn as today: no reprojection, no cost. The
   conformance cases in scope pin it and must stay as they are.
-- A map's `AUTO` is warned as not yet supported and leaves the map without a projection. The
-  projection stays absent; the warning goes.
+- A map's `AUTO` is warned as not yet supported and leaves the map without a projection, so no layer
+  is reprojected. MapServer keeps `AUTO` as the map's one argument without a PROJ object: a layer
+  in a projection then differs from the map and is reprojected into its base geographic CRS. This
+  changes; the warning goes.
 - The conformance list leaves out every msautotest case that needs a projection, with the reason
   "a projection". Each ticket brings its cases into scope.
 
@@ -37,6 +41,8 @@ longitude and latitude in WGS84. A map of `PROJECTION AUTO` has no projection, a
 - G-9, Q-2 (reprojected renders are bit-identical natively and on wasm32)
 - Q-1 (the reprojection is pure Rust and builds for wasm32), Q-5 (bundle size), Q-6 (licence)
 - G-5 (the browser bindings reproject as the CLI does)
+- Q-3 (a point that does not reproject and a `.prj` that does not read are diagnostics; the `.prj`
+  reader is fuzzed), Q-9 (the points a horizon adds, and the size of a `.prj`, are bounded)
 
 ## User stories
 
@@ -61,12 +67,19 @@ longitude and latitude in WGS84. A map of `PROJECTION AUTO` has no projection, a
 - The area asked of a source is the map's extent projected into the layer's projection as
   `msProjectRect` projects it.
 - A layer projects only where its projection and the map's differ as `msProjectionsDiffer` finds
-  it; a layer or a map without one projects nothing.
+  it: a layer or a map without one projects nothing. A map of `AUTO` stays distinct from a map
+  without a projection in the style IR, so that a layer in a projection reprojects into its base
+  geographic CRS beneath it, as `msProjectCreateReprojector` does.
 - WKT from a `.prj` is turned into a proj4 string in the shapefile adapter, outside the core, which
   accepts proj4 only (*Constraints*). The feature source port carries the projection a source
   declares. A GeoJSON source declares WGS84 longitude and latitude.
 - The tolerance of G-11 is set from a measurement of proj4rs against PROJ at the pinned MapServer
-  build, as the noise of G-6 was.
+  build, as the noise of G-6 was, and stated in G-11, a change to the specification the human
+  lands. A distance in degrees is measured in metres on the ellipsoid.
+- The msautotest harness resolves the EPSG codes beyond the built-in ones to stand-ins in longitude
+  and latitude. A case brought into scope needs real definitions; where they come from is decided
+  with the human, since ADR-0019 rejected a subset of the EPSG dataset in the repository for its
+  licence.
 - Horizon clipping into an orthographic projection (MapServer's RFC 5) and the dateline handling of
   `+over` are their own late tickets.
 
@@ -84,8 +97,8 @@ longitude and latitude in WGS84. A map of `PROJECTION AUTO` has no projection, a
 ## Out of scope
 
 - Raster reprojection (the raster package).
-- Datum grids, a mapfile's `PROJECTION` given as WKT, PROJJSON, a PROJ pipeline, or `EPSG:` without
-  `init=` (Non-Goals as drafted with the function matrix).
+- Datum grids; a mapfile's `PROJECTION` given as WKT, as PROJJSON, as a PROJ pipeline, or as `EPSG:`
+  without `init=`.
 - An EPSG database in the core; `init=` stays with the resolver (ADR-0019).
 - FlatGeobuf's declared projection, which comes with the FlatGeobuf adapter.
 - Map rotation (`ANGLE`), which interacts with the extent but is its own package.

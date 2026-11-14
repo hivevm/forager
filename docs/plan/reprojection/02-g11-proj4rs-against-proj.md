@@ -5,22 +5,26 @@
 A measurement of proj4rs against PROJ at the pinned MapServer build, over the transformations the
 msautotest cases in scope and the built-in codes of `adapter-epsg` use, and from it the tolerance in
 metres that G-11 states. The reference coordinates PROJ computes are recorded beside the test, as
-the label records of ADR-0033 are, so that the test needs no PROJ to run.
+the label records of ADR-0033 are, so that the test needs no PROJ to run. A result in degrees is
+compared by its distance in metres on the ellipsoid. Running PROJ on CI is a run beside MapServer's
+that ADR-0033 may need revising for.
 
 ## Acceptance criteria
 
 - [ ] Given the transformations of the cases in scope and of EPSG:4326, EPSG:3857, and the UTM
   zones, when proj4rs transforms the recorded points, then each lies within the tolerance of the
   PROJ result, and the test cites `Verifies: G-11`.
-- [ ] Given the measurement, when the tolerance is set, then the human decides it, and the ADR of
-  ticket 01 or a revision of it states it with the measured spread.
+- [ ] Given the measurement, when the tolerance is set, then the human decides it and lands it in
+  G-11 as a change to the specification, with the measured spread.
+- [ ] Given EPSG:3857 as `adapter-epsg` builds it in, with `+nadgrids=@null`, when proj4rs reads it,
+  then it transforms without a grid file, or the definition changes with the human's decision.
 - [ ] Given a recorded reference, when it is read, then a script names the PROJ version and the
   MapServer build that computed it, and rerunning the script reproduces the file.
 
 ## Read first
 
 - Touches: `crates/proj`, `scripts/build-mapserver.sh`, `.github/workflows/noise.yml`,
-  `crates/cli/tests/conformance/`
+  `crates/cli/tests/conformance/`, `docs/SPECIFICATION.md` (G-11, landed by the human)
 - ADR-0033 (how MapServer's own runs are recorded); ADR-0002 (`Verifies:`)
 - Seam: a test of `crates/proj` over recorded points
 

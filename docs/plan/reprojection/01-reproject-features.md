@@ -7,14 +7,18 @@ shape, inline features included, is reprojected after the source delivers it and
 layer's `GEOMTRANSFORM`, classes, and labels. The source is asked for the map's extent projected
 into the layer's projection; this ticket may project the extent's corners and edges simply, and
 ticket 03 makes it MapServer's. Before any code, `propose-adr` runs for the reprojection with
-proj4rs in the core crate `proj`.
+proj4rs in the core crate `proj`; the session stops once the ADR is proposed and resumes after the
+human's review. The ADR also settles where the msautotest harness takes real definitions for the
+EPSG codes of the cases it brings into scope: today it resolves them to stand-ins in longitude and
+latitude, and ADR-0019 rejected a subset of the EPSG dataset in the repository for its licence.
 
 ## Acceptance criteria
 
 - [ ] Given a proposed ADR for the reprojection with proj4rs, reviewed by the human, when the work
   starts, then it settles: the dependency under ADR-0011, its build for `wasm32-unknown-unknown`
   without C code (Q-1), its licence (Q-6), the bundle's growth against Q-5, and how its
-  trigonometry gives the same bits on every target where std's calls the platform's libm (Q-2).
+  trigonometry gives the same bits on every target where std's calls the platform's libm (Q-2),
+  and where the harness's real EPSG definitions come from.
 - [ ] Given a map in `init=epsg:4326` and a layer in `init=epsg:3978`, as msautotest's
   `misc/quoting.map`, when the case is rendered, then it is in scope and holds its outcome by the
   metric of G-6, natively and on wasm32 (G-9).
@@ -29,7 +33,8 @@ proj4rs in the core crate `proj`.
 
 - Touches: `crates/proj` (new, the row ADR-0008 names), `crates/engine/src/lib.rs`,
   `crates/engine/src/classes.rs`, `crates/engine/src/inline.rs`, `Cargo.toml`, `deny.toml`,
-  `crates/cli/tests/conformance/cases.txt`
+  `crates/cli/tests/msautotest.rs`, `crates/cli/tests/conformance/cases.txt`,
+  `docs/ARCHITECTURE.md`, `docs/semantics/projection.md` (the reprojection it now describes)
 - `docs/semantics/projection.md`; MapServer's `msDrawLayer`, `msDrawShape`, `msProjectShapeEx`,
   and `msProjectionsDiffer` (`src/mapdraw.c`, `src/mapproject.c`) at the pinned tag
 - Glossary: Core, Feature source, Viewport; `docs/CONVENTIONS.md`
