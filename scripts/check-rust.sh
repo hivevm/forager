@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds, tests, and lints the Rust workspace (ADR-0007): formatting, clippy with warnings as
+# Builds, tests, and lints the Rust workspace (ADR-0038): formatting, clippy with warnings as
 # errors, the tests, the style document's JSON Schema against its checked-in file (ADR-0014),
 # the load of the msautotest suite at the pinned MapServer release (G-1, fetched once into
 # target/ by scripts/fetch-msautotest.sh) and the conformance harness over its cases, whose share

@@ -41,7 +41,7 @@ use crate::place::{Anchor, Bounds, Placement, PointLabel, member_box, place, pla
 /// MapServer's `MS_MAX_LABEL_PRIORITY`: priorities run from 1 to it.
 pub const MAX_PRIORITY: u8 = 10;
 
-/// The most labels the label cache of one render holds (Q-9, ADR-0032); MapServer holds any
+/// The most labels the label cache of one render holds (Q-9, ADR-0039); MapServer holds any
 /// number. A label added past it is left out, untested.
 pub const MAX_LABELS: usize = 100_000;
 
@@ -198,7 +198,7 @@ struct Cache<'m, M: ?Sized> {
     gutter: f64,
     /// The markers of each slot, by the member's index.
     markers: Vec<Grid<u32>>,
-    /// The labels drawn, by their members' boxes alone (ADR-0032), with the position each stands
+    /// The labels drawn, by their members' boxes alone (ADR-0039), with the position each stands
     /// at.
     boxes: Grid<(u32, Anchor)>,
     /// The labels drawn with a text, by the points they stand at, for the `MINDISTANCE` test;

@@ -401,7 +401,7 @@ whose shapefile does not read is a difference too. The native render and the mod
 are written in the test and again in `crates/bindings-wasm/src/conformance.rs`.
 
 The crates and their allowed edges are [ADR-0008](adr/0008-ports-and-adapters-crates.md); the
-toolchain and its checks are [ADR-0007](adr/0007-rust-toolchain.md).
+toolchain and its checks are [ADR-0038](adr/0038-sensors-and-duplication.md).
 
 **Golden path:** `forager read`, from the CLI's argument through the file loader and the
 frontend's `load` to the style document — `crates/cli/src/main.rs`, `crates/cli/src/files.rs`,

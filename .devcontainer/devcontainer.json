@@ -49,7 +49,7 @@
   // Runs inside the container once it is created.
   "postCreateCommand": {
     // The pinned toolchain, cargo-deny, the wasm-bindgen CLI, and ShellCheck at the version CI runs,
-    // so that the pre-push hook runs the shell lint CI runs (ADR-0007, ADR-0009).
+    // so that the pre-push hook runs the shell lint CI runs (ADR-0038, ADR-0009).
     "tools": "bash scripts/install-tools.sh",
     // git authenticates through gh's stored login, not through VS Code's helper of an earlier
     // container (ADR-0009); before the first login it has nothing to set up.

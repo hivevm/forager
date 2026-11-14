@@ -57,7 +57,7 @@ schema/               # the JSON Schema of the style document, one file per form
 Cargo.toml            # the Rust workspace: one crate per responsibility under crates/ (ADR-0008)
 Cargo.lock            # the resolved versions of every crate the workspace builds
 crates/               # the crates, one per responsibility: style-ir, mapfile, engine, cli, …
-rust-toolchain.toml   # the pinned Rust toolchain (ADR-0007)
+rust-toolchain.toml   # the pinned Rust toolchain (ADR-0038)
 clippy.toml           # clippy's configuration for the workspace
 deny.toml             # cargo-deny: licences, advisories, sources (ADR-0011)
 .jscpd.json           # jscpd's formats, paths, and minimum clone size for sensor-duplication.sh

@@ -876,7 +876,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
         let mut cached = false;
         for point in points_in_view(self.view, &feature.geometry) {
-            // The label cache holds at most MAX_LABELS labels a render (Q-9, ADR-0032).
+            // The label cache holds at most MAX_LABELS labels a render (Q-9, ADR-0039).
             if self.cached.len() >= MAX_LABELS {
                 let first = self
                     .over_limit

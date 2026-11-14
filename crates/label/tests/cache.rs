@@ -331,7 +331,7 @@ fn labels_a_span_of_the_grid_apart_or_at_infinity_meet_as_their_boxes_do() {
 
 #[test]
 fn a_turned_label_whose_box_is_no_number_meets_a_label_in_another_cell() {
-    // Verifies: ADR-0032
+    // Verifies: ADR-0039
     // An ANGLE bound to `nan` turns the box into no numbers at a finite point. msRectOverlap and
     // msIntersectSegments find it to meet any box, so a label far from its point, in another
     // cell of the grid, is left out.
