@@ -19,6 +19,11 @@
 # and his third condition, which no other notice holds, and the disclaimer. THIRD-PARTY-NOTICES.md,
 # which a binary carries as his second condition asks, must then hold the same lines, and
 # MapServer's copyright line.
+# A Rust file under crates/proj that names a source file of PROJ — src/….cpp or .h, in a
+# subdirectory or not — ports PROJ's formulas (ADR-draft-reprojection-ported-in-proj) and must hold
+# PROJ's notice: the first words of its terms, the permission sentence, and the disclaimer
+# (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then hold the same first words, as the MIT
+# licence asks of every copy, binaries included.
 # Beyond this check's reach are a file that names only a MapServer function, one that names a
 # source without `src/`, one that names a C++ source (`src/map….cpp`), whose holders differ by
 # file, and a port of pnpoly that names neither word.
@@ -41,6 +46,8 @@ failures=0
 checked=0
 pnpoly=0
 pnpoly_failures=0
+proj=0
+proj_failures=0
 while IFS= read -r -d '' file; do
   if grep -qiE '\bmsPointInPolygon\b|\bpnpoly\b' "$file"; then
     pnpoly=$((pnpoly + 1))
@@ -67,18 +74,34 @@ while IFS= read -r -d '' file; do
 done < <(find "$ROOT/crates" "$ROOT/fuzz" \( -name '*.rs' -o -name '*.c' \) -not -path '*/target/*' \
   -print0 2>/dev/null)
 
+# The ports of PROJ's formulas, under crates/proj.
+while IFS= read -r -d '' file; do
+  grep -qE '\bsrc/([a-z0-9_]+/)*[A-Za-z0-9_]+\.(cpp|h)\b' "$file" || continue
+  proj=$((proj + 1))
+  if ! holds_proj "$file"; then
+    echo "ERROR: ${file#"$ROOT"/} follows PROJ's source and does not hold PROJ's notice" >&2
+    proj_failures=$((proj_failures + 1))
+  fi
+done < <(find "$ROOT/crates/proj" -name '*.rs' -not -path '*/target/*' -print0 2>/dev/null)
+
 # A binary carries the notices in THIRD-PARTY-NOTICES.md, pnpoly's condition 2.
 notices="$ROOT/THIRD-PARTY-NOTICES.md"
+if ((proj)) && { [[ ! -f "$notices" ]] || ! grep -qF "$PROJ_TERMS" "$notices"; }; then
+  echo "ERROR: THIRD-PARTY-NOTICES.md does not reproduce PROJ's notice" >&2
+  proj_failures=$((proj_failures + 1))
+fi
 if ((pnpoly)) && { [[ ! -f "$notices" ]] || ! holds_third_party_notices "$notices"; }; then
   echo "ERROR: THIRD-PARTY-NOTICES.md does not reproduce W. Randolph Franklin's and MapServer's" \
     "notices" >&2
   pnpoly_failures=$((pnpoly_failures + 1))
 fi
 
-if ((failures || pnpoly_failures)); then
+if ((failures || pnpoly_failures || proj_failures)); then
   echo "Notice check FAILED ($failures of $checked files that follow MapServer's source;" \
-    "$pnpoly_failures problems with the notice of pnpoly, which $pnpoly files follow)." >&2
+    "$pnpoly_failures problems with the notice of pnpoly, which $pnpoly files follow;" \
+    "$proj_failures with PROJ's, which $proj files follow)." >&2
   exit 1
 fi
-echo "Notice check passed ($checked files that follow MapServer's source, $pnpoly pnpoly's)."
+echo "Notice check passed ($checked files that follow MapServer's source, $pnpoly pnpoly's," \
+  "$proj PROJ's)."
 exit 0

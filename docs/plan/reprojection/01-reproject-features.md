@@ -33,7 +33,9 @@ latitude, and ADR-0019 rejected a subset of the EPSG dataset in the repository f
 
 - Touches: `crates/proj` (new, the row ADR-0008 names), `crates/engine/src/lib.rs`,
   `crates/engine/src/classes.rs`, `crates/engine/src/inline.rs`, `Cargo.toml`, `deny.toml`,
-  `crates/cli/tests/msautotest.rs`, `crates/cli/tests/conformance/cases.txt`, `clippy.toml`,
+  `crates/cli/tests/msautotest.rs`, `crates/cli/tests/conformance/cases.txt` and its label record
+  of `misc/quoting.map`, `scripts/fetch-msautotest.sh` (the fonts of `wxs/etc/vera`),
+  `crates/engine/tests/reproject.rs`, `crates/engine/src/reproject.rs`, `clippy.toml`,
   `crates/{engine,label,symbolize}/clippy.toml`, `crates/arch-test/tests/dependencies.rs`,
   `crates/render/src/hatch.rs`, `crates/render-agg/src/lib.rs`, `scripts/check-notice.sh` and its
   test, `THIRD-PARTY-NOTICES.md`, `docs/ARCHITECTURE.md`, `docs/semantics/projection.md` (the

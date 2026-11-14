@@ -339,6 +339,54 @@ fn only_the_cli_s_tests_run_wasm_in_wasmi() {
 }
 
 #[test]
+fn proj_depends_on_style_ir_and_libm_alone() {
+    // Verifies: ADR-draft-reprojection-ported-in-proj
+    // The reprojection is the core's own port of PROJ's formulas: no crate that ports them, nor
+    // any other, comes in beside the IR and the mathematics that round alike on every target.
+    let ws = workspace();
+    let mut normal: Vec<_> = ws
+        .declared
+        .iter()
+        .filter(|(member, _, kind)| member == "proj" && kind == "normal")
+        .map(|(_, dep, _)| dep.as_str())
+        .collect();
+    normal.sort_unstable();
+    assert_eq!(normal, ["forager-style-ir", "libm"]);
+    // The check itself sees the crate: the engine reprojects through it.
+    assert!(dependents(&ws, "forager-proj").contains(&"engine".to_owned()));
+}
+
+/// The methods of `f64` and `f32` that call the platform's libm, which the output path takes from
+/// the `libm` crate instead (ADR-draft-reprojection-ported-in-proj, Q-2).
+const LIBM_METHODS: &[&str] = &[
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "ln", "powf", "sinh", "cosh",
+    "tanh", "atanh", "cbrt", "hypot",
+];
+
+#[test]
+fn the_output_path_takes_its_transcendental_functions_from_libm() {
+    // Verifies: ADR-draft-reprojection-ported-in-proj, Q-2
+    // The workspace's clippy.toml bans each, for f64 and f32, with the reason Q-2; the copies of
+    // the three crates that port MapServer's drawing are held equal to it by the test below.
+    let text = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../clippy.toml"),
+    )
+    .unwrap();
+    let mut missing = Vec::new();
+    for ty in ["f64", "f32"] {
+        for method in LIBM_METHODS {
+            let banned = text.lines().any(|line| {
+                line.contains(&format!("path = \"{ty}::{method}\"")) && line.contains("(Q-2)")
+            });
+            if !banned {
+                missing.push(format!("{ty}::{method}"));
+            }
+        }
+    }
+    assert!(missing.is_empty(), "clippy.toml does not ban {missing:?}");
+}
+
+#[test]
 fn only_render_agg_cuts_polygons_with_i_overlay() {
     // Verifies: ADR-0028
     let ws = workspace();

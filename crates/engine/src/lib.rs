@@ -20,9 +20,9 @@
 //! `inline`, `label_binding`, `label_cache`, `label_styles`, and `layer`; `label_styles` imports
 //! `bindable`, `classes`, `label_cache`, and `layer`; `label_binding` imports `classes`; `classes`
 //! imports `bindable` and `layer`; `fonts` and `images` import `resource`; `bind`, `bindable`,
-//! `inline`, `label_cache`, `layer`, `plan`, and `resource` import none, nor does a module take an
-//! item of this root. The test `engine_modules.rs` of `crates/arch-test` holds that direction,
-//! its tests aside, by a table in this order.
+//! `inline`, `label_cache`, `layer`, `plan`, `reproject`, and `resource` import none, nor does a
+//! module take an item of this root. The test `engine_modules.rs` of `crates/arch-test` holds that
+//! direction, its tests aside, by a table in this order.
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
@@ -41,6 +41,7 @@ mod label_styles;
 mod labels;
 mod layer;
 mod plan;
+mod reproject;
 mod resource;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -51,8 +52,8 @@ use forager_ports::{
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
-    Diagnostic, GeomTransform, Layer, LayerStatus, Map, NotDrawn, RenderMode, Rgba, Style, Symbol,
-    TransformTree,
+    Diagnostic, Extent, GeomTransform, Layer, LayerStatus, Map, NotDrawn, RenderMode, Rgba, Style,
+    Symbol, TransformTree,
 };
 use forager_symbolize::{
     Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, clip_pixmaps,
@@ -160,7 +161,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
         };
-        let Some(mut features) = features(layer, sources, &view, &mut diagnostics).await else {
+        let Some(mut features) = in_view(map, layer, sources, &view, &mut diagnostics).await else {
             continue;
         };
         if layer.classes.is_empty() {
@@ -634,13 +635,90 @@ fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<Ren
     }
 }
 
-/// The features of a layer in view: those of its inline features where it is read from them
-/// ([`is_inline`], ADR-0018), whatever source is bound to it, which is not read and is reported;
-/// otherwise those of the source bound to its name.
-async fn features<S: FeatureSource>(
+/// The features of `layer` in view, in the map's projection: those its source delivers for the
+/// area [`asked`], reprojected where the layer is.
+async fn in_view<S: FeatureSource>(
+    map: &Map,
     layer: &Layer,
     sources: &BTreeMap<String, S>,
     view: &View,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Vec<Feature>> {
+    let (reprojection, asked) = asked(map, layer, view, diagnostics)?;
+    let mut features = source_features(layer, sources, asked, diagnostics).await?;
+    if let Some(reprojection) = &reprojection {
+        let left_out = reprojection.features(&mut features);
+        if left_out > 0 {
+            diagnostics.push(points_not_reprojected(layer, left_out));
+        }
+    }
+    Some(features)
+}
+
+/// How `layer` is reprojected into the map's projection, where it is, and the area its source is
+/// asked for: the map's extent, reprojected into the layer's projection where the layer is
+/// reprojected. None, with a warning, where a projection does not read or no point of the map's
+/// extent reprojects into the layer's.
+fn asked(
+    map: &Map,
+    layer: &Layer,
+    view: &View,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(Option<reproject::LayerReprojection>, Extent)> {
+    let reprojection = match reproject::for_layer(map, layer) {
+        Ok(reprojection) => reprojection,
+        Err(error) => {
+            let message = format!(
+                "layer {} is not drawn: its projection or the map's cannot be reprojected: {error}",
+                name(layer)
+            );
+            diagnostics.push(Diagnostic::warning(
+                "projection-unsupported",
+                message,
+                layer.span.clone(),
+            ));
+            return None;
+        }
+    };
+    let Some(reprojection) = reprojection else {
+        return Some((None, view.extent));
+    };
+    let Some(extent) = reprojection.asked(&view.extent) else {
+        let message = format!(
+            "layer {} is not drawn: no point of the map's extent reprojects into its projection",
+            name(layer)
+        );
+        diagnostics.push(Diagnostic::warning(
+            "extent-not-reprojected",
+            message,
+            layer.span.clone(),
+        ));
+        return None;
+    };
+    Some((Some(reprojection), extent))
+}
+
+/// The warning that `count` points of `layer`'s features do not reproject into the map's
+/// projection and are left out (Q-3).
+fn points_not_reprojected(layer: &Layer, count: usize) -> Diagnostic {
+    let message = format!(
+        "layer {}: {count} point{} of its features do{} not reproject into the map's projection \
+         and {} left out",
+        name(layer),
+        if count == 1 { "" } else { "s" },
+        if count == 1 { "es" } else { "" },
+        if count == 1 { "is" } else { "are" },
+    );
+    Diagnostic::warning("points-not-reprojected", message, layer.span.clone())
+}
+
+/// The features of a layer within `extent`, in its source's coordinates: those of its inline
+/// features where it is read from them ([`is_inline`], ADR-0018), whatever source is bound to it,
+/// which is not read and is reported; otherwise those of the source bound to its name.
+async fn source_features<S: FeatureSource>(
+    layer: &Layer,
+    sources: &BTreeMap<String, S>,
+    extent: Extent,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Vec<Feature>> {
     let bound = layer.name.as_ref().and_then(|n| sources.get(n));
@@ -657,14 +735,14 @@ async fn features<S: FeatureSource>(
             ));
         }
         let source = inline::InlineSource::new(&layer.features);
-        return query(layer, "inline", &source, view, diagnostics).await;
+        return query(layer, "inline", &source, extent, diagnostics).await;
     }
     let kind = layer.source.as_ref().map_or("none", |s| s.kind.as_str());
     let Some(source) = bound else {
         diagnostics.push(skipped(layer, kind, "no source is bound to it".to_owned()));
         return None;
     };
-    query(layer, kind, source, view, diagnostics).await
+    query(layer, kind, source, extent, diagnostics).await
 }
 
 /// The warning that a layer whose source is of `kind` is skipped for `reason`.
@@ -678,12 +756,12 @@ fn skipped(layer: &Layer, kind: &str, reason: String) -> Diagnostic {
     Diagnostic::warning("layer-skipped", message, span)
 }
 
-/// The features `source`, of `kind`, delivers for the view, bounded in number (Q-9).
+/// The features `source`, of `kind`, delivers for `extent`, bounded in number (Q-9).
 async fn query<S: FeatureSource>(
     layer: &Layer,
     kind: &str,
     source: &S,
-    view: &View,
+    extent: Extent,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Vec<Feature>> {
     let span = layer
@@ -692,9 +770,7 @@ async fn query<S: FeatureSource>(
         .and_then(|s| s.span.clone())
         .or_else(|| layer.span.clone());
     let skip = |reason: String| skipped(layer, kind, reason);
-    let query = FeatureQuery {
-        extent: view.extent,
-    };
+    let query = FeatureQuery { extent };
     let delivered = source.features(&query).await.map(|delivered| {
         // The records the source skipped, one warning for the layer however many (ADR-0022).
         let skipped = &delivered.skipped;

@@ -35,6 +35,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("label_cache", &[]),
     ("layer", &[]),
     ("plan", &[]),
+    ("reproject", &[]),
     ("resource", &[]),
 ];
 

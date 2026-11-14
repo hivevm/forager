@@ -119,6 +119,27 @@ expect_check "THIRD-PARTY-NOTICES.md without MapServer's notice fails" \
 printf '%s\n' "$PNPOLY" "$NOTICE" > "$pdir/THIRD-PARTY-NOTICES.md"
 expect_check "Franklin's notice, reproduced in THIRD-PARTY-NOTICES.md beside MapServer's, passes" \
   "$pdir" 0 "Notice check passed"
+PROJ_NOTICE='// All source, data files and other contents of the PROJ package are available under the
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.'
+# proj_repo <name> <text> — a fixture whose one file crates/proj/src/lcc.rs holds the text, printed
+# as its path.
+proj_repo() {
+  local dir="$work/$1"
+  mkdir -p "$dir/crates/proj/src"
+  printf '%s\n' "$2" > "$dir/crates/proj/src/lcc.rs"
+  echo "$dir"
+}
+expect_check "a port under crates/proj that cites PROJ's source without its notice fails, by name" \
+  "$(proj_repo projbare '// As lcc_e_forward in src/projections/lcc.cpp computes it.')" 1 \
+  "crates/proj/src/lcc.rs follows PROJ's source"
+qdir="$(proj_repo projnoticed "$PROJ_NOTICE
+// As pj_tsfn in src/tsfn.cpp computes it.")"
+expect_check "PROJ's notice without THIRD-PARTY-NOTICES.md reproducing it fails" \
+  "$qdir" 1 "THIRD-PARTY-NOTICES.md does not reproduce PROJ's notice"
+printf '%s\n' "$PROJ_NOTICE" > "$qdir/THIRD-PARTY-NOTICES.md"
+expect_check "a port of PROJ with its notice, reproduced in THIRD-PARTY-NOTICES.md, passes" \
+  "$qdir" 0 "1 PROJ's"
 expect_check "a root that is no directory exits 2" "$work/none" 2 "is not a directory"
 
 if ((failed)); then
