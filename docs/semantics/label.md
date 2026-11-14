@@ -157,8 +157,9 @@ glyph and so needs no font either.
 **`POSTLABELCACHE`.** A layer's `POSTLABELCACHE`, `TRUE` or `FALSE` as `loadLayer` in
 `src/mapfile.c` reads it, `FALSE` without one, is the IR's `post_label_cache`, false where it is
 absent. `loadLayer` turns the layer's label cache off where it is `TRUE`, and `msDrawLayer` in
-`src/mapdraw.c` turns it off again as it draws the layer, so the frontend writes `label_cache` false
-for such a layer whatever its `LABELCACHE`. `msDrawMap` draws the layers in their order but those of
+`src/mapdraw.c` turns it off again as it draws the layer, so `post_label_cache` overrides the IR's
+`label_cache`, which the frontend writes as `LABELCACHE` says: the engine draws such a layer's
+labels at once whatever it says. `msDrawMap` draws the layers in their order but those of
 `POSTLABELCACHE TRUE`, then the label cache, then those in their order, so such a layer is drawn
 over every cached label of the map; a point layer's labels are drawn at once, as above, and a line
 or polygon layer's are not drawn yet, each reported.

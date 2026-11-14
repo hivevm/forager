@@ -4377,8 +4377,9 @@ fn post_layer(name: &str, post: bool, size: f64, color: Rgba, text: Option<&str>
             kind: "local".into(),
             ..SourceRef::default()
         }),
-        // The frontend turns the label cache off where POSTLABELCACHE is TRUE.
-        label_cache: !post,
+        // On, as the frontend carries a mapfile's POSTLABELCACHE layer: post_label_cache overrides
+        // it.
+        label_cache: true,
         post_label_cache: post,
         classes: vec![Class {
             styles: vec![Style {
@@ -4446,10 +4447,10 @@ fn a_layer_of_postlabelcache_is_drawn_after_the_cached_labels_its_own_at_once() 
     ]);
     assert_eq!(ops, [('M', 10.0), ('L', 0.0), ('M', 20.0), ('L', 0.0)]);
     assert_eq!(cached, [1], "the plain layer's label alone is cached");
-    // A style document that leaves the layer's label cache on draws its labels at once alike, as
-    // msDrawLayer turns the cache off for it (src/mapdraw.c:850-856).
+    // A style document that turns the layer's label cache off draws its labels at once alike, as
+    // msDrawLayer turns the cache off for it either way (src/mapdraw.c:850-856).
     let mut over = post_layer("over", true, 20.0, GREEN, Some("Up"));
-    over.label_cache = true;
+    over.label_cache = false;
     let (ops, cached) = post_render(vec![
         over,
         post_layer("under", false, 10.0, BLUE, Some("Fen")),

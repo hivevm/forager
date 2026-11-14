@@ -524,10 +524,9 @@ impl Translator<'_> {
         }
     }
 
-    /// What a layer settles once its block is read: its opacity from its `COMPOSITE`s; its label
-    /// cache off where it is drawn after the cache, as loadLayer turns it off where POSTLABELCACHE
-    /// is TRUE (mapfile.c:4755-4759) and msDrawLayer turns it off again as it draws such a layer,
-    /// whatever LABELCACHE says after it (mapdraw.c:854-856); and its limit on its features.
+    /// What a layer settles once its block is read: its opacity from its `COMPOSITE`s and its
+    /// limit on its features. Its label cache stays as `LABELCACHE` writes it, for the engine
+    /// draws a layer of `POSTLABELCACHE TRUE`'s labels at once whatever it says.
     fn settle_layer(
         &mut self,
         layer: &mut Layer,
@@ -536,7 +535,6 @@ impl Translator<'_> {
         max_features: i32,
     ) {
         layer.opacity = self.composite(composites);
-        layer.label_cache &= !layer.post_label_cache;
         let metadata = HashTable::of([block], "METADATA", self.diagnostics);
         layer.max_features = self.features_to_draw(&metadata, max_features);
     }

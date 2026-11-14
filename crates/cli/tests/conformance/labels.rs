@@ -294,18 +294,24 @@ pub fn beyond_noise(record: &[Recorded], output: &[Recorded]) -> Vec<String> {
 }
 
 /// The layers of `map` whose labels the comparison does not see, one line each: a layer of
-/// `LABELCACHE OFF` draws its labels at once, and neither Forager's `Rendered.labels` nor the
-/// reader of MapServer's cache, which holds only the cache, lists them.
+/// `LABELCACHE OFF` or of `POSTLABELCACHE TRUE`, whatever its `label_cache` says, draws its labels
+/// at once, and neither Forager's `Rendered.labels` nor the reader of MapServer's cache, which
+/// holds only the cache, lists them.
 pub fn uncompared(map: &Map) -> Vec<String> {
     map.layers
         .iter()
         .enumerate()
-        .filter(|(_, layer)| !layer.label_cache)
+        .filter(|(_, layer)| !layer.label_cache || layer.post_label_cache)
         .filter(|(_, layer)| layer.classes.iter().any(|class| !class.labels.is_empty()))
         .map(|(index, layer)| {
+            let why = if layer.post_label_cache {
+                "POSTLABELCACHE TRUE"
+            } else {
+                "LABELCACHE OFF"
+            };
             format!(
-                "the labels of layer {index} ({}) are not compared: LABELCACHE OFF draws them at \
-                 once, outside the label cache",
+                "the labels of layer {index} ({}) are not compared: {why} draws them at once, \
+                 outside the label cache",
                 layer.name.as_deref().unwrap_or("unnamed")
             )
         })

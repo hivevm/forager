@@ -243,7 +243,8 @@ pub struct Layer {
     /// Whether the layer's labels go to the label cache, MapServer's `LABELCACHE`: placed with
     /// the labels of every layer and drawn after them. Without the cache, each label is drawn at
     /// once after its feature, untested against any other. Absent, it is true, MapServer's
-    /// default `LABELCACHE ON`.
+    /// default `LABELCACHE ON`. `post_label_cache` overrides it: a layer drawn after the label
+    /// cache draws its labels at once whatever this says.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     pub label_cache: bool,
     /// Whether the layer is drawn after the label cache, MapServer's `POSTLABELCACHE TRUE`: past

@@ -111,14 +111,15 @@ fn a_layers_labelcache_is_carried_and_on_without_one() {
 }
 
 #[test]
-fn a_layer_of_postlabelcache_is_carried_its_label_cache_off() {
-    // loadLayer reads POSTLABELCACHE with getSymbol(MS_TRUE, MS_FALSE) and turns the label
-    // cache off where it is TRUE (mapfile.c:4755-4759); msDrawLayer turns it off again, so a
-    // LABELCACHE ON after it changes nothing (mapdraw.c:854-856).
+fn a_layer_of_postlabelcache_is_carried_its_label_cache_as_written() {
+    // loadLayer reads POSTLABELCACHE with getSymbol(MS_TRUE, MS_FALSE) (mapfile.c:4755-4759);
+    // the frontend carries LABELCACHE as written beside it, and the engine draws such a layer's
+    // labels at once whatever its label cache says, as msDrawLayer turns the cache off for it
+    // (mapdraw.c:854-856).
     let loaded = load_files(&[(
         "m.map",
         "MAP LAYER NAME 'a' POSTLABELCACHE TRUE END \
-         LAYER NAME 'b' POSTLABELCACHE TRUE LABELCACHE ON END \
+         LAYER NAME 'b' POSTLABELCACHE TRUE LABELCACHE OFF END \
          LAYER NAME 'c' POSTLABELCACHE FALSE END LAYER NAME 'd' END END",
     )]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
@@ -129,7 +130,7 @@ fn a_layer_of_postlabelcache_is_carried_its_label_cache_off() {
         .collect();
     assert_eq!(
         flags,
-        [(true, false), (true, false), (false, true), (false, true)]
+        [(true, true), (true, false), (false, true), (false, true)]
     );
 }
 
