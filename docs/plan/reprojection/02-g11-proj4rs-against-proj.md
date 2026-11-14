@@ -28,9 +28,10 @@ measures them.
 
 ## Read first
 
-- Touches: `crates/proj` (with `tmerc.rs`), `scripts/build-mapserver.sh`,
-  `.github/workflows/noise.yml`, `crates/cli/tests/conformance/`, `docs/SPECIFICATION.md` (G-11,
-  landed by the human)
+- Touches: `crates/proj` (with `tmerc.rs`, `tests/reference.rs`, `tests/reference/`),
+  `scripts/build-mapserver.sh` and `scripts/test-build-mapserver.sh`, `.github/workflows/noise.yml`,
+  `crates/cli/tests/conformance/` (`mapserver_proj.c`, `noise/`),
+  `crates/engine/tests/reproject.rs`, `docs/SPECIFICATION.md` (G-11, landed by the human)
 - ADR-0033 (how MapServer's own runs are recorded); ADR-0002 (`Verifies:`)
 - Seam: a test of `crates/proj` over recorded points
 

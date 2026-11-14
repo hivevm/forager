@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use super::{NOISE_THRESHOLDS, mapserver, noise_report, reproduced};
+use super::{MapServer, NOISE_THRESHOLDS, mapserver, noise_report, record_differences, reproduced};
 use crate::conformance::Category;
 use crate::metric::Metric;
 use crate::{GEOMETRY, TEXT};
@@ -79,20 +79,79 @@ fn the_noise_report_holds_each_share_the_maximum_and_the_cases_not_reproduced() 
 #[test]
 fn the_noise_measurement_runs_only_where_mapserver_is_named() {
     let named = |s: &str| Some(OsString::from(s));
-    assert_eq!(mapserver(None, None), Ok(None));
+    assert_eq!(mapserver(None, None, None), Ok(None));
     assert_eq!(
-        mapserver(named("bin/map2img"), named("bin/mapserver_labels")),
-        Ok(Some((
-            PathBuf::from("bin/map2img"),
-            PathBuf::from("bin/mapserver_labels")
-        )))
+        mapserver(
+            named("bin/map2img"),
+            named("bin/mapserver_labels"),
+            named("bin/mapserver_proj")
+        ),
+        Ok(Some(MapServer {
+            map2img: PathBuf::from("bin/map2img"),
+            labels: PathBuf::from("bin/mapserver_labels"),
+            proj: PathBuf::from("bin/mapserver_proj"),
+        }))
     );
-    for (map2img, reader) in [
-        (named("bin/map2img"), None),
-        (None, named("bin/mapserver_labels")),
-        (named(""), named("bin/mapserver_labels")),
-        (named("bin/map2img"), named("")),
+    for (map2img, labels, proj) in [
+        (named("bin/map2img"), named("bin/mapserver_labels"), None),
+        (named("bin/map2img"), None, named("bin/mapserver_proj")),
+        (
+            None,
+            named("bin/mapserver_labels"),
+            named("bin/mapserver_proj"),
+        ),
+        (
+            named(""),
+            named("bin/mapserver_labels"),
+            named("bin/mapserver_proj"),
+        ),
+        (named("bin/map2img"), named(""), named("bin/mapserver_proj")),
+        (
+            named("bin/map2img"),
+            named("bin/mapserver_labels"),
+            named(""),
+        ),
     ] {
-        assert!(mapserver(map2img, reader).is_err());
+        assert!(mapserver(map2img, labels, proj).is_err());
+    }
+}
+
+#[test]
+fn the_reprojection_s_output_holds_its_record_within_a_millimetre() {
+    // Verifies: ADR-draft-proj-references-from-mapserver
+    let header = "# PROJ 9.4.0\n# MapServer abc\n";
+    let ll = "+proj=longlat +datum=WGS84";
+    let wm = "+proj=merc +a=6378137 +b=6378137";
+    let record = format!(
+        "{header}{ll}\t{wm}\t10\t50\t1113194.9079327357\t6446275.8410171578\n\
+         {wm}\t{ll}\t0\t0\t0\t0\n{ll}\t{wm}\t0\t90\tfail\n"
+    );
+    assert!(record_differences(&record, &record).is_empty());
+    // Within a millimetre in metres, and in degrees for a geographic target.
+    let close = record
+        .replace("1113194.9079327357", "1113194.9085")
+        .replace("\t0\t0\t0\t0", "\t0\t0\t0.000000005\t0");
+    assert!(record_differences(&record, &close).is_empty());
+    for (what, written) in [
+        (
+            "a metre off",
+            record.replace("1113194.9079327357", "1113195.9"),
+        ),
+        (
+            "a degree off",
+            record.replace("\t0\t0\t0\t0", "\t0\t0\t0.0001\t0"),
+        ),
+        (
+            "a failure on one side",
+            record.replace("\tfail", "\t0\t1e300"),
+        ),
+        ("another PROJ", record.replace("9.4.0", "9.5.0")),
+        (
+            "a point not recorded",
+            format!("{record}{ll}\t{wm}\t1\t1\t1\t1\n"),
+        ),
+        ("another point", record.replace("\t10\t50\t", "\t11\t50\t")),
+    ] {
+        assert!(!record_differences(&record, &written).is_empty(), "{what}");
     }
 }

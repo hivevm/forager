@@ -268,7 +268,7 @@ fn a_projection_not_supported_leaves_its_layer_undrawn_with_a_warning() {
         &map(
             LONGLAT,
             MAP_EXTENT,
-            Some("+proj=tmerc +zone=20 +ellps=GRS80"),
+            Some("+proj=omerc +lat_0=45 +lonc=-64 +alpha=30 +ellps=GRS80"),
         ),
         source,
     );
@@ -277,7 +277,7 @@ fn a_projection_not_supported_leaves_its_layer_undrawn_with_a_warning() {
     assert_eq!(codes, ["projection-unsupported"]);
     assert!(
         rendered.diagnostics[0].message.contains("layer `data`")
-            && rendered.diagnostics[0].message.contains("+proj=tmerc"),
+            && rendered.diagnostics[0].message.contains("+proj=omerc"),
         "{}",
         rendered.diagnostics[0].message
     );

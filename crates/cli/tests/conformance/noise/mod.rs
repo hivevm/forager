@@ -1,8 +1,10 @@
 //! The noise measurement of G-6 and G-13 (ADR-0033): MapServer at the pinned release renders the
 //! cases in scope, and the harness compares its renderings with the references and the labels of
-//! its label cache with the records beside the list. Only `.github/workflows/noise.yml` builds
-//! MapServer; the measurement runs where `FORAGER_MAP2IMG` and `FORAGER_MAPSERVER_LABELS` name it
-//! and skips itself where neither does, so the push checks never run it, whatever it is named.
+//! its label cache with the records beside the list, and its reprojection of G-11's reference
+//! points with the record beside the test of `proj` (ADR-draft-proj-references-from-mapserver).
+//! Only `.github/workflows/noise.yml` builds MapServer; the measurement runs where
+//! `FORAGER_MAP2IMG`, `FORAGER_MAPSERVER_LABELS`, and `FORAGER_MAPSERVER_PROJ` name it and skips
+//! itself where none does, so the push checks never run it, whatever it is named.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -31,18 +33,27 @@ const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 /// same, and its labels must hold the record beside the list, each box within [`labels::NOISE`] and
 /// every other field exactly; the test fails on a record that differs or is missing, and the
 /// reader's labels stay in `noise/labels/` to take the record from. The renderings stay in
-/// `noise/` under the test's target directory.
+/// `noise/` under the test's target directory. Last, the reader of MapServer's reprojection
+/// reprojects G-11's reference points ([`reference_points`]); the test fails where its output and
+/// the record beside the test of `proj` disagree, and the output stays in `noise/proj/`.
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test, and \
             without it the test skips itself"]
 fn mapserver_renders_the_cases_in_scope_within_its_noise() {
     // Verifies: ADR-0033
+    // Verifies: ADR-draft-proj-references-from-mapserver
     let mapserver = mapserver(
         std::env::var_os("FORAGER_MAP2IMG"),
         std::env::var_os("FORAGER_MAPSERVER_LABELS"),
+        std::env::var_os("FORAGER_MAPSERVER_PROJ"),
     )
     .unwrap();
-    let Some((map2img, reader)) = mapserver else {
+    let Some(MapServer {
+        map2img,
+        labels: reader,
+        proj,
+    }) = mapserver
+    else {
         skipped();
         return;
     };
@@ -101,24 +112,141 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
         out.join("labels").display(),
         records.join("\n")
     );
+    let differences = reference_points(&proj, &out.join("proj")).unwrap();
+    assert!(
+        differences.is_empty(),
+        "MapServer's reprojection of G-11's reference points does not hold the record {}; the \
+         reader's output is in {}:\n{}",
+        REFERENCE_RECORD,
+        out.join("proj").display(),
+        differences.join("\n")
+    );
 }
 
-/// `map2img` and the reader of MapServer's label cache, as `FORAGER_MAP2IMG` and
-/// `FORAGER_MAPSERVER_LABELS` name them, or none where neither is set: the noise measurement runs
-/// where both name a file and skips itself where neither does. One without the other, or one
+/// The list of G-11's reference points and the record of MapServer's reprojection of them, from
+/// the workspace root (ADR-draft-proj-references-from-mapserver).
+const REFERENCE_POINTS: &str = "crates/proj/tests/reference/points.tsv";
+const REFERENCE_RECORD: &str = "crates/proj/tests/reference/mapserver.tsv";
+
+/// The largest difference of a coordinate between the reader's output and the record: 1 mm, in
+/// metres for a projected target and in degrees, about 1.1 mm, for a geographic one.
+const PROJECTED_SLACK: f64 = 1e-3;
+const GEOGRAPHIC_SLACK: f64 = 1e-8;
+
+/// Runs the reader of MapServer's reprojection, `reader`, over [`REFERENCE_POINTS`], keeps its
+/// output in `out` as `mapserver.tsv`, and returns how it differs from [`REFERENCE_RECORD`]; an
+/// error is a reader that does not run or fails.
+fn reference_points(reader: &Path, out: &Path) -> Result<Vec<String>, String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = Command::new(reader)
+        .arg(root.join(REFERENCE_POINTS))
+        .output()
+        .map_err(|e| format!("{}: {e}", reader.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{} fails: {}",
+            reader.display(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let output = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
+    std::fs::write(out.join("mapserver.tsv"), &output).map_err(|e| e.to_string())?;
+    let Ok(record) = std::fs::read_to_string(root.join(REFERENCE_RECORD)) else {
+        return Ok(vec![format!("{REFERENCE_RECORD} is missing")]);
+    };
+    Ok(record_differences(&record, &output))
+}
+
+/// How the reader's `output` differs from the `record`: a line one has and the other lacks, a
+/// header or a point that differs, a point that fails in one only, or a coordinate past the slack
+/// of its target ([`PROJECTED_SLACK`], [`GEOGRAPHIC_SLACK`]).
+fn record_differences(record: &str, output: &str) -> Vec<String> {
+    let mut differences = Vec::new();
+    let (record, output): (Vec<&str>, Vec<&str>) =
+        (record.lines().collect(), output.lines().collect());
+    if record.len() != output.len() {
+        differences.push(format!(
+            "the record holds {} lines, the reader wrote {}",
+            record.len(),
+            output.len()
+        ));
+    }
+    for (number, (recorded, written)) in record.iter().zip(&output).enumerate() {
+        let line = number + 1;
+        if recorded.starts_with('#') || written.starts_with('#') {
+            if recorded != written {
+                differences.push(format!("line {line}: {written:?}, recorded {recorded:?}"));
+            }
+            continue;
+        }
+        let r: Vec<&str> = recorded.split('\t').collect();
+        let w: Vec<&str> = written.split('\t').collect();
+        if r.len() < 5 || w.len() < 5 || r[..4] != w[..4] {
+            differences.push(format!("line {line}: {written:?}, recorded {recorded:?}"));
+            continue;
+        }
+        let geographic = r[1].split_whitespace().any(|p| {
+            matches!(
+                p,
+                "+proj=longlat" | "+proj=latlong" | "+proj=lonlat" | "+proj=latlon"
+            )
+        });
+        let slack = if geographic {
+            GEOGRAPHIC_SLACK
+        } else {
+            PROJECTED_SLACK
+        };
+        let agree = match (&r[4..], &w[4..]) {
+            (["fail"], ["fail"]) => true,
+            ([rx, ry], [wx, wy]) => [(rx, wx), (ry, wy)].iter().all(|(a, b)| {
+                match (a.parse::<f64>(), b.parse::<f64>()) {
+                    (Ok(a), Ok(b)) => (a - b).abs() <= slack,
+                    _ => false,
+                }
+            }),
+            _ => false,
+        };
+        if !agree {
+            differences.push(format!("line {line}: {written:?}, recorded {recorded:?}"));
+        }
+    }
+    differences
+}
+
+/// The programs of the MapServer build the noise measurement runs.
+#[derive(Debug, PartialEq)]
+struct MapServer {
+    map2img: PathBuf,
+    /// The reader of the label cache (ADR-0033).
+    labels: PathBuf,
+    /// The reader of the reprojection (ADR-draft-proj-references-from-mapserver).
+    proj: PathBuf,
+}
+
+/// `map2img` and the two readers, as `FORAGER_MAP2IMG`, `FORAGER_MAPSERVER_LABELS`, and
+/// `FORAGER_MAPSERVER_PROJ` name them, or none where none is set: the noise measurement runs
+/// where all three name a file and skips itself where none does. Some without the others, or one
 /// empty, is an error, so that a noise run whose build named nothing does not pass unmeasured.
 fn mapserver(
     map2img: Option<OsString>,
-    reader: Option<OsString>,
-) -> Result<Option<(PathBuf, PathBuf)>, String> {
-    match (map2img, reader) {
-        (None, None) => Ok(None),
-        (Some(map2img), Some(reader)) if !map2img.is_empty() && !reader.is_empty() => {
-            Ok(Some((PathBuf::from(map2img), PathBuf::from(reader))))
+    labels: Option<OsString>,
+    proj: Option<OsString>,
+) -> Result<Option<MapServer>, String> {
+    match (map2img, labels, proj) {
+        (None, None, None) => Ok(None),
+        (Some(map2img), Some(labels), Some(proj))
+            if !map2img.is_empty() && !labels.is_empty() && !proj.is_empty() =>
+        {
+            Ok(Some(MapServer {
+                map2img: PathBuf::from(map2img),
+                labels: PathBuf::from(labels),
+                proj: PathBuf::from(proj),
+            }))
         }
         _ => Err(
-            "FORAGER_MAP2IMG and FORAGER_MAPSERVER_LABELS must both name a file, as \
-                  .github/workflows/noise.yml sets them, or neither be set"
+            "FORAGER_MAP2IMG, FORAGER_MAPSERVER_LABELS, and FORAGER_MAPSERVER_PROJ must all name a \
+             file, as .github/workflows/noise.yml sets them, or none be set"
                 .to_owned(),
         ),
     }
@@ -132,7 +260,7 @@ fn mapserver(
 fn skipped() {
     eprintln!(
         "the noise measurement needs MapServer, which only .github/workflows/noise.yml builds; \
-         skipped without FORAGER_MAP2IMG and FORAGER_MAPSERVER_LABELS"
+         skipped without FORAGER_MAP2IMG, FORAGER_MAPSERVER_LABELS, and FORAGER_MAPSERVER_PROJ"
     );
 }
 

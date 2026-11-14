@@ -5,8 +5,10 @@
 # curl, as MapServer's own CI builds the references, and the Ubuntu archive's packages below, into
 # target/mapserver/<commit>/. It then compiles the reader of MapServer's label cache,
 # crates/cli/tests/conformance/mapserver_labels.c, against that build's unmodified library and
-# headers, outside the cached build, into target/mapserver-labels/<commit>/ (ADR-0033), and prints
-# the path of map2img and, on a second line, that of the reader. It adds no apt source. It runs on a
+# headers, outside the cached build, into target/mapserver-labels/<commit>/ (ADR-0033), and the
+# reader of MapServer's reprojection, crates/cli/tests/conformance/mapserver_proj.c, the same way
+# into target/mapserver-proj/<commit>/ (ADR-draft-proj-references-from-mapserver), and prints the
+# path of map2img and, on a second and a third line, those of the two readers. It adds no apt source. It runs on a
 # GitHub-hosted runner only, where .github/workflows/noise.yml calls it, and refuses anywhere else,
 # the dev container included.
 #
@@ -16,7 +18,7 @@
 # other than the archive is seen. A build already in target/ is kept, as the workflow restores it
 # from its cache; the packages are installed on every run, as map2img links them.
 #
-# Usage: bash scripts/build-mapserver.sh    (prints the paths of map2img and of the reader)
+# Usage: bash scripts/build-mapserver.sh    (prints the paths of map2img and of the two readers)
 set -euo pipefail
 # A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
 # repository instead of the one it names (docs/CONVENTIONS.md).
@@ -105,5 +107,15 @@ mkdir -p "$(dirname "$READER")"
 cc -O2 -o "$READER" "$READER_SRC" -I"$DIR/src/src" -I"$DIR/build" $(gdal-config --cflags) \
   -L"$DIR/build" -lmapserver -Wl,-rpath,"$DIR/build" >&2
 
+# The reader of the reprojection, built the same way; it names the commit in its record's header.
+PROJ_READER_SRC="$ROOT/crates/cli/tests/conformance/mapserver_proj.c"
+PROJ_READER="$ROOT/target/mapserver-proj/$COMMIT/mapserver_proj"
+mkdir -p "$(dirname "$PROJ_READER")"
+# shellcheck disable=SC2046
+cc -O2 -o "$PROJ_READER" "$PROJ_READER_SRC" -DFORAGER_MAPSERVER_COMMIT="\"$COMMIT\"" \
+  -I"$DIR/src/src" -I"$DIR/build" $(gdal-config --cflags) \
+  -L"$DIR/build" -lmapserver -lproj -Wl,-rpath,"$DIR/build" >&2
+
 echo "$MAP2IMG"
 echo "$READER"
+echo "$PROJ_READER"

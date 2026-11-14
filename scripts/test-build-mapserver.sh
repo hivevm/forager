@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# Self-test of how MapServer runs on CI. Verifies: ADR-0033
+# Self-test of how MapServer runs on CI. Verifies: ADR-0033, ADR-draft-proj-references-from-mapserver
 #
 # The rules hold scripts/build-mapserver.sh and .github/workflows/noise.yml: the build script
 # reads the pin from scripts/fetch-msautotest.sh and names no tag or commit of its own, refuses to
-# run outside GitHub Actions, compiles the reader of the label cache outside the cached build, and
-# patches nothing of the checkout, and neither file adds an apt source; the workflow runs on
+# run outside GitHub Actions, compiles the readers of the label cache and of the reprojection
+# (ADR-draft-proj-references-from-mapserver) outside the cached build, and patches nothing of the
+# checkout, and neither file adds an apt source; the workflow runs on
 # ubuntu-24.04 without a container, triggers on demand and on a push to the paths of the ADR only,
 # and keys the cache of the build on the two scripts alone. The real files must pass; each case
 # then breaks one rule in a copy and must fail with the line that names it.
@@ -40,6 +41,7 @@ TRIGGER='on:
       - "crates/cli/tests/conformance/**"
       - "crates/cli/tests/metric/**"
       - "crates/cli/tests/msautotest.rs"
+      - "crates/proj/tests/reference/**"
       - "scripts/fetch-msautotest.sh"
       - "scripts/build-mapserver.sh"
       - ".github/workflows/noise.yml"'
@@ -78,6 +80,15 @@ check() {
   fi
   if grep -Eq '^READER="\$DIR' "$build" || ! grep -Eq '^READER="\$ROOT/target/' "$build"; then
     problems+=("the build script compiles the reader inside the cached build")
+  fi
+  if ! grep -Eq '^cc .*"\$PROJ_READER_SRC"' "$build" \
+    || ! grep -qx 'PROJ_READER_SRC="\$ROOT/crates/cli/tests/conformance/mapserver_proj.c"' "$build"
+  then
+    problems+=("the build script does not compile crates/cli/tests/conformance/mapserver_proj.c")
+  fi
+  if grep -Eq '^PROJ_READER="\$DIR' "$build" || ! grep -Eq '^PROJ_READER="\$ROOT/target/' "$build"
+  then
+    problems+=("the build script compiles the reader of the reprojection inside the cached build")
   fi
   if grep -Eq '(^|[[:space:];|&])(patch|git([[:space:]]+[^[:space:];|&]+)*[[:space:]]+(apply|am))[[:space:]]|sed[[:space:]]+(-[a-zA-Z]*i|--in-place)' "$build"; then
     problems+=("the build script patches the checkout")
@@ -188,6 +199,14 @@ expect_pair "a build without the reader fails" "$b" "$w" 1 "does not compile cra
 
 read -r b w <<< "$(copy inside 's/^READER="\$ROOT\/target\/mapserver-labels/READER="$DIR/' '')"
 expect_pair "a reader inside the cached build fails" "$b" "$w" 1 "inside the cached build"
+
+read -r b w <<< "$(copy noprojreader '/^cc .*PROJ_READER_SRC/d' '')"
+expect_pair "a build without the reader of the reprojection fails" "$b" "$w" 1 \
+  "does not compile crates/cli/tests/conformance/mapserver_proj.c"
+
+read -r b w <<< "$(copy projinside 's/^PROJ_READER="\$ROOT\/target\/mapserver-proj/PROJ_READER="$DIR/' '')"
+expect_pair "a reader of the reprojection inside the cached build fails" "$b" "$w" 1 \
+  "reader of the reprojection inside the cached build"
 
 read -r b w <<< "$(copy patch 's/^  cmake -S .*/  patch -d "$DIR\/src" -p1 < x.diff\n&/' '')"
 expect_pair "a patch of the checkout fails" "$b" "$w" 1 "patches the checkout"
