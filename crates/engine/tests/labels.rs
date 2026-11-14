@@ -3395,7 +3395,6 @@ fn names_missing_pin(rendered: &Rendered) -> (Vec<&str>, bool) {
 
 #[test]
 fn a_labelcenter_pixmap_that_does_not_load_leaves_its_marker_out_and_warns() {
-    // Verifies: G-8
     // msDrawMarkerSymbol draws a labelcenter style's pixmap (src/maprendering.c:980), and fails
     // where msPreloadImageSymbol cannot load it; Forager leaves the marker out, draws the label's
     // text as the label without the style draws it, and warns with the symbol and its image.
@@ -3470,7 +3469,6 @@ fn a_pixmap_neither_a_point_nor_its_cached_label_draws_is_reported_once() {
 
 #[test]
 fn a_labelpnt_pixmap_that_does_not_load_leaves_the_label_out() {
-    // Verifies: G-8
     // msGetMarkerSize sizes a labelpnt style's marker in computeMarkerBounds and fails where
     // msPreloadImageSymbol does (src/mapsymbol.c:736-738), and the map with it; Forager leaves
     // the label out, with a warning that names the symbol and its image.
@@ -4326,7 +4324,6 @@ fn each_label_moves_away_from_its_own_feature_s_pixmap_marker() {
 
 #[test]
 fn the_label_over_a_pixmap_that_does_not_load_is_left_out_and_the_map_drawn() {
-    // Verifies: G-8
     // msGetMarkerSize fails where msPreloadImageSymbol does (src/mapsymbol.c:736-738), and so
     // msAddLabelGroup (src/maplabel.c:350-352) and the map; Forager leaves the label out, with
     // a warning that names the symbol and its image, and draws the rest of the map.
