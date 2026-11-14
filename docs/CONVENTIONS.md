@@ -105,10 +105,10 @@ skimmed. The design revision drops what prevented nothing
   and the low 32 bits of `MS_NINT`; [ADR-0016](adr/0016-expression-evaluation.md) decides the
   undefined behaviour of `expr`. Neither places the step where a value is cut, narrowed, or
   bounded.
-- **A minimum or maximum over values that may be NaN decides the NaN first** — `f64::min` and
-  `f64::max` return the other operand, so a fold or a bound drops a NaN without a trace: the label
-  cache filed a box with a NaN edge at its point until f8fa86d, and the label comparison of the
-  harness was found on 2026-11-10 holding such a box within its tolerance.
+- **A minimum or maximum over values that may be NaN decides the NaN first** — `ms_min` and
+  `ms_max` hand on their second operand where one is no number, so the operand that may be NaN
+  goes first unless the port keeps MapServer's order; `f64::min` and `f64::max`, refused only in
+  `engine`, `label`, and `symbolize`, drop it silently elsewhere.
 - **An ADR that decides how code is written is tried against the workspace's lints before it is
   proposed** — an attribute, an export, or a pattern it names is compiled once under
   `[workspace.lints]` and the ADRs that bind the crate, because ADR-0034 first decided exports of

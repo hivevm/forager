@@ -24,7 +24,7 @@ use std::collections::btree_map::Entry;
 
 use forager_render::clip::within_glyph_reach;
 use forager_render::{PathCommand, Point};
-use forager_style_ir::c::int_cast;
+use forager_style_ir::c::{int_cast, ms_max, ms_min};
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::DrawSettings;
 use skrifa::outline::pen::{OutlinePen, PathStyle};
@@ -393,11 +393,12 @@ impl Turn {
         for (x, y) in [(b[0], b[1]), (b[2], b[1]), (b[0], b[3]), (b[2], b[3])] {
             // A corner y down is one of the outline's, y up, at -y.
             let p = self.outline_point(Point { x, y: -y }, at);
+            // The point first, so that one which is no number leaves the box as it was.
             out = [
-                out[0].min(p.x),
-                out[1].min(p.y),
-                out[2].max(p.x),
-                out[3].max(p.y),
+                ms_min(p.x, out[0]),
+                ms_min(p.y, out[1]),
+                ms_max(p.x, out[2]),
+                ms_max(p.y, out[3]),
             ];
         }
         out
@@ -540,7 +541,17 @@ impl Pen {
     fn point(&mut self, x: f32, y: f32) -> Point {
         let (x, y) = (f64::from(x), f64::from(y));
         let b = self.cbox.get_or_insert([x, y, x, y]);
-        *b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+        // The point first, so that a coordinate which is no number leaves the box as it was;
+        // an edge which is none, from a first point that was none, takes the point's.
+        let fold = |edge: f64, v: f64, by: fn(f64, f64) -> f64| {
+            if edge.is_nan() { v } else { by(v, edge) }
+        };
+        *b = [
+            fold(b[0], x, ms_min),
+            fold(b[1], y, ms_min),
+            fold(b[2], x, ms_max),
+            fold(b[3], y, ms_max),
+        ];
         Point { x, y }
     }
 }

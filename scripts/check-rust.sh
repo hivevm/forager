@@ -9,8 +9,9 @@
 # bindings and their size (Q-5) once they exist, and cargo deny (ADR-0011). scripts/check-all.sh
 # and the `rust` job of checks.yml run it; the tools come from scripts/install-tools.sh. Two
 # fixture workspaces show that cargo deny refuses a non-permissive licence, that clippy bans
-# hash maps, clocks, and randomness on the output path, hosts and tooling free (Q-2), and that it
-# refuses a str sliced at an index it cannot see is a character's boundary.
+# hash maps, clocks, and randomness on the output path, hosts and tooling free (Q-2), that it
+# refuses a str sliced at an index it cannot see is a character's boundary, and that it refuses
+# f64::min and f64::max in the crates that port MapServer's drawing.
 #
 # Usage: bash scripts/check-rust.sh
 set -euo pipefail
@@ -80,13 +81,13 @@ step "Clippy bans hash maps, clocks, and randomness on the output path, hosts fr
 # adapters carries, must fail on every banned use, and one without it, as a host, must pass.
 lints="$(mktemp -d)"
 trap 'rm -rf "$lints"' EXIT
-mkdir -p "$lints/held/src" "$lints/host/src" "$lints/slice/src"
+mkdir -p "$lints/held/src" "$lints/host/src" "$lints/slice/src" "$lints/nan/src"
 cp clippy.toml rust-toolchain.toml "$lints/"
 {
-  printf '[workspace]\nmembers = ["held", "host", "slice"]\nresolver = "3"\n\n'
+  printf '[workspace]\nmembers = ["held", "host", "slice", "nan"]\nresolver = "3"\n\n'
   awk '/^\[/ { keep = ($0 ~ /^\[workspace\.lints\./) } keep' Cargo.toml
 } > "$lints/Cargo.toml"
-for member in held host slice; do
+for member in held host slice nan; do
   printf '[package]\nname = "%s"\nversion = "0.1.0"\nedition = "2024"\npublish = false\n[lints]\nworkspace = true\n' \
     "$member" > "$lints/$member/Cargo.toml"
 done
@@ -105,6 +106,11 @@ uses='pub fn uses() -> usize {
 printf '%s\n' "$uses" > "$lints/host/src/lib.rs"
 printf 'pub fn head(text: &str, at: usize) -> &str {\n    &text[..at]\n}\n' \
   > "$lints/slice/src/lib.rs"
+cp crates/symbolize/clippy.toml "$lints/nan/"
+{
+  grep -m 1 '^#!\[warn(clippy::disallowed_types' crates/symbolize/src/lib.rs
+  printf 'pub fn wider(a: f64, b: f64) -> f64 {\n    a.max(b)\n}\n'
+} > "$lints/nan/src/lib.rs"
 (cd "$lints" && cargo generate-lockfile --offline -q)
 if output="$(cd "$lints" && cargo clippy -p held --offline -- -D warnings 2>&1)"; then
   echo "check-rust: clippy accepted hash maps, clocks, and randomness on the output path" >&2
@@ -131,6 +137,19 @@ if output="$(cd "$lints" && cargo clippy -p slice --offline -- -D warnings 2>&1)
 fi
 if ! grep -qF 'clippy::string_slice' <<< "$output"; then
   printf 'check-rust: clippy did not name clippy::string_slice:\n%s\n' "$output" >&2
+  exit 1
+fi
+echo "refused, as it should be"
+
+step "Clippy refuses f64::min and f64::max in the crates that port MapServer's drawing"
+# The fixture workspace above, its crate with symbolize's clippy.toml and the line of its lib.rs.
+if output="$(cd "$lints" && cargo clippy -p nan --offline -- -D warnings 2>&1)"; then
+  echo "check-rust: clippy accepted f64::max with symbolize's clippy.toml" >&2
+  exit 1
+fi
+if ! grep -qF "use of a disallowed method \`f64::max\`" <<< "$output" \
+  || ! grep -qF 'nan/src/lib.rs:3' <<< "$output"; then
+  printf 'check-rust: clippy did not name f64::max at its site:\n%s\n' "$output" >&2
   exit 1
 fi
 echo "refused, as it should be"

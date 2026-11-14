@@ -318,9 +318,12 @@ golden path and the test pattern an agent copies from are named here.
   future polled with a no-op waker anywhere but `poll_once` of `ports`, and requires every crate
   on the output path, the IR, the core, the ports, the frontend, and the adapters, to turn on the
   lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them
-  nowhere but the one test time bound it names; the hosts alone are free. `tests/c_numbers.rs`
-  refuses a definition of one of `c.rs`'s ports, or one named `lrint_…` or `ms_nint_…`, outside
-  `style-ir`'s `c.rs`, and a `PI / 180` in code (ADR-0036).
+  nowhere but the one test time bound it names; the hosts alone are free. It holds the
+  clippy.toml of `engine`, `label`, and `symbolize`, which clippy reads in place of the
+  workspace's, to those lists with the bans of `min` and `max` of `f64` and `f32` added, and
+  refuses one in any other crate, and a `.clippy.toml` anywhere under `crates/`.
+  `tests/c_numbers.rs` refuses a definition of one of `c.rs`'s ports, or one named `lrint_…` or
+  `ms_nint_…`, outside `style-ir`'s `c.rs`, and a `PI / 180` in code (ADR-0036).
   `tests/symbolize_modules.rs` refuses an import between the modules of `symbolize`, outside its
   tests, against the direction its `lib.rs` states, and a module of the crate its table has no row
   for; `tests/engine_modules.rs` refuses the same of the engine's modules, and an item of its

@@ -20,6 +20,7 @@
 use forager_render::Point;
 use forager_style_ir::Coord;
 use forager_style_ir::Extent;
+use forager_style_ir::c::ms_max;
 
 /// The mapping from map coordinates to pixels of one image.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -41,12 +42,15 @@ impl View {
             return None;
         }
         let (w, h) = (f64::from(width - 1), f64::from(height - 1));
-        let cellsize = ((extent.max_x - extent.min_x) / w).max((extent.max_y - extent.min_y) / h);
+        let cellsize = ms_max(
+            (extent.max_x - extent.min_x) / w,
+            (extent.max_y - extent.min_y) / h,
+        );
         if !(cellsize.is_finite() && cellsize > 0.0) {
             return None;
         }
-        let ox = ((w - (extent.max_x - extent.min_x) / cellsize) / 2.0).max(0.0);
-        let oy = ((h - (extent.max_y - extent.min_y) / cellsize) / 2.0).max(0.0);
+        let ox = ms_max((w - (extent.max_x - extent.min_x) / cellsize) / 2.0, 0.0);
+        let oy = ms_max((h - (extent.max_y - extent.min_y) / cellsize) / 2.0, 0.0);
         Some(Self {
             extent: Extent {
                 min_x: extent.min_x - ox * cellsize,

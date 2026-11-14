@@ -4,7 +4,9 @@
 # IR, the core, the ports, the frontend, and the adapters (ADR-0008) at the top of its lib.rs, so
 # that only hosts and tooling stay free, beside the integration tests under such a crate's tests/,
 # which reach no output. The fuzz workspace takes no workspace lints, so the bans warn there by
-# default; it renders through the core and is held to them as well.
+# default; it renders through the core and is held to them as well. `engine`, `label`, and
+# `symbolize` read their own clippy.toml in place of this one: these lists, which arch-test holds
+# them to, and the bans of `min` and `max` of `f64` and `f32`.
 disallowed-types = [
   { path = "std::collections::HashMap", reason = "iteration order is random; use BTreeMap (Q-2)" },
   { path = "std::collections::HashSet", reason = "iteration order is random; use BTreeSet (Q-2)" },

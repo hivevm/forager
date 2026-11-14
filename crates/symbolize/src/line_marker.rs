@@ -25,7 +25,7 @@
 use std::rc::Rc;
 
 use forager_render::{DrawOp, Point, PremultipliedImage};
-use forager_style_ir::c::ms_max;
+use forager_style_ir::c::{ms_max, ms_min};
 use forager_style_ir::{Style, Symbol};
 
 use crate::symbol::{self, Factors};
@@ -439,20 +439,31 @@ fn visible(origin: Point, rx: f64, ry: f64, current: f64, count: f64, p: &Placem
             }
         } else {
             let (t0, t1) = ((low - o) / r, (high - o) / r);
-            (t0.min(t1), t0.max(t1))
+            // A bound that gives no number bounds nothing; where neither gives one, the slab
+            // gives none.
+            if t0.is_nan() {
+                (t1, t1)
+            } else {
+                (ms_min(t1, t0), ms_max(t1, t0))
+            }
         }
     };
     let (x0, x1) = slab(origin.x, rx, -width, p.image.0 + width);
     let (y0, y1) = slab(origin.y, ry, -height, p.image.1 + height);
-    let (t0, t1) = (x0.max(y0), x1.min(y1));
+    // An axis whose slab gives no number bounds nothing; where neither gives one, all of them.
+    let (t0, t1) = if x0.is_nan() {
+        (y0, y1)
+    } else {
+        (ms_max(y0, x0), ms_min(y1, x1))
+    };
     if t0.is_nan() || t1.is_nan() {
         return all;
     }
     if t0 > t1 {
         return (0.0, -1.0);
     }
-    let first = (((t0 - current) / p.spacing).floor() - 1.0).max(0.0);
-    let last = (((t1 - current) / p.spacing).ceil() + 1.0).min(count - 1.0);
+    let first = ms_max(((t0 - current) / p.spacing).floor() - 1.0, 0.0);
+    let last = ms_min(((t1 - current) / p.spacing).ceil() + 1.0, count - 1.0);
     if first.is_nan() || last.is_nan() {
         return all;
     }

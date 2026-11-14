@@ -62,7 +62,7 @@ fn bounded_side(asked: f64) -> Option<u32> {
         clippy::cast_possible_truncation,
         reason = "held to Tile::MAX_SIDE, and NaN refused, before it is converted (Q-9)"
     )]
-    let side = (side <= f64::from(Tile::MAX_SIDE)).then(|| side.max(1.0) as u32);
+    let side = (side <= f64::from(Tile::MAX_SIDE)).then(|| ms_max(side, 1.0) as u32);
     side
 }
 

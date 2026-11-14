@@ -4,6 +4,7 @@
 //! draws. It does no I/O: the engine loads the font files and hands their bytes here. It is the
 //! one crate that depends on skrifa.
 
+// The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 // C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0036).
 #![deny(clippy::cast_possible_truncation)]

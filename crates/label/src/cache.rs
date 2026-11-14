@@ -532,7 +532,10 @@ struct Level<E> {
 impl<E: Copy> Grid<E> {
     fn new((width, height): (u32, u32)) -> Self {
         Self {
-            size: [f64::from(width).max(1.0), f64::from(height).max(1.0)],
+            size: [
+                ms_max(f64::from(width), 1.0),
+                ms_max(f64::from(height), 1.0),
+            ],
             stores: [None, None, None, None],
             anywhere: Vec::new(),
         }
