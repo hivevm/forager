@@ -70,6 +70,6 @@ if ((${#findings[@]} == 0)); then
   echo "Refactor tests sensor ($short_base..$short_head): nothing to report."
   exit 0
 fi
-echo "Refactor tests sensor ($short_base..$short_head): ${#findings[@]} commit(s) typed refactor that change a test — each is a fix with its regression test, or needs its reason in the pull request (docs/CONVENTIONS.md):"
+echo "Refactor tests sensor ($short_base..$short_head): ${#findings[@]} commit(s) typed refactor that change a test — a behaviour each moves is a fix of its own, or it needs its reason in the pull request (docs/CONVENTIONS.md):"
 printf '  - %s\n' "${findings[@]}"
 exit 0

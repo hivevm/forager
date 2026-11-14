@@ -131,6 +131,12 @@ jobs:
         run: bash scripts/sensor-refactor-tests.sh "$BASE"
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - name: Self-test the backlog commits sensor
+        run: bash scripts/test-sensor-backlog-commits.sh
+      - name: Report the commits that add a backlog entry beside other changes since the base
+        run: bash scripts/sensor-backlog-commits.sh "$BASE"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       - name: Self-test the binding ADRs sensor
         run: bash scripts/test-sensor-binding-adrs.sh
       - name: Report the ADRs in force whose Applies to names a path the change touches

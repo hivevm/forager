@@ -22,7 +22,8 @@
 # Usage:
 #     scripts/package.sh                    build both artefacts, then check them
 #     scripts/package.sh --check <archive>...   check the archives only
-# scripts/test-package.sh checks fixture archives with --check.
+# scripts/test-package.sh checks fixture archives with --check, and runs the build on a fixture
+# tree with cargo, rustc, and scripts/build-web.sh stubbed.
 # Exit code 0 when every artefact carries the notices, 1 when one does not or a build fails, 2 on
 # a usage error.
 
@@ -39,6 +40,7 @@ if [[ "${1:-}" == --check ]]; then
   shift
   (($#)) || { echo "package: --check needs at least one archive" >&2; exit 2; }
   check_archives "$@"
+  exit
 fi
 (($# == 0)) || { echo "package: unknown argument '$1' — usage: scripts/package.sh [--check <archive>...]" >&2; exit 2; }
 

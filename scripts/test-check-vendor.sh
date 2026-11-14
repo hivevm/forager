@@ -21,6 +21,9 @@ trap 'rm -rf "$work"' EXIT
 failed=0
 passed=0
 
+# shellcheck source-path=SCRIPTDIR source=lib/expect.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
+
 if command -v sha256sum >/dev/null 2>&1; then
   sha256() { sha256sum "$@"; }
 else
@@ -39,70 +42,59 @@ repo() {
   echo "$dir"
 }
 
-# expect <name> <dir> <code> <needle> — run the check; it must exit with the code and its output
-# contain the needle.
-expect() {
-  local name="$1" dir="$2" code="$3" needle="$4"
-  local out rc
-  out="$(bash "$CHECK" "$dir" 2>&1)"; rc=$?
-  if ((rc == code)) && [[ "$out" == *"$needle"* ]]; then
-    passed=$((passed + 1))
-    return
-  fi
-  failed=$((failed + 1))
-  echo "FAIL: $name (expected exit $code with \"$needle\", exit $rc)" >&2
-  while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
-}
+# expect_check <name> <dir> <code> <needle> — run the check; it must exit with the code and its
+# output contain the needle (expect, scripts/lib/expect.sh).
+expect_check() { expect "$1" "$3" "$4" bash "$CHECK" "$2"; }
 
-expect "the listed, unchanged copy passes" "$(repo clean)" 0 "Vendor check passed."
+expect_check "the listed, unchanged copy passes" "$(repo clean)" 0 "Vendor check passed."
 
 dir="$(repo changed)"
 printf 'window.L = {evil: 1};\r\n' > "$dir/examples/web/vendor/lib/lib.js"
-expect "a changed vendored file fails" "$dir" 1 "differs from examples/web/vendor/SHA256SUMS"
+expect_check "a changed vendored file fails" "$dir" 1 "differs from examples/web/vendor/SHA256SUMS"
 
 dir="$(repo normalized)"
 printf 'window.L = {};\n' > "$dir/examples/web/vendor/lib/lib.js"
-expect "line endings rewritten fail" "$dir" 1 "differs from examples/web/vendor/SHA256SUMS"
+expect_check "line endings rewritten fail" "$dir" 1 "differs from examples/web/vendor/SHA256SUMS"
 
 dir="$(repo unlisted)"
 printf 'x\n' > "$dir/examples/web/vendor/lib/extra.js"
-expect "an unlisted vendored file fails" "$dir" 1 "lib/extra.js is not listed"
+expect_check "an unlisted vendored file fails" "$dir" 1 "lib/extra.js is not listed"
 
 dir="$(repo missing)"
 rm "$dir/examples/web/vendor/lib/lib.js"
-expect "a listed file that is missing fails" "$dir" 1 "differs from examples/web/vendor/SHA256SUMS"
+expect_check "a listed file that is missing fails" "$dir" 1 "differs from examples/web/vendor/SHA256SUMS"
 
 dir="$(repo nolist)"
 rm "$dir/examples/web/vendor/SHA256SUMS"
-expect "a vendor directory without a list fails" "$dir" 1 "has no SHA256SUMS"
+expect_check "a vendor directory without a list fails" "$dir" 1 "has no SHA256SUMS"
 
 dir="$(repo cdn)"
 printf '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>\n' \
   >> "$dir/examples/web/index.html"
-expect "a script from another origin fails" "$dir" 1 "another origin: <script src=\"https://unpkg.com"
+expect_check "a script from another origin fails" "$dir" 1 "another origin: <script src=\"https://unpkg.com"
 
 dir="$(repo relative-origin)"
 printf "<link href='//cdn.example/x.css'>\n" >> "$dir/examples/web/index.html"
-expect "a protocol-relative stylesheet fails" "$dir" 1 "another origin: <link href='//cdn.example"
+expect_check "a protocol-relative stylesheet fails" "$dir" 1 "another origin: <link href='//cdn.example"
 
 dir="$(repo spaced)"
 printf '<script type="module" src = "https://cdn.example/x.js"></script>\n' \
   >> "$dir/examples/web/index.html"
-expect "a script source with spaces around = fails" "$dir" 1 "another origin: <script"
+expect_check "a script source with spaces around = fails" "$dir" 1 "another origin: <script"
 
 dir="$(repo import)"
 printf '<script type="module">import L from "https://cdn.example/l.js";</script>\n' \
   >> "$dir/examples/web/index.html"
-expect "a module import from another origin fails" "$dir" 1 "another origin: from \"https://cdn.example"
+expect_check "a module import from another origin fails" "$dir" 1 "another origin: from \"https://cdn.example"
 
 dir="$(repo dynamic-import)"
 printf '<script type="module">await import("//cdn.example/l.js");</script>\n' \
   >> "$dir/examples/web/index.html"
-expect "a dynamic import from another origin fails" "$dir" 1 "another origin: import(\"//cdn.example"
+expect_check "a dynamic import from another origin fails" "$dir" 1 "another origin: import(\"//cdn.example"
 
 dir="$(repo anchor)"
 printf '<a href="https://leafletjs.com/">Leaflet</a>\n' >> "$dir/examples/web/index.html"
-expect "a link to another origin passes" "$dir" 0 "Vendor check passed."
+expect_check "a link to another origin passes" "$dir" 0 "Vendor check passed."
 
 dir="$(repo unreadable)"
 mkdir -p "$dir/bin"

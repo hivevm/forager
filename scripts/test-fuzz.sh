@@ -36,6 +36,9 @@ trap 'rm -rf "$work"' EXIT
 failed=0
 passed=0
 
+# shellcheck source-path=SCRIPTDIR source=lib/expect.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
+
 # The stand-ins: every call but 'cargo metadata' and 'cargo fuzz --version' appends its command
 # and arguments as one line to $FAKE_LOG; 'cargo fuzz run' of a target named in $FAKE_FAIL then
 # fails, as a crash would.
@@ -78,29 +81,21 @@ fixture() {
   echo "$dir"
 }
 
-# expect <exit code> <name> <dir> <needle> <calls> [args...] — run the script in the directory;
-# the exit code must be the given one, or any but 0 when that is 'nonzero'; the output must
-# contain the needle, and not $REJECT when that is set; and the recorded calls, one per line, must
-# equal the given ones once both are sorted, since cargo, not the manifest, decides the order of
-# the targets.
-expect() {
+# expect_fuzz <exit code> <name> <dir> <needle> <calls> [args...] — run the script in the
+# directory; the exit code must be the given one, or any but 0 when that is 'nonzero'; the output
+# must contain the needle, and not $REJECT when that is set (verdict, scripts/lib/expect.sh); and
+# the recorded calls, one per line, must equal the given ones once both are sorted, since cargo,
+# not the manifest, decides the order of the targets.
+expect_fuzz() {
   local want="$1" name="$2" dir="$3" needle="$4" calls="$5"
   shift 5
   local out rc log="$work/$name.log"
-  [[ -n "$dir" && -f "$dir/scripts/fuzz.sh" ]] || { echo "expect: '$dir' is no fixture" >&2; exit 1; }
+  [[ -n "$dir" && -f "$dir/scripts/fuzz.sh" ]] || { echo "expect_fuzz: '$dir' is no fixture" >&2; exit 1; }
   : > "$log"
   out="$(cd "$dir" && PATH="$work/bin:$PATH" FAKE_LOG="$log" bash scripts/fuzz.sh "$@" 2>&1)"; rc=$?
-  local rc_ok=0
-  if [[ "$want" == nonzero ]]; then ((rc != 0)) && rc_ok=1; else ((rc == want)) && rc_ok=1; fi
-  if ((rc_ok)) && [[ "$out" == *"$needle"* ]] \
-    && [[ "$(sort "$log")" == "$(if [[ -n "$calls" ]]; then sort <<< "$calls"; fi)" ]] \
-    && [[ -z "${REJECT:-}" || "$out" != *"$REJECT"* ]]; then
-    passed=$((passed + 1))
-    return
-  fi
-  failed=$((failed + 1))
-  echo "FAIL: $name (expected exit $want with \"$needle\"${REJECT:+ and without \"$REJECT\"}, got exit $rc)" >&2
-  while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
+  local same=0
+  [[ "$(sort "$log")" == "$(if [[ -n "$calls" ]]; then sort <<< "$calls"; fi)" ]] && same=1
+  verdict "$name" "$want" "$needle" "$rc" "$out" "$same" && return
   echo "    calls expected: $calls" >&2
   while IFS= read -r l; do printf '    calls got:      %s\n' "$l"; done < "$log" >&2
 }
@@ -114,36 +109,36 @@ LIMITS="-timeout=10 -rss_limit_mb=2048"
 # --- refusals before anything is fuzzed ------------------------------------------------------
 
 d="$(fixture no-bins "")"
-expect 1 "a manifest without a bin fails" "$d" "fuzz/Cargo.toml names no [[bin]] target" ""
+expect_fuzz 1 "a manifest without a bin fails" "$d" "fuzz/Cargo.toml names no [[bin]] target" ""
 
 d="$(fixture no-seeds "$BIN_ONE")"
-expect 1 "a bin without seeds fails naming it, before anything is fuzzed" "$d" \
+expect_fuzz 1 "a bin without seeds fails naming it, before anything is fuzzed" "$d" \
   "the fuzz target one has no seeds under fuzz/seeds/one" ""
 
 d="$(fixture one-of-two-seeded "$BIN_ONE"$'\n\n'"$BIN_PATH" one)"
-expect 1 "a second bin without seeds fails naming it" "$d" \
+expect_fuzz 1 "a second bin without seeds fails naming it" "$d" \
   "the fuzz target declared has no seeds under fuzz/seeds/declared" ""
 
 d="$(fixture auto-bin "")"
 mkdir -p "$d/fuzz/src/bin"
 printf 'fn main() {}\n' > "$d/fuzz/src/bin/discovered.rs"
-expect 1 "a bin cargo discovers without a [[bin]] entry is a target too" "$d" \
+expect_fuzz 1 "a bin cargo discovers without a [[bin]] entry is a target too" "$d" \
   "the fuzz target discovered has no seeds under fuzz/seeds/discovered" ""
 
 d="$(fixture broken-manifest "[[bin]]")"
 # A failing cargo stops the run itself, not the empty list of targets it would leave behind.
-REJECT="names no [[bin]] target" expect nonzero "a manifest cargo cannot read stops the run" \
+REJECT="names no [[bin]] target" expect_fuzz nonzero "a manifest cargo cannot read stops the run" \
   "$d" "" ""
 
 # --- the run ---------------------------------------------------------------------------------
 
 d="$(fixture declared-path "$BIN_PATH" declared)"
-expect 0 "a bin declared with a path is fuzzed by its name" "$d" "--> fuzz declared for 300 s" \
+expect_fuzz 0 "a bin declared with a path is fuzzed by its name" "$d" "--> fuzz declared for 300 s" \
   "$SETUP
 cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=300 $LIMITS"
 
 d="$(fixture both-seeded "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
-expect 0 "every seeded bin is fuzzed for the seconds given" "$d" "--> fuzz one for 7 s" \
+expect_fuzz 0 "every seeded bin is fuzzed for the seconds given" "$d" "--> fuzz one for 7 s" \
   "$SETUP
 cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=7 $LIMITS
 cargo +$NIGHTLY fuzz run one fuzz/corpus/one fuzz/seeds/one -- -max_total_time=7 $LIMITS" \
@@ -163,15 +158,15 @@ for bad in one declared; do
   good=declared
   [[ "$bad" == declared ]] && good=one
   d="$(fixture "fails-$bad" "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
-  FAKE_FAIL="$bad" REJECT="the fuzz target $good failed" expect 1 \
+  FAKE_FAIL="$bad" REJECT="the fuzz target $good failed" expect_fuzz 1 \
     "a failing $bad does not stop the other target, and the run fails naming it" "$d" \
     "$(failed_line "$bad")" "$both_runs"
 done
 
 d="$(fixture fails-both "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
-FAKE_FAIL="one declared" expect 1 "the run names every target that failed" "$d" \
+FAKE_FAIL="one declared" expect_fuzz 1 "the run names every target that failed" "$d" \
   "$(failed_line declared)" "$both_runs"
-FAKE_FAIL="one declared" expect 1 "the run names every target that failed, the other too" "$d" \
+FAKE_FAIL="one declared" expect_fuzz 1 "the run names every target that failed, the other too" "$d" \
   "$(failed_line one)" "$both_runs"
 
 # --- the workflow ----------------------------------------------------------------------------

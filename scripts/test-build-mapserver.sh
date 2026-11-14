@@ -29,6 +29,9 @@ trap 'rm -rf "$work"' EXIT
 failed=0
 passed=0
 
+# shellcheck source-path=SCRIPTDIR source=lib/expect.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
+
 # The trigger block of the workflow as the ADR decides it, compared line by line.
 TRIGGER='on:
   workflow_dispatch:
@@ -105,19 +108,9 @@ check() {
   return 1
 }
 
-# expect <name> <build> <workflow> <code> <needle>
-expect() {
-  local name="$1" build="$2" workflow="$3" code="$4" needle="$5"
-  local out rc
-  out="$(check "$build" "$workflow" 2>&1)"; rc=$?
-  if ((rc == code)) && [[ "$out" == *"$needle"* ]]; then
-    passed=$((passed + 1))
-    return
-  fi
-  failed=$((failed + 1))
-  echo "FAIL: $name (expected exit $code with \"$needle\", exit $rc)" >&2
-  while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
-}
+# expect_pair <name> <build> <workflow> <code> <needle> — run the check on the pair; it must exit
+# with the code and its output contain the needle (expect, scripts/lib/expect.sh).
+expect_pair() { expect "$1" "$4" "$5" check "$2" "$3"; }
 
 # copy <name> <sed expression for the build script> <sed expression for the workflow> — a pair of
 # changed copies, printed as two paths on one line.
@@ -128,87 +121,87 @@ copy() {
   echo "$work/$1/build-mapserver.sh $work/$1/noise.yml"
 }
 
-expect "the build script and the workflow pass" "$BUILD" "$WORKFLOW" 0 ""
+expect_pair "the build script and the workflow pass" "$BUILD" "$WORKFLOW" 0 ""
 
 read -r b w <<< "$(copy tag 's/^PIN=.*/&\nTAG="rel-8-6-6"/' '')"
-expect "a tag of the build script's own fails" "$b" "$w" 1 "names a tag or a commit"
+expect_pair "a tag of the build script's own fails" "$b" "$w" 1 "names a tag or a commit"
 
 read -r b w <<< "$(copy commit 's/^PIN=.*/&\nCOMMIT="7515cccfe75fb7554ea45bc87ba5eb4b6126db5d"/' '')"
-expect "a commit of the build script's own fails" "$b" "$w" 1 "names a tag or a commit"
+expect_pair "a commit of the build script's own fails" "$b" "$w" 1 "names a tag or a commit"
 
 read -r b w <<< "$(copy nopin 's/fetch-msautotest\.sh/pin.sh/g' '')"
-expect "a build script that does not read the pin fails" "$b" "$w" 1 "does not read the pin"
+expect_pair "a build script that does not read the pin fails" "$b" "$w" 1 "does not read the pin"
 
 read -r b w <<< "$(copy pincomment 's/^PIN=.*/PIN="$ROOT\/scripts\/pin.sh"/' '')"
-expect "a pin read from elsewhere, the name left in a comment, fails" "$b" "$w" 1 "does not read the pin"
+expect_pair "a pin read from elsewhere, the name left in a comment, fails" "$b" "$w" 1 "does not read the pin"
 
 read -r b w <<< "$(copy branch 's/--branch "\$TAG"/--branch 8.6.6/' '')"
-expect "a branch of the build script's own fails" "$b" "$w" 1 "names a tag or a commit"
+expect_pair "a branch of the build script's own fails" "$b" "$w" 1 "names a tag or a commit"
 
 read -r b w <<< "$(copy short 's/^PIN=.*/&\nX=7515ccc/' '')"
-expect "an abbreviated commit fails" "$b" "$w" 1 "names a tag or a commit"
+expect_pair "an abbreviated commit fails" "$b" "$w" 1 "names a tag or a commit"
 
 read -r b w <<< "$(copy runs '/GITHUB_ACTIONS:-/,/^fi$/d' '')"
-expect "a build script that runs anywhere fails" "$b" "$w" 1 "does not refuse"
+expect_pair "a build script that runs anywhere fails" "$b" "$w" 1 "does not refuse"
 
 read -r b w <<< "$(copy ppa 's/^sudo apt-get update.*/sudo add-apt-repository -y ppa:ubuntugis\/ubuntugis-unstable\n&/' '')"
-expect "a PPA in the build script fails" "$b" "$w" 1 "build-mapserver.sh adds an apt source"
+expect_pair "a PPA in the build script fails" "$b" "$w" 1 "build-mapserver.sh adds an apt source"
 
 read -r b w <<< "$(copy alias 's/^sudo apt-get update.*/sudo apt-add-repository -y ppa:x\/y\n&/' '')"
-expect "the apt-add-repository alias fails" "$b" "$w" 1 "build-mapserver.sh adds an apt source"
+expect_pair "the apt-add-repository alias fails" "$b" "$w" 1 "build-mapserver.sh adds an apt source"
 
 read -r b w <<< "$(copy list '' 's/^      - name: Build MapServer.*/      - run: echo deb x | sudo tee \/etc\/apt\/sources.list.d\/x.list\n&/')"
-expect "a source written by the workflow fails" "$b" "$w" 1 "noise.yml adds an apt source"
+expect_pair "a source written by the workflow fails" "$b" "$w" 1 "noise.yml adds an apt source"
 
 read -r b w <<< "$(copy runner '' 's/runs-on: ubuntu-24.04/runs-on: ubuntu-latest/')"
-expect "another runner fails" "$b" "$w" 1 "another runner"
+expect_pair "another runner fails" "$b" "$w" 1 "another runner"
 
 read -r b w <<< "$(copy container '' 's/^    runs-on: ubuntu-24.04/&\n    container: ubuntu:24.04/')"
-expect "a container job fails" "$b" "$w" 1 "uses a container"
+expect_pair "a container job fails" "$b" "$w" 1 "uses a container"
 
 read -r b w <<< "$(copy docker '' 's/^      - name: Build MapServer.*/      - run: docker run ubuntu:24.04 true\n&/')"
-expect "a docker step fails" "$b" "$w" 1 "uses a container"
+expect_pair "a docker step fails" "$b" "$w" 1 "uses a container"
 
 read -r b w <<< "$(copy services '' 's/^    runs-on: ubuntu-24.04/&\n    services:\n      db:\n        image: x/')"
-expect "a service container fails" "$b" "$w" 1 "uses a container"
+expect_pair "a service container fails" "$b" "$w" 1 "uses a container"
 
 read -r b w <<< "$(copy podman '' 's/^      - name: Build MapServer.*/      - run: podman run x true\n&/')"
-expect "a podman step fails" "$b" "$w" 1 "uses a container"
+expect_pair "a podman step fails" "$b" "$w" 1 "uses a container"
 
 read -r b w <<< "$(copy schedule '' 's/^  workflow_dispatch:/&\n  schedule:\n    - cron: "0 0 * * 0"/')"
-expect "a schedule fails" "$b" "$w" 1 "triggers on more"
+expect_pair "a schedule fails" "$b" "$w" 1 "triggers on more"
 
 read -r b w <<< "$(copy everypush '' '/^    paths:/,/noise\.yml"$/d')"
-expect "a push without paths fails" "$b" "$w" 1 "triggers on more"
+expect_pair "a push without paths fails" "$b" "$w" 1 "triggers on more"
 
 read -r b w <<< "$(copy pr '' 's/^  push:/  pull_request:\n&/')"
-expect "a pull_request trigger fails" "$b" "$w" 1 "triggers on more"
+expect_pair "a pull_request trigger fails" "$b" "$w" 1 "triggers on more"
 
 read -r b w <<< "$(copy key '' "s/'scripts\/build-mapserver.sh', //")"
-expect "a cache key without the build script fails" "$b" "$w" 1 "keys the build's cache"
+expect_pair "a cache key without the build script fails" "$b" "$w" 1 "keys the build's cache"
 
 read -r b w <<< "$(copy second '' 's/^      - name: Build MapServer.*/      - uses: actions\/cache@v6\n        with:\n          path: target\/mapserver\n          key: other\n&/')"
-expect "a second cache of the build fails" "$b" "$w" 1 "keys the build's cache"
+expect_pair "a second cache of the build fails" "$b" "$w" 1 "keys the build's cache"
 
 read -r b w <<< "$(copy noreader '/^cc .*READER_SRC/d' '')"
-expect "a build without the reader fails" "$b" "$w" 1 "does not compile crates/cli"
+expect_pair "a build without the reader fails" "$b" "$w" 1 "does not compile crates/cli"
 
 read -r b w <<< "$(copy inside 's/^READER="\$ROOT\/target\/mapserver-labels/READER="$DIR/' '')"
-expect "a reader inside the cached build fails" "$b" "$w" 1 "inside the cached build"
+expect_pair "a reader inside the cached build fails" "$b" "$w" 1 "inside the cached build"
 
 read -r b w <<< "$(copy patch 's/^  cmake -S .*/  patch -d "$DIR\/src" -p1 < x.diff\n&/' '')"
-expect "a patch of the checkout fails" "$b" "$w" 1 "patches the checkout"
+expect_pair "a patch of the checkout fails" "$b" "$w" 1 "patches the checkout"
 
 read -r b w <<< "$(copy gitapply 's/^  cmake -S .*/  git --git-dir "$DIR\/src\/.git" apply x.diff\n&/' '')"
-expect "git apply on the checkout fails" "$b" "$w" 1 "patches the checkout"
+expect_pair "git apply on the checkout fails" "$b" "$w" 1 "patches the checkout"
 
 read -r b w <<< "$(copy gitam 's/^  cmake -S .*/  git --git-dir "$DIR\/src\/.git" am x.patch\n&/' '')"
-expect "git am on the checkout fails" "$b" "$w" 1 "patches the checkout"
+expect_pair "git am on the checkout fails" "$b" "$w" 1 "patches the checkout"
 
 # The flag is spliced in, as the shell lint refuses GNU sed's in-place flag written out.
 in_place="-i"
 read -r b w <<< "$(copy sedi "s/^  cmake -S .*/  sed $in_place s\\/a\\/b\\/ x.c\\n\&/" '')"
-expect "sed -i on the checkout fails" "$b" "$w" 1 "patches the checkout"
+expect_pair "sed -i on the checkout fails" "$b" "$w" 1 "patches the checkout"
 
 echo "build-mapserver self-test: $passed passed, $failed failed."
 ((failed == 0))
