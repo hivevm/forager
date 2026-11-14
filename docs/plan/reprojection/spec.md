@@ -89,6 +89,7 @@ own longitude and latitude.
   scope in the ticket that draws it (`quoting`, `dateline`, `ortho`, `bug1526`), holding its outcome
   and the G-9 comparison on wasm32.
 - The frontend's `load` with files in memory for `AUTO` of the map and the layer.
+- The style document's round trip (G-3) and the schema test for the map's `AUTO` (ticket 07).
 - The engine's render with sources in memory for the area asked of a source.
 - G-11 by a test with reference coordinates PROJ computed at the pinned build, recorded beside the
   test as the label records of ADR-0033 are.
