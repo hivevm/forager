@@ -151,7 +151,7 @@ impl Plane for Lcc {
     fn inverse(&self, x: f64, y: f64) -> Option<(f64, f64)> {
         let mut x = x / self.k0;
         let mut y = self.rho0 - y / self.k0;
-        let mut rho = (x * x + y * y).sqrt();
+        let mut rho = libm::hypot(x, y);
         if rho == 0.0 {
             return Some((0.0, if self.n > 0.0 { HALF_PI } else { -HALF_PI }));
         }

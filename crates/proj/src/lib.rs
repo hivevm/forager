@@ -13,7 +13,9 @@
 // AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-// PROJ's notice, from its file COPYING; the files of PROJ this one follows hold no other:
+// Copyright (c) 2000, Frank Warmerdam; Copyright (c) 2018, Thomas Knudsen / SDFE (src/fwd.cpp,
+// src/inv.cpp)
+// Each file grants the MIT licence below; PROJ's notice, from its file COPYING:
 // All source, data files and other contents of the PROJ package are available under the following
 // terms. Note that the PROJ 4.3 and earlier was "public domain" as is common with US government
 // work, but apparently this is not a well defined legal term in many countries. Frank Warmerdam
@@ -296,7 +298,8 @@ impl Reprojection {
     }
 
     /// The rectangle that holds the reprojected points of `extent`'s sides, each side sampled at
-    /// [`SAMPLES_PER_SIDE`] points, its corners included; `None` where none reprojects.
+    /// a hundred points, its corners included, as `msProjectRect` samples it; `None` where none
+    /// reprojects.
     pub fn extent(&self, extent: &Extent) -> Option<Extent> {
         let mut bounds: Option<Extent> = None;
         let width = extent.max_x - extent.min_x;

@@ -1,8 +1,9 @@
 # What the output path may not use (Q-2): hash-map iteration order, a clock, a random source, and
 # std's `hypot` and transcendental functions, which call the platform's libm and need not round
 # alike on every target, would make the same input render or load differently; the `libm` crate
-# gives the same bits everywhere (ADR-draft-reprojection-ported-in-proj). The lints are allowed in the workspace and warned by each crate of the
-# IR, the core, the ports, the frontend, and the adapters (ADR-0008) at the top of its lib.rs, so
+# gives the same bits everywhere (ADR-draft-reprojection-ported-in-proj). The lints are allowed in
+# the workspace and warned by each crate of the IR, the core, the ports, the frontend, and the
+# adapters (ADR-0008) at the top of its lib.rs, so
 # that only hosts and tooling stay free, beside the integration tests under such a crate's tests/,
 # which reach no output. The fuzz workspace takes no workspace lints, so the bans warn there by
 # default; it renders through the core and is held to them as well. `engine`, `label`, and

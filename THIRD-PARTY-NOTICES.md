@@ -34,7 +34,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 The reprojection of `crates/proj` ports PROJ's formulas, as of PROJ 9.4.0. Each file that follows a
 PROJ source names it and holds PROJ's notice (`scripts/check-notice.sh` holds this), from its file
-`COPYING`; the MIT licence it grants asks that the notice is included in all copies:
+`COPYING`, with the copyright lines of the PROJ sources it follows; the MIT licence each grants asks
+that the notice is included in all copies:
+
+```text
+Copyright (c) 1995, Gerald Evenden
+Copyright (c) 2000, Frank Warmerdam
+Copyright (c) 2002, Frank Warmerdam <warmerdam@pobox.com>
+Copyright (c) 2016, Thomas Knudsen / SDFE
+Copyright (c) 2016, 2017 Thomas Knudsen/SDFE
+Copyright (c) 2018, Thomas Knudsen / SDFE
+```
 
 ```text
 All source, data files and other contents of the PROJ package are available under the following

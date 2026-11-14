@@ -44,8 +44,9 @@ impl LayerReprojection {
 
     /// Reprojects each of `features` into the map's projection, and returns how many of their
     /// points do not reproject. Those are left out; a line left with fewer than two points, a ring
-    /// with fewer than three, and a part, a geometry, or a feature left with nothing are left out
-    /// with them.
+    /// with fewer than three, a polygon whose exterior ring is left out, so that a hole never
+    /// stands first, and a part, a geometry, or a feature left with nothing are left out with
+    /// them.
     pub(crate) fn features(&self, features: &mut Vec<Feature>) -> usize {
         let mut left_out = 0;
         features.retain_mut(|feature| self.geometry(&mut feature.geometry, &mut left_out));
@@ -69,9 +70,9 @@ impl LayerReprojection {
             Geometry::MultiPoint(points) => self.points(points, left_out, 1),
             Geometry::LineString(line) => self.points(line, left_out, 2),
             Geometry::MultiLineString(lines) => self.parts(lines, left_out, 2),
-            Geometry::Polygon(rings) => self.parts(rings, left_out, 3),
+            Geometry::Polygon(rings) => self.polygon(rings, left_out),
             Geometry::MultiPolygon(polygons) => {
-                polygons.retain_mut(|rings| self.parts(rings, left_out, 3));
+                polygons.retain_mut(|rings| self.polygon(rings, left_out));
                 !polygons.is_empty()
             }
             Geometry::Collection(members) => {
@@ -79,6 +80,20 @@ impl LayerReprojection {
                 !members.is_empty()
             }
         }
+    }
+
+    /// Reprojects a polygon's `rings`, the exterior first; whether its exterior ring is left, its
+    /// holes then kept where each keeps three points.
+    fn polygon(&self, rings: &mut Vec<Vec<Coord>>, left_out: &mut usize) -> bool {
+        let Some(exterior) = rings.first_mut() else {
+            return false;
+        };
+        if !self.points(exterior, left_out, 3) {
+            return false;
+        }
+        let mut first = true;
+        rings.retain_mut(|ring| std::mem::take(&mut first) || self.points(ring, left_out, 3));
+        true
     }
 
     /// Reprojects each of `parts`, a line's or a ring's points; whether any keeps `least`.
@@ -100,5 +115,86 @@ impl LayerReprojection {
             }
         });
         points.len() >= least
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use forager_ports::Properties;
+
+    /// The way from longitude and latitude into EPSG:3978, whose cone has no place for the south
+    /// pole.
+    fn into_the_conic() -> LayerReprojection {
+        let map = Map {
+            projection: Some(
+                "+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +ellps=GRS80 +units=m".into(),
+            ),
+            ..Map::default()
+        };
+        let layer = Layer {
+            projection: Some(LayerProjection::Proj4("+proj=longlat +datum=WGS84".into())),
+            ..Layer::default()
+        };
+        for_layer(&map, &layer).unwrap().unwrap()
+    }
+
+    fn ring(points: &[(f64, f64)]) -> Vec<Coord> {
+        points.iter().map(|&(x, y)| Coord { x, y }).collect()
+    }
+
+    fn polygon(rings: Vec<Vec<Coord>>) -> Feature {
+        Feature {
+            id: 0,
+            geometry: Geometry::Polygon(rings),
+            properties: Properties::default(),
+        }
+    }
+
+    const SQUARE: &[(f64, f64)] = &[(-64.0, 45.0), (-62.0, 45.0), (-62.0, 47.0), (-64.0, 45.0)];
+    const HOLE: &[(f64, f64)] = &[(-63.5, 45.5), (-62.5, 45.5), (-63.0, 46.0), (-63.5, 45.5)];
+    const THROUGH_THE_POLE: &[(f64, f64)] =
+        &[(-64.0, 45.0), (0.0, -90.0), (-62.0, 47.0), (-64.0, 45.0)];
+
+    #[test]
+    fn a_polygon_whose_exterior_ring_does_not_reproject_is_left_out_with_its_holes() {
+        // Verifies: ADR-draft-reprojection-ported-in-proj
+        // Left in, the hole would stand first and be drawn as the exterior.
+        let mut features = vec![polygon(vec![
+            ring(&[(-64.0, 45.0), (0.0, -90.0), (-62.0, 47.0)]),
+            ring(HOLE),
+        ])];
+        assert_eq!(into_the_conic().features(&mut features), 1);
+        assert!(features.is_empty());
+    }
+
+    #[test]
+    fn a_hole_that_does_not_reproject_leaves_its_polygon_drawn_without_it() {
+        // Verifies: ADR-draft-reprojection-ported-in-proj
+        let mut features = vec![polygon(vec![
+            ring(SQUARE),
+            ring(&[(-63.5, 45.5), (0.0, -90.0), (-63.5, 45.5)]),
+            ring(HOLE),
+        ])];
+        assert_eq!(into_the_conic().features(&mut features), 1);
+        let [
+            Feature {
+                geometry: Geometry::Polygon(rings),
+                ..
+            },
+        ] = &features[..]
+        else {
+            panic!("one polygon left: {features:?}");
+        };
+        assert_eq!(rings.len(), 2, "the exterior and the hole that reprojects");
+        assert!(
+            rings[0][0].x > 2_000_000.0,
+            "in metres of the conic: {:?}",
+            rings[0][0]
+        );
+        // A ring that keeps three points after one is left out stays.
+        let mut kept = vec![polygon(vec![ring(THROUGH_THE_POLE)])];
+        assert_eq!(into_the_conic().features(&mut kept), 1);
+        assert_eq!(kept.len(), 1);
     }
 }

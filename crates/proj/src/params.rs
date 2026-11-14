@@ -1,7 +1,10 @@
 // The tables of ellipsoids, datums, and units, and the set-up of a projection from its parameters,
 // follow src/ellps.cpp, src/datums.cpp, src/units.cpp, src/ell_set.cpp, src/datum_set.cpp, and
 // src/init.cpp of PROJ 9.4.0, <https://proj.org>.
-// PROJ's notice, from its file COPYING; the files of PROJ this one follows hold no other:
+// Copyright (c) 2000, Frank Warmerdam (src/datums.cpp, src/datum_set.cpp)
+// Copyright (c) 1995, Gerald Evenden; Copyright (c) 2002, Frank Warmerdam (src/init.cpp)
+// src/ellps.cpp, src/units.cpp, and src/ell_set.cpp hold no copyright line of their own. Each file
+// grants the MIT licence below; PROJ's notice, from its file COPYING:
 // All source, data files and other contents of the PROJ package are available under the following
 // terms. Note that the PROJ 4.3 and earlier was "public domain" as is common with US government
 // work, but apparently this is not a well defined legal term in many countries. Frank Warmerdam
@@ -134,75 +137,35 @@ impl Ellipsoid {
     }
 }
 
-/// A shape parameter of an ellipsoid, as `ellps.cpp` gives each.
-enum Shape {
-    Rf(f64),
-    B(f64),
-}
-
-/// The ellipsoids of PROJ's table that the datums below and the cases in scope name.
-const ELLIPSOIDS: &[(&str, f64, Shape)] = &[
-    ("WGS84", 6_378_137.0, Shape::Rf(298.257_223_563)),
-    ("GRS80", 6_378_137.0, Shape::Rf(298.257_222_101)),
-    ("WGS72", 6_378_135.0, Shape::Rf(298.26)),
-    ("intl", 6_378_388.0, Shape::Rf(297.0)),
-    ("bessel", 6_377_397.155, Shape::Rf(299.152_812_8)),
-    ("clrk66", 6_378_206.4, Shape::B(6_356_583.8)),
-    ("clrk80ign", 6_378_249.2, Shape::Rf(293.466_021_293_626_9)),
-    ("airy", 6_377_563.396, Shape::Rf(299.324_964_6)),
-    ("mod_airy", 6_377_340.189, Shape::B(6_356_034.446)),
-    ("sphere", 6_370_997.0, Shape::B(6_370_997.0)),
+/// The ellipsoids of PROJ's table, by their semimajor axis and reverse flattening, that the
+/// datums below and the cases in scope name; another `+ellps` is unsupported until a case or a
+/// ticket needs it (ADR-draft-reprojection-ported-in-proj).
+const ELLIPSOIDS: &[(&str, f64, f64)] = &[
+    ("WGS84", 6_378_137.0, 298.257_223_563),
+    ("GRS80", 6_378_137.0, 298.257_222_101),
 ];
 
-/// The datums of PROJ's table that shift by `towgs84`; NAD27 and potsdam, which shift by grids,
-/// are left out.
-const DATUMS: &[(&str, &str, &str)] = &[
-    ("WGS84", "0,0,0", "WGS84"),
-    ("GGRS87", "-199.87,74.79,246.62", "GRS80"),
-    ("NAD83", "0,0,0", "GRS80"),
-    ("carthage", "-263.0,6.0,431.0", "clrk80ign"),
-    (
-        "hermannskogel",
-        "577.326,90.129,463.919,5.137,1.474,5.297,2.4232",
-        "bessel",
-    ),
-    (
-        "ire65",
-        "482.530,-130.596,564.557,-1.042,-0.214,-0.631,8.15",
-        "mod_airy",
-    ),
-    (
-        "nzgd49",
-        "59.47,-5.04,187.44,0.47,-0.1,1.024,-4.5993",
-        "intl",
-    ),
-    (
-        "OSGB36",
-        "446.448,-125.157,542.060,0.1502,0.2470,0.8421,-20.4894",
-        "airy",
-    ),
-];
+/// The datums of PROJ's table that the cases in scope name, by their `towgs84` and ellipsoid.
+const DATUMS: &[(&str, &str, &str)] = &[("WGS84", "0,0,0", "WGS84"), ("NAD83", "0,0,0", "GRS80")];
 
-/// The linear units of PROJ's table that a case may name, in metres.
-const UNITS: &[(&str, f64)] = &[
-    ("m", 1.0),
-    ("km", 1000.0),
-    ("ft", 0.3048),
-    ("us-ft", 1200.0 / 3937.0),
-];
+/// The linear units of PROJ's table that the cases in scope name, in metres; `+to_meter` gives
+/// any other.
+const UNITS: &[(&str, f64)] = &[("m", 1.0)];
 
 /// The datum a projection's coordinates are in, by how PROJ's `pj_init` shifts it to WGS84
 /// (`src/4D_api.cpp`, its cs2cs emulation): by `+nadgrids=@null`, not at all; by a Helmert
 /// transform of `+towgs84`, through geocentric coordinates; by a change of ellipsoid alone, where
 /// `+towgs84` is all zeros and the ellipsoid is not WGS84's; or not at all, where none is given.
+/// MapServer at the pin creates its transformation by `proj_create_crs_to_crs_from_pj`, in its
+/// `createNormalizedPJ`, whose operation for these definitions is not verified to be this chain;
+/// G-11's measurement against PROJ is the guard.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Datum {
     /// Its longitude and latitude are WGS84's.
     Wgs84,
-    /// Through geocentric coordinates on its ellipsoid, shifted by the seven parameters of a
-    /// Helmert transform where it has them: the translations in metres, the rotations in
-    /// radians, the scale in parts per million.
-    Geocentric(Option<[f64; 7]>),
+    /// Through geocentric coordinates on its ellipsoid, shifted by the Helmert transform of its
+    /// `towgs84` where that is not all zeros.
+    Geocentric(Option<crate::datum::Helmert>),
 }
 
 /// The ellipsoid and the datum of `params`, as `pj_datum_set` and `pj_ellipsoid` read them, the
@@ -235,7 +198,7 @@ pub(crate) fn ellipsoid_and_datum(params: &Params) -> Result<(Ellipsoid, Datum),
                     Datum::Geocentric(None)
                 }
             } else {
-                Datum::Geocentric(Some(shift))
+                Datum::Geocentric(Some(crate::datum::Helmert::new(&shift)))
             }
         }
     };
@@ -269,7 +232,7 @@ fn ellipsoid(params: &Params, datum_ellps: Option<&str>) -> Result<Ellipsoid, Er
     }
     let given = params.text("ellps")?;
     let name = given.or(datum_ellps).unwrap_or("GRS80");
-    let (_, table_a, table_shape) = ELLIPSOIDS
+    let (_, table_a, table_rf) = ELLIPSOIDS
         .iter()
         .find(|(id, _, _)| *id == name)
         .ok_or_else(|| Error::Unsupported(format!("+ellps={name}")))?;
@@ -295,10 +258,7 @@ fn ellipsoid(params: &Params, datum_ellps: Option<&str>) -> Result<Ellipsoid, Er
         }
         from_f((a - b) / a)
     } else {
-        match table_shape {
-            Shape::Rf(rf) => from_f(1.0 / rf),
-            Shape::B(b) => from_f((table_a - b) / table_a),
-        }
+        from_f(1.0 / table_rf)
     };
     if !(0.0..1.0).contains(&es) {
         return Err(Error::Invalid(format!(

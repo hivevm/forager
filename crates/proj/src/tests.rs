@@ -34,7 +34,7 @@ fn the_lambert_conic_of_two_parallels_matches_iogps_worked_example() {
     let geographic = "+proj=longlat +a=6378206.4 +rf=294.9786982";
     let texas = format!(
         "+proj=lcc +a=6378206.4 +rf=294.9786982 +lat_1={:.12} +lat_2={:.12} +lat_0={:.12} \
-         +lon_0=-99 +x_0=609601.2192 +y_0=0 +units=us-ft",
+         +lon_0=-99 +x_0=609601.2192 +y_0=0 +to_meter=1200/3937",
         degrees(28.0, 23.0),
         degrees(30.0, 17.0),
         degrees(27.0, 50.0)
@@ -56,8 +56,9 @@ fn the_mercator_of_an_ellipsoid_matches_iogps_worked_example() {
     // Verifies: ADR-draft-reprojection-ported-in-proj
     // Guidance Note 7-2, Mercator (variant A): Makassar / NEIEZ on Bessel 1841; 3°S 120°E is
     // E 5009726.58 m, N 569150.82 m.
-    let geographic = "+proj=longlat +ellps=bessel";
-    let neiez = "+proj=merc +ellps=bessel +lon_0=110 +k=0.997 +x_0=3900000 +y_0=900000";
+    let geographic = "+proj=longlat +a=6377397.155 +rf=299.1528128";
+    let neiez = "+proj=merc +a=6377397.155 +rf=299.1528128 +lon_0=110 +k=0.997 +x_0=3900000 \
+                 +y_0=900000";
     let projected = way(geographic, neiez).point(at(120.0, -3.0)).unwrap();
     assert!((projected.x - 5_009_726.58).abs() < 0.01, "{projected:?}");
     assert!((projected.y - 569_150.82).abs() < 0.01, "{projected:?}");
@@ -113,7 +114,9 @@ fn the_canadian_lambert_conic_of_the_suite_has_its_origin_at_49n_95w() {
 #[test]
 fn a_seven_parameter_shift_moves_a_point_by_some_metres_and_back() {
     // Verifies: ADR-draft-reprojection-ported-in-proj
-    let osgb36 = "+proj=longlat +datum=OSGB36";
+    // OSGB36 on Airy 1830, as PROJ's table of datums defines it.
+    let osgb36 = "+proj=longlat +a=6377563.396 +rf=299.3249646 \
+                  +towgs84=446.448,-125.157,542.060,0.1502,0.2470,0.8421,-20.4894";
     let shifted = way(osgb36, LONGLAT_WGS84).point(at(-1.0, 52.0)).unwrap();
     // OSGB36 lies about 100 m from WGS84 in England: some thousandths of a degree.
     let moved = (shifted.x + 1.0).abs() + (shifted.y - 52.0).abs();
@@ -146,6 +149,19 @@ fn an_unknown_projection_or_parameter_is_an_error_naming_it() {
     assert_eq!(
         error("+proj=longlat +datum=NAD27"),
         Error::Unsupported("+datum=NAD27".to_owned())
+    );
+    // A datum, an ellipsoid, or a unit no case in scope names is unsupported until one does.
+    assert_eq!(
+        error("+proj=longlat +datum=OSGB36"),
+        Error::Unsupported("+datum=OSGB36".to_owned())
+    );
+    assert_eq!(
+        error("+proj=longlat +ellps=bessel"),
+        Error::Unsupported("+ellps=bessel".to_owned())
+    );
+    assert_eq!(
+        error("+proj=lcc +lat_1=30 +units=us-ft"),
+        Error::Unsupported("+units=us-ft".to_owned())
     );
     assert_eq!(
         error("+proj=longlat +ellps=WGS84 +lon_0=10"),

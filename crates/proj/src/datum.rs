@@ -1,7 +1,11 @@
 // The geocentric coordinates and the Helmert transform follow src/conversions/cart.cpp and
 // src/transformations/helmert.cpp of PROJ 9.4.0, <https://proj.org>, and their chaining the cs2cs
 // emulation of its src/4D_api.cpp and src/fwd.cpp.
-// PROJ's notice, from its file COPYING; the files of PROJ this one follows hold no other:
+// Copyright (c) 2016, Thomas Knudsen / SDFE (src/conversions/cart.cpp,
+// src/transformations/helmert.cpp)
+// Copyright (c) 2016, 2017 Thomas Knudsen/SDFE (src/4D_api.cpp)
+// Copyright (c) 2000, Frank Warmerdam; Copyright (c) 2018, Thomas Knudsen / SDFE (src/fwd.cpp)
+// Each file grants the MIT licence below; PROJ's notice, from its file COPYING:
 // All source, data files and other contents of the PROJ package are available under the following
 // terms. Note that the PROJ 4.3 and earlier was "public domain" as is common with US government
 // work, but apparently this is not a well defined legal term in many countries. Frank Warmerdam
@@ -24,7 +28,8 @@
 
 //! The shift of a longitude and latitude from one datum to WGS84 and back, through geocentric
 //! coordinates, as PROJ's cs2cs emulation chains `cart` and an exact `helmert` of the position
-//! vector convention.
+//! vector convention. MapServer at the pin goes through `proj_create_crs_to_crs_from_pj` instead,
+//! which is not verified to pick the same operation (see [`Datum`]).
 
 use crate::params::{Datum, Ellipsoid};
 
@@ -56,19 +61,14 @@ fn cartesian(lam: f64, phi: f64, ellipsoid: &Ellipsoid) -> Cartesian {
     }
 }
 
-/// `hypot` as IEEE's square root of the sum of squares, which rounds alike on every target (Q-2).
-fn hypot(x: f64, y: f64) -> f64 {
-    (x * x + y * y).sqrt()
-}
-
 /// `geodetic`: the longitude and latitude, in radians, of the geocentric `point` on the
 /// ellipsoid, by Bowring's formula; the height is dropped.
 fn geodetic(point: Cartesian, ellipsoid: &Ellipsoid) -> (f64, f64) {
     let (a, b) = (ellipsoid.a, ellipsoid.b());
-    let p = hypot(point.x, point.y);
+    let p = libm::hypot(point.x, point.y);
     let y_theta = point.z * a;
     let x_theta = p * b;
-    let norm = hypot(y_theta, x_theta);
+    let norm = libm::hypot(y_theta, x_theta);
     let c = if norm == 0.0 { 1.0 } else { x_theta / norm };
     let s = if norm == 0.0 { 0.0 } else { y_theta / norm };
     let y_phi = point.z + ellipsoid.e2s() * b * s * s * s;
@@ -105,8 +105,11 @@ fn rotation(rx: f64, ry: f64, rz: f64) -> [[f64; 3]; 3] {
     transposed
 }
 
-/// A Helmert transform of the seven parameters of a `towgs84`, from the datum into WGS84.
-struct Helmert {
+/// A Helmert transform of the seven parameters of a `towgs84`, from the datum into WGS84: the
+/// translations in metres, the rotations in arc seconds, the scale in parts per million, its
+/// rotation matrix built once.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Helmert {
     translation: [f64; 3],
     /// The rotation, where it has one or a scale; a translation alone is added as it is.
     rotation: Option<[[f64; 3]; 3]>,
@@ -114,7 +117,7 @@ struct Helmert {
 }
 
 impl Helmert {
-    fn new(shift: &[f64; 7]) -> Self {
+    pub(crate) fn new(shift: &[f64; 7]) -> Self {
         let [x, y, z, rx, ry, rz, s] = *shift;
         let no_rotation = rx == 0.0 && ry == 0.0 && rz == 0.0;
         Self {
@@ -170,8 +173,8 @@ pub(crate) fn to_wgs84(lam: f64, phi: f64, datum: &Datum, ellipsoid: &Ellipsoid)
         return (lam, phi);
     };
     let mut point = cartesian(lam, phi, ellipsoid);
-    if let Some(shift) = shift {
-        point = Helmert::new(shift).forward(point);
+    if let Some(helmert) = shift {
+        point = helmert.forward(point);
     }
     geodetic(point, &Ellipsoid::wgs84())
 }
@@ -183,8 +186,8 @@ pub(crate) fn from_wgs84(lam: f64, phi: f64, datum: &Datum, ellipsoid: &Ellipsoi
         return (lam, phi);
     };
     let mut point = cartesian(lam, phi, &Ellipsoid::wgs84());
-    if let Some(shift) = shift {
-        point = Helmert::new(shift).reverse(point);
+    if let Some(helmert) = shift {
+        point = helmert.reverse(point);
     }
     geodetic(point, ellipsoid)
 }
@@ -211,9 +214,9 @@ mod tests {
     #[test]
     fn a_helmert_shift_reverses() {
         // Verifies: ADR-draft-reprojection-ported-in-proj
-        let datum = Datum::Geocentric(Some([
+        let datum = Datum::Geocentric(Some(Helmert::new(&[
             446.448, -125.157, 542.06, 0.1502, 0.247, 0.8421, -20.4894,
-        ]));
+        ])));
         let airy = Ellipsoid {
             a: 6_377_563.396,
             es: 0.006_670_539_999_985_363,
