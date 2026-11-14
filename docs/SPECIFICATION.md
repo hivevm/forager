@@ -130,10 +130,9 @@ from the threats below.
   *Files a host reads:* a data file (256 MiB); a font file, which a symbol image's file shares
   (32 MiB, apart from the load's text).
 
-  *Images:* image size; the pixels of a symbol image, read from its header before it is decoded,
-  a GIF's from its logical screen (4096 × 4096); the pixels of the tile a polygon is filled
-  with, whatever its size or gap asks (4096 × 4096); the images one render holds decoded, its
-  fill tiles among them (256 MiB).
+  *Images:* image size; the pixels of a symbol image, read from its header before it is decoded
+  (4096 × 4096); the pixels of the tile a polygon is filled with, whatever its size or gap asks
+  (4096 × 4096); the images one render holds decoded, its fill tiles among them (256 MiB).
 
   *Drawing:* the features one layer draws (1,000,000); the points of the symbols one layer places
   at its features, along its lines, or where a style's geometry transformation puts them
