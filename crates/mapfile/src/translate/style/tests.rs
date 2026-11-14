@@ -507,8 +507,8 @@ fn a_geomtransform_name_is_matched_on_its_prefix_as_msstylesetgeomtransform_matc
             "{name}"
         );
     }
-    // `labelcenter` is carried over; a class's style warns of it (see
-    // `a_class_style_of_labelcenter_warns_and_a_label_style_does_not`).
+    // `labelcenter` is carried over (see
+    // `a_style_of_labelcenter_is_carried_over_and_warned_of_by_the_engine_alone`).
     let (_, style) =
         first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM 'LabelCenter' END END END END");
     assert_eq!(
@@ -619,36 +619,27 @@ fn a_colour_is_three_numbers_one_string_or_one_binding() {
 }
 
 #[test]
-fn a_class_style_of_labelcenter_warns_and_a_label_style_does_not() {
+fn a_style_of_labelcenter_is_carried_over_and_warned_of_by_the_engine_alone() {
     // msDrawTransformedShape (src/mapgeomtransform.c:245) fails the draw of a line or polygon
-    // layer on a class's labelcenter style; msDrawLabelCache draws a label's.
-    for layer_type in ["LINE", "POLYGON"] {
-        let text: &'static str = format!(
-            "MAP LAYER TYPE {layer_type} CLASS STYLE GEOMTRANSFORM labelcenter END END END END"
-        )
-        .leak();
+    // layer on a class's labelcenter style; msDrawLabelCache draws a label's. The engine warns of
+    // the class's style for every document, so the load warns of neither.
+    for text in [
+        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM labelcenter END END END END",
+        "MAP LAYER TYPE POLYGON CLASS STYLE GEOMTRANSFORM labelcenter END END END END",
+        "MAP LAYER CLASS STYLE GEOMTRANSFORM labelcenter END END TYPE POLYGON END END",
+        "MAP LAYER TYPE POINT CLASS STYLE GEOMTRANSFORM labelcenter END END END END",
+    ] {
         let (loaded, style) = first_style(text);
-        assert_eq!(codes(&loaded), ["unsupported-value"], "{layer_type}");
+        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{text}");
         assert_eq!(
             style.unwrap().geom_transform,
-            Some(forager_style_ir::GeomTransform::LabelCenter)
+            Some(forager_style_ir::GeomTransform::LabelCenter),
+            "{text}"
         );
     }
-    // A point layer draws a class's style at its points whatever its transform; a label's
-    // labelcenter style is drawn on any layer.
-    for text in [
-        "MAP LAYER TYPE POINT CLASS STYLE GEOMTRANSFORM labelcenter END END END END",
-        "MAP LAYER TYPE LINE CLASS LABEL STYLE GEOMTRANSFORM labelcenter END END END END END",
-    ] {
-        let loaded = load_files(&[("m.map", text)]);
-        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{text}");
-    }
-    // TYPE after the class.
-    let text = "MAP LAYER CLASS STYLE GEOMTRANSFORM labelcenter END END TYPE POLYGON END END";
-    assert_eq!(
-        codes(&load_files(&[("m.map", text)])),
-        ["unsupported-value"]
-    );
+    let text =
+        "MAP LAYER TYPE LINE CLASS LABEL STYLE GEOMTRANSFORM labelcenter END END END END END";
+    assert_eq!(codes(&load_files(&[("m.map", text)])), Vec::<&str>::new());
 }
 
 /// The keywords of MapServer's lexer whose token value is that of `name`.

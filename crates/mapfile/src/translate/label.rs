@@ -163,16 +163,16 @@ impl Translator<'_> {
     /// on bbox and others: a label's style holds no other, so its label is left out, and the caller
     /// leaves out its class's other labels with it.
     fn label_style(&mut self, b: &Block) -> Option<Style<LabelTransform>> {
-        let style = self.style(b, true);
-        let transformed = b
-            .nodes
-            .iter()
-            .any(|node| matches!(node, Node::Directive(d) if d.keyword == "GEOMTRANSFORM"));
-        let transform = match (transformed, &style.geom_transform) {
-            (false, _) | (true, Some(GeomTransform::LabelPoint)) => LabelTransform::Point,
-            (true, Some(GeomTransform::LabelPoly)) => LabelTransform::Poly,
-            (true, Some(GeomTransform::LabelCenter)) => LabelTransform::Center,
-            (true, _) => {
+        // The warnings of a transform name that names none and of an expression's syntax error
+        // give way to the one that the label is left out. A style without a transform but with
+        // such a warning had a GEOMTRANSFORM written that holds no transform, so a non-empty list
+        // is read as that, and the label is left out rather than drawn at its point.
+        let (style, transform_warnings) = self.style(b);
+        let transform = match (&style.geom_transform, transform_warnings.is_empty()) {
+            (None, true) | (Some(GeomTransform::LabelPoint), _) => LabelTransform::Point,
+            (Some(GeomTransform::LabelPoly), _) => LabelTransform::Poly,
+            (Some(GeomTransform::LabelCenter), _) => LabelTransform::Center,
+            _ => {
                 let message = "a LABEL's STYLE of a GEOMTRANSFORM other than labelpnt, \
                                labelpoly, or labelcenter is not drawn; the label is left out, and \
                                its class's other labels with it";

@@ -373,3 +373,52 @@ fn a_style_naming_an_image_file_draws_it_and_one_missing_or_by_url_draws_nothing
     assert_eq!(image.pixel(10, 10), white, "the files that do not exist");
     assert_eq!(image.pixel(30, 10), Some(Rgba::opaque(0, 0, 255)));
 }
+
+#[test]
+fn a_class_style_of_labelcenter_is_warned_of_once_as_the_mapfile_loads_and_renders() {
+    // The engine warns of a line layer's class style of labelcenter, which draws nothing, for a
+    // mapfile as for a style document; the frontend does not warn of it again.
+    let dir = std::env::temp_dir().join(format!("forager-labelcenter-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("centre.map"),
+        r#"MAP
+  EXTENT 0 0 100 100
+  SIZE 101 101
+  LAYER
+    NAME "lines"
+    TYPE LINE
+    STATUS ON
+    CLASS
+      STYLE
+        COLOR 255 0 0
+        GEOMTRANSFORM labelcenter
+      END
+    END
+  END
+END
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("lines.geojson"),
+        r#"{"type": "LineString", "coordinates": [[0, 50], [100, 50]]}"#,
+    )
+    .unwrap();
+    let lines = format!("lines={}", dir.join("lines.geojson").display());
+    let result = Command::new(env!("CARGO_BIN_EXE_forager"))
+        .arg("render")
+        .arg(dir.join("centre.map"))
+        .args(["--source", &lines, "-o", "/dev/null"])
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(result.status.success(), "{stderr}");
+    let warnings: Vec<_> = stderr.lines().filter(|l| l.contains("warning [")).collect();
+    assert_eq!(warnings.len(), 1, "{stderr}");
+    assert!(
+        warnings[0].contains("centre.map:9:7: warning [geomtransform-not-drawn]"),
+        "{stderr}"
+    );
+}

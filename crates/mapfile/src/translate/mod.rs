@@ -21,9 +21,9 @@ use std::collections::BTreeMap;
 use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::c::{atoi, int_cast};
 use forager_style_ir::{
-    Bound, Class, Diagnostic, Expr, Extent, Fonts, GeomTransform, Layer, LayerProjection,
-    LayerStatus, MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef,
-    Span, Symbol, TransformTree, Units,
+    Bound, Class, Diagnostic, Expr, Extent, Fonts, Layer, LayerProjection, LayerStatus,
+    MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol,
+    TransformTree, Units,
 };
 
 use crate::MAX_DEFAULT_BYTES;
@@ -283,7 +283,6 @@ impl Translator<'_> {
                     "OUTPUTFORMAT" => self.output_format(&b.keyword, &b.span),
                     "LAYER" => {
                         if let Some(layer) = self.layer(b, &web) {
-                            self.class_labelcenter(&layer);
                             map.layers.push(layer);
                         }
                     }
@@ -528,7 +527,11 @@ impl Translator<'_> {
         if let [token] = d.values.as_slice()
             && let TokenKind::Expression(text) = &token.kind
         {
-            return self.transform_tree(text, &token.span, true);
+            let (tree, syntax) = self.transform_tree(text, &token.span)?;
+            if let Some(warning) = syntax {
+                self.diagnostics.push(warning);
+            }
+            return Some(tree);
         }
         self.invalid(d, "an expression");
         None
@@ -565,32 +568,6 @@ impl Translator<'_> {
     fn post_label_cache(&mut self, layer: &mut Layer, d: &Directive) {
         if let Some(post) = self.choice(d, &[("TRUE", true), ("FALSE", false)]) {
             layer.post_label_cache = post;
-        }
-    }
-
-    /// Warns of each class `STYLE` of `GEOMTRANSFORM labelcenter` of a line or a polygon layer:
-    /// msDrawTransformedShape (src/mapgeomtransform.c:245) fails the layer's draw on it, and the
-    /// engine draws nothing of the style. A label's style is drawn, and a point layer draws the
-    /// style at its points.
-    fn class_labelcenter(&mut self, layer: &Layer) {
-        if !matches!(
-            layer.render_mode,
-            Some(RenderMode::Line | RenderMode::Polygon)
-        ) {
-            return;
-        }
-        let spans: Vec<Span> = layer
-            .classes
-            .iter()
-            .flat_map(|class| &class.styles)
-            .filter(|style| style.geom_transform == Some(GeomTransform::LabelCenter))
-            .filter_map(|style| style.span.clone())
-            .collect();
-        for span in spans {
-            let message = "GEOMTRANSFORM labelcenter is drawn only by a label's style; on a \
-                           class's style of a line or polygon layer MapServer fails the layer's \
-                           draw, and the style draws nothing";
-            self.warn("unsupported-value", message, &span);
         }
     }
 
@@ -754,7 +731,13 @@ impl Translator<'_> {
                 {
                     class.max_scale_denom = self.scale_denom(d);
                 }
-                Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b, false)),
+                Node::Block(b) if b.keyword == "STYLE" => {
+                    let (style, transform_warnings) = self.style(b);
+                    for warning in transform_warnings {
+                        self.diagnostics.push(warning);
+                    }
+                    class.styles.push(style);
+                }
                 Node::Block(b) if b.keyword == "VALIDATION" => {}
                 Node::Block(b) if b.keyword == "LABEL" => {
                     match self.label(b, fallback.as_ref(), label_item) {

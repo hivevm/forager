@@ -1859,6 +1859,38 @@ fn a_style_of_a_geomtransform_expression_draws_nothing_and_is_reported() {
 }
 
 #[test]
+fn a_class_style_of_labelcenter_in_a_line_or_polygon_layer_draws_nothing_and_is_reported() {
+    // msDrawTransformedShape (src/mapgeomtransform.c:245) fails the draw of a line or a polygon
+    // layer on a class's style of labelcenter, which msDrawLabelCache alone draws: the style draws
+    // nothing, with a warning, whichever document wrote it, and the class's other style draws as
+    // alone. A point layer draws the style at its points and is not warned.
+    let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
+    let polygon =
+        r#"{"type": "Polygon", "coordinates": [[[10, 10], [90, 10], [90, 90], [10, 10]]]}"#;
+    let centred = Style {
+        geom_transform: Some(GeomTransform::LabelCenter),
+        ..line_style(GREEN, 9.0)
+    };
+    for (mode, shape) in [(RenderMode::Line, line), (RenderMode::Polygon, polygon)] {
+        let plain = line_style(BLUE, 3.0);
+        let alone = render_with(&map_with(mode, vec![plain.clone()]), Some(shape));
+        let rendered = render_with(&map_with(mode, vec![plain, centred.clone()]), Some(shape));
+        assert_eq!(codes(&rendered), ["geomtransform-not-drawn"], "{mode:?}");
+        assert!(
+            rendered.diagnostics[0].message.contains("labelcenter"),
+            "{}",
+            rendered.diagnostics[0].message
+        );
+        assert_eq!(
+            rendered.image, alone.image,
+            "{mode:?}: the other style draws"
+        );
+    }
+    let rendered = render_with(&map_with(RenderMode::Point, vec![centred]), Some(line));
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+}
+
+#[test]
 fn a_point_layer_draws_a_style_of_a_geomtransform_expression_at_its_points() {
     // pointLayerDrawShape draws every style at each point whatever its transform: a point layer's
     // style of an expression draws its markers, and nothing is reported.

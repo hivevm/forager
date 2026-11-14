@@ -255,7 +255,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
 }
 
 /// The reports on the styles of a layer drawn in `mode`: the symbols no symbol is named, and, but
-/// in a point layer, which draws them at its points, the GEOMTRANSFORM expressions not drawn.
+/// in a point layer, which draws them at its points, the styles of a GEOMTRANSFORM not drawn.
 fn style_reports(
     layer: &Layer,
     mode: RenderMode,
@@ -264,7 +264,7 @@ fn style_reports(
 ) {
     unknown_symbols(layer, symbols, diagnostics);
     if mode != RenderMode::Point {
-        expressions_not_drawn(layer, diagnostics);
+        styles_not_drawn(layer, diagnostics);
     }
 }
 
@@ -809,29 +809,40 @@ fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diag
     }
 }
 
-/// Warns of each class style whose `GEOMTRANSFORM` is an expression, which the engine does not
-/// draw on a style, of a line or a polygon layer: MapServer evaluates it by msDrawTransformedShape,
-/// most of its functions through GEOS. The style draws nothing; the class's other styles draw in
-/// their passes as before. A point layer draws such a style at its points, as pointLayerDrawShape
-/// draws every style whatever its transform, and is not warned.
-fn expressions_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
+/// Warns of each class style of a line or a polygon layer whose `GEOMTRANSFORM` the engine does
+/// not draw on a style. An expression MapServer evaluates by msDrawTransformedShape, most of its
+/// functions through GEOS; labelcenter fails the layer's draw there (src/mapgeomtransform.c:245),
+/// msDrawLabelCache alone drawing it on a label's style. The style draws nothing; the class's
+/// other styles draw in their passes as before. A point layer draws such a style at its points, as
+/// pointLayerDrawShape draws every style whatever its transform, and is not warned. The warning
+/// holds for a style document as for a mapfile, whose frontend does not warn of it again.
+fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
     for style in layer.classes.iter().flat_map(|class| &class.styles) {
-        if let Some(GeomTransform::Expression(tree)) = &style.geom_transform {
-            let holding = match tree {
-                TransformTree::NotDrawn(reason) => format!(", of {},", described(*reason)),
-                TransformTree::Drawn(_) => String::new(),
-            };
-            let message = format!(
-                "layer {}: the GEOMTRANSFORM expression{holding} of a class's style is not drawn: \
-                 the style draws nothing",
+        let message = match &style.geom_transform {
+            Some(GeomTransform::Expression(tree)) => {
+                let holding = match tree {
+                    TransformTree::NotDrawn(reason) => format!(", of {},", described(*reason)),
+                    TransformTree::Drawn(_) => String::new(),
+                };
+                format!(
+                    "layer {}: the GEOMTRANSFORM expression{holding} of a class's style is not \
+                     drawn: the style draws nothing",
+                    name(layer),
+                )
+            }
+            Some(GeomTransform::LabelCenter) => format!(
+                "layer {}: a class's style of GEOMTRANSFORM labelcenter is not drawn: only a \
+                 label's style draws labelcenter, and MapServer fails the layer's draw on it; the \
+                 style draws nothing",
                 name(layer),
-            );
-            diagnostics.push(Diagnostic::warning(
-                "geomtransform-not-drawn",
-                message,
-                style.span.clone().or_else(|| layer.span.clone()),
-            ));
-        }
+            ),
+            _ => continue,
+        };
+        diagnostics.push(Diagnostic::warning(
+            "geomtransform-not-drawn",
+            message,
+            style.span.clone().or_else(|| layer.span.clone()),
+        ));
     }
 }
 

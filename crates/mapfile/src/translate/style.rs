@@ -17,7 +17,7 @@
 
 use forager_style_ir::c::{int_cast, opacity_alpha};
 use forager_style_ir::{
-    Bound, GeomTransform, LineCap, LineJoin, LineOffset, Span, Style, TransformTree,
+    Bound, Diagnostic, GeomTransform, LineCap, LineJoin, LineOffset, Span, Style, TransformTree,
 };
 
 use super::{Range, Translator, kept_binding, kept_bindings};
@@ -26,9 +26,12 @@ use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
 
 impl Translator<'_> {
-    /// A class's `STYLE`, or a label's where `of_label`; a label's reader reports the transform
-    /// that leaves its label out itself, so the style's reader does not warn of it again.
-    pub(super) fn style(&mut self, block: &Block, of_label: bool) -> Style {
+    /// A class's or a label's `STYLE`, with the warnings of its `GEOMTRANSFORM` directives that
+    /// hold no transform: a name that names none, or an expression's syntax error at its place.
+    /// The reader of a class's style gives them; a label's warns instead of the label it leaves
+    /// out. The transform the style holds is warned of where it is not drawn by the engine.
+    pub(super) fn style(&mut self, block: &Block) -> (Style, Vec<Diagnostic>) {
+        let mut transform_warnings = Vec::new();
         let mut style = Style {
             span: Some(block.span.clone()),
             ..Style::default()
@@ -120,7 +123,11 @@ impl Translator<'_> {
                     "MAXSIZE" => style.max_size = self.number(d, Range::above(0.0)),
                     "MINWIDTH" => style.min_width = self.number(d, Range::at_least(0.0)),
                     "MAXWIDTH" => style.max_width = self.number(d, Range::above(0.0)),
-                    "GEOMTRANSFORM" => style.geom_transform = self.geom_transform(d, of_label),
+                    "GEOMTRANSFORM" => {
+                        let (transform, warning) = self.geom_transform(d);
+                        style.geom_transform = transform;
+                        transform_warnings.extend(warning);
+                    }
                     _ => self.unhandled_directive(d),
                 },
                 Node::Block(b) if b.keyword == "PATTERN" => style.pattern = self.pattern(b),
@@ -128,7 +135,7 @@ impl Translator<'_> {
             }
         }
         opacity_beside_binding(&mut style, opacity_value);
-        style
+        (style, transform_warnings)
     }
 
     /// `SIZE`, kept to `binding`, the last binding it had: bindStyle evaluates an expression
@@ -194,17 +201,18 @@ impl Translator<'_> {
         }
     }
 
-    /// `GEOMTRANSFORM` by name, or an expression as its transform tree.
-    fn geom_transform(&mut self, d: &Directive, of_label: bool) -> Option<GeomTransform> {
+    /// `GEOMTRANSFORM` by name, or an expression as its transform tree, with the warning, not
+    /// given, of a name that names no transform or of an expression's syntax error.
+    fn geom_transform(&mut self, d: &Directive) -> (Option<GeomTransform>, Option<Diagnostic>) {
         // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION): a string, a bare word that is no
-        // keyword among them, or an expression, which the engine does not draw and reports. A
-        // label's reader reports the label it leaves out of a style of an expression, so a
-        // syntax error of a label's style is not warned of again.
+        // keyword among them, or an expression, which the engine does not draw and reports.
         if let [token] = d.values.as_slice()
             && let TokenKind::Expression(text) = &token.kind
         {
-            let tree = self.transform_tree(text, &token.span, !of_label)?;
-            return Some(GeomTransform::Expression(tree));
+            return match self.transform_tree(text, &token.span) {
+                Some((tree, syntax)) => (Some(GeomTransform::Expression(tree)), syntax),
+                None => (None, None),
+            };
         }
         let name = match d.values.as_slice() {
             [token] => token.string().map(str::to_ascii_lowercase),
@@ -212,7 +220,7 @@ impl Translator<'_> {
         };
         let Some(name) = name else {
             self.invalid(d, "a transform name or an expression");
-            return None;
+            return (None, None);
         };
         // msStyleSetGeomTransform, src/mapgeomtransform.c: the first of its names the transform
         // begins with, in its order.
@@ -230,25 +238,24 @@ impl Translator<'_> {
             .into_iter()
             .find(|(prefix, _)| name.starts_with(prefix))
             .map(|(_, transform)| transform);
-        if transform.is_none() && !of_label {
+        let warning = transform.is_none().then(|| {
             let message = "this GEOMTRANSFORM names no transform; a class's style is drawn as if \
                            it had none";
-            self.warn("unsupported-value", message, &d.span);
-        }
-        transform
+            Diagnostic::warning("unsupported-value", message, Some(d.span.clone()))
+        });
+        (transform, warning)
     }
 }
 
 impl Translator<'_> {
     /// The transform tree of a `GEOMTRANSFORM` expression, `text` the token at `span` with its
-    /// parentheses (ADR-draft-typed-geomtransform). A syntax error is warned of at its place,
-    /// where `warn`; a tree past the nesting bound fails the load (Q-9).
+    /// parentheses (ADR-draft-typed-geomtransform), with the warning, for the caller to give, of
+    /// its syntax error at its place; a tree past the nesting bound fails the load (Q-9).
     pub(super) fn transform_tree(
         &mut self,
         text: &str,
         span: &Span,
-        warn: bool,
-    ) -> Option<TransformTree> {
+    ) -> Option<(TransformTree, Option<Diagnostic>)> {
         let translated = match expression::geom_transform(text) {
             Ok(translated) => translated,
             Err(problem) => {
@@ -256,9 +263,7 @@ impl Translator<'_> {
                 return None;
             }
         };
-        if let Some((what, character)) = translated.syntax
-            && warn
-        {
+        let syntax = translated.syntax.map(|(what, character)| {
             let place = Span {
                 column: span
                     .column
@@ -269,9 +274,9 @@ impl Translator<'_> {
                 "the GEOMTRANSFORM expression does not parse as a shape: {what}; the transform \
                  draws nothing"
             );
-            self.warn("invalid-expression", &message, &place);
-        }
-        Some(translated.tree)
+            Diagnostic::warning("invalid-expression", message, Some(place))
+        });
+        Some((translated.tree, syntax))
     }
 }
 
