@@ -17,6 +17,16 @@ PNPOLY_COPYRIGHT='Copyright (c) 1970-2003, Wm. Randolph Franklin'
 PNPOLY_CONDITION='Redistributions of source code must retain the above copyright notice'
 PNPOLY_ENDORSE='The name of W. Randolph Franklin may not be used to endorse or promote'
 
+# PROJ's notice, from its file COPYING, which a port of its formulas under crates/proj holds
+# (ADR-0037): its terms' first words, which no other notice holds, and
+# the permission sentence and the disclaimer of the MIT licence, which MapServer's share.
+PROJ_TERMS='All source, data files and other contents of the PROJ package are available'
+
+# holds_proj <file> — whether the file holds PROJ's notice.
+holds_proj() {
+  grep -qF "$PROJ_TERMS" "$1" && grep -qF "$PERMISSION" "$1" && grep -qF "$DISCLAIMER" "$1"
+}
+
 # holds_pnpoly <file> — whether the file holds Franklin's notice.
 holds_pnpoly() {
   grep -qF "$PNPOLY_COPYRIGHT" "$1" && grep -qF "$PNPOLY_CONDITION" "$1" \

@@ -1038,7 +1038,7 @@ mod tests {
         let circle: Vec<Point> = (0..40_000)
             .map(|i| {
                 let t = f64::from(i) / 40_000.0 * std::f64::consts::TAU;
-                p(32.0 + 30.0 * t.cos(), 32.0 + 30.0 * t.sin())
+                p(32.0 + 30.0 * libm::cos(t), 32.0 + 30.0 * libm::sin(t))
             })
             .collect();
         let dense: Vec<[Point; 2]> = (0..2_000)

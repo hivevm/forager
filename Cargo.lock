@@ -280,6 +280,7 @@ dependencies = [
  "forager-expr",
  "forager-label",
  "forager-ports",
+ "forager-proj",
  "forager-render",
  "forager-render-agg",
  "forager-style-ir",
@@ -326,10 +327,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "forager-proj"
+version = "0.1.0"
+dependencies = [
+ "forager-style-ir",
+ "libm",
+]
+
+[[package]]
 name = "forager-render"
 version = "0.1.0"
 dependencies = [
  "forager-style-ir",
+ "libm",
 ]
 
 [[package]]
@@ -340,6 +350,7 @@ dependencies = [
  "forager-render",
  "forager-style-ir",
  "i_overlay",
+ "libm",
 ]
 
 [[package]]

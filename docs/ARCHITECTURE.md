@@ -116,12 +116,31 @@ golden path and the test pattern an agent copies from are named here.
   ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax in `pattern.rs`, and it reads
   numbers with `style-ir`'s `c.rs`, as the engine reads a style's or a label's bound values.
   Synchronous, without I/O; the only crate that uses `regex`.
+- **`proj`** — the reprojection: its own port of PROJ 9.4.0's formulas, the version the pinned
+  MapServer build links, every transcendental function from `libm`, so that a point reprojects to
+  the same bits on every target (ADR-0037, Q-2). It reads a
+  projection as the style IR's proj4 string, parameters and tables as PROJ's `pj_init` reads them
+  (`params.rs`), implements longitude and latitude, `lcc`, and `merc` (`lcc.rs`, `merc.rs`, their
+  shared functions in `common.rs`), and shifts a datum through WGS84 as PROJ's cs2cs emulation
+  chains it, by an exact Helmert transform of `+towgs84` or a change of ellipsoid alone
+  (`datum.rs`); MapServer goes through `proj_create_crs_to_crs_from_pj` instead, not verified to
+  pick the same operation. Its tables hold only the datums, ellipsoids, and units the cases in
+  scope name: WGS84 and NAD83, their ellipsoids, and metres.
+  Anything else is an error value naming it; a point that does not transform is one too, never a
+  panic. It decides whether two projections differ as `msProjectionsDiffer` compares their
+  parameters, and reprojects a rectangle by its sides' points as `msProjectRect` samples them.
+  Synchronous, without I/O; it depends on `style-ir` and `libm` alone, and each file that ports a
+  PROJ source holds PROJ's notice (`scripts/check-notice.sh`).
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, or, for a layer with inline features, a source
   in memory of its own over them, which reports a bound source as not read (`inline.rs`,
-  ADR-0018), replaces the shape of each feature that passes the layer's filter by the layer's
-  `GEOMTRANSFORM` through `symbolize`, up to the first feature past its `MAXFEATURES`, and draws
-  nothing of a layer whose transform tree is `not_drawn` or fails, with a warning (`classes.rs`,
+  ADR-0018); for a layer whose projection differs from the map's, it asks for the map's extent
+  reprojected into the layer's and reprojects each feature's shape into the map's before anything
+  else touches it, the points that do not reproject left out with a warning, and draws nothing of
+  a layer whose projection does not read, with a warning (`reproject.rs`); replaces the shape of
+  each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
+  up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
+  tree is `not_drawn` or fails, with a warning (`classes.rs`,
   ADR-0036), draws each feature that passes the layer's
   filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
   the frontend takes from the layer, its metadata, the map's, or the output format, its styles'

@@ -14,5 +14,9 @@ forager-render.workspace = true
 agg-rust = "1.2.0"
 i_overlay = { version = "9.1.0", default-features = false }
 
+[dev-dependencies]
+# The tests' circles take sin and cos from libm, as the output path does (Q-2).
+libm.workspace = true
+
 [lints]
 workspace = true

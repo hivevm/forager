@@ -6,7 +6,22 @@
 **Meaning.** The coordinate reference system of the map's extent and image, and of a layer's
 features. A layer without one is in the map's projection, and MapServer then reprojects nothing
 (`msProjectionsDiffer` in `src/mapproject.c` treats a projection without parameters as no
-difference). Reprojection itself is not yet drawn.
+difference).
+
+**Reprojection.** A layer whose projection differs from the map's is drawn in the map's, as
+`msDrawShape` in `src/mapdraw.c` reprojects each shape by `msProjectShapeEx` before its
+`GEOMTRANSFORM`, classes, and labels. Two projections differ as `msProjectionsDiffer` finds it:
+where neither lacks parameters and they differ in number or in any one, compared in order as text;
+the IR compares the proj4 strings its frontend wrote, `init=` expanded, where MapServer compares the
+arguments as written. The layer's source is asked for the map's extent reprojected into the layer's
+projection: the rectangle that holds the points of its sides, a hundred along each, as
+`msProjectRect` samples them before it refines the edges. A point that does not reproject is left
+out with a warning naming the layer, and with it a line left with fewer than two points, a ring
+with fewer than three, and a feature left with nothing; MapServer finds a horizon along a line
+instead, and wraps lines at the dateline, which Forager does not do yet. A projection the core does
+not implement leaves its layer undrawn with a warning. The core implements longitude and latitude,
+`lcc`, and `merc`, a datum's shift by `+towgs84`, and the datums WGS84 and NAD83, as PROJ 9.4.0
+computes them (ADR-0037). A layer of `AUTO` is not reprojected yet.
 
 **Parameters.** MapServer hands every parameter to PROJ, so the frontend writes each one with a
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the

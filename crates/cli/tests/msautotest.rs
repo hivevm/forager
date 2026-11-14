@@ -88,9 +88,10 @@ const SKIPPED: &[(&str, &str)] = &[
     ),
 ];
 
-/// The EPSG codes the suite names beyond those built into the resolver (ADR-0019). Their
-/// definitions here are stand-ins, so that the test carries no EPSG data: G-1 decides that a
-/// mapfile loads; whether a projection is right is G-11's.
+/// The EPSG codes the suite names beyond those built into the resolver (ADR-0019). The suite's own
+/// init file [`EPSG_FILE`] defines some; each code it lacks has a stand-in in longitude and
+/// latitude, so that the test carries no EPSG data (ADR-0037): G-1
+/// decides that a mapfile loads, and a case whose layer is in a stand-in is not drawn right.
 const EPSG_CODES: &[u32] = &[
     2157, 3347, 3395, 3978, 21781, 25833, 26711, 26915, 26917, 27700, 102977,
 ];
@@ -132,6 +133,9 @@ fn report(text: &str) {
     println!("{text}");
 }
 
+/// The suite's EPSG table, `wxs/data/epsg2`, which the harness passes as the CLI's.
+const EPSG_FILE: &str = "wxs/data/epsg2";
+
 fn stand_in() -> StandIn {
     StandIn(EpsgTable::with_table(&epsg_table()).unwrap())
 }
@@ -161,11 +165,22 @@ fn suite() -> PathBuf {
     )
 }
 
+/// The EPSG table of the harness: the suite's [`EPSG_FILE`], and a stand-in in longitude and
+/// latitude for each of [`EPSG_CODES`] that it does not define.
 fn epsg_table() -> String {
-    EPSG_CODES
-        .iter()
-        .map(|code| format!("<{code}> +proj=longlat +datum=WGS84 +no_defs <>\n"))
-        .collect()
+    let file = suite().join(EPSG_FILE);
+    let mut table = std::fs::read_to_string(&file)
+        .unwrap_or_else(|e| panic!("the suite's EPSG table {}: {e}", file.display()));
+    let defined = EpsgTable::with_table(&table).expect("the suite's EPSG table reads");
+    for code in EPSG_CODES {
+        if defined.resolve("epsg", &code.to_string()).is_none() {
+            table.push_str(&format!(
+                "\n<{code}> +proj=longlat +datum=WGS84 +no_defs <>"
+            ));
+        }
+    }
+    table.push('\n');
+    table
 }
 
 #[test]
@@ -582,6 +597,8 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
     // Verifies: G-9
     // Verifies: Q-2
     // Verifies: ADR-0034
+    // Verifies: ADR-0037, for misc/quoting.map, reprojected from the
+    // suite's EPSG:3978 natively and on wasm32
     let suite = suite();
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
