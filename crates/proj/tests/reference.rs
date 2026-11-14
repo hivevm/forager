@@ -10,8 +10,8 @@ use forager_style_ir::Coord;
 const POINTS: &str = include_str!("reference/points.tsv");
 const RECORD_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/reference/mapserver.tsv");
 
-/// The tolerance of G-11, in metres. Provisional: the maintainer states it in G-11 from the spread
-/// this test reports, and this constant follows the specification.
+/// The tolerance of G-11, in metres, as the specification states it: 1 mm, set by the maintainer
+/// from the spread this test reports (1.9 nm over the reference points at the time).
 const TOLERANCE_METRES: f64 = 1e-3;
 
 /// WGS84's semimajor axis and squared eccentricity, by which a difference in degrees is measured
