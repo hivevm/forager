@@ -1,6 +1,5 @@
 # Ticket: `PROJECTION AUTO` takes the projection the source declares
 
-
 ## What to build
 
 A layer of `PROJECTION AUTO` takes its projection from its source: a shapefile from the WKT of the

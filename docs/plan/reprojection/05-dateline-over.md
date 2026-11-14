@@ -1,6 +1,5 @@
 # Ticket: Shapes crossing the dateline keep their shape, `+over` included
 
-
 ## What to build
 
 A line or polygon reprojected into longitude and latitude across the dateline is wrapped as

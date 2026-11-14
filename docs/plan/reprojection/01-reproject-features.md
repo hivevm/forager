@@ -1,6 +1,5 @@
 # Ticket: A layer in another projection is drawn in the map's (tracer bullet)
 
-
 ## What to build
 
 A layer whose `PROJECTION` differs from the map's is drawn in the map's projection: each feature's

@@ -1,6 +1,5 @@
 # Ticket: Shapes are cut at the horizon of an orthographic map (RFC 5)
 
-
 ## What to build
 
 A line reprojected into a projection where part of it lies beyond the horizon, such as an

@@ -1,6 +1,5 @@
 # Spec: Reprojection of vector layers
 
-
 ## Problem
 
 A mapfile often holds layers in other projections than the map's: a shapefile in a national grid

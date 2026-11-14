@@ -1,6 +1,5 @@
 # Ticket: proj4rs is held to PROJ within a measured tolerance (G-11)
 
-
 ## What to build
 
 A measurement of proj4rs against PROJ at the pinned MapServer build, over the transformations the

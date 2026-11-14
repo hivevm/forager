@@ -1,6 +1,5 @@
 # Ticket: The area asked of a source is the map's extent as MapServer projects it
 
-
 ## What to build
 
 The engine projects the map's extent into a layer's projection as `msProjectRect` does: its
