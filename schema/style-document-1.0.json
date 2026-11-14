@@ -1182,7 +1182,7 @@
           "const": "fromtext"
         },
         {
-          "description": "An operation of literals that folds to no finite JSON number, a `%` by 0 among them.",
+          "description": "An operation of literals that folds to no finite JSON number, a `%` by 0 among them, or a\nsingle literal past a double, such as `1e999`, which `atof` reads as infinite.",
           "type": "string",
           "const": "literal"
         },

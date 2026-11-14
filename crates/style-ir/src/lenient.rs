@@ -271,8 +271,8 @@ fn never_matching(
 
 /// A transform tree's `not_drawn` reason at `path` that this build does not know, as serde's
 /// `reason` says, read as not drawn: the reason `syntax`, the one of the closed list that names no
-/// construct, with a warning naming its path. A reason added in a minor version so fails closed
-/// (ADR-0036).
+/// construct, which the engine's later warning names, with a warning naming the reason and its
+/// path. A reason added in a minor version so fails closed (ADR-0036).
 fn unknown_reason(value: &mut Value, path: &Pointer, reason: &str) -> Option<Diagnostic> {
     if !matches!(path.segments(), [.., Segment::Key(k)] if k == "not_drawn")
         || !is_unknown_variant(reason)

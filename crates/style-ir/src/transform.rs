@@ -102,7 +102,8 @@ pub enum NotDrawn {
     Text,
     /// A shape `fromtext` reads from a text.
     Fromtext,
-    /// An operation of literals that folds to no finite JSON number, a `%` by 0 among them.
+    /// An operation of literals that folds to no finite JSON number, a `%` by 0 among them, or a
+    /// single literal past a double, such as `1e999`, which `atof` reads as infinite.
     Literal,
     /// An expression MapServer's grammar does not parse as a shape, a `/` by 0 among them.
     Syntax,
