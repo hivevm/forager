@@ -87,7 +87,7 @@ to invent.
   when a map is drawn, from its resolution, its scale, and the layer's size units, as MapServer
   computes it ([`semantics/scale.md`](semantics/scale.md)).
 - **Script** — The Unicode Script property of a character (UAX #24), by which MapServer splits a
-  label's line it does not lay out with its basic shaper. Latin covers the Latin letters; Common
+  label's line that holds a character at or above U+02B0. Latin covers the Latin letters; Common
   covers the characters every script shares, such as digits, punctuation, and symbols.
 - **Source reference** — A layer's description of where its data lives — a kind, the name of the
   choice MapServer reads its `CONNECTIONTYPE` as (`POSTGRESQL` is `ogr`), and properties taken
