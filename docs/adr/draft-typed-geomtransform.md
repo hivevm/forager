@@ -126,7 +126,8 @@ Only the mapfile frontend translates it from MapServer's text.
   from the C, `[map_cellsize]` and the layer's `UNITS` among them;
 - drawing a class style's expression: the engine keeps drawing none, as today;
 - the bounds on the points a transform adds and visits, which Q-9 does not yet name;
-- a label's style, which keeps `LabelTransform` and is left out with its label as today;
+- a label's style of an expression, which keeps `LabelTransform` and is left out with its label as
+  today;
 - porting any function of the not-drawn list, `buffer` and `centerline` among them.
 
 ## Alternatives considered
@@ -138,9 +139,10 @@ Only the mapfile frontend translates it from MapServer's text.
 - **A unit variant, `Unsupported`, with the text only in the load's diagnostic** — smallest for
   today's class styles, which draw no expression. It cannot carry the five ported functions of a
   layer, which the maintainer decided to draw.
-- **The style or the layer left out at load with its warning** — what a label's style of an unknown
-  transform gets. A style document could then not say that a layer draws nothing. A layer of
-  `centerline` would draw its untransformed shapes, where MapServer draws only centerlines.
+- **The style or the layer left out at load with its warning** — what a label's style of an
+  expression or of a transform other than `labelpnt`, `labelpoly`, or `labelcenter` gets. A style
+  document could then not say that a layer draws nothing. A layer of `centerline` would draw its
+  untransformed shapes, where MapServer draws only centerlines.
 - **The not-drawn function kept in place in the tree, with its arguments** — `buffer(s, 1)` as a
   node. It types arguments the engine never reads. `difference` needs a second shape, and
   `javascript` holds a script text.
