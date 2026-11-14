@@ -10,8 +10,8 @@
 G-9 asks that the same input rendered natively and on `wasm32-unknown-unknown` yields
 bit-identical RGBA buffers; it backs Q-2, and the specification's *Strategy* ends each phase with
 it green. The browser bundle is built for that target with wasm-bindgen (`crates/bindings-wasm`,
-`scripts/build-web.sh`), but nothing runs it outside a browser, and
-[ADR-0007](0007-rust-toolchain.md) puts a browser test runner out of scope.
+`scripts/build-web.sh`), but nothing runs it outside a browser, and no test runs a browser: a
+browser test waits for G-14, as *Out of scope* below says.
 [ADR-0009](0009-dev-container.md) installs no Node in the dev container, and a test is to run there
 as on CI.
 
@@ -24,7 +24,7 @@ The candidates, read on 2026-11-07: wasmi 2.0.0 (an interpreter, MIT OR Apache-2
 small tree, two published security audits), wasmtime 50.0.1 (Cranelift, Apache-2.0 WITH
 LLVM-exception, which `deny.toml` does not admit, a heavy build, a new major version about every
 month), wasmer 7.5.0 (several compiler backends, the largest tree), and Node with wasm-bindgen's
-glue (no Node in the container; the browser runner [ADR-0007](0007-rust-toolchain.md) left out).
+glue (no Node in the container, [ADR-0009](0009-dev-container.md); no browser test before G-14).
 None of the Rust runtimes runs wasm-bindgen's glue without stubbing its imports, which follow
 wasm-bindgen's internals.
 
