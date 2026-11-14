@@ -201,12 +201,12 @@ struct Translator<'a> {
     diagnostics: &'a mut Report,
     /// The map's symbols, read before its layers so that a style's reference resolves.
     symbols: Vec<Symbol>,
-    /// The position among `symbols` of the first of each name, lower-cased, so that a name is
-    /// found without scanning them (Q-9).
+    /// The position among `symbols` of the first of each name, by its `symbol_name_key`, so that
+    /// a name is found as `ms_get_symbol_index` finds it without scanning them (Q-9).
     names: BTreeMap<String, usize>,
     /// The symbol indexes the styles give, each with its directive's span, checked against the
     /// symbols once those the styles name are appended.
-    numbered: Vec<(u32, Span)>,
+    numbered: Vec<(i32, Span)>,
     /// The map's fonts, read before its layers so that a label's font is checked.
     fonts: Fonts,
     /// What the defaults of `VALIDATION` have put into the load's expressions, held to
@@ -256,11 +256,7 @@ impl Translator<'_> {
                 Node::Directive(d) => match d.keyword.as_str() {
                     "NAME" => map.name = self.string(d),
                     "EXTENT" => map.extent = self.extent(d),
-                    "SIZE" => {
-                        map.size = self
-                            .numbers(d, 2)
-                            .map(|n| [n[0].max(0.0) as u32, n[1].max(0.0) as u32]);
-                    }
+                    "SIZE" => map.size = self.map_size(d),
                     "IMAGECOLOR" => map.image_color = self.image_color(d),
                     "IMAGETYPE" => self.output_format(&d.keyword, &d.span),
                     "RESOLUTION" => map.resolution = self.number(d, RESOLUTION),
@@ -650,7 +646,10 @@ impl Translator<'_> {
                     if let Node::Directive(d) = node
                         && d.keyword == "OPACITY"
                     {
-                        opacity = self.number(d, Range::within(0.0, 100.0)).map(f64::trunc);
+                        // getInteger's `(int)` cast, of a number already within 0 to 100.
+                        opacity = self
+                            .number(d, Range::within(0.0, 100.0))
+                            .map(|n| f64::from(int_cast(n)));
                     }
                 }
                 opacity
@@ -815,6 +814,27 @@ impl Translator<'_> {
         }
     }
 
+    /// A map's `SIZE` as loadMap reads it (src/mapfile.c:6824-6829): two numbers each checked by
+    /// getInteger against 1 and the map's `MAXSIZE`, an `int`, and cast to an `int`. A number below
+    /// 1 or above INT_MAX, past any `MAXSIZE`, fails the load; the engine bounds the rest (Q-9).
+    fn map_size(&mut self, d: &Directive) -> Option<[u32; 2]> {
+        let numbers = self.numbers(d, 2)?;
+        // msCheckNumber compares the double with the bounds before the cast
+        // (src/mapfile.c:276-290, 312-317); `MAXSIZE` is at most INT_MAX.
+        let side = |n: f64| {
+            Some(n)
+                .filter(|n| (1.0..=f64::from(i32::MAX)).contains(n))
+                .and_then(|n| u32::try_from(int_cast(n)).ok())
+        };
+        match (side(numbers[0]), side(numbers[1])) {
+            (Some(width), Some(height)) => Some([width, height]),
+            _ => {
+                self.invalid(d, "two numbers of at least 1 within an `int`");
+                None
+            }
+        }
+    }
+
     fn extent(&mut self, d: &Directive) -> Option<Extent> {
         self.numbers(d, 4).map(|n| Extent {
             min_x: n[0],
@@ -847,7 +867,8 @@ impl Translator<'_> {
                     self.invalid(d, "three numbers from -255 to 255");
                     return None;
                 }
-                Some(([rgb[0], rgb[1], rgb[2]].map(|c| c.trunc() as i32), 255))
+                // loadColor's `(int)` cast, of a channel already within -255 to 255.
+                Some(([rgb[0], rgb[1], rgb[2]].map(int_cast), 255))
             }
         }
     }

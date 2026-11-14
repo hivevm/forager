@@ -46,7 +46,7 @@ pub use crate::line::{Pass, outlined};
 pub use crate::line_marker::MAX_MARKER_POINTS;
 pub use crate::shade::shade;
 pub use crate::symbol::{
-    Factors, Mark, Pixmaps, Resolved, mark, marker_size_of, marker_size_with, named_index,
-    pixmap_marker_size, resolve, symbol_ops,
+    Factors, Mark, Pixmaps, Resolved, mark, marker_size_of, marker_size_with, pixmap_marker_size,
+    resolve, symbol_ops,
 };
 pub use crate::tile::{MAX_DECODED_IMAGE_BYTES, Tiles};

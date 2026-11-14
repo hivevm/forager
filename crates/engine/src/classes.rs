@@ -24,7 +24,9 @@ use std::collections::BTreeSet;
 
 use forager_expr::{Evaluator, Failure, Lookup};
 use forager_ports::{Feature, Properties, Value};
-use forager_style_ir::c::{atof, atoi, c_str, ms_nint, ms_string_split};
+use forager_style_ir::c::{
+    atof, atoi, c_str, ms_get_symbol_index, ms_nint, ms_string_split, opacity_alpha,
+};
 use forager_style_ir::{Bound, Diagnostic, Expr, Layer, Map, Rgba, Span, Style, Symbol, Units};
 
 use crate::bindable::{self, Field, Written};
@@ -355,8 +357,7 @@ pub(crate) fn with_opacity<T: Clone>(style: Cow<'_, Style<T>>) -> Cow<'_, Style<
     if opacity >= 100 {
         return style;
     }
-    #[expect(clippy::cast_possible_truncation, reason = "in 0..256")]
-    let alpha = ms_nint(f64::from(opacity) * 2.55).rem_euclid(256) as u8;
+    let alpha = opacity_alpha(opacity);
     let mut style = style.into_owned();
     for color in [&mut style.color, &mut style.outline_color] {
         if let Some(Bound::Value(c)) = color {
@@ -487,15 +488,15 @@ fn layer_scale_factor(
     }
 }
 
-/// The index of a symbol by its name, as msGetSymbolIndex finds it (see
-/// [`forager_symbolize::named_index`]); 0, the default symbol, for a name the symbol set does not
-/// hold, which MapServer would next read as an image file, not drawn yet.
+/// The index of a symbol by its name, as msGetSymbolIndex finds it ([`ms_get_symbol_index`]); 0,
+/// the default symbol, for a name the symbol set does not hold, which MapServer would next read as
+/// an image file, not drawn yet.
 fn symbol_index(name: &str, symbols: &[Symbol]) -> u32 {
     #[expect(
         clippy::cast_possible_truncation,
         reason = "an index into the symbol set, held far below u32::MAX by the input's bounds (Q-9)"
     )]
-    let index = forager_symbolize::named_index(name, symbols).map_or(0, |index| index as u32);
+    let index = ms_get_symbol_index(name, symbols).map_or(0, |index| index as u32);
     index
 }
 

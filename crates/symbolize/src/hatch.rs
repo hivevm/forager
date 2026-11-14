@@ -24,7 +24,7 @@
 
 use forager_render::{Hatch, Point};
 use forager_style_ir::Coord;
-use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_max, ms_nint};
+use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_compute_bounds, ms_max, ms_nint};
 use forager_style_ir::{Rgba, Style, Symbol};
 
 use crate::bounds;
@@ -365,20 +365,17 @@ pub(crate) fn hatch_polygon(
     image: (u32, u32),
     reference: Point,
 ) -> Option<Vec<[Point; 2]>> {
-    let mut points = rings
+    // msHatchPolygon takes msComputeBounds over every point, src/mapagg.cpp:1137; here a point
+    // that is no number or infinite is left out first, a departure from that C kept from before
+    // the port, whose drawing of such bounds through createHatch is not ported.
+    let finite = rings
         .iter()
         .flatten()
-        .filter(|p| p.x.is_finite() && p.y.is_finite());
-    let Some(first) = points.next() else {
+        .filter(|p| p.x.is_finite() && p.y.is_finite())
+        .map(|p| [p.x, p.y]);
+    let Some([min_x, min_y, max_x, max_y]) = ms_compute_bounds(finite) else {
         return Some(Vec::new());
     };
-    let (mut min_x, mut min_y, mut max_x, mut max_y) = (first.x, first.y, first.x, first.y);
-    for p in points {
-        min_x = min_x.min(p.x);
-        min_y = min_y.min(p.y);
-        max_x = max_x.max(p.x);
-        max_y = max_y.max(p.y);
-    }
     let grow = width * 0.7072;
     // MapServer's `(int)` of the box's size, plus 1, in an `int`: a box past an `int` gives a
     // negative size, over which no line is laid.

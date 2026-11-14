@@ -15,7 +15,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use forager_style_ir::c::{int_cast, ms_max, ms_min, ms_nint};
+use forager_style_ir::c::{int_cast, lrint, ms_max, ms_min, ms_nint};
 
 /// The size a label's glyphs are drawn at, in points, as `msComputeTextPath` computes it
 /// (`src/maplabel.c:71-75`) into the `int` `glyph_size`: the label's size times the scale factor,
@@ -36,18 +36,15 @@ pub fn glyph_size(
 }
 
 /// The pixel size, FreeType's ppem, of a glyph size: `MS_NINT(size * 96 / 72.0)` of the glyph size
-/// taken as an `unsigned int`, held between 1 and 65535 as `FT_Set_Pixel_Sizes` holds it.
+/// taken as an `unsigned int` (msGetGlyphByIndex, `src/fontcache.c:294-296`), `lrint`'s `long`
+/// held between 1 and 65535 as `FT_Set_Pixel_Sizes` holds it.
 pub fn pixel_size(glyph_size: f64) -> u16 {
-    let pixels = (glyph_size.trunc() * 96.0 / 72.0).round_ties_even();
-    if pixels >= 65535.0 {
+    let pixels = lrint(glyph_size.trunc() * 96.0 / 72.0);
+    if pixels >= 65535 {
         u16::MAX
-    } else if pixels >= 1.0 {
-        // In 1..65535 and integral, so the conversion is exact.
-        #[expect(clippy::cast_possible_truncation, reason = "in 1..65535 and integral")]
-        let pixels = pixels as u16;
-        pixels
     } else {
-        1
+        // Below 1 it is 1; in 1..65535 the conversion is exact.
+        u16::try_from(pixels).map_or(1, |pixels| pixels.max(1))
     }
 }
 
@@ -85,7 +82,7 @@ mod tests {
 
     #[test]
     fn the_pixel_size_is_rounded_half_to_even_and_held_as_freetype_holds_it() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0031, ADR-0036
         assert_eq!(pixel_size(10.0), 13); // 13.33
         assert_eq!(pixel_size(9.0), 12); // 12.0
         assert_eq!(pixel_size(15.0), 20); // 20.0
@@ -94,5 +91,8 @@ mod tests {
         assert_eq!(pixel_size(0.0), 1);
         assert_eq!(pixel_size(1e12), 65535);
         assert_eq!(pixel_size(f64::NAN), 1);
+        // MS_NINT is lrint, whose `long` past its range is LONG_MIN, held at 1, where rounding
+        // alone would hold it at 65535.
+        assert_eq!(pixel_size(1e19), 1);
     }
 }

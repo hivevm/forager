@@ -15,7 +15,7 @@
 
 //! A class's or a label's `STYLE` blocks.
 
-use forager_style_ir::c::ms_nint;
+use forager_style_ir::c::{int_cast, opacity_alpha};
 use forager_style_ir::{Bound, GeomTransform, LineCap, LineJoin, LineOffset, Style};
 
 use super::{Range, Translator, kept_binding, kept_bindings};
@@ -95,10 +95,11 @@ impl Translator<'_> {
                     "LINEJOINMAXSIZE" => {
                         style.line_join_max_size = self.number(d, Range::above(0.0));
                     }
-                    // loadStyle truncates an opacity and clamps it to 0..100.
+                    // loadStyle casts an opacity to an `int` and clamps it to 0..100
+                    // (src/mapfile.c:2903-2904), so one past an `int`, INT_MIN, is 0.
                     "OPACITY" => {
                         let opacity = self.bound_number(d, Range::any(), false).map(|o| match o {
-                            Bound::Value(n) => Bound::Value(n.trunc().clamp(0.0, 100.0)),
+                            Bound::Value(n) => Bound::Value(f64::from(int_cast(n).clamp(0, 100))),
                             bound => bound,
                         });
                         if let Some(Bound::Value(n)) = opacity {
@@ -241,7 +242,7 @@ fn opacity_beside_binding(style: &mut Style, opacity: Option<f64>) {
     if let (Some(Bound::Binding { .. }), Some(opacity)) = (&style.opacity, opacity)
         && opacity < 100.0
     {
-        let alpha = u8::try_from(ms_nint(opacity * 2.55)).unwrap_or(u8::MAX);
+        let alpha = opacity_alpha(int_cast(opacity));
         for color in [&mut style.color, &mut style.outline_color] {
             if let Some(Bound::Value(c)) = color {
                 c.a = alpha;

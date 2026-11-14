@@ -52,9 +52,12 @@ as the layer's source and reports a source a host binds to such a layer as not r
 The CLI binds no shapefile to it, so its `DATA` is not read. It delivers the features in the order
 they were written, each whose bounds meet the extent drawn, edges included
 (`msINLINELayerNextShape`, `msRectOverlap`); a feature without points has the bounds `-1 -1 -1
--1` that `msInitShape` gives it. A point shape of one point is delivered as a point and any other
-as a multipoint, a line shape of one part as a line and any other as a multi-line, and a polygon
-shape as one polygon of all its parts, as a shapefile's records are.
+-1` that `msInitShape` gives it. `msComputeBounds` folds the points by `MS_MIN` and `MS_MAX`:
+a last vertex of no number makes the bounds no number, which `msRectOverlap` lets through, and an
+earlier one drops the vertices before it, the bounds those of the rest. A point shape of one
+point is delivered as a point and any other as a multipoint, a line shape of one part as a line
+and any other as a multi-line, and a polygon shape as one polygon of all its parts, as a
+shapefile's records are.
 
 **Item names.** A feature's values are named by the layer's first `PROCESSING` whose key is
 `ITEMS`, without regard to case, followed by `=` or `:` (`msLayerGetItems`, GDAL's

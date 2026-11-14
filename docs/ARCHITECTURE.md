@@ -49,12 +49,15 @@ golden path and the test pattern an agent copies from are named here.
   module `c.rs` ports C's and MapServer's small functions once for the frontend, the core, and
   the adapters: glibc's `strtod`, `atof`, and `atoi`, MapServer's `MS_NINT` as `lrint` on
   x86-64 narrowed to an `int`, C's `(int)` cast of a `double`, `int_cast`, `INT_MIN` past an
-  `int`, a C string's end, and `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, and
-  `msStringSplit` ([ADR-0036](adr/0036-c-ports-in-style-ir.md)). `engine`, `symbolize`, and
-  `label` deny clippy's `cast_possible_truncation`, so that such a cast is not written as `as`.
-  `style-ir` holds the geometry of a feature (`geometry.rs`), which the ports deliver and
-  `symbolize` draws, the one crate both may depend on. It holds the marker a label's
-  `labelpoint` style gives, a symbol's default anchor point, and the anchor arithmetic
+  `int`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`,
+  `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex`'s match of a symbol's name with the
+  key the frontend's map of names takes, and the alpha `MS_NINT(opacity * 2.55)` of a style's
+  or a layer's opacity, kept in a byte as AGG keeps it
+  ([ADR-0036](adr/0036-c-ports-in-style-ir.md)).
+  `engine`, `symbolize`, and `label` deny clippy's `cast_possible_truncation`, so that such a
+  cast is not written as `as`. `style-ir` holds the geometry of a feature (`geometry.rs`), which
+  the ports deliver and `symbolize` draws, the one crate both may depend on. It holds the marker
+  a label's `labelpoint` style gives, a symbol's default anchor point, and the anchor arithmetic
   (`marker.rs`): a computed value, not part of the style document, shared by `symbolize`, which
   sizes and places the marker, and `label`, which bounds it; it lives here because ADR-0008 gives
   `symbolize` no edge to `label`. It holds a map's fonts, `Fonts`, which finds a name without
@@ -299,9 +302,10 @@ golden path and the test pattern an agent copies from are named here.
   `style-ir`'s `c.rs`, and a `PI / 180` in code (ADR-0036).
   `tests/symbolize_modules.rs` refuses an import between the modules of `symbolize`, outside its
   tests, against the direction its `lib.rs` states, and a module of the crate its table has no row
-  for. `tests/symbol_names.rs` refuses an `eq_ignore_ascii_case` near a symbol's name outside
-  `symbolize`'s `symbol.rs`, whose `named_index` the engine's binding of a `SYMBOL` calls; the
-  frontend keeps a lookup of its own in another form, which ADR-0008 keeps from `symbolize`.
+  for. `tests/symbol_names.rs` refuses an `eq_ignore_ascii_case`, an ASCII case fold, or a
+  `to_uppercase` near a symbol's name outside `style-ir`'s `c.rs`, whose
+  `ms_get_symbol_index` and `symbol_name_key` the frontend, the engine, and `symbolize` call;
+  `tests/c_numbers.rs` refuses a function of either name outside it.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on

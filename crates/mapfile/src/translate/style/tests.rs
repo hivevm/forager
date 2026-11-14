@@ -335,11 +335,28 @@ fn angle_auto_is_the_bare_keyword_only() {
 
 #[test]
 fn opacity_is_truncated_toward_zero_then_clamped() {
-    // MS_MAX(MS_MIN((int)msyynumber, 100), 0): the cast truncates toward zero.
+    // Verifies: ADR-0036
+    // MS_MAX(MS_MIN((int)msyynumber, 100), 0) (src/mapfile.c:2903-2904): the cast truncates
+    // toward zero, and past an `int` is INT_MIN, which the clamp makes 0.
+    assert_eq!(style_of("OPACITY 100.4").opacity, Some(Bound::Value(100.0)));
+    assert_eq!(style_of("OPACITY -1").opacity, Some(Bound::Value(0.0)));
+    assert_eq!(
+        style_of("OPACITY 2147483647.9").opacity,
+        Some(Bound::Value(100.0))
+    );
+    assert_eq!(
+        style_of("OPACITY 2147483648").opacity,
+        Some(Bound::Value(0.0))
+    );
+    assert_eq!(style_of("OPACITY 3e9").opacity, Some(Bound::Value(0.0)));
     assert_eq!(style_of("OPACITY -5").opacity, Some(Bound::Value(0.0)));
     assert_eq!(style_of("OPACITY -0.9").opacity, Some(Bound::Value(0.0)));
     assert_eq!(style_of("OPACITY 99.99").opacity, Some(Bound::Value(99.0)));
     assert_eq!(style_of("OPACITY 0").opacity, Some(Bound::Value(0.0)));
+    // Beside a binding, loadStyle's END gives the colours MS_NINT(0 × 2.55) = 0.
+    let (_, style) =
+        first_style("MAP LAYER CLASS STYLE COLOR 1 2 3 OPACITY [o] OPACITY 3e9 END END END END");
+    assert_eq!(style.unwrap().color, value(1, 2, 3, 0));
 }
 
 #[test]
@@ -530,6 +547,7 @@ fn value(r: u8, g: u8, b: u8, a: u8) -> Option<Bound<Rgba>> {
 
 #[test]
 fn each_colour_channel_is_checked_by_load_color_before_it_is_truncated() {
+    // Verifies: ADR-0036
     // loadColor checks the first channel's msyynumber, and getInteger the others' through
     // msCheckNumber, each before the cast to `int`.
     for body in [

@@ -32,7 +32,7 @@
 use std::rc::Rc;
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
-use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_max, ms_nint};
+use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_get_symbol_index, ms_max, ms_nint};
 use forager_style_ir::{
     ANCHOR_CENTRE, Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef, anchor_offset,
 };
@@ -87,22 +87,8 @@ pub(crate) fn named(index: usize, symbol: Option<&Symbol>) -> String {
         .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"))
 }
 
-/// The index, from 1, of the symbol named `name` among `symbols`, as msGetSymbolIndex finds it:
-/// the first whose name matches without regard to case; `None` for a name no symbol carries.
-pub fn named_index(name: &str, symbols: &[Symbol]) -> Option<usize> {
-    symbols
-        .iter()
-        .position(|symbol| {
-            symbol
-                .name
-                .as_ref()
-                .is_some_and(|known| known.eq_ignore_ascii_case(name))
-        })
-        .map(|position| position + 1)
-}
-
-/// The symbol `symbol` names among `symbols`: by its index, or by its name (see
-/// [`named_index`]).
+/// The symbol `symbol` names among `symbols`: by its index, or by its name, as msGetSymbolIndex
+/// finds it ([`ms_get_symbol_index`]).
 pub fn resolve<'a, 'n>(
     symbol: &'n Option<Bound<SymbolRef>>,
     symbols: &'a [Symbol],
@@ -110,7 +96,7 @@ pub fn resolve<'a, 'n>(
     let index = match symbol {
         None => return Resolved::Default,
         Some(Bound::Value(SymbolRef::Index(index))) => *index as usize,
-        Some(Bound::Value(SymbolRef::Name(name))) => match named_index(name, symbols) {
+        Some(Bound::Value(SymbolRef::Name(name))) => match ms_get_symbol_index(name, symbols) {
             Some(index) => index,
             None => return Resolved::Unnamed(name),
         },

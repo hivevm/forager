@@ -3,8 +3,11 @@
 **Where:** `STYLE`. **IR:** the style's `symbol` and `geom_transform`.
 
 **Meaning.** `SYMBOL` names the symbol the style draws: by its name, by MapServer's index into the
-[symbols](symbol.md) (at least 0, a fraction cut as `loadStyle` casts it; 0 is the default symbol),
-or bound to a property. A name resolves at import to the index of the first symbol of that name,
+[symbols](symbol.md) (at least 0, a fraction cut as `loadStyle` casts it to an `int`, and a number
+past an `int` `INT_MIN`, which draws nothing as an index past the symbols does, though
+`msDrawShape` fails the draw of a shape it clips on either, `src/mapdraw.c` 2470–2474, which
+Forager does not port; 0 is the default symbol), or bound to a property.
+A name resolves at import to the index of the first symbol of that name,
 without regard to case, as `msGetSymbolIndex` in `src/mapfile.c` resolves it. A name no symbol
 carries is an image file, as `msAddImageSymbol` in `src/mapsymbol.c` reads it once the map is read:
 the frontend appends a symbol named by the file name to the map's symbols, after the symbol file's,

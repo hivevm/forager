@@ -18,6 +18,7 @@
 //! to one.
 
 use forager_ports::ResourcePath;
+use forager_style_ir::c::{int_cast, symbol_name_key};
 use forager_style_ir::{ANCHOR_CENTRE, Bound, Map, Symbol, SymbolKind, SymbolRef};
 
 use super::{Range, Translator, binding_of};
@@ -162,14 +163,20 @@ impl Translator<'_> {
             return None;
         };
         if let TokenKind::Number(n) = token.kind {
-            if !(n >= 0.0 && n <= f64::from(u32::MAX)) {
+            // loadStyle checks the number against 0 and casts it to an `int`
+            // (src/mapfile.c:3009-3021): past an `int` the cast is INT_MIN, which every site that
+            // draws a symbol refuses as it refuses an index past the symbols
+            // (src/maprendering.c:615, 742, 912), so the IR, whose index is unsigned, holds it as
+            // the largest. msDrawShape fails the draw of a shape it clips on either
+            // (src/mapdraw.c:2470-2474), which Forager does not port. Whether an index is past the
+            // symbols is known once the styles' images are appended (`image_symbols`).
+            if !Range::at_least(0.0).contains(n) {
                 self.invalid(d, expected);
                 return None;
             }
-            // Whether the index is past the symbols is known once the styles' images are
-            // appended (`image_symbols`).
-            let index = n as u32;
+            let index = int_cast(n);
             self.numbered.push((index, d.span.clone()));
+            let index = u32::try_from(index).unwrap_or(u32::MAX);
             return Some(Bound::Value(SymbolRef::Index(index)));
         }
         let Some(value) = token.string() else {
@@ -205,19 +212,18 @@ impl Translator<'_> {
         Some(Bound::Value(SymbolRef::Name(value.to_owned())))
     }
 
-    /// The position among the symbols of the first named `name`, without regard to case, as
-    /// msGetSymbolIndex finds it.
+    /// The position among the symbols of the first named `name`, as msGetSymbolIndex finds it
+    /// (`forager_style_ir::c::ms_get_symbol_index`), from the names by their key.
     fn named(&self, name: &str) -> Option<usize> {
-        self.names.get(&name.to_ascii_lowercase()).copied()
+        self.names.get(&symbol_name_key(name)).copied()
     }
 
-    /// Appends `symbol` to the symbols, and its name, unless an earlier symbol has it.
+    /// Appends `symbol` to the symbols, and its name by its key, unless an earlier symbol's name
+    /// matches it.
     pub(super) fn push_symbol(&mut self, symbol: Symbol) {
         if let Some(name) = &symbol.name {
             let position = self.symbols.len();
-            self.names
-                .entry(name.to_ascii_lowercase())
-                .or_insert(position);
+            self.names.entry(symbol_name_key(name)).or_insert(position);
         }
         self.symbols.push(symbol);
     }
@@ -243,7 +249,7 @@ impl Translator<'_> {
         }
         let count = self.symbols.len();
         for (index, span) in std::mem::take(&mut self.numbered) {
-            if index as usize > count {
+            if !usize::try_from(index).is_ok_and(|index| index <= count) {
                 let message = format!("there is no symbol {index}; the style draws nothing");
                 self.warn("symbol-unknown", &message, &span);
             }

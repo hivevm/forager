@@ -231,6 +231,32 @@ fn invalid_values_are_errors() {
 }
 
 #[test]
+fn a_map_size_is_checked_from_1_and_cast_as_load_map_casts_it() {
+    // Verifies: ADR-0036
+    // loadMap (src/mapfile.c:6824-6829): getInteger checks each number against 1 and MAXSIZE, an
+    // `int`, before its `(int)` cast (src/mapfile.c:276-290, 312-317), so a fraction is cut and a
+    // number below 1 or above INT_MAX, 2147483647.5 among them, fails the load.
+    let size = |body: &str| {
+        let text = format!("MAP SIZE {body} END").leak();
+        let loaded = load_files(&[("m.map", text)]);
+        let codes: Vec<String> = codes(&loaded).into_iter().map(str::to_owned).collect();
+        loaded.document.map(|d| d.map.size).ok_or(codes)
+    };
+    assert_eq!(size("400.9 1"), Ok(Some([400, 1])));
+    assert_eq!(size("2147483647 1"), Ok(Some([2_147_483_647, 1])));
+    for body in [
+        "2147483647.5 1",
+        "0 10",
+        "10 0.99",
+        "-5 10",
+        "10 2147483648",
+        "3e9 10",
+    ] {
+        assert_eq!(size(body), Err(vec!["invalid-value".to_owned()]), "{body}");
+    }
+}
+
+#[test]
 fn colours_of_minus_one_mean_no_colour() {
     let loaded = load_files(&[(
         "m.map",

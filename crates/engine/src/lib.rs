@@ -40,7 +40,7 @@ use forager_ports::{
     Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
-use forager_style_ir::c::{int_cast, ms_nint};
+use forager_style_ir::c::{int_cast, opacity_alpha};
 use forager_style_ir::{
     Diagnostic, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
 };
@@ -471,8 +471,7 @@ impl Drawing<'_> {
         };
         canvas.in_own_image();
         // aggCompositeRasterBufferNoPixman lays the layer over at MS_NINT(opacity × 2.55).
-        let alpha = ms_nint(f64::from(opacity) * 2.55);
-        Target::Layer(renderer.layer(alpha.clamp(0, 255) as u8))
+        Target::Layer(renderer.layer(opacity_alpha(opacity)))
     }
 
     /// Loads into `images`, through `files`, the image of each pixmap symbol the styles of the

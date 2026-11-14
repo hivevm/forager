@@ -377,3 +377,23 @@ fn a_polygon_s_pixmap_without_its_image_or_past_its_bound_draws_nothing_and_says
     assert!(why.contains("past the limit of 4096 × 4096"), "{why}");
     assert!(drawn(&style(2, 0.0), None).contains("no tiles"));
 }
+
+#[test]
+fn a_polygon_meets_the_image_as_rect_overlap_decides_a_bound_of_no_number_included() {
+    // Verifies: ADR-0036
+    // `ms_compute_bounds` makes a bound no number at a point that is none, and `rect_overlap`
+    // refuses no overlap by it, as msComputeBounds and msRectOverlap do.
+    let image = (10.0, 10.0);
+    let ring = |points: &[(f64, f64)]| vec![points.iter().map(|&(x, y)| p(x, y)).collect()];
+    assert!(meets_image(&ring(&[(1.0, 1.0), (20.0, 20.0)]), image));
+    assert!(
+        meets_image(&ring(&[(10.0, 10.0), (20.0, 20.0)]), image),
+        "an edge meets"
+    );
+    assert!(!meets_image(&ring(&[(11.0, 1.0), (20.0, 5.0)]), image));
+    assert!(!meets_image(&[], image));
+    // The first point is off the image to the right; the NaN after it makes the x bounds no
+    // number, which f64::min and f64::max would have passed over.
+    assert!(meets_image(&ring(&[(11.0, 1.0), (f64::NAN, 5.0)]), image));
+    assert!(meets_image(&ring(&[(f64::NAN, f64::NAN)]), image));
+}

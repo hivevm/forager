@@ -20,7 +20,7 @@
 //! on every target (Q-2).
 
 use forager_render::Point;
-use forager_style_ir::c::{DEG_TO_RAD, int_cast, ms_max, ms_min};
+use forager_style_ir::c::{DEG_TO_RAD, int_cast, ms_compute_bounds, ms_max, ms_min};
 use forager_style_ir::{ANCHOR_CENTRE, LabelMarker, anchor_offset};
 
 /// MapServer's `MARKER_SLOP`: the pixels a label at an upper, lower, left, or right centre keeps
@@ -167,17 +167,11 @@ pub fn metrics(
     }
 }
 
-/// `fastComputeBounds`: the box of the points, by MapServer's `MS_MIN` and `MS_MAX`.
+/// `fastComputeBounds`, `src/mapdraw.c:3271-3282`: the box of the points of one line, folded from
+/// its first point over every point by `MS_MIN` and `MS_MAX` as `msComputeBounds` folds a shape's,
+/// so that port serves; the latter's check for a shape without points five points never reach.
 fn fast_bounds(points: &[Point; 5]) -> [f64; 4] {
-    let first = points[0];
-    let mut b = [first.x, first.y, first.x, first.y];
-    for p in points {
-        b[0] = ms_min(b[0], p.x);
-        b[2] = ms_max(b[2], p.x);
-        b[1] = ms_min(b[1], p.y);
-        b[3] = ms_max(b[3], p.y);
-    }
-    b
+    ms_compute_bounds(points.map(|p| [p.x, p.y])).expect("five points have bounds")
 }
 
 /// What moves a label off its point: half the size of the marker drawn there, and the label's

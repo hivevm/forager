@@ -4,8 +4,9 @@
 number or a [binding](binding.md).
 
 **Meaning.** `OPACITY` is how opaque the style draws, 0 to 100, default 100; `loadStyle` in
-`src/mapfile.c` truncates a number to an integer and clamps it to 0…100, and the frontend stores
-the result. An opacity below 100 replaces the alpha of the style's colours, a `#rrggbbaa`'s
+`src/mapfile.c` casts a number to an `int`, truncating it, and clamps it to 0…100, and the
+frontend stores the result: a number past an `int` is the cast's `INT_MIN`, so 0. An opacity
+below 100 replaces the alpha of the style's colours, a `#rrggbbaa`'s
 included, with `opacity × 2.55` rounded (`loadStyle` at its `END`, and `bindStyle` in
 `src/maputil.c` for a bound one); an opacity of 100 leaves the colours' alpha as written.
 `loadStyle` keeps a number and a binding side by side, `OPACITY [o] OPACITY 50` in either order,
