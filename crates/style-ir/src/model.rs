@@ -4,7 +4,7 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::expression::Keys;
-use crate::{Expr, Span};
+use crate::{ANCHOR_CENTRE, Expr, Span};
 
 /// The least `resolution` and `def_resolution` a map may have, in dpi: MapServer's
 /// `MS_RESOLUTION_MIN`, which its loader holds both to.
@@ -156,6 +156,14 @@ pub struct Symbol {
     pub transparent: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span: Option<Span>,
+}
+
+impl Symbol {
+    /// The point of the symbol placed on the feature, as fractions of its extent: its
+    /// `ANCHORPOINT`, else [`ANCHOR_CENTRE`].
+    pub fn anchor(&self) -> [f64; 2] {
+        self.anchor_point.unwrap_or(ANCHOR_CENTRE)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -50,7 +50,6 @@ fn at(x: f64, y: f64) -> Member {
             offsets: Offsets::default(),
             rotation: 0.0,
             buffer: 0,
-            force: false,
         }),
         force: false,
         partials: false,
@@ -116,7 +115,7 @@ fn a_buffer_grows_the_box_that_meets_the_others() {
 
 #[test]
 fn force_draws_a_label_whatever_it_meets_and_partials_lets_it_leave_the_image() {
-    let forced = |m: Member| with(m, |_, l| l.force = true);
+    let forced = |m: Member| with(m, |m, _| m.force = true);
     assert_eq!(
         drawn(vec![forced(at(50.0, 50.0)), forced(at(60.0, 52.0))]).len(),
         2
@@ -146,8 +145,8 @@ fn auto_takes_the_next_position_where_the_first_meets_a_label() {
         [(1, Anchor::Cc), (0, Anchor::Lr)]
     );
     // A forced label at the point meets every position: forced, AUTO takes the last, LC.
-    let wall = with(at(100.0, 50.0), |_, l| l.force = true);
-    let forced = with(auto, |_, l| l.force = true);
+    let wall = with(at(100.0, 50.0), |m, _| m.force = true);
+    let forced = with(auto, |m, _| m.force = true);
     assert_eq!(
         drawn(vec![forced, wall]),
         [(1, Anchor::Cc), (0, Anchor::Lc)]
@@ -233,7 +232,7 @@ fn min_distance_leaves_out_a_label_near_one_of_the_same_text() {
     );
     assert_eq!(drawn_texts(vec![a, offset]), [(1, Anchor::Cc)]);
     // A forced label is not held apart.
-    let forced = (with(b.0, |_, l| l.force = true), "Fen");
+    let forced = (with(b.0, |m, _| m.force = true), "Fen");
     assert_eq!(drawn_texts(vec![forced, a]).len(), 2);
 }
 
@@ -270,9 +269,9 @@ fn labels_far_apart_and_far_outside_the_image_meet_as_near_ones_do() {
     // the image's edge meets a partial one there, and one whose x is no number meets every box
     // its y meets.
     let out = |x, force| {
-        with(at(x, 50.0), |m, l| {
+        with(at(x, 50.0), |m, _| {
             m.partials = true;
-            l.force = force;
+            m.force = force;
         })
     };
     assert_eq!(
@@ -280,9 +279,9 @@ fn labels_far_apart_and_far_outside_the_image_meet_as_near_ones_do() {
         [(1, Anchor::Cc)]
     );
     assert_eq!(drawn(vec![out(5000.0, false), out(-5000.0, true)]).len(), 2);
-    let nan = with(at(f64::NAN, 20.0), |m, l| {
+    let nan = with(at(f64::NAN, 20.0), |m, _| {
         m.partials = true;
-        l.force = true;
+        m.force = true;
     });
     assert_eq!(drawn(vec![at(20.0, 20.0), nan]), [(1, Anchor::Cc)]);
     // A wide box covers many cells.
@@ -298,7 +297,7 @@ fn a_turned_label_whose_box_is_no_number_meets_a_label_in_another_cell() {
     // cell of the grid, is left out.
     let nan = with(at(20.0, 20.0), |m, l| {
         m.partials = true;
-        l.force = true;
+        m.force = true;
         l.rotation = f64::NAN;
     });
     assert_eq!(drawn(vec![at(150.0, 80.0), nan]), [(1, Anchor::Cc)]);
@@ -359,5 +358,5 @@ fn a_label_inside_the_gutter_is_left_out_unless_partial_or_forced() {
     assert_eq!(draw(near, 5), [0], "5 pixels inside a gutter of 5");
     assert!(draw(near, 10).is_empty(), "5 pixels inside a gutter of 10");
     assert_eq!(draw(with(near, |m, _| m.partials = true), 10), [0]);
-    assert_eq!(draw(with(near, |_, l| l.force = true), 10), [0]);
+    assert_eq!(draw(with(near, |m, _| m.force = true), 10), [0]);
 }

@@ -10,6 +10,7 @@ mod document;
 mod expression;
 mod geometry;
 mod lenient;
+mod marker;
 mod migration;
 mod model;
 
@@ -18,6 +19,7 @@ pub use document::{FORMAT_VERSION, Read, StyleDocument};
 pub use expression::{Expr, MAX_EXPRESSION_DEPTH, Op};
 pub use geometry::{Coord, Geometry};
 pub use lenient::MAX_DROPPED_VALUES;
+pub use marker::{ANCHOR_CENTRE, LabelMarker, anchor_offset};
 pub use migration::{STEPS, Step};
 pub use model::{
     Align, AngleMode, Bound, Class, Extent, FeatureProperty, Force, GeomTransform, InlineFeature,

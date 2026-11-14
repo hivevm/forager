@@ -33,7 +33,9 @@ use std::rc::Rc;
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
 use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_max, ms_nint};
-use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
+use forager_style_ir::{
+    ANCHOR_CENTRE, Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef, anchor_offset,
+};
 
 use crate::bounds;
 use crate::style::fixed;
@@ -184,8 +186,8 @@ pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol], pixmaps: Option
     }
 }
 
-/// The factors a layer's styles are drawn at (see the engine's `classes::layer_scale_factor` and
-/// `classes::resolution_factor`).
+/// The factors a layer's styles are drawn at (see the engine's `classes::scales`, which
+/// computes them once per render).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Factors {
     /// The layer's scale factor, by which the sizes, widths, gaps, patterns, and offsets of its
@@ -204,7 +206,7 @@ impl Factors {
 }
 
 /// computeSymbolStyle for a vector or ellipse symbol at `factors`, the style's scale factor and the
-/// image's resolution factor (see the engine's `classes::layer_scale_factor`). A
+/// image's resolution factor (see the engine's `classes::scales`). A
 /// filled symbol is filled with the style's colour and outlined with its outline colour; one not
 /// filled is outlined with its colour, or its outline colour where it has none. The size is
 /// scaled by the scale factor and bounded by `MINSIZE` and `MAXSIZE` scaled by the resolution
@@ -464,12 +466,10 @@ pub fn marker_size_with<T>(
 /// `anchor` on the point it is drawn at, turned with the symbol by `rotation`, as both
 /// msAdjustMarkerPos and msImagePolylineMarkers shift it; nothing for an anchor at the centre.
 pub(crate) fn anchor_shift(anchor: [f64; 2], size: (f64, f64), rotation: f64) -> (f64, f64) {
-    let [anchor_x, anchor_y] = anchor;
-    if anchor_x == 0.5 && anchor_y == 0.5 {
+    if anchor == ANCHOR_CENTRE {
         return (0.0, 0.0);
     }
-    let ox = (0.5 - anchor_x) * size.0;
-    let oy = (0.5 - anchor_y) * size.1;
+    let (ox, oy) = anchor_offset(anchor, size);
     if rotation == 0.0 {
         return (ox, oy);
     }
@@ -486,8 +486,8 @@ pub(crate) fn anchored(
     rotation: f64,
     size: impl FnOnce() -> (f64, f64),
 ) -> Point {
-    let anchor = symbol.anchor_point.unwrap_or([0.5, 0.5]);
-    if anchor == [0.5, 0.5] {
+    let anchor = symbol.anchor();
+    if anchor == ANCHOR_CENTRE {
         return at;
     }
     let (ox, oy) = anchor_shift(anchor, size(), rotation);

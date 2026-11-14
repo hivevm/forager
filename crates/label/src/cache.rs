@@ -58,8 +58,8 @@ pub struct Member {
     /// the member's box is the marker's. Without one, a text of line breaks only, which is not
     /// drawn, but whose marker is cached.
     pub label: Option<PointLabel>,
-    /// `FORCE` of a label without a box of text: its marker is drawn untested. Read only for a
-    /// member whose `label` is `None`; a label with one is forced by its [`PointLabel`]'s.
+    /// `FORCE`: the label is drawn where it does not fit, its `labelpoint` marker untested, and
+    /// is not held apart by its minimum distance.
     pub force: bool,
     /// `PARTIALS TRUE`: the label may leave the image.
     pub partials: bool,
@@ -74,6 +74,35 @@ pub struct Member {
     pub label_marker: Option<Bounds>,
     /// `MINDISTANCE` in pixels; none at 0 or below.
     pub min_distance: f64,
+}
+
+/// The box of the marker `msAddLabelGroup` caches beneath a label at `point`, of the width and
+/// height `size`: about the point, its far corner `w - 1` and `h - 1` from its near one.
+pub fn cached_marker_box(point: Point, (w, h): (f64, f64)) -> [f64; 4] {
+    let (min_x, min_y) = (point.x - 0.5 * w, point.y - 0.5 * h);
+    [min_x, min_y, min_x + (w - 1.0), min_y + (h - 1.0)]
+}
+
+/// `msDrawLabelCache`'s offset of a label from its markers: half the size of the box `marker`
+/// the marker cache holds, or of its `labelpoint` marker `label_marker`'s where that is larger,
+/// grown by `outline_grow`, half the label's outline, where it has one and the offset across is
+/// not 0.
+pub fn marker_offset(
+    marker: Option<&[f64; 4]>,
+    label_marker: Option<&Bounds>,
+    outline_grow: Option<f64>,
+) -> [f64; 2] {
+    let half =
+        |[min_x, min_y, max_x, max_y]: &[f64; 4]| [(max_x - min_x) / 2.0, (max_y - min_y) / 2.0];
+    let mut offset = marker.map_or([0.0, 0.0], half);
+    if let Some(m) = label_marker {
+        let [x, y] = half(&m.bbox);
+        offset = [ms_max(offset[0], x), ms_max(offset[1], y)];
+    }
+    match outline_grow {
+        Some(grow) if offset[0] != 0.0 => offset.map(|o| o + grow),
+        _ => offset,
+    }
 }
 
 /// The labels of a cache, in the order they were added.
@@ -95,8 +124,8 @@ pub fn draw_label_cache<M: Members + ?Sized>(
     gutter: u32,
     mut draw: impl FnMut(usize, &Placement),
 ) -> usize {
-    walk_label_cache(members, size, gutter, |i, placement| {
-        if let Some(placement) = placement {
+    walk_label_cache(members, size, gutter, |i, filed| {
+        if let Some((placement, _)) = filed {
             draw(i, placement);
         }
     })
@@ -106,13 +135,13 @@ pub fn draw_label_cache<M: Members + ?Sized>(
 /// highest priority down and within a priority from the last added to the first, into an image of
 /// `size` pixels whose `gutter`, `labelcache_map_edge_buffer`, no label reaches into that may not
 /// be partial and is tested, and hands `visit` each member it visits, in that order, with its
-/// placement where it is drawn and `None` where it is left out. Returns how many members past
-/// [`MAX_LABELS`] it left out untested (Q-9).
+/// placement and the box it filed it by, its [`member_box`], where it is drawn, and `None` where
+/// it is left out. Returns how many members past [`MAX_LABELS`] it left out untested (Q-9).
 pub fn walk_label_cache<M: Members + ?Sized>(
     members: &M,
     size: (u32, u32),
     gutter: u32,
-    mut visit: impl FnMut(usize, Option<&Placement>),
+    mut visit: impl FnMut(usize, Option<(&Placement, [f64; 4])>),
 ) -> usize {
     let taken = members.count().min(MAX_LABELS);
     let image = [f64::from(size.0), f64::from(size.1)];
@@ -144,10 +173,11 @@ pub fn walk_label_cache<M: Members + ?Sized>(
             }
             let member = members.member(i);
             let placement = cache.place(i, &member);
-            if let Some(placement) = &placement {
-                cache.file(i, &member, placement);
-            }
-            visit(i, placement.as_ref());
+            let filed = placement.as_ref().map(|placement| {
+                let bbox = cache.file(i, &member, placement);
+                (placement, bbox)
+            });
+            visit(i, filed);
         }
     }
     members.count() - taken
@@ -175,8 +205,9 @@ struct Cache<'m, M: ?Sized> {
 }
 
 impl<M: Members + ?Sized> Cache<'_, M> {
-    /// Files member `i`, drawn at `placement`, by its box, and by its point where it has a text.
-    fn file(&mut self, i: usize, member: &Member, placement: &Placement) {
+    /// Files member `i`, drawn at `placement`, by its box, and by its point where it has a text;
+    /// returns its box.
+    fn file(&mut self, i: usize, member: &Member, placement: &Placement) -> [f64; 4] {
         #[expect(
             clippy::cast_possible_truncation,
             reason = "a member's index, below MAX_LABELS"
@@ -188,6 +219,7 @@ impl<M: Members + ?Sized> Cache<'_, M> {
             let p = member.point;
             points.insert(&[p.x, p.y, p.x, p.y], entry);
         }
+        bbox
     }
 
     /// Places member `i`, or `None` where it is left out.
@@ -209,7 +241,7 @@ impl<M: Members + ?Sized> Cache<'_, M> {
         // The marker of a labelpoint style is tested first, at the label's priority, unless the
         // label is forced; where it has one, the point is not tested.
         if let Some(marker) = &member.label_marker {
-            if !label.force && !self.fits(member, marker, Some((member.priority, i))) {
+            if !member.force && !self.fits(member, marker, Some((member.priority, i))) {
                 return None;
             }
         } else if member.test_point {
@@ -223,11 +255,11 @@ impl<M: Members + ?Sized> Cache<'_, M> {
                 return None;
             }
         }
-        let placement = place(member.point, &label, |bounds| {
+        let placement = place(member.point, &label, member.force, |bounds| {
             self.fits(member, bounds, Some((member.priority, i)))
         })?;
         if member.min_distance > 0.0
-            && !label.force
+            && !member.force
             && self.too_close(
                 i,
                 &member_box(&placement.bounds.bbox, member.label_marker.as_ref()),

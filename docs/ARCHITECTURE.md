@@ -53,8 +53,11 @@ golden path and the test pattern an agent copies from are named here.
   `msStringSplit` ([ADR-0036](adr/0036-c-ports-in-style-ir.md)). `engine`, `symbolize`, and
   `label` deny clippy's `cast_possible_truncation`, so that such a cast is not written as `as`.
   `style-ir` holds the geometry of a feature (`geometry.rs`), which the ports deliver and
-  `symbolize` draws, the one crate both may depend on. It depends on no other crate of the
-  workspace.
+  `symbolize` draws, the one crate both may depend on. It holds the marker a label's
+  `labelpoint` style gives, a symbol's default anchor point, and the anchor arithmetic
+  (`marker.rs`): a computed value, not part of the style document, shared by `symbolize`, which
+  sizes and places the marker, and `label`, which bounds it; it lives here because ADR-0008 gives
+  `symbolize` no edge to `label`. It depends on no other crate of the workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
   resolver — with the features a source delivers, their geometries, re-exported from `style-ir`,
   and properties
@@ -126,7 +129,8 @@ golden path and the test pattern an agent copies from are named here.
   diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does, through
   `symbolize`, which it hands the label's point and the box around its text (`labels.rs`, its
   binding to a feature `label_binding.rs`, which reads a bound value as `classes.rs` does, its
-  styles held for the cache, their marker's bounds, and their drawing `label_styles.rs`); a
+  styles held for the cache, which hand the cache their marker, and their drawing
+  `label_styles.rs`); a
   label's `PRIORITY` it may compute per feature through `expr`. A label
   takes its text from the label, the class, the `LABELITEM`, or last its inline feature's own
   `TEXT`, which the port's `Feature` does not carry: the labels read it beside the port, from the
@@ -139,7 +143,9 @@ golden path and the test pattern an agent copies from are named here.
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
-  refused, a label's among them, and geometries its render mode cannot draw (Q-9). It loads the
+  refused, a label's among them, and geometries its render mode cannot draw (Q-9); the hatches
+  and pixmaps are one value, `Refusals`, which a canvas yields, the labels keep per layer and
+  merge, and one function of `lib.rs` turns into the layer's diagnostics. It loads the
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
@@ -158,12 +164,13 @@ golden path and the test pattern an agent copies from are named here.
   at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol` fills about the
   point and the inverse of the image's transformation (`marker.rs`); a line's dashes, and the
   style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
-  canvas a layer draws on, which the images of the render's pixmaps are handed on
-  (`canvas.rs`); a label's styles, which of them are drawn, and their operations on the label's
-  point and the box around its text: a `labelpoly` style shaded on the box, a `labelpoint`
-  style's marker at the point, and a `labelcenter` style's at the centre of the box, a vector, an
-  ellipse, or a pixmap drawn as a point's marker is, MapServer's default symbol as nothing
-  (`label.rs`); a style's width
+  canvas a layer draws on, which the images of the render's pixmaps are handed on and which
+  yields what it left undrawn (`canvas.rs`); a label's styles, which of them are drawn, and their
+  operations on the label's point and the box around its text: a `labelpoly` style shaded on the
+  box, a `labelpoint` style's marker at the point, and a `labelcenter` style's at the centre of the
+  box, a vector, an ellipse, or a pixmap drawn as a point's marker is, MapServer's default symbol
+  as nothing, and a `labelpoint` style's marker sized and placed as `computeMarkerBounds` takes it,
+  `label_style_marker` (`label.rs`); a style's width
   and size bounds, one function per site of MapServer's that bounds them, with the constants they
   bound by (`bounds.rs`); a property's value as bound, the gamma, and degrees to radians
   (`style.rs`); the view that maps the extent to the image, and a line's or a ring's vertices to
@@ -196,8 +203,10 @@ golden path and the test pattern an agent copies from are named here.
   the gutter inside it that `labelcache_map_edge_buffer` sets, and `MINDISTANCE`, each test bounded
   by a grid over the image that files a drawn label by its box and, for `MINDISTANCE`, by its point
   apart; the cache takes the first `MAX_LABELS`, reports how many it left out, and hands its caller
-  every label it visits, drawn or not, in its walk's order, which the engine's report of the labels
-  follows (`cache.rs`). It is the one crate that depends on skrifa, and does no I/O (ADR-0031).
+  every label it visits, drawn or not, in its walk's order, with the box it filed a drawn one by,
+  which the engine's report of the labels follows; it computes the box of the marker cached
+  beneath a label and `msDrawLabelCache`'s offset of a label from its markers (`cache.rs`). It
+  is the one crate that depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
   or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
   transformation, each by a counted reference to the one image, a polygon filled with a tile, by

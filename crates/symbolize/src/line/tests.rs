@@ -36,7 +36,7 @@ fn p(x: f64, y: f64) -> Point {
 
 /// A canvas without symbols, of 100 × 100.
 fn plain() -> Canvas<'static> {
-    Canvas::new(&[], 100, 100, 1.0)
+    Canvas::new(&[], 100, 100, Factors::new(1.0, 1.0))
 }
 
 fn line() -> Vec<Vec<Point>> {
@@ -251,7 +251,7 @@ fn circle() -> Symbol {
 /// The operations of `style` on [`line`] at `factor`.
 fn strokes_at(style: &Style, factor: f64) -> Vec<DrawOp> {
     let mut ops = Vec::new();
-    let mut canvas = Canvas::new(&[], 100, 100, factor);
+    let mut canvas = Canvas::new(&[], 100, 100, Factors::new(factor, factor));
     line_symbol(&mut ops, line(), style, Pass::Plain, &mut canvas);
     ops
 }
@@ -330,7 +330,7 @@ fn at_a_factor_symbols_along_a_line_are_those_of_the_scaled_style() {
     };
     let along = |style: &Style, factor: f64| {
         let mut ops = Vec::new();
-        let mut canvas = Canvas::new(&symbols, 101, 101, factor);
+        let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(factor, factor));
         let long = vec![vec![p(0.0, 50.0), p(100.0, 50.0)]];
         line_symbol(&mut ops, long, style, Pass::Plain, &mut canvas);
         ops
@@ -437,13 +437,13 @@ fn a_pixmap_s_gap_along_a_line_is_scaled_as_its_size_is() {
         max_size: Some(3.0),
         ..gapped_pin(20.0)
     };
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_pixmaps(&pixmaps);
     assert_eq!(pixmaps_along(&bounded, Pass::Plain, &mut canvas), along);
     let scaled = Style {
         size: Some(Bound::Value(1.5)),
         ..gapped_pin(5.0)
     };
-    let mut canvas = Canvas::new(&symbols, 101, 101, 2.0).with_pixmaps(&pixmaps);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(2.0, 2.0)).with_pixmaps(&pixmaps);
     assert_eq!(pixmaps_along(&scaled, Pass::Plain, &mut canvas), along);
 }
 
@@ -455,11 +455,11 @@ fn a_pixmap_along_a_line_costs_one_point_of_the_layer_s_budget() {
     let pixmaps = pin_pixmaps();
     let symbols = [pixmap_symbol(Some("pin.png"))];
     let style = gapped_pin(10.0);
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_pixmaps(&pixmaps);
     canvas.markers = MarkerBudget::of(2);
     assert!(pixmaps_along(&style, Pass::Plain, &mut canvas).is_empty());
     assert!(canvas.markers_spent());
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_pixmaps(&pixmaps);
     canvas.markers = MarkerBudget::of(3);
     assert_eq!(pixmaps_along(&style, Pass::Plain, &mut canvas).len(), 3);
     assert!(!canvas.markers_spent());
@@ -472,7 +472,7 @@ fn a_later_cached_pixmap_brush_without_a_colour_draws_nothing() {
     // which Forager does not: the pass skips it, and strokes no line in the OUTLINECOLOR.
     let pixmaps = pin_pixmaps();
     let symbols = [pixmap_symbol(Some("pin.png"))];
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_pixmaps(&pixmaps);
     let mut ops = Vec::new();
     let line = vec![vec![p(0.0, 50.0), p(30.0, 50.0)]];
     let brush = gapped_pin(0.0);
@@ -493,7 +493,7 @@ fn a_pixmap_at_a_scale_of_0_draws_nothing_along_a_line_and_spends_no_budget() {
     // Forager draws nothing, as at a point, and leaves the layer's budget whole.
     let pixmaps = pin_pixmaps();
     let symbols = [pixmap_symbol(Some("pin.png"))];
-    let mut canvas = Canvas::new(&symbols, 101, 101, 0.0).with_pixmaps(&pixmaps);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(0.0, 0.0)).with_pixmaps(&pixmaps);
     assert!(pixmaps_along(&gapped_pin(10.0), Pass::Plain, &mut canvas).is_empty());
     assert!(!canvas.markers_spent());
 }

@@ -35,10 +35,13 @@ mod style;
 mod symbol;
 mod tile;
 
-pub use crate::canvas::Canvas;
+pub use crate::canvas::{Canvas, Refusals};
 pub use crate::draw::{can_draw, clip_pixmaps, draw_ops, marked_pixmap, point_markers, vertices};
 pub use crate::extent::View;
-pub use crate::label::{LabelGeometry, label_pixmap, label_style_ops, label_style_refused};
+pub use crate::label::{
+    LabelGeometry, MarkerValues, label_pixmap, label_style_marker, label_style_ops,
+    label_style_refused,
+};
 pub use crate::line::{Pass, outlined};
 pub use crate::line_marker::MAX_MARKER_POINTS;
 pub use crate::shade::shade;

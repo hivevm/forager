@@ -17,30 +17,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 
-use forager_label::{Bounds, Member, Placement, label_poly_at, marker_bounds};
+use forager_label::{Anchor, Bounds, PointLabel, label_poly_at, marker_bounds};
 use forager_render::{Draw, Point};
-use forager_style_ir::{Bound, LabelTransform, Map, Style, SymbolRef};
+use forager_style_ir::{Bound, LabelMarker, LabelTransform, Map, Style, SymbolRef};
 use forager_symbolize::{
-    Canvas, LabelGeometry, Pixmaps, Resolved, View, label_style_ops, label_style_refused,
-    marker_size_with, resolve,
+    Canvas, Factors, LabelGeometry, MarkerValues, Pixmaps, Refusals, View, label_style_marker,
+    label_style_ops,
 };
 
 use crate::bindable::{Field, Value};
 use crate::classes;
 use crate::labels::{LabelAt, index};
-
-/// What `computeMarkerBounds` takes of a label's first `labelpoint` style: the width and height
-/// `msGetMarkerSize` gives its marker, its symbol's anchor point, its angle in degrees, and its
-/// `OFFSET`, scaled.
-#[derive(Clone, Copy)]
-pub(crate) struct LabelMarker {
-    size: (f64, f64),
-    anchor_point: [f64; 2],
-    angle: f64,
-    offset: [f64; 2],
-}
 
 /// The marker of the first `labelpoint` style of a label's `styles`, as computeMarkerBounds sizes
 /// it at the label's scale factor `factor`, a pixmap's by its image among `pixmaps`; `None`
@@ -57,70 +45,22 @@ pub(crate) fn label_marker(
     else {
         return Ok(None);
     };
-    let values = MarkerValues::of(style);
-    marker_of(style, values, &style.symbol, map, pixmaps, factor).map(Some)
+    let values = marker_values(|field| field.written_value(style));
+    label_style_marker(style, values, &style.symbol, &map.symbols, pixmaps, factor).map(Some)
 }
 
-/// What a `labelpoint` style's marker is sized and placed by, as a feature binds it: its `SIZE`,
-/// its angle in degrees, and its `OFFSET`, unscaled.
-#[derive(Clone, Copy)]
-struct MarkerValues {
-    size: Option<f64>,
-    angle: f64,
-    offset: [f64; 2],
-}
-
-impl MarkerValues {
-    /// The values of `style` as written, a value that varies by feature taken as none.
-    fn of(style: &Style<LabelTransform>) -> Self {
-        Self::read(|field| field.written_value(style))
-    }
-
-    /// The values `value` gives by the properties of [`Field::ALL`], each that gives none taken
-    /// as unset.
-    fn read(value: impl Fn(Field) -> Option<Value>) -> Self {
-        let number = |field| match value(field) {
-            Some(Value::Number(n)) => Some(n),
-            _ => None,
-        };
-        Self {
-            size: number(Field::Size),
-            angle: number(Field::Angle).unwrap_or(0.0),
-            offset: [0, 1].map(|i| number(Field::Offset(i)).unwrap_or(0.0)),
-        }
-    }
-}
-
-/// The marker of the `labelpoint` style `style` of the values `values` and the symbol `symbol`
-/// at the scale factor `factor`, as computeMarkerBounds sizes it, a pixmap's by its image among
-/// `pixmaps`; or why it is not drawn.
-fn marker_of(
-    style: &Style<LabelTransform>,
-    values: MarkerValues,
-    symbol: &Option<Bound<SymbolRef>>,
-    map: &Map,
-    pixmaps: &Pixmaps,
-    factor: f64,
-) -> Result<LabelMarker, String> {
-    let size = marker_size_with(
-        style,
-        values.size,
-        symbol,
-        &map.symbols,
-        Some(pixmaps),
-        factor,
-    )
-    .map_err(|what| format!("its labelpoint style draws {what}"))?;
-    let anchor_point = match resolve(symbol, &map.symbols) {
-        Resolved::Found(_, symbol) => symbol.anchor_point.unwrap_or([0.5, 0.5]),
-        _ => [0.5, 0.5],
+/// The values of a `labelpoint` style's marker that `value` gives by the properties of
+/// [`Field::ALL`], each that gives none taken as unset.
+fn marker_values(value: impl Fn(Field) -> Option<Value>) -> MarkerValues {
+    let number = |field| match value(field) {
+        Some(Value::Number(n)) => Some(n),
+        _ => None,
     };
-    Ok(LabelMarker {
-        size,
-        anchor_point,
-        angle: values.angle,
-        offset: values.offset.map(|o| o * factor),
-    })
+    MarkerValues {
+        size: number(Field::Size),
+        angle: number(Field::Angle).unwrap_or(0.0),
+        offset: [0, 1].map(|i| number(Field::Offset(i)).unwrap_or(0.0)),
+    }
 }
 
 /// The fields of a definition's styles that vary by feature, each with its style's index.
@@ -236,13 +176,7 @@ impl LabelStyles {
                 .ok()?;
             self.def_markers[i].1
         };
-        Some(marker_bounds(
-            at,
-            marker.size,
-            marker.anchor_point,
-            marker.angle,
-            marker.offset,
-        ))
+        Some(marker_bounds(at, &marker))
     }
 
     /// The marker of the `labelpoint` style `i`, written `style`, of the label of text `text`
@@ -267,13 +201,13 @@ impl LabelStyles {
                 .find(|&(&(s, f), _)| s == i && f == field)
                 .map(|(_, &value)| value)
         };
-        let values = MarkerValues::read(|field| held(field).or_else(|| field.written_value(style)));
+        let values = marker_values(|field| held(field).or_else(|| field.written_value(style)));
         let symbol = match held(Field::Symbol) {
             Some(Value::Symbol(index)) => &Some(Bound::Value(SymbolRef::Index(index))),
             _ => &style.symbol,
         };
         // The label was cached with this marker, which it computed from the same values.
-        marker_of(style, values, symbol, map, pixmaps, factor).ok()
+        label_style_marker(style, values, symbol, &map.symbols, pixmaps, factor).ok()
     }
 
     /// The run that holds the values of the label of text `text`, where its styles vary by
@@ -334,12 +268,12 @@ impl StylesOf<'_> {
     }
 }
 
-/// A label drawn: of definition `at`, `member` placed at `placement`, its styles bound to its
-/// feature as `styles` gives them.
+/// A label drawn: of definition `at`, at `point`, its text's `label` placed at its anchor where it
+/// has text, its styles bound to its feature as `styles` gives them.
 pub(crate) struct Placed<'l> {
     pub(crate) at: LabelAt,
-    pub(crate) member: &'l Member,
-    pub(crate) placement: &'l Placement,
+    pub(crate) point: Point,
+    pub(crate) label: Option<(PointLabel, Anchor)>,
     pub(crate) styles: &'l StylesOf<'l>,
 }
 
@@ -347,40 +281,31 @@ pub(crate) struct Placed<'l> {
 pub(crate) struct Styled<'a> {
     view: &'a View,
     map: &'a Map,
-    /// The scale factor of each layer's labels, by the layer's index.
-    factors: Vec<f64>,
+    /// The factors of each layer's labels, by the layer's index.
+    factors: &'a [Factors],
     canvas: Canvas<'a>,
-    /// The hatches of labelpoly styles refused since last taken (Q-9).
-    hatches_refused: usize,
 }
 
 impl<'a> Styled<'a> {
-    /// What the styles of the labels drawn in an image `width` by `height` draw with, a pixmap
-    /// with its image among `pixmaps`.
+    /// What the styles of the labels drawn in an image `width` by `height` draw with, at
+    /// `factors`, each layer's by its index, a pixmap with its image among `pixmaps`.
     pub(crate) fn new(
         map: &'a Map,
         view: &'a View,
+        factors: &'a [Factors],
         pixmaps: &'a Pixmaps,
         width: u32,
         height: u32,
     ) -> Self {
-        // A label's styles inherit its scale factor, which is its layer's
-        // (msUpdateClassScaleFactor), as each label's `Fixed` holds it.
-        let scale = classes::scale_denom(map, view, width);
-        let factors = map
-            .layers
-            .iter()
-            .map(|layer| classes::layer_scale_factor(map, layer, view.cellsize, scale))
-            .collect();
-        let resolution = classes::resolution_factor(map);
         Self {
             view,
             map,
             factors,
-            canvas: Canvas::new(&map.symbols, width, height, resolution)
-                .with_resolution(resolution)
+            // A label's styles inherit its factors, which are its layer's
+            // (msUpdateClassScaleFactor), as each label's `Fixed` holds them: each draw sets its
+            // layer's on the canvas before a style is drawn.
+            canvas: Canvas::new(&map.symbols, width, height, Factors::new(1.0, 1.0))
                 .with_pixmaps(pixmaps),
-            hatches_refused: 0,
         }
     }
 
@@ -390,51 +315,40 @@ impl<'a> Styled<'a> {
         self.canvas.in_own_image();
     }
 
-    /// How many hatches of labelpoly styles were refused since this was last asked (Q-9), as
-    /// a polygon's are refused.
-    pub(crate) fn take_hatches_refused(&mut self) -> usize {
-        std::mem::take(&mut self.hatches_refused)
-    }
-
-    /// The pixmap symbols of labelpoint and labelcenter styles left undrawn since this was last
-    /// asked, their image refused: by the index from 1, each named, with why.
-    pub(crate) fn take_pixmaps_refused(&mut self) -> BTreeMap<usize, (String, String)> {
-        self.canvas.take_pixmaps_refused()
+    /// What the styles of the labels drawn left undrawn since this was last asked: the hatches of
+    /// labelpoly styles refused (Q-9), as a polygon's are refused, and the pixmap symbols of
+    /// labelpoint and labelcenter styles whose image is refused.
+    pub(crate) fn take_refusals(&mut self) -> Refusals {
+        self.canvas.take_refusals()
     }
 
     /// Draws the styles of `label` of feature `feature_id`, written in its definition, in their
     /// order, as its `styles` gives them bound to its feature where they vary by it, else as
     /// written, as msDrawLabelCache draws them before the text (see [`label_style_ops`]): on the
-    /// labelpoly it computes at its `placement` (mapdraw.c:3799-3860), which it never tests for
-    /// collisions (maplabel.c:781). A style that `label_style_refused` refuses as written, which
-    /// `fixed` has checked, is not drawn.
+    /// labelpoly it computes at its anchor (mapdraw.c:3799-3860), which it never tests for
+    /// collisions (maplabel.c:781). No style is refused here: `fixed` refuses the whole label
+    /// where `label_style_refused` refuses any of its styles as written.
     pub(crate) fn draw<R: Draw>(&mut self, renderer: &mut R, label: &Placed<'_>, feature_id: u64) {
-        let (layer, class, n) = label.at;
-        let written = &self.map.layers[layer].classes[class].labels[n].styles;
+        let written = &label.at.label(self.map).styles;
         if written.is_empty() {
             return;
         }
-        let (member, placement) = (label.member, label.placement);
         // A label without text draws its labelpoint styles alone (mapdraw.c:4056-4069); one with a
-        // labelpoly or labelcenter style is refused before it is cached.
-        let poly = member
+        // labelpoly or labelcenter style is refused before it is drawn.
+        let poly = label
             .label
-            .map(|label| label_poly_at(member.point, &label, placement.anchor));
+            .map(|(text, anchor)| label_poly_at(label.point, &text, anchor));
         let at = LabelGeometry {
-            point: member.point,
+            point: label.point,
             poly: poly
                 .as_ref()
                 .map(|poly| (poly.bbox, poly.poly.as_ref().map(|p| &p[..]))),
         };
-        self.canvas.set_factor(self.factors[layer]);
+        self.canvas.set_factors(self.factors[label.at.0]);
         let mut ops = Vec::new();
         for (i, style) in written.iter().enumerate() {
-            if label_style_refused(style, &self.map.symbols).is_some() {
-                continue;
-            }
             let style = label.styles.style(i, style);
-            let drawn = label_style_ops(&mut ops, &style, &at, self.view, &mut self.canvas);
-            self.hatches_refused += usize::from(!drawn);
+            label_style_ops(&mut ops, &style, &at, self.view, &mut self.canvas);
         }
         crate::draw_items(renderer, feature_id, ops);
     }
@@ -616,13 +530,40 @@ mod tests {
                 classes::resolution_factor(&map),
             )
             .unwrap()
-            .map(|m| marker_bounds(at, m.size, m.anchor_point, m.angle, m.offset));
+            .map(|m| marker_bounds(at, &m));
             assert_eq!(
                 styles.marker_bounds((&map, &Pixmaps::new()), def, index(text), written, at, 1.0),
                 marker,
                 "text {text}"
             );
         }
+    }
+
+    #[test]
+    fn a_labels_marker_is_its_first_labelpoint_styles() {
+        // computeMarkerBounds takes the first labelpoint style of a label (mapdraw.c): not a
+        // labelpoly style before it, nor a labelpoint style after it. MapServer's default symbol
+        // is 1 by 1, anchored at its centre; the OFFSET is scaled by the factor, 2.
+        let style = |transform, angle: f64, offset: [f64; 2]| Style {
+            angle: Some(Bound::Value(angle)),
+            offset: Some(offset.map(Bound::Value)),
+            ..Style::new(transform)
+        };
+        let styles = [
+            style(LabelTransform::Poly, 10.0, [7.0, 8.0]),
+            style(LabelTransform::Point, 30.0, [2.0, 3.0]),
+            style(LabelTransform::Point, 45.0, [5.0, 5.0]),
+        ];
+        let marker = label_marker(&styles, &Map::default(), &Pixmaps::new(), 2.0).unwrap();
+        assert_eq!(
+            marker,
+            Some(LabelMarker {
+                size: (1.0, 1.0),
+                anchor_point: [0.5, 0.5],
+                angle: 30.0,
+                offset: [4.0, 6.0],
+            })
+        );
     }
 
     #[test]
@@ -751,7 +692,7 @@ mod tests {
             assert_eq!(drawn.as_ref(), &bound, "{field:?} drawn");
             let marker = label_marker(std::slice::from_ref(&bound), &map, &Pixmaps::new(), 1.0)
                 .unwrap()
-                .map(|m| marker_bounds(at, m.size, m.anchor_point, m.angle, m.offset));
+                .map(|m| marker_bounds(at, &m));
             assert_eq!(
                 styles.marker_bounds((&map, &Pixmaps::new()), 0, text, &written, at, 1.0),
                 marker,
@@ -759,30 +700,5 @@ mod tests {
             );
         }
         assert!(diagnostics.is_empty());
-    }
-
-    #[test]
-    fn a_labelpnt_markers_symbol_by_name_takes_its_anchor_point_as_by_index() {
-        // computeMarkerBounds places the marker by its symbol's ANCHORPOINT, the symbol found by
-        // name as by index (msGetSymbolIndex).
-        let (_, _, mut symbols) = written();
-        symbols[1].anchor_point = Some([0.0, 0.25]);
-        let map = Map {
-            symbols,
-            ..Map::default()
-        };
-        let marker = |symbol: SymbolRef| {
-            let style = Style {
-                symbol: Some(Bound::Value(symbol)),
-                ..Style::new(LabelTransform::Point)
-            };
-            label_marker(&[style], &map, &Pixmaps::new(), 1.0)
-                .unwrap()
-                .unwrap()
-                .anchor_point
-        };
-        assert_eq!(marker(SymbolRef::Index(2)), [0.0, 0.25]);
-        assert_eq!(marker(SymbolRef::Name("SQUARE".to_owned())), [0.0, 0.25]);
-        assert_eq!(marker(SymbolRef::Name("dot".to_owned())), [0.5, 0.5]);
     }
 }

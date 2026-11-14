@@ -29,7 +29,7 @@ use crate::tile::Tiles;
 /// What a layer draws its features on beside the view: the map's symbols, the images of its
 /// pixmap symbols and the render's tiles of them, the image's width and height in pixels, the
 /// layer's scale factor and the image's resolution factor (see the engine's
-/// `classes::layer_scale_factor`), what is left to the layer of
+/// `classes::scales`), what is left to the layer of
 /// [`crate::line_marker::MAX_MARKER_POINTS`], the hatching of the class drawn, which counts the
 /// hatches refused (Q-9), the pixmap symbols left undrawn, and whether the layer is drawn into an
 /// image of its own.
@@ -48,16 +48,37 @@ pub struct Canvas<'a> {
     pub(crate) own_image: bool,
 }
 
+/// What a layer's drawing left undrawn, which it reports: how many hatches were refused (Q-9),
+/// and the pixmap symbols whose image is refused, by their index from 1, each named, with why.
+#[derive(Debug, Default)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct Refusals {
+    pub hatches: usize,
+    pub pixmaps: BTreeMap<usize, (String, String)>,
+}
+
+impl Refusals {
+    /// Adds `other`'s hatches to these, and its pixmap symbols not among these, each by its index
+    /// once, the first kept.
+    pub fn merge(&mut self, other: Self) {
+        self.hatches += other.hatches;
+        for (index, named) in other.pixmaps {
+            self.pixmaps.entry(index).or_insert(named);
+        }
+    }
+}
+
 impl<'a> Canvas<'a> {
-    /// A canvas for one layer at the scale factor `factor`, its budget of markers whole, its
-    /// resolution factor the same until [`Self::with_resolution`] sets it.
-    pub fn new(symbols: &'a [Symbol], width: u32, height: u32, factor: f64) -> Self {
+    /// A canvas for one layer at `factors`, the layer's scale factor, which sizes its styles, and
+    /// the image's resolution factor, which bounds them (msPrepareImage), its budget of markers
+    /// whole.
+    pub fn new(symbols: &'a [Symbol], width: u32, height: u32, factors: Factors) -> Self {
         Self {
             symbols,
             pixmaps: None,
             tiles: None,
             size: (width, height),
-            factors: Factors::new(factor, factor),
+            factors,
             markers: MarkerBudget::new(),
             hatching: Hatching::default(),
             refused_pixmaps: BTreeMap::new(),
@@ -74,22 +95,10 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    /// Sets the scale factor the next styles are drawn at, as the labels of several layers, each
-    /// at its layer's, are drawn on one canvas.
-    pub fn set_factor(&mut self, factor: f64) {
-        self.factors.scale = factor;
-    }
-
-    /// The canvas at the image's resolution factor `resolution`, which bounds its styles, apart
-    /// from the layer's scale factor, which sizes them (msPrepareImage).
-    pub fn with_resolution(self, resolution: f64) -> Self {
-        Self {
-            factors: Factors {
-                resolution,
-                ..self.factors
-            },
-            ..self
-        }
+    /// Sets the factors the next styles are drawn at, as the labels of several layers, each at
+    /// its layer's, are drawn on one canvas.
+    pub fn set_factors(&mut self, factors: Factors) {
+        self.factors = factors;
     }
 
     /// The canvas, the polygons of its pixmap symbols filled with the tiles of `tiles`; without
@@ -128,27 +137,18 @@ impl<'a> Canvas<'a> {
         self.markers.spent()
     }
 
-    /// How many hatches of the layer were refused (Q-9).
-    pub fn hatches_refused(&self) -> usize {
-        self.hatching.refused
-    }
-
-    /// The pixmap symbols the layer left undrawn, their image refused: by the index from 1, each
-    /// named by its name or that index (see [`symbol::named`]), with why.
-    pub fn named_pixmaps_refused(&self) -> BTreeMap<usize, (String, String)> {
-        self.refused_pixmaps
-            .iter()
-            .map(|(&index, why)| (index, (self.named(index), why.clone())))
-            .collect()
-    }
-
-    /// The pixmap symbols left undrawn since this was last asked, as
-    /// [`Self::named_pixmaps_refused`] gives them.
-    pub fn take_pixmaps_refused(&mut self) -> BTreeMap<usize, (String, String)> {
-        std::mem::take(&mut self.refused_pixmaps)
+    /// What the layer left undrawn since this was last asked: the hatches refused (Q-9) and the
+    /// pixmap symbols whose image is refused, each named by its name or its index (see
+    /// [`symbol::named`]).
+    pub fn take_refusals(&mut self) -> Refusals {
+        let pixmaps = std::mem::take(&mut self.refused_pixmaps)
             .into_iter()
             .map(|(index, why)| (index, (self.named(index), why)))
-            .collect()
+            .collect();
+        Refusals {
+            hatches: std::mem::take(&mut self.hatching.refused),
+            pixmaps,
+        }
     }
 
     /// The symbol at `index`, from 1, named for a report.

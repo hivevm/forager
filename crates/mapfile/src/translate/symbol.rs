@@ -18,7 +18,7 @@
 //! to one.
 
 use forager_ports::ResourcePath;
-use forager_style_ir::{Bound, Map, Symbol, SymbolKind, SymbolRef};
+use forager_style_ir::{ANCHOR_CENTRE, Bound, Map, Symbol, SymbolKind, SymbolRef};
 
 use super::{Range, Translator, binding_of};
 use crate::lexer::TokenKind;
@@ -118,7 +118,7 @@ impl Translator<'_> {
             return None;
         }
         if needs_points {
-            let anchor = symbol.anchor_point.unwrap_or([0.5, 0.5]);
+            let anchor = symbol.anchor();
             let vector = symbol.kind == SymbolKind::Vector;
             let (paths, extent) = shape(&points, measured, vector, anchor);
             symbol.paths = paths;
@@ -324,7 +324,7 @@ fn shape(
             .filter(drawn)
             .map(|p| p[1])
             .fold(points[0][1], f64::min);
-        let shift_positive = anchor != [0.5, 0.5];
+        let shift_positive = anchor != ANCHOR_CENTRE;
         if min_x < 0.0 || min_y < 0.0 || (shift_positive && (min_x != 0.0 || min_y != 0.0)) {
             shift = [min_x, min_y];
             extent = [extent[0] - min_x, extent[1] - min_y];

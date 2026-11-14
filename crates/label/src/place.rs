@@ -21,6 +21,7 @@
 
 use forager_render::Point;
 use forager_style_ir::c::{DEG_TO_RAD, int_cast, ms_max, ms_min};
+use forager_style_ir::{ANCHOR_CENTRE, LabelMarker, anchor_offset};
 
 /// MapServer's `MARKER_SLOP`: the pixels a label at an upper, lower, left, or right centre keeps
 /// from its point beyond its offset.
@@ -188,7 +189,7 @@ pub struct Offsets {
 }
 
 /// A label of a point as it is placed: its position, its text's box, its offsets, its rotation
-/// in radians counter-clockwise, its buffer in whole pixels, and whether it is forced.
+/// in radians counter-clockwise, and its buffer in whole pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PointLabel {
     pub position: Position,
@@ -196,7 +197,6 @@ pub struct PointLabel {
     pub offsets: Offsets,
     pub rotation: f64,
     pub buffer: i32,
-    pub force: bool,
 }
 
 /// Where `label` stands at `anchor` of `at`, as `msDrawLabelCache` calls `get_metrics`: at a fixed
@@ -214,24 +214,22 @@ pub fn label_poly_at(at: Point, label: &PointLabel, anchor: Anchor) -> Bounds {
     placed_with_buffer(at, label, anchor, 1).1
 }
 
-/// A marker of a label's `GEOMTRANSFORM labelpoint` style at `at`, as `computeMarkerBounds`
-/// computes its bounds: `size` the width and height `msGetMarkerSize` gives it, `anchor_point`
-/// its symbol's, `angle` the style's in degrees, and `offset` the style's `OFFSET`, scaled. A
-/// marker turned by any angle but 0 has its turned corners, and their box; one not turned, its
-/// box alone.
-pub fn marker_bounds(
-    at: Point,
-    (sx, sy): (f64, f64),
-    [anchor_x, anchor_y]: [f64; 2],
-    angle: f64,
-    [offset_x, offset_y]: [f64; 2],
-) -> Bounds {
+/// The bounds of `marker`, of a label's `GEOMTRANSFORM labelpoint` style, at `at`, as
+/// `computeMarkerBounds` computes them. A marker turned by any angle but 0 has its turned corners,
+/// and their box; one not turned, its box alone.
+pub fn marker_bounds(at: Point, marker: &LabelMarker) -> Bounds {
+    let LabelMarker {
+        size: (sx, sy),
+        anchor_point,
+        angle,
+        offset: [offset_x, offset_y],
+    } = *marker;
     if angle != 0.0 {
         let (hx, hy) = (sx / 2.0, sy / 2.0);
         let p = |x, y| Point { x, y };
         let mut points = [p(hx, hy), p(hx, -hy), p(-hx, -hy), p(-hx, hy), p(hx, hy)];
-        if anchor_x != 0.5 || anchor_y != 0.5 {
-            let (aox, aoy) = ((0.5 - anchor_x) * sx, (0.5 - anchor_y) * sy);
+        if anchor_point != ANCHOR_CENTRE {
+            let (aox, aoy) = anchor_offset(anchor_point, (sx, sy));
             for point in &mut points {
                 point.x += aox;
                 point.y += aoy;
@@ -254,8 +252,8 @@ pub fn marker_bounds(
             bbox: fast_bounds(&points),
         }
     } else {
-        let aox = (0.5 - anchor_x) * sx + at.x + offset_x;
-        let aoy = (0.5 - anchor_y) * sy + at.y + offset_y;
+        let (ox, oy) = anchor_offset(anchor_point, (sx, sy));
+        let (aox, aoy) = (ox + at.x + offset_x, oy + at.y + offset_y);
         Bounds {
             poly: None,
             bbox: [
@@ -307,10 +305,11 @@ fn placed_with_buffer(
 /// Places `label` at `at`, as `msDrawLabelCache` places a label without a leader: at `AUTO` at
 /// the first of [`AUTO_POSITIONS`] whose box `fits`, or at the last where it is forced; at a fixed
 /// position where its box fits, or where it is forced. `None` names a label that is not placed.
-/// `fits` is the label cache's test of a box.
+/// `force` is the label's `FORCE`, and `fits` the label cache's test of a box.
 pub fn place(
     at: Point,
     label: &PointLabel,
+    force: bool,
     mut fits: impl FnMut(&Bounds) -> bool,
 ) -> Option<Placement> {
     let placement = |anchor| {
@@ -328,12 +327,12 @@ pub fn place(
                 .into_iter()
                 .enumerate()
                 .map(|(i, anchor)| (i, placement(anchor)))
-                .find(|(i, p)| fits(&p.bounds) || (*i == last && label.force))
+                .find(|(i, p)| fits(&p.bounds) || (*i == last && force))
                 .map(|(_, p)| p)
         }
         Position::At(anchor) => {
             let p = placement(anchor);
-            (label.force || fits(&p.bounds)).then_some(p)
+            (force || fits(&p.bounds)).then_some(p)
         }
     }
 }

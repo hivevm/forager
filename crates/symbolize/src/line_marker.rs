@@ -158,7 +158,7 @@ pub(crate) fn draw<T>(
         style,
         (s.gap, s.rotation),
         (size_x * s.scale, size_y * s.scale),
-        symbol.anchor_point,
+        symbol.anchor(),
         initial_gap,
         image,
     );
@@ -205,7 +205,7 @@ pub(crate) fn draw_pixmap<T>(
             f64::from(pixmap.width()) * scale,
             f64::from(pixmap.height()) * scale,
         ),
-        symbol.anchor_point,
+        symbol.anchor(),
         initial_gap,
         image,
     );
@@ -230,12 +230,12 @@ impl Placement {
     /// What msDrawLineSymbol hands msImagePolylineMarkers of `style`, `src/maprendering.c:679-688`,
     /// with computeSymbolStyle's gap and rotation: the spacing the gap's size, turned with the
     /// line for a negative `GAP`; and the marker's size, the symbol's width and height scaled, at
-    /// least 1 each way (400-401), anchored at `anchor`, the centre without one.
+    /// least 1 each way (400-401), anchored at `anchor`.
     fn of<T>(
         style: &Style<T>,
         (gap, rotation): (f64, f64),
         (width, height): (f64, f64),
-        anchor: Option<[f64; 2]>,
+        anchor: [f64; 2],
         initial_gap: f64,
         image: (f64, f64),
     ) -> Self {
@@ -246,7 +246,7 @@ impl Placement {
             auto_angle: turned,
             rotation,
             size: (ms_max(1.0, width), ms_max(1.0, height)),
-            anchor: anchor.unwrap_or([0.5, 0.5]),
+            anchor,
             image,
         }
     }

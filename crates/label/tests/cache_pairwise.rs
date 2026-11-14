@@ -26,6 +26,7 @@ use forager_label::{
     draw_label_cache, marker_bounds, place,
 };
 use forager_render::Point;
+use forager_style_ir::LabelMarker;
 use forager_style_ir::c::{ms_max, ms_min, rect_overlap};
 
 /// The image: 5 by 4 cells of the grid's finest level, and four levels.
@@ -167,8 +168,9 @@ fn member(rng: &mut Rng) -> (Member, u8) {
         offsets,
         rotation,
         buffer,
-        force: rng.chance(15),
     });
+    // FORCE: the label's draw, taken by a member with a label; both drawn to keep the cases.
+    let label_force = rng.chance(15);
     let marker = rng.chance(40).then(|| {
         let (w, h) = (rng.range(0.0, 40.0), rng.range(0.0, 40.0));
         let mut m = [
@@ -193,7 +195,8 @@ fn member(rng: &mut Rng) -> (Member, u8) {
         priority: 1 + rng.below(3) as u8,
         point,
         label,
-        force: rng.chance(15),
+        // A member without a label takes its own draw, drawn first so that it is always drawn.
+        force: rng.chance(15) && label.is_none() || label_force && label.is_some(),
         partials: rng.chance(50),
         test_point: rng.chance(40),
         marker,
@@ -219,7 +222,13 @@ fn label_marker(rng: &mut Rng, point: Point) -> Option<Bounds> {
             0.0
         };
         let offset = [rng.range(-10.0, 10.0), rng.range(-10.0, 10.0)];
-        let mut bounds = marker_bounds(point, size, anchor, angle, offset);
+        let marker = LabelMarker {
+            size,
+            anchor_point: anchor,
+            angle,
+            offset,
+        };
+        let mut bounds = marker_bounds(point, &marker);
         match rng.below(10) {
             0 => bounds.bbox[rng.below(4) as usize] = rng.special(),
             1 => bounds.bbox.swap(0, 2),
@@ -264,7 +273,7 @@ fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
             // The marker of a labelpoint style, unless the label is forced; else the label
             // point, tested at MS_MAX_LABEL_PRIORITY: against no marker.
             if let Some(marker) = &m.label_marker {
-                if !label.force && !collisions(cache, &drawn, &m, marker, current, i) {
+                if !m.force && !collisions(cache, &drawn, &m, marker, current, i) {
                     continue;
                 }
             } else if m.test_point {
@@ -277,7 +286,7 @@ fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
                     continue;
                 }
             }
-            let Some(placement) = place(m.point, &label, |lb| {
+            let Some(placement) = place(m.point, &label, m.force, |lb| {
                 collisions(cache, &drawn, &m, lb, current, i)
             }) else {
                 continue;
@@ -378,8 +387,8 @@ fn min_distance(
     bbox: &[f64; 4],
 ) -> bool {
     let m = cache.0[i].0;
-    let label = m.label.expect("a placed label has a text");
-    if m.min_distance <= 0.0 || label.force {
+    assert!(m.label.is_some(), "a placed label has a text");
+    if m.min_distance <= 0.0 || m.force {
         return false;
     }
     let d = m.min_distance;

@@ -28,7 +28,7 @@ use forager_style_ir::c::{atof, atoi, c_str, ms_nint, ms_string_split};
 use forager_style_ir::{Bound, Diagnostic, Expr, Layer, Map, Rgba, Span, Style, Symbol, Units};
 
 use crate::bindable::{self, Field, Written};
-use forager_symbolize::View;
+use forager_symbolize::{Factors, View};
 
 /// A feature's properties as the evaluator reads them. A name is found without regard to ASCII
 /// case, as MapServer finds an attribute in a shapefile's `.dbf` or an OGR source: by the
@@ -445,14 +445,37 @@ pub(crate) fn resolution_factor(map: &Map) -> f64 {
     map.resolution.unwrap_or(72.0) / map.def_resolution.unwrap_or(72.0)
 }
 
-/// msPrepareImage's scale factor of `layer`, at the map's `cellsize` and scale `scale_denom`
-/// (see [`scale_denom`]): for `SIZEUNITS` other than pixels, the inches of that unit over those
-/// of the map's, over the cellsize; with a `SYMBOLSCALEDENOM` above 0 at a scale above 0, that
-/// over the scale, times the resolution factor; otherwise the resolution factor. Its classes,
-/// styles, labels, and labels' styles inherit it (msUpdateClassScaleFactor), as the mapfile
-/// gives none of them a `SIZEUNITS` of its own (loadClass, loadStyle, and loadLabel read none).
-pub(crate) fn layer_scale_factor(map: &Map, layer: &Layer, cellsize: f64, scale_denom: f64) -> f64 {
+/// The scale of a render of `map` in `view`, `width` pixels wide (see [`scale_denom`]), and the
+/// factors each layer is drawn at, by the layer's index, computed once for the render: the
+/// layer's scale factor (see [`layer_scale_factor`]) and the image's [`resolution_factor`]. A
+/// layer's classes, styles, labels, and labels' styles inherit them (msUpdateClassScaleFactor).
+pub(crate) fn scales(map: &Map, view: &View, width: u32) -> (f64, Vec<Factors>) {
+    let scale_denom = scale_denom(map, view, width);
     let resolution = resolution_factor(map);
+    let factors = map
+        .layers
+        .iter()
+        .map(|layer| {
+            let scale = layer_scale_factor(map, layer, view.cellsize, scale_denom, resolution);
+            Factors::new(scale, resolution)
+        })
+        .collect();
+    (scale_denom, factors)
+}
+
+/// msPrepareImage's scale factor of `layer`, at the map's `cellsize`, scale `scale_denom`, and
+/// resolution factor `resolution`: for `SIZEUNITS` other than pixels, the inches of that unit
+/// over those of the map's, over the cellsize; with a `SYMBOLSCALEDENOM` above 0 at a scale above
+/// 0, that over the scale, times the resolution factor; otherwise the resolution factor. The
+/// mapfile gives none of the layer's classes, styles, or labels a `SIZEUNITS` of its own
+/// (loadClass, loadStyle, and loadLabel read none).
+fn layer_scale_factor(
+    map: &Map,
+    layer: &Layer,
+    cellsize: f64,
+    scale_denom: f64,
+    resolution: f64,
+) -> f64 {
     match layer.size_units {
         Some(units) if units != Units::Pixels => {
             inches_per_unit(units) / inches_per_unit(map_units(map)) / cellsize

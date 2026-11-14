@@ -108,7 +108,7 @@ fn the_symbols_along_the_lines_of_a_layer_share_one_budget() {
                 .collect(),
         )
     };
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     let mut draw = |geometry: &Geometry| {
         let ops = draw_ops(
             RenderMode::Line,
@@ -198,11 +198,11 @@ fn a_transformed_style_without_a_symbol_or_with_symbol_0_draws_nothing() {
     let symbols = [circle()];
     for symbol in [None, Some(0)] {
         let style = transformed_style(GeomTransform::Start, symbol);
-        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+        let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
         assert!(transformed_ops(&ell(), &style, &mut canvas).is_empty());
     }
     let style = transformed_style(GeomTransform::Start, Some(1));
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     assert!(!transformed_ops(&ell(), &style, &mut canvas).is_empty());
 }
 
@@ -233,7 +233,7 @@ fn bbox_fills_and_outlines_the_bounds_held_by_the_padding_with_symbol_0() {
         geom_transform: Some(GeomTransform::Bbox),
         ..colored(Some(BLUE), Some(BLACK))
     };
-    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let mut canvas = Canvas::new(&[], 101, 101, Factors::new(1.0, 1.0));
     let ops = transformed_ops(&past_the_image(), &style, &mut canvas);
     let expected = ring(-8.0, -8.0, 109.0, 60.0);
     let [
@@ -259,7 +259,7 @@ fn bbox_strokes_the_ring_of_an_outline_colour_without_a_colour() {
         geom_transform: Some(GeomTransform::Bbox),
         ..colored(None, Some(BLACK))
     };
-    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let mut canvas = Canvas::new(&[], 101, 101, Factors::new(1.0, 1.0));
     let ops = transformed_ops(&past_the_image(), &style, &mut canvas);
     let [DrawOp::Stroke { paths, color, .. }] = ops.as_slice() else {
         panic!("{ops:?}");
@@ -280,7 +280,7 @@ fn bbox_strokes_the_ring_of_an_outline_colour_without_a_colour() {
 fn bbox_pads_by_the_larger_of_width_and_size_cut_to_an_int() {
     // SIZE 10.7 over the default WIDTH 1: (int)13.7 = 13; WIDTH 2.9 without a SIZE, which
     // initStyle sets to -1: (int)5.9 = 5. A shape within the image keeps its bounds.
-    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let mut canvas = Canvas::new(&[], 101, 101, Factors::new(1.0, 1.0));
     for (width, size, pad) in [(None, Some(10.7), 13.0), (Some(2.9), None, 5.0)] {
         let style = Style {
             width: width.map(Bound::Value),
@@ -311,7 +311,7 @@ fn bbox_pads_as_the_pin_s_int_does_past_an_int() {
         geom_transform: Some(GeomTransform::Bbox),
         ..colored(Some(BLUE), None)
     };
-    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let mut canvas = Canvas::new(&[], 101, 101, Factors::new(1.0, 1.0));
     let ops = transformed_ops(&ell(), &style, &mut canvas);
     let [DrawOp::Fill { rings, .. }] = ops.as_slice() else {
         panic!("{ops:?}");
@@ -331,7 +331,7 @@ fn bbox_in_an_outline_pass_pads_by_the_style_the_outline_prepares() {
         geom_transform: Some(GeomTransform::Bbox),
         ..colored(Some(BLUE), Some(BLACK))
     };
-    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let mut canvas = Canvas::new(&[], 101, 101, Factors::new(1.0, 1.0));
     let ops = draw_ops(
         RenderMode::Line,
         &past_the_image(),
@@ -384,7 +384,7 @@ fn bbox_on_a_polygon_layer_hatches_and_counts_a_hatch_refused() {
             canvas,
         )
     };
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     let ops = polygon_ops(&style, &mut canvas);
     assert!(matches!(ops.as_slice(), [DrawOp::Hatch(_)]), "{ops:?}");
     assert_eq!(canvas.hatching.refused, 0);
@@ -424,7 +424,7 @@ fn without_angle_auto_a_transformed_symbol_keeps_its_angle() {
         );
         ops
     };
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     assert_eq!(
         transformed_ops(&ell(), &style, &mut canvas),
         at_corner(&style)
@@ -467,16 +467,16 @@ fn the_symbols_a_transform_places_share_the_layer_s_budget() {
         (50.0, 50.0),
         (60.0, 60.0),
     ]));
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     let drawn = transformed_ops(&zigzag, &style, &mut canvas);
     assert_eq!(drawn.len(), 4);
     let cost = points(&drawn);
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     canvas.markers = MarkerBudget::of(cost - 1);
     assert!(transformed_ops(&zigzag, &style, &mut canvas).is_empty());
     assert!(canvas.markers_spent());
     assert!(transformed_ops(&ell(), &style, &mut canvas).is_empty());
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     canvas.markers = MarkerBudget::of(cost);
     assert_eq!(transformed_ops(&zigzag, &style, &mut canvas).len(), 4);
     assert!(!canvas.markers_spent());
@@ -503,15 +503,15 @@ fn the_markers_of_a_point_layer_share_the_layer_s_budget() {
             canvas,
         )
     };
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     let drawn = point_ops(&mut canvas);
     assert_eq!(drawn.len(), 3);
     let cost = points(&drawn);
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     canvas.markers = MarkerBudget::of(cost - 1);
     assert!(point_ops(&mut canvas).is_empty());
     assert!(canvas.markers_spent());
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     canvas.markers = MarkerBudget::of(cost);
     assert_eq!(point_ops(&mut canvas).len(), 3);
     assert!(!canvas.markers_spent());
@@ -540,7 +540,7 @@ fn the_stand_in_squares_of_symbols_not_drawn_yet_pay_the_budget_and_symbol_0_s_d
         ..transformed_style(GeomTransform::Vertices, None)
     };
     let point_ops = |style: &Style, budget: usize| {
-        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+        let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
         canvas.markers = MarkerBudget::of(budget);
         let ops = draw_ops(
             RenderMode::Point,
@@ -585,7 +585,7 @@ fn a_centroid_of_a_collection_is_that_of_all_its_parts() {
         Geometry::LineString(coords(&[(10.0, 50.0), (30.0, 50.0)])),
         Geometry::LineString(coords(&[(70.0, 50.0), (90.0, 50.0)])),
     ]);
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     let drawn = transformed_ops(&collection, &style, &mut canvas);
     let mut expected = Vec::new();
     symbol::symbol_ops(
@@ -634,7 +634,7 @@ fn hatches(geometry: &Geometry) -> Vec<forager_render::Hatch> {
         ..colored(Some(BLUE), None)
     };
     let symbols = [hatch_symbol()];
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     canvas.class(std::slice::from_ref(&style));
     let ops = draw_ops(
         RenderMode::Polygon,
@@ -740,7 +740,7 @@ fn at_a_factor_a_point_draws_its_symbol_scaled_and_its_stand_in_square_as_writte
         ..colored(Some(BLUE), (mode == RenderMode::Point).then_some(BLACK))
     };
     let drawn = |style: &Style, mode: RenderMode, geometry: &Geometry, factor: f64| {
-        let mut canvas = Canvas::new(&symbols, 101, 101, factor);
+        let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(factor, factor));
         draw_ops(
             mode,
             geometry,
@@ -807,7 +807,7 @@ fn a_stand_in_square_bounds_its_outline_as_compute_symbol_style_does() {
     // maprendering.c:69-71: MS_MAX with MINWIDTH, then MS_MIN with MAXWIDTH, here at a
     // factor of 1. A NaN width becomes MINWIDTH, and a MAXWIDTH below the MINWIDTH wins.
     let outline = |style: &Style| {
-        let mut canvas = Canvas::new(&[], 101, 101, 2.0);
+        let mut canvas = Canvas::new(&[], 101, 101, Factors::new(2.0, 2.0));
         let point = Geometry::Point(Coord { x: 50.0, y: 50.0 });
         let ops = draw_ops(
             RenderMode::Point,
@@ -851,7 +851,7 @@ fn pixmap_ops_of(
     symbols: &[Symbol],
     pixmaps: &Pixmaps,
 ) -> (Vec<DrawOp>, Vec<(usize, String)>) {
-    let mut canvas = Canvas::new(symbols, 101, 101, 1.0).with_pixmaps(pixmaps);
+    let mut canvas = Canvas::new(symbols, 101, 101, Factors::new(1.0, 1.0)).with_pixmaps(pixmaps);
     let point = Geometry::Point(Coord { x: 50.0, y: 50.0 });
     let ops = draw_ops(
         RenderMode::Point,
@@ -862,7 +862,8 @@ fn pixmap_ops_of(
         &mut canvas,
     );
     let refused = canvas
-        .named_pixmaps_refused()
+        .take_refusals()
+        .pixmaps
         .into_iter()
         .map(|(index, (_, why))| (index, why))
         .collect();
@@ -977,7 +978,8 @@ fn a_pixmap_along_a_line_needs_no_colour_and_a_polygon_s_draws_no_line() {
         ..Style::default()
     };
     let drawn = |style: &Style, pass: Pass| {
-        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+        let mut canvas =
+            Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_pixmaps(&pixmaps);
         let mut ops = Vec::new();
         let line = vec![vec![p(0.0, 50.0), p(30.0, 50.0)]];
         line_symbol(&mut ops, line, style, pass, &mut canvas);
@@ -988,7 +990,7 @@ fn a_pixmap_along_a_line_needs_no_colour_and_a_polygon_s_draws_no_line() {
                 other => panic!("{other:?}"),
             })
             .collect();
-        let refused: Vec<_> = canvas.named_pixmaps_refused().into_keys().collect();
+        let refused: Vec<_> = canvas.take_refusals().pixmaps.into_keys().collect();
         (placed, refused)
     };
     let along = (vec![(3, 48), (13, 48), (23, 48)], vec![]);
@@ -1015,7 +1017,7 @@ fn a_pixmap_along_a_line_needs_no_colour_and_a_polygon_s_draws_no_line() {
     );
     // A polygon's pixmap without a COLOR draws no outline, markers or stroke, only its tile.
     let mut tiles = Tiles::default();
-    let mut canvas = Canvas::new(&symbols, 101, 101, 1.0)
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0))
         .with_pixmaps(&pixmaps)
         .with_tiles(&mut tiles);
     let mut ops = Vec::new();
@@ -1032,7 +1034,7 @@ fn a_pixmap_along_a_line_needs_no_colour_and_a_polygon_s_draws_no_line() {
         &unit_view(),
         &mut canvas
     ));
-    assert!(canvas.named_pixmaps_refused().is_empty());
+    assert!(canvas.take_refusals().pixmaps.is_empty());
     match ops.as_slice() {
         [DrawOp::TiledFill { tile, .. }] => {
             assert_eq!((tile.width(), tile.height()), (10, 10), "the GAP's");
@@ -1060,7 +1062,8 @@ fn a_pixmap_s_scale_is_bounded_by_its_size_bounds_times_the_resolution_factor() 
         ..Style::default()
     };
     for (size, half_side, scale) in [(6.0, 10, 0.299_999_999_999_999_93), (1.0, 8, 0.375)] {
-        let mut canvas = Canvas::new(&symbols, 101, 101, 2.0).with_pixmaps(&pixmaps);
+        let mut canvas =
+            Canvas::new(&symbols, 101, 101, Factors::new(2.0, 2.0)).with_pixmaps(&pixmaps);
         let point = Geometry::Point(Coord { x: 50.0, y: 50.0 });
         let ops = draw_ops(
             RenderMode::Point,
@@ -1154,7 +1157,7 @@ fn a_pixmap_is_loaded_where_it_is_drawn_as_a_mark() {
 /// The paths of the strokes `draw_ops` draws for `geometry` in `mode`, outlined in black.
 fn outline_paths(mode: RenderMode, geometry: &Geometry, view: &View) -> Vec<Vec<Point>> {
     let style = colored(None, Some(BLACK));
-    let mut canvas = Canvas::new(&[], 101, 101, 1.0);
+    let mut canvas = Canvas::new(&[], 101, 101, Factors::new(1.0, 1.0));
     draw_ops(mode, geometry, &style, Pass::Plain, view, &mut canvas)
         .into_iter()
         .flat_map(|op| match op {

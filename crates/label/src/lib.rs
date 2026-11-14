@@ -15,7 +15,8 @@ mod place;
 mod size;
 
 pub use crate::cache::{
-    MAX_LABELS, MAX_PRIORITY, Member, Members, draw_label_cache, walk_label_cache,
+    MAX_LABELS, MAX_PRIORITY, Member, Members, cached_marker_box, draw_label_cache, marker_offset,
+    walk_label_cache,
 };
 pub use crate::font::{Attempt, Font, Unusable, attempts};
 pub use crate::layout::{Align, Drawn, Glyphs, Layout, LineError, TextPath, lines};

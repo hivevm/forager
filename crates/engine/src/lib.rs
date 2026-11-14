@@ -45,8 +45,8 @@ use forager_style_ir::{
     Diagnostic, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
 };
 use forager_symbolize::{
-    Canvas, Pass, Pixmaps, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops, label_pixmap,
-    marked_pixmap, point_markers, resolve, vertices,
+    Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops,
+    label_pixmap, marked_pixmap, point_markers, resolve, vertices,
 };
 
 use forager_expr::Evaluator;
@@ -147,12 +147,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         return Rendered::no_map(diagnostics);
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    let mut labels = Labels::new(map, &view, files, (width, height));
+    let (scale, factors) = classes::scales(map, &view, width);
+    let mut labels = Labels::new(map, &view, &factors, files, (width, height));
     // The images of the render's pixmap symbols, dropped with the render (ADR-0029).
     let mut images = Images::default();
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
-    let scale = classes::scale_denom(map, &view, width);
     let (order, cache_at) = drawing_order(map);
     let mut cached_labels = None;
     for (position, &(layer_index, layer)) in order.iter().enumerate() {
@@ -196,7 +196,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .load_pixmaps(&selected, &map.symbols, !at_once, &mut images, files)
             .await;
         let (pixmaps, tiles) = images.drawing();
-        let mut canvas = drawing.canvas(map, (width, height), pixmaps, tiles);
+        let mut canvas = layer_canvas(map, factors[layer_index], (width, height), pixmaps, tiles);
         // Each feature is labelled by the class that draws it, in the order it is drawn.
         let drawn: Vec<labels::Labelled<'_>> = selected
             .iter()
@@ -225,12 +225,11 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         }
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
-        let label_hatches = labels.take_hatches_refused(layer_index);
+        let refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
         layer_reports(
             layer,
-            &canvas,
-            label_hatches,
-            labels.pixmaps_reported(layer_index, canvas.named_pixmaps_refused()),
+            canvas.markers_spent(),
+            refusals,
             undrawn,
             selector.binder.diagnostics,
         );
@@ -322,19 +321,17 @@ fn drawable(
     (drawable, undrawn)
 }
 
-/// Reports what `layer` left undrawn on `canvas`: symbols past the budget of markers, hatches
-/// refused, those of the labelpoly styles of its labels drawn at once, `label_hatches`, among them,
-/// the pixmaps of `pixmaps` refused, its features' and its labels' drawn at once, and the
-/// geometries of `undrawn`, by kind, its render mode cannot draw.
+/// Reports what `layer` left undrawn: symbols past the budget of markers where `markers_spent`,
+/// the hatches and pixmaps of `refusals`, its features' and those of its labels drawn at once, and
+/// the geometries of `undrawn`, by kind, its render mode cannot draw.
 fn layer_reports(
     layer: &Layer,
-    canvas: &Canvas,
-    label_hatches: usize,
-    pixmaps: BTreeMap<usize, (String, String)>,
+    markers_spent: bool,
+    refusals: Refusals,
     undrawn: BTreeMap<&'static str, usize>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if canvas.markers_spent() {
+    if markers_spent {
         let message = format!(
             "layer {}: its symbols at its features, along its lines, or placed by a \
              GEOMTRANSFORM exceed {MAX_MARKER_POINTS} points; those past the limit are not drawn",
@@ -346,13 +343,7 @@ fn layer_reports(
             layer.span.clone(),
         ));
     }
-    diagnostics.extend(refused_hatches(
-        layer,
-        canvas.hatches_refused() + label_hatches,
-    ));
-    for (symbol, why) in pixmaps.into_values() {
-        diagnostics.push(refused_pixmap(layer, &symbol, &why));
-    }
+    diagnostics.extend(refusal_reports(layer, refusals));
     for (kind, count) in undrawn {
         let message = format!(
             "layer {} cannot draw {count} {kind} geometr{} in its render mode",
@@ -367,10 +358,16 @@ fn layer_reports(
     }
 }
 
-/// The report that `layer` left its pixmap symbol `symbol`, named, undrawn, and why.
-fn refused_pixmap(layer: &Layer, symbol: &str, why: &str) -> Diagnostic {
-    let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
-    Diagnostic::warning("pixmap-not-drawn", message, layer.span.clone())
+/// The reports that `layer` left the hatches and pixmaps of `refusals` undrawn: the warning for
+/// the hatches (see [`refused_hatches`]), then one for each pixmap symbol, named, and why.
+fn refusal_reports(layer: &Layer, refusals: Refusals) -> impl Iterator<Item = Diagnostic> {
+    let pixmaps = refusals.pixmaps.into_values().map(|(symbol, why)| {
+        let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
+        Diagnostic::warning("pixmap-not-drawn", message, layer.span.clone())
+    });
+    refused_hatches(layer, refusals.hatches)
+        .into_iter()
+        .chain(pixmaps)
 }
 
 /// A layer's opacity as MapServer holds it, an integer percent from 0 to 100: the IR's number
@@ -440,6 +437,21 @@ impl<R: Renderer> Draw for Target<'_, R> {
     }
 }
 
+/// The canvas a layer of `map` is drawn on, in an image `width` by `height`, with the images of
+/// `pixmaps` and the fill tiles of `tiles`, at `factors`, the layer's scale factor, which sizes
+/// its styles, and the image's resolution factor, which bounds them.
+fn layer_canvas<'c>(
+    map: &'c Map,
+    factors: Factors,
+    (width, height): (u32, u32),
+    pixmaps: &'c Pixmaps,
+    tiles: &'c mut Tiles,
+) -> Canvas<'c> {
+    Canvas::new(&map.symbols, width, height, factors)
+        .with_pixmaps(pixmaps)
+        .with_tiles(tiles)
+}
+
 /// What a layer's features are drawn with.
 struct Drawing<'a> {
     mode: RenderMode,
@@ -450,23 +462,6 @@ struct Drawing<'a> {
 }
 
 impl Drawing<'_> {
-    /// The canvas the layer is drawn on, in an image `width` by `height`, with the images of
-    /// `pixmaps` and the fill tiles of `tiles`: the layer's scale factor sizes its styles, the
-    /// image's resolution factor bounds them.
-    fn canvas<'c>(
-        &self,
-        map: &'c Map,
-        (width, height): (u32, u32),
-        pixmaps: &'c Pixmaps,
-        tiles: &'c mut Tiles,
-    ) -> Canvas<'c> {
-        let factor = classes::layer_scale_factor(map, self.layer, self.view.cellsize, self.scale);
-        Canvas::new(&map.symbols, width, height, factor)
-            .with_resolution(classes::resolution_factor(map))
-            .with_pixmaps(pixmaps)
-            .with_tiles(tiles)
-    }
-
     /// Where the layer is drawn: into an image of its own, laid over the map, where the layer has
     /// an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block, and straight onto the
     /// map otherwise.
