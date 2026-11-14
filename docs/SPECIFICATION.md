@@ -137,7 +137,9 @@ from the threats below.
   *Drawing:* the features one layer draws (1,000,000); the points of the symbols one layer places
   at its features, along its lines, or where a style's geometry transformation puts them
   (1,000,000), the stand-in square of a style without a symbol, or of symbol 0, not counted;
-  the labels one render's label cache holds (100,000).
+  the points one layer's `GEOMTRANSFORM` adds to the shapes of its features (1,000,000), and the
+  points it visits beyond reading each once (100,000,000); the labels one render's label cache
+  holds (100,000).
 
   *Expressions:* nesting (24 levels); the length of a text an expression reads or computes
   (16 MiB); a regular expression's length (64 KiB) and size.
