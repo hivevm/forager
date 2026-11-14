@@ -159,7 +159,9 @@ or polygon layer's are not drawn yet, each reported.
 **`labelcache_map_edge_buffer`.** The map's `WEB` `METADATA` may name a gutter along the image's
 edges that no cached label reaches into: `msDrawLabelCache` in `src/mapdraw.c` reads it as the
 absolute value of `atoi` of the text, the key found without case, and the IR's
-`label_cache_edge_buffer` carries it, none where it reads as 0. `labelInImage` in `src/maplabel.c`
+`label_cache_edge_buffer` carries it, none where it reads as 0; a pair of that `METADATA` that is
+not two strings, or a last key without a value, is left out and warns `unsupported-value`, where
+`loadHashTable` in `src/mapfile.c` fails the load. `labelInImage` in `src/maplabel.c`
 then requires a label that may not be partial to lie that many pixels inside each edge, by its box
 or, where it is turned, its corners; a label of `PARTIALS TRUE` is not tested against the image, and
 a forced one is drawn untested, but for a forced label of `POSITION AUTO`, whose positions before

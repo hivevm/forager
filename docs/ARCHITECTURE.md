@@ -57,7 +57,12 @@ golden path and the test pattern an agent copies from are named here.
   `labelpoint` style gives, a symbol's default anchor point, and the anchor arithmetic
   (`marker.rs`): a computed value, not part of the style document, shared by `symbolize`, which
   sizes and places the marker, and `label`, which bounds it; it lives here because ADR-0008 gives
-  `symbolize` no edge to `label`. It depends on no other crate of the workspace.
+  `symbolize` no edge to `label`. It holds a map's fonts, `Fonts`, which finds a name without
+  case as MapServer's font set does and leaves a style document's name that matches one written
+  before it out with a warning, and the one reader of a label's font list, `font_list`,
+  which the frontend checks a label's fonts with and `label` takes its steps from (`font.rs`); it
+  lives here because ADR-0008 keeps `mapfile` from `label`. It depends on no other crate of the
+  workspace.
 - **`ports`** — the port traits — the resource loader, the feature source, the projection
   resolver — with the features a source delivers, their geometries, re-exported from `style-ir`,
   and properties
@@ -75,7 +80,9 @@ golden path and the test pattern an agent copies from are named here.
   translation into the style IR (`translate/`, a module per block it reads: symbols, font set,
   labels, styles, projections, the output format's transparency, inline features, and the
   defaults of `VALIDATION`, which a load substitutes into its expressions within a 16 MiB bound of
-  their own, apart from the total size (`translate/defaults.rs`, Q-9); a load counts each of the two
+  their own, apart from the total size (`translate/defaults.rs`, Q-9); `METADATA` and `VALIDATION`
+  read by one reader, as `loadHashTable` reads them, which reports a pair it cannot read
+  (`translate/hash_table.rs`); a load counts each of the two
   bounds on text by a budget of one type that stops at its bound and reports the charge that passes
   it once (`budget.rs`)), which appends
   to the map's symbols a pixmap or SVG symbol for each name a style's `SYMBOL` gives that no
@@ -193,20 +200,20 @@ golden path and the test pattern an agent copies from are named here.
   decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs` holds
   this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
-  font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
-  FreeType's arithmetic, laid out by their advances, broken into lines at the label's `WRAP`
-  character and its `MAXLENGTH`, aligned line by line, and turned by the label's angle; and where a
-  label stands, its point and its box placed by its position, its offset, and its marker's, with its
-  labelpoly and the bounds of its `labelpoint` marker, as a pure function of the text's box
-  (`place.rs`); and which labels MapServer's label cache draws, by priority, collisions with the
-  labels drawn, their `labelpoint` markers among them, and the markers cached, the image's edge and
-  the gutter inside it that `labelcache_map_edge_buffer` sets, and `MINDISTANCE`, each test bounded
-  by a grid over the image that files a drawn label by its box and, for `MINDISTANCE`, by its point
-  apart; the cache takes the first `MAX_LABELS`, reports how many it left out, and hands its caller
-  every label it visits, drawn or not, in its walk's order, with the box it filed a drawn one by,
-  which the engine's report of the labels follows; it computes the box of the marker cached
-  beneath a label and `msDrawLabelCache`'s offset of a label from its markers (`cache.rs`). It
-  is the one crate that depends on skrifa, and does no I/O (ADR-0031).
+  font list, read by `style-ir`'s `font_list`, in the order MapServer tries them, and its glyphs
+  read with skrifa, unhinted with FreeType's arithmetic, laid out by their advances, broken into
+  lines at the label's `WRAP` character and its `MAXLENGTH`, aligned line by line, and turned by the
+  label's angle; and where a label stands, its point and its box placed by its position, its offset,
+  and its marker's, with its labelpoly and the bounds of its `labelpoint` marker, as a pure function
+  of the text's box (`place.rs`); and which labels MapServer's label cache draws, by priority,
+  collisions with the labels drawn, their `labelpoint` markers among them, and the markers cached,
+  the image's edge and the gutter inside it that `labelcache_map_edge_buffer` sets, and
+  `MINDISTANCE`, each test bounded by a grid over the image that files a drawn label by its box and,
+  for `MINDISTANCE`, by its point apart; the cache takes the first `MAX_LABELS`, reports how many it
+  left out, and hands its caller every label it visits, drawn or not, in its walk's order, with the
+  box it filed a drawn one by, which the engine's report of the labels follows; it computes the box
+  of the marker cached beneath a label and `msDrawLabelCache`'s offset of a label from its markers
+  (`cache.rs`). It is the one crate that depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
   or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
   transformation, each by a counted reference to the one image, a polygon filled with a tile, by

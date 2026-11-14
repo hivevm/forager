@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::lenient::{self, Pointer, read_error};
 use crate::migration::{self, STEPS};
-use crate::{Diagnostic, MAX_EXPRESSION_DEPTH, MAX_RESOLUTION, MIN_RESOLUTION, Map};
+use crate::{Diagnostic, Fonts, MAX_EXPRESSION_DEPTH, MAX_RESOLUTION, MIN_RESOLUTION, Map};
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
 pub const FORMAT_VERSION: &str = "1.0";
@@ -173,7 +173,18 @@ impl StyleDocument {
         let mut track = serde_path_to_error::Track::new();
         match F::typed(text, &mut track, &mut ignored) {
             Ok(document) => Self::checked(document, ignored),
-            Err(_) if lenient => lenient::read(tree()?, F::CODE),
+            Err(_) if lenient => {
+                let mut read = lenient::read(tree()?, F::CODE)?;
+                // The value tree orders the fonts by bytes; a typed read of them alone keeps
+                // the order written, which decides the twin kept.
+                if let Ok(written) = F::value::<WrittenFonts>(text) {
+                    read.warnings.retain(|w| w.code != TWIN);
+                    read.document.map.fonts = written.map.fonts;
+                    read.warnings
+                        .extend(twin_warnings(&mut read.document.map.fonts));
+                }
+                Ok(read)
+            }
             Err(e) => Err(read_error(
                 F::CODE,
                 &serde_path_to_error::Error::new(track.path(), e),
@@ -241,6 +252,7 @@ impl StyleDocument {
                     .collect();
                 let mut document = self.bounded()?;
                 warnings.extend(document.map.ranged());
+                warnings.extend(twin_warnings(&mut document.map.fonts));
                 Ok(Read { document, warnings })
             }
             (Some(theirs), Some(ours)) if theirs.0 > ours.0 => Err(Diagnostic::error(
@@ -261,6 +273,37 @@ impl StyleDocument {
             )),
         }
     }
+}
+
+/// The code of the warning of a font name a document's fonts give twice without regard to case.
+const TWIN: &str = "font-name-twin";
+
+/// A warning for each font name of `fonts` that the reader left out for one before it that it
+/// matches without regard to case.
+fn twin_warnings(fonts: &mut Fonts) -> Vec<Diagnostic> {
+    fonts
+        .take_twins()
+        .into_iter()
+        .map(|(name, kept)| {
+            let message = format!(
+                "/map/fonts: `{name}` matches the font `{kept}` before it without regard to case \
+                 and is ignored"
+            );
+            Diagnostic::warning(TWIN, message, None)
+        })
+        .collect()
+}
+
+/// A document's fonts alone, read typed so that their order is the order written.
+#[derive(Deserialize)]
+struct WrittenFonts {
+    map: WrittenMap,
+}
+
+#[derive(Deserialize)]
+struct WrittenMap {
+    #[serde(default)]
+    fonts: Fonts,
 }
 
 impl Map {
@@ -403,7 +446,9 @@ mod tests {
                 span: Some(Span::new("world.map", 6, 3)),
             }],
             symbols: vec![sample_symbol()],
-            fonts: [("sans".to_owned(), "fonts/DejaVuSans.ttf".to_owned())].into(),
+            fonts: [("sans".to_owned(), "fonts/DejaVuSans.ttf".to_owned())]
+                .into_iter()
+                .collect(),
             span: Some(Span::new("world.map", 1, 1)),
         })
     }
@@ -717,6 +762,70 @@ mod tests {
             "{:?}",
             read.warnings
         );
+    }
+
+    #[test]
+    fn a_font_name_after_one_in_another_case_is_ignored_with_a_warning() {
+        // The maintainer's choice of 2026-11-13: the first written is used, as the frontend
+        // keeps a font set's name as first written.
+        let read = with_map(r#""fonts":{"sans":"a.ttf","mono":"m.ttf","Sans":"b.ttf"}"#);
+        let fonts = &read.document.map.fonts;
+        assert_eq!(fonts.get("SANS"), Some("a.ttf"));
+        assert_eq!(fonts.get("mono"), Some("m.ttf"));
+        assert_eq!(fonts.len(), 2);
+        let [warning] = read.warnings.as_slice() else {
+            panic!("{:?}", read.warnings)
+        };
+        assert_eq!(warning.code, "font-name-twin");
+        assert_eq!(
+            warning.message,
+            "/map/fonts: `Sans` matches the font `sans` before it without regard to case and is \
+             ignored"
+        );
+        let read = StyleDocument::from_yaml(
+            "version: \"1.0\"\nmap:\n  fonts:\n    Sans: b.ttf\n    sans: a.ttf\n",
+        )
+        .unwrap();
+        assert_eq!(read.document.map.fonts.get("sans"), Some("b.ttf"));
+        assert_eq!(read.warnings.len(), 1, "{:?}", read.warnings);
+        assert!(read.warnings[0].message.contains("`sans` matches"));
+        let read = with_map(r#""fonts":{"sans":"a.ttf","sans":"b.ttf"}"#);
+        assert_eq!(read.document.map.fonts.get("sans"), Some("a.ttf"));
+        assert_eq!(
+            read.warnings[0].message,
+            "/map/fonts: `sans` matches the font `sans` before it without regard to case and is \
+             ignored",
+            "an exact duplicate too"
+        );
+    }
+
+    #[test]
+    fn a_lenient_read_keeps_the_font_name_written_first() {
+        // The lenient read goes through a serde_json::Value, whose map orders its keys by bytes,
+        // where `Sans` comes before `sans`.
+        let fonts = r#""fonts":{"sans":"a.ttf","Sans":"b.ttf"}"#;
+        for unknown in [r#""units":"furlongs","#, ""] {
+            let text = format!(r#"{{"version":"1.1","map":{{{unknown}{fonts}}}}}"#);
+            let read = StyleDocument::from_json(&text).unwrap();
+            let lenient = read.warnings.iter().any(|w| w.code != "font-name-twin");
+            assert_eq!(lenient, !unknown.is_empty(), "{:?}", read.warnings);
+            assert_eq!(read.document.map.fonts.get("SANS"), Some("a.ttf"), "{text}");
+            assert_eq!(read.document.map.fonts.keys().collect::<Vec<_>>(), ["sans"]);
+            let twin: Vec<&str> = read
+                .warnings
+                .iter()
+                .filter(|w| w.code == "font-name-twin")
+                .map(|w| w.message.as_str())
+                .collect();
+            assert_eq!(
+                twin,
+                [
+                    "/map/fonts: `Sans` matches the font `sans` before it without regard to case \
+                  and is ignored"
+                ],
+                "{text}"
+            );
+        }
     }
 
     #[test]

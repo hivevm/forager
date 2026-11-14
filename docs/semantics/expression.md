@@ -89,8 +89,9 @@ that is not two strings, or a last key without a value, gives no default and war
 `unsupported-value` naming its key, where MapServer's `loadHashTable` fails the load; the block's
 other pairs still hold. `WEB` is read for its `VALIDATION` and, of its `METADATA`, for the keys
 the map carries ([label.md](label.md)): its `METADATA` warns `unsupported-keyword` for the others,
-and each of its other keywords, which serve MapServer's CGI and templates, warns
-`discarded-keyword`.
+a pair of it that is not two strings, or a last key without a value, warns `unsupported-value` as a
+`VALIDATION` pair does, and each of its other keywords, which serve MapServer's CGI and templates,
+warns `discarded-keyword`.
 
 **Not carried over.** `[shape]`, `[map_cellsize]`, `[data_cellsize]`, the geometry functions and
 spatial predicates, `IN` against a computed string, a number past the range of a double, which JSON

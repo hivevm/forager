@@ -362,7 +362,9 @@ fuzz_target!(|data: &[u8]| {
     let [min_x, min_y, max_x, max_y] = input.extent;
     let mut map = Map {
         resolution: Some(input.resolution),
-        fonts: [("sans".to_owned(), "sans.ttf".to_owned())].into(),
+        fonts: [("sans".to_owned(), "sans.ttf".to_owned())]
+            .into_iter()
+            .collect(),
         extent: Some(Extent {
             min_x,
             min_y,

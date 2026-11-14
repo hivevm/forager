@@ -15,7 +15,7 @@ mod syntax;
 mod translate;
 mod wkt;
 
-use budget::{Budget, Charged};
+use budget::Budget;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -199,17 +199,14 @@ impl<L: ResourceLoader> Reading<'_, L> {
             .load(path)
             .await
             .map_err(|e| Refused::Unreadable(e.to_string()))?;
-        match self.read.charge(bytes.len()) {
-            Charged::Within => Ok(bytes),
-            Charged::PassedNow => {
-                let message =
-                    format!("the mapfile with the files it names exceeds {MAX_TOTAL_BYTES} bytes");
-                self.report
-                    .push(Diagnostic::error("mapfile-too-large", message, span));
-                Err(Refused::OverLimit)
-            }
-            Charged::Passed => Err(Refused::OverLimit),
+        if self.read.charge(bytes.len()) {
+            let message =
+                format!("the mapfile with the files it names exceeds {MAX_TOTAL_BYTES} bytes");
+            self.report
+                .push(Diagnostic::error("mapfile-too-large", message, span));
+            return Err(Refused::OverLimit);
         }
+        Ok(bytes)
     }
 
     /// The last `keyword` directive of the map and the file it names, resolved against the main

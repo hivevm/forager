@@ -16,14 +16,14 @@
 //! Translates the syntax tree of a mapfile into the style IR. What the IR cannot hold yet is
 //! reported, never silently dropped.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::c::{atoi, int_cast};
 use forager_style_ir::{
-    Bound, Class, Diagnostic, Expr, Extent, GeomTransform, Layer, LayerProjection, LayerStatus,
-    MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol,
-    Units,
+    Bound, Class, Diagnostic, Expr, Extent, Fonts, GeomTransform, Layer, LayerProjection,
+    LayerStatus, MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef,
+    Span, Symbol, Units,
 };
 
 use crate::MAX_DEFAULT_BYTES;
@@ -36,10 +36,12 @@ use crate::report::Report;
 use crate::syntax::{Block, Directive, Node};
 
 use self::defaults::{Defaults, substituted};
+use self::hash_table::HashTable;
 
 mod defaults;
 mod feature;
 mod fonts;
+mod hash_table;
 mod label;
 mod output;
 mod projection;
@@ -78,24 +80,6 @@ const WEB_METADATA_READ: &[&str] = &["labelcache_map_edge_buffer", MAX_FEATURES_
 /// The key of the metadata and of the output format's option that limit the features a layer
 /// draws, as `msLayerGetMaxFeaturesToDraw` reads it.
 const MAX_FEATURES_KEY: &str = "maxfeaturestodraw";
-
-/// The value of `key` in the `METADATA` of `blocks`, as msLookupHashTable finds it: without
-/// regard to case, a later pair of a key replacing an earlier, as loadHashTable inserts them. A
-/// pair that is not two strings is none.
-fn metadata<'b>(blocks: impl IntoIterator<Item = &'b Block>, key: &str) -> Option<&'b str> {
-    blocks
-        .into_iter()
-        .flat_map(|block| &block.nodes)
-        .filter_map(|node| match node {
-            Node::Block(b) if b.keyword == "METADATA" => Some(b.values.as_chunks::<2>().0),
-            _ => None,
-        })
-        .flatten()
-        .filter_map(|[k, v]| Some((k.string()?, v.string()?)))
-        .filter(|(k, _)| k.eq_ignore_ascii_case(key))
-        .last()
-        .map(|(_, v)| v)
-}
 
 /// Whether the layer `block`'s features are never read: a `FEATURE` makes the layer inline as
 /// `loadLayer` reads it (src/mapfile.c), and a `CONNECTIONTYPE GRATICULE` after the last one
@@ -175,10 +159,12 @@ pub fn translate(
         symbols: Vec::new(),
         names: BTreeMap::new(),
         numbered: Vec::new(),
-        fonts: BTreeMap::new(),
-        font_names: BTreeSet::new(),
+        fonts: Fonts::default(),
         defaults_added: Budget::new(MAX_DEFAULT_BYTES),
-        max_features_fallback: (None, -1),
+        max_features_fallback: MaxFeaturesFallback {
+            web: None,
+            format: -1,
+        },
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
     // its symbol set after the whole map (loadMap, loadSymbolSet).
@@ -197,11 +183,6 @@ pub fn translate(
     }
     if let Some((path, text)) = files.font_set {
         t.fonts = t.fonts(path, text);
-        t.font_names = t
-            .fonts
-            .keys()
-            .map(|name| name.to_ascii_lowercase())
-            .collect();
     }
     let mut map = t.map(map);
     t.image_symbols(&mut map);
@@ -227,16 +208,23 @@ struct Translator<'a> {
     /// symbols once those the styles name are appended.
     numbered: Vec<(u32, Span)>,
     /// The map's fonts, read before its layers so that a label's font is checked.
-    fonts: BTreeMap<String, String>,
-    /// Their names in lower case, which a label's font is looked up by at once (Q-9).
-    font_names: BTreeSet<String>,
+    fonts: Fonts,
     /// What the defaults of `VALIDATION` have put into the load's expressions, held to
     /// [`MAX_DEFAULT_BYTES`] (Q-9).
     defaults_added: Budget,
-    /// The limits on a layer's features that `msLayerGetMaxFeaturesToDraw` falls back on: the
-    /// map's `maxfeaturestodraw` metadata, and the selected output format's `MAXFEATURESTODRAW`,
-    /// -1 without one.
-    max_features_fallback: (Option<i32>, i32),
+    /// The limits on a layer's features that `msLayerGetMaxFeaturesToDraw` falls back on.
+    max_features_fallback: MaxFeaturesFallback,
+}
+
+/// The limits on a layer's features that `msLayerGetMaxFeaturesToDraw` falls back on, where the
+/// layer's own metadata gives none.
+struct MaxFeaturesFallback {
+    /// The map's `maxfeaturestodraw` metadata, read by `atoi`, which replaces the layer's
+    /// `MAXFEATURES`.
+    web: Option<i32>,
+    /// The selected output format's `MAXFEATURESTODRAW`, read by `atoi`, -1 without one, which
+    /// holds where the limit is below 0.
+    format: i32,
 }
 
 impl Translator<'_> {
@@ -246,15 +234,23 @@ impl Translator<'_> {
             ..Map::default()
         };
         // MapServer applies them after the whole map is read, so each holds wherever it stands.
-        let webs = block.nodes.iter().filter_map(|node| match node {
-            Node::Block(b) if b.keyword == "WEB" => Some(b),
-            _ => None,
-        });
-        let web = Defaults::of(webs.clone(), self.diagnostics);
-        self.max_features_fallback = (
-            metadata(webs, MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes())),
-            output::format_option(block, MAX_FEATURES_KEY).map_or(-1, |v| atoi(v.as_bytes())),
-        );
+        let webs: Vec<&Block> = block
+            .nodes
+            .iter()
+            .filter_map(|node| match node {
+                Node::Block(b) if b.keyword == "WEB" => Some(b),
+                _ => None,
+            })
+            .collect();
+        let web = Defaults::of(webs.iter().copied(), self.diagnostics);
+        let web_metadata = HashTable::of(webs, "METADATA", self.diagnostics);
+        self.max_features_fallback = MaxFeaturesFallback {
+            web: web_metadata
+                .get(MAX_FEATURES_KEY)
+                .map(|v| atoi(v.as_bytes())),
+            format: output::format_option(block, MAX_FEATURES_KEY)
+                .map_or(-1, |v| atoi(v.as_bytes())),
+        };
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
@@ -304,11 +300,8 @@ impl Translator<'_> {
             }
         }
         // msDrawLabelCache reads the gutter as MS_ABS(atoi(value)) (src/mapdraw.c:3488-3498).
-        let webs = block.nodes.iter().filter_map(|node| match node {
-            Node::Block(b) if b.keyword == "WEB" => Some(b),
-            _ => None,
-        });
-        map.label_cache_edge_buffer = metadata(webs, "labelcache_map_edge_buffer")
+        map.label_cache_edge_buffer = web_metadata
+            .get("labelcache_map_edge_buffer")
             .map(|v| atoi(v.as_bytes()).unsigned_abs())
             .filter(|&gutter| gutter > 0);
         if output::transparent(block) {
@@ -514,7 +507,8 @@ impl Translator<'_> {
     ) {
         layer.opacity = self.composite(composites);
         layer.label_cache &= !layer.post_label_cache;
-        layer.max_features = self.features_to_draw(block, max_features);
+        let metadata = HashTable::of([block], "METADATA", self.diagnostics);
+        layer.max_features = self.features_to_draw(&metadata, max_features);
     }
 
     /// Warns of a layer's `METADATA`, read for [`MAX_FEATURES_KEY`] alone
@@ -533,13 +527,13 @@ impl Translator<'_> {
         self.number(d, Range::above(0.0)).map_or(-1, int_cast)
     }
 
-    /// The most features the layer `block` draws, as `msLayerGetMaxFeaturesToDraw` of
+    /// The most features a layer of the `metadata` draws, as `msLayerGetMaxFeaturesToDraw` of
     /// src/maplayer.c settles it: its `MAXFEATURES`, replaced by its `maxfeaturestodraw` metadata
     /// or else the map's, read by `atoi`; below 0, the output format's `MAXFEATURESTODRAW`; below 0
     /// still, none.
-    fn features_to_draw(&self, block: &Block, max_features: i32) -> Option<u32> {
-        let (web, format) = self.max_features_fallback;
-        let layer = metadata([block], MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes()));
+    fn features_to_draw(&self, metadata: &HashTable<'_>, max_features: i32) -> Option<u32> {
+        let MaxFeaturesFallback { web, format } = self.max_features_fallback;
+        let layer = metadata.get(MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes()));
         let n = layer.or(web).unwrap_or(max_features);
         u32::try_from(if n < 0 { format } else { n }).ok()
     }

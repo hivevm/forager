@@ -93,7 +93,9 @@ fn map(labelled: bool, styled: Option<Style<LabelTransform>>) -> Map {
             max_y: 1000.0,
         }),
         size: Some([1000, 1000]),
-        fonts: [("sans".to_owned(), "sans.ttf".to_owned())].into(),
+        fonts: [("sans".to_owned(), "sans.ttf".to_owned())]
+            .into_iter()
+            .collect(),
         // Symbol 1, a vector square of side 1, which a style's SIZE scales; symbol 2, the pin.
         symbols: vec![
             Symbol {

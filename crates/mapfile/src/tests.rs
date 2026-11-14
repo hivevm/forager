@@ -1829,6 +1829,60 @@ fn a_layers_metadata_and_the_output_format_name_the_limit_they_are_read_for() {
 }
 
 #[test]
+fn a_metadata_pair_loadhashtable_fails_on_is_reported_as_a_validation_pair_is() {
+    // loadHashTable (src/mapfile.c:2473-2505) fails the load on a key without a value and on a
+    // pair that is not two strings, in METADATA as in VALIDATION; the pair is left out with the
+    // same warning, and the block's other pairs still hold.
+    for (block, key, gutter, layer_limit) in [
+        (
+            "WEB METADATA 'labelcache_map_edge_buffer' '4' 'maxfeaturestodraw' END END",
+            "\"maxfeaturestodraw\"",
+            Some(4),
+            None,
+        ),
+        (
+            "WEB METADATA 'labelcache_map_edge_buffer' '4' 3 'x' END END",
+            "3",
+            Some(4),
+            None,
+        ),
+        (
+            "LAYER NAME 'a' METADATA 'maxfeaturestodraw' '2' 'labelcache_map_edge_buffer' END END",
+            "\"labelcache_map_edge_buffer\"",
+            None,
+            Some(2),
+        ),
+        (
+            "LAYER NAME 'a' METADATA 'maxfeaturestodraw' '2' 'x' 3 END END",
+            "\"x\"",
+            None,
+            Some(2),
+        ),
+    ] {
+        let text: &'static str = format!("MAP {block} LAYER NAME 'b' END END").leak();
+        let loaded = load_files(&[("m.map", text)]);
+        // METADATA is otherwise read for its keys alone, which warns unsupported-keyword.
+        let skipped: Vec<_> = loaded
+            .diagnostics
+            .iter()
+            .filter(|d| d.code != "unsupported-keyword")
+            .collect();
+        let [pair] = skipped.as_slice() else {
+            panic!("{block}: {skipped:?}");
+        };
+        assert_eq!(pair.code, "unsupported-value", "{block}");
+        // The key as the warning names it: quoted where it is a string.
+        let named = format!("the METADATA pair of the key {key} ");
+        assert!(pair.message.contains(&named), "{block}: {}", pair.message);
+        let map = loaded.document.unwrap().map;
+        assert_eq!(map.label_cache_edge_buffer, gutter, "{block}");
+        assert_eq!(map.layers[0].max_features, layer_limit, "{block}");
+    }
+    let validation = load_files(&[("m.map", "MAP WEB VALIDATION 'default_a' END END END")]);
+    assert_eq!(codes(&validation), ["unsupported-value"]);
+}
+
+#[test]
 fn a_maxfeatures_of_zero_is_an_error() {
     // getInteger(&maxfeatures, MS_NUM_CHECK_GT, 0, -1) refuses 0.
     let loaded = load_files(&[("m.map", "MAP LAYER NAME 'a' MAXFEATURES 0 END END")]);

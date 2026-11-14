@@ -43,11 +43,7 @@ impl Fonts {
         for attempt in attempts(list) {
             let mut opened = None;
             for name in &attempt.names {
-                let Some(path) = map
-                    .fonts
-                    .iter()
-                    .find_map(|(key, path)| key.eq_ignore_ascii_case(name).then_some(path))
-                else {
+                let Some(path) = map.fonts.get(name) else {
                     why = format!("the font set has no font `{name}`");
                     continue;
                 };
@@ -66,7 +62,7 @@ impl Fonts {
             match font.glyphs(line, attempt.last) {
                 Ok(Some(glyphs)) => {
                     return Ok(Face {
-                        path: path.clone(),
+                        path: path.to_owned(),
                         bytes,
                         glyphs,
                     });

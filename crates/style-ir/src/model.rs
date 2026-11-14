@@ -4,7 +4,7 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::expression::Keys;
-use crate::{ANCHOR_CENTRE, Expr, Span};
+use crate::{ANCHOR_CENTRE, Expr, Fonts, Span};
 
 /// The least `resolution` and `def_resolution` a map may have, in dpi: MapServer's
 /// `MS_RESOLUTION_MIN`, which its loader holds both to.
@@ -53,9 +53,11 @@ pub struct Map {
     pub layers: Vec<Layer>,
     /// The map's fonts by name, each a resource path inside the base context, not read at load.
     /// Names match without regard to case, as MapServer's font set compares them, so no two
-    /// differ only in case.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub fonts: BTreeMap<String, String>,
+    /// differ only in case: a reader leaves out a name that matches one written before it
+    /// without regard to case, with a warning naming both, and uses the first written.
+    #[serde(default, skip_serializing_if = "Fonts::is_empty")]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeMap<String, String>"))]
+    pub fonts: Fonts,
     /// The map's symbols in MapServer's order: those of its `SYMBOL` blocks, then those of its
     /// symbol set, then the image files its styles name. The one at position `i` has MapServer's
     /// index `i + 1`; index 0 is MapServer's default symbol, a filled circle of size 1, which the

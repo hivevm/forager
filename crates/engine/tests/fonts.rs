@@ -327,3 +327,22 @@ fn a_font_whose_glyph_names_freetype_would_read_is_not_drawn_with() {
     );
     assert!(rendered.diagnostics[0].message.contains("glyph names"));
 }
+
+#[test]
+fn a_label_whose_font_list_is_empty_is_not_drawn_with_a_diagnostic() {
+    // The frontend warns of no entry of `FONT ''` at load; the render reports the label.
+    let files = files(&[("sans.ttf", sans())]);
+    let rendered = render(&map("", &[("sans", "sans.ttf")]), &files);
+    assert_eq!(
+        codes(&rendered),
+        ["label-font-unusable", "label-font-unusable"]
+    );
+    assert!(
+        rendered.diagnostics[0]
+            .message
+            .contains("the label's font list names no font"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
+    assert!(files.asked.borrow().is_empty());
+}

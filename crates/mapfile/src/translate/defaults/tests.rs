@@ -229,6 +229,18 @@ fn a_default_named_by_many_expressions_counts_each_time_toward_one_limit_reporte
     assert_eq!(codes(&loaded), Vec::<&str>::new());
 }
 
+/// A budget already past its bound refuses every later substitution itself, so a caller that
+/// does not ask `passed()` first fails closed: the error again, not the default substituted.
+#[test]
+fn a_substitution_on_a_budget_past_its_bound_is_refused() {
+    // Verifies: Q-9
+    let defaults = super::Defaults([("v".to_owned(), "x".to_owned())].into());
+    let mut added = crate::budget::Budget::new(1);
+    assert!(added.charge(2), "the charge that passes the bound");
+    let refused = defaults.applied("%v%", &mut added).unwrap_err();
+    assert_eq!((refused.error, refused.code), (true, "mapfile-too-large"));
+}
+
 /// A `%` that opens no tag leaves the `%` after it free to open one, as msCaseReplaceSubstring,
 /// looking for the whole tag, finds it wherever it stands.
 #[test]

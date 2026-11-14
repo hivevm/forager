@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "map": {
+    "fonts": {
+      "sans": "fonts/a.ttf",
+      "mono": "fonts/m.ttf",
+      "Sans": "fonts/b.ttf"
+    }
+  }
+}
