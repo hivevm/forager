@@ -1,0 +1,53 @@
+# A map that is its own font set, as the fuzz target answers every file with the same bytes:
+# the lines at the first column are fonts, under each of GDAL's line ends, and the rest are
+# skipped. A layer's MAXFEATURES and maxfeaturestodraw, the map's, POSTLABELCACHE, the label
+# cache's edge buffer, a label's marker styles, and the GEOMTRANSFORM expressions of a layer and
+# of a class's style.
+MAP
+NAME	"sans.ttf"
+FONTSET "fontset.map"
+EXTENT 0 0 100 100SIZE 100 100
+  WEB
+    METADATA
+      "labelcache_map_edge_buffer" "-10"
+      "maxfeaturestodraw" "2"
+    END
+  END
+  LAYER
+    NAME "orte"
+    TYPE POINT
+    STATUS ON
+    MAXFEATURES 3
+    METADATA "maxfeaturestodraw" "1" END
+    FEATURE POINTS 10 10 END TEXT "a" END
+    FEATURE POINTS 50 50 END TEXT "b" END
+    CLASS
+      STYLE COLOR 0 0 0 SIZE 4 END
+      LABEL
+        FONT "name,ar:Name,missing"
+        TYPE TRUETYPE
+        SIZE 8
+        STYLE GEOMTRANSFORM "labelpnt" SYMBOL 0 SIZE 3 COLOR 1 2 3 END
+        STYLE GEOMTRANSFORM "labelcenter" SYMBOL 0 SIZE 3 COLOR 1 2 3 END
+      END
+    END
+  END
+  LAYER
+    NAME "wege"
+    TYPE LINE
+    STATUS ON
+    POSTLABELCACHE TRUE
+    MAXFEATURES 5
+    GEOMTRANSFORM (generalize(densify([shape], 2), [map_cellsize]*2+1-3/4%5^2))
+    FEATURE POINTS 0 0 100 100 END END
+    CLASS
+      STYLE
+        GEOMTRANSFORM (buffer(smoothsia(outer([shape]), 3, 1, 'all'), [map_cellsize]*2+1-3/4%5^2))
+        COLOR 0 0 255
+        WIDTH 2
+      END
+      STYLE GEOMTRANSFORM "vertices" COLOR 255 0 0 END
+    END
+  END
+ENDsans	  sans.ttf  
+#comment

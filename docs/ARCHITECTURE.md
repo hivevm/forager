@@ -289,13 +289,14 @@ golden path and the test pattern an agent copies from are named here.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
-structured shapes with a label of arbitrary text and size, a pixmap at points, along lines, and
-tiled over polygons, and expressions built from the same bytes, the expression evaluator on
-arbitrary trees, patterns, and properties, the browser path on GeoJSON, the shapefile adapter on
-arbitrary `.shp`, `.shx`, and `.dbf` files, the text path on an arbitrary font file, and the pixmap
-decoder on an arbitrary image file — run by `scripts/fuzz.sh`, which reads them from the manifest,
-every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out
-of the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
+structured shapes with a label of arbitrary text and size and its pixmap markers, a pixmap at
+points, along lines, and tiled over polygons, the layers' feature limit and drawing after the label
+cache, the cache's edge buffer, and expressions built from the same bytes, the expression
+evaluator on arbitrary trees, patterns, and properties, the browser path on GeoJSON, the shapefile
+adapter on arbitrary `.shp`, `.shx`, and `.dbf` files, the text path on an arbitrary font file, and
+the pixmap decoder on an arbitrary image file — run by `scripts/fuzz.sh`, which reads them from the
+manifest, every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly
+toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
 `scripts/mutants.sh` runs cargo-mutants over the workspace every week through
 `.github/workflows/mutants.yml` and reports the edits no test notices. `scripts/package.sh` packs
 the CLI's archive and the browser bindings' package under `target/package/`, each with
