@@ -24,8 +24,22 @@ a label's `SIZE tiny`. This holds for every choice the frontend reads: a layer's
 `ANGLE`, `FORCE`, `PARTIALS`, and `TYPE`, a symbol's `TYPE` and `FILLED`, and an output format's
 `TRANSPARENT`. `loadSymbol` hands `getSymbol` a count of 8 for its seven types; the eighth value
 it compares is undefined in C, and the frontend takes the seven alone. A layer's `CONNECTIONTYPE`
-is still read by its word: at the pin `graticule` lexes as the keyword `GRATICULE`, 1140, which is
-not `MS_GRATICULE`, so MapServer itself refuses `CONNECTIONTYPE graticule`.
+is read so too, `getSymbol(14, MS_OGR, …)` of `loadLayer`, and its source takes the name of the
+choice in lower case as its kind: `small`, 7, is `wms`, and `postgresql`, 4, is `ogr`. At the pin
+`graticule` lexes as the keyword `GRATICULE`, 1140, which is not `MS_GRATICULE`, 10, so MapServer
+itself refuses `CONNECTIONTYPE graticule` (`invalid-value`); the word of 10 is `medium`.
+
+**A statement keyword is matched by its token value.** Each loader switches on the lexer's token,
+so a word stands for the statement or block of its block that has its value: `SIMPLE`
+(`MS_SYMBOL_SIMPLE`, 1000) inside a `STYLE` or a `LABEL` is `ANGLE`, `POSTLABELCACHE` inside a
+`LABEL` is `FORCE` (1098), `SVG` (1006) is `COLOR`, and inside a `LAYER` `large` (13) is
+`PLUGIN`, whose case is `MS_PLUGIN`. A word of no statement of its block stays the warning
+`unknown-keyword`.
+
+**A `VALIDATION` or `METADATA` pair is two strings.** `loadHashTable` takes a key only as a string
+token and reads its value with `getString`, failing the load on a bare keyword in either place;
+the frontend leaves such a pair out with the warning `unsupported-value`, the block's other pairs
+still holding.
 
 **A number token is read with `atof`.** The lexer's rule for a number,
 `-?[0-9]+|-?[0-9]+\.[0-9]*|-?\.[0-9]*` with an optional exponent, is the same in a mapfile and in

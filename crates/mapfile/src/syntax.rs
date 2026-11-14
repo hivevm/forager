@@ -19,9 +19,16 @@
 //! symbol in `STYLE` — so each block kind lists its statements and its child blocks. A directive
 //! takes every following token up to the next statement keyword of its block, so one-line
 //! blocks such as `STYLE COLOR 0 0 0 END` read as MapServer reads them.
+//!
+//! The loaders switch on the lexer's token value, so a word stands for the statement of its
+//! block that has the same value: `SIMPLE`, `MS_SYMBOL_SIMPLE`, inside a `STYLE` is `ANGLE`, both
+//! 1000, and `POSTLABELCACHE` inside a `LABEL` is `FORCE`, both 1098 (`crate::keywords`).
+
+use std::sync::LazyLock;
 
 use forager_style_ir::{Diagnostic, Span};
 
+use crate::keywords;
 use crate::lexer::Token;
 use crate::report::Report;
 
@@ -33,7 +40,8 @@ pub enum Node {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Block {
-    /// The keyword that opened it, in upper case.
+    /// The keyword that opened it, in upper case: the one of its parent's schema the word written
+    /// stands for (see [`statement`]), or the root's own, `MAP` or `SYMBOLSET`.
     pub keyword: String,
     pub span: Span,
     /// The statements of a structured block.
@@ -44,6 +52,8 @@ pub struct Block {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Directive {
+    /// The keyword in upper case: the statement of its block the word written stands for (see
+    /// [`statement`]), or the word itself where it stands for none.
     pub keyword: String,
     pub span: Span,
     pub values: Vec<Token>,
@@ -51,9 +61,11 @@ pub struct Directive {
     pub known: bool,
 }
 
+/// A block kind's statement keywords and the keywords that open a child block, each with its
+/// token value.
 struct Schema {
-    statements: &'static [&'static str],
-    blocks: &'static [&'static str],
+    statements: &'static [(&'static str, i32)],
+    blocks: &'static [(&'static str, i32)],
 }
 
 /// Blocks whose content is a flat list of values up to `END`.
@@ -199,11 +211,50 @@ const SCHEMAS: &[(&str, &[&str], &[&str])] = &[
     ),
 ];
 
-fn schema(block: &str) -> Option<Schema> {
+/// The one of `names` the word `keyword` stands for, as a loader's `switch` on the lexer's token
+/// reads it: the one the lexer gives the same token value, so that `SIMPLE` stands for `ANGLE`;
+/// `None` where it stands for none, a word that is no keyword among them, since every name of a
+/// schema is a keyword.
+fn statement(keyword: &str, names: &[(&'static str, i32)]) -> Option<&'static str> {
+    of_value(keywords::token_value(keyword)?, names)
+}
+
+/// The one of `names` of the token value `value`.
+fn of_value(value: i32, names: &[(&'static str, i32)]) -> Option<&'static str> {
+    names
+        .iter()
+        .find(|&&(_, of)| of == value)
+        .map(|&(name, _)| name)
+}
+
+/// Keywords, each with its token value.
+type Valued = Vec<(&'static str, i32)>;
+
+/// [`SCHEMAS`] with the token value of each keyword, worked out once.
+static SCHEMA_VALUES: LazyLock<Vec<(&str, Valued, Valued)>> = LazyLock::new(|| {
+    let valued = |names: &[&'static str]| -> Valued {
+        names
+            .iter()
+            .map(|&name| {
+                let value = keywords::token_value(name);
+                (
+                    name,
+                    value.expect("every keyword of a schema is one of the lexer's"),
+                )
+            })
+            .collect()
+    };
     SCHEMAS
         .iter()
+        .map(|&(name, statements, blocks)| (name, valued(statements), valued(blocks)))
+        .collect()
+});
+
+fn schema(block: &str) -> Option<Schema> {
+    SCHEMA_VALUES
+        .iter()
         .find(|(name, _, _)| *name == block)
-        .map(|&(_, statements, blocks)| Schema { statements, blocks })
+        .map(|(_, statements, blocks)| Schema { statements, blocks })
 }
 
 /// Parses the tokens of a mapfile, its `INCLUDE`s already spliced in, into the `MAP` block, its
@@ -344,13 +395,15 @@ impl Parser<'_, '_> {
             if keyword == "END" {
                 return Some(block);
             }
-            if schema.blocks.contains(&keyword.as_str()) {
-                block
-                    .nodes
-                    .push(Node::Block(self.block(keyword, token.span.clone())?));
+            if let Some(opened) = statement(&keyword, schema.blocks) {
+                block.nodes.push(Node::Block(
+                    self.block(opened.to_owned(), token.span.clone())?,
+                ));
                 continue;
             }
-            let known = schema.statements.contains(&keyword.as_str());
+            let read = statement(&keyword, schema.statements);
+            let known = read.is_some();
+            let keyword = read.map_or(keyword, str::to_owned);
             if !known {
                 self.diagnostics.push(Diagnostic::warning(
                     "unknown-keyword",
@@ -383,16 +436,18 @@ impl Parser<'_, '_> {
 
     /// The values of a directive. The first token is always one, as MapServer reads a value after
     /// every keyword, so that a value spelled like a keyword stays a value: `CONNECTIONTYPE
-    /// PLUGIN` followed by `PLUGIN "…"`. Further tokens are values up to the next keyword of the
-    /// block.
+    /// PLUGIN` followed by `PLUGIN "…"`. Further tokens are values up to the next word that stands
+    /// for a keyword of the block.
     fn values(&mut self, schema: &Schema) -> Vec<Token> {
         let start = self.pos;
         while let Some(token) = self.tokens.get(self.pos) {
             if let Some(keyword) = token.keyword()
                 && (keyword == "END"
                     || (self.pos > start
-                        && (schema.statements.contains(&keyword.as_str())
-                            || schema.blocks.contains(&keyword.as_str()))))
+                        && keywords::token_value(&keyword).is_some_and(|value| {
+                            of_value(value, schema.statements).is_some()
+                                || of_value(value, schema.blocks).is_some()
+                        })))
             {
                 break;
             }
@@ -486,6 +541,46 @@ mod tests {
             panic!()
         };
         assert!(connection_type.values[0].is_word("PLUGIN"));
+    }
+
+    #[test]
+    fn a_word_stands_for_the_statement_of_its_token_value() {
+        let (map, diagnostics) = parse_text(
+            "MAP LAYER LARGE 'p.so' CLASS STYLE SIMPLE 30 COLOR 1 2 3 END \
+             LABEL POSTLABELCACHE TRUE SVG 1 2 3 END END END END",
+        );
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let Node::Block(layer) = &map.unwrap().nodes[0] else {
+            panic!()
+        };
+        // loadLayer's case MS_PLUGIN, 13, is the value of MS_LARGE.
+        assert_eq!(keywords(&layer.nodes), ["PLUGIN", "CLASS"]);
+        let Node::Block(class) = &layer.nodes[1] else {
+            panic!()
+        };
+        let [Node::Block(style), Node::Block(label)] = class.nodes.as_slice() else {
+            panic!()
+        };
+        assert_eq!(keywords(&style.nodes), ["ANGLE", "COLOR"]);
+        // MS_SYMBOL_SVG, 1006, is the value of COLOR.
+        assert_eq!(keywords(&label.nodes), ["FORCE", "COLOR"]);
+    }
+
+    /// A loader's `switch` has one case of a value, so no block's schema names two keywords of one
+    /// token value, or a word would stand for two of them.
+    #[test]
+    fn no_schema_names_two_keywords_of_one_value() {
+        for (block, statements, blocks) in SCHEMAS {
+            let mut values: Vec<i32> = statements
+                .iter()
+                .chain(blocks.iter())
+                .map(|name| keywords::token_value(name).unwrap_or_else(|| panic!("{name}")))
+                .collect();
+            let count = values.len();
+            values.sort_unstable();
+            values.dedup();
+            assert_eq!(values.len(), count, "{block}");
+        }
     }
 
     #[test]

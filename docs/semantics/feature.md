@@ -43,12 +43,13 @@ leaves it as it was read. `loadFeature` reads the block's statements in order:
   error quotes the first 80 characters of the WKT.
 
 A layer with features is drawn from them alone, whatever its `DATA` or `CONNECTION` says, unless a
-`CONNECTIONTYPE GRATICULE` follows its last `FEATURE`, the last `CONNECTIONTYPE` written: each
-`FEATURE` makes the layer inline as `loadLayer` in `src/mapfile.c` reads it, and
-`msInitializeVirtualTable` in `src/maplayer.c` reads no features for a graticule. Those are never
-read: the frontend leaves them out with a warning, so that a layer of the style IR holds features
-only where they are its source. The engine reads a layer's features, whatever its source's kind,
-as the layer's source and reports a source a host binds to such a layer as not read.
+`CONNECTIONTYPE` of `MS_GRATICULE`, `medium` at the pin ([`tokens.md`](tokens.md)), follows its
+last `FEATURE`, the last `CONNECTIONTYPE` written: each `FEATURE` makes the layer inline as
+`loadLayer` in `src/mapfile.c` reads it, and `msInitializeVirtualTable` in `src/maplayer.c` reads
+no features for a graticule. Those are never read: the frontend leaves them out with a warning, so
+that a layer of the style IR holds features only where they are its source. The engine reads a
+layer's features, whatever its source's kind, as the layer's source and reports a source a host
+binds to such a layer as not read.
 The CLI binds no shapefile to it, so its `DATA` is not read. It delivers the features in the order
 they were written, each whose bounds meet the extent drawn, edges included
 (`msINLINELayerNextShape`, `msRectOverlap`); a feature without points has the bounds `-1 -1 -1

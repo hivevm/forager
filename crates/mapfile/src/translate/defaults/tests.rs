@@ -336,3 +336,16 @@ fn a_pair_skipped_in_web_or_a_class_is_a_warning_too() {
         assert_eq!(codes(&load(text)), ["unsupported-value"], "{text}");
     }
 }
+
+/// loadHashTable takes a key only as a string token and fails the load on any other in its
+/// `default:` branch, and reads the value with getString, which fails on a keyword
+/// (src/mapfile.c:2473-2505, 260-274): a pair of a bare keyword is reported.
+#[test]
+fn a_pair_of_a_bare_keyword_is_reported() {
+    for validation in [r#"name "1""#, r#""default_a" data"#] {
+        let loaded = load(&format!(
+            "MAP LAYER VALIDATION {validation} END FILTER ([v] = 1) END END"
+        ));
+        assert_eq!(codes(&loaded), ["unsupported-value"], "{validation}");
+    }
+}

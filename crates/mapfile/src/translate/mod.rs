@@ -89,11 +89,46 @@ fn has_features(block: &Block) -> bool {
         .any(|node| matches!(node, Node::Block(b) if b.keyword == "FEATURE"))
 }
 
+/// The choices of a layer's `CONNECTIONTYPE`, `getSymbol(14, MS_OGR, …)` of `loadLayer`
+/// (src/mapfile.c:4510-4517), each by its value of `enum MS_CONNECTION_TYPE`
+/// (src/mapserver.h:609-631), which `getSymbol` compares the lexer's token value with, and the
+/// kind of the layer's source, the choice's name in lower case. No word lexes as
+/// `MS_GRATICULE`, 10, but `medium`, `MS_MEDIUM`: `graticule` lexes as `GRATICULE`, 1140.
+const CONNECTION_TYPES: [(i32, &str); 14] = [
+    (4, "ogr"),
+    (6, "postgis"),
+    (7, "wms"),
+    (8, "oraclespatial"),
+    (9, "wfs"),
+    (10, "graticule"),
+    (13, "plugin"),
+    (14, "union"),
+    (15, "uvraster"),
+    (16, "contour"),
+    (17, "kerneldensity"),
+    (18, "idw"),
+    (19, "flatgeobuf"),
+    (20, "rasterlabel"),
+];
+
+/// The kind of the source the `CONNECTIONTYPE` `d` gives, as `getSymbol` reads its one token by
+/// its value; `None` where it reads as none of [`CONNECTION_TYPES`], which fails the load.
+fn connection_type(d: &Directive) -> Option<&'static str> {
+    let [token] = d.values.as_slice() else {
+        return None;
+    };
+    let value = keywords::token_value(token.keyword()?.as_str())?;
+    CONNECTION_TYPES
+        .iter()
+        .find(|(choice, _)| *choice == value)
+        .map(|(_, kind)| *kind)
+}
+
 /// Whether the layer `block`'s features are never read: a `FEATURE` makes the layer inline as
-/// `loadLayer` reads it (src/mapfile.c), and a `CONNECTIONTYPE GRATICULE` after the last one
-/// makes it a graticule again, which `msInitializeVirtualTable` (src/maplayer.c) does not read
-/// features for; so that the style IR carries features only where they are the layer's source
-/// (ADR-0018).
+/// `loadLayer` reads it (src/mapfile.c), and a `CONNECTIONTYPE` of `MS_GRATICULE` after the last
+/// one makes it a graticule again, which `msInitializeVirtualTable` (src/maplayer.c) does not
+/// read features for; so that the style IR carries features only where they are the layer's
+/// source (ADR-0018).
 fn exempts_features(block: &Block) -> bool {
     block
         .nodes
@@ -101,12 +136,7 @@ fn exempts_features(block: &Block) -> bool {
         .rev()
         .find_map(|node| match node {
             Node::Directive(d) if d.keyword == "CONNECTIONTYPE" => {
-                Some(match d.values.as_slice() {
-                    [token] => token
-                        .keyword()
-                        .is_some_and(|kind| kind.eq_ignore_ascii_case("graticule")),
-                    _ => false,
-                })
+                Some(connection_type(d) == Some("graticule"))
             }
             Node::Block(b) if b.keyword == "FEATURE" => Some(false),
             _ => None,
@@ -363,7 +393,7 @@ impl Translator<'_> {
             span: Some(block.span.clone()),
             ..Layer::default()
         };
-        let mut connection_type = None;
+        let mut connection = None;
         // initLayer: no quota.
         let mut max_features = -1;
         let mut props = BTreeMap::new();
@@ -404,7 +434,7 @@ impl Translator<'_> {
                         );
                     }
                     "CONNECTIONTYPE" => {
-                        connection_type = self.word(d).map(|w| w.to_ascii_lowercase());
+                        connection = self.connection_type(d);
                         source_span.get_or_insert_with(|| d.span.clone());
                     }
                     "CLASSITEM" | "FILTERITEM" | "LABELITEM" => {
@@ -449,7 +479,7 @@ impl Translator<'_> {
                     "FEATURE" => {
                         let feature = self.feature(b, shape_type, &item_names);
                         if exempt {
-                            let message = "a FEATURE before the layer's CONNECTIONTYPE GRATICULE is never \
+                            let message = "a FEATURE before the layer's graticule CONNECTIONTYPE is never \
                                            read, as in MapServer, and is left out";
                             self.warn("features-ignored", message, &b.span);
                         } else {
@@ -461,7 +491,7 @@ impl Translator<'_> {
             }
         }
         self.settle_layer(&mut layer, block, &composites, max_features);
-        layer.source = source_span.map(|span| self.source(connection_type, props, span, data_span));
+        layer.source = source_span.map(|span| self.source(connection, props, span, data_span));
         Some(layer)
     }
 
@@ -469,13 +499,13 @@ impl Translator<'_> {
     /// `props`, the first of them at `span`, its `DATA` at `data_span`.
     fn source(
         &mut self,
-        connection_type: Option<String>,
+        connection_type: Option<&str>,
         mut props: BTreeMap<String, String>,
         span: Span,
         data_span: Option<Span>,
     ) -> SourceRef {
         // Without CONNECTIONTYPE, MapServer reads DATA as a local shapefile.
-        let kind = connection_type.unwrap_or_else(|| "local".to_owned());
+        let kind = connection_type.unwrap_or("local").to_owned();
         if kind == "local"
             && let (Some(data), Some(at)) = (props.remove("data"), data_span)
         {
@@ -795,6 +825,27 @@ impl Translator<'_> {
                 None
             }
         }
+    }
+
+    /// The kind of a layer's source its `CONNECTIONTYPE` gives (see [`connection_type`]); where
+    /// it gives none, the error `getSymbol` fails the load with.
+    fn connection_type(&mut self, d: &Directive) -> Option<&'static str> {
+        let kind = connection_type(d);
+        if kind.is_none() {
+            let mut expected = "OGR, POSTGIS, WMS, ORACLESPATIAL, WFS, PLUGIN, UNION, UVRASTER, \
+                                CONTOUR, KERNELDENSITY, IDW, FLATGEOBUF, or RASTERLABEL"
+                .to_owned();
+            if let [token] = d.values.as_slice()
+                && token.is_word("GRATICULE")
+            {
+                expected.push_str(
+                    "; GRATICULE is a keyword of its own, not MapServer's MS_GRATICULE, and is \
+                     refused: the word MapServer reads as a graticule is MEDIUM",
+                );
+            }
+            self.invalid(d, &expected);
+        }
+        kind
     }
 
     fn numbers(&mut self, d: &Directive, count: usize) -> Option<Vec<f64>> {

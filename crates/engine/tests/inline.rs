@@ -142,7 +142,7 @@ fn a_feature_without_points_draws_nothing() {
 
 #[test]
 fn a_layer_is_read_from_its_features_whatever_its_sources_kind() {
-    // The frontend leaves out the features of a kind MapServer exempts, as GRATICULE; the engine
+    // The frontend leaves out the features of a kind MapServer exempts, as a graticule; the engine
     // tests only for features.
     let mut map = map(vec![feature(vec![square(10.0, 30.0)], "a")]);
     map.layers[0].source = Some(forager_style_ir::SourceRef {

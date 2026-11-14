@@ -233,21 +233,22 @@ fn a_wkt_polygons_inner_ring_that_crosses_itself_is_left_out() {
 
 #[test]
 fn a_graticule_layers_features_are_left_out_with_a_warning() {
-    // loadLayer (src/mapfile.c) makes a layer inline at each FEATURE, and a CONNECTIONTYPE
-    // GRATICULE after the last one makes it a graticule again, whose features
-    // msInitializeVirtualTable (src/maplayer.c) never reads.
+    // loadLayer (src/mapfile.c) makes a layer inline at each FEATURE, and a CONNECTIONTYPE of
+    // MS_GRATICULE after the last one makes it a graticule again, whose features
+    // msInitializeVirtualTable (src/maplayer.c) never reads. The word that reads as MS_GRATICULE,
+    // 10, is `medium`, MS_MEDIUM; `graticule` lexes as GRATICULE, 1140, which loadLayer refuses.
     let body = r#"TYPE LINE FEATURE POINTS 1 1 2 2 END END PROCESSING "ITEMS=a"
-                  CONNECTIONTYPE GRATICULE"#;
+                  CONNECTIONTYPE MEDIUM"#;
     let (loaded, layer) = load_layer(body);
     assert_eq!(codes(&loaded), ["features-ignored", "unsupported-keyword"]);
     let layer = layer.unwrap();
     assert!(layer.features.is_empty());
     assert_eq!(layer.source.unwrap().kind, "graticule");
     // A FEATURE after the CONNECTIONTYPE makes the layer inline: its features are read.
-    let body = r#"TYPE LINE CONNECTIONTYPE GRATICULE FEATURE POINTS 1 1 2 2 END END"#;
+    let body = r#"TYPE LINE CONNECTIONTYPE MEDIUM FEATURE POINTS 1 1 2 2 END END"#;
     assert_eq!(features(body).len(), 1);
-    // Another CONNECTIONTYPE after the GRATICULE takes its place.
-    let body = r#"TYPE LINE FEATURE POINTS 1 1 2 2 END END CONNECTIONTYPE GRATICULE
+    // Another CONNECTIONTYPE after the graticule's takes its place.
+    let body = r#"TYPE LINE FEATURE POINTS 1 1 2 2 END END CONNECTIONTYPE MEDIUM
                   CONNECTIONTYPE OGR"#;
     assert_eq!(features(body).len(), 1);
 }

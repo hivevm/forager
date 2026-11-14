@@ -650,3 +650,14 @@ fn a_labels_align_and_bitmap_size_are_any_keyword_of_their_token_value() {
         assert_eq!(label.unwrap().size, Some(Bound::Value(size)), "{word}");
     }
 }
+
+/// loadLabel switches on the lexer's token (src/mapfile.c:1735-1739), and `postlabelcache` lexes as
+/// `POSTLABELCACHE` (src/maplexer.l:388), 1098 (src/mapfile.h:109), the value of `FORCE`
+/// (src/mapfile.h:143): so `POSTLABELCACHE TRUE` forces the label, `TRUE` being `MS_ON`
+/// (src/mapfile.c:1824-1835).
+#[test]
+fn a_keyword_of_the_value_of_force_forces_the_label() {
+    let (codes, label) = label_of("POSTLABELCACHE TRUE");
+    assert!(codes.is_empty(), "{codes:?}");
+    assert_eq!(label.unwrap().force, Some(forager_style_ir::Force::On));
+}

@@ -760,3 +760,13 @@ fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load()
         )))
     );
 }
+
+/// loadStyle switches on the lexer's token (src/mapfile.c:2729-2735), and `simple` lexes as
+/// `MS_SYMBOL_SIMPLE` (src/maplexer.l:504), 1000 (src/mapsymbol.h:37), the value of `ANGLE`
+/// (src/mapfile.h:47): so `SIMPLE 30` is the style's `ANGLE 30` (src/mapfile.c:2754-2766).
+#[test]
+fn a_keyword_of_the_value_of_angle_is_the_styles_angle() {
+    let (loaded, style) = first_style("MAP LAYER CLASS STYLE SIMPLE 30 END END END END");
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(style.unwrap().angle, Some(Bound::Value(30.0)));
+}

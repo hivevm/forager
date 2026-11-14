@@ -140,6 +140,36 @@ fn a_query_layer_is_discarded() {
     assert_eq!(codes(&loaded), ["discarded-layer"]);
 }
 
+/// loadLayer reads `CONNECTIONTYPE` with `getSymbol(14, MS_OGR, …)` (src/mapfile.c:4510-4517),
+/// which compares the lexer's token value with its choices' (src/mapfile.c:202-223), the values of
+/// `enum MS_CONNECTION_TYPE` (src/mapserver.h:609-631): `small` lexes as `MS_SMALL`
+/// (src/maplexer.l:506), 7, which is `MS_WMS`; `postgresql` as `MS_DB_POSTGRES`, 4, which is
+/// `MS_OGR`; and `medium` as `MS_MEDIUM`, 10, which is `MS_GRATICULE` (src/mapserver.h:604-605,
+/// 634-640). `graticule` lexes as `GRATICULE` (src/maplexer.l:307), 1140 (src/mapfile.h:195),
+/// which is none of the choices, so MapServer refuses it, as it refuses a string.
+#[test]
+fn a_connection_type_is_read_by_its_token_value() {
+    let load = |word: &str| {
+        let text = format!("MAP LAYER NAME 'a' CONNECTIONTYPE {word} CONNECTION 'x' END END");
+        load_files(&[("m.map", text.leak())])
+    };
+    for (word, kind) in [
+        ("small", "wms"),
+        ("WMS", "wms"),
+        ("postgresql", "ogr"),
+        ("medium", "graticule"),
+        ("rasterlabel", "rasterlabel"),
+    ] {
+        let loaded = load(word);
+        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{word}");
+        let layer = &loaded.document.as_ref().unwrap().map.layers[0];
+        assert_eq!(layer.source.as_ref().unwrap().kind, kind, "{word}");
+    }
+    for word in ["graticule", "GRATICULE", "local", "'ogr'"] {
+        assert_eq!(codes(&load(word)), ["invalid-value"], "{word}");
+    }
+}
+
 #[test]
 fn an_include_is_spliced_in_with_its_own_spans() {
     let loaded = load_files(&[

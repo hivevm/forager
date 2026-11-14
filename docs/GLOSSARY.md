@@ -86,9 +86,9 @@ to invent.
 - **Scale factor** — What a style's sizes, widths, gaps, patterns, and offsets are multiplied by
   when a map is drawn, from its resolution, its scale, and the layer's size units, as MapServer
   computes it ([`semantics/scale.md`](semantics/scale.md)).
-- **Source reference** — A layer's description of where its data lives — a kind and properties
-  taken unparsed from `CONNECTIONTYPE`, `CONNECTION`, `DATA`, and related keywords — which a
-  resolver binds to an adapter.
+- **Source reference** — A layer's description of where its data lives — a kind, the name of the
+  choice MapServer reads its `CONNECTIONTYPE` as (`POSTGRESQL` is `ogr`), and properties taken
+  unparsed from `CONNECTION`, `DATA`, and related keywords — which a resolver binds to an adapter.
   _Avoid:_ connection, data source.
 - **Source span** — The location in a mapfile or style document a diagnostic or IR element comes
   from: file, line, and column.
