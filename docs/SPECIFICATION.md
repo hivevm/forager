@@ -154,32 +154,34 @@ from the threats below.
 What this project explicitly does not try to do.
 
 - Data queries: `TYPE QUERY`, `TEMPLATE`, `HEADER`, `FOOTER`, `QUERYMAP`, hilite, `TOLERANCE`,
-  `IDENTIFY`, `JOIN`, GetFeatureInfo.
-- CGI/FastCGI, MapServer's tile mode, MapScript, `mapserver.conf`, and OGC services: WMS, WFS, WCS,
-  OGC API, and SLD, applied or generated.
+  `TOLERANCEUNITS`, `IDENTIFY`, `JOIN`, GetFeatureInfo.
+- CGI/FastCGI and what a `WEB` block sets for it, its `METADATA` and `VALIDATION` aside; MapServer's
+  tile mode, MapScript, `mapserver.conf`, and OGC services: WMS, WFS, WCS, OGC API, and SLD, applied
+  or generated.
 - Runtime substitution of `%var%`, beyond the default from `VALIDATION` applied at load time.
 - What configures MapServer's process rather than the map: `CONFIG`, `DEBUG`, `MAXSIZE`, the map's
   `STATUS` and `SCALEDENOM`, `TEMPLATEPATTERN`, `DATAPATTERN`, the `METADATA` keys of the services
   (`ows_`, `wms_`, `wfs_`), and encrypted connection strings.
-- Sources other than shapefiles, inline features, GeoJSON, FlatGeobuf, and rasters: OGR, PostGIS,
-  Oracle Spatial, plugins, WMS and WFS clients, `UNION`, `CONTOUR`, `KERNELDENSITY`, `IDW`,
-  `UVRASTER`, `RASTERLABEL`, the graticule and its `GRID`, and tile indexes (`TILEINDEX`,
-  `TILEITEM`, `TILESRS`). Whether Forager ships a source for SQLite and GeoPackage, or for an SQL
-  database with a spatial extension, is not decided.
-- The layer types `CHART` and `TILEINDEX`.
-- Classification and visibility by `GROUP`, `CLASSGROUP`, a class's `GROUP`, `STATUS`, and
-  `FALLBACK`, `REQUIRES`, `LABELREQUIRES`, `SCALETOKEN`, the `MINFEATURESIZE` of a layer or a class,
-  `MINGEOWIDTH`, and `MAXGEOWIDTH`; a `STYLEITEM` of `AUTO` or of JavaScript; a class's `TITLE`.
+- The sources a layer's `CONNECTIONTYPE` names as `OGR`, `POSTGIS`, `ORACLESPATIAL`, `PLUGIN`,
+  `WMS`, `WFS`, `UNION`, `CONTOUR`, `KERNELDENSITY`, `IDW`, `UVRASTER`, `RASTERLABEL`, or
+  `GRATICULE`; a layer's `GRID`, `CONNECTIONOPTIONS`, and `BINDVALS`; tile indexes (`TILEINDEX`,
+  `TILEITEM`, `TILESRS`); and the handling of connections: pooling, and the `PROCESSING` keys
+  `CLOSE_CONNECTION`, `NATIVE_SQL`, and `NATIVE_FILTER`.
+- A layer's `TYPE` of `CHART` or `TILEINDEX`.
+- Classification and visibility by a layer's `GROUP`, `CLASSGROUP`, `REQUIRES`, `LABELREQUIRES`,
+  `SCALETOKEN`, `MINGEOWIDTH`, and `MAXGEOWIDTH`; by a class's `GROUP`, `STATUS`, and `FALLBACK`;
+  by the `MINFEATURESIZE` of a layer or a class; a `STYLEITEM` of `AUTO` or of JavaScript; a
+  class's `TITLE`.
 - Colour ramps (`COLORRANGE`, `DATARANGE`, `RANGEITEM`, `RANGE_COLORSPACE`), and the `COMPOP` and
   `COMPFILTER` of a layer's `COMPOSITE`.
 - Pixmap symbols in formats other than PNG, a symbol of `TYPE simple`, a symbol fetched by its URL,
   and a pixmap tiled along a line without a `GAP`.
-- Bitmap fonts, a label's shadow, `LEADER`, `ENCODING`, bidirectional text, and the scripts other
-  than Latin and Common.
+- Bitmap fonts, a label's shadow, `LEADER`, `ENCODING`, and a label's line that holds a character
+  of a script other than Latin or Common, right-to-left text among them.
 - COG read by HTTP range requests or through its overviews, raster formats other than GeoTIFF, COG,
   and PNG or JPEG with a world file, and lookup tables (`LUT`).
-- Datum grids, projections given as WKT, as PROJJSON, or as a PROJ pipeline, and `EPSG:` without
-  `init=`.
+- A mapfile's `PROJECTION` given as WKT, as PROJJSON, as a PROJ pipeline, or as `EPSG:` without
+  `init=`; datum grids.
 - Output other than an RGBA buffer, PNG, and JPEG: vector output (SVG, PDF), palette images,
   GIF, WebP, GeoTIFF, UTFGrid, KML, MVT, and the formats of OGR; the format option `GAMMA`.
 - A legend drawn into the map, a scale bar, a reference map, and `CLUSTER`.
