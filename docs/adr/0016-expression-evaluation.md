@@ -53,7 +53,7 @@ resets, comments `(?#…)`, `\h`, `\R`, `\e`, `\cX`, `\N`, octal escapes, and qu
 
 Today `crates/expr` holds the evaluator (`lib.rs`), the patterns (`pattern.rs`), and C's `printf`
 and `strptime` (`c.rs`, `time.rs`); C's reading of numbers it takes from `style-ir`
-([ADR-0017](0017-c-numbers-in-style-ir.md)). Q-9 bounds a pattern's length (64 KiB) and the text
+([ADR-0017](0017-c-ports-in-style-ir.md)). Q-9 bounds a pattern's length (64 KiB) and the text
 an expression reads or computes (16 MiB). The engine's lookup is `FeatureProperties` in
 `crates/engine/src/classes.rs`, which also evaluates a label's expression for each feature.
 

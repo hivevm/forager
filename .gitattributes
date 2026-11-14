@@ -32,3 +32,7 @@ examples/web/vendor/** -text
 # text. Nothing relies on a merge on GitHub reading this line: a branch takes up main locally before
 # its pull request merges.
 docs/adr/README.md merge=adr-index
+
+# The fuzz seeds keep their bytes, CR included: a seed's line ends are part of what it reaches,
+# such as the font set's lines under each of GDAL's line ends.
+fuzz/seeds/** -text

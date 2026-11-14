@@ -2,7 +2,9 @@ name: Checks
 
 # Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed but
 # ShellCheck, which the shell job installs at the version scripts/install-shellcheck.sh pins
-# (ADR-0007), and the toolchain of the rust job. scripts/check-all.sh is the local equivalent;
+# (ADR-0007), jscpd, which the jobs that run its self-test install at the version
+# scripts/install-jscpd.sh pins for the duplication sensor (ADR-0007), and the toolchain of the
+# rust job. scripts/check-all.sh is the local equivalent;
 # check 9 of scripts/check-docs.sh holds its list, the jobs of this workflow, and the required
 # checks named in CONTRIBUTING.md together. Each job runs a check after its own self-test, and
 # each script's header says what it checks and which ADR it holds.
@@ -74,6 +76,12 @@ jobs:
         run: bash scripts/check-docs.sh
         env:
           PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
+      # The self-test below runs every self-test, the duplication sensor's among them, which runs
+      # jscpd at the version scripts/install-jscpd.sh pins (ADR-0007).
+      - name: Install jscpd at its pinned version
+        run: |
+          bash scripts/install-jscpd.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Self-test the map script of the normalize skill
         run: bash scripts/test-normalize-remap.sh
       - name: Self-test the numbering script of the drafts
@@ -129,6 +137,12 @@ jobs:
         run: bash scripts/test-sensor-refactor-tests.sh
       - name: Report the commits typed refactor that change a test since the base
         run: bash scripts/sensor-refactor-tests.sh "$BASE"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - name: Self-test the backlog commits sensor
+        run: bash scripts/test-sensor-backlog-commits.sh
+      - name: Report the commits that add a backlog entry beside other changes since the base
+        run: bash scripts/sensor-backlog-commits.sh "$BASE"
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       - name: Self-test the binding ADRs sensor
@@ -192,6 +206,16 @@ jobs:
       # The repository settings sensor itself runs on a human's instruction (ADR-0002).
       - name: Self-test the repository settings sensor
         run: bash scripts/test-sensor-repo-settings.sh
+      # The duplication sensor runs jscpd at the version scripts/install-jscpd.sh pins
+      # (ADR-0007).
+      - name: Install jscpd at its pinned version
+        run: |
+          bash scripts/install-jscpd.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Self-test the duplication sensor
+        run: bash scripts/test-sensor-duplication.sh
+      - name: Report the clones of Rust and bash in the tree, each with its two places
+        run: bash scripts/sensor-duplication.sh
 
   shell:
     runs-on: ubuntu-latest
@@ -210,6 +234,12 @@ jobs:
         run: bash scripts/test-git-hooks.sh
       - name: Self-test the ADR index's merge driver
         run: bash scripts/test-merge-adr-index.sh
+      # The self-test below runs every self-test, the duplication sensor's among them, which runs
+      # jscpd at the version scripts/install-jscpd.sh pins (ADR-0007).
+      - name: Install jscpd at its pinned version
+        run: |
+          bash scripts/install-jscpd.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Self-test the self-tests' fixture git
         run: bash scripts/test-fixture-git-env.sh
       - name: Self-test the shell lint

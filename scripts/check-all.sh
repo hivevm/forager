@@ -186,6 +186,7 @@ run() {
 # On instruction: scripts/build-mapserver.sh — noise.yml runs it; its self-test runs here
 # On instruction: scripts/generate-example.sh — its self-test runs it twice
 # On instruction: scripts/install-shellcheck.sh — install-tools.sh and the shell job run it
+# On instruction: scripts/install-jscpd.sh — install-tools.sh and the sensors job run it
 
 run "Documentation self-test" scripts/test-check-docs.sh
 run "Documentation consistency" scripts/check-docs.sh
@@ -210,6 +211,8 @@ run "Tests-kept sensor self-test" scripts/test-sensor-tests-kept.sh
 run "Tests-kept sensor" scripts/sensor-tests-kept.sh
 run "Refactor tests sensor self-test" scripts/test-sensor-refactor-tests.sh
 run "Refactor tests sensor" scripts/sensor-refactor-tests.sh
+run "Backlog commits sensor self-test" scripts/test-sensor-backlog-commits.sh
+run "Backlog commits sensor" scripts/sensor-backlog-commits.sh
 run "Binding ADRs sensor self-test" scripts/test-sensor-binding-adrs.sh
 run "Binding ADRs sensor" scripts/sensor-binding-adrs.sh
 run "Plain rules sensor self-test" scripts/test-sensor-plain-rules.sh
@@ -253,10 +256,13 @@ run "Shell lint self-test" scripts/test-check-shell.sh
 run "Shell lint" scripts/check-shell.sh
 run "Rust toolchain and tools" scripts/install-tools.sh
 # The fuzz script's self-test reads its fixture manifests with the pinned toolchain the line
-# before installs, and the Rust build needs it: both start once every check before has ended.
+# before installs, and the Rust build needs it; the duplication sensor and its self-test run the
+# jscpd it installs: all start once every check before has ended.
 settle
 run "Fuzz script self-test" scripts/test-fuzz.sh
 run "Rust build, test, lint" scripts/check-rust.sh
+run "Duplication sensor self-test" scripts/test-sensor-duplication.sh
+run "Duplication sensor" scripts/sensor-duplication.sh
 
 wait
 

@@ -93,16 +93,22 @@ skimmed. The design revision drops what prevented nothing
   holds what it is meant to compare, a layer's features, an image, a label, because two empty
   results agree: a text case marked `labels-hold` that rendered nothing held its mark until
   b1f2c29, and a shapefile that did not read left both sides of G-9 empty until f3a9c8f.
-- **A port holds a value in the C type MapServer holds it in, at the step it does** — a value C
-  keeps in an `int`, a label's `SIZE`, its `MAXLENGTH`, a `PRIORITY`, a line's pen, is cut,
-  narrowed, or bounded where the C casts it, and an overflow C leaves undefined is decided and
-  named beside the code, because the label work held four such values in a wider type, each
-  differing from MapServer only past the range a reference case takes (168b04c, cb21a5c, 7a509de,
-  c39b845).
-- **A minimum or maximum over values that may be NaN decides the NaN first** — `f64::min` and
-  `f64::max` return the other operand, so a fold or a bound drops a NaN without a trace: the label
-  cache filed a box with a NaN edge at its point until f8fa86d, and the label comparison of the
-  harness was found on 2026-11-10 holding such a box within its tolerance.
+- **A port cuts a value where C's declared type cuts it** — a value MapServer keeps in an `int`, a
+  label's `SIZE`, its `MAXLENGTH`, a line's pen, is cut, narrowed, or bounded at the step C does,
+  an implicit assignment to an `int` field included, and an overflow that ADR-0017 and ADR-0016 do
+  not decide is decided and named beside the code. No check sees such a step in a port that writes
+  no cast: `msComputeTextPath` assigns `glyph_size`, an `int` (`mapserver.h:2385`), three times
+  (`maplabel.c:71-75`), and the work of ef639d7 first rounded it once, so `SIZE 23` at a scale
+  factor of 0.5 drew at 12 where MapServer draws at 11, until its review found it.
+  [ADR-0017](adr/0017-c-ports-in-style-ir.md) decides how a port carries out a C cast, a C
+  assignment of a `double` to an `int`, and C's rounding, with the `INT_MIN` of the `(int)` cast
+  and the low 32 bits of `MS_NINT`; [ADR-0016](adr/0016-expression-evaluation.md) decides the
+  undefined behaviour of `expr`. Neither places the step where a value is cut, narrowed, or
+  bounded.
+- **A minimum or maximum over values that may be NaN decides the NaN first** — `ms_min` and
+  `ms_max` hand on their second operand where one is no number, so the operand that may be NaN
+  goes first unless the port keeps MapServer's order; `f64::min` and `f64::max`, refused only in
+  `engine`, `label`, and `symbolize`, drop it silently elsewhere.
 - **An ADR that decides how code is written is tried against the workspace's lints before it is
   proposed** — an attribute, an export, or a pattern it names is compiled once under
   `[workspace.lints]` and the ADRs that bind the crate, because ADR-0034 first decided exports of

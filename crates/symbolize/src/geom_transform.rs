@@ -22,7 +22,7 @@
 
 use forager_render::Point;
 use forager_style_ir::GeomTransform;
-use forager_style_ir::c::{int_cast, ms_max};
+use forager_style_ir::c::{int_cast, ms_compute_bounds, ms_max};
 use forager_style_ir::{Coord, Geometry};
 
 use crate::extent::View;
@@ -108,19 +108,9 @@ pub(crate) fn bbox(
     size: f64,
 ) -> Option<Vec<Point>> {
     let lines = shape_in_pixels(geometry, view);
-    let mut points = lines.iter().flatten();
-    let first = *points.next()?;
-    let (mut min, mut max) = (first, first);
-    for p in points {
-        min = Point {
-            x: min.x.min(p.x),
-            y: min.y.min(p.y),
-        };
-        max = Point {
-            x: max.x.max(p.x),
-            y: max.y.max(p.y),
-        };
-    }
+    let [min_x, min_y, max_x, max_y] =
+        ms_compute_bounds(lines.iter().flatten().map(|p| [p.x, p.y]))?;
+    let (min, max) = (Point { x: min_x, y: min_y }, Point { x: max_x, y: max_y });
     // `int padding = MS_MAX(style->width, style->size) + 3`, C's `(int)` of a double; the `int`
     // sums and negation around it wrap as the x86-64 build's at the pin do.
     let larger = ms_max(width, size) + 3.0;
@@ -232,7 +222,7 @@ fn centroid(lines: &[Vec<Point>]) -> Option<Point> {
 
 #[cfg(test)]
 mod tests {
-    use forager_style_ir::Extent;
+    use forager_style_ir::{Extent, NotDrawn, TransformTree};
 
     use super::*;
 
@@ -264,6 +254,44 @@ mod tests {
     /// An L from pixel (10, 20) right to (90, 20), then down to (90, 90).
     fn ell() -> Geometry {
         line(&[(10.0, 80.0), (90.0, 80.0), (90.0, 10.0)])
+    }
+
+    #[test]
+    fn bbox_bounds_a_vertex_of_no_number_as_ms_compute_bounds_does() {
+        // msDrawTransformedShape takes msComputeBounds of the shape in pixels,
+        // src/mapgeomtransform.c:175, which folds by MS_MIN and MS_MAX,
+        // src/mapprimitive.cpp:260-286: the vertex of no number after (0, 20) makes each bound no
+        // number, and the next takes its place, so (0, 20) is forgotten. Padding 3 holds nothing.
+        let ring = Geometry::Polygon(vec![
+            [
+                (0.0, 80.0),
+                (f64::NAN, f64::NAN),
+                (50.0, 10.0),
+                (60.0, 30.0),
+            ]
+            .map(|(x, y)| Coord { x, y })
+            .to_vec(),
+        ]);
+        let at = |x, y| p(x, y);
+        assert_eq!(
+            bbox(&ring, &view(), (101, 101), 0.0, 0.0),
+            Some(vec![
+                at(50.0, 70.0),
+                at(50.0, 90.0),
+                at(60.0, 90.0),
+                at(60.0, 70.0),
+                at(50.0, 70.0),
+            ])
+        );
+        // A last vertex of no number leaves every side no number.
+        let ring = bbox(
+            &line(&[(10.0, 80.0), (f64::NAN, f64::NAN)]),
+            &view(),
+            (101, 101),
+            0.0,
+            0.0,
+        );
+        assert!(ring.unwrap().iter().all(|q| q.x.is_nan() && q.y.is_nan()));
     }
 
     #[test]
@@ -405,7 +433,7 @@ mod tests {
             GeomTransform::LabelPoint,
             GeomTransform::LabelPoly,
             GeomTransform::LabelCenter,
-            GeomTransform::Expression("(buffer([shape], 5))".to_owned()),
+            GeomTransform::Expression(TransformTree::NotDrawn(NotDrawn::Buffer)),
         ] {
             assert!(placed(&transform, &ell(), &view(), IMAGE).is_empty());
         }

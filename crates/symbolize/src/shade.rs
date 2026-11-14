@@ -15,6 +15,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
+use forager_style_ir::c::{ms_compute_bounds, rect_overlap};
 use forager_style_ir::{Rgba, Style, Symbol};
 
 use crate::bounds;
@@ -136,18 +137,12 @@ fn tiled<T>(
     }
 }
 
-/// Whether the box of `rings` meets the image of `(width, height)` pixels.
+/// Whether the box of `rings`, as `msComputeBounds` computes it, meets the image of
+/// `(width, height)` pixels, as `msRectOverlap` decides: a bound of no number meets it, so that
+/// only a polygon the comparisons put off the image builds no tile.
 fn meets_image(rings: &[Vec<Point>], (width, height): (f64, f64)) -> bool {
-    let mut points = rings.iter().flatten();
-    let Some(first) = points.next() else {
-        return false;
-    };
-    let (mut min, mut max) = (*first, *first);
-    for p in points {
-        (min.x, min.y) = (min.x.min(p.x), min.y.min(p.y));
-        (max.x, max.y) = (max.x.max(p.x), max.y.max(p.y));
-    }
-    min.x <= width && max.x >= 0.0 && min.y <= height && max.y >= 0.0
+    ms_compute_bounds(rings.iter().flatten().map(|p| [p.x, p.y]))
+        .is_some_and(|bounds| rect_overlap(bounds, [0.0, 0.0, width, height]))
 }
 
 #[cfg(test)]

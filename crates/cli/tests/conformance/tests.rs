@@ -724,7 +724,7 @@ fn the_readers_labels_differ_from_the_record_in_any_field_but_the_box() {
 }
 
 #[test]
-fn the_labels_of_a_layer_of_labelcache_off_are_named_as_not_compared() {
+fn the_labels_of_a_layer_of_labelcache_off_or_postlabelcache_are_named_as_not_compared() {
     use forager_style_ir::{Class, Label};
     let labelled = |name: &str, label_cache: bool| Layer {
         label_cache,
@@ -742,6 +742,10 @@ fn the_labels_of_a_layer_of_labelcache_off_are_named_as_not_compared() {
                 label_cache: false,
                 ..layer("unlabelled", None)
             },
+            Layer {
+                post_label_cache: true,
+                ..labelled("after", true)
+            },
         ],
         ..Map::default()
     };
@@ -749,7 +753,9 @@ fn the_labels_of_a_layer_of_labelcache_off_are_named_as_not_compared() {
         super::labels::uncompared(&map),
         [
             "the labels of layer 1 (at once) are not compared: LABELCACHE OFF draws them at once, \
-             outside the label cache"
+             outside the label cache",
+            "the labels of layer 3 (after) are not compared: POSTLABELCACHE TRUE draws them at \
+             once, outside the label cache"
         ]
     );
 }

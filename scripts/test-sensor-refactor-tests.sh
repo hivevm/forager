@@ -15,21 +15,12 @@
 # Exit code 0 when every case passes, 1 otherwise.
 
 set -uo pipefail
-# A caller's GIT_DIR, such as a hook's in a linked worktree, would turn the fixtures' git on its
-# repository; they run on their own (docs/CONVENTIONS.md).
-# shellcheck disable=SC2046
-unset $(git rev-parse --local-env-vars)
 
 # shellcheck source-path=SCRIPTDIR source=lib/selftest.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/selftest.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/expect.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
 SENSOR="$ROOT/scripts/sensor-refactor-tests.sh"
-
-# commit <dir> <message> — stage everything and commit with a fixed identity.
-commit() {
-  fixture "$1"
-  git -C "${1:?}" add -A
-  git -C "${1:?}" -c user.name=fixture -c user.email=fixture@example.invalid commit -q -m "$2"
-}
 
 # repo <name> — a repository whose base commit is tagged 'base', printed as its path.
 repo() {
@@ -43,20 +34,12 @@ repo() {
   echo "$dir"
 }
 
-# expect <exit code> <name> <dir> <needle> [base] — run the sensor in the repository against the
-# given base (default 'base'); the output must contain the needle.
-expect() {
-  local want="$1" name="$2" dir="$3" needle="$4" base="${5-base}"
-  local out rc
-  fixture "$dir"
-  out="$(bash "$SENSOR" --root "$dir" "$base" 2>&1)"; rc=$?
-  if [[ $rc -eq "$want" && "$out" == *"$needle"* ]]; then
-    passed=$((passed + 1))
-    return
-  fi
-  failed=$((failed + 1))
-  echo "FAIL: $name (expected exit $want with \"$needle\", got exit $rc)" >&2
-  while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
+# expect_sensor <exit code> <name> <dir> <needle> [base] — run the sensor in the repository
+# against the given base (default 'base'); the output must contain the needle (expect,
+# scripts/lib/expect.sh).
+expect_sensor() {
+  fixture "$3"
+  expect "$2" "$1" "$4" bash "$SENSOR" --root "$3" "${5-base}"
 }
 
 # short <dir> — the abbreviated hash of the repository's head.
@@ -72,30 +55,30 @@ d="$(repo assert-changed)"
 edit "$d/tests/two.rs" 's/assert_eq!(app::two(), 2)/assert_eq!(app::two(), 3)/'
 printf 'pub fn two() -> u32 {\n    3\n}\n' > "$d/src/lib.rs"
 commit "$d" "refactor(app): two is three"
-expect 0 "a refactor that changes an assert is listed, with its test file and not the source" "$d" \
+expect_sensor 0 "a refactor that changes an assert is listed, with its test file and not the source" "$d" \
   "$(short "$d") refactor(app): two is three — changes a test in: tests/two.rs"
 
 d="$(repo no-prefix)"
 git -C "${d:?}" config diff.noprefix true
 edit "$d/tests/two.rs" 's/assert_eq!(app::two(), 2)/assert_eq!(app::two(), 4)/'
 commit "$d" "refactor(app): two is four"
-expect 0 "a repository of diff.noprefix still lists the test file by its whole path" "$d" \
+expect_sensor 0 "a repository of diff.noprefix still lists the test file by its whole path" "$d" \
   "$(short "$d") refactor(app): two is four — changes a test in: tests/two.rs"
 
 d="$(repo test-added)"
 printf '\n#[test]\nfn more() {}\n' >> "$d/tests/two.rs"
 commit "$d" "refactor!: a test more"
-expect 0 "a refactor marked breaking that adds a #[test]" "$d" "refactor!: a test more — changes a test in: tests/two.rs"
+expect_sensor 0 "a refactor marked breaking that adds a #[test]" "$d" "refactor!: a test more — changes a test in: tests/two.rs"
 
 d="$(repo test-deleted)"
 git -C "${d:?}" rm -q tests/two.rs
 commit "$d" "refactor: drop the test"
-expect 0 "a refactor that deletes a test file is listed by its old path" "$d" "refactor: drop the test — changes a test in: tests/two.rs"
+expect_sensor 0 "a refactor that deletes a test file is listed by its old path" "$d" "refactor: drop the test — changes a test in: tests/two.rs"
 
 d="$(repo assert-ne-added)"
 printf '\nfn more() {\n    assert_ne!(app::two(), 3);\n}\n' >> "$d/tests/two.rs"
 commit "$d" "refactor: an assert_ne"
-expect 0 "a refactor that adds an assert_ne! alone is listed" "$d" "refactor: an assert_ne — changes a test in: tests/two.rs"
+expect_sensor 0 "a refactor that adds an assert_ne! alone is listed" "$d" "refactor: an assert_ne — changes a test in: tests/two.rs"
 
 # In a hunk, a removed line whose content starts "-- " reads "--- ", and an added one that starts
 # "++ " reads "+++ ", as a file header does; neither names the file.
@@ -105,28 +88,28 @@ commit "$d" "chore: a line of dashes"
 git -C "${d:?}" tag dashes
 printf '%s\n' '++ b/tests/c.rs' '#[test]' > "$d/tests/a.rs"
 commit "$d" "refactor: lines that look like file headers"
-expect 0 "a changed line that looks like a file header names no file" "$d" \
+expect_sensor 0 "a changed line that looks like a file header names no file" "$d" \
   "refactor: lines that look like file headers — changes a test in: tests/a.rs" dashes
 
 d="$(repo source-only)"
 printf 'pub fn two() -> u32 {\n    debug_assert!(1 + 1 == 2);\n    1 + 1\n}\n' > "$d/src/lib.rs"
 commit "$d" "refactor(app): compute two"
-expect 0 "a refactor that changes no test, a debug_assert aside, lists none" "$d" "nothing to report"
+expect_sensor 0 "a refactor that changes no test, a debug_assert aside, lists none" "$d" "nothing to report"
 
 d="$(repo fix-changes-test)"
 edit "$d/tests/two.rs" 's/2);/3);/'
 commit "$d" "fix(app): two is three"
-expect 0 "a commit typed fix that changes a test is no finding" "$d" "nothing to report"
+expect_sensor 0 "a commit typed fix that changes a test is no finding" "$d" "nothing to report"
 
 d="$(repo not-rust)"
 printf 'assert_eq!(a, b)\n#[test]\n' > "$d/notes.md"
 commit "$d" "refactor: notes on tests"
-expect 0 "an assert in a file that is no Rust is not read" "$d" "nothing to report"
+expect_sensor 0 "an assert in a file that is no Rust is not read" "$d" "nothing to report"
 
 d="$(repo refactoring-word)"
 edit "$d/tests/two.rs" 's/2);/3);/'
 commit "$d" "refactoring: not the type"
-expect 0 "a subject that only starts with the word is no refactor" "$d" "nothing to report"
+expect_sensor 0 "a subject that only starts with the word is no refactor" "$d" "nothing to report"
 
 d="$(repo two-of-three)"
 edit "$d/tests/two.rs" 's/2);/3);/'
@@ -135,9 +118,13 @@ printf '// note\n' >> "$d/src/lib.rs"
 commit "$d" "refactor(app): second"
 printf '#[test]\nfn third() { assert!(true); }\n' > "$d/tests/third.rs"
 commit "$d" "refactor(app): third"
-expect 0 "only the refactor commits that change a test are counted" "$d" "2 commit(s)"
-expect 0 "the first is listed" "$d" "refactor(app): first — changes a test in: tests/two.rs"
-expect 0 "the third is listed" "$d" "refactor(app): third — changes a test in: tests/third.rs"
+expect_sensor 0 "only the refactor commits that change a test are counted" "$d" "2 commit(s)"
+expect_sensor 0 "the first is listed" "$d" "refactor(app): first — changes a test in: tests/two.rs"
+expect_sensor 0 "the third is listed" "$d" "refactor(app): third — changes a test in: tests/third.rs"
+# The whole clause from the count to the colon, so no word the convention does not hold, such as
+# a regression test, fits in it.
+expect_sensor 0 "the message says what the convention says, and no more" "$d" \
+  "2 commit(s) typed refactor that change a test — a behaviour each moves is a fix of its own, or it needs its reason in the pull request (docs/CONVENTIONS.md):"
 
 # A merge typed refactor that changes an assertion of its own, beyond both its parents, is not
 # read: merges are left out, and their branches' commits are read on their own.
@@ -152,17 +139,17 @@ git -C "${d:?}" -c user.name=fixture -c user.email=fixture@example.invalid \
   merge -q --no-ff --no-commit side >/dev/null 2>&1
 edit "$d/tests/two.rs" 's/2);/3);/'
 commit "$d" "refactor: merge side"
-expect 0 "a merge commit is not read" "$d" "nothing to report"
+expect_sensor 0 "a merge commit is not read" "$d" "nothing to report"
 
 d="$(repo same-commit)"
-expect 0 "base and head the same commit" "$d" "base and head are the same commit"
+expect_sensor 0 "base and head the same commit" "$d" "base and head are the same commit"
 
 d="$(repo bad-base)"
-expect 2 "a base that does not resolve" "$d" "does not resolve" nosuchref
+expect_sensor 2 "a base that does not resolve" "$d" "does not resolve" nosuchref
 
 d="$(repo no-main)"
 git -C "${d:?}" branch -m main work
-expect 0 "no base and no main" "$d" "no main to compare with" ""
+expect_sensor 0 "no base and no main" "$d" "no main to compare with" ""
 
 # --- summary ---------------------------------------------------------------------------------
 

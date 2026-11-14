@@ -15,9 +15,18 @@
 
 //! The engine: renders the map of a style IR from the sources bound to its layers. It is the
 //! one core crate that awaits the ports (ADR-0008).
+//!
+//! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
+//! `inline`, `label_binding`, `label_cache`, `label_styles`, and `layer`; `label_styles` imports
+//! `bindable`, `classes`, `label_cache`, and `layer`; `label_binding` imports `classes`; `classes`
+//! imports `bindable` and `layer`; `fonts` and `images` import `resource`; `bind`, `bindable`,
+//! `inline`, `label_cache`, `layer`, `plan`, and `resource` import none, nor does a module take an
+//! item of this root. The test `engine_modules.rs` of `crates/arch-test` holds that direction,
+//! its tests aside, by a table in this order.
 
+// The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
-// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0036).
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0017).
 #![deny(clippy::cast_possible_truncation)]
 
 mod bind;
@@ -27,26 +36,27 @@ mod fonts;
 mod images;
 mod inline;
 mod label_binding;
+mod label_cache;
 mod label_styles;
 mod labels;
+mod layer;
 mod plan;
 mod resource;
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
 use forager_ports::{
     Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
-use forager_style_ir::c::{int_cast, ms_nint};
+use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
-    Diagnostic, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
+    Diagnostic, GeomTransform, Layer, LayerStatus, Map, NotDrawn, RenderMode, Rgba, Style, Symbol,
+    TransformTree,
 };
 use forager_symbolize::{
-    Canvas, Pass, Pixmaps, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops, label_pixmap,
-    marked_pixmap, point_markers, resolve, vertices,
+    Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, clip_pixmaps,
+    draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
 };
 
 use forager_expr::Evaluator;
@@ -61,6 +71,9 @@ pub use crate::resource::MAX_FONT_OR_IMAGE_FILE_BYTES;
 pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
+use crate::layer::{Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports};
+
+pub use crate::labels::CachedLabel;
 
 /// The largest width or height of an image, MapServer's default `MAXSIZE` (Q-9).
 pub const MAX_IMAGE_SIDE: u32 = 4096;
@@ -92,21 +105,6 @@ impl Rendered {
             labels: Vec::new(),
         }
     }
-}
-
-/// A label of a render's label cache.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CachedLabel {
-    /// From 1 to `MAX_PRIORITY` of `forager-label`.
-    pub priority: u8,
-    /// The index of the layer in the map, and of the class in the layer.
-    pub layer: usize,
-    pub class: usize,
-    /// The label's text, held once for a feature's label and shared by its labels at every point.
-    pub text: Arc<str>,
-    /// The box the label was drawn in, `[min x, min y, max x, max y]` in pixels, its buffer
-    /// included; `None` for a label the cache discarded.
-    pub drawn: Option<[f64; 4]>,
 }
 
 /// Renders `map` with `renderer`, reading each layer's features from the source bound to the
@@ -147,12 +145,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         return Rendered::no_map(diagnostics);
     };
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    let mut labels = Labels::new(map, &view, files, (width, height));
+    let (scale, factors) = classes::scales(map, &view, width);
+    let mut labels = Labels::new(map, &view, &factors, files, (width, height));
     // The images of the render's pixmap symbols, dropped with the render (ADR-0029).
     let mut images = Images::default();
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
-    let scale = classes::scale_denom(map, &view, width);
     let (order, cache_at) = drawing_order(map);
     let mut cached_labels = None;
     for (position, &(layer_index, layer)) in order.iter().enumerate() {
@@ -162,13 +160,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
         };
-        let Some(features) = features(layer, sources, &view, &mut diagnostics).await else {
+        let Some(mut features) = features(layer, sources, &view, &mut diagnostics).await else {
             continue;
         };
         if layer.classes.is_empty() {
             continue;
         }
-        let (drawable, undrawn) = drawable(mode, &features);
         let mut selector = Selector {
             binder: Binder {
                 layer,
@@ -179,6 +176,11 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             },
             scale,
         };
+        let cellsize = classes::layer_cellsize(map, view.cellsize);
+        if !transformed(&mut selector, mode, &mut features, cellsize) {
+            continue;
+        }
+        let (drawable, undrawn) = drawable(mode, &features);
         let selected = selector.select(drawable, &map.symbols);
         let drawing = Drawing {
             mode,
@@ -196,12 +198,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .load_pixmaps(&selected, &map.symbols, !at_once, &mut images, files)
             .await;
         let (pixmaps, tiles) = images.drawing();
-        let mut canvas = drawing.canvas(map, (width, height), pixmaps, tiles);
-        // Each feature is labelled by the class that draws it, in the order it is drawn.
-        let drawn: Vec<labels::Labelled<'_>> = selected
-            .iter()
-            .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
-            .collect();
+        let mut canvas = layer_canvas(map, factors[layer_index], (width, height), pixmaps, tiles);
+        let drawn = labelled(&selected);
         let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
             let binder = &mut selector.binder;
@@ -225,12 +223,11 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         }
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
-        let label_hatches = labels.take_hatches_refused(layer_index);
+        let refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
         layer_reports(
             layer,
-            &canvas,
-            label_hatches,
-            labels.pixmaps_reported(layer_index, canvas.named_pixmaps_refused()),
+            canvas.markers_spent(),
+            refusals,
             undrawn,
             selector.binder.diagnostics,
         );
@@ -255,7 +252,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
 }
 
 /// The reports on the styles of a layer drawn in `mode`: the symbols no symbol is named, and, but
-/// in a point layer, which draws them at its points, the GEOMTRANSFORM expressions not drawn.
+/// in a point layer, which draws them at its points, the styles of a GEOMTRANSFORM not drawn.
 fn style_reports(
     layer: &Layer,
     mode: RenderMode,
@@ -264,7 +261,7 @@ fn style_reports(
 ) {
     unknown_symbols(layer, symbols, diagnostics);
     if mode != RenderMode::Point {
-        expressions_not_drawn(layer, diagnostics);
+        styles_not_drawn(layer, diagnostics);
     }
 }
 
@@ -280,16 +277,6 @@ fn drawing_order(map: &Map) -> (Vec<(usize, &Layer)>, usize) {
     let cache_at = order.len();
     order.extend(post);
     (order, cache_at)
-}
-
-/// The points of `geometry` inside the map's extent, in pixels, in order: where
-/// pointLayerDrawShape draws a point layer's markers and labels, which skips a point outside
-/// (msPointInRect) and transforms the others by the inverse of the cellsize (msTransformPoint).
-fn points_in_view(view: &View, geometry: &Geometry) -> impl Iterator<Item = Point> {
-    vertices(geometry)
-        .into_iter()
-        .filter(|&c| view.contains(c))
-        .map(|c| view.point_to_pixel(c))
 }
 
 /// The render mode `layer` is drawn in at the map's scale `scale`; none where it is hidden, out
@@ -322,19 +309,17 @@ fn drawable(
     (drawable, undrawn)
 }
 
-/// Reports what `layer` left undrawn on `canvas`: symbols past the budget of markers, hatches
-/// refused, those of the labelpoly styles of its labels drawn at once, `label_hatches`, among them,
-/// the pixmaps of `pixmaps` refused, its features' and its labels' drawn at once, and the
-/// geometries of `undrawn`, by kind, its render mode cannot draw.
+/// Reports what `layer` left undrawn: symbols past the budget of markers where `markers_spent`,
+/// the hatches and pixmaps of `refusals`, its features' and those of its labels drawn at once, and
+/// the geometries of `undrawn`, by kind, its render mode cannot draw.
 fn layer_reports(
     layer: &Layer,
-    canvas: &Canvas,
-    label_hatches: usize,
-    pixmaps: BTreeMap<usize, (String, String)>,
+    markers_spent: bool,
+    refusals: Refusals,
     undrawn: BTreeMap<&'static str, usize>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if canvas.markers_spent() {
+    if markers_spent {
         let message = format!(
             "layer {}: its symbols at its features, along its lines, or placed by a \
              GEOMTRANSFORM exceed {MAX_MARKER_POINTS} points; those past the limit are not drawn",
@@ -346,13 +331,7 @@ fn layer_reports(
             layer.span.clone(),
         ));
     }
-    diagnostics.extend(refused_hatches(
-        layer,
-        canvas.hatches_refused() + label_hatches,
-    ));
-    for (symbol, why) in pixmaps.into_values() {
-        diagnostics.push(refused_pixmap(layer, &symbol, &why));
-    }
+    diagnostics.extend(refusal_reports(layer, refusals));
     for (kind, count) in undrawn {
         let message = format!(
             "layer {} cannot draw {count} {kind} geometr{} in its render mode",
@@ -365,20 +344,6 @@ fn layer_reports(
             layer.span.clone(),
         ));
     }
-}
-
-/// The report that `layer` left its pixmap symbol `symbol`, named, undrawn, and why.
-fn refused_pixmap(layer: &Layer, symbol: &str, why: &str) -> Diagnostic {
-    let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
-    Diagnostic::warning("pixmap-not-drawn", message, layer.span.clone())
-}
-
-/// A layer's opacity as MapServer holds it, an integer percent from 0 to 100: the IR's number
-/// truncated, as `loadLayerCompositer` truncates it, and bounded, as it checks it; none for a
-/// number that is not finite.
-fn layer_opacity(layer: &Layer) -> Option<i32> {
-    let opacity = layer.opacity.filter(|o| o.is_finite())?;
-    Some(int_cast(opacity).clamp(0, 100))
 }
 
 /// [`layer_opacity`], with a warning for an opacity outside 0 to 100, which a mapfile cannot give
@@ -407,23 +372,6 @@ fn checked_opacity(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<i
     opacity
 }
 
-/// Draws each of `ops` into `renderer` as a display item of feature `feature_id`, in order.
-pub(crate) fn draw_items<R: Draw>(
-    renderer: &mut R,
-    feature_id: u64,
-    ops: impl IntoIterator<Item = DrawOp>,
-) {
-    for op in ops {
-        renderer.draw(&DisplayItem {
-            op,
-            feature_id: Some(feature_id),
-        });
-    }
-}
-
-/// A feature drawn: it, the place of its class, and its styles bound to it.
-pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
-
 /// Where a layer is drawn: straight onto the map, or, where it has an opacity, into a layer of
 /// the renderer, laid over the map when the target is dropped.
 enum Target<'r, R: Renderer + 'r> {
@@ -440,6 +388,21 @@ impl<R: Renderer> Draw for Target<'_, R> {
     }
 }
 
+/// The canvas a layer of `map` is drawn on, in an image `width` by `height`, with the images of
+/// `pixmaps` and the fill tiles of `tiles`, at `factors`, the layer's scale factor, which sizes
+/// its styles, and the image's resolution factor, which bounds them.
+fn layer_canvas<'c>(
+    map: &'c Map,
+    factors: Factors,
+    (width, height): (u32, u32),
+    pixmaps: &'c Pixmaps,
+    tiles: &'c mut Tiles,
+) -> Canvas<'c> {
+    Canvas::new(&map.symbols, width, height, factors)
+        .with_pixmaps(pixmaps)
+        .with_tiles(tiles)
+}
+
 /// What a layer's features are drawn with.
 struct Drawing<'a> {
     mode: RenderMode,
@@ -450,23 +413,6 @@ struct Drawing<'a> {
 }
 
 impl Drawing<'_> {
-    /// The canvas the layer is drawn on, in an image `width` by `height`, with the images of
-    /// `pixmaps` and the fill tiles of `tiles`: the layer's scale factor sizes its styles, the
-    /// image's resolution factor bounds them.
-    fn canvas<'c>(
-        &self,
-        map: &'c Map,
-        (width, height): (u32, u32),
-        pixmaps: &'c Pixmaps,
-        tiles: &'c mut Tiles,
-    ) -> Canvas<'c> {
-        let factor = classes::layer_scale_factor(map, self.layer, self.view.cellsize, self.scale);
-        Canvas::new(&map.symbols, width, height, factor)
-            .with_resolution(classes::resolution_factor(map))
-            .with_pixmaps(pixmaps)
-            .with_tiles(tiles)
-    }
-
     /// Where the layer is drawn: into an image of its own, laid over the map, where the layer has
     /// an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block, and straight onto the
     /// map otherwise.
@@ -476,8 +422,7 @@ impl Drawing<'_> {
         };
         canvas.in_own_image();
         // aggCompositeRasterBufferNoPixman lays the layer over at MS_NINT(opacity × 2.55).
-        let alpha = ms_nint(f64::from(opacity) * 2.55);
-        Target::Layer(renderer.layer(alpha.clamp(0, 255) as u8))
+        Target::Layer(renderer.layer(opacity_alpha(opacity)))
     }
 
     /// Loads into `images`, through `files`, the image of each pixmap symbol the styles of the
@@ -814,40 +759,119 @@ fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diag
     }
 }
 
-/// Warns of each class style whose `GEOMTRANSFORM` is an expression, which the engine does not
-/// draw, of a line or a polygon layer: MapServer evaluates it by msGeomTransformShape, most of its
-/// functions through GEOS. The style draws nothing; the class's other styles draw in their passes
-/// as before. A point layer draws such a style at its points, as pointLayerDrawShape draws every
-/// style whatever its transform, and is not warned.
-fn expressions_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
+/// Warns of each class style of a line or a polygon layer whose `GEOMTRANSFORM` the engine does
+/// not draw on a style. An expression MapServer evaluates by msDrawTransformedShape, most of its
+/// functions through GEOS; labelcenter fails the layer's draw there (src/mapgeomtransform.c:245),
+/// msDrawLabelCache alone drawing it on a label's style. The style draws nothing; the class's
+/// other styles draw in their passes as before. A point layer draws such a style at its points, as
+/// pointLayerDrawShape draws every style whatever its transform, and is not warned. The warning
+/// holds for a style document as for a mapfile, whose frontend does not warn of it again.
+fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
     for style in layer.classes.iter().flat_map(|class| &class.styles) {
-        if let Some(GeomTransform::Expression(expression)) = &style.geom_transform {
-            let message = format!(
-                "layer {}: the GEOMTRANSFORM expression {} is not drawn: the style draws nothing",
+        let message = match &style.geom_transform {
+            Some(GeomTransform::Expression(tree)) => {
+                let holding = match tree {
+                    TransformTree::NotDrawn(reason) => format!(", of {},", described(*reason)),
+                    TransformTree::Drawn(_) => String::new(),
+                };
+                format!(
+                    "layer {}: the GEOMTRANSFORM expression{holding} of a class's style is not \
+                     drawn: the style draws nothing",
+                    name(layer),
+                )
+            }
+            Some(GeomTransform::LabelCenter) => format!(
+                "layer {}: a class's style of GEOMTRANSFORM labelcenter is not drawn: only a \
+                 label's style draws labelcenter, and MapServer fails the layer's draw on it; the \
+                 style draws nothing",
                 name(layer),
-                quoted(expression)
-            );
-            diagnostics.push(Diagnostic::warning(
-                "geomtransform-not-drawn",
-                message,
-                style.span.clone().or_else(|| layer.span.clone()),
-            ));
-        }
+            ),
+            _ => continue,
+        };
+        diagnostics.push(Diagnostic::warning(
+            "geomtransform-not-drawn",
+            message,
+            style.span.clone().or_else(|| layer.span.clone()),
+        ));
     }
 }
 
-/// The warning for the hatch fills of a layer refused to be drawn (Q-9), if any.
-fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnostic> {
-    (refused > 0).then(|| {
-        let message = format!(
-            "layer {}: {refused} hatch fill{} not drawn (Q-9): its spacing or its dash pattern \
-             would never end the hatch, or it would lay more lines or dashes over the image, or \
-             cut them from a polygon of more vertices or crossings, than a hatch may",
-            name(layer),
-            if refused == 1 { " is" } else { "s are" }
-        );
-        Diagnostic::warning("hatch-not-drawn", message, layer.span.clone())
-    })
+/// What a transform tree's reason `not_drawn` stands for, as a warning names it.
+fn described(reason: NotDrawn) -> String {
+    match reason {
+        NotDrawn::Binding => "a property's value where a number or a text is due".to_owned(),
+        NotDrawn::Text => "a computed smoothsia preprocessing".to_owned(),
+        NotDrawn::Fromtext => "a shape fromtext reads from a text".to_owned(),
+        NotDrawn::Literal => "an operation of literals that folds to no finite number".to_owned(),
+        NotDrawn::Syntax => "an expression that does not parse as a shape".to_owned(),
+        function => format!("the function {}", function.name()),
+    }
+}
+
+/// Each feature of `selected` with the class that draws it, by which it is labelled, and its
+/// first style, in the order it is drawn.
+fn labelled<'a>(selected: &'a [Selected<'a>]) -> Vec<labels::Labelled<'a>> {
+    selected
+        .iter()
+        .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
+        .collect()
+}
+
+/// Whether the layer of `selector` is drawn after its `GEOMTRANSFORM`: its `features`
+/// transformed, `[map_cellsize]` at `cellsize`, where it has one; none drawn, with a warning,
+/// where its transform tree is `not_drawn` or fails (ADR-0036).
+fn transformed(
+    selector: &mut Selector<'_, '_>,
+    mode: RenderMode,
+    features: &mut [Feature],
+    cellsize: f64,
+) -> bool {
+    let layer = selector.binder.layer;
+    let warning = match &layer.geom_transform {
+        None => return true,
+        Some(TransformTree::NotDrawn(reason)) => transform_not_drawn(layer, *reason),
+        Some(TransformTree::Drawn(shape)) => {
+            match selector.transform(mode, features, shape, cellsize) {
+                Ok(()) => return true,
+                Err(undrawn) => transform_failed(layer, undrawn),
+            }
+        }
+    };
+    selector.binder.diagnostics.push(warning);
+    false
+}
+
+/// The warning that `layer` draws nothing, its `GEOMTRANSFORM` a transform tree of the reason
+/// `reason` (ADR-0036). MapServer evaluates a function the tree has no node
+/// for through GEOS, or a JavaScript engine, and fails on a syntax error or a binding where it
+/// makes no number; Forager draws none of the layer, and the rest of the map.
+fn transform_not_drawn(layer: &Layer, reason: NotDrawn) -> Diagnostic {
+    let message = format!(
+        "layer {} draws nothing: its GEOMTRANSFORM holds {} (not_drawn: {}), which the engine \
+         does not draw",
+        name(layer),
+        described(reason),
+        reason.name()
+    );
+    Diagnostic::warning("geomtransform-not-drawn", message, layer.span.clone())
+}
+
+/// The warning that `layer` draws nothing, its `GEOMTRANSFORM` failed on a shape or past a bound
+/// of Q-9. Where MapServer's parser fails the transform on a shape (densify on a point, a division
+/// by zero, outer on a line), msGeomTransformShape fails, msDrawVectorLayer returns MS_FAILURE
+/// (src/mapdraw.c:1427-1434), and msDrawMap frees the image and returns none
+/// (src/mapdraw.c:508-519): MapServer makes no map. Forager draws nothing of the layer, with the
+/// warning, and the rest of the map.
+fn transform_failed(layer: &Layer, undrawn: Undrawn) -> Diagnostic {
+    let (code, why) = match undrawn {
+        Undrawn::Failed(why) => ("geomtransform-not-drawn", why),
+        Undrawn::Limit(why) => ("geomtransform-over-limit", why),
+    };
+    let message = format!(
+        "layer {} draws nothing: its GEOMTRANSFORM {why}",
+        name(layer)
+    );
+    Diagnostic::warning(code, message, layer.span.clone())
 }
 
 /// The kind of a geometry, as a diagnostic names it.
@@ -860,29 +884,5 @@ fn kind(geometry: &Geometry) -> &'static str {
         Geometry::Polygon(_) => "polygon",
         Geometry::MultiPolygon(_) => "multipolygon",
         Geometry::Collection(_) => "collection",
-    }
-}
-
-fn name(layer: &Layer) -> String {
-    layer
-        .name
-        .as_deref()
-        .map_or("without NAME".to_owned(), |n| format!("`{n}`"))
-}
-
-/// The most characters of a text a diagnostic quotes, a feature's text or a pattern computed from
-/// one, so that a render keeps no copy of a long text for each label or expression it reports
-/// (Q-9).
-const QUOTED_CHARACTERS: usize = 64;
-
-/// `text` in backticks as a diagnostic quotes it: whole up to [`QUOTED_CHARACTERS`] characters,
-/// else cut there, followed by an ellipsis and the text's length in characters.
-fn quoted(text: &str) -> String {
-    let count = text.chars().count();
-    if count <= QUOTED_CHARACTERS {
-        format!("`{text}`")
-    } else {
-        let head: String = text.chars().take(QUOTED_CHARACTERS).collect();
-        format!("`{head}\u{2026}` ({count} characters)")
     }
 }

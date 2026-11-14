@@ -24,6 +24,8 @@ use skrifa::raw::tables::cmap::{CmapSubtable, PlatformId};
 use skrifa::raw::types::Version16Dot16;
 use skrifa::{FontRef, MetadataProvider};
 
+use forager_style_ir::{font_list, font_names};
+
 /// The encoding FreeType gives a character map, of those MapServer reads a label through.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Encoding {
@@ -184,45 +186,20 @@ pub struct Attempt<'a> {
 }
 
 /// The steps `get_face_for_run` takes through the font list `list` for a Latin line: each entry
-/// prefixed `en:` first, without the prefix, then every entry in order. Both loops stop at the
-/// end of the list, so an empty entry after a trailing comma is no step and leaves the entry
-/// before it not the last one; an empty entry inside the list is a step that finds no font. Each
-/// step tries, as `check_single_font` does, the name after its first colon, then the name as
-/// written.
+/// of [`font_list`] prefixed `en:` first, without the prefix, then every entry in order. Each step
+/// tries the names [`font_names`] gives, as `check_single_font` does.
 pub fn attempts(list: &str) -> Vec<Attempt<'_>> {
-    let mut entries = Vec::new();
-    let mut rest = list;
-    while !rest.is_empty() {
-        match rest.split_once(',') {
-            Some((entry, after)) => {
-                entries.push((entry, false));
-                rest = after;
-            }
-            None => {
-                entries.push((rest, true));
-                rest = "";
-            }
-        }
-    }
+    let entries = font_list(list);
     let english = entries
         .iter()
-        .filter_map(|(entry, _)| entry.strip_prefix("en:"))
-        .map(|name| Attempt {
-            names: names(name),
+        .filter_map(|entry| entry.text.strip_prefix("en:"))
+        .map(|text| Attempt {
+            names: font_names(text),
             last: false,
         });
-    let all = entries.iter().map(|&(entry, last)| Attempt {
-        names: names(entry),
-        last,
+    let all = entries.iter().map(|entry| Attempt {
+        names: font_names(entry.text),
+        last: entry.last,
     });
     english.chain(all).collect()
-}
-
-/// The names `check_single_font` looks a font list entry up by: after its first colon, then as
-/// written.
-fn names(entry: &str) -> Vec<&str> {
-    match entry.split_once(':') {
-        Some((_, name)) => vec![name, entry],
-        None => vec![entry],
-    }
 }

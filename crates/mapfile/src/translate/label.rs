@@ -157,22 +157,24 @@ impl Translator<'_> {
         (!dropped).then_some(label)
     }
 
-    /// A label's `STYLE`, at the label's point without a `GEOMTRANSFORM`, the default loadLabel
-    /// gives it; `None`, with a warning, for any transform but labelpnt, labelpoly, and
-    /// labelcenter, by which alone msDrawLabelCache draws a label's style, failing the map's draw
-    /// on bbox and others: a label's style holds no other, so its label is left out, and the caller
-    /// leaves out its class's other labels with it.
+    /// A label's `STYLE`, at the label's point without a `GEOMTRANSFORM`, or with one naming no
+    /// transform, the default loadLabel gives it; `None`, with a warning, for any transform but
+    /// labelpnt, labelpoly, and labelcenter, by which alone msDrawLabelCache draws a label's style,
+    /// failing the map's draw on bbox and others: a label's style holds no other, so its label is
+    /// left out, and the caller leaves out its class's other labels with it.
     fn label_style(&mut self, b: &Block) -> Option<Style<LabelTransform>> {
-        let style = self.style(b, true);
-        let transformed = b
-            .nodes
-            .iter()
-            .any(|node| matches!(node, Node::Directive(d) if d.keyword == "GEOMTRANSFORM"));
-        let transform = match (transformed, &style.geom_transform) {
-            (false, _) | (true, Some(GeomTransform::LabelPoint)) => LabelTransform::Point,
-            (true, Some(GeomTransform::LabelPoly)) => LabelTransform::Poly,
-            (true, Some(GeomTransform::LabelCenter)) => LabelTransform::Center,
-            (true, _) => {
+        // A name that names no transform leaves the style without one, as msStyleSetGeomTransform
+        // (src/mapgeomtransform.c:58-64) sets MS_GEOMTRANSFORM_NONE and only records an error that
+        // neither loadStyle nor map2img reads, and loadLabel (src/mapfile.c:2058-2061) gives such a
+        // style its default, labelpnt: the style is drawn at the label's point, with the name's
+        // warning. The warnings of a style left out, an expression's syntax error among them, give
+        // way to the one that the label is left out.
+        let (style, transform_warnings) = self.style(b);
+        let transform = match &style.geom_transform {
+            None | Some(GeomTransform::LabelPoint) => LabelTransform::Point,
+            Some(GeomTransform::LabelPoly) => LabelTransform::Poly,
+            Some(GeomTransform::LabelCenter) => LabelTransform::Center,
+            _ => {
                 let message = "a LABEL's STYLE of a GEOMTRANSFORM other than labelpnt, \
                                labelpoly, or labelcenter is not drawn; the label is left out, and \
                                its class's other labels with it";
@@ -180,6 +182,9 @@ impl Translator<'_> {
                 return None;
             }
         };
+        for warning in transform_warnings {
+            self.diagnostics.push(warning);
+        }
         Some(style.with_transform(transform))
     }
 

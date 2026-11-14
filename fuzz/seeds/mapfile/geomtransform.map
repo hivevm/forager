@@ -1,0 +1,48 @@
+# GEOMTRANSFORM expressions of layers and class styles, read into their transform trees: each
+# function of the tree, folded and kept arithmetic, a unary minus, the smoothsia preprocessing,
+# each reason a tree is not drawn, a syntax error, and a chain near the nesting bound.
+MAP
+  EXTENT 0 0 100 100
+  SIZE 100 100
+  LAYER
+    NAME "rings"
+    TYPE POLYGON
+    STATUS ON
+    GEOMTRANSFORM (smoothsia(inner(outer([shape])), [map_cellsize] * 2 + 1, - 3 % 2, 'Angle'))
+    FEATURE POINTS 0 0 50 0 50 50 0 0 END POINTS 10 5 40 5 40 40 10 5 END END
+    CLASS
+      STYLE COLOR 0 0 255 END
+      STYLE GEOMTRANSFORM (generalize(densify([shape], 2 ^ 3 ^ 0.5), 1)) COLOR 0 255 0 END
+      STYLE GEOMTRANSFORM (difference(buffer([shape], 1), [shape])) COLOR 1 2 3 END
+    END
+  END
+  LAYER
+    NAME "lines"
+    TYPE LINE
+    STATUS ON
+    GEOMTRANSFORM (densify(generalize([shape], [map_cellsize] / (4 - [map_cellsize])), 0.5))
+    FEATURE POINTS 0 0 100 100 50 0 END END
+    CLASS STYLE WIDTH 2 COLOR 0 0 0 END END
+  END
+  LAYER
+    NAME "unparsed"
+    TYPE LINE
+    STATUS ON
+    GEOMTRANSFORM (densify([shape], [map_cellsize]-2))
+    CLASS STYLE GEOMTRANSFORM (smoothsia([shape], 3, 1, "[prep]")) END END
+  END
+  LAYER
+    NAME "computed"
+    TYPE LINE
+    STATUS ON
+    GEOMTRANSFORM (smoothsia([shape], length('ab'), round(2.5, 1), upper('all') + "x"))
+    CLASS STYLE GEOMTRANSFORM (javascript(centerline(simplifypt(simplify([shape], 1), 2)), 'f')) END END
+  END
+  LAYER
+    NAME "deep"
+    TYPE LINE
+    STATUS ON
+    GEOMTRANSFORM (densify([shape], 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + [map_cellsize]))
+    CLASS STYLE GEOMTRANSFORM (densify([shape], area([shape]) * [data_cellsize] / 0)) END END
+  END
+END

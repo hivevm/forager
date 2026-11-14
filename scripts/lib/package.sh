@@ -34,7 +34,8 @@ check_archive() {
   return "$problems"
 }
 
-# check_archives <archive>... — check every archive; exit 0 when all carry the notices, 1 otherwise.
+# check_archives <archive>... — check every archive; return 0 when all carry the notices, 1
+# otherwise.
 check_archives() {
   local archive failures=0
   for archive in "$@"; do
@@ -42,10 +43,9 @@ check_archives() {
   done
   if ((failures)); then
     echo "Package check FAILED ($failures of $# artefact(s) without the notices they carry)." >&2
-    exit 1
+    return 1
   fi
   echo "Package check passed ($# artefact(s) carry THIRD-PARTY-NOTICES.md, LICENSE, and LICENSE-APACHE)."
-  exit 0
 }
 
 # pack <dir of the files> <archive> — write the archive of the files and the notices, under one

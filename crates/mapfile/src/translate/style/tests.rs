@@ -13,7 +13,9 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use forager_style_ir::{Bound, GeomTransform, Rgba};
+use forager_style_ir::{
+    Bound, GeomTransform, NotDrawn, Rgba, TransformNumber, TransformShape, TransformTree,
+};
 
 use crate::test_support::{binding, codes, first_style, load_files};
 
@@ -335,11 +337,28 @@ fn angle_auto_is_the_bare_keyword_only() {
 
 #[test]
 fn opacity_is_truncated_toward_zero_then_clamped() {
-    // MS_MAX(MS_MIN((int)msyynumber, 100), 0): the cast truncates toward zero.
+    // Verifies: ADR-0017
+    // MS_MAX(MS_MIN((int)msyynumber, 100), 0) (src/mapfile.c:2903-2904): the cast truncates
+    // toward zero, and past an `int` is INT_MIN, which the clamp makes 0.
+    assert_eq!(style_of("OPACITY 100.4").opacity, Some(Bound::Value(100.0)));
+    assert_eq!(style_of("OPACITY -1").opacity, Some(Bound::Value(0.0)));
+    assert_eq!(
+        style_of("OPACITY 2147483647.9").opacity,
+        Some(Bound::Value(100.0))
+    );
+    assert_eq!(
+        style_of("OPACITY 2147483648").opacity,
+        Some(Bound::Value(0.0))
+    );
+    assert_eq!(style_of("OPACITY 3e9").opacity, Some(Bound::Value(0.0)));
     assert_eq!(style_of("OPACITY -5").opacity, Some(Bound::Value(0.0)));
     assert_eq!(style_of("OPACITY -0.9").opacity, Some(Bound::Value(0.0)));
     assert_eq!(style_of("OPACITY 99.99").opacity, Some(Bound::Value(99.0)));
     assert_eq!(style_of("OPACITY 0").opacity, Some(Bound::Value(0.0)));
+    // Beside a binding, loadStyle's END gives the colours MS_NINT(0 × 2.55) = 0.
+    let (_, style) =
+        first_style("MAP LAYER CLASS STYLE COLOR 1 2 3 OPACITY [o] OPACITY 3e9 END END END END");
+    assert_eq!(style.unwrap().color, value(1, 2, 3, 0));
 }
 
 #[test]
@@ -488,8 +507,8 @@ fn a_geomtransform_name_is_matched_on_its_prefix_as_msstylesetgeomtransform_matc
             "{name}"
         );
     }
-    // `labelcenter` is carried over; a class's style warns of it (see
-    // `a_class_style_of_labelcenter_warns_and_a_label_style_does_not`).
+    // `labelcenter` is carried over (see
+    // `a_style_of_labelcenter_is_carried_over_and_warned_of_by_the_engine_alone`).
     let (_, style) =
         first_style("MAP LAYER CLASS STYLE GEOMTRANSFORM 'LabelCenter' END END END END");
     assert_eq!(
@@ -530,6 +549,7 @@ fn value(r: u8, g: u8, b: u8, a: u8) -> Option<Bound<Rgba>> {
 
 #[test]
 fn each_colour_channel_is_checked_by_load_color_before_it_is_truncated() {
+    // Verifies: ADR-0017
     // loadColor checks the first channel's msyynumber, and getInteger the others' through
     // msCheckNumber, each before the cast to `int`.
     for body in [
@@ -599,36 +619,27 @@ fn a_colour_is_three_numbers_one_string_or_one_binding() {
 }
 
 #[test]
-fn a_class_style_of_labelcenter_warns_and_a_label_style_does_not() {
+fn a_style_of_labelcenter_is_carried_over_and_warned_of_by_the_engine_alone() {
     // msDrawTransformedShape (src/mapgeomtransform.c:245) fails the draw of a line or polygon
-    // layer on a class's labelcenter style; msDrawLabelCache draws a label's.
-    for layer_type in ["LINE", "POLYGON"] {
-        let text: &'static str = format!(
-            "MAP LAYER TYPE {layer_type} CLASS STYLE GEOMTRANSFORM labelcenter END END END END"
-        )
-        .leak();
+    // layer on a class's labelcenter style; msDrawLabelCache draws a label's. The engine warns of
+    // the class's style for every document, so the load warns of neither.
+    for text in [
+        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM labelcenter END END END END",
+        "MAP LAYER TYPE POLYGON CLASS STYLE GEOMTRANSFORM labelcenter END END END END",
+        "MAP LAYER CLASS STYLE GEOMTRANSFORM labelcenter END END TYPE POLYGON END END",
+        "MAP LAYER TYPE POINT CLASS STYLE GEOMTRANSFORM labelcenter END END END END",
+    ] {
         let (loaded, style) = first_style(text);
-        assert_eq!(codes(&loaded), ["unsupported-value"], "{layer_type}");
+        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{text}");
         assert_eq!(
             style.unwrap().geom_transform,
-            Some(forager_style_ir::GeomTransform::LabelCenter)
+            Some(forager_style_ir::GeomTransform::LabelCenter),
+            "{text}"
         );
     }
-    // A point layer draws a class's style at its points whatever its transform; a label's
-    // labelcenter style is drawn on any layer.
-    for text in [
-        "MAP LAYER TYPE POINT CLASS STYLE GEOMTRANSFORM labelcenter END END END END",
-        "MAP LAYER TYPE LINE CLASS LABEL STYLE GEOMTRANSFORM labelcenter END END END END END",
-    ] {
-        let loaded = load_files(&[("m.map", text)]);
-        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{text}");
-    }
-    // TYPE after the class.
-    let text = "MAP LAYER CLASS STYLE GEOMTRANSFORM labelcenter END END TYPE POLYGON END END";
-    assert_eq!(
-        codes(&load_files(&[("m.map", text)])),
-        ["unsupported-value"]
-    );
+    let text =
+        "MAP LAYER TYPE LINE CLASS LABEL STYLE GEOMTRANSFORM labelcenter END END END END END";
+    assert_eq!(codes(&load_files(&[("m.map", text)])), Vec::<&str>::new());
 }
 
 /// The keywords of MapServer's lexer whose token value is that of `name`.
@@ -704,15 +715,58 @@ fn a_bare_keyword_is_no_symbol_name_and_a_quoted_one_is() {
 }
 
 #[test]
-fn a_geomtransform_expression_is_carried_as_written_without_a_warning_at_load() {
+fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load() {
+    // Verifies: ADR-0036
     // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION) keeps the expression; the engine reports
-    // it as it draws the layer, so the load does not.
+    // it as it draws the layer, so the load does not, but for a syntax error, at its place.
     let (loaded, style) = first_style(
         "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (buffer([shape], 5)) END END END END",
     );
     assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
     assert_eq!(
         style.unwrap().geom_transform,
-        Some(GeomTransform::Expression("(buffer([shape], 5))".to_owned()))
+        Some(GeomTransform::Expression(TransformTree::NotDrawn(
+            NotDrawn::Buffer
+        )))
     );
+    let (loaded, style) = first_style(
+        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (generalize([shape], 2)) END END END END",
+    );
+    assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
+    assert_eq!(
+        style.unwrap().geom_transform,
+        Some(GeomTransform::Expression(TransformTree::Drawn(
+            TransformShape::Generalize(
+                Box::new(TransformShape::Shape),
+                TransformNumber::Number(2.0)
+            )
+        )))
+    );
+    let (loaded, style) = first_style(
+        "MAP LAYER TYPE LINE CLASS\nSTYLE GEOMTRANSFORM (labelpoint([shape])) END END END END",
+    );
+    assert_eq!(codes(&loaded), ["invalid-expression"]);
+    assert_eq!(
+        loaded.diagnostics[0]
+            .span
+            .as_ref()
+            .map(|s| (s.line, s.column)),
+        Some((2, 22))
+    );
+    assert_eq!(
+        style.unwrap().geom_transform,
+        Some(GeomTransform::Expression(TransformTree::NotDrawn(
+            NotDrawn::Syntax
+        )))
+    );
+}
+
+/// loadStyle switches on the lexer's token (src/mapfile.c:2729-2735), and `simple` lexes as
+/// `MS_SYMBOL_SIMPLE` (src/maplexer.l:504), 1000 (src/mapsymbol.h:37), the value of `ANGLE`
+/// (src/mapfile.h:47): so `SIMPLE 30` is the style's `ANGLE 30` (src/mapfile.c:2754-2766).
+#[test]
+fn a_keyword_of_the_value_of_angle_is_the_styles_angle() {
+    let (loaded, style) = first_style("MAP LAYER CLASS STYLE SIMPLE 30 END END END END");
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    assert_eq!(style.unwrap().angle, Some(Bound::Value(30.0)));
 }

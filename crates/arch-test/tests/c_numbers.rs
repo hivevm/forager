@@ -1,7 +1,8 @@
-//! C's and MapServer's small ports live once (ADR-0036): `atof`,
+//! C's and MapServer's small ports live once (ADR-0017): `atof`,
 //! `atoi`, `strtod`, `lrint`, C's `(int)` cast of a `double` and its string end, and MapServer's
-//! `MS_NINT`, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, and `msStringSplit` are defined
-//! in the module of `style-ir` and nowhere else in the workspace.
+//! `MS_NINT`, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, `msStringSplit`,
+//! `msComputeBounds`, `msGetSymbolIndex` with the key of its match of a name, and the alpha of an
+//! opacity are defined in the module of `style-ir` and nowhere else in the workspace.
 
 use std::path::{Path, PathBuf};
 
@@ -9,7 +10,7 @@ use std::path::{Path, PathBuf};
 const MODULE: &str = "crates/style-ir/src/c.rs";
 
 /// The names of the module's ports.
-const PORTS: [&str; 12] = [
+const PORTS: [&str; 16] = [
     "atof",
     "atoi",
     "strtod",
@@ -20,6 +21,10 @@ const PORTS: [&str; 12] = [
     "ms_max",
     "rect_overlap",
     "ms_string_split",
+    "ms_compute_bounds",
+    "opacity_alpha",
+    "ms_get_symbol_index",
+    "symbol_name_key",
     "c_bytes",
     "c_str",
 ];
@@ -83,7 +88,7 @@ fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
 
 #[test]
 fn c_number_reading_is_defined_only_in_the_module_of_style_ir() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
     rust_files(&root.join("crates"), &mut files);

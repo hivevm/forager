@@ -518,6 +518,75 @@ fn no_crate_on_the_output_path_lifts_the_ban_on_hash_maps_clocks_and_randomness(
     assert!(offenders.is_empty(), "{offenders:?}");
 }
 
+/// The crates that port MapServer's drawing, each with its own clippy.toml, and the lines it adds
+/// to the workspace's: the bans of `f64`'s and `f32`'s `min` and `max`, which drop a NaN operand.
+const PORTS_OF_THE_DRAWING: [&str; 3] = ["engine", "label", "symbolize"];
+const NAN_BANS: [&str; 4] = [
+    r#"  { path = "f64::min", reason = "drops a NaN operand; ms_min, whose operand order decides it" },"#,
+    r#"  { path = "f64::max", reason = "drops a NaN operand; ms_max, whose operand order decides it" },"#,
+    r#"  { path = "f32::min", reason = "drops a NaN operand; ms_min, whose operand order decides it" },"#,
+    r#"  { path = "f32::max", reason = "drops a NaN operand; ms_max, whose operand order decides it" },"#,
+];
+
+#[test]
+fn the_crates_that_port_mapservers_drawing_ban_what_the_workspace_bans() {
+    // Verifies: Q-2, ADR-0007
+    // Clippy reads the clippy.toml nearest a crate's manifest in place of the workspace's, so a
+    // crate's own file would lift every ban it leaves out. The three crates that port MapServer's
+    // drawing carry the workspace's lists with the bans of NAN_BANS added; no other crate, nor
+    // the directory of the crates, carries one, nor anything under it a `.clippy.toml`, which
+    // clippy reads as well.
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let entries = |text: &str| -> Vec<String> {
+        text.lines()
+            .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+            .map(str::to_owned)
+            .collect()
+    };
+    let workspace = entries(&std::fs::read_to_string(crates.join("../clippy.toml")).unwrap());
+    let mut found: Vec<String> = std::fs::read_dir(&crates)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.join("clippy.toml").exists())
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    found.sort();
+    assert_eq!(
+        found, PORTS_OF_THE_DRAWING,
+        "the crates with their own clippy.toml"
+    );
+    assert!(!crates.join("clippy.toml").exists(), "crates/clippy.toml");
+    let mut hidden = Vec::new();
+    let mut stack = vec![crates.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().map(Result::unwrap) {
+            let path = entry.path();
+            if path.is_dir() && entry.file_name() != "target" {
+                stack.push(path);
+            } else if entry.file_name() == ".clippy.toml" {
+                hidden.push(path.strip_prefix(&crates).unwrap().display().to_string());
+            }
+        }
+    }
+    assert!(
+        hidden.is_empty(),
+        "a .clippy.toml under crates/: {hidden:?}"
+    );
+    for name in PORTS_OF_THE_DRAWING {
+        let own = entries(&std::fs::read_to_string(crates.join(name).join("clippy.toml")).unwrap());
+        let mut expected = workspace.clone();
+        let close = expected.len() - 1;
+        assert_eq!(
+            expected[close], "]",
+            "the workspace's clippy.toml ends its last list"
+        );
+        for ban in NAN_BANS.iter().rev() {
+            expected.insert(close, (*ban).to_owned());
+        }
+        assert_eq!(own, expected, "crates/{name}/clippy.toml");
+    }
+}
+
 #[test]
 fn only_poll_once_polls_with_a_no_op_waker() {
     // A future polled with a waker that wakes nothing is run in one place, `poll_once` of the

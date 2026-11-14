@@ -27,6 +27,10 @@ use forager_style_ir::{Expr, MAX_EXPRESSION_DEPTH, Op};
 
 use crate::lexer::{Token, TokenKind, number_len};
 
+mod transform;
+
+pub use transform::geom_transform;
+
 /// Why an expression was not carried over. A warning keeps its class, label, or filter as one that
 /// never matches, as MapServer, which parses an expression only when it evaluates it, never matches
 /// one it cannot parse; an error fails the load.
@@ -395,7 +399,7 @@ const KEYWORDS: &[&str] = &[
 
 /// A token the EXPRESSION_STRING rules of maplexer.l read, where the parser and a plain `TEXT`
 /// take it differently.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 enum Lexeme {
     Tok(Tok),
     /// `[shape]`, `[map_cellsize]`, or `[data_cellsize]`, as written: a binding to no attribute.

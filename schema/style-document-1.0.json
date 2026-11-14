@@ -417,11 +417,11 @@
           "const": "labelcenter"
         },
         {
-          "description": "One of MapServer's expressions, `(buffer([shape], 5))` and the like, as written, which\nthe engine does not draw: a class's style of it in a line or a polygon layer draws nothing\nand is reported, its class's other styles drawn as before; a point layer draws the style at\nits points, as it draws every style whatever its transform; a label of a style of it is\nleft out.",
+          "description": "An expression of shape functions, its transform tree (ADR-0036),\nwhich the engine does not draw on a class's style: a class's style of it in a line or a\npolygon layer draws nothing and is reported, its class's other styles drawn as before; a\npoint layer draws the style at its points, as it draws every style whatever its\ntransform; a label of a style of it is left out.",
           "type": "object",
           "properties": {
             "expression": {
-              "type": "string"
+              "$ref": "#/$defs/TransformTree"
             }
           },
           "additionalProperties": false,
@@ -811,8 +811,19 @@
             }
           ]
         },
+        "geom_transform": {
+          "description": "The layer's `GEOMTRANSFORM`, its transform tree (ADR-0036), which\nreplaces the shape of each feature that passes the layer's filter before it is classed and\ndrawn, as MapServer transforms each shape it reads. Absent, there is none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransformTree"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "label_cache": {
-          "description": "Whether the layer's labels go to the label cache, MapServer's `LABELCACHE`: placed with\nthe labels of every layer and drawn after them. Without the cache, each label is drawn at\nonce after its feature, untested against any other. Absent, it is true, MapServer's\ndefault `LABELCACHE ON`.",
+          "description": "Whether the layer's labels go to the label cache, MapServer's `LABELCACHE`: placed with\nthe labels of every layer and drawn after them. Without the cache, each label is drawn at\nonce after its feature, untested against any other. Absent, it is true, MapServer's\ndefault `LABELCACHE ON`. `post_label_cache` overrides it: a layer drawn after the label\ncache draws its labels at once whatever this says.",
           "type": "boolean"
         },
         "max_features": {
@@ -1026,7 +1037,7 @@
           ]
         },
         "fonts": {
-          "description": "The map's fonts by name, each a resource path inside the base context, not read at load.\nNames match without regard to case, as MapServer's font set compares them, so no two\ndiffer only in case.",
+          "description": "The map's fonts by name, each a resource path inside the base context, not read at load.\nNames match without regard to case, as MapServer's font set compares them, so no two\ndiffer only in case: a reader leaves out a name that matches one written before it\nwithout regard to case, with a warning naming both, and uses the first written.",
           "type": "object",
           "additionalProperties": {
             "type": "string"
@@ -1138,6 +1149,70 @@
         }
       ]
     },
+    "NotDrawn": {
+      "description": "Why the engine does not draw a transform: the first construct of the expression, in its\nreading order, the tree has no node for.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "buffer",
+            "centerline",
+            "difference",
+            "simplify",
+            "simplifypt",
+            "javascript",
+            "length",
+            "area",
+            "round"
+          ]
+        },
+        {
+          "description": "A property's value where a number or a text is due.",
+          "type": "string",
+          "const": "binding"
+        },
+        {
+          "description": "A computed `smoothsia` preprocessing.",
+          "type": "string",
+          "const": "text"
+        },
+        {
+          "description": "A shape `fromtext` reads from a text.",
+          "type": "string",
+          "const": "fromtext"
+        },
+        {
+          "description": "An operation of literals that folds to no finite JSON number, a `%` by 0 among them.",
+          "type": "string",
+          "const": "literal"
+        },
+        {
+          "description": "An expression MapServer's grammar does not parse as a shape, a `/` by 0 among them.",
+          "type": "string",
+          "const": "syntax"
+        }
+      ]
+    },
+    "NumberOp": {
+      "description": "The operators of a number argument.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "+",
+            "-",
+            "*",
+            "/",
+            "^"
+          ]
+        },
+        {
+          "description": "The remainder of the operands cut to C's `int`s, MapServer's `(int)$1 % (int)$3`.",
+          "type": "string",
+          "const": "%"
+        }
+      ]
+    },
     "Op": {
       "description": "The operators of CQL2 an expression uses, and the functions for what CQL2 lacks.",
       "oneOf": [
@@ -1214,6 +1289,21 @@
         "lc",
         "lr",
         "auto"
+      ]
+    },
+    "Preprocessing": {
+      "description": "The preprocessing of `smoothsia`.",
+      "oneOf": [
+        {
+          "description": "Midpoints added about every point whose window is whole.",
+          "type": "string",
+          "const": "all"
+        },
+        {
+          "description": "Midpoints added about every point whose window's path turns.",
+          "type": "string",
+          "const": "angle"
+        }
       ]
     },
     "RenderMode": {
@@ -1897,6 +1987,194 @@
         },
         {
           "type": "string"
+        }
+      ]
+    },
+    "TransformNumber": {
+      "description": "A number argument: a number, the map's cellsize in the layer's units, or an operation of two numbers.",
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": false,
+              "minItems": 0,
+              "prefixItems": []
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "map_cellsize"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "args"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": false,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/TransformNumber"
+                },
+                {
+                  "$ref": "#/$defs/TransformNumber"
+                }
+              ]
+            },
+            "op": {
+              "$ref": "#/$defs/NumberOp"
+            }
+          },
+          "required": [
+            "op",
+            "args"
+          ]
+        }
+      ]
+    },
+    "TransformShape": {
+      "description": "A shape the tree computes: the feature's shape, or a function of a shape.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": false,
+              "minItems": 0,
+              "prefixItems": []
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "shape"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "args"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": false,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/TransformShape"
+                },
+                {
+                  "$ref": "#/$defs/TransformNumber"
+                }
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "generalize",
+                "densify"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "args"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": false,
+              "minItems": 1,
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/TransformShape"
+                }
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "outer",
+                "inner"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "args"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "array",
+              "items": false,
+              "minItems": 1,
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/TransformShape"
+                },
+                {
+                  "$ref": "#/$defs/TransformNumber"
+                },
+                {
+                  "$ref": "#/$defs/TransformNumber"
+                },
+                {
+                  "$ref": "#/$defs/Preprocessing"
+                }
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "smoothsia"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "args"
+          ]
+        }
+      ]
+    },
+    "TransformTree": {
+      "description": "A `GEOMTRANSFORM` expression: a tree of the functions of a shape the engine draws, or the reason it does not draw the transform.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TransformShape"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "not_drawn": {
+              "$ref": "#/$defs/NotDrawn"
+            }
+          },
+          "required": [
+            "not_drawn"
+          ]
         }
       ]
     },

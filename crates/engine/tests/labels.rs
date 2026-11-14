@@ -2156,7 +2156,7 @@ fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
 
 #[test]
 fn a_label_styles_opacity_past_an_int_is_rounded_as_a_class_styles_is() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // bindStyle rounds a label's style as it rounds a class's: MS_NINT(atof("3e9")) in an int is
     // -1294967296, and the alpha MS_NINT(-1294967296 × 2.55) keeps 179 in a byte.
     let style = Style {
@@ -3395,7 +3395,6 @@ fn names_missing_pin(rendered: &Rendered) -> (Vec<&str>, bool) {
 
 #[test]
 fn a_labelcenter_pixmap_that_does_not_load_leaves_its_marker_out_and_warns() {
-    // Verifies: G-8
     // msDrawMarkerSymbol draws a labelcenter style's pixmap (src/maprendering.c:980), and fails
     // where msPreloadImageSymbol cannot load it; Forager leaves the marker out, draws the label's
     // text as the label without the style draws it, and warns with the symbol and its image.
@@ -3470,7 +3469,6 @@ fn a_pixmap_neither_a_point_nor_its_cached_label_draws_is_reported_once() {
 
 #[test]
 fn a_labelpnt_pixmap_that_does_not_load_leaves_the_label_out() {
-    // Verifies: G-8
     // msGetMarkerSize sizes a labelpnt style's marker in computeMarkerBounds and fails where
     // msPreloadImageSymbol does (src/mapsymbol.c:736-738), and the map with it; Forager leaves
     // the label out, with a warning that names the symbol and its image.
@@ -4326,7 +4324,6 @@ fn each_label_moves_away_from_its_own_feature_s_pixmap_marker() {
 
 #[test]
 fn the_label_over_a_pixmap_that_does_not_load_is_left_out_and_the_map_drawn() {
-    // Verifies: G-8
     // msGetMarkerSize fails where msPreloadImageSymbol does (src/mapsymbol.c:736-738), and so
     // msAddLabelGroup (src/maplabel.c:350-352) and the map; Forager leaves the label out, with
     // a warning that names the symbol and its image, and draws the rest of the map.
@@ -4380,8 +4377,9 @@ fn post_layer(name: &str, post: bool, size: f64, color: Rgba, text: Option<&str>
             kind: "local".into(),
             ..SourceRef::default()
         }),
-        // The frontend turns the label cache off where POSTLABELCACHE is TRUE.
-        label_cache: !post,
+        // On, as the frontend carries a mapfile's POSTLABELCACHE layer: post_label_cache overrides
+        // it.
+        label_cache: true,
         post_label_cache: post,
         classes: vec![Class {
             styles: vec![Style {
@@ -4449,10 +4447,10 @@ fn a_layer_of_postlabelcache_is_drawn_after_the_cached_labels_its_own_at_once() 
     ]);
     assert_eq!(ops, [('M', 10.0), ('L', 0.0), ('M', 20.0), ('L', 0.0)]);
     assert_eq!(cached, [1], "the plain layer's label alone is cached");
-    // A style document that leaves the layer's label cache on draws its labels at once alike, as
-    // msDrawLayer turns the cache off for it (src/mapdraw.c:850-856).
+    // A style document that turns the layer's label cache off draws its labels at once alike, as
+    // msDrawLayer turns the cache off for it either way (src/mapdraw.c:850-856).
     let mut over = post_layer("over", true, 20.0, GREEN, Some("Up"));
-    over.label_cache = true;
+    over.label_cache = false;
     let (ops, cached) = post_render(vec![
         over,
         post_layer("under", false, 10.0, BLUE, Some("Fen")),
@@ -4498,7 +4496,7 @@ fn the_maps_label_cache_edge_buffer_keeps_a_cached_label_from_the_edge() {
 
 #[test]
 fn a_label_offset_past_an_int_is_cast_as_c_casts_it() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // `(int)` of an `OFFSET` past an `int` gives INT_MIN on x86-64, both where the label binds it
     // and where its offset is scaled: the label stands 2^31 pixels left of the point, where `as`
     // would saturate it to the right. Partial, so that the cache keeps it off the image.

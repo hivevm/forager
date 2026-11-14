@@ -6,6 +6,7 @@ use forager_style_ir::{Bound, Extent, Rgba, Style, Symbol, SymbolKind, SymbolRef
 use super::*;
 use crate::canvas::Canvas;
 use crate::extent::View;
+use crate::symbol::Factors;
 use crate::symbol::Pixmaps;
 use crate::tile::Tiles;
 
@@ -18,7 +19,7 @@ fn p(x: f64, y: f64) -> Point {
 
 /// A canvas without symbols, of 100 × 100.
 fn plain() -> Canvas<'static> {
-    Canvas::new(&[], 100, 100, 1.0)
+    Canvas::new(&[], 100, 100, Factors::new(1.0, 1.0))
 }
 
 fn line() -> Vec<Vec<Point>> {
@@ -163,7 +164,7 @@ fn a_hatch_is_bounded_on_the_image_s_own_size_not_one_rebuilt_from_the_extent() 
         ]]
     };
     let shaded = |width: u32, ring| {
-        let mut canvas = Canvas::new(&symbols, width, width, 1.0);
+        let mut canvas = Canvas::new(&symbols, width, width, Factors::new(1.0, 1.0));
         let mut ops = Vec::new();
         shade(&mut ops, ring, &style, &view, &mut canvas)
     };
@@ -200,7 +201,7 @@ fn at_a_factor_a_polygon_moves_by_its_offset_scaled_and_its_outline_bounds_stay(
             ..colored(Some(BLUE), Some(BLACK))
         };
         let mut ops = Vec::new();
-        let mut canvas = Canvas::new(&[], 101, 101, 2.0);
+        let mut canvas = Canvas::new(&[], 101, 101, Factors::new(2.0, 2.0));
         let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
         assert!(shade(&mut ops, ring, &style, &unit_view(), &mut canvas));
         ops
@@ -255,7 +256,7 @@ fn a_polygon_of_a_symbol_past_the_last_or_of_a_name_no_symbol_carries_draws_noth
         (SymbolRef::Name("DOT".to_owned()), true),
     ] {
         let mut ops = Vec::new();
-        let mut canvas = Canvas::new(&symbols, 101, 101, 1.0);
+        let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
         let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
         assert!(shade(
             &mut ops,
@@ -275,7 +276,7 @@ fn a_polygon_bounds_its_outline_as_ms_draw_shade_symbol_does() {
     // MAXWIDTH as written, and a MINWIDTH above the MAXWIDTH wins.
     let outline = |style: &Style| {
         let mut ops = Vec::new();
-        let mut canvas = Canvas::new(&[], 101, 101, 2.0);
+        let mut canvas = Canvas::new(&[], 101, 101, Factors::new(2.0, 2.0));
         let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
         assert!(shade(&mut ops, ring, style, &unit_view(), &mut canvas));
         stroke(&ops[1]).0
@@ -320,7 +321,7 @@ fn a_polygon_s_pixmap_is_moved_by_its_offset_and_draws_neither_colour_nor_outlin
         ..Style::default()
     };
     let mut tiles = Tiles::default();
-    let mut canvas = Canvas::new(&symbols, 101, 101, 2.0)
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(2.0, 2.0))
         .with_pixmaps(&pixmaps)
         .with_tiles(&mut tiles);
     let mut ops = Vec::new();
@@ -356,7 +357,7 @@ fn a_polygon_s_pixmap_without_its_image_or_past_its_bound_draws_nothing_and_says
         ..Style::default()
     };
     let drawn = |style: &Style, tiles: Option<&mut Tiles>| {
-        let canvas = Canvas::new(&symbols, 101, 101, 1.0).with_pixmaps(&pixmaps);
+        let canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_pixmaps(&pixmaps);
         let mut canvas = match tiles {
             Some(tiles) => canvas.with_tiles(tiles),
             None => canvas,
@@ -365,7 +366,7 @@ fn a_polygon_s_pixmap_without_its_image_or_past_its_bound_draws_nothing_and_says
         let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
         assert!(shade(&mut ops, ring, style, &unit_view(), &mut canvas));
         assert!(ops.is_empty(), "{ops:?}");
-        let refused = canvas.named_pixmaps_refused();
+        let refused = canvas.take_refusals().pixmaps;
         assert_eq!(refused.len(), 1);
         refused.into_values().next().unwrap().1
     };
@@ -375,4 +376,24 @@ fn a_polygon_s_pixmap_without_its_image_or_past_its_bound_draws_nothing_and_says
     assert!(why.contains("4097 × 4097"), "{why}");
     assert!(why.contains("past the limit of 4096 × 4096"), "{why}");
     assert!(drawn(&style(2, 0.0), None).contains("no tiles"));
+}
+
+#[test]
+fn a_polygon_meets_the_image_as_rect_overlap_decides_a_bound_of_no_number_included() {
+    // Verifies: ADR-0017
+    // `ms_compute_bounds` makes a bound no number at a point that is none, and `rect_overlap`
+    // refuses no overlap by it, as msComputeBounds and msRectOverlap do.
+    let image = (10.0, 10.0);
+    let ring = |points: &[(f64, f64)]| vec![points.iter().map(|&(x, y)| p(x, y)).collect()];
+    assert!(meets_image(&ring(&[(1.0, 1.0), (20.0, 20.0)]), image));
+    assert!(
+        meets_image(&ring(&[(10.0, 10.0), (20.0, 20.0)]), image),
+        "an edge meets"
+    );
+    assert!(!meets_image(&ring(&[(11.0, 1.0), (20.0, 5.0)]), image));
+    assert!(!meets_image(&[], image));
+    // The first point is off the image to the right; the NaN after it makes the x bounds no
+    // number, which f64::min and f64::max would have passed over.
+    assert!(meets_image(&ring(&[(11.0, 1.0), (f64::NAN, 5.0)]), image));
+    assert!(meets_image(&ring(&[(f64::NAN, f64::NAN)]), image));
 }

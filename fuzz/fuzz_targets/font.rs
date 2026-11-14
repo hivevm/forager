@@ -65,7 +65,9 @@ fuzz_target!(|data: &[u8]| {
             max_y: 100.0,
         }),
         size: Some([101, 101]),
-        fonts: [("font".to_owned(), "font.ttf".to_owned())].into(),
+        fonts: [("font".to_owned(), "font.ttf".to_owned())]
+            .into_iter()
+            .collect(),
         layers,
         ..Map::default()
     };

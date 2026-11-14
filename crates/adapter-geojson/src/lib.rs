@@ -8,6 +8,7 @@ use forager_ports::{
     Stored,
 };
 use forager_style_ir::Extent;
+use forager_style_ir::c::rect_overlap;
 use geojson::{GeoJson, GeometryValue, JsonObject, JsonValue, Position};
 
 /// The features of one GeoJSON document, numbered in document order.
@@ -58,9 +59,7 @@ impl FeatureSource for GeoJsonSource {
         let features: Vec<Feature> = self
             .features
             .iter()
-            .filter(|(_, b)| {
-                b.min_x <= q.max_x && b.max_x >= q.min_x && b.min_y <= q.max_y && b.max_y >= q.min_y
-            })
+            .filter(|(_, b)| rect_overlap(corners(b), corners(q)))
             .map(|(feature, _)| feature.clone())
             .collect();
         // JSON holds no number that is not finite, and an empty geometry, which RFC 7946 allows,
@@ -147,6 +146,11 @@ fn bounds(geometry: &Geometry) -> Option<Extent> {
         e.max_y = e.max_y.max(c.y);
     });
     extent
+}
+
+/// An extent as `[min x, min y, max x, max y]`, as [`rect_overlap`] takes it.
+fn corners(e: &Extent) -> [f64; 4] {
+    [e.min_x, e.min_y, e.max_x, e.max_y]
 }
 
 fn visit(geometry: &Geometry, f: &mut impl FnMut(Coord)) {
@@ -274,6 +278,21 @@ mod tests {
             .unwrap()
             .features;
         assert_eq!(features.iter().map(|f| f.id).collect::<Vec<_>>(), [6]);
+    }
+
+    #[test]
+    fn a_query_edge_of_no_number_overlaps_as_rect_overlap_decides() {
+        // Verifies: ADR-0017
+        // `rect_overlap`, msRectOverlap's port, refuses an overlap only by a comparison that
+        // holds, and none holds with NaN: every feature meets an extent with a NaN edge.
+        let source = GeoJsonSource::parse(ALL_TYPES).unwrap();
+        let features = ready(source.features(&query(f64::NAN, 0.0, 11.0, 11.0)))
+            .unwrap()
+            .features;
+        assert_eq!(
+            features.iter().map(|f| f.id).collect::<Vec<_>>(),
+            [0, 2, 3, 4, 5, 6, 7]
+        );
     }
 
     #[test]

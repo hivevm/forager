@@ -792,3 +792,76 @@ fn a_new_alternative_of_an_untagged_union_is_major_in_derived_schemas() {
         Change::Major
     );
 }
+
+/// The strings of `schema` and of every schema it refers to in `defs`, each as the place it is
+/// found at, that are no value of a closed enum: a `"type": "string"` without an `enum` or a
+/// `const`, or a schema that admits anything.
+fn open_strings(schema: &Value, defs: &Map<String, Value>) -> Vec<String> {
+    let mut open = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut pending = vec![("".to_owned(), schema)];
+    while let Some((at, node)) = pending.pop() {
+        let object = match node {
+            Value::Object(object) => object,
+            Value::Bool(true) => {
+                open.push(format!("{at}: a schema that admits anything"));
+                continue;
+            }
+            _ => continue,
+        };
+        if let Some(name) = reference(node) {
+            if seen.insert(name.to_owned()) {
+                pending.push((format!("$defs/{name}"), &defs[name]));
+            }
+            continue;
+        }
+        let types = match object.get("type") {
+            Some(Value::String(t)) => vec![t.as_str()],
+            Some(Value::Array(ts)) => ts.iter().filter_map(Value::as_str).collect(),
+            _ => Vec::new(),
+        };
+        let closed = object.contains_key("enum") || object.contains_key("const");
+        if types.contains(&"string") && !closed {
+            open.push(format!("{at}: a string that is no value of a closed enum"));
+        }
+        if object.is_empty() {
+            open.push(format!("{at}: a schema that admits anything"));
+        }
+        for (key, value) in object {
+            if matches!(key.as_str(), "enum" | "const" | "description" | "required") {
+                continue;
+            }
+            match value {
+                Value::Array(items) => {
+                    for (i, item) in items.iter().enumerate() {
+                        pending.push((format!("{at}/{key}/{i}"), item));
+                    }
+                }
+                Value::Object(fields) if key == "properties" => {
+                    for (name, field) in fields {
+                        pending.push((format!("{at}/properties/{name}"), field));
+                    }
+                }
+                other => pending.push((format!("{at}/{key}"), other)),
+            }
+        }
+    }
+    open
+}
+
+#[test]
+fn the_transform_tree_and_a_styles_transform_hold_no_text_of_the_mapfile() {
+    // Verifies: ADR-0036
+    // Every string the schemas of the transform tree and of a style's transform admit is a value
+    // of a closed enum, so the tree can hold no text a mapfile wrote.
+    let derived: Value = serde_json::from_str(&derived()).unwrap();
+    let defs = derived["$defs"].as_object().unwrap();
+    for name in ["TransformTree", "GeomTransform"] {
+        let reference = json!({ "$ref": format!("#/$defs/{name}") });
+        let open = open_strings(&reference, defs);
+        assert!(open.is_empty(), "{name}: {open:?}");
+    }
+    // The walk sees an open string where there is one, a binding's.
+    let bound = json!({ "$ref": "#/$defs/Bound" });
+    assert!(!open_strings(&bound, defs).is_empty());
+}

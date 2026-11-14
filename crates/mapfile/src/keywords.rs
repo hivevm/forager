@@ -293,9 +293,9 @@ pub(crate) const KEYWORDS: [(&str, i32); 263] = [
 /// The token value MapServer's lexer gives `word` where it is a keyword, without regard to case;
 /// `None` for a word it reads as a string.
 pub(crate) fn token_value(word: &str) -> Option<i32> {
-    let lower = word.to_ascii_lowercase();
+    let lower = word.bytes().map(|b| b.to_ascii_lowercase());
     KEYWORDS
-        .binary_search_by(|(keyword, _)| (*keyword).cmp(lower.as_str()))
+        .binary_search_by(|(keyword, _)| keyword.bytes().cmp(lower.clone()))
         .ok()
         .map(|i| KEYWORDS[i].1)
 }

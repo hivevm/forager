@@ -32,9 +32,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 ## pnpoly, W. Randolph Franklin
 
-The point-in-polygon test of the label cache (`crates/label/src/cache.rs`) ports MapServer's
-`msPointInPolygon`, which `src/mapsearch.c` takes from W. Randolph Franklin's pnpoly under his
-notice. Its condition 2 asks that a redistribution in binary form reproduces it here:
+The point-in-polygon tests of the label cache (`crates/label/src/cache.rs`) and of a layer's
+`GEOMTRANSFORM` (`crates/symbolize/src/layer_transform.rs`) port MapServer's `msPointInPolygon`,
+which `src/mapsearch.c` takes from W. Randolph Franklin's pnpoly under his notice. Its condition 2
+asks that a redistribution in binary form reproduces it here:
 
 ```text
 Copyright (c) 1970-2003, Wm. Randolph Franklin

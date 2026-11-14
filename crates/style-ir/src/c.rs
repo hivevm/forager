@@ -1,9 +1,13 @@
 // C's and MapServer's small functions, ported once for the frontend, the core, and the adapters
-// (ADR-0036): glibc's strtod in the C locale and the atof and atoi it backs, its lrint on x86-64,
+// (ADR-0017): glibc's strtod in the C locale and the atof and atoi it backs, its lrint on x86-64,
 // and the (int) cast of a double as x86-64 computes it; MapServer's MS_NINT, MS_MIN, MS_MAX, and
-// MS_DEG_TO_RAD of src/mapserver.h, msRectOverlap of src/mapsearch.c, and msStringSplit of
-// src/mapstring.cpp, of the release pinned in scripts/fetch-msautotest.sh.
+// MS_DEG_TO_RAD of src/mapserver.h, msRectOverlap of src/mapsearch.c, msStringSplit of
+// src/mapstring.cpp, msComputeBounds of src/mapprimitive.cpp, msGetSymbolIndex's match of a name
+// of src/mapfile.c, and the alpha of an opacity of loadStyle, src/mapfile.c, bindStyle,
+// src/maputil.c, and aggCompositeRasterBufferNoPixman, src/mapagg.cpp, of the release pinned in
+// scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Copyright (c) 1996-2007 Regents of the University of Minnesota (src/mapagg.cpp).
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
 // including without limitation the rights to use, copy, modify, merge, publish, distribute,
@@ -18,8 +22,11 @@
 
 //! C's and MapServer's small functions as MapServer's build at the pin runs them: `strtod`,
 //! `atof`, and `atoi` of glibc in the C locale, `MS_NINT`, which is `lrint` on x86-64, the `(int)`
-//! cast of a `double`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, and
-//! `msStringSplit` (ADR-0036).
+//! cast of a `double`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`,
+//! `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex`'s match of a symbol's name, and the
+//! alpha `MS_NINT(opacity * 2.55)` of an opacity (ADR-0017).
+
+use crate::Symbol;
 
 /// C's `isspace` in the C locale.
 fn is_space(b: u8) -> bool {
@@ -262,6 +269,16 @@ pub fn ms_nint(x: f64) -> i32 {
     lrint(x) as i32
 }
 
+/// The alpha of an opacity, `MS_NINT(opacity * 2.55)` of an `int` opacity, kept in a byte: the
+/// alpha loadStyle and bindStyle give a style's colours below 100 (`src/mapfile.c:2799`,
+/// `src/maputil.c:270`), an `int` AGG's `rgba8` keeps in an `int8u`, and the cover
+/// aggCompositeRasterBufferNoPixman lays a layer over at (`src/mapagg.cpp:1389-1395`), an
+/// `unsigned` AGG's `blend_from` takes as a `cover_type`, an `unsigned char`. Each keeps the low 8
+/// bits, so -1 gives 253 and an opacity of -1294967296 179.
+pub fn opacity_alpha(opacity: i32) -> u8 {
+    ms_nint(f64::from(opacity) * 2.55).to_le_bytes()[0]
+}
+
 /// C's `(int)` cast of a `double`, and its assignment to an `int`, as the x86-64 build at the pin
 /// computes it with `cvttsd2si`: toward zero, and `INT_MIN` for a value past an `int` and for no
 /// number, where Rust's `as` saturates and gives 0 for NaN.
@@ -298,6 +315,27 @@ pub fn rect_overlap(a: [f64; 4], b: [f64; 4]) -> bool {
     !(a_min_x > b_max_x || a_max_x < b_min_x || a_min_y > b_max_y || a_max_y < b_min_y)
 }
 
+/// `msComputeBounds`, `src/mapprimitive.cpp:260-286`, of a shape's points, its parts run
+/// together, as `[min x, min y, max x, max y]`: from its first point, each bound folded over every
+/// point by [`ms_min`] or [`ms_max`]. So a point that is no number makes a bound no number, and
+/// the next point takes its place, what came before forgotten. `None` for a shape without points,
+/// whose bounds the C leaves as they were.
+pub fn ms_compute_bounds(points: impl IntoIterator<Item = [f64; 2]>) -> Option<[f64; 4]> {
+    let mut points = points.into_iter().peekable();
+    let &[x, y] = points.peek()?;
+    let mut bounds = [x, y, x, y];
+    for [x, y] in points {
+        let [min_x, min_y, max_x, max_y] = bounds;
+        bounds = [
+            ms_min(min_x, x),
+            ms_min(min_y, y),
+            ms_max(max_x, x),
+            ms_max(max_y, y),
+        ];
+    }
+    Some(bounds)
+}
+
 /// `msStringSplit`, `src/mapstring.cpp:863-908`, of `text` at `separator`: one token more than
 /// the runs of separators, a run parting once; a leading or a trailing separator leaves an empty
 /// token, and an empty text is one empty token. `text` is read as C reads it, up to its first NUL.
@@ -329,13 +367,36 @@ pub fn c_str(text: &str) -> &str {
     text.split('\0').next().unwrap_or_default()
 }
 
+/// `msGetSymbolIndex`, `src/mapfile.c:408-427`, without the `msAddImageSymbol` it may call where
+/// no symbol matches: the index, from 1, of the first of `symbols` whose name matches `name`, the
+/// IR's symbols being MapServer's from index 1, since its symbol 0 has no name. A name matches as
+/// `strcasecmp`, glibc's in the C locale, compares: byte by byte, ASCII letters folded, so where
+/// their [`symbol_name_key`]s are equal. `None` for a name no symbol carries, where the C gives -1.
+pub fn ms_get_symbol_index(name: &str, symbols: &[Symbol]) -> Option<usize> {
+    symbols
+        .iter()
+        .position(|symbol| {
+            symbol
+                .name
+                .as_ref()
+                .is_some_and(|known| known.eq_ignore_ascii_case(name))
+        })
+        .map(|position| position + 1)
+}
+
+/// The key by which two names match in [`ms_get_symbol_index`]: equal for exactly the names
+/// `strcasecmp` in the C locale finds equal, for a map from a name to its symbol.
+pub fn symbol_name_key(name: &str) -> String {
+    name.to_ascii_lowercase()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn atof_reads_the_longest_number_strtod_reads() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         let cases: &[(&str, f64)] = &[
             ("12abc", 12.0),
             ("abc", 0.0),
@@ -374,7 +435,7 @@ mod tests {
 
     #[test]
     fn strtod_reads_up_to_where_glibc_stops() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         let cases: &[(&str, usize)] = &[
             ("", 0),
             ("abc", 0),
@@ -404,7 +465,7 @@ mod tests {
 
     #[test]
     fn atoi_reads_an_int_as_glibc_does() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         assert_eq!(atoi(b" 42x"), 42);
         assert_eq!(atoi(b"-7"), -7);
         assert_eq!(atoi(b"\t255"), 255);
@@ -415,7 +476,7 @@ mod tests {
 
     #[test]
     fn lrint_rounds_half_to_even_and_gives_long_min_past_a_long() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         assert_eq!(lrint(2.5), 2);
         assert_eq!(lrint(3.5), 4);
         assert_eq!(lrint(-2.5), -2);
@@ -440,7 +501,7 @@ mod tests {
 
     #[test]
     fn ms_nint_keeps_the_low_32_bits_of_lrint() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         assert_eq!(ms_nint(2.5), 2);
         assert_eq!(ms_nint(-2_147_483_648.5), i32::MIN);
         assert_eq!(ms_nint(2_147_483_648.0), i32::MIN);
@@ -452,8 +513,22 @@ mod tests {
     }
 
     #[test]
+    fn opacity_alpha_is_ms_nint_of_the_opacity_times_2_55_kept_in_a_byte() {
+        // Verifies: ADR-0017
+        // 50 × 2.55 is 127.4999…, 99 × 2.55 252.45, -1 × 2.55 -2.55, whose MS_NINT -3 is 253 in a
+        // byte; MS_NINT(-1294967296 × 2.55) is 992800691, whose low byte is 179.
+        assert_eq!(opacity_alpha(0), 0);
+        assert_eq!(opacity_alpha(50), 127);
+        assert_eq!(opacity_alpha(99), 252);
+        assert_eq!(opacity_alpha(100), 255);
+        assert_eq!(opacity_alpha(101), 2);
+        assert_eq!(opacity_alpha(-1), 253);
+        assert_eq!(opacity_alpha(-1_294_967_296), 179);
+    }
+
+    #[test]
     fn int_cast_truncates_toward_zero_and_gives_int_min_past_an_int() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         assert_eq!(int_cast(2.9), 2);
         assert_eq!(int_cast(-2.9), -2);
         assert_eq!(int_cast(-0.5), 0);
@@ -474,7 +549,7 @@ mod tests {
 
     #[test]
     fn ms_min_and_ms_max_keep_their_second_operand_where_they_cannot_compare() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         // src/mapserver.h:78 and 81: `((a) < (b)) ? (a) : (b)` and `((a) > (b)) ? (a) : (b)`.
         assert_eq!(ms_min(1.0, 2.0), 1.0);
         assert_eq!(ms_max(1.0, 2.0), 2.0);
@@ -488,14 +563,14 @@ mod tests {
 
     #[test]
     fn deg_to_rad_is_mapservers_constant() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         assert_eq!(DEG_TO_RAD, ".0174532925199432958".parse::<f64>().unwrap());
         assert_eq!(DEG_TO_RAD, std::f64::consts::PI / 180.0);
     }
 
     #[test]
     fn rect_overlap_holds_edges_and_lets_no_number_through() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         let a = [0.0, 0.0, 10.0, 10.0];
         assert!(rect_overlap(a, [10.0, 10.0, 20.0, 20.0]));
         assert!(rect_overlap(a, [2.0, 2.0, 3.0, 3.0]));
@@ -507,8 +582,37 @@ mod tests {
     }
 
     #[test]
+    fn ms_compute_bounds_folds_by_ms_min_and_ms_max_from_the_first_point() {
+        // Verifies: ADR-0017
+        // src/mapprimitive.cpp:260-286: no line with a point leaves the bounds as they were.
+        assert_eq!(ms_compute_bounds([]), None);
+        assert_eq!(ms_compute_bounds([[1.0, 2.0]]), Some([1.0, 2.0, 1.0, 2.0]));
+        // The first line with a point gives the first bounds, one without any passed over.
+        let parts: [&[[f64; 2]]; 2] = [&[], &[[1.0, 2.0], [3.0, 0.0]]];
+        assert_eq!(
+            ms_compute_bounds(parts.into_iter().flatten().copied()),
+            Some([1.0, 0.0, 3.0, 2.0])
+        );
+        assert_eq!(
+            ms_compute_bounds([[3.0, 0.0], [-1.0, 5.0], [2.0, -4.0]]),
+            Some([-1.0, -4.0, 3.0, 5.0])
+        );
+        // A vertex of no number: `MS_MIN(0, NaN)` is NaN and `MS_MIN(NaN, 5)` is 5, so the 0
+        // before it is forgotten, where `f64::min` would keep it.
+        assert_eq!(
+            ms_compute_bounds([[0.0, 0.0], [f64::NAN, 1.0], [5.0, 2.0], [6.0, 3.0]]),
+            Some([5.0, 0.0, 6.0, 3.0])
+        );
+        // The last one leaves its bounds no number.
+        let [min_x, min_y, max_x, max_y] =
+            ms_compute_bounds([[0.0, 0.0], [3.0, f64::NAN]]).unwrap();
+        assert_eq!([min_x, max_x], [0.0, 3.0]);
+        assert!(min_y.is_nan() && max_y.is_nan());
+    }
+
+    #[test]
     fn ms_string_split_parts_a_run_once_and_keeps_empty_ends() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         fn split(text: &str) -> Vec<&[u8]> {
             ms_string_split(text.as_bytes(), b',')
         }
@@ -522,11 +626,67 @@ mod tests {
 
     #[test]
     fn a_c_string_ends_at_its_first_nul() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         assert_eq!(c_str("ab\0cd"), "ab");
         assert_eq!(c_str("ab"), "ab");
         assert_eq!(c_str("\0"), "");
         assert_eq!(c_bytes(b"ab\0cd"), b"ab");
         assert_eq!(c_bytes(b""), b"");
+    }
+
+    #[test]
+    fn ms_get_symbol_index_finds_the_first_name_that_matches_from_index_1() {
+        // Verifies: ADR-0017
+        // src/mapfile.c:416-420: from symbol 1, the first whose name strcasecmp finds equal.
+        let symbols = [
+            Symbol {
+                name: None,
+                ..symbol_named("")
+            },
+            symbol_named("Pin"),
+            symbol_named("pin"),
+            symbol_named("Straße"),
+        ];
+        assert_eq!(ms_get_symbol_index("pin", &symbols), Some(2));
+        assert_eq!(ms_get_symbol_index("PIN", &symbols), Some(2));
+        assert_eq!(ms_get_symbol_index("STRAßE", &symbols), Some(4));
+        // Only ASCII letters fold in the C locale; a symbol without a name matches nothing.
+        assert_eq!(ms_get_symbol_index("STRASSE", &symbols), None);
+        assert_eq!(ms_get_symbol_index("", &symbols), None);
+        assert_eq!(ms_get_symbol_index("pin", &[]), None);
+    }
+
+    #[test]
+    fn two_names_have_one_key_exactly_where_they_match() {
+        // Verifies: ADR-0017
+        let names = [
+            "Pin", "pin", "PIN", "pín", "PÍN", "p_n", "P_N", "", "[", "{",
+        ];
+        for a in names {
+            for b in names {
+                let matched = ms_get_symbol_index(a, &[symbol_named(b)]).is_some();
+                assert_eq!(
+                    symbol_name_key(a) == symbol_name_key(b),
+                    matched,
+                    "{a:?} {b:?}"
+                );
+            }
+        }
+    }
+
+    fn symbol_named(name: &str) -> Symbol {
+        Symbol {
+            name: Some(name.to_owned()),
+            kind: crate::SymbolKind::Ellipse,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }
     }
 }

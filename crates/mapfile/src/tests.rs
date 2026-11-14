@@ -17,7 +17,9 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
-use forager_style_ir::{Bound, LayerStatus, RenderMode, Rgba, Severity, Span};
+use forager_style_ir::{
+    Bound, LayerStatus, NotDrawn, RenderMode, Rgba, Severity, Span, TransformShape, TransformTree,
+};
 
 use super::{Loaded, load};
 use crate::test_support::{Files, codes, first_label, first_style, load_files, ready};
@@ -109,14 +111,15 @@ fn a_layers_labelcache_is_carried_and_on_without_one() {
 }
 
 #[test]
-fn a_layer_of_postlabelcache_is_carried_its_label_cache_off() {
-    // loadLayer reads POSTLABELCACHE with getSymbol(MS_TRUE, MS_FALSE) and turns the label
-    // cache off where it is TRUE (mapfile.c:4755-4759); msDrawLayer turns it off again, so a
-    // LABELCACHE ON after it changes nothing (mapdraw.c:854-856).
+fn a_layer_of_postlabelcache_is_carried_its_label_cache_as_written() {
+    // loadLayer reads POSTLABELCACHE with getSymbol(MS_TRUE, MS_FALSE) (mapfile.c:4755-4759);
+    // the frontend carries LABELCACHE as written beside it, and the engine draws such a layer's
+    // labels at once whatever its label cache says, as msDrawLayer turns the cache off for it
+    // (mapdraw.c:854-856).
     let loaded = load_files(&[(
         "m.map",
         "MAP LAYER NAME 'a' POSTLABELCACHE TRUE END \
-         LAYER NAME 'b' POSTLABELCACHE TRUE LABELCACHE ON END \
+         LAYER NAME 'b' POSTLABELCACHE TRUE LABELCACHE OFF END \
          LAYER NAME 'c' POSTLABELCACHE FALSE END LAYER NAME 'd' END END",
     )]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
@@ -127,7 +130,7 @@ fn a_layer_of_postlabelcache_is_carried_its_label_cache_off() {
         .collect();
     assert_eq!(
         flags,
-        [(true, false), (true, false), (false, true), (false, true)]
+        [(true, true), (true, false), (false, true), (false, true)]
     );
 }
 
@@ -136,6 +139,36 @@ fn a_query_layer_is_discarded() {
     let loaded = load_files(&[("m.map", "MAP LAYER NAME 'q' TYPE QUERY END END")]);
     assert!(loaded.document.as_ref().unwrap().map.layers.is_empty());
     assert_eq!(codes(&loaded), ["discarded-layer"]);
+}
+
+/// loadLayer reads `CONNECTIONTYPE` with `getSymbol(14, MS_OGR, …)` (src/mapfile.c:4510-4517),
+/// which compares the lexer's token value with its choices' (src/mapfile.c:202-223), the values of
+/// `enum MS_CONNECTION_TYPE` (src/mapserver.h:609-631): `small` lexes as `MS_SMALL`
+/// (src/maplexer.l:506), 7, which is `MS_WMS`; `postgresql` as `MS_DB_POSTGRES`, 4, which is
+/// `MS_OGR`; and `medium` as `MS_MEDIUM`, 10, which is `MS_GRATICULE` (src/mapserver.h:604-605,
+/// 634-640). `graticule` lexes as `GRATICULE` (src/maplexer.l:307), 1140 (src/mapfile.h:195),
+/// which is none of the choices, so MapServer refuses it, as it refuses a string.
+#[test]
+fn a_connection_type_is_read_by_its_token_value() {
+    let load = |word: &str| {
+        let text = format!("MAP LAYER NAME 'a' CONNECTIONTYPE {word} CONNECTION 'x' END END");
+        load_files(&[("m.map", text.leak())])
+    };
+    for (word, kind) in [
+        ("small", "wms"),
+        ("WMS", "wms"),
+        ("postgresql", "ogr"),
+        ("medium", "graticule"),
+        ("rasterlabel", "rasterlabel"),
+    ] {
+        let loaded = load(word);
+        assert_eq!(codes(&loaded), Vec::<&str>::new(), "{word}");
+        let layer = &loaded.document.as_ref().unwrap().map.layers[0];
+        assert_eq!(layer.source.as_ref().unwrap().kind, kind, "{word}");
+    }
+    for word in ["graticule", "GRATICULE", "local", "'ogr'"] {
+        assert_eq!(codes(&load(word)), ["invalid-value"], "{word}");
+    }
 }
 
 #[test]
@@ -228,6 +261,32 @@ fn invalid_values_are_errors() {
     let loaded = load_files(&[("m.map", "MAP SIZE 400 END")]);
     assert!(loaded.document.is_none());
     assert_eq!(codes(&loaded), ["invalid-value"]);
+}
+
+#[test]
+fn a_map_size_is_checked_from_1_and_cast_as_load_map_casts_it() {
+    // Verifies: ADR-0017
+    // loadMap (src/mapfile.c:6824-6829): getInteger checks each number against 1 and MAXSIZE, an
+    // `int`, before its `(int)` cast (src/mapfile.c:276-290, 312-317), so a fraction is cut and a
+    // number below 1 or above INT_MAX, 2147483647.5 among them, fails the load.
+    let size = |body: &str| {
+        let text = format!("MAP SIZE {body} END").leak();
+        let loaded = load_files(&[("m.map", text)]);
+        let codes: Vec<String> = codes(&loaded).into_iter().map(str::to_owned).collect();
+        loaded.document.map(|d| d.map.size).ok_or(codes)
+    };
+    assert_eq!(size("400.9 1"), Ok(Some([400, 1])));
+    assert_eq!(size("2147483647 1"), Ok(Some([2_147_483_647, 1])));
+    for body in [
+        "2147483647.5 1",
+        "0 10",
+        "10 0.99",
+        "-5 10",
+        "10 2147483648",
+        "3e9 10",
+    ] {
+        assert_eq!(size(body), Err(vec!["invalid-value".to_owned()]), "{body}");
+    }
 }
 
 #[test]
@@ -1829,6 +1888,60 @@ fn a_layers_metadata_and_the_output_format_name_the_limit_they_are_read_for() {
 }
 
 #[test]
+fn a_metadata_pair_loadhashtable_fails_on_is_reported_as_a_validation_pair_is() {
+    // loadHashTable (src/mapfile.c:2473-2505) fails the load on a key without a value and on a
+    // pair that is not two strings, in METADATA as in VALIDATION; the pair is left out with the
+    // same warning, and the block's other pairs still hold.
+    for (block, key, gutter, layer_limit) in [
+        (
+            "WEB METADATA 'labelcache_map_edge_buffer' '4' 'maxfeaturestodraw' END END",
+            "\"maxfeaturestodraw\"",
+            Some(4),
+            None,
+        ),
+        (
+            "WEB METADATA 'labelcache_map_edge_buffer' '4' 3 'x' END END",
+            "3",
+            Some(4),
+            None,
+        ),
+        (
+            "LAYER NAME 'a' METADATA 'maxfeaturestodraw' '2' 'labelcache_map_edge_buffer' END END",
+            "\"labelcache_map_edge_buffer\"",
+            None,
+            Some(2),
+        ),
+        (
+            "LAYER NAME 'a' METADATA 'maxfeaturestodraw' '2' 'x' 3 END END",
+            "\"x\"",
+            None,
+            Some(2),
+        ),
+    ] {
+        let text: &'static str = format!("MAP {block} LAYER NAME 'b' END END").leak();
+        let loaded = load_files(&[("m.map", text)]);
+        // METADATA is otherwise read for its keys alone, which warns unsupported-keyword.
+        let skipped: Vec<_> = loaded
+            .diagnostics
+            .iter()
+            .filter(|d| d.code != "unsupported-keyword")
+            .collect();
+        let [pair] = skipped.as_slice() else {
+            panic!("{block}: {skipped:?}");
+        };
+        assert_eq!(pair.code, "unsupported-value", "{block}");
+        // The key as the warning names it: quoted where it is a string.
+        let named = format!("the METADATA pair of the key {key} ");
+        assert!(pair.message.contains(&named), "{block}: {}", pair.message);
+        let map = loaded.document.unwrap().map;
+        assert_eq!(map.label_cache_edge_buffer, gutter, "{block}");
+        assert_eq!(map.layers[0].max_features, layer_limit, "{block}");
+    }
+    let validation = load_files(&[("m.map", "MAP WEB VALIDATION 'default_a' END END END")]);
+    assert_eq!(codes(&validation), ["unsupported-value"]);
+}
+
+#[test]
 fn a_maxfeatures_of_zero_is_an_error() {
     // getInteger(&maxfeatures, MS_NUM_CHECK_GT, 0, -1) refuses 0.
     let loaded = load_files(&[("m.map", "MAP LAYER NAME 'a' MAXFEATURES 0 END END")]);
@@ -1836,13 +1949,58 @@ fn a_maxfeatures_of_zero_is_an_error() {
 }
 
 #[test]
-fn a_layers_geomtransform_is_reported_as_not_carried() {
-    // The style IR carries no layer GEOMTRANSFORM yet (docs/backlog/layer-geomtransform.md): the
-    // keyword is warned of, and the layer's shapes are drawn as read.
-    let loaded = load_files(&[(
-        "m.map",
-        "MAP LAYER NAME 'a' GEOMTRANSFORM (simplify([shape], 25)) END END",
-    )]);
-    assert_eq!(codes(&loaded), ["unsupported-keyword"]);
-    assert!(loaded.document.is_some());
+fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
+    // Verifies: ADR-0036
+    // loadLayer reads GEOMTRANSFORM by getSymbol(1, MS_EXPRESSION): an expression alone.
+    let layer_transform = |text: &'static str| {
+        let loaded = load_files(&[("m.map", text)]);
+        let codes: Vec<String> = codes(&loaded).iter().map(|c| (*c).to_owned()).collect();
+        let transform = loaded
+            .document
+            .map(|d| d.map.layers[0].geom_transform.clone());
+        (codes, transform)
+    };
+    let (codes, transform) =
+        layer_transform("MAP LAYER NAME 'a' GEOMTRANSFORM (outer([shape])) END END");
+    assert!(codes.is_empty(), "{codes:?}");
+    assert_eq!(
+        transform,
+        Some(Some(TransformTree::Drawn(TransformShape::Outer(Box::new(
+            TransformShape::Shape
+        )))))
+    );
+    let (codes, transform) =
+        layer_transform("MAP LAYER NAME 'a' GEOMTRANSFORM (simplify([shape], 25)) END END");
+    assert!(codes.is_empty(), "{codes:?}");
+    assert_eq!(
+        transform,
+        Some(Some(TransformTree::NotDrawn(NotDrawn::Simplify)))
+    );
+    let (codes, transform) =
+        layer_transform("MAP LAYER NAME 'a' GEOMTRANSFORM (outer([shape]) 2) END END");
+    assert_eq!(codes, ["invalid-expression"]);
+    assert_eq!(
+        transform,
+        Some(Some(TransformTree::NotDrawn(NotDrawn::Syntax)))
+    );
+    let (codes, transform) = layer_transform("MAP LAYER NAME 'a' GEOMTRANSFORM 'start' END END");
+    assert_eq!(codes, ["invalid-value"]);
+    assert_eq!(transform, None, "the load fails");
+}
+
+#[test]
+fn a_geomtransform_past_the_nesting_bound_fails_the_load() {
+    // Verifies: Q-9, ADR-0036
+    let chain = vec!["1"; 26].join(" + ");
+    for place in [
+        format!("MAP LAYER NAME 'a' GEOMTRANSFORM (densify([shape], {chain})) END END"),
+        format!(
+            "MAP LAYER NAME 'a' CLASS STYLE GEOMTRANSFORM (densify([shape], {chain})) END END END \
+             END"
+        ),
+    ] {
+        let loaded = load_files(&[("m.map", place.leak())]);
+        assert_eq!(codes(&loaded), ["expression-too-deep"]);
+        assert!(loaded.document.is_none());
+    }
 }

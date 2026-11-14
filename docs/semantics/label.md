@@ -93,13 +93,20 @@ marker is: a vector, an ellipse, or a pixmap symbol, nothing for symbol 0. A pix
 `label-not-drawn` where it sizes that marker, and is otherwise left undrawn, its layer warning with
 `pixmap-not-drawn`. A marker of any other symbol, or of one the symbol set does not hold, is not
 drawn yet, so its label is left out with `label-not-drawn`.
-A label's style of any other `GEOMTRANSFORM`, `start`, `end`, `vertices`, `centroid`, `bbox`, an
-expression, or a name MapServer does not know, `msDrawLabelCache` fails the map's draw on; the IR's
-label style always names `labelpoint`, `labelpoly`, or `labelcenter`, so the frontend leaves such a
-label out with `label-not-drawn`, and its class's other labels with it, as the engine leaves out
-every label of a class of several labels, not drawn yet. `ANGLE AUTO` on a label's style changes
-nothing: `loadStyle` sets only the style's `autoangle`, which none of the functions drawing a
-label's styles reads, so the style turns by its `ANGLE` alone.
+A label's style of a `GEOMTRANSFORM` that names no transform, such as `"foo"`, draws at the
+label's point: `msStyleSetGeomTransform` (`src/mapgeomtransform.c:58-64`) sets its type to
+`MS_GEOMTRANSFORM_NONE` and only records an error, which `loadStyle` (`src/mapfile.c:2831-2843`)
+does not check and `map2img` does not read, failing only where `msLoadMap` or `msDrawMap` returns
+nothing; `loadLabel` (`src/mapfile.c:2058-2061`) then gives the style its default, `labelpnt`. A
+later `GEOMTRANSFORM` sets the type again, so the last one holds. The frontend warns of the name
+with `unsupported-value`, as for a class's style.
+A label's style of any other `GEOMTRANSFORM`, `start`, `end`, `vertices`, `centroid`, `bbox`, or
+an expression, `msDrawLabelCache` fails the map's draw on; the IR's label style always names
+`labelpoint`, `labelpoly`, or `labelcenter`, so the frontend leaves such a label out with
+`label-not-drawn`, and its class's other labels with it, as the engine leaves out every label of a
+class of several labels, not drawn yet. `ANGLE AUTO` on a label's style changes nothing:
+`loadStyle` sets only the style's `autoangle`, which none of the functions drawing a label's styles
+reads, so the style turns by its `ANGLE` alone.
 
 **The marker under a label.** The label cache holds beneath each label of a point layer the box
 of the marker its class's first style draws at the point, as `msAddLabelGroup` and `msAddLabel`
@@ -150,8 +157,9 @@ glyph and so needs no font either.
 **`POSTLABELCACHE`.** A layer's `POSTLABELCACHE`, `TRUE` or `FALSE` as `loadLayer` in
 `src/mapfile.c` reads it, `FALSE` without one, is the IR's `post_label_cache`, false where it is
 absent. `loadLayer` turns the layer's label cache off where it is `TRUE`, and `msDrawLayer` in
-`src/mapdraw.c` turns it off again as it draws the layer, so the frontend writes `label_cache` false
-for such a layer whatever its `LABELCACHE`. `msDrawMap` draws the layers in their order but those of
+`src/mapdraw.c` turns it off again as it draws the layer, so `post_label_cache` overrides the IR's
+`label_cache`, which the frontend writes as `LABELCACHE` says: the engine draws such a layer's
+labels at once whatever it says. `msDrawMap` draws the layers in their order but those of
 `POSTLABELCACHE TRUE`, then the label cache, then those in their order, so such a layer is drawn
 over every cached label of the map; a point layer's labels are drawn at once, as above, and a line
 or polygon layer's are not drawn yet, each reported.
@@ -159,7 +167,9 @@ or polygon layer's are not drawn yet, each reported.
 **`labelcache_map_edge_buffer`.** The map's `WEB` `METADATA` may name a gutter along the image's
 edges that no cached label reaches into: `msDrawLabelCache` in `src/mapdraw.c` reads it as the
 absolute value of `atoi` of the text, the key found without case, and the IR's
-`label_cache_edge_buffer` carries it, none where it reads as 0. `labelInImage` in `src/maplabel.c`
+`label_cache_edge_buffer` carries it, none where it reads as 0; a pair of that `METADATA` that is
+not two strings, or a last key without a value, is left out and warns `unsupported-value`, where
+`loadHashTable` in `src/mapfile.c` fails the load. `labelInImage` in `src/maplabel.c`
 then requires a label that may not be partial to lie that many pixels inside each edge, by its box
 or, where it is turned, its corners; a label of `PARTIALS TRUE` is not tested against the image, and
 a forced one is drawn untested, but for a forced label of `POSITION AUTO`, whose positions before

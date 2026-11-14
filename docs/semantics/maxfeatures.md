@@ -15,4 +15,7 @@ features past it are not drawn, nor their labels.
 
 A layer's `METADATA` is read for `maxfeaturestodraw` alone, and the output format, besides whether
 the image starts transparent ([`opacity.md`](opacity.md)), for its `MAXFEATURESTODRAW` alone. Each
-warns `unsupported-keyword`, naming what it is read for.
+warns `unsupported-keyword`, naming what it is read for. A pair of a `METADATA`, the layer's or
+`WEB`'s, that is not two strings, or a last key without a value, is left out and warns
+`unsupported-value` naming its key, as a `VALIDATION` pair does ([`expression.md`](expression.md)),
+where `loadHashTable` in `src/mapfile.c` fails the load; the block's other pairs still hold.

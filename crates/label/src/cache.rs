@@ -26,10 +26,12 @@
 //! out where a drawn label of the same text lies within its minimum distance.
 //!
 //! The tests are MapServer's, pair by pair; which pairs are tested is bounded by a loose grid
-//! over the image (Q-9): every marker and every drawn label is held once by its box, and a test
-//! visits each entry near its box at most once, and none that cannot meet it by lying inside out
-//! along the same axis. Where a member has a `MINDISTANCE`, a drawn label with a text is held a
-//! second time, by its point, in a grid of its own, and that test may visit it once in each.
+//! that wraps around the image (Q-9, ADR-0032), so that labels drawn
+//! beyond it cost what labels within it do: every marker and every drawn label is held once by its
+//! box, and a test visits each entry near its box at most once, and none that cannot meet it by
+//! lying inside out along the same axis. Where a member has a `MINDISTANCE`, a drawn label with a
+//! text is held a second time, by its point, in a grid of its own, and that test may visit it once
+//! in each.
 
 use forager_render::Point;
 use forager_style_ir::c::{ms_max, ms_min, rect_overlap};
@@ -58,8 +60,8 @@ pub struct Member {
     /// the member's box is the marker's. Without one, a text of line breaks only, which is not
     /// drawn, but whose marker is cached.
     pub label: Option<PointLabel>,
-    /// `FORCE` of a label without a box of text: its marker is drawn untested. Read only for a
-    /// member whose `label` is `None`; a label with one is forced by its [`PointLabel`]'s.
+    /// `FORCE`: the label is drawn where it does not fit, its `labelpoint` marker untested, and
+    /// is not held apart by its minimum distance.
     pub force: bool,
     /// `PARTIALS TRUE`: the label may leave the image.
     pub partials: bool,
@@ -74,6 +76,35 @@ pub struct Member {
     pub label_marker: Option<Bounds>,
     /// `MINDISTANCE` in pixels; none at 0 or below.
     pub min_distance: f64,
+}
+
+/// The box of the marker `msAddLabelGroup` caches beneath a label at `point`, of the width and
+/// height `size`: about the point, its far corner `w - 1` and `h - 1` from its near one.
+pub fn cached_marker_box(point: Point, (w, h): (f64, f64)) -> [f64; 4] {
+    let (min_x, min_y) = (point.x - 0.5 * w, point.y - 0.5 * h);
+    [min_x, min_y, min_x + (w - 1.0), min_y + (h - 1.0)]
+}
+
+/// `msDrawLabelCache`'s offset of a label from its markers: half the size of the box `marker`
+/// the marker cache holds, or of its `labelpoint` marker `label_marker`'s where that is larger,
+/// grown by `outline_grow`, half the label's outline, where it has one and the offset across is
+/// not 0.
+pub fn marker_offset(
+    marker: Option<&[f64; 4]>,
+    label_marker: Option<&Bounds>,
+    outline_grow: Option<f64>,
+) -> [f64; 2] {
+    let half =
+        |[min_x, min_y, max_x, max_y]: &[f64; 4]| [(max_x - min_x) / 2.0, (max_y - min_y) / 2.0];
+    let mut offset = marker.map_or([0.0, 0.0], half);
+    if let Some(m) = label_marker {
+        let [x, y] = half(&m.bbox);
+        offset = [ms_max(offset[0], x), ms_max(offset[1], y)];
+    }
+    match outline_grow {
+        Some(grow) if offset[0] != 0.0 => offset.map(|o| o + grow),
+        _ => offset,
+    }
 }
 
 /// The labels of a cache, in the order they were added.
@@ -95,8 +126,8 @@ pub fn draw_label_cache<M: Members + ?Sized>(
     gutter: u32,
     mut draw: impl FnMut(usize, &Placement),
 ) -> usize {
-    walk_label_cache(members, size, gutter, |i, placement| {
-        if let Some(placement) = placement {
+    walk_label_cache(members, size, gutter, |i, filed| {
+        if let Some((placement, _)) = filed {
             draw(i, placement);
         }
     })
@@ -106,13 +137,13 @@ pub fn draw_label_cache<M: Members + ?Sized>(
 /// highest priority down and within a priority from the last added to the first, into an image of
 /// `size` pixels whose `gutter`, `labelcache_map_edge_buffer`, no label reaches into that may not
 /// be partial and is tested, and hands `visit` each member it visits, in that order, with its
-/// placement where it is drawn and `None` where it is left out. Returns how many members past
-/// [`MAX_LABELS`] it left out untested (Q-9).
+/// placement and the box it filed it by, its [`member_box`], where it is drawn, and `None` where
+/// it is left out. Returns how many members past [`MAX_LABELS`] it left out untested (Q-9).
 pub fn walk_label_cache<M: Members + ?Sized>(
     members: &M,
     size: (u32, u32),
     gutter: u32,
-    mut visit: impl FnMut(usize, Option<&Placement>),
+    mut visit: impl FnMut(usize, Option<(&Placement, [f64; 4])>),
 ) -> usize {
     let taken = members.count().min(MAX_LABELS);
     let image = [f64::from(size.0), f64::from(size.1)];
@@ -144,10 +175,11 @@ pub fn walk_label_cache<M: Members + ?Sized>(
             }
             let member = members.member(i);
             let placement = cache.place(i, &member);
-            if let Some(placement) = &placement {
-                cache.file(i, &member, placement);
-            }
-            visit(i, placement.as_ref());
+            let filed = placement.as_ref().map(|placement| {
+                let bbox = cache.file(i, &member, placement);
+                (placement, bbox)
+            });
+            visit(i, filed);
         }
     }
     members.count() - taken
@@ -175,8 +207,9 @@ struct Cache<'m, M: ?Sized> {
 }
 
 impl<M: Members + ?Sized> Cache<'_, M> {
-    /// Files member `i`, drawn at `placement`, by its box, and by its point where it has a text.
-    fn file(&mut self, i: usize, member: &Member, placement: &Placement) {
+    /// Files member `i`, drawn at `placement`, by its box, and by its point where it has a text;
+    /// returns its box.
+    fn file(&mut self, i: usize, member: &Member, placement: &Placement) -> [f64; 4] {
         #[expect(
             clippy::cast_possible_truncation,
             reason = "a member's index, below MAX_LABELS"
@@ -188,6 +221,7 @@ impl<M: Members + ?Sized> Cache<'_, M> {
             let p = member.point;
             points.insert(&[p.x, p.y, p.x, p.y], entry);
         }
+        bbox
     }
 
     /// Places member `i`, or `None` where it is left out.
@@ -209,7 +243,7 @@ impl<M: Members + ?Sized> Cache<'_, M> {
         // The marker of a labelpoint style is tested first, at the label's priority, unless the
         // label is forced; where it has one, the point is not tested.
         if let Some(marker) = &member.label_marker {
-            if !label.force && !self.fits(member, marker, Some((member.priority, i))) {
+            if !member.force && !self.fits(member, marker, Some((member.priority, i))) {
                 return None;
             }
         } else if member.test_point {
@@ -223,11 +257,11 @@ impl<M: Members + ?Sized> Cache<'_, M> {
                 return None;
             }
         }
-        let placement = place(member.point, &label, |bounds| {
+        let placement = place(member.point, &label, member.force, |bounds| {
             self.fits(member, bounds, Some((member.priority, i)))
         })?;
         if member.min_distance > 0.0
-            && !label.force
+            && !member.force
             && self.too_close(
                 i,
                 &member_box(&placement.bounds.bbox, member.label_marker.as_ref()),
@@ -459,13 +493,19 @@ fn extent(min: f64, max: f64) -> (f64, f64, bool) {
 /// Entries by where their boxes lie, so that a test visits only the entries that can meet its
 /// box, each once, and each entry is held once (Q-9).
 ///
-/// It is a loose grid of levels over the image: level `k` has square cells of side `64 · 2^k`,
-/// up to the level of one cell over the image. An entry is held once, at the finest level whose
-/// side its box, held to the image, does not exceed, in the cell of its lower corner, so it lies
-/// within that cell and the next one along each axis; a box that meets it starts at most a cell
-/// before. Coordinates past the image are held to its edge, which keeps every pair that meets.
-/// Entries inside out along an axis are held apart and not visited by a box inside out along the
-/// same axis, which they cannot meet. An entry with a coordinate that is no number, which
+/// It is a loose grid of levels that wraps around the image (ADR-0032):
+/// level `k` has square cells of side `64 · 2^k`, as many as cover the image, its far edge
+/// included, up to the level of one cell over the image. A coordinate's cell is taken modulo the
+/// level's columns or rows, wherever it lies, so labels past the image spread over the cells as
+/// labels within it do; a cell index past a 64-bit integer saturates. An entry is held once, at
+/// the finest level whose side its box does not exceed and over which it spans at most two cells
+/// along each axis, in the cell of its lower corner, so it lies within that cell and the next one
+/// along each axis, and a box that meets it starts at most a cell after its cell. A test visits
+/// its run of cells from the one before its own to that of its far edge, wrapped alike, each cell
+/// once; a box larger than every level's side is held in the coarsest level, which every test
+/// visits whole, as its run of at least two cells covers its one or two columns and rows. Entries
+/// inside out along an axis are held apart and not visited by a box inside out along the same
+/// axis, which they cannot meet. An entry with a coordinate that is no number, which
 /// `msRectOverlap` finds to meet every box, is held apart and visited by every test, and a test
 /// of such a box visits every entry. Nothing is allocated until the first entry.
 struct Grid<E> {
@@ -492,48 +532,53 @@ struct Level<E> {
 impl<E: Copy> Grid<E> {
     fn new((width, height): (u32, u32)) -> Self {
         Self {
-            size: [f64::from(width).max(1.0), f64::from(height).max(1.0)],
+            size: [
+                ms_max(f64::from(width), 1.0),
+                ms_max(f64::from(height), 1.0),
+            ],
             stores: [None, None, None, None],
             anywhere: Vec::new(),
         }
     }
 
-    /// The box's extents held to the image, `[x0, y0, x1, y1]`, and the store it belongs to;
-    /// `None` where a coordinate is no number.
-    fn place(&self, bbox: &[f64; 4]) -> Option<([f64; 4], usize)> {
+    /// The box's extents, `[x0, y0, x1, y1]`, and the store it belongs to; `None` where a
+    /// coordinate is no number.
+    fn place(bbox: &[f64; 4]) -> Option<([f64; 4], usize)> {
         if bbox.iter().any(|v| v.is_nan()) {
             return None;
         }
         let (x0, x1, x_out) = extent(bbox[0], bbox[2]);
         let (y0, y1, y_out) = extent(bbox[1], bbox[3]);
-        let [w, h] = self.size;
-        let held = [
-            x0.clamp(0.0, w),
-            y0.clamp(0.0, h),
-            x1.clamp(0.0, w),
-            y1.clamp(0.0, h),
-        ];
-        Some((held, usize::from(x_out) + 2 * usize::from(y_out)))
+        Some((
+            [x0, y0, x1, y1],
+            usize::from(x_out) + 2 * usize::from(y_out),
+        ))
     }
 
     /// Holds `entry` for `bbox`.
     fn insert(&mut self, bbox: &[f64; 4], entry: E) {
-        let Some((b, store)) = self.place(bbox) else {
+        let Some((b, store)) = Self::place(bbox) else {
             self.anywhere.push(entry);
             return;
         };
         let size = self.size;
-        let levels = self.stores[store].get_or_insert_with(|| Levels::new(size));
-        let level = levels
-            .levels
-            .iter_mut()
-            .find(|l| b[2] - b[0] <= l.side && b[3] - b[1] <= l.side)
-            .expect("the last level spans the image");
+        let levels = &mut self.stores[store]
+            .get_or_insert_with(|| Levels::new(size))
+            .levels;
+        let last = levels.len() - 1;
+        let at = levels.iter().position(|l| l.holds(&b)).unwrap_or(last);
+        let level = &mut levels[at];
         let (x, y) = (
-            level.cell(b[0], level.columns),
-            level.cell(b[1], level.rows),
+            wrap(level.cell(b[0]), level.columns),
+            wrap(level.cell(b[1]), level.rows),
         );
-        level.cells[y * level.columns + x].push(entry);
+        let cell = &mut level.cells[y * level.columns + x];
+        // Spread over the cells, most entries are alone in theirs: room for one, not the four a
+        // first push takes, keeps a label's memory within the 64 bytes cache_bounds.rs allows.
+        if cell.capacity() == 0 {
+            cell.reserve_exact(1);
+        }
+        cell.push(entry);
         level.count += 1;
     }
 
@@ -542,7 +587,7 @@ impl<E: Copy> Grid<E> {
         if self.anywhere.iter().any(&mut hit) {
             return true;
         }
-        let Some((b, query)) = self.place(bbox) else {
+        let Some((b, query)) = Self::place(bbox) else {
             return self
                 .stores
                 .iter()
@@ -561,17 +606,32 @@ impl<E: Copy> Grid<E> {
                 return false;
             };
             levels.levels.iter().filter(|l| l.count > 0).any(|level| {
-                let xs = level.cell(b[0], level.columns).saturating_sub(1)
-                    ..=level.cell(b[2], level.columns);
-                let ys =
-                    level.cell(b[1], level.rows).saturating_sub(1)..=level.cell(b[3], level.rows);
+                let xs = run(level.cell(b[0]), level.cell(b[2]), level.columns);
+                let ys = run(level.cell(b[1]), level.cell(b[3]), level.rows);
                 ys.into_iter().any(|y| {
+                    let y = (y % level.rows) * level.columns;
                     xs.clone()
-                        .any(|x| level.cells[y * level.columns + x].iter().any(&mut hit))
+                        .any(|x| level.cells[y + x % level.columns].iter().any(&mut hit))
                 })
             })
         })
     }
+}
+
+/// The cells, unwrapped, of a run from one before the cell `lo` to the cell `hi` along an axis of
+/// `n` cells, starting at `lo - 1` wrapped and to be wrapped by `n`: every cell once where the run
+/// is as long as the axis.
+fn run(lo: i64, hi: i64, n: usize) -> std::ops::Range<usize> {
+    let start = wrap(lo.saturating_sub(1), n);
+    let length = i128::from(hi) - i128::from(lo) + 2;
+    let length = usize::try_from(length).map_or(n, |length| length.min(n));
+    start..start + length
+}
+
+/// A cell index wrapped onto an axis of `n` cells.
+fn wrap(cell: i64, n: usize) -> usize {
+    let n = i64::try_from(n).expect("a count of cells along the image (Q-9)");
+    usize::try_from(cell.rem_euclid(n)).expect("a remainder of a positive count")
 }
 
 impl<E> Levels<E> {
@@ -579,7 +639,7 @@ impl<E> Levels<E> {
         let mut levels = Vec::new();
         let mut side = CELL;
         loop {
-            // Coordinates run from 0 to the image's edge, that edge included.
+            // The cells cover the image from 0 to its edge, that edge included.
             #[expect(
                 clippy::cast_possible_truncation,
                 reason = "a count of cells along the image, held to its side (Q-9)"
@@ -603,12 +663,23 @@ impl<E> Levels<E> {
 }
 
 impl<E> Level<E> {
-    /// The cell of a coordinate held to the image, along an axis of `n` cells.
+    /// The cell of a coordinate along the plane, unwrapped; past the range of a 64-bit integer,
+    /// its end.
     #[expect(
         clippy::cast_possible_truncation,
-        reason = "a cell along the image; a coordinate past it is held to the last"
+        reason = "a cell index along the plane, saturating at the range's ends"
     )]
-    fn cell(&self, v: f64, n: usize) -> usize {
-        ((v / self.side).floor() as usize).min(n - 1)
+    fn cell(&self, v: f64) -> i64 {
+        (v / self.side).floor() as i64
+    }
+
+    /// Whether a box of `extents` is held at this level: no wider or taller than its side, and
+    /// over at most two cells along each axis, which a rounding of the extent could otherwise
+    /// exceed.
+    fn holds(&self, b: &[f64; 4]) -> bool {
+        b[2] - b[0] <= self.side
+            && b[3] - b[1] <= self.side
+            && i128::from(self.cell(b[2])) - i128::from(self.cell(b[0])) <= 1
+            && i128::from(self.cell(b[3])) - i128::from(self.cell(b[1])) <= 1
     }
 }

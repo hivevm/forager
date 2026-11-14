@@ -44,13 +44,17 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 
 The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml); rustup installs it on
 first use. [`scripts/install-tools.sh`](scripts/install-tools.sh) installs it with the cargo
-tools the checks need, and the Dev Container runs it after creation (ADR-0007, ADR-0009).
+tools the checks need and the release binaries of ShellCheck and jscpd, and the Dev Container runs
+it after creation (ADR-0007, ADR-0009).
 
 - **Build:** `cargo build --workspace`
 - **Test:** `cargo test --workspace`
 - **Lint:** `bash scripts/check-rust.sh` — formatting, clippy, tests, the `wasm32-unknown-unknown`
   build, the WebAssembly bundle and its size, and `cargo deny`; `scripts/check-all.sh` runs it with
   the repository's other checks
+- **Duplication:** `bash scripts/sensor-duplication.sh` — jscpd's report of the clones in the
+  Rust and bash files, each with its two places; it fails on no count, and `scripts/check-all.sh`
+  runs it
 - **Run:** `cargo run -p forager-cli -- read <mapfile>`, or
   `cargo run -p forager-cli -- render <mapfile> --source <layer>=<file.geojson> -o <image.png>`
 - **Browser example:** `bash scripts/build-web.sh`, then `cargo run -p forager-dev-server` and open

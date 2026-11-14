@@ -1,3 +1,20 @@
+// The tests pin the behaviour of MapServer's bindStyle, src/maputil.c, loadStyle, src/mapfile.c,
+// and aggCompositeRasterBufferNoPixman, src/mapagg.cpp, among the functions they name, of the
+// release pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Copyright (c) 1996-2007 Regents of the University of Minnesota (src/mapagg.cpp).
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 //! The class that draws each feature, the layer's filter, and the properties bound to each
 //! feature, through the engine's display list (ADR-0016).
 
@@ -9,7 +26,8 @@ use forager_adapter_geojson::GeoJsonSource;
 use forager_engine::{Rendered, render};
 use forager_render::{DisplayItem, Draw, DrawOp, Renderer, RgbaImage};
 use forager_style_ir::{
-    Bound, Class, Expr, Extent, Layer, LayerStatus, Map, Op, RenderMode, Rgba, Style,
+    Bound, Class, Expr, Extent, Layer, LayerStatus, Map, Op, RenderMode, Rgba, Style, Symbol,
+    SymbolKind, SymbolRef,
 };
 
 const RED: Rgba = Rgba::opaque(255, 0, 0);
@@ -92,6 +110,15 @@ fn points(properties: &[&str]) -> String {
 }
 
 fn draw(layer: Layer, geojson: &str) -> (Vec<DisplayItem>, Rendered) {
+    draw_with_symbols(layer, geojson, Vec::new())
+}
+
+/// [`draw`] with the map's `symbols`.
+fn draw_with_symbols(
+    layer: Layer,
+    geojson: &str,
+    symbols: Vec<Symbol>,
+) -> (Vec<DisplayItem>, Rendered) {
     let map = Map {
         extent: Some(Extent {
             min_x: 0.0,
@@ -101,6 +128,7 @@ fn draw(layer: Layer, geojson: &str) -> (Vec<DisplayItem>, Rendered) {
         }),
         size: Some([101, 101]),
         layers: vec![layer],
+        symbols,
         ..Map::default()
     };
     let sources: BTreeMap<String, GeoJsonSource> =
@@ -256,6 +284,61 @@ fn bound_and_computed_sizes_and_colours_are_each_feature_s_own() {
             // expression reads it as 0.
             (2, BLUE, 1.0),
             (2, Rgba::opaque(0, 128, 0), 0.0),
+        ]
+    );
+}
+
+#[test]
+fn a_symbol_named_in_other_case_is_found_by_a_binding_and_by_a_name() {
+    // msGetSymbolIndex's match (forager_style_ir::c::ms_get_symbol_index): a `SYMBOL [kind]`
+    // bound to `pin` or `PIN` and a style document's `"symbol": "pIN"` find the symbol `Pin`, a
+    // filled box 2 wide and 4 high, so 4 wide at size 8. `pín`, whose `í` the C locale does not
+    // fold, names none, and the binding takes the default symbol, the square of side 8.
+    let pin = Symbol {
+        name: Some("Pin".to_owned()),
+        kind: SymbolKind::Vector,
+        paths: vec![vec![[0.0, 0.0], [2.0, 0.0], [2.0, 4.0], [0.0, 4.0]]],
+        extent: Some([2.0, 4.0]),
+        filled: true,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    };
+    let bound = Style {
+        symbol: Some(Bound::Binding {
+            binding: "kind".into(),
+        }),
+        ..filled(RED, 8.0)
+    };
+    let named = Style {
+        symbol: Some(Bound::Value(SymbolRef::Name("pIN".to_owned()))),
+        ..filled(GREEN, 8.0)
+    };
+    let classes = vec![class(None, vec![bound, named])];
+    let geojson = points(&[
+        r#"{"kind": "pin"}"#,
+        r#"{"kind": "PIN"}"#,
+        r#"{"kind": "pín"}"#,
+    ]);
+    let (items, rendered) =
+        draw_with_symbols(layer(RenderMode::Point, None, classes), &geojson, vec![pin]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        fills(&items),
+        vec![
+            (1, RED, 4.0),
+            (1, GREEN, 4.0),
+            (2, RED, 4.0),
+            (2, GREEN, 4.0),
+            (3, RED, 8.0),
+            (3, GREEN, 4.0),
         ]
     );
 }
@@ -717,7 +800,7 @@ fn a_layer_without_an_opacity_is_recorded_as_items_onto_the_map() {
 
 #[test]
 fn an_opacity_past_an_int_is_rounded_as_ms_nint_rounds_at_the_pin() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // bindIntegerAttribute stores MS_NINT(atof("3e9")), lrint's long 3000000000, in an int, which
     // keeps its low 32 bits: -1294967296, below 100, so bindStyle sets the alpha to
     // MS_NINT(-1294967296 × 2.55), -3302166605, whose low bits are 992800691, 179 in a byte.
@@ -738,6 +821,61 @@ fn an_opacity_past_an_int_is_rounded_as_ms_nint_rounds_at_the_pin() {
             (2, Rgba { a: 0, ..RED }, 2.0),
         ]
     );
+}
+
+#[test]
+fn a_style_s_opacity_of_100_4_or_of_minus_1_gives_the_alpha_bind_style_gives() {
+    // Verifies: ADR-0017
+    // bindIntegerAttribute stores MS_NINT(100.4) = 100, not below 100, so the colour keeps its
+    // alpha; MS_NINT(-1) = -1 is, and bindStyle sets the alpha MS_NINT(-1 × 2.55) = -3, which
+    // AGG's int8u keeps as 253 (src/maputil.c:80-86, 268-274).
+    let bound = Style {
+        opacity: Some(Bound::Binding {
+            binding: "op".into(),
+        }),
+        ..filled(RED, 2.0)
+    };
+    let classes = vec![class(None, vec![bound])];
+    let geojson = points(&[r#"{"op": "100.4"}"#, r#"{"op": "-1"}"#]);
+    let (items, _) = draw(layer(RenderMode::Point, None, classes), &geojson);
+    assert_eq!(
+        fills(&items),
+        vec![(1, RED, 2.0), (2, Rgba { a: 253, ..RED }, 2.0)]
+    );
+    // A style document's number is rounded as a bound one is.
+    for (opacity, alpha) in [(100.4, 255), (-1.0, 253)] {
+        let style = Style {
+            opacity: Some(Bound::Value(opacity)),
+            ..filled(RED, 2.0)
+        };
+        let classes = vec![class(None, vec![style])];
+        let (items, _) = draw(layer(RenderMode::Point, None, classes), &points(&["{}"]));
+        assert_eq!(
+            fills(&items),
+            vec![(1, Rgba { a: alpha, ..RED }, 2.0)],
+            "{opacity}"
+        );
+    }
+}
+
+#[test]
+fn a_layer_s_opacity_of_100_4_or_of_minus_1_is_laid_over_as_mapserver_lays_it() {
+    // Verifies: ADR-0017
+    // A layer's opacity, cast to an `int` and bounded to 0 to 100 as a mapfile's must be: 100.4
+    // is 100, laid over at MS_NINT(100 × 2.55) = 255 (src/mapagg.cpp:1389-1395); 99.6 is 99, at
+    // MS_NINT(252.45) = 252; -1 is 0, a layer msDrawLayer skips.
+    for (opacity, laid) in [(100.4, Some(255)), (99.6, Some(252)), (-1.0, None)] {
+        let classes = vec![class(None, vec![filled(RED, 2.0)])];
+        let mut drawn = layer(RenderMode::Point, None, classes);
+        drawn.opacity = Some(opacity);
+        let recorded = record_layers(drawn, &points(&["{}"]));
+        let alpha = match recorded.as_slice() {
+            [Recorded::Layer { opacity, .. }] => Some(*opacity),
+            [] => None,
+            _ => panic!("expected one layer or none, got {recorded:?}"),
+        };
+        assert_eq!(alpha, laid, "{opacity}");
+    }
 }
 
 #[test]

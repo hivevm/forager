@@ -16,14 +16,14 @@
 //! Translates the syntax tree of a mapfile into the style IR. What the IR cannot hold yet is
 //! reported, never silently dropped.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::c::{atoi, int_cast};
 use forager_style_ir::{
-    Bound, Class, Diagnostic, Expr, Extent, GeomTransform, Layer, LayerProjection, LayerStatus,
+    Bound, Class, Diagnostic, Expr, Extent, Fonts, Layer, LayerProjection, LayerStatus,
     MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol,
-    Units,
+    TransformTree, Units,
 };
 
 use crate::MAX_DEFAULT_BYTES;
@@ -36,10 +36,12 @@ use crate::report::Report;
 use crate::syntax::{Block, Directive, Node};
 
 use self::defaults::{Defaults, substituted};
+use self::hash_table::HashTable;
 
 mod defaults;
 mod feature;
 mod fonts;
+mod hash_table;
 mod label;
 mod output;
 mod projection;
@@ -79,29 +81,54 @@ const WEB_METADATA_READ: &[&str] = &["labelcache_map_edge_buffer", MAX_FEATURES_
 /// draws, as `msLayerGetMaxFeaturesToDraw` reads it.
 const MAX_FEATURES_KEY: &str = "maxfeaturestodraw";
 
-/// The value of `key` in the `METADATA` of `blocks`, as msLookupHashTable finds it: without
-/// regard to case, a later pair of a key replacing an earlier, as loadHashTable inserts them. A
-/// pair that is not two strings is none.
-fn metadata<'b>(blocks: impl IntoIterator<Item = &'b Block>, key: &str) -> Option<&'b str> {
-    blocks
-        .into_iter()
-        .flat_map(|block| &block.nodes)
-        .filter_map(|node| match node {
-            Node::Block(b) if b.keyword == "METADATA" => Some(b.values.as_chunks::<2>().0),
-            _ => None,
-        })
-        .flatten()
-        .filter_map(|[k, v]| Some((k.string()?, v.string()?)))
-        .filter(|(k, _)| k.eq_ignore_ascii_case(key))
-        .last()
-        .map(|(_, v)| v)
+/// Whether a layer's block holds a `FEATURE`.
+fn has_features(block: &Block) -> bool {
+    block
+        .nodes
+        .iter()
+        .any(|node| matches!(node, Node::Block(b) if b.keyword == "FEATURE"))
+}
+
+/// The choices of a layer's `CONNECTIONTYPE`, `getSymbol(14, MS_OGR, …)` of `loadLayer`
+/// (src/mapfile.c:4510-4517), each by its value of `enum MS_CONNECTION_TYPE`
+/// (src/mapserver.h:609-631), which `getSymbol` compares the lexer's token value with, and the
+/// kind of the layer's source, the choice's name in lower case. No word lexes as
+/// `MS_GRATICULE`, 10, but `medium`, `MS_MEDIUM`: `graticule` lexes as `GRATICULE`, 1140.
+const CONNECTION_TYPES: [(i32, &str); 14] = [
+    (4, "ogr"),
+    (6, "postgis"),
+    (7, "wms"),
+    (8, "oraclespatial"),
+    (9, "wfs"),
+    (10, "graticule"),
+    (13, "plugin"),
+    (14, "union"),
+    (15, "uvraster"),
+    (16, "contour"),
+    (17, "kerneldensity"),
+    (18, "idw"),
+    (19, "flatgeobuf"),
+    (20, "rasterlabel"),
+];
+
+/// The kind of the source the `CONNECTIONTYPE` `d` gives, as `getSymbol` reads its one token by
+/// its value; `None` where it reads as none of [`CONNECTION_TYPES`], which fails the load.
+fn connection_type(d: &Directive) -> Option<&'static str> {
+    let [token] = d.values.as_slice() else {
+        return None;
+    };
+    let value = keywords::token_value(token.keyword()?.as_str())?;
+    CONNECTION_TYPES
+        .iter()
+        .find(|(choice, _)| *choice == value)
+        .map(|(_, kind)| *kind)
 }
 
 /// Whether the layer `block`'s features are never read: a `FEATURE` makes the layer inline as
-/// `loadLayer` reads it (src/mapfile.c), and a `CONNECTIONTYPE GRATICULE` after the last one
-/// makes it a graticule again, which `msInitializeVirtualTable` (src/maplayer.c) does not read
-/// features for; so that the style IR carries features only where they are the layer's source
-/// (ADR-0018).
+/// `loadLayer` reads it (src/mapfile.c), and a `CONNECTIONTYPE` of `MS_GRATICULE` after the last
+/// one makes it a graticule again, which `msInitializeVirtualTable` (src/maplayer.c) does not
+/// read features for; so that the style IR carries features only where they are the layer's
+/// source (ADR-0018).
 fn exempts_features(block: &Block) -> bool {
     block
         .nodes
@@ -109,12 +136,7 @@ fn exempts_features(block: &Block) -> bool {
         .rev()
         .find_map(|node| match node {
             Node::Directive(d) if d.keyword == "CONNECTIONTYPE" => {
-                Some(match d.values.as_slice() {
-                    [token] => token
-                        .keyword()
-                        .is_some_and(|kind| kind.eq_ignore_ascii_case("graticule")),
-                    _ => false,
-                })
+                Some(connection_type(d) == Some("graticule"))
             }
             Node::Block(b) if b.keyword == "FEATURE" => Some(false),
             _ => None,
@@ -175,10 +197,12 @@ pub fn translate(
         symbols: Vec::new(),
         names: BTreeMap::new(),
         numbered: Vec::new(),
-        fonts: BTreeMap::new(),
-        font_names: BTreeSet::new(),
+        fonts: Fonts::default(),
         defaults_added: Budget::new(MAX_DEFAULT_BYTES),
-        max_features_fallback: (None, -1),
+        max_features_fallback: MaxFeaturesFallback {
+            web: None,
+            format: -1,
+        },
     };
     // MapServer appends the symbols of the map's SYMBOL blocks as it parses them, and those of
     // its symbol set after the whole map (loadMap, loadSymbolSet).
@@ -197,11 +221,6 @@ pub fn translate(
     }
     if let Some((path, text)) = files.font_set {
         t.fonts = t.fonts(path, text);
-        t.font_names = t
-            .fonts
-            .keys()
-            .map(|name| name.to_ascii_lowercase())
-            .collect();
     }
     let mut map = t.map(map);
     t.image_symbols(&mut map);
@@ -220,23 +239,30 @@ struct Translator<'a> {
     diagnostics: &'a mut Report,
     /// The map's symbols, read before its layers so that a style's reference resolves.
     symbols: Vec<Symbol>,
-    /// The position among `symbols` of the first of each name, lower-cased, so that a name is
-    /// found without scanning them (Q-9).
+    /// The position among `symbols` of the first of each name, by its `symbol_name_key`, so that
+    /// a name is found as `ms_get_symbol_index` finds it without scanning them (Q-9).
     names: BTreeMap<String, usize>,
     /// The symbol indexes the styles give, each with its directive's span, checked against the
     /// symbols once those the styles name are appended.
-    numbered: Vec<(u32, Span)>,
+    numbered: Vec<(i32, Span)>,
     /// The map's fonts, read before its layers so that a label's font is checked.
-    fonts: BTreeMap<String, String>,
-    /// Their names in lower case, which a label's font is looked up by at once (Q-9).
-    font_names: BTreeSet<String>,
+    fonts: Fonts,
     /// What the defaults of `VALIDATION` have put into the load's expressions, held to
     /// [`MAX_DEFAULT_BYTES`] (Q-9).
     defaults_added: Budget,
-    /// The limits on a layer's features that `msLayerGetMaxFeaturesToDraw` falls back on: the
-    /// map's `maxfeaturestodraw` metadata, and the selected output format's `MAXFEATURESTODRAW`,
-    /// -1 without one.
-    max_features_fallback: (Option<i32>, i32),
+    /// The limits on a layer's features that `msLayerGetMaxFeaturesToDraw` falls back on.
+    max_features_fallback: MaxFeaturesFallback,
+}
+
+/// The limits on a layer's features that `msLayerGetMaxFeaturesToDraw` falls back on, where the
+/// layer's own metadata gives none.
+struct MaxFeaturesFallback {
+    /// The map's `maxfeaturestodraw` metadata, read by `atoi`, which replaces the layer's
+    /// `MAXFEATURES`.
+    web: Option<i32>,
+    /// The selected output format's `MAXFEATURESTODRAW`, read by `atoi`, -1 without one, which
+    /// holds where the limit is below 0.
+    format: i32,
 }
 
 impl Translator<'_> {
@@ -246,25 +272,29 @@ impl Translator<'_> {
             ..Map::default()
         };
         // MapServer applies them after the whole map is read, so each holds wherever it stands.
-        let webs = block.nodes.iter().filter_map(|node| match node {
-            Node::Block(b) if b.keyword == "WEB" => Some(b),
-            _ => None,
-        });
-        let web = Defaults::of(webs.clone(), self.diagnostics);
-        self.max_features_fallback = (
-            metadata(webs, MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes())),
-            output::format_option(block, MAX_FEATURES_KEY).map_or(-1, |v| atoi(v.as_bytes())),
-        );
+        let webs: Vec<&Block> = block
+            .nodes
+            .iter()
+            .filter_map(|node| match node {
+                Node::Block(b) if b.keyword == "WEB" => Some(b),
+                _ => None,
+            })
+            .collect();
+        let web = Defaults::of(webs.iter().copied(), self.diagnostics);
+        let web_metadata = HashTable::of(webs, "METADATA", self.diagnostics);
+        self.max_features_fallback = MaxFeaturesFallback {
+            web: web_metadata
+                .get(MAX_FEATURES_KEY)
+                .map(|v| atoi(v.as_bytes())),
+            format: output::format_option(block, MAX_FEATURES_KEY)
+                .map_or(-1, |v| atoi(v.as_bytes())),
+        };
         for node in &block.nodes {
             match node {
                 Node::Directive(d) => match d.keyword.as_str() {
                     "NAME" => map.name = self.string(d),
                     "EXTENT" => map.extent = self.extent(d),
-                    "SIZE" => {
-                        map.size = self
-                            .numbers(d, 2)
-                            .map(|n| [n[0].max(0.0) as u32, n[1].max(0.0) as u32]);
-                    }
+                    "SIZE" => map.size = self.map_size(d),
                     "IMAGECOLOR" => map.image_color = self.image_color(d),
                     "IMAGETYPE" => self.output_format(&d.keyword, &d.span),
                     "RESOLUTION" => map.resolution = self.number(d, RESOLUTION),
@@ -283,7 +313,6 @@ impl Translator<'_> {
                     "OUTPUTFORMAT" => self.output_format(&b.keyword, &b.span),
                     "LAYER" => {
                         if let Some(layer) = self.layer(b, &web) {
-                            self.class_labelcenter(&layer);
                             map.layers.push(layer);
                         }
                     }
@@ -304,11 +333,8 @@ impl Translator<'_> {
             }
         }
         // msDrawLabelCache reads the gutter as MS_ABS(atoi(value)) (src/mapdraw.c:3488-3498).
-        let webs = block.nodes.iter().filter_map(|node| match node {
-            Node::Block(b) if b.keyword == "WEB" => Some(b),
-            _ => None,
-        });
-        map.label_cache_edge_buffer = metadata(webs, "labelcache_map_edge_buffer")
+        map.label_cache_edge_buffer = web_metadata
+            .get("labelcache_map_edge_buffer")
             .map(|v| atoi(v.as_bytes()).unsigned_abs())
             .filter(|&gutter| gutter > 0);
         if output::transparent(block) {
@@ -367,7 +393,7 @@ impl Translator<'_> {
             span: Some(block.span.clone()),
             ..Layer::default()
         };
-        let mut connection_type = None;
+        let mut connection = None;
         // initLayer: no quota.
         let mut max_features = -1;
         let mut props = BTreeMap::new();
@@ -384,11 +410,7 @@ impl Translator<'_> {
         // its PROCESSING "ITEMS=…" gives (msLayerGetItems), unless its connection type is one
         // MapServer exempts, whose features are never read.
         let exempt = exempts_features(block);
-        let inline = !exempt
-            && block
-                .nodes
-                .iter()
-                .any(|node| matches!(node, Node::Block(b) if b.keyword == "FEATURE"));
+        let inline = !exempt && has_features(block);
         let item_names = feature::item_names(block);
         // The shape type of the features the TYPE read so far gives (loadLayer); none before one.
         let mut shape_type = None;
@@ -412,7 +434,7 @@ impl Translator<'_> {
                         );
                     }
                     "CONNECTIONTYPE" => {
-                        connection_type = self.word(d).map(|w| w.to_ascii_lowercase());
+                        connection = self.connection_type(d);
                         source_span.get_or_insert_with(|| d.span.clone());
                     }
                     "CLASSITEM" | "FILTERITEM" | "LABELITEM" => {
@@ -421,6 +443,7 @@ impl Translator<'_> {
                     "LABELCACHE" => self.label_cache(&mut layer, d),
                     "POSTLABELCACHE" => self.post_label_cache(&mut layer, d),
                     "MAXFEATURES" => max_features = self.max_features(d),
+                    "GEOMTRANSFORM" => layer.geom_transform = self.layer_geom_transform(d),
                     "FILTER" => layer.filter = self.defaulted(d, filter_item.as_deref(), &tables),
                     "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
                     "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
@@ -456,7 +479,7 @@ impl Translator<'_> {
                     "FEATURE" => {
                         let feature = self.feature(b, shape_type, &item_names);
                         if exempt {
-                            let message = "a FEATURE before the layer's CONNECTIONTYPE GRATICULE is never \
+                            let message = "a FEATURE before the layer's graticule CONNECTIONTYPE is never \
                                            read, as in MapServer, and is left out";
                             self.warn("features-ignored", message, &b.span);
                         } else {
@@ -468,7 +491,7 @@ impl Translator<'_> {
             }
         }
         self.settle_layer(&mut layer, block, &composites, max_features);
-        layer.source = source_span.map(|span| self.source(connection_type, props, span, data_span));
+        layer.source = source_span.map(|span| self.source(connection, props, span, data_span));
         Some(layer)
     }
 
@@ -476,13 +499,13 @@ impl Translator<'_> {
     /// `props`, the first of them at `span`, its `DATA` at `data_span`.
     fn source(
         &mut self,
-        connection_type: Option<String>,
+        connection_type: Option<&str>,
         mut props: BTreeMap<String, String>,
         span: Span,
         data_span: Option<Span>,
     ) -> SourceRef {
         // Without CONNECTIONTYPE, MapServer reads DATA as a local shapefile.
-        let kind = connection_type.unwrap_or_else(|| "local".to_owned());
+        let kind = connection_type.unwrap_or("local").to_owned();
         if kind == "local"
             && let (Some(data), Some(at)) = (props.remove("data"), data_span)
         {
@@ -501,10 +524,9 @@ impl Translator<'_> {
         }
     }
 
-    /// What a layer settles once its block is read: its opacity from its `COMPOSITE`s; its label
-    /// cache off where it is drawn after the cache, as loadLayer turns it off where POSTLABELCACHE
-    /// is TRUE (mapfile.c:4755-4759) and msDrawLayer turns it off again as it draws such a layer,
-    /// whatever LABELCACHE says after it (mapdraw.c:854-856); and its limit on its features.
+    /// What a layer settles once its block is read: its opacity from its `COMPOSITE`s and its
+    /// limit on its features. Its label cache stays as `LABELCACHE` writes it, for the engine
+    /// draws a layer of `POSTLABELCACHE TRUE`'s labels at once whatever it says.
     fn settle_layer(
         &mut self,
         layer: &mut Layer,
@@ -513,8 +535,8 @@ impl Translator<'_> {
         max_features: i32,
     ) {
         layer.opacity = self.composite(composites);
-        layer.label_cache &= !layer.post_label_cache;
-        layer.max_features = self.features_to_draw(block, max_features);
+        let metadata = HashTable::of([block], "METADATA", self.diagnostics);
+        layer.max_features = self.features_to_draw(&metadata, max_features);
     }
 
     /// Warns of a layer's `METADATA`, read for [`MAX_FEATURES_KEY`] alone
@@ -527,19 +549,35 @@ impl Translator<'_> {
         self.warn("unsupported-keyword", &message, span);
     }
 
+    /// A layer's `GEOMTRANSFORM`, read by `getSymbol(1, MS_EXPRESSION)`: an expression alone, as
+    /// its transform tree; anything else fails the load.
+    fn layer_geom_transform(&mut self, d: &Directive) -> Option<TransformTree> {
+        if let [token] = d.values.as_slice()
+            && let TokenKind::Expression(text) = &token.kind
+        {
+            let (tree, syntax) = self.transform_tree(text, &token.span)?;
+            if let Some(warning) = syntax {
+                self.diagnostics.push(warning);
+            }
+            return Some(tree);
+        }
+        self.invalid(d, "an expression");
+        None
+    }
+
     /// A layer's `MAXFEATURES`, a number above 0 as getInteger checks it, truncated to an `int`;
     /// -1, no quota, where it does not read, which fails the load.
     fn max_features(&mut self, d: &Directive) -> i32 {
         self.number(d, Range::above(0.0)).map_or(-1, int_cast)
     }
 
-    /// The most features the layer `block` draws, as `msLayerGetMaxFeaturesToDraw` of
+    /// The most features a layer of the `metadata` draws, as `msLayerGetMaxFeaturesToDraw` of
     /// src/maplayer.c settles it: its `MAXFEATURES`, replaced by its `maxfeaturestodraw` metadata
     /// or else the map's, read by `atoi`; below 0, the output format's `MAXFEATURESTODRAW`; below 0
     /// still, none.
-    fn features_to_draw(&self, block: &Block, max_features: i32) -> Option<u32> {
-        let (web, format) = self.max_features_fallback;
-        let layer = metadata([block], MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes()));
+    fn features_to_draw(&self, metadata: &HashTable<'_>, max_features: i32) -> Option<u32> {
+        let MaxFeaturesFallback { web, format } = self.max_features_fallback;
+        let layer = metadata.get(MAX_FEATURES_KEY).map(|v| atoi(v.as_bytes()));
         let n = layer.or(web).unwrap_or(max_features);
         u32::try_from(if n < 0 { format } else { n }).ok()
     }
@@ -558,32 +596,6 @@ impl Translator<'_> {
     fn post_label_cache(&mut self, layer: &mut Layer, d: &Directive) {
         if let Some(post) = self.choice(d, &[("TRUE", true), ("FALSE", false)]) {
             layer.post_label_cache = post;
-        }
-    }
-
-    /// Warns of each class `STYLE` of `GEOMTRANSFORM labelcenter` of a line or a polygon layer:
-    /// msDrawTransformedShape (src/mapgeomtransform.c:245) fails the layer's draw on it, and the
-    /// engine draws nothing of the style. A label's style is drawn, and a point layer draws the
-    /// style at its points.
-    fn class_labelcenter(&mut self, layer: &Layer) {
-        if !matches!(
-            layer.render_mode,
-            Some(RenderMode::Line | RenderMode::Polygon)
-        ) {
-            return;
-        }
-        let spans: Vec<Span> = layer
-            .classes
-            .iter()
-            .flat_map(|class| &class.styles)
-            .filter(|style| style.geom_transform == Some(GeomTransform::LabelCenter))
-            .filter_map(|style| style.span.clone())
-            .collect();
-        for span in spans {
-            let message = "GEOMTRANSFORM labelcenter is drawn only by a label's style; on a \
-                           class's style of a line or polygon layer MapServer fails the layer's \
-                           draw, and the style draws nothing";
-            self.warn("unsupported-value", message, &span);
         }
     }
 
@@ -656,7 +668,10 @@ impl Translator<'_> {
                     if let Node::Directive(d) = node
                         && d.keyword == "OPACITY"
                     {
-                        opacity = self.number(d, Range::within(0.0, 100.0)).map(f64::trunc);
+                        // getInteger's `(int)` cast, of a number already within 0 to 100.
+                        opacity = self
+                            .number(d, Range::within(0.0, 100.0))
+                            .map(|n| f64::from(int_cast(n)));
                     }
                 }
                 opacity
@@ -744,7 +759,13 @@ impl Translator<'_> {
                 {
                     class.max_scale_denom = self.scale_denom(d);
                 }
-                Node::Block(b) if b.keyword == "STYLE" => class.styles.push(self.style(b, false)),
+                Node::Block(b) if b.keyword == "STYLE" => {
+                    let (style, transform_warnings) = self.style(b);
+                    for warning in transform_warnings {
+                        self.diagnostics.push(warning);
+                    }
+                    class.styles.push(style);
+                }
                 Node::Block(b) if b.keyword == "VALIDATION" => {}
                 Node::Block(b) if b.keyword == "LABEL" => {
                     match self.label(b, fallback.as_ref(), label_item) {
@@ -804,6 +825,27 @@ impl Translator<'_> {
         }
     }
 
+    /// The kind of a layer's source its `CONNECTIONTYPE` gives (see [`connection_type`]); where
+    /// it gives none, the error `getSymbol` fails the load with.
+    fn connection_type(&mut self, d: &Directive) -> Option<&'static str> {
+        let kind = connection_type(d);
+        if kind.is_none() {
+            let mut expected = "OGR, POSTGIS, WMS, ORACLESPATIAL, WFS, PLUGIN, UNION, UVRASTER, \
+                                CONTOUR, KERNELDENSITY, IDW, FLATGEOBUF, or RASTERLABEL"
+                .to_owned();
+            if let [token] = d.values.as_slice()
+                && token.is_word("GRATICULE")
+            {
+                expected.push_str(
+                    "; GRATICULE is a keyword of its own, not MapServer's MS_GRATICULE, and is \
+                     refused: the word MapServer reads as a graticule is MEDIUM",
+                );
+            }
+            self.invalid(d, &expected);
+        }
+        kind
+    }
+
     fn numbers(&mut self, d: &Directive, count: usize) -> Option<Vec<f64>> {
         let numbers: Vec<f64> = d
             .values
@@ -818,6 +860,27 @@ impl Translator<'_> {
         } else {
             self.invalid(d, &format!("{count} number(s)"));
             None
+        }
+    }
+
+    /// A map's `SIZE` as loadMap reads it (src/mapfile.c:6824-6829): two numbers each checked by
+    /// getInteger against 1 and the map's `MAXSIZE`, an `int`, and cast to an `int`. A number below
+    /// 1 or above INT_MAX, past any `MAXSIZE`, fails the load; the engine bounds the rest (Q-9).
+    fn map_size(&mut self, d: &Directive) -> Option<[u32; 2]> {
+        let numbers = self.numbers(d, 2)?;
+        // msCheckNumber compares the double with the bounds before the cast
+        // (src/mapfile.c:276-290, 312-317); `MAXSIZE` is at most INT_MAX.
+        let side = |n: f64| {
+            Some(n)
+                .filter(|n| (1.0..=f64::from(i32::MAX)).contains(n))
+                .and_then(|n| u32::try_from(int_cast(n)).ok())
+        };
+        match (side(numbers[0]), side(numbers[1])) {
+            (Some(width), Some(height)) => Some([width, height]),
+            _ => {
+                self.invalid(d, "two numbers of at least 1 within an `int`");
+                None
+            }
         }
     }
 
@@ -853,7 +916,8 @@ impl Translator<'_> {
                     self.invalid(d, "three numbers from -255 to 255");
                     return None;
                 }
-                Some(([rgb[0], rgb[1], rgb[2]].map(|c| c.trunc() as i32), 255))
+                // loadColor's `(int)` cast, of a channel already within -255 to 255.
+                Some(([rgb[0], rgb[1], rgb[2]].map(int_cast), 255))
             }
         }
     }

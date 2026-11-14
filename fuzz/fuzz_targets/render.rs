@@ -12,7 +12,13 @@
 //! size and colour, as arbitrary trees (ADR-0016), which every layer evaluates. A pixmap symbol,
 //! a small PNG every image path loads as, is drawn at the points, along the lines at a gap, and
 //! tiled over the polygons, at an arbitrary size, angle, and gap, so that its resampling and the
-//! tiled fill are fuzzed too (ADR-0029, ADR-0026).
+//! tiled fill are fuzzed too (ADR-0029, ADR-0026). The bytes back to front are read once more
+//! for the layers' limit on their features, which layers are drawn after the label cache, the
+//! cache's edge buffer, and the pixmap as the label's labelpoint and labelcenter marker. The last
+//! third of the bytes is read once more for a layer's `GEOMTRANSFORM`, a transform tree of up to
+//! eight functions of arbitrary numbers, `[map_cellsize]` among them, which the polygon and line
+//! layers apply to their features (ADR-0036). `Input` decodes as before; the
+//! existing seeds now also read a `Cache` from their tail, which changes what they render.
 // Verifies: Q-3, ADR-0025, ADR-0016
 #![no_main]
 
@@ -27,8 +33,9 @@ use forager_ports::{
 };
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Expr, Extent, Label, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
-    RenderMode, Rgba, Style, Symbol, SymbolKind, SymbolRef,
+    Bound, Class, Expr, Extent, Label, LabelTransform, Layer, LayerStatus, LineCap, LineJoin,
+    LineOffset, Map, NumberOp, Preprocessing, RenderMode, Rgba, Style, Symbol, SymbolKind,
+    SymbolRef, TransformNumber, TransformShape, TransformTree,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -158,6 +165,96 @@ struct Expressions {
     values: Vec<Vec<expr_input::Value>>,
 }
 
+/// What the label cache and the layers' limits read: every layer's `MAXFEATURES`, the layers of
+/// `POSTLABELCACHE TRUE` by the bits of their positions, the map's
+/// `labelcache_map_edge_buffer`, and whether the label draws the pixmap as a marker at its point
+/// and at the centre of its box.
+#[derive(Arbitrary, Debug, Default)]
+struct Cache {
+    max_features: Option<u8>,
+    post_label_cache: u8,
+    edge_buffer: Option<u16>,
+    label_point: bool,
+    label_center: bool,
+}
+
+/// A layer's `GEOMTRANSFORM`: each step a function of the shape the steps before it give, from
+/// `[shape]`, at most eight of them.
+#[derive(Arbitrary, Debug, Default)]
+struct TransformInput(Vec<StepInput>);
+
+#[derive(Arbitrary, Debug)]
+enum StepInput {
+    Generalize(NumberInput),
+    Densify(NumberInput),
+    Outer,
+    Inner,
+    SmoothSia(NumberInput, NumberInput, Option<bool>),
+}
+
+/// A number: written, or an operation of `[map_cellsize]` and a written number.
+#[derive(Arbitrary, Debug)]
+enum NumberInput {
+    Number(f64),
+    Cellsize(u8, f64),
+}
+
+impl NumberInput {
+    fn number(&self) -> TransformNumber {
+        match self {
+            NumberInput::Number(n) => TransformNumber::Number(*n),
+            NumberInput::Cellsize(op, n) => {
+                let ops = [
+                    NumberOp::Add,
+                    NumberOp::Sub,
+                    NumberOp::Mul,
+                    NumberOp::Div,
+                    NumberOp::Mod,
+                    NumberOp::Pow,
+                ];
+                TransformNumber::Op(
+                    ops[usize::from(*op) % ops.len()],
+                    Box::new(TransformNumber::MapCellsize),
+                    Box::new(TransformNumber::Number(*n)),
+                )
+            }
+        }
+    }
+}
+
+impl TransformInput {
+    fn tree(&self) -> Option<TransformTree> {
+        if self.0.is_empty() {
+            return None;
+        }
+        let mut shape = TransformShape::Shape;
+        for step in self.0.iter().take(8) {
+            let inner = Box::new(shape);
+            shape = match step {
+                StepInput::Generalize(n) => TransformShape::Generalize(inner, n.number()),
+                StepInput::Densify(n) => TransformShape::Densify(inner, n.number()),
+                StepInput::Outer => TransformShape::Outer(inner),
+                StepInput::Inner => TransformShape::Inner(inner),
+                StepInput::SmoothSia(size, iterations, preprocessing) => {
+                    TransformShape::SmoothSia {
+                        shape: inner,
+                        size: size.number(),
+                        iterations: iterations.number(),
+                        preprocessing: preprocessing.map(|all| {
+                            if all {
+                                Preprocessing::All
+                            } else {
+                                Preprocessing::Angle
+                            }
+                        }),
+                    }
+                }
+            };
+        }
+        Some(TransformTree::Drawn(shape))
+    }
+}
+
 #[derive(Arbitrary, Debug)]
 struct SymbolInput {
     ellipse: bool,
@@ -220,6 +317,11 @@ fuzz_target!(|data: &[u8]| {
         .map_or_else(|_| Vec::new(), |styles| styles.0);
     let exprs = Expressions::arbitrary_take_rest(Unstructured::new(&data[data.len() / 2..]))
         .unwrap_or_default();
+    let cache = Cache::arbitrary(&mut Unstructured::new(&reversed)).unwrap_or_default();
+    let transform =
+        TransformInput::arbitrary_take_rest(Unstructured::new(&data[data.len() / 3 * 2..]))
+            .unwrap_or_default()
+            .tree();
     let features: Vec<Feature> = input
         .shapes
         .iter()
@@ -254,14 +356,6 @@ fuzz_target!(|data: &[u8]| {
         }),
         size: Some(computed(&exprs.size).map_or(Bound::Value(input.symbol_size), Bound::Expr)),
         ..Style::default()
-    };
-    let label = Label {
-        text: Some(Expr::String(input.text)),
-        font: Some(Bound::Value("sans".to_owned())),
-        size: Some(Bound::Value(input.label_size)),
-        min_size: Some(input.min_size),
-        max_size: Some(input.max_size),
-        ..Label::default()
     };
     let symbol = &input.symbol;
     let mut symbols = vec![Symbol {
@@ -314,6 +408,23 @@ fuzz_target!(|data: &[u8]| {
             .map(|(x, y)| [Bound::Value(x), Bound::Value(y)]),
         ..Style::default()
     };
+    let markers = [
+        (cache.label_point, LabelTransform::Point),
+        (cache.label_center, LabelTransform::Center),
+    ];
+    let label = Label {
+        text: Some(Expr::String(input.text)),
+        font: Some(Bound::Value("sans".to_owned())),
+        size: Some(Bound::Value(input.label_size)),
+        min_size: Some(input.min_size),
+        max_size: Some(input.max_size),
+        styles: markers
+            .into_iter()
+            .filter(|&(drawn, _)| drawn)
+            .map(|(_, transform)| pixmap_style.clone().with_transform(transform))
+            .collect(),
+        ..Label::default()
+    };
     let symbol_style = Style {
         symbol: Some(Bound::Value(SymbolRef::Index(1))),
         angle: Some(Bound::Value(symbol.angle)),
@@ -333,9 +444,11 @@ fuzz_target!(|data: &[u8]| {
         class.labels.push(label.clone());
     }
     let [min_x, min_y, max_x, max_y] = input.extent;
-    let map = Map {
+    let mut map = Map {
         resolution: Some(input.resolution),
-        fonts: [("sans".to_owned(), "sans.ttf".to_owned())].into(),
+        fonts: [("sans".to_owned(), "sans.ttf".to_owned())]
+            .into_iter()
+            .collect(),
         extent: Some(Extent {
             min_x,
             min_y,
@@ -343,6 +456,7 @@ fuzz_target!(|data: &[u8]| {
             max_y,
         }),
         size: Some([u32::from(input.width), u32::from(input.height)]),
+        label_cache_edge_buffer: cache.edge_buffer.map(u32::from),
         layers: vec![
             layer("polygons", RenderMode::Polygon, styles.clone(), &exprs),
             layer("lines", RenderMode::Line, styles.clone(), &exprs),
@@ -371,6 +485,14 @@ fuzz_target!(|data: &[u8]| {
         symbols,
         ..Map::default()
     };
+    for layer in &mut map.layers[..2] {
+        layer.geom_transform = transform.clone();
+    }
+    // One bit for each layer; a layer past the eighth is drawn before the cache.
+    for (layer, bit) in map.layers.iter_mut().zip(0u32..) {
+        layer.max_features = cache.max_features.map(u32::from);
+        layer.post_label_cache = cache.post_label_cache.checked_shr(bit).unwrap_or(0) & 1 == 1;
+    }
     let sources: BTreeMap<String, Shapes> = [
         "polygons",
         "lines",

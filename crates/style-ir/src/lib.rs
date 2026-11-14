@@ -1,6 +1,7 @@
 //! The style IR: the data model of a map, free of MapServer syntax, and the style document that
 //! serializes it as YAML or JSON (ADR-0008, ADR-0013); its expressions are a CQL2 tree
-//! (ADR-0015).
+//! (ADR-0015), and its `GEOMTRANSFORM` expressions a transform tree
+//! (ADR-0036).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -8,20 +9,28 @@ pub mod c;
 mod diagnostic;
 mod document;
 mod expression;
+mod font;
 mod geometry;
 mod lenient;
+mod marker;
 mod migration;
 mod model;
+mod transform;
 
 pub use diagnostic::{Diagnostic, Severity, Span};
 pub use document::{FORMAT_VERSION, Read, StyleDocument};
 pub use expression::{Expr, MAX_EXPRESSION_DEPTH, Op};
+pub use font::{FontListEntry, Fonts, font_list, font_names};
 pub use geometry::{Coord, Geometry};
 pub use lenient::MAX_DROPPED_VALUES;
+pub use marker::{ANCHOR_CENTRE, LabelMarker, anchor_offset};
 pub use migration::{STEPS, Step};
 pub use model::{
     Align, AngleMode, Bound, Class, Extent, FeatureProperty, Force, GeomTransform, InlineFeature,
     Label, LabelTransform, Layer, LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset,
     MAX_RESOLUTION, MIN_RESOLUTION, Map, MinFeatureSize, Position, RenderMode, Rgba, ShapeType,
     SourceRef, Style, Symbol, SymbolKind, SymbolRef, Transform, Units,
+};
+pub use transform::{
+    NotDrawn, NumberOp, Preprocessing, TransformNumber, TransformShape, TransformTree,
 };

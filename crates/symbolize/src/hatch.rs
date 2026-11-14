@@ -24,7 +24,9 @@
 
 use forager_render::{Hatch, Point};
 use forager_style_ir::Coord;
-use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_max, ms_nint};
+use forager_style_ir::c::{
+    DEG_TO_RAD, int_cast, lrint, ms_compute_bounds, ms_max, ms_min, ms_nint,
+};
 use forager_style_ir::{Rgba, Style, Symbol};
 
 use crate::bounds;
@@ -365,20 +367,17 @@ pub(crate) fn hatch_polygon(
     image: (u32, u32),
     reference: Point,
 ) -> Option<Vec<[Point; 2]>> {
-    let mut points = rings
+    // msHatchPolygon takes msComputeBounds over every point, src/mapagg.cpp:1137; here a point
+    // that is no number or infinite is left out first, a departure from that C kept from before
+    // the port, whose drawing of such bounds through createHatch is not ported.
+    let finite = rings
         .iter()
         .flatten()
-        .filter(|p| p.x.is_finite() && p.y.is_finite());
-    let Some(first) = points.next() else {
+        .filter(|p| p.x.is_finite() && p.y.is_finite())
+        .map(|p| [p.x, p.y]);
+    let Some([min_x, min_y, max_x, max_y]) = ms_compute_bounds(finite) else {
         return Some(Vec::new());
     };
-    let (mut min_x, mut min_y, mut max_x, mut max_y) = (first.x, first.y, first.x, first.y);
-    for p in points {
-        min_x = min_x.min(p.x);
-        min_y = min_y.min(p.y);
-        max_x = max_x.max(p.x);
-        max_y = max_y.max(p.y);
-    }
     let grow = width * 0.7072;
     // MapServer's `(int)` of the box's size, plus 1, in an `int`: a box past an `int` gives a
     // negative size, over which no line is laid.
@@ -450,7 +449,7 @@ fn steps(first: f64, step: f64, low: f64, high: f64) -> Option<impl Iterator<Ite
         clippy::cast_possible_truncation,
         reason = "a count of lines, held to MAX_LINES above (Q-9)"
     )]
-    let count = count.max(0.0) as usize + 2;
+    let count = ms_max(count, 0.0) as usize + 2;
     Some(
         std::iter::successors(Some(from), move |v| Some(v + step))
             .take(count)
@@ -487,7 +486,7 @@ fn create_hatch(
         if oy - ry < 0.0 {
             y0 -= step;
         }
-        let high = size_y.min(visible.max_y);
+        let high = ms_min(visible.max_y, size_y);
         for y in steps(y0, step, visible.min_y, high)?.take_while(|y| *y < size_y) {
             lines.push([p(0.0, y), p(size_x, y)]);
         }
@@ -498,7 +497,7 @@ fn create_hatch(
         if ox - rx < 0.0 {
             x0 -= step;
         }
-        let high = size_x.min(visible.max_x);
+        let high = ms_min(visible.max_x, size_x);
         for x in steps(x0, step, visible.min_x, high)?.take_while(|x| *x < size_x) {
             lines.push([p(x, 0.0), p(x, size_y)]);
         }
@@ -539,12 +538,15 @@ fn create_hatch(
         corner_r(visible.min_x, visible.max_y),
         corner_r(visible.max_x, visible.max_y),
     ];
-    let low = corners.iter().copied().fold(f64::INFINITY, f64::min);
-    let high = corners
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, f64::max)
-        .min(rmax);
+    // A corner first, so that one which is no number is passed over; `rmax`, of a box whose
+    // sides are whole numbers, is always one.
+    let low = corners.iter().fold(f64::INFINITY, |low, r| ms_min(*r, low));
+    let high = ms_min(
+        rmax,
+        corners
+            .iter()
+            .fold(f64::NEG_INFINITY, |high, r| ms_max(*r, high)),
+    );
     for r in steps(r0, step, low, high)?.take_while(|r| *r < rmax) {
         if let Some(line) = crossing(r, [ct, st, invct, invst], size_x, size_y) {
             lines.push(if angle < 90.0 {

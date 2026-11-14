@@ -1,3 +1,18 @@
+// The tests pin the behaviour of MapServer's loadStyle, src/mapfile.c, and the functions they
+// name, of the release pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 use forager_style_ir::Bound;
 
 use crate::test_support::{codes, first_style, load_files};
@@ -398,6 +413,31 @@ fn a_name_resolves_to_the_first_symbol_of_that_name_and_an_index_is_kept() {
 }
 
 #[test]
+fn a_name_is_found_where_ms_get_symbol_index_finds_it() {
+    use forager_style_ir::SymbolRef;
+    use forager_style_ir::c::ms_get_symbol_index;
+    // The frontend's map of names finds a symbol where the port of msGetSymbolIndex does: `pin`
+    // is `Pin`, its ASCII letters folded, and `PÍN` is not `Pín`, whose `í` strcasecmp in the C
+    // locale does not fold, so it names an image file, appended as the third symbol.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP
+           SYMBOL NAME 'Pin' TYPE ELLIPSE POINTS 1 1 END END
+           SYMBOL NAME 'Pín' TYPE ELLIPSE POINTS 2 2 END END
+           LAYER CLASS STYLE SYMBOL 'pin' END STYLE SYMBOL 'PÍN' END END END
+         END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let map = loaded.document.unwrap().map;
+    let index = |i| Some(Bound::Value(SymbolRef::Index(i)));
+    let styles = &map.layers[0].classes[0].styles;
+    assert_eq!(styles[0].symbol, index(1));
+    assert_eq!(styles[1].symbol, index(3));
+    assert_eq!(ms_get_symbol_index("pin", &map.symbols), Some(1));
+    assert_eq!(ms_get_symbol_index("PÍN", &map.symbols), Some(3));
+}
+
+#[test]
 fn an_index_past_the_symbols_or_a_quoted_number_warns_and_a_negative_one_is_refused() {
     use forager_style_ir::SymbolRef;
     let one = "MAP SYMBOL TYPE ELLIPSE POINTS 1 1 END END LAYER CLASS STYLE SYMBOL ";
@@ -423,6 +463,32 @@ fn an_index_past_the_symbols_or_a_quoted_number_warns_and_a_negative_one_is_refu
     // "Invalid SYMBOL id, must be greater than or equal to 0" (loadStyle).
     let (loaded, _) = first_style(format!("{one} -1 END END END END").leak());
     assert_eq!(codes(&loaded), ["invalid-value"]);
+}
+
+#[test]
+fn a_symbol_index_past_an_int_is_int_min_and_draws_nothing() {
+    // Verifies: ADR-0017
+    // loadStyle (src/mapfile.c:3009-3021) checks the number against 0 alone and casts it with
+    // `(int)`: 2147483647.9 is 2147483647, 2^31 and 5e9 are INT_MIN, which no symbol has.
+    use forager_style_ir::SymbolRef;
+    let one = "MAP SYMBOL TYPE ELLIPSE POINTS 1 1 END END LAYER CLASS STYLE SYMBOL ";
+    for (number, held, said) in [
+        ("2147483647.9", 2_147_483_647, "2147483647"),
+        ("2147483648", u32::MAX, "-2147483648"),
+        ("5e9", u32::MAX, "-2147483648"),
+    ] {
+        let (loaded, style) = first_style(format!("{one} {number} END END END END").leak());
+        assert_eq!(codes(&loaded), ["symbol-unknown"], "{number}");
+        assert_eq!(
+            loaded.diagnostics[0].message,
+            format!("there is no symbol {said}; the style draws nothing")
+        );
+        assert_eq!(
+            style.unwrap().symbol,
+            Some(Bound::Value(SymbolRef::Index(held))),
+            "{number}"
+        );
+    }
 }
 
 #[test]

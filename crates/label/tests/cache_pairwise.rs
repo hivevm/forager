@@ -26,6 +26,7 @@ use forager_label::{
     draw_label_cache, marker_bounds, place,
 };
 use forager_render::Point;
+use forager_style_ir::LabelMarker;
 use forager_style_ir::c::{ms_max, ms_min, rect_overlap};
 
 /// The image: 5 by 4 cells of the grid's finest level, and four levels.
@@ -167,8 +168,9 @@ fn member(rng: &mut Rng) -> (Member, u8) {
         offsets,
         rotation,
         buffer,
-        force: rng.chance(15),
     });
+    // FORCE: the label's draw, taken by a member with a label; both drawn to keep the cases.
+    let label_force = rng.chance(15);
     let marker = rng.chance(40).then(|| {
         let (w, h) = (rng.range(0.0, 40.0), rng.range(0.0, 40.0));
         let mut m = [
@@ -193,7 +195,8 @@ fn member(rng: &mut Rng) -> (Member, u8) {
         priority: 1 + rng.below(3) as u8,
         point,
         label,
-        force: rng.chance(15),
+        // A member without a label takes its own draw, drawn first so that it is always drawn.
+        force: rng.chance(15) && label.is_none() || label_force && label.is_some(),
         partials: rng.chance(50),
         test_point: rng.chance(40),
         marker,
@@ -219,7 +222,13 @@ fn label_marker(rng: &mut Rng, point: Point) -> Option<Bounds> {
             0.0
         };
         let offset = [rng.range(-10.0, 10.0), rng.range(-10.0, 10.0)];
-        let mut bounds = marker_bounds(point, size, anchor, angle, offset);
+        let marker = LabelMarker {
+            size,
+            anchor_point: anchor,
+            angle,
+            offset,
+        };
+        let mut bounds = marker_bounds(point, &marker);
         match rng.below(10) {
             0 => bounds.bbox[rng.below(4) as usize] = rng.special(),
             1 => bounds.bbox.swap(0, 2),
@@ -264,7 +273,7 @@ fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
             // The marker of a labelpoint style, unless the label is forced; else the label
             // point, tested at MS_MAX_LABEL_PRIORITY: against no marker.
             if let Some(marker) = &m.label_marker {
-                if !label.force && !collisions(cache, &drawn, &m, marker, current, i) {
+                if !m.force && !collisions(cache, &drawn, &m, marker, current, i) {
                     continue;
                 }
             } else if m.test_point {
@@ -277,7 +286,7 @@ fn pairwise(cache: &Cache) -> Vec<(usize, Anchor)> {
                     continue;
                 }
             }
-            let Some(placement) = place(m.point, &label, |lb| {
+            let Some(placement) = place(m.point, &label, m.force, |lb| {
                 collisions(cache, &drawn, &m, lb, current, i)
             }) else {
                 continue;
@@ -378,8 +387,8 @@ fn min_distance(
     bbox: &[f64; 4],
 ) -> bool {
     let m = cache.0[i].0;
-    let label = m.label.expect("a placed label has a text");
-    if m.min_distance <= 0.0 || label.force {
+    assert!(m.label.is_some(), "a placed label has a text");
+    if m.min_distance <= 0.0 || m.force {
         return false;
     }
     let d = m.min_distance;
@@ -543,4 +552,85 @@ fn the_cache_draws_what_the_pairwise_test_draws_on_arbitrary_labels() {
     }
     // The inputs draw labels and leave labels out, so the comparison decides something.
     assert!(drawn > INPUTS && drawn < INPUTS * 8, "{drawn} labels drawn");
+}
+
+/// The seed of the inputs some of whose labels lie spans of the image away from it.
+const FAR_SEED: u64 = 0x2026_1114_0025;
+
+/// `member` moved, in half the cases along each axis, by 1 to 4 spans of the image to either side
+/// and a remainder that is no whole cell: its point, its marker's box, and its labelpoint
+/// marker's bounds alike, so that it stands as it stood, far from the image. Whether it moved.
+fn far(rng: &mut Rng, mut member: Member) -> (Member, bool) {
+    let mut along = |span: u32| {
+        if rng.chance(50) {
+            return 0.0;
+        }
+        let k = 1.0 + rng.below(4) as f64;
+        let sign = if rng.chance(50) { 1.0 } else { -1.0 };
+        sign * k * f64::from(span) + rng.range(1.0, 63.0)
+    };
+    let (dx, dy) = (along(SIZE.0), along(SIZE.1));
+    let shift = |b: &mut [f64; 4]| {
+        b[0] += dx;
+        b[1] += dy;
+        b[2] += dx;
+        b[3] += dy;
+    };
+    member.point = Point {
+        x: member.point.x + dx,
+        y: member.point.y + dy,
+    };
+    if let Some(marker) = member.marker.as_mut() {
+        shift(marker);
+    }
+    if let Some(bounds) = member.label_marker.as_mut() {
+        shift(&mut bounds.bbox);
+        for p in bounds.poly.iter_mut().flatten() {
+            *p = Point {
+                x: p.x + dx,
+                y: p.y + dy,
+            };
+        }
+    }
+    (member, dx != 0.0 || dy != 0.0)
+}
+
+#[test]
+fn the_cache_draws_what_the_pairwise_test_draws_on_labels_spans_of_the_image_away() {
+    // Verifies: ADR-0032
+    // The grid wraps around the image, so labels several spans of it away share its cells with
+    // labels near it; the pairs that meet must still be found, those that do not still not.
+    let mut rng = Rng(FAR_SEED);
+    let (mut drawn, mut drawn_far) = (0, 0);
+    for input in 0..INPUTS {
+        let count = 1 + rng.below(16) as usize;
+        let mut moved = Vec::with_capacity(count);
+        let members = (0..count)
+            .map(|_| {
+                let (member, text) = member(&mut rng);
+                let (member, away) = far(&mut rng, member);
+                moved.push(away);
+                (member, text)
+            })
+            .collect();
+        let gutter = if rng.chance(50) {
+            0
+        } else {
+            rng.below(41) as u32
+        };
+        let cache = Cache(members, gutter);
+        let expected = pairwise(&cache);
+        assert_eq!(
+            through_cache(&cache),
+            expected,
+            "input {input} of seed {FAR_SEED:#x}: {:?}",
+            cache.0
+        );
+        drawn += expected.len();
+        drawn_far += expected.iter().filter(|(i, _)| moved[*i]).count();
+    }
+    // Labels far from the image are drawn and left out among the others, so the comparison
+    // decides something for them.
+    assert!(drawn > INPUTS && drawn < INPUTS * 8, "{drawn} labels drawn");
+    assert!(drawn_far > INPUTS, "{drawn_far} labels drawn far away");
 }

@@ -312,6 +312,7 @@ version = "0.1.0"
 dependencies = [
  "forager-ports",
  "forager-style-ir",
+ "libm",
 ]
 
 [[package]]

@@ -1,6 +1,7 @@
 // The styles of a label are drawn as msDrawLabelCache draws its labelpoly, labelpoint, and
-// labelcenter styles, src/mapdraw.c, with msDrawLabelBounds and msDrawMarkerSymbol,
-// src/maprendering.c, of MapServer at the release pinned in scripts/fetch-msautotest.sh.
+// labelcenter styles, and computeMarkerBounds, src/mapdraw.c, with msDrawLabelBounds and
+// msDrawMarkerSymbol, src/maprendering.c, of MapServer at the release pinned in
+// scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -15,13 +16,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use forager_render::{DrawOp, Point};
-use forager_style_ir::{LabelTransform, Style, Symbol};
+use forager_style_ir::{
+    ANCHOR_CENTRE, Bound, LabelMarker, LabelTransform, Style, Symbol, SymbolRef,
+};
 
 use crate::canvas::Canvas;
 use crate::extent::View;
 use crate::marker::{marker_ops, of_symbol_zero};
 use crate::shade::shade;
-use crate::symbol::{self, Mark, Resolved};
+use crate::symbol::{self, Mark, Pixmaps, Resolved, marker_size_with};
 
 /// Where a label's styles are drawn: its point, and the box around its text, which a label
 /// without text lacks.
@@ -94,15 +97,15 @@ pub fn label_pixmap<'a>(style: &Style<LabelTransform>, symbols: &'a [Symbol]) ->
 /// turned polygon where the label is turned, else the ring of its box from its lower left corner
 /// up, and a labelcenter style's marker at the centre of the labelpoly's box. A marker is drawn
 /// as msDrawMarkerSymbol draws it (see [`marker_ops`]), nothing for MapServer's default symbol. A
-/// labelpoly or labelcenter style of a label without text draws nothing. False where a hatch is
-/// refused (Q-9).
+/// labelpoly or labelcenter style of a label without text draws nothing. A hatch refused is
+/// counted on the canvas (Q-9).
 pub fn label_style_ops(
     ops: &mut Vec<DrawOp>,
     style: &Style<LabelTransform>,
     at: &LabelGeometry<'_>,
     view: &View,
     canvas: &mut Canvas,
-) -> bool {
+) {
     match (style.geom_transform, &at.poly) {
         (LabelTransform::Point, _) => label_marker(ops, at.point, style, canvas),
         (LabelTransform::Center, Some(([min_x, min_y, max_x, max_y], _))) => {
@@ -127,13 +130,13 @@ pub fn label_style_ops(
                     ]
                 }
             };
-            return shade(ops, vec![ring], style, view, canvas);
+            let drawn = shade(ops, vec![ring], style, view, canvas);
+            canvas.hatching.refused += usize::from(!drawn);
         }
         // The label cache refuses a label without text that has such a style before it is
         // cached; should one reach here, it draws nothing rather than fail the map (Q-3).
         (LabelTransform::Center | LabelTransform::Poly, None) => {}
     }
-    true
 }
 
 /// A label's marker `style` at the pixel `at`, as msDrawMarkerSymbol draws it: nothing for
@@ -146,5 +149,86 @@ fn label_marker(
 ) {
     if !of_symbol_zero(style) {
         marker_ops(ops, at, style, canvas);
+    }
+}
+
+/// What a label's `labelpoint` style's marker is sized and placed by, as a feature binds it: its
+/// `SIZE`, where it has one, its angle in degrees, and its `OFFSET`, unscaled.
+#[derive(Clone, Copy, Debug)]
+pub struct MarkerValues {
+    pub size: Option<f64>,
+    pub angle: f64,
+    pub offset: [f64; 2],
+}
+
+/// The marker of the `labelpoint` style `style` of the values `values` and the symbol `symbol`
+/// among `symbols` at the scale factor `factor`, as computeMarkerBounds sizes and places it, a
+/// pixmap's by its image among `pixmaps`; or why it is not drawn. A symbol it cannot resolve has
+/// no size, and so no marker.
+pub fn label_style_marker(
+    style: &Style<LabelTransform>,
+    values: MarkerValues,
+    symbol: &Option<Bound<SymbolRef>>,
+    symbols: &[Symbol],
+    pixmaps: &Pixmaps,
+    factor: f64,
+) -> Result<LabelMarker, String> {
+    let size = marker_size_with(style, values.size, symbol, symbols, Some(pixmaps), factor)
+        .map_err(|what| format!("its labelpoint style draws {what}"))?;
+    let anchor_point = match symbol::resolve(symbol, symbols) {
+        Resolved::Found(_, symbol) => symbol.anchor(),
+        _ => ANCHOR_CENTRE,
+    };
+    Ok(LabelMarker {
+        size,
+        anchor_point,
+        angle: values.angle,
+        offset: values.offset.map(|o| o * factor),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use forager_style_ir::SymbolKind;
+
+    #[test]
+    fn a_labelpnt_markers_symbol_by_name_takes_its_anchor_point_as_by_index() {
+        // computeMarkerBounds places the marker by its symbol's ANCHORPOINT, the symbol found by
+        // name as by index (msGetSymbolIndex).
+        let mut symbols: Vec<Symbol> = ["dot", "square"]
+            .map(|name| Symbol {
+                name: Some(name.to_owned()),
+                kind: SymbolKind::Ellipse,
+                paths: Vec::new(),
+                extent: None,
+                filled: true,
+                anchor_point: None,
+                character: None,
+                font: None,
+                image: None,
+                transparent: None,
+                span: None,
+            })
+            .into();
+        symbols[1].anchor_point = Some([0.0, 0.25]);
+        let values = MarkerValues {
+            size: None,
+            angle: 0.0,
+            offset: [0.0, 0.0],
+        };
+        let marker = |symbol: SymbolRef| {
+            let symbol = Some(Bound::Value(symbol));
+            let style = Style {
+                symbol: symbol.clone(),
+                ..Style::new(LabelTransform::Point)
+            };
+            label_style_marker(&style, values, &symbol, &symbols, &Pixmaps::new(), 1.0)
+                .unwrap()
+                .anchor_point
+        };
+        assert_eq!(marker(SymbolRef::Index(2)), [0.0, 0.25]);
+        assert_eq!(marker(SymbolRef::Name("SQUARE".to_owned())), [0.0, 0.25]);
+        assert_eq!(marker(SymbolRef::Name("dot".to_owned())), [0.5, 0.5]);
     }
 }

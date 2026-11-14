@@ -1,0 +1,160 @@
+{
+  "version": "1.0",
+  "map": {
+    "extent": {
+      "min_x": 0.0,
+      "min_y": 0.0,
+      "max_x": 100.0,
+      "max_y": 100.0
+    },
+    "size": [
+      100,
+      100
+    ],
+    "layers": [
+      {
+        "name": "rings",
+        "render_mode": "polygon",
+        "status": "on",
+        "geom_transform": {
+          "op": "smoothsia",
+          "args": [
+            {
+              "op": "outer",
+              "args": [
+                {
+                  "op": "inner",
+                  "args": [
+                    {
+                      "op": "shape",
+                      "args": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "op": "*",
+              "args": [
+                {
+                  "op": "map_cellsize",
+                  "args": []
+                },
+                2
+              ]
+            },
+            {
+              "op": "%",
+              "args": [
+                7,
+                {
+                  "op": "map_cellsize",
+                  "args": []
+                }
+              ]
+            },
+            "all"
+          ]
+        },
+        "features": [
+          {
+            "type": "polygon",
+            "parts": [
+              [
+                [
+                  0,
+                  0
+                ],
+                [
+                  50,
+                  0
+                ],
+                [
+                  50,
+                  50
+                ],
+                [
+                  0,
+                  0
+                ]
+              ]
+            ]
+          }
+        ],
+        "classes": [
+          {
+            "styles": [
+              {
+                "color": "#0000ff"
+              },
+              {
+                "geom_transform": {
+                  "expression": {
+                    "op": "densify",
+                    "args": [
+                      {
+                        "op": "generalize",
+                        "args": [
+                          {
+                            "op": "shape",
+                            "args": []
+                          },
+                          {
+                            "op": "^",
+                            "args": [
+                              2,
+                              {
+                                "op": "map_cellsize",
+                                "args": []
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      0.5
+                    ]
+                  }
+                }
+              },
+              {
+                "geom_transform": {
+                  "expression": {
+                    "not_drawn": "buffer"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "lines",
+        "render_mode": "line",
+        "status": "on",
+        "geom_transform": {
+          "not_drawn": "syntax"
+        },
+        "classes": [
+          {
+            "styles": [
+              {
+                "width": 2,
+                "geom_transform": {
+                  "expression": {
+                    "op": "smoothsia",
+                    "args": [
+                      {
+                        "op": "shape",
+                        "args": []
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

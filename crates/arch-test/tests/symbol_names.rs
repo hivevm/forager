@@ -1,15 +1,26 @@
-//! The engine and `symbolize` find a symbol by its name in one place: `named_index` of
-//! `symbolize`, msGetSymbolIndex's match without regard to case, which the engine's binding of a
-//! `SYMBOL` calls too. The check refuses an `eq_ignore_ascii_case` outside that module where the
-//! identifier `symbol`, `symbols`, or `Symbol` stands on its line or one of the four lines before
-//! it. Another form of the comparison passes it, the frontend's map of lower-cased names among them
-//! (`crates/mapfile/src/translate/symbol.rs`, which ADR-0008 keeps from `symbolize`;
-//! docs/backlog/symbol-name-index-in-mapfile.md).
+//! A symbol's name is matched in one place, `ms_get_symbol_index` and its `symbol_name_key` in
+//! `style-ir`'s module `c`, msGetSymbolIndex's `strcasecmp` (ADR-0017), which the frontend, the
+//! engine, and `symbolize` call. `c_numbers.rs` refuses a function of either name outside that
+//! module; this check refuses the match written under another name: one of the folds of `FOLDS`
+//! outside the module where the identifier `symbol`, `symbols`, or `Symbol` stands on its line or
+//! one of the four lines before it. Another form of the comparison passes it.
 
 use std::path::{Path, PathBuf};
 
 /// The one module that may compare a symbol's name, from the workspace root.
-const MODULE: &str = "crates/symbolize/src/symbol.rs";
+const MODULE: &str = "crates/style-ir/src/c.rs";
+
+/// The calls that compare or fold text without regard to case. `to_lowercase` is not among them:
+/// `symbolize` lower-cases a message that names a symbol's kind (`crates/symbolize/src/symbol.rs`,
+/// `marker_size_with`), which compares no name.
+const FOLDS: [&str; 6] = [
+    "eq_ignore_ascii_case",
+    "to_ascii_lowercase",
+    "to_ascii_uppercase",
+    "make_ascii_lowercase",
+    "make_ascii_uppercase",
+    "to_uppercase",
+];
 
 /// The lines before a comparison read with it.
 const WINDOW: usize = 4;
@@ -29,7 +40,7 @@ fn comparisons(source: &str) -> Vec<usize> {
         .collect();
     (0..code.len())
         .filter(|&i| {
-            code[i].contains("eq_ignore_ascii_case")
+            FOLDS.iter().any(|fold| code[i].contains(fold))
                 && code[i.saturating_sub(WINDOW)..=i]
                     .iter()
                     .any(|line| names_a_symbol(line))
@@ -56,7 +67,7 @@ fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
 }
 
 #[test]
-fn a_symbols_name_is_compared_only_in_the_module_of_symbolize() {
+fn a_symbols_name_is_compared_only_in_the_module_of_style_ir() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
     rust_files(&root.join("crates"), &mut files);
@@ -88,6 +99,8 @@ fn the_check_reads_a_comparison_near_a_symbol_and_not_in_comments() {
                   .is_some_and(|n| n.eq_ignore_ascii_case(name))\n});\n\
                   layers.iter().any(|l| l.name.eq_ignore_ascii_case(name));\n\
                   // symbol: n.eq_ignore_ascii_case(name)\n\
-                  let symbolic = key.eq_ignore_ascii_case(name);\n";
-    assert_eq!(comparisons(source), [4]);
+                  let symbolic = key.eq_ignore_ascii_case(name);\n\
+                  names.entry(symbol.name.to_ascii_lowercase());\n\
+                  let key = symbol.name.to_uppercase();\n";
+    assert_eq!(comparisons(source), [4, 9, 10]);
 }

@@ -28,6 +28,9 @@ trap 'rm -rf "$work"' EXIT
 failed=0
 passed=0
 
+# shellcheck source-path=SCRIPTDIR source=lib/expect.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
+
 # The stand-in cargo: 'mutants --version' prints the pinned version; any other call appends its
 # arguments as one line to $FAKE_LOG, writes $FAKE_MISSED as the report's missed.txt when set,
 # and exits with $FAKE_STATUS.
@@ -49,13 +52,6 @@ WEEKLY="mutants --workspace --test-workspace=false --no-shuffle --output target/
 # fixture <dir> — refuse an empty fixture path: 'git -C ""' would act on this repository.
 fixture() { [[ -n "${1:-}" && -d "$1/.git" ]] || { echo "fixture: '$1' is no fixture repository" >&2; exit 1; }; }
 
-# commit <dir> <message> — stage everything and commit with a fixed identity.
-commit() {
-  fixture "$1"
-  git -C "${1:?}" add -A
-  git -C "${1:?}" -c user.name=fixture -c user.email=fixture@example.invalid commit -q -m "$2"
-}
-
 # repo <name> — a repository with the script, a Rust file, and a README on 'main', checked out on
 # the branch 'work', printed as its path.
 repo() {
@@ -71,24 +67,20 @@ repo() {
   echo "$dir"
 }
 
-# expect <exit code> <name> <dir> <needle> <cargo calls> [args...] — run the script in the
-# repository; the output must contain the needle, and not $REJECT when that is set, and the
-# recorded cargo calls, one per line, must equal the given ones exactly.
-expect() {
+# expect_mutants <exit code> <name> <dir> <needle> <cargo calls> [args...] — run the script in
+# the repository; the output must contain the needle, and not $REJECT when that is set (verdict,
+# scripts/lib/expect.sh), and the recorded cargo calls, one per line, must equal the given ones
+# exactly.
+expect_mutants() {
   local want="$1" name="$2" dir="$3" needle="$4" calls="$5"
   shift 5
   local out rc log="$work/$name.log"
   fixture "$dir"
   : > "$log"
   out="$(cd "$dir" && PATH="$work/bin:$PATH" FAKE_LOG="$log" bash scripts/mutants.sh "$@" 2>&1)"; rc=$?
-  if [[ $rc -eq "$want" && "$out" == *"$needle"* && "$(cat "$log")" == "$calls" ]] \
-    && [[ -z "${REJECT:-}" || "$out" != *"$REJECT"* ]]; then
-    passed=$((passed + 1))
-    return
-  fi
-  failed=$((failed + 1))
-  echo "FAIL: $name (expected exit $want with \"$needle\"${REJECT:+ and without \"$REJECT\"}, got exit $rc)" >&2
-  while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
+  local same=0
+  [[ "$(cat "$log")" == "$calls" ]] && same=1
+  verdict "$name" "$want" "$needle" "$rc" "$out" "$same" && return
   echo "    cargo calls expected: $calls" >&2
   while IFS= read -r l; do printf '    cargo calls got:      %s\n' "$l"; done < "$log" >&2
 }
@@ -96,20 +88,20 @@ expect() {
 # --- without a base: the weekly run --------------------------------------------------------
 
 d="$(repo weekly)"
-expect 0 "no argument mutates the whole workspace" "$d" "" "$WEEKLY"
-expect 0 "a shard is handed over" "$d" "" "$WEEKLY --shard 1/4" 1/4
+expect_mutants 0 "no argument mutates the whole workspace" "$d" "" "$WEEKLY"
+expect_mutants 0 "a shard is handed over" "$d" "" "$WEEKLY --shard 1/4" 1/4
 FAKE_STATUS=2 FAKE_MISSED="src/lib.rs:2:5: replace one -> u8 with 0" \
-  expect 0 "missed mutants are listed and the run passes" "$d" \
+  expect_mutants 0 "missed mutants are listed and the run passes" "$d" \
   "Mutants no test caught (1):"$'\n'"src/lib.rs:2:5: replace one -> u8 with 0" "$WEEKLY"
-FAKE_STATUS=3 expect 0 "timed-out mutants are a finding, not a broken run" "$d" "" "$WEEKLY"
-FAKE_STATUS=1 expect 1 "a broken run fails" "$d" "the run failed (exit 1)" "$WEEKLY"
+FAKE_STATUS=3 expect_mutants 0 "timed-out mutants are a finding, not a broken run" "$d" "" "$WEEKLY"
+FAKE_STATUS=1 expect_mutants 1 "a broken run fails" "$d" "the run failed (exit 1)" "$WEEKLY"
 
 # --- with a base: the review's run ---------------------------------------------------------
 
 d="$(repo rust-changed)"
 printf 'pub fn two(x: bool) -> u8 {\n    if x { 2 } else { 0 }\n}\n' >> "$d/src/lib.rs"
 commit "$d" "a Rust change"
-expect 0 "a Rust change is handed over as the diff" "$d" "" \
+expect_mutants 0 "a Rust change is handed over as the diff" "$d" "" \
   "$WEEKLY --in-diff target/mutants.diff" --base main
 if grep -qF '+pub fn two(x: bool) -> u8 {' "$d/target/mutants.diff" \
   && ! grep -qF 'README' "$d/target/mutants.diff"; then
@@ -118,17 +110,17 @@ else
   failed=$((failed + 1))
   echo "FAIL: the diff holds the Rust change and nothing else" >&2
 fi
-expect 0 "--base= and a shard together" "$d" "" \
+expect_mutants 0 "--base= and a shard together" "$d" "" \
   "$WEEKLY --in-diff target/mutants.diff --shard 2/3" 2/3 --base=main
 FAKE_STATUS=2 FAKE_MISSED="src/lib.rs:5:12: replace == with != in two" \
-  expect 0 "a surviving mutant in the diff is listed and the run passes" "$d" \
+  expect_mutants 0 "a surviving mutant in the diff is listed and the run passes" "$d" \
   "src/lib.rs:5:12: replace == with != in two" "$WEEKLY --in-diff target/mutants.diff" --base main
 
 # A user's git config must not change the diff cargo-mutants reads: it strips only the b/
 # prefix and reads no colour.
 mkdir -p "$work/hostile"
 printf '[diff]\n\tmnemonicPrefix = true\n[color]\n\tui = always\n' > "$work/hostile/.gitconfig"
-HOME="$work/hostile" expect 0 "a hostile git config still gives cargo-mutants its diff" "$d" "" \
+HOME="$work/hostile" expect_mutants 0 "a hostile git config still gives cargo-mutants its diff" "$d" "" \
   "$WEEKLY --in-diff target/mutants.diff" --base main
 if grep -qxF '+++ b/src/lib.rs' "$d/target/mutants.diff" && ! grep -q $'\e' "$d/target/mutants.diff"; then
   passed=$((passed + 1))
@@ -141,18 +133,18 @@ fi
 # print an earlier run's.
 mkdir -p "$d/target/mutants/mutants.out"
 printf 'src/lib.rs:2:5: a stale mutant\n' > "$d/target/mutants/mutants.out/missed.txt"
-REJECT="a stale mutant" expect 0 "an earlier run's report is not this run's" "$d" "" \
+REJECT="a stale mutant" expect_mutants 0 "an earlier run's report is not this run's" "$d" "" \
   "$WEEKLY --in-diff target/mutants.diff" --base main
 
 d="$(repo rust-uncommitted)"
 printf '// more\n' >> "$d/src/lib.rs"
-expect 0 "a change not yet committed counts, as cargo-mutants mutates the working tree" "$d" "" \
+expect_mutants 0 "a change not yet committed counts, as cargo-mutants mutates the working tree" "$d" "" \
   "$WEEKLY --in-diff target/mutants.diff" --base main
 
 d="$(repo no-rust)"
 printf 'more\n' >> "$d/README.md"
 commit "$d" "a README change"
-expect 0 "a change without Rust code has nothing to mutate" "$d" "nothing to mutate" "" --base main
+expect_mutants 0 "a change without Rust code has nothing to mutate" "$d" "nothing to mutate" "" --base main
 
 d="$(repo base-moved-on)"
 printf 'more\n' >> "$d/README.md"
@@ -161,16 +153,16 @@ git -C "${d:?}" checkout -q main
 printf '// on main\n' >> "$d/src/lib.rs"
 commit "$d" "a Rust change on main"
 git -C "${d:?}" checkout -q work
-expect 0 "a Rust change on the base after the fork is not the branch's" "$d" "nothing to mutate" "" \
+expect_mutants 0 "a Rust change on the base after the fork is not the branch's" "$d" "nothing to mutate" "" \
   --base main
 
 d="$(repo bad-base)"
-expect 1 "a base that does not resolve" "$d" "does not resolve to a commit" "" --base nosuchref
-expect 1 "--base without a revision" "$d" "--base needs a revision" "" --base
-expect 1 "--base= without a revision" "$d" "--base needs a revision" "" --base=
-expect 1 "an unknown option" "$d" "unknown option '--all'" "" --all
-expect 1 "two shards" "$d" "more than one shard" "" 1/4 2/4
-expect 1 "two bases" "$d" "more than one base" "" --base main --base=HEAD
+expect_mutants 1 "a base that does not resolve" "$d" "does not resolve to a commit" "" --base nosuchref
+expect_mutants 1 "--base without a revision" "$d" "--base needs a revision" "" --base
+expect_mutants 1 "--base= without a revision" "$d" "--base needs a revision" "" --base=
+expect_mutants 1 "an unknown option" "$d" "unknown option '--all'" "" --all
+expect_mutants 1 "two shards" "$d" "more than one shard" "" 1/4 2/4
+expect_mutants 1 "two bases" "$d" "more than one base" "" --base main --base=HEAD
 
 # --- summary ---------------------------------------------------------------------------------
 

@@ -32,8 +32,10 @@
 use std::rc::Rc;
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
-use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_max, ms_nint};
-use forager_style_ir::{Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef};
+use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_get_symbol_index, ms_max, ms_nint};
+use forager_style_ir::{
+    ANCHOR_CENTRE, Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef, anchor_offset,
+};
 
 use crate::bounds;
 use crate::style::fixed;
@@ -85,22 +87,8 @@ pub(crate) fn named(index: usize, symbol: Option<&Symbol>) -> String {
         .map_or(format!("symbol {index}"), |n| format!("symbol `{n}`"))
 }
 
-/// The index, from 1, of the symbol named `name` among `symbols`, as msGetSymbolIndex finds it:
-/// the first whose name matches without regard to case; `None` for a name no symbol carries.
-pub fn named_index(name: &str, symbols: &[Symbol]) -> Option<usize> {
-    symbols
-        .iter()
-        .position(|symbol| {
-            symbol
-                .name
-                .as_ref()
-                .is_some_and(|known| known.eq_ignore_ascii_case(name))
-        })
-        .map(|position| position + 1)
-}
-
-/// The symbol `symbol` names among `symbols`: by its index, or by its name (see
-/// [`named_index`]).
+/// The symbol `symbol` names among `symbols`: by its index, or by its name, as msGetSymbolIndex
+/// finds it ([`ms_get_symbol_index`]).
 pub fn resolve<'a, 'n>(
     symbol: &'n Option<Bound<SymbolRef>>,
     symbols: &'a [Symbol],
@@ -108,7 +96,7 @@ pub fn resolve<'a, 'n>(
     let index = match symbol {
         None => return Resolved::Default,
         Some(Bound::Value(SymbolRef::Index(index))) => *index as usize,
-        Some(Bound::Value(SymbolRef::Name(name))) => match named_index(name, symbols) {
+        Some(Bound::Value(SymbolRef::Name(name))) => match ms_get_symbol_index(name, symbols) {
             Some(index) => index,
             None => return Resolved::Unnamed(name),
         },
@@ -184,8 +172,8 @@ pub(crate) fn default_size_of(style: &Style, symbols: &[Symbol], pixmaps: Option
     }
 }
 
-/// The factors a layer's styles are drawn at (see the engine's `classes::layer_scale_factor` and
-/// `classes::resolution_factor`).
+/// The factors a layer's styles are drawn at (see the engine's `classes::scales`, which
+/// computes them once per render).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Factors {
     /// The layer's scale factor, by which the sizes, widths, gaps, patterns, and offsets of its
@@ -204,7 +192,7 @@ impl Factors {
 }
 
 /// computeSymbolStyle for a vector or ellipse symbol at `factors`, the style's scale factor and the
-/// image's resolution factor (see the engine's `classes::layer_scale_factor`). A
+/// image's resolution factor (see the engine's `classes::scales`). A
 /// filled symbol is filled with the style's colour and outlined with its outline colour; one not
 /// filled is outlined with its colour, or its outline colour where it has none. The size is
 /// scaled by the scale factor and bounded by `MINSIZE` and `MAXSIZE` scaled by the resolution
@@ -464,12 +452,10 @@ pub fn marker_size_with<T>(
 /// `anchor` on the point it is drawn at, turned with the symbol by `rotation`, as both
 /// msAdjustMarkerPos and msImagePolylineMarkers shift it; nothing for an anchor at the centre.
 pub(crate) fn anchor_shift(anchor: [f64; 2], size: (f64, f64), rotation: f64) -> (f64, f64) {
-    let [anchor_x, anchor_y] = anchor;
-    if anchor_x == 0.5 && anchor_y == 0.5 {
+    if anchor == ANCHOR_CENTRE {
         return (0.0, 0.0);
     }
-    let ox = (0.5 - anchor_x) * size.0;
-    let oy = (0.5 - anchor_y) * size.1;
+    let (ox, oy) = anchor_offset(anchor, size);
     if rotation == 0.0 {
         return (ox, oy);
     }
@@ -486,8 +472,8 @@ pub(crate) fn anchored(
     rotation: f64,
     size: impl FnOnce() -> (f64, f64),
 ) -> Point {
-    let anchor = symbol.anchor_point.unwrap_or([0.5, 0.5]);
-    if anchor == [0.5, 0.5] {
+    let anchor = symbol.anchor();
+    if anchor == ANCHOR_CENTRE {
         return at;
     }
     let (ox, oy) = anchor_shift(anchor, size(), rotation);

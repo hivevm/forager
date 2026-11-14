@@ -24,11 +24,17 @@ use std::collections::BTreeSet;
 
 use forager_expr::{Evaluator, Failure, Lookup};
 use forager_ports::{Feature, Properties, Value};
-use forager_style_ir::c::{atof, atoi, c_str, ms_nint, ms_string_split};
-use forager_style_ir::{Bound, Diagnostic, Expr, Layer, Map, Rgba, Span, Style, Symbol, Units};
+use forager_style_ir::c::{
+    atof, atoi, c_str, ms_get_symbol_index, ms_nint, ms_string_split, opacity_alpha,
+};
+use forager_style_ir::{
+    Bound, Diagnostic, Expr, Layer, Map, RenderMode, Rgba, Span, Style, Symbol, TransformShape,
+    Units,
+};
 
 use crate::bindable::{self, Field, Written};
-use forager_symbolize::View;
+use crate::layer::{Selected, name, quoted};
+use forager_symbolize::{Budget, Factors, Undrawn, View, can_draw, transformed};
 
 /// A feature's properties as the evaluator reads them. A name is found without regard to ASCII
 /// case, as MapServer finds an attribute in a shapefile's `.dbf` or an OGR source: by the
@@ -118,13 +124,13 @@ impl Reports {
                 }
             }
         };
-        let layer_name = crate::name(layer);
+        let layer_name = name(layer);
         let message = match failure {
             Failure::Pattern { pattern, construct } => format!(
                 "layer {layer_name}: the pattern {} of {what} uses {construct}, which \
                  Forager cannot match as MapServer does; the expression that holds it never \
                  matches",
-                crate::quoted(pattern)
+                quoted(pattern)
             ),
             _ => format!(
                 "layer {layer_name}: an expression of {what} reads or computes a text past {} \
@@ -288,9 +294,7 @@ impl<'a> Selector<'a, '_> {
     /// in the map's scale whose expression matches it, a class without one matching every
     /// feature; none where no class matches.
     pub fn class(&mut self, feature: &Feature) -> Option<usize> {
-        if let Some(filter) = &self.binder.layer.filter
-            && !self.binder.matches(filter, feature, Carrier::Filter)
-        {
+        if !self.passes_filter(feature) {
             return None;
         }
         (0..self.binder.layer.classes.len()).find(|&i| {
@@ -303,13 +307,59 @@ impl<'a> Selector<'a, '_> {
         })
     }
 
+    /// Whether `feature` passes the layer's filter; every feature passes where it has none.
+    fn passes_filter(&mut self, feature: &Feature) -> bool {
+        match &self.binder.layer.filter {
+            None => true,
+            Some(filter) => self.binder.matches(filter, feature, Carrier::Filter),
+        }
+    }
+
+    /// `features` with the shape of each that passes the layer's filter replaced by the layer's
+    /// transform `shape`, `[map_cellsize]` at `cellsize`, as msLayerNextShape transforms each
+    /// shape it reads after the filter (src/maplayer.c:437-449). msDrawVectorLayer reads no shape
+    /// past the first that its class finds beyond the layer's limit (src/mapdraw.c:1282-1286), so
+    /// none past it is transformed, and none fails: those are counted as [`Self::select`] counts
+    /// them, of the render mode `mode`. The reason where a shape fails the transform, or where the
+    /// layer's transforms pass a bound of Q-9. The filter, and under a limit the classes, are
+    /// evaluated here and again by [`Self::select`], which sees the transformed features: the
+    /// evaluation is pure and its failures report once, so only a layer with a transform pays
+    /// it twice.
+    pub fn transform(
+        &mut self,
+        mode: RenderMode,
+        features: &mut [Feature],
+        shape: &TransformShape,
+        cellsize: f64,
+    ) -> Result<(), Undrawn> {
+        let mut budget = Budget::default();
+        let limit = self.binder.layer.max_features.map(|max| max as usize);
+        let mut counted = 0_usize;
+        for feature in features {
+            if !self.passes_filter(feature) {
+                continue;
+            }
+            feature.geometry = transformed(shape, &feature.geometry, cellsize, &mut budget)?;
+            if let Some(limit) = limit
+                && can_draw(mode, &feature.geometry)
+                && self.class(feature).is_some()
+            {
+                counted += 1;
+                if counted > limit {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Each of `features` the layer draws, with the place of its class and its styles bound to
     /// it, in the source's order.
     pub fn select<'f>(
         &mut self,
         features: Vec<&'f Feature>,
         symbols: &[Symbol],
-    ) -> Vec<crate::Selected<'f>>
+    ) -> Vec<Selected<'f>>
     where
         'a: 'f,
     {
@@ -355,8 +405,7 @@ pub(crate) fn with_opacity<T: Clone>(style: Cow<'_, Style<T>>) -> Cow<'_, Style<
     if opacity >= 100 {
         return style;
     }
-    #[expect(clippy::cast_possible_truncation, reason = "in 0..256")]
-    let alpha = ms_nint(f64::from(opacity) * 2.55).rem_euclid(256) as u8;
+    let alpha = opacity_alpha(opacity);
     let mut style = style.into_owned();
     for color in [&mut style.color, &mut style.outline_color] {
         if let Some(Bound::Value(c)) = color {
@@ -438,6 +487,14 @@ fn inches_per_unit(units: Units) -> f64 {
     }
 }
 
+/// The value msGeomTransformShape binds `[map_cellsize]` of a layer's `GEOMTRANSFORM` to
+/// (src/mapgeomtransform.c:283-284): the map's `cellsize` times the inches of the map's unit over
+/// those of the layer's. The frontend does not carry a layer's `UNITS`, and warns of one written;
+/// the layer's unit is initLayer's, meters (src/mapfile.c:3951).
+pub(crate) fn layer_cellsize(map: &Map, cellsize: f64) -> f64 {
+    cellsize * (inches_per_unit(map_units(map)) / inches_per_unit(Units::Meters))
+}
+
 /// The image's resolution factor: the map's `RESOLUTION` over its `DEFRESOLUTION`, both 72
 /// unless written (msPrepareImage). It scales the bounds of every style, its `MINSIZE`,
 /// `MAXSIZE`, `MINWIDTH`, and `MAXWIDTH`, and a label's.
@@ -445,14 +502,37 @@ pub(crate) fn resolution_factor(map: &Map) -> f64 {
     map.resolution.unwrap_or(72.0) / map.def_resolution.unwrap_or(72.0)
 }
 
-/// msPrepareImage's scale factor of `layer`, at the map's `cellsize` and scale `scale_denom`
-/// (see [`scale_denom`]): for `SIZEUNITS` other than pixels, the inches of that unit over those
-/// of the map's, over the cellsize; with a `SYMBOLSCALEDENOM` above 0 at a scale above 0, that
-/// over the scale, times the resolution factor; otherwise the resolution factor. Its classes,
-/// styles, labels, and labels' styles inherit it (msUpdateClassScaleFactor), as the mapfile
-/// gives none of them a `SIZEUNITS` of its own (loadClass, loadStyle, and loadLabel read none).
-pub(crate) fn layer_scale_factor(map: &Map, layer: &Layer, cellsize: f64, scale_denom: f64) -> f64 {
+/// The scale of a render of `map` in `view`, `width` pixels wide (see [`scale_denom`]), and the
+/// factors each layer is drawn at, by the layer's index, computed once for the render: the
+/// layer's scale factor (see [`layer_scale_factor`]) and the image's [`resolution_factor`]. A
+/// layer's classes, styles, labels, and labels' styles inherit them (msUpdateClassScaleFactor).
+pub(crate) fn scales(map: &Map, view: &View, width: u32) -> (f64, Vec<Factors>) {
+    let scale_denom = scale_denom(map, view, width);
     let resolution = resolution_factor(map);
+    let factors = map
+        .layers
+        .iter()
+        .map(|layer| {
+            let scale = layer_scale_factor(map, layer, view.cellsize, scale_denom, resolution);
+            Factors::new(scale, resolution)
+        })
+        .collect();
+    (scale_denom, factors)
+}
+
+/// msPrepareImage's scale factor of `layer`, at the map's `cellsize`, scale `scale_denom`, and
+/// resolution factor `resolution`: for `SIZEUNITS` other than pixels, the inches of that unit
+/// over those of the map's, over the cellsize; with a `SYMBOLSCALEDENOM` above 0 at a scale above
+/// 0, that over the scale, times the resolution factor; otherwise the resolution factor. The
+/// mapfile gives none of the layer's classes, styles, or labels a `SIZEUNITS` of its own
+/// (loadClass, loadStyle, and loadLabel read none).
+fn layer_scale_factor(
+    map: &Map,
+    layer: &Layer,
+    cellsize: f64,
+    scale_denom: f64,
+    resolution: f64,
+) -> f64 {
     match layer.size_units {
         Some(units) if units != Units::Pixels => {
             inches_per_unit(units) / inches_per_unit(map_units(map)) / cellsize
@@ -464,15 +544,15 @@ pub(crate) fn layer_scale_factor(map: &Map, layer: &Layer, cellsize: f64, scale_
     }
 }
 
-/// The index of a symbol by its name, as msGetSymbolIndex finds it (see
-/// [`forager_symbolize::named_index`]); 0, the default symbol, for a name the symbol set does not
-/// hold, which MapServer would next read as an image file, not drawn yet.
+/// The index of a symbol by its name, as msGetSymbolIndex finds it ([`ms_get_symbol_index`]); 0,
+/// the default symbol, for a name the symbol set does not hold, which MapServer would next read as
+/// an image file, not drawn yet.
 fn symbol_index(name: &str, symbols: &[Symbol]) -> u32 {
     #[expect(
         clippy::cast_possible_truncation,
         reason = "an index into the symbol set, held far below u32::MAX by the input's bounds (Q-9)"
     )]
-    let index = forager_symbolize::named_index(name, symbols).map_or(0, |index| index as u32);
+    let index = ms_get_symbol_index(name, symbols).map_or(0, |index| index as u32);
     index
 }
 

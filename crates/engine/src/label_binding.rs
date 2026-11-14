@@ -27,8 +27,8 @@ use forager_style_ir::{
     Align as IrAlign, Bound, Expr, Force, Label, Map, Position as IrPosition, Rgba,
 };
 
-use crate::classes::{self, FeatureProperties, attribute, bind_double, bind_integer, color};
-use forager_symbolize::label_style_refused;
+use crate::classes::{FeatureProperties, attribute, bind_double, bind_integer, color};
+use forager_symbolize::{Factors, label_style_refused};
 
 /// A label's size where none is given, MapServer's `MS_MEDIUM`.
 const DEFAULT_SIZE: f64 = 10.0;
@@ -77,12 +77,10 @@ pub(crate) struct Fixed<'a> {
     pub(crate) position: Prop<'a, Position>,
     pub(crate) align: Prop<'a, Align>,
     pub(crate) priority: Priority<'a>,
-    /// The layer's scale factor, which its labels inherit (msUpdateClassScaleFactor) and which
-    /// scales a label's size, offset, buffer, outline, and styles.
-    pub(crate) factor: f64,
-    /// The image's resolution factor, which scales a label's `MINSIZE`, `MAXSIZE`, and
-    /// `MINDISTANCE`.
-    pub(crate) resolution: f64,
+    /// The layer's factors, which its labels inherit (msUpdateClassScaleFactor): the scale
+    /// factor, which scales a label's size, offset, buffer, outline, and styles, and the image's
+    /// resolution factor, which scales a label's `MINSIZE`, `MAXSIZE`, and `MINDISTANCE`.
+    pub(crate) factors: Factors,
     pub(crate) buffer: f64,
     pub(crate) force: bool,
     pub(crate) partials: bool,
@@ -246,7 +244,7 @@ pub(crate) fn fixed<'a>(
     map: &Map,
     label: &'a Label,
     text: Option<&'a Expr>,
-    factor: f64,
+    factors: Factors,
 ) -> Result<Fixed<'a>, String> {
     let fonts = match &label.font {
         Some(Bound::Value(fonts)) => Some(fonts.as_str()),
@@ -319,8 +317,7 @@ pub(crate) fn fixed<'a>(
             Some(Bound::Binding { binding }) => Priority::Binding(binding),
             Some(Bound::Expr(expr)) => Priority::Expr(expr),
         },
-        factor,
-        resolution: classes::resolution_factor(map),
+        factors,
         buffer: label.buffer.unwrap_or(0.0),
         force: label.force == Some(Force::On),
         partials: label.partials.unwrap_or(false),
@@ -378,7 +375,7 @@ mod tests {
         let mut evaluator = Evaluator::new();
         let mut reports = Reports::default();
         let mut diagnostics = Vec::new();
-        let mut binder = classes::Binder {
+        let mut binder = crate::classes::Binder {
             layer: &layer,
             layer_index: 0,
             evaluator: &mut evaluator,
@@ -396,7 +393,8 @@ mod tests {
             angle: Some(p()),
             ..Label::default()
         };
-        let fixed = fixed(&Map::default(), &label, None, 1.0).unwrap_or_else(|why| panic!("{why}"));
+        let fixed = fixed(&Map::default(), &label, None, Factors::new(1.0, 1.0))
+            .unwrap_or_else(|why| panic!("{why}"));
         let bound_label = bind(&fixed, &feature.properties, |_| unreachable!());
         assert_eq!(bound_label.size, f64::from(bind_integer(&read, 1)));
         assert_eq!(bound_label.size, 12.0);

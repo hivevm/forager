@@ -36,8 +36,12 @@ fn fonts_come_from_the_font_set_and_a_label_names_one() {
         Some(Bound::Value("sans,serif".to_owned()))
     );
     let fonts = loaded.document.unwrap().map.fonts;
-    assert_eq!(fonts["sans"], "f/DejaVuSans.ttf", "beside the font set");
-    assert_eq!(fonts["mono"], "f/ttf/mono.ttf");
+    assert_eq!(
+        fonts.get("sans"),
+        Some("f/DejaVuSans.ttf"),
+        "beside the font set"
+    );
+    assert_eq!(fonts.get("mono"), Some("f/ttf/mono.ttf"));
     assert_eq!(fonts.len(), 2);
 }
 
@@ -66,16 +70,24 @@ fn a_font_set_line_is_read_as_ms_load_font_set_reads_it() {
     let loaded = load_files(&[("m.map", "MAP FONTSET 'fonts.txt' END"), ("fonts.txt", set)]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     let fonts = loaded.document.unwrap().map.fonts;
-    let names: Vec<&str> = fonts.keys().map(String::as_str).collect();
+    let names: Vec<&str> = fonts.keys().collect();
     assert_eq!(
         names,
         ["a", "c", "f", "g", long.as_str()],
         "a line led by a tab has no name; a line feed and a carriage return end one line; one \
          without a file is skipped; the separator must fall in the alias buffer's first 63 bytes"
     );
-    assert_eq!(fonts["a"], "other.ttf", "a later line replaces a name");
-    assert_eq!(fonts["f"], "f.ttf", "trimmed by isspace");
-    assert_eq!(fonts["g"], "g\u{a0}", "which takes no Unicode space");
+    assert_eq!(
+        fonts.get("a"),
+        Some("other.ttf"),
+        "a later line replaces a name"
+    );
+    assert_eq!(fonts.get("f"), Some("f.ttf"), "trimmed by isspace");
+    assert_eq!(
+        fonts.get("g"),
+        Some("g\u{a0}"),
+        "which takes no Unicode space"
+    );
 }
 
 #[test]
@@ -105,10 +117,11 @@ fn font_names_match_without_case_and_the_last_path_wins() {
     assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
     let fonts = loaded.document.unwrap().map.fonts;
     assert_eq!(
-        fonts["Sans"], "b.ttf",
-        "the name as first written, the last path"
+        fonts.keys().collect::<Vec<_>>(),
+        ["Sans", "mono"],
+        "the name as first written"
     );
-    assert_eq!(fonts.len(), 2);
+    assert_eq!(fonts.get("Sans"), Some("b.ttf"), "the last path");
 }
 
 #[test]
@@ -144,10 +157,10 @@ fn a_font_set_s_lines_end_as_gdal_ends_them() {
     ];
     let loaded = load_files(&files);
     let fonts = loaded.document.unwrap().map.fonts;
-    let names: Vec<_> = fonts.keys().map(String::as_str).collect();
+    let names: Vec<_> = fonts.keys().collect();
     assert_eq!(names, ["a", "b", "c", "d", "e"]);
-    assert_eq!(fonts["a"], "a.ttf");
-    assert_eq!(fonts["e"], "e.ttf");
+    assert_eq!(fonts.get("a"), Some("a.ttf"));
+    assert_eq!(fonts.get("e"), Some("e.ttf"));
 }
 
 #[test]
@@ -182,4 +195,33 @@ fn a_large_font_set_is_read_in_time_that_grows_with_its_lines() {
     let (loaded, _) = first_label(&[("m.map", map), ("fonts.txt", set)]);
     assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
     assert_eq!(loaded.document.unwrap().map.fonts.len(), count);
+}
+
+#[test]
+fn a_font_list_s_trailing_comma_names_no_font() {
+    // get_face_for_run stops at the list's end, so the empty entry after the comma is none.
+    let files = [
+        (
+            "m.map",
+            "MAP FONTSET 'fonts.txt' LAYER CLASS LABEL FONT 'sans,' END END END END",
+        ),
+        ("fonts.txt", "sans s.ttf\n"),
+    ];
+    let (loaded, _) = first_label(&files);
+    assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
+}
+
+#[test]
+fn an_empty_font_list_names_no_font_to_warn_of_at_load() {
+    // get_face_for_run takes no entry from an empty list; the engine reports the label at render.
+    let files = [
+        (
+            "m.map",
+            "MAP FONTSET 'fonts.txt' LAYER CLASS LABEL FONT '' END END END END",
+        ),
+        ("fonts.txt", "sans s.ttf\n"),
+    ];
+    let (loaded, label) = first_label(&files);
+    assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
+    assert_eq!(label.unwrap().font, Some(Bound::Value(String::new())));
 }

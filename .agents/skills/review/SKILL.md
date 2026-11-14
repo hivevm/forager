@@ -31,10 +31,9 @@ The reviewer runs in a context that did not write the change and is handed only:
 - for each of those ADRs that chose a concept of the catalogue in
   [`propose-adr`](../propose-adr/concepts/README.md), that entry's *Does not fit* and *The rule a
   test decides*: what the tests decide is checked there, and the rest is checked here;
-- the output of the sensors the toolchain ADR names, and of
-  [`scripts/check-all.sh`](../../../scripts/check-all.sh) `--verbose`, whose tests-kept sensor
-  lists the test files deleted and the skip markers added since the base, and whose refactor
-  tests sensor lists each `refactor` commit that changes a test;
+- the output of the sensors the toolchain ADR names, every `scripts/sensor-*.sh` that
+  [`scripts/check-all.sh`](../../../scripts/check-all.sh) runs, as `scripts/check-all.sh
+  --verbose` prints it;
 - for a normalization, its map and its clause table, and the record at the base commit
   ([`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules), rule 5).
 

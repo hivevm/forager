@@ -1,0 +1,6 @@
+{
+  "format": ["rust", "bash"],
+  "path": ["."],
+  "minTokens": 50,
+  "minLines": 5
+}

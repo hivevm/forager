@@ -7,6 +7,7 @@ use forager_label::{
     marker_bounds, metrics, place, placed_at,
 };
 use forager_render::Point;
+use forager_style_ir::LabelMarker;
 
 /// A text 30 pixels wide whose glyphs rise 9 pixels above the baseline and reach 2 below it,
 /// 11 high in all.
@@ -82,7 +83,6 @@ fn a_labelpoly_is_the_text_box_grown_by_1_pixel_whatever_the_labels_buffer() {
         },
         rotation: 0.0,
         buffer: 5,
-        force: false,
     };
     // At UL 4 across and 3 down the text's box is [66, 36, 96, 47].
     assert_eq!(
@@ -150,12 +150,12 @@ fn a_fixed_position_takes_the_offsets_of_the_label_and_the_marker() {
         marker: [5.5, 5.5],
         label: [1, 2],
     };
-    let ul = place(AT, &label(Position::At(Anchor::Ul), offsets, false), |_| {
+    let ul = place(AT, &label(Position::At(Anchor::Ul), offsets), false, |_| {
         true
     })
     .expect("placed");
     assert_eq!(ul.origin, metrics(AT, Anchor::Ul, &TEXT, 6, 7, 0.0, 0).0);
-    let cc = place(AT, &label(Position::At(Anchor::Cc), offsets, false), |_| {
+    let cc = place(AT, &label(Position::At(Anchor::Cc), offsets), false, |_| {
         true
     })
     .expect("placed");
@@ -165,7 +165,7 @@ fn a_fixed_position_takes_the_offsets_of_the_label_and_the_marker() {
         marker: [0.0, 0.0],
         label: [-3, 0],
     };
-    let lr = place(AT, &label(Position::At(Anchor::Lr), offsets, false), |_| {
+    let lr = place(AT, &label(Position::At(Anchor::Lr), offsets), false, |_| {
         true
     })
     .expect("placed");
@@ -176,8 +176,8 @@ fn a_fixed_position_takes_the_offsets_of_the_label_and_the_marker() {
 fn a_fixed_position_that_does_not_fit_is_placed_only_when_forced() {
     let fixed = Position::At(Anchor::Lr);
     let none = Offsets::default();
-    assert_eq!(place(AT, &label(fixed, none, false), |_| false), None);
-    let forced = place(AT, &label(fixed, none, true), |_| false).expect("forced");
+    assert_eq!(place(AT, &label(fixed, none), false, |_| false), None);
+    let forced = place(AT, &label(fixed, none), true, |_| false).expect("forced");
     assert_eq!(forced.anchor, Anchor::Lr);
 }
 
@@ -202,7 +202,7 @@ fn auto_takes_the_first_position_that_fits_in_msdrawlabelcaches_order() {
     };
     // Every position is tried, with the marker's offset, until one fits.
     let mut tried = Vec::new();
-    let placed = place(AT, &label(Position::Auto, offsets, false), |b| {
+    let placed = place(AT, &label(Position::Auto, offsets), false, |b| {
         tried.push(b.bbox);
         tried.len() == 3
     })
@@ -216,22 +216,21 @@ fn auto_takes_the_first_position_that_fits_in_msdrawlabelcaches_order() {
     );
     // None fits: the label is not placed, unless forced, then at the last.
     assert_eq!(
-        place(AT, &label(Position::Auto, offsets, false), |_| false),
+        place(AT, &label(Position::Auto, offsets), false, |_| false),
         None
     );
-    let forced = place(AT, &label(Position::Auto, offsets, true), |_| false);
+    let forced = place(AT, &label(Position::Auto, offsets), true, |_| false);
     assert_eq!(forced.map(|p| p.anchor), Some(Anchor::Lc));
 }
 
 /// A label of [`TEXT`] at `position`, unturned and without a buffer.
-fn label(position: Position, offsets: Offsets, force: bool) -> PointLabel {
+fn label(position: Position, offsets: Offsets) -> PointLabel {
     PointLabel {
         position,
         text: TEXT,
         offsets,
         rotation: 0.0,
         buffer: 0,
-        force,
     }
 }
 
@@ -241,7 +240,15 @@ fn a_labelpoint_marker_is_its_box_about_its_anchor_or_its_turned_corners() {
     // centred (0.5 - 0) * 8 + 10 + 1 = 15 across and (0.5 - 0) * 4 + 20 + 2 = 24 down.
     let at = Point { x: 10.0, y: 20.0 };
     assert_eq!(
-        marker_bounds(at, (8.0, 4.0), [0.0, 0.0], 0.0, [1.0, 2.0]),
+        marker_bounds(
+            at,
+            &LabelMarker {
+                size: (8.0, 4.0),
+                anchor_point: [0.0, 0.0],
+                angle: 0.0,
+                offset: [1.0, 2.0],
+            }
+        ),
         Bounds {
             poly: None,
             bbox: [11.0, 22.0, 19.0, 26.0]
@@ -249,7 +256,15 @@ fn a_labelpoint_marker_is_its_box_about_its_anchor_or_its_turned_corners() {
     );
     // Turned by 90 degrees about its centre, its corners (4, 2), (4, -2), (-4, -2), (-4, 2)
     // become (2, -4), (-2, -4), (-2, 4), (2, 4), moved to the point: a box 4 wide, 8 high.
-    let turned = marker_bounds(at, (8.0, 4.0), [0.5, 0.5], 90.0, [0.0, 0.0]);
+    let turned = marker_bounds(
+        at,
+        &LabelMarker {
+            size: (8.0, 4.0),
+            anchor_point: [0.5, 0.5],
+            angle: 90.0,
+            offset: [0.0, 0.0],
+        },
+    );
     let poly = turned.poly.expect("a turned marker has its corners");
     let want = [
         (12.0, 16.0),

@@ -161,7 +161,7 @@ fn the_functions_follow_mapserver() {
         Ok(40.0)
     );
     // MS_NINT is lrint, which on the x86-64 build at the pin gives LONG_MIN past a long and for
-    // no number; ROUND keeps that long as a double (ADR-0036).
+    // no number; ROUND keeps that long as a double (ADR-0017).
     let long_min = -9_223_372_036_854_775_808.0;
     assert_eq!(number(&call(Op::Round, vec![num(1e19)])), Ok(long_min));
     assert_eq!(number(&call(Op::Round, vec![num(-1e300)])), Ok(long_min));

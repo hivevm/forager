@@ -190,7 +190,7 @@ fn the_fonts_a_label_names_are_read_from_the_base_context() {
 
 #[test]
 fn a_numeric_in_list_reads_its_items_as_atof_does() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // The grammar's `math_exp IN string_exp` compares the number with `atof` of
     // each item, so `0x10` reads 16, as the frontend folds it at load and `expr` reads it.
     let dir = std::env::temp_dir().join(format!("forager-in-hex-{}", std::process::id()));
@@ -372,4 +372,108 @@ fn a_style_naming_an_image_file_draws_it_and_one_missing_or_by_url_draws_nothing
     assert_eq!(image.pixel(30, 30), white, "the name by URL");
     assert_eq!(image.pixel(10, 10), white, "the files that do not exist");
     assert_eq!(image.pixel(30, 10), Some(Rgba::opaque(0, 0, 255)));
+}
+
+#[test]
+fn a_class_style_of_labelcenter_is_warned_of_once_as_the_mapfile_loads_and_renders() {
+    // The engine warns of a line layer's class style of labelcenter, which draws nothing, for a
+    // mapfile as for a style document; the frontend does not warn of it again.
+    let dir = std::env::temp_dir().join(format!("forager-labelcenter-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("centre.map"),
+        r#"MAP
+  EXTENT 0 0 100 100
+  SIZE 101 101
+  LAYER
+    NAME "lines"
+    TYPE LINE
+    STATUS ON
+    CLASS
+      STYLE
+        COLOR 255 0 0
+        GEOMTRANSFORM labelcenter
+      END
+    END
+  END
+END
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("lines.geojson"),
+        r#"{"type": "LineString", "coordinates": [[0, 50], [100, 50]]}"#,
+    )
+    .unwrap();
+    let lines = format!("lines={}", dir.join("lines.geojson").display());
+    let result = Command::new(env!("CARGO_BIN_EXE_forager"))
+        .arg("render")
+        .arg(dir.join("centre.map"))
+        .args(["--source", &lines, "-o", "/dev/null"])
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    let stderr = String::from_utf8(result.stderr).unwrap();
+    assert!(result.status.success(), "{stderr}");
+    let warnings: Vec<_> = stderr.lines().filter(|l| l.contains("warning [")).collect();
+    assert_eq!(warnings.len(), 1, "{stderr}");
+    assert!(
+        warnings[0].contains("centre.map:9:7: warning [geomtransform-not-drawn]"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_label_style_of_a_name_that_names_no_transform_is_drawn_at_the_label_point() {
+    // MapServer gives a label's style of a name that names no transform its default, labelpnt
+    // (docs/semantics/label.md, and the frontend's test of the same name, which cites the C): the
+    // map renders as it does without the GEOMTRANSFORM, the marker drawn at the label's point, and
+    // the load warns of the name once, at its directive.
+    let dir = std::env::temp_dir().join(format!("forager-unknown-name-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("fonts")).unwrap();
+    let sans = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+    std::fs::copy(sans, dir.join("fonts/sans.ttf")).unwrap();
+    std::fs::write(dir.join("fonts.lst"), "sans fonts/sans.ttf\n").unwrap();
+    let map = |transform: &str| {
+        format!(
+            "MAP SIZE 41 41 EXTENT 0 0 40 40 IMAGECOLOR 255 255 255 FONTSET 'fonts.lst'\n\
+             SYMBOL NAME 'circle' TYPE ELLIPSE POINTS 1 1 END FILLED TRUE END\n\
+             LAYER NAME 'p' TYPE POINT STATUS ON FEATURE POINTS 20 20 END END\n\
+             CLASS LABEL FONT 'sans' TEXT 'x' POSITION UR\n\
+             STYLE {transform} SYMBOL 'circle' SIZE 9 COLOR 255 0 0 END\n\
+             END END END END\n"
+        )
+    };
+    let draw = |name: &str, transform: &str| {
+        std::fs::write(dir.join(name), map(transform)).unwrap();
+        let output = dir.join(format!("{name}.png"));
+        let result = Command::new(env!("CARGO_BIN_EXE_forager"))
+            .arg("render")
+            .arg(dir.join(name))
+            .arg("-o")
+            .arg(&output)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8(result.stderr).unwrap();
+        assert!(result.status.success(), "{name}: {stderr}");
+        let image = forager_encode::decode_png(&std::fs::read(&output).unwrap()).unwrap();
+        (image, stderr)
+    };
+    let (unknown, stderr) = draw("foo.map", "GEOMTRANSFORM \"foo\"");
+    let (plain, plain_stderr) = draw("plain.map", "");
+    std::fs::remove_dir_all(&dir).unwrap();
+    let warnings: Vec<_> = stderr.lines().filter(|l| l.contains("warning [")).collect();
+    assert_eq!(warnings.len(), 1, "{stderr}");
+    assert!(
+        warnings[0].contains("foo.map:5:7: warning [unsupported-value]"),
+        "{stderr}"
+    );
+    assert!(!plain_stderr.contains("warning ["), "{plain_stderr}");
+    assert_eq!(
+        unknown.pixel(20, 20),
+        Some(Rgba::opaque(255, 0, 0)),
+        "the marker at the label point"
+    );
+    assert!(unknown == plain, "drawn as without the GEOMTRANSFORM");
 }

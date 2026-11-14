@@ -43,18 +43,22 @@ leaves it as it was read. `loadFeature` reads the block's statements in order:
   error quotes the first 80 characters of the WKT.
 
 A layer with features is drawn from them alone, whatever its `DATA` or `CONNECTION` says, unless a
-`CONNECTIONTYPE GRATICULE` follows its last `FEATURE`, the last `CONNECTIONTYPE` written: each
-`FEATURE` makes the layer inline as `loadLayer` in `src/mapfile.c` reads it, and
-`msInitializeVirtualTable` in `src/maplayer.c` reads no features for a graticule. Those are never
-read: the frontend leaves them out with a warning, so that a layer of the style IR holds features
-only where they are its source. The engine reads a layer's features, whatever its source's kind,
-as the layer's source and reports a source a host binds to such a layer as not read.
+`CONNECTIONTYPE` of `MS_GRATICULE`, `medium` at the pin ([`tokens.md`](tokens.md)), follows its
+last `FEATURE`, the last `CONNECTIONTYPE` written: each `FEATURE` makes the layer inline as
+`loadLayer` in `src/mapfile.c` reads it, and `msInitializeVirtualTable` in `src/maplayer.c` reads
+no features for a graticule. Those are never read: the frontend leaves them out with a warning, so
+that a layer of the style IR holds features only where they are its source. The engine reads a
+layer's features, whatever its source's kind, as the layer's source and reports a source a host
+binds to such a layer as not read.
 The CLI binds no shapefile to it, so its `DATA` is not read. It delivers the features in the order
 they were written, each whose bounds meet the extent drawn, edges included
 (`msINLINELayerNextShape`, `msRectOverlap`); a feature without points has the bounds `-1 -1 -1
--1` that `msInitShape` gives it. A point shape of one point is delivered as a point and any other
-as a multipoint, a line shape of one part as a line and any other as a multi-line, and a polygon
-shape as one polygon of all its parts, as a shapefile's records are.
+-1` that `msInitShape` gives it. `msComputeBounds` folds the points by `MS_MIN` and `MS_MAX`:
+a last vertex of no number makes the bounds no number, which `msRectOverlap` lets through, and an
+earlier one drops the vertices before it, the bounds those of the rest. A point shape of one
+point is delivered as a point and any other as a multipoint, a line shape of one part as a line
+and any other as a multi-line, and a polygon shape as one polygon of all its parts, as a
+shapefile's records are.
 
 **Item names.** A feature's values are named by the layer's first `PROCESSING` whose key is
 `ITEMS`, without regard to case, followed by `=` or `:` (`msLayerGetItems`, GDAL's
@@ -65,7 +69,7 @@ feature has no properties. An expression or a binding finds a name without regar
 the first of two that match (`msLayerGetItemIndex`). `PROCESSING "ITEMS=…"` of a layer without
 features, and every other `PROCESSING` key, is not yet supported and is ignored with a warning.
 
-**Not carried:** the layer's `GEOMTRANSFORM` and `TRANSFORM` on
+**Not carried:** the layer's `TRANSFORM` on
 inline features; and a `FEATURE` keyword inside a `FEATURE`, which `loadFeature` skips (`case
 (FEATURE): break;`, for features loaded from a string).
 

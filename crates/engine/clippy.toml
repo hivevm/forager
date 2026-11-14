@@ -1,0 +1,23 @@
+# Clippy reads this file in place of the workspace's clippy.toml for this crate, one of the three
+# that port MapServer's drawing: the workspace's bans of Q-2, which the test
+# `the_crates_that_port_mapservers_drawing_ban_what_the_workspace_bans` of
+# crates/arch-test/tests/dependencies.rs holds equal to that file's, and `min` and `max` of `f64`
+# and `f32`, which return the other operand where one is no number, so a fold or a bound drops a
+# NaN without a trace. `ms_min` and `ms_max` of style-ir's `c` decide it by their operands' order.
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "iteration order is random; use BTreeMap (Q-2)" },
+  { path = "std::collections::HashSet", reason = "iteration order is random; use BTreeSet (Q-2)" },
+  { path = "std::hash::RandomState", reason = "a random source (Q-2)" },
+  { path = "std::time::SystemTime", reason = "a clock (Q-2)" },
+  { path = "std::time::Instant", reason = "a clock (Q-2)" },
+]
+disallowed-methods = [
+  { path = "std::hash::RandomState::new", reason = "a random source (Q-2)" },
+  { path = "std::time::SystemTime::now", reason = "a clock (Q-2)" },
+  { path = "std::time::Instant::now", reason = "a clock (Q-2)" },
+  { path = "f64::hypot", reason = "the platform's libm, which differs between targets; IEEE's sqrt of the sum of squares is exact everywhere (Q-2)" },
+  { path = "f64::min", reason = "drops a NaN operand; ms_min, whose operand order decides it" },
+  { path = "f64::max", reason = "drops a NaN operand; ms_max, whose operand order decides it" },
+  { path = "f32::min", reason = "drops a NaN operand; ms_min, whose operand order decides it" },
+  { path = "f32::max", reason = "drops a NaN operand; ms_max, whose operand order decides it" },
+]

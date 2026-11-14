@@ -4,8 +4,9 @@
 //! draws. It does no I/O: the engine loads the font files and hands their bytes here. It is the
 //! one crate that depends on skrifa.
 
+// The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
-// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0036).
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0017).
 #![deny(clippy::cast_possible_truncation)]
 
 mod cache;
@@ -15,7 +16,8 @@ mod place;
 mod size;
 
 pub use crate::cache::{
-    MAX_LABELS, MAX_PRIORITY, Member, Members, draw_label_cache, walk_label_cache,
+    MAX_LABELS, MAX_PRIORITY, Member, Members, cached_marker_box, draw_label_cache, marker_offset,
+    walk_label_cache,
 };
 pub use crate::font::{Attempt, Font, Unusable, attempts};
 pub use crate::layout::{Align, Drawn, Glyphs, Layout, LineError, TextPath, lines};

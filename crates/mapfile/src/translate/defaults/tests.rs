@@ -229,6 +229,18 @@ fn a_default_named_by_many_expressions_counts_each_time_toward_one_limit_reporte
     assert_eq!(codes(&loaded), Vec::<&str>::new());
 }
 
+/// A budget already past its bound refuses every later substitution itself, so a caller that
+/// does not ask `passed()` first fails closed: the error again, not the default substituted.
+#[test]
+fn a_substitution_on_a_budget_past_its_bound_is_refused() {
+    // Verifies: Q-9
+    let defaults = super::Defaults([("v".to_owned(), "x".to_owned())].into());
+    let mut added = crate::budget::Budget::new(1);
+    assert!(added.charge(2), "the charge that passes the bound");
+    let refused = defaults.applied("%v%", &mut added).unwrap_err();
+    assert_eq!((refused.error, refused.code), (true, "mapfile-too-large"));
+}
+
 /// A `%` that opens no tag leaves the `%` after it free to open one, as msCaseReplaceSubstring,
 /// looking for the whole tag, finds it wherever it stands.
 #[test]
@@ -322,5 +334,18 @@ fn a_pair_skipped_in_web_or_a_class_is_a_warning_too() {
         r#"MAP LAYER CLASS VALIDATION "default_b" END END END END"#,
     ] {
         assert_eq!(codes(&load(text)), ["unsupported-value"], "{text}");
+    }
+}
+
+/// loadHashTable takes a key only as a string token and fails the load on any other in its
+/// `default:` branch, and reads the value with getString, which fails on a keyword
+/// (src/mapfile.c:2473-2505, 260-274): a pair of a bare keyword is reported.
+#[test]
+fn a_pair_of_a_bare_keyword_is_reported() {
+    for validation in [r#"name "1""#, r#""default_a" data"#] {
+        let loaded = load(&format!(
+            "MAP LAYER VALIDATION {validation} END FILTER ([v] = 1) END END"
+        ));
+        assert_eq!(codes(&loaded), ["unsupported-value"], "{validation}");
     }
 }

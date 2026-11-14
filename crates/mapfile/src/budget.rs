@@ -10,68 +10,48 @@ pub(crate) struct Budget {
     bound: usize,
 }
 
-/// What a charge did to a [`Budget`].
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Charged {
-    /// The count stays within the bound.
-    Within,
-    /// This charge passed the bound: the one to report.
-    PassedNow,
-    /// The bound was passed before; nothing is charged.
-    Passed,
-}
-
 impl Budget {
     pub(crate) const fn new(bound: usize) -> Self {
         Self { spent: 0, bound }
     }
 
-    /// Whether a charge has passed the bound.
+    /// Whether a charge has passed the bound: what a caller asks before the work it would charge.
     pub(crate) fn passed(&self) -> bool {
         self.spent > self.bound
     }
 
-    /// Charges `amount`, unless the bound was passed before. The count stops one past the bound.
-    pub(crate) fn charge(&mut self, amount: usize) -> Charged {
+    /// Charges `amount`, and answers whether this charge is the one that passed the bound, the
+    /// one to report: once, as the count stops one past the bound and a later charge adds nothing.
+    #[must_use]
+    pub(crate) fn charge(&mut self, amount: usize) -> bool {
         if self.passed() {
-            return Charged::Passed;
+            return false;
         }
         self.spent = self.spent.saturating_add(amount);
         if self.passed() {
             self.spent = self.bound.saturating_add(1);
-            return Charged::PassedNow;
+            return true;
         }
-        Charged::Within
-    }
-
-    /// Whether `len` bytes fit within the bound on their own, as one expression with its defaults
-    /// must.
-    pub(crate) fn admits(&self, len: usize) -> bool {
-        len <= self.bound
-    }
-
-    /// The bound.
-    pub(crate) fn bound(&self) -> usize {
-        self.bound
+        false
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Budget, Charged};
+    use super::Budget;
 
     #[test]
     fn a_budget_reports_the_one_charge_that_passes_it_and_stops() {
         // Verifies: Q-9
         let mut budget = Budget::new(10);
-        assert_eq!(budget.charge(10), Charged::Within);
+        assert!(!budget.charge(10));
         assert!(!budget.passed());
-        assert_eq!(budget.charge(1), Charged::PassedNow);
+        assert!(budget.charge(1), "the charge that passes the bound");
         assert!(budget.passed());
-        assert_eq!(budget.charge(usize::MAX), Charged::Passed);
-        assert_eq!(budget.charge(0), Charged::Passed);
+        assert!(!budget.charge(usize::MAX), "reported once");
+        assert!(!budget.charge(0));
+        assert!(budget.passed());
         let mut budget = Budget::new(10);
-        assert_eq!(budget.charge(usize::MAX), Charged::PassedNow, "no wrap");
-        assert!(budget.admits(10) && !budget.admits(11));
+        assert!(budget.charge(usize::MAX), "no wrap");
     }
 }

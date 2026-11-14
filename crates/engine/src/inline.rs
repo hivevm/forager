@@ -23,7 +23,7 @@ use forager_ports::{
     Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
     Table, Value,
 };
-use forager_style_ir::c::rect_overlap;
+use forager_style_ir::c::{ms_compute_bounds, rect_overlap};
 use forager_style_ir::{Extent, InlineFeature, Layer, ShapeType};
 
 /// Whether `layer` is read from its inline features (ADR-0018): it has some, whatever its
@@ -95,32 +95,18 @@ impl FeatureSource for InlineSource<'_> {
     }
 }
 
-/// The bounds `msComputeBounds` gives a shape: those of its points, or, of a shape without any,
-/// the `-1` of each side that `msInitShape` leaves.
+/// The bounds `msComputeBounds` gives a shape, `msINLINELayerNextShape` computing them
+/// (`src/maplayer.c:2577`): those of its points, or, of a shape without any, the `-1` of each side
+/// that `msInitShape` leaves.
 fn bounds(feature: &InlineFeature) -> Extent {
-    let mut points = feature.parts.iter().flatten();
-    let Some(&[x, y]) = points.next() else {
-        return Extent {
-            min_x: -1.0,
-            min_y: -1.0,
-            max_x: -1.0,
-            max_y: -1.0,
-        };
-    };
-    points.fold(
-        Extent {
-            min_x: x,
-            min_y: y,
-            max_x: x,
-            max_y: y,
-        },
-        |e, &[x, y]| Extent {
-            min_x: e.min_x.min(x),
-            min_y: e.min_y.min(y),
-            max_x: e.max_x.max(x),
-            max_y: e.max_y.max(y),
-        },
-    )
+    let [min_x, min_y, max_x, max_y] =
+        ms_compute_bounds(feature.parts.iter().flatten().copied()).unwrap_or([-1.0; 4]);
+    Extent {
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+    }
 }
 
 /// An extent as `[min x, min y, max x, max y]`, which `msRectOverlap`'s port reads.
@@ -222,6 +208,25 @@ mod tests {
         let ids = |extent| -> Vec<u64> { query(&source, extent).iter().map(|f| f.id).collect() };
         assert_eq!(ids([0.0, 0.0, 10.0, 10.0]), [0, 2]);
         assert_eq!(ids([-2.0, -2.0, 0.0, 0.0]), [3]);
+    }
+
+    #[test]
+    fn a_vertex_of_no_number_bounds_a_feature_as_ms_compute_bounds_does() {
+        // msComputeBounds, src/mapprimitive.cpp:260-286, folds by MS_MIN and MS_MAX: a last vertex
+        // of no number leaves the bounds no number, which msRectOverlap lets through; one before
+        // the last is forgotten with every vertex before it, the bounds those of the rest.
+        let nan = f64::NAN;
+        let features = [
+            feature(ShapeType::Line, &[&[[50.0, 50.0], [nan, nan]]]),
+            feature(
+                ShapeType::Line,
+                &[&[[0.0, 0.0], [nan, nan], [50.0, 50.0], [60.0, 60.0]]],
+            ),
+        ];
+        let source = InlineSource::new(&features);
+        let ids = |extent| -> Vec<u64> { query(&source, extent).iter().map(|f| f.id).collect() };
+        assert_eq!(ids([0.0, 0.0, 10.0, 10.0]), [0]);
+        assert_eq!(ids([55.0, 55.0, 70.0, 70.0]), [0, 1]);
     }
 
     #[test]
