@@ -10,8 +10,8 @@
 G-9 asks that the same input rendered natively and on `wasm32-unknown-unknown` yields
 bit-identical RGBA buffers; it backs Q-2, and the specification's *Strategy* ends each phase with
 it green. The browser bundle is built for that target with wasm-bindgen (`crates/bindings-wasm`,
-`scripts/build-web.sh`), but nothing runs it outside a browser, and no test runs a browser: a
-browser test waits for G-14, as *Out of scope* below says.
+`scripts/build-web.sh`), but nothing runs it outside a browser, and no test runs a browser. A
+browser test, which G-14 waits for, is out of scope below.
 [ADR-0009](0009-dev-container.md) installs no Node in the dev container, and a test is to run there
 as on CI.
 
@@ -24,7 +24,7 @@ The candidates, read on 2026-11-07: wasmi 2.0.0 (an interpreter, MIT OR Apache-2
 small tree, two published security audits), wasmtime 50.0.1 (Cranelift, Apache-2.0 WITH
 LLVM-exception, which `deny.toml` does not admit, a heavy build, a new major version about every
 month), wasmer 7.5.0 (several compiler backends, the largest tree), and Node with wasm-bindgen's
-glue (no Node in the container, [ADR-0009](0009-dev-container.md); no browser test before G-14).
+glue (no Node in the container, [ADR-0009](0009-dev-container.md); a browser test out of scope).
 None of the Rust runtimes runs wasm-bindgen's glue without stubbing its imports, which follow
 wasm-bindgen's internals.
 
@@ -61,9 +61,8 @@ which G-14 waits for.
   monthly major versions bring advisory churn, for speed this test does not need.
 - **wasmer** — the heaviest tree, and nothing this test needs beyond wasmi.
 - **Node running the wasm-bindgen bundle** — tests the glue as shipped, but supersedes
-  [ADR-0009](0009-dev-container.md) and takes up what [ADR-0007](0007-rust-toolchain.md) left out,
-  and the module has no file system, so every case would be embedded and the native buffers passed
-  between processes.
+  [ADR-0009](0009-dev-container.md), which leaves Node out, and the module has no file system, so
+  every case would be embedded and the native buffers passed between processes.
 - **Stubbing wasm-bindgen's imports in a Rust runtime** — no new exports, but bound to
   wasm-bindgen's internals, which change with its versions. The exports chosen call none of the
   imports, so a stub that traps stands for each, whatever wasm-bindgen imports.

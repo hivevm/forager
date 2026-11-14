@@ -183,15 +183,15 @@ Tests cite this ADR with `Verifies:`:
   grid must find across cells (a box that is not a number, a box larger than its cell), and the
   bounded visits and memory of piled, large, and inside-out boxes;
 - in `crates/label/tests/cache_bounds.rs`, `MAX_LABELS` labels drawn beyond the image ask for as
-  many boxes as the same labels unmoved within the image, exactly for an offset of whole cells of
-  the finest level and within a tolerance for others. An offset of 1,000,000 px, a whole number of
-  such cells, asks for exactly as many. An offset of 3,000 px, as one within the image, moves the
-  count by up to ±10 % either way with the spacing of the points; at the two spacings the test
-  tries, it asks for no more. Where their points stand 3.4 px apart over the image's upper left,
-  they ask for fewer than 12 boxes per label. They allocate under 64 bytes per label at the peak.
-  The labels are offset right and down, and left and up, with `PARTIALS TRUE`, from points spread
-  over the whole image and over its upper left. Those of the upper left offset by 3,000 px stay
-  within the image;
+  many boxes as the same labels unmoved within the image. They ask for exactly as many for an offset
+  of whole cells of the finest level, and within a tolerance for others. An offset of 1,000,000 px
+  is a whole number of such cells. An offset of 3,000 px is not. Like an offset within the image, it
+  moves the count either way with the spacing of the points. Measured on 2026-11-13, it moved it by
+  up to ±10 %. At the two spacings the test tries, it asks for no more. Where the points stand 3.4
+  px apart over the image's upper left, the labels ask for fewer than 12 boxes each. They allocate
+  under 64 bytes per label at the peak. The labels are offset right and down, and left and up, with
+  `PARTIALS TRUE`, from points spread over the whole image and over its upper left. Those of the
+  upper left offset 3,000 px right and down stay within the image;
 - in `crates/label/tests/cache.rs`, two labels a level's span apart, and labels at an infinite
   coordinate, meet as `msRectOverlap` decides;
 - in `crates/label/tests/cache_pairwise.rs`, the grid's outcome against MapServer's pairwise test

@@ -98,7 +98,8 @@ Only the mapfile frontend translates it from MapServer's text.
   - `text`, for a computed `smoothsia` preprocessing;
   - `fromtext`, for a shape `fromtext` reads from a text;
   - `literal`, for an operation of literals that folds to no finite JSON number, a `%` by 0 among
-    them, and for a single literal past a double, such as `1e999`, which `atof` reads as infinite;
+    them. A single literal past a double, such as `1e999`, which `atof` reads as infinite, is one
+    too;
   - `syntax`, for an expression `shape_exp` does not parse, a `/` by 0 among them.
 
   A syntax error takes precedence: MapServer refuses the whole expression, so an expression with a
