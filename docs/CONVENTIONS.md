@@ -107,8 +107,9 @@ skimmed. The design revision drops what prevented nothing
   bounded.
 - **A minimum or maximum over values that may be NaN decides the NaN first** — `ms_min` and
   `ms_max` hand on their second operand where one is no number, so the operand that may be NaN
-  goes first unless the port keeps MapServer's order; `f64::min` and `f64::max`, refused only in
-  `engine`, `label`, and `symbolize`, drop it silently elsewhere.
+  goes first and is dropped, as the maintainer kept it on 2026-11-14, unless the port keeps
+  MapServer's order; `f64::min` and `f64::max`, refused only in `engine`, `label`, and
+  `symbolize`, drop it silently elsewhere.
 - **An ADR that decides how code is written is tried against the workspace's lints before it is
   proposed** — an attribute, an export, or a pattern it names is compiled once under
   `[workspace.lints]` and the ADRs that bind the crate, because ADR-0034 first decided exports of
