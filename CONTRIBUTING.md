@@ -60,6 +60,7 @@ crates/               # the crates, one per responsibility: style-ir, mapfile, e
 rust-toolchain.toml   # the pinned Rust toolchain (ADR-0007)
 clippy.toml           # clippy's configuration for the workspace
 deny.toml             # cargo-deny: licences, advisories, sources (ADR-0011)
+.jscpd.json           # jscpd's formats, paths, and minimum clone size for sensor-duplication.sh
 scripts/check-all.sh  # runs the checks, sensors, self-tests, and the Rust build, as the hooks and CI do
 scripts/check-*.sh    # checks: each fails on what breaks a rule
 scripts/sensor-*.sh   # sensors: report for the reviewer; sensor-repo-settings.sh runs by hand
