@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/sensor-duplication.sh. Verifies: ADR-draft-sensors-and-duplication
+# Self-test of scripts/sensor-duplication.sh. Verifies: ADR-0038
 #
 # Each case builds a throwaway git repository under a temporary directory with the repository's
 # own .jscpd.json and tracked Rust or bash files, runs the sensor against it with the jscpd on

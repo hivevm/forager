@@ -4,7 +4,7 @@
 # the version of the wasm-bindgen crate in Cargo.lock, which the generated glue must match; and
 # ShellCheck at the version scripts/install-shellcheck.sh pins, for the shell lint (ADR-0007); and
 # jscpd at the version scripts/install-jscpd.sh pins, for the duplication sensor
-# (ADR-draft-sensors-and-duplication). A tool already at its version is skipped. The Dev Container
+# (ADR-0038). A tool already at its version is skipped. The Dev Container
 # runs this after creation (ADR-0009) and CI before the build, with ~/.cargo/bin cached.
 #
 # Usage: bash scripts/install-tools.sh

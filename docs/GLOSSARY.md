@@ -102,7 +102,7 @@ to invent.
 - **Transform tree** — A `GEOMTRANSFORM` expression of a layer or a class's style in the style
   IR: a tree of its shape functions and their numbers in CQL2-JSON's shape, or `not_drawn` with the
   reason the engine does not draw it, translated by the mapfile frontend
-  (ADR-draft-typed-geomtransform; [`semantics/style-symbol.md`](semantics/style-symbol.md)).
+  (ADR-0037; [`semantics/style-symbol.md`](semantics/style-symbol.md)).
   _Avoid:_ shape expression, geometry expression.
 - **Viewport** — The part of a map that is drawn: an image size and an extent. A page asks the WASM
   bindings for one, which overrides the mapfile's `SIZE` and `EXTENT`.

@@ -1942,7 +1942,7 @@ fn codes(rendered: &Rendered) -> Vec<&str> {
 
 #[test]
 fn a_layer_of_a_not_drawn_transform_draws_nothing_and_warns_its_reason() {
-    // Verifies: ADR-draft-typed-geomtransform
+    // Verifies: ADR-0037
     // MapServer applies the layer's GEOMTRANSFORM to each shape msLayerNextShape reads; simplify
     // needs GEOS, which Forager has not: the layer draws nothing, with the warning naming the
     // reason.

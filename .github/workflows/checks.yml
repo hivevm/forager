@@ -3,7 +3,7 @@ name: Checks
 # Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed but
 # ShellCheck, which the shell job installs at the version scripts/install-shellcheck.sh pins
 # (ADR-0007), jscpd, which the sensors job installs at the version scripts/install-jscpd.sh pins
-# for the duplication sensor (ADR-draft-sensors-and-duplication), and the toolchain of the rust
+# for the duplication sensor (ADR-0038), and the toolchain of the rust
 # job. scripts/check-all.sh is the local equivalent;
 # check 9 of scripts/check-docs.sh holds its list, the jobs of this workflow, and the required
 # checks named in CONTRIBUTING.md together. Each job runs a check after its own self-test, and
@@ -201,7 +201,7 @@ jobs:
       - name: Self-test the repository settings sensor
         run: bash scripts/test-sensor-repo-settings.sh
       # The duplication sensor runs jscpd at the version scripts/install-jscpd.sh pins
-      # (ADR-draft-sensors-and-duplication).
+      # (ADR-0038).
       - name: Install jscpd at its pinned version
         run: |
           bash scripts/install-jscpd.sh

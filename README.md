@@ -45,7 +45,7 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml); rustup installs it on
 first use. [`scripts/install-tools.sh`](scripts/install-tools.sh) installs it with the cargo
 tools the checks need and the release binaries of ShellCheck and jscpd, and the Dev Container runs
-it after creation (ADR-0007, ADR-0009, ADR-draft-sensors-and-duplication).
+it after creation (ADR-0007, ADR-0009, ADR-0038).
 
 - **Build:** `cargo build --workspace`
 - **Test:** `cargo test --workspace`

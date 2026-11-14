@@ -851,7 +851,7 @@ fn open_strings(schema: &Value, defs: &Map<String, Value>) -> Vec<String> {
 
 #[test]
 fn the_transform_tree_and_a_styles_transform_hold_no_text_of_the_mapfile() {
-    // Verifies: ADR-draft-typed-geomtransform
+    // Verifies: ADR-0037
     // Every string the schemas of the transform tree and of a style's transform admit is a value
     // of a closed enum, so the tree can hold no text a mapfile wrote.
     let derived: Value = serde_json::from_str(&derived()).unwrap();

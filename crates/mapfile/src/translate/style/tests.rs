@@ -716,7 +716,7 @@ fn a_bare_keyword_is_no_symbol_name_and_a_quoted_one_is() {
 
 #[test]
 fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load() {
-    // Verifies: ADR-draft-typed-geomtransform
+    // Verifies: ADR-0037
     // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION) keeps the expression; the engine reports
     // it as it draws the layer, so the load does not, but for a syntax error, at its place.
     let (loaded, style) = first_style(

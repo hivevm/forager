@@ -258,7 +258,7 @@ pub struct Layer {
     /// counted once their class is found, are not drawn, nor their labels. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_features: Option<u32>,
-    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-draft-typed-geomtransform), which
+    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-0037), which
     /// replaces the shape of each feature that passes the layer's filter before it is classed and
     /// drawn, as MapServer transforms each shape it reads. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -677,7 +677,7 @@ pub enum GeomTransform {
     /// polygon layer draws nothing at.
     #[serde(rename = "labelcenter")]
     LabelCenter,
-    /// An expression of shape functions, its transform tree (ADR-draft-typed-geomtransform),
+    /// An expression of shape functions, its transform tree (ADR-0037),
     /// which the engine does not draw on a class's style: a class's style of it in a line or a
     /// polygon layer draws nothing and is reported, its class's other styles drawn as before; a
     /// point layer draws the style at its points, as it draws every style whatever its

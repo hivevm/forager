@@ -36,7 +36,7 @@ fn round_trip(tree: &TransformTree) -> String {
 
 #[test]
 fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
-    // Verifies: ADR-draft-typed-geomtransform
+    // Verifies: ADR-0037
     let cases = [
         (
             TransformTree::Drawn(TransformShape::Shape),
@@ -94,7 +94,7 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
 
 #[test]
 fn every_not_drawn_reason_reads_and_writes_by_its_name() {
-    // Verifies: ADR-draft-typed-geomtransform
+    // Verifies: ADR-0037
     let reasons = [
         (NotDrawn::Buffer, "buffer"),
         (NotDrawn::Centerline, "centerline"),

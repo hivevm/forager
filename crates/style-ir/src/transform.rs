@@ -1,5 +1,5 @@
 //! The transform tree: a `GEOMTRANSFORM` expression of a layer or of a class's style as a typed
-//! tree of its shape functions, serialized in the shape of CQL2-JSON (ADR-draft-typed-geomtransform).
+//! tree of its shape functions, serialized in the shape of CQL2-JSON (ADR-0037).
 //! The mapfile frontend alone translates MapServer's text into it; the tree holds no text of the
 //! mapfile, and a transform the engine does not draw is the whole tree `{"not_drawn": reason}`.
 

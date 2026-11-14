@@ -34,7 +34,7 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0015](adr/0015-expressions-as-cql2.md)), its `GEOMTRANSFORM` expressions, of a layer and
   of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
   no text of the mapfile and is read to the same nesting bound (`transform.rs`,
-  ADR-draft-typed-geomtransform), the diagnostics with their source spans, and the
+  ADR-0037), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
   class's `Style` may leave it out, a label's `Style<LabelTransform>` always names `labelpoint`,
@@ -104,7 +104,7 @@ golden path and the test pattern an agent copies from are named here.
   (`expression.rs`), which also reads a `GEOMTRANSFORM` expression of a layer or a style into its
   transform tree, its operations without `[map_cellsize]` folded, and every node and operator
   counted against the nesting bound before it recurses deeper (`expression/transform.rs`,
-  ADR-draft-typed-geomtransform, Q-9), and resolves
+  ADR-0037, Q-9), and resolves
   every other `init=` through the host's projection resolver. A load reports at most a thousand
   diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
   carries means is described per parameter under `docs/semantics/`.
@@ -122,7 +122,7 @@ golden path and the test pattern an agent copies from are named here.
   ADR-0018), replaces the shape of each feature that passes the layer's filter by the layer's
   `GEOMTRANSFORM` through `symbolize`, up to the first feature past its `MAXFEATURES`, and draws
   nothing of a layer whose transform tree is `not_drawn` or fails, with a warning (`classes.rs`,
-  ADR-draft-typed-geomtransform), draws each feature that passes the layer's
+  ADR-0037), draws each feature that passes the layer's
   filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
   the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
   bound and computed

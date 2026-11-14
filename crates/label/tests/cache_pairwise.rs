@@ -597,7 +597,7 @@ fn far(rng: &mut Rng, mut member: Member) -> (Member, bool) {
 
 #[test]
 fn the_cache_draws_what_the_pairwise_test_draws_on_labels_spans_of_the_image_away() {
-    // Verifies: ADR-draft-label-cache-edge-cells
+    // Verifies: ADR-0039
     // The grid wraps around the image, so labels several spans of it away share its cells with
     // labels near it; the pairs that meet must still be found, those that do not still not.
     let mut rng = Rng(FAR_SEED);

@@ -26,7 +26,7 @@
 //! out where a drawn label of the same text lies within its minimum distance.
 //!
 //! The tests are MapServer's, pair by pair; which pairs are tested is bounded by a loose grid
-//! that wraps around the image (Q-9, ADR-draft-label-cache-edge-cells), so that labels drawn
+//! that wraps around the image (Q-9, ADR-0039), so that labels drawn
 //! beyond it cost what labels within it do: every marker and every drawn label is held once by its
 //! box, and a test visits each entry near its box at most once, and none that cannot meet it by
 //! lying inside out along the same axis. Where a member has a `MINDISTANCE`, a drawn label with a
@@ -493,7 +493,7 @@ fn extent(min: f64, max: f64) -> (f64, f64, bool) {
 /// Entries by where their boxes lie, so that a test visits only the entries that can meet its
 /// box, each once, and each entry is held once (Q-9).
 ///
-/// It is a loose grid of levels that wraps around the image (ADR-draft-label-cache-edge-cells):
+/// It is a loose grid of levels that wraps around the image (ADR-0039):
 /// level `k` has square cells of side `64 · 2^k`, as many as cover the image, its far edge
 /// included, up to the level of one cell over the image. A coordinate's cell is taken modulo the
 /// level's columns or rows, wherever it lies, so labels past the image spread over the cells as

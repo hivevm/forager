@@ -291,7 +291,7 @@ fn labels_far_apart_and_far_outside_the_image_meet_as_near_ones_do() {
 
 #[test]
 fn labels_a_span_of_the_grid_apart_or_at_infinity_meet_as_their_boxes_do() {
-    // Verifies: ADR-draft-label-cache-edge-cells
+    // Verifies: ADR-0039
     // The grid wraps around the image: on 200 by 100 pixels its finest cells, of 64, repeat every
     // 4 columns and 2 rows, 256 and 128 pixels. Labels that far apart share a cell and do not
     // meet; labels near one another that far from the image meet.

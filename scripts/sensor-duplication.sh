@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Sensor: duplication (ADR-draft-sensors-and-duplication).
+# Sensor: duplication (ADR-0038).
 #
 # Runs jscpd on the Rust and bash files git tracks, and reports each clone with its two places,
 # then jscpd's table of the files, lines, and tokens read per format. The sensor names jscpd every

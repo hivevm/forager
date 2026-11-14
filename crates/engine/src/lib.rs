@@ -819,7 +819,7 @@ fn labelled<'a>(selected: &'a [Selected<'a>]) -> Vec<labels::Labelled<'a>> {
 
 /// Whether the layer of `selector` is drawn after its `GEOMTRANSFORM`: its `features`
 /// transformed, `[map_cellsize]` at `cellsize`, where it has one; none drawn, with a warning,
-/// where its transform tree is `not_drawn` or fails (ADR-draft-typed-geomtransform).
+/// where its transform tree is `not_drawn` or fails (ADR-0037).
 fn transformed(
     selector: &mut Selector<'_, '_>,
     mode: RenderMode,
@@ -842,7 +842,7 @@ fn transformed(
 }
 
 /// The warning that `layer` draws nothing, its `GEOMTRANSFORM` a transform tree of the reason
-/// `reason` (ADR-draft-typed-geomtransform). MapServer evaluates a function the tree has no node
+/// `reason` (ADR-0037). MapServer evaluates a function the tree has no node
 /// for through GEOS, or a JavaScript engine, and fails on a syntax error or a binding where it
 /// makes no number; Forager draws none of the layer, and the rest of the map.
 fn transform_not_drawn(layer: &Layer, reason: NotDrawn) -> Diagnostic {
