@@ -1,4 +1,4 @@
-# ADR-draft-label-cache-edge-cells: The label cache tests collisions over a grid that wraps around the image, with MapServer's outcome, and holds at most 100,000 labels a render
+# ADR-0039: The label cache tests collisions over a grid that wraps around the image, with MapServer's outcome, and holds at most 100,000 labels a render
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-13

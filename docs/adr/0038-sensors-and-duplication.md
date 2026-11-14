@@ -1,4 +1,4 @@
-# ADR-draft-sensors-and-duplication: The toolchain is pinned stable Rust with its cargo tools, the wasm-bindgen CLI, and the ShellCheck and jscpd release binaries, installed by `scripts/install-tools.sh` and run by the checks, with every sensor `scripts/check-all.sh` runs
+# ADR-0038: The toolchain is pinned stable Rust with its cargo tools, the wasm-bindgen CLI, and the ShellCheck and jscpd release binaries, installed by `scripts/install-tools.sh` and run by the checks, with every sensor `scripts/check-all.sh` runs
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-13

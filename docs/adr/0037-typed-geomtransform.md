@@ -1,4 +1,4 @@
-# ADR-draft-typed-geomtransform: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, translated by the mapfile frontend
+# ADR-0037: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, translated by the mapfile frontend
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-13
