@@ -553,3 +553,84 @@ fn the_cache_draws_what_the_pairwise_test_draws_on_arbitrary_labels() {
     // The inputs draw labels and leave labels out, so the comparison decides something.
     assert!(drawn > INPUTS && drawn < INPUTS * 8, "{drawn} labels drawn");
 }
+
+/// The seed of the inputs some of whose labels lie spans of the image away from it.
+const FAR_SEED: u64 = 0x2026_1114_0025;
+
+/// `member` moved, in half the cases along each axis, by 1 to 4 spans of the image to either side
+/// and a remainder that is no whole cell: its point, its marker's box, and its labelpoint
+/// marker's bounds alike, so that it stands as it stood, far from the image. Whether it moved.
+fn far(rng: &mut Rng, mut member: Member) -> (Member, bool) {
+    let mut along = |span: u32| {
+        if rng.chance(50) {
+            return 0.0;
+        }
+        let k = 1.0 + rng.below(4) as f64;
+        let sign = if rng.chance(50) { 1.0 } else { -1.0 };
+        sign * k * f64::from(span) + rng.range(1.0, 63.0)
+    };
+    let (dx, dy) = (along(SIZE.0), along(SIZE.1));
+    let shift = |b: &mut [f64; 4]| {
+        b[0] += dx;
+        b[1] += dy;
+        b[2] += dx;
+        b[3] += dy;
+    };
+    member.point = Point {
+        x: member.point.x + dx,
+        y: member.point.y + dy,
+    };
+    if let Some(marker) = member.marker.as_mut() {
+        shift(marker);
+    }
+    if let Some(bounds) = member.label_marker.as_mut() {
+        shift(&mut bounds.bbox);
+        for p in bounds.poly.iter_mut().flatten() {
+            *p = Point {
+                x: p.x + dx,
+                y: p.y + dy,
+            };
+        }
+    }
+    (member, dx != 0.0 || dy != 0.0)
+}
+
+#[test]
+fn the_cache_draws_what_the_pairwise_test_draws_on_labels_spans_of_the_image_away() {
+    // Verifies: ADR-draft-label-cache-edge-cells
+    // The grid wraps around the image, so labels several spans of it away share its cells with
+    // labels near it; the pairs that meet must still be found, those that do not still not.
+    let mut rng = Rng(FAR_SEED);
+    let (mut drawn, mut drawn_far) = (0, 0);
+    for input in 0..INPUTS {
+        let count = 1 + rng.below(16) as usize;
+        let mut moved = Vec::with_capacity(count);
+        let members = (0..count)
+            .map(|_| {
+                let (member, text) = member(&mut rng);
+                let (member, away) = far(&mut rng, member);
+                moved.push(away);
+                (member, text)
+            })
+            .collect();
+        let gutter = if rng.chance(50) {
+            0
+        } else {
+            rng.below(41) as u32
+        };
+        let cache = Cache(members, gutter);
+        let expected = pairwise(&cache);
+        assert_eq!(
+            through_cache(&cache),
+            expected,
+            "input {input} of seed {FAR_SEED:#x}: {:?}",
+            cache.0
+        );
+        drawn += expected.len();
+        drawn_far += expected.iter().filter(|(i, _)| moved[*i]).count();
+    }
+    // Labels far from the image are drawn and left out among the others, so the comparison
+    // decides something for them.
+    assert!(drawn > INPUTS && drawn < INPUTS * 8, "{drawn} labels drawn");
+    assert!(drawn_far > INPUTS, "{drawn_far} labels drawn far away");
+}

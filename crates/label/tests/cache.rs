@@ -290,6 +290,46 @@ fn labels_far_apart_and_far_outside_the_image_meet_as_near_ones_do() {
 }
 
 #[test]
+fn labels_a_span_of_the_grid_apart_or_at_infinity_meet_as_their_boxes_do() {
+    // Verifies: ADR-draft-label-cache-edge-cells
+    // The grid wraps around the image: on 200 by 100 pixels its finest cells, of 64, repeat every
+    // 4 columns and 2 rows, 256 and 128 pixels. Labels that far apart share a cell and do not
+    // meet; labels near one another that far from the image meet.
+    let partial = |x, y| with(at(x, y), |m, _| m.partials = true);
+    assert_eq!(
+        drawn(vec![partial(50.0, 50.0), partial(306.0, 50.0)]),
+        [(1, Anchor::Cc), (0, Anchor::Cc)]
+    );
+    assert_eq!(
+        drawn(vec![partial(50.0, 50.0), partial(50.0, 178.0)]),
+        [(1, Anchor::Cc), (0, Anchor::Cc)]
+    );
+    assert_eq!(
+        drawn(vec![partial(-2000.0, -900.0), partial(-1990.0, -895.0)]),
+        [(1, Anchor::Cc)]
+    );
+    // At an infinite coordinate, or one past a 64-bit cell index, msRectOverlap finds two boxes at
+    // the same infinity to meet and boxes at a finite and an infinite one apart.
+    let inf = f64::INFINITY;
+    assert_eq!(
+        drawn(vec![partial(inf, 50.0), partial(inf, 52.0)]),
+        [(1, Anchor::Cc)]
+    );
+    assert_eq!(
+        drawn(vec![partial(-inf, 50.0), partial(inf, 50.0)]),
+        [(1, Anchor::Cc), (0, Anchor::Cc)]
+    );
+    assert_eq!(
+        drawn(vec![partial(1e300, 50.0), partial(inf, 50.0)]),
+        [(1, Anchor::Cc), (0, Anchor::Cc)]
+    );
+    assert_eq!(
+        drawn(vec![partial(50.0, -1e300), partial(52.0, -1e300)]),
+        [(1, Anchor::Cc)]
+    );
+}
+
+#[test]
 fn a_turned_label_whose_box_is_no_number_meets_a_label_in_another_cell() {
     // Verifies: ADR-0032
     // An ANGLE bound to `nan` turns the box into no numbers at a finite point. msRectOverlap and

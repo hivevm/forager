@@ -211,12 +211,14 @@ golden path and the test pattern an agent copies from are named here.
   of the text's box (`place.rs`); and which labels MapServer's label cache draws, by priority,
   collisions with the labels drawn, their `labelpoint` markers among them, and the markers cached,
   the image's edge and the gutter inside it that `labelcache_map_edge_buffer` sets, and
-  `MINDISTANCE`, each test bounded by a grid over the image that files a drawn label by its box and,
-  for `MINDISTANCE`, by its point apart; the cache takes the first `MAX_LABELS`, reports how many it
-  left out, and hands its caller every label it visits, drawn or not, in its walk's order, with the
-  box it filed a drawn one by, which the engine's report of the labels follows; it computes the box
-  of the marker cached beneath a label and `msDrawLabelCache`'s offset of a label from its markers
-  (`cache.rs`). It is the one crate that depends on skrifa, and does no I/O (ADR-0031).
+  `MINDISTANCE`, each test bounded by a grid that wraps around the image, so that a label drawn
+  beyond it, by a large `OFFSET` or a point outside the image, costs what one within it does, and
+  that files a drawn label by its box and, for `MINDISTANCE`, by its point apart; the cache takes
+  the first `MAX_LABELS`, reports how many it left out, and hands its caller every label it visits,
+  drawn or not, in its walk's order, with the box it filed a drawn one by, which the engine's report
+  of the labels follows; it computes the box of the marker cached beneath a label and
+  `msDrawLabelCache`'s offset of a label from its markers (`cache.rs`). It is the one crate that
+  depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
   or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
   transformation, each by a counted reference to the one image, a polygon filled with a tile, by
