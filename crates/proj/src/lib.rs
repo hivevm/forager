@@ -40,7 +40,7 @@
 //! taken from `libm`, so that a coordinate reprojects to the same bits on every target
 //! (ADR-0037, Q-2). It reads a projection as the proj4 string of the
 //! style IR and implements only what a case in scope or a ticket needs: longitude and latitude,
-//! `lcc`, and `merc`, and a datum's shift by `+towgs84`. Anything else is an [`Error`] naming it,
+//! `lcc`, `merc`, and `tmerc` with `utm`, and a datum's shift by `+towgs84`. Anything else is an [`Error`] naming it,
 //! and a point that does not transform is [`NotTransformed`], never a panic (Q-3).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
@@ -50,6 +50,7 @@ mod datum;
 mod lcc;
 mod merc;
 mod params;
+mod tmerc;
 
 use std::fmt;
 
@@ -98,17 +99,20 @@ enum Kind {
     LongLat,
     Lcc(lcc::Lcc),
     Merc(merc::Merc),
+    Tmerc(tmerc::Tmerc),
 }
 
 /// The projections this crate implements, by the names PROJ gives them.
-const PROJECTIONS: &[&str] = &["longlat", "latlong", "lonlat", "latlon", "lcc", "merc"];
+const PROJECTIONS: &[&str] = &[
+    "longlat", "latlong", "lonlat", "latlon", "lcc", "merc", "tmerc", "utm",
+];
 
 /// The parameters this crate reads; any other is unsupported. `no_defs`, `wktext`, and
 /// `type=crs` change nothing PROJ computes here.
 const KNOWN: &[&str] = &[
     "proj", "datum", "ellps", "R", "a", "b", "rf", "f", "es", "e", "towgs84", "nadgrids", "lat_0",
     "lon_0", "lat_1", "lat_2", "lat_ts", "k", "k_0", "x_0", "y_0", "units", "to_meter", "no_defs",
-    "wktext", "type",
+    "wktext", "type", "zone", "south",
 ];
 
 /// A projection read from a proj4 string.
@@ -149,7 +153,7 @@ impl Projection {
             return Err(Error::Unsupported(format!("+type={kind}")));
         }
         let (ellipsoid, datum) = params::ellipsoid_and_datum(&params)?;
-        let k0 = match params.number("k_0")? {
+        let mut k0 = match params.number("k_0")? {
             Some(k0) => k0,
             None => params.number("k")?.unwrap_or(1.0),
         };
@@ -159,6 +163,9 @@ impl Projection {
             )));
         }
         let mut phi0 = params.radians("lat_0")?.unwrap_or(0.0);
+        let mut lam0 = params.radians("lon_0")?.unwrap_or(0.0);
+        let mut x0 = params.number("x_0")?.unwrap_or(0.0);
+        let mut y0 = params.number("y_0")?.unwrap_or(0.0);
         let kind = match name {
             "longlat" | "latlong" | "lonlat" | "latlon" => {
                 if params.has("lon_0") {
@@ -173,6 +180,12 @@ impl Projection {
                 Kind::Lcc(lcc::Lcc::new(&params, &ellipsoid, phi0, k0)?)
             }
             "merc" => Kind::Merc(merc::Merc::new(&params, &ellipsoid, k0)?),
+            "tmerc" => Kind::Tmerc(tmerc::Tmerc::new(&ellipsoid, phi0, k0)?),
+            "utm" => {
+                let utm = tmerc::utm(&params, &ellipsoid, lam0)?;
+                (lam0, x0, y0, k0, phi0) = (utm.lam0, utm.x0, utm.y0, utm.k0, 0.0);
+                Kind::Tmerc(tmerc::Tmerc::new(&ellipsoid, phi0, k0)?)
+            }
             other => return Err(Error::Unsupported(format!("+proj={other}"))),
         };
         if phi0.abs() > HALF_PI {
@@ -182,9 +195,9 @@ impl Projection {
             kind,
             ellipsoid,
             datum,
-            lam0: params.radians("lon_0")?.unwrap_or(0.0),
-            x0: params.number("x_0")?.unwrap_or(0.0),
-            y0: params.number("y_0")?.unwrap_or(0.0),
+            lam0,
+            x0,
+            y0,
             to_meter: params::to_meter(&params)?,
         })
     }
@@ -200,6 +213,7 @@ impl Projection {
             Kind::LongLat => None,
             Kind::Lcc(lcc) => Some(lcc),
             Kind::Merc(merc) => Some(merc),
+            Kind::Tmerc(tmerc) => Some(tmerc),
         }
     }
 

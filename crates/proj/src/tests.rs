@@ -70,6 +70,58 @@ fn the_mercator_of_an_ellipsoid_matches_iogps_worked_example() {
 }
 
 #[test]
+fn the_transverse_mercator_matches_iogps_worked_example() {
+    // Verifies: ADR-0037
+    // Guidance Note 7-2, Transverse Mercator: OSGB 1936 / British National Grid on Airy 1830;
+    // 50°30'N 0°30'E is E 577274.99 m, N 69740.50 m.
+    let geographic = "+proj=longlat +a=6377563.396 +rf=299.3249646";
+    let grid = "+proj=tmerc +a=6377563.396 +rf=299.3249646 +lat_0=49 +lon_0=-2 \
+                +k=0.9996012717 +x_0=400000 +y_0=-100000";
+    let projected = way(geographic, grid).point(at(0.5, 50.5)).unwrap();
+    assert!((projected.x - 577_274.99).abs() < 0.01, "{projected:?}");
+    assert!((projected.y - 69_740.50).abs() < 0.01, "{projected:?}");
+    let back = way(grid, geographic).point(projected).unwrap();
+    assert!(
+        (back.x - 0.5).abs() < 1e-9 && (back.y - 50.5).abs() < 1e-9,
+        "{back:?}"
+    );
+}
+
+#[test]
+fn a_utm_zone_as_adapter_epsg_builds_it_in_projects_as_utm_does() {
+    // Verifies: ADR-0037
+    let zone_32 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs";
+    let to_utm = way(LONGLAT_WGS84, zone_32);
+    // On the central meridian at the equator: the false easting, northing 0.
+    let origin = to_utm.point(at(9.0, 0.0)).unwrap();
+    assert!(
+        (origin.x - 500_000.0).abs() < 1e-6 && origin.y.abs() < 1e-6,
+        "{origin:?}"
+    );
+    // 50°N 10°E, widely published as E 571666.45, N 5539109.82 in zone 32.
+    let point = to_utm.point(at(10.0, 50.0)).unwrap();
+    assert!((point.x - 571_666.45).abs() < 0.01, "{point:?}");
+    assert!((point.y - 5_539_109.82).abs() < 0.01, "{point:?}");
+    let back = to_utm.reversed().point(point).unwrap();
+    assert!(
+        (back.x - 10.0).abs() < 1e-9 && (back.y - 50.0).abs() < 1e-9,
+        "{back:?}"
+    );
+    // South of the equator the false northing is 10 000 km: the mirror of the north.
+    let south = "+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs";
+    let north = to_utm.point(at(9.5, 10.0)).unwrap();
+    let mirrored = way(LONGLAT_WGS84, south).point(at(9.5, -10.0)).unwrap();
+    assert!(
+        (mirrored.x - north.x).abs() < 1e-6,
+        "{mirrored:?} {north:?}"
+    );
+    assert!(
+        (mirrored.y - (10_000_000.0 - north.y)).abs() < 1e-6,
+        "{mirrored:?} {north:?}"
+    );
+}
+
+#[test]
 fn web_mercator_takes_wgs84_longitude_and_latitude_on_its_sphere_without_a_shift() {
     // Verifies: ADR-0037
     let projected = way(LONGLAT_WGS84, EPSG_3857).point(at(10.0, 50.0)).unwrap();
@@ -135,9 +187,21 @@ fn an_unknown_projection_or_parameter_is_an_error_naming_it() {
     // Verifies: ADR-0037
     let error = |text: &str| Projection::parse(text).unwrap_err();
     assert_eq!(
-        error("+proj=tmerc +zone=32"),
-        Error::Unsupported("+proj=tmerc".to_owned())
+        error("+proj=omerc +lat_0=4"),
+        Error::Unsupported("+proj=omerc".to_owned())
     );
+    assert_eq!(
+        error("+proj=tmerc +R=6370997"),
+        Error::Unsupported("+proj=tmerc on a sphere".to_owned())
+    );
+    assert_eq!(
+        error("+proj=tmerc +ellps=GRS80 +approx"),
+        Error::Unsupported("+approx".to_owned())
+    );
+    assert!(matches!(
+        error("+proj=utm +zone=61 +ellps=GRS80"),
+        Error::Invalid(_)
+    ));
     assert_eq!(
         error("+proj=lcc +lat_1=49 +over"),
         Error::Unsupported("+over".to_owned())

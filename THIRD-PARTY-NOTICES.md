@@ -46,6 +46,10 @@ Copyright (c) 2016, 2017 Thomas Knudsen/SDFE
 Copyright (c) 2018, Thomas Knudsen / SDFE
 ```
 
+Its transverse Mercator (`crates/proj/src/tmerc.rs`) follows PROJ's `src/projections/tmerc.cpp`,
+whose exact algorithm was written by Knud Poder and Karsten Engsager and is used by PROJ by
+permission of Reference Networks Division, Kort og Matrikelstyrelsen (KMS), Copenhagen, Denmark.
+
 ```text
 All source, data files and other contents of the PROJ package are available under the following
 terms. Note that the PROJ 4.3 and earlier was "public domain" as is common with US government work,

@@ -120,15 +120,16 @@ golden path and the test pattern an agent copies from are named here.
   MapServer build links, every transcendental function from `libm`, so that a point reprojects to
   the same bits on every target (ADR-0037, Q-2). It reads a
   projection as the style IR's proj4 string, parameters and tables as PROJ's `pj_init` reads them
-  (`params.rs`), implements longitude and latitude, `lcc`, and `merc` (`lcc.rs`, `merc.rs`, their
-  shared functions in `common.rs`), and shifts a datum through WGS84 as PROJ's cs2cs emulation
-  chains it, by an exact Helmert transform of `+towgs84` or a change of ellipsoid alone
-  (`datum.rs`); MapServer goes through `proj_create_crs_to_crs_from_pj` instead, not verified to
-  pick the same operation. Its tables hold only the datums, ellipsoids, and units the cases in
-  scope name: WGS84 and NAD83, their ellipsoids, and metres.
-  Anything else is an error value naming it; a point that does not transform is one too, never a
-  panic. It decides whether two projections differ as `msProjectionsDiffer` compares their
-  parameters, and reprojects a rectangle by its sides' points as `msProjectRect` samples them.
+  (`params.rs`), implements longitude and latitude, `lcc`, `merc`, and `tmerc` with `utm` by
+  PROJ's Poder/Engsager algorithm (`lcc.rs`, `merc.rs`, `tmerc.rs`, their shared functions in
+  `common.rs`), and shifts a datum through WGS84 as PROJ's cs2cs emulation chains it, by an
+  exact Helmert transform of `+towgs84` or a change of ellipsoid alone (`datum.rs`); MapServer
+  goes through `proj_create_crs_to_crs_from_pj` instead, not verified to pick the same operation.
+  Its tables hold only the datums, ellipsoids, and units the cases in scope name: WGS84 and NAD83,
+  their ellipsoids, and metres. Anything else is an error value naming it; a point that does not
+  transform is one too, never a panic. It decides whether two projections differ as
+  `msProjectionsDiffer` compares their parameters, and reprojects a rectangle by its sides' points
+  as `msProjectRect` samples them.
   Synchronous, without I/O; it depends on `style-ir` and `libm` alone, and each file that ports a
   PROJ source holds PROJ's notice (`scripts/check-notice.sh`).
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
