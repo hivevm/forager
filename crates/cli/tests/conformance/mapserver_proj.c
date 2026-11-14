@@ -37,7 +37,7 @@
 #include "mapserver.h"
 
 #ifndef FORAGER_MAPSERVER_COMMIT
-#error "FORAGER_MAPSERVER_COMMIT names the commit of the MapServer build; build-mapserver.sh sets it"
+#error "FORAGER_MAPSERVER_COMMIT names the MapServer build's commit; build-mapserver.sh sets it"
 #endif
 
 static void fail(const char *what, long line) {

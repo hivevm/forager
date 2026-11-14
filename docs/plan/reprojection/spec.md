@@ -36,8 +36,8 @@ own longitude and latitude.
 
 ## Goals served
 
-- G-11 (the core's reprojection agrees with PROJ within a tolerance stated in metres; no test cites
-  it yet)
+- G-11 (the core's reprojection agrees with PROJ within a tolerance stated in metres; ticket 02
+  gives it its test and its tolerance)
 - G-6, Q-4 (the cases of misc and renderers that need a projection come into scope)
 - G-9, Q-2 (reprojected renders are bit-identical natively and on wasm32)
 - Q-1 (the reprojection is pure Rust and builds for wasm32), Q-5 (bundle size), Q-6 (licence)

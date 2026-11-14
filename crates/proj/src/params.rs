@@ -145,20 +145,24 @@ const ELLIPSOIDS: &[(&str, f64, f64)] = &[
     ("GRS80", 6_378_137.0, 298.257_222_101),
 ];
 
-/// The datums of PROJ's table that the cases in scope name, by their `towgs84` and ellipsoid.
+/// The datums of PROJ's table that the cases in scope name, by their `towgs84` and ellipsoid; the
+/// `towgs84` is kept as PROJ's table holds it, though a named datum shifts by none (see [`Datum`]).
 const DATUMS: &[(&str, &str, &str)] = &[("WGS84", "0,0,0", "WGS84"), ("NAD83", "0,0,0", "GRS80")];
 
 /// The linear units of PROJ's table that the cases in scope name, in metres; `+to_meter` gives
 /// any other.
 const UNITS: &[(&str, f64)] = &[("m", 1.0)];
 
-/// The datum a projection's coordinates are in, by how it shifts to WGS84: by `+nadgrids=@null`,
-/// a `+towgs84` of all zeros, or none, not at all; by any other `+towgs84`, through geocentric
-/// coordinates by a Helmert transform, as PROJ's cs2cs emulation (`src/4D_api.cpp`) chains it.
-/// For a zero `towgs84` on another ellipsoid than WGS84's, such as NAD83's GRS80, that emulation
-/// changes the ellipsoid through geocentric coordinates; MapServer at the pin, which asks PROJ
-/// for its operation by `proj_create_crs_to_crs_from_pj`, does not, as G-11's measurement shows,
-/// and this follows MapServer (the maintainer's decision of 2026-11-14).
+/// The datum a projection's coordinates are in, by how it shifts to WGS84. Not at all for
+/// `+nadgrids=@null`, for no datum, for a `+datum` PROJ's table names without an explicit
+/// `+towgs84`, and for a zero `+towgs84` on WGS84's ellipsoid. Through geocentric coordinates by
+/// a Helmert transform, as PROJ's cs2cs emulation (`src/4D_api.cpp`) chains it, for any other
+/// explicit `+towgs84`, a zero one on another ellipsoid included, which changes the ellipsoid.
+/// A named `+datum` is read by PROJ as its EPSG datum, for which MapServer at the pin, asking PROJ
+/// for its operation by `proj_create_crs_to_crs_from_pj`, changes no ellipsoid: G-11's
+/// measurement shows it for `+datum=NAD83` on GRS80, which this follows (the maintainer's decision
+/// of 2026-11-14). An explicit `+towgs84` PROJ reads as a bound CRS, whose Helmert step, a null
+/// one included, the measurement does not cover yet.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Datum {
     /// Its longitude and latitude are WGS84's.
@@ -182,14 +186,16 @@ pub(crate) fn ellipsoid_and_datum(params: &Params) -> Result<(Ellipsoid, Datum),
         .transpose()?;
     let ellipsoid = ellipsoid(params, datum_row.map(|(_, _, ellps)| *ellps))?;
     let grids = params.text("nadgrids")?;
-    let towgs84 = params.text("towgs84")?.or(datum_row.map(|(_, t, _)| *t));
-    let datum = match (grids, towgs84) {
+    // A named datum's own towgs84 does not count: PROJ reads the datum as its EPSG datum.
+    let datum = match (grids, params.text("towgs84")?) {
         (Some("@null"), _) => Datum::Wgs84,
         (Some(other), _) => return Err(Error::Unsupported(format!("+nadgrids={other}"))),
         (None, None) => Datum::Wgs84,
         (None, Some(text)) => {
             let shift = towgs84_params(text)?;
-            if shift.iter().all(|&p| p == 0.0) {
+            let wgs84 = (ellipsoid.a - 6_378_137.0).abs() < 1e-8
+                && (ellipsoid.es - 0.006_694_379_990_141_3).abs() < 1e-15;
+            if wgs84 && shift.iter().all(|&p| p == 0.0) {
                 Datum::Wgs84
             } else {
                 Datum::Geocentric(crate::datum::Helmert::new(&shift))

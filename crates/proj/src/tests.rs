@@ -98,7 +98,8 @@ fn a_utm_zone_as_adapter_epsg_builds_it_in_projects_as_utm_does() {
         (origin.x - 500_000.0).abs() < 1e-6 && origin.y.abs() < 1e-6,
         "{origin:?}"
     );
-    // 50°N 10°E, widely published as E 571666.45, N 5539109.82 in zone 32.
+    // 50°N 10°E is E 571666.45, N 5539109.82 in zone 32, as online UTM converters give it (no
+    // primary source); the record of tests/reference/ holds zone 32 to MapServer's PROJ.
     let point = to_utm.point(at(10.0, 50.0)).unwrap();
     assert!((point.x - 571_666.45).abs() < 0.01, "{point:?}");
     assert!((point.y - 5_539_109.82).abs() < 0.01, "{point:?}");
@@ -179,6 +180,28 @@ fn a_seven_parameter_shift_moves_a_point_by_some_metres_and_back() {
         (back.x + 1.0).abs() < 1e-7 && (back.y - 52.0).abs() < 1e-7,
         "{back:?}"
     );
+}
+
+#[test]
+fn a_named_datum_shifts_nothing_and_an_explicit_zero_towgs84_changes_the_ellipsoid() {
+    // Verifies: ADR-0037
+    // +datum=NAD83 is read as its EPSG datum, which MapServer's call of PROJ does not shift, as
+    // the record of tests/reference/ shows; an explicit zero towgs84 on GRS80 is a bound CRS
+    // whose null Helmert step still changes the ellipsoid, by about a tenth of a millimetre.
+    let named = way(LONGLAT_WGS84, "+proj=longlat +datum=NAD83")
+        .point(at(-63.0, 46.0))
+        .unwrap();
+    assert_eq!((named.x, named.y), (-63.0, 46.0));
+    let bound = way(LONGLAT_WGS84, "+proj=longlat +ellps=GRS80 +towgs84=0,0,0")
+        .point(at(-63.0, 46.0))
+        .unwrap();
+    let moved = (bound.y - 46.0).abs();
+    assert!(moved > 0.0 && moved < 1e-8, "{bound:?}");
+    // On WGS84's own ellipsoid a zero towgs84 shifts nothing either.
+    let wgs84 = way(LONGLAT_WGS84, "+proj=longlat +ellps=WGS84 +towgs84=0,0,0")
+        .point(at(-63.0, 46.0))
+        .unwrap();
+    assert_eq!((wgs84.x, wgs84.y), (-63.0, 46.0));
 }
 
 #[test]

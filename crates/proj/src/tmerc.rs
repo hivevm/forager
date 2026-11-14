@@ -54,8 +54,8 @@ pub(crate) struct Tmerc {
     gtu: [f64; ORDER],
 }
 
-/// What `utm` sets beside the series: the central meridian, the false easting and northing, the
-/// scale, and the origin latitude.
+/// What `utm` sets beside the series: the central meridian, the false easting and northing, and
+/// the scale; the origin latitude it sets to 0.
 pub(crate) struct Utm {
     pub(crate) lam0: f64,
     pub(crate) x0: f64,

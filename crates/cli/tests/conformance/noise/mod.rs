@@ -97,6 +97,8 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
             .and_then(|mut file| file.write_all(report.as_bytes()))
             .unwrap();
     }
+    // Run before anything is judged, so that the artifact holds its output whatever the rest shows.
+    let differences = reference_points(&proj, &out.join("proj")).unwrap();
     assert!(
         unreproduced.is_empty(),
         "{} cases in scope are not reproduced by MapServer itself; the list moves each out of \
@@ -112,7 +114,6 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
         out.join("labels").display(),
         records.join("\n")
     );
-    let differences = reference_points(&proj, &out.join("proj")).unwrap();
     assert!(
         differences.is_empty(),
         "MapServer's reprojection of G-11's reference points does not hold the record {}; the \
@@ -129,9 +130,9 @@ const REFERENCE_POINTS: &str = "crates/proj/tests/reference/points.tsv";
 const REFERENCE_RECORD: &str = "crates/proj/tests/reference/mapserver.tsv";
 
 /// The largest difference of a coordinate between the reader's output and the record: 1 mm, in
-/// metres for a projected target and in degrees, about 1.1 mm, for a geographic one.
+/// metres for a projected target and in degrees, about 1.0 mm, for a geographic one.
 const PROJECTED_SLACK: f64 = 1e-3;
-const GEOGRAPHIC_SLACK: f64 = 1e-8;
+const GEOGRAPHIC_SLACK: f64 = 9e-9;
 
 /// Runs the reader of MapServer's reprojection, `reader`, over [`REFERENCE_POINTS`], keeps its
 /// output in `out` as `mapserver.tsv`, and returns how it differs from [`REFERENCE_RECORD`]; an

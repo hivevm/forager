@@ -122,9 +122,9 @@ golden path and the test pattern an agent copies from are named here.
   projection as the style IR's proj4 string, parameters and tables as PROJ's `pj_init` reads them
   (`params.rs`), implements longitude and latitude, `lcc`, `merc`, and `tmerc` with `utm` by
   PROJ's Poder/Engsager algorithm (`lcc.rs`, `merc.rs`, `tmerc.rs`, their shared functions in
-  `common.rs`), and shifts a datum through WGS84 by an exact Helmert transform of a `+towgs84`
-  that is not all zeros, as PROJ's cs2cs emulation chains it (`datum.rs`); a zero one shifts
-  nothing, as MapServer's call of PROJ does not, where the emulation would change the ellipsoid.
+  `common.rs`), and shifts a datum through WGS84 by an exact Helmert transform of an explicit
+  `+towgs84`, as PROJ's cs2cs emulation chains it (`datum.rs`); a named `+datum` shifts nothing,
+  as MapServer's call of PROJ does not for NAD83.
   Its tables hold only the datums, ellipsoids, and units the cases in scope name: WGS84 and NAD83,
   their ellipsoids, and metres. Anything else is an error value naming it; a point that does not
   transform is one too, never a panic. It decides whether two projections differ as
