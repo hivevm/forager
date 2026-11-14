@@ -16,7 +16,7 @@ WKT into proj4 (proj4wkt or another).
 - [ ] Given a proposed ADR for the projection a source declares, reviewed by the human, when the
   work starts, then it settles the port's change under ADR-0022 and ADR-0023 and the WKT crate under
   ADR-0011.
-- [ ] Given a shapefile layer of `PROJECTION AUTO` with a `.prj` in a projection proj4rs supports,
+- [ ] Given a shapefile layer of `PROJECTION AUTO` with a `.prj` in a projection `proj` supports,
   when it is rendered under a map in another projection, then it is reprojected from the `.prj`'s
   projection.
 - [ ] Given a `.prj` that does not read or names a projection the conversion does not support, when

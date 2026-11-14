@@ -6,15 +6,15 @@ A layer whose `PROJECTION` differs from the map's is drawn in the map's projecti
 shape, inline features included, is reprojected after the source delivers it and before the
 layer's `GEOMTRANSFORM`, classes, and labels. The source is asked for the map's extent projected
 into the layer's projection; this ticket may project the extent's corners and edges simply, and
-ticket 03 makes it MapServer's. Before any code, `propose-adr` runs for the reprojection with
-proj4rs in the core crate `proj`; the session stops once the ADR is proposed and resumes after the
-human's review. The ADR also settles where the msautotest harness takes real definitions for the
+ticket 03 makes it MapServer's. Before any code, `propose-adr` runs for the reprojection in the
+core crate `proj`; the session stops once the ADR is proposed and resumes after the human's
+review. The ADR also settles where the msautotest harness takes real definitions for the
 EPSG codes of the cases it brings into scope: today it resolves them to stand-ins in longitude and
 latitude, and ADR-0019 rejected a subset of the EPSG dataset in the repository for its licence.
 
 ## Acceptance criteria
 
-- [ ] Given a proposed ADR for the reprojection with proj4rs, reviewed by the human, when the work
+- [ ] Given a proposed ADR for the reprojection in `proj`, reviewed by the human, when the work
   starts, then it settles: the dependency under ADR-0011, its build for `wasm32-unknown-unknown`
   without C code (Q-1), its licence (Q-6), the bundle's growth against Q-5, and how its
   trigonometry gives the same bits on every target where std's calls the platform's libm (Q-2),
@@ -33,8 +33,11 @@ latitude, and ADR-0019 rejected a subset of the EPSG dataset in the repository f
 
 - Touches: `crates/proj` (new, the row ADR-0008 names), `crates/engine/src/lib.rs`,
   `crates/engine/src/classes.rs`, `crates/engine/src/inline.rs`, `Cargo.toml`, `deny.toml`,
-  `crates/cli/tests/msautotest.rs`, `crates/cli/tests/conformance/cases.txt`,
-  `docs/ARCHITECTURE.md`, `docs/semantics/projection.md` (the reprojection it now describes)
+  `crates/cli/tests/msautotest.rs`, `crates/cli/tests/conformance/cases.txt`, `clippy.toml`,
+  `crates/{engine,label,symbolize}/clippy.toml`, `crates/arch-test/tests/dependencies.rs`,
+  `crates/render/src/hatch.rs`, `crates/render-agg/src/lib.rs`, `scripts/check-notice.sh` and its
+  test, `THIRD-PARTY-NOTICES.md`, `docs/ARCHITECTURE.md`, `docs/semantics/projection.md` (the
+  reprojection it now describes)
 - `docs/semantics/projection.md`; MapServer's `msDrawLayer`, `msDrawShape`, `msProjectShapeEx`,
   and `msProjectionsDiffer` (`src/mapdraw.c`, `src/mapproject.c`) at the pinned tag
 - Glossary: Core, Feature source, Viewport; `docs/CONVENTIONS.md`

@@ -29,4 +29,4 @@ asked of a source.
 
 ## Mode
 
-with the human: its scope depends on what proj4rs supports of `+over`, which may need a decision.
+with the human: its scope depends on how much of `+over` `proj` ports, which may need a decision.

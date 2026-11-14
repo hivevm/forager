@@ -36,7 +36,8 @@ own longitude and latitude.
 
 ## Goals served
 
-- G-11 (proj4rs agrees with PROJ within a tolerance stated in metres; no test cites it yet)
+- G-11 (the core's reprojection agrees with PROJ within a tolerance stated in metres; no test cites
+  it yet)
 - G-6, Q-4 (the cases of misc and renderers that need a projection come into scope)
 - G-9, Q-2 (reprojected renders are bit-identical natively and on wasm32)
 - Q-1 (the reprojection is pure Rust and builds for wasm32), Q-5 (bundle size), Q-6 (licence)
@@ -54,8 +55,8 @@ own longitude and latitude.
    can pass RFC 7946 GeoJSON under any map projection.
 4. As a host developer, I want the source asked for the area in view in its own coordinates, so
    that a source that filters by extent returns the right features.
-5. As the maintainer, I want proj4rs measured against PROJ at the pinned MapServer, so that G-11
-   states a tolerance the measurement supports.
+5. As the maintainer, I want the core's reprojection measured against PROJ at the pinned MapServer,
+   so that G-11 states a tolerance the measurement supports.
 6. As a cartographer, I want lines crossing the dateline and maps in an orthographic projection
    drawn as MapServer draws them, so that world maps keep their shape.
 
@@ -73,13 +74,15 @@ own longitude and latitude.
 - WKT from a `.prj` is turned into a proj4 string in the shapefile adapter, outside the core, which
   accepts proj4 only (*Constraints*). The feature source port carries the projection a source
   declares. A GeoJSON source declares WGS84 longitude and latitude.
-- The tolerance of G-11 is set from a measurement of proj4rs against PROJ at the pinned MapServer
-  build, as the noise of G-6 was, and stated in G-11, a change to the specification the human
-  lands. A distance in degrees is measured in metres on the ellipsoid.
-- The msautotest harness resolves the EPSG codes beyond the built-in ones to stand-ins in longitude
-  and latitude. A case brought into scope needs real definitions; where they come from is decided
-  with the human, since ADR-0019 rejected a subset of the EPSG dataset in the repository for its
-  licence.
+- The tolerance of G-11 is set from a measurement of the core's reprojection against PROJ at the
+  pinned MapServer build, as the noise of G-6 was, and stated in G-11, a change to the
+  specification the human lands. A distance in degrees is measured in metres on the ellipsoid.
+- `proj` ports PROJ's formulas itself, with `libm`'s transcendental functions and no crate but
+  `style-ir` and `libm`, and implements a projection only when a case or a ticket needs it
+  (ADR-draft-reprojection-ported-in-proj); proj4rs binds itself to JavaScript on wasm32.
+- The msautotest harness takes its EPSG definitions from the suite's own `wxs/data/epsg2` and keeps
+  a stand-in in longitude and latitude only for a code that file lacks; ADR-0019 rejected a subset
+  of the EPSG dataset in the repository for its licence.
 - Horizon clipping into an orthographic projection (MapServer's RFC 5) and the dateline handling of
   `+over` are their own late tickets.
 
@@ -111,8 +114,9 @@ own longitude and latitude.
   ADR-0011 (a new dependency), ADR-0022 and ADR-0023 (the port and its features), ADR-0024 (the
   browser bindings' sources), ADR-0034 (G-9 on wasm32), ADR-0002 (`Verifies: G-11`).
 - New `proposed` ADRs before implementation:
-  - the reprojection with proj4rs in `proj`: the dependency, its build for wasm32 without C code,
-    its bundle size, and how its trigonometry stays bit-identical across targets where std's calls
-    the platform's libm (ticket 01);
+  - the reprojection in `proj` as a port of PROJ's formulas, its dependencies, its build for wasm32
+    without C code, its bundle size, how its trigonometry stays bit-identical across targets, and
+    where the harness's EPSG definitions come from (ticket 01,
+    ADR-draft-reprojection-ported-in-proj);
   - the projection a source declares: the port's change, and the WKT conversion in the shapefile
     adapter with its crate (ticket 04).
