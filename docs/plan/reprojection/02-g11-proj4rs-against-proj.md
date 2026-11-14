@@ -9,6 +9,11 @@ recorded beside the test, as the label records of ADR-0033 are, so that the test
 run. A result in degrees is compared by its distance in metres on the ellipsoid. Running PROJ on CI
 is a run beside MapServer's that ADR-0033 may need revising for.
 
+Ticket 01 ported longitude and latitude, `lcc`, `merc`, and the datum shift, which the case it
+brought into scope needs; `tmerc` with `+zone`, which the UTM zones of `adapter-epsg` need, is
+not ported yet, and this ticket ports it from PROJ 9.4.0's `src/projections/tmerc.cpp` before it
+measures them.
+
 ## Acceptance criteria
 
 - [ ] Given the transformations of the cases in scope and of EPSG:4326, EPSG:3857, and the UTM
@@ -23,8 +28,9 @@ is a run beside MapServer's that ADR-0033 may need revising for.
 
 ## Read first
 
-- Touches: `crates/proj`, `scripts/build-mapserver.sh`, `.github/workflows/noise.yml`,
-  `crates/cli/tests/conformance/`, `docs/SPECIFICATION.md` (G-11, landed by the human)
+- Touches: `crates/proj` (with `tmerc.rs`), `scripts/build-mapserver.sh`,
+  `.github/workflows/noise.yml`, `crates/cli/tests/conformance/`, `docs/SPECIFICATION.md` (G-11,
+  landed by the human)
 - ADR-0033 (how MapServer's own runs are recorded); ADR-0002 (`Verifies:`)
 - Seam: a test of `crates/proj` over recorded points
 

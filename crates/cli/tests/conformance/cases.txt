@@ -115,7 +115,7 @@ misc/ortho.map ortho.png out: a projection, ortho
 misc/pg_join.map pg_join.html out: an OGC or CGI request
 misc/quantized.map quantized.png out: a raster source
 misc/quoted_data.map quoted_data.png out: a data source other than shapefiles, PostGIS
-misc/quoting.map quoting.png text passes
+misc/quoting.map quoting.png text passes labels-hold
 misc/rfc14.map rfc14.png out: a bitmap font
 misc/rfc36.map rfc36_geojson.js out: an OGC or CGI request
 misc/rfc36_ogr.map rfc36_ogr_geojson.js out: an OGC or CGI request
