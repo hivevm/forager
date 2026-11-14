@@ -98,7 +98,8 @@ Only the mapfile frontend translates it from MapServer's text.
   - `text`, for a computed `smoothsia` preprocessing;
   - `fromtext`, for a shape `fromtext` reads from a text;
   - `literal`, for an operation of literals that folds to no finite JSON number, a `%` by 0 among
-    them;
+    them. A single literal past a double, such as `1e999`, which `atof` reads as infinite, is one
+    too;
   - `syntax`, for an expression `shape_exp` does not parse, a `/` by 0 among them.
 
   A syntax error takes precedence: MapServer refuses the whole expression, so an expression with a
@@ -118,7 +119,9 @@ Only the mapfile frontend translates it from MapServer's text.
   the change that implements this ADR. A function added to the tree after the first release must
   be a major version. A reader of an older minor unsets an unknown function, and so draws the
   shapes untransformed. It must read a `not_drawn` reason it does not know as not drawn, with a
-  warning naming its path. A reason added in a minor version so fails closed.
+  warning naming the reason and its path. The tree holds such a reason as `syntax`, so the engine's
+  later `geomtransform-not-drawn` names `syntax`. A reason added in a minor version so fails
+  closed.
 
 **Out of scope:**
 

@@ -135,11 +135,13 @@ layer's labels outside the cache.
   `labelInImage`, `intersectLabelPolygons`, and `msRectOverlap` in `src/maplabel.c` and
   `src/mapsearch.c`.
 - Loose grids and quadtrees for collision broad phases, as described in Ericson, *Real-Time
-  Collision Detection* (2005), chapter 7. Its section on hashed storage and infinite grids maps
-  an unbounded grid onto a finite array, of which the wrap is the modulo form; recalled, to be
-  checked against the book before acceptance.
-- Teschner et al., *Optimized Spatial Hashing for Collision Detection of Deformable Objects*
-  (VMV 2003): an unbounded grid hashed into a fixed table; recalled, to be checked likewise.
+  Collision Detection* (Morgan Kaufmann, 2005), chapter 7 *Spatial Partitioning*. Its section
+  7.1.3 *Hashed Storage and Infinite Grids*, under 7.1 *Uniform Grids*, maps an unbounded grid
+  onto a finite array, of which the wrap is the modulo form; checked 2026-11-14 against the
+  book's table of contents at realtimecollisiondetection.net/books/rtcd/toc.
+- Teschner, Heidelberger, Müller, Pomeranets, and Gross, *Optimized Spatial Hashing for Collision
+  Detection of Deformable Objects* (VMV 2003, Munich), pages 47–54: a hash function maps a
+  potentially infinite regular grid onto a table of fixed size; checked 2026-11-14.
 - The measurements above: those of the decision of 2026-10-30, from the work and the review of
   the labels spec, and the edge cells', from the ticket
   `revision-2026-10-31/11-label-cache-files-drawn-boxes` (#180) and its backlog entry, taken up
@@ -180,12 +182,16 @@ Tests cite this ADR with `Verifies:`:
 - in `crates/label/tests/cache.rs` and `crates/label/tests/cache_bounds.rs`, a collision that the
   grid must find across cells (a box that is not a number, a box larger than its cell), and the
   bounded visits and memory of piled, large, and inside-out boxes;
-- in `crates/label/tests/cache_bounds.rs`, `MAX_LABELS` labels drawn beyond the image ask for no
-  more boxes per label than the same labels unmoved within the image. Where their points spread over
-  the image's upper left, they ask for fewer than 12. They allocate under 64 bytes per label at the
-  peak. The labels are offset 3,000 px right and down, with `PARTIALS TRUE`, from points spread over
-  the whole image and over its upper left. Those of the upper left stay within the image. The same
-  holds for labels offset left and up, and for an offset of 1,000,000 px;
+- in `crates/label/tests/cache_bounds.rs`, `MAX_LABELS` labels drawn beyond the image ask for as
+  many boxes as the same labels unmoved within the image. They ask for exactly as many for an offset
+  of whole cells of the finest level, and within a tolerance for others. An offset of 1,000,000 px
+  is a whole number of such cells. An offset of 3,000 px is not. Like an offset within the image, it
+  moves the count either way with the spacing of the points. Measured on 2026-11-13, it moved it by
+  up to ±10 %. At the two spacings the test tries, it asks for no more. Where the points stand 3.4
+  px apart over the image's upper left, the labels ask for fewer than 12 boxes each. They allocate
+  under 64 bytes per label at the peak. The labels are offset right and down, and left and up, with
+  `PARTIALS TRUE`, from points spread over the whole image and over its upper left. Those of the
+  upper left offset 3,000 px right and down stay within the image;
 - in `crates/label/tests/cache.rs`, two labels a level's span apart, and labels at an infinite
   coordinate, meet as `msRectOverlap` decides;
 - in `crates/label/tests/cache_pairwise.rs`, the grid's outcome against MapServer's pairwise test

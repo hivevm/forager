@@ -63,7 +63,8 @@ collection's members are one shape. With `ANGLE AUTO` the symbol turns with the 
 and `end`, and at a vertex halfway between its two segments (`calcOrientation` and `calcMidAngle`).
 `labelpnt` and `labelpoly` draw nothing there, nor does `labelcenter`, on which
 `msDrawTransformedShape` fails the layer's draw, so the engine warns of it on a class's style of a
-line or polygon layer with `geomtransform-not-drawn`, of a style document as of a mapfile; nor does
+line or polygon layer with `geomtransform-not-drawn`, of a style document as of a mapfile, as it
+renders a layer it draws, so that `forager read` alone does not report it; nor does
 a style without a symbol or with symbol 0, as `msDrawMarkerSymbol` draws none. `bbox` draws no
 symbol at a point but a polygon, the bounds of the shape in pixels as a ring of five points from
 their lower left corner up and around: each side is held within the image grown by a padding, the
@@ -112,7 +113,10 @@ double, and a literal past one, which `atof` reads as infinite. An expression th
 parse, anywhere in it, is `not_drawn: syntax`, whatever construct comes before the error, as
 MapServer refuses the whole expression; a division of literals by 0, which `math_exp` fails with
 `yyerror(p, "Division by zero.")`, is one. The frontend warns `invalid-expression` at the place it
-stops, but on a label's style, whose label it leaves out. A tree that nests more than 24 levels,
+stops, but on a label's style, whose label it leaves out. A style document of a newer minor
+version whose tree names a reason this reader does not know is read as not drawn, with a warning
+naming the reason and its path; the tree holds it as `syntax`, the reason the engine's warning
+then names. A tree that nests more than 24 levels,
 each node and each operator of a chain one level, fails the load with `expression-too-deep`
 (Q-9), from a mapfile and from a style document alike.
 
