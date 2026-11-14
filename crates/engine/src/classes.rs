@@ -33,6 +33,7 @@ use forager_style_ir::{
 };
 
 use crate::bindable::{self, Field, Written};
+use crate::layer::{Selected, name, quoted};
 use forager_symbolize::{Budget, Factors, Undrawn, View, can_draw, transformed};
 
 /// A feature's properties as the evaluator reads them. A name is found without regard to ASCII
@@ -123,13 +124,13 @@ impl Reports {
                 }
             }
         };
-        let layer_name = crate::name(layer);
+        let layer_name = name(layer);
         let message = match failure {
             Failure::Pattern { pattern, construct } => format!(
                 "layer {layer_name}: the pattern {} of {what} uses {construct}, which \
                  Forager cannot match as MapServer does; the expression that holds it never \
                  matches",
-                crate::quoted(pattern)
+                quoted(pattern)
             ),
             _ => format!(
                 "layer {layer_name}: an expression of {what} reads or computes a text past {} \
@@ -358,7 +359,7 @@ impl<'a> Selector<'a, '_> {
         &mut self,
         features: Vec<&'f Feature>,
         symbols: &[Symbol],
-    ) -> Vec<crate::Selected<'f>>
+    ) -> Vec<Selected<'f>>
     where
         'a: 'f,
     {

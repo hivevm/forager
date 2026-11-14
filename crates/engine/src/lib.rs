@@ -15,6 +15,14 @@
 
 //! The engine: renders the map of a style IR from the sources bound to its layers. It is the
 //! one core crate that awaits the ports (ADR-0008).
+//!
+//! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
+//! `inline`, `label_binding`, `label_cache`, `label_styles`, and `layer`; `label_styles` imports
+//! `bindable`, `classes`, `label_cache`, and `layer`; `label_binding` imports `classes`; `classes`
+//! imports `bindable` and `layer`; `fonts` and `images` import `resource`; `bind`, `bindable`,
+//! `inline`, `label_cache`, `layer`, `plan`, and `resource` import none, nor does a module take an
+//! item of this root. The test `engine_modules.rs` of `crates/arch-test` holds that direction,
+//! its tests aside, by a table in this order.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 // C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0036).
@@ -27,27 +35,27 @@ mod fonts;
 mod images;
 mod inline;
 mod label_binding;
+mod label_cache;
 mod label_styles;
 mod labels;
+mod layer;
 mod plan;
 mod resource;
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
 use forager_ports::{
     Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
-use forager_style_ir::c::{int_cast, opacity_alpha};
+use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
     Diagnostic, GeomTransform, Layer, LayerStatus, Map, NotDrawn, RenderMode, Rgba, Style, Symbol,
     TransformTree,
 };
 use forager_symbolize::{
     Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, clip_pixmaps,
-    draw_ops, label_pixmap, marked_pixmap, point_markers, resolve, vertices,
+    draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
 };
 
 use forager_expr::Evaluator;
@@ -62,6 +70,9 @@ pub use crate::resource::MAX_FONT_OR_IMAGE_FILE_BYTES;
 pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
+use crate::layer::{Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports};
+
+pub use crate::labels::CachedLabel;
 
 /// The largest width or height of an image, MapServer's default `MAXSIZE` (Q-9).
 pub const MAX_IMAGE_SIDE: u32 = 4096;
@@ -93,21 +104,6 @@ impl Rendered {
             labels: Vec::new(),
         }
     }
-}
-
-/// A label of a render's label cache.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CachedLabel {
-    /// From 1 to `MAX_PRIORITY` of `forager-label`.
-    pub priority: u8,
-    /// The index of the layer in the map, and of the class in the layer.
-    pub layer: usize,
-    pub class: usize,
-    /// The label's text, held once for a feature's label and shared by its labels at every point.
-    pub text: Arc<str>,
-    /// The box the label was drawn in, `[min x, min y, max x, max y]` in pixels, its buffer
-    /// included; `None` for a label the cache discarded.
-    pub drawn: Option<[f64; 4]>,
 }
 
 /// Renders `map` with `renderer`, reading each layer's features from the source bound to the
@@ -282,16 +278,6 @@ fn drawing_order(map: &Map) -> (Vec<(usize, &Layer)>, usize) {
     (order, cache_at)
 }
 
-/// The points of `geometry` inside the map's extent, in pixels, in order: where
-/// pointLayerDrawShape draws a point layer's markers and labels, which skips a point outside
-/// (msPointInRect) and transforms the others by the inverse of the cellsize (msTransformPoint).
-fn points_in_view(view: &View, geometry: &Geometry) -> impl Iterator<Item = Point> {
-    vertices(geometry)
-        .into_iter()
-        .filter(|&c| view.contains(c))
-        .map(|c| view.point_to_pixel(c))
-}
-
 /// The render mode `layer` is drawn in at the map's scale `scale`; none where it is hidden, out
 /// of scale, or of no opacity, where msDrawLayer skips it and its labels, or of a mode not drawn.
 fn layer_mode(layer: &Layer, scale: f64, diagnostics: &mut Vec<Diagnostic>) -> Option<RenderMode> {
@@ -359,26 +345,6 @@ fn layer_reports(
     }
 }
 
-/// The reports that `layer` left the hatches and pixmaps of `refusals` undrawn: the warning for
-/// the hatches (see [`refused_hatches`]), then one for each pixmap symbol, named, and why.
-fn refusal_reports(layer: &Layer, refusals: Refusals) -> impl Iterator<Item = Diagnostic> {
-    let pixmaps = refusals.pixmaps.into_values().map(|(symbol, why)| {
-        let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
-        Diagnostic::warning("pixmap-not-drawn", message, layer.span.clone())
-    });
-    refused_hatches(layer, refusals.hatches)
-        .into_iter()
-        .chain(pixmaps)
-}
-
-/// A layer's opacity as MapServer holds it, an integer percent from 0 to 100: the IR's number
-/// truncated, as `loadLayerCompositer` truncates it, and bounded, as it checks it; none for a
-/// number that is not finite.
-fn layer_opacity(layer: &Layer) -> Option<i32> {
-    let opacity = layer.opacity.filter(|o| o.is_finite())?;
-    Some(int_cast(opacity).clamp(0, 100))
-}
-
 /// [`layer_opacity`], with a warning for an opacity outside 0 to 100, which a mapfile cannot give
 /// (`loadLayerCompositer` refuses it) but a style document can.
 fn checked_opacity(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<i32> {
@@ -404,23 +370,6 @@ fn checked_opacity(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<i
     }
     opacity
 }
-
-/// Draws each of `ops` into `renderer` as a display item of feature `feature_id`, in order.
-pub(crate) fn draw_items<R: Draw>(
-    renderer: &mut R,
-    feature_id: u64,
-    ops: impl IntoIterator<Item = DrawOp>,
-) {
-    for op in ops {
-        renderer.draw(&DisplayItem {
-            op,
-            feature_id: Some(feature_id),
-        });
-    }
-}
-
-/// A feature drawn: it, the place of its class, and its styles bound to it.
-pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
 
 /// Where a layer is drawn: straight onto the map, or, where it has an opacity, into a layer of
 /// the renderer, laid over the map when the target is dropped.
@@ -924,20 +873,6 @@ fn transform_failed(layer: &Layer, undrawn: Undrawn) -> Diagnostic {
     Diagnostic::warning(code, message, layer.span.clone())
 }
 
-/// The warning for the hatch fills of a layer refused to be drawn (Q-9), if any.
-fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnostic> {
-    (refused > 0).then(|| {
-        let message = format!(
-            "layer {}: {refused} hatch fill{} not drawn (Q-9): its spacing or its dash pattern \
-             would never end the hatch, or it would lay more lines or dashes over the image, or \
-             cut them from a polygon of more vertices or crossings, than a hatch may",
-            name(layer),
-            if refused == 1 { " is" } else { "s are" }
-        );
-        Diagnostic::warning("hatch-not-drawn", message, layer.span.clone())
-    })
-}
-
 /// The kind of a geometry, as a diagnostic names it.
 fn kind(geometry: &Geometry) -> &'static str {
     match geometry {
@@ -948,29 +883,5 @@ fn kind(geometry: &Geometry) -> &'static str {
         Geometry::Polygon(_) => "polygon",
         Geometry::MultiPolygon(_) => "multipolygon",
         Geometry::Collection(_) => "collection",
-    }
-}
-
-fn name(layer: &Layer) -> String {
-    layer
-        .name
-        .as_deref()
-        .map_or("without NAME".to_owned(), |n| format!("`{n}`"))
-}
-
-/// The most characters of a text a diagnostic quotes, a feature's text or a pattern computed from
-/// one, so that a render keeps no copy of a long text for each label or expression it reports
-/// (Q-9).
-const QUOTED_CHARACTERS: usize = 64;
-
-/// `text` in backticks as a diagnostic quotes it: whole up to [`QUOTED_CHARACTERS`] characters,
-/// else cut there, followed by an ellipsis and the text's length in characters.
-fn quoted(text: &str) -> String {
-    let count = text.chars().count();
-    if count <= QUOTED_CHARACTERS {
-        format!("`{text}`")
-    } else {
-        let head: String = text.chars().take(QUOTED_CHARACTERS).collect();
-        format!("`{head}\u{2026}` ({count} characters)")
     }
 }

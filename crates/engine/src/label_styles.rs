@@ -28,7 +28,8 @@ use forager_symbolize::{
 
 use crate::bindable::{Field, Value};
 use crate::classes;
-use crate::labels::{LabelAt, index};
+use crate::label_cache::{LabelAt, index, make_room, push};
+use crate::layer::draw_items;
 
 /// The marker of the first `labelpoint` style of a label's `styles`, as computeMarkerBounds sizes
 /// it at the label's scale factor `factor`, a pixmap's by its image among `pixmaps`; `None`
@@ -135,7 +136,7 @@ impl LabelStyles {
             Some(run) if run.layout as usize == layout && run.text + run.len == text => {
                 run.len += 1;
             }
-            _ => crate::labels::push(
+            _ => push(
                 &mut self.runs,
                 Run {
                     text,
@@ -146,7 +147,7 @@ impl LabelStyles {
             ),
         }
         let fields = &self.layouts[layout].1;
-        crate::labels::make_room(&mut self.values, fields.len());
+        make_room(&mut self.values, fields.len());
         self.values
             .extend(fields.iter().map(|&(i, field)| field.value(&styles[i])));
     }
@@ -350,7 +351,7 @@ impl<'a> Styled<'a> {
             let style = label.styles.style(i, style);
             label_style_ops(&mut ops, &style, &at, self.view, &mut self.canvas);
         }
-        crate::draw_items(renderer, feature_id, ops);
+        draw_items(renderer, feature_id, ops);
     }
 }
 

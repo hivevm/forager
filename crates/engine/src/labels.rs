@@ -31,7 +31,7 @@ use forager_ports::{Feature, ResourceLoader};
 use forager_render::{Draw, DrawOp, GlyphOutline, Point};
 use forager_style_ir::c::{DEG_TO_RAD, c_str, int_cast, ms_nint};
 use forager_style_ir::{
-    Diagnostic, Expr, Label, LabelMarker, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style,
+    Diagnostic, Expr, LabelMarker, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style,
 };
 use forager_symbolize::{Factors, Pixmaps, Refusals, View, marker_size_of};
 
@@ -39,8 +39,26 @@ use crate::classes::{self, Binder};
 use crate::fonts::Fonts;
 use crate::inline::feature_text;
 use crate::label_binding::{BoundLabel, Fixed, bind, fixed};
+use crate::label_cache::{self, LabelAt, index, push};
 use crate::label_styles::{self, LabelStyles, Placed, Styled, StylesOf};
-use crate::{CachedLabel, quoted};
+use crate::layer::{
+    draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
+};
+
+/// A label of a render's label cache.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CachedLabel {
+    /// From 1 to `MAX_PRIORITY` of `forager-label`.
+    pub priority: u8,
+    /// The index of the layer in the map, and of the class in the layer.
+    pub layer: usize,
+    pub class: usize,
+    /// The label's text, held once for a feature's label and shared by its labels at every point.
+    pub text: Arc<str>,
+    /// The box the label was drawn in, `[min x, min y, max x, max y]` in pixels, its buffer
+    /// included; `None` for a label the cache discarded.
+    pub drawn: Option<[f64; 4]>,
+}
 
 /// Why a label's text is not laid out: the label names no font, no font of its list draws a line,
 /// or its font cannot draw a glyph, nor its fallback.
@@ -73,17 +91,6 @@ impl Unlaid {
             Self::Font(why) => why,
             Self::Glyph(glyph) => format!("its font cannot draw glyph {glyph} of {}", quoted(text)),
         }
-    }
-}
-
-/// A label of the render by its layer's index, its class's, and its index in the class.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct LabelAt(pub(crate) usize, pub(crate) usize, pub(crate) usize);
-
-impl LabelAt {
-    /// The label of `map` this finds.
-    pub(crate) fn label(self, map: &Map) -> &Label {
-        &map.layers[self.0].classes[self.1].labels[self.2]
     }
 }
 
@@ -326,7 +333,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let labels = self.settle_layer(index, RenderMode::Point, drawn, binder, several);
         let (width, height) = self.size;
         let mut styled = Styled::new(self.map, self.view, self.factors, pixmaps, width, height);
-        if crate::layer_opacity(&self.map.layers[index]).is_some() {
+        if layer_opacity(&self.map.layers[index]).is_some() {
             styled.in_own_image();
         }
         AtOnce { labels, styled }
@@ -721,10 +728,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     fn report_refusals(&mut self, diagnostics: &mut Vec<Diagnostic>) {
         let refusals = std::mem::take(&mut self.refusals);
         for (&layer, refused) in &refusals {
-            diagnostics.extend(crate::refused_hatches(
-                &self.map.layers[layer],
-                refused.hatches,
-            ));
+            diagnostics.extend(refused_hatches(&self.map.layers[layer], refused.hatches));
         }
         for (layer, Refusals { mut pixmaps, .. }) in refusals {
             pixmaps.retain(|&index, _| !self.pixmaps_reported.contains(&(layer, index)));
@@ -732,7 +736,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 hatches: 0,
                 pixmaps,
             };
-            diagnostics.extend(crate::refusal_reports(&self.map.layers[layer], pixmaps));
+            diagnostics.extend(refusal_reports(&self.map.layers[layer], pixmaps));
         }
     }
 
@@ -871,7 +875,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             self.defs[template.def as usize].marker = marker;
         }
         let mut cached = false;
-        for point in crate::points_in_view(self.view, &feature.geometry) {
+        for point in points_in_view(self.view, &feature.geometry) {
             // The label cache holds at most MAX_LABELS labels a render (Q-9, ADR-0032).
             if self.cached.len() >= MAX_LABELS {
                 let first = self
@@ -1130,7 +1134,7 @@ fn draw_label<R: Draw>(
                 width: f64::from(width),
             }),
         };
-        crate::draw_items(renderer, label.feature_id, [glyphs]);
+        draw_items(renderer, label.feature_id, [glyphs]);
     }
     drawn.out_of_reach
 }
@@ -1164,7 +1168,7 @@ impl Members for Cache<'_> {
         // msAddLabelGroup caches the marker of the class's first style.
         let marker = self
             .markers
-            .binary_search_by_key(&self::index(index), |(i, _)| *i)
+            .binary_search_by_key(&label_cache::index(index), |(i, _)| *i)
             .ok()
             .map(|i| self.markers[i].1)
             .or(def.marker)
@@ -1297,46 +1301,13 @@ fn is_text(expr: &Expr) -> bool {
     }
 }
 
-/// Makes room in `list`, a list of the label cache, for `more` entries as they are held, growing
-/// it by a quarter of its capacity, or by what they need where that is more. A list that
-/// doubled as it grew would hold up to three times what it fills while it moved, past what Q-9
-/// bounds per label; one sized ahead for the features of a layer would hold room for labels a
-/// feature's `EXPRESSION`, its empty text, or its layout leaves out. Grown by half, the lists
-/// hold 400 bytes per label without style just past a step, at 15,586 labels; by a quarter, 363
-/// at 5,262, the most measured, and 392 at 1,109, where the render's fixed cost counts more
-/// per label. Each entry moves about four times as the list grows.
-pub(crate) fn make_room<T>(list: &mut Vec<T>, more: usize) {
-    if list.capacity() - list.len() < more {
-        list.reserve_exact(more.max(list.capacity() / 4).max(MIN_ROOM));
-    }
-}
-
-/// Pushes `entry` onto `list`, a list of the label cache, grown as [`make_room`] grows it.
-pub(crate) fn push<T>(list: &mut Vec<T>, entry: T) {
-    make_room(list, 1);
-    list.push(entry);
-}
-
-/// The fewest entries a list of the label cache grows by, so that a small one is not moved at
-/// each entry.
-const MIN_ROOM: usize = 8;
-
-/// An index into a render's labels, their texts, paths, or glyph caches, as the `u32` they are
-/// filed by.
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "the labels cached are held to MAX_LABELS, and their texts, paths, and defs with them"
-)]
-pub(crate) fn index(i: usize) -> u32 {
-    i as u32
-}
-
 #[cfg(test)]
 mod tests {
     use forager_ports::{Coord, Properties, ResourcePath, SourceError, Stored};
     use forager_style_ir::{Bound, Class, Extent};
 
     use super::*;
+    use crate::label_cache::MIN_ROOM;
     use forager_style_ir::Layer;
 
     struct NoFiles;
@@ -1348,7 +1319,7 @@ mod tests {
     }
 
     /// Whether `list` holds no more room than a quarter of what it fills, and the fewest entries
-    /// a list grows by, as [`make_room`] grows it.
+    /// a list grows by, as [`label_cache::make_room`] grows it.
     fn grown_by_a_quarter<T>(list: &[T], capacity: usize) -> bool {
         capacity <= list.len() + list.len() / 4 + MIN_ROOM
     }

@@ -165,13 +165,19 @@ golden path and the test pattern an agent copies from are named here.
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
   refused, a label's among them, and geometries its render mode cannot draw (Q-9); the hatches
   and pixmaps are one value, `Refusals`, which a canvas yields, the labels keep per layer and
-  merge, and one function of `lib.rs` turns into the layer's diagnostics. It loads the
+  merge, and one function of `layer.rs` turns into the layer's diagnostics. It loads the
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
   holds beneath each label, and a `labelpoint` style's marker, by them. It turns every drawing
-  operation into a display item of its feature in one place (`draw_items` in `lib.rs`). It is the
-  one core crate that awaits the ports.
+  operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It is the
+  one core crate that awaits the ports. Its modules import one another in one direction only,
+  `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `classes.rs`, `fonts.rs` and
+  `images.rs`, and `bind.rs`, `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `plan.rs`,
+  and `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs` lists them:
+  what the root and the modules share of a layer drawn lies in `layer.rs`, and the address of a
+  label and the growth of the label cache's lists, which the labels and their styles share, in
+  `label_cache.rs`; `arch-test`'s `tests/engine_modules.rs` holds this direction.
   Every host binds its sources to the layers by name through the engine's `bind_sources`
   (`bind.rs`), which reports a source no layer is named for and one that cannot be read the same
   way for each.
@@ -317,7 +323,9 @@ golden path and the test pattern an agent copies from are named here.
   `style-ir`'s `c.rs`, and a `PI / 180` in code (ADR-0036).
   `tests/symbolize_modules.rs` refuses an import between the modules of `symbolize`, outside its
   tests, against the direction its `lib.rs` states, and a module of the crate its table has no row
-  for. `tests/symbol_names.rs` refuses an `eq_ignore_ascii_case`, an ASCII case fold, or a
+  for; `tests/engine_modules.rs` refuses the same of the engine's modules, and an item of its
+  root taken by one, both reading the imports by `tests/module_direction/`.
+  `tests/symbol_names.rs` refuses an `eq_ignore_ascii_case`, an ASCII case fold, or a
   `to_uppercase` near a symbol's name outside `style-ir`'s `c.rs`, whose
   `ms_get_symbol_index` and `symbol_name_key` the frontend, the engine, and `symbolize` call;
   `tests/c_numbers.rs` refuses a function of either name outside it.
