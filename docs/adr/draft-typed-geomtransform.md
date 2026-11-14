@@ -187,8 +187,6 @@ Only the mapfile frontend translates it from MapServer's text.
 - Follow-ups:
   - the semantics page of the layer's transform, with `[map_cellsize]` and the layer's `UNITS`;
   - Q-9's bounds on the points a transform adds and visits, a change to the specification;
-  - the warning of ticket 12 of the revision of 2026-11-13, which this decision leaves in the
-    engine alone;
   - a glossary entry for the transform tree.
 
 ## Enforcement
