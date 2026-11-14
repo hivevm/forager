@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-11, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-13, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0005](adr/0005-feature-layer.md)).
@@ -72,7 +72,9 @@ golden path and the test pattern an agent copies from are named here.
   translation into the style IR (`translate/`, a module per block it reads: symbols, font set,
   labels, styles, projections, the output format's transparency, inline features, and the
   defaults of `VALIDATION`, which a load substitutes into its expressions within a 16 MiB bound of
-  their own, apart from the total size (`translate/defaults.rs`, Q-9)), which appends
+  their own, apart from the total size (`translate/defaults.rs`, Q-9); a load counts each of the two
+  bounds on text by a budget of one type that stops at its bound and reports the charge that passes
+  it once (`budget.rs`)), which appends
   to the map's symbols a pixmap or SVG symbol for each name a style's `SYMBOL` gives that no
   symbol carries, as `msAddImageSymbol` appends it, a name beginning `http` aside, its path
   inside the base context and its file not read
@@ -98,7 +100,9 @@ golden path and the test pattern an agent copies from are named here.
   bound feature source for the features in view, or, for a layer with inline features, a source
   in memory of its own over them, which reports a bound source as not read (`inline.rs`,
   ADR-0018), draws each feature that passes the layer's
-  filter with the first class whose expression matches it, its styles' bound and computed
+  filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
+  the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
+  bound and computed
   properties bound to it and every style and label scaled by its layer's scale factor, which
   `SIZEUNITS` or `SYMBOLSCALEDENOM` set and the map's `RESOLUTION` over its `DEFRESOLUTION`
   otherwise, the bounds of a style and a label by that resolution factor alone (`classes.rs`,
@@ -176,23 +180,24 @@ golden path and the test pattern an agent copies from are named here.
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`
-  at the top, then `shade.rs`, `marker.rs`, `line.rs`, and `canvas.rs`, and `bounds.rs`,
-  `style.rs`, `extent.rs`, and `offset.rs` the leaves; ADR-0008
+  and `label.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`, `canvas.rs`, `hatch.rs`,
+  `line_marker.rs` and `tile.rs`, `symbol.rs`, and `geom_transform.rs`, and `bounds.rs`, `style.rs`,
+  `extent.rs`, and `offset.rs` the leaves, as `lib.rs` lists them; ADR-0008
   decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs` holds
   this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list in the order MapServer tries them, and its glyphs read with skrifa, unhinted with
   FreeType's arithmetic, laid out by their advances, broken into lines at the label's `WRAP`
-  character and its `MAXLENGTH`, aligned line by line, and turned by the label's angle; and where
-  a label stands, its point and its box placed by its position, its offset, and its marker's, with
-  its labelpoly and the bounds of its `labelpoint` marker, as a pure function of the text's box
+  character and its `MAXLENGTH`, aligned line by line, and turned by the label's angle; and where a
+  label stands, its point and its box placed by its position, its offset, and its marker's, with its
+  labelpoly and the bounds of its `labelpoint` marker, as a pure function of the text's box
   (`place.rs`); and which labels MapServer's label cache draws, by priority, collisions with the
-  labels drawn, their `labelpoint` markers among them, and the markers cached, the image's edge,
-  and `MINDISTANCE`, each test bounded by a grid over the image that files a drawn label by its
-  box and, for `MINDISTANCE`, by its point apart; the cache takes the first `MAX_LABELS`, reports
-  how many it left out, and hands its caller every label it visits, drawn or not, in its walk's
-  order, which the engine's report of the labels follows (`cache.rs`). It is the one crate
-  that depends on skrifa, and does no I/O (ADR-0031).
+  labels drawn, their `labelpoint` markers among them, and the markers cached, the image's edge and
+  the gutter inside it that `labelcache_map_edge_buffer` sets, and `MINDISTANCE`, each test bounded
+  by a grid over the image that files a drawn label by its box and, for `MINDISTANCE`, by its point
+  apart; the cache takes the first `MAX_LABELS`, reports how many it left out, and hands its caller
+  every label it visits, drawn or not, in its walk's order, which the engine's report of the labels
+  follows (`cache.rs`). It is the one crate that depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
   or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
   transformation, each by a counted reference to the one image, a polygon filled with a tile, by
@@ -292,7 +297,11 @@ decoder on an arbitrary image file — run by `scripts/fuzz.sh`, which reads the
 every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out
 of the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
 `scripts/mutants.sh` runs cargo-mutants over the workspace every week through
-`.github/workflows/mutants.yml` and reports the edits no test notices.
+`.github/workflows/mutants.yml` and reports the edits no test notices. `scripts/package.sh` packs
+the CLI's archive and the browser bindings' package under `target/package/`, each with
+`THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive back for them, by the check
+of the notices that `scripts/check-notice.sh` shares (`scripts/lib/notice.sh`); nothing is
+published.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
 pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles, fonts,
