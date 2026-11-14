@@ -234,8 +234,8 @@ else
 fi
 
 # A shellcheck of another version: named beside the pinned one, failing in CI and warning
-# elsewhere (ADR-0038).
-# Verifies: ADR-0038 A stand-in reports the version and finds nothing.
+# elsewhere (ADR-0007).
+# Verifies: ADR-0007 A stand-in reports the version and finds nothing.
 fake="$work/fake-bin"
 mkdir -p "$fake"
 # The stand-in's own "$1" is written as it stands, unexpanded.

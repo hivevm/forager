@@ -800,7 +800,7 @@ fn a_layer_without_an_opacity_is_recorded_as_items_onto_the_map() {
 
 #[test]
 fn an_opacity_past_an_int_is_rounded_as_ms_nint_rounds_at_the_pin() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // bindIntegerAttribute stores MS_NINT(atof("3e9")), lrint's long 3000000000, in an int, which
     // keeps its low 32 bits: -1294967296, below 100, so bindStyle sets the alpha to
     // MS_NINT(-1294967296 × 2.55), -3302166605, whose low bits are 992800691, 179 in a byte.
@@ -825,7 +825,7 @@ fn an_opacity_past_an_int_is_rounded_as_ms_nint_rounds_at_the_pin() {
 
 #[test]
 fn a_style_s_opacity_of_100_4_or_of_minus_1_gives_the_alpha_bind_style_gives() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // bindIntegerAttribute stores MS_NINT(100.4) = 100, not below 100, so the colour keeps its
     // alpha; MS_NINT(-1) = -1 is, and bindStyle sets the alpha MS_NINT(-1 × 2.55) = -3, which
     // AGG's int8u keeps as 253 (src/maputil.c:80-86, 268-274).
@@ -860,7 +860,7 @@ fn a_style_s_opacity_of_100_4_or_of_minus_1_gives_the_alpha_bind_style_gives() {
 
 #[test]
 fn a_layer_s_opacity_of_100_4_or_of_minus_1_is_laid_over_as_mapserver_lays_it() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // A layer's opacity, cast to an `int` and bounded to 0 to 100 as a mapfile's must be: 100.4
     // is 100, laid over at MS_NINT(100 × 2.55) = 255 (src/mapagg.cpp:1389-1395); 99.6 is 99, at
     // MS_NINT(252.45) = 252; -1 is 0, a layer msDrawLayer skips.

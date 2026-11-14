@@ -526,7 +526,7 @@ fn smoothsia_or_rings_past_the_points_a_layer_may_visit_is_a_limit() {
 
 #[test]
 fn a_size_or_iterations_past_an_int_is_int_min_and_clamped() {
-    // The (int) cast gives INT_MIN for a double past an `int` (ADR-0036), which
+    // The (int) cast gives INT_MIN for a double past an `int` (ADR-0017), which
     // msSmoothShapeSIA raises to 3 and 1.
     let zigzag = line(&[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (8.0, 4.0)]);
     let once = line(&[(0.0, 0.0), (3.0, 1.0), (5.0, 3.0), (8.0, 4.0)]);

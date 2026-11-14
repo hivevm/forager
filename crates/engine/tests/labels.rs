@@ -1908,7 +1908,7 @@ fn a_label_over_a_marker_whose_size_is_not_computed_yet_is_not_drawn() {
 
 #[test]
 fn the_label_cache_holds_at_most_100000_labels_and_reports_those_past_it_once() {
-    // Verifies: Q-9, ADR-0039
+    // Verifies: Q-9, ADR-0032
     // One feature of 100,001 points: the first 100,000 at one point, where all but one collide,
     // and the last alone, where it would be drawn first. Past the limit it is left out untested.
     let mut points = vec!["[40, 30]"; forager_label::MAX_LABELS];
@@ -2156,7 +2156,7 @@ fn a_labelpoly_style_fills_the_text_box_grown_by_a_pixel_under_the_text() {
 
 #[test]
 fn a_label_styles_opacity_past_an_int_is_rounded_as_a_class_styles_is() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // bindStyle rounds a label's style as it rounds a class's: MS_NINT(atof("3e9")) in an int is
     // -1294967296, and the alpha MS_NINT(-1294967296 × 2.55) keeps 179 in a byte.
     let style = Style {
@@ -4496,7 +4496,7 @@ fn the_maps_label_cache_edge_buffer_keeps_a_cached_label_from_the_edge() {
 
 #[test]
 fn a_label_offset_past_an_int_is_cast_as_c_casts_it() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // `(int)` of an `OFFSET` past an `int` gives INT_MIN on x86-64, both where the label binds it
     // and where its offset is scaled: the label stands 2^31 pixels left of the point, where `as`
     // would saturate it to the right. Partial, so that the cache keeps it off the image.

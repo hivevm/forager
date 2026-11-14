@@ -417,7 +417,7 @@
           "const": "labelcenter"
         },
         {
-          "description": "An expression of shape functions, its transform tree (ADR-0037),\nwhich the engine does not draw on a class's style: a class's style of it in a line or a\npolygon layer draws nothing and is reported, its class's other styles drawn as before; a\npoint layer draws the style at its points, as it draws every style whatever its\ntransform; a label of a style of it is left out.",
+          "description": "An expression of shape functions, its transform tree (ADR-0036),\nwhich the engine does not draw on a class's style: a class's style of it in a line or a\npolygon layer draws nothing and is reported, its class's other styles drawn as before; a\npoint layer draws the style at its points, as it draws every style whatever its\ntransform; a label of a style of it is left out.",
           "type": "object",
           "properties": {
             "expression": {
@@ -812,7 +812,7 @@
           ]
         },
         "geom_transform": {
-          "description": "The layer's `GEOMTRANSFORM`, its transform tree (ADR-0037), which\nreplaces the shape of each feature that passes the layer's filter before it is classed and\ndrawn, as MapServer transforms each shape it reads. Absent, there is none.",
+          "description": "The layer's `GEOMTRANSFORM`, its transform tree (ADR-0036), which\nreplaces the shape of each feature that passes the layer's filter before it is classed and\ndrawn, as MapServer transforms each shape it reads. Absent, there is none.",
           "anyOf": [
             {
               "$ref": "#/$defs/TransformTree"

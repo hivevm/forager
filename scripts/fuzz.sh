@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the fuzz targets under fuzz/ (Q-3; ADR-0038, ADR-0025), each for a number of seconds, on
+# Runs the fuzz targets under fuzz/ (Q-3; ADR-0007, ADR-0025), each for a number of seconds, on
 # the nightly toolchain cargo-fuzz needs. Both are pinned here. The targets are the [[bin]] entries
 # of fuzz/Cargo.toml, read from there, so that no target the manifest builds is skipped; a target
 # without seeds under fuzz/seeds/<target> fails the run before anything is fuzzed;

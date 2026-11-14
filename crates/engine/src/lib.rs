@@ -26,7 +26,7 @@
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
-// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0036).
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0017).
 #![deny(clippy::cast_possible_truncation)]
 
 mod bind;
@@ -819,7 +819,7 @@ fn labelled<'a>(selected: &'a [Selected<'a>]) -> Vec<labels::Labelled<'a>> {
 
 /// Whether the layer of `selector` is drawn after its `GEOMTRANSFORM`: its `features`
 /// transformed, `[map_cellsize]` at `cellsize`, where it has one; none drawn, with a warning,
-/// where its transform tree is `not_drawn` or fails (ADR-0037).
+/// where its transform tree is `not_drawn` or fails (ADR-0036).
 fn transformed(
     selector: &mut Selector<'_, '_>,
     mode: RenderMode,
@@ -842,7 +842,7 @@ fn transformed(
 }
 
 /// The warning that `layer` draws nothing, its `GEOMTRANSFORM` a transform tree of the reason
-/// `reason` (ADR-0037). MapServer evaluates a function the tree has no node
+/// `reason` (ADR-0036). MapServer evaluates a function the tree has no node
 /// for through GEOS, or a JavaScript engine, and fails on a syntax error or a binding where it
 /// makes no number; Forager draws none of the layer, and the rest of the map.
 fn transform_not_drawn(layer: &Layer, reason: NotDrawn) -> Diagnostic {

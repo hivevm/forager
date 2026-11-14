@@ -467,7 +467,7 @@ fn an_index_past_the_symbols_or_a_quoted_number_warns_and_a_negative_one_is_refu
 
 #[test]
 fn a_symbol_index_past_an_int_is_int_min_and_draws_nothing() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // loadStyle (src/mapfile.c:3009-3021) checks the number against 0 alone and casts it with
     // `(int)`: 2147483647.9 is 2147483647, 2^31 and 5e9 are INT_MIN, which no symbol has.
     use forager_style_ir::SymbolRef;

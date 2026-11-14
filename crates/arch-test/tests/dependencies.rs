@@ -530,7 +530,7 @@ const NAN_BANS: [&str; 4] = [
 
 #[test]
 fn the_crates_that_port_mapservers_drawing_ban_what_the_workspace_bans() {
-    // Verifies: Q-2
+    // Verifies: Q-2, ADR-0007
     // Clippy reads the clippy.toml nearest a crate's manifest in place of the workspace's, so a
     // crate's own file would lift every ban it leaves out. The three crates that port MapServer's
     // drawing carry the workspace's lists with the bans of NAN_BANS added; no other crate, nor

@@ -10,7 +10,7 @@ publish.workspace = true
 
 [dependencies]
 forager-render.workspace = true
-# C's small ports, the `(int)` cast among them (ADR-0036).
+# C's small ports, the `(int)` cast among them (ADR-0017).
 forager-style-ir.workspace = true
 libm.workspace = true
 # The one crate that reads fonts (ADR-0031); without its default autohinter shaping, which an

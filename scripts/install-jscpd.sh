@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs jscpd at the version scripts/sensor-duplication.sh runs (ADR-0038):
+# Installs jscpd at the version scripts/sensor-duplication.sh runs (ADR-0007):
 # the static (musl) Linux release binary of kucherenko/jscpd for this machine's architecture,
 # verified against the SHA-256 the release's checksums.txt lists for the asset, which is pinned
 # here, into a directory on PATH, ~/.local/bin unless JSCPD_BIN_DIR names another. A jscpd

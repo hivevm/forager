@@ -1,4 +1,4 @@
-//! C's and MapServer's small ports live once (ADR-0036): `atof`,
+//! C's and MapServer's small ports live once (ADR-0017): `atof`,
 //! `atoi`, `strtod`, `lrint`, C's `(int)` cast of a `double` and its string end, and MapServer's
 //! `MS_NINT`, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, `msStringSplit`,
 //! `msComputeBounds`, `msGetSymbolIndex` with the key of its match of a name, and the alpha of an
@@ -88,7 +88,7 @@ fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
 
 #[test]
 fn c_number_reading_is_defined_only_in_the_module_of_style_ir() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
     rust_files(&root.join("crates"), &mut files);

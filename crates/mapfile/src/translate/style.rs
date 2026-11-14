@@ -250,7 +250,7 @@ impl Translator<'_> {
 
 impl Translator<'_> {
     /// The transform tree of a `GEOMTRANSFORM` expression, `text` the token at `span` with its
-    /// parentheses (ADR-0037), with the warning, for the caller to give, of
+    /// parentheses (ADR-0036), with the warning, for the caller to give, of
     /// its syntax error at its place; a tree past the nesting bound fails the load (Q-9).
     pub(super) fn transform_tree(
         &mut self,

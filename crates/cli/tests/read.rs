@@ -25,7 +25,7 @@ fn read(name: &str, format: &str) -> Output {
 
 #[test]
 fn a_mapfile_is_printed_as_a_style_document_with_its_warnings() {
-    // Verifies: G-2, ADR-0038
+    // Verifies: G-2, ADR-0007
     let output = read("world.map", "yaml");
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8(output.stdout).unwrap();

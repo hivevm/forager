@@ -1,5 +1,5 @@
 //! A symbol's name is matched in one place, `ms_get_symbol_index` and its `symbol_name_key` in
-//! `style-ir`'s module `c`, msGetSymbolIndex's `strcasecmp` (ADR-0036), which the frontend, the
+//! `style-ir`'s module `c`, msGetSymbolIndex's `strcasecmp` (ADR-0017), which the frontend, the
 //! engine, and `symbolize` call. `c_numbers.rs` refuses a function of either name outside that
 //! module; this check refuses the match written under another name: one of the folds of `FOLDS`
 //! outside the module where the identifier `symbol`, `symbols`, or `Symbol` stands on its line or

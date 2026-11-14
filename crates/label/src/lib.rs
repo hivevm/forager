@@ -6,7 +6,7 @@
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
-// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0036).
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0017).
 #![deny(clippy::cast_possible_truncation)]
 
 mod cache;

@@ -172,7 +172,7 @@ run() {
 }
 
 # The weekly workflows measure rather than gate, and a push cannot wait for them: the fuzz run of
-# Q-3, the mutation testing of ADR-0038, and the noise measurement of G-6. Their scripts run on a
+# Q-3, the mutation testing of ADR-0007, and the noise measurement of G-6. Their scripts run on a
 # human's instruction locally, and their self-tests run here.
 # Not a gate: .github/workflows/fuzz.yml
 # Not a gate: .github/workflows/mutants.yml

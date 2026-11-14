@@ -89,13 +89,13 @@ outside the part.
 lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`, the rules `shape_exp`,
 `math_exp`, and `string_exp`), function names without regard to case, without the parentheses
 `loadLayer` and `loadStyle` strip. The frontend translates it into a transform tree
-(ADR-0037): `[shape]`, and `generalize`, `densify`, `outer`, `inner`, and
+(ADR-0036): `[shape]`, and `generalize`, `densify`, `outer`, `inner`, and
 `smoothsia` of a shape, nested. A number is written, `[map_cellsize]`, or computed of those by
 `+ - * / % ^` and parentheses, as the grammar reduces them; the frontend folds every operation
 without `[map_cellsize]` to one number. A unary `-` leaves its operand as it is, as the rule
 `'-' math_exp %prec NEG { $$ = $2; }` does, while `-3` written together is one negative number,
 so `[map_cellsize]-2` does not parse. `%` takes its operands cut to `int`s, `INT_MIN` past an
-`int` (ADR-0036). `[data_cellsize]` is 0, as `msGeomTransformShape` binds it on every layer but
+`int` (ADR-0017). `[data_cellsize]` is 0, as `msGeomTransformShape` binds it on every layer but
 a contour layer (`src/mapgeomtransform.c:285-291`), which Forager does not carry. `smoothsia`'s
 size and iterations are 3 and 1 where they are not written, as the grammar calls
 `msSmoothShapeSIA(s, 3, 1, NULL)`; its preprocessing `all` or `angle` is read without regard to

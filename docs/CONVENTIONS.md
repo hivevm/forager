@@ -95,12 +95,12 @@ skimmed. The design revision drops what prevented nothing
   b1f2c29, and a shapefile that did not read left both sides of G-9 empty until f3a9c8f.
 - **A port cuts a value where C's declared type cuts it** — a value MapServer keeps in an `int`, a
   label's `SIZE`, its `MAXLENGTH`, a line's pen, is cut, narrowed, or bounded at the step C does,
-  an implicit assignment to an `int` field included, and an overflow that ADR-0036 and ADR-0016 do
+  an implicit assignment to an `int` field included, and an overflow that ADR-0017 and ADR-0016 do
   not decide is decided and named beside the code. No check sees such a step in a port that writes
   no cast: `msComputeTextPath` assigns `glyph_size`, an `int` (`mapserver.h:2385`), three times
   (`maplabel.c:71-75`), and the work of ef639d7 first rounded it once, so `SIZE 23` at a scale
   factor of 0.5 drew at 12 where MapServer draws at 11, until its review found it.
-  [ADR-0036](adr/0036-c-ports-in-style-ir.md) decides how a port carries out a C cast, a C
+  [ADR-0017](adr/0017-c-ports-in-style-ir.md) decides how a port carries out a C cast, a C
   assignment of a `double` to an `int`, and C's rounding, with the `INT_MIN` of the `(int)` cast
   and the low 32 bits of `MS_NINT`; [ADR-0016](adr/0016-expression-evaluation.md) decides the
   undefined behaviour of `expr`. Neither places the step where a value is cut, narrowed, or

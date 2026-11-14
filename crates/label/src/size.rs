@@ -54,7 +54,7 @@ mod tests {
 
     #[test]
     fn the_glyph_size_is_cut_twice_held_between_its_bounds_and_rounded_at_the_last() {
-        // Verifies: ADR-0031, ADR-0036
+        // Verifies: ADR-0031, ADR-0017
         // src/maplabel.c:71-75, each value checked against the C compiled with gcc: `glyph_size`
         // is an `int`, so the scaled size and its MS_MAX with the minimum are cut, and only the
         // MS_MIN with the maximum is rounded by MS_NINT.
@@ -75,14 +75,14 @@ mod tests {
 
     #[test]
     fn the_glyph_size_past_an_int_is_int_min_held_at_the_minimum() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         // `(int)` of 3e9 is INT_MIN, which MS_MAX lifts to the minimum size.
         assert_eq!(glyph_size(3e9, 1.0, 4.0, 4e9, 1.0), 4.0);
     }
 
     #[test]
     fn the_pixel_size_is_rounded_half_to_even_and_held_as_freetype_holds_it() {
-        // Verifies: ADR-0031, ADR-0036
+        // Verifies: ADR-0031, ADR-0017
         assert_eq!(pixel_size(10.0), 13); // 13.33
         assert_eq!(pixel_size(9.0), 12); // 12.0
         assert_eq!(pixel_size(15.0), 20); // 20.0

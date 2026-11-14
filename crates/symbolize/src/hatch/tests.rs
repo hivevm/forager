@@ -580,7 +580,7 @@ fn a_hatched_polygon_s_rings_reach_pixels_as_ms_transform_shape_simplify_puts_th
 
 #[test]
 fn a_hatch_over_a_box_past_an_int_lays_no_line() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // msHatchPolygon's `(int)` of the box's size gives INT_MIN past an `int`, so the hatch is laid
     // over a box of negative size, and createHatch lays no line where `as` would lay them all.
     let huge = vec![vec![p(-2e9, -2e9), p(2e9, -2e9), p(2e9, 2e9), p(-2e9, 2e9)]];

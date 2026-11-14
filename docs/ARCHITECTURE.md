@@ -34,7 +34,7 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0015](adr/0015-expressions-as-cql2.md)), its `GEOMTRANSFORM` expressions, of a layer and
   of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
   no text of the mapfile and is read to the same nesting bound (`transform.rs`,
-  ADR-0037), the diagnostics with their source spans, and the
+  ADR-0036), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
   class's `Style` may leave it out, a label's `Style<LabelTransform>` always names `labelpoint`,
@@ -57,7 +57,7 @@ golden path and the test pattern an agent copies from are named here.
   `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex`'s match of a symbol's name with the
   key the frontend's map of names takes, and the alpha `MS_NINT(opacity * 2.55)` of a style's
   or a layer's opacity, kept in a byte as AGG keeps it
-  ([ADR-0036](adr/0036-c-ports-in-style-ir.md)).
+  ([ADR-0017](adr/0017-c-ports-in-style-ir.md)).
   `engine`, `symbolize`, and `label` deny clippy's `cast_possible_truncation`, so that such a
   cast is not written as `as`. `style-ir` holds the geometry of a feature (`geometry.rs`), which
   the ports deliver and `symbolize` draws, the one crate both may depend on. It holds the marker
@@ -104,7 +104,7 @@ golden path and the test pattern an agent copies from are named here.
   (`expression.rs`), which also reads a `GEOMTRANSFORM` expression of a layer or a style into its
   transform tree, its operations without `[map_cellsize]` folded, and every node and operator
   counted against the nesting bound before it recurses deeper (`expression/transform.rs`,
-  ADR-0037, Q-9), and resolves
+  ADR-0036, Q-9), and resolves
   every other `init=` through the host's projection resolver. A load reports at most a thousand
   diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
   carries means is described per parameter under `docs/semantics/`.
@@ -122,7 +122,7 @@ golden path and the test pattern an agent copies from are named here.
   ADR-0018), replaces the shape of each feature that passes the layer's filter by the layer's
   `GEOMTRANSFORM` through `symbolize`, up to the first feature past its `MAXFEATURES`, and draws
   nothing of a layer whose transform tree is `not_drawn` or fails, with a warning (`classes.rs`,
-  ADR-0037), draws each feature that passes the layer's
+  ADR-0036), draws each feature that passes the layer's
   filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
   the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
   bound and computed
@@ -323,7 +323,7 @@ golden path and the test pattern an agent copies from are named here.
   workspace's, to those lists with the bans of `min` and `max` of `f64` and `f32` added, and
   refuses one in any other crate, and a `.clippy.toml` anywhere under `crates/`.
   `tests/c_numbers.rs` refuses a definition of one of `c.rs`'s ports, or one named `lrint_…` or
-  `ms_nint_…`, outside `style-ir`'s `c.rs`, and a `PI / 180` in code (ADR-0036).
+  `ms_nint_…`, outside `style-ir`'s `c.rs`, and a `PI / 180` in code (ADR-0017).
   `tests/symbolize_modules.rs` refuses an import between the modules of `symbolize`, outside its
   tests, against the direction its `lib.rs` states, and a module of the crate its table has no row
   for; `tests/engine_modules.rs` refuses the same of the engine's modules, and an item of its
@@ -401,7 +401,7 @@ whose shapefile does not read is a difference too. The native render and the mod
 are written in the test and again in `crates/bindings-wasm/src/conformance.rs`.
 
 The crates and their allowed edges are [ADR-0008](adr/0008-ports-and-adapters-crates.md); the
-toolchain and its checks are [ADR-0038](adr/0038-sensors-and-duplication.md).
+toolchain and its checks are [ADR-0007](adr/0007-rust-toolchain.md).
 
 **Golden path:** `forager read`, from the CLI's argument through the file loader and the
 frontend's `load` to the style document — `crates/cli/src/main.rs`, `crates/cli/src/files.rs`,

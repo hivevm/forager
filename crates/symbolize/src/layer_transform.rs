@@ -17,7 +17,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0037)
+//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0036)
 //! replaces the shape of each feature that passes the layer's filter before it is classed and
 //! drawn. The tree holds `generalize`, `densify`, `outer`, `inner`, and `smoothsia` of `[shape]`,
 //! nested; the frontend has translated MapServer's text into it.

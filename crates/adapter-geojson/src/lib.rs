@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn a_query_edge_of_no_number_overlaps_as_rect_overlap_decides() {
-        // Verifies: ADR-0036
+        // Verifies: ADR-0017
         // `rect_overlap`, msRectOverlap's port, refuses an overlap only by a comparison that
         // holds, and none holds with NaN: every feature meets an extent with a NaN edge.
         let source = GeoJsonSource::parse(ALL_TYPES).unwrap();

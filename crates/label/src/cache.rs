@@ -26,7 +26,7 @@
 //! out where a drawn label of the same text lies within its minimum distance.
 //!
 //! The tests are MapServer's, pair by pair; which pairs are tested is bounded by a loose grid
-//! that wraps around the image (Q-9, ADR-0039), so that labels drawn
+//! that wraps around the image (Q-9, ADR-0032), so that labels drawn
 //! beyond it cost what labels within it do: every marker and every drawn label is held once by its
 //! box, and a test visits each entry near its box at most once, and none that cannot meet it by
 //! lying inside out along the same axis. Where a member has a `MINDISTANCE`, a drawn label with a
@@ -41,7 +41,7 @@ use crate::place::{Anchor, Bounds, Placement, PointLabel, member_box, place, pla
 /// MapServer's `MS_MAX_LABEL_PRIORITY`: priorities run from 1 to it.
 pub const MAX_PRIORITY: u8 = 10;
 
-/// The most labels the label cache of one render holds (Q-9, ADR-0039); MapServer holds any
+/// The most labels the label cache of one render holds (Q-9, ADR-0032); MapServer holds any
 /// number. A label added past it is left out, untested.
 pub const MAX_LABELS: usize = 100_000;
 
@@ -198,7 +198,7 @@ struct Cache<'m, M: ?Sized> {
     gutter: f64,
     /// The markers of each slot, by the member's index.
     markers: Vec<Grid<u32>>,
-    /// The labels drawn, by their members' boxes alone (ADR-0039), with the position each stands
+    /// The labels drawn, by their members' boxes alone (ADR-0032), with the position each stands
     /// at.
     boxes: Grid<(u32, Anchor)>,
     /// The labels drawn with a text, by the points they stand at, for the `MINDISTANCE` test;
@@ -493,7 +493,7 @@ fn extent(min: f64, max: f64) -> (f64, f64, bool) {
 /// Entries by where their boxes lie, so that a test visits only the entries that can meet its
 /// box, each once, and each entry is held once (Q-9).
 ///
-/// It is a loose grid of levels that wraps around the image (ADR-0039):
+/// It is a loose grid of levels that wraps around the image (ADR-0032):
 /// level `k` has square cells of side `64 · 2^k`, as many as cover the image, its far edge
 /// included, up to the level of one cell over the image. A coordinate's cell is taken modulo the
 /// level's columns or rows, wherever it lies, so labels past the image spread over the cells as

@@ -265,7 +265,7 @@ fn invalid_values_are_errors() {
 
 #[test]
 fn a_map_size_is_checked_from_1_and_cast_as_load_map_casts_it() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // loadMap (src/mapfile.c:6824-6829): getInteger checks each number against 1 and MAXSIZE, an
     // `int`, before its `(int)` cast (src/mapfile.c:276-290, 312-317), so a fraction is cut and a
     // number below 1 or above INT_MAX, 2147483647.5 among them, fails the load.
@@ -1950,7 +1950,7 @@ fn a_maxfeatures_of_zero_is_an_error() {
 
 #[test]
 fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
-    // Verifies: ADR-0037
+    // Verifies: ADR-0036
     // loadLayer reads GEOMTRANSFORM by getSymbol(1, MS_EXPRESSION): an expression alone.
     let layer_transform = |text: &'static str| {
         let loaded = load_files(&[("m.map", text)]);
@@ -1990,7 +1990,7 @@ fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
 
 #[test]
 fn a_geomtransform_past_the_nesting_bound_fails_the_load() {
-    // Verifies: Q-9, ADR-0037
+    // Verifies: Q-9, ADR-0036
     let chain = vec!["1"; 26].join(" + ");
     for place in [
         format!("MAP LAYER NAME 'a' GEOMTRANSFORM (densify([shape], {chain})) END END"),

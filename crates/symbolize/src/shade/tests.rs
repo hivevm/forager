@@ -380,7 +380,7 @@ fn a_polygon_s_pixmap_without_its_image_or_past_its_bound_draws_nothing_and_says
 
 #[test]
 fn a_polygon_meets_the_image_as_rect_overlap_decides_a_bound_of_no_number_included() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0017
     // `ms_compute_bounds` makes a bound no number at a point that is none, and `rect_overlap`
     // refuses no overlap by it, as msComputeBounds and msRectOverlap do.
     let image = (10.0, 10.0);

@@ -96,7 +96,7 @@ fn run(cache: &Counted) -> (Vec<usize>, usize, usize) {
 
 #[test]
 fn large_inside_out_and_off_image_boxes_cost_the_cache_little_per_label() {
-    // Verifies: Q-9, ADR-0039
+    // Verifies: Q-9, ADR-0032
     // Forced boxes wider and taller than the image, each held once, not in every cell.
     let (drawn, _, bytes) = run(&labels(10_000.0, 3000, true, true));
     assert_eq!(drawn.len(), LABELS);
@@ -122,7 +122,7 @@ fn large_inside_out_and_off_image_boxes_cost_the_cache_little_per_label() {
     assert!(asked < 10, "{asked} boxes asked for per label");
     // MAX_LABELS labels offset 3000 pixels from their points, within the image: each drawn
     // label is filed by its box, not by its box grown to its point, which would put it in the
-    // coarsest level, where every later test visits it (ADR-0039).
+    // coarsest level, where every later test visits it (ADR-0032).
     let offset = spread_labels(MAX_LABELS, UPPER_LEFT, 3000);
     let mut drawn = 0;
     let left_out = draw_label_cache(&offset, SIZE, 0, |_, _| drawn += 1);
@@ -151,7 +151,7 @@ fn large_inside_out_and_off_image_boxes_cost_the_cache_little_per_label() {
 /// `MAX_LABELS` labels drawn beyond the image, by offsets right and down, left and up, and of a
 /// million pixels: the grid wraps around the image, so they spread over its cells as the same
 /// labels unmoved within the image do, and ask for no more boxes than those; where their points
-/// spread over the upper left, fewer than 12 (ADR-0039). Held at the
+/// spread over the upper left, fewer than 12 (ADR-0032). Held at the
 /// image's edge, the case of 3000 pixels over the whole image asked for 4962 boxes per label.
 /// A million pixels is a whole number of cells of the finest level, where these labels are
 /// held, so they lie in the cells as the unmoved ones do and ask for exactly as many boxes;

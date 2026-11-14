@@ -45,7 +45,7 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml); rustup installs it on
 first use. [`scripts/install-tools.sh`](scripts/install-tools.sh) installs it with the cargo
 tools the checks need and the release binaries of ShellCheck and jscpd, and the Dev Container runs
-it after creation (ADR-0038, ADR-0009).
+it after creation (ADR-0007, ADR-0009).
 
 - **Build:** `cargo build --workspace`
 - **Test:** `cargo test --workspace`
@@ -65,7 +65,7 @@ it after creation (ADR-0038, ADR-0009).
 - **Fuzz:** `bash scripts/fuzz.sh [seconds per target]` — the weekly fuzz run of Q-3, locally; it
   installs its nightly toolchain and cargo-fuzz
 - **Mutants:** `bash scripts/mutants.sh [shard such as 1/20]` — the weekly mutation testing of
-  ADR-0038, locally; it reports the mutants no test caught
+  ADR-0007, locally; it reports the mutants no test caught
 
 ## Usage
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the WebAssembly bundle of the browser bindings into target/web/ (ADR-0038): a build with
+# Builds the WebAssembly bundle of the browser bindings into target/web/ (ADR-0007): a build with
 # the size-optimized `wasm` profile for wasm32-unknown-unknown, then the JavaScript glue of the
 # wasm-bindgen CLI, which scripts/install-tools.sh installs at the crate's version. The dev server
 # serves the result under /pkg/; scripts/check-rust.sh measures it.
