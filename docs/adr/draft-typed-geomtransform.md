@@ -84,6 +84,8 @@ Only the mapfile frontend translates it from MapServer's text.
 - **Numbers.** A number argument is a JSON number, `map_cellsize` without arguments, or `+`, `-`,
   `*`, `/`, `%`, or `^` of two number arguments.
   - The frontend must fold every operation without `map_cellsize` to one JSON number at load.
+  - The frontend must fold `[data_cellsize]` to the number 0, as `mapgeomtransform.c` binds it on
+    every layer but a contour layer, which Forager does not carry.
   - The IR has no negation. The frontend must translate MapServer's unary `-` to its operand, as
     `mapparser.y` does.
   - The frontend must translate a text `smoothsia` preprocessing other than `all` or `angle`, read
@@ -94,10 +96,14 @@ Only the mapfile frontend translates it from MapServer's text.
     `difference`, `simplify`, `simplifypt`, `javascript`, `length`, `area`, `round`;
   - `binding`, for a property's value where a number or a text is due;
   - `text`, for a computed `smoothsia` preprocessing;
-  - `syntax`, for an expression `shape_exp` does not parse.
+  - `fromtext`, for a shape `fromtext` reads from a text;
+  - `literal`, for an operation of literals that folds to no finite JSON number, a `%` by 0 among
+    them;
+  - `syntax`, for an expression `shape_exp` does not parse, a `/` by 0 among them.
 
-  The frontend must name the first such construct in the expression's reading order. The tree
-  must hold no text of the mapfile.
+  A syntax error takes precedence: MapServer refuses the whole expression, so an expression with a
+  syntax error is `syntax`. Otherwise the frontend must name the first such construct in the
+  expression's reading order. The tree must hold no text of the mapfile.
 - **Who parses.** Only `crates/mapfile` may parse a `GEOMTRANSFORM` expression. The core must read
   the tree and never MapServer's text.
 - **Diagnostics.** The engine must warn `geomtransform-not-drawn` for a `not_drawn` tree, naming
@@ -110,8 +116,9 @@ Only the mapfile frontend translates it from MapServer's text.
     document alike (Q-9).
 - **Versions.** The document stays at 1.0, and `schema/style-document-1.0.json` is regenerated in
   the change that implements this ADR. A function added to the tree after the first release must
-  be a major version. A reader of an older minor unsets an unknown value, and so draws the shapes
-  untransformed.
+  be a major version. A reader of an older minor unsets an unknown function, and so draws the
+  shapes untransformed. It must read a `not_drawn` reason it does not know as not drawn, with a
+  warning naming its path. A reason added in a minor version so fails closed.
 
 **Out of scope:**
 
