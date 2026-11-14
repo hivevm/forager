@@ -42,7 +42,7 @@ own longitude and latitude.
 - Q-1 (the reprojection is pure Rust and builds for wasm32), Q-5 (bundle size), Q-6 (licence)
 - G-5 (the browser bindings reproject as the CLI does)
 - Q-3 (a point that does not reproject and a `.prj` that does not read are diagnostics; the `.prj`
-  reader is fuzzed), Q-9 (the points a horizon adds, and the size of a `.prj`, are bounded)
+  reader is fuzzed), Q-9 (the points a horizon adds are bounded)
 
 ## User stories
 
@@ -105,7 +105,8 @@ own longitude and latitude.
 
 ## ADR impact
 
-- Binding: ADR-0008 (the `proj` crate and its edges), ADR-0019 (proj4 strings from the resolver),
+- Binding: ADR-0008 (the `proj` crate and its edges), ADR-0013 and ADR-0014 (a map of `AUTO` changes
+  the style document; ticket 07), ADR-0019 (proj4 strings from the resolver),
   ADR-0011 (a new dependency), ADR-0022 and ADR-0023 (the port and its features), ADR-0024 (the
   browser bindings' sources), ADR-0034 (G-9 on wasm32), ADR-0002 (`Verifies: G-11`).
 - New `proposed` ADRs before implementation:

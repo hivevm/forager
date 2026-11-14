@@ -1,18 +1,15 @@
-# Ticket: `PROJECTION AUTO` takes the projection the source declares
+# Ticket: A layer's `PROJECTION AUTO` takes the projection the source declares
 
 ## What to build
 
 A layer of `PROJECTION AUTO` takes its projection from its source: a shapefile from the WKT of the
 `.prj` beside it, turned into a proj4 string in the shapefile adapter, and a GeoJSON source as WGS84
 longitude and latitude. A source that declares none leaves the layer as `msProjectCreateReprojector`
-leaves it: longitude and latitude in the datum of the map's projection. A map of `PROJECTION AUTO`
-is read as `msProcessProjection` reads it: `AUTO` stays its one argument, without a PROJ object, so
-a layer without a projection is not reprojected and a layer in a projection is reprojected into its
-base geographic CRS (`msProjectCreateReprojector`); the frontend no longer warns of it as not yet
-supported. A `.prj` is read up to the 2047 bytes MapServer reads of it. Where MapServer only writes
-a debug message for a `.prj` it cannot read, Forager warns, by intent, since it has no debug log.
-Before any code, `propose-adr` runs for the projection a source declares: the change to the feature
-source port, and the crate that turns WKT into proj4 (proj4wkt or another).
+leaves it: longitude and latitude in the datum of the map's projection. A `.prj` is read up to the
+2047 bytes MapServer reads of it. Where MapServer only writes a debug message for a `.prj` it cannot
+read, Forager warns, by intent, since it has no debug log. Before any code, `propose-adr` runs for
+the projection a source declares: the change to the feature source port, and the crate that turns
+WKT into proj4 (proj4wkt or another).
 
 ## Acceptance criteria
 
@@ -27,25 +24,18 @@ source port, and the crate that turns WKT into proj4 (proj4wkt or another).
   none.
 - [ ] Given a GeoJSON layer of `PROJECTION AUTO`, when it is rendered under a map in UTM, then it is
   reprojected from WGS84 longitude and latitude, in the CLI and in the browser bindings (G-5).
-- [ ] Given a map of `PROJECTION AUTO`, when it is loaded, then the style IR tells it from a map
-  without a projection, and no `unsupported-value` warning is reported.
-- [ ] Given a map of `PROJECTION AUTO` and a layer in UTM, when it is rendered, then the layer is
-  drawn in the longitude and latitude of its own datum, as MapServer draws it; a layer without a
-  projection beneath it is drawn unreprojected.
 - [ ] Given the reader of a `.prj`, when the weekly fuzz run feeds it, then it ends without a panic
   (Q-3).
 
 ## Read first
 
 - Touches: `crates/ports/src/lib.rs`, `crates/adapter-shapefile`, `crates/adapter-geojson`,
-  `crates/engine/src/lib.rs`, `crates/mapfile/src/translate/mod.rs`, `crates/cli`,
-  `crates/bindings-wasm`, `crates/style-ir` (the map's `AUTO`), `fuzz/`,
-  `docs/semantics/projection.md` (**AUTO**)
+  `crates/engine/src/lib.rs`, `crates/cli`, `crates/bindings-wasm`, `fuzz/` (a `[[bin]]` target and
+  its seeds), `docs/semantics/projection.md` (**AUTO**)
 - `docs/semantics/projection.md` (**AUTO**), `docs/semantics/shapefile.md`; MapServer's
-  `msSHPLayerOpen` (`src/mapshape.c`) and `msProcessProjection` (`src/mapproject.c`)
+  `msSHPLayerOpen` (`src/mapshape.c`) and `msProjectCreateReprojector` (`src/mapproject.c`)
 - Glossary: Adapter, Feature source, Port
-- Seam: the frontend's `load` with files in memory; the shapefile adapter's tests with fixtures; the
-  engine's render with sources in memory
+- Seam: the shapefile adapter's tests with fixtures; the engine's render with sources in memory
 
 ## Blocked by
 
