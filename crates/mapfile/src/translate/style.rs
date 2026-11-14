@@ -16,9 +16,12 @@
 //! A class's or a label's `STYLE` blocks.
 
 use forager_style_ir::c::{int_cast, opacity_alpha};
-use forager_style_ir::{Bound, GeomTransform, LineCap, LineJoin, LineOffset, Style};
+use forager_style_ir::{
+    Bound, GeomTransform, LineCap, LineJoin, LineOffset, Span, Style, TransformTree,
+};
 
 use super::{Range, Translator, kept_binding, kept_bindings};
+use crate::expression;
 use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
 
@@ -191,15 +194,17 @@ impl Translator<'_> {
         }
     }
 
-    /// `GEOMTRANSFORM` by name; MapServer's expressions are not yet carried over, and are a
-    /// warning on a class's style.
+    /// `GEOMTRANSFORM` by name, or an expression as its transform tree.
     fn geom_transform(&mut self, d: &Directive, of_label: bool) -> Option<GeomTransform> {
         // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION): a string, a bare word that is no
-        // keyword among them, or an expression, which the engine does not draw and reports.
+        // keyword among them, or an expression, which the engine does not draw and reports. A
+        // label's reader reports the label it leaves out of a style of an expression, so a
+        // syntax error of a label's style is not warned of again.
         if let [token] = d.values.as_slice()
             && let TokenKind::Expression(text) = &token.kind
         {
-            return Some(GeomTransform::Expression(text.clone()));
+            let tree = self.transform_tree(text, &token.span, !of_label)?;
+            return Some(GeomTransform::Expression(tree));
         }
         let name = match d.values.as_slice() {
             [token] => token.string().map(str::to_ascii_lowercase),
@@ -231,6 +236,42 @@ impl Translator<'_> {
             self.warn("unsupported-value", message, &d.span);
         }
         transform
+    }
+}
+
+impl Translator<'_> {
+    /// The transform tree of a `GEOMTRANSFORM` expression, `text` the token at `span` with its
+    /// parentheses (ADR-draft-typed-geomtransform). A syntax error is warned of at its place,
+    /// where `warn`; a tree past the nesting bound fails the load (Q-9).
+    pub(super) fn transform_tree(
+        &mut self,
+        text: &str,
+        span: &Span,
+        warn: bool,
+    ) -> Option<TransformTree> {
+        let translated = match expression::geom_transform(text) {
+            Ok(translated) => translated,
+            Err(problem) => {
+                self.error(problem.code, &problem.message, span);
+                return None;
+            }
+        };
+        if let Some((what, character)) = translated.syntax
+            && warn
+        {
+            let place = Span {
+                column: span
+                    .column
+                    .saturating_add(u32::try_from(character).unwrap_or(u32::MAX)),
+                ..span.clone()
+            };
+            let message = format!(
+                "the GEOMTRANSFORM expression does not parse as a shape: {what}; the transform \
+                 draws nothing"
+            );
+            self.warn("invalid-expression", &message, &place);
+        }
+        Some(translated.tree)
     }
 }
 

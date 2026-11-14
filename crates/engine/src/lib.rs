@@ -42,11 +42,12 @@ use forager_ports::{
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::{int_cast, opacity_alpha};
 use forager_style_ir::{
-    Diagnostic, GeomTransform, Layer, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
+    Diagnostic, GeomTransform, Layer, LayerStatus, Map, NotDrawn, RenderMode, Rgba, Style, Symbol,
+    TransformTree,
 };
 use forager_symbolize::{
-    Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, can_draw, clip_pixmaps, draw_ops,
-    label_pixmap, marked_pixmap, point_markers, resolve, vertices,
+    Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, clip_pixmaps,
+    draw_ops, label_pixmap, marked_pixmap, point_markers, resolve, vertices,
 };
 
 use forager_expr::Evaluator;
@@ -162,13 +163,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
         };
-        let Some(features) = features(layer, sources, &view, &mut diagnostics).await else {
+        let Some(mut features) = features(layer, sources, &view, &mut diagnostics).await else {
             continue;
         };
         if layer.classes.is_empty() {
             continue;
         }
-        let (drawable, undrawn) = drawable(mode, &features);
         let mut selector = Selector {
             binder: Binder {
                 layer,
@@ -179,6 +179,11 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             },
             scale,
         };
+        let cellsize = classes::layer_cellsize(map, view.cellsize);
+        if !transformed(&mut selector, mode, &mut features, cellsize) {
+            continue;
+        }
+        let (drawable, undrawn) = drawable(mode, &features);
         let selected = selector.select(drawable, &map.symbols);
         let drawing = Drawing {
             mode,
@@ -197,11 +202,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .await;
         let (pixmaps, tiles) = images.drawing();
         let mut canvas = layer_canvas(map, factors[layer_index], (width, height), pixmaps, tiles);
-        // Each feature is labelled by the class that draws it, in the order it is drawn.
-        let drawn: Vec<labels::Labelled<'_>> = selected
-            .iter()
-            .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
-            .collect();
+        let drawn = labelled(&selected);
         let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
             let binder = &mut selector.binder;
@@ -809,17 +810,21 @@ fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diag
 }
 
 /// Warns of each class style whose `GEOMTRANSFORM` is an expression, which the engine does not
-/// draw, of a line or a polygon layer: MapServer evaluates it by msGeomTransformShape, most of its
-/// functions through GEOS. The style draws nothing; the class's other styles draw in their passes
-/// as before. A point layer draws such a style at its points, as pointLayerDrawShape draws every
-/// style whatever its transform, and is not warned.
+/// draw on a style, of a line or a polygon layer: MapServer evaluates it by msDrawTransformedShape,
+/// most of its functions through GEOS. The style draws nothing; the class's other styles draw in
+/// their passes as before. A point layer draws such a style at its points, as pointLayerDrawShape
+/// draws every style whatever its transform, and is not warned.
 fn expressions_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
     for style in layer.classes.iter().flat_map(|class| &class.styles) {
-        if let Some(GeomTransform::Expression(expression)) = &style.geom_transform {
+        if let Some(GeomTransform::Expression(tree)) = &style.geom_transform {
+            let holding = match tree {
+                TransformTree::NotDrawn(reason) => format!(", of {},", described(*reason)),
+                TransformTree::Drawn(_) => String::new(),
+            };
             let message = format!(
-                "layer {}: the GEOMTRANSFORM expression {} is not drawn: the style draws nothing",
+                "layer {}: the GEOMTRANSFORM expression{holding} of a class's style is not drawn: \
+                 the style draws nothing",
                 name(layer),
-                quoted(expression)
             );
             diagnostics.push(Diagnostic::warning(
                 "geomtransform-not-drawn",
@@ -828,6 +833,84 @@ fn expressions_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
             ));
         }
     }
+}
+
+/// What a transform tree's reason `not_drawn` stands for, as a warning names it.
+fn described(reason: NotDrawn) -> String {
+    match reason {
+        NotDrawn::Binding => "a property's value where a number or a text is due".to_owned(),
+        NotDrawn::Text => "a computed smoothsia preprocessing".to_owned(),
+        NotDrawn::Fromtext => "a shape fromtext reads from a text".to_owned(),
+        NotDrawn::Literal => "an operation of literals that folds to no finite number".to_owned(),
+        NotDrawn::Syntax => "an expression that does not parse as a shape".to_owned(),
+        function => format!("the function {}", function.name()),
+    }
+}
+
+/// Each feature of `selected` with the class that draws it, by which it is labelled, and its
+/// first style, in the order it is drawn.
+fn labelled<'a>(selected: &'a [Selected<'a>]) -> Vec<labels::Labelled<'a>> {
+    selected
+        .iter()
+        .map(|(feature, class, styles)| (*feature, *class, styles.first().map(|s| &**s)))
+        .collect()
+}
+
+/// Whether the layer of `selector` is drawn after its `GEOMTRANSFORM`: its `features`
+/// transformed, `[map_cellsize]` at `cellsize`, where it has one; none drawn, with a warning,
+/// where its transform tree is `not_drawn` or fails (ADR-draft-typed-geomtransform).
+fn transformed(
+    selector: &mut Selector<'_, '_>,
+    mode: RenderMode,
+    features: &mut [Feature],
+    cellsize: f64,
+) -> bool {
+    let layer = selector.binder.layer;
+    let warning = match &layer.geom_transform {
+        None => return true,
+        Some(TransformTree::NotDrawn(reason)) => transform_not_drawn(layer, *reason),
+        Some(TransformTree::Drawn(shape)) => {
+            match selector.transform(mode, features, shape, cellsize) {
+                Ok(()) => return true,
+                Err(undrawn) => transform_failed(layer, undrawn),
+            }
+        }
+    };
+    selector.binder.diagnostics.push(warning);
+    false
+}
+
+/// The warning that `layer` draws nothing, its `GEOMTRANSFORM` a transform tree of the reason
+/// `reason` (ADR-draft-typed-geomtransform). MapServer evaluates a function the tree has no node
+/// for through GEOS, or a JavaScript engine, and fails on a syntax error or a binding where it
+/// makes no number; Forager draws none of the layer, and the rest of the map.
+fn transform_not_drawn(layer: &Layer, reason: NotDrawn) -> Diagnostic {
+    let message = format!(
+        "layer {} draws nothing: its GEOMTRANSFORM holds {} (not_drawn: {}), which the engine \
+         does not draw",
+        name(layer),
+        described(reason),
+        reason.name()
+    );
+    Diagnostic::warning("geomtransform-not-drawn", message, layer.span.clone())
+}
+
+/// The warning that `layer` draws nothing, its `GEOMTRANSFORM` failed on a shape or past a bound
+/// of Q-9. Where MapServer's parser fails the transform on a shape (densify on a point, a division
+/// by zero, outer on a line), msGeomTransformShape fails, msDrawVectorLayer returns MS_FAILURE
+/// (src/mapdraw.c:1427-1434), and msDrawMap frees the image and returns none
+/// (src/mapdraw.c:508-519): MapServer makes no map. Forager draws nothing of the layer, with the
+/// warning, and the rest of the map.
+fn transform_failed(layer: &Layer, undrawn: Undrawn) -> Diagnostic {
+    let (code, why) = match undrawn {
+        Undrawn::Failed(why) => ("geomtransform-not-drawn", why),
+        Undrawn::Limit(why) => ("geomtransform-over-limit", why),
+    };
+    let message = format!(
+        "layer {} draws nothing: its GEOMTRANSFORM {why}",
+        name(layer)
+    );
+    Diagnostic::warning(code, message, layer.span.clone())
 }
 
 /// The warning for the hatch fills of a layer refused to be drawn (Q-9), if any.

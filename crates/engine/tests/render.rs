@@ -1,3 +1,18 @@
+// Some expectations of these tests follow MapServer's src/maplayer.c and src/mapdraw.c of the
+// release pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 //! The engine end to end: a style IR and GeoJSON in, an RGBA image out, compared with a reference
 //! image of Forager's own (spec of the browser tracer, Testing decisions). Set FORAGER_BLESS=1 to
 //! write the references after a deliberate change, and review the images before committing them;
@@ -15,8 +30,9 @@ use forager_engine::{MAX_FEATURES_PER_LAYER, MAX_IMAGE_SIDE, Rendered, render};
 use forager_render::{DrawOp, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset, Map,
-    RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef, Units,
+    Bound, Class, Expr, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset,
+    Map, NotDrawn, NumberOp, Op, RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind,
+    SymbolRef, TransformNumber, TransformShape, TransformTree, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -1816,7 +1832,7 @@ fn a_style_of_a_geomtransform_expression_draws_nothing_and_is_reported() {
     let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
     let alone = render_with(&map_with(RenderMode::Line, vec![plain.clone()]), Some(line));
     let transformed = Style {
-        geom_transform: Some(GeomTransform::Expression("(buffer([shape], 5))".to_owned())),
+        geom_transform: Some(GeomTransform::Expression(not_drawn(NotDrawn::Buffer))),
         ..line_style(GREEN, 9.0)
     };
     let rendered = render_with(
@@ -1832,7 +1848,7 @@ fn a_style_of_a_geomtransform_expression_draws_nothing_and_is_reported() {
     assert!(
         rendered.diagnostics[0]
             .message
-            .contains("`(buffer([shape], 5))`"),
+            .contains("of the function buffer"),
         "{}",
         rendered.diagnostics[0].message
     );
@@ -1849,7 +1865,7 @@ fn a_point_layer_draws_a_style_of_a_geomtransform_expression_at_its_points() {
     let style = Style {
         color: Some(Bound::Value(BLUE)),
         size: Some(Bound::Value(5.0)),
-        geom_transform: Some(GeomTransform::Expression("(buffer([shape], 5))".to_owned())),
+        geom_transform: Some(GeomTransform::Expression(not_drawn(NotDrawn::Buffer))),
         ..Style::default()
     };
     let line = r#"{"type": "LineString", "coordinates": [[20, 20], [80, 80]]}"#;
@@ -1862,4 +1878,193 @@ fn a_point_layer_draws_a_style_of_a_geomtransform_expression_at_its_points() {
     let image = rendered.image.unwrap();
     assert_eq!(image.pixel(20, 80), Some(BLUE));
     assert_eq!(image.pixel(80, 20), Some(BLUE));
+}
+
+fn not_drawn(reason: NotDrawn) -> TransformTree {
+    TransformTree::NotDrawn(reason)
+}
+
+/// `generalize([shape], tolerance)`.
+fn generalized(tolerance: TransformNumber) -> TransformTree {
+    TransformTree::Drawn(TransformShape::Generalize(
+        Box::new(TransformShape::Shape),
+        tolerance,
+    ))
+}
+
+/// `densify([shape], tolerance)`.
+fn densified(tolerance: f64) -> TransformTree {
+    TransformTree::Drawn(TransformShape::Densify(
+        Box::new(TransformShape::Shape),
+        TransformNumber::Number(tolerance),
+    ))
+}
+
+fn codes(rendered: &Rendered) -> Vec<&str> {
+    rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect()
+}
+
+#[test]
+fn a_layer_of_a_not_drawn_transform_draws_nothing_and_warns_its_reason() {
+    // Verifies: ADR-draft-typed-geomtransform
+    // MapServer applies the layer's GEOMTRANSFORM to each shape msLayerNextShape reads; simplify
+    // needs GEOS, which Forager has not: the layer draws nothing, with the warning naming the
+    // reason.
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
+    for (reason, named) in [
+        (NotDrawn::Simplify, "not_drawn: simplify"),
+        (NotDrawn::Binding, "not_drawn: binding"),
+        (NotDrawn::Syntax, "not_drawn: syntax"),
+    ] {
+        map.layers[0].geom_transform = Some(not_drawn(reason));
+        let rendered = render_with(&map, Some(line));
+        assert_eq!(codes(&rendered), ["geomtransform-not-drawn"]);
+        let message = &rendered.diagnostics[0].message;
+        assert!(message.contains(named), "{message}");
+        let image = rendered.image.unwrap();
+        assert_eq!(
+            image.pixel(50, 80),
+            Some(WHITE),
+            "nothing of the layer is drawn"
+        );
+    }
+}
+
+/// A line up from (0, 20) to (50, 60) and down to (100, 20).
+const PEAK: &str = r#"{"type": "LineString", "coordinates": [[0, 20], [50, 60], [100, 20]]}"#;
+
+#[test]
+fn a_layer_of_generalize_draws_the_generalized_line() {
+    // msGeneralize keeps the first point, each at least the tolerance from the last kept, and the
+    // last: by 200 the peak is dropped, and the line runs straight along y = 20, pixel row 80.
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    let plain = render_with(&map, Some(PEAK)).image.unwrap();
+    assert_ne!(
+        plain.pixel(25, 60),
+        Some(WHITE),
+        "the peak's slope is drawn"
+    );
+    assert_eq!(plain.pixel(50, 80), Some(WHITE));
+    map.layers[0].geom_transform = Some(generalized(TransformNumber::Number(200.0)));
+    let rendered = render_with(&map, Some(PEAK));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 80), Some(BLUE), "the generalized line");
+    assert_eq!(image.pixel(25, 60), Some(WHITE), "the peak is dropped");
+}
+
+#[test]
+fn map_cellsize_is_the_cellsize_in_meters_of_the_layer() {
+    // msGeomTransformShape binds [map_cellsize] to the map's cellsize, 1 here, times the inches
+    // of the map's unit over those of the layer's, meters as initLayer sets them: in a map of
+    // meters a tolerance of 10 keeps the peak; in one of degrees it is 10 * 4374754 / 39.3701,
+    // about 1.1 million, and drops it.
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    map.layers[0].geom_transform = Some(generalized(TransformNumber::Op(
+        NumberOp::Mul,
+        Box::new(TransformNumber::MapCellsize),
+        Box::new(TransformNumber::Number(10.0)),
+    )));
+    let meters = render_with(&map, Some(PEAK)).image.unwrap();
+    assert_ne!(meters.pixel(25, 60), Some(WHITE), "the peak is kept");
+    map.units = Some(Units::Degrees);
+    let rendered = render_with(&map, Some(PEAK));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let degrees = rendered.image.unwrap();
+    assert_eq!(degrees.pixel(25, 60), Some(WHITE), "the peak is dropped");
+    assert_eq!(degrees.pixel(50, 80), Some(BLUE));
+}
+
+#[test]
+fn a_layer_whose_geomtransform_adds_too_many_points_draws_nothing_with_a_warning() {
+    // densify by 0.000001 would add a hundred million points to the line, past the 1 000 000 a
+    // layer's transforms may add.
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    map.layers[0].geom_transform = Some(densified(0.000001));
+    let rendered = render_with(&map, Some(PEAK));
+    assert_eq!(codes(&rendered), ["geomtransform-over-limit"]);
+    let image = rendered.image.unwrap();
+    assert_eq!(
+        image.pixel(25, 60),
+        Some(WHITE),
+        "nothing of the layer is drawn"
+    );
+}
+
+#[test]
+fn a_layer_whose_transform_fails_on_a_shape_draws_nothing_with_a_warning() {
+    // msDensify returns NULL for a point shape, and the parser fails ("Executing densify
+    // failed."); msDrawMap then makes no map, where Forager draws nothing of the layer.
+    let mut map = map(RenderMode::Point, line_style(BLUE, 3.0));
+    map.layers[0].geom_transform = Some(densified(5.0));
+    let point = r#"{"type": "Point", "coordinates": [50, 50]}"#;
+    let rendered = render_with(&map, Some(point));
+    assert_eq!(codes(&rendered), ["geomtransform-not-drawn"]);
+    assert!(
+        rendered.diagnostics[0]
+            .message
+            .contains("densify on a point"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
+}
+
+/// Two lines along y = 20 and y = 50, pixel rows 80 and 50, and a point, which densify fails,
+/// each with its `kind`.
+const LINES_THEN_A_POINT: &str = r#"{"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {"kind": "line"},
+     "geometry": {"type": "LineString", "coordinates": [[0, 20], [100, 20]]}},
+    {"type": "Feature", "properties": {"kind": "line"},
+     "geometry": {"type": "LineString", "coordinates": [[0, 50], [100, 50]]}},
+    {"type": "Feature", "properties": {"kind": "point"},
+     "geometry": {"type": "Point", "coordinates": [50, 50]}}]}"#;
+
+#[test]
+fn a_shape_past_the_layers_limit_or_its_filter_is_never_transformed() {
+    // msLayerNextShape transforms a shape after the filter passes it (src/maplayer.c:437-449),
+    // and msDrawVectorLayer reads none past the first its class finds beyond MAXFEATURES
+    // (src/mapdraw.c:1282-1286): the point, which densify fails, is transformed only where the
+    // limit reads up to it and the filter passes it.
+    let transformed = |max_features: Option<u32>, filter: Option<Expr>| {
+        let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+        map.layers[0].geom_transform = Some(densified(5.0));
+        map.layers[0].max_features = max_features;
+        map.layers[0].filter = filter;
+        render_with(&map, Some(LINES_THEN_A_POINT))
+    };
+    let failed = |rendered: &Rendered| codes(rendered).contains(&"geomtransform-not-drawn");
+    // MAXFEATURES 1: the second line is read and transformed, its class found past the limit;
+    // the point is never read.
+    let one = transformed(Some(1), None);
+    assert!(!failed(&one), "{:?}", one.diagnostics);
+    let image = one.image.unwrap();
+    assert_eq!(image.pixel(50, 80), Some(BLUE), "the first line");
+    assert_eq!(image.pixel(25, 50), Some(WHITE), "past the limit");
+    // MAXFEATURES 2: the point is read after the second line, and fails.
+    assert!(failed(&transformed(Some(2), None)));
+    assert!(failed(&transformed(None, None)));
+    // A filter that leaves the point out: it is never transformed.
+    let lines = Expr::call(
+        Op::Eq,
+        vec![
+            Expr::call(Op::ToString, vec![Expr::property("kind")]),
+            "line".into(),
+        ],
+    );
+    let filtered = transformed(None, Some(lines));
+    assert!(!failed(&filtered), "{:?}", filtered.diagnostics);
+    assert_eq!(filtered.image.unwrap().pixel(25, 50), Some(BLUE));
 }

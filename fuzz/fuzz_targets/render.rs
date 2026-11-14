@@ -14,9 +14,11 @@
 //! tiled over the polygons, at an arbitrary size, angle, and gap, so that its resampling and the
 //! tiled fill are fuzzed too (ADR-0029, ADR-0026). The bytes back to front are read once more
 //! for the layers' limit on their features, which layers are drawn after the label cache, the
-//! cache's edge buffer, and the pixmap as the label's labelpoint and labelcenter marker. `Input`
-//! decodes as before; the existing seeds now also read a `Cache` from their tail, which changes
-//! what they render.
+//! cache's edge buffer, and the pixmap as the label's labelpoint and labelcenter marker. The last
+//! third of the bytes is read once more for a layer's `GEOMTRANSFORM`, a transform tree of up to
+//! eight functions of arbitrary numbers, `[map_cellsize]` among them, which the polygon and line
+//! layers apply to their features (ADR-draft-typed-geomtransform). `Input` decodes as before; the
+//! existing seeds now also read a `Cache` from their tail, which changes what they render.
 // Verifies: Q-3, ADR-0025, ADR-0016
 #![no_main]
 
@@ -32,7 +34,8 @@ use forager_ports::{
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Expr, Extent, Label, LabelTransform, Layer, LayerStatus, LineCap, LineJoin,
-    LineOffset, Map, RenderMode, Rgba, Style, Symbol, SymbolKind, SymbolRef,
+    LineOffset, Map, NumberOp, Preprocessing, RenderMode, Rgba, Style, Symbol, SymbolKind,
+    SymbolRef, TransformNumber, TransformShape, TransformTree,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -175,6 +178,83 @@ struct Cache {
     label_center: bool,
 }
 
+/// A layer's `GEOMTRANSFORM`: each step a function of the shape the steps before it give, from
+/// `[shape]`, at most eight of them.
+#[derive(Arbitrary, Debug, Default)]
+struct TransformInput(Vec<StepInput>);
+
+#[derive(Arbitrary, Debug)]
+enum StepInput {
+    Generalize(NumberInput),
+    Densify(NumberInput),
+    Outer,
+    Inner,
+    SmoothSia(NumberInput, NumberInput, Option<bool>),
+}
+
+/// A number: written, or an operation of `[map_cellsize]` and a written number.
+#[derive(Arbitrary, Debug)]
+enum NumberInput {
+    Number(f64),
+    Cellsize(u8, f64),
+}
+
+impl NumberInput {
+    fn number(&self) -> TransformNumber {
+        match self {
+            NumberInput::Number(n) => TransformNumber::Number(*n),
+            NumberInput::Cellsize(op, n) => {
+                let ops = [
+                    NumberOp::Add,
+                    NumberOp::Sub,
+                    NumberOp::Mul,
+                    NumberOp::Div,
+                    NumberOp::Mod,
+                    NumberOp::Pow,
+                ];
+                TransformNumber::Op(
+                    ops[usize::from(*op) % ops.len()],
+                    Box::new(TransformNumber::MapCellsize),
+                    Box::new(TransformNumber::Number(*n)),
+                )
+            }
+        }
+    }
+}
+
+impl TransformInput {
+    fn tree(&self) -> Option<TransformTree> {
+        if self.0.is_empty() {
+            return None;
+        }
+        let mut shape = TransformShape::Shape;
+        for step in self.0.iter().take(8) {
+            let inner = Box::new(shape);
+            shape = match step {
+                StepInput::Generalize(n) => TransformShape::Generalize(inner, n.number()),
+                StepInput::Densify(n) => TransformShape::Densify(inner, n.number()),
+                StepInput::Outer => TransformShape::Outer(inner),
+                StepInput::Inner => TransformShape::Inner(inner),
+                StepInput::SmoothSia(size, iterations, preprocessing) => {
+                    TransformShape::SmoothSia {
+                        shape: inner,
+                        size: size.number(),
+                        iterations: iterations.number(),
+                        preprocessing: preprocessing.map(|all| {
+                            if all {
+                                Preprocessing::All
+                            } else {
+                                Preprocessing::Angle
+                            }
+                        }),
+                    }
+                }
+            };
+        }
+        Some(TransformTree::Drawn(shape))
+    }
+}
+
 #[derive(Arbitrary, Debug)]
 struct SymbolInput {
     ellipse: bool,
@@ -238,6 +318,10 @@ fuzz_target!(|data: &[u8]| {
     let exprs = Expressions::arbitrary_take_rest(Unstructured::new(&data[data.len() / 2..]))
         .unwrap_or_default();
     let cache = Cache::arbitrary(&mut Unstructured::new(&reversed)).unwrap_or_default();
+    let transform =
+        TransformInput::arbitrary_take_rest(Unstructured::new(&data[data.len() / 3 * 2..]))
+            .unwrap_or_default()
+            .tree();
     let features: Vec<Feature> = input
         .shapes
         .iter()
@@ -401,6 +485,9 @@ fuzz_target!(|data: &[u8]| {
         symbols,
         ..Map::default()
     };
+    for layer in &mut map.layers[..2] {
+        layer.geom_transform = transform.clone();
+    }
     // One bit for each layer; a layer past the eighth is drawn before the cache.
     for (layer, bit) in map.layers.iter_mut().zip(0u32..) {
         layer.max_features = cache.max_features.map(u32::from);

@@ -68,7 +68,7 @@ feature has no properties. An expression or a binding finds a name without regar
 the first of two that match (`msLayerGetItemIndex`). `PROCESSING "ITEMS=…"` of a layer without
 features, and every other `PROCESSING` key, is not yet supported and is ignored with a warning.
 
-**Not carried:** the layer's `GEOMTRANSFORM` and `TRANSFORM` on
+**Not carried:** the layer's `TRANSFORM` on
 inline features; and a `FEATURE` keyword inside a `FEATURE`, which `loadFeature` skips (`case
 (FEATURE): break;`, for features loaded from a string).
 

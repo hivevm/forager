@@ -4,7 +4,7 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::expression::Keys;
-use crate::{ANCHOR_CENTRE, Expr, Fonts, Span};
+use crate::{ANCHOR_CENTRE, Expr, Fonts, Span, TransformTree};
 
 /// The least `resolution` and `def_resolution` a map may have, in dpi: MapServer's
 /// `MS_RESOLUTION_MIN`, which its loader holds both to.
@@ -106,6 +106,21 @@ impl Map {
                     .filter_map(|l| l.expression.as_ref());
                 let classes = classes.filter_map(|c| c.expression.as_ref());
                 layer.filter.iter().chain(classes).chain(labels)
+            })
+            .collect()
+    }
+
+    /// Every transform tree of the map: its layers', and those of its class styles.
+    pub(crate) fn transforms(&self) -> Vec<&TransformTree> {
+        let layers = self.layers.iter();
+        layers
+            .flat_map(|layer| {
+                let styles = layer.classes.iter().flat_map(|class| &class.styles);
+                let styles = styles.filter_map(|style| match &style.geom_transform {
+                    Some(GeomTransform::Expression(tree)) => Some(tree),
+                    _ => None,
+                });
+                layer.geom_transform.iter().chain(styles)
             })
             .collect()
     }
@@ -242,6 +257,11 @@ pub struct Layer {
     /// counted once their class is found, are not drawn, nor their labels. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_features: Option<u32>,
+    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-draft-typed-geomtransform), which
+    /// replaces the shape of each feature that passes the layer's filter before it is classed and
+    /// drawn, as MapServer transforms each shape it reads. Absent, there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geom_transform: Option<TransformTree>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
     /// The features written into the layer (ADR-0018). A layer with any is read from them alone,
@@ -270,6 +290,7 @@ impl Default for Layer {
             label_cache: true,
             post_label_cache: false,
             max_features: None,
+            geom_transform: None,
             classes: Vec::new(),
             features: Vec::new(),
             span: None,
@@ -629,7 +650,7 @@ pub enum LineJoin {
     Bevel,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum GeomTransform {
@@ -655,13 +676,13 @@ pub enum GeomTransform {
     /// polygon layer draws nothing at.
     #[serde(rename = "labelcenter")]
     LabelCenter,
-    /// One of MapServer's expressions, `(buffer([shape], 5))` and the like, as written, which
-    /// the engine does not draw: a class's style of it in a line or a polygon layer draws nothing
-    /// and is reported, its class's other styles drawn as before; a point layer draws the style at
-    /// its points, as it draws every style whatever its transform; a label of a style of it is
-    /// left out.
+    /// An expression of shape functions, its transform tree (ADR-draft-typed-geomtransform),
+    /// which the engine does not draw on a class's style: a class's style of it in a line or a
+    /// polygon layer draws nothing and is reported, its class's other styles drawn as before; a
+    /// point layer draws the style at its points, as it draws every style whatever its
+    /// transform; a label of a style of it is left out.
     #[serde(rename = "expression")]
-    Expression(String),
+    Expression(TransformTree),
 }
 
 /// Where a label's style draws, which it always names.

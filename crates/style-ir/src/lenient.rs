@@ -112,8 +112,17 @@ fn missing_field(reason: &str) -> Option<&str> {
     Some(reason.strip_prefix("missing field `")?.split_once('`')?.0)
 }
 
-/// The keys of an expression's or a binding's object, which no other part of the IR has.
-const EXPRESSION_KEYS: [&str; 6] = ["op", "args", "property", "date", "timestamp", "binding"];
+/// The keys of an expression's, a binding's, or a transform tree's object, which no other part of
+/// the IR has.
+const EXPRESSION_KEYS: [&str; 7] = [
+    "op",
+    "args",
+    "property",
+    "date",
+    "timestamp",
+    "binding",
+    "not_drawn",
+];
 
 /// Where on `path` the outermost expression or binding it runs into begins: the path without
 /// the keys of expressions and the indices of their arguments, and of the lists among them, at
@@ -168,18 +177,25 @@ fn value_depth(value: &Value) -> usize {
     })
 }
 
-/// The first operator in `value` that this build does not know.
-fn unknown_operator(value: &Value) -> Option<String> {
+/// The first operator in `value` that this build does not know: in an expression, one that is
+/// no operator of ADR-0015's tree; in a transform tree, where `transform`, one that is none of its
+/// functions either.
+fn unknown_operator(value: &Value, transform: bool) -> Option<String> {
     match value {
         Value::Object(object) => {
             if let Some(Value::String(op)) = object.get("op")
                 && serde_json::from_value::<crate::Op>(op.clone().into()).is_err()
+                && !(transform && crate::transform::is_function(op))
             {
                 return Some(op.clone());
             }
-            object.values().find_map(unknown_operator)
+            object
+                .values()
+                .find_map(|value| unknown_operator(value, transform))
         }
-        Value::Array(items) => items.iter().find_map(unknown_operator),
+        Value::Array(items) => items
+            .iter()
+            .find_map(|value| unknown_operator(value, transform)),
         _ => None,
     }
 }
@@ -201,6 +217,86 @@ fn required_dropped(
          cannot be read without it"
     );
     Some(Diagnostic::error("unknown-value", message, None))
+}
+
+/// The field that holds what failed at `at`: a class style's transform tree is the whole
+/// `geom_transform`, so that unset, the style draws the feature's shape
+/// (ADR-draft-typed-geomtransform).
+fn whole_transform(at: Pointer) -> Pointer {
+    match at.segments() {
+        [.., Segment::Key(field), Segment::Key(expression)]
+            if field == "geom_transform" && expression == "expression" =>
+        {
+            at.prefix(at.segments().len() - 1)
+        }
+        _ => at,
+    }
+}
+
+/// Keeps the class, label, or filter at `at` whose expression does not read, as one that never
+/// matches: dropped, it would match every feature. The warning names `operator` where an unknown
+/// one is why; the load error where the expression nests too deep (Q-9).
+fn never_matching(
+    value: &mut Value,
+    at: &Pointer,
+    operator: Option<String>,
+) -> Result<Diagnostic, Diagnostic> {
+    let field = value
+        .pointer_mut(&at.to_string())
+        .expect("the failed place is inside the field");
+    if value_depth(field) > MAX_EXPRESSION_DEPTH {
+        let message = format!("{at}: an expression nests deeper than {MAX_EXPRESSION_DEPTH}");
+        return Err(Diagnostic::error("expression-too-deep", message, None));
+    }
+    *field = Value::Bool(false);
+    Ok(match operator {
+        Some(op) => Diagnostic::warning(
+            "unknown-operator",
+            format!(
+                "{at}: the operator `{op}` is unknown to format version {FORMAT_VERSION}, and the \
+                 expression never matches"
+            ),
+            None,
+        ),
+        None => Diagnostic::warning(
+            "unknown-value",
+            format!(
+                "{at}: the expression does not read in format version {FORMAT_VERSION}, and it \
+                 never matches"
+            ),
+            None,
+        ),
+    })
+}
+
+/// A transform tree's `not_drawn` reason at `path` that this build does not know, as serde's
+/// `reason` says, read as not drawn: the reason `syntax`, the one of the closed list that names no
+/// construct, with a warning naming its path. A reason added in a minor version so fails closed
+/// (ADR-draft-typed-geomtransform).
+fn unknown_reason(value: &mut Value, path: &Pointer, reason: &str) -> Option<Diagnostic> {
+    if !matches!(path.segments(), [.., Segment::Key(k)] if k == "not_drawn")
+        || !is_unknown_variant(reason)
+    {
+        return None;
+    }
+    // serde_path_to_error names no variant of an enum, so a class style's tree, the variant
+    // `expression` of its `geom_transform`, is found under that key.
+    let path = if value.pointer(&path.to_string()).is_some() {
+        path.clone()
+    } else {
+        let (last, parent) = path.segments().split_last()?;
+        let mut segments = parent.to_vec();
+        segments.extend([Segment::Key("expression".to_owned()), last.clone()]);
+        Pointer(segments)
+    };
+    let slot = value.pointer_mut(&path.to_string())?;
+    let shown = slot.as_str().unwrap_or_default().to_owned();
+    *slot = Value::String(crate::NotDrawn::Syntax.name().to_owned());
+    let message = format!(
+        "{path}: the reason `{shown}` is unknown to format version {FORMAT_VERSION}, and the \
+         transform is not drawn"
+    );
+    Some(Diagnostic::warning("unknown-value", message, None))
 }
 
 /// Removes the field at `at` from its object.
@@ -251,7 +347,7 @@ pub(crate) fn read(mut value: Value, code: &str) -> Result<Read, Diagnostic> {
         else {
             return Err(read_error(code, &error));
         };
-        let at = slot.prefix(key_at + 1);
+        let at = whole_transform(slot.prefix(key_at + 1));
         let Some(failed) = value.pointer(&slot.to_string()).cloned() else {
             return Err(read_error(code, &error));
         };
@@ -264,37 +360,14 @@ pub(crate) fn read(mut value: Value, code: &str) -> Result<Read, Diagnostic> {
         };
         // Only an expression, which reads as an untagged enum would, holds operators.
         let untagged = inside || is_untagged_failure(&reason);
-        let operator = untagged.then(|| unknown_operator(&failed)).flatten();
-        let warning = if condition(at.segments()) {
-            // A class, label, or filter that does not read is kept and never matches; dropped, it
-            // would match every feature.
-            let field = value
-                .pointer_mut(&at.to_string())
-                .expect("the failed place is inside the field");
-            if value_depth(field) > MAX_EXPRESSION_DEPTH {
-                let message =
-                    format!("{at}: an expression nests deeper than {MAX_EXPRESSION_DEPTH}");
-                return Err(Diagnostic::error("expression-too-deep", message, None));
-            }
-            *field = Value::Bool(false);
-            match operator {
-                Some(op) => Diagnostic::warning(
-                    "unknown-operator",
-                    format!(
-                        "{at}: the operator `{op}` is unknown to format version \
-                         {FORMAT_VERSION}, and the expression never matches"
-                    ),
-                    None,
-                ),
-                None => Diagnostic::warning(
-                    "unknown-value",
-                    format!(
-                        "{at}: the expression does not read in format version \
-                         {FORMAT_VERSION}, and it never matches"
-                    ),
-                    None,
-                ),
-            }
+        let in_transform = matches!(at.segments(), [.., Segment::Key(k)] if k == "geom_transform");
+        let operator = untagged
+            .then(|| unknown_operator(&failed, in_transform))
+            .flatten();
+        let warning = if let Some(warning) = unknown_reason(&mut value, &path, &reason) {
+            warning
+        } else if condition(at.segments()) {
+            never_matching(&mut value, &at, operator)?
         } else if let Some(op) = operator {
             remove(&mut value, &at);
             let message = format!(

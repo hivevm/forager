@@ -55,6 +55,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("geom_transform", &["extent"]),
     ("bounds", &[]),
     ("extent", &[]),
+    ("layer_transform", &[]),
     ("offset", &[]),
     ("style", &[]),
 ];

@@ -31,7 +31,10 @@ The parts the system is made of, each with one responsibility, named in the voca
 golden path and the test pattern an agent copies from are named here.
 
 - **`style-ir`** — the data model of a map, its expressions a CQL2 tree
-  ([ADR-0015](adr/0015-expressions-as-cql2.md)), the diagnostics with their source spans, and the
+  ([ADR-0015](adr/0015-expressions-as-cql2.md)), its `GEOMTRANSFORM` expressions, of a layer and
+  of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
+  no text of the mapfile and is read to the same nesting bound (`transform.rs`,
+  ADR-draft-typed-geomtransform), the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
   class's `Style` may leave it out, a label's `Style<LabelTransform>` always names `labelpoint`,
@@ -39,7 +42,8 @@ golden path and the test pattern an agent copies from are named here.
   generic over it. Its readers
   ([ADR-0014](adr/0014-style-document-versions.md)) name each field they do not know by its
   JSON Pointer; a document of a newer minor that does not read is read again from its value tree
-  with each unknown value dropped and each condition that does not read kept as `false`, at most
+  with each unknown value dropped, each condition that does not read kept as `false`, and each
+  transform tree's unknown `not_drawn` reason kept not drawn, at most
   a hundred times (Q-9); a document of an older major is migrated on its value tree by the chain
   of steps in `migration.rs`, one major at a time, and then read as the current version. Its
   `schema` feature derives the JSON Schema of the current format version with schemars, checked
@@ -97,7 +101,10 @@ golden path and the test pattern an agent copies from are named here.
   [ADR-0018](adr/0018-inline-features.md)), translates
   MapServer's expressions with their typing into the CQL2 tree and a plain `TEXT`'s bindings into
   a concatenation, both read by one scanner of the expression rules of MapServer's lexer
-  (`expression.rs`), and resolves
+  (`expression.rs`), which also reads a `GEOMTRANSFORM` expression of a layer or a style into its
+  transform tree, its operations without `[map_cellsize]` folded, and every node and operator
+  counted against the nesting bound before it recurses deeper (`expression/transform.rs`,
+  ADR-draft-typed-geomtransform, Q-9), and resolves
   every other `init=` through the host's projection resolver. A load reports at most a thousand
   diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
   carries means is described per parameter under `docs/semantics/`.
@@ -112,7 +119,10 @@ golden path and the test pattern an agent copies from are named here.
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, or, for a layer with inline features, a source
   in memory of its own over them, which reports a bound source as not read (`inline.rs`,
-  ADR-0018), draws each feature that passes the layer's
+  ADR-0018), replaces the shape of each feature that passes the layer's filter by the layer's
+  `GEOMTRANSFORM` through `symbolize`, up to the first feature past its `MAXFEATURES`, and draws
+  nothing of a layer whose transform tree is `not_drawn` or fails, with a warning (`classes.rs`,
+  ADR-draft-typed-geomtransform), draws each feature that passes the layer's
   filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
   the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
   bound and computed
@@ -192,14 +202,17 @@ golden path and the test pattern an agent copies from are named here.
   ellipse, and pixmap symbols along a line, and the layer's budget of markers
   (`line_marker.rs`); a polygon's tile, its size held to Q-9's bound, and the render's
   cache of six tiles, counted with the decoded images (`tile.rs`); line offsets (`offset.rs`); and
-  the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`). A line style's symbol with a
+  the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a layer's
+  `GEOMTRANSFORM`, its transform tree evaluated on each feature's shape before the engine classes
+  it, what its transforms add and visit held to a budget per layer (`layer_transform.rs`, Q-9). A
+  line style's symbol with a
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`
   and `label.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`, `canvas.rs`, `hatch.rs`,
   `line_marker.rs` and `tile.rs`, `symbol.rs`, and `geom_transform.rs`, and `bounds.rs`, `style.rs`,
-  `extent.rs`, and `offset.rs` the leaves, as `lib.rs` lists them; ADR-0008
+  `extent.rs`, `layer_transform.rs`, and `offset.rs` the leaves, as `lib.rs` lists them; ADR-0008
   decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs` holds
   this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
@@ -313,7 +326,8 @@ Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz tar
 mapfile frontend, the style document readers with and without a migration step, the renderer on
 structured shapes with a label of arbitrary text and size and its pixmap markers, a pixmap at
 points, along lines, and tiled over polygons, the layers' feature limit and drawing after the label
-cache, the cache's edge buffer, and expressions built from the same bytes, the expression
+cache, the cache's edge buffer, a layer's transform tree, and expressions built from the same
+bytes, the expression
 evaluator on arbitrary trees, patterns, and properties, the browser path on GeoJSON, the shapefile
 adapter on arbitrary `.shp`, `.shx`, and `.dbf` files, the text path on an arbitrary font file, and
 the pixmap decoder on an arbitrary image file — run by `scripts/fuzz.sh`, which reads them from the

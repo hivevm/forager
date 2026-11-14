@@ -13,7 +13,9 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use forager_style_ir::{Bound, GeomTransform, Rgba};
+use forager_style_ir::{
+    Bound, GeomTransform, NotDrawn, Rgba, TransformNumber, TransformShape, TransformTree,
+};
 
 use crate::test_support::{binding, codes, first_style, load_files};
 
@@ -722,15 +724,48 @@ fn a_bare_keyword_is_no_symbol_name_and_a_quoted_one_is() {
 }
 
 #[test]
-fn a_geomtransform_expression_is_carried_as_written_without_a_warning_at_load() {
+fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load() {
+    // Verifies: ADR-draft-typed-geomtransform
     // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION) keeps the expression; the engine reports
-    // it as it draws the layer, so the load does not.
+    // it as it draws the layer, so the load does not, but for a syntax error, at its place.
     let (loaded, style) = first_style(
         "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (buffer([shape], 5)) END END END END",
     );
     assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
     assert_eq!(
         style.unwrap().geom_transform,
-        Some(GeomTransform::Expression("(buffer([shape], 5))".to_owned()))
+        Some(GeomTransform::Expression(TransformTree::NotDrawn(
+            NotDrawn::Buffer
+        )))
+    );
+    let (loaded, style) = first_style(
+        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (generalize([shape], 2)) END END END END",
+    );
+    assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
+    assert_eq!(
+        style.unwrap().geom_transform,
+        Some(GeomTransform::Expression(TransformTree::Drawn(
+            TransformShape::Generalize(
+                Box::new(TransformShape::Shape),
+                TransformNumber::Number(2.0)
+            )
+        )))
+    );
+    let (loaded, style) = first_style(
+        "MAP LAYER TYPE LINE CLASS\nSTYLE GEOMTRANSFORM (labelpoint([shape])) END END END END",
+    );
+    assert_eq!(codes(&loaded), ["invalid-expression"]);
+    assert_eq!(
+        loaded.diagnostics[0]
+            .span
+            .as_ref()
+            .map(|s| (s.line, s.column)),
+        Some((2, 22))
+    );
+    assert_eq!(
+        style.unwrap().geom_transform,
+        Some(GeomTransform::Expression(TransformTree::NotDrawn(
+            NotDrawn::Syntax
+        )))
     );
 }

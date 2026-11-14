@@ -222,7 +222,7 @@ fn centroid(lines: &[Vec<Point>]) -> Option<Point> {
 
 #[cfg(test)]
 mod tests {
-    use forager_style_ir::Extent;
+    use forager_style_ir::{Extent, NotDrawn, TransformTree};
 
     use super::*;
 
@@ -433,7 +433,7 @@ mod tests {
             GeomTransform::LabelPoint,
             GeomTransform::LabelPoly,
             GeomTransform::LabelCenter,
-            GeomTransform::Expression("(buffer([shape], 5))".to_owned()),
+            GeomTransform::Expression(TransformTree::NotDrawn(NotDrawn::Buffer)),
         ] {
             assert!(placed(&transform, &ell(), &view(), IMAGE).is_empty());
         }

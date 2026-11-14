@@ -27,10 +27,13 @@ use forager_ports::{Feature, Properties, Value};
 use forager_style_ir::c::{
     atof, atoi, c_str, ms_get_symbol_index, ms_nint, ms_string_split, opacity_alpha,
 };
-use forager_style_ir::{Bound, Diagnostic, Expr, Layer, Map, Rgba, Span, Style, Symbol, Units};
+use forager_style_ir::{
+    Bound, Diagnostic, Expr, Layer, Map, RenderMode, Rgba, Span, Style, Symbol, TransformShape,
+    Units,
+};
 
 use crate::bindable::{self, Field, Written};
-use forager_symbolize::{Factors, View};
+use forager_symbolize::{Budget, Factors, Undrawn, View, can_draw, transformed};
 
 /// A feature's properties as the evaluator reads them. A name is found without regard to ASCII
 /// case, as MapServer finds an attribute in a shapefile's `.dbf` or an OGR source: by the
@@ -290,9 +293,7 @@ impl<'a> Selector<'a, '_> {
     /// in the map's scale whose expression matches it, a class without one matching every
     /// feature; none where no class matches.
     pub fn class(&mut self, feature: &Feature) -> Option<usize> {
-        if let Some(filter) = &self.binder.layer.filter
-            && !self.binder.matches(filter, feature, Carrier::Filter)
-        {
+        if !self.passes_filter(feature) {
             return None;
         }
         (0..self.binder.layer.classes.len()).find(|&i| {
@@ -303,6 +304,52 @@ impl<'a> Selector<'a, '_> {
                     Some(expression) => self.binder.matches(expression, feature, Carrier::Class(i)),
                 }
         })
+    }
+
+    /// Whether `feature` passes the layer's filter; every feature passes where it has none.
+    fn passes_filter(&mut self, feature: &Feature) -> bool {
+        match &self.binder.layer.filter {
+            None => true,
+            Some(filter) => self.binder.matches(filter, feature, Carrier::Filter),
+        }
+    }
+
+    /// `features` with the shape of each that passes the layer's filter replaced by the layer's
+    /// transform `shape`, `[map_cellsize]` at `cellsize`, as msLayerNextShape transforms each
+    /// shape it reads after the filter (src/maplayer.c:437-449). msDrawVectorLayer reads no shape
+    /// past the first that its class finds beyond the layer's limit (src/mapdraw.c:1282-1286), so
+    /// none past it is transformed, and none fails: those are counted as [`Self::select`] counts
+    /// them, of the render mode `mode`. The reason where a shape fails the transform, or where the
+    /// layer's transforms pass a bound of Q-9. The filter, and under a limit the classes, are
+    /// evaluated here and again by [`Self::select`], which sees the transformed features: the
+    /// evaluation is pure and its failures report once, so only a layer with a transform pays
+    /// it twice.
+    pub fn transform(
+        &mut self,
+        mode: RenderMode,
+        features: &mut [Feature],
+        shape: &TransformShape,
+        cellsize: f64,
+    ) -> Result<(), Undrawn> {
+        let mut budget = Budget::default();
+        let limit = self.binder.layer.max_features.map(|max| max as usize);
+        let mut counted = 0_usize;
+        for feature in features {
+            if !self.passes_filter(feature) {
+                continue;
+            }
+            feature.geometry = transformed(shape, &feature.geometry, cellsize, &mut budget)?;
+            if let Some(limit) = limit
+                && can_draw(mode, &feature.geometry)
+                && self.class(feature).is_some()
+            {
+                counted += 1;
+                if counted > limit {
+                    break;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Each of `features` the layer draws, with the place of its class and its styles bound to
@@ -437,6 +484,14 @@ fn inches_per_unit(units: Units) -> f64 {
         Units::Degrees => 4_374_754.0,
         Units::NauticalMiles => 72913.3858,
     }
+}
+
+/// The value msGeomTransformShape binds `[map_cellsize]` of a layer's `GEOMTRANSFORM` to
+/// (src/mapgeomtransform.c:283-284): the map's `cellsize` times the inches of the map's unit over
+/// those of the layer's. The frontend does not carry a layer's `UNITS`, and warns of one written;
+/// the layer's unit is initLayer's, meters (src/mapfile.c:3951).
+pub(crate) fn layer_cellsize(map: &Map, cellsize: f64) -> f64 {
+    cellsize * (inches_per_unit(map_units(map)) / inches_per_unit(Units::Meters))
 }
 
 /// The image's resolution factor: the map's `RESOLUTION` over its `DEFRESOLUTION`, both 72

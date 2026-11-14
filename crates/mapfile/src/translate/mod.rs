@@ -23,7 +23,7 @@ use forager_style_ir::c::{atoi, int_cast};
 use forager_style_ir::{
     Bound, Class, Diagnostic, Expr, Extent, Fonts, GeomTransform, Layer, LayerProjection,
     LayerStatus, MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef,
-    Span, Symbol, Units,
+    Span, Symbol, TransformTree, Units,
 };
 
 use crate::MAX_DEFAULT_BYTES;
@@ -80,6 +80,14 @@ const WEB_METADATA_READ: &[&str] = &["labelcache_map_edge_buffer", MAX_FEATURES_
 /// The key of the metadata and of the output format's option that limit the features a layer
 /// draws, as `msLayerGetMaxFeaturesToDraw` reads it.
 const MAX_FEATURES_KEY: &str = "maxfeaturestodraw";
+
+/// Whether a layer's block holds a `FEATURE`.
+fn has_features(block: &Block) -> bool {
+    block
+        .nodes
+        .iter()
+        .any(|node| matches!(node, Node::Block(b) if b.keyword == "FEATURE"))
+}
 
 /// Whether the layer `block`'s features are never read: a `FEATURE` makes the layer inline as
 /// `loadLayer` reads it (src/mapfile.c), and a `CONNECTIONTYPE GRATICULE` after the last one
@@ -373,11 +381,7 @@ impl Translator<'_> {
         // its PROCESSING "ITEMS=…" gives (msLayerGetItems), unless its connection type is one
         // MapServer exempts, whose features are never read.
         let exempt = exempts_features(block);
-        let inline = !exempt
-            && block
-                .nodes
-                .iter()
-                .any(|node| matches!(node, Node::Block(b) if b.keyword == "FEATURE"));
+        let inline = !exempt && has_features(block);
         let item_names = feature::item_names(block);
         // The shape type of the features the TYPE read so far gives (loadLayer); none before one.
         let mut shape_type = None;
@@ -410,6 +414,7 @@ impl Translator<'_> {
                     "LABELCACHE" => self.label_cache(&mut layer, d),
                     "POSTLABELCACHE" => self.post_label_cache(&mut layer, d),
                     "MAXFEATURES" => max_features = self.max_features(d),
+                    "GEOMTRANSFORM" => layer.geom_transform = self.layer_geom_transform(d),
                     "FILTER" => layer.filter = self.defaulted(d, filter_item.as_deref(), &tables),
                     "SIZEUNITS" => layer.size_units = self.choice(d, UNITS),
                     "MINSCALE" | "MINSCALEDENOM" => layer.min_scale_denom = self.scale_denom(d),
@@ -515,6 +520,18 @@ impl Translator<'_> {
              supported and are ignored"
         );
         self.warn("unsupported-keyword", &message, span);
+    }
+
+    /// A layer's `GEOMTRANSFORM`, read by `getSymbol(1, MS_EXPRESSION)`: an expression alone, as
+    /// its transform tree; anything else fails the load.
+    fn layer_geom_transform(&mut self, d: &Directive) -> Option<TransformTree> {
+        if let [token] = d.values.as_slice()
+            && let TokenKind::Expression(text) = &token.kind
+        {
+            return self.transform_tree(text, &token.span, true);
+        }
+        self.invalid(d, "an expression");
+        None
     }
 
     /// A layer's `MAXFEATURES`, a number above 0 as getInteger checks it, truncated to an `int`;

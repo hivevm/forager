@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::lenient::{self, Pointer, read_error};
 use crate::migration::{self, STEPS};
-use crate::{Diagnostic, Fonts, MAX_EXPRESSION_DEPTH, MAX_RESOLUTION, MIN_RESOLUTION, Map};
+use crate::{
+    Diagnostic, Expr, Fonts, MAX_EXPRESSION_DEPTH, MAX_RESOLUTION, MIN_RESOLUTION, Map,
+    TransformTree,
+};
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
 pub const FORMAT_VERSION: &str = "1.0";
@@ -334,13 +337,14 @@ impl Map {
 }
 
 impl StyleDocument {
-    /// Refuses a document with an expression nested deeper than [`MAX_EXPRESSION_DEPTH`] (Q-9).
+    /// Refuses a document with an expression or a transform tree nested deeper than
+    /// [`MAX_EXPRESSION_DEPTH`] (Q-9, ADR-draft-typed-geomtransform).
     fn bounded(self) -> Result<Self, Diagnostic> {
-        if self
-            .map
-            .expressions()
-            .iter()
-            .any(|expression| expression.depth() > MAX_EXPRESSION_DEPTH)
+        let expressions = self.map.expressions().into_iter().map(Expr::depth);
+        let transforms = self.map.transforms().into_iter().map(TransformTree::depth);
+        if expressions
+            .chain(transforms)
+            .any(|depth| depth > MAX_EXPRESSION_DEPTH)
         {
             let message = format!("an expression nests deeper than {MAX_EXPRESSION_DEPTH}");
             return Err(Diagnostic::error("expression-too-deep", message, None));
@@ -360,6 +364,7 @@ mod tests {
         LineJoin, LineOffset, MinFeatureSize, Op, Position, RenderMode, Rgba, ShapeType, SourceRef,
         Span, Style, Symbol, SymbolKind, SymbolRef, Units,
     };
+    use crate::{NotDrawn, NumberOp, Preprocessing, TransformNumber, TransformShape};
     use serde_json::Value;
 
     fn sample() -> StyleDocument {
@@ -396,6 +401,7 @@ mod tests {
                 label_cache: false,
                 post_label_cache: true,
                 max_features: Some(3),
+                geom_transform: Some(sample_transform()),
                 filter: Some(Expr::call(
                     Op::In,
                     vec![
@@ -429,7 +435,11 @@ mod tests {
                             Expr::Bool(false),
                         ],
                     )),
-                    styles: vec![sample_style()],
+                    styles: vec![
+                        sample_style(),
+                        Style::new(Some(GeomTransform::Expression(sample_transform()))),
+                        Style::new(Some(not_drawn_expression())),
+                    ],
                     labels: vec![sample_label()],
                     span: Some(Span::new("world.map", 12, 7)),
                 }],
@@ -451,6 +461,24 @@ mod tests {
                 .collect(),
             span: Some(Span::new("world.map", 1, 1)),
         })
+    }
+
+    /// `smoothsia(outer([shape]), [map_cellsize] * 2, 1, 'all')`.
+    fn sample_transform() -> TransformTree {
+        TransformTree::Drawn(TransformShape::SmoothSia {
+            shape: Box::new(TransformShape::Outer(Box::new(TransformShape::Shape))),
+            size: TransformNumber::Op(
+                NumberOp::Mul,
+                Box::new(TransformNumber::MapCellsize),
+                Box::new(TransformNumber::Number(2.0)),
+            ),
+            iterations: TransformNumber::Number(1.0),
+            preprocessing: Some(Preprocessing::All),
+        })
+    }
+
+    fn not_drawn_expression() -> GeomTransform {
+        GeomTransform::Expression(TransformTree::NotDrawn(NotDrawn::Buffer))
     }
 
     fn sample_style() -> Style {
@@ -615,6 +643,146 @@ mod tests {
         assert_eq!(error.code, "expression-too-deep");
         let error = StyleDocument::from_yaml(&past.to_yaml().unwrap()).unwrap_err();
         assert_eq!(error.code, "expression-too-deep");
+    }
+
+    #[test]
+    fn a_transform_tree_past_the_nesting_limit_is_refused_and_one_at_it_reads() {
+        // Verifies: Q-9, ADR-draft-typed-geomtransform
+        // `densify(shape, n)` over a chain of `+`: densify, its number, and the operators below
+        // it, each a level.
+        let chained = |depth: usize| {
+            let mut number = TransformNumber::Number(1.0);
+            for _ in 2..depth {
+                number = TransformNumber::Op(
+                    NumberOp::Add,
+                    Box::new(number),
+                    Box::new(TransformNumber::MapCellsize),
+                );
+            }
+            TransformTree::Drawn(TransformShape::Densify(
+                Box::new(TransformShape::Shape),
+                number,
+            ))
+        };
+        assert_eq!(chained(MAX_EXPRESSION_DEPTH).depth(), MAX_EXPRESSION_DEPTH);
+        let on_layer = |tree: TransformTree| {
+            let mut document = sample();
+            document.map.layers[0].geom_transform = Some(tree);
+            document
+        };
+        let on_style = |tree: TransformTree| {
+            let mut document = sample();
+            document.map.layers[0].classes[0].styles[0].geom_transform =
+                Some(GeomTransform::Expression(tree));
+            document
+        };
+        for place in [on_layer, on_style] {
+            let at_limit = place(chained(MAX_EXPRESSION_DEPTH));
+            let json = at_limit.to_json().unwrap();
+            assert_eq!(StyleDocument::from_json(&json).unwrap().document, at_limit);
+            let yaml = at_limit.to_yaml().unwrap();
+            assert_eq!(StyleDocument::from_yaml(&yaml).unwrap().document, at_limit);
+            let past = place(chained(MAX_EXPRESSION_DEPTH + 1));
+            let error = StyleDocument::from_json(&past.to_json().unwrap()).unwrap_err();
+            assert_eq!(error.code, "expression-too-deep");
+            let error = StyleDocument::from_yaml(&past.to_yaml().unwrap()).unwrap_err();
+            assert_eq!(error.code, "expression-too-deep");
+        }
+    }
+
+    /// A newer minor's document with `tree` as a layer's transform and a class style's.
+    fn with_transforms(tree: &str) -> String {
+        format!(
+            r#"{{"version":"1.9","map":{{"layers":[{{"geom_transform":{tree},
+            "classes":[{{"styles":[{{"width":2,"geom_transform":{{"expression":{tree}}}}}]}}]}}]}}}}"#
+        )
+    }
+
+    /// The code and the place of each warning of `read`.
+    fn places(read: &Read) -> Vec<(&str, &str)> {
+        read.warnings
+            .iter()
+            .map(|w| (w.code.as_str(), w.message.split(':').next().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn a_newer_minors_unknown_function_unsets_the_transform_with_a_warning() {
+        // Verifies: ADR-draft-typed-geomtransform
+        // A reader of an older minor unsets an unknown function, and so draws the shapes
+        // untransformed: on a layer, and on a class's style.
+        let shape = r#"{"op":"shape","args":[]}"#;
+        let unknown = [
+            format!(r#"{{"op":"outer","args":[{{"op":"twist","args":[{shape}]}}]}}"#),
+            format!(r#"{{"op":"densify","args":[{shape},{{"op":"mod","args":[1,2]}}]}}"#),
+        ];
+        for tree in &unknown {
+            let text = with_transforms(tree);
+            let read = StyleDocument::from_json(&text).unwrap();
+            let layer = &read.document.map.layers[0];
+            assert_eq!(layer.geom_transform, None, "{tree}");
+            let style = &layer.classes[0].styles[0];
+            assert_eq!(style.geom_transform, None, "{tree}");
+            assert_eq!(style.width, Some(Bound::Value(2.0)), "{tree}");
+            assert_eq!(
+                places(&read),
+                [
+                    (
+                        "unknown-value",
+                        "/map/layers/0/classes/0/styles/0/geom_transform"
+                    ),
+                    ("unknown-value", "/map/layers/0/geom_transform"),
+                ],
+                "{tree}"
+            );
+            // In the current minor the same is a load error.
+            let current = text.replace("1.9", "1.0");
+            assert!(StyleDocument::from_json(&current).is_err(), "{tree}");
+        }
+    }
+
+    #[test]
+    fn a_newer_minors_unknown_not_drawn_reason_is_read_as_not_drawn_with_a_warning() {
+        // Verifies: ADR-draft-typed-geomtransform
+        // A reason added in a minor version fails closed: the transform stays not drawn, on a
+        // layer and on a class's style, with a warning naming its path.
+        let text = with_transforms(r#"{"not_drawn":"offset"}"#);
+        let read = StyleDocument::from_json(&text).unwrap();
+        let layer = &read.document.map.layers[0];
+        let not_drawn = TransformTree::NotDrawn(NotDrawn::Syntax);
+        assert_eq!(layer.geom_transform.as_ref(), Some(&not_drawn));
+        assert_eq!(
+            layer.classes[0].styles[0].geom_transform,
+            Some(GeomTransform::Expression(not_drawn))
+        );
+        assert_eq!(
+            places(&read),
+            [
+                (
+                    "unknown-value",
+                    "/map/layers/0/classes/0/styles/0/geom_transform/expression/not_drawn"
+                ),
+                ("unknown-value", "/map/layers/0/geom_transform/not_drawn"),
+            ]
+        );
+        assert!(read.warnings[0].message.contains("`offset`"));
+        let current = text.replace("1.9", "1.0");
+        assert!(StyleDocument::from_json(&current).is_err());
+    }
+
+    #[test]
+    fn a_newer_minors_unknown_operator_of_an_expression_named_as_a_tree_function_is_reported() {
+        // Verifies: ADR-0014
+        // A tree's function is no operator of an expression: in a filter it is reported as an
+        // unknown operator, as any other.
+        let text = r#"{"version":"1.9","map":{"layers":[{"filter":
+            {"op":"generalize","args":[{"property":"a"},1]}}]}}"#;
+        let read = StyleDocument::from_json(text).unwrap();
+        assert_eq!(read.document.map.layers[0].filter, Some(Expr::Bool(false)));
+        assert_eq!(
+            places(&read),
+            [("unknown-operator", "/map/layers/0/filter")]
+        );
     }
 
     #[test]

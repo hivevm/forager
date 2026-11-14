@@ -11,7 +11,7 @@
 //! `offset`, `style`, and `symbol`; `canvas` imports `hatch`, `line_marker`, `symbol`, and
 //! `tile`; `hatch` imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile`
 //! import `bounds` and `symbol`; `symbol` imports `bounds` and `style`; `geom_transform` imports
-//! `extent`; `bounds`, `extent`, `offset`, and `style` import none. The test
+//! `extent`; `bounds`, `extent`, `layer_transform`, `offset`, and `style` import none. The test
 //! `symbolize_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a table
 //! in this order.
 
@@ -26,6 +26,7 @@ mod extent;
 mod geom_transform;
 mod hatch;
 mod label;
+mod layer_transform;
 mod line;
 mod line_marker;
 mod marker;
@@ -41,6 +42,9 @@ pub use crate::extent::View;
 pub use crate::label::{
     LabelGeometry, MarkerValues, label_pixmap, label_style_marker, label_style_ops,
     label_style_refused,
+};
+pub use crate::layer_transform::{
+    Budget, MAX_ADDED_POINTS, MAX_TRANSFORM_VISITS, Undrawn, transformed,
 };
 pub use crate::line::{Pass, outlined};
 pub use crate::line_marker::MAX_MARKER_POINTS;

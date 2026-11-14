@@ -17,7 +17,9 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
-use forager_style_ir::{Bound, LayerStatus, RenderMode, Rgba, Severity, Span};
+use forager_style_ir::{
+    Bound, LayerStatus, NotDrawn, RenderMode, Rgba, Severity, Span, TransformShape, TransformTree,
+};
 
 use super::{Loaded, load};
 use crate::test_support::{Files, codes, first_label, first_style, load_files, ready};
@@ -1916,13 +1918,58 @@ fn a_maxfeatures_of_zero_is_an_error() {
 }
 
 #[test]
-fn a_layers_geomtransform_is_reported_as_not_carried() {
-    // The style IR carries no layer GEOMTRANSFORM yet (docs/backlog/layer-geomtransform.md): the
-    // keyword is warned of, and the layer's shapes are drawn as read.
-    let loaded = load_files(&[(
-        "m.map",
-        "MAP LAYER NAME 'a' GEOMTRANSFORM (simplify([shape], 25)) END END",
-    )]);
-    assert_eq!(codes(&loaded), ["unsupported-keyword"]);
-    assert!(loaded.document.is_some());
+fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
+    // Verifies: ADR-draft-typed-geomtransform
+    // loadLayer reads GEOMTRANSFORM by getSymbol(1, MS_EXPRESSION): an expression alone.
+    let layer_transform = |text: &'static str| {
+        let loaded = load_files(&[("m.map", text)]);
+        let codes: Vec<String> = codes(&loaded).iter().map(|c| (*c).to_owned()).collect();
+        let transform = loaded
+            .document
+            .map(|d| d.map.layers[0].geom_transform.clone());
+        (codes, transform)
+    };
+    let (codes, transform) =
+        layer_transform("MAP LAYER NAME 'a' GEOMTRANSFORM (outer([shape])) END END");
+    assert!(codes.is_empty(), "{codes:?}");
+    assert_eq!(
+        transform,
+        Some(Some(TransformTree::Drawn(TransformShape::Outer(Box::new(
+            TransformShape::Shape
+        )))))
+    );
+    let (codes, transform) =
+        layer_transform("MAP LAYER NAME 'a' GEOMTRANSFORM (simplify([shape], 25)) END END");
+    assert!(codes.is_empty(), "{codes:?}");
+    assert_eq!(
+        transform,
+        Some(Some(TransformTree::NotDrawn(NotDrawn::Simplify)))
+    );
+    let (codes, transform) =
+        layer_transform("MAP LAYER NAME 'a' GEOMTRANSFORM (outer([shape]) 2) END END");
+    assert_eq!(codes, ["invalid-expression"]);
+    assert_eq!(
+        transform,
+        Some(Some(TransformTree::NotDrawn(NotDrawn::Syntax)))
+    );
+    let (codes, transform) = layer_transform("MAP LAYER NAME 'a' GEOMTRANSFORM 'start' END END");
+    assert_eq!(codes, ["invalid-value"]);
+    assert_eq!(transform, None, "the load fails");
+}
+
+#[test]
+fn a_geomtransform_past_the_nesting_bound_fails_the_load() {
+    // Verifies: Q-9, ADR-draft-typed-geomtransform
+    let chain = vec!["1"; 26].join(" + ");
+    for place in [
+        format!("MAP LAYER NAME 'a' GEOMTRANSFORM (densify([shape], {chain})) END END"),
+        format!(
+            "MAP LAYER NAME 'a' CLASS STYLE GEOMTRANSFORM (densify([shape], {chain})) END END END \
+             END"
+        ),
+    ] {
+        let loaded = load_files(&[("m.map", place.leak())]);
+        assert_eq!(codes(&loaded), ["expression-too-deep"]);
+        assert!(loaded.document.is_none());
+    }
 }
