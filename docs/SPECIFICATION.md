@@ -153,10 +153,36 @@ from the threats below.
 
 What this project explicitly does not try to do.
 
-- Data queries: `TYPE QUERY`, `TEMPLATE`, `QUERYMAP`, hilite, GetFeatureInfo.
-- CGI/FastCGI, MapScript, and OGC services (WMS, WFS, WCS).
+- Data queries: `TYPE QUERY`, `TEMPLATE`, `HEADER`, `FOOTER`, `QUERYMAP`, hilite, `TOLERANCE`,
+  `IDENTIFY`, `JOIN`, GetFeatureInfo.
+- CGI/FastCGI, MapServer's tile mode, MapScript, `mapserver.conf`, and OGC services: WMS, WFS, WCS,
+  OGC API, and SLD, applied or generated.
 - Runtime substitution of `%var%`, beyond the default from `VALIDATION` applied at load time.
-- Vector output (SVG, PDF).
+- What configures MapServer's process rather than the map: `CONFIG`, `DEBUG`, `MAXSIZE`, the map's
+  `STATUS` and `SCALEDENOM`, `TEMPLATEPATTERN`, `DATAPATTERN`, the `METADATA` keys of the services
+  (`ows_`, `wms_`, `wfs_`), and encrypted connection strings.
+- Sources other than shapefiles, inline features, GeoJSON, FlatGeobuf, and rasters: OGR, PostGIS,
+  Oracle Spatial, plugins, WMS and WFS clients, `UNION`, `CONTOUR`, `KERNELDENSITY`, `IDW`,
+  `UVRASTER`, `RASTERLABEL`, the graticule and its `GRID`, and tile indexes (`TILEINDEX`,
+  `TILEITEM`, `TILESRS`). Whether Forager ships a source for SQLite and GeoPackage, or for an SQL
+  database with a spatial extension, is not decided.
+- The layer types `CHART` and `TILEINDEX`.
+- Classification and visibility by `GROUP`, `CLASSGROUP`, a class's `GROUP`, `STATUS`, and
+  `FALLBACK`, `REQUIRES`, `LABELREQUIRES`, `SCALETOKEN`, the `MINFEATURESIZE` of a layer or a class,
+  `MINGEOWIDTH`, and `MAXGEOWIDTH`; a `STYLEITEM` of `AUTO` or of JavaScript; a class's `TITLE`.
+- Colour ramps (`COLORRANGE`, `DATARANGE`, `RANGEITEM`, `RANGE_COLORSPACE`), and the `COMPOP` and
+  `COMPFILTER` of a layer's `COMPOSITE`.
+- Pixmap symbols in formats other than PNG, a symbol of `TYPE simple`, a symbol fetched by its URL,
+  and a pixmap tiled along a line without a `GAP`.
+- Bitmap fonts, a label's shadow, `LEADER`, `ENCODING`, bidirectional text, and the scripts other
+  than Latin and Common.
+- COG read by HTTP range requests or through its overviews, raster formats other than GeoTIFF, COG,
+  and PNG or JPEG with a world file, and lookup tables (`LUT`).
+- Datum grids, projections given as WKT, as PROJJSON, or as a PROJ pipeline, and `EPSG:` without
+  `init=`.
+- Output other than an RGBA buffer, PNG, and JPEG: vector output (SVG, PDF), palette images,
+  GIF, WebP, GeoTIFF, UTFGrid, KML, MVT, and the formats of OGR; the format option `GAMMA`.
+- A legend drawn into the map, a scale bar, a reference map, and `CLUSTER`.
 - An EPSG database in the core; `init=epsg:` is resolved only by a resolver the host injects.
 - A strict mode that fails a map when one layer's source is unavailable.
 - Pixel-identical output to MapServer: fidelity is a tolerance (Q-4), not equality.
@@ -208,7 +234,7 @@ maintained.
 
 - There is demand for rendering existing mapfiles in the browser; no evidence for it is recorded
   yet (see *Problem*).
-- The pure-Rust crates the work leans on — agg-rust, proj4rs, harfrust, unicode-bidi, skrifa,
+- The pure-Rust crates the work leans on — agg-rust, proj4rs, harfrust, skrifa,
   i_overlay, png, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and stay
   maintained. The ADR that picks each one verifies it.
 - The msautotest reference images are reproducible enough that the tolerances of G-6 and G-13 lie
@@ -216,6 +242,6 @@ maintained.
   category is held. For geometry and symbols, and for text, MapServer at the pin, built on CI,
   reproduces the references of the cases in scope bit for bit.
 - proj4 strings cover the projections that client-side maps need.
-- Browser hosts can serve HTTP range requests for COG and FlatGeobuf.
+- Browser hosts can serve HTTP range requests for FlatGeobuf.
 - The expected scale — features per viewport, image size, layer count — is not known yet; the
   limits of Q-9 are set from a first measurement.
