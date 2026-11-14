@@ -28,8 +28,9 @@ use crate::syntax::{Block, Directive, Node};
 impl Translator<'_> {
     /// A class's or a label's `STYLE`, with the warnings of its `GEOMTRANSFORM` directives that
     /// hold no transform: a name that names none, or an expression's syntax error at its place.
-    /// The reader of a class's style gives them; a label's warns instead of the label it leaves
-    /// out. The transform the style holds is warned of where it is not drawn by the engine.
+    /// The reader of a class's style gives them; a label's gives them where it draws the style,
+    /// and warns instead that the label is left out where it does not. The transform the style
+    /// holds is warned of where it is not drawn by the engine.
     pub(super) fn style(&mut self, block: &Block) -> (Style, Vec<Diagnostic>) {
         let mut transform_warnings = Vec::new();
         let mut style = Style {
@@ -240,7 +241,7 @@ impl Translator<'_> {
             .map(|(_, transform)| transform);
         let warning = transform.is_none().then(|| {
             let message = "this GEOMTRANSFORM names no transform; a class's style is drawn as if \
-                           it had none";
+                           it had none, a label's at the label's point";
             Diagnostic::warning("unsupported-value", message, Some(d.span.clone()))
         });
         (transform, warning)

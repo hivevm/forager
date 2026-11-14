@@ -14,7 +14,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use forager_style_ir::{Align, Bound, Expr, MinFeatureSize, Position, Rgba};
+use forager_style_ir::{Align, Bound, Expr, LabelTransform, MinFeatureSize, Position, Rgba};
 
 use crate::test_support::{binding, codes, first_label, json, load_files};
 
@@ -240,17 +240,16 @@ fn a_label_carries_what_placement_and_drawing_need() {
 /// fails the map's draw on bbox and others: a label with a style of any other GEOMTRANSFORM is
 /// left out with a warning, never drawn at the label point, and its class's other labels with it,
 /// as the engine leaves out every label of a class of several: leaving one out must not draw another.
-/// The one warning says so, also where the transform is a name MapServer does not know or an
-/// expression, which the style's reader does not warn of again.
+/// The one warning says so, also where the transform is an expression, whose syntax error the
+/// style's reader does not warn of again.
 #[test]
 fn a_label_with_a_style_of_another_transform_is_left_out() {
     for transform in [
         "start",
         "centroid",
         "bbox",
-        "'nosuch'",
-        "\"foo\"",
         "(buffer([shape], 2))",
+        "(buffer([shape], 2)",
     ] {
         let text: &'static str = format!(
             "MAP LAYER CLASS
@@ -270,6 +269,63 @@ fn a_label_with_a_style_of_another_transform_is_left_out() {
         );
         let labels = &loaded.document.as_ref().unwrap().map.layers[0].classes[0].labels;
         assert!(labels.is_empty(), "{transform}: {labels:?}");
+    }
+}
+
+/// msStyleSetGeomTransform (src/mapgeomtransform.c:58-64) sets a name that names no transform to
+/// MS_GEOMTRANSFORM_NONE and only records an error, which loadStyle (src/mapfile.c:2831-2843)
+/// does not check and map2img does not read, and loadLabel (src/mapfile.c:2058-2061) gives a style
+/// of MS_GEOMTRANSFORM_NONE its default, MS_GEOMTRANSFORM_LABELPOINT: the label keeps the style at
+/// its point, and the load warns of the name at its directive. A later GEOMTRANSFORM sets the type
+/// again, so a known name after an unknown one holds, and an unknown one after a known one leaves
+/// the default.
+#[test]
+fn a_label_style_of_a_name_that_names_no_transform_is_drawn_at_the_label_point() {
+    for (transforms, expected, unknown) in [
+        ("GEOMTRANSFORM \"foo\"", LabelTransform::Point, 1),
+        ("GEOMTRANSFORM 'nosuch'", LabelTransform::Point, 1),
+        (
+            "GEOMTRANSFORM labelpoly GEOMTRANSFORM 'foo'",
+            LabelTransform::Point,
+            1,
+        ),
+        (
+            "GEOMTRANSFORM 'foo' GEOMTRANSFORM labelpoly",
+            LabelTransform::Poly,
+            1,
+        ),
+        (
+            "GEOMTRANSFORM 'foo' GEOMTRANSFORM 'bar'",
+            LabelTransform::Point,
+            2,
+        ),
+    ] {
+        let text: &'static str = format!(
+            "MAP LAYER CLASS
+               LABEL TEXT 'a' STYLE {transforms} END END
+               LABEL TEXT 'b' STYLE SIZE 3 END END
+             END END END"
+        )
+        .leak();
+        let loaded = load_files(&[("m.map", text)]);
+        assert_eq!(
+            codes(&loaded),
+            vec!["unsupported-value"; unknown],
+            "{transforms}"
+        );
+        for warning in &loaded.diagnostics {
+            assert!(
+                warning.message.contains("names no transform"),
+                "{transforms}: {}",
+                warning.message
+            );
+            let span = warning.span.as_ref().unwrap();
+            assert_eq!(span.line, 2, "{transforms}: the GEOMTRANSFORM's line");
+        }
+        let labels = &loaded.document.as_ref().unwrap().map.layers[0].classes[0].labels;
+        assert_eq!(labels.len(), 2, "{transforms}: {labels:?}");
+        let drawn: Vec<_> = labels[0].styles.iter().map(|s| s.geom_transform).collect();
+        assert_eq!(drawn, [expected], "{transforms}");
     }
 }
 

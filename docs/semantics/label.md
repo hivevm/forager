@@ -93,13 +93,20 @@ marker is: a vector, an ellipse, or a pixmap symbol, nothing for symbol 0. A pix
 `label-not-drawn` where it sizes that marker, and is otherwise left undrawn, its layer warning with
 `pixmap-not-drawn`. A marker of any other symbol, or of one the symbol set does not hold, is not
 drawn yet, so its label is left out with `label-not-drawn`.
-A label's style of any other `GEOMTRANSFORM`, `start`, `end`, `vertices`, `centroid`, `bbox`, an
-expression, or a name MapServer does not know, `msDrawLabelCache` fails the map's draw on; the IR's
-label style always names `labelpoint`, `labelpoly`, or `labelcenter`, so the frontend leaves such a
-label out with `label-not-drawn`, and its class's other labels with it, as the engine leaves out
-every label of a class of several labels, not drawn yet. `ANGLE AUTO` on a label's style changes
-nothing: `loadStyle` sets only the style's `autoangle`, which none of the functions drawing a
-label's styles reads, so the style turns by its `ANGLE` alone.
+A label's style of a `GEOMTRANSFORM` that names no transform, such as `"foo"`, draws at the
+label's point: `msStyleSetGeomTransform` (`src/mapgeomtransform.c:58-64`) sets its type to
+`MS_GEOMTRANSFORM_NONE` and only records an error, which `loadStyle` (`src/mapfile.c:2831-2843`)
+does not check and `map2img` does not read, failing only where `msLoadMap` or `msDrawMap` returns
+nothing; `loadLabel` (`src/mapfile.c:2058-2061`) then gives the style its default, `labelpnt`. A
+later `GEOMTRANSFORM` sets the type again, so the last one holds. The frontend warns of the name
+with `unsupported-value`, as for a class's style.
+A label's style of any other `GEOMTRANSFORM`, `start`, `end`, `vertices`, `centroid`, `bbox`, or
+an expression, `msDrawLabelCache` fails the map's draw on; the IR's label style always names
+`labelpoint`, `labelpoly`, or `labelcenter`, so the frontend leaves such a label out with
+`label-not-drawn`, and its class's other labels with it, as the engine leaves out every label of a
+class of several labels, not drawn yet. `ANGLE AUTO` on a label's style changes nothing:
+`loadStyle` sets only the style's `autoangle`, which none of the functions drawing a label's styles
+reads, so the style turns by its `ANGLE` alone.
 
 **The marker under a label.** The label cache holds beneath each label of a point layer the box
 of the marker its class's first style draws at the point, as `msAddLabelGroup` and `msAddLabel`
