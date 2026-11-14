@@ -1,6 +1,6 @@
 # ADR-0037: The core crate `proj` reprojects with its own port of PROJ's formulas, every transcendental function taken from `libm`, and no crate beyond it
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-14
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/proj`, its `[dependencies]`, the reprojection of a layer's features and of the area asked of its source in `crates/engine`, the workspace's `clippy.toml` and the three crate copies of it (`crates/engine/clippy.toml`, `crates/label/clippy.toml`, `crates/symbolize/clippy.toml`), `scripts/check-notice.sh` and `THIRD-PARTY-NOTICES.md` for the notice of PROJ, and the EPSG table the msautotest harness `crates/cli/tests/msautotest.rs` passes to the CLI
