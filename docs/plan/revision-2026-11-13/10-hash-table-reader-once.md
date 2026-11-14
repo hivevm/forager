@@ -34,5 +34,7 @@ Read `loadHashTable` at the pin for what MapServer does with a malformed pair.
 
 ## Mode
 
-with the human: `Defaults::of` holds the 16 MiB bound of the defaults (Q-9), and the resource
-limits are kept with the maintainer by ADR-0006.
+unattended, on the maintainer's instruction of 2026-11-13 to implement every open ticket, the
+smallest variant chosen and listed in the pull request, which the maintainer reviews: one reader; a
+malformed pair reported in both blocks as `VALIDATION`'s is today; the 16 MiB bound untouched. Stop
+when that variant cannot hold.

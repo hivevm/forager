@@ -32,5 +32,6 @@ function that turns it into the layer's diagnostics. No behaviour changes.
 
 ## Mode
 
-with the human: what a layer reports past Q-9's bounds is the resource limits' reporting, which
-ADR-0006 keeps with the maintainer, even where no value moves.
+unattended, on the maintainer's instruction of 2026-11-13 to implement every open ticket, the
+smallest variant chosen and listed in the pull request, which the maintainer reviews: the
+refactoring as written, no value of Q-9 and no diagnostic moved. Stop when that variant cannot hold.

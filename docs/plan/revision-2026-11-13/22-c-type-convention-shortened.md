@@ -29,6 +29,6 @@ revision files and does not land
 
 ## Mode
 
-with the human: a rule dropped in part, which the design revision files for the maintainer
-([`AGENTS.md` §5](../../../AGENTS.md#5-quality-bar--definition-of-done)); `docs/CONVENTIONS.md` is
-one of ADR-0001's documents and takes the full review.
+unattended, on the maintainer's instruction of 2026-11-13 to implement every open ticket, the
+smallest variant chosen and listed in the pull request, which the maintainer reviews: shorten the
+entry to the step, as written. Stop when that variant cannot hold.

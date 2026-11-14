@@ -37,6 +37,8 @@ reader lies lower, in `style-ir`. Read `check_single_font` at the pin first.
 
 ## Mode
 
-with the human: the reader of the style document refusing or warning of a case-twin is a decision
-on the format, which ADR-0006 keeps with the maintainer. The rest may run unattended once that is
-decided.
+unattended, on the maintainer's instruction of 2026-11-13 to implement every open ticket, the
+smallest variant chosen and listed in the pull request, which the maintainer reviews: a style
+document whose fonts hold two names that differ only in case is read with a warning naming the
+second, and the first written is used, as the frontend's `first_written` keeps it. Stop when that
+variant cannot hold.

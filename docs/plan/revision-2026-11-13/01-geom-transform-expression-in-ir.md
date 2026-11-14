@@ -21,6 +21,17 @@ The options the survey found:
 - a unit variant, such as `Unsupported`, with the text kept in the load's diagnostic alone;
 - the style left out at load with its warning, as a label's style of an unknown transform is.
 
+The ticket takes up `docs/backlog/layer-geomtransform.md`: a layer's `GEOMTRANSFORM`, which the
+maintainer decided on 2026-11-10 to carry, porting `generalize`, `densify`, `outer`, `inner`, and
+`smoothsia` and drawing nothing of a layer of any other function, with a warning. The port is in
+44cc731 (`crates/symbolize/src/layer_transform.rs`, its `parse.rs` and `tests.rs`, the tests'
+values derived from the C), taken out in 7f36bf6. The tree decides what that review left open: the
+layer's `UNITS`, which `[map_cellsize]` reads; that MapServer transforms a shape only as it reads
+it, so a feature past `MAXFEATURES` fails nothing; a multipoint, which the IR flattens; a quoted
+attribute binding; every chain of `+ - * / %` counted against the nesting bound; and the two bounds
+the port added on the points added and visited, which Q-9 does not name yet (a drafted
+specification change, for the maintainer to land).
+
 ## Acceptance criteria
 
 - [ ] Given the options above, when the maintainer has decided, then a `proposed` ADR records the
@@ -35,7 +46,7 @@ The options the survey found:
   `crates/engine/src/lib.rs`, `crates/symbolize/src/draw.rs`,
   `crates/symbolize/src/geom_transform.rs`, `schema/style-document-1.0.json`
 - `docs/adr/0015-expressions-as-cql2.md`, `docs/adr/0014-style-document-versions.md`
-- `docs/backlog/layer-geomtransform.md`, which waits on the same question for a layer.
+- `git show 44cc731 -- crates/symbolize/src/layer_transform.rs crates/symbolize/src/layer_transform`
 
 ## Blocked by
 

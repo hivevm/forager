@@ -31,5 +31,7 @@ maintainer's to choose.
 
 ## Mode
 
-with the human: the doc comment of a field of the style document changes its schema's description,
-and the format is kept with the maintainer by ADR-0006; the enum is a format decision.
+unattended, on the maintainer's instruction of 2026-11-13 to implement every open ticket, the
+smallest variant chosen and listed in the pull request, which the maintainer reviews: the engine's
+rule stays; the frontend's line goes; the model's doc comment of `label_cache` says that
+`post_label_cache` overrides it; no enum. Stop when that variant cannot hold.

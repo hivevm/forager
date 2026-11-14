@@ -32,5 +32,7 @@ keep the one expression's check a comparison in `defaults.rs`. No behaviour chan
 
 ## Mode
 
-with the human: the resource limits are kept with the maintainer by ADR-0006, even where no value
-moves.
+unattended, on the maintainer's instruction of 2026-11-13 to implement every open ticket, the
+smallest variant chosen and listed in the pull request, which the maintainer reviews: `charge` owns
+"report once"; the pre-check that leaves a file past the bound unread stays; no value moves. Stop
+when that variant cannot hold.
