@@ -1,4 +1,4 @@
-# ADR-draft-reprojection-ported-in-proj: The core crate `proj` reprojects with its own port of PROJ's formulas, every transcendental function taken from `libm`, and no crate beyond it
+# ADR-0037: The core crate `proj` reprojects with its own port of PROJ's formulas, every transcendental function taken from `libm`, and no crate beyond it
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-14
