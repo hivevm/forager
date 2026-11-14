@@ -152,20 +152,20 @@ const DATUMS: &[(&str, &str, &str)] = &[("WGS84", "0,0,0", "WGS84"), ("NAD83", "
 /// any other.
 const UNITS: &[(&str, f64)] = &[("m", 1.0)];
 
-/// The datum a projection's coordinates are in, by how PROJ's `pj_init` shifts it to WGS84
-/// (`src/4D_api.cpp`, its cs2cs emulation): by `+nadgrids=@null`, not at all; by a Helmert
-/// transform of `+towgs84`, through geocentric coordinates; by a change of ellipsoid alone, where
-/// `+towgs84` is all zeros and the ellipsoid is not WGS84's; or not at all, where none is given.
-/// MapServer at the pin creates its transformation by `proj_create_crs_to_crs_from_pj`, in its
-/// `createNormalizedPJ`, whose operation for these definitions is not verified to be this chain;
-/// G-11's measurement against PROJ is the guard.
+/// The datum a projection's coordinates are in, by how it shifts to WGS84: by `+nadgrids=@null`,
+/// a `+towgs84` of all zeros, or none, not at all; by any other `+towgs84`, through geocentric
+/// coordinates by a Helmert transform, as PROJ's cs2cs emulation (`src/4D_api.cpp`) chains it.
+/// For a zero `towgs84` on another ellipsoid than WGS84's, such as NAD83's GRS80, that emulation
+/// changes the ellipsoid through geocentric coordinates; MapServer at the pin, which asks PROJ
+/// for its operation by `proj_create_crs_to_crs_from_pj`, does not, as G-11's measurement shows,
+/// and this follows MapServer (the maintainer's decision of 2026-11-14).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Datum {
     /// Its longitude and latitude are WGS84's.
     Wgs84,
     /// Through geocentric coordinates on its ellipsoid, shifted by the Helmert transform of its
-    /// `towgs84` where that is not all zeros.
-    Geocentric(Option<crate::datum::Helmert>),
+    /// `towgs84`.
+    Geocentric(crate::datum::Helmert),
 }
 
 /// The ellipsoid and the datum of `params`, as `pj_datum_set` and `pj_ellipsoid` read them, the
@@ -190,15 +190,9 @@ pub(crate) fn ellipsoid_and_datum(params: &Params) -> Result<(Ellipsoid, Datum),
         (None, Some(text)) => {
             let shift = towgs84_params(text)?;
             if shift.iter().all(|&p| p == 0.0) {
-                let wgs84 = (ellipsoid.a - 6_378_137.0).abs() < 1e-8
-                    && (ellipsoid.es - 0.006_694_379_990_141_3).abs() < 1e-15;
-                if wgs84 {
-                    Datum::Wgs84
-                } else {
-                    Datum::Geocentric(None)
-                }
+                Datum::Wgs84
             } else {
-                Datum::Geocentric(Some(crate::datum::Helmert::new(&shift)))
+                Datum::Geocentric(crate::datum::Helmert::new(&shift))
             }
         }
     };

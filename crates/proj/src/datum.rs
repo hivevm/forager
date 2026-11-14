@@ -28,8 +28,7 @@
 
 //! The shift of a longitude and latitude from one datum to WGS84 and back, through geocentric
 //! coordinates, as PROJ's cs2cs emulation chains `cart` and an exact `helmert` of the position
-//! vector convention. MapServer at the pin goes through `proj_create_crs_to_crs_from_pj` instead,
-//! which is not verified to pick the same operation (see [`Datum`]).
+//! vector convention, for a `towgs84` that is not all zeros (see [`Datum`]).
 
 use crate::params::{Datum, Ellipsoid};
 
@@ -169,27 +168,25 @@ impl Helmert {
 /// The longitude and latitude `(lam, phi)`, in radians, in `datum` on `ellipsoid`, shifted into
 /// WGS84, as `inv_finalize` shifts them: `cart`, `helmert` forward, `cart` of WGS84 inverse.
 pub(crate) fn to_wgs84(lam: f64, phi: f64, datum: &Datum, ellipsoid: &Ellipsoid) -> (f64, f64) {
-    let Datum::Geocentric(shift) = datum else {
+    let Datum::Geocentric(helmert) = datum else {
         return (lam, phi);
     };
-    let mut point = cartesian(lam, phi, ellipsoid);
-    if let Some(helmert) = shift {
-        point = helmert.forward(point);
-    }
-    geodetic(point, &Ellipsoid::wgs84())
+    geodetic(
+        helmert.forward(cartesian(lam, phi, ellipsoid)),
+        &Ellipsoid::wgs84(),
+    )
 }
 
 /// The WGS84 longitude and latitude `(lam, phi)` shifted into `datum` on `ellipsoid`, as
 /// `fwd_prepare` shifts them: `cart` of WGS84, `helmert` inverse, `cart` inverse.
 pub(crate) fn from_wgs84(lam: f64, phi: f64, datum: &Datum, ellipsoid: &Ellipsoid) -> (f64, f64) {
-    let Datum::Geocentric(shift) = datum else {
+    let Datum::Geocentric(helmert) = datum else {
         return (lam, phi);
     };
-    let mut point = cartesian(lam, phi, &Ellipsoid::wgs84());
-    if let Some(helmert) = shift {
-        point = helmert.reverse(point);
-    }
-    geodetic(point, ellipsoid)
+    geodetic(
+        helmert.reverse(cartesian(lam, phi, &Ellipsoid::wgs84())),
+        ellipsoid,
+    )
 }
 
 #[cfg(test)]
@@ -214,9 +211,9 @@ mod tests {
     #[test]
     fn a_helmert_shift_reverses() {
         // Verifies: ADR-0037
-        let datum = Datum::Geocentric(Some(Helmert::new(&[
+        let datum = Datum::Geocentric(Helmert::new(&[
             446.448, -125.157, 542.06, 0.1502, 0.247, 0.8421, -20.4894,
-        ])));
+        ]));
         let airy = Ellipsoid {
             a: 6_377_563.396,
             es: 0.006_670_539_999_985_363,

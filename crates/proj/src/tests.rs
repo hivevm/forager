@@ -138,13 +138,12 @@ fn web_mercator_takes_wgs84_longitude_and_latitude_on_its_sphere_without_a_shift
 #[test]
 fn the_canadian_lambert_conic_of_the_suite_has_its_origin_at_49n_95w() {
     // Verifies: ADR-0037
-    // NAD83's GRS80 and WGS84 part by a tenth of a millimetre at the origin, which the change of
-    // ellipsoid that PROJ makes for a zero `towgs84` keeps.
+    // A zero `towgs84` shifts nothing, as MapServer's call of PROJ does not.
     let projected = way(LONGLAT_WGS84, EPSG_3978)
         .point(at(-95.0, 49.0))
         .unwrap();
     assert!(
-        projected.x.abs() < 1e-3 && projected.y.abs() < 1e-3,
+        projected.x.abs() < 1e-6 && projected.y.abs() < 1e-6,
         "{projected:?}"
     );
     // Prince Edward Island, where misc/quoting.map draws, lies east and south of the origin.
