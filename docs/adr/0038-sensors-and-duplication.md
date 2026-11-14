@@ -1,6 +1,6 @@
 # ADR-0038: The toolchain is pinned stable Rust with its cargo tools, the wasm-bindgen CLI, and the ShellCheck and jscpd release binaries, installed by `scripts/install-tools.sh` and run by the checks, with every sensor `scripts/check-all.sh` runs
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-13
 - **Deciders:** Markus Brigl
 - **Applies to:** `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.cargo/`, `clippy.toml`, `rustfmt.toml`, `deny.toml`, `scripts/install-tools.sh`, `scripts/install-shellcheck.sh`, `scripts/install-jscpd.sh`, `scripts/check-rust.sh`, the ShellCheck of `scripts/check-shell.sh` and its self-test, every `scripts/sensor-*.sh` that `scripts/check-all.sh` runs and its self-test, `.jscpd.json`, the `postCreateCommand` of `.devcontainer/devcontainer.json`, the `rust`, `shell`, and `sensors` jobs of `.github/workflows/checks.yml`, the scheduled workflows of the slow sensors (`.github/workflows/fuzz.yml`, `.github/workflows/mutants.yml`), and the **Build, Test & Run** section of `README.md`

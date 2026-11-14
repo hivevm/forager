@@ -1,6 +1,6 @@
 # ADR-0039: The label cache tests collisions over a grid that wraps around the image, with MapServer's outcome, and holds at most 100,000 labels a render
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-13
 - **Deciders:** Markus Brigl
 - **Applies to:** the label cache of `crates/label` and the engine's use of it in `crates/engine`: how a label is tested against the markers and the labels drawn before it, the grid that bounds those tests, and how many labels one render holds

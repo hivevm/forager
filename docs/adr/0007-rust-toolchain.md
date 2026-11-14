@@ -1,6 +1,6 @@
 # ADR-0007: The toolchain is pinned stable Rust with its cargo tools, the wasm-bindgen CLI, and one ShellCheck release binary, installed by `scripts/install-tools.sh` and run by the checks
 
-- **Status:** 🟢 accepted
+- **Status:** ⚪ superseded by ADR-0038
 - **Date:** 2026-11-10
 - **Deciders:** Markus Brigl
 - **Applies to:** `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.cargo/`, `clippy.toml`, `rustfmt.toml`, `deny.toml`, `scripts/install-tools.sh`, `scripts/install-shellcheck.sh`, `scripts/check-rust.sh`, the ShellCheck of `scripts/check-shell.sh` and its self-test, the `postCreateCommand` of `.devcontainer/devcontainer.json`, the `rust` and `shell` jobs of `.github/workflows/checks.yml`, the scheduled workflows of the slow sensors (`.github/workflows/fuzz.yml`, `.github/workflows/mutants.yml`), and the **Build, Test & Run** section of `README.md`
