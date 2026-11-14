@@ -72,8 +72,8 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
    shall produce bit-identical RGBA buffers.
 10. **G-10** — When labels are placed for a msautotest case, the system shall place and discard
     the same labels as the reference, each within 1 px of its reference position.
-11. **G-11** — When a proj4 transformation used by a test case is evaluated, proj4rs shall agree
-    with PROJ within a tolerance stated in metres.
+11. **G-11** — When a proj4 transformation used by a test case is evaluated, the core's
+    reprojection shall agree with PROJ within a tolerance stated in metres.
 12. **G-12** — When an RGBA buffer is encoded as PNG and decoded again, the system shall yield the
     identical buffer.
 13. **G-13** — When a msautotest case of the categories raster nearest neighbour, raster bilinear
@@ -236,14 +236,16 @@ maintained.
 
 - There is demand for rendering existing mapfiles in the browser; no evidence for it is recorded
   yet (see *Problem*).
-- The pure-Rust crates the work leans on — agg-rust, proj4rs, skrifa,
-  i_overlay, png, tiff, flatgeobuf — build for `wasm32-unknown-unknown` without C code and stay
-  maintained. The ADR that picks each one verifies it.
+- The pure-Rust crates the work leans on — agg-rust, skrifa, i_overlay, png, tiff, flatgeobuf —
+  build for `wasm32-unknown-unknown` without C code and stay maintained. The ADR that picks each
+  one verifies it.
 - The msautotest reference images are reproducible enough that the tolerances of G-6 and G-13 lie
   above their platform noise; the noise is measured before the first rendering criterion of a
   category is held. For geometry and symbols, and for text, MapServer at the pin, built on CI,
   reproduces the references of the cases in scope bit for bit.
 - proj4 strings cover the projections that client-side maps need.
+- The core's port of PROJ's formulas for those projections stays small, and PROJ seldom changes
+  them, so that keeping the port in step with PROJ costs less than taking a crate that ports it.
 - Browser hosts can serve HTTP range requests for FlatGeobuf.
 - The expected scale — features per viewport, image size, layer count — is not known yet; the
   limits of Q-9 are set from a first measurement.
