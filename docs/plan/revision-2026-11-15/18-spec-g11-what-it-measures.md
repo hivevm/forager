@@ -20,16 +20,18 @@ The draft names the accepted ADRs whose basis it may move, for the maintainer to
 ([`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules), rule 7):
 
 - ADR-0038 (what its records hold; see ticket 12);
-- ADR-0037. The maintainer has an open question whether G-11's change of "as MapServer at the
-  pin calls it", 1 mm, moves ADR-0037's basis. This ticket lists the question and does not
-  decide it.
+- not ADR-0037. On 2026-11-15 the maintainer decided that G-11's change ("agree with PROJ as
+  MapServer at the pin calls it, within 1 mm") and the named-datum rule do not move ADR-0037's
+  basis. ADR-0037 leaves the reference and the tolerance to the measurement, and stays unchanged.
+  The draft cites that decision and does not ask it again.
 
 The agent drafts. Only the maintainer lands the change.
 
 ## Acceptance criteria
 
 - [ ] Given the draft, when the maintainer reads it, then it states G-11's comparison, its
-  reference, and its tolerance, and lists ADR-0037 and ADR-0038 with the question on each.
+  reference, and its tolerance, lists ADR-0038 with the question on it, and cites the
+  maintainer's decision of 2026-11-15 on ADR-0037.
 - [ ] Given the maintainer's decision, when the change lands, then `scripts/check-traceability.sh`
   passes and every `Verifies: G-11` marker decides the whole criterion as reworded.
 
