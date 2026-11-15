@@ -56,8 +56,8 @@ What binds:
 
 - **The port.** `symbolize` defines a trait that takes a font's name, a character, and a glyph
   size in points. It returns the glyph's outline in pixels about its origin, y down as the display
-  list has it, and its metrics. Where there is none, it returns why. The canvas carries the port, as it carries
-  the render's pixmaps. `symbolize` gains no dependency.
+  list has it, and its metrics. Where there is none, it returns why. The canvas carries the port,
+  as it carries the render's pixmaps. `symbolize` gains no dependency.
 - **The engine's answer.** The engine looks up the font's path in the font set. It loads the font
   through the resource loader, once per render, into the store the labels' fonts use. `label`
   reads the glyph. `label` reads it as it reads a label's glyph: unhinted, at the pixel size
