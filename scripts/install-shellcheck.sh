@@ -4,7 +4,7 @@
 # SHA-256 GitHub records for the release asset, which is pinned here, into a directory on PATH,
 # ~/.local/bin unless SHELLCHECK_BIN_DIR names another. A ShellCheck already at the version there
 # is kept. scripts/install-tools.sh runs it in the Dev Container (ADR-0009), and the shell job of
-# CI runs it before the lint.
+# CI runs it before the lint. The download, the check, and the install are scripts/lib/install.sh.
 #
 # Usage: bash scripts/install-shellcheck.sh
 set -euo pipefail
@@ -28,23 +28,9 @@ case "$(uname -s).$(uname -m)" in
     ;;
 esac
 
-if grep -qx "version: $SHELLCHECK_VERSION" <<< "$("$BIN_DIR/shellcheck" --version 2> /dev/null)"; then
-  echo "install-shellcheck: shellcheck $SHELLCHECK_VERSION is installed in $BIN_DIR"
-else
-  name="shellcheck-v$SHELLCHECK_VERSION.$asset.tar.xz"
-  url="https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION/$name"
-  work="$(mktemp -d)"
-  trap 'rm -rf "$work"' EXIT
-  curl --fail --silent --show-error --location --output "$work/$name" "$url"
-  echo "$sha256  $work/$name" | sha256sum --check --quiet -
-  tar -xJf "$work/$name" -C "$work"
-  mkdir -p "$BIN_DIR"
-  install -m 0755 "$work/shellcheck-v$SHELLCHECK_VERSION/shellcheck" "$BIN_DIR/shellcheck"
-  echo "install-shellcheck: installed shellcheck $SHELLCHECK_VERSION in $BIN_DIR"
-fi
-
-# A ShellCheck of another version earlier on PATH would be the one the lint runs.
-found="$(command -v shellcheck || true)"
-if [[ "$found" != "$BIN_DIR/shellcheck" ]]; then
-  echo "install-shellcheck: note: PATH finds ${found:-no shellcheck} before $BIN_DIR/shellcheck" >&2
-fi
+# shellcheck source-path=SCRIPTDIR source=lib/install.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/install.sh"
+release="https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION"
+install_release shellcheck "$SHELLCHECK_VERSION" "$BIN_DIR" "version: $SHELLCHECK_VERSION" \
+  "$release/shellcheck-v$SHELLCHECK_VERSION.$asset.tar.xz" "$sha256" \
+  "shellcheck-v$SHELLCHECK_VERSION/shellcheck"

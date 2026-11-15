@@ -1,13 +1,16 @@
 name: Noise
 
-# The noise measurement of G-6 and of G-13 for the category text: MapServer at the pinned release,
-# built as ADR-0033 decides, renders the cases the list crates/cli/tests/conformance/cases.txt puts
-# in scope, of every category, as the testing decisions of the point-label spec ask, and the
-# harness compares its renderings with the references by its metric at each threshold of a small
-# set, the maximum over each category apart. A sensor: the report goes into the job summary and
-# the renderings are kept as an artifact; the run fails only when it breaks. It runs on demand and
-# when what it measures changes: the harness, its metric, and its list, the pin, the build of
-# MapServer, or this workflow.
+# The noise measurement of G-6 and of G-13 for the category text, and the records of G-11's
+# reference. MapServer at the pinned release, built as ADR-0033 decides, renders the cases the list
+# crates/cli/tests/conformance/cases.txt puts in scope, of every category, as the testing decisions
+# of the point-label spec ask, and the harness compares its renderings with the references by its
+# metric at each threshold of a small set, the maximum over each category apart. The same build's
+# reprojection reader reprojects G-11's lists of points, rectangles, and shapes under
+# crates/proj/tests/reference/, and the run fails where its output and the records there differ
+# (ADR-0038). A sensor: the report goes into the job summary and the renderings and the reader's
+# output are kept as an artifact; the run fails only when it breaks or a record no longer holds. It
+# runs on demand and when what it measures changes: the harness, its metric, and its list, G-11's
+# lists and records, the pin, the build of MapServer, or this workflow.
 
 on:
   workflow_dispatch:

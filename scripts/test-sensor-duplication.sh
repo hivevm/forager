@@ -26,6 +26,8 @@ unset $(git rev-parse --local-env-vars)
 
 # shellcheck source-path=SCRIPTDIR source=lib/selftest.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/selftest.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/expect.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
 SENSOR="$ROOT/scripts/sensor-duplication.sh"
 pinned="$(sed -n 's/^JSCPD_VERSION="\(.*\)"$/\1/p' "$ROOT/scripts/install-jscpd.sh")"
 
@@ -94,22 +96,18 @@ put() {
   git -C "${1:?}" add -- "$2"
 }
 
-# expect <exit code> <name> <dir> <needle...> — run the sensor; its output must contain every needle.
-expect() {
-  local want="$1" name="$2" dir="$3" out rc needle
+# expect_sensor <exit code> <name> <dir> <needle...> — run the sensor on the repository; its
+# output must contain every needle, counted as one case. verdict (scripts/lib/expect.sh) holds the
+# first needle, and the others as its caller's comparison, which a failure names.
+expect_sensor() {
+  local want="$1" name="$2" dir="$3" out rc needle all=1
   shift 3
   fixture "$dir"
   out="$(bash "$SENSOR" "$dir" 2>&1)"; rc=$?
-  local ok=1
-  [[ $rc -eq "$want" ]] || ok=0
-  for needle in "$@"; do [[ "$out" == *"$needle"* ]] || ok=0; done
-  if ((ok)); then
-    passed=$((passed + 1))
-    return
+  for needle in "${@:2}"; do [[ "$out" == *"$needle"* ]] || all=0; done
+  if ! verdict "$name" "$want" "$1" "$rc" "$out" "$all" && ((!all)); then
+    echo "    (and every one of: ${*:2})" >&2
   fi
-  failed=$((failed + 1))
-  echo "FAIL: $name (expected exit $want with $*, got exit $rc)" >&2
-  while IFS= read -r l; do printf '    %s\n' "$l"; done <<< "$out" >&2
 }
 
 # --- cases -----------------------------------------------------------------------------------
@@ -117,41 +115,43 @@ expect() {
 d="$(repo rust)"
 put "$d" "crates/a/src/lib.rs" "$(rust_fn widen)"
 put "$d" "crates/b/src/lib.rs" "$(rust_fn stretch)"
-expect 0 "a Rust clone names both places and exits 0" "$d" \
+expect_sensor 0 "a Rust clone names both places and exits 0" "$d" \
   "Duplication sensor: 1 clone in the Rust and bash files" "Clone found (rust)" \
   "crates/a/src/lib.rs [" "crates/b/src/lib.rs ["
 
 d="$(repo bash)"
 put "$d" "scripts/a.sh" "$(printf '#!/usr/bin/env bash\n%s' "$(bash_fn count_a)")"
 put "$d" "scripts/b.sh" "$(printf '#!/usr/bin/env bash\n%s' "$(bash_fn count_b)")"
-expect 0 "a bash clone names both places and exits 0" "$d" \
+expect_sensor 0 "a bash clone names both places and exits 0" "$d" \
   "Duplication sensor: 1 clone in" "Clone found (bash)" "scripts/a.sh [" "scripts/b.sh ["
 
 d="$(repo hook)"
 put "$d" "scripts/a.sh" "$(printf '#!/usr/bin/env bash\n%s' "$(bash_fn count_a)")"
 put "$d" ".githooks/pre-push" "$(printf '#!/usr/bin/env bash\n%s' "$(bash_fn count_b)")"
-expect 0 "a hook without an extension is read as bash by its shebang" "$d" \
+expect_sensor 0 "a hook without an extension is read as bash by its shebang" "$d" \
   "Duplication sensor: 1 clone in" "scripts/a.sh [" ".githooks/pre-push ["
 
 d="$(repo none)"
 put "$d" "crates/a/src/lib.rs" "$(rust_fn widen)"
 put "$d" "scripts/a.sh" "$(printf '#!/usr/bin/env bash\n%s' "$(bash_fn count_a)")"
-expect 0 "a tree without clones reports none and exits 0" "$d" "Duplication sensor: 0 clones in"
+expect_sensor 0 "a tree without clones reports none and exits 0" "$d" \
+  "Duplication sensor: 0 clones in"
 
 d="$(repo untracked)"
 put "$d" "crates/a/src/lib.rs" "$(rust_fn widen)"
 draft "$d" "crates/b/src/lib.rs" "$(rust_fn stretch)"
-expect 0 "a clone in an untracked file that .gitignore does not ignore is left out" "$d" \
-  "Duplication sensor: 0 clones in"
+expect_sensor 0 "a clone in an untracked file that .gitignore does not ignore is left out" \
+  "$d" "Duplication sensor: 0 clones in"
 
 d="$(repo other-format)"
 put "$d" "a.c" "$(rust_fn widen)"
 put "$d" "b.c" "$(rust_fn stretch)"
-expect 0 "a format .jscpd.json does not name is left out" "$d" "Duplication sensor: 0 clones in"
+expect_sensor 0 "a format .jscpd.json does not name is left out" "$d" \
+  "Duplication sensor: 0 clones in"
 
 d="$(repo no-config)"
 rm "$d/.jscpd.json"
-expect 1 "no .jscpd.json measures nothing" "$d" ".jscpd.json not found"
+expect_sensor 1 "no .jscpd.json measures nothing" "$d" ".jscpd.json not found"
 
 d="$(repo tools)"
 put "$d" "crates/a/src/lib.rs" "$(rust_fn widen)"

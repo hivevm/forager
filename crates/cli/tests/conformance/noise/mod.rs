@@ -124,8 +124,9 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
     );
 }
 
-/// The lists of G-11's reference points and rectangles, each with the record of MapServer's
-/// reprojection of it and the name of the reader's output, from the workspace root (ADR-0038).
+/// The lists of G-11's reference points, rectangles, and shapes, each with the record of
+/// MapServer's reprojection of it and the name of the reader's output, from the workspace root
+/// (ADR-0038).
 const REFERENCES: [(&str, &str, &str); 3] = [
     (
         "crates/proj/tests/reference/points.tsv",

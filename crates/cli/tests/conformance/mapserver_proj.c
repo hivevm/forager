@@ -1,31 +1,31 @@
 /*
- * The reader of MapServer's reprojection for G-11's reference
- * (ADR-0038): it reads the list of points named as its one
- * argument, crates/proj/tests/reference/points.tsv, and reprojects each point from its line's
- * source projection into its target projection as MapServer reprojects a shape's point: each
- * projection loaded by msLoadProjectionString of src/mapfile.c, the point reprojected by
- * msProjectPoint of src/mapproject.c, which asks PROJ for the operation through
- * createNormalizedPJ.
+ * The reader of MapServer's reprojection for G-11's reference (ADR-0038): it reads the list named
+ * as its one argument, one of crates/proj/tests/reference/points.tsv, rects.tsv, and shapes.tsv,
+ * and reprojects each point, rectangle, or shape from its line's source projection into its
+ * target projection as MapServer does, each projection loaded by msLoadProjectionString of
+ * src/mapfile.c. Its output, on standard output, is the record of that list: two header lines,
+ * "# PROJ <release>" from proj_info and "# MapServer <commit>" as its build names it, then for each
+ * line of the list that line, a tab, and its result, or "fail" where MapServer's function fails.
+ * Coordinates are written with %.17g. Comment lines and empty lines of the list are skipped. A line
+ * of the list that does not hold four or six tab-separated fields, or a projection that does not
+ * load, ends the reader with an error.
  *
- * Its output, on standard output, is the record crates/proj/tests/reference/mapserver.tsv: two
- * header lines, "# PROJ <release>" from proj_info and "# MapServer <commit>" as its build names it,
- * then for each point of the list its line, a tab, and the result as "x<TAB>y" written with %.17g,
- * or "fail" where msProjectPoint fails. Comment lines and empty lines of the list are skipped. A
- * line of the list that does not hold four or six tab-separated fields, or a projection that does
- * not load, ends the reader with an error.
+ * A line of four fields whose third is a number is a point, from points.tsv: its source and target
+ * and its x and y, reprojected by msProjectPoint of src/mapproject.c as a shape's point is, which
+ * asks PROJ for the operation through createNormalizedPJ. The result is "x<TAB>y"; the record is
+ * mapserver.tsv.
  *
- * A line of six fields is a rectangle, crates/proj/tests/reference/rects.tsv: its source and target
- * and minx, miny, maxx, maxy, projected by msProjectRect as a map's extent is projected into a
- * layer's to ask its source; the result is "minx<TAB>miny<TAB>maxx<TAB>maxy", or "fail" where
- * msProjectRect fails. Both projections are loaded afresh for each rectangle, so that none keeps
- * the is_polar msProjectRect sets on its source; the record is mapserver-rects.tsv.
+ * A line of six fields is a rectangle, from rects.tsv: its source and target and minx, miny, maxx,
+ * maxy, projected by msProjectRect as a map's extent is projected into a layer's to ask its source.
+ * The result is "minx<TAB>miny<TAB>maxx<TAB>maxy". Both projections are loaded afresh for each
+ * rectangle, so that none keeps the is_polar msProjectRect sets on its source; the record is
+ * mapserver-rects.tsv.
  *
- * A line of four fields whose third is "point", "line", or "polygon" is a shape,
- * crates/proj/tests/reference/shapes.tsv: its source and target, that type, and its lines, each "x,y x,y ...", separated by "|";
- * it is reprojected by msProjectShape as a layer's shape is before it is drawn. The result is each
- * line the shape is left with, in order, as "x,y x,y ..." written with %.17g and "-" for a line
- * left without points, tab-separated, or "fail" where msProjectShape fails; the record is
- * mapserver-shapes.tsv.
+ * A line of four fields whose third is "point", "line", or "polygon" is a shape, from shapes.tsv:
+ * its source and target, that type, and its lines, each "x,y x,y ...", separated by "|". It is
+ * reprojected by msProjectShape as a layer's shape is before it is drawn. The result is each line
+ * the shape is left with, in order, as "x,y x,y ..." and "-" for a line left without points,
+ * tab-separated; the record is mapserver-shapes.tsv.
  *
  * Copyright (c) 1996-2005 Regents of the University of Minnesota.
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
