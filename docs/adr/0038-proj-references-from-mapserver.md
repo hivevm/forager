@@ -1,4 +1,4 @@
-# ADR-draft-proj-references-from-mapserver: The reference coordinates of G-11 are reprojected by MapServer's own call of PROJ at the pinned build, in the noise run, and kept as records beside the test of `proj`
+# ADR-0038: The reference coordinates of G-11 are reprojected by MapServer's own call of PROJ at the pinned build, in the noise run, and kept as records beside the test of `proj`
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-14
