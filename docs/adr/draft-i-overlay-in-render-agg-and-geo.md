@@ -1,6 +1,6 @@
 # ADR-draft-i-overlay-in-render-agg-and-geo: The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it, and geo is the only other package that depends on i_overlay
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-15
 - **Deciders:** Markus Brigl
 - **Applies to:** the cut of a hatch in `crates/render-agg`, the `i_overlay` entry of its `Cargo.toml`, the i_overlay that geo brings into `crates/symbolize`, the bounds of a hatch in `crates/render`, and the test `only_render_agg_cuts_polygons_with_i_overlay` of `crates/arch-test`

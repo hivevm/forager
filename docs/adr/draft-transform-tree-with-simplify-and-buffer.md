@@ -1,6 +1,6 @@
 # ADR-draft-transform-tree-with-simplify-and-buffer: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, `simplify` and `buffer` among its nodes
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-15
 - **Deciders:** Markus Brigl
 - **Applies to:** the transform tree of `crates/style-ir` (a style's `GeomTransform::Expression` and a layer's `geom_transform`), the translation of `GEOMTRANSFORM` expressions in `crates/mapfile`, every crate that evaluates or reports a transform tree (`crates/engine`, `crates/symbolize`), and `schema/style-document-1.1.json`
