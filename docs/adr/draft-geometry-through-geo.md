@@ -259,15 +259,19 @@ from JTS. We will compute `buffer`, and a simplified polygon's validity and repa
   geo's `Validation` agreed with GEOS's `isValid` on all 3,053 results. `buffer` comes within
   2.5 × 10⁻⁷ px on the case's polygons. The Douglas-Peucker keeps GEOS's rule for equally far
   points and needs no recursion, so no line overflows the stack, and `hypot` is off its path.
-  The budget is charged by the work done, so a long line is simplified as MapServer simplifies it.
+  The budget is charged by the work done, so a long line of ordinary shape is simplified as
+  MapServer simplifies it.
 - Negative / trade-offs, measured:
   - a buffer and a repaired polygon are not bit-identical to GEOS. A buffer of −3 px differed by up
     to 2.1 × 10⁻³ px, with 2 of 272 rings of another point count;
   - the repair by `unary_union` keeps another lobe than GEOS's buffer of 0 for 7 of 40 repaired
     random polygons, where the simplified ring crosses itself;
-  - geo's `Validation` compares each pair of a simplified ring's segments. A polygon whose
-    simplified ring keeps more than about 10,000 points so passes the bound of Q-9 on visits, and
-    its layer draws nothing, where MapServer draws it;
+  - the validity test is charged the square of a simplified ring's segments. A polygon whose
+    simplified ring keeps more than about 10,000 points passes the bound of Q-9 on visits alone,
+    and its layer draws nothing, where MapServer draws it;
+  - in its worst case the Douglas-Peucker scans about n²/2 points for a part of n points kept,
+    as on a zigzag of falling amplitude. Such a line of more than about 14,000 points passes the
+    bound of Q-9 on visits, and its layer draws nothing, where MapServer draws it;
   - Forager owns a Douglas-Peucker of about 60 lines besides the first-point step and the removal
     of a ring;
   - 19 crates, among them a second i_overlay family and `rand`, and +129 KB of the bundle with
