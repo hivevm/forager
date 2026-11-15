@@ -3,7 +3,7 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-13
 - **Deciders:** Markus Brigl
-- **Applies to:** `rust-toolchain.toml`, `Cargo.toml`, `Cargo.lock`, `.cargo/`, `clippy.toml`, `crates/engine/clippy.toml`, `crates/label/clippy.toml`, `crates/symbolize/clippy.toml`, `rustfmt.toml`, `deny.toml`, `scripts/install-tools.sh`, `scripts/install-shellcheck.sh`, `scripts/install-jscpd.sh`, `scripts/check-rust.sh`, the ShellCheck of `scripts/check-shell.sh` and its self-test, every `scripts/sensor-*.sh` that `scripts/check-all.sh` runs and its self-test, `.jscpd.json`, the `postCreateCommand` of `.devcontainer/devcontainer.json`, the `rust`, `shell`, and `sensors` jobs of `.github/workflows/checks.yml`, the scheduled workflows of the slow sensors (`.github/workflows/fuzz.yml`, `.github/workflows/mutants.yml`), and the **Build, Test & Run** section of `README.md`
+- **Applies to:** `rust-toolchain.toml`, `.cargo/`, `rustfmt.toml`, `Cargo.toml`, `Cargo.lock`, `clippy.toml`, `crates/engine/clippy.toml`, `crates/label/clippy.toml`, `crates/symbolize/clippy.toml`, `deny.toml`, `scripts/install-tools.sh`, `scripts/install-shellcheck.sh`, `scripts/install-jscpd.sh`, the installer of pinned release binaries both use `scripts/lib/install.sh`, `scripts/check-rust.sh`, the ShellCheck of `scripts/check-shell.sh` and its self-test, the sensors `scripts/check-all.sh` runs (`scripts/sensor-tests-kept.sh`, `scripts/sensor-refactor-tests.sh`, `scripts/sensor-backlog-commits.sh`, `scripts/sensor-binding-adrs.sh`, `scripts/sensor-plain-rules.sh`, `scripts/sensor-revision-due.sh`, `scripts/sensor-plan-frontier.sh`, `scripts/sensor-backlog.sh`, `scripts/sensor-diagnostics-untested.sh`, `scripts/sensor-action-refs.sh`, `scripts/sensor-review-binding.sh`, `scripts/sensor-duplication.sh`) and their self-tests (`scripts/test-sensor-tests-kept.sh`, `scripts/test-sensor-refactor-tests.sh`, `scripts/test-sensor-backlog-commits.sh`, `scripts/test-sensor-binding-adrs.sh`, `scripts/test-sensor-plain-rules.sh`, `scripts/test-sensor-revision-due.sh`, `scripts/test-sensor-plan-frontier.sh`, `scripts/test-sensor-backlog.sh`, `scripts/test-sensor-diagnostics-untested.sh`, `scripts/test-sensor-action-refs.sh`, `scripts/test-sensor-review-binding.sh`, `scripts/test-sensor-duplication.sh`), the slow sensors `scripts/fuzz.sh` and `scripts/mutants.sh` with their self-tests `scripts/test-fuzz.sh` and `scripts/test-mutants.sh` and the fuzz targets `fuzz/`, `.jscpd.json`, the `postCreateCommand` of `.devcontainer/devcontainer.json`, the `rust`, `shell`, and `sensors` jobs of `.github/workflows/checks.yml`, the scheduled workflows of the slow sensors (`.github/workflows/fuzz.yml`, `.github/workflows/mutants.yml`), and the **Build, Test & Run** section of `README.md`
 
 ## Context
 
@@ -112,16 +112,19 @@ runs:
   The `rust` job of `checks.yml` runs it too, and caches `~/.cargo/bin` with `actions/cache`.
 - **ShellCheck.** The shell lint, locally and in CI, must run ShellCheck's release binary of the
   version `scripts/install-shellcheck.sh` names, 0.11.0:
-  - the script downloads it from the `koalaman/shellcheck` release on GitHub;
-  - the script refuses the download unless its SHA-256 matches the digest it pins per platform;
+  - the script downloads it from the `koalaman/shellcheck` release on GitHub, through
+    `scripts/lib/install.sh`;
+  - the script refuses the download unless its SHA-256 matches the digest it pins per platform,
+    checked by `scripts/lib/install.sh`;
   - the `shell` job of `checks.yml` runs the script in a step before the lint;
   - `scripts/check-shell.sh` names the running and the pinned version where they differ, and
     fails in a CI run.
 - **jscpd.** The duplication sensor, locally and in CI, must run jscpd's static Linux release
   binary of the version `scripts/install-jscpd.sh` names, 5.4.3:
   - the script downloads the `linux-x64-musl` or `linux-arm64-musl` archive from the
-    `kucherenko/jscpd` release on GitHub;
-  - the script refuses the download unless its SHA-256 matches the digest it pins per platform;
+    `kucherenko/jscpd` release on GitHub, through `scripts/lib/install.sh`;
+  - the script refuses the download unless its SHA-256 matches the digest it pins per platform,
+    checked by `scripts/lib/install.sh`;
   - the `sensors` job of `checks.yml` runs the script in a step before the sensor.
 - **Commands.** `scripts/check-rust.sh` runs every build, test, and lint command of the workspace.
   `scripts/check-all.sh` invokes it, and the `rust` job of `checks.yml` runs it. It must run
@@ -149,8 +152,9 @@ runs:
     It reports each clone with its two places, and fails on no count.
     `.jscpd.json` holds its formats, paths, and minimum clone size.
   - Architecture fitness: the dependency test of [ADR-0008](0008-ports-and-adapters-crates.md).
-  - Slow, in scheduled workflows of their own: `cargo-mutants` in `mutants.yml`, and the fuzz
-    targets of Q-3 with `cargo-fuzz` in `fuzz.yml`, on a nightly toolchain installed for that run.
+  - Slow, in scheduled workflows of their own: `cargo-mutants` by `scripts/mutants.sh` in
+    `mutants.yml`, and the fuzz targets of Q-3 under `fuzz/` with `cargo-fuzz` by `scripts/fuzz.sh`
+    in `fuzz.yml`, on a nightly toolchain installed for that run.
 
 **Out of scope:**
 
@@ -328,7 +332,7 @@ runs:
   named with it and fails the lint in a CI run. It cites this ADR with `Verifies:`. The `shell` job
   runs it before the lint, and the lint after the install step.
 - `scripts/install-shellcheck.sh` and `scripts/install-jscpd.sh` fail on a digest that does not
-  match, through `sha256sum --check`.
+  match, through the `sha256sum --check` of `scripts/lib/install.sh`.
 - `scripts/test-sensor-duplication.sh` decides that the sensor names both places of a clone in a
   fixture of Rust and of bash, and exits 0 with clones found. It cites this ADR with `Verifies:`.
   The `sensors` job runs it before the sensor, after the install step.

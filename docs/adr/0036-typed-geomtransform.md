@@ -3,7 +3,7 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-13
 - **Deciders:** Markus Brigl
-- **Applies to:** the transform tree of `crates/style-ir` (a style's `GeomTransform::Expression` and a layer's `geom_transform`), the translation of `GEOMTRANSFORM` expressions in `crates/mapfile`, every crate that evaluates or reports a transform tree (`crates/engine`, `crates/symbolize`), and `schema/style-document-1.0.json`
+- **Applies to:** the transform tree of `crates/style-ir` (a style's `GeomTransform::Expression` and a layer's `geom_transform`), the translation of `GEOMTRANSFORM` expressions in `crates/mapfile`, every crate that evaluates or reports a transform tree (`crates/engine`, `crates/symbolize`), and `schema/style-document-1.1.json`
 
 ## Context
 
@@ -62,9 +62,10 @@ IR already holds.
 
 **Forces.** The core must not know MapServer syntax (*Constraints*). The IR round-trips through
 YAML and JSON (G-3). Expressions nest at most 24 levels (Q-9), as
-[ADR-0015](0015-expressions-as-cql2.md) bounds its tree with `MAX_EXPRESSION_DEPTH`. The document is
-1.0 and pre-release: its schema file is regenerated with the IR and the version stays
-([ADR-0014](0014-style-document-versions.md), *Freeze*).
+[ADR-0015](0015-expressions-as-cql2.md) bounds its tree with `MAX_EXPRESSION_DEPTH`. The document
+was at 1.0 when this decision was taken, and it is pre-release: the current version's schema file
+is regenerated with the IR ([ADR-0014](0014-style-document-versions.md), *Before a release*). It
+is 1.1 today, `schema/style-document-1.1.json`.
 
 ## Decision
 
@@ -115,13 +116,14 @@ Only the mapfile frontend translates it from MapServer's text.
   - It must refuse a deeper tree before it recurses deeper, without overflowing the stack.
   - A deeper tree is the load error `expression-too-deep`, from a mapfile and from a style
     document alike (Q-9).
-- **Versions.** The document stays at 1.0, and `schema/style-document-1.0.json` is regenerated in
-  the change that implements this ADR. A function added to the tree after the first release must
-  be a major version. A reader of an older minor unsets an unknown function, and so draws the
-  shapes untransformed. It must read a `not_drawn` reason it does not know as not drawn, with a
-  warning naming the reason and its path. The tree holds such a reason as `syntax`, so the engine's
-  later `geomtransform-not-drawn` names `syntax`. A reason added in a minor version so fails
-  closed.
+- **Versions.** The tree entered the document at 1.0, the version of that day, and
+  `schema/style-document-1.0.json` was regenerated in the change that implemented this ADR. The
+  current version's file, `schema/style-document-1.1.json`, holds it today. A function added to
+  the tree after the first release must be a major version. A reader of an older minor unsets an
+  unknown function, and so draws the shapes untransformed. It must read a `not_drawn` reason it
+  does not know as not drawn, with a warning naming the reason and its path. The tree holds such a
+  reason as `syntax`, so the engine's later `geomtransform-not-drawn` names `syntax`. A reason
+  added in a minor version so fails closed.
 
 **Out of scope:**
 

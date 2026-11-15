@@ -3,7 +3,7 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-10
 - **Deciders:** NUC maintainer, Markus Brigl
-- **Applies to:** every change larger than one agent session, `docs/plan/`, the spec and ticket templates of the `plan-feature` skill, the pull request template, the `Last design revision` line of `docs/ARCHITECTURE.md`, `scripts/sensor-revision-due.sh`, `scripts/sensor-plan-frontier.sh`, the claim script `.agents/skills/work-tickets/claim.sh`, `docs/backlog/`, and `scripts/sensor-backlog.sh`
+- **Applies to:** every change larger than one agent session, `docs/plan/`, the spec and ticket templates of the `plan-feature` skill, the pull request template, the `Last design revision` line of `docs/ARCHITECTURE.md`, `scripts/sensor-revision-due.sh`, `scripts/sensor-plan-frontier.sh`, the claim script `.agents/skills/work-tickets/claim.sh` and the path of a ticket both it and the frontier sensor read from `scripts/lib/ticket.sh`, `docs/backlog/`, `scripts/sensor-backlog.sh`, and `scripts/sensor-backlog-commits.sh`
 
 ## Context
 
@@ -240,6 +240,9 @@ and runs the claim script of the `work-tickets` skill, in one repository and acr
 one remote, where the second claim of a ticket must lose.
 `scripts/sensor-backlog.sh`, in the same job, lists the backlog entries on `main` and those only
 on unmerged local branches; it fails nothing, and its self-test cites this ADR.
+`scripts/sensor-backlog-commits.sh`, in the same job, lists each commit that adds a backlog entry
+beside a change outside `docs/backlog/`; it fails nothing, the reviewer asks for the split, and
+its self-test cites this ADR.
 
 **Not mechanically decidable:** the review decides each of these.
 

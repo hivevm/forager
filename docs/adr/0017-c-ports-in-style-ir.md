@@ -3,7 +3,7 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-13
 - **Deciders:** Markus Brigl
-- **Applies to:** the ports of C's `atof`, `strtod`, `atoi`, `(int)` cast of a `double`, and string end, and of MapServer's `MS_NINT`, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, and `msStringSplit`, in `crates/style-ir`, `crates/expr`, `crates/mapfile`, `crates/engine`, `crates/symbolize`, `crates/label`, and `crates/adapter-shapefile`; every conversion of a number that may truncate in `crates/engine`, `crates/symbolize`, and `crates/label`
+- **Applies to:** the ports of C's `atof`, `strtod`, `atoi`, `lrint`, `(int)` cast of a `double`, and string end, and of MapServer's `MS_NINT`, the opacity alpha `MS_NINT(opacity * 2.55)` kept in a byte, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, `msComputeBounds`, `msStringSplit`, and `msGetSymbolIndex` with the key of its `strcasecmp`, in `crates/style-ir`, and their callers in `crates/expr`, `crates/mapfile`, `crates/engine`, `crates/symbolize`, `crates/label`, `crates/render-agg`, `crates/proj`, `crates/adapter-shapefile`, and `crates/adapter-geojson`; every conversion of a number that may truncate in `crates/engine`, `crates/symbolize`, and `crates/label`
 
 ## Context
 
@@ -63,8 +63,15 @@ The maintainer settled these questions:
 - On 2026-11-13: the `(int)` cast, the macros, and the helpers join the same module, and `label`
   gains the edge to `style-ir` for them.
 
+The revision of 2026-11-13 found three more ports written inline where MapServer calls one
+function: the alpha of a layer's or a style's opacity, `MS_NINT(opacity * 2.55)` kept in an
+`unsigned char`; the bounds of a shape's points, `msComputeBounds`; and the match of a symbol's
+name, `msGetSymbolIndex` with glibc's `strcasecmp`. 7d09373f moved each into the module, as the
+decision says of every small function or macro of C's or MapServer's that crates call.
+
 Today the module is `crates/style-ir/src/c.rs`. The frontend, `expr`, the engine, `symbolize`,
-`label`, `render-agg`, and the adapters import from it, and `expr` keeps only `printf` and
+`label`, `render-agg` (`lrint` in its resampler), `proj` (`DEG_TO_RAD`), and both adapters
+(`rect_overlap` in the GeoJSON adapter) import from it, and `expr` keeps only `printf` and
 `strptime`.
 
 ## Decision
@@ -87,9 +94,13 @@ We will port C's and MapServer's small functions and macros once, in the module 
   [ADR-0016](0016-expression-evaluation.md) decides for C's undefined behaviour, and casts it
   with `int_cast` within an `int`.
 - **The macros.** The module ports `MS_MIN` and `MS_MAX` as `ms_min` and `ms_max`, each keeping
-  its second operand where the comparison fails, and `MS_DEG_TO_RAD` as one constant.
+  its second operand where the comparison fails, and `MS_DEG_TO_RAD` as one constant. It ports
+  the opacity alpha, `MS_NINT(opacity * 2.55)` kept in a byte, as `opacity_alpha`.
 - **The helpers.** The module ports `msRectOverlap` over a rectangle's four bounds,
-  `msStringSplit` over a separator, and a C string's end at its first NUL.
+  `msComputeBounds` over a shape's points as `ms_compute_bounds`, `msStringSplit` over a
+  separator, a C string's end at its first NUL, and `msGetSymbolIndex` as `ms_get_symbol_index`,
+  whose names match where their `symbol_name_key`s, `strcasecmp`'s comparison in the C locale,
+  are equal.
 - **The edge.** `crates/label` depends on `crates/style-ir` for these ports.
 - **The lint.** `crates/engine`, `crates/symbolize`, and `crates/label` deny clippy's
   `cast_possible_truncation` in their library code. A conversion between integers must use
@@ -173,9 +184,13 @@ We will port C's and MapServer's small functions and macros once, in the module 
 - The test `c_number_reading_is_defined_only_in_the_module_of_style_ir` in
   `crates/arch-test/tests/c_numbers.rs` cites this ADR with `Verifies:`. It refuses a function
   named `atof`, `atoi`, `strtod`, `ms_nint`, `lrint`, `int_cast`, `ms_min`, `ms_max`,
-  `rect_overlap`, `ms_string_split`, `c_bytes`, or `c_str`, or one whose name starts with `lrint_`
-  or `ms_nint_`, defined outside `crates/style-ir/src/c.rs`. It refuses `PI / 180` in the
-  workspace's code outside that file.
+  `rect_overlap`, `ms_compute_bounds`, `opacity_alpha`, `ms_string_split`, `ms_get_symbol_index`,
+  `symbol_name_key`, `c_bytes`, or `c_str`, or one whose name starts with `lrint_` or `ms_nint_`,
+  defined outside `crates/style-ir/src/c.rs`. It refuses `PI / 180` in the workspace's code
+  outside that file.
+- The test `a_symbols_name_is_compared_only_in_the_module_of_style_ir` in
+  `crates/arch-test/tests/symbol_names.rs` refuses a comparison of text without regard to case
+  near a symbol outside that file.
 - The module's tests cover each branch of the ports and cite this ADR with `Verifies:`. Among
   them are the NaN case of `ms_min` and `ms_max`, and the cast past an `int` and of NaN.
 - Tests in `crates/engine/tests/classes.rs` and `crates/engine/tests/labels.rs` cite this ADR for
