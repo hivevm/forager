@@ -138,7 +138,11 @@ g "$repo" switch -q main
 g "$repo" merge -q --no-ff -m "merge one" one
 if g "$repo" merge -q --no-ff -m "merge two" two > /dev/null 2>&1; then
   passed=$((passed + 1))
-  if bash "$repo/scripts/check-docs.sh" "$repo" > "$work/out" 2>&1; then
+  # Without the branch CI names: the fixture's merge is into its own main, and a draft ADR of the
+  # repository it copies, in a pull request into main, would fail check 16, which this test does
+  # not decide (scripts/test-check-docs.sh does).
+  if GITHUB_BASE_REF="" GITHUB_REF_NAME="" GITHUB_ACTIONS="" \
+    bash "$repo/scripts/check-docs.sh" "$repo" > "$work/out" 2>&1; then
     passed=$((passed + 1))
   else
     failed=$((failed + 1))
