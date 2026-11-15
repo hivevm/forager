@@ -45,11 +45,15 @@ the case of their extension; each file read stays within its limit
 `.cpg` is asked for.
 
 **Projection** (`msSHPLayerOpen`). The `.prj` beside the `.shp`, its name with the extension
-`prj`, is loaded when the source opens; a `.prj` that does not load declares nothing. Its first
-2047 bytes are read as the ESRI WKT a `.prj` holds and declared as the proj4 string GDAL's
-`OSRExportToProj4` writes, for what the core implements: longitude and latitude, the transverse
-Mercator with UTM, the Lambert conformal conic, the Mercator, and the orthographic projection, on
-WGS84 or NAD83, in metres and degrees; a `LOCAL_CS` declares no projection at all. An `AUTHORITY`
+`prj` in lower case only, is loaded when the source opens, whatever its layer's projection: one
+more load for each shapefile, where MapServer reads it only for a layer of `AUTO`, because a source
+does not know its layer. A `.prj` that does not load declares nothing. Its first 2047 bytes are
+read as the WKT a `.prj` holds, ESRI's or OGC's with its `AXIS`, and declared as the proj4 string
+GDAL's `OSRExportToProj4` writes, for what the core implements: longitude and latitude, the
+transverse Mercator with UTM, the Lambert conformal conic, a two-parallel one with a scale factor
+included, and the Mercator, on WGS84 or NAD83, in metres and degrees; a `LOCAL_CS` declares no
+projection at all. ESRI's `Orthographic` does not read: it is spherical, and whether GDAL writes it
+so is not settled here. An `AUTHORITY`
 is not followed: MapServer loads `init=epsg:<code>` for it, which needs the projection resolver
 the render does not have, so the string is written from the parameters. Anything else does not
 read, and the layer that takes it warns naming the file

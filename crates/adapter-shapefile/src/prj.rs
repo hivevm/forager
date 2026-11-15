@@ -2,7 +2,8 @@
 //! MapServer's `msSHPLayerOpen` reads them, parsed as the ESRI WKT a `.prj` holds and written as
 //! the proj4 string GDAL's `OSRExportToProj4` writes for it, for what the core crate `proj`
 //! implements: longitude and latitude, the transverse Mercator with UTM, the Lambert conformal
-//! conic, the Mercator, and the orthographic projection, on WGS84 or NAD83, in metres and degrees.
+//! conic, and the Mercator, on WGS84 or NAD83, in metres and degrees; an `AXIS` is read and
+//! passed over.
 //! Anything else does not read, and says why. An `AUTHORITY` is not followed: MapServer would load
 //! `init=epsg:<code>`, which needs the projection resolver the render does not have.
 
@@ -144,7 +145,24 @@ impl Parser<'_> {
                     values.push(Value::Number(self.number()?));
                 }
                 Some(b) if b.is_ascii_alphabetic() => {
-                    values.push(Value::Node(self.node(depth + 1)?));
+                    // A keyword with brackets is a node; a bare one, as `EAST` of an `AXIS`, a
+                    // value of its own.
+                    let start = self.at;
+                    while self
+                        .text
+                        .get(self.at)
+                        .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+                    {
+                        self.at += 1;
+                    }
+                    let bracket = matches!(self.peek(), Some(b'[' | b'('));
+                    if bracket {
+                        self.at = start;
+                        values.push(Value::Node(self.node(depth + 1)?));
+                    } else {
+                        let word = String::from_utf8_lossy(&self.text[start..self.at]);
+                        values.push(Value::Text(word.into_owned()));
+                    }
                 }
                 _ => return Err(format!("{keyword} holds no value at byte {}", self.at)),
             }
@@ -350,8 +368,14 @@ fn method_proj4(method: &str, p: &Parameters, datum: &str) -> Result<String, Str
                     n(y0)
                 )
             } else {
+                // A two-parallel conic with a scale factor, as ESRI writes NAD83 / Michigan.
+                let k0 = if k == 1.0 {
+                    String::new()
+                } else {
+                    format!(" +k_0={}", n(k))
+                };
                 format!(
-                    "+proj=lcc +lat_0={} +lon_0={} +lat_1={} +lat_2={} +x_0={} +y_0={} {tail}",
+                    "+proj=lcc +lat_0={} +lon_0={} +lat_1={} +lat_2={}{k0} +x_0={} +y_0={} {tail}",
                     n(lat0),
                     n(lon0),
                     n(lat1),
@@ -384,13 +408,8 @@ fn method_proj4(method: &str, p: &Parameters, datum: &str) -> Result<String, Str
             n(x0),
             n(y0)
         ),
-        "orthographic" => format!(
-            "+proj=ortho +lat_0={} +lon_0={} +x_0={} +y_0={} {tail}",
-            n(lat0),
-            n(lon0),
-            n(x0),
-            n(y0)
-        ),
+        // ESRI's Orthographic is spherical where PROJ's ortho of a datum is ellipsoidal; which one
+        // OSRExportToProj4 writes for it is not settled here, so it does not read.
         _ => return Err(format!("the projection {method} is not supported")),
     };
     Ok(proj4)

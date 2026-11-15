@@ -35,8 +35,9 @@ The forces:
   [ADR-0023](0023-typed-properties.md)).
 - Every crate added is weighed under [ADR-0011](0011-crate-supply-chain.md) and against Q-5's
   bundle.
-- `proj` implements only longitude and latitude, `lcc`, `merc`, `tmerc` with `utm`, and soon
-  `ortho` ([ADR-0037](0037-reprojection-ported-in-proj.md)), on WGS84 and NAD83 in metres. A WKT
+- `proj` implements only longitude and latitude, `lcc`, `merc`, `tmerc` with `utm`, and
+  `ortho` ([ADR-0037](0037-reprojection-ported-in-proj.md)), on WGS84 and NAD83 in metres; ESRI's
+  `Orthographic` is spherical, which `ortho` of a datum is not. A WKT
   converted to anything else could not be reprojected anyway.
 - A `.prj` is untrusted input (Q-3): its reader must never panic, and the weekly fuzz run feeds
   it.
@@ -60,11 +61,13 @@ We will let a feature source declare its projection through a synchronous method
   It is synchronous, because the adapter has read what it needs at open, as `msSHPLayerOpen`
   reads at open.
 - **The shapefile adapter.**
-  - `ShapefileSource::open` loads the `.prj` beside the `.shp`, tried in upper case like its other
-    files. A missing `.prj` is no error, and the adapter keeps the first 2047 bytes.
-  - `declared_projection` parses them as ESRI WKT, `GEOGCS` and `PROJCS` with their `DATUM`,
-    `SPHEROID`, `PRIMEM`, `PROJECTION`, `PARAMETER`, and `UNIT`. It writes the proj4 string
-    `OSRExportToProj4` writes for the projections, datums, and units `proj` implements.
+  - `ShapefileSource::open` loads the `.prj` beside the `.shp`, its name with the extension `prj`
+    in lower case only, as MapServer's `CPLResetExtension` names it. A missing `.prj` is no error,
+    and the adapter keeps the first 2047 bytes.
+  - `declared_projection` parses them as ESRI or OGC WKT, `GEOGCS` and `PROJCS` with their
+    `DATUM`, `SPHEROID`, `PRIMEM`, `PROJECTION`, `PARAMETER`, `UNIT`, and `AXIS`. It writes the
+    proj4 string `OSRExportToProj4` writes for the projections, datums, and units `proj`
+    implements.
   - An `AUTHORITY["EPSG", …]` on the CRS is not followed. MapServer turns it into
     `init=epsg:<code>`; the adapter writes the proj4 string from the parameters instead, because
     the render has no projection resolver (ADR-0019 keeps it at load). Where PROJ's EPSG entry and
@@ -135,6 +138,8 @@ We will let a feature source declare its projection through a synchronous method
 - Negative / trade-offs:
   - every implementation of the port gets a default it may need to override;
   - the parser follows `OSRExportToProj4` only as far as `proj` reaches, and must widen with it;
+  - the `.prj` is loaded at open for every shapefile, of a layer of `AUTO` or not, since a source
+    does not know its layer: one more load per shapefile, a fetch in the browser;
   - a `.prj` that MapServer reads but Forager does not support is drawn in the map datum's
     longitude and latitude, with a warning. MapServer draws it in its projection.
 - Follow-ups:

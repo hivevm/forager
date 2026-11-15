@@ -143,3 +143,34 @@ fn only_the_first_2047_bytes_of_a_prj_are_read() {
         "+proj=longlat +datum=WGS84 +no_defs"
     );
 }
+
+#[test]
+fn an_ogc_prj_with_axes_a_scaled_conic_and_esri_s_orthographic_read_as_gdal_reads_them() {
+    // Verifies: ADR-draft-declared-projection
+    // An OGC WKT, as PostGIS writes one: its AXIS values are bare words.
+    let ogc = r#"PROJCS["WGS 84 / UTM zone 32N",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AXIS["Latitude",NORTH],AXIS["Longitude",EAST]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",9],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",0],UNIT["metre",1],AXIS["Easting",EAST],AXIS["Northing",NORTH]]"#;
+    assert_eq!(
+        proj4(ogc),
+        "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs"
+    );
+    // ESRI's two-parallel conic with a scale factor keeps it.
+    let michigan = projcs(
+        GCS_NAD83,
+        "Lambert_Conformal_Conic",
+        &[
+            ("False_Easting", 8_000_000.0),
+            ("Central_Meridian", -84.36666666666666),
+            ("Standard_Parallel_1", 44.18333333333333),
+            ("Standard_Parallel_2", 45.7),
+            ("Scale_Factor", 1.000_038_2),
+            ("Latitude_Of_Origin", 43.31666666666667),
+        ],
+    );
+    assert!(
+        proj4(&michigan).contains(" +k_0=1.0000382 "),
+        "{}",
+        proj4(&michigan)
+    );
+    // Whether ESRI's spherical Orthographic comes out spherical is not settled: it does not read.
+    assert!(why(&projcs(GCS_WGS84, "Orthographic", &[])).contains("Orthographic"));
+}

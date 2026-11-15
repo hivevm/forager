@@ -113,13 +113,9 @@ impl LayerReprojection {
     /// `msProjectLineEx`, all of them left out where one does not reproject, unless the map is in
     /// longitude and latitude and the layer is not. A line left empty is left out, and a feature
     /// left with nothing.
-    pub(crate) fn features(&self, features: &mut Vec<Feature>) -> Reprojected {
-        self.features_within(features, MAX_HORIZON_POINTS)
-    }
-
     /// [`Self::features`], the points the horizon search adds held to `bound`: the feature that
     /// passes it and those after it are left out.
-    fn features_within(&self, features: &mut Vec<Feature>, bound: usize) -> Reprojected {
+    pub(crate) fn features_within(&self, features: &mut Vec<Feature>, bound: usize) -> Reprojected {
         let mut done = Reprojected::default();
         let mut kept = 0;
         for i in 0..features.len() {
@@ -278,7 +274,12 @@ mod tests {
             ]),
             ring(HOLE),
         ])];
-        assert_eq!(into_the_conic().features(&mut features).failed, 1);
+        assert_eq!(
+            into_the_conic()
+                .features_within(&mut features, MAX_HORIZON_POINTS)
+                .failed,
+            1
+        );
         let [
             Feature {
                 geometry: Geometry::Polygon(rings),
@@ -322,7 +323,12 @@ mod tests {
             (-62.0, 47.0),
             (-64.0, 47.0),
         ])];
-        assert_eq!(into_the_conic().features(&mut features).failed, 4);
+        assert_eq!(
+            into_the_conic()
+                .features_within(&mut features, MAX_HORIZON_POINTS)
+                .failed,
+            4
+        );
         let Geometry::MultiLineString(parts) = &features[0].geometry else {
             panic!("two parts: {features:?}");
         };
@@ -334,7 +340,12 @@ mod tests {
             geometry: Geometry::MultiPoint(ring(&[(-64.0, 45.0), (0.0, -90.0)])),
             properties: Properties::default(),
         }];
-        assert_eq!(into_the_conic().features(&mut points).failed, 1);
+        assert_eq!(
+            into_the_conic()
+                .features_within(&mut points, MAX_HORIZON_POINTS)
+                .failed,
+            1
+        );
         assert!(points.is_empty());
     }
 
@@ -378,8 +389,25 @@ mod tests {
             name: Some("coast".into()),
             ..Layer::default()
         };
-        let warning = crate::horizon_points_limit(&layer);
-        assert_eq!(warning.code, "horizon-points-limit");
+        // The render warns once the bound is passed, and draws the features before.
+        let leaving = Feature {
+            id: 0,
+            geometry: Geometry::LineString(ring(&[(-64.0, 45.0), (-90.0, -90.0), (-62.0, 47.0)])),
+            properties: Properties::default(),
+        };
+        let mut features = vec![leaving.clone(), leaving.clone(), leaving];
+        let mut diagnostics = Vec::new();
+        crate::reproject_features(
+            &into_the_conic(),
+            &layer,
+            &mut features,
+            &mut diagnostics,
+            3,
+        );
+        let codes: Vec<&str> = diagnostics.iter().map(|d| d.code.as_str()).collect();
+        assert_eq!(codes, ["points-not-reprojected", "horizon-points-limit"]);
+        assert_eq!(features.len(), 1);
+        let warning = &diagnostics[1];
         assert!(
             warning.message.contains("`coast`")
                 && warning.message.contains("1000000")
@@ -406,7 +434,12 @@ mod tests {
             geometry: Geometry::MultiPolygon(vec![vec![through_the_pole, ring(HOLE)], vec![other]]),
             properties: Properties::default(),
         }];
-        assert_eq!(into_the_conic().features(&mut features).failed, 1);
+        assert_eq!(
+            into_the_conic()
+                .features_within(&mut features, MAX_HORIZON_POINTS)
+                .failed,
+            1
+        );
         let Geometry::MultiPolygon(polygons) = &features[0].geometry else {
             panic!("{features:?}");
         };

@@ -650,26 +650,13 @@ async fn in_view<S: FeatureSource>(
     let (reprojection, asked) = asked(map, layer, &declared, view, diagnostics)?;
     let mut features = source_features(layer, sources, asked, diagnostics).await?;
     if let Some(reprojection) = &reprojection {
-        if reprojection.cuts_lines_with_geos() && features.iter().any(|f| has_lines(&f.geometry)) {
-            let message = format!(
-                "layer {}: MapServer cuts its lines with GEOS where they cross the dateline from \
-                 a polar projection into longitude and latitude, which Forager does not; they are \
-                 drawn uncut",
-                name(layer)
-            );
-            diagnostics.push(Diagnostic::warning(
-                "lines-not-cut",
-                message,
-                layer.span.clone(),
-            ));
-        }
-        let done = reprojection.features(&mut features);
-        if done.failed > 0 {
-            diagnostics.push(points_not_reprojected(layer, done.failed));
-        }
-        if done.stopped {
-            diagnostics.push(horizon_points_limit(layer));
-        }
+        reproject_features(
+            reprojection,
+            layer,
+            &mut features,
+            diagnostics,
+            MAX_HORIZON_POINTS,
+        );
     }
     Some(features)
 }
@@ -716,6 +703,38 @@ fn asked(
         return None;
     };
     Some((Some(reprojection), extent))
+}
+
+/// Reprojects `layer`'s `features` into the map's projection, with a warning for lines MapServer
+/// would cut with GEOS, for points that do not reproject, and for horizon points past `bound`
+/// (Q-9), at which the layer stops.
+fn reproject_features(
+    reprojection: &reproject::LayerReprojection,
+    layer: &Layer,
+    features: &mut Vec<Feature>,
+    diagnostics: &mut Vec<Diagnostic>,
+    bound: usize,
+) {
+    if reprojection.cuts_lines_with_geos() && features.iter().any(|f| has_lines(&f.geometry)) {
+        let message = format!(
+            "layer {}: MapServer cuts its lines with GEOS where they cross the dateline from \
+         a polar projection into longitude and latitude, which Forager does not; they are \
+         drawn uncut",
+            name(layer)
+        );
+        diagnostics.push(Diagnostic::warning(
+            "lines-not-cut",
+            message,
+            layer.span.clone(),
+        ));
+    }
+    let done = reprojection.features_within(features, bound);
+    if done.failed > 0 {
+        diagnostics.push(points_not_reprojected(layer, done.failed));
+    }
+    if done.stopped {
+        diagnostics.push(horizon_points_limit(layer));
+    }
 }
 
 /// Whether `geometry` holds a line, which a line shape of MapServer holds.

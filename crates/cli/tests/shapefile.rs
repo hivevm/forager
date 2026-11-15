@@ -389,3 +389,40 @@ fn a_layer_with_inline_features_draws_them_and_leaves_its_data_unread() {
         "the shapefile is not drawn"
     );
 }
+
+#[test]
+fn a_layer_of_auto_takes_the_projection_of_its_shapefile_s_prj() {
+    // Verifies: ADR-draft-declared-projection
+    // Under a map in Web Mercator's metres, a layer of AUTO without a .prj takes its coordinates
+    // as degrees, and the square of 50 degrees covers the whole map of 100 metres; a .prj of a
+    // LOCAL_CS declares no projection, and the square is drawn where its coordinates stand.
+    let map = |dir: &Path| {
+        let text = mapfile("SHAPEPATH 'data'", "poly").replace(
+            "    DATA 'poly'\n",
+            "    DATA 'poly'\n    PROJECTION AUTO END\n",
+        );
+        let text = text.replace(
+            "  SIZE 101 101\n",
+            "  SIZE 101 101\n  PROJECTION '+proj=merc' '+datum=WGS84' END\n",
+        );
+        std::fs::write(dir.join("m.map"), text).unwrap();
+    };
+    let dir = scratch("auto-prj");
+    write_square(&dir, "data/poly", ["shp", "shx", "dbf"]);
+    map(&dir);
+    let (code, stderr, image) = render(&dir.join("m.map"), &[]);
+    assert_eq!(code, Some(0), "{stderr}");
+    assert_eq!(image.unwrap().pixel(75, 25), Some(GREEN), "{stderr}");
+    std::fs::write(
+        dir.join("data/poly.prj"),
+        r#"LOCAL_CS["plan",UNIT["Meter",1.0]]"#,
+    )
+    .unwrap();
+    let (code, stderr, image) = render(&dir.join("m.map"), &[]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(code, Some(0), "{stderr}");
+    assert_eq!(stderr, "");
+    let image = image.unwrap();
+    assert_eq!(image.pixel(25, 75), Some(GREEN));
+    assert_eq!(image.pixel(75, 25), Some(WHITE));
+}
