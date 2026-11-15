@@ -18,10 +18,11 @@
 use std::borrow::Cow;
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
-use forager_style_ir::{Bound, Style};
+use forager_style_ir::{Bound, Style, SymbolKind};
 
 use crate::bounds;
 use crate::canvas::Canvas;
+use crate::glyph_marker;
 use crate::line_marker;
 use crate::offset::{self, Offset};
 use crate::style::fixed;
@@ -145,8 +146,9 @@ pub(crate) fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
 /// the dash pattern, and the initial gap scaled by the factor the scaling and the bounds applied to
 /// the width; and the style's cap and join, by default `round` and `none`. An outline pass draws
 /// the style widened by twice its outline width with its colours swapped, as
-/// msOutlineRenderingPrepareStyle() prepares it. A style with a vector, an ellipse, or a pixmap
-/// symbol and a `GAP` draws the symbol along the line instead, its markers' points taken from the
+/// msOutlineRenderingPrepareStyle() prepares it. A style with a vector, an ellipse, a pixmap, or a
+/// TrueType symbol and a `GAP` draws the symbol along the line instead (a TrueType symbol's
+/// glyphs through [`glyph_marker::line_glyphs`]), its markers' points taken from the
 /// canvas's budget, a pixmap without a colour and not at all where its image is refused; one whose
 /// symbol index is past the last draws nothing.
 pub(crate) fn line_symbol<T: Clone>(
@@ -178,6 +180,22 @@ pub(crate) fn line_symbol<T: Clone>(
     let (width, written) = bounded_width(style, canvas.factors);
     let factor = if written != 0.0 { width / written } else { 1.0 };
     let initial_gap = style.initial_gap.unwrap_or(-1.0);
+    if gapped
+        && let symbol::Resolved::Found(index, symbol) =
+            symbol::resolve(&style.symbol, canvas.symbols)
+        && symbol.kind == SymbolKind::Truetype
+    {
+        let paths = moved(paths, style_offset(style, factor));
+        ops.extend(glyph_marker::line_glyphs(
+            &paths,
+            style,
+            index,
+            symbol,
+            initial_gap * factor,
+            canvas,
+        ));
+        return;
+    }
     match mark {
         symbol::Mark::Nothing => return,
         symbol::Mark::Pixmap(index, symbol) if gapped => {

@@ -204,11 +204,11 @@ golden path and the test pattern an agent copies from are named here.
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
-  refused, a label's among them, vector symbols whose fill tile the cache refused, TrueType
-  symbols whose font cannot be used or lacks the character, and geometries its render mode cannot
-  draw (Q-9); the hatches, pixmaps, and symbols are one value, `Refusals`, which a canvas yields,
-  the labels keep per layer and merge, and one function of `layer.rs` turns into the layer's
-  diagnostics. It loads the
+  refused, a label's among them, vector and TrueType symbols whose fill tile the cache refused,
+  TrueType symbols whose font cannot be used or lacks the character, and geometries its render
+  mode cannot draw (Q-9); the hatches, pixmaps, and symbols are one value, `Refusals`, which a
+  canvas yields, the labels keep per layer and merge, and one function of `layer.rs` turns into the
+  layer's diagnostics. It loads the
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
@@ -232,7 +232,8 @@ golden path and the test pattern an agent copies from are named here.
   pixmap's tile (`shade.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
   at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol` fills about the
   point and the inverse of the image's transformation (`marker.rs`); a TrueType symbol's glyph at
-  a point, asked of the port `Glyphs` the engine answers through `label`
+  a point, anchored, along a line, and tiled over a polygon, asked of the port `Glyphs` the engine
+  answers through `label`; the label cache sizes a class's TrueType marker by the same glyphs
   ([ADR-draft-truetype-marker-glyph-through-a-port](adr/draft-truetype-marker-glyph-through-a-port.md),
   `glyph.rs`, `glyph_marker.rs`); a line's dashes, and the
   style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the

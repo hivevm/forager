@@ -69,8 +69,19 @@ as MapServer does, and the layer warns with `symbol-glyph-missing`, once per sym
 does not load or that this renderer cannot read, draws nothing, and the layer warns with
 `symbol-not-drawn`, once per symbol, where MapServer fails the layer. So do a symbol without a
 `FONT`, which MapServer draws in its built-in font, not bundled with Forager, and a `CHARACTER` that
-starts with a named entity, such as `&radic;`, whose table of 252 Forager does not carry. The
-symbol's `ANCHORPOINT` is not applied yet.
+starts with a named entity, such as `&radic;`, whose table of 252 Forager does not carry. An
+anchor point other than the centre moves the glyph as a vector symbol's moves it
+(`msAdjustMarkerPos`), at the size `msGetMarkerSize` gives a TrueType symbol: the width and height
+of its character's control box (`msGetCharacterSize`), the glyph read at the style's size, 1
+without one, times the scale factor, cut to whole pixels and bounded by `MINSIZE` and `MAXSIZE`
+unscaled. The label cache sizes the marker of a class's first style the same way.
+
+**A TrueType symbol along a line.** A line layer's style whose symbol is a TrueType symbol and whose
+`GAP` is not 0 draws its glyph along the line as `msImagePolylineMarkers` places a vector symbol,
+with the same spacing, `INITIALGAP`, and turn with each segment for a negative `GAP`. The marker's
+size, by which its anchor point moves it and a glyph outside the image is skipped, is the glyph's
+control box, not held to 1 pixel as another symbol's is. Each glyph is drawn as at a point, by the
+middle of its control box. A TrueType symbol of `GAP 0` is still drawn as a line in its `COLOR`.
 
 **A pixmap at a point.** A point layer's style whose symbol is a pixmap draws its image at each
 point inside the map's extent, as `msDrawMarkerSymbolInternal` in `src/maprendering.c` and
@@ -196,7 +207,15 @@ another `GAP` the symbol is drawn once at the tile's centre. A tile is kept, as
 `searchTileCache` keeps it, by its symbol, its size, the scale, the rotation, the outline's width,
 and each colour the style asks for. A tile past Q-9's bounds is refused as a pixmap's is, the style
 is not drawn, and the layer warns with `symbol-not-drawn`, once per symbol, naming the limit. An
-ellipse or TrueType symbol over a polygon is still filled in its `COLOR`, as before.
+ellipse symbol over a polygon is still filled in its `COLOR`, as before.
+
+**A TrueType symbol over a polygon.** A polygon layer's style whose symbol is a TrueType symbol
+fills the polygon with its glyph repeated in tiles, as `getTile` draws it, once the style has a
+`COLOR`.
+Its tile's sides follow the table above, of a side of 1, the extent `initSymbol` leaves a TrueType
+symbol; at `SIZE 8 GAP 3` the tile is 8 × 8, at `SIZE 5` without a gap 5 × 5. The glyph is drawn as
+at a point at the tile's centre, turned by `ANGLE`, never in seamless mode, and the tile crops it.
+The tile is kept and bounded as a vector symbol's, and refused with `symbol-not-drawn` likewise.
 
 **A hatch over a polygon.** A polygon layer's style whose symbol is a hatch fills the polygon
 with parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprendering.c` and

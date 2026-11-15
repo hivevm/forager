@@ -21,6 +21,7 @@ use forager_style_ir::{Rgba, Style, Symbol, SymbolKind};
 use crate::bounds;
 use crate::canvas::Canvas;
 use crate::extent::View;
+use crate::glyph_marker;
 use crate::hatch::{self, Hatched};
 use crate::line::{Pass, line_ends, line_symbol, moved, open_rings, style_offset};
 use crate::style::{GAMMA, fixed};
@@ -32,7 +33,8 @@ use crate::tile;
 /// moved by the offset scaled and filled with the image tiled (see [`tiled`]); without a `COLOR`,
 /// its outline as a line in the `OUTLINECOLOR`; with one, moved by the offset scaled, and with a
 /// hatch symbol hatched (see [`hatch::hatch`]), with a vector symbol filled with the symbol tiled
-/// (see [`vector_tiled`]), with any other filled, and outlined in the
+/// (see [`vector_tiled`]), with a TrueType symbol filled with its glyph tiled (see
+/// [`glyph_marker::tiled_glyph`]), with any other filled, and outlined in the
 /// `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width scaled, the factor
 /// itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled, as MapServer
 /// bounds it there. False where a hatch is refused (Q-9).
@@ -75,6 +77,14 @@ pub fn shade<T: Clone>(
             Hatched::Nothing => true,
             Hatched::Refused => false,
         };
+    }
+    if let symbol::Resolved::Found(index, symbol) = symbol::resolve(&style.symbol, canvas.symbols)
+        && symbol.kind == SymbolKind::Truetype
+    {
+        if meets_image(&rings, canvas.image()) {
+            glyph_marker::tiled_glyph(ops, rings, style, index, symbol, canvas);
+        }
+        return true;
     }
     if let symbol::Mark::Symbol(symbol) = symbol::mark(style, canvas.symbols)
         && symbol.kind == SymbolKind::Vector

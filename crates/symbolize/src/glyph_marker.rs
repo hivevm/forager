@@ -1,7 +1,7 @@
-// The drawing of a TrueType symbol at a point follows the TrueType branch of MapServer's
-// msDrawMarkerSymbolInternal() and drawGlyphMarker(), src/maprendering.c,
-// agg2RenderGlyphsPath(), src/mapagg.cpp, and the numeric entities of msGetUnicodeEntity(),
-// src/mapstring.cpp, of the release pinned in scripts/fetch-msautotest.sh.
+// The drawing of a TrueType symbol follows the TrueType branches of MapServer's
+// msDrawMarkerSymbolInternal(), msImagePolylineMarkers(), and getTile(), and drawGlyphMarker(),
+// src/maprendering.c, msGetMarkerSize() and msGetCharacterSize(), src/mapsymbol.c, and
+// agg2RenderGlyphsPath(), src/mapagg.cpp, of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2007 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
@@ -17,68 +17,28 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A TrueType symbol at a point: its glyph asked of the port [`crate::glyph::Glyphs`], placed as
-//! drawGlyphMarker places it and drawn as agg2RenderGlyphsPath draws it
-//! (ADR-draft-truetype-marker-glyph-through-a-port).
+//! A TrueType symbol at a point, anchored, along a line, and tiled over a polygon: its glyph asked
+//! of the port [`crate::glyph::Glyphs`], placed as drawGlyphMarker places it and drawn as
+//! agg2RenderGlyphsPath draws it (ADR-draft-truetype-marker-glyph-through-a-port).
+
+use std::rc::Rc;
 
 use forager_render::{DrawOp, GlyphOutline, PathCommand, Point};
 use forager_style_ir::c::lrint;
-use forager_style_ir::{Style, Symbol};
+use forager_style_ir::{ANCHOR_CENTRE, Style, Symbol};
 
 use crate::canvas::Canvas;
-use crate::symbol::{self, Affine};
+use crate::glyph::{Glyph, character};
+use crate::line_marker::{Placement, taken};
+use crate::style::fixed;
+use crate::symbol::{self, Affine, SymbolStyle};
+use crate::tile;
 
 /// The size in points a TrueType marker's glyph is taken at: `MS_MAX(MS_NINT(scale), 1)`, held to
 /// an `unsigned int`, as msDrawMarkerSymbolInternal hands it to msGetGlyphByIndex.
 fn glyph_size(scale: f64) -> u32 {
     let rounded = lrint(scale).max(1);
     u32::try_from(rounded).unwrap_or(u32::MAX)
-}
-
-/// The character a TrueType symbol's `CHARACTER` names, as msUTF8ToUniChar reads its first: a
-/// numeric entity, `&#NNN;` of up to six decimal digits or `&#xHH;` of up to five hexadecimal
-/// ones, as msGetUnicodeEntity decodes it; otherwise the first character, or U+0000 for an empty
-/// text, which maps to glyph 0. A named entity, `&` and up to eight characters and `;`, which
-/// MapServer looks up in its table of 252, is refused, as Forager does not carry that table. A
-/// numeric one that is no Unicode scalar value is refused too.
-fn character(text: &str) -> Result<char, String> {
-    if let Some(code) = numeric_entity(text) {
-        return char::from_u32(code)
-            .ok_or_else(|| format!("its CHARACTER `{text}` names no Unicode character"));
-    }
-    // msGetUnicodeEntity tries a name only where no `#` follows the `&`, of up to eight bytes.
-    if let Some(rest) = text.strip_prefix('&')
-        && !rest.starts_with('#')
-        && let Some(end) = rest.find(';')
-        && (1..=8).contains(&end)
-    {
-        return Err(format!(
-            "its CHARACTER `{text}` starts with a named entity, which is not decoded yet; a \
-             numeric one, such as `&#65;`, is"
-        ));
-    }
-    Ok(text.chars().next().unwrap_or('\0'))
-}
-
-/// msGetUnicodeEntity's numeric entity at the start of `text`: `&#` and one to six decimal digits,
-/// or `&#x` (or `&#X`) and one to five hexadecimal digits, each followed by `;`.
-fn numeric_entity(text: &str) -> Option<u32> {
-    let rest = text.strip_prefix("&#")?;
-    let (digits, radix, most) = match rest.strip_prefix(['x', 'X']) {
-        Some(hex) => (hex, 16, 5),
-        None => (rest, 10, 6),
-    };
-    let count = digits
-        .chars()
-        .take(most)
-        .take_while(|c| c.is_digit(radix))
-        .count();
-    // The digits counted are ASCII, so `count` stands on a character's boundary.
-    let (number, after) = (digits.get(..count)?, digits.get(count..)?);
-    if count == 0 || !after.starts_with(';') {
-        return None;
-    }
-    u32::from_str_radix(number, radix).ok()
 }
 
 /// Where drawGlyphMarker puts the origin of a glyph whose control box, y down, is `bounds`, to
@@ -125,15 +85,96 @@ fn placed(path: &[PathCommand], origin: Point, rotation: f64) -> Vec<PathCommand
         .collect()
 }
 
+/// The glyph of the TrueType symbol `symbol`, at `index` from 1, at `size` points, asked of the
+/// canvas's port, as msGetFontFace, msUTF8ToUniChar, msGetGlyphIndex, and msGetGlyphByIndex find
+/// it. A symbol without a `FONT` has none, where MapServer draws its built-in font, which Forager
+/// does not bundle; nor does one whose `CHARACTER` is refused (see [`character`]), nor one the
+/// port has none for. The canvas records why. One whose font lacks the character is glyph 0, and
+/// the canvas records that too.
+pub(crate) fn glyph_of(
+    symbol: &Symbol,
+    index: usize,
+    size: u32,
+    canvas: &mut Canvas,
+) -> Option<Rc<Glyph>> {
+    let Some(font) = symbol.font.as_deref() else {
+        let why = "the TrueType symbol names no FONT, where MapServer draws its built-in font, \
+                   which Forager does not bundle"
+            .to_owned();
+        canvas.refused_symbols.entry(index).or_insert(why);
+        return None;
+    };
+    let glyph = character(symbol.character.as_deref().unwrap_or("")).and_then(|character| {
+        let glyph = match canvas.glyphs {
+            Some(glyphs) => glyphs.glyph(font, character, size),
+            None => Err("no fonts are kept where it is drawn".to_owned()),
+        };
+        glyph.map(|glyph| (character, glyph))
+    });
+    let (character, glyph) = match glyph {
+        Ok(found) => found,
+        Err(why) => {
+            canvas.refused_symbols.entry(index).or_insert(why);
+            return None;
+        }
+    };
+    if glyph.missing {
+        canvas.missing_glyphs.entry(index).or_insert_with(|| {
+            format!(
+                "the font `{font}` has no glyph for the character U+{:04X}; glyph 0 is drawn, or \
+                 the font's `?` where glyph 0 cannot be",
+                u32::from(character)
+            )
+        });
+    }
+    Some(glyph)
+}
+
+/// The glyph of the TrueType symbol `symbol`, at `index` from 1, at the size computeSymbolStyle's
+/// `s` asks it at (see [`glyph_size`]); see [`glyph_of`].
+pub(crate) fn styled_glyph(
+    symbol: &Symbol,
+    index: usize,
+    s: &SymbolStyle,
+    canvas: &mut Canvas,
+) -> Option<Rc<Glyph>> {
+    glyph_of(symbol, index, glyph_size(s.scale), canvas)
+}
+
+/// The glyph's control box, y down: `(min_x, min_y, max_x, max_y)`.
+fn bounds(glyph: &Glyph) -> (f64, f64, f64, f64) {
+    (glyph.min_x, glyph.min_y, glyph.max_x, glyph.max_y)
+}
+
+/// The width and height of `glyph`, of its control box, as msGetCharacterSize gives them to
+/// msGetMarkerSize and msImagePolylineMarkers reads them of the glyph's metrics.
+pub(crate) fn glyph_extent(glyph: &Glyph) -> (f64, f64) {
+    (glyph.max_x - glyph.min_x, glyph.max_y - glyph.min_y)
+}
+
+/// `glyph` at the pixel `at` in computeSymbolStyle's `s`, as drawGlyphMarker draws it: placed by
+/// [`origin`]; one glyph item, its outline the `OUTLINECOLOR` at the outline width cut to an
+/// integer plus 1, its fill the `COLOR`.
+pub(crate) fn glyph_op(glyph: &Glyph, at: Point, s: &SymbolStyle) -> DrawOp {
+    let origin = origin(at, bounds(glyph), s.rotation);
+    // drawGlyphMarker's `int olwidth`: the outline width cut toward zero.
+    let outline = s.outline.map(|color| GlyphOutline {
+        color,
+        width: s.outline_width.trunc() + 1.0,
+    });
+    DrawOp::Glyphs {
+        path: placed(&glyph.path, origin, s.rotation),
+        color: s.fill,
+        outline,
+    }
+}
+
 /// The TrueType symbol `symbol`, at `index` from 1, at the pixel `at` in `style` at the canvas's
-/// factors, as msDrawMarkerSymbolInternal draws it: computeSymbolStyle's style, nothing without a
-/// colour or at a scale of 0; moved by the style's offsets; its glyph asked of the canvas's port at
-/// [`glyph_size`] and placed by [`origin`]; drawn as one glyph item, its outline the
-/// `OUTLINECOLOR` at the outline width cut to an integer plus 1, its fill the `COLOR`. A glyph the
-/// port has none for draws nothing, and the canvas records why; one the font lacks the character
-/// of draws glyph 0, and the canvas records that too. A symbol without a `FONT` draws nothing,
-/// where MapServer draws its built-in font, which Forager does not bundle; one whose `CHARACTER`
-/// is refused draws nothing (see [`character`]). The symbol's `ANCHORPOINT` is not applied.
+/// factors, as msDrawMarkerSymbol draws it: computeSymbolStyle's style, nothing without a colour
+/// or at a scale of 0; moved by the style's offsets, and by its `ANCHORPOINT` of the size
+/// msGetMarkerSize gives it, its character's bounds at [`symbol::marker_points`] (msAdjustMarkerPos);
+/// its glyph (see [`styled_glyph`]) drawn by [`glyph_op`]. Where either glyph is not found,
+/// nothing is drawn.
 pub(crate) fn glyph_ops<T>(
     ops: &mut Vec<DrawOp>,
     at: Point,
@@ -146,58 +187,191 @@ pub(crate) fn glyph_ops<T>(
     if (s.fill.is_none() && s.outline.is_none()) || s.scale == 0.0 {
         return;
     }
-    let at = symbol::shifted(at, style, canvas.factors.scale);
-    let Some(font) = symbol.font.as_deref() else {
-        let why = "the TrueType symbol names no FONT, where MapServer draws its built-in font, \
-                   which Forager does not bundle"
-            .to_owned();
-        canvas.refused_symbols.entry(index).or_insert(why);
+    let factor = canvas.factors.scale;
+    let mut at = symbol::shifted(at, style, factor);
+    if symbol.anchor() != ANCHOR_CENTRE {
+        let points = symbol::marker_points(style, fixed(&style.size), factor);
+        let Some(sized) = glyph_of(symbol, index, points, canvas) else {
+            return;
+        };
+        at = symbol::anchored(at, symbol, s.rotation, || glyph_extent(&sized));
+    }
+    if let Some(glyph) = styled_glyph(symbol, index, &s, canvas) {
+        ops.push(glyph_op(&glyph, at, &s));
+    }
+}
+
+/// The glyphs of the TrueType symbol `symbol`, at `index` from 1, of `style` along `paths`, in
+/// pixels already offset, as msDrawLineSymbol hands them to msImagePolylineMarkers: the glyph
+/// at computeSymbolStyle's size, its control box the marker's size, not held to 1 as another
+/// symbol's is (`src/maprendering.c:402-413`), each marker drawn by [`glyph_op`]. `initial_gap`
+/// is the `INITIALGAP` scaled as the width is. Each glyph costs one point of the canvas's budget.
+pub(crate) fn line_glyphs<T>(
+    paths: &[Vec<Point>],
+    style: &Style<T>,
+    index: usize,
+    symbol: &Symbol,
+    initial_gap: f64,
+    canvas: &mut Canvas,
+) -> Vec<DrawOp> {
+    if canvas.markers.spent() {
+        return Vec::new();
+    }
+    let s = symbol::symbol_style(style, symbol, canvas.factors);
+    if (s.fill.is_none() && s.outline.is_none()) || s.scale == 0.0 {
+        return Vec::new();
+    }
+    let Some(glyph) = styled_glyph(symbol, index, &s, canvas) else {
+        return Vec::new();
+    };
+    let turned = style.gap.unwrap_or(0.0) < 0.0;
+    let placement = Placement {
+        spacing: if turned { -s.gap } else { s.gap },
+        initial_gap,
+        auto_angle: turned,
+        rotation: s.rotation,
+        size: glyph_extent(&glyph),
+        anchor: symbol.anchor(),
+        image: canvas.image(),
+    };
+    let mut ops = Vec::new();
+    let mut each = s;
+    for marker in taken(paths, &placement, 1, &mut canvas.markers) {
+        each.rotation = marker.rotation;
+        ops.push(glyph_op(&glyph, marker.at, &each));
+    }
+    ops
+}
+
+/// The TrueType symbol `symbol`, at `index` from 1, of `style` over `rings`, already moved by the
+/// offset, as msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the
+/// tile of its size, scale, and gap, never seamless (see [`tile::glyph_tile`]), its glyph drawn
+/// at the tile's centre by [`glyph_op`], and the polygon filled with it. Where the glyph is not
+/// found or the tile is refused (Q-9), nothing is drawn, and the canvas records why.
+pub(crate) fn tiled_glyph<T>(
+    ops: &mut Vec<DrawOp>,
+    rings: Vec<Vec<Point>>,
+    style: &Style<T>,
+    index: usize,
+    symbol: &Symbol,
+    canvas: &mut Canvas,
+) {
+    let s = symbol::symbol_style(style, symbol, canvas.factors);
+    let Some(glyph) = styled_glyph(symbol, index, &s, canvas) else {
         return;
     };
-    let character = match character(symbol.character.as_deref().unwrap_or("")) {
-        Ok(character) => character,
+    let tile = match canvas.tiles.as_deref_mut() {
+        Some(tiles) => tile::glyph_tile(tiles, index, &s, |at| glyph_op(&glyph, at, &s)),
+        None => Err("no tiles are kept where it is drawn".to_owned()),
+    };
+    match tile {
+        Ok(tile) => ops.push(DrawOp::TiledFill { rings, tile }),
         Err(why) => {
             canvas.refused_symbols.entry(index).or_insert(why);
-            return;
         }
-    };
-    let glyph = match canvas.glyphs {
-        Some(glyphs) => glyphs.glyph(font, character, glyph_size(s.scale)),
-        None => Err("no fonts are kept where it is drawn".to_owned()),
-    };
-    let glyph = match glyph {
-        Ok(glyph) => glyph,
-        Err(why) => {
-            canvas.refused_symbols.entry(index).or_insert(why);
-            return;
-        }
-    };
-    if glyph.missing {
-        canvas.missing_glyphs.entry(index).or_insert_with(|| {
-            format!(
-                "the font `{font}` has no glyph for the character U+{:04X}; glyph 0 is drawn, or \
-                 the font's `?` where glyph 0 cannot be",
-                u32::from(character)
-            )
-        });
     }
-    let bounds = (glyph.min_x, glyph.min_y, glyph.max_x, glyph.max_y);
-    let origin = origin(at, bounds, s.rotation);
-    // drawGlyphMarker's `int olwidth`: the outline width cut toward zero.
-    let outline = s.outline.map(|color| GlyphOutline {
-        color,
-        width: s.outline_width.trunc() + 1.0,
-    });
-    ops.push(DrawOp::Glyphs {
-        path: placed(&glyph.path, origin, s.rotation),
-        color: s.fill,
-        outline,
-    });
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
+    use forager_style_ir::{Bound, SymbolKind, SymbolRef};
+
     use super::*;
+    use crate::glyph::Glyphs;
+    use crate::symbol::{Factors, marker_size_with};
+
+    /// A port whose every glyph is a box from (1, -18) to (11, 2) y down, its path one move to
+    /// the origin, and which records the sizes it is asked at.
+    #[derive(Default)]
+    struct Boxes(RefCell<Vec<u32>>);
+
+    impl Glyphs for Boxes {
+        fn glyph(&self, _: &str, _: char, size: u32) -> Result<Rc<Glyph>, String> {
+            self.0.borrow_mut().push(size);
+            Ok(Rc::new(Glyph {
+                path: vec![PathCommand::MoveTo(Point { x: 0.0, y: 0.0 })],
+                min_x: 1.0,
+                min_y: -18.0,
+                max_x: 11.0,
+                max_y: 2.0,
+                missing: false,
+            }))
+        }
+    }
+
+    fn truetype(anchor_point: Option<[f64; 2]>) -> Symbol {
+        Symbol {
+            name: Some("ttf".to_owned()),
+            kind: SymbolKind::Truetype,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            anchor_point,
+            character: Some("A".to_owned()),
+            font: Some("sans".to_owned()),
+            image: None,
+            transparent: None,
+            span: None,
+        }
+    }
+
+    fn sized(size: f64) -> Style {
+        Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            size: Some(Bound::Value(size)),
+            color: Some(Bound::Value(forager_style_ir::Rgba::opaque(0, 0, 0))),
+            ..Style::default()
+        }
+    }
+
+    #[test]
+    fn a_truetype_marker_s_size_is_its_character_s_bounds_at_ms_get_marker_size_s_size() {
+        // msGetMarkerSize cuts SIZE 10.7 at a factor of 1.5, 16.05, to 16 points and hands it to
+        // msGetCharacterSize, whose bounds are 10 wide and 20 high.
+        let symbols = [truetype(None)];
+        let style = sized(10.7);
+        let boxes = Boxes::default();
+        let size = marker_size_with(
+            &style,
+            Some(10.7),
+            &style.symbol,
+            &symbols,
+            None,
+            Some(&boxes),
+            1.5,
+        );
+        assert_eq!(size, Ok((10.0, 20.0)));
+        assert_eq!(*boxes.0.borrow(), [16]);
+        // Without the port it is not known, and says why.
+        let unknown =
+            marker_size_with(&style, Some(10.7), &style.symbol, &symbols, None, None, 1.5);
+        assert!(
+            unknown
+                .unwrap_err()
+                .contains("symbol `ttf`, whose size is not known")
+        );
+    }
+
+    #[test]
+    fn a_truetype_marker_is_moved_by_its_anchor_point_as_ms_adjust_marker_pos_moves_it() {
+        // ANCHORPOINT 0 0 moves the point by half the marker's size, (5, 10), to (105, 60); the
+        // glyph is centred there by its box's centre, (6, -8) y down: its origin is (99, 68).
+        let symbols = [truetype(Some([0.0, 0.0]))];
+        let boxes = Boxes::default();
+        let mut canvas =
+            Canvas::new(&symbols, 200, 200, Factors::new(1.0, 1.0)).with_glyphs(&boxes);
+        let mut ops = Vec::new();
+        let at = Point { x: 100.0, y: 50.0 };
+        glyph_ops(&mut ops, at, &sized(10.0), 1, &symbols[0], &mut canvas);
+        let [DrawOp::Glyphs { path, .. }] = &ops[..] else {
+            panic!("{ops:?}");
+        };
+        assert_eq!(path[0], PathCommand::MoveTo(Point { x: 99.0, y: 68.0 }));
+        // The marker's size is asked at msGetMarkerSize's 10 points, the glyph at the style's 10.
+        assert_eq!(*boxes.0.borrow(), [10, 10]);
+    }
 
     #[test]
     fn a_glyph_s_size_is_its_scale_rounded_half_to_even_and_at_least_1() {
@@ -260,32 +434,5 @@ mod tests {
             (p.x - 74.0).abs() < 1e-12 && (p.y - 48.0).abs() < 1e-12,
             "{p:?}"
         );
-    }
-
-    #[test]
-    fn a_character_is_read_as_ms_utf8_to_uni_char_reads_it() {
-        // Numeric entities, decimal and hexadecimal, as msGetUnicodeEntity decodes them.
-        assert_eq!(character("&#8730;"), Ok('√'));
-        assert_eq!(character("&#x221A;"), Ok('√'));
-        assert_eq!(character("&#X221a;tail"), Ok('√'));
-        assert_eq!(character("A"), Ok('A'));
-        assert_eq!(character("√x"), Ok('√'));
-        // No entity: too many digits, none, or no `;` leave the `&` itself.
-        assert_eq!(character("&#1234567;"), Ok('&'));
-        assert_eq!(character("&#x123456;"), Ok('&'));
-        assert_eq!(character("&#;"), Ok('&'));
-        assert_eq!(character("&#65"), Ok('&'));
-        assert_eq!(character("&"), Ok('&'));
-        // An empty CHARACTER is code point 0, which maps to glyph 0.
-        assert_eq!(character(""), Ok('\0'));
-        // A named entity is refused, as is a code point that is no Unicode scalar value.
-        assert!(character("&radic;").unwrap_err().contains("named entity"));
-        assert!(
-            character("&#xD800;")
-                .unwrap_err()
-                .contains("no Unicode character")
-        );
-        // Past eight characters before `;` it is no entity to MapServer either.
-        assert_eq!(character("&abcdefghi;"), Ok('&'));
     }
 }

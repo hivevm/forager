@@ -359,7 +359,7 @@ renderers/line_marker_svg.map line_marker_svg.png geometry fails  # not built ye
 renderers/line_marker_svg.map line_marker_svg.pdf out: another output format, pdf
 renderers/line_marker_svg.map line_marker_svg.svg out: another output format, svg
 renderers/line_marker_svg.map line_marker_svg.cairo.png out: another output format, cairopng
-renderers/line_marker_truetype.map line_marker_truetype.png geometry fails  # not built yet: TrueType symbols along a line
+renderers/line_marker_truetype.map line_marker_truetype.png geometry passes
 renderers/line_marker_truetype.map line_marker_truetype.pdf out: another output format, pdf
 renderers/line_marker_truetype.map line_marker_truetype.svg out: another output format, svg
 renderers/line_marker_truetype.map line_marker_truetype.cairo.png out: another output format, cairopng
@@ -397,7 +397,7 @@ renderers/line_simple.map line_simple.cairo.png out: another output format, cair
 renderers/line_simple.map line_simple.cairo.jpg out: another output format, jpg
 renderers/lots_of_text.map lots_of_text.png text passes labels-hold
 renderers/lots_of_text.map lots_of_text.cairo.png out: another output format, cairopng
-renderers/marker_anchorpoint.map marker_anchorpoint.png geometry fails  # not built yet: a TrueType symbol's ANCHORPOINT
+renderers/marker_anchorpoint.map marker_anchorpoint.png geometry passes
 renderers/marker_anchorpoint.map marker_anchorpoint.pdf out: another output format, pdf
 renderers/marker_anchorpoint.map marker_anchorpoint.svg out: another output format, svg
 renderers/marker_anchorpoint.map marker_anchorpoint.cairo.png out: another output format, cairopng
@@ -502,7 +502,7 @@ renderers/polygon-simple.map polygon-simple.pdf out: another output format, pdf
 renderers/polygon-simple.map polygon-simple.svg out: another output format, svg
 renderers/polygon-simple.map polygon-simple.json out: another output format, json
 renderers/polygon-simple.map polygon-simple.cairo.png out: another output format, cairopng
-renderers/polygon-ttf.map polygon-ttf.png geometry fails  # not built yet: TrueType symbols
+renderers/polygon-ttf.map polygon-ttf.png geometry passes
 renderers/polygon-ttf.map polygon-ttf.pdf out: another output format, pdf
 renderers/polygon-ttf.map polygon-ttf.svg out: another output format, svg
 renderers/polygon-ttf.map polygon-ttf.cairo.png out: another output format, cairopng

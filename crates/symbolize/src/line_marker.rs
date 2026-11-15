@@ -15,7 +15,8 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! Symbols along a line: a vector, an ellipse, or a pixmap symbol repeated every `GAP` pixels
+//! Symbols along a line: a vector, an ellipse, a pixmap, or a TrueType symbol, whose glyphs
+//! `glyph_marker` places through [`taken`], repeated every `GAP` pixels
 //! from the `INITIALGAP`, upright for a positive gap and turned with each segment for a negative
 //! one, as MapServer places them. The positions of the markers outside the image are not visited
 //! one by one but skipped, and the markers along the lines of one layer, with those at its
@@ -254,7 +255,7 @@ impl Placement {
 
 /// The markers of `placement` along `paths`, each of `price` points taken from the `budget`:
 /// none, and the budget spent, where they would exceed what is left.
-fn taken(
+pub(crate) fn taken(
     paths: &[Vec<Point>],
     placement: &Placement,
     price: usize,

@@ -238,7 +238,9 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         if !at_once {
             let binder = &mut selector.binder;
             let settled = labels.layer(layer_index, mode, &drawn, binder);
-            labels.collect(&settled, &drawn, pixmaps, binder).await;
+            labels
+                .collect(&settled, &drawn, pixmaps, glyphs, binder)
+                .await;
         }
     }
     // The labels of the cache are drawn after every layer but those of POSTLABELCACHE TRUE, as

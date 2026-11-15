@@ -282,6 +282,35 @@ pub(crate) fn vector_tile(
     tiles.tile(key, marks)
 }
 
+/// The tile of the TrueType symbol at `index` from 1, as msDrawShadeSymbol asks getTile for it in
+/// `s`: its size of the symbol's extent, 1 by 1 as initSymbol leaves a TrueType symbol's, at the
+/// scale and gap, held to Q-9's bound first; then the tile the cache holds, or a new one, whose
+/// mark is the glyph `mark` draws at the tile's centre. Never seamless: msDrawShadeSymbol sets
+/// that for a vector symbol alone.
+pub(crate) fn glyph_tile(
+    tiles: &mut Tiles,
+    index: usize,
+    s: &SymbolStyle,
+    mark: impl FnOnce(Point) -> DrawOp,
+) -> Result<Rc<Tile>, String> {
+    let (width, height) = size((1.0, 1.0), s.scale, s.gap)?;
+    let key = Key {
+        symbol: index,
+        width,
+        height,
+        scale: s.scale.to_bits(),
+        rotation: s.rotation.to_bits(),
+        outline_width: s.outline_width.to_bits(),
+        fill: s.fill,
+        outline: s.outline,
+    };
+    let at = Point {
+        x: f64::from(width) / 2.0,
+        y: f64::from(height) / 2.0,
+    };
+    tiles.tile(key, vec![mark(at)])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

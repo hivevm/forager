@@ -46,8 +46,8 @@ pub struct Canvas<'a> {
     pub(crate) hatching: Hatching,
     /// Each pixmap symbol left undrawn, by its index from 1, and why.
     pub(crate) refused_pixmaps: BTreeMap<usize, String>,
-    /// Each vector symbol whose fill tile is refused (Q-9), and each TrueType symbol whose glyph
-    /// has no font, by its index from 1, and why.
+    /// Each vector or TrueType symbol whose fill tile is refused (Q-9), and each TrueType symbol
+    /// whose glyph has no font, by its index from 1, and why.
     pub(crate) refused_symbols: BTreeMap<usize, String>,
     /// Each TrueType symbol whose font lacks its character, by its index from 1, and what is
     /// drawn instead.
@@ -58,8 +58,8 @@ pub struct Canvas<'a> {
 }
 
 /// What a layer's drawing left undrawn, which it reports: how many hatches were refused (Q-9),
-/// the pixmap symbols whose image is refused, and the vector symbols whose fill tile is refused
-/// (Q-9), each by its index from 1, named, with why.
+/// the pixmap symbols whose image is refused, and the vector and TrueType symbols whose fill tile
+/// is refused (Q-9), each by its index from 1, named, with why.
 #[derive(Debug, Default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Refusals {
@@ -169,8 +169,8 @@ impl<'a> Canvas<'a> {
     }
 
     /// What the layer left undrawn since this was last asked: the hatches refused (Q-9), the
-    /// pixmap symbols whose image is refused, and the vector symbols whose fill tile is refused,
-    /// each named by its name or its index (see [`symbol::named`]).
+    /// pixmap symbols whose image is refused, and the vector and TrueType symbols whose fill tile
+    /// is refused, each named by its name or its index (see [`symbol::named`]).
     pub fn take_refusals(&mut self) -> Refusals {
         let named = |canvas: &Self, refused: BTreeMap<usize, String>| {
             refused

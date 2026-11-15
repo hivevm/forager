@@ -6,12 +6,13 @@
 //! Its modules import one another in one direction only: `draw` imports `canvas`, `extent`,
 //! `geom_transform`, `hatch`, `line`, `marker`, `shade`, and `symbol`; `label` imports `canvas`,
 //! `extent`, `marker`, `shade`, and `symbol`; `shade` imports `bounds`, `canvas`, `extent`,
-//! `hatch`, `line`, `style`, `symbol`, and `tile`; `marker` imports `bounds`, `canvas`,
-//! `glyph_marker`, `line`, `line_marker`, `style`, and `symbol`; `glyph_marker` imports `canvas`
-//! and `symbol`; `line` imports `bounds`, `canvas`, `line_marker`, `offset`, `style`, and
-//! `symbol`; `canvas` imports `glyph`, `hatch`, `line_marker`, `symbol`, and `tile`; `hatch`
-//! imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile` import `bounds`
-//! and `symbol`; `symbol` imports `bounds` and `style`; `geom_transform` imports `extent`;
+//! `glyph_marker`, `hatch`, `line`, `style`, `symbol`, and `tile`; `marker` imports `bounds`,
+//! `canvas`, `glyph_marker`, `line`, `line_marker`, `style`, and `symbol`; `line` imports
+//! `bounds`, `canvas`, `glyph_marker`, `line_marker`, `offset`, `style`, and `symbol`;
+//! `glyph_marker` imports `canvas`, `glyph`, `line_marker`, `style`, `symbol`, and `tile`;
+//! `canvas` imports `glyph`, `hatch`, `line_marker`, `symbol`, and `tile`; `hatch` imports
+//! `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile` import `bounds` and
+//! `symbol`; `symbol` imports `bounds`, `glyph`, and `style`; `geom_transform` imports `extent`;
 //! `bounds`, `extent`, `glyph`, `layer_transform`, `offset`, and `style` import none. The test
 //! `symbolize_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a table
 //! in this order.

@@ -23,8 +23,8 @@ pub(crate) fn points_in_view(view: &View, geometry: &Geometry) -> impl Iterator<
 
 /// The reports that `layer` left the hatches and symbols of `refusals` undrawn: the warning for
 /// the hatches (see [`refused_hatches`]), then one for each pixmap symbol, then one for each
-/// vector symbol whose fill tile is refused or TrueType symbol whose font cannot be used, then one
-/// for each TrueType symbol whose font lacks its character, each named, and why.
+/// vector or TrueType symbol whose fill tile is refused or TrueType symbol whose font cannot be
+/// used, then one for each TrueType symbol whose font lacks its character, each named, and why.
 pub(crate) fn refusal_reports(
     layer: &Layer,
     refusals: Refusals,

@@ -405,12 +405,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// msDrawShape adds each feature's labels to the cache: at each of its points inside the
     /// map's extent, as `pointLayerDrawShape` places them. A pixmap that a class's first style
     /// draws is sized by its image among `pixmaps`, loaded before the layer's labels are
-    /// collected.
+    /// collected, and a TrueType symbol by its glyph among `glyphs`.
     pub(crate) async fn collect(
         &mut self,
         layer: &LayerLabels<'r>,
         drawn: &[Labelled<'_>],
         pixmaps: &Pixmaps,
+        glyphs: &MarkerGlyphs,
         binder: &mut Binder<'_, '_>,
     ) {
         for &(feature, class, style) in drawn {
@@ -420,7 +421,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     continue;
                 };
                 let fixed = label.fixed;
-                let one = self.lay_out_cached(label, feature, style, pixmaps, binder);
+                let marker = style.map(|style| (style, glyphs));
+                let one = self.lay_out_cached(label, feature, marker, pixmaps, binder);
                 laid.extend(one.await.map(|one| (one, fixed)));
             }
             for (one, fixed) in laid {
@@ -490,13 +492,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         Some(Matched { at, fixed, styles })
     }
 
-    /// Lays out `label` of `feature` for the cache, with the first style of its class, `style`,
-    /// sized among `pixmaps`, the marker the label moves away from. None where it is not drawn.
+    /// Lays out `label` of `feature` for the cache, with the first style of its class in
+    /// `marker`, sized among `pixmaps` or by its glyph asked of the glyphs `marker` carries, the
+    /// marker the label moves away from. None where it is not drawn.
     async fn lay_out_cached(
         &mut self,
         label: Matched<'_, '_>,
         feature: &Feature,
-        style: Option<&Style>,
+        marker: Option<ClassMarker<'_>>,
         pixmaps: &Pixmaps,
         binder: &mut Binder<'_, '_>,
     ) -> Option<Laid> {
@@ -539,7 +542,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             return None;
         }
         let annotation = Annotation { text, lines, bound };
-        self.lay_out(label, annotation, style, pixmaps, feature, binder)
+        self.lay_out(label, annotation, marker, pixmaps, feature, binder)
             .await
     }
 
@@ -578,13 +581,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 
     /// Lays out `label` of `feature`, its text, lines, and bound properties `annotation`, moved
-    /// away from the marker of `style`, sized among `pixmaps`, where it has one. None where it is
-    /// not drawn.
+    /// away from the marker of the style `marker` carries, sized among `pixmaps` or by its glyph,
+    /// where it has one. None where it is not drawn.
     async fn lay_out(
         &mut self,
         label: Matched<'_, '_>,
         annotation: Annotation,
-        style: Option<&Style>,
+        marker: Option<ClassMarker<'_>>,
         pixmaps: &Pixmaps,
         feature: &Feature,
         binder: &mut Binder<'_, '_>,
@@ -596,7 +599,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let label_styles: &[Style<LabelTransform>] =
             if styles.is_empty() { written } else { &styles };
         let settled =
-            settle(fixed, &bound, lines.len(), style, pixmaps, self.map).and_then(|settled| {
+            settle(fixed, &bound, lines.len(), marker, pixmaps, self.map).and_then(|settled| {
                 let marker = label_styles::label_marker(
                     label_styles,
                     self.map,
@@ -1238,6 +1241,10 @@ impl Members for Cache<'_> {
     }
 }
 
+/// The first style of a label's class, the marker the label cache holds beneath it, and the
+/// glyphs a TrueType symbol of it is sized by.
+type ClassMarker<'a> = (&'a Style, &'a MarkerGlyphs);
+
 /// A label's position, its alignment, and the width and height of the marker it moves away from.
 type Settled = (Position, Align, Option<(f64, f64)>);
 
@@ -1250,7 +1257,7 @@ fn settle(
     fixed: &Fixed<'_>,
     bound: &BoundLabel,
     num_lines: usize,
-    style: Option<&Style>,
+    marker: Option<ClassMarker<'_>>,
     pixmaps: &Pixmaps,
     map: &Map,
 ) -> Result<Settled, (&'static str, String)> {
@@ -1271,9 +1278,15 @@ fn settle(
     };
     // The marker the label cache holds beneath the label, which a label away from its point
     // moves away from.
-    let marker = match style {
+    let marker = match marker {
         None => None,
-        Some(style) => match marker_size_of(style, &map.symbols, pixmaps, fixed.factors.scale) {
+        Some((style, glyphs)) => match marker_size_of(
+            style,
+            &map.symbols,
+            pixmaps,
+            Some(glyphs),
+            fixed.factors.scale,
+        ) {
             Ok(size) => Some(size),
             Err(what) => {
                 let why =

@@ -173,8 +173,16 @@ pub fn label_style_marker(
     pixmaps: &Pixmaps,
     factor: f64,
 ) -> Result<LabelMarker, String> {
-    let size = marker_size_with(style, values.size, symbol, symbols, Some(pixmaps), factor)
-        .map_err(|what| format!("its labelpoint style draws {what}"))?;
+    let size = marker_size_with(
+        style,
+        values.size,
+        symbol,
+        symbols,
+        Some(pixmaps),
+        None,
+        factor,
+    )
+    .map_err(|what| format!("its labelpoint style draws {what}"))?;
     let anchor_point = match symbol::resolve(symbol, symbols) {
         Resolved::Found(_, symbol) => symbol.anchor(),
         _ => ANCHOR_CENTRE,
