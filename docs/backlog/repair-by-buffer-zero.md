@@ -19,5 +19,5 @@ maintainer kept `unary_union`, with the difference stated.
   `buffer`: measure it on the same polygons against GEOS before choosing it. geo's buffer is
   i_overlay's outline offset, so its lobe choice may follow neither.
 - **Keeping `unary_union`**: no work; the 7 of 40 stay different, and the semantics page says so.
-- **A repair of Forager's own** that picks the lobe as GEOS's buffer does, by the orientation at
-  the ring's highest point: more owned geometry code, under an ADR revision.
+- **A repair of Forager's own** that picks the lobe as GEOS's buffer does (how it picks it is not
+  yet read from JTS's buffer code): more owned geometry code, under an ADR revision.
