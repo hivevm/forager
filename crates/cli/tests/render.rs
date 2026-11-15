@@ -477,3 +477,39 @@ fn a_label_style_of_a_name_that_names_no_transform_is_drawn_at_the_label_point()
     );
     assert!(unknown == plain, "drawn as without the GEOMTRANSFORM");
 }
+
+#[test]
+fn a_geojson_layer_of_auto_is_reprojected_from_wgs84_longitude_and_latitude() {
+    // Verifies: ADR-draft-declared-projection, G-5
+    let dir = std::env::temp_dir().join(format!("forager-auto-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let map = dir.join("auto.map");
+    std::fs::write(
+        &map,
+        "MAP SIZE 11 11 EXTENT 400000 5450000 600000 5650000\n\
+         PROJECTION '+proj=utm' '+zone=32' '+datum=WGS84' '+units=m' END\n\
+         LAYER NAME 'p' TYPE POINT STATUS ON PROJECTION AUTO END\n\
+         CLASS STYLE COLOR 0 0 0 SIZE 5 END END END END\n",
+    )
+    .unwrap();
+    let point = dir.join("p.geojson");
+    std::fs::write(&point, r#"{"type": "Point", "coordinates": [9, 50]}"#).unwrap();
+    let output = dir.join("auto.png");
+    let result = Command::new(env!("CARGO_BIN_EXE_forager"))
+        .arg("render")
+        .arg(&map)
+        .args(["--source", &format!("p={}", point.display()), "-o"])
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    assert!(
+        result.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let image = forager_encode::decode_png(&std::fs::read(&output).unwrap()).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    let dark = (4..=6).any(|x| (4..=7).any(|y| image.pixel(x, y) == Some(Rgba::opaque(0, 0, 0))));
+    assert!(dark, "the point at 9°E 50°N, near the middle");
+}

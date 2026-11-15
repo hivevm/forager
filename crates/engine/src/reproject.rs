@@ -1,7 +1,7 @@
 //! The reprojection of a layer's features into the map's projection, as `msDrawShape` reprojects
 //! each shape before it draws it, and of the area asked of the layer's source into the layer's.
 
-use forager_ports::{Coord, Feature, Geometry};
+use forager_ports::{Coord, DeclaredProjection, Feature, Geometry};
 use forager_proj::{Error, Projection, Reprojection, differ};
 use forager_style_ir::{Extent, Layer, LayerProjection, Map};
 
@@ -36,31 +36,61 @@ pub(crate) struct LayerReprojection {
     to_layer: Reprojection,
 }
 
-/// How `layer` is reprojected into `map`'s projection: not where either has no projection, where
-/// they do not differ as `msProjectionsDiffer` finds it, or where the layer's comes from its
-/// source, which no source declares yet; an error where either does not read. Under a map of
-/// `AUTO`, which has no PROJ object, a layer in a projection differs from it and is reprojected
-/// into its own base geographic CRS, as `msProjectCreateReprojector` reprojects it.
-pub(crate) fn for_layer(map: &Map, layer: &Layer) -> Result<Option<LayerReprojection>, Error> {
-    let Some(LayerProjection::Proj4(layer_projection)) = &layer.projection else {
-        return Ok(None);
+/// A side of a reprojection as MapServer holds it.
+enum Side<'a> {
+    /// No parameters: nothing differs from it.
+    Empty,
+    /// `AUTO` without a PROJ object.
+    Auto,
+    /// A proj4 string.
+    Proj4(&'a str),
+}
+
+/// How `layer` is reprojected into `map`'s projection, `declared` the projection its source
+/// declares for a layer of `AUTO` (ADR-draft-declared-projection): not where either has no
+/// parameters or they do not differ as `msProjectionsDiffer` finds it; an error where either does
+/// not read. A side of `AUTO` without a PROJ object is taken as longitude and latitude in the
+/// other's base geographic CRS, as `msProjectCreateReprojector` takes it, and nothing is
+/// reprojected where that is the other side itself.
+pub(crate) fn for_layer(
+    map: &Map,
+    layer: &Layer,
+    declared: &DeclaredProjection,
+) -> Result<Option<LayerReprojection>, Error> {
+    let layer_side = match &layer.projection {
+        None => Side::Empty,
+        Some(LayerProjection::Proj4(p)) => Side::Proj4(p),
+        Some(LayerProjection::FromSource) => match declared {
+            DeclaredProjection::Proj4(p) => Side::Proj4(p),
+            DeclaredProjection::NoProjection => Side::Empty,
+            DeclaredProjection::None | DeclaredProjection::Unreadable { .. } => Side::Auto,
+        },
     };
-    let to_map = if map.projection_auto {
-        if layer_projection.split_whitespace().next().is_none() {
-            return Ok(None);
+    let map_side = match (&map.projection, map.projection_auto) {
+        (_, true) => Side::Auto,
+        (Some(p), false) => Side::Proj4(p),
+        (None, false) => Side::Empty,
+    };
+    let empty = |p: &str| p.split_whitespace().next().is_none();
+    let to_map = match (layer_side, map_side) {
+        (Side::Empty, _) | (_, Side::Empty) | (Side::Auto, Side::Auto) => return Ok(None),
+        (Side::Proj4(l), _) if empty(l) => return Ok(None),
+        (_, Side::Proj4(m)) if empty(m) => return Ok(None),
+        (Side::Proj4(l), Side::Auto) => Reprojection::into_auto(Projection::parse(l)?),
+        (Side::Auto, Side::Proj4(m)) => {
+            let map = Projection::parse(m)?;
+            // Longitude and latitude into its own geographic CRS: MapServer does nothing.
+            if map.is_geographic() {
+                return Ok(None);
+            }
+            Reprojection::into_auto(map).reversed()
         }
-        Reprojection::into_auto(Projection::parse(layer_projection)?)
-    } else {
-        let Some(map_projection) = &map.projection else {
-            return Ok(None);
-        };
-        if !differ(layer_projection, map_projection) {
-            return Ok(None);
+        (Side::Proj4(l), Side::Proj4(m)) => {
+            if !differ(l, m) {
+                return Ok(None);
+            }
+            Reprojection::new(Projection::parse(l)?, Projection::parse(m)?)
         }
-        Reprojection::new(
-            Projection::parse(layer_projection)?,
-            Projection::parse(map_projection)?,
-        )
     };
     Ok(Some(LayerReprojection {
         to_layer: to_map.reversed(),
@@ -165,46 +195,33 @@ impl LayerReprojection {
         }
     }
 
-    /// The lines of one shape, each reprojected by `msProjectShapeLine`, last first as
-    /// `msProjectShapeEx` takes them: each in its place, the lines they add after them all, and
-    /// those left empty left out.
+    /// The lines of one shape reprojected by [`Reprojection::shape`], as `msProjectShapeEx`
+    /// leaves them, those left empty left out.
     fn lines(&self, lines: Vec<Vec<Coord>>, polygon: bool, failed: &mut Count) -> Vec<Vec<Coord>> {
-        let mut placed = Vec::with_capacity(lines.len());
-        let mut added = Vec::new();
-        for line in lines.iter().rev() {
-            let reprojected = self.to_map.shape_line(line, polygon);
-            failed.failed += reprojected.failed;
-            failed.horizon += reprojected.horizon_points;
-            placed.push(reprojected.first);
-            added.extend(reprojected.added);
-        }
-        placed.reverse();
-        placed.extend(added);
-        placed.retain(|line| !line.is_empty());
-        placed
+        let shape = self.to_map.shape(&lines, polygon);
+        failed.failed += shape.failed;
+        failed.horizon += shape.horizon_points;
+        let mut lines = shape.lines;
+        lines.retain(|line| !line.is_empty());
+        lines
     }
 
-    /// The rings of a multipolygon, one shape to MapServer, each in its place and the lines they
-    /// add with the last polygon; whether any is left.
+    /// The polygons of a multipolygon, each reprojected as a shape of its own, so that a ring
+    /// moved after the others stays with its holes: MapServer holds them in one shape and moves
+    /// such a ring after all of them, which an even-odd fill over the whole shape draws alike, but
+    /// the engine fills each polygon apart. Whether any is left.
     fn polygons(&self, polygons: &mut Vec<Vec<Vec<Coord>>>, failed: &mut Count) -> bool {
-        let mut added = Vec::new();
-        for rings in polygons.iter_mut().rev() {
-            for ring in rings.iter_mut().rev() {
-                let reprojected = self.to_map.shape_line(ring, true);
-                failed.failed += reprojected.failed;
-                failed.horizon += reprojected.horizon_points;
-                *ring = reprojected.first;
-                added.extend(reprojected.added);
-            }
-        }
-        if let Some(last) = polygons.last_mut() {
-            last.extend(added);
-        }
         for rings in polygons.iter_mut() {
-            rings.retain(|ring| !ring.is_empty());
+            *rings = self.lines(std::mem::take(rings), true, failed);
         }
         polygons.retain(|rings| !rings.is_empty());
         !polygons.is_empty()
+    }
+
+    /// Whether MapServer would cut the lines of this layer's line shapes with GEOS, which the
+    /// engine does not ([`Reprojection::cuts_lines_with_geos`]).
+    pub(crate) fn cuts_lines_with_geos(&self) -> bool {
+        self.to_map.cuts_lines_with_geos()
     }
 }
 
@@ -226,7 +243,9 @@ mod tests {
             projection: Some(LayerProjection::Proj4("+proj=longlat +datum=WGS84".into())),
             ..Layer::default()
         };
-        for_layer(&map, &layer).unwrap().unwrap()
+        for_layer(&map, &layer, &DeclaredProjection::None)
+            .unwrap()
+            .unwrap()
     }
 
     fn ring(points: &[(f64, f64)]) -> Vec<Coord> {
@@ -350,5 +369,73 @@ mod tests {
             (false, 10, 5)
         );
         assert_eq!(MAX_HORIZON_POINTS, 1_000_000);
+    }
+
+    #[test]
+    fn the_warning_of_the_horizon_bound_names_the_layer_and_q_9() {
+        // Verifies: Q-9
+        let layer = Layer {
+            name: Some("coast".into()),
+            ..Layer::default()
+        };
+        let warning = crate::horizon_points_limit(&layer);
+        assert_eq!(warning.code, "horizon-points-limit");
+        assert!(
+            warning.message.contains("`coast`")
+                && warning.message.contains("1000000")
+                && warning.message.contains("(Q-9)"),
+            "{}",
+            warning.message
+        );
+    }
+
+    #[test]
+    fn a_ring_moved_after_a_short_run_stays_with_its_own_polygon() {
+        // Verifies: ADR-0037
+        let through_the_pole = ring(&[
+            (-64.0, 45.0),
+            (-62.0, 45.0),
+            (-62.0, 47.0),
+            (-64.0, 47.0),
+            (-90.0, -90.0),
+            (-64.0, 45.0),
+        ]);
+        let other = ring(&[(-60.0, 45.0), (-59.0, 45.0), (-59.0, 46.0), (-60.0, 45.0)]);
+        let mut features = vec![Feature {
+            id: 0,
+            geometry: Geometry::MultiPolygon(vec![vec![through_the_pole, ring(HOLE)], vec![other]]),
+            properties: Properties::default(),
+        }];
+        assert_eq!(into_the_conic().features(&mut features).failed, 1);
+        let Geometry::MultiPolygon(polygons) = &features[0].geometry else {
+            panic!("{features:?}");
+        };
+        let counts: Vec<Vec<usize>> = polygons
+            .iter()
+            .map(|rings| rings.iter().map(Vec::len).collect())
+            .collect();
+        // The first polygon's exterior moves after its own hole, not into the last polygon.
+        assert_eq!(counts, [vec![HOLE.len(), 7], vec![4]]);
+    }
+
+    #[test]
+    fn a_polar_layer_into_longitude_and_latitude_is_one_mapserver_cuts_with_geos() {
+        // Verifies: ADR-0037
+        let way = |layer: &str| {
+            let map = Map {
+                projection: Some("+proj=longlat +datum=WGS84".into()),
+                ..Map::default()
+            };
+            let layer = Layer {
+                projection: Some(LayerProjection::Proj4(layer.into())),
+                ..Layer::default()
+            };
+            for_layer(&map, &layer, &DeclaredProjection::None)
+                .unwrap()
+                .unwrap()
+        };
+        assert!(way("+proj=ortho +lat_0=90 +datum=WGS84").cuts_lines_with_geos());
+        assert!(!way("+proj=ortho +lat_0=0 +datum=WGS84").cuts_lines_with_geos());
+        assert!(!into_the_conic().cuts_lines_with_geos());
     }
 }

@@ -47,13 +47,14 @@ mod resource;
 use std::collections::{BTreeMap, BTreeSet};
 
 use forager_ports::{
-    Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader, ResourcePath, SourceError,
+    DeclaredProjection, Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader,
+    ResourcePath, SourceError,
 };
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
-    Diagnostic, Extent, GeomTransform, Layer, LayerStatus, Map, NotDrawn, RenderMode, Rgba, Style,
-    Symbol, TransformTree,
+    Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
+    RenderMode, Rgba, Style, Symbol, TransformTree,
 };
 use forager_symbolize::{
     Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, clip_pixmaps,
@@ -645,25 +646,29 @@ async fn in_view<S: FeatureSource>(
     view: &View,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<Vec<Feature>> {
-    let (reprojection, asked) = asked(map, layer, view, diagnostics)?;
+    let declared = declared_projection(layer, sources, diagnostics);
+    let (reprojection, asked) = asked(map, layer, &declared, view, diagnostics)?;
     let mut features = source_features(layer, sources, asked, diagnostics).await?;
     if let Some(reprojection) = &reprojection {
+        if reprojection.cuts_lines_with_geos() && features.iter().any(|f| has_lines(&f.geometry)) {
+            let message = format!(
+                "layer {}: MapServer cuts its lines with GEOS where they cross the dateline from \
+                 a polar projection into longitude and latitude, which Forager does not; they are \
+                 drawn uncut",
+                name(layer)
+            );
+            diagnostics.push(Diagnostic::warning(
+                "lines-not-cut",
+                message,
+                layer.span.clone(),
+            ));
+        }
         let done = reprojection.features(&mut features);
         if done.failed > 0 {
             diagnostics.push(points_not_reprojected(layer, done.failed));
         }
         if done.stopped {
-            let message = format!(
-                "layer {}: the horizon search of its reprojection adds more than {} points to \
-                 its shapes, and it stops at the feature that passes it",
-                name(layer),
-                reproject::MAX_HORIZON_POINTS
-            );
-            diagnostics.push(Diagnostic::warning(
-                "horizon-points-limit",
-                message,
-                layer.span.clone(),
-            ));
+            diagnostics.push(horizon_points_limit(layer));
         }
     }
     Some(features)
@@ -676,10 +681,11 @@ async fn in_view<S: FeatureSource>(
 fn asked(
     map: &Map,
     layer: &Layer,
+    declared: &DeclaredProjection,
     view: &View,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<(Option<reproject::LayerReprojection>, Extent)> {
-    let reprojection = match reproject::for_layer(map, layer) {
+    let reprojection = match reproject::for_layer(map, layer, declared) {
         Ok(reprojection) => reprojection,
         Err(error) => {
             let message = format!(
@@ -712,16 +718,67 @@ fn asked(
     Some((Some(reprojection), extent))
 }
 
+/// Whether `geometry` holds a line, which a line shape of MapServer holds.
+fn has_lines(geometry: &Geometry) -> bool {
+    match geometry {
+        Geometry::LineString(_) | Geometry::MultiLineString(_) => true,
+        Geometry::Collection(members) => members.iter().any(has_lines),
+        _ => false,
+    }
+}
+
+/// The warning that the horizon search of `layer`'s reprojection passes
+/// [`reproject::MAX_HORIZON_POINTS`] and the layer stops at the feature that passes it (Q-9).
+fn horizon_points_limit(layer: &Layer) -> Diagnostic {
+    let message = format!(
+        "layer {}: the horizon search of its reprojection adds more than {} points to its shapes \
+         (Q-9), and it stops at the feature that passes it",
+        name(layer),
+        reproject::MAX_HORIZON_POINTS
+    );
+    Diagnostic::warning("horizon-points-limit", message, layer.span.clone())
+}
+
+/// The projection the source bound to a layer of `PROJECTION AUTO` declares
+/// (ADR-draft-declared-projection), none for any other layer or one read from its inline
+/// features; one that does not read is none, with a warning naming the layer and the file, where
+/// MapServer writes a debug message.
+fn declared_projection<S: FeatureSource>(
+    layer: &Layer,
+    sources: &BTreeMap<String, S>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> DeclaredProjection {
+    if layer.projection != Some(LayerProjection::FromSource) || is_inline(layer) {
+        return DeclaredProjection::None;
+    }
+    let Some(source) = layer.name.as_ref().and_then(|n| sources.get(n)) else {
+        return DeclaredProjection::None;
+    };
+    let declared = source.declared_projection();
+    if let DeclaredProjection::Unreadable { file, why } = &declared {
+        let message = format!(
+            "layer {}: the projection of {file} does not read ({why}); the layer takes its \
+             coordinates as longitude and latitude in the datum of the map's projection",
+            name(layer)
+        );
+        diagnostics.push(Diagnostic::warning(
+            "projection-unreadable",
+            message,
+            layer.span.clone(),
+        ));
+    }
+    declared
+}
+
 /// The warning that `count` points of `layer`'s features do not reproject into the map's
-/// projection and are left out (Q-3).
+/// projection (Q-3): cut at the horizon, left out with their point shape, or, into longitude and
+/// latitude from a projected layer, left where they were, as MapServer reprojects them.
 fn points_not_reprojected(layer: &Layer, count: usize) -> Diagnostic {
     let message = format!(
-        "layer {}: {count} point{} of its features do{} not reproject into the map's projection \
-         and {} left out",
+        "layer {}: {count} point{} of its features do{} not reproject into the map's projection",
         name(layer),
         if count == 1 { "" } else { "s" },
         if count == 1 { "es" } else { "" },
-        if count == 1 { "is" } else { "are" },
     );
     Diagnostic::warning("points-not-reprojected", message, layer.span.clone())
 }

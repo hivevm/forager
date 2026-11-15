@@ -8,7 +8,8 @@ use std::future::Future;
 
 use forager_engine::{Rendered, render};
 use forager_ports::{
-    Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
+    Coord, DeclaredProjection, Feature, FeatureQuery, FeatureSource, Features, Geometry,
+    Properties, SourceError,
 };
 use forager_proj::{Projection, Reprojection};
 use forager_render_agg::AggRenderer;
@@ -42,6 +43,7 @@ fn ready<F: Future>(future: F) -> F::Output {
 struct Recording {
     features: Vec<Feature>,
     asked: RefCell<Vec<Extent>>,
+    declared: DeclaredProjection,
 }
 
 impl Recording {
@@ -58,7 +60,13 @@ impl Recording {
         Self {
             features,
             asked: RefCell::new(Vec::new()),
+            declared: DeclaredProjection::None,
         }
+    }
+
+    fn declaring(mut self, declared: DeclaredProjection) -> Self {
+        self.declared = declared;
+        self
     }
 }
 
@@ -69,6 +77,10 @@ impl FeatureSource for Recording {
             features: self.features.clone(),
             ..Features::default()
         })
+    }
+
+    fn declared_projection(&self) -> DeclaredProjection {
+        self.declared.clone()
     }
 }
 
@@ -224,6 +236,134 @@ fn under_a_map_of_auto_a_layer_is_drawn_in_its_own_longitude_and_latitude() {
     let (rendered, asked) = render_from(&auto, in_longlat);
     assert_square_drawn(&rendered);
     assert_eq!(asked, [MAP_EXTENT]);
+}
+
+/// A map in `map_projection` over `extent`, its layer of `PROJECTION AUTO`.
+fn auto_layer(map_projection: &str, extent: Extent) -> Map {
+    let mut map = map(map_projection, extent, None);
+    map.layers[0].projection = Some(LayerProjection::FromSource);
+    map
+}
+
+#[test]
+fn a_layer_of_auto_takes_the_projection_its_source_declares() {
+    // Verifies: ADR-draft-declared-projection
+    let declared = DeclaredProjection::Proj4(LCC.to_owned());
+    let in_lcc = Recording::new(vec![Geometry::Polygon(vec![square_in(LCC)])]).declaring(declared);
+    let (rendered, asked) = render_from(&auto_layer(LONGLAT, MAP_EXTENT), in_lcc);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_square_drawn(&rendered);
+    assert!(
+        asked[0].min_x > 1_000_000.0,
+        "in the conic's metres: {asked:?}"
+    );
+    // No projection at all: nothing is reprojected.
+    let in_longlat = || Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
+    let none = in_longlat().declaring(DeclaredProjection::NoProjection);
+    let (rendered, asked) = render_from(&auto_layer(LONGLAT, MAP_EXTENT), none);
+    assert_square_drawn(&rendered);
+    assert_eq!(asked, [MAP_EXTENT]);
+}
+
+#[test]
+fn a_layer_of_auto_whose_source_declares_nothing_is_in_the_longitude_and_latitude_of_the_map() {
+    // Verifies: ADR-draft-declared-projection
+    // Under a map in the conic, its coordinates are taken as longitude and latitude in the map's
+    // datum, as msProjectCreateReprojector takes an AUTO without a PROJ object.
+    let extent = way(LONGLAT, LCC).extent(&MAP_EXTENT).unwrap();
+    let in_longlat = Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
+    let (rendered, asked) = render_from(&auto_layer(LCC, extent), in_longlat);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    let green = (0..101).flat_map(|x| (0..101).map(move |y| (x, y)));
+    assert!(
+        green
+            .filter(|&(x, y)| image.pixel(x, y) == Some(GREEN))
+            .count()
+            > 100
+    );
+    assert!(
+        asked[0].min_x < -60.0 && asked[0].max_y > 50.0,
+        "in degrees: {asked:?}"
+    );
+    // One that does not read is treated alike, with a warning naming the layer and the file.
+    let unreadable = DeclaredProjection::Unreadable {
+        file: "data.prj".to_owned(),
+        why: "the datum D_European_1950 is not supported".to_owned(),
+    };
+    let in_longlat = Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
+    let (rendered, _) = render_from(&auto_layer(LCC, extent), in_longlat.declaring(unreadable));
+    let [warning] = &rendered.diagnostics[..] else {
+        panic!("one warning: {:?}", rendered.diagnostics);
+    };
+    assert_eq!(warning.code, "projection-unreadable");
+    assert!(
+        warning.message.contains("`data`") && warning.message.contains("data.prj"),
+        "{}",
+        warning.message
+    );
+    // Under a map in longitude and latitude, nothing is reprojected.
+    let in_longlat = Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
+    let (rendered, asked) = render_from(&auto_layer(LONGLAT, MAP_EXTENT), in_longlat);
+    assert_square_drawn(&rendered);
+    assert_eq!(asked, [MAP_EXTENT]);
+}
+
+#[test]
+fn lines_mapserver_cuts_with_geos_are_drawn_uncut_with_a_warning() {
+    // Verifies: ADR-0037
+    let polar = "+proj=ortho +lat_0=90 +lon_0=0 +datum=WGS84";
+    let mut map = map(
+        LONGLAT,
+        Extent {
+            min_x: -180.0,
+            min_y: 0.0,
+            max_x: 180.0,
+            max_y: 90.0,
+        },
+        Some(polar),
+    );
+    map.layers[0].render_mode = Some(RenderMode::Line);
+    let line = vec![
+        Coord {
+            x: -1_000_000.0,
+            y: 10.0,
+        },
+        Coord {
+            x: 1_000_000.0,
+            y: 10.0,
+        },
+    ];
+    let (rendered, _) = render_from(&map, Recording::new(vec![Geometry::LineString(line)]));
+    let codes: Vec<&str> = rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect();
+    assert!(codes.contains(&"lines-not-cut"), "{codes:?}");
+    // A polygon layer is not cut by GEOS, and is not warned of.
+    map.layers[0].render_mode = Some(RenderMode::Polygon);
+    let ring = vec![
+        Coord { x: -1e6, y: -1e6 },
+        Coord { x: 1e6, y: -1e6 },
+        Coord { x: 1e6, y: 1e6 },
+        Coord { x: -1e6, y: -1e6 },
+    ];
+    let (rendered, _) = render_from(&map, Recording::new(vec![Geometry::Polygon(vec![ring])]));
+    assert!(
+        rendered
+            .diagnostics
+            .iter()
+            .all(|d| d.code != "lines-not-cut")
+    );
 }
 
 #[test]

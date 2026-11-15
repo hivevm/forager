@@ -301,6 +301,18 @@ mod tests {
         assert_eq!(ResourcePath::new("./"), Err(PathError::Empty));
         assert_eq!(ResourcePath::new("a/.."), Err(PathError::Empty));
     }
+
+    #[test]
+    fn a_source_that_declares_nothing_declares_no_projection() {
+        // Verifies: ADR-draft-declared-projection
+        struct Silent;
+        impl FeatureSource for Silent {
+            async fn features(&self, _: &FeatureQuery) -> Result<Features, SourceError> {
+                Ok(Features::default())
+            }
+        }
+        assert_eq!(Silent.declared_projection(), DeclaredProjection::None);
+    }
 }
 
 /// A feature as a source delivers it. Its id is stable for a source, so that output that depends
@@ -496,6 +508,32 @@ impl Skipped {
 #[allow(async_fn_in_trait)]
 pub trait FeatureSource {
     async fn features(&self, query: &FeatureQuery) -> Result<Features, SourceError>;
+
+    /// The projection the source declares, which a layer of `PROJECTION AUTO` takes, as MapServer's
+    /// layer takes it at open (ADR-draft-declared-projection); by default none. Synchronous: a source reads what it
+    /// needs for it when it opens.
+    fn declared_projection(&self) -> DeclaredProjection {
+        DeclaredProjection::None
+    }
+}
+
+/// The projection a feature source declares (ADR-draft-declared-projection).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DeclaredProjection {
+    /// No declaration: a layer of `AUTO` keeps it, its coordinates taken as longitude and latitude
+    /// in the datum of the map's projection, as `msProjectCreateReprojector` takes them.
+    None,
+    /// A proj4 string, as the style IR holds one.
+    Proj4(String),
+    /// No projection at all, MapServer's empty one: nothing is reprojected.
+    NoProjection,
+    /// A declaration that does not read, which the layer treats as none, with a warning.
+    Unreadable {
+        /// The file that holds it.
+        file: String,
+        /// Why it does not read.
+        why: String,
+    },
 }
 
 /// Resolves a projection a style names by authority and code, as `init=epsg:4326` does, to a

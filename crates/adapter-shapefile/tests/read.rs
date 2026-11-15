@@ -844,3 +844,34 @@ fn a_null_shape_is_not_a_skipped_record() {
         assert_eq!(delivered.skipped.count, 0, "{extent:?}");
     }
 }
+
+#[test]
+fn the_prj_beside_the_shp_declares_the_shapefile_s_projection() {
+    // Verifies: ADR-draft-declared-projection
+    use forager_ports::{DeclaredProjection, FeatureSource};
+    let files = Files::new(1, BOUNDS, &[point(1.0, 2.0)]);
+    let utm = r#"PROJCS["WGS_1984_UTM_Zone_32N",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",9.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]"#;
+    let with = |prj: &str| {
+        let mut loader = files.loader();
+        loader
+            .0
+            .insert("data/layer.prj".to_owned(), prj.as_bytes().to_vec());
+        open(&loader).unwrap().declared_projection()
+    };
+    assert_eq!(
+        with(utm),
+        DeclaredProjection::Proj4("+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs".to_owned())
+    );
+    // One that does not read names its file.
+    let DeclaredProjection::Unreadable { file, why } = with(&utm.replace("Transverse", "Oblique"))
+    else {
+        panic!("unreadable");
+    };
+    assert_eq!(file, "data/layer.prj");
+    assert!(why.contains("Oblique_Mercator"), "{why}");
+    // Without a .prj, the shapefile declares nothing.
+    assert_eq!(
+        files.open().unwrap().declared_projection(),
+        DeclaredProjection::None
+    );
+}

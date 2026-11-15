@@ -41,8 +41,19 @@ refused `poly.shp` beside a valid `poly.SHP` reads `poly.SHP`, where MapServer, 
 limit, reads `poly.shp`. The resource loader's error does not tell a missing file from a refused
 one, and giving it that kind would change a port's types for a pair of files that differ only in
 the case of their extension; each file read stays within its limit
-(`an_upper_case_name_is_tried_where_the_lower_case_file_is_refused`). Neither `.qix`, `.sbn`,
-`.cpg`, nor `.prj` is asked for.
+(`an_upper_case_name_is_tried_where_the_lower_case_file_is_refused`). Neither `.qix`, `.sbn`, nor
+`.cpg` is asked for.
+
+**Projection** (`msSHPLayerOpen`). The `.prj` beside the `.shp`, its name with the extension
+`prj`, is loaded when the source opens; a `.prj` that does not load declares nothing. Its first
+2047 bytes are read as the ESRI WKT a `.prj` holds and declared as the proj4 string GDAL's
+`OSRExportToProj4` writes, for what the core implements: longitude and latitude, the transverse
+Mercator with UTM, the Lambert conformal conic, the Mercator, and the orthographic projection, on
+WGS84 or NAD83, in metres and degrees; a `LOCAL_CS` declares no projection at all. An `AUTHORITY`
+is not followed: MapServer loads `init=epsg:<code>` for it, which needs the projection resolver
+the render does not have, so the string is written from the parameters. Anything else does not
+read, and the layer that takes it warns naming the file
+(ADR-draft-declared-projection).
 
 **Headers** (`msSHPOpenVirtualFile`, `msDBFOpenVirtualFile`). An error opens no layer:
 

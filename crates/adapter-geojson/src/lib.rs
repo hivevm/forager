@@ -4,8 +4,8 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 use forager_ports::{
-    Coord, Feature, FeatureQuery, FeatureSource, Features, Geometry, Properties, SourceError,
-    Stored,
+    Coord, DeclaredProjection, Feature, FeatureQuery, FeatureSource, Features, Geometry,
+    Properties, SourceError, Stored,
 };
 use forager_style_ir::Extent;
 use forager_style_ir::c::rect_overlap;
@@ -54,6 +54,12 @@ impl GeoJsonSource {
 }
 
 impl FeatureSource for GeoJsonSource {
+    /// WGS84 longitude and latitude, the only coordinates RFC 7946 allows, as OGR declares them for
+    /// MapServer (ADR-draft-declared-projection).
+    fn declared_projection(&self) -> DeclaredProjection {
+        DeclaredProjection::Proj4("+proj=longlat +datum=WGS84 +no_defs".to_owned())
+    }
+
     async fn features(&self, query: &FeatureQuery) -> Result<Features, SourceError> {
         let q = &query.extent;
         let features: Vec<Feature> = self

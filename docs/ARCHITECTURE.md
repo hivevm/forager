@@ -70,8 +70,9 @@ golden path and the test pattern an agent copies from are named here.
   which the frontend checks a label's fonts with and `label` takes its steps from (`font.rs`); it
   lives here because ADR-0008 keeps `mapfile` from `label`. It depends on no other crate of the
   workspace.
-- **`ports`** — the port traits — the resource loader, the feature source, the projection
-  resolver — with the features a source delivers, their geometries, re-exported from `style-ir`,
+- **`ports`** — the port traits — the resource loader, the feature source with the projection
+  it declares (ADR-draft-declared-projection), the projection resolver — with the features a
+  source delivers, their geometries, re-exported from `style-ir`,
   and properties
   ([ADR-0023](adr/0023-typed-properties.md)), and the resource path that
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`;
@@ -293,11 +294,13 @@ golden path and the test pattern an agent copies from are named here.
   allocated for it (`pixmap.rs`, [ADR-0030](adr/0030-png-encoder.md),
   [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)).
 - **`adapter-geojson`** — a feature source over a GeoJSON document
-  ([ADR-0020](adr/0020-geojson-adapter.md)).
+  ([ADR-0020](adr/0020-geojson-adapter.md)), declaring WGS84 longitude and latitude.
 - **`adapter-shapefile`** — a feature source over an ESRI shapefile, its `.shp`, `.shx`, and
   `.dbf` loaded through the resource loader and read with the records MapServer reads, in memory
   that follows the files' size ([ADR-0021](adr/0021-shapefile-adapter.md)), each rule of the
-  reading written down in `docs/semantics/shapefile.md`; a record it cannot read is skipped and
+  reading written down in `docs/semantics/shapefile.md`, and its `.prj` read into the
+  projection it declares by a WKT reader of its own (`prj.rs`, ADR-draft-declared-projection);
+  a record it cannot read is skipped and
   counted, and the engine reports it per layer
   ([ADR-0022](adr/0022-skipped-records.md)).
 - **`adapter-epsg`** — resolves `init=epsg:` projections for the frontend through the
