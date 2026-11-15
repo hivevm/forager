@@ -167,9 +167,9 @@ What this project explicitly does not try to do.
   (`ows_`, `wms_`, `wfs_`), and encrypted connection strings.
 - The sources a layer's `CONNECTIONTYPE` names as `OGR`, `POSTGIS`, `ORACLESPATIAL`, `PLUGIN`,
   `WMS`, `WFS`, `UNION`, `CONTOUR`, `KERNELDENSITY`, `IDW`, `UVRASTER`, `RASTERLABEL`, or
-  `GRATICULE`; a layer's `GRID`, `CONNECTIONOPTIONS`, and `BINDVALS`; tile indexes (`TILEINDEX`,
-  `TILEITEM`, `TILESRS`); and the handling of connections: pooling, and the `PROCESSING` keys
-  `CLOSE_CONNECTION`, `NATIVE_SQL`, and `NATIVE_FILTER`.
+  `GRATICULE`; a layer's `GRID`, `ENCODING`, `CONNECTIONOPTIONS`, and `BINDVALS`; tile indexes
+  (`TILEINDEX`, `TILEITEM`, `TILESRS`); and the handling of connections: pooling, and the
+  `PROCESSING` keys `CLOSE_CONNECTION`, `NATIVE_SQL`, and `NATIVE_FILTER`.
 - A layer's `TYPE` of `CHART` or `TILEINDEX`.
 - Classification and visibility by a layer's `GROUP`, `CLASSGROUP`, `REQUIRES`, `LABELREQUIRES`,
   `SCALETOKEN`, `MINGEOWIDTH`, and `MAXGEOWIDTH`; by a class's `GROUP`, `STATUS`, and `FALLBACK`;
@@ -177,8 +177,9 @@ What this project explicitly does not try to do.
   class's `TITLE`.
 - Colour ramps (`COLORRANGE`, `DATARANGE`, `RANGEITEM`, `RANGE_COLORSPACE`), and the `COMPOP` and
   `COMPFILTER` of a layer's `COMPOSITE`.
-- Pixmap symbols in formats other than PNG, a symbol of `TYPE simple`, a symbol fetched by its URL,
-  and a pixmap tiled along a line without a `GAP`.
+- Pixmap symbols in formats other than PNG, SVG symbols (`TYPE svg`, and a symbol named by a file
+  name ending in `.svg`), a symbol of `TYPE simple`, a symbol fetched by its URL, and a pixmap
+  tiled along a line without a `GAP`.
 - Bitmap fonts, a label's shadow, `LEADER`, `ENCODING`, and a label's line that holds a character
   of a script other than Latin or Common, right-to-left text among them.
 - COG read by HTTP range requests or through its overviews, raster formats other than GeoTIFF, COG,
