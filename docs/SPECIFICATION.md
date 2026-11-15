@@ -140,7 +140,7 @@ from the threats below.
   at its features, along its lines, or where a style's geometry transformation puts them
   (1,000,000), the stand-in square of a style without a symbol, or of symbol 0, not counted;
   the points one layer's `GEOMTRANSFORM` and the `GEOMTRANSFORM` expressions of its styles add,
-  together, to the shapes of its features (1,000,000), and the points they visit together beyond
+  together, to the shapes they compute (1,000,000), and the points they visit together beyond
   reading each once (100,000,000); the points the horizon search of one layer's reprojection adds
   to the shapes of its features (1,000,000); the labels one render's label cache holds (100,000).
 
