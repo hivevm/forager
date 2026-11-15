@@ -328,7 +328,7 @@ renderers/legend_sizeunits_meters.map legend_sizeunits_meters.png out: an OGC or
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.cairo.png out: an OGC or CGI request
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.svg out: an OGC or CGI request
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.pdf out: an OGC or CGI request
-renderers/line_aliased.map line_aliased.png geometry fails  # not built yet: the ANTIALIAS FALSE of a style
+renderers/line_aliased.map line_aliased.png geometry passes
 renderers/line_anchorpoint.map line_anchorpoint.png geometry passes
 renderers/line_anchorpoint.map line_anchorpoint.cairo.png out: another output format, cairopng
 renderers/line_antialiased.map line_anti_aliased.png geometry passes

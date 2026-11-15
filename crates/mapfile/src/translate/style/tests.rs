@@ -388,6 +388,51 @@ fn line_caps_and_joins_are_loadstyles_keywords() {
 }
 
 #[test]
+fn antialias_false_makes_the_style_aliased_and_a_later_true_leaves_it_so() {
+    // loadStyle's ANTIALIAS: getSymbol(2, MS_TRUE, MS_FALSE), by token value, so `off` and
+    // `inches` are false, `on` and `bevel` true, and `butt`, 2, neither; only a false changes the
+    // style.
+    for word in ["FALSE", "off", "inches"] {
+        assert!(style_of(&format!("ANTIALIAS {word}")).aliased, "{word}");
+    }
+    for body in [
+        "ANTIALIAS TRUE",
+        "ANTIALIAS on",
+        "ANTIALIAS bevel",
+        "COLOR 1 2 3",
+    ] {
+        assert!(!style_of(body).aliased, "{body}");
+    }
+    assert!(style_of("ANTIALIAS FALSE ANTIALIAS TRUE").aliased);
+    refused("ANTIALIAS 0");
+    refused("ANTIALIAS 'false'");
+    refused("ANTIALIAS butt");
+}
+
+#[test]
+fn a_style_of_antialias_false_round_trips() {
+    // Verifies: G-3
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER CLASS STYLE COLOR 1 2 3 ANTIALIAS FALSE END STYLE COLOR 1 2 3 END
+         END END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let document = loaded.document.unwrap();
+    let styles = &document.map.layers[0].classes[0].styles;
+    assert_eq!((styles[0].aliased, styles[1].aliased), (true, false));
+    let yaml = document.to_yaml().unwrap();
+    // The second style, not aliased, writes no field.
+    assert_eq!(yaml.matches("aliased").count(), 1, "{yaml}");
+    let read = forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap();
+    assert_eq!(read.document, document);
+    let json = document.to_json().unwrap();
+    assert_eq!(json.matches("\"aliased\"").count(), 1, "{json}");
+    let read = forager_style_ir::StyleDocument::from_json(&json).unwrap();
+    assert_eq!(read.document, document);
+}
+
+#[test]
 fn a_pattern_holds_only_numbers() {
     // loadStyle's PATTERN loop takes MS_NUMBER until END and fails on anything else.
     refused("PATTERN 1 two END");

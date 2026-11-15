@@ -1,7 +1,7 @@
-# `PATTERN`, `GAP`, `INITIALGAP`, `LINECAP`, `LINEJOIN`, `LINEJOINMAXSIZE`
+# `PATTERN`, `GAP`, `INITIALGAP`, `LINECAP`, `LINEJOIN`, `LINEJOINMAXSIZE`, `ANTIALIAS`
 
 **Where:** `STYLE`. **IR:** the style's `pattern`, `gap`, `initial_gap`, `line_cap`,
-`line_join`, `line_join_max_size`.
+`line_join`, `line_join_max_size`, `aliased`.
 
 **Meaning**, as `loadStyle` in `src/mapfile.c` reads them and `msDrawLineSymbol` in
 `src/maprendering.c` draws them:
@@ -34,6 +34,15 @@
 - `LINECAP`: `butt`, `round` (the default), `square`, `triangle`. `LINEJOIN`: `none` (the
   default), `round`, `miter`, `bevel`. `LINEJOINMAXSIZE`: how far a miter reaches as a multiple
   of the width, above 0, default 3.
+- `ANTIALIAS`: `true` or `false`, or a word of the same token value, such as `on` or `off`. A
+  `false` strokes the style's line aliased: every pixel the stroke's outline covers at all takes
+  the full colour, as `agg2RenderLine` in `src/mapagg.cpp` renders it through AGG's
+  `renderer_scanline_bin_solid`; the IR holds `aliased: true`. A `true` changes nothing, so a
+  `false` before it stays, as `loadStyle` reads it. Only a line `msDrawLineSymbol` strokes, in
+  `src/maprendering.c`, takes the flag: a line, and a polygon's outline in a style without a
+  `COLOR`. The outline `msDrawShadeSymbol` draws about a polygon's fill, a symbol's outline, and a
+  hatch stay anti-aliased. A label's `ANTIALIAS` is read and ignored
+  ([`label.md`](label.md)).
 
 **Vertices.** A line or a polygon, outlined, stroked, or hatched, reaches pixels as
 `msTransformShapeSimplify` in `src/mapprimitive.cpp` puts it there, the transform mode

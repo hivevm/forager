@@ -301,8 +301,9 @@ golden path and the test pattern an agent copies from are named here.
   in one module (`clip.rs`, [ADR-0027](adr/0027-clip-to-the-image.md)),
   which the bound measures a hatch's lines with and every renderer clips with.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
-  before rasterizing, by the clip of `render`, fills through the gamma it is given,
-  blends premultiplied colours
+  before rasterizing, by the clip of `render`, fills through the gamma it is given, strokes an
+  aliased line by blending each pixel agg-rust's scanlines cover at full cover, as AGG's
+  `renderer_scanline_bin_solid` does, blends premultiplied colours
   in a pixel format of its own as MapServer's AGG 2.4 does, draws a layer with an opacity into an
   image of its own and lays it over, fills glyphs as MapServer's AGG renderer does, blends a
   pixmap's image as `blend_from` does, resamples a scaled or turned one with a port of AGG 2.4's

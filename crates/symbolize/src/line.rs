@@ -255,6 +255,7 @@ pub(crate) fn line_symbol<T: Clone>(
                 initial_gap * factor
             },
         },
+        antialiased: !style.aliased,
     });
 }
 

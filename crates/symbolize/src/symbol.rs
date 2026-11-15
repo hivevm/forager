@@ -597,6 +597,7 @@ pub(crate) fn render(ops: &mut Vec<DrawOp>, at: Point, symbol: &Symbol, s: &Symb
             cap: LineCap::Butt,
             join: LineJoin::Miter,
             dashes: Dashes::default(),
+            antialiased: true,
         });
     }
 }

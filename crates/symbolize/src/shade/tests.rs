@@ -85,6 +85,48 @@ fn a_filled_polygon_is_outlined_at_its_fill_s_alpha() {
     }
 }
 
+#[test]
+fn antialias_false_reaches_the_stroke_of_a_line_but_not_the_outline_of_a_fill() {
+    // msDrawLineSymbol hands the style's flag to the stroke; msDrawShadeSymbol outlines a fill
+    // with a fresh stroke style, anti-aliased, and hands a style without a COLOR to
+    // msDrawLineSymbol.
+    let aliased = |style: Style| Style {
+        aliased: true,
+        ..style
+    };
+    let antialiased = |ops: &[DrawOp]| -> Vec<bool> {
+        ops.iter()
+            .filter_map(|op| match op {
+                DrawOp::Stroke { antialiased, .. } => Some(*antialiased),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut ops = Vec::new();
+    line_symbol(
+        &mut ops,
+        line(),
+        &aliased(colored(Some(BLACK), None)),
+        Pass::Plain,
+        &mut plain(),
+    );
+    line_symbol(
+        &mut ops,
+        line(),
+        &colored(Some(BLACK), None),
+        Pass::Plain,
+        &mut plain(),
+    );
+    assert_eq!(antialiased(&ops), [false, true]);
+    let mut ops = Vec::new();
+    let view = unit_view();
+    let fill = aliased(colored(Some(BLACK), Some(BLACK)));
+    assert!(shade(&mut ops, line(), &fill, &view, &mut plain()));
+    let outline = aliased(colored(None, Some(BLACK)));
+    assert!(shade(&mut ops, line(), &outline, &view, &mut plain()));
+    assert_eq!(antialiased(&ops), [true, false]);
+}
+
 /// A view of 0..100 on 101 × 101 pixels: a map unit is a pixel, y downwards from 100.
 fn unit_view() -> View {
     View::for_image(

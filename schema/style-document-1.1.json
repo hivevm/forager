@@ -1383,6 +1383,10 @@
       "description": "A style of a class, whose transform may be absent, or, as `Style<LabelTransform>`, of a label,\nwhose transform may not.",
       "type": "object",
       "properties": {
+        "aliased": {
+          "description": "Whether a line the style strokes is aliased, every pixel its stroke touches in the full\ncolour or not at all, MapServer's `ANTIALIAS FALSE`; otherwise it is anti-aliased.",
+          "type": "boolean"
+        },
         "angle": {
           "description": "Rotation in degrees, counter-clockwise.",
           "anyOf": [
@@ -1627,6 +1631,10 @@
       "description": "A style of a class, whose transform may be absent, or, as `Style<LabelTransform>`, of a label,\nwhose transform may not.",
       "type": "object",
       "properties": {
+        "aliased": {
+          "description": "Whether a line the style strokes is aliased, every pixel its stroke touches in the full\ncolour or not at all, MapServer's `ANTIALIAS FALSE`; otherwise it is anti-aliased.",
+          "type": "boolean"
+        },
         "angle": {
           "description": "Rotation in degrees, counter-clockwise.",
           "anyOf": [

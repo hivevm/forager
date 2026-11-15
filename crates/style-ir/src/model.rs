@@ -480,6 +480,10 @@ pub struct Style<T = Option<GeomTransform>> {
     /// How far a miter join may reach, as a multiple of the width.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_join_max_size: Option<f64>,
+    /// Whether a line the style strokes is aliased, every pixel its stroke touches in the full
+    /// colour or not at all, MapServer's `ANTIALIAS FALSE`; otherwise it is anti-aliased.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub aliased: bool,
     /// Opacity in percent, 0 to 100.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opacity: Option<Bound<f64>>,
@@ -534,6 +538,7 @@ impl<T> Style<T> {
             line_cap,
             line_join,
             line_join_max_size,
+            aliased,
             opacity,
             outline_width,
             min_size,
@@ -562,6 +567,7 @@ impl<T> Style<T> {
             line_cap,
             line_join,
             line_join_max_size,
+            aliased,
             opacity,
             outline_width,
             min_size,

@@ -114,6 +114,7 @@ pub fn shade<T: Clone>(
             cap,
             join,
             dashes: Dashes::default(),
+            antialiased: true,
         });
     }
     true

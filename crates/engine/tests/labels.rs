@@ -2228,6 +2228,7 @@ fn a_turned_labelpoly_is_moved_by_its_offset_and_outlined_at_its_width() {
             cap,
             join,
             dashes,
+            antialiased,
         } => {
             assert_eq!(
                 (paths.len(), *closed, *color, *width, *cap, *join),
@@ -2241,6 +2242,7 @@ fn a_turned_labelpoly_is_moved_by_its_offset_and_outlined_at_its_width() {
                 )
             );
             assert!(dashes.pattern.is_empty());
+            assert!(*antialiased);
             assert!(near(&paths[0]), "{paths:?}");
         }
         other => panic!("{other:?}"),
