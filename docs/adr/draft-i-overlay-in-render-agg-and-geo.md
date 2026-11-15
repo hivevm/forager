@@ -32,8 +32,12 @@ This ADR restates every clause of ADR-0028 in its wording, but these:
   crates. New items let geo depend on it, and `symbolize` alone depend on geo;
 - *Out of scope*: the `buffer` of a `GEOMTRANSFORM` is no longer an example of what is left open,
   since the geometry ADR decides it, and the unification of the two i_overlay majors is added;
-- *Consequences*: ADR-0028's are restated, and the two i_overlay families are added;
-- *Enforcement*: the arch-test gains an assertion on the packages outside the workspace;
+- *Consequences*: ADR-0028's are restated, but its follow-up that a `GEOMTRANSFORM` `buffer` may
+  build on i_overlay under an ADR of its own is dropped, since the geometry ADR decides it. A
+  Positive item, the geometry ADR accepted without a conflict, and the two i_overlay families
+  are added;
+- *Enforcement*: the arch-test's assertion on the workspace's crates gives way to two on the
+  resolved graph, which take in the packages outside the workspace;
 - *Applies to*: geo's i_overlay in `symbolize` and the arch-test are added.
 
 ## Decision
@@ -111,8 +115,8 @@ Tests cite this ADR with `Verifies:`:
 
 - in `crates/arch-test/tests/dependencies.rs`, the test
   `only_render_agg_cuts_polygons_with_i_overlay` moves its `Verifies:` from ADR-0028 to this ADR.
-  It keeps failing when a workspace crate other than `render-agg` depends on i_overlay directly.
-  It gains two assertions on the resolved graph. One fails when a package other than `render-agg`
+  Its assertion on the workspace's crates gives way to two assertions on the resolved graph, which
+  imply it. One fails when a package other than `render-agg`
   and geo depends directly on i_overlay. The other fails when a workspace crate other than
   `symbolize` depends directly on geo;
 - in `crates/render-agg` (`src/hatch.rs`, `src/lib.rs`), the polygon and the stroke intersected
