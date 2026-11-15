@@ -36,7 +36,7 @@ fn round_trip(tree: &TransformTree) -> String {
 
 #[test]
 fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     let cases = [
         (
             TransformTree::Drawn(TransformShape::Shape),
@@ -67,6 +67,10 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
             }),
             r#"{"op":"smoothsia","args":[{"op":"shape","args":[]},5.0,2.0,"angle"]}"#,
         ),
+        (
+            TransformTree::Drawn(TransformShape::Simplify(shape(), num(25.0))),
+            r#"{"op":"simplify","args":[{"op":"shape","args":[]},25.0]}"#,
+        ),
     ];
     for (tree, json) in cases {
         assert_eq!(round_trip(&tree), json);
@@ -94,12 +98,11 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
 
 #[test]
 fn every_not_drawn_reason_reads_and_writes_by_its_name() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     let reasons = [
         (NotDrawn::Buffer, "buffer"),
         (NotDrawn::Centerline, "centerline"),
         (NotDrawn::Difference, "difference"),
-        (NotDrawn::Simplify, "simplify"),
         (NotDrawn::Simplifypt, "simplifypt"),
         (NotDrawn::Javascript, "javascript"),
         (NotDrawn::Length, "length"),
@@ -116,6 +119,9 @@ fn every_not_drawn_reason_reads_and_writes_by_its_name() {
         assert_eq!(round_trip(&tree), format!(r#"{{"not_drawn":"{name}"}}"#));
         assert_eq!(reason.name(), name);
     }
+    // `simplify` left the list when its node landed: the tree itself no longer reads it as a
+    // reason, which the style document's reader of a newer minor turns into `syntax`.
+    assert!(serde_json::from_str::<TransformTree>(r#"{"not_drawn":"simplify"}"#).is_err());
 }
 
 #[test]

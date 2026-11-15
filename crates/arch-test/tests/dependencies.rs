@@ -402,11 +402,27 @@ fn the_output_path_takes_its_transcendental_functions_from_libm() {
     assert!(missing.is_empty(), "clippy.toml does not ban {missing:?}");
 }
 
+/// The packages of the resolved graph, workspace crates by short name, that depend on the crate
+/// named `dependency` directly.
+fn package_dependents(ws: &Workspace, dependency: &str) -> BTreeSet<String> {
+    ws.deps
+        .iter()
+        .filter(|(_, deps)| deps.iter().any(|dep| ws.names[dep] == dependency))
+        .map(|(id, _)| ws.members.get(id).unwrap_or(&ws.names[id]).clone())
+        .collect()
+}
+
 #[test]
 fn only_render_agg_cuts_polygons_with_i_overlay() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0028, ADR-draft-i-overlay-in-render-agg-and-geo, ADR-draft-geometry-through-geo
+    // Of the resolved graph, render-agg and geo alone depend on i_overlay directly, which implies
+    // that no other workspace crate does; symbolize alone of the workspace depends on geo.
     let ws = workspace();
-    assert_eq!(dependents(&ws, "i_overlay"), ["render-agg"]);
+    assert_eq!(
+        package_dependents(&ws, "i_overlay"),
+        BTreeSet::from(["geo".to_owned(), "render-agg".to_owned()])
+    );
+    assert_eq!(dependents(&ws, "geo"), ["symbolize"]);
 }
 
 #[test]

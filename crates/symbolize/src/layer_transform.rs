@@ -2,7 +2,9 @@
 // its parser calls, src/mapparser.y: msGeneralize, src/maputil.c; msDensify, msRings2Shape,
 // msGetOuterList, and msIsOuterRing, src/mapprimitive.cpp; msSmoothShapeSIA and its line window
 // and preprocessing, src/mapsmoothing.c; and msPointInPolygon and msDistancePointToPoint,
-// src/mapsearch.c; of the release pinned in scripts/fetch-msautotest.sh.
+// src/mapsearch.c; msGEOSSimplify and the shape's conversion to GEOS's geometry and back,
+// msGEOSShape2Geometry and msGEOSGeometry2Shape, src/mapgeos.c; and msGetInnerList,
+// src/mapprimitive.cpp; of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2008 Regents of the University of Minnesota (src/mapprimitive.cpp).
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
@@ -17,10 +19,12 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0036)
-//! replaces the shape of each feature that passes the layer's filter before it is classed and
-//! drawn. The tree holds `generalize`, `densify`, `outer`, `inner`, and `smoothsia` of `[shape]`,
-//! nested; the frontend has translated MapServer's text into it.
+//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0036,
+//! ADR-draft-transform-tree-with-simplify-and-buffer) replaces the shape of each feature that
+//! passes the layer's filter before it is classed and drawn. The tree holds `generalize`,
+//! `densify`, `simplify`, `outer`, `inner`, and `smoothsia` of `[shape]`, nested; the frontend has
+//! translated MapServer's text into it. `simplify` is computed by the geometry module
+//! (ADR-draft-geometry-through-geo).
 //!
 //! A shape is MapServer's: a type, point, line, or polygon, and a list of parts, a polygon's
 //! rings listed flat, as a source delivers them. What the transforms add or visit is bounded per
@@ -29,13 +33,16 @@
 use forager_style_ir::c::int_cast;
 use forager_style_ir::{Coord, Geometry, NumberOp, Preprocessing, TransformNumber, TransformShape};
 
-/// The most points one layer's transforms add to its shapes, `densify`'s and `smoothsia`'s
-/// preprocessing (Q-9): past it, the layer draws nothing.
+use crate::geometry::{self, Area, Charge};
+
+/// The most points one layer's transforms add to its shapes, `densify`'s, `smoothsia`'s
+/// preprocessing, and `simplify`'s repair (Q-9): past it, the layer draws nothing.
 pub const MAX_ADDED_POINTS: usize = 1_000_000;
 
 /// The most points one layer's transforms visit beyond reading each once, `smoothsia`'s windows
-/// over its passes and the rings `outer` and `inner` test each ring against (Q-9): past it, the
-/// layer draws nothing.
+/// over its passes, the rings `outer`, `inner`, and `simplify` test each ring against, and the
+/// points `simplify`'s Douglas-Peucker scans and its validity test and repair compare (Q-9):
+/// past it, the layer draws nothing.
 pub const MAX_TRANSFORM_VISITS: usize = 100_000_000;
 
 /// Why a layer's `GEOMTRANSFORM` draws nothing.
@@ -74,6 +81,18 @@ impl Budget {
             )));
         }
         Ok(())
+    }
+}
+
+impl Charge for Budget {
+    type Error = Undrawn;
+
+    fn visit(&mut self, points: usize) -> Result<(), Undrawn> {
+        Budget::visit(self, points)
+    }
+
+    fn add(&mut self, points: usize) -> Result<(), Undrawn> {
+        Budget::add(self, points)
     }
 }
 
@@ -164,6 +183,10 @@ impl Eval<'_> {
             TransformShape::Densify(inner, tolerance) => {
                 let shape = self.shape(inner, shape)?;
                 densify(&shape, self.number(tolerance)?, self.budget)
+            }
+            TransformShape::Simplify(inner, tolerance) => {
+                let shape = self.shape(inner, shape)?;
+                simplify(shape, self.number(tolerance)?, self.budget)
             }
             TransformShape::Outer(inner) => {
                 let shape = self.shape(inner, shape)?;
@@ -314,6 +337,106 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
         kind: shape.kind,
         parts,
     })
+}
+
+/// msGEOSSimplify (src/mapgeos.c:922-943): the shape converted to GEOS's geometry by
+/// msGEOSShape2Geometry (:360-399), simplified by GEOS's Douglas-Peucker, and converted back by
+/// msGEOSGeometry2Shape (:686-746), as the geometry module computes it.
+///
+/// - A point shape is its points, which the simplification keeps.
+/// - A line's parts are simplified each; a part without points is dropped.
+/// - A polygon's rings are grouped as msGEOSShape2Geometry_polygon groups them: each outer ring by
+///   msGetOuterList with the inner rings msGetInnerList finds inside it, one polygon where one ring
+///   is outer, a multipolygon otherwise. The result's rings are each polygon's shell and holes.
+///
+/// It fails where MapServer's does: a tolerance below 0, which GEOS refuses; a shape GEOS is not
+/// given, a point shape without points, a line whose first part has fewer than 2, a polygon whose
+/// first ring has fewer than 4; and a part GEOS cannot build, a line's of 1 point or a ring of a
+/// polygon of fewer than 4 or not closed. A ring in no polygon is never built, so it fails nothing.
+/// The tolerance is tested after the shape is built, as GEOS refuses it after
+/// msGEOSShape2Geometry.
+fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
+    let built = match shape.kind {
+        Kind::Point => shape.parts.first().is_some_and(|part| !part.is_empty()),
+        Kind::Line => shape.parts.first().is_some_and(|part| part.len() >= 2),
+        Kind::Polygon => shape.parts.first().is_some_and(|ring| ring.len() >= 4),
+    };
+    if !built {
+        return Err(Undrawn::Failed(
+            "calls simplify on a shape of too few points, which fails in MapServer".to_owned(),
+        ));
+    }
+    if shape.kind == Kind::Line && shape.parts.iter().any(|part| part.len() == 1) {
+        return Err(Undrawn::Failed(
+            "calls simplify on a line part of one point, which GEOS cannot build and which fails \
+             in MapServer"
+                .to_owned(),
+        ));
+    }
+    let areas = match shape.kind {
+        Kind::Polygon => areas(&shape.parts, budget)?,
+        Kind::Point | Kind::Line => Vec::new(),
+    };
+    let unbuilt = |ring: &Vec<Coord>| ring.len() < 4 || ring.first() != ring.last();
+    if areas
+        .iter()
+        .any(|area| unbuilt(&area.shell) || area.holes.iter().any(unbuilt))
+    {
+        return Err(Undrawn::Failed(
+            "calls simplify on a ring of fewer than 4 points or not closed, which GEOS cannot \
+             build and which fails in MapServer"
+                .to_owned(),
+        ));
+    }
+    if tolerance < 0.0 {
+        return Err(Undrawn::Failed(format!(
+            "calls simplify with the tolerance {tolerance}, below 0, which fails in MapServer"
+        )));
+    }
+    let parts = match shape.kind {
+        Kind::Point => shape.parts,
+        Kind::Line => shape
+            .parts
+            .iter()
+            .filter(|part| !part.is_empty())
+            .map(|part| geometry::simplify_line(part, tolerance, budget))
+            .collect::<Result<_, _>>()?,
+        Kind::Polygon => geometry::simplify_areas(&areas, tolerance, budget)?
+            .into_iter()
+            .flat_map(|area| std::iter::once(area.shell).chain(area.holes))
+            .collect(),
+    };
+    Ok(Shape {
+        kind: shape.kind,
+        parts,
+    })
+}
+
+/// msGEOSShape2Geometry_polygon (src/mapgeos.c:322-358): a polygon of each ring msGetOuterList
+/// finds outer, in their order, with the rings msGetInnerList (src/mapprimitive.cpp:353-385) finds
+/// inside it, those not outer whose first or second point lies in it by msPointInPolygon. A ring
+/// neither outer nor inside an outer one is in no polygon. The tests of each ring against every
+/// other are charged to `budget` first.
+fn areas(rings: &[Vec<Coord>], budget: &mut Budget) -> Result<Vec<Area>, Undrawn> {
+    let points: usize = rings.iter().map(Vec::len).sum();
+    budget.visit(points.saturating_mul(rings.len()).saturating_mul(2))?;
+    let outer = (0..rings.len())
+        .map(|r| is_outer_ring(rings, r))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((0..rings.len())
+        .filter(|&r| outer[r])
+        .map(|r| Area {
+            shell: rings[r].clone(),
+            holes: (0..rings.len())
+                .filter(|&i| {
+                    !outer[i]
+                        && (point_in_polygon(rings[i][0], &rings[r])
+                            || point_in_polygon(rings[i][1], &rings[r]))
+                })
+                .map(|i| rings[i].clone())
+                .collect(),
+        })
+        .collect())
 }
 
 /// msRings2Shape (src/mapprimitive.cpp:2588-2625): the rings of a polygon that msGetOuterList

@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::{
-    Bound, LayerStatus, NotDrawn, RenderMode, Rgba, Severity, ShapeType, Span, TransformShape,
-    TransformTree,
+    Bound, LayerStatus, NotDrawn, RenderMode, Rgba, Severity, ShapeType, Span, TransformNumber,
+    TransformShape, TransformTree,
 };
 
 use super::{Loaded, load};
@@ -1978,7 +1978,7 @@ fn a_maxfeatures_of_zero_is_an_error() {
 
 #[test]
 fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     // loadLayer reads GEOMTRANSFORM by getSymbol(1, MS_EXPRESSION): an expression alone.
     let layer_transform = |text: &'static str| {
         let loaded = load_files(&[("m.map", text)]);
@@ -2002,7 +2002,10 @@ fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
     assert!(codes.is_empty(), "{codes:?}");
     assert_eq!(
         transform,
-        Some(Some(TransformTree::NotDrawn(NotDrawn::Simplify)))
+        Some(Some(TransformTree::Drawn(TransformShape::Simplify(
+            Box::new(TransformShape::Shape),
+            TransformNumber::Number(25.0)
+        ))))
     );
     let (codes, transform) =
         layer_transform("MAP LAYER NAME 'a' GEOMTRANSFORM (outer([shape]) 2) END END");
@@ -2018,7 +2021,7 @@ fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
 
 #[test]
 fn a_geomtransform_past_the_nesting_bound_fails_the_load() {
-    // Verifies: Q-9, ADR-0036
+    // Verifies: Q-9, ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     let chain = vec!["1"; 26].join(" + ");
     for place in [
         format!("MAP LAYER NAME 'a' GEOMTRANSFORM (densify([shape], {chain})) END END"),

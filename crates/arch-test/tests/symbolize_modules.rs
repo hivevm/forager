@@ -74,10 +74,11 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("tile", &["bounds", "symbol"]),
     ("symbol", &["bounds", "glyph", "style"]),
     ("geom_transform", &["extent"]),
+    ("layer_transform", &["geometry"]),
     ("bounds", &[]),
     ("extent", &[]),
+    ("geometry", &[]),
     ("glyph", &[]),
-    ("layer_transform", &[]),
     ("offset", &[]),
     ("style", &[]),
 ];

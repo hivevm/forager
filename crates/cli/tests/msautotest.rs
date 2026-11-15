@@ -654,6 +654,55 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
     ));
 }
 
+/// A layer of `simplify` over a zigzag of 6,000 points whose amplitude shrinks, so that the
+/// Douglas-Peucker keeps every point, one section deeper for each: geo's recursive `Simplify`
+/// trapped with a stack overflow at 1,000 such points in wasmi. The layer renders natively and on
+/// wasm32 without a trap, to the same RGBA buffer (Q-3, G-9).
+#[test]
+#[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
+fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm32() {
+    // Verifies: ADR-draft-geometry-through-geo
+    let module = std::fs::read(conformance_module()).expect("the conformance module reads");
+    let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
+    let n = 6_000_u32;
+    let points: Vec<String> = (0..n)
+        .map(|i| {
+            let amplitude = n - i;
+            if i % 2 == 0 {
+                format!("{i} {amplitude}")
+            } else {
+                format!("{i} -{amplitude}")
+            }
+        })
+        .collect();
+    let mapfile = format!(
+        "MAP SIZE 200 200 EXTENT 0 -6000 6000 6000 \
+         LAYER NAME 'zigzag' TYPE LINE STATUS ON GEOMTRANSFORM (simplify([shape], 0.5)) \
+         FEATURE POINTS {} END END \
+         CLASS STYLE COLOR 0 0 255 END END END END",
+        points.join(" ")
+    );
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("zigzag");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("zigzag.map");
+    std::fs::write(&path, mapfile).unwrap();
+    let (base, name) = FileLoader::for_mapfile(&path, None).unwrap();
+    let path = ResourcePath::new(&name).unwrap();
+    let loaded = forager_cli::now(forager_mapfile::load(&path, &base.for_load(), None)).unwrap();
+    let map = loaded.document.expect("the mapfile loads").map;
+    let document = StyleDocument::new(map).to_json().unwrap();
+    let (native, files) = wasm::native(&document, &base.for_load());
+    let (_, _, pixels) = native.as_ref().expect("the native render");
+    assert!(
+        pixels.chunks(4).any(|p| p[2] > p[0]),
+        "the simplified zigzag is drawn in blue, not refused"
+    );
+    let rendered = module
+        .render(&document, &files)
+        .expect("the module renders without a trap");
+    assert_eq!(wasm::difference(&native, &rendered), None);
+}
+
 /// The cases whose `blank` marker in the list disagrees with their reference: a case is blank
 /// when its reference is a PNG that [`metric::blank`] finds nearly one colour by the metric of its
 /// category, or by [`GEOMETRY`] when it is out of scope, an image of its most common colour

@@ -57,7 +57,7 @@ fn drawn(shape: TransformShape) -> TransformTree {
 
 #[test]
 fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     // Every GEOMTRANSFORM expression of the msautotest suite at 7515cccf (rel-8-6-6), as the
     // mapfile's token holds it.
     assert_eq!(
@@ -72,6 +72,14 @@ fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
         tree("(generalize([shape],50))"),
         drawn(TransformShape::Generalize(shape(), num(50.0)))
     );
+    assert_eq!(
+        tree("(simplify([shape],25))"),
+        drawn(TransformShape::Simplify(shape(), num(25.0)))
+    );
+    assert_eq!(
+        tree("(simplify([shape],10))"),
+        drawn(TransformShape::Simplify(shape(), num(10.0)))
+    );
     for (text, reason) in [
         ("(centerline([shape]))", NotDrawn::Centerline),
         ("(centerline(densify([shape], 5)))", NotDrawn::Centerline),
@@ -80,8 +88,6 @@ fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
             "(smoothsia(centerline(densify([shape], 5))))",
             NotDrawn::Centerline,
         ),
-        ("(simplify([shape],25))", NotDrawn::Simplify),
-        ("(simplify([shape],10))", NotDrawn::Simplify),
         ("(simplifypt([shape],50))", NotDrawn::Simplifypt),
         ("(buffer([shape], 1))", NotDrawn::Buffer),
         ("(buffer([shape], -1))", NotDrawn::Buffer),
@@ -99,7 +105,7 @@ fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
 
 #[test]
 fn each_function_of_the_tree_translates_with_its_arguments() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     assert_eq!(tree("([shape])"), drawn(TransformShape::Shape));
     assert_eq!(
         tree("(densify(([shape]), 2.5))"),
@@ -148,7 +154,7 @@ fn each_function_of_the_tree_translates_with_its_arguments() {
 
 #[test]
 fn literal_arithmetic_folds_and_map_cellsize_is_kept() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     let tolerance = |text: &str| match tree(&format!("(densify([shape], {text}))")) {
         TransformTree::Drawn(TransformShape::Densify(_, number)) => number,
         other => panic!("{text}: {other:?}"),
@@ -193,7 +199,7 @@ fn literal_arithmetic_folds_and_map_cellsize_is_kept() {
 
 #[test]
 fn a_unary_minus_leaves_its_operand_un_negated() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     // `'-' math_exp %prec NEG { $$ = $2; }`; `-3` written together is one number token.
     let tolerance = |text: &str| match tree(&format!("(densify([shape], {text}))")) {
         TransformTree::Drawn(TransformShape::Densify(_, number)) => number,
@@ -210,7 +216,7 @@ fn a_unary_minus_leaves_its_operand_un_negated() {
 
 #[test]
 fn the_first_construct_without_a_node_names_the_reason() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     for (text, reason) in [
         ("(difference([shape], [shape]))", NotDrawn::Difference),
         ("(javascript([shape], 'f.js'))", NotDrawn::Javascript),
@@ -258,7 +264,7 @@ fn the_first_construct_without_a_node_names_the_reason() {
 
 #[test]
 fn a_syntax_error_is_warned_with_its_place() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     for (text, found, at) in [
         ("(generalize([shape]))", "`)` where `,` is due", 19),
         ("(outer([shape], 2))", "`,` where `)` is due", 14),
@@ -314,7 +320,7 @@ fn a_syntax_error_is_warned_with_its_place() {
 
 #[test]
 fn a_syntax_error_takes_precedence_over_an_earlier_construct_without_a_node() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     // MapServer refuses the whole expression, so `buffer` before the error names nothing.
     let (what, at) = syntax("(buffer([shape],1) 2)");
     assert!(what.contains("`2` after the shape"), "{what}");
@@ -323,7 +329,7 @@ fn a_syntax_error_takes_precedence_over_an_earlier_construct_without_a_node() {
 
 #[test]
 fn data_cellsize_folds_to_0_as_on_a_layer_that_is_no_contour() {
-    // Verifies: ADR-0036
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
     // msGeomTransformShape sets p.dblval2 = 0 and reads `__data_cellsize__` only for a contour
     // layer (src/mapgeomtransform.c:285-291).
     assert_eq!(
@@ -346,7 +352,7 @@ fn a_diagnostic_quotes_the_expression_bounded() {
 
 #[test]
 fn a_chain_of_25_operators_is_refused_as_too_deep_without_overflowing_the_stack() {
-    // Verifies: ADR-0036, Q-9
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer, Q-9
     // densify (1), its number's chain of `+` below it, its last operands one level further:
     // 22 operators nest 24 levels and translate; 23 and 25 pass the bound.
     let chain = |operators: usize| {

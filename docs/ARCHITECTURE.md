@@ -34,7 +34,9 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0015](adr/0015-expressions-as-cql2.md)), its `GEOMTRANSFORM` expressions, of a layer and
   of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
   no text of the mapfile and is read to the same nesting bound (`transform.rs`,
-  ADR-0036), the diagnostics with their source spans, and the
+  ADR-0036,
+  [ADR-draft-transform-tree-with-simplify-and-buffer](adr/draft-transform-tree-with-simplify-and-buffer.md)),
+  the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
   class's `Style` may leave it out, a label's `Style<LabelTransform>` always names `labelpoint`,
@@ -260,15 +262,19 @@ golden path and the test pattern an agent copies from are named here.
   cache of six tiles, counted with the decoded images (`tile.rs`); line offsets (`offset.rs`); and
   the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a layer's
   `GEOMTRANSFORM`, its transform tree evaluated on each feature's shape before the engine classes
-  it, what its transforms add and visit held to a budget per layer (`layer_transform.rs`, Q-9). A
+  it, what its transforms add and visit held to a budget per layer (`layer_transform.rs`, Q-9),
+  `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
+  collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
+  geo crate (`geometry.rs`, [ADR-draft-geometry-through-geo](adr/draft-geometry-through-geo.md)). A
   line style's symbol with a
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`,
   `label.rs`, and `circle.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`, `canvas.rs`,
-  `hatch.rs`, `line_marker.rs` and `tile.rs`, `symbol.rs`, and `geom_transform.rs`, and
-  `bounds.rs`, `style.rs`, `extent.rs`, `layer_transform.rs`, and `offset.rs` the leaves, as
+  `hatch.rs`, `line_marker.rs` and `tile.rs`, `symbol.rs`, `geom_transform.rs`, and
+  `layer_transform.rs`, and `bounds.rs`, `style.rs`, `extent.rs`, `geometry.rs`, and `offset.rs`
+  the leaves, as
   `lib.rs` lists them; ADR-0008 decides the direction only between crates, and `arch-test`'s
   `tests/symbolize_modules.rs` holds this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
@@ -312,7 +318,10 @@ golden path and the test pattern an agent copies from are named here.
   [ADR-0026](adr/0026-agg-blender-and-resampler.md)), builds a tile the first time
   it fills with it, in a transparent image of its own, and repeats it from the image's origin, and
   is the one crate that may use `unsafe` ([ADR-0025](adr/0025-agg-rust-rasterizer.md)); it cuts a
-  hatch from its polygon with i_overlay, the one crate that depends on it (ADR-0028).
+  hatch from its polygon with i_overlay, the one crate of the workspace that depends on it
+  directly
+  ([ADR-draft-i-overlay-in-render-agg-and-geo](adr/draft-i-overlay-in-render-agg-and-geo.md);
+  geo brings its own i_overlay into `symbolize`).
 - **`encode`** — PNG from and to an RGBA image, and a pixmap symbol's PNG decoded as MapServer's
   `readPNG` decodes it, premultiplied, its header held to Q-9's 4096 × 4096 before anything is
   allocated for it (`pixmap.rs`, [ADR-0030](adr/0030-png-encoder.md),
@@ -370,13 +379,14 @@ golden path and the test pattern an agent copies from are named here.
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`
   ([ADR-0025](adr/0025-agg-rust-rasterizer.md)), skrifa outside `label` (ADR-0031), `regex`
-  outside `expr` ([ADR-0016](adr/0016-expression-evaluation.md)), and i_overlay outside
-  `render-agg` (ADR-0028), `adapter-shapefile` as a dependency of `bindings-wasm`
-  ([ADR-0024](adr/0024-browser-bindings-bind-geojson-only.md)), `wasmi` anywhere but among the
-  dev-dependencies of `cli` ([ADR-0034](adr/0034-wasm-renders-compared-in-wasmi.md)), and a
-  future polled with a no-op waker anywhere but `poll_once` of `ports`, and requires every crate
-  on the output path, the IR, the core, the ports, the frontend, and the adapters, to turn on the
-  lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them
+  outside `expr` ([ADR-0016](adr/0016-expression-evaluation.md)), i_overlay as a direct
+  dependency of any package but `render-agg` and geo, and geo outside `symbolize`
+  (ADR-draft-i-overlay-in-render-agg-and-geo), `adapter-shapefile` as a dependency of
+  `bindings-wasm` ([ADR-0024](adr/0024-browser-bindings-bind-geojson-only.md)), `wasmi` anywhere
+  but among the dev-dependencies of `cli` ([ADR-0034](adr/0034-wasm-renders-compared-in-wasmi.md)),
+  and a future polled with a no-op waker anywhere but `poll_once` of `ports`, and requires every
+  crate on the output path, the IR, the core, the ports, the frontend, and the adapters, to turn on
+  the lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them
   nowhere but the one test time bound it names; the hosts alone are free. It holds the
   clippy.toml of `engine`, `label`, and `symbolize`, which clippy reads in place of the
   workspace's, to those lists with the bans of `min` and `max` of `f64` and `f32` added, and
