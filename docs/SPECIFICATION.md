@@ -64,8 +64,6 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
 6. **G-6** — When a msautotest case of the category geometry and symbols is rendered, its RGBA
    buffer shall match the reference image: a pixel differs when one of its channels differs by more
    than 16, and the case passes when at most 0.1 % of its pixels differ.
-7. **G-7** — When a filter is evaluated with and without pushdown, the system shall return
-   identical feature sets.
 8. **G-8** — When a layer's source has no bound adapter or its adapter fails, the system shall
    skip the layer and emit a diagnostic naming the layer, the source kind, and the source span.
 9. **G-9** — When the same input is rendered natively and on `wasm32-unknown-unknown`, the system
