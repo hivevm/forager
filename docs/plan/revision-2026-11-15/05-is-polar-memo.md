@@ -33,7 +33,7 @@ scope reaches it.
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/02-proj-repeated-logic.md (both touch `rect.rs`)
+- docs/plan/revision-2026-11-15/02-proj-repeated-logic.md
 
 ## Mode
 

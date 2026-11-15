@@ -33,9 +33,10 @@ holds or move the factors out, and rename `label_cache.rs` for what it holds. Th
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/03-engine-reprojection-interface.md (both touch `lib.rs`)
+- docs/plan/revision-2026-11-15/03-engine-reprojection-interface.md
 
 ## Mode
 
-unattended: the arch test and the unchanged suite decide it; one revert. Stop when a test's
-expected value moves or the module direction needs a cycle.
+unattended: the arch test and the unchanged suite decide it; one revert. Stop when a test's expected
+value moves or the module direction needs a cycle. It touches nothing ADR-0006 keeps with the human,
+and it counts against ADR-0006's cap of three open agent branches.

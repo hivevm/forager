@@ -21,8 +21,8 @@ reprojects arbitrary points, rectangles, and shapes between two of them.
 
 - [ ] Given `scripts/fuzz.sh` run briefly over each target, when it starts, then the new seeds
   load and the target `proj` runs.
-- [ ] Given the `proj` target, when it runs for 10 minutes locally, then no panic is found, or
-  the panic is filed with its seed as its own ticket.
+- [ ] Given the `proj` target, when it runs for 10 minutes locally, then it ends without a
+  crash.
 
 ## Read first
 
@@ -36,5 +36,7 @@ reprojects arbitrary points, rectangles, and shapes between two of them.
 
 ## Mode
 
-unattended: the fuzz run decides it, and a seed or a target costs one revert. Stop after 10
-minutes of fuzzing; a panic found is a defect for its own ticket.
+unattended: the fuzz run decides it, and a seed or a target costs one revert. Stop after 10 minutes
+of fuzzing. A panic found is a defect for its own ticket, filed with its seed, and this ticket hands
+off. It touches nothing ADR-0006 keeps with the human, and it counts against ADR-0006's cap of three
+open agent branches.

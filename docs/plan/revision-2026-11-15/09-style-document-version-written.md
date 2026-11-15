@@ -39,8 +39,7 @@ Then align the message, the stamp, the README, and the schema directory.
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/01-map-projection-held-once.md (both touch the map's projection in
-  `document.rs`)
+- docs/plan/revision-2026-11-15/01-map-projection-held-once.md
 
 ## Mode
 

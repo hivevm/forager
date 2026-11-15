@@ -38,9 +38,9 @@ correct the doc comment, and add the divergence to `docs/semantics/projection.md
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/01-map-projection-held-once.md (the map's projection in the IR)
+- docs/plan/revision-2026-11-15/01-map-projection-held-once.md
 
 ## Mode
 
-with the human: a field of the style IR, or a stated divergence from MapServer, is the
-maintainer's choice, and a port of GEOS's cut is a decision for an ADR.
+with the human: a field of the style IR, or a stated divergence from MapServer, is the maintainer's
+choice, and a port of GEOS's cut is a decision for an ADR.

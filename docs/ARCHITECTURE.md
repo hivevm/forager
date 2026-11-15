@@ -45,10 +45,10 @@ golden path and the test pattern an agent copies from are named here.
   with each unknown value dropped, each condition that does not read kept as `false`, and each
   transform tree's unknown `not_drawn` reason kept not drawn, at most
   a hundred times (Q-9); a document of an older major is migrated on its value tree by the chain
-  of steps in `migration.rs`, one major at a time, each step leaving it at its major's
-  `<major>.0`, and then read by the current version's reader. The current format version is 1.1,
-  which adds a map's `projection_auto`, a map of `PROJECTION AUTO` held apart from a map without
-  a projection; a layer's projection is a proj4 string or `from_source`. Its
+  of steps in `migration.rs`, one major at a time, each step stamping it with the `.0` of the
+  major it migrates to, and then read by the current version's reader. The current format
+  version is 1.1, which adds a map's `projection_auto`, a map of `PROJECTION AUTO` held apart from
+  a map without a projection; a layer's projection is a proj4 string or `from_source`. Its
   `schema` feature derives the JSON Schema of the current format version with schemars, checked
   in under `schema/` (`style-document-1.1.json`, beside the unreleased 1.0 file, which nothing
   checks any more); `tests/schema.rs` compares a fresh derivation with that file on every push
@@ -139,7 +139,9 @@ golden path and the test pattern an agent copies from are named here.
   where none of them reprojects, all longitudes where a polar projection's pole lies inside it,
   with the `+over` it adds. It reprojects a shape's lines as `msProjectShapeLine` does and a point
   shape's as `msProjectLineEx` does (`shape.rs`): cut at the horizon, wrapped at the dateline;
-  it says where MapServer would cut a line shape with GEOS, which it does not port. These ports of
+  it says where MapServer would cut a line shape with GEOS, which it does not port, for a
+  projected source whose origin is the north pole into longitude and latitude; MapServer's other
+  cases, a target written `init=epsg:3857` among them, it does not see. These ports of
   MapServer's `mapproject.c` live here beside the port of PROJ. Its test `tests/reference.rs`
   holds points, rectangles, and shapes against the records MapServer's call of PROJ wrote at the
   pinned build, under `tests/reference/` (ADR-0038, G-11).
@@ -155,8 +157,8 @@ golden path and the test pattern an agent copies from are named here.
   each layer's base geographic CRS, and draws nothing of a layer whose projection does not read,
   with a warning (`reproject.rs`); a layer of `PROJECTION AUTO` takes the projection its bound
   source declares (ADR-0039), longitude and latitude with a warning where that does not read; a
-  layer with lines that MapServer would cut with GEOS is drawn uncut with a warning
-  (`lines-not-cut`); replaces the shape of
+  layer with lines from such a polar source into longitude and latitude is drawn uncut with a
+  warning (`lines-not-cut`); replaces the shape of
   each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
   up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
   tree is `not_drawn` or fails, with a warning (`classes.rs`,

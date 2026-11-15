@@ -34,8 +34,7 @@ reader calls, and how it loads projections. It travels in a commit of ADRs only.
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/18-spec-g11-what-it-measures.md (G-11's wording is what the ADR
-  serves)
+- docs/plan/revision-2026-11-15/18-spec-g11-what-it-measures.md
 
 ## Mode
 

@@ -32,4 +32,5 @@ no exterior.
 ## Mode
 
 unattended: the test decides it; one revert. Stop when the invariant fails on the tree as it is.
-That is a defect for its own ticket.
+That is a defect for its own ticket. It touches nothing ADR-0006 keeps with the human, and it counts
+against ADR-0006's cap of three open agent branches.

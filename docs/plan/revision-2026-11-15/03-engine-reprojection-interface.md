@@ -26,8 +26,10 @@
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/01-map-projection-held-once.md (both touch `reproject.rs`)
+- docs/plan/revision-2026-11-15/01-map-projection-held-once.md
 
 ## Mode
 
-unattended: the engine's tests decide it; one revert. Stop when a test's expected value moves.
+unattended: the engine's tests decide it; one revert. Stop when a test's expected value moves. It
+touches nothing ADR-0006 keeps with the human, and it counts against ADR-0006's cap of three open
+agent branches. The bound of Q-9 itself, `MAX_HORIZON_POINTS`, does not change.

@@ -24,7 +24,8 @@ of a map of `AUTO`, and the shortcut into longitude and latitude. The engine cal
 ## Acceptance criteria
 
 - [ ] Given every style document the tests read, when the change lands, then each serializes byte
-  for byte as before and `schema/style-document-1.1.json` is unchanged.
+  for byte as before, and `schema/style-document-1.1.json` changes only in the descriptions the
+  maintainer reviewed.
 - [ ] Given the engine's tests of `crates/engine/tests/reproject.rs`, when they run, then every
   expected value holds unchanged.
 - [ ] Given `crates/engine/src/reproject.rs`, when the change lands, then it holds no enum or
@@ -44,6 +45,7 @@ of a map of `AUTO`, and the shortcut into longitude and latitude. The engine cal
 
 ## Mode
 
-unattended: the schema test, the round trips of G-3, and the engine's tests decide it; one revert.
-Stop when the schema file or a serialized document would change, or when a test's expected value
-moves.
+with the human: the map's projection is a field of the style document, whose format ADR-0006 never
+leaves unattended. Its doc comment is the schema's description, so the enum changes
+`schema/style-document-1.1.json` even where the wire shape stays. The schema test, the round trips
+of G-3, and the engine's tests decide the rest.

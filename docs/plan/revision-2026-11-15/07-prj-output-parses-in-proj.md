@@ -13,8 +13,9 @@ reads a `.prj` fixture per branch of `method_proj4`. It parses each string with
 
 - [ ] Given a `.prj` fixture for each branch of `method_proj4`, when the test runs, then each
   declared proj4 string parses in `proj`.
-- [ ] Given a new branch of `method_proj4` without a fixture, when the test runs, then it fails
-  and names the branch, or the test states why it cannot enumerate them.
+- [ ] Given a `.prj` of each projection name `method_proj4` matches, the names read from its
+  `match`, when the test runs, then the test holds a fixture for each name and fails naming one it
+  lacks.
 
 ## Read first
 
@@ -28,5 +29,6 @@ reads a `.prj` fixture per branch of `method_proj4`. It parses each string with
 
 ## Mode
 
-unattended: the test decides it; one revert. Stop when a branch's string does not parse. That is
-a defect for its own ticket, not this one's to fix.
+unattended: the test decides it; one revert. Stop when a branch's string does not parse. That is a
+defect for its own ticket, not this one's to fix. It touches nothing ADR-0006 keeps with the human,
+and it counts against ADR-0006's cap of three open agent branches.

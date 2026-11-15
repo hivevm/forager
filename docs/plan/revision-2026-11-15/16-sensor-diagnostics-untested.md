@@ -30,9 +30,10 @@ review skill already hands every sensor's output to the reviewer.
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/14-scripts-and-headers.md (both touch the self-tests' helpers)
+- docs/plan/revision-2026-11-15/14-scripts-and-headers.md
 
 ## Mode
 
-unattended: the self-test decides it; one revert. Stop when the codes cannot be read without a
-Rust parser. That is a judgement on the sensor's worth, for the maintainer.
+unattended: the self-test decides it; one revert. Stop when the codes cannot be read without a Rust
+parser. That is a judgement on the sensor's worth, for the maintainer. It touches nothing ADR-0006
+keeps with the human, and it counts against ADR-0006's cap of three open agent branches.

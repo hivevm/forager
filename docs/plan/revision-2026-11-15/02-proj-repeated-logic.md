@@ -10,7 +10,9 @@ The reprojection's code writes the same logic or the same constant more than onc
 - the wrap by ±360° of `msProjectShapeLine`, twice: `shape.rs:113-118` and `shape.rs:202-207`;
 - WGS84's semi-major axis and flattening at `crates/proj/src/params.rs:135-136` and again in the
   table at `params.rs:144`, and its `es` written as a literal at `params.rs:196-197`;
-- the middle column of `DATUMS` (`params.rs:150`), a `towgs84` no code reads (`params.rs:178-183`);
+- the middle column of `DATUMS` (`params.rs:150`), a `towgs84` no code reads (`params.rs:178-183`).
+  Its doc comment (`params.rs:147-148`) keeps it "as PROJ's table holds it". ADR-0037's *Scope*
+  holds `proj` to what a case needs, and a value no code reads is needed by none;
 - `Reprojection::shape_line` and the re-export of `ShapeLines` (`crates/proj/src/lib.rs:65`,
   `shape.rs:35,84`) are public, but only `rect.rs` uses them;
 - the `.prj` reader ends the C string at its first NUL inline
@@ -37,9 +39,10 @@ Each becomes one function or one constant, the items `pub(crate)`, and the reade
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/01-map-projection-held-once.md (both touch `rect.rs`)
+- docs/plan/revision-2026-11-15/01-map-projection-held-once.md
 
 ## Mode
 
 unattended: the reference records of G-11 and the unit tests decide it; one revert. Stop when an
-expected value or a record would move.
+expected value or a record would move. It touches nothing ADR-0006 keeps with the human, and it
+counts against ADR-0006's cap of three open agent branches.

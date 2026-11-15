@@ -33,5 +33,5 @@ names a source the table lacks, or lacks a line the table gives.
 
 ## Mode
 
-unattended: the self-test decides it; one revert. Stop when PROJ 9.4.0's sources cannot be read
-for the table.
+with the human: the check is about the licences, which ADR-0006 never leaves unattended. The
+self-test decides it. Stop when PROJ 9.4.0's sources cannot be read for the table.
