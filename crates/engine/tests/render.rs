@@ -177,6 +177,77 @@ fn an_image_past_the_size_limit_is_an_error() {
 }
 
 #[test]
+fn a_map_without_size_or_extent_is_an_error_and_draws_nothing() {
+    let mut no_size = map(RenderMode::Polygon, Style::default());
+    no_size.size = None;
+    let rendered = render_with(&no_size, Some(SQUARE_WITH_HOLE));
+    assert!(rendered.image.is_none());
+    assert_eq!(codes(&rendered), ["size-missing"]);
+    let mut no_extent = map(RenderMode::Polygon, Style::default());
+    no_extent.extent = None;
+    let rendered = render_with(&no_extent, Some(SQUARE_WITH_HOLE));
+    assert!(rendered.image.is_none());
+    assert_eq!(codes(&rendered), ["extent-missing"]);
+}
+
+#[test]
+fn a_size_and_extent_that_give_no_scale_are_an_error_and_draw_nothing() {
+    // An image one pixel a side, an empty extent, a corner that is not finite, and finite corners
+    // whose cellsize is not.
+    let mut one_pixel = map(RenderMode::Polygon, Style::default());
+    one_pixel.size = Some([1, 1]);
+    let mut empty = map(RenderMode::Polygon, Style::default());
+    empty.extent = Some(Extent {
+        min_x: 50.0,
+        min_y: 50.0,
+        max_x: 50.0,
+        max_y: 50.0,
+    });
+    let mut infinite = map(RenderMode::Polygon, Style::default());
+    infinite.extent.as_mut().unwrap().max_x = f64::INFINITY;
+    let mut overflowing = map(RenderMode::Polygon, Style::default());
+    let extent = overflowing.extent.as_mut().unwrap();
+    (extent.min_x, extent.max_x) = (-f64::MAX, f64::MAX);
+    for unscaled in [one_pixel, empty, infinite, overflowing] {
+        let rendered = render_with(&unscaled, Some(SQUARE_WITH_HOLE));
+        assert!(rendered.image.is_none());
+        assert_eq!(codes(&rendered), ["view-invalid"]);
+    }
+}
+
+#[test]
+fn a_raster_layer_is_not_drawn_and_the_other_layers_draw_as_before() {
+    let style = Style {
+        color: Some(Bound::Value(GREEN)),
+        ..Style::default()
+    };
+    let alone = render_with(
+        &map(RenderMode::Polygon, style.clone()),
+        Some(SQUARE_WITH_HOLE),
+    );
+    let mut with_raster = map(RenderMode::Polygon, style);
+    with_raster.layers.push(Layer {
+        name: Some("relief".into()),
+        render_mode: Some(RenderMode::Raster),
+        status: Some(LayerStatus::On),
+        span: Some(Span::new("m.map", 9, 1)),
+        ..Layer::default()
+    });
+    let rendered = render_with(&with_raster, Some(SQUARE_WITH_HOLE));
+    assert_eq!(codes(&rendered), ["layer-not-drawn"]);
+    let warning = &rendered.diagnostics[0];
+    assert!(warning.message.contains("relief"), "{}", warning.message);
+    assert_eq!(warning.span, Some(Span::new("m.map", 9, 1)));
+    let image = alone.image.unwrap();
+    assert_eq!(
+        image.pixel(25, 75),
+        Some(GREEN),
+        "the polygon layer draws alone"
+    );
+    assert_eq!(rendered.image, Some(image));
+}
+
+#[test]
 fn a_layer_without_status_is_off_as_in_mapserver() {
     let mut no_status = map(
         RenderMode::Polygon,
