@@ -252,3 +252,133 @@ fn the_area_asked_of_a_source_is_mapserver_s_rectangle_within_g_11() {
         outside.join("\n")
     );
 }
+
+const SHAPES: &str = include_str!("reference/shapes.tsv");
+const SHAPES_RECORD_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/reference/mapserver-shapes.tsv"
+);
+
+/// The points of `text`, `x,y x,y ...`.
+fn shape_points(text: &str) -> Vec<Coord> {
+    text.split(' ')
+        .map(|xy| {
+            let (x, y) = xy.split_once(',').expect("x,y");
+            Coord {
+                x: x.parse().unwrap(),
+                y: y.parse().unwrap(),
+            }
+        })
+        .collect()
+}
+
+/// The lines a shape of `kind` is left with, as `msProjectShapeEx` leaves them: `None` where it
+/// fails.
+fn reprojected_shape(
+    way: &Reprojection,
+    kind: &str,
+    lines: &[Vec<Coord>],
+) -> Option<Vec<Vec<Coord>>> {
+    if kind == "point" {
+        let kept: Vec<Vec<Coord>> = lines
+            .iter()
+            .filter_map(|line| {
+                let mut line = line.clone();
+                way.point_line(&mut line).ok().map(|_| line)
+            })
+            .collect();
+        return (!kept.is_empty()).then_some(kept);
+    }
+    let mut placed = lines.to_vec();
+    let mut added = Vec::new();
+    for (i, line) in lines.iter().enumerate().rev() {
+        let reprojected = way.shape_line(line, kind == "polygon");
+        placed[i] = reprojected.first;
+        added.extend(reprojected.added);
+    }
+    placed.extend(added);
+    Some(placed)
+}
+
+#[test]
+fn the_core_cuts_and_wraps_shapes_as_mapserver_reprojects_them_within_g_11() {
+    // Verifies: G-11
+    // Verifies: ADR-0038
+    let (proj, mapserver, recorded) = record(SHAPES_RECORD_PATH);
+    let shapes: Vec<&str> = SHAPES
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    assert_eq!(
+        recorded.len(),
+        shapes.len(),
+        "the record holds a line for each shape of the list"
+    );
+    let mut outside = Vec::new();
+    let mut spread: f64 = 0.0;
+    for (line, recorded) in shapes.iter().zip(&recorded) {
+        let Some(result) = recorded
+            .strip_prefix(line)
+            .and_then(|r| r.strip_prefix('\t'))
+        else {
+            panic!("the record's line {recorded:?} is not that of the shape {line:?}");
+        };
+        let f: Vec<&str> = line.split('\t').collect();
+        let way = Reprojection::new(
+            Projection::parse(f[0]).unwrap(),
+            Projection::parse(f[1]).unwrap(),
+        );
+        let lines: Vec<Vec<Coord>> = f[3].split('|').map(shape_points).collect();
+        let ours = reprojected_shape(&way, f[2], &lines);
+        let theirs: Option<Vec<Vec<Coord>>> = (result != "fail").then(|| {
+            result
+                .split('\t')
+                .map(|l| {
+                    if l == "-" {
+                        Vec::new()
+                    } else {
+                        shape_points(l)
+                    }
+                })
+                .collect()
+        });
+        match (theirs, ours) {
+            (None, None) => {}
+            (theirs, ours) => {
+                let (Some(theirs), Some(ours)) = (&theirs, &ours) else {
+                    outside.push(format!("{line}: MapServer {theirs:?}, proj {ours:?}"));
+                    continue;
+                };
+                let shapes_of = |s: &Vec<Vec<Coord>>| s.iter().map(Vec::len).collect::<Vec<_>>();
+                if shapes_of(theirs) != shapes_of(ours) {
+                    outside.push(format!(
+                        "{line}: MapServer's lines hold {:?} points, proj's {:?}",
+                        shapes_of(theirs),
+                        shapes_of(ours)
+                    ));
+                    continue;
+                }
+                for (a, b) in theirs.iter().flatten().zip(ours.iter().flatten()) {
+                    let d = metres(*a, *b, geographic(f[1]));
+                    spread = spread.max(d);
+                    if d.is_nan() || d > TOLERANCE_METRES {
+                        outside.push(format!("{line}: {b:?} lies {d} m from MapServer's {a:?}"));
+                    }
+                }
+            }
+        }
+    }
+    report(&format!(
+        "G-11: the largest distance of the points of {} shapes from MapServer's ({}, {}) is \
+         {spread:e} m",
+        shapes.len(),
+        proj.trim_start_matches("# "),
+        mapserver.trim_start_matches("# ")
+    ));
+    assert!(
+        outside.is_empty(),
+        "{} differences from MapServer's shapes:\n{}",
+        outside.len(),
+        outside.join("\n")
+    );
+}
