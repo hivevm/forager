@@ -759,7 +759,7 @@ fn horizon_points_limit(layer: &Layer) -> Diagnostic {
 }
 
 /// The projection the source bound to a layer of `PROJECTION AUTO` declares
-/// (ADR-draft-declared-projection), none for any other layer or one read from its inline
+/// (ADR-0039), none for any other layer or one read from its inline
 /// features; one that does not read is none, with a warning naming the layer and the file, where
 /// MapServer writes a debug message.
 fn declared_projection<S: FeatureSource>(

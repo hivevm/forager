@@ -737,7 +737,7 @@ mod projections {
     /// and latitude, as its source declares (G-5).
     #[test]
     fn a_geojson_layer_of_auto_is_reprojected_from_wgs84_longitude_and_latitude() {
-        // Verifies: ADR-draft-declared-projection, G-5
+        // Verifies: ADR-0039, G-5
         let mapfile = |projection: &str| {
             format!(
                 "MAP SIZE 11 11 EXTENT 400000 5450000 600000 5650000\n\

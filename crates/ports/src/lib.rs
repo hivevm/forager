@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn a_source_that_declares_nothing_declares_no_projection() {
-        // Verifies: ADR-draft-declared-projection
+        // Verifies: ADR-0039
         struct Silent;
         impl FeatureSource for Silent {
             async fn features(&self, _: &FeatureQuery) -> Result<Features, SourceError> {
@@ -510,14 +510,14 @@ pub trait FeatureSource {
     async fn features(&self, query: &FeatureQuery) -> Result<Features, SourceError>;
 
     /// The projection the source declares, which a layer of `PROJECTION AUTO` takes, as MapServer's
-    /// layer takes it at open (ADR-draft-declared-projection); by default none. Synchronous: a source reads what it
+    /// layer takes it at open (ADR-0039); by default none. Synchronous: a source reads what it
     /// needs for it when it opens.
     fn declared_projection(&self) -> DeclaredProjection {
         DeclaredProjection::None
     }
 }
 
-/// The projection a feature source declares (ADR-draft-declared-projection).
+/// The projection a feature source declares (ADR-0039).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DeclaredProjection {
     /// No declaration: a layer of `AUTO` keeps it, its coordinates taken as longitude and latitude

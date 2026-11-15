@@ -254,14 +254,14 @@ const SIZE_UNDER_4: &str = "its .shx entry gives a size under 4 bytes";
 const NO_OFFSET: &str = "its .shx entry gives no offset";
 
 /// The projection a `.prj` named `file` declares, from its bytes, as the shapefile adapter reads it
-/// (ADR-draft-declared-projection): only its first 2047 bytes are read.
+/// (ADR-0039): only its first 2047 bytes are read.
 pub fn declared_projection_of_prj(file: &str, bytes: &[u8]) -> DeclaredProjection {
     prj::declared(file, bytes)
 }
 
 impl FeatureSource for ShapefileSource {
     /// The projection of the `.prj` beside the `.shp`, none where there is none
-    /// (ADR-draft-declared-projection).
+    /// (ADR-0039).
     fn declared_projection(&self) -> DeclaredProjection {
         match &self.prj {
             Some((file, bytes)) => prj::declared(file, bytes),

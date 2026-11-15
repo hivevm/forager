@@ -480,7 +480,7 @@ fn a_label_style_of_a_name_that_names_no_transform_is_drawn_at_the_label_point()
 
 #[test]
 fn a_geojson_layer_of_auto_is_reprojected_from_wgs84_longitude_and_latitude() {
-    // Verifies: ADR-draft-declared-projection, G-5
+    // Verifies: ADR-0039, G-5
     let dir = std::env::temp_dir().join(format!("forager-auto-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let map = dir.join("auto.map");

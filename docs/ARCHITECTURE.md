@@ -71,7 +71,7 @@ golden path and the test pattern an agent copies from are named here.
   lives here because ADR-0008 keeps `mapfile` from `label`. It depends on no other crate of the
   workspace.
 - **`ports`** — the port traits — the resource loader, the feature source with the projection
-  it declares (ADR-draft-declared-projection), the projection resolver — with the features a
+  it declares (ADR-0039), the projection resolver — with the features a
   source delivers, their geometries, re-exported from `style-ir`,
   and properties
   ([ADR-0023](adr/0023-typed-properties.md)), and the resource path that
@@ -299,7 +299,7 @@ golden path and the test pattern an agent copies from are named here.
   `.dbf` loaded through the resource loader and read with the records MapServer reads, in memory
   that follows the files' size ([ADR-0021](adr/0021-shapefile-adapter.md)), each rule of the
   reading written down in `docs/semantics/shapefile.md`, and its `.prj` read into the
-  projection it declares by a WKT reader of its own (`prj.rs`, ADR-draft-declared-projection);
+  projection it declares by a WKT reader of its own (`prj.rs`, ADR-0039);
   a record it cannot read is skipped and
   counted, and the engine reports it per layer
   ([ADR-0022](adr/0022-skipped-records.md)).

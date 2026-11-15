@@ -247,7 +247,7 @@ fn auto_layer(map_projection: &str, extent: Extent) -> Map {
 
 #[test]
 fn a_layer_of_auto_takes_the_projection_its_source_declares() {
-    // Verifies: ADR-draft-declared-projection
+    // Verifies: ADR-0039
     let declared = DeclaredProjection::Proj4(LCC.to_owned());
     let in_lcc = Recording::new(vec![Geometry::Polygon(vec![square_in(LCC)])]).declaring(declared);
     let (rendered, asked) = render_from(&auto_layer(LONGLAT, MAP_EXTENT), in_lcc);
@@ -271,7 +271,7 @@ fn a_layer_of_auto_takes_the_projection_its_source_declares() {
 
 #[test]
 fn a_layer_of_auto_whose_source_declares_nothing_is_in_the_longitude_and_latitude_of_the_map() {
-    // Verifies: ADR-draft-declared-projection
+    // Verifies: ADR-0039
     // Under a map in the conic, its coordinates are taken as longitude and latitude in the map's
     // datum, as msProjectCreateReprojector takes an AUTO without a PROJ object.
     let extent = way(LONGLAT, LCC).extent(&MAP_EXTENT).unwrap();

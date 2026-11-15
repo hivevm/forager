@@ -1,4 +1,4 @@
-//! The reader of a shapefile's `.prj` (ADR-draft-declared-projection): the first 2047 bytes, as
+//! The reader of a shapefile's `.prj` (ADR-0039): the first 2047 bytes, as
 //! MapServer's `msSHPLayerOpen` reads them, parsed as the ESRI WKT a `.prj` holds and written as
 //! the proj4 string GDAL's `OSRExportToProj4` writes for it, for what the core crate `proj`
 //! implements: longitude and latitude, the transverse Mercator with UTM, the Lambert conformal

@@ -55,7 +55,7 @@ impl GeoJsonSource {
 
 impl FeatureSource for GeoJsonSource {
     /// WGS84 longitude and latitude, the only coordinates RFC 7946 allows, as OGR declares them for
-    /// MapServer (ADR-draft-declared-projection).
+    /// MapServer (ADR-0039).
     fn declared_projection(&self) -> DeclaredProjection {
         DeclaredProjection::Proj4("+proj=longlat +datum=WGS84 +no_defs".to_owned())
     }

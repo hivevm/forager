@@ -60,7 +60,7 @@ none, the layer keeps `AUTO` without a PROJ object, which `msProjectionsDiffer` 
 the map's, and `msProjectCreateReprojector` in `src/mapproject.c` takes its coordinates as longitude
 and latitude in the datum of the map's projection; only a map without a projection, or a geographic
 one, leaves them as they are. The IR holds this as `from_source`; the engine asks the source bound
-to the layer for the projection it declares (ADR-draft-declared-projection): a shapefile its
+to the layer for the projection it declares (ADR-0039): a shapefile its
 `.prj` (docs/semantics/shapefile.md), a GeoJSON source WGS84 longitude and latitude. A source that
 declares none leaves the layer as MapServer leaves it, and one whose declaration does not read
 does too, with a warning naming the layer and the file, where MapServer writes a debug message.

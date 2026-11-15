@@ -47,7 +47,7 @@ enum Side<'a> {
 }
 
 /// How `layer` is reprojected into `map`'s projection, `declared` the projection its source
-/// declares for a layer of `AUTO` (ADR-draft-declared-projection): not where either has no
+/// declares for a layer of `AUTO` (ADR-0039): not where either has no
 /// parameters or they do not differ as `msProjectionsDiffer` finds it; an error where either does
 /// not read. A side of `AUTO` without a PROJ object is taken as longitude and latitude in the
 /// other's base geographic CRS, as `msProjectCreateReprojector` takes it, and nothing is

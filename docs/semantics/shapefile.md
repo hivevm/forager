@@ -57,7 +57,7 @@ so is not settled here. An `AUTHORITY`
 is not followed: MapServer loads `init=epsg:<code>` for it, which needs the projection resolver
 the render does not have, so the string is written from the parameters. Anything else does not
 read, and the layer that takes it warns naming the file
-(ADR-draft-declared-projection).
+(ADR-0039).
 
 **Headers** (`msSHPOpenVirtualFile`, `msDBFOpenVirtualFile`). An error opens no layer:
 
