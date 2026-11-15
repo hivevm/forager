@@ -138,7 +138,9 @@ crate, and repair a simplified polygon as GEOS repairs it.
 - **Dependency.** geo must be a dependency of `symbolize` alone, at 0.33, with its default features
   off.
 - **Precondition.** geo brings i_overlay 4.5 into `symbolize`, which ADR-0028 forbids. This ADR
-  must not be accepted before a successor of ADR-0028 that allows it.
+  must not be accepted before
+  [ADR-draft-i-overlay-in-render-agg-and-geo](draft-i-overlay-in-render-agg-and-geo.md), the
+  successor of ADR-0028 that allows it.
 - **`simplify` of a line** must be geo's `LineString::simplify` on each part.
 - **`simplify` of a polygon** must take these steps, in this order:
   - each ring is simplified by geo's `LineString::simplify`, not by `Polygon::simplify`, which
