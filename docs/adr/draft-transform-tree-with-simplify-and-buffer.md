@@ -32,12 +32,13 @@ This ADR restates every clause of ADR-0036 in its wording, but these:
 - *Order of landing*: a new entry, each node landing with the change that draws it;
 - *Numbers*: a new item, a negative tolerance or distance kept as written;
 - *Not drawn*: `buffer` and `simplify` stay reasons only until their nodes land;
-- *A class's style*: a new entry, a class style's expression drawn as `msDrawTransformedShape`
-  draws it, in the pass of a style of a keyword transform, its `[map_cellsize]` bound as a
-  layer's; a point layer's style drawn at the layer's points; its evaluations charged to the
-  layer's bounds of Q-9 on the points added and visited; a failed evaluation drawing nothing on
-  its shape; one warning for each failing style, naming its first failure, and one for the layer
-  past a bound;
+- *A class's style*: a new entry. A class style's expression is drawn as
+  `msDrawTransformedShape` draws it; evaluated on the shape in pixels, unclipped; drawn in the
+  pass of a style of a keyword transform; with `[map_cellsize]` bound as a layer's. A point
+  layer's style is drawn at the layer's points. The evaluations are charged to the layer's bounds
+  of Q-9 on the points added and visited; past a bound, the style trees draw nothing on that shape
+  and every later one. A failed evaluation draws nothing on its shape. One warning is given for
+  each failing style, naming its first failure, and one for the layer past a bound;
 - *Diagnostics*: the warning for a `not_drawn` tree is given for a layer's tree and a class
   style's alike, and the style draws nothing;
 - *Versions*: "this ADR" reads "ADR-0036"; three new items, the regenerated file of 1.1, the
@@ -162,10 +163,10 @@ from MapServer's text.
     on every later shape of the layer. The shapes drawn before stay drawn.
   - Where the evaluation fails on a shape, the style must draw nothing on that shape. MapServer
     makes no map there. The layer's other styles and the rest of the map are drawn.
-  - For a failure, the engine must warn `geomtransform-not-drawn` at most once for each style and
-    render. The warning names the style's first failure.
+  - For a failure, the engine must warn `geomtransform-not-drawn` once for each failing style and
+    render. The warning must name the style's first failure, in the order the shapes are drawn.
   - Past a bound, the engine must warn `geomtransform-over-limit` once for the layer and render,
-    whatever the number of style trees it stops.
+    whatever the number of style trees the bound stops.
 - **Who parses.** Only `crates/mapfile` may parse a `GEOMTRANSFORM` expression. The core must read
   the tree and never MapServer's text.
 - **Diagnostics.** The engine must warn `geomtransform-not-drawn` for a `not_drawn` tree, naming
