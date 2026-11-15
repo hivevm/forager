@@ -204,6 +204,20 @@ impl Projection {
         })
     }
 
+    /// Its base geographic CRS, as `getBaseGeographicCRS` of MapServer's `src/mapproject.c` takes
+    /// it from PROJ: longitude and latitude in degrees, on its ellipsoid and in its datum.
+    pub fn base_geographic(&self) -> Self {
+        Self {
+            kind: Kind::LongLat,
+            ellipsoid: self.ellipsoid,
+            datum: self.datum,
+            lam0: 0.0,
+            x0: 0.0,
+            y0: 0.0,
+            to_meter: 1.0,
+        }
+    }
+
     /// Whether its coordinates are longitude and latitude.
     pub fn is_geographic(&self) -> bool {
         self.kind == Kind::LongLat

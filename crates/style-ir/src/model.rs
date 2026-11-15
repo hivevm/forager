@@ -34,6 +34,14 @@ pub struct Map {
     /// The map's projection as a proj4 string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projection: Option<String>,
+    /// Whether the map's projection is `AUTO`, which MapServer keeps as its one argument without
+    /// a PROJ object (`msProcessProjection`): a layer without a projection is not reprojected,
+    /// and a layer in one is drawn in the longitude and latitude of its own datum. Absent or
+    /// false, the map's projection is `projection`, or none. Added in format version 1.1; a
+    /// reader of 1.0 drops it with a warning and draws the map without a projection, as 1.0
+    /// draws a map of `AUTO`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub projection_auto: bool,
     /// The resolution of the image in dpi; MapServer's default is 72. A reader drops a value
     /// outside 10 to 1000 with a warning, as MapServer's loader refuses one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

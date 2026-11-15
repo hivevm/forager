@@ -15,20 +15,32 @@ pub(crate) struct LayerReprojection {
 
 /// How `layer` is reprojected into `map`'s projection: not where either has no projection, where
 /// they do not differ as `msProjectionsDiffer` finds it, or where the layer's comes from its
-/// source, which no source declares yet; an error where either does not read.
+/// source, which no source declares yet; an error where either does not read. Under a map of
+/// `AUTO`, which has no PROJ object, a layer in a projection differs from it and is reprojected
+/// into its own base geographic CRS, as `msProjectCreateReprojector` reprojects it.
 pub(crate) fn for_layer(map: &Map, layer: &Layer) -> Result<Option<LayerReprojection>, Error> {
-    let (Some(map_projection), Some(LayerProjection::Proj4(layer_projection))) =
-        (&map.projection, &layer.projection)
-    else {
+    let Some(LayerProjection::Proj4(layer_projection)) = &layer.projection else {
         return Ok(None);
     };
-    if !differ(layer_projection, map_projection) {
-        return Ok(None);
-    }
-    let to_map = Reprojection::new(
-        Projection::parse(layer_projection)?,
-        Projection::parse(map_projection)?,
-    );
+    let to_map = if map.projection_auto {
+        if layer_projection.split_whitespace().next().is_none() {
+            return Ok(None);
+        }
+        let from = Projection::parse(layer_projection)?;
+        let to = from.base_geographic();
+        Reprojection::new(from, to)
+    } else {
+        let Some(map_projection) = &map.projection else {
+            return Ok(None);
+        };
+        if !differ(layer_projection, map_projection) {
+            return Ok(None);
+        }
+        Reprojection::new(
+            Projection::parse(layer_projection)?,
+            Projection::parse(map_projection)?,
+        )
+    };
     Ok(Some(LayerReprojection {
         to_layer: to_map.reversed(),
         to_map,

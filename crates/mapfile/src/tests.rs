@@ -1173,10 +1173,14 @@ fn a_layers_projection_resolves_as_the_maps_does() {
         loaded.document.unwrap().map.layers[0].projection,
         Some(LayerProjection::Proj4("+auto +over".to_owned()))
     );
-    // A map has no source to declare one.
+    // A map keeps AUTO as its one argument, without a PROJ object (msProcessProjection), told
+    // from a map without a projection.
     let loaded = load_files(&[("m.map", "MAP PROJECTION AUTO END END")]);
-    assert_eq!(codes(&loaded), ["unsupported-value"]);
-    assert_eq!(loaded.document.unwrap().map.projection, None);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let map = loaded.document.unwrap().map;
+    assert_eq!((map.projection, map.projection_auto), (None, true));
+    let map = load_files(&[("m.map", "MAP END")]).document.unwrap().map;
+    assert_eq!((map.projection, map.projection_auto), (None, false));
 }
 
 #[test]

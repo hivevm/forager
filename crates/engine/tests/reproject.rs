@@ -197,6 +197,36 @@ fn a_layer_without_a_projection_or_in_the_maps_is_not_reprojected() {
 }
 
 #[test]
+fn under_a_map_of_auto_a_layer_is_drawn_in_its_own_longitude_and_latitude() {
+    // A map of PROJECTION AUTO has no PROJ object: a layer in UTM differs from it and is drawn in
+    // the longitude and latitude of its own datum (msProjectCreateReprojector); a layer without a
+    // projection is drawn as it is.
+    const UTM_20: &str = "+proj=utm +zone=20 +datum=WGS84 +units=m +no_defs";
+    let mut auto = map(LONGLAT, MAP_EXTENT, Some(UTM_20));
+    (auto.projection, auto.projection_auto) = (None, true);
+    let in_utm = Recording::new(vec![Geometry::Polygon(vec![square_in(UTM_20)])]);
+    let (rendered, asked) = render_from(&auto, in_utm);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_square_drawn(&rendered);
+    let [asked] = asked[..] else {
+        panic!("one query, not {asked:?}");
+    };
+    assert!(
+        asked.max_x < 1_000_000.0 && asked.min_y > 4_000_000.0,
+        "in UTM's metres: {asked:?}"
+    );
+    auto.layers[0].projection = None;
+    let in_longlat = Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
+    let (rendered, asked) = render_from(&auto, in_longlat);
+    assert_square_drawn(&rendered);
+    assert_eq!(asked, [MAP_EXTENT]);
+}
+
+#[test]
 fn the_source_is_asked_for_the_maps_extent_in_its_own_coordinates() {
     // Verifies: ADR-0037
     let source = Recording::new(Vec::new());

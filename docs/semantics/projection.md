@@ -52,4 +52,8 @@ none, the layer keeps `AUTO` without a PROJ object, which `msProjectionsDiffer` 
 the map's, and `msProjectCreateReprojector` in `src/mapproject.c` takes its coordinates as longitude
 and latitude in the datum of the map's projection; only a map without a projection, or a geographic
 one, leaves them as they are. The IR holds this as `from_source`. On the map, where no source
-declares one, `AUTO` is a warning and the map has no projection.
+declares one, `AUTO` stays the map's one argument without a PROJ object, as `msProcessProjection`
+leaves it; the IR holds it as the map's `projection_auto` (format version 1.1). A layer without a
+projection beneath it is not reprojected, and a layer in a projection differs from it and is drawn
+in the longitude and latitude of its own datum, its base geographic CRS
+(`msProjectCreateReprojector`); its source is asked for the map's extent taken back from there.
