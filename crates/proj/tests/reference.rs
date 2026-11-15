@@ -289,15 +289,7 @@ fn reprojected_shape(
             .collect();
         return (!kept.is_empty()).then_some(kept);
     }
-    let mut placed = lines.to_vec();
-    let mut added = Vec::new();
-    for (i, line) in lines.iter().enumerate().rev() {
-        let reprojected = way.shape_line(line, kind == "polygon");
-        placed[i] = reprojected.first;
-        added.extend(reprojected.added);
-    }
-    placed.extend(added);
-    Some(placed)
+    Some(way.shape(lines, kind == "polygon").lines)
 }
 
 #[test]

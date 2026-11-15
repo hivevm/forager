@@ -23,9 +23,9 @@
 //! The orthographic projection, `+proj=ortho`, on the sphere and the ellipsoid: a point on the far
 //! hemisphere does not transform.
 
+use crate::Plane;
 use crate::common::{HALF_PI, adjlon};
 use crate::params::Ellipsoid;
-use crate::{Error, Plane};
 
 const EPS10: f64 = 1e-10;
 
@@ -55,7 +55,7 @@ pub(crate) struct Ortho {
 
 impl Ortho {
     /// `PJ_PROJECTION(ortho)`.
-    pub(crate) fn new(ellipsoid: &Ellipsoid, phi0: f64) -> Result<Self, Error> {
+    pub(crate) fn new(ellipsoid: &Ellipsoid, phi0: f64) -> Self {
         let sinph0 = libm::sin(phi0);
         let cosph0 = libm::cos(phi0);
         let mode = if (phi0.abs() - HALF_PI).abs() <= EPS10 {
@@ -72,7 +72,7 @@ impl Ortho {
             y_shift = es * nu0 * sinph0 * cosph0;
             y_scale = 1.0 / libm::sqrt(1.0 - es * cosph0 * cosph0);
         }
-        Ok(Self {
+        Self {
             phi0,
             sinph0,
             cosph0,
@@ -82,7 +82,7 @@ impl Ortho {
             mode,
             es,
             a_over_b: 1.0 / libm::sqrt(1.0 - es),
-        })
+        }
     }
 
     /// `ortho_s_forward`.

@@ -18,9 +18,10 @@
 //! ring by `msProjectShapeLine`, its run of points that do not reproject cut at the horizon and
 //! its longitudes wrapped across the dateline into longitude and latitude, and the points of a
 //! point shape by `msProjectLineEx`. Not ported: the cutting of lines by GEOS
-//! (`msProjectGetLineCuttingCase`), which only a polar or rotated-pole source into longitude and
-//! latitude, or a source of `lon_wrap=0`, takes, and no projection here is either; and
-//! `USE_PROJ_FASTPATHS`, which the pinned build does not define.
+//! (`msProjectGetLineCuttingCase`), which a polar or rotated-pole source into longitude and
+//! latitude, or a source of `lon_wrap=0`, takes ([`Reprojection::cuts_lines_with_geos`] tells
+//! the first, whose lines the engine draws uncut with a warning); and `USE_PROJ_FASTPATHS`, which
+//! the pinned build does not define.
 
 use forager_style_ir::Coord;
 
@@ -44,7 +45,40 @@ pub struct ShapeLines {
     pub horizon_points: usize,
 }
 
+/// The lines of a shape reprojected, as `msProjectShapeEx` leaves them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Shape {
+    /// Each line in its place, those its lines added after them all, a line left without points
+    /// kept empty.
+    pub lines: Vec<Vec<Coord>>,
+    /// The points that did not reproject.
+    pub failed: usize,
+    /// The points the horizon search added (Q-9).
+    pub horizon_points: usize,
+}
+
 impl Reprojection {
+    /// `msProjectShapeEx` of the `lines` of a line shape, or of a polygon's where `polygon`: each
+    /// reprojected by [`Self::shape_line`], the last first, in its place, and the lines each adds
+    /// after them all.
+    pub fn shape(&self, lines: &[Vec<Coord>], polygon: bool) -> Shape {
+        let mut shape = Shape {
+            lines: Vec::with_capacity(lines.len()),
+            ..Shape::default()
+        };
+        let mut added = Vec::new();
+        for line in lines.iter().rev() {
+            let reprojected = self.shape_line(line, polygon);
+            shape.failed += reprojected.failed;
+            shape.horizon_points += reprojected.horizon_points;
+            shape.lines.push(reprojected.first);
+            added.extend(reprojected.added);
+        }
+        shape.lines.reverse();
+        shape.lines.extend(added);
+        shape
+    }
+
     /// `msProjectShapeLine` of a line, or of a ring where `polygon`, into the projection reprojected
     /// into.
     pub fn shape_line(&self, points: &[Coord], polygon: bool) -> ShapeLines {
@@ -183,6 +217,18 @@ impl Reprojection {
             }
         }
         if failed > 0 { Err(failed) } else { Ok(0) }
+    }
+
+    /// Whether MapServer cuts the lines of a line shape with GEOS (`msProjectGetLineCuttingCase`):
+    /// from a projected source whose origin is the north pole into longitude and latitude, as
+    /// `ortho` or `tmerc` of `+lat_0=90` are. Its other cases, a rotated pole, a source of
+    /// `lon_wrap=0`, and a target written `init=epsg:3857`, no projection here takes.
+    pub fn cuts_lines_with_geos(&self) -> bool {
+        !self.from_geographic
+            && self.to_geographic
+            && self
+                .point(Coord { x: 0.0, y: 0.0 })
+                .is_ok_and(|p| (p.y - 90.0).abs() < 1e-8)
     }
 
     /// `msTestNeedWrap`: whether the segment from `pt2` to `pt1`, in the projection reprojected

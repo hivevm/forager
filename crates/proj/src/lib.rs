@@ -38,11 +38,11 @@
 
 //! The reprojection of the core: its own port of PROJ's formulas, every transcendental function
 //! taken from `libm`, so that a coordinate reprojects to the same bits on every target
-//! (ADR-0037, Q-2). It reads a projection as the proj4 string of the
-//! style IR and implements only what a case in scope or a ticket needs: longitude and latitude,
-//! `lcc`, `merc`, `tmerc` with `utm`, and `ortho`, `+over`, and a datum's shift by `+towgs84`. Anything else is an
-//! [`Error`] naming it, and a point that does not transform is [`NotTransformed`], never a panic
-//! (Q-3).
+//! (ADR-0037, Q-2). It reads a projection as the proj4 string of the style IR and implements only
+//! what a case in scope or a ticket needs: the projections longitude and latitude, `lcc`, `merc`,
+//! `tmerc` with `utm`, and `ortho`, the parameter `+over`, and a datum's shift by `+towgs84`.
+//! Anything else is an [`Error`] naming it, and a point that does not transform is
+//! [`NotTransformed`], never a panic (Q-3).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -62,7 +62,7 @@ use forager_style_ir::Coord;
 
 use crate::common::{HALF_PI, adjlon};
 use crate::params::{DEG_TO_RAD, Datum, Ellipsoid, Params, RAD_TO_DEG};
-pub use crate::shape::ShapeLines;
+pub use crate::shape::{Shape, ShapeLines};
 
 /// Why a projection cannot be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -188,7 +188,7 @@ impl Projection {
                 Kind::Lcc(lcc::Lcc::new(&params, &ellipsoid, phi0, k0)?)
             }
             "merc" => Kind::Merc(merc::Merc::new(&params, &ellipsoid, k0)?),
-            "ortho" => Kind::Ortho(ortho::Ortho::new(&ellipsoid, phi0)?),
+            "ortho" => Kind::Ortho(ortho::Ortho::new(&ellipsoid, phi0)),
             "tmerc" => Kind::Tmerc(tmerc::Tmerc::new(&ellipsoid, phi0, k0)?),
             "utm" => {
                 let utm = tmerc::utm(&params, &ellipsoid, lam0)?;
@@ -214,7 +214,7 @@ impl Projection {
 
     /// Its base geographic CRS, as `getBaseGeographicCRS` of MapServer's `src/mapproject.c` takes
     /// it from PROJ: longitude and latitude in degrees, on its ellipsoid and in its datum.
-    pub fn base_geographic(&self) -> Self {
+    pub(crate) fn base_geographic(&self) -> Self {
         Self {
             kind: Kind::LongLat,
             ellipsoid: self.ellipsoid,
@@ -228,7 +228,7 @@ impl Projection {
     }
 
     /// The same projection with `+over`, as `msProjectRect` copies a projection with it.
-    pub fn with_over(&self) -> Self {
+    pub(crate) fn with_over(&self) -> Self {
         Self {
             over: true,
             ..self.clone()

@@ -1082,7 +1082,7 @@
           ]
         },
         "projection_auto": {
-          "description": "Whether the map's projection is `AUTO`, which MapServer keeps as its one argument without\na PROJ object (`msProcessProjection`): a layer without a projection is not reprojected,\nand a layer in one is drawn in the longitude and latitude of its own datum. Absent or\nfalse, the map's projection is `projection`, or none. Added in format version 1.1; a\nreader of 1.0 drops it with a warning and draws the map without a projection, as 1.0\ndraws a map of `AUTO`.",
+          "description": "Whether the map's projection is `AUTO`, which MapServer keeps as its one argument without\na PROJ object (`msProcessProjection`): a layer without a projection is not reprojected,\nand a layer in one is drawn in the longitude and latitude of its own datum. Absent or\nfalse, the map's projection is `projection`, or none; true, `projection` is not read, and\nthe frontend writes none beside it. Added in format version 1.1; a\nreader of 1.0 drops it with a warning and draws the map without a projection, as 1.0\ndraws a map of `AUTO`.",
           "type": "boolean"
         },
         "resolution": {

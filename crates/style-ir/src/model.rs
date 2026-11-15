@@ -37,7 +37,8 @@ pub struct Map {
     /// Whether the map's projection is `AUTO`, which MapServer keeps as its one argument without
     /// a PROJ object (`msProcessProjection`): a layer without a projection is not reprojected,
     /// and a layer in one is drawn in the longitude and latitude of its own datum. Absent or
-    /// false, the map's projection is `projection`, or none. Added in format version 1.1; a
+    /// false, the map's projection is `projection`, or none; true, `projection` is not read, and
+    /// the frontend writes none beside it. Added in format version 1.1; a
     /// reader of 1.0 drops it with a warning and draws the map without a projection, as 1.0
     /// draws a map of `AUTO`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
