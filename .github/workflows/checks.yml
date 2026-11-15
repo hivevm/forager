@@ -291,7 +291,9 @@ jobs:
 
   browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # As the rust job's: on a cache miss it compiles the same cargo tools, and it builds the
+    # bundle and the bindings beside them.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:

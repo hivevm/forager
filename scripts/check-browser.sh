@@ -21,4 +21,5 @@ cd "$ROOT"
 if [[ "${FORAGER_BROWSER_TEST:-}" == required ]]; then
   bash scripts/build-web.sh
 fi
-cargo test --locked -p forager-dev-server --test browser
+# One case at a time: each starts a dev server, a ChromeDriver, and a Chrome of its own.
+cargo test --locked -p forager-dev-server --test browser -- --test-threads=1
