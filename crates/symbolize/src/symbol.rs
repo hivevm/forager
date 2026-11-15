@@ -38,6 +38,7 @@ use forager_style_ir::{
 };
 
 use crate::bounds;
+use crate::glyph::{self, Glyphs};
 use crate::style::fixed;
 
 /// The images of a render's pixmap symbols by their resource path, each the decoded image or why
@@ -137,9 +138,9 @@ pub(crate) fn is_hatch<T>(style: &Style<T>, symbols: &[Symbol]) -> bool {
 /// How a symbol is drawn, computeSymbolStyle's `symbolStyleObj`.
 #[derive(Debug, PartialEq)]
 pub(crate) struct SymbolStyle {
-    fill: Option<Rgba>,
-    outline: Option<Rgba>,
-    outline_width: f64,
+    pub(crate) fill: Option<Rgba>,
+    pub(crate) outline: Option<Rgba>,
+    pub(crate) outline_width: f64,
     /// Of the symbol's extent to pixels.
     pub(crate) scale: f64,
     /// Radians, counter-clockwise.
@@ -211,7 +212,8 @@ pub(crate) fn symbol_style<T>(
     let style_size = fixed(&style.size).unwrap_or(default_size);
     let color = fixed(&style.color);
     let outline_color = fixed(&style.outline_color);
-    let (fill, outline) = if symbol.filled {
+    // computeSymbolStyle takes a TrueType symbol's colours as a filled one's.
+    let (fill, outline) = if symbol.filled || symbol.kind == SymbolKind::Truetype {
         (color, outline_color)
     } else {
         (None, color.or(outline_color))
@@ -347,6 +349,16 @@ fn marker_size_at<T>(
     }
 }
 
+/// msGetMarkerSize's `size` of a TrueType symbol in `style` at the size `size`, or 1, its default
+/// size, without one, at `scale_factor`: scaled and cut to whole pixels, then bounded by `MINSIZE`
+/// and `MAXSIZE` unscaled, as it hands it to msGetCharacterSize as the glyph's size in points. An
+/// `int` below 0, which a negative `MINSIZE` alone allows, is taken as 0.
+pub(crate) fn marker_points<T>(style: &Style<T>, size: Option<f64>, scale_factor: f64) -> u32 {
+    let pixels = f64::from(int_cast(size.unwrap_or(1.0) * scale_factor));
+    let pixels = int_cast(bounds::marker_pixels(pixels, style));
+    u32::try_from(pixels).unwrap_or(0)
+}
+
 /// msGetMarkerSize, `src/mapsymbol.c:720-799`, for a pixmap symbol whose image is `width` by
 /// `height` pixels, of `style` at the size `size` and at `scale_factor`: the size, or the image's
 /// height without one (msSymbolGetDefaultSize), scaled and cut to whole pixels, then bounded by
@@ -377,16 +389,18 @@ pub fn pixmap_marker_size<T>(
 
 /// msGetMarkerSize of `style` among `symbols` at `scale_factor`, the size of the marker a label
 /// of a point moves away from: 1 by 1 for MapServer's default symbol, a vector's, an ellipse's,
-/// or any other symbol's MapServer sizes by its extent as it sizes them, and a pixmap's by its
+/// or any other symbol's MapServer sizes by its extent as it sizes them, a pixmap's by its
 /// image among `pixmaps`, which msGetMarkerSize loads where it has not been
-/// (`src/mapsymbol.c:736-738`); the error names an SVG or a TrueType symbol, whose size is not
-/// computed yet, a pixmap that names no image or whose image is not among `pixmaps` or does not
-/// load, or a symbol the symbol set does not hold; for the pixmap and the missing symbol,
-/// MapServer fails the map.
+/// (`src/mapsymbol.c:736-738`), and a TrueType symbol's by its character's bounds, the glyph
+/// asked of `glyphs` at [`marker_points`] (msGetCharacterSize); the error names an SVG symbol,
+/// whose size is not computed yet, a pixmap that names no image or whose image is not among
+/// `pixmaps` or does not load, a TrueType symbol whose glyph is not found, or a symbol the symbol
+/// set does not hold; for the pixmap, the glyph, and the missing symbol, MapServer fails the map.
 pub fn marker_size_of(
     style: &Style,
     symbols: &[Symbol],
     pixmaps: &Pixmaps,
+    glyphs: Option<&dyn Glyphs>,
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
     marker_size_with(
@@ -395,18 +409,21 @@ pub fn marker_size_of(
         &style.symbol,
         symbols,
         Some(pixmaps),
+        glyphs,
         scale_factor,
     )
 }
 
 /// [`marker_size_of`] of `style` at the size `size` and of the symbol `symbol` in place of its
-/// own, as a feature binds them; without `pixmaps`, a pixmap's size is not computed.
+/// own, as a feature binds them; without `pixmaps`, a pixmap's size is not computed yet, nor
+/// without `glyphs` a TrueType symbol's.
 pub fn marker_size_with<T>(
     style: &Style<T>,
     size: Option<f64>,
     symbol: &Option<Bound<SymbolRef>>,
     symbols: &[Symbol],
     pixmaps: Option<&Pixmaps>,
+    glyphs: Option<&dyn Glyphs>,
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
     match resolve(symbol, symbols) {
@@ -435,7 +452,24 @@ pub fn marker_size_with<T>(
                     scale_factor,
                 ))
             }
-            (SymbolKind::Pixmap | SymbolKind::Svg | SymbolKind::Truetype, _) => Err(format!(
+            (SymbolKind::Truetype, _) => {
+                // Without the port, as a label's own marker is sized, it is not computed yet.
+                let Some(glyphs) = glyphs else {
+                    return Err("a truetype symbol, whose size is not computed yet".to_owned());
+                };
+                let points = marker_points(style, size, scale_factor);
+                let glyph = glyph::font_and_character(symbol)
+                    .and_then(|(font, character)| glyphs.glyph(font, character, points));
+                let named = named(index, Some(symbol));
+                let glyph =
+                    glyph.map_err(|why| format!("{named}, whose size is not known: {why}"))?;
+                // MS_MAX with the starting 0 of *width and *height.
+                Ok((
+                    ms_max(0.0, glyph.max_x - glyph.min_x),
+                    ms_max(0.0, glyph.max_y - glyph.min_y),
+                ))
+            }
+            (SymbolKind::Pixmap | SymbolKind::Svg, _) => Err(format!(
                 "a {:?} symbol, whose size is not computed yet",
                 symbol.kind
             )
@@ -623,7 +657,7 @@ fn agg_ellipse(x: f64, y: f64, rx: f64, ry: f64) -> Vec<Point> {
 
 /// AGG's `trans_affine`: `x' = sx·x + shx·y + tx`, `y' = shy·x + sy·y + ty`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Affine {
+pub(crate) struct Affine {
     sx: f64,
     shy: f64,
     shx: f64,
@@ -642,7 +676,7 @@ impl Affine {
         ty: 0.0,
     };
 
-    fn translation(x: f64, y: f64) -> Self {
+    pub(crate) fn translation(x: f64, y: f64) -> Self {
         Self {
             tx: x,
             ty: y,
@@ -658,7 +692,7 @@ impl Affine {
         }
     }
 
-    fn rotation(a: f64) -> Self {
+    pub(crate) fn rotation(a: f64) -> Self {
         Self {
             sx: libm::cos(a),
             shy: libm::sin(a),
@@ -670,7 +704,7 @@ impl Affine {
     }
 
     /// This transformation followed by `m`, AGG's `multiply` (`*=`), in its order of operations.
-    fn then(self, m: Self) -> Self {
+    pub(crate) fn then(self, m: Self) -> Self {
         Self {
             sx: self.sx * m.sx + self.shy * m.shx,
             shx: self.shx * m.sx + self.sy * m.shx,
@@ -698,7 +732,7 @@ impl Affine {
         }
     }
 
-    fn apply(&self, x: f64, y: f64) -> Point {
+    pub(crate) fn apply(&self, x: f64, y: f64) -> Point {
         Point {
             x: x * self.sx + y * self.shx + self.tx,
             y: x * self.shy + y * self.sy + self.ty,

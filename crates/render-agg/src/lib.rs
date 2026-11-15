@@ -541,8 +541,8 @@ impl AggRenderer {
     }
 }
 
-/// The image of `tile`, as getTile makes it: its mark drawn in a new transparent image of the
-/// tile's size, as agg2CreateImage clears one, its colours left premultiplied.
+/// The image of `tile`, as getTile makes it: its marks drawn in turn in a new transparent image of
+/// the tile's size, as agg2CreateImage clears one, its colours left premultiplied.
 fn built_tile(tile: &Tile) -> PremultipliedImage {
     let mut renderer = AggRenderer::new();
     renderer.begin(
@@ -555,10 +555,12 @@ fn built_tile(tile: &Tile) -> PremultipliedImage {
             a: 0,
         },
     );
-    renderer.draw(&DisplayItem {
-        op: tile.mark().clone(),
-        feature_id: None,
-    });
+    for mark in tile.marks() {
+        renderer.draw(&DisplayItem {
+            op: mark.clone(),
+            feature_id: None,
+        });
+    }
     PremultipliedImage::new(tile.width(), tile.height(), renderer.pixels)
         .expect("a tile is within the sizes an image holds")
 }
@@ -1279,7 +1281,7 @@ mod tests {
             left: 0,
             top: 0,
         };
-        Rc::new(Tile::new(width, height, mark).unwrap())
+        Rc::new(Tile::new(width, height, vec![mark]).unwrap())
     }
 
     fn square(a: f64, b: f64) -> Vec<Point> {
@@ -1376,7 +1378,7 @@ mod tests {
             left: 1,
             top: 1,
         };
-        let tile = Rc::new(Tile::new(4, 4, mark).unwrap());
+        let tile = Rc::new(Tile::new(4, 4, vec![mark]).unwrap());
         let fill = DrawOp::TiledFill {
             rings: vec![square(0.0, 64.0)],
             tile: Rc::clone(&tile),

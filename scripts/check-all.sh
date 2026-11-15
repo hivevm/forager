@@ -264,6 +264,10 @@ run "Rust toolchain and tools" scripts/install-tools.sh
 settle
 run "Fuzz script self-test" scripts/test-fuzz.sh
 run "Rust build, test, lint" scripts/check-rust.sh
+# The browser test runs where FORAGER_BROWSER_TEST=required, as in the browser job; here it
+# returns at once unless that variable is set, which makes a missing ChromeDriver, Chrome, or
+# bundle fail it.
+run "Browser test" scripts/check-browser.sh
 run "Duplication sensor self-test" scripts/test-sensor-duplication.sh
 run "Duplication sensor" scripts/sensor-duplication.sh
 

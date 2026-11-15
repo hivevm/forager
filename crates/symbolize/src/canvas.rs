@@ -21,6 +21,7 @@ use std::rc::Rc;
 use forager_render::PremultipliedImage;
 use forager_style_ir::{Style, Symbol};
 
+use crate::glyph::Glyphs;
 use crate::hatch::Hatching;
 use crate::line_marker::MarkerBudget;
 use crate::symbol::{self, Factors, Pixmaps};
@@ -45,25 +46,43 @@ pub struct Canvas<'a> {
     pub(crate) hatching: Hatching,
     /// Each pixmap symbol left undrawn, by its index from 1, and why.
     pub(crate) refused_pixmaps: BTreeMap<usize, String>,
+    /// Each vector or TrueType symbol whose fill tile is refused (Q-9), and each TrueType symbol
+    /// whose glyph has no font, by its index from 1, and why.
+    pub(crate) refused_symbols: BTreeMap<usize, String>,
+    /// Each TrueType symbol whose font lacks its character, by its index from 1, and what is
+    /// drawn instead.
+    pub(crate) missing_glyphs: BTreeMap<usize, String>,
+    /// The port TrueType markers ask their glyphs of.
+    pub(crate) glyphs: Option<&'a dyn Glyphs>,
     pub(crate) own_image: bool,
 }
 
 /// What a layer's drawing left undrawn, which it reports: how many hatches were refused (Q-9),
-/// and the pixmap symbols whose image is refused, by their index from 1, each named, with why.
+/// the pixmap symbols whose image is refused, and the vector and TrueType symbols whose fill tile
+/// is refused (Q-9), each by its index from 1, named, with why.
 #[derive(Debug, Default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Refusals {
     pub hatches: usize,
     pub pixmaps: BTreeMap<usize, (String, String)>,
+    pub symbols: BTreeMap<usize, (String, String)>,
+    /// The TrueType symbols whose font lacks their character, drawn with glyph 0.
+    pub glyphs: BTreeMap<usize, (String, String)>,
 }
 
 impl Refusals {
-    /// Adds `other`'s hatches to these, and its pixmap symbols not among these, each by its index
-    /// once, the first kept.
+    /// Adds `other`'s hatches to these, and its symbols not among these, each by its index once,
+    /// the first kept.
     pub fn merge(&mut self, other: Self) {
         self.hatches += other.hatches;
         for (index, named) in other.pixmaps {
             self.pixmaps.entry(index).or_insert(named);
+        }
+        for (index, named) in other.symbols {
+            self.symbols.entry(index).or_insert(named);
+        }
+        for (index, named) in other.glyphs {
+            self.glyphs.entry(index).or_insert(named);
         }
     }
 }
@@ -82,6 +101,9 @@ impl<'a> Canvas<'a> {
             markers: MarkerBudget::new(),
             hatching: Hatching::default(),
             refused_pixmaps: BTreeMap::new(),
+            refused_symbols: BTreeMap::new(),
+            missing_glyphs: BTreeMap::new(),
+            glyphs: None,
             own_image: false,
         }
     }
@@ -106,6 +128,15 @@ impl<'a> Canvas<'a> {
     pub fn with_tiles(self, tiles: &'a mut Tiles) -> Self {
         Self {
             tiles: Some(tiles),
+            ..self
+        }
+    }
+
+    /// The canvas, its TrueType markers drawn with the glyphs of `glyphs`; without them, each is
+    /// left undrawn.
+    pub fn with_glyphs(self, glyphs: &'a dyn Glyphs) -> Self {
+        Self {
+            glyphs: Some(glyphs),
             ..self
         }
     }
@@ -137,17 +168,27 @@ impl<'a> Canvas<'a> {
         self.markers.spent()
     }
 
-    /// What the layer left undrawn since this was last asked: the hatches refused (Q-9) and the
-    /// pixmap symbols whose image is refused, each named by its name or its index (see
-    /// [`symbol::named`]).
+    /// What the layer left undrawn since this was last asked: the hatches refused (Q-9), the
+    /// pixmap symbols whose image is refused, and the vector and TrueType symbols whose fill tile
+    /// is refused, each named by its name or its index (see [`symbol::named`]).
     pub fn take_refusals(&mut self) -> Refusals {
-        let pixmaps = std::mem::take(&mut self.refused_pixmaps)
-            .into_iter()
-            .map(|(index, why)| (index, (self.named(index), why)))
-            .collect();
+        let named = |canvas: &Self, refused: BTreeMap<usize, String>| {
+            refused
+                .into_iter()
+                .map(|(index, why)| (index, (canvas.named(index), why)))
+                .collect()
+        };
+        let refused_pixmaps = std::mem::take(&mut self.refused_pixmaps);
+        let refused_symbols = std::mem::take(&mut self.refused_symbols);
+        let missing_glyphs = std::mem::take(&mut self.missing_glyphs);
+        let pixmaps = named(self, refused_pixmaps);
+        let symbols = named(self, refused_symbols);
+        let glyphs = named(self, missing_glyphs);
         Refusals {
             hatches: std::mem::take(&mut self.hatching.refused),
             pixmaps,
+            symbols,
+            glyphs,
         }
     }
 

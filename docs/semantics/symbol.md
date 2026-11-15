@@ -52,6 +52,38 @@ than the centre moves the symbol so that the anchor, turned with it, lies on the
 at the size cut to whole pixels (`msAdjustMarkerPos`, `msGetMarkerSize` in `src/mapsymbol.c`).
 A style whose symbol index lies past the last symbol draws nothing.
 
+**A TrueType symbol at a point.** A point layer's style whose symbol is a TrueType symbol draws the
+glyph of its `CHARACTER`, its first character or a numeric entity such as `&#8730;` or `&#x221A;` at
+its start, as `msUTF8ToUniChar` reads it, in the font the font set names by its `FONT`, at each
+point inside the map's extent, as the TrueType branch of `msDrawMarkerSymbolInternal` and
+`drawGlyphMarker` in `src/maprendering.c` and `agg2RenderGlyphsPath` in `src/mapagg.cpp` draw it
+([ADR-draft-truetype-marker-glyph-through-a-port](../adr/draft-truetype-marker-glyph-through-a-port.md)).
+Its colours are a filled symbol's: the glyph is filled with `COLOR` and outlined with
+`OUTLINECOLOR`, at the style's `WIDTH` cut to an integer, plus 1. The glyph is read as a label's is,
+unhinted, at `MS_MAX(MS_NINT(scale), 1)` points, the scale the style's size bounded by `MINSIZE` and
+`MAXSIZE`. It is centred on the point by the middle of its control box, the middle turned by `ANGLE`
+where there is one, and the glyph turned counter-clockwise by it. The font is loaded once per
+render, with the labels' fonts, before the layer is drawn. A character the font lacks draws glyph 0,
+as MapServer does, and the layer warns with `symbol-glyph-missing`, once per symbol; an empty
+`CHARACTER` is code point 0, which draws glyph 0 too. A `FONT` the font set lacks, or a file that
+does not load or that this renderer cannot read, draws nothing, and the layer warns with
+`symbol-not-drawn`, once per symbol, where MapServer fails the layer. So do a symbol without a
+`FONT`, which MapServer draws in its built-in font, not bundled with Forager, and a `CHARACTER` that
+starts with a named entity, such as `&radic;`, whose table of 252 Forager does not carry. An
+anchor point other than the centre moves the glyph as a vector symbol's moves it
+(`msAdjustMarkerPos`), at the size `msGetMarkerSize` gives a TrueType symbol: the width and height
+of its character's control box (`msGetCharacterSize`), the glyph read at the style's size, 1
+without one, times the scale factor, cut to whole pixels and bounded by `MINSIZE` and `MAXSIZE`
+unscaled. The label cache sizes the marker of a class's first style the same way, its font loaded
+whatever the style's scale range, as a pixmap's image is.
+
+**A TrueType symbol along a line.** A line layer's style whose symbol is a TrueType symbol and whose
+`GAP` is not 0 draws its glyph along the line as `msImagePolylineMarkers` places a vector symbol,
+with the same spacing, `INITIALGAP`, and turn with each segment for a negative `GAP`. The marker's
+size, by which its anchor point moves it and a glyph outside the image is skipped, is the glyph's
+control box, not held to 1 pixel as another symbol's is. Each glyph is drawn as at a point, by the
+middle of its control box. A TrueType symbol of `GAP 0` is still drawn as a line in its `COLOR`.
+
 **A pixmap at a point.** A point layer's style whose symbol is a pixmap draws its image at each
 point inside the map's extent, as `msDrawMarkerSymbolInternal` in `src/maprendering.c` and
 `agg2RenderPixmapSymbol` in `src/mapagg.cpp` draw it. The image is read through the resource
@@ -160,6 +192,32 @@ refers to it, an image's bytes with them, so an image a later layer names can be
 tiles before it. A polygon its offset moves wholly off the image builds no tile, so that it takes
 nothing from the polygons on it.
 
+**A vector symbol over a polygon.** A polygon layer's style whose symbol is a vector symbol fills
+the polygon with the symbol repeated in tiles, as the same functions fill it with a pixmap, once
+the style has a `COLOR`; without one it draws the polygon's outline as a line in the
+`OUTLINECOLOR`, as for any symbol but a pixmap. The symbol is drawn as at a point
+(computeSymbolStyle and `agg2RenderVectorSymbol`): a filled one filled in the `COLOR` and outlined
+in the `OUTLINECOLOR`, an open one outlined in the `COLOR`, at the style's `WIDTH`. Its tile's
+sides follow the table above, of the symbol's extent in place of the image's side. With a `GAP` of
+0, msDrawShadeSymbol draws the tile in seamless mode under AGG: the symbol nine times in a grid
+three tiles a side, at `((i + 0.5) × width, (j + 0.5) × height)` for `i` and `j` from 1 to 3, as
+its loops count them, and keeps the middle tile. So the neighbours below and right of the middle
+tile reach into it, those above and left do not. Forager draws the nine marks straight into the
+tile, moved up and left by a tile, rather than into an image nine times the tile's size. With
+another `GAP` the symbol is drawn once at the tile's centre. A tile is kept, as
+`searchTileCache` keeps it, by its symbol, its size, the scale, the rotation, the outline's width,
+and each colour the style asks for. A tile past Q-9's bounds is refused as a pixmap's is, the style
+is not drawn, and the layer warns with `symbol-not-drawn`, once per symbol, naming the limit. An
+ellipse symbol over a polygon is still filled in its `COLOR`, as before.
+
+**A TrueType symbol over a polygon.** A polygon layer's style whose symbol is a TrueType symbol
+fills the polygon with its glyph repeated in tiles, as `getTile` draws it, once the style has a
+`COLOR`.
+Its tile's sides follow the table above, of a side of 1, the extent `initSymbol` leaves a TrueType
+symbol; at `SIZE 8 GAP 3` the tile is 8 × 8, at `SIZE 5` without a gap 5 × 5. The glyph is drawn as
+at a point at the tile's centre, turned by `ANGLE`, never in seamless mode, and the tile crops it.
+The tile is kept and bounded as a vector symbol's, and refused with `symbol-not-drawn` likewise.
+
 **A hatch over a polygon.** A polygon layer's style whose symbol is a hatch fills the polygon
 with parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprendering.c` and
 `msHatchPolygon` and `createHatch` in `src/mapagg.cpp` draw it, in the `COLOR`; without one, the
@@ -210,7 +268,7 @@ points that come within a hundredth of a pixel of an edge, which Clipper does no
 any other style is not clipped, which draws the same.
 
 **Not yet as MapServer draws it at a point.** A point layer's style without a symbol it draws —
-none, 0, a TrueType, SVG, hatch, or simple symbol — draws a square of its size, where MapServer
+none, 0, an SVG, hatch, or simple symbol — draws a square of its size, where MapServer
 draws nothing for none and 0 and the symbol otherwise; the square for none and 0 takes none of the
 layer's million points of markers (Q-9). A style of a style document whose name no symbol carries
 ([`style-symbol.md`](style-symbol.md)) draws nothing. A style a `GEOMTRANSFORM` places

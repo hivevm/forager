@@ -21,6 +21,13 @@ name: Checks
 # registry are cached, keyed on the files that decide their content, and so is the msautotest
 # suite check-rust.sh fetches, keyed on the script that holds its pin.
 #
+# The browser job runs the browser test of G-14 alone, against the Google Chrome and ChromeDriver
+# of the runner image, which CHROMEWEBDRIVER names (ADR-draft-browser-test-over-webdriver). It
+# installs the toolchain as the rust job does, from the same cache, and runs
+# scripts/check-browser.sh with FORAGER_BROWSER_TEST=required, which builds the bundle first, so
+# that a missing driver, browser, or bundle fails it; elsewhere, as in the rust job and in
+# scripts/check-all.sh, the test returns at once.
+#
 # Every job is bounded by a timeout — a hung step would otherwise occupy a runner until the
 # platform's own six-hour limit — and every checkout runs with 'persist-credentials: false': the
 # workflow token is needed to fetch the code, not afterwards, and leaving it in .git/config makes
@@ -281,3 +288,28 @@ jobs:
         run: bash scripts/test-fuzz.sh
       - name: Build, test, and lint the workspace
         run: bash scripts/check-rust.sh
+
+  browser:
+    runs-on: ubuntu-latest
+    # As the rust job's: on a cache miss it compiles the same cargo tools, and it builds the
+    # bundle and the bindings beside them.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The same cache as the rust job's: the toolchain, the cargo tools, wasm-bindgen among them.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+          key: rust-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'scripts/install-tools.sh') }}
+      - name: Install the toolchain and the cargo tools
+        run: bash scripts/install-tools.sh
+      # Builds the bundle, then runs the browser test alone.
+      # Verifies: ADR-draft-browser-test-over-webdriver
+      - name: Open the browser example in headless Chrome and compare it with the native render
+        run: bash scripts/check-browser.sh
+        env:
+          FORAGER_BROWSER_TEST: required

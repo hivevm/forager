@@ -59,6 +59,10 @@ it after creation (ADR-0007, ADR-0009).
   `cargo run -p forager-cli -- render <mapfile> --source <layer>=<file.geojson> -o <image.png>`
 - **Browser example:** `bash scripts/build-web.sh`, then `cargo run -p forager-dev-server` and open
   <http://127.0.0.1:8000/>; in VS Code, the launch configuration *Browser example* does all three
+- **Browser test:** `FORAGER_BROWSER_TEST=required bash scripts/check-browser.sh` — the example
+  in headless Chrome, compared with the native render (G-14); it needs Chrome and ChromeDriver,
+  which the Dev Container lacks, so it runs in CI's browser job, and without the variable it
+  returns at once
 - **Package:** `bash scripts/package.sh` — the CLI's archive and the browser bindings' package
   under `target/package/`, each carrying `THIRD-PARTY-NOTICES.md`, `LICENSE`, and
   `LICENSE-APACHE`, and checked for them; nothing is published

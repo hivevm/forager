@@ -64,8 +64,6 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
 6. **G-6** — When a msautotest case of the category geometry and symbols is rendered, its RGBA
    buffer shall match the reference image: a pixel differs when one of its channels differs by more
    than 16, and the case passes when at most 0.1 % of its pixels differ.
-7. **G-7** — When a filter is evaluated with and without pushdown, the system shall return
-   identical feature sets.
 8. **G-8** — When a layer's source has no bound adapter or its adapter fails, the system shall
    skip the layer and emit a diagnostic naming the layer, the source kind, and the source span.
 9. **G-9** — When the same input is rendered natively and on `wasm32-unknown-unknown`, the system
@@ -169,9 +167,9 @@ What this project explicitly does not try to do.
   (`ows_`, `wms_`, `wfs_`), and encrypted connection strings.
 - The sources a layer's `CONNECTIONTYPE` names as `OGR`, `POSTGIS`, `ORACLESPATIAL`, `PLUGIN`,
   `WMS`, `WFS`, `UNION`, `CONTOUR`, `KERNELDENSITY`, `IDW`, `UVRASTER`, `RASTERLABEL`, or
-  `GRATICULE`; a layer's `GRID`, `CONNECTIONOPTIONS`, and `BINDVALS`; tile indexes (`TILEINDEX`,
-  `TILEITEM`, `TILESRS`); and the handling of connections: pooling, and the `PROCESSING` keys
-  `CLOSE_CONNECTION`, `NATIVE_SQL`, and `NATIVE_FILTER`.
+  `GRATICULE`; a layer's `GRID`, `ENCODING`, `CONNECTIONOPTIONS`, and `BINDVALS`; tile indexes
+  (`TILEINDEX`, `TILEITEM`, `TILESRS`); and the handling of connections: pooling, and the
+  `PROCESSING` keys `CLOSE_CONNECTION`, `NATIVE_SQL`, and `NATIVE_FILTER`.
 - A layer's `TYPE` of `CHART` or `TILEINDEX`.
 - Classification and visibility by a layer's `GROUP`, `CLASSGROUP`, `REQUIRES`, `LABELREQUIRES`,
   `SCALETOKEN`, `MINGEOWIDTH`, and `MAXGEOWIDTH`; by a class's `GROUP`, `STATUS`, and `FALLBACK`;
@@ -179,10 +177,11 @@ What this project explicitly does not try to do.
   class's `TITLE`.
 - Colour ramps (`COLORRANGE`, `DATARANGE`, `RANGEITEM`, `RANGE_COLORSPACE`), and the `COMPOP` and
   `COMPFILTER` of a layer's `COMPOSITE`.
-- Pixmap symbols in formats other than PNG, a symbol of `TYPE simple`, a symbol fetched by its URL,
-  and a pixmap tiled along a line without a `GAP`.
-- Bitmap fonts, a label's shadow, `LEADER`, `ENCODING`, and a label's line that holds a character
-  of a script other than Latin or Common, right-to-left text among them.
+- Pixmap symbols in formats other than PNG, SVG symbols (`TYPE svg`, and a symbol named by a file
+  name ending in `.svg`), a symbol of `TYPE simple`, a symbol fetched by its URL, and a pixmap
+  tiled along a line without a `GAP`.
+- Bitmap fonts, a label's shadow, `LEADER`, a label's `ENCODING`, and a label's line that holds a
+  character of a script other than Latin or Common, right-to-left text among them.
 - COG read by HTTP range requests or through its overviews, raster formats other than GeoTIFF, COG,
   and PNG or JPEG with a world file, and lookup tables (`LUT`).
 - A mapfile's `PROJECTION` given as WKT, as PROJJSON, as a PROJ pipeline, or as `EPSG:` without

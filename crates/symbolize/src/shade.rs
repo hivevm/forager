@@ -16,11 +16,12 @@
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
 use forager_style_ir::c::{ms_compute_bounds, rect_overlap};
-use forager_style_ir::{Rgba, Style, Symbol};
+use forager_style_ir::{Rgba, Style, Symbol, SymbolKind};
 
 use crate::bounds;
 use crate::canvas::Canvas;
 use crate::extent::View;
+use crate::glyph_marker;
 use crate::hatch::{self, Hatched};
 use crate::line::{Pass, line_ends, line_symbol, moved, open_rings, style_offset};
 use crate::style::{GAMMA, fixed};
@@ -31,7 +32,9 @@ use crate::tile;
 /// for a symbol past the last or a name no symbol carries; with a pixmap, whatever its colours,
 /// moved by the offset scaled and filled with the image tiled (see [`tiled`]); without a `COLOR`,
 /// its outline as a line in the `OUTLINECOLOR`; with one, moved by the offset scaled, and with a
-/// hatch symbol hatched (see [`hatch::hatch`]), with any other filled, and outlined in the
+/// hatch symbol hatched (see [`hatch::hatch`]), with a vector symbol filled with the symbol tiled
+/// (see [`vector_tiled`]), with a TrueType symbol filled with its glyph tiled (see
+/// [`glyph_marker::tiled_glyph`]), with any other filled, and outlined in the
 /// `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width scaled, the factor
 /// itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled, as MapServer
 /// bounds it there. False where a hatch is refused (Q-9).
@@ -74,6 +77,21 @@ pub fn shade<T: Clone>(
             Hatched::Nothing => true,
             Hatched::Refused => false,
         };
+    }
+    if let symbol::Resolved::Found(index, symbol) = symbol::resolve(&style.symbol, canvas.symbols)
+        && symbol.kind == SymbolKind::Truetype
+    {
+        if meets_image(&rings, canvas.image()) {
+            glyph_marker::tiled_glyph(ops, rings, style, index, symbol, canvas);
+        }
+        return true;
+    }
+    if let symbol::Mark::Symbol(symbol) = symbol::mark(style, canvas.symbols)
+        && symbol.kind == SymbolKind::Vector
+        && let symbol::Resolved::Found(index, _) = symbol::resolve(&style.symbol, canvas.symbols)
+    {
+        vector_tiled(ops, rings, style, index, symbol, canvas);
+        return true;
     }
     ops.push(DrawOp::Fill {
         rings: rings.clone(),
@@ -133,6 +151,38 @@ fn tiled<T>(
         Ok(tile) => ops.push(DrawOp::TiledFill { rings, tile }),
         Err(why) => {
             canvas.refused_pixmaps.entry(index).or_insert(why);
+        }
+    }
+}
+
+/// The vector symbol `symbol`, at `index` from 1, over `rings`, already moved by the offset, as
+/// msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the tile of its
+/// size, scale, and gap (see [`tile::vector_tile`]), seamless where the style's `GAP` is 0, as
+/// msDrawShadeSymbol sets it for a vector symbol under AGG, and the polygon filled with it. Where the tile is refused (Q-9),
+/// nothing is drawn, and the canvas records why. A polygon wholly off the image builds no tile.
+fn vector_tiled<T: Clone>(
+    ops: &mut Vec<DrawOp>,
+    rings: Vec<Vec<Point>>,
+    style: &Style<T>,
+    index: usize,
+    symbol: &Symbol,
+    canvas: &mut Canvas,
+) {
+    // With the COLOR shade checked, computeSymbolStyle gives a fill or an outline colour: the
+    // check of msDrawShadeSymbol for neither cannot fail here.
+    let s = symbol::symbol_style(style, symbol, canvas.factors);
+    if !meets_image(&rings, canvas.image()) {
+        return;
+    }
+    let seamless = style.gap.unwrap_or(0.0) == 0.0;
+    let tile = match canvas.tiles.as_deref_mut() {
+        Some(tiles) => tile::vector_tile(tiles, index, symbol, &s, seamless),
+        None => Err("no tiles are kept where it is drawn".to_owned()),
+    };
+    match tile {
+        Ok(tile) => ops.push(DrawOp::TiledFill { rings, tile }),
+        Err(why) => {
+            canvas.refused_symbols.entry(index).or_insert(why);
         }
     }
 }

@@ -17,10 +17,11 @@
 //! one core crate that awaits the ports (ADR-0008).
 //!
 //! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
-//! `inline`, `label_binding`, `label_cache`, `label_styles`, and `layer`; `label_styles` imports
-//! `bindable`, `classes`, `label_cache`, and `layer`; `label_binding` imports `classes`; `classes`
-//! imports `bindable` and `layer`; `fonts` and `images` import `resource`; `bind`, `bindable`,
-//! `inline`, `label_cache`, `layer`, `plan`, `reproject`, and `resource` import none, nor does a
+//! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, and `marker_glyphs`;
+//! `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`; `label_binding`
+//! imports `classes`; `classes` imports `bindable` and `layer`; `fonts` imports `resource`, and
+//! `images` imports `marker_glyphs` and `resource`; `bind`, `bindable`, `inline`, `label_cache`,
+//! `layer`, `marker_glyphs`, `plan`, `reproject`, and `resource` import none, nor does a
 //! module take an item of this root. The test `engine_modules.rs` of `crates/arch-test` holds that
 //! direction, its tests aside, by a table in this order.
 
@@ -40,6 +41,7 @@ mod label_cache;
 mod label_styles;
 mod labels;
 mod layer;
+mod marker_glyphs;
 mod plan;
 mod reproject;
 mod resource;
@@ -54,7 +56,7 @@ use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
     Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
-    RenderMode, Rgba, Style, Symbol, TransformTree,
+    RenderMode, Rgba, Style, Symbol, SymbolKind, TransformTree,
 };
 use forager_symbolize::{
     Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, clip_pixmaps,
@@ -198,10 +200,11 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         // as msDrawLayer turns the cache off for it as it draws it (src/mapdraw.c:850-856).
         let at_once = mode == RenderMode::Point && (!layer.label_cache || layer.post_label_cache);
         drawing
-            .load_pixmaps(&selected, &map.symbols, !at_once, &mut images, files)
+            .load_resources(&selected, &map.symbols, !at_once, &mut images, &mut labels)
             .await;
-        let (pixmaps, tiles) = images.drawing();
-        let mut canvas = layer_canvas(map, factors[layer_index], (width, height), pixmaps, tiles);
+        let (pixmaps, tiles, glyphs) = images.drawing();
+        let mut canvas = layer_canvas(map, factors[layer_index], (width, height), pixmaps, tiles)
+            .with_glyphs(glyphs);
         let drawn = labelled(&selected);
         let mut target = drawing.target(&mut renderer, &mut canvas);
         if at_once {
@@ -227,20 +230,17 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
         let refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
-        layer_reports(
-            layer,
-            canvas.markers_spent(),
-            refusals,
-            undrawn,
-            selector.binder.diagnostics,
-        );
-        style_reports(layer, mode, &map.symbols, selector.binder.diagnostics);
+        let (spent, diagnostics) = (canvas.markers_spent(), &mut *selector.binder.diagnostics);
+        layer_reports(layer, spent, refusals, undrawn, diagnostics);
+        style_reports(layer, mode, &map.symbols, diagnostics);
         // Only a line, polygon, or annotation layer of POSTLABELCACHE TRUE comes here after the
         // cache is drawn: its labels are not drawn yet, each reported, so none enters the cache.
         if !at_once {
             let binder = &mut selector.binder;
             let settled = labels.layer(layer_index, mode, &drawn, binder);
-            labels.collect(&settled, &drawn, pixmaps, binder).await;
+            labels
+                .collect(&settled, &drawn, pixmaps, glyphs, binder)
+                .await;
         }
     }
     // The labels of the cache are drawn after every layer but those of POSTLABELCACHE TRUE, as
@@ -406,6 +406,35 @@ fn layer_canvas<'c>(
         .with_tiles(tiles)
 }
 
+/// The fonts the TrueType symbols of the `selected` features' styles name, each once, which their
+/// markers draw their glyphs from (ADR-draft-truetype-marker-glyph-through-a-port); those of
+/// styles outside their scale range at the map's `scale` are left out, as their pixmaps are, but
+/// for the first style of a class for which `holds_marker` is true: the label cache sizes that
+/// marker by msGetMarkerSize whatever its scale range (`src/maplabel.c:344-352, 604-608`).
+fn truetype_fonts<'s>(
+    selected: &'s [Selected<'_>],
+    symbols: &'s [Symbol],
+    scale: f64,
+    holds_marker: impl Fn(usize) -> bool,
+) -> Vec<&'s str> {
+    let mut fonts: Vec<&str> = Vec::new();
+    for (_, class, styles) in selected {
+        let marker = holds_marker(*class);
+        for (place, style) in styles.iter().enumerate() {
+            if ((place == 0 && marker)
+                || classes::in_scale(scale, style.min_scale_denom, style.max_scale_denom))
+                && let Resolved::Found(_, symbol) = resolve(&style.symbol, symbols)
+                && symbol.kind == SymbolKind::Truetype
+                && let Some(font) = symbol.font.as_deref()
+                && !fonts.contains(&font)
+            {
+                fonts.push(font);
+            }
+        }
+    }
+    fonts
+}
+
 /// What a layer's features are drawn with.
 struct Drawing<'a> {
     mode: RenderMode,
@@ -428,7 +457,10 @@ impl Drawing<'_> {
         Target::Layer(renderer.layer(opacity_alpha(opacity)))
     }
 
-    /// Loads into `images`, through `files`, the image of each pixmap symbol the styles of the
+    /// Loads what the layer is drawn from, through the resource loader of `labels`: the fonts of
+    /// the TrueType symbols the `selected` features' styles name, kept in `images` from the store
+    /// of the labels' fonts (see [`truetype_fonts`]), by the scale rule of the pixmaps below; and
+    /// into `images` the image of each pixmap symbol the styles of the
     /// `selected` features draw as a mark, those outside their scale range left out, so that the
     /// layer is drawn from them; one the store refuses leaves its style undrawn, as the canvas
     /// records. On a point layer of the label cache, the first style of a class with labels is
@@ -439,17 +471,22 @@ impl Drawing<'_> {
     /// (see [`clip_pixmaps`]), and those of the labelpoint and labelcenter styles of the classes'
     /// labels (see [`label_pixmap`]). `cached` tells whether the layer's labels go through the
     /// label cache.
-    async fn load_pixmaps<L: ResourceLoader>(
+    async fn load_resources<L: ResourceLoader>(
         &self,
         selected: &[Selected<'_>],
         symbols: &[forager_style_ir::Symbol],
         cached: bool,
         images: &mut Images,
-        files: &L,
+        labels: &mut Labels<'_, L>,
     ) {
         let holds_markers = self.mode == RenderMode::Point && cached;
+        let holds_marker =
+            |class: usize| holds_markers && !self.layer.classes[class].labels.is_empty();
+        let fonts = truetype_fonts(selected, symbols, self.scale, holds_marker);
+        labels.load_marker_fonts(images.glyphs_mut(), &fonts).await;
+        let files = labels.files();
         for (_, class, styles) in selected {
-            let marker = holds_markers && !self.layer.classes[*class].labels.is_empty();
+            let marker = holds_marker(*class);
             for (place, style) in styles.iter().enumerate() {
                 if !(place == 0 && marker)
                     && !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom)

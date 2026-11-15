@@ -204,9 +204,11 @@ golden path and the test pattern an agent copies from are named here.
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
-  refused, a label's among them, and geometries its render mode cannot draw (Q-9); the hatches
-  and pixmaps are one value, `Refusals`, which a canvas yields, the labels keep per layer and
-  merge, and one function of `layer.rs` turns into the layer's diagnostics. It loads the
+  refused, a label's among them, vector and TrueType symbols whose fill tile the cache refused,
+  TrueType symbols whose font cannot be used or lacks the character, and geometries its render
+  mode cannot draw (Q-9); the hatches, pixmaps, and symbols are one value, `Refusals`, which a
+  canvas yields, the labels keep per layer and merge, and one function of `layer.rs` turns into the
+  layer's diagnostics. It loads the
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
@@ -229,7 +231,11 @@ golden path and the test pattern an agent copies from are named here.
   (`draw.rs`); a polygon's fill through MapServer's default gamma, and a polygon filled with its
   pixmap's tile (`shade.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
   at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol` fills about the
-  point and the inverse of the image's transformation (`marker.rs`); a line's dashes, and the
+  point and the inverse of the image's transformation (`marker.rs`); a TrueType symbol's glyph at
+  a point, anchored, along a line, and tiled over a polygon, asked of the port `Glyphs` the engine
+  answers through `label`; the label cache sizes a class's TrueType marker by the same glyphs
+  ([ADR-draft-truetype-marker-glyph-through-a-port](adr/draft-truetype-marker-glyph-through-a-port.md),
+  `glyph.rs`, `glyph_marker.rs`); a line's dashes, and the
   style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
   canvas a layer draws on, which the images of the render's pixmaps are handed on and which
   yields what it left undrawn (`canvas.rs`); a label's styles, which of them are drawn, and their
@@ -351,6 +357,11 @@ golden path and the test pattern an agent copies from are named here.
   `scripts/generate-example.sh` writes from a fixed seed in bash and awk;
   `scripts/test-generate-example.sh` holds two runs of it to each other and to the checked-in
   files.
+  Its test `tests/browser.rs` opens the page in headless Chrome over ChromeDriver, with a
+  WebDriver client of its own on `std` and `serde_json`, and compares the canvas and the list of
+  diagnostics with the native render of `bindings-wasm` (G-14); `scripts/check-browser.sh` runs
+  it, and only where `FORAGER_BROWSER_TEST=required`, as in the browser job of CI, does it open a
+  browser ([ADR-draft-browser-test-over-webdriver](adr/draft-browser-test-over-webdriver.md)).
 - **`arch-test`** — the dependency test of [ADR-0008](adr/0008-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`

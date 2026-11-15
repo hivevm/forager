@@ -154,6 +154,38 @@ impl Glyphs {
     }
 }
 
+/// The glyph a marker draws: its outline in pixels in the font's coordinates, y up, its control
+/// box, and whether the font lacks the character, so that glyph 0 stands in for it.
+#[derive(Debug, PartialEq)]
+pub struct MarkerGlyph {
+    pub path: Vec<PathCommand>,
+    pub min_x: f64,
+    pub min_y: f64,
+    pub max_x: f64,
+    pub max_y: f64,
+    pub missing: bool,
+}
+
+/// The glyph of `character` in `font` at `glyph_size` points, as the TrueType branch of
+/// `msDrawMarkerSymbolInternal` takes it (ADR-draft-truetype-marker-glyph-through-a-port): the
+/// character mapped through the font's Unicode character map, glyph 0 where the font lacks it, as
+/// `FT_Get_Char_Index` maps it; drawn unhinted at the pixel size of `glyph_size` (see
+/// [`pixel_size`]), or the font's `?` where it cannot be, as `msGetGlyphByIndex` falls back;
+/// `None` where neither can be drawn.
+pub fn marker_glyph(font: &Font<'_>, character: char, glyph_size: f64) -> Option<MarkerGlyph> {
+    let id = font.glyph_index(character);
+    let ppem = pixel_size(glyph_size);
+    let glyph = draw(font, id, ppem).or_else(|| draw(font, font.glyph_index('?'), ppem))?;
+    Some(MarkerGlyph {
+        path: glyph.path,
+        min_x: glyph.min_x,
+        min_y: glyph.min_y,
+        max_x: glyph.max_x,
+        max_y: glyph.max_y,
+        missing: id == 0,
+    })
+}
+
 /// One line of a text path with glyphs: the [`Glyphs`] it was laid out with, by the index the
 /// caller gave it, the end of its glyphs among the path's, and its pen's start, after the line's
 /// alignment, from the path's origin.

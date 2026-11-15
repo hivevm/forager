@@ -6,15 +6,16 @@ use std::cell::OnceCell;
 use crate::{DrawOp, PremultipliedImage};
 
 /// A polygon fill's tile, a display item's counted reference to one image however many polygons
-/// it fills (ADR-0029): `width` by `height` pixels, transparent but for the drawing `mark` in
-/// them. Whoever keeps count of the bytes of a render's images counts [`Tile::bytes`] from the
-/// moment the tile exists, so that one past the bound is refused before anything is allocated
-/// for it; the renderer builds the pixels from the mark when it first fills with the tile.
+/// it fills (ADR-0029): `width` by `height` pixels, transparent but for the drawings `marks` in
+/// them, drawn in turn. Whoever keeps count of the bytes of a render's images counts
+/// [`Tile::bytes`] from the moment the tile exists, so that one past the bound is refused before
+/// anything is allocated for it; the renderer builds the pixels from the marks when it first
+/// fills with the tile.
 #[derive(Debug, PartialEq)]
 pub struct Tile {
     width: u32,
     height: u32,
-    mark: DrawOp,
+    marks: Vec<DrawOp>,
     image: OnceCell<PremultipliedImage>,
 }
 
@@ -22,14 +23,14 @@ impl Tile {
     /// The largest width and height of a tile (Q-9).
     pub const MAX_SIDE: u32 = 4096;
 
-    /// The tile of `width` by `height` pixels that `mark` draws, or `None` for a side of no
+    /// The tile of `width` by `height` pixels that `marks` draw, or `None` for a side of no
     /// pixels or past [`Tile::MAX_SIDE`].
-    pub fn new(width: u32, height: u32, mark: DrawOp) -> Option<Self> {
+    pub fn new(width: u32, height: u32, marks: Vec<DrawOp>) -> Option<Self> {
         let sides = 1..=Self::MAX_SIDE;
         (sides.contains(&width) && sides.contains(&height)).then_some(Self {
             width,
             height,
-            mark,
+            marks,
             image: OnceCell::new(),
         })
     }
@@ -47,9 +48,9 @@ impl Tile {
         self.width as usize * self.height as usize * 4
     }
 
-    /// The drawing that makes the tile, in the tile's own pixels.
-    pub fn mark(&self) -> &DrawOp {
-        &self.mark
+    /// The drawings that make the tile, in the tile's own pixels, in the order they are drawn.
+    pub fn marks(&self) -> &[DrawOp] {
+        &self.marks
     }
 
     /// The tile's image, which `build` makes the first time it is asked for and never again.
@@ -77,17 +78,20 @@ mod tests {
     #[test]
     fn a_tile_past_4096_pixels_a_side_or_of_none_cannot_be_made() {
         // Verifies: Q-9
-        assert!(Tile::new(4096, 4096, mark()).is_some());
-        assert_eq!(Tile::new(4096, 4096, mark()).unwrap().bytes(), 67_108_864);
-        assert!(Tile::new(4097, 1, mark()).is_none());
-        assert!(Tile::new(1, 4097, mark()).is_none());
-        assert!(Tile::new(0, 1, mark()).is_none());
-        assert!(Tile::new(1, 0, mark()).is_none());
+        assert!(Tile::new(4096, 4096, vec![mark()]).is_some());
+        assert_eq!(
+            Tile::new(4096, 4096, vec![mark()]).unwrap().bytes(),
+            67_108_864
+        );
+        assert!(Tile::new(4097, 1, vec![mark()]).is_none());
+        assert!(Tile::new(1, 4097, vec![mark()]).is_none());
+        assert!(Tile::new(0, 1, vec![mark()]).is_none());
+        assert!(Tile::new(1, 0, vec![mark()]).is_none());
     }
 
     #[test]
     fn a_tile_is_built_once_however_often_it_is_asked_for() {
-        let tile = Tile::new(1, 1, mark()).unwrap();
+        let tile = Tile::new(1, 1, vec![mark()]).unwrap();
         let built = Cell::new(0);
         let build = |_: &Tile| {
             built.set(built.get() + 1);

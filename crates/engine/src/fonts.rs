@@ -69,18 +69,7 @@ impl Fonts {
                 }
                 Ok(None) => why = format!("the font `{name}` ({path}) lacks a glyph of the text"),
                 Err(unusable) => {
-                    let what = match unusable {
-                        Unusable::NoUnicodeCharacterMap => {
-                            "has no Unicode character map; FreeType would read it through one \
-                             built from its glyph names, which is not built here"
-                        }
-                        Unusable::UnreadCharacterMapFormat => {
-                            "has a character map of format 2 or 8, which is not read"
-                        }
-                        Unusable::SymbolCharacterMap => "has only a Symbol character map",
-                        Unusable::AppleRomanCharacterMap => "has only an Apple Roman character map",
-                        Unusable::NoGlyfOutlines => "has no TrueType (glyf) outlines",
-                    };
+                    let what = unusable_reason(unusable);
                     return Err(format!("the font `{name}` ({path}) {what}"));
                 }
             }
@@ -88,6 +77,33 @@ impl Fonts {
         Err(format!(
             "{why}, and no other font of the label's list can be used"
         ))
+    }
+
+    /// The font the font set names `name`, loaded once per render into the store the labels' fonts
+    /// use, as a TrueType marker takes it (ADR-draft-truetype-marker-glyph-through-a-port): its
+    /// path and its bytes, or why it cannot be used, naming the font and its path. A font this
+    /// renderer cannot read a character map or outlines of cannot be used (ADR-0031).
+    pub(crate) async fn named<L: ResourceLoader>(
+        &mut self,
+        map: &Map,
+        name: &str,
+        loader: &L,
+    ) -> Result<(String, Rc<[u8]>), String> {
+        let Some(path) = map.fonts.get(name) else {
+            return Err(format!("the font set has no font `{name}`"));
+        };
+        let bytes = self
+            .load(path, loader)
+            .await
+            .map_err(|reason| format!("the font `{name}` ({path}) {reason}"))?;
+        let font = Font::new(&bytes).map_err(|e| format!("the font `{name}` ({path}): {e}"))?;
+        // Any character serves to find whether the font can be read: its usability does not hang
+        // on which.
+        if let Err(unusable) = font.glyphs(&['A'], false) {
+            let what = unusable_reason(unusable);
+            return Err(format!("the font `{name}` ({path}) {what}"));
+        }
+        Ok((path.to_owned(), bytes))
     }
 
     /// The font at `path`, loaded once per render whatever names the font set gives it.
@@ -104,5 +120,21 @@ impl Fonts {
             }
         })
         .await
+    }
+}
+
+/// Why a font this renderer cannot read cannot be used, as a diagnostic says it.
+fn unusable_reason(unusable: Unusable) -> &'static str {
+    match unusable {
+        Unusable::NoUnicodeCharacterMap => {
+            "has no Unicode character map; FreeType would read it through one built from its \
+             glyph names, which is not built here"
+        }
+        Unusable::UnreadCharacterMapFormat => {
+            "has a character map of format 2 or 8, which is not read"
+        }
+        Unusable::SymbolCharacterMap => "has only a Symbol character map",
+        Unusable::AppleRomanCharacterMap => "has only an Apple Roman character map",
+        Unusable::NoGlyfOutlines => "has no TrueType (glyf) outlines",
     }
 }

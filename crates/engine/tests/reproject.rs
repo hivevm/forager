@@ -460,6 +460,25 @@ fn a_point_that_does_not_reproject_is_left_out_with_a_warning_naming_the_layer()
 }
 
 #[test]
+fn a_layer_whose_projection_the_map_s_extent_misses_is_not_drawn_with_a_warning() {
+    // An orthographic layer centred on 115°E 45°S, the antipode of the map's extent: every point
+    // of that extent lies on its far side, and none reprojects into it.
+    let ortho = "+proj=ortho +lat_0=-45 +lon_0=115 +ellps=WGS84";
+    let source = Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
+    let (rendered, asked) = render_from(&map(LONGLAT, MAP_EXTENT, Some(ortho)), source);
+    assert!(asked.is_empty(), "its source is asked for nothing");
+    let codes: Vec<_> = rendered.diagnostics.iter().map(|d| &*d.code).collect();
+    assert_eq!(codes, ["extent-not-reprojected"]);
+    assert!(
+        rendered.diagnostics[0].message.contains("layer `data`"),
+        "{}",
+        rendered.diagnostics[0].message
+    );
+    let image = rendered.image.unwrap();
+    assert!(image.pixels.chunks(4).all(|p| p == [255, 255, 255, 255]));
+}
+
+#[test]
 fn a_projection_not_supported_leaves_its_layer_undrawn_with_a_warning() {
     // Verifies: ADR-0037
     let source = Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
