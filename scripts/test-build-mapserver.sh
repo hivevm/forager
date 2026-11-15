@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Self-test of how MapServer runs on CI. Verifies: ADR-0033, ADR-draft-proj-references-from-mapserver
+# Self-test of how MapServer runs on CI. Verifies: ADR-0033, ADR-0038
 #
 # The rules hold scripts/build-mapserver.sh and .github/workflows/noise.yml: the build script
 # reads the pin from scripts/fetch-msautotest.sh and names no tag or commit of its own, refuses to
 # run outside GitHub Actions, compiles the readers of the label cache and of the reprojection
-# (ADR-draft-proj-references-from-mapserver) outside the cached build, and patches nothing of the
+# (ADR-0038) outside the cached build, and patches nothing of the
 # checkout, and neither file adds an apt source; the workflow runs on
 # ubuntu-24.04 without a container, triggers on demand and on a push to the paths of the ADR only,
 # and keys the cache of the build on the two scripts alone. The real files must pass; each case

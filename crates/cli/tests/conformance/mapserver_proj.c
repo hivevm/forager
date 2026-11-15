@@ -1,6 +1,6 @@
 /*
  * The reader of MapServer's reprojection for G-11's reference
- * (ADR-draft-proj-references-from-mapserver): it reads the list of points named as its one
+ * (ADR-0038): it reads the list of points named as its one
  * argument, crates/proj/tests/reference/points.tsv, and reprojects each point from its line's
  * source projection into its target projection as MapServer reprojects a shape's point: each
  * projection loaded by msLoadProjectionString of src/mapfile.c, the point reprojected by

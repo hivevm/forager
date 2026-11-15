@@ -1,7 +1,7 @@
 //! The noise measurement of G-6 and G-13 (ADR-0033): MapServer at the pinned release renders the
 //! cases in scope, and the harness compares its renderings with the references and the labels of
 //! its label cache with the records beside the list, and its reprojection of G-11's reference
-//! points with the record beside the test of `proj` (ADR-draft-proj-references-from-mapserver).
+//! points with the record beside the test of `proj` (ADR-0038).
 //! Only `.github/workflows/noise.yml` builds MapServer; the measurement runs where
 //! `FORAGER_MAP2IMG`, `FORAGER_MAPSERVER_LABELS`, and `FORAGER_MAPSERVER_PROJ` name it and skips
 //! itself where none does, so the push checks never run it, whatever it is named.
@@ -41,7 +41,7 @@ const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
             without it the test skips itself"]
 fn mapserver_renders_the_cases_in_scope_within_its_noise() {
     // Verifies: ADR-0033
-    // Verifies: ADR-draft-proj-references-from-mapserver
+    // Verifies: ADR-0038
     let mapserver = mapserver(
         std::env::var_os("FORAGER_MAP2IMG"),
         std::env::var_os("FORAGER_MAPSERVER_LABELS"),
@@ -125,7 +125,7 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
 }
 
 /// The list of G-11's reference points and the record of MapServer's reprojection of them, from
-/// the workspace root (ADR-draft-proj-references-from-mapserver).
+/// the workspace root (ADR-0038).
 const REFERENCE_POINTS: &str = "crates/proj/tests/reference/points.tsv";
 const REFERENCE_RECORD: &str = "crates/proj/tests/reference/mapserver.tsv";
 
@@ -221,7 +221,7 @@ struct MapServer {
     map2img: PathBuf,
     /// The reader of the label cache (ADR-0033).
     labels: PathBuf,
-    /// The reader of the reprojection (ADR-draft-proj-references-from-mapserver).
+    /// The reader of the reprojection (ADR-0038).
     proj: PathBuf,
 }
 

@@ -7,7 +7,7 @@
 # crates/cli/tests/conformance/mapserver_labels.c, against that build's unmodified library and
 # headers, outside the cached build, into target/mapserver-labels/<commit>/ (ADR-0033), and the
 # reader of MapServer's reprojection, crates/cli/tests/conformance/mapserver_proj.c, the same way
-# into target/mapserver-proj/<commit>/ (ADR-draft-proj-references-from-mapserver), and prints the
+# into target/mapserver-proj/<commit>/ (ADR-0038), and prints the
 # path of map2img and, on a second and a third line, those of the two readers. It adds no apt source. It runs on a
 # GitHub-hosted runner only, where .github/workflows/noise.yml calls it, and refuses anywhere else,
 # the dev container included.

@@ -1,7 +1,7 @@
 //! G-11: the core's reprojection agrees with PROJ, as MapServer at the pinned build calls it, over
 //! the reference points of `tests/reference/points.tsv`. The record `tests/reference/mapserver.tsv`
 //! is the output of the reader `crates/cli/tests/conformance/mapserver_proj.c` in the noise run,
-//! taken from its artifact (ADR-draft-proj-references-from-mapserver); this test needs neither PROJ
+//! taken from its artifact (ADR-0038); this test needs neither PROJ
 //! nor MapServer.
 
 use forager_proj::{Projection, Reprojection};
@@ -77,11 +77,11 @@ fn report(text: &str) {
 #[test]
 fn the_core_s_reprojection_agrees_with_mapserver_s_call_of_proj_within_g_11() {
     // Verifies: G-11
-    // Verifies: ADR-draft-proj-references-from-mapserver
+    // Verifies: ADR-0038
     let record = std::fs::read_to_string(RECORD_PATH).unwrap_or_else(|e| {
         panic!(
             "the record {RECORD_PATH} ({e}) is taken from the noise run's artifact, noise/proj/ \
-             (ADR-draft-proj-references-from-mapserver)"
+             (ADR-0038)"
         )
     });
     let mut lines = record.lines();
