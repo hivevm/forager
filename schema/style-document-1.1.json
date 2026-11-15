@@ -1326,6 +1326,11 @@
           "description": "Labels only, no geometry.",
           "type": "string",
           "const": "annotation"
+        },
+        {
+          "description": "Each feature drawn as a circle: a shape of one part of two points gives its centre, their\nmidpoint, and its radius, half their distance in x, or in y where that is 0.",
+          "type": "string",
+          "const": "circle"
         }
       ]
     },

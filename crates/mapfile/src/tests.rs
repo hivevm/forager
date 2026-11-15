@@ -18,7 +18,8 @@ use std::collections::BTreeMap;
 
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::{
-    Bound, LayerStatus, NotDrawn, RenderMode, Rgba, Severity, Span, TransformShape, TransformTree,
+    Bound, LayerStatus, NotDrawn, RenderMode, Rgba, Severity, ShapeType, Span, TransformShape,
+    TransformTree,
 };
 
 use super::{Loaded, load};
@@ -1731,6 +1732,29 @@ fn a_bare_keyword_is_no_item_name_and_a_quoted_one_is() {
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     let loaded = load_files(&[("m.map", "MAP LAYER CLASSITEM kind END END")]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
+}
+
+#[test]
+fn a_circle_layer_draws_in_the_render_mode_circle_and_round_trips() {
+    // Verifies: G-3
+    // loadLayer reads TYPE CIRCLE as MS_LAYER_CIRCLE, and gives the features after it the shape
+    // type point (src/mapfile.c), which msDrawShape hands to circleLayerDrawShape.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER TYPE circle FEATURE POINTS 10 10 50 50 END END END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let document = loaded.document.unwrap();
+    let layer = &document.map.layers[0];
+    assert_eq!(layer.render_mode, Some(RenderMode::Circle));
+    assert_eq!(layer.features[0].shape_type, ShapeType::Point);
+    let yaml = document.to_yaml().unwrap();
+    assert!(yaml.contains("render_mode: circle"), "{yaml}");
+    let json = document.to_json().unwrap();
+    let from_yaml = forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap();
+    let from_json = forager_style_ir::StyleDocument::from_json(&json).unwrap();
+    assert_eq!(from_yaml.document, document);
+    assert_eq!(from_json.document, document);
 }
 
 #[test]

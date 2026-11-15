@@ -172,7 +172,9 @@ golden path and the test pattern an agent copies from are named here.
   otherwise, the bounds of a style and a label by that resolution factor alone (`classes.rs`,
   the properties of a style a feature may bind listed once in `bindable.rs`),
   and turns each feature and style into display items
-  by the layer's render mode. A layer without a source, or whose source fails, is skipped with a
+  by the layer's render mode; a circle layer's features it keeps in the layer's projection and
+  reprojects only each circle's centre, as `circleLayerDrawShape` does, and draws none of its
+  labels. A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer
   ([ADR-0022](adr/0022-skipped-records.md)); the fonts a label names and the images its
   pixmap symbols name it loads by one load, once per render and path through the host's resource
@@ -228,7 +230,8 @@ golden path and the test pattern an agent copies from are named here.
   in a style bound to it turned into drawing operations, as MapServer draws it. The dispatch of a
   style by the layer's render mode, the symbols a `GEOMTRANSFORM` places, and the paths of the
   images a layer's styles will draw, which the engine loads before it draws the layer
-  (`draw.rs`); a polygon's fill through MapServer's default gamma, and a polygon filled with its
+  (`draw.rs`); the circle a circle layer draws of a shape of two points, as a polygon in pixels
+  (`circle.rs`); a polygon's fill through MapServer's default gamma, and a polygon filled with its
   pixmap's tile (`shade.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
   at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol` fills about the
   point and the inverse of the image's transformation (`marker.rs`); a TrueType symbol's glyph at
@@ -262,12 +265,12 @@ golden path and the test pattern an agent copies from are named here.
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
-  does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`
-  and `label.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`, `canvas.rs`, `hatch.rs`,
-  `line_marker.rs` and `tile.rs`, `symbol.rs`, and `geom_transform.rs`, and `bounds.rs`, `style.rs`,
-  `extent.rs`, `layer_transform.rs`, and `offset.rs` the leaves, as `lib.rs` lists them; ADR-0008
-  decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs` holds
-  this one.
+  does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`,
+  `label.rs`, and `circle.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`, `canvas.rs`,
+  `hatch.rs`, `line_marker.rs` and `tile.rs`, `symbol.rs`, and `geom_transform.rs`, and
+  `bounds.rs`, `style.rs`, `extent.rs`, `layer_transform.rs`, and `offset.rs` the leaves, as
+  `lib.rs` lists them; ADR-0008 decides the direction only between crates, and `arch-test`'s
+  `tests/symbolize_modules.rs` holds this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list, read by `style-ir`'s `font_list`, in the order MapServer tries them, and its glyphs
   read with skrifa, unhinted with FreeType's arithmetic, laid out by their advances, broken into

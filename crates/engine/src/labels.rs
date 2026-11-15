@@ -304,7 +304,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
 
     /// Settles the labels of layer `index`, drawn in `mode` with its labels cached, for the
     /// classes of `drawn` before its features, each label not drawn reported once: a label of a
-    /// layer other than a point layer is not drawn yet.
+    /// circle layer is never drawn, and one of any other layer but a point layer not yet.
     pub(crate) fn layer(
         &mut self,
         index: usize,
@@ -379,7 +379,11 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     fixed_labels.insert((class_index, n), None);
                     continue;
                 }
-                let fixed = if mode != RenderMode::Point {
+                // msDrawShape returns after circleLayerDrawShape, which draws no label
+                // (src/mapdraw.c:2390-2396).
+                let fixed = if mode == RenderMode::Circle {
+                    Err("a circle layer draws no label, as MapServer draws none".to_owned())
+                } else if mode != RenderMode::Point {
                     Err("labels of line and polygon layers are not drawn yet".to_owned())
                 } else if class.labels.len() > 1 {
                     Err(several.to_owned())

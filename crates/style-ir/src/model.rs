@@ -378,6 +378,9 @@ pub enum RenderMode {
     Raster,
     /// Labels only, no geometry.
     Annotation,
+    /// Each feature drawn as a circle: a shape of one part of two points gives its centre, their
+    /// midpoint, and its radius, half their distance in x, or in y where that is 0.
+    Circle,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

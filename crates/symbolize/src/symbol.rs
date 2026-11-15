@@ -48,7 +48,7 @@ pub type Pixmaps = std::collections::BTreeMap<String, Result<Rc<PremultipliedIma
 /// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16
 /// for a radius of 6, some 2000 for 100 000 pixels; this many are reached at a radius of some
 /// 425 000 pixels, far past any image, and bound what a hostile symbol costs (Q-9).
-const MAX_ELLIPSE_STEPS: u32 = 4096;
+pub(crate) const MAX_ELLIPSE_STEPS: u32 = 4096;
 
 /// What a point style draws at each point.
 #[derive(Debug, PartialEq)]
