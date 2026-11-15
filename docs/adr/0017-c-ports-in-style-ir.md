@@ -67,7 +67,7 @@ The revision of 2026-11-13 found three more ports written inline where MapServer
 function: the alpha of a layer's or a style's opacity, `MS_NINT(opacity * 2.55)` kept in an
 `unsigned char`; the bounds of a shape's points, `msComputeBounds`; and the match of a symbol's
 name, `msGetSymbolIndex` with glibc's `strcasecmp`. 7d09373f moved each into the module, as the
-decision of that day says for a helper of `mapserver.h`.
+decision says of every small function or macro of C's or MapServer's that crates call.
 
 Today the module is `crates/style-ir/src/c.rs`. The frontend, `expr`, the engine, `symbolize`,
 `label`, `render-agg` (`lrint` in its resampler), `proj` (`DEG_TO_RAD`), and both adapters

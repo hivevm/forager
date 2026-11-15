@@ -67,13 +67,12 @@ The maintainer chose on 2026-11-14 a port of its own over proj4rs, and the suite
 harness's source.
 
 **What the port holds today.** The tickets of the plan that needed them added, under this
-decision's *Scope*, `ortho` (`ortho.rs`) and the parameter `+over`, and two ports of MapServer's
-`src/mapproject.c` beside the port of PROJ: the area asked of a source as `msProjectRect` computes
-it, with the `+over` it adds to both projections (`rect.rs`), and a shape's lines as
-`msProjectShapeLine` reprojects them, cut at the horizon of `ortho` and wrapped at the dateline of
-`+over` (`shape.rs`). The engine reprojects a layer's features and the area it asks of their source
-through them, the points its horizon search adds bounded by Q-9. The work they are is in scope of
-this decision: the same formulas, the same `libm`, and no crate beyond `style-ir`.
+decision's *Scope*, `ortho` (`ortho.rs`) and the parameter `+over`. Beside the port of PROJ,
+`proj` holds two ports of MapServer's `src/mapproject.c`, which this decision leaves out of its
+scope (*Out of scope*): the area asked of a source as `msProjectRect` computes it (`rect.rs`), and
+a shape's lines as `msProjectShapeLine` reprojects them, cut at the horizon and wrapped at the
+dateline (`shape.rs`). They take this decision's `libm` and its one dependency, and
+[ADR-0038](0038-proj-references-from-mapserver.md) measures them against MapServer.
 
 ## Decision
 
@@ -98,8 +97,10 @@ functions and no other dependency but `style-ir`.
 
 **Out of scope:**
 
-- the tolerance of G-11, which the specification states and
-  [ADR-0038](0038-proj-references-from-mapserver.md) measures;
+- the area asked of a source as `msProjectRect` computes it, horizon clipping into `ortho`, and
+  the dateline of `+over`, ports of MapServer's code rather than of PROJ's, which landed in `proj`
+  and which [ADR-0038](0038-proj-references-from-mapserver.md) measures;
+- the tolerance of G-11, which the specification states and ADR-0038 measures;
 - datum grids, WKT, PROJJSON, PROJ pipelines, and raster reprojection.
 
 ## Alternatives considered
