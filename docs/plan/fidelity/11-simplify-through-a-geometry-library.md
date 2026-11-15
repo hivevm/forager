@@ -62,8 +62,8 @@ layer of `GEOMTRANSFORM (simplify([shape],25))`.
 ## Read first
 
 - Touches: `docs/adr/` (two drafts), `crates/style-ir/src/transform.rs`,
-  `schema/style-document-1.1.json`, `crates/mapfile/src/translate/` (the translation of
-  `GEOMTRANSFORM` expressions), `crates/symbolize/src/layer_transform.rs`,
+  `schema/style-document-1.1.json`, `crates/mapfile/src/expression/transform.rs` (the translation
+  of `GEOMTRANSFORM` expressions), `crates/symbolize/src/layer_transform.rs`,
   `crates/symbolize/Cargo.toml` or a new crate, `Cargo.toml`, `Cargo.lock`,
   `crates/cli/tests/conformance/cases.txt`
 - MapServer at the pin: `src/mapgeos.c` (`msGEOSSimplify`, `msGEOSTopologyPreservingSimplify`,
