@@ -223,6 +223,8 @@ run "Plan frontier sensor self-test" scripts/test-sensor-plan-frontier.sh
 run "Plan frontier sensor" scripts/sensor-plan-frontier.sh
 run "Backlog sensor self-test" scripts/test-sensor-backlog.sh
 run "Backlog sensor" scripts/sensor-backlog.sh
+run "Diagnostics untested sensor self-test" scripts/test-sensor-diagnostics-untested.sh
+run "Diagnostics untested sensor" scripts/sensor-diagnostics-untested.sh
 run "Action references sensor self-test" scripts/test-sensor-action-refs.sh
 # The check of ADR-0010: every action by its major version tag.
 # Verifies: ADR-0010

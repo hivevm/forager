@@ -169,6 +169,10 @@ jobs:
         run: bash scripts/test-sensor-backlog.sh
       - name: Report the backlog entries on main and on unmerged local branches
         run: bash scripts/sensor-backlog.sh
+      - name: Self-test the diagnostics untested sensor
+        run: bash scripts/test-sensor-diagnostics-untested.sh
+      - name: Report the diagnostic codes no test names
+        run: bash scripts/sensor-diagnostics-untested.sh
       - name: Self-test the action references sensor
         run: bash scripts/test-sensor-action-refs.sh
       # The check of ADR-0010: every action by its major version tag, kept current by Dependabot.
