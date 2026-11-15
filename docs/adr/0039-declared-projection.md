@@ -1,4 +1,4 @@
-# ADR-draft-declared-projection: A feature source declares its projection through the port, and the shapefile adapter turns the WKT of its `.prj` into a proj4 string with a parser of its own
+# ADR-0039: A feature source declares its projection through the port, and the shapefile adapter turns the WKT of its `.prj` into a proj4 string with a parser of its own
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-15
