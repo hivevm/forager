@@ -405,12 +405,18 @@ fn layer_canvas<'c>(
 }
 
 /// The fonts the TrueType symbols of the `selected` features' styles name, each once, which their
-/// markers draw their glyphs from (ADR-draft-truetype-marker-glyph-through-a-port).
-fn truetype_fonts<'s>(selected: &'s [Selected<'_>], symbols: &'s [Symbol]) -> Vec<&'s str> {
+/// markers draw their glyphs from (ADR-draft-truetype-marker-glyph-through-a-port); those of
+/// styles outside their scale range at the map's `scale` are left out, as their pixmaps are.
+fn truetype_fonts<'s>(
+    selected: &'s [Selected<'_>],
+    symbols: &'s [Symbol],
+    scale: f64,
+) -> Vec<&'s str> {
     let mut fonts: Vec<&str> = Vec::new();
     for (_, _, styles) in selected {
         for style in styles {
-            if let Resolved::Found(_, symbol) = resolve(&style.symbol, symbols)
+            if classes::in_scale(scale, style.min_scale_denom, style.max_scale_denom)
+                && let Resolved::Found(_, symbol) = resolve(&style.symbol, symbols)
                 && symbol.kind == SymbolKind::Truetype
                 && let Some(font) = symbol.font.as_deref()
                 && !fonts.contains(&font)
@@ -466,7 +472,7 @@ impl Drawing<'_> {
         images: &mut Images,
         labels: &mut Labels<'_, L>,
     ) {
-        let fonts = truetype_fonts(selected, symbols);
+        let fonts = truetype_fonts(selected, symbols, self.scale);
         labels.load_marker_fonts(images.glyphs_mut(), &fonts).await;
         let files = labels.files();
         let holds_markers = self.mode == RenderMode::Point && cached;

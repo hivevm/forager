@@ -28,8 +28,8 @@ use crate::style::fixed;
 use crate::symbol::{self, Factors};
 
 /// What msDrawMarkerSymbol draws of `style` at the pixel `at` at the canvas's factor: its
-/// symbol, a TrueType symbol's glyph (see [`glyph_marker::glyph_ops`]), or the square that stands for a symbol not drawn yet, moved as msAdjustMarkerPos
-/// moves it. The square is Forager's, not MapServer's, which draws nothing for symbol 0; it is
+/// symbol, a TrueType symbol's glyph (see [`glyph_marker::glyph_ops`]), or the square that stands
+/// for a symbol not drawn yet, moved as msAdjustMarkerPos moves it. The square is Forager's, not MapServer's, which draws nothing for symbol 0; it is
 /// drawn at a factor of 1. A pixmap whose image the canvas lacks draws nothing, and the canvas
 /// records why.
 pub(crate) fn marker_ops<T>(

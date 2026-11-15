@@ -138,7 +138,9 @@ fn a_character_the_font_lacks_draws_glyph_0_and_warns() {
     assert_eq!(codes(&rendered), ["symbol-glyph-missing"]);
     let message = &rendered.diagnostics[0].message;
     assert!(
-        message.contains("symbol `ttf`") && message.contains("`☃`") && message.contains("glyph 0"),
+        message.contains("symbol `ttf`")
+            && message.contains("U+2603")
+            && message.contains("glyph 0"),
         "{message}"
     );
     assert!(drawn(&rendered) > 0, "glyph 0 is drawn");

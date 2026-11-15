@@ -5,8 +5,9 @@ use std::rc::Rc;
 
 use forager_render::PathCommand;
 
-/// A glyph a marker draws: its outline in pixels in the font's coordinates, y up, its control box,
-/// and whether the font lacks the character, so that glyph 0 stands in for it.
+/// A glyph a marker draws: its outline in pixels about its origin, y down as the display list has
+/// it, its control box in the same pixels, and whether the font lacks the character, so that
+/// glyph 0 stands in for it.
 #[derive(Debug, PartialEq)]
 pub struct Glyph {
     pub path: Vec<PathCommand>,

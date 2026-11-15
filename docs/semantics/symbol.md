@@ -52,21 +52,25 @@ than the centre moves the symbol so that the anchor, turned with it, lies on the
 at the size cut to whole pixels (`msAdjustMarkerPos`, `msGetMarkerSize` in `src/mapsymbol.c`).
 A style whose symbol index lies past the last symbol draws nothing.
 
-**A TrueType symbol at a point.** A point layer's style whose symbol is a TrueType symbol draws
-the glyph of its `CHARACTER`, the first character, in the font the font set names by its `FONT`,
-at each point inside the map's extent, as the TrueType branch of `msDrawMarkerSymbolInternal` and
+**A TrueType symbol at a point.** A point layer's style whose symbol is a TrueType symbol draws the
+glyph of its `CHARACTER`, its first character or a numeric entity such as `&#8730;` or `&#x221A;` at
+its start, as `msUTF8ToUniChar` reads it, in the font the font set names by its `FONT`, at each
+point inside the map's extent, as the TrueType branch of `msDrawMarkerSymbolInternal` and
 `drawGlyphMarker` in `src/maprendering.c` and `agg2RenderGlyphsPath` in `src/mapagg.cpp` draw it
 ([ADR-draft-truetype-marker-glyph-through-a-port](../adr/draft-truetype-marker-glyph-through-a-port.md)).
 Its colours are a filled symbol's: the glyph is filled with `COLOR` and outlined with
 `OUTLINECOLOR`, at the style's `WIDTH` cut to an integer, plus 1. The glyph is read as a label's is,
-unhinted, at `MS_MAX(MS_NINT(scale), 1)` points, the scale the style's size bounded by `MINSIZE`
-and `MAXSIZE`. It is centred on the point by the middle of its control box, the middle turned by
-`ANGLE` where there is one, and the glyph turned counter-clockwise by it. The font is loaded once
-per render, with the labels' fonts, before the layer is drawn. A character the font lacks draws
-glyph 0, as MapServer does, and the layer warns with `symbol-glyph-missing`, once per symbol. A
-`FONT` the font set lacks, a file that does not load or that this renderer cannot read, and a
-symbol without `FONT` or `CHARACTER` draw nothing, and the layer warns with `symbol-not-drawn`,
-once per symbol, where MapServer fails the layer. The symbol's `ANCHORPOINT` is not applied yet.
+unhinted, at `MS_MAX(MS_NINT(scale), 1)` points, the scale the style's size bounded by `MINSIZE` and
+`MAXSIZE`. It is centred on the point by the middle of its control box, the middle turned by `ANGLE`
+where there is one, and the glyph turned counter-clockwise by it. The font is loaded once per
+render, with the labels' fonts, before the layer is drawn. A character the font lacks draws glyph 0,
+as MapServer does, and the layer warns with `symbol-glyph-missing`, once per symbol; an empty
+`CHARACTER` is code point 0, which draws glyph 0 too. A `FONT` the font set lacks, or a file that
+does not load or that this renderer cannot read, draws nothing, and the layer warns with
+`symbol-not-drawn`, once per symbol, where MapServer fails the layer. So do a symbol without a
+`FONT`, which MapServer draws in its built-in font, not bundled with Forager, and a `CHARACTER` that
+starts with a named entity, such as `&radic;`, whose table of 252 Forager does not carry. The
+symbol's `ANCHORPOINT` is not applied yet.
 
 **A pixmap at a point.** A point layer's style whose symbol is a pixmap draws its image at each
 point inside the map's extent, as `msDrawMarkerSymbolInternal` in `src/maprendering.c` and

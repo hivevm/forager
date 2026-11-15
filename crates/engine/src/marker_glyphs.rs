@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use forager_label::{Font, marker_glyph};
+use forager_render::{PathCommand, Point};
 use forager_symbolize::{Glyph, Glyphs};
 
 /// A font kept for the markers: its path and its bytes, or why it cannot be used.
@@ -57,17 +58,31 @@ impl Glyphs for MarkerGlyphs {
                     })
                 })
                 .map(|glyph| {
+                    // The port's pixels run down, the font's up: y is flipped, as
+                    // decompose_ft_outline flips it, and the control box with it.
                     Rc::new(Glyph {
-                        path: glyph.path,
+                        path: glyph.path.iter().map(flipped).collect(),
                         min_x: glyph.min_x,
-                        min_y: glyph.min_y,
+                        min_y: -glyph.max_y,
                         max_x: glyph.max_x,
-                        max_y: glyph.max_y,
+                        max_y: -glyph.min_y,
                         missing: glyph.missing,
                     })
                 }),
         };
         self.read.borrow_mut().insert(key, read.clone());
         read
+    }
+}
+
+/// `command` with each point's y negated.
+fn flipped(command: &PathCommand) -> PathCommand {
+    let f = |p: &Point| Point { x: p.x, y: -p.y };
+    match command {
+        PathCommand::MoveTo(p) => PathCommand::MoveTo(f(p)),
+        PathCommand::LineTo(p) => PathCommand::LineTo(f(p)),
+        PathCommand::QuadTo(c, p) => PathCommand::QuadTo(f(c), f(p)),
+        PathCommand::CubicTo(c0, c1, p) => PathCommand::CubicTo(f(c0), f(c1), f(p)),
+        PathCommand::Close => PathCommand::Close,
     }
 }
