@@ -1,4 +1,4 @@
-# ADR-draft-browser-test-over-webdriver: The browser test of G-14 drives headless Chrome over WebDriver with a client of its own, compares the canvas with the native render, and runs in a CI job of its own
+# ADR-0040: The browser test of G-14 drives headless Chrome over WebDriver with a client of its own, compares the canvas with the native render, and runs in a CI job of its own
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-15

@@ -1,4 +1,4 @@
-# ADR-draft-transform-tree-with-simplify-and-buffer: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, `simplify` and `buffer` among its nodes
+# ADR-0043: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, `simplify` and `buffer` among its nodes
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-15
@@ -15,7 +15,7 @@ the forces; they still hold. Its *Decision* lists the tree's nodes: `shape`, `ge
 reasons a tree is not drawn. Its *Out of scope* leaves the port of any function of that list open.
 
 The fidelity plan ports `simplify` and `buffer` (tickets 11 and 12). The code that computes them
-is [ADR-draft-geometry-through-geo](draft-geometry-through-geo.md), the geo crate the maintainer
+is [ADR-0041](0041-geometry-through-geo.md), the geo crate the maintainer
 chose on 2026-11-15. geo does not reproduce GEOS's `simplifypt`, so `simplifypt` stays a reason.
 The tree must hold `simplify` and `buffer` as nodes with their arguments. That changes
 ADR-0036's list of nodes and its closed list of reasons, so this ADR supersedes it.
@@ -199,7 +199,7 @@ from MapServer's text.
 - the evaluation of the tree and each function's semantics, which `docs/semantics/` writes down
   from the C, `[map_cellsize]` and the layer's `UNITS` among them;
 - the code that computes `simplify` and `buffer`, which
-  [ADR-draft-geometry-through-geo](draft-geometry-through-geo.md) decides;
+  [ADR-0041](0041-geometry-through-geo.md) decides;
 - the bounds on the points a transform adds and visits beyond those Q-9 names;
 - a label's style of an expression, which keeps `LabelTransform` and is left out with its label as
   today;

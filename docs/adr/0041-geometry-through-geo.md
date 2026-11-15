@@ -1,4 +1,4 @@
-# ADR-draft-geometry-through-geo: `simplify` and `buffer` are computed in `symbolize`, by a Douglas-Peucker ported from JTS and with the geo crate, and a simplified polygon is repaired as GEOS repairs it
+# ADR-0041: `simplify` and `buffer` are computed in `symbolize`, by a Douglas-Peucker ported from JTS and with the geo crate, and a simplified polygon is repaired as GEOS repairs it
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-15
@@ -161,7 +161,7 @@ from JTS. We will compute `buffer`, and a simplified polygon's validity and repa
   crates, at 0.33, with its default features off.
 - **Precondition.** geo brings i_overlay 4.5 into `symbolize`, which ADR-0028 forbids. This ADR
   must not be accepted before
-  [ADR-draft-i-overlay-in-render-agg-and-geo](draft-i-overlay-in-render-agg-and-geo.md), the
+  [ADR-0042](0042-i-overlay-in-render-agg-and-geo.md), the
   successor of ADR-0028 that allows it.
 - **Douglas-Peucker.** Forager's own Douglas-Peucker must port JTS's
   `DouglasPeuckerLineSimplifier`:
@@ -195,7 +195,7 @@ from JTS. We will compute `buffer`, and a simplified polygon's validity and repa
   `not_drawn` reason. The backlog entry `docs/backlog/simplifypt-topology-preserving.md` names the
   options;
 - the transform tree's nodes and their arguments, which
-  [ADR-draft-transform-tree-with-simplify-and-buffer](draft-transform-tree-with-simplify-and-buffer.md)
+  [ADR-0043](0043-transform-tree-with-simplify-and-buffer.md)
   decides;
 - a tolerance of 0 or below, for which geo returns its input and GEOS does not, and MapServer's
   reaction when GEOS fails. `docs/semantics/` writes them down from the C, and the module follows

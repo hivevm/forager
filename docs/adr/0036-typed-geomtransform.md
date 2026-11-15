@@ -1,6 +1,6 @@
 # ADR-0036: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, translated by the mapfile frontend
 
-- **Status:** ⚪ superseded by ADR-draft-transform-tree-with-simplify-and-buffer
+- **Status:** ⚪ superseded by ADR-0043
 - **Date:** 2026-11-13
 - **Deciders:** Markus Brigl
 - **Applies to:** the transform tree of `crates/style-ir` (a style's `GeomTransform::Expression` and a layer's `geom_transform`), the translation of `GEOMTRANSFORM` expressions in `crates/mapfile`, every crate that evaluates or reports a transform tree (`crates/engine`, `crates/symbolize`), and `schema/style-document-1.1.json`

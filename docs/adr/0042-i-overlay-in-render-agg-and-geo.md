@@ -1,4 +1,4 @@
-# ADR-draft-i-overlay-in-render-agg-and-geo: The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it, and geo is the only other package that depends on i_overlay
+# ADR-0042: The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it, and geo is the only other package that depends on i_overlay
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-15
@@ -13,7 +13,7 @@ intersection. Its *Context*, *Alternatives*, and *Sources* still hold. Its *Deci
 "i_overlay must be a dependency of `render-agg` alone, with its default features off." Its *Out of
 scope* leaves a `GEOMTRANSFORM` `buffer` free to choose i_overlay by an ADR of its own.
 
-[ADR-draft-geometry-through-geo](draft-geometry-through-geo.md) makes geo 0.33 a dependency of
+[ADR-0041](0041-geometry-through-geo.md) makes geo 0.33 a dependency of
 `symbolize`, as the maintainer chose on 2026-11-15. geo 0.33.1 depends on i_overlay 4.5.2 with
 i_float 1.16, i_shape 1.18, i_key_sort 0.10, and i_tree 0.18. Cargo keeps them beside the 9.1.0
 family of `render-agg`, since the two majors are not compatible. `symbolize` so depends on
@@ -90,7 +90,7 @@ MapServer's Clipper cuts it. geo is the only other package that may depend on i_
   scratch copy of the workspace wrote with geo added to `symbolize`.
 - `crates/arch-test/tests/dependencies.rs`, `dependents` and
   `only_render_agg_cuts_polygons_with_i_overlay`, read 2026-11-15.
-- [ADR-draft-geometry-through-geo](draft-geometry-through-geo.md).
+- [ADR-0041](0041-geometry-through-geo.md).
 
 ## Consequences
 
