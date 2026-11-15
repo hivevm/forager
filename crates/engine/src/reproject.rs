@@ -106,15 +106,15 @@ impl LayerReprojection {
     }
 
     /// Reprojects each of `features` into the map's projection as `msProjectShapeEx` reprojects a
-    /// shape, and returns how many of their points do not reproject. A line or a ring is
+    /// shape, and returns how many of their points do not reproject and how many points the
+    /// horizon search added, those past `bound` leaving out the feature that passes it and the
+    /// features after it (Q-9). A line or a ring is
     /// reprojected by `msProjectShapeLine`: a run of points that do not reproject is cut at the
     /// horizon, a line into parts added after the shape's others, and a longitude into longitude
     /// and latitude is wrapped across the dateline. The points of a point shape are reprojected by
     /// `msProjectLineEx`, all of them left out where one does not reproject, unless the map is in
     /// longitude and latitude and the layer is not. A line left empty is left out, and a feature
     /// left with nothing.
-    /// [`Self::features`], the points the horizon search adds held to `bound`: the feature that
-    /// passes it and those after it are left out.
     pub(crate) fn features_within(&self, features: &mut Vec<Feature>, bound: usize) -> Reprojected {
         let mut done = Reprojected::default();
         let mut kept = 0;
@@ -397,7 +397,7 @@ mod tests {
         };
         let mut features = vec![leaving.clone(), leaving.clone(), leaving];
         let mut diagnostics = Vec::new();
-        crate::reproject_features(
+        crate::reproject_features_within(
             &into_the_conic(),
             &layer,
             &mut features,
@@ -470,5 +470,86 @@ mod tests {
         assert!(way("+proj=ortho +lat_0=90 +datum=WGS84").cuts_lines_with_geos());
         assert!(!way("+proj=ortho +lat_0=0 +datum=WGS84").cuts_lines_with_geos());
         assert!(!into_the_conic().cuts_lines_with_geos());
+    }
+
+    /// The polygons of the G-11 reference shapes, with their source and target projections.
+    fn reference_polygons() -> Vec<(String, String, Vec<Vec<Coord>>)> {
+        let point = |xy: &str| {
+            let (x, y) = xy.split_once(',').unwrap();
+            Coord {
+                x: x.parse().unwrap(),
+                y: y.parse().unwrap(),
+            }
+        };
+        include_str!("../../proj/tests/reference/shapes.tsv")
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .filter_map(|line| {
+                let f: Vec<&str> = line.split('\t').collect();
+                (f[2] == "polygon").then(|| {
+                    let rings = f[3]
+                        .split('|')
+                        .map(|ring| ring.split(' ').map(point).collect())
+                        .collect();
+                    (f[0].to_owned(), f[1].to_owned(), rings)
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_reprojected_polygon_keeps_its_rings_beside_another_polygon() {
+        // Verifies: ADR-0037
+        // The engine fills each polygon of a multipolygon apart, so the rings MapServer moves after
+        // a shape's others stay with the polygon they came from: each polygon of the reference
+        // shapes, beside a ring that reprojects whole, keeps the rings proj's shape gives it.
+        let polygons = reference_polygons();
+        assert!(polygons.len() >= 4, "{} polygons", polygons.len());
+        for (source, target, rings) in polygons {
+            let map = Map {
+                projection: Some(target.clone()),
+                ..Map::default()
+            };
+            let layer = Layer {
+                projection: Some(LayerProjection::Proj4(source.clone())),
+                ..Layer::default()
+            };
+            let way = for_layer(&map, &layer, &DeclaredProjection::None)
+                .unwrap()
+                .unwrap();
+            // A small ring about a point of the polygon that reprojects.
+            let at = rings[0]
+                .iter()
+                .copied()
+                .find(|&p| way.to_map.point(p).is_ok())
+                .unwrap();
+            let small = ring(&[
+                (at.x, at.y),
+                (at.x + 1e-3, at.y),
+                (at.x + 1e-3, at.y + 1e-3),
+                (at.x, at.y),
+            ]);
+            let mut expected = way.to_map.shape(&rings, true).lines;
+            expected.retain(|r| !r.is_empty());
+            let mut features = vec![Feature {
+                id: 0,
+                geometry: Geometry::MultiPolygon(vec![rings, vec![small]]),
+                properties: Properties::default(),
+            }];
+            way.features_within(&mut features, MAX_HORIZON_POINTS);
+            let Geometry::MultiPolygon(left) = &features[0].geometry else {
+                panic!("{source} → {target}: {features:?}");
+            };
+            assert_eq!(left.len(), 2, "{source} → {target}: both polygons left");
+            assert_eq!(
+                left[0], expected,
+                "{source} → {target}: the polygon's own rings"
+            );
+            assert_eq!(
+                left[1].len(),
+                1,
+                "{source} → {target}: the small ring alone"
+            );
+        }
     }
 }

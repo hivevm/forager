@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-13, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-15, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0005](adr/0005-feature-layer.md)).
@@ -45,11 +45,16 @@ golden path and the test pattern an agent copies from are named here.
   with each unknown value dropped, each condition that does not read kept as `false`, and each
   transform tree's unknown `not_drawn` reason kept not drawn, at most
   a hundred times (Q-9); a document of an older major is migrated on its value tree by the chain
-  of steps in `migration.rs`, one major at a time, and then read as the current version. Its
+  of steps in `migration.rs`, one major at a time, each step stamping it with the `.0` of the
+  major it migrates to, and then read by the current version's reader; a document read, of any
+  version, carries the current version afterwards and is written as it. The current format
+  version is 1.1, which adds a map's `projection_auto`, a map of `PROJECTION AUTO` held apart from
+  a map without a projection; a layer's projection is a proj4 string or `from_source`. Its
   `schema` feature derives the JSON Schema of the current format version with schemars, checked
-  in under `schema/`; `tests/schema.rs` compares a fresh derivation with that file on every push
-  and, once a release tag `v<semver>` holds schema files, freezes them and asks for the bump the
-  change since the last release needs. The browser bindings never enable the feature. Its
+  in under `schema/` (`style-document-1.1.json`); `tests/schema.rs` compares a fresh derivation
+  with that file on every push and, once a release tag `v<semver>` holds schema files, freezes
+  them and asks for the bump the change since the last release needs. The browser bindings never
+  enable the feature. Its
   module `c.rs` ports C's and MapServer's small functions once for the frontend, the core, and
   the adapters: glibc's `strtod`, `atof`, and `atoi`, MapServer's `MS_NINT` as `lrint` on
   x86-64 narrowed to an `int`, C's `(int)` cast of a `double`, `int_cast`, `INT_MIN` past an
@@ -134,7 +139,13 @@ golden path and the test pattern an agent copies from are named here.
   does (`rect.rs`): its sides and a diagonal sampled, the horizon found where points fail, a grid
   where none of them reprojects, all longitudes where a polar projection's pole lies inside it,
   with the `+over` it adds. It reprojects a shape's lines as `msProjectShapeLine` does and a point
-  shape's as `msProjectLineEx` does (`shape.rs`): cut at the horizon, wrapped at the dateline.
+  shape's as `msProjectLineEx` does (`shape.rs`): cut at the horizon, wrapped at the dateline;
+  it says where MapServer would cut a line shape with GEOS, which it does not port, for a
+  projected source whose origin is the north pole into longitude and latitude; MapServer's other
+  cases, a target written `init=epsg:3857` among them, it does not see. These ports of
+  MapServer's `mapproject.c` live here beside the port of PROJ. Its test `tests/reference.rs`
+  holds points, rectangles, and shapes against the records MapServer's call of PROJ wrote at the
+  pinned build, under `tests/reference/` (ADR-0038, G-11).
   Synchronous, without I/O; it depends on `style-ir` and `libm` alone, and each file that ports a
   PROJ source holds PROJ's notice (`scripts/check-notice.sh`).
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
@@ -145,7 +156,10 @@ golden path and the test pattern an agent copies from are named here.
   else touches it, as `msProjectShapeEx` does, with a warning for the points that do not
   reproject, the horizon points held to a bound per layer (Q-9), and a map of `AUTO` taken as
   each layer's base geographic CRS, and draws nothing of a layer whose projection does not read,
-  with a warning (`reproject.rs`); replaces the shape of
+  with a warning (`reproject.rs`); a layer of `PROJECTION AUTO` takes the projection its bound
+  source declares (ADR-0039), longitude and latitude with a warning where that does not read; a
+  layer with lines from such a polar source into longitude and latitude is drawn uncut with a
+  warning (`lines-not-cut`); replaces the shape of
   each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
   up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
   tree is `not_drawn` or fails, with a warning (`classes.rs`,
@@ -298,8 +312,9 @@ golden path and the test pattern an agent copies from are named here.
 - **`adapter-shapefile`** — a feature source over an ESRI shapefile, its `.shp`, `.shx`, and
   `.dbf` loaded through the resource loader and read with the records MapServer reads, in memory
   that follows the files' size ([ADR-0021](adr/0021-shapefile-adapter.md)), each rule of the
-  reading written down in `docs/semantics/shapefile.md`, and its `.prj` read into the
-  projection it declares by a WKT reader of its own (`prj.rs`, ADR-0039);
+  reading written down in `docs/semantics/shapefile.md`, and its `.prj`, loaded at every open
+  whatever the layer's projection, read into the projection it declares by a WKT reader of its
+  own (`prj.rs`, ADR-0039);
   a record it cannot read is skipped and
   counted, and the engine reports it per layer
   ([ADR-0022](adr/0022-skipped-records.md)).
@@ -369,7 +384,8 @@ points, along lines, and tiled over polygons, the layers' feature limit and draw
 cache, the cache's edge buffer, a layer's transform tree, and expressions built from the same
 bytes, the expression
 evaluator on arbitrary trees, patterns, and properties, the browser path on GeoJSON, the shapefile
-adapter on arbitrary `.shp`, `.shx`, and `.dbf` files, the text path on an arbitrary font file, and
+adapter on arbitrary `.shp`, `.shx`, and `.dbf` files and its `.prj` reader on arbitrary
+bytes, the text path on an arbitrary font file, and
 the pixmap decoder on an arbitrary image file — run by `scripts/fuzz.sh`, which reads them from the
 manifest, every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly
 toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
@@ -385,7 +401,8 @@ pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the s
 and symbol images the cases of `misc` and `renderers` read, and the non-cairo PNG references of
 those two directories, cached in CI, never in the repository. `scripts/check-rust.sh` loads every
 mapfile of it through the CLI on every push (G-1), with the suite's directory as the base context
-and a stand-in table for the EPSG codes beyond the built-in ones, and round-trips the style IR of
+and the suite's own EPSG table `wxs/data/epsg2`, with a stand-in in longitude and latitude for each
+code it lacks (ADR-0037), and round-trips the style IR of
 each through YAML and JSON (G-3); `crates/cli/tests/msautotest.rs` names the files it skips with a
 reason each, and loads the one mapfile that names the suite's init file bare in-process with a
 stand-in for it. Its module `metric/` compares a rendering with a reference image as RGBA buffers,
@@ -420,7 +437,11 @@ noise measurement runs, for each text case, the C reader `conformance/mapserver_
 `map2img`, which `scripts/build-mapserver.sh` compiles against the pinned build (ADR-0033); it holds
 the reader's image byte for byte equal to `map2img`'s and fails when the labels the reader takes
 from MapServer's label cache differ from the record, and keeps them in the run's artifact, from
-which a record is taken again.
+which a record is taken again. The same run builds the C reader
+`conformance/mapserver_proj.c` against the pinned build, which reprojects the points, rectangles,
+and shapes listed under `crates/proj/tests/reference/` by MapServer's `msProjectPoint`,
+`msProjectRect`, and `msProjectShape`, and keeps what it writes as the records `proj`'s test
+reads (ADR-0038).
 
 The same harness holds G-9 (ADR-0034): its module `conformance/wasm.rs` writes the features of each
 case's shapefiles into its map, renders the style document natively and in the bindings' wasm32

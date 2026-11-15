@@ -72,8 +72,9 @@ Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules)
    shall produce bit-identical RGBA buffers.
 10. **G-10** — When labels are placed for a msautotest case, the system shall place and discard
     the same labels as the reference, each within 1 px of its reference position.
-11. **G-11** — When a proj4 transformation used by a test case is evaluated, the core's
-    reprojection shall agree with PROJ, as MapServer at the pin calls it, within 1 mm.
+11. **G-11** — When a point, a rectangle, or a shape is reprojected between the proj4 projections
+    the test cases use, the core's reprojection shall agree with MapServer at the pin, which
+    reprojects through PROJ, within 1 mm.
 12. **G-12** — When an RGBA buffer is encoded as PNG and decoded again, the system shall yield the
     identical buffer.
 13. **G-13** — When a msautotest case of the categories raster nearest neighbour, raster bilinear

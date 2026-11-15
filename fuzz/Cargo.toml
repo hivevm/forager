@@ -33,7 +33,15 @@ forager-engine = { path = "../crates/engine" }
 forager-expr = { path = "../crates/expr" }
 forager-render-agg = { path = "../crates/render-agg" }
 forager-adapter-shapefile = { path = "../crates/adapter-shapefile" }
+forager-proj = { path = "../crates/proj" }
 forager-encode = { path = "../crates/encode" }
+
+[[bin]]
+name = "proj"
+path = "fuzz_targets/proj.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "prj"

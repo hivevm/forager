@@ -60,7 +60,7 @@ impl Node {
 pub(crate) fn declared(file: &str, bytes: &[u8]) -> DeclaredProjection {
     let bytes = &bytes[..bytes.len().min(MAX_PRJ_BYTES)];
     // The C string ends at its first NUL.
-    let bytes = bytes.split(|&b| b == 0).next().unwrap_or_default();
+    let bytes = forager_style_ir::c::c_bytes(bytes);
     let unreadable = |why: String| DeclaredProjection::Unreadable {
         file: file.to_owned(),
         why,

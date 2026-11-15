@@ -22,6 +22,49 @@ PNPOLY_ENDORSE='The name of W. Randolph Franklin may not be used to endorse or p
 # the permission sentence and the disclaimer of the MIT licence, which MapServer's share.
 PROJ_TERMS='All source, data files and other contents of the PROJ package are available'
 
+# The copyright lines each source of PROJ 9.4.0 holds that a port under crates/proj names, as
+# "<source>|<line>;<line>", each line without its "Copyright (c) "; nothing after the bar for a
+# source that holds none. Read from the sources at the tag 9.4.0; a port names a source the table
+# lacks only once a line for it is added here.
+PROJ_SOURCE_COPYRIGHTS=(
+  'src/adjlon.cpp|'
+  'src/msfn.cpp|'
+  'src/phi2.cpp|'
+  'src/tsfn.cpp|'
+  'src/ellps.cpp|'
+  'src/units.cpp|'
+  'src/ell_set.cpp|'
+  'src/datums.cpp|2000, Frank Warmerdam'
+  'src/datum_set.cpp|2000, Frank Warmerdam'
+  'src/init.cpp|1995, Gerald Evenden;2002, Frank Warmerdam'
+  'src/fwd.cpp|2000, Frank Warmerdam;2018, Thomas Knudsen / SDFE'
+  'src/inv.cpp|2000, Frank Warmerdam;2018, Thomas Knudsen / SDFE'
+  'src/4D_api.cpp|2016, 2017 Thomas Knudsen/SDFE'
+  'src/conversions/cart.cpp|2016, Thomas Knudsen / SDFE'
+  'src/transformations/helmert.cpp|2016, Thomas Knudsen / SDFE'
+  'src/projections/lcc.cpp|'
+  'src/projections/merc.cpp|'
+  'src/projections/ortho.cpp|'
+  'src/projections/tmerc.cpp|'
+)
+
+# proj_source_copyrights <source> — prints the copyright lines of a PROJ source, one per line,
+# each with its "Copyright (c) "; exit code 1 for a source the table does not hold.
+proj_source_copyrights() {
+  local entry lines line
+  for entry in "${PROJ_SOURCE_COPYRIGHTS[@]}"; do
+    [[ "${entry%%|*}" == "$1" ]] || continue
+    lines="${entry#*|}"
+    [[ -n "$lines" ]] || return 0
+    IFS=';' read -r -a parts <<< "$lines"
+    for line in "${parts[@]}"; do
+      printf 'Copyright (c) %s\n' "$line"
+    done
+    return 0
+  done
+  return 1
+}
+
 # holds_proj <file> — whether the file holds PROJ's notice.
 holds_proj() {
   grep -qF "$PROJ_TERMS" "$1" && grep -qF "$PERMISSION" "$1" && grep -qF "$DISCLAIMER" "$1"

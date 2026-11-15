@@ -159,10 +159,23 @@ impl StyleDocument {
         Self::read::<Json>(text, steps)
     }
 
+    /// Reads a document of the format `F` (ADR-0014) as [`Self::read_as_written`] does, and stamps
+    /// it with this build's version: what is read is this build's IR, an older version's fields
+    /// migrated and a newer minor's unknown ones dropped, so it is written as `FORMAT_VERSION`,
+    /// never as a version whose reader would refuse a field it carries.
+    fn read<F: Format>(text: &str, steps: &[migration::Step]) -> Result<Read, Diagnostic> {
+        let mut read = Self::read_as_written::<F>(text, steps)?;
+        FORMAT_VERSION.clone_into(&mut read.document.version);
+        Ok(read)
+    }
+
     /// Reads a document of the format `F` (ADR-0014): its version first, an older major
     /// migrated from the value tree, else a typed read that names the fields it does not know,
     /// and for a newer minor that does not read so, the lenient read of its value tree.
-    fn read<F: Format>(text: &str, steps: &[migration::Step]) -> Result<Read, Diagnostic> {
+    fn read_as_written<F: Format>(
+        text: &str,
+        steps: &[migration::Step],
+    ) -> Result<Read, Diagnostic> {
         let tree = || {
             F::value::<serde_json::Value>(text)
                 .map_err(|e| Diagnostic::error(F::CODE, e.to_string(), None))
@@ -600,21 +613,28 @@ mod tests {
         let read = StyleDocument::from_json(old).unwrap();
         assert!(read.warnings.is_empty(), "{:?}", read.warnings);
         assert!(!read.document.map.projection_auto);
+        // A document stamped 1.0 that carries projection_auto is written back as 1.1, so that a
+        // reader of 1.0 reads it leniently as a newer minor rather than refusing the field.
+        let stamped = r#"{"version":"1.0","map":{"projection_auto":true}}"#;
+        let read = StyleDocument::from_json(stamped).unwrap();
+        assert!(read.document.map.projection_auto);
+        let written = read.document.to_json().unwrap();
+        assert!(written.contains(r#""version": "1.1""#), "{written}");
     }
 
     #[test]
     fn a_layer_without_label_cache_keeps_its_labels_in_the_cache() {
         // A document written before the field reads as it did: its layers' labels are cached,
-        // and a layer of the cache writes no field.
+        // and a layer of the cache writes no field. It is written back at this build's version.
         let read = StyleDocument::from_json(r#"{"version":"1.0","map":{"layers":[{}]}}"#).unwrap();
         assert!(read.warnings.is_empty(), "{:?}", read.warnings);
         assert!(read.document.map.layers[0].label_cache);
         let compact = |text: String| text.split_whitespace().collect::<String>();
         assert_eq!(
             compact(read.document.to_json().unwrap()),
-            r#"{"version":"1.0","map":{"layers":[{}]}}"#
+            r#"{"version":"1.1","map":{"layers":[{}]}}"#
         );
-        let off = r#"{"version":"1.0","map":{"layers":[{"label_cache":false}]}}"#;
+        let off = r#"{"version":"1.1","map":{"layers":[{"label_cache":false}]}}"#;
         let read = StyleDocument::from_json(off).unwrap();
         assert!(!read.document.map.layers[0].label_cache);
         assert_eq!(compact(read.document.to_json().unwrap()), off);
@@ -1075,8 +1095,8 @@ mod tests {
             StyleDocument::from_yaml_with(yaml, FIXTURE),
         ] {
             let read = read.unwrap();
-            // Each step leaves the document at its major's `<major>.0`, an older minor of 1.1.
-            assert_eq!(read.document.version, "1.0");
+            // Read, it carries this build's version, the one its warning names.
+            assert_eq!(read.document.version, FORMAT_VERSION);
             assert_eq!(read.document.map.image_color, Some(Rgba::opaque(1, 2, 3)));
             let messages: Vec<_> = read.warnings.iter().map(|w| w.message.as_str()).collect();
             assert_eq!(

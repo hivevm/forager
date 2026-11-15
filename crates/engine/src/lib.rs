@@ -650,13 +650,7 @@ async fn in_view<S: FeatureSource>(
     let (reprojection, asked) = asked(map, layer, &declared, view, diagnostics)?;
     let mut features = source_features(layer, sources, asked, diagnostics).await?;
     if let Some(reprojection) = &reprojection {
-        reproject_features(
-            reprojection,
-            layer,
-            &mut features,
-            diagnostics,
-            MAX_HORIZON_POINTS,
-        );
+        reproject_features(reprojection, layer, &mut features, diagnostics);
     }
     Some(features)
 }
@@ -706,9 +700,25 @@ fn asked(
 }
 
 /// Reprojects `layer`'s `features` into the map's projection, with a warning for lines MapServer
-/// would cut with GEOS, for points that do not reproject, and for horizon points past `bound`
-/// (Q-9), at which the layer stops.
+/// would cut with GEOS, for points that do not reproject, and for horizon points past
+/// [`MAX_HORIZON_POINTS`] (Q-9), at which the layer stops.
 fn reproject_features(
+    reprojection: &reproject::LayerReprojection,
+    layer: &Layer,
+    features: &mut Vec<Feature>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    reproject_features_within(
+        reprojection,
+        layer,
+        features,
+        diagnostics,
+        MAX_HORIZON_POINTS,
+    );
+}
+
+/// [`reproject_features`], the horizon points held to `bound`, which a test sets low.
+fn reproject_features_within(
     reprojection: &reproject::LayerReprojection,
     layer: &Layer,
     features: &mut Vec<Feature>,

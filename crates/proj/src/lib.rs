@@ -62,7 +62,7 @@ use forager_style_ir::Coord;
 
 use crate::common::{HALF_PI, adjlon};
 use crate::params::{DEG_TO_RAD, Datum, Ellipsoid, Params, RAD_TO_DEG};
-pub use crate::shape::{Shape, ShapeLines};
+pub use crate::shape::Shape;
 
 /// Why a projection cannot be read.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -291,6 +291,7 @@ dependencies = [
  "forager-expr",
  "forager-mapfile",
  "forager-ports",
+ "forager-proj",
  "forager-render-agg",
  "forager-style-ir",
  "libfuzzer-sys",

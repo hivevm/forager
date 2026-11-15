@@ -140,6 +140,23 @@ expect_check "PROJ's notice without THIRD-PARTY-NOTICES.md reproducing it fails"
 printf '%s\n' "$PROJ_NOTICE" > "$qdir/THIRD-PARTY-NOTICES.md"
 expect_check "a port of PROJ with its notice, reproduced in THIRD-PARTY-NOTICES.md, passes" \
   "$qdir" 0 "1 PROJ's"
+rdir="$(proj_repo projlines "// A point's way follows src/fwd.cpp of PROJ 9.4.0.
+// Copyright (c) 2000, Frank Warmerdam (src/fwd.cpp)
+$PROJ_NOTICE")"
+printf '%s\n' "$PROJ_NOTICE" > "$rdir/THIRD-PARTY-NOTICES.md"
+expect_check "a port that names src/fwd.cpp without its 2018 copyright line fails, naming the line" \
+  "$rdir" 1 "crates/proj/src/lcc.rs follows src/fwd.cpp and lacks its line 'Copyright (c) 2018, Thomas Knudsen / SDFE'"
+sdir="$(proj_repo projunknown "// The sinusoidal follows src/projections/sinu.cpp of PROJ 9.4.0.
+$PROJ_NOTICE")"
+printf '%s\n' "$PROJ_NOTICE" > "$sdir/THIRD-PARTY-NOTICES.md"
+expect_check "a port that names a source the table lacks fails, naming the source" \
+  "$sdir" 1 "names src/projections/sinu.cpp, whose copyright lines the table"
+tdir="$(proj_repo projwrapped "// A point's way follows src/fwd.cpp of PROJ 9.4.0.
+// Copyright (c) 2000, Frank Warmerdam; Copyright (c) 2018, Thomas Knudsen /
+// SDFE (src/fwd.cpp)
+$PROJ_NOTICE")"
+printf '%s\n' "$PROJ_NOTICE" > "$tdir/THIRD-PARTY-NOTICES.md"
+expect_check "a copyright line wrapped across two comment lines passes" "$tdir" 0 "1 PROJ's"
 expect_check "a root that is no directory exits 2" "$work/none" 2 "is not a directory"
 
 if ((failed)); then

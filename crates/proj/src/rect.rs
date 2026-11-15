@@ -80,9 +80,7 @@ impl Reprojection {
             return false;
         }
         let to_long_lat = Reprojection::new(self.from.clone(), self.from.base_geographic());
-        to_long_lat
-            .point(Coord { x: 0.0, y: 0.0 })
-            .is_ok_and(|p| (p.y - 90.0).abs() < 1e-8)
+        to_long_lat.pole_at_origin() == Some(1.0)
     }
 
     /// The way with `+over` on each side but a map's `AUTO`, as `msProjectRect` copies a projection
@@ -110,10 +108,7 @@ impl Reprojection {
         if self.from_geographic || !self.to_geographic {
             return None;
         }
-        let p = self.point(Coord { x: 0.0, y: 0.0 }).ok()?;
-        [1.0, -1.0]
-            .into_iter()
-            .find(|sign: &f64| (p.y - sign * 90.0).abs() < 1e-8)
+        self.pole_at_origin()
     }
 
     /// `msProjectRectAsPolygon`.

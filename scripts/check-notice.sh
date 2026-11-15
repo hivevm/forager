@@ -23,7 +23,9 @@
 # subdirectory or not — ports PROJ's formulas (ADR-0037) and must hold
 # PROJ's notice: the first words of its terms, the permission sentence, and the disclaimer
 # (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then hold the same first words, as the MIT
-# licence asks of every copy, binaries included.
+# licence asks of every copy, binaries included. Each source of PROJ such a file's header names
+# must stand in the table of scripts/lib/notice.sh, which holds the copyright lines each source
+# holds at PROJ 9.4.0, and the header must hold each of those lines.
 # Beyond this check's reach are a file that names only a MapServer function, one that names a
 # source without `src/`, one that names a C++ source (`src/map….cpp`), whose holders differ by
 # file, and a port of pnpoly that names neither word.
@@ -82,6 +84,26 @@ while IFS= read -r -d '' file; do
     echo "ERROR: ${file#"$ROOT"/} follows PROJ's source and does not hold PROJ's notice" >&2
     proj_failures=$((proj_failures + 1))
   fi
+  # The sources its header names, each with the copyright lines it holds at PROJ 9.4.0; the
+  # header's comment lines joined, so that a line wrapped in it still reads.
+  header="$(awk '!/^\/\// { exit } { sub(/^\/\/ ?/, ""); printf "%s ", $0 }' "$file")"
+  sources="$(grep -oE '\bsrc/([a-z0-9_]+/)*[A-Za-z0-9_]+\.cpp\b' <<< "$header" | sort -u)"
+  while IFS= read -r source; do
+    [[ -n "$source" ]] || continue
+    if ! lines="$(proj_source_copyrights "$source")"; then
+      echo "ERROR: ${file#"$ROOT"/} names $source, whose copyright lines the table of" \
+        "scripts/lib/notice.sh does not hold" >&2
+      proj_failures=$((proj_failures + 1))
+      continue
+    fi
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      if ! grep -qF "$line" <<< "$header"; then
+        echo "ERROR: ${file#"$ROOT"/} follows $source and lacks its line '$line'" >&2
+        proj_failures=$((proj_failures + 1))
+      fi
+    done <<< "$lines"
+  done <<< "$sources"
 done < <(find "$ROOT/crates/proj" -name '*.rs' -not -path '*/target/*' -print0 2>/dev/null)
 
 # A binary carries the notices in THIRD-PARTY-NOTICES.md, pnpoly's condition 2.
