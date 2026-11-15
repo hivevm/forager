@@ -69,10 +69,10 @@ The pipeline is geo's `LineString::simplify` on each ring, then three steps of F
 first-point step, the removal of a ring under 4 coordinates, and a repair of an invalid result by
 geo's `unary_union`. geo's `Validation` decided validity. It agreed with GEOS's `isValid` on every
 one of the 3,053 rough results. The repair by `unary_union` matched GEOS's buffer of 0 on the 7
-repaired polygons whose rough result matched. A later measurement of the implementation contradicts
-the general claim: on 2,467 small random valid polygons, of 6 to 9 vertices and 2 decimals, at 3, 6,
-and 10 units, 40 results were repaired. 33 matched GEOS within 10⁻⁷ with its point count. 7 kept
-another lobe of a ring that crosses itself than GEOS keeps, 27 to 54 units away, in either
+repaired polygons whose rough result matched. A later measurement of the implementation found
+otherwise in general: on 2,467 small random valid polygons, of 6 to 9 vertices and 2 decimals, at
+3, 6, and 10 units, 40 results were repaired. 33 matched GEOS within 10⁻⁷ with its point count.
+7 kept another lobe of a ring that crosses itself than GEOS keeps, 27 to 54 units away, in either
 orientation of the input. No case in scope simplifies a polygon. The equally far points were
 counted with a script of both rules: on the integer grid, the rule explains every difference; on 6
 decimals it changed nothing.
@@ -259,12 +259,15 @@ from JTS. We will compute `buffer`, and a simplified polygon's validity and repa
   geo's `Validation` agreed with GEOS's `isValid` on all 3,053 results. `buffer` comes within
   2.5 × 10⁻⁷ px on the case's polygons. The Douglas-Peucker keeps GEOS's rule for equally far
   points and needs no recursion, so no line overflows the stack, and `hypot` is off its path.
-  The budget is charged by the work done, so a long part is simplified as MapServer simplifies it.
+  The budget is charged by the work done, so a long line is simplified as MapServer simplifies it.
 - Negative / trade-offs, measured:
   - a buffer and a repaired polygon are not bit-identical to GEOS. A buffer of −3 px differed by up
     to 2.1 × 10⁻³ px, with 2 of 272 rings of another point count;
   - the repair by `unary_union` keeps another lobe than GEOS's buffer of 0 for 7 of 40 repaired
     random polygons, where the simplified ring crosses itself;
+  - geo's `Validation` compares each pair of a simplified ring's segments. A polygon whose
+    simplified ring keeps more than about 10,000 points so passes the bound of Q-9 on visits, and
+    its layer draws nothing, where MapServer draws it;
   - Forager owns a Douglas-Peucker of about 60 lines besides the first-point step and the removal
     of a ring;
   - 19 crates, among them a second i_overlay family and `rand`, and +129 KB of the bundle with
