@@ -180,8 +180,8 @@ What this project explicitly does not try to do.
 - Pixmap symbols in formats other than PNG, SVG symbols (`TYPE svg`, and a symbol named by a file
   name ending in `.svg`), a symbol of `TYPE simple`, a symbol fetched by its URL, and a pixmap
   tiled along a line without a `GAP`.
-- Bitmap fonts, a label's shadow, `LEADER`, `ENCODING`, and a label's line that holds a character
-  of a script other than Latin or Common, right-to-left text among them.
+- Bitmap fonts, a label's shadow, `LEADER`, a label's `ENCODING`, and a label's line that holds a
+  character of a script other than Latin or Common, right-to-left text among them.
 - COG read by HTTP range requests or through its overviews, raster formats other than GeoTIFF, COG,
   and PNG or JPEG with a world file, and lookup tables (`LUT`).
 - A mapfile's `PROJECTION` given as WKT, as PROJJSON, as a PROJ pipeline, or as `EPSG:` without
