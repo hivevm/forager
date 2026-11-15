@@ -67,8 +67,8 @@ the same coordinates. Every coordinate was printed with 17 significant digits.
 
 The pipeline is geo's `LineString::simplify` on each ring, then three steps of Forager's own: the
 first-point step, the removal of a ring under 4 coordinates, and a repair of an invalid result by
-geo's `unary_union`. geo's `Validation` stood in for the validity test. It agreed with GEOS's
-`isValid` on every one of the 3,053 rough results. The repair by `unary_union` matched GEOS's
+geo's `unary_union`. geo's `Validation` decided validity. It agreed with GEOS's `isValid` on every
+one of the 3,053 rough results. The repair by `unary_union` matched GEOS's
 buffer of 0 on every repaired polygon whose rough result matched. The equally far points were
 counted with a script of both rules: on the integer grid, the rule explains every difference; on 6
 decimals it changed nothing.
@@ -113,8 +113,9 @@ from the layer's transform:
 | `Simplify`, `Validation`, `unary_union`, and `Buffer` | +129,443 B |
 
 **The maintainer's choice.** On 2026-11-15 the maintainer chose the geo crate for the geometry
-code, against the session's recommendation of a port of JTS. The maintainer chose a partial port
-of JTS's `IsValidOp` for the validity test. `simplifypt` stays not drawn until a later decision.
+code, against the session's recommendation of a port of JTS. The maintainer chose geo's
+`Validation` for the validity test and geo's `Simplify` over a Douglas-Peucker of Forager's own.
+`simplifypt` stays not drawn until a later decision.
 
 **Forces.**
 
@@ -149,13 +150,7 @@ crate, and repair a simplified polygon as GEOS repairs it.
   - a ring of 4 or more coordinates loses its first point as JTS's
     `DouglasPeuckerLineSimplifier` decides, with the distance computed by `f64::sqrt`;
   - a ring with fewer than 4 coordinates is removed. A removed shell leaves an empty polygon;
-  - the module decides the result's validity by a port of the checks of JTS's `IsValidOp` that a
-    simplification can break, and of no other. It must port the checks of these faults:
-    - a ring that crosses or touches itself;
-    - two rings that cross, or touch in more than one point;
-    - a hole outside its shell or inside another hole;
-    - a shell inside another shell of a multipolygon;
-    - an interior that its holes disconnect;
+  - geo's `Validation` decides the result's validity;
   - an invalid result is repaired by geo's `unary_union`. A multipolygon is repaired as a whole. A
     valid result is not passed through `unary_union`.
 - **`buffer`** must be geo's `buffer_with_style` with round joins and round caps of π/60 radians,
@@ -190,13 +185,13 @@ crate, and repair a simplified polygon as GEOS repairs it.
   `f64::sqrt`, so the differences and the risk to G-9 below vanish. It adds no crate, and it brings
   `simplifypt` within reach. Not chosen by the maintainer: it is the largest piece of geometry
   Forager would own, about 2,000 lines of Java to port.
-- **geo's `Validation` for the validity test** — no code to port. It agreed with GEOS's `isValid`
-  on all 3,053 rough results measured. It costs about 48 KB of the bundle, the difference between
-  the last two rows of the table. Not chosen by the maintainer, who chose the partial port.
+- **A partial port of JTS's `IsValidOp` for the validity test** — only the checks a simplification
+  can break, and no 47 KB of geo's `Validation` in the bundle. Not chosen by the maintainer: it is
+  code of Forager's own, where geo's check agreed with GEOS on every result measured.
 - **A Douglas-Peucker of Forager's own instead of geo's `Simplify`** — about 20 lines, GEOS's rule
   for equally far points, and `f64::sqrt` in place of `hypot`. It would remove the differences on
-  an integer grid and the risk to G-9 of `simplify`. It is open to the maintainer at review. geo
-  would then compute only `buffer`, `unary_union`, and the rings' winding.
+  an integer grid and the risk to G-9 of `simplify`. Not chosen by the maintainer, who kept geo's
+  `Simplify`.
 - **geo's `Polygon::simplify` as it stands** — no code of Forager's own. It keeps collapsed rings
   and the ring's first point, and repairs nothing (*Context*).
 - **geo's `SimplifyVwPreserve` for `simplifypt`** — Visvalingam-Whyatt, whose tolerance is an area.
@@ -231,10 +226,10 @@ crate, and repair a simplified polygon as GEOS repairs it.
 ## Consequences
 
 - Positive: the case of `vertex2` reproduces GEOS's points bit for bit, on both targets as
-  measured. A polygon's simplification matched GEOS on every polygon measured with 6 decimals,
-  with geo's `Validation` standing in for the partial port of `IsValidOp`.
-  `buffer` comes within 2.5 × 10⁻⁷ px on the case's polygons. Forager owns little geometry code:
-  the first-point step, the removal of a ring, the partial validity test, and the calls.
+  measured. A polygon's simplification matched GEOS on every polygon measured with 6 decimals.
+  geo's `Validation` agreed with GEOS's `isValid` on all 3,053 results. `buffer` comes within
+  2.5 × 10⁻⁷ px on the case's polygons. Forager owns little geometry code: the first-point step,
+  the removal of a ring, and the calls.
 - Negative / trade-offs, measured:
   - on an integer grid, 0.7 % to 2.8 % of polygons differ from GEOS, by geo's rule for equally far
     points. A line is exposed to the same rule;
@@ -243,8 +238,8 @@ crate, and repair a simplified polygon as GEOS repairs it.
   - geo's `hypot` differs in its last bit between native and wasm32 for 0.1 % to 0.6 % of random
     inputs. A distance within one last bit of the tolerance would make a render differ between the
     targets, against G-9. None of the case's runs did;
-  - 19 crates, among them a second i_overlay family and `rand`, and +82 KB to +129 KB of the
-    bundle with `buffer`, depending on the validity test.
+  - 19 crates, among them a second i_overlay family and `rand`, and +129 KB of the bundle with
+    `buffer` and `Validation`, of which `Validation` takes about 47 KB.
 - Negative / trade-offs: `simplifypt` stays not drawn, so the style `simplifypt([shape],50)` of
   `geomtransform-vertex.map` draws nothing.
 - Follow-ups:
@@ -261,8 +256,9 @@ crate, and repair a simplified polygon as GEOS repairs it.
   - the case's three lines at 25 map units and at 10 px, bit for bit;
   - a polygon whose ring loses its first point, one with a removed hole, and one with a removed
     shell, bit for bit;
-  - a repaired polygon with GEOS's point count, each vertex within 10⁻⁶ of GEOS's in the shape's
-    unit;
+  - a polygon whose simplified result geo's `Validation` finds invalid, repaired with GEOS's point
+    count, each vertex within 10⁻⁶ of GEOS's in the shape's unit;
+  - a polygon whose simplified result is valid, left as it is, bit for bit;
   - `world_testpoly.shp` in the pixels of `polygon-as-line-offset.map`, buffered by 1 and by −1,
     with GEOS's point count, each vertex within 10⁻⁶ px of GEOS's.
 - The msautotest harness renders `renderers/geomtransform-vertex.map` with `-l vertex2` natively
