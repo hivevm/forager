@@ -1,0 +1,252 @@
+# The points G-11's reference reprojects (ADR-0038): each line a
+# source and a target projection, as Forager's frontend writes them, and a point in the source,
+# tab-separated. The reader crates/cli/tests/conformance/mapserver_proj.c reprojects each through
+# MapServer's msProjectPoint in the noise run; the record mapserver.tsv beside it is its output.
+# misc/quoting.map: its layer in the suite's EPSG:3978 drawn under its map in EPSG:4326, and the
+# map's extent asked of the layer.
+# EPSG:3978 to EPSG:4326 over quoting.map's layer
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	1900000	-200000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2100000	-200000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2300000	-200000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2500000	-200000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2700000	-200000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	1900000	100000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2100000	100000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2300000	100000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2500000	100000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2700000	100000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	1900000	400000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2100000	400000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2300000	400000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2500000	400000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2700000	400000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	1900000	700000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2100000	700000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2300000	700000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2500000	700000
++proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	+proj=longlat +datum=WGS84 +no_defs	2700000	700000
+# EPSG:4326 to EPSG:3978 over quoting.map's extent
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-67.5725	42
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-65.41125000000001	42
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-63.25	42
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-61.088750000000005	42
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-58.9275	42
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-67.5725	44.166666666666664
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-65.41125000000001	44.166666666666664
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-63.25	44.166666666666664
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-61.088750000000005	44.166666666666664
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-58.9275	44.166666666666664
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-67.5725	46.333333333333336
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-65.41125000000001	46.333333333333336
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-63.25	46.333333333333336
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-61.088750000000005	46.333333333333336
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-58.9275	46.333333333333336
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-67.5725	48.5
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-65.41125000000001	48.5
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-63.25	48.5
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-61.088750000000005	48.5
++proj=longlat +datum=WGS84 +no_defs	+proj=lcc +lat_1=49 +lat_2=77 +lat_0=49 +lon_0=-95 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs +no_defs	-58.9275	48.5
+# EPSG:4326 to EPSG:3857, worldwide
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-180	-85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-120	-85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-60	-85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	0	-85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	60	-85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	120	-85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	180	-85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-180	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-120	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-60	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	0	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	60	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	120	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	180	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-180	-30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-120	-30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-60	-30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	0	-30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	60	-30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	120	-30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	180	-30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-180	0
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-120	0
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-60	0
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	0	0
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	60	0
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	120	0
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	180	0
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-180	30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-120	30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-60	30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	0	30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	60	30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	120	30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	180	30
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-180	60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-120	60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-60	60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	0	60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	60	60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	120	60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	180	60
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-180	85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-120	85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	-60	85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	0	85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	60	85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	120	85
++proj=longlat +datum=WGS84 +no_defs	+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	180	85
+# EPSG:3857 to EPSG:4326, worldwide
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-20000000	-19000000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-10000000	-19000000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	0	-19000000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	10000000	-19000000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	20000000	-19000000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-20000000	-9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-10000000	-9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	0	-9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	10000000	-9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	20000000	-9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-20000000	0
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-10000000	0
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	0	0
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	10000000	0
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	20000000	0
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-20000000	9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-10000000	9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	0	9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	10000000	9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	20000000	9500000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-20000000	19000000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	-10000000	19000000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	0	19000000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	10000000	19000000
++proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs	+proj=longlat +datum=WGS84 +no_defs	20000000	19000000
+# EPSG:4326 to UTM zone 32
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	6	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	9	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	12	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	6	20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	9	20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	12	20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	6	40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	9	40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	12	40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	6	60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	9	60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	12	60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	6	80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	9	80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	12	80
+# UTM zone 32 to EPSG:4326
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	1000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	1000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	1000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	3000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	3000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	3000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	5000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	5000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	5000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	7000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	7000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	7000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	9000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	9000000
++proj=utm +zone=32 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	9000000
+# EPSG:4326 to UTM zone 32 south
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	6	-80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	9	-80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	12	-80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	6	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	9	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	12	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	6	-40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	9	-40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	12	-40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	6	-20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	9	-20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	12	-20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	6	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	9	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	12	0
+# UTM zone 32 south to EPSG:4326
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	1000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	1000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	1000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	3000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	3000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	3000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	5000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	5000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	5000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	7000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	7000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	7000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	9000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	9000000
++proj=utm +zone=32 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	9000000
+# EPSG:4326 to UTM zone 1
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-180	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-177	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-174	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-180	20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-177	20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-174	20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-180	40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-177	40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-174	40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-180	60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-177	60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-174	60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-180	80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-177	80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	-174	80
+# UTM zone 1 to EPSG:4326
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	1000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	1000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	1000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	3000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	3000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	3000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	5000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	5000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	5000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	7000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	7000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	7000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	9000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	9000000
++proj=utm +zone=1 +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	9000000
+# EPSG:4326 to UTM zone 60 south
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	174	-80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	177	-80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	180	-80
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	174	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	177	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	180	-60
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	174	-40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	177	-40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	180	-40
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	174	-20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	177	-20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	180	-20
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	174	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	177	0
++proj=longlat +datum=WGS84 +no_defs	+proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	180	0
+# UTM zone 60 south to EPSG:4326
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	1000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	1000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	1000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	3000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	3000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	3000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	5000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	5000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	5000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	7000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	7000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	7000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	200000	9000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	500000	9000000
++proj=utm +zone=60 +south +datum=WGS84 +units=m +no_defs	+proj=longlat +datum=WGS84 +no_defs	800000	9000000

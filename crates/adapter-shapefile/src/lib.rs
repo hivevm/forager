@@ -23,13 +23,14 @@
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod dbf;
+mod prj;
 mod record;
 
 use std::rc::Rc;
 
 use forager_ports::{
-    Feature, FeatureQuery, FeatureSource, Features, Properties, ResourceLoader, ResourcePath,
-    Skipped, SourceError,
+    DeclaredProjection, Feature, FeatureQuery, FeatureSource, Features, Properties, ResourceLoader,
+    ResourcePath, Skipped, SourceError,
 };
 use forager_style_ir::Extent;
 
@@ -56,6 +57,8 @@ pub struct ShapefileSource {
     bounds: Rect,
     /// The `.dbf`, whose records the features share as their properties (ADR-0023).
     dbf: Rc<Dbf>,
+    /// The `.prj` beside the `.shp`, its name and its first bytes, where it loads.
+    prj: Option<(String, Vec<u8>)>,
 }
 
 /// Names the file's shape, records, and bounds, never its bytes, so that a logged source does not
@@ -85,6 +88,15 @@ impl ShapefileSource {
         let shx = load(loader, base, "shx", "SHX").await?;
         let (shape_type, entries, bounds) = Self::headers(&shp, &shx)?;
         let dbf = Rc::new(Dbf::open(load(loader, base, "dbf", "DBF").await?)?);
+        // msSHPLayerOpen opens the .shp's name with the extension `prj` (CPLResetExtension); a
+        // .prj that does not load declares nothing.
+        let mut prj = None;
+        if let Ok(path) = ResourcePath::new(&format!("{base}.prj"))
+            && let Ok(mut bytes) = loader.load(&path).await
+        {
+            bytes.truncate(prj::MAX_PRJ_BYTES);
+            prj = Some((path.as_str().to_owned(), bytes));
+        }
         Ok(Self {
             shp,
             shx,
@@ -92,6 +104,7 @@ impl ShapefileSource {
             entries,
             bounds,
             dbf,
+            prj,
         })
     }
 
@@ -240,7 +253,22 @@ impl ShapefileSource {
 const SIZE_UNDER_4: &str = "its .shx entry gives a size under 4 bytes";
 const NO_OFFSET: &str = "its .shx entry gives no offset";
 
+/// The projection a `.prj` named `file` declares, from its bytes, as the shapefile adapter reads it
+/// (ADR-0039): only its first 2047 bytes are read.
+pub fn declared_projection_of_prj(file: &str, bytes: &[u8]) -> DeclaredProjection {
+    prj::declared(file, bytes)
+}
+
 impl FeatureSource for ShapefileSource {
+    /// The projection of the `.prj` beside the `.shp`, none where there is none
+    /// (ADR-0039).
+    fn declared_projection(&self) -> DeclaredProjection {
+        match &self.prj {
+            Some((file, bytes)) => prj::declared(file, bytes),
+            None => DeclaredProjection::None,
+        }
+    }
+
     async fn features(&self, query: &FeatureQuery) -> Result<Features, SourceError> {
         let extent = Rect::from(&query.extent);
         // Counted first, so that the list takes no more memory than its features.

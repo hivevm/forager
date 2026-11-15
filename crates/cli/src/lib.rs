@@ -174,6 +174,13 @@ impl FeatureSource for Source {
             Self::Shapefile(source) => source.features(query).await,
         }
     }
+
+    fn declared_projection(&self) -> forager_ports::DeclaredProjection {
+        match self {
+            Self::GeoJson(source) => source.declared_projection(),
+            Self::Shapefile(source) => source.declared_projection(),
+        }
+    }
 }
 
 fn read_source(file: &Path) -> Result<GeoJsonSource, String> {
@@ -305,9 +312,9 @@ mod tests {
         let loader = CountingLoader::new();
         let mut shapefiles = Shapefiles::new(&loader);
         let first = shapefiles.open("poly").unwrap();
-        assert_eq!(loader.loads.get(), 3, "the .shp, .shx, and .dbf");
+        assert_eq!(loader.loads.get(), 4, "the .shp, .shx, .dbf, and .prj");
         let second = shapefiles.open("poly.shp").unwrap();
-        assert_eq!(loader.loads.get(), 3, "nothing is read again");
+        assert_eq!(loader.loads.get(), 4, "nothing is read again");
         assert!(Rc::ptr_eq(&first, &second), "the layers share one source");
         // A shapefile that fails to open is not read again either.
         assert!(shapefiles.open("broken").is_err());

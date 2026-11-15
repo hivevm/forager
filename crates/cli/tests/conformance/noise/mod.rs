@@ -1,8 +1,10 @@
 //! The noise measurement of G-6 and G-13 (ADR-0033): MapServer at the pinned release renders the
 //! cases in scope, and the harness compares its renderings with the references and the labels of
-//! its label cache with the records beside the list. Only `.github/workflows/noise.yml` builds
-//! MapServer; the measurement runs where `FORAGER_MAP2IMG` and `FORAGER_MAPSERVER_LABELS` name it
-//! and skips itself where neither does, so the push checks never run it, whatever it is named.
+//! its label cache with the records beside the list, and its reprojection of G-11's reference
+//! points with the record beside the test of `proj` (ADR-0038).
+//! Only `.github/workflows/noise.yml` builds MapServer; the measurement runs where
+//! `FORAGER_MAP2IMG`, `FORAGER_MAPSERVER_LABELS`, and `FORAGER_MAPSERVER_PROJ` name it and skips
+//! itself where none does, so the push checks never run it, whatever it is named.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -31,18 +33,28 @@ const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 /// same, and its labels must hold the record beside the list, each box within [`labels::NOISE`] and
 /// every other field exactly; the test fails on a record that differs or is missing, and the
 /// reader's labels stay in `noise/labels/` to take the record from. The renderings stay in
-/// `noise/` under the test's target directory.
+/// `noise/` under the test's target directory. Last, the reader of MapServer's reprojection
+/// reprojects G-11's reference points and rectangles ([`reference_points`]); the test fails where
+/// its output and a record beside the test of `proj` disagree, and the output stays in
+/// `noise/proj/`.
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test, and \
             without it the test skips itself"]
 fn mapserver_renders_the_cases_in_scope_within_its_noise() {
     // Verifies: ADR-0033
+    // Verifies: ADR-0038
     let mapserver = mapserver(
         std::env::var_os("FORAGER_MAP2IMG"),
         std::env::var_os("FORAGER_MAPSERVER_LABELS"),
+        std::env::var_os("FORAGER_MAPSERVER_PROJ"),
     )
     .unwrap();
-    let Some((map2img, reader)) = mapserver else {
+    let Some(MapServer {
+        map2img,
+        labels: reader,
+        proj,
+    }) = mapserver
+    else {
         skipped();
         return;
     };
@@ -86,6 +98,8 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
             .and_then(|mut file| file.write_all(report.as_bytes()))
             .unwrap();
     }
+    // Run before anything is judged, so that the artifact holds its output whatever the rest shows.
+    let differences = reference_points(&proj, &out.join("proj")).unwrap();
     assert!(
         unreproduced.is_empty(),
         "{} cases in scope are not reproduced by MapServer itself; the list moves each out of \
@@ -101,24 +115,202 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
         out.join("labels").display(),
         records.join("\n")
     );
+    assert!(
+        differences.is_empty(),
+        "MapServer's reprojection of G-11's reference points and rectangles does not hold its \
+         record; the reader's output is in {}:\n{}",
+        out.join("proj").display(),
+        differences.join("\n")
+    );
 }
 
-/// `map2img` and the reader of MapServer's label cache, as `FORAGER_MAP2IMG` and
-/// `FORAGER_MAPSERVER_LABELS` name them, or none where neither is set: the noise measurement runs
-/// where both name a file and skips itself where neither does. One without the other, or one
+/// The lists of G-11's reference points and rectangles, each with the record of MapServer's
+/// reprojection of it and the name of the reader's output, from the workspace root (ADR-0038).
+const REFERENCES: [(&str, &str, &str); 3] = [
+    (
+        "crates/proj/tests/reference/points.tsv",
+        "crates/proj/tests/reference/mapserver.tsv",
+        "mapserver.tsv",
+    ),
+    (
+        "crates/proj/tests/reference/rects.tsv",
+        "crates/proj/tests/reference/mapserver-rects.tsv",
+        "mapserver-rects.tsv",
+    ),
+    (
+        "crates/proj/tests/reference/shapes.tsv",
+        "crates/proj/tests/reference/mapserver-shapes.tsv",
+        "mapserver-shapes.tsv",
+    ),
+];
+
+/// The largest difference of a coordinate between the reader's output and the record: 1 mm, in
+/// metres for a projected target and in degrees, about 1.0 mm, for a geographic one.
+const PROJECTED_SLACK: f64 = 1e-3;
+const GEOGRAPHIC_SLACK: f64 = 9e-9;
+
+/// Runs the reader of MapServer's reprojection, `reader`, over each list of [`REFERENCES`], keeps
+/// its output in `out` under the list's name, and returns how each differs from its record; an
+/// error is a reader that does not run or fails.
+fn reference_points(reader: &Path, out: &Path) -> Result<Vec<String>, String> {
+    let mut differences = Vec::new();
+    for (list, record, name) in REFERENCES {
+        differences.extend(
+            reference(reader, list, record, &out.join(name))?
+                .into_iter()
+                .map(|d| format!("{record}: {d}")),
+        );
+    }
+    Ok(differences)
+}
+
+/// Runs `reader` over `list`, keeps its output at `out`, and returns how it differs from `record`.
+fn reference(reader: &Path, list: &str, record: &str, out: &Path) -> Result<Vec<String>, String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let output = Command::new(reader)
+        .arg(root.join(list))
+        .output()
+        .map_err(|e| format!("{}: {e}", reader.display()))?;
+    if !output.status.success() {
+        return Err(format!(
+            "{} fails: {}",
+            reader.display(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let output = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(out, &output).map_err(|e| e.to_string())?;
+    let Ok(record) = std::fs::read_to_string(root.join(record)) else {
+        return Ok(vec![format!("{record} is missing")]);
+    };
+    Ok(record_differences(&record, &output))
+}
+
+/// How the reader's `output` differs from the `record`: a line one has and the other lacks, a
+/// header or a point or rectangle that differs, one that fails in one only, or a coordinate past
+/// the slack of its target ([`PROJECTED_SLACK`], [`GEOGRAPHIC_SLACK`]). A line of the record is
+/// a point's, its four fields followed by two coordinates or `fail`, a rectangle's, its six
+/// followed by four or `fail`, or a shape's, its four, the third its type, followed by its lines,
+/// each `x,y x,y ...` or `-`, or by `fail`.
+fn record_differences(record: &str, output: &str) -> Vec<String> {
+    let mut differences = Vec::new();
+    let (record, output): (Vec<&str>, Vec<&str>) =
+        (record.lines().collect(), output.lines().collect());
+    if record.len() != output.len() {
+        differences.push(format!(
+            "the record holds {} lines, the reader wrote {}",
+            record.len(),
+            output.len()
+        ));
+    }
+    for (number, (recorded, written)) in record.iter().zip(&output).enumerate() {
+        let line = number + 1;
+        if recorded.starts_with('#') || written.starts_with('#') {
+            if recorded != written {
+                differences.push(format!("line {line}: {written:?}, recorded {recorded:?}"));
+            }
+            continue;
+        }
+        let r: Vec<&str> = recorded.split('\t').collect();
+        let w: Vec<&str> = written.split('\t').collect();
+        let shape = matches!(r.get(2), Some(&("point" | "line" | "polygon")));
+        let fields = match r.len() {
+            _ if shape => 4,
+            5 | 6 => 4,
+            7 | 10 => 6,
+            _ => 0,
+        };
+        if fields == 0 || w.len() <= fields || r[..fields] != w[..fields] {
+            differences.push(format!("line {line}: {written:?}, recorded {recorded:?}"));
+            continue;
+        }
+        let geographic = r[1].split_whitespace().any(|p| {
+            matches!(
+                p,
+                "+proj=longlat" | "+proj=latlong" | "+proj=lonlat" | "+proj=latlon"
+            )
+        });
+        let slack = if geographic {
+            GEOGRAPHIC_SLACK
+        } else {
+            PROJECTED_SLACK
+        };
+        let (r, w) = (&r[fields..], &w[fields..]);
+        let close = |a: &str, b: &str| match (a.parse::<f64>(), b.parse::<f64>()) {
+            (Ok(a), Ok(b)) => (a - b).abs() <= slack,
+            _ => false,
+        };
+        let agree = match (r, w) {
+            _ if shape => {
+                r.len() == w.len()
+                    && r.iter().zip(w).all(|(a, b)| {
+                        let (a, b): (Vec<&str>, Vec<&str>) =
+                            (a.split(' ').collect(), b.split(' ').collect());
+                        a.len() == b.len()
+                            && a.iter().zip(&b).all(|(a, b)| {
+                                match (a.split_once(','), b.split_once(',')) {
+                                    (Some((ax, ay)), Some((bx, by))) => {
+                                        close(ax, bx) && close(ay, by)
+                                    }
+                                    (None, None) => a == b,
+                                    _ => false,
+                                }
+                            })
+                    })
+            }
+            (["fail"], ["fail"]) => true,
+            _ if r.len() == fields - 2 && w.len() == r.len() && !r.contains(&"fail") => r
+                .iter()
+                .zip(w)
+                .all(|(a, b)| match (a.parse::<f64>(), b.parse::<f64>()) {
+                    (Ok(a), Ok(b)) => (a - b).abs() <= slack,
+                    _ => false,
+                }),
+            _ => false,
+        };
+        if !agree {
+            differences.push(format!("line {line}: {written:?}, recorded {recorded:?}"));
+        }
+    }
+    differences
+}
+
+/// The programs of the MapServer build the noise measurement runs.
+#[derive(Debug, PartialEq)]
+struct MapServer {
+    map2img: PathBuf,
+    /// The reader of the label cache (ADR-0033).
+    labels: PathBuf,
+    /// The reader of the reprojection (ADR-0038).
+    proj: PathBuf,
+}
+
+/// `map2img` and the two readers, as `FORAGER_MAP2IMG`, `FORAGER_MAPSERVER_LABELS`, and
+/// `FORAGER_MAPSERVER_PROJ` name them, or none where none is set: the noise measurement runs
+/// where all three name a file and skips itself where none does. Some without the others, or one
 /// empty, is an error, so that a noise run whose build named nothing does not pass unmeasured.
 fn mapserver(
     map2img: Option<OsString>,
-    reader: Option<OsString>,
-) -> Result<Option<(PathBuf, PathBuf)>, String> {
-    match (map2img, reader) {
-        (None, None) => Ok(None),
-        (Some(map2img), Some(reader)) if !map2img.is_empty() && !reader.is_empty() => {
-            Ok(Some((PathBuf::from(map2img), PathBuf::from(reader))))
+    labels: Option<OsString>,
+    proj: Option<OsString>,
+) -> Result<Option<MapServer>, String> {
+    match (map2img, labels, proj) {
+        (None, None, None) => Ok(None),
+        (Some(map2img), Some(labels), Some(proj))
+            if !map2img.is_empty() && !labels.is_empty() && !proj.is_empty() =>
+        {
+            Ok(Some(MapServer {
+                map2img: PathBuf::from(map2img),
+                labels: PathBuf::from(labels),
+                proj: PathBuf::from(proj),
+            }))
         }
         _ => Err(
-            "FORAGER_MAP2IMG and FORAGER_MAPSERVER_LABELS must both name a file, as \
-                  .github/workflows/noise.yml sets them, or neither be set"
+            "FORAGER_MAP2IMG, FORAGER_MAPSERVER_LABELS, and FORAGER_MAPSERVER_PROJ must all name a \
+             file, as .github/workflows/noise.yml sets them, or none be set"
                 .to_owned(),
         ),
     }
@@ -132,7 +324,7 @@ fn mapserver(
 fn skipped() {
     eprintln!(
         "the noise measurement needs MapServer, which only .github/workflows/noise.yml builds; \
-         skipped without FORAGER_MAP2IMG and FORAGER_MAPSERVER_LABELS"
+         skipped without FORAGER_MAP2IMG, FORAGER_MAPSERVER_LABELS, and FORAGER_MAPSERVER_PROJ"
     );
 }
 

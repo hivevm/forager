@@ -70,8 +70,9 @@ golden path and the test pattern an agent copies from are named here.
   which the frontend checks a label's fonts with and `label` takes its steps from (`font.rs`); it
   lives here because ADR-0008 keeps `mapfile` from `label`. It depends on no other crate of the
   workspace.
-- **`ports`** — the port traits — the resource loader, the feature source, the projection
-  resolver — with the features a source delivers, their geometries, re-exported from `style-ir`,
+- **`ports`** — the port traits — the resource loader, the feature source with the projection
+  it declares (ADR-0039), the projection resolver — with the features a
+  source delivers, their geometries, re-exported from `style-ir`,
   and properties
   ([ADR-0023](adr/0023-typed-properties.md)), and the resource path that
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`;
@@ -116,12 +117,38 @@ golden path and the test pattern an agent copies from are named here.
   ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax in `pattern.rs`, and it reads
   numbers with `style-ir`'s `c.rs`, as the engine reads a style's or a label's bound values.
   Synchronous, without I/O; the only crate that uses `regex`.
+- **`proj`** — the reprojection: its own port of PROJ 9.4.0's formulas, the version the pinned
+  MapServer build links, every transcendental function from `libm`, so that a point reprojects to
+  the same bits on every target (ADR-0037, Q-2). It reads a
+  projection as the style IR's proj4 string, parameters and tables as PROJ's `pj_init` reads them
+  (`params.rs`), implements longitude and latitude, `lcc`, `merc`, `tmerc` with `utm` by
+  PROJ's Poder/Engsager algorithm, and `ortho`, with `+over` (`lcc.rs`, `merc.rs`, `tmerc.rs`,
+  `ortho.rs`, their shared functions in
+  `common.rs`), and shifts a datum through WGS84 by an exact Helmert transform of an explicit
+  `+towgs84`, as PROJ's cs2cs emulation chains it (`datum.rs`); a named `+datum` shifts nothing,
+  as MapServer's call of PROJ does not for NAD83.
+  Its tables hold only the datums, ellipsoids, and units the cases in scope name: WGS84 and NAD83,
+  their ellipsoids, and metres. Anything else is an error value naming it; a point that does not
+  transform is one too, never a panic. It decides whether two projections differ as
+  `msProjectionsDiffer` compares their parameters, and reprojects a rectangle as `msProjectRect`
+  does (`rect.rs`): its sides and a diagonal sampled, the horizon found where points fail, a grid
+  where none of them reprojects, all longitudes where a polar projection's pole lies inside it,
+  with the `+over` it adds. It reprojects a shape's lines as `msProjectShapeLine` does and a point
+  shape's as `msProjectLineEx` does (`shape.rs`): cut at the horizon, wrapped at the dateline.
+  Synchronous, without I/O; it depends on `style-ir` and `libm` alone, and each file that ports a
+  PROJ source holds PROJ's notice (`scripts/check-notice.sh`).
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
   bound feature source for the features in view, or, for a layer with inline features, a source
   in memory of its own over them, which reports a bound source as not read (`inline.rs`,
-  ADR-0018), replaces the shape of each feature that passes the layer's filter by the layer's
-  `GEOMTRANSFORM` through `symbolize`, up to the first feature past its `MAXFEATURES`, and draws
-  nothing of a layer whose transform tree is `not_drawn` or fails, with a warning (`classes.rs`,
+  ADR-0018); for a layer whose projection differs from the map's, it asks for the map's extent
+  reprojected into the layer's and reprojects each feature's shape into the map's before anything
+  else touches it, as `msProjectShapeEx` does, with a warning for the points that do not
+  reproject, the horizon points held to a bound per layer (Q-9), and a map of `AUTO` taken as
+  each layer's base geographic CRS, and draws nothing of a layer whose projection does not read,
+  with a warning (`reproject.rs`); replaces the shape of
+  each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
+  up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
+  tree is `not_drawn` or fails, with a warning (`classes.rs`,
   ADR-0036), draws each feature that passes the layer's
   filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
   the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
@@ -267,11 +294,13 @@ golden path and the test pattern an agent copies from are named here.
   allocated for it (`pixmap.rs`, [ADR-0030](adr/0030-png-encoder.md),
   [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)).
 - **`adapter-geojson`** — a feature source over a GeoJSON document
-  ([ADR-0020](adr/0020-geojson-adapter.md)).
+  ([ADR-0020](adr/0020-geojson-adapter.md)), declaring WGS84 longitude and latitude.
 - **`adapter-shapefile`** — a feature source over an ESRI shapefile, its `.shp`, `.shx`, and
   `.dbf` loaded through the resource loader and read with the records MapServer reads, in memory
   that follows the files' size ([ADR-0021](adr/0021-shapefile-adapter.md)), each rule of the
-  reading written down in `docs/semantics/shapefile.md`; a record it cannot read is skipped and
+  reading written down in `docs/semantics/shapefile.md`, and its `.prj` read into the
+  projection it declares by a WKT reader of its own (`prj.rs`, ADR-0039);
+  a record it cannot read is skipped and
   counted, and the engine reports it per layer
   ([ADR-0022](adr/0022-skipped-records.md)).
 - **`adapter-epsg`** — resolves `init=epsg:` projections for the frontend through the

@@ -6,7 +6,30 @@
 **Meaning.** The coordinate reference system of the map's extent and image, and of a layer's
 features. A layer without one is in the map's projection, and MapServer then reprojects nothing
 (`msProjectionsDiffer` in `src/mapproject.c` treats a projection without parameters as no
-difference). Reprojection itself is not yet drawn.
+difference).
+
+**Reprojection.** A layer whose projection differs from the map's is drawn in the map's, as
+`msDrawShape` in `src/mapdraw.c` reprojects each shape by `msProjectShapeEx` before its
+`GEOMTRANSFORM`, classes, and labels. Two projections differ as `msProjectionsDiffer` finds it:
+where neither lacks parameters and they differ in number or in any one, compared in order as text;
+the IR compares the proj4 strings its frontend wrote, `init=` expanded, where MapServer compares the
+arguments as written. The layer's source is asked for the map's extent reprojected into the layer's
+projection as `msProjectRect` reprojects it: the points of its sides and of a diagonal, a hundred
+along each, both projections taken with `+over`, a run of points that do not reproject cut at the
+horizon, a grid where none of the ring is left, and every longitude where a polar projection's pole
+lies inside it. A line or a ring is reprojected by `msProjectShapeLine`: a run of points that do not
+reproject is cut at the horizon, found by halving each side to it down to 0.01 units; a line goes
+on in a new part after the shape's others, a ring is closed along the horizon, and after a run of
+no more than three such points its points move after the shape's other lines. Into longitude and
+latitude from a projected layer, a vertex more than 180° from the one before is wrapped by 360°
+where `msTestNeedWrap` finds the segment crossing the dateline. The points of a point shape are
+reprojected by `msProjectLineEx`: all are left out where one does not reproject, except into
+longitude and latitude from a projected layer, where such a point stays where it was. A warning
+names the layer and how many points did not reproject (Q-3), and the points the horizon search adds
+are bounded per layer (Q-9). `+over` keeps a longitude past ±180° on the way in and out. A
+projection the core does not implement leaves its layer undrawn with a warning. The core implements
+longitude and latitude, `lcc`, `merc`, `tmerc` with `utm`, and `ortho`, a datum's shift by
+`+towgs84`, and the datums WGS84 and NAD83, as PROJ 9.4.0 computes them (ADR-0037).
 
 **Parameters.** MapServer hands every parameter to PROJ, so the frontend writes each one with a
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the
@@ -36,5 +59,14 @@ what GDAL reads (`src/mapraster.c`), an OGR layer its spatial reference. Where t
 none, the layer keeps `AUTO` without a PROJ object, which `msProjectionsDiffer` finds different from
 the map's, and `msProjectCreateReprojector` in `src/mapproject.c` takes its coordinates as longitude
 and latitude in the datum of the map's projection; only a map without a projection, or a geographic
-one, leaves them as they are. The IR holds this as `from_source`. On the map, where no source
-declares one, `AUTO` is a warning and the map has no projection.
+one, leaves them as they are. The IR holds this as `from_source`; the engine asks the source bound
+to the layer for the projection it declares (ADR-0039): a shapefile its
+`.prj` (docs/semantics/shapefile.md), a GeoJSON source WGS84 longitude and latitude. A source that
+declares none leaves the layer as MapServer leaves it, and one whose declaration does not read
+does too, with a warning naming the layer and the file, where MapServer writes a debug message.
+On the map, where no source declares one, `AUTO` stays the map's one argument without a PROJ
+object, as `msProcessProjection` leaves it; the IR holds it as the map's `projection_auto` (format
+version 1.1). A layer without a
+projection beneath it is not reprojected, and a layer in a projection differs from it and is drawn
+in the longitude and latitude of its own datum, its base geographic CRS
+(`msProjectCreateReprojector`); its source is asked for the map's extent taken back from there.

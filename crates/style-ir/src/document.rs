@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
-pub const FORMAT_VERSION: &str = "1.0";
+pub const FORMAT_VERSION: &str = "1.1";
 
 /// A style document as read, with the warnings reading it raised.
 #[derive(Debug)]
@@ -380,6 +380,7 @@ mod tests {
             image_color: Some(Rgba::opaque(255, 255, 255)),
             label_cache_edge_buffer: Some(10),
             projection: Some("+proj=longlat +datum=WGS84".into()),
+            projection_auto: false,
             resolution: Some(96.0),
             def_resolution: None,
             units: Some(Units::Degrees),
@@ -577,6 +578,28 @@ mod tests {
             .document;
         assert_eq!(from_yaml, document);
         assert_eq!(from_json, document);
+    }
+
+    #[test]
+    fn a_map_of_auto_reads_back_and_a_document_of_1_0_reads_as_before() {
+        // Verifies: ADR-0014
+        // Format version 1.1 adds the map's projection_auto, an optional field: a minor bump.
+        assert_eq!(FORMAT_VERSION, "1.1");
+        let mut document = sample();
+        (document.map.projection, document.map.projection_auto) = (None, true);
+        for text in [document.to_json().unwrap(), document.to_yaml().unwrap()] {
+            assert!(text.contains("projection_auto"), "{text}");
+        }
+        let from_json = StyleDocument::from_json(&document.to_json().unwrap()).unwrap();
+        let from_yaml = StyleDocument::from_yaml(&document.to_yaml().unwrap()).unwrap();
+        assert_eq!(from_json.document, document);
+        assert_eq!(from_yaml.document, document);
+        // A map that is not AUTO writes no field, and a document of 1.0 reads with none.
+        assert!(!sample().to_json().unwrap().contains("projection_auto"));
+        let old = r#"{"version":"1.0","map":{"projection":"+proj=longlat"}}"#;
+        let read = StyleDocument::from_json(old).unwrap();
+        assert!(read.warnings.is_empty(), "{:?}", read.warnings);
+        assert!(!read.document.map.projection_auto);
     }
 
     #[test]
@@ -800,8 +823,8 @@ mod tests {
             assert_eq!(
                 messages,
                 [
-                    "/map/layers/0/glow is unknown to format version 1.0 and is ignored",
-                    "/map/a~1b~0 is unknown to format version 1.0 and is ignored",
+                    "/map/layers/0/glow is unknown to format version 1.1 and is ignored",
+                    "/map/a~1b~0 is unknown to format version 1.1 and is ignored",
                 ]
             );
             assert!(read.warnings.iter().all(|w| w.code == "unknown-field"));
@@ -973,7 +996,7 @@ mod tests {
         // where `Sans` comes before `sans`.
         let fonts = r#""fonts":{"sans":"a.ttf","Sans":"b.ttf"}"#;
         for unknown in [r#""units":"furlongs","#, ""] {
-            let text = format!(r#"{{"version":"1.1","map":{{{unknown}{fonts}}}}}"#);
+            let text = format!(r#"{{"version":"1.9","map":{{{unknown}{fonts}}}}}"#);
             let read = StyleDocument::from_json(&text).unwrap();
             let lenient = read.warnings.iter().any(|w| w.code != "font-name-twin");
             assert_eq!(lenient, !unknown.is_empty(), "{:?}", read.warnings);
@@ -1052,12 +1075,13 @@ mod tests {
             StyleDocument::from_yaml_with(yaml, FIXTURE),
         ] {
             let read = read.unwrap();
-            assert_eq!(read.document.version, FORMAT_VERSION);
+            // Each step leaves the document at its major's `<major>.0`, an older minor of 1.1.
+            assert_eq!(read.document.version, "1.0");
             assert_eq!(read.document.map.image_color, Some(Rgba::opaque(1, 2, 3)));
             let messages: Vec<_> = read.warnings.iter().map(|w| w.message.as_str()).collect();
             assert_eq!(
                 messages,
-                ["the document was migrated from format version 0.3 to 1.0"]
+                ["the document was migrated from format version 0.3 to 1.1"]
             );
         }
     }
@@ -1081,7 +1105,7 @@ mod tests {
         assert_eq!(error.code, "unknown-field");
         assert_eq!(
             error.message,
-            "format version 0.1 has no field /map/glow; this build reads 1.0"
+            "format version 0.1 has no field /map/glow; this build reads 1.1"
         );
     }
 
@@ -1093,7 +1117,7 @@ mod tests {
         assert_eq!(read.document.map.name.as_deref(), Some("m"));
         assert_eq!(
             read.warnings[0].message,
-            "/map/glow is unknown to format version 1.0 and is ignored"
+            "/map/glow is unknown to format version 1.1 and is ignored"
         );
         let newer_major = r#"{"version":"2.0","map":{}}"#;
         let error = StyleDocument::from_json(newer_major).unwrap_err();
@@ -1120,7 +1144,8 @@ mod tests {
     #[test]
     fn bbox_is_a_transform_of_format_1_0_and_reads_back() {
         // Verifies: ADR-0014
-        assert_eq!(FORMAT_VERSION, "1.0");
+        // 1.1 only added the map's projection_auto, so bbox is still a transform of 1.0.
+        assert_eq!(FORMAT_VERSION, "1.1");
         let mut document = sample();
         document.map.layers[0].classes[0].styles[0].geom_transform = Some(GeomTransform::Bbox);
         let json = document.to_json().unwrap();
@@ -1144,7 +1169,7 @@ mod tests {
         assert_eq!(
             messages,
             [
-                "/map/layers/0/render_mode: `hologram` is unknown to format version 1.0 and is ignored"
+                "/map/layers/0/render_mode: `hologram` is unknown to format version 1.1 and is ignored"
             ]
         );
         assert_eq!(read.warnings[0].code, "unknown-value");
@@ -1168,7 +1193,7 @@ mod tests {
             messages,
             [
                 "/map/layers/0/classes/0/expression: the operator `s_buffer` is unknown to format \
-                 version 1.0, and the expression never matches"
+                 version 1.1, and the expression never matches"
             ]
         );
         assert_eq!(read.warnings[0].code, "unknown-operator");
@@ -1226,7 +1251,7 @@ mod tests {
                 .map(|w| (w.code.as_str(), w.message.as_str()))
                 .collect();
             warnings.sort_unstable();
-            let never = "the operator `glows` is unknown to format version 1.0, and the \
+            let never = "the operator `glows` is unknown to format version 1.1, and the \
                          expression never matches";
             assert_eq!(
                 warnings,
@@ -1365,9 +1390,9 @@ mod tests {
         assert_eq!(
             fields,
             [
-                "/map/layers/0/classes/0/styles/0/width/glow is unknown to format version 1.0 and is ignored",
-                "/map/layers/0/filter/args/0/glow is unknown to format version 1.0 and is ignored",
-                "/map/layers/0/filter/flags is unknown to format version 1.0 and is ignored",
+                "/map/layers/0/classes/0/styles/0/width/glow is unknown to format version 1.1 and is ignored",
+                "/map/layers/0/filter/args/0/glow is unknown to format version 1.1 and is ignored",
+                "/map/layers/0/filter/flags is unknown to format version 1.1 and is ignored",
             ]
         );
         let layer = &read.document.map.layers[0];

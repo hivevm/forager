@@ -417,7 +417,7 @@ mod tests {
         (0..points)
             .map(|i| {
                 let t = ((i * skip) % points) as f64 / points as f64 * std::f64::consts::TAU;
-                p(50.0 + 40.0 * t.cos(), 50.0 + 40.0 * t.sin())
+                p(50.0 + 40.0 * libm::cos(t), 50.0 + 40.0 * libm::sin(t))
             })
             .collect()
     }

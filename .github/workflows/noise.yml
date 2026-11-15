@@ -16,6 +16,7 @@ on:
       - "crates/cli/tests/conformance/**"
       - "crates/cli/tests/metric/**"
       - "crates/cli/tests/msautotest.rs"
+      - "crates/proj/tests/reference/**"
       - "scripts/fetch-msautotest.sh"
       - "scripts/build-mapserver.sh"
       - ".github/workflows/noise.yml"
@@ -49,11 +50,13 @@ jobs:
       - name: Build MapServer at the pinned release
         id: mapserver
         # Assigned first, so that a failing build fails the step; an echo would hide its status.
-        # The script prints map2img's path and, on the second line, the label cache reader's.
+        # The script prints map2img's path and, on the second and third lines, the label cache
+        # reader's and the reprojection reader's.
         run: |
           paths="$(bash scripts/build-mapserver.sh)"
           echo "map2img=$(sed -n 1p <<< "$paths")" >> "$GITHUB_OUTPUT"
           echo "labels=$(sed -n 2p <<< "$paths")" >> "$GITHUB_OUTPUT"
+          echo "proj=$(sed -n 3p <<< "$paths")" >> "$GITHUB_OUTPUT"
       - name: Install the toolchain and the cargo tools
         run: bash scripts/install-tools.sh
       # The path reaches the shell through the environment, not spliced into the script. The suite
@@ -63,6 +66,7 @@ jobs:
         env:
           FORAGER_MAP2IMG: ${{ steps.mapserver.outputs.map2img }}
           FORAGER_MAPSERVER_LABELS: ${{ steps.mapserver.outputs.labels }}
+          FORAGER_MAPSERVER_PROJ: ${{ steps.mapserver.outputs.proj }}
         run: |
           suite="$(bash scripts/fetch-msautotest.sh)"
           python3 -m http.server 8000 --bind 127.0.0.1 --directory "$suite" >/dev/null 2>&1 &

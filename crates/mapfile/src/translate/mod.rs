@@ -318,14 +318,12 @@ impl Translator<'_> {
                     }
                     "WEB" => self.web(b),
                     "PROJECTION" => {
-                        map.projection = match self.projection(b) {
-                            Some(LayerProjection::Proj4(proj4)) => Some(proj4),
-                            Some(LayerProjection::FromSource) => {
-                                let message = "PROJECTION AUTO of a map is not yet supported";
-                                self.warn("unsupported-value", message, &b.span);
-                                None
-                            }
-                            None => None,
+                        // AUTO stays the map's one argument, without a PROJ object
+                        // (msProcessProjection).
+                        (map.projection, map.projection_auto) = match self.projection(b) {
+                            Some(LayerProjection::Proj4(proj4)) => (Some(proj4), false),
+                            Some(LayerProjection::FromSource) => (None, true),
+                            None => (None, false),
                         };
                     }
                     _ => self.unhandled(&b.keyword, &b.span),

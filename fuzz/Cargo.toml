@@ -36,6 +36,13 @@ forager-adapter-shapefile = { path = "../crates/adapter-shapefile" }
 forager-encode = { path = "../crates/encode" }
 
 [[bin]]
+name = "prj"
+path = "fuzz_targets/prj.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "mapfile"
 path = "fuzz_targets/mapfile.rs"
 test = false

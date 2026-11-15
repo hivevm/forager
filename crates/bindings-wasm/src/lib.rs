@@ -732,4 +732,44 @@ mod projections {
         );
         assert_eq!(broken.diagnostics[0].code, "epsg-table-invalid");
     }
+
+    /// A GeoJSON layer of `PROJECTION AUTO` under a map in UTM is reprojected from WGS84 longitude
+    /// and latitude, as its source declares (G-5).
+    #[test]
+    fn a_geojson_layer_of_auto_is_reprojected_from_wgs84_longitude_and_latitude() {
+        // Verifies: ADR-0039, G-5
+        let mapfile = |projection: &str| {
+            format!(
+                "MAP SIZE 11 11 EXTENT 400000 5450000 600000 5650000\n\
+                 PROJECTION '+proj=utm' '+zone=32' '+datum=WGS84' '+units=m' END\n\
+                 LAYER NAME 'p' TYPE POINT STATUS ON {projection}\n\
+                 CLASS STYLE COLOR 0 0 0 SIZE 5 END END END END\n"
+            )
+        };
+        let sources = serde_json::json!({ "p": {"type": "Point", "coordinates": [9, 50]} });
+        let dark = |output: &Output| {
+            let image = output.image.as_ref().unwrap();
+            (4..=6).any(|x| {
+                (4..=7).any(|y| image.pixel(x, y) == Some(forager_style_ir::Rgba::opaque(0, 0, 0)))
+            })
+        };
+        let auto = render_map(
+            &mapfile("PROJECTION AUTO END"),
+            &sources.to_string(),
+            None,
+            &Viewport::default(),
+        );
+        assert!(auto.diagnostics.is_empty(), "{:?}", auto.diagnostics);
+        assert!(dark(&auto), "the point at 9°E 50°N, near the middle");
+        let unprojected = render_map(
+            &mapfile(""),
+            &sources.to_string(),
+            None,
+            &Viewport::default(),
+        );
+        assert!(
+            !dark(&unprojected),
+            "without a projection, 9 and 50 metres lie far off"
+        );
+    }
 }

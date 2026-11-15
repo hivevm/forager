@@ -12,6 +12,7 @@ publish.workspace = true
 forager-style-ir.workspace = true
 forager-ports.workspace = true
 forager-expr.workspace = true
+forager-proj.workspace = true
 forager-render.workspace = true
 forager-label.workspace = true
 forager-symbolize.workspace = true
