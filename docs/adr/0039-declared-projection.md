@@ -1,6 +1,6 @@
 # ADR-0039: A feature source declares its projection through the port, and the shapefile adapter turns the WKT of its `.prj` into a proj4 string with a parser of its own
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-15
 - **Deciders:** Markus Brigl
 - **Applies to:** the `FeatureSource` port of `crates/ports` and its declared projection, its use by a layer of `PROJECTION AUTO` in `crates/engine`, the `.prj` reader of `crates/adapter-shapefile` and its fuzz target under `fuzz/`, and the declaration of `crates/adapter-geojson`
