@@ -1,6 +1,6 @@
 # ADR-0038: The reference coordinates of G-11 are reprojected by MapServer's own call of PROJ at the pinned build, in the noise run, and kept as records beside the test of `proj`
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-14
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/proj/tests/reference/` (the list of points and the records), the test of `crates/proj` that reads them, `crates/cli/tests/conformance/mapserver_proj.c`, its build in `scripts/build-mapserver.sh`, its run in `.github/workflows/noise.yml` and the harness's noise module, and the paths that start that workflow
