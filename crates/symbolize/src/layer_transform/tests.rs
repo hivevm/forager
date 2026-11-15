@@ -533,3 +533,160 @@ fn a_size_or_iterations_past_an_int_is_int_min_and_clamped() {
     assert_eq!(apply(&smooth(1e10, 1e10, None), &zigzag), Ok(once.clone()));
     assert_eq!(apply(&smooth(1.0, 0.0, None), &zigzag), Ok(once));
 }
+
+fn simplified(tolerance: f64) -> TransformShape {
+    TransformShape::Simplify(shape(), n(tolerance))
+}
+
+#[test]
+fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
+    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer, ADR-draft-geometry-through-geo
+    // msGEOSSimplify: each part by GEOS's Douglas-Peucker, a part GEOS builds empty dropped from
+    // the result by its transformer.
+    let parts = Geometry::MultiLineString(vec![
+        coords(&[(0.0, 0.0), (5.0, 0.5), (10.0, 0.0), (15.0, 6.0)]),
+        vec![],
+        coords(&[(0.0, 10.0), (5.0, 10.25), (10.0, 10.0)]),
+    ]);
+    assert_eq!(
+        apply(&simplified(1.0), &parts),
+        Ok(Geometry::MultiLineString(vec![
+            coords(&[(0.0, 0.0), (10.0, 0.0), (15.0, 6.0)]),
+            coords(&[(0.0, 10.0), (10.0, 10.0)]),
+        ]))
+    );
+    // A point shape is its points, which the simplification keeps.
+    let point = Geometry::Point(c(3.0, 4.0));
+    assert_eq!(apply(&simplified(1.0), &point), Ok(point));
+}
+
+#[test]
+fn simplify_groups_a_polygon_s_rings_as_mapserver_hands_them_to_geos() {
+    // Verifies: ADR-draft-geometry-through-geo
+    // Three outer rings by msGetOuterList, each with the inner rings msGetInnerList finds inside
+    // it, in the order of the outer ones: the hole listed after the third ring goes with the
+    // second. A multipolygon of the three, valid, kept as simplified: each square's bend at 10.5
+    // is dropped.
+    let square = |x: f64| {
+        coords(&[
+            (x, 0.0),
+            (x, 10.0),
+            (x + 5.0, 10.5),
+            (x + 10.0, 10.0),
+            (x + 10.0, 0.0),
+            (x, 0.0),
+        ])
+    };
+    let hole = coords(&[(2.0, 2.0), (4.0, 2.0), (4.0, 4.0), (2.0, 4.0), (2.0, 2.0)]);
+    let enclosing = coords(&[
+        (-50.0, -50.0),
+        (-50.0, 50.0),
+        (-20.0, 50.0),
+        (-20.0, -50.0),
+        (-50.0, -50.0),
+    ]);
+    let inside_enclosing = coords(&[
+        (-40.0, -40.0),
+        (-30.0, -40.0),
+        (-30.0, -30.0),
+        (-40.0, -30.0),
+        (-40.0, -40.0),
+    ]);
+    let polygon = Geometry::Polygon(vec![
+        square(0.0),
+        hole.clone(),
+        enclosing.clone(),
+        square(100.0),
+        inside_enclosing.clone(),
+    ]);
+    let flat = |x: f64| {
+        coords(&[
+            (x, 0.0),
+            (x, 10.0),
+            (x + 10.0, 10.0),
+            (x + 10.0, 0.0),
+            (x, 0.0),
+        ])
+    };
+    assert_eq!(
+        apply(&simplified(1.0), &polygon),
+        Ok(Geometry::Polygon(vec![
+            flat(0.0),
+            hole,
+            enclosing,
+            inside_enclosing,
+            flat(100.0),
+        ]))
+    );
+    // A square whose shell collapses leaves a polygon without rings.
+    assert_eq!(
+        apply(&simplified(20.0), &Geometry::Polygon(vec![flat(0.0)])),
+        Ok(Geometry::Polygon(vec![]))
+    );
+}
+
+#[test]
+fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
+    // Verifies: ADR-draft-geometry-through-geo
+    // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points or a polygon of
+    // fewer than 4; GEOS cannot build a line of 1 point or a ring that is not closed; and its
+    // DouglasPeuckerSimplifier refuses a tolerance below 0. Each fails "Executing simplify".
+    let short = line(&[(0.0, 0.0)]);
+    let why = failed(apply(&simplified(1.0), &short));
+    assert!(why.contains("too few points"), "{why}");
+    let one = Geometry::MultiLineString(vec![coords(ELL), coords(&[(1.0, 1.0)])]);
+    let why = failed(apply(&simplified(1.0), &one));
+    assert!(why.contains("line part of one point"), "{why}");
+    let open = polygon(&[&[(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)]]);
+    let why = failed(apply(&simplified(1.0), &open));
+    assert!(why.contains("not closed"), "{why}");
+    let triangle = polygon(&[&[(0.0, 0.0), (0.0, 1.0), (0.0, 0.0)]]);
+    let why = failed(apply(&simplified(1.0), &triangle));
+    assert!(why.contains("too few points"), "{why}");
+    let why = failed(apply(&simplified(-1.0), &line(ELL)));
+    assert!(why.contains("tolerance -1, below 0"), "{why}");
+    // A ring in no polygon is never built by GEOS, so it fails nothing, open and short as it is.
+    // The rectangle from (5, 5) to (8, 15) overlaps the square [0, 10]²: its first two points lie
+    // in it, so msIsOuterRing finds it inner, and msGetInnerList makes it a hole of the square.
+    // The open ring about (6.5, 12.5) lies in the rectangle alone, so it is inner too, but in no
+    // outer ring.
+    let outer = [
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (10.0, 10.0),
+        (10.0, 0.0),
+        (0.0, 0.0),
+    ];
+    let overlapping = [(5.0, 5.0), (8.0, 5.0), (8.0, 15.0), (5.0, 15.0), (5.0, 5.0)];
+    let stray = [(6.0, 12.0), (7.0, 12.0), (7.0, 13.0)];
+    let shape = polygon(&[&outer, &overlapping, &stray]);
+    let simplified = apply(&simplified(1.0), &shape);
+    assert!(simplified.is_ok(), "{simplified:?}");
+}
+
+#[test]
+fn simplify_past_the_points_a_layer_may_visit_is_a_limit() {
+    // Verifies: Q-9
+    // A straight line of 20,000 points is one section of 19,998 inner points, well inside the
+    // budget, and keeps its ends. A zigzag of 15,000 points whose amplitude shrinks keeps every
+    // point, its sections one point shorter each: 14,998 * 14,999 / 2 points, past 1e8, and the
+    // budget stops it as it goes.
+    let straight = Geometry::LineString((0..20_000).map(|i| c(f64::from(i), 0.0)).collect());
+    assert_eq!(
+        apply(&simplified(1.0), &straight),
+        Ok(line(&[(0.0, 0.0), (19_999.0, 0.0)]))
+    );
+    let zigzag = Geometry::LineString(
+        (0..15_000_u32)
+            .map(|i| {
+                let amplitude = f64::from(15_000 - i);
+                c(
+                    f64::from(i),
+                    if i % 2 == 0 { amplitude } else { -amplitude },
+                )
+            })
+            .collect(),
+    );
+    let why = limit(apply(&simplified(0.5), &zigzag));
+    assert!(why.contains("visits more than 100000000 points"), "{why}");
+}

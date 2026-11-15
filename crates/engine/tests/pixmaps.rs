@@ -804,7 +804,7 @@ fn a_polygon_s_pixmap_at_a_size_of_0_has_a_tile_of_a_pixel_and_draws_without_a_f
 
 #[test]
 fn a_pixmap_of_a_hatched_class_counts_in_the_clip_buffer_loaded_outside_its_scale_range() {
-    // Verifies: ADR-0028
+    // Verifies: ADR-0028, ADR-draft-i-overlay-in-render-agg-and-geo
     // msDrawShape loads every pixmap of the class before the clip, whatever its scale range: the
     // style of the 16 × 48 image never draws, yet it counts at its height: MS_NINT(48 + 1) + 2 =
     // 51 pixels around the extent, where the hatch of SIZE 10 alone would give 13.

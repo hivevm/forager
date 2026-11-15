@@ -106,8 +106,11 @@ to invent.
   position, with the box they span, as MapServer's `textPathObj` holds them.
 - **Transform tree** — A `GEOMTRANSFORM` expression of a layer or a class's style in the style
   IR: a tree of its shape functions and their numbers in CQL2-JSON's shape, or `not_drawn` with the
-  reason the engine does not draw it, translated by the mapfile frontend
-  (ADR-0036; [`semantics/style-symbol.md`](semantics/style-symbol.md)).
+  reason the engine does not draw it, translated by the mapfile frontend. Its nodes are `shape`,
+  `generalize`, `densify`, `simplify`, `outer`, `inner`, and `smoothsia`
+  (ADR-0036,
+  [ADR-draft-transform-tree-with-simplify-and-buffer](adr/draft-transform-tree-with-simplify-and-buffer.md);
+  [`semantics/style-symbol.md`](semantics/style-symbol.md)).
   _Avoid:_ shape expression, geometry expression.
 - **Viewport** — The part of a map that is drawn: an image size and an extent. A page asks the WASM
   bindings for one, which overrides the mapfile's `SIZE` and `EXTENT`.

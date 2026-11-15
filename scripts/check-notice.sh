@@ -26,6 +26,11 @@
 # licence asks of every copy, binaries included. Each source of PROJ such a file's header names
 # must stand in the table of scripts/lib/notice.sh, which holds the copyright lines each source
 # holds at PROJ 9.4.0, and the header must hold each of those lines.
+# A Rust file under crates/symbolize that names a JTS source — a Java file, such as
+# DouglasPeuckerLineSimplifier.java — follows JTS (ADR-draft-geometry-through-geo) and must hold
+# JTS's notice: the copyright line of its sources, and the third condition and the disclaimer of
+# the Eclipse Distribution License 1.0 (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then
+# hold the same lines, as the licence's second condition asks of a binary.
 # Beyond this check's reach are a file that names only a MapServer function, one that names a
 # source without `src/`, one that names a C++ source (`src/map….cpp`), whose holders differ by
 # file, and a port of pnpoly that names neither word.
@@ -50,6 +55,8 @@ pnpoly=0
 pnpoly_failures=0
 proj=0
 proj_failures=0
+jts=0
+jts_failures=0
 while IFS= read -r -d '' file; do
   if grep -qiE '\bmsPointInPolygon\b|\bpnpoly\b' "$file"; then
     pnpoly=$((pnpoly + 1))
@@ -106,11 +113,25 @@ while IFS= read -r -d '' file; do
   done <<< "$sources"
 done < <(find "$ROOT/crates/proj" -name '*.rs' -not -path '*/target/*' -print0 2>/dev/null)
 
+# The ports of JTS's steps, under crates/symbolize.
+while IFS= read -r -d '' file; do
+  grep -qE '\b[A-Z][A-Za-z0-9]*\.java\b' "$file" || continue
+  jts=$((jts + 1))
+  if ! holds_jts "$file"; then
+    echo "ERROR: ${file#"$ROOT"/} follows JTS's source and does not hold JTS's notice" >&2
+    jts_failures=$((jts_failures + 1))
+  fi
+done < <(find "$ROOT/crates/symbolize" -name '*.rs' -not -path '*/target/*' -print0 2>/dev/null)
+
 # A binary carries the notices in THIRD-PARTY-NOTICES.md, pnpoly's condition 2.
 notices="$ROOT/THIRD-PARTY-NOTICES.md"
 if ((proj)) && { [[ ! -f "$notices" ]] || ! grep -qF "$PROJ_TERMS" "$notices"; }; then
   echo "ERROR: THIRD-PARTY-NOTICES.md does not reproduce PROJ's notice" >&2
   proj_failures=$((proj_failures + 1))
+fi
+if ((jts)) && { [[ ! -f "$notices" ]] || ! holds_jts "$notices"; }; then
+  echo "ERROR: THIRD-PARTY-NOTICES.md does not reproduce JTS's notice" >&2
+  jts_failures=$((jts_failures + 1))
 fi
 if ((pnpoly)) && { [[ ! -f "$notices" ]] || ! holds_third_party_notices "$notices"; }; then
   echo "ERROR: THIRD-PARTY-NOTICES.md does not reproduce W. Randolph Franklin's and MapServer's" \
@@ -118,12 +139,13 @@ if ((pnpoly)) && { [[ ! -f "$notices" ]] || ! holds_third_party_notices "$notice
   pnpoly_failures=$((pnpoly_failures + 1))
 fi
 
-if ((failures || pnpoly_failures || proj_failures)); then
+if ((failures || pnpoly_failures || proj_failures || jts_failures)); then
   echo "Notice check FAILED ($failures of $checked files that follow MapServer's source;" \
     "$pnpoly_failures problems with the notice of pnpoly, which $pnpoly files follow;" \
-    "$proj_failures with PROJ's, which $proj files follow)." >&2
+    "$proj_failures with PROJ's, which $proj files follow;" \
+    "$jts_failures with JTS's, which $jts files follow)." >&2
   exit 1
 fi
 echo "Notice check passed ($checked files that follow MapServer's source, $pnpoly pnpoly's," \
-  "$proj PROJ's)."
+  "$proj PROJ's, $jts JTS's)."
 exit 0

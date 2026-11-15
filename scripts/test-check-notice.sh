@@ -157,6 +157,27 @@ tdir="$(proj_repo projwrapped "// A point's way follows src/fwd.cpp of PROJ 9.4.
 $PROJ_NOTICE")"
 printf '%s\n' "$PROJ_NOTICE" > "$tdir/THIRD-PARTY-NOTICES.md"
 expect_check "a copyright line wrapped across two comment lines passes" "$tdir" 0 "1 PROJ's"
+JTS_NOTICE='// Copyright (c) 2016 Vivid Solutions.
+//   Neither the name of the Eclipse Foundation, Inc. nor the names of its contributors may be used
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR'
+# jts_repo <name> <text> — a fixture whose one file crates/symbolize/src/geometry.rs holds the
+# text, printed as its path.
+jts_repo() {
+  local dir="$work/$1"
+  mkdir -p "$dir/crates/symbolize/src"
+  printf '%s\n' "$2" > "$dir/crates/symbolize/src/geometry.rs"
+  echo "$dir"
+}
+expect_check "a file under crates/symbolize that names a JTS source without its notice fails" \
+  "$(jts_repo jtsbare '// As DouglasPeuckerLineSimplifier.java drops it.')" 1 \
+  "crates/symbolize/src/geometry.rs follows JTS's source"
+jdir="$(jts_repo jtsnoticed "$JTS_NOTICE
+// As DouglasPeuckerLineSimplifier.java drops it.")"
+expect_check "JTS's notice without THIRD-PARTY-NOTICES.md reproducing it fails" \
+  "$jdir" 1 "THIRD-PARTY-NOTICES.md does not reproduce JTS's notice"
+printf '%s\n' "$JTS_NOTICE" > "$jdir/THIRD-PARTY-NOTICES.md"
+expect_check "a port of JTS with its notice, reproduced in THIRD-PARTY-NOTICES.md, passes" \
+  "$jdir" 0 "1 JTS's"
 expect_check "a root that is no directory exits 2" "$work/none" 2 "is not a directory"
 
 if ((failed)); then

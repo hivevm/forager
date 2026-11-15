@@ -2013,14 +2013,14 @@ fn codes(rendered: &Rendered) -> Vec<&str> {
 
 #[test]
 fn a_layer_of_a_not_drawn_transform_draws_nothing_and_warns_its_reason() {
-    // Verifies: ADR-0036
-    // MapServer applies the layer's GEOMTRANSFORM to each shape msLayerNextShape reads; simplify
-    // needs GEOS, which Forager has not: the layer draws nothing, with the warning naming the
-    // reason.
+    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // MapServer applies the layer's GEOMTRANSFORM to each shape msLayerNextShape reads;
+    // simplifypt needs GEOS's topology-preserving simplifier, which Forager has not: the layer
+    // draws nothing, with the warning naming the reason.
     let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
     let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
     for (reason, named) in [
-        (NotDrawn::Simplify, "not_drawn: simplify"),
+        (NotDrawn::Simplifypt, "not_drawn: simplifypt"),
         (NotDrawn::Binding, "not_drawn: binding"),
         (NotDrawn::Syntax, "not_drawn: syntax"),
     ] {
@@ -2062,6 +2062,35 @@ fn a_layer_of_generalize_draws_the_generalized_line() {
     );
     let image = rendered.image.unwrap();
     assert_eq!(image.pixel(50, 80), Some(BLUE), "the generalized line");
+    assert_eq!(image.pixel(25, 60), Some(WHITE), "the peak is dropped");
+}
+
+#[test]
+fn a_layer_of_simplify_draws_the_simplified_line() {
+    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // GEOS's Douglas-Peucker drops the peak 40 from the line between the ends at a tolerance of
+    // 50, and keeps it at 30.
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    let simplified = |tolerance| {
+        TransformTree::Drawn(TransformShape::Simplify(
+            Box::new(TransformShape::Shape),
+            TransformNumber::Number(tolerance),
+        ))
+    };
+    map.layers[0].geom_transform = Some(simplified(30.0));
+    let kept = render_with(&map, Some(PEAK));
+    assert!(kept.diagnostics.is_empty(), "{:?}", kept.diagnostics);
+    let image = kept.image.unwrap();
+    assert_ne!(image.pixel(25, 60), Some(WHITE), "the peak is kept");
+    map.layers[0].geom_transform = Some(simplified(50.0));
+    let rendered = render_with(&map, Some(PEAK));
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 80), Some(BLUE), "the simplified line");
     assert_eq!(image.pixel(25, 60), Some(WHITE), "the peak is dropped");
 }
 

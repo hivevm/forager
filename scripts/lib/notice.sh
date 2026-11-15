@@ -22,6 +22,13 @@ PNPOLY_ENDORSE='The name of W. Randolph Franklin may not be used to endorse or p
 # the permission sentence and the disclaimer of the MIT licence, which MapServer's share.
 PROJ_TERMS='All source, data files and other contents of the PROJ package are available'
 
+# JTS's notice, which a file under crates/symbolize that follows a JTS source holds
+# (ADR-draft-geometry-through-geo): the copyright line of those sources, and the third condition
+# and the disclaimer of the Eclipse Distribution License 1.0, under which Forager takes JTS.
+JTS_COPYRIGHT='Copyright (c) 2016 Vivid Solutions.'
+JTS_ENDORSE='Neither the name of the Eclipse Foundation, Inc. nor the names of its'
+JTS_DISCLAIMER='THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY'
+
 # The copyright lines each source of PROJ 9.4.0 holds that a port under crates/proj names, as
 # "<source>|<line>;<line>", each line without its "Copyright (c) "; nothing after the bar for a
 # source that holds none. Read from the sources at the tag 9.4.0; a port names a source the table
@@ -68,6 +75,11 @@ proj_source_copyrights() {
 # holds_proj <file> — whether the file holds PROJ's notice.
 holds_proj() {
   grep -qF "$PROJ_TERMS" "$1" && grep -qF "$PERMISSION" "$1" && grep -qF "$DISCLAIMER" "$1"
+}
+
+# holds_jts <file> — whether the file holds JTS's notice.
+holds_jts() {
+  grep -qF "$JTS_COPYRIGHT" "$1" && grep -qF "$JTS_ENDORSE" "$1" && grep -qF "$JTS_DISCLAIMER" "$1"
 }
 
 # holds_pnpoly <file> — whether the file holds Franklin's notice.

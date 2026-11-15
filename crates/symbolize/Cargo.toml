@@ -12,6 +12,10 @@ publish.workspace = true
 forager-style-ir.workspace = true
 forager-render.workspace = true
 libm.workspace = true
+# Tests a simplified polygon's validity and repairs it by a union, for a `GEOMTRANSFORM`
+# (ADR-draft-geometry-through-geo); its default features are off, so it brings no threads and no
+# triangulation.
+geo = { version = "0.33.1", default-features = false }
 
 [lints]
 workspace = true

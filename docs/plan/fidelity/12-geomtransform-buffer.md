@@ -34,9 +34,9 @@ transforms are.
 ## Read first
 
 - Touches: `crates/style-ir/src/transform.rs`, `schema/style-document-1.1.json`,
-  `crates/mapfile/src/translate/` (the translation of `GEOMTRANSFORM` expressions), the geometry
-  code ticket 11 placed, `crates/symbolize/src/layer_transform.rs`,
-  `crates/cli/tests/conformance/cases.txt`
+  `crates/mapfile/src/expression/transform.rs` (the translation of `GEOMTRANSFORM` expressions),
+  the geometry code ticket 11 placed, `crates/symbolize/src/geometry.rs`, its caller
+  `crates/symbolize/src/layer_transform.rs`, `crates/cli/tests/conformance/cases.txt`
 - MapServer at the pin: `src/mapgeos.c` (`msGEOSBuffer`), `src/mapparser.y`,
   `src/mapgeomtransform.c` (`msDrawTransformedShape`)
 - The ADRs ticket 11 proposed, and `docs/adr/0014-style-document-versions.md`

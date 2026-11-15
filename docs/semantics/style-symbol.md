@@ -87,38 +87,37 @@ map units where it skipped a part too short to begin — and for `end` the point
 outside the part.
 
 **A `GEOMTRANSFORM` expression.** An expression of a layer or of a style is read as MapServer's
-lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`, the rules `shape_exp`,
-`math_exp`, and `string_exp`), function names without regard to case, without the parentheses
-`loadLayer` and `loadStyle` strip. The frontend translates it into a transform tree
-(ADR-0036): `[shape]`, and `generalize`, `densify`, `outer`, `inner`, and
-`smoothsia` of a shape, nested. A number is written, `[map_cellsize]`, or computed of those by
-`+ - * / % ^` and parentheses, as the grammar reduces them; the frontend folds every operation
-without `[map_cellsize]` to one number. A unary `-` leaves its operand as it is, as the rule
-`'-' math_exp %prec NEG { $$ = $2; }` does, while `-3` written together is one negative number,
-so `[map_cellsize]-2` does not parse. `%` takes its operands cut to `int`s, `INT_MIN` past an
-`int` (ADR-0017). `[data_cellsize]` is 0, as `msGeomTransformShape` binds it on every layer but
-a contour layer (`src/mapgeomtransform.c:285-291`), which Forager does not carry. `smoothsia`'s
-size and iterations are 3 and 1 where they are not written, as the grammar calls
-`msSmoothShapeSIA(s, 3, 1, NULL)`; its preprocessing `all` or `angle` is read without regard to
-case, as `strcasecmp` reads it, and any other text is none.
+lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`, the rules `shape_exp`, `math_exp`,
+and `string_exp`), function names without regard to case, without the parentheses `loadLayer` and
+`loadStyle` strip. The frontend translates it into a transform tree (ADR-0036,
+ADR-draft-transform-tree-with-simplify-and-buffer): `[shape]`, and `generalize`, `densify`,
+`simplify`, `outer`, `inner`, and `smoothsia` of a shape, nested. A number is written,
+`[map_cellsize]`, or computed of those by `+ - * / % ^` and parentheses, as the grammar reduces
+them; the frontend folds every operation without `[map_cellsize]` to one number. A unary `-` leaves
+its operand as it is, as the rule `'-' math_exp %prec NEG { $$ = $2; }` does, while `-3` written
+together is one negative number, so `[map_cellsize]-2` does not parse. `%` takes its operands cut to
+`int`s, `INT_MIN` past an `int` (ADR-0017). `[data_cellsize]` is 0, as `msGeomTransformShape` binds
+it on every layer but a contour layer (`src/mapgeomtransform.c:285-291`), which Forager does not
+carry. `smoothsia`'s size and iterations are 3 and 1 where they are not written, as the grammar
+calls `msSmoothShapeSIA(s, 3, 1, NULL)`; its preprocessing `all` or `angle` is read without regard
+to case, as `strcasecmp` reads it, and any other text is none.
 
-An expression the grammar parses that holds any other construct is the tree `not_drawn`, naming
-the first such construct in the expression's reading order: a function the tree lacks, `buffer`,
-`centerline`, `difference`, `simplify`, `simplifypt`, `javascript`, `length`, `area`, or
-`round`; `binding`, an attribute where a number or a text is due; `text`, a computed
-preprocessing of `smoothsia`; `fromtext`, a shape read from a text, which the tree cannot hold;
-or `literal`, an operation of literals that folds to no finite number, which a style document
-cannot carry: a `%` by 0 or of `INT_MIN` by -1, on which the x86-64 build traps, a result past a
-double, and a literal past one, which `atof` reads as infinite. An expression the grammar does not
-parse, anywhere in it, is `not_drawn: syntax`, whatever construct comes before the error, as
-MapServer refuses the whole expression; a division of literals by 0, which `math_exp` fails with
-`yyerror(p, "Division by zero.")`, is one. The frontend warns `invalid-expression` at the place it
-stops, but on a label's style, whose label it leaves out. A style document of a newer minor
-version whose tree names a reason this reader does not know is read as not drawn, with a warning
-naming the reason and its path; the tree holds it as `syntax`, the reason the engine's warning
-then names. A tree that nests more than 24 levels,
-each node and each operator of a chain one level, fails the load with `expression-too-deep`
-(Q-9), from a mapfile and from a style document alike.
+An expression the grammar parses that holds any other construct is the tree `not_drawn`, naming the
+first such construct in the expression's reading order: a function the tree lacks, `buffer`,
+`centerline`, `difference`, `simplifypt`, `javascript`, `length`, `area`, or `round`; `binding`, an
+attribute where a number or a text is due; `text`, a computed preprocessing of `smoothsia`;
+`fromtext`, a shape read from a text, which the tree cannot hold; or `literal`, an operation of
+literals that folds to no finite number, which a style document cannot carry: a `%` by 0 or of
+`INT_MIN` by -1, on which the x86-64 build traps, a result past a double, and a literal past one,
+which `atof` reads as infinite. An expression the grammar does not parse, anywhere in it, is
+`not_drawn: syntax`, whatever construct comes before the error, as MapServer refuses the whole
+expression; a division of literals by 0, which `math_exp` fails with `yyerror(p, "Division by
+zero.")`, is one. The frontend warns `invalid-expression` at the place it stops, but on a label's
+style, whose label it leaves out. A style document of a newer minor version whose tree names a
+reason this reader does not know is read as not drawn, with a warning naming the reason and its
+path; the tree holds it as `syntax`, the reason the engine's warning then names. A tree that nests
+more than 24 levels, each node and each operator of a chain one level, fails the load with
+`expression-too-deep` (Q-9), from a mapfile and from a style document alike.
 
 **A layer's `GEOMTRANSFORM`.** A layer's `GEOMTRANSFORM` is an expression alone (RFC 89, read by
 `getSymbol(1, MS_EXPRESSION)`); anything else fails the load. `msLayerNextShape` in
@@ -132,6 +131,26 @@ engine draws its tree's functions:
 - `densify(s, t)` (`msDensify`, `src/mapprimitive.cpp`): each segment of a line or a polygon
   longer than `t` cut into `floor(length / t) + 1` equal ones. It fails a point and a `t` not
   above 0.
+- `simplify(s, t)` (`msGEOSSimplify`, `src/mapgeos.c`): `s` as GEOS's Douglas-Peucker simplifies
+  it at the tolerance `t`, by a Douglas-Peucker ported from JTS (ADR-draft-geometry-through-geo).
+  A point shape keeps its points. Each part of a line keeps its end points and the points the
+  Douglas-Peucker keeps, which splits a section at the first of its farthest points, as GEOS
+  does, and needs no recursion, so no line overflows the stack. A part without points is dropped. A
+  polygon's rings are grouped as `msGEOSShape2Geometry` groups them: each outer ring, by
+  `msIsOuterRing`, with the inner rings whose first or second point lies in it, one polygon where
+  one ring is outer, a multipolygon otherwise; a ring neither outer nor in an outer one is dropped.
+  Each ring is simplified as a line, then loses its first point where it lies within `t` of the
+  segment between its neighbours, and is removed below 4 coordinates. A polygon whose shell is
+  removed is removed with its holes, and a shape without polygons draws nothing. The result is
+  kept where geo's `Validation` finds it valid, a multipolygon as a whole, and is otherwise
+  replaced by geo's `unary_union` of its polygons, where GEOS takes a buffer of 0: the two agree
+  on most results, within 10⁻⁶ in the shape's unit and in another order of the vertices, but
+  where the simplified ring crosses itself `unary_union` may keep another lobe than GEOS, as it
+  did for 7 of 40 repaired random polygons; no case in scope simplifies a polygon. A tolerance of
+  0 drops the points that lie on the segment of their section, as GEOS does; a tolerance that is
+  no number keeps every point, as GEOS's comparisons with it are false. A multipolygon's
+  member whose shell is removed while one of its holes is kept leaves the hole as a stray line
+  in GEOS's result, which turns the shape into a line; Forager removes the member with its holes.
 - `outer(s)` and `inner(s)` (`msRings2Shape`, `msIsOuterRing`, `src/mapprimitive.cpp`): the rings
   of a polygon that are outer, or inner, in their order. A ring alone is outer; another is outer
   where its first point lies in an even number of the other rings by `msPointInPolygon`. Where its
@@ -154,15 +173,28 @@ A layer whose tree is `not_drawn` draws nothing, with the warning `geomtransform
 the reason: MapServer evaluates those functions through GEOS or a JavaScript engine, and fails the
 others. So does a layer whose transform fails on a shape as MapServer's fails: `densify` of a point
 or by a tolerance not above 0, `outer` or `inner` of a line, a division by 0, or a `%` by 0, of a
-computed number. The engine treats a geometry collection, or a multipoint, whose parts the IR does
-not keep, the same way. MapServer fails `msGeomTransformShape` on these: `msDrawVectorLayer`
-returns a failure (`src/mapdraw.c`, 1427–1434), and `msDrawMap` frees the image and returns none
-(508–519), so MapServer makes no map at all. Forager deviates: the layer draws nothing, with the
-warning, and the rest of the map is drawn. `msDrawVectorLayer` reads no shape past the first whose
-class it finds beyond the layer's `MAXFEATURES` (`src/mapdraw.c:1282-1286`), so a shape past it,
-or one the filter leaves out, is never transformed and fails nothing. A layer draws nothing, with
+computed number. `simplify` fails, with "Executing simplify failed", where GEOS is given no geometry
+or fails: a tolerance below 0, which GEOS's simplifier refuses; a point shape without points, a line
+whose first part has fewer than 2 points, or a polygon whose first ring has fewer than 4, which
+`msGEOSShape2Geometry` does not convert; and a line's part of 1 point, or a ring of a polygon of
+fewer than 4 points or not closed, which GEOS cannot build; a ring in no polygon is never built and
+fails nothing. The engine treats a geometry collection, or a multipoint, whose parts the IR does not
+keep, the same way. MapServer fails `msGeomTransformShape` on these: `msDrawVectorLayer` returns a
+failure (`src/mapdraw.c`, 1427–1434), and `msDrawMap` frees the image and returns none (508–519), so
+MapServer makes no map at all. Forager deviates: the layer draws nothing, with the warning, and the
+rest of the map is drawn. `msDrawVectorLayer` reads no shape past the first whose class it finds
+beyond the layer's `MAXFEATURES` (`src/mapdraw.c:1282-1286`), so a shape past it, or one the filter
+leaves out, is never transformed and fails nothing. A layer draws nothing, with
 `geomtransform-over-limit`, where its transforms add more than 1,000,000 points or visit more than
-100,000,000; the smoothing passes and the tests of `outer` and `inner` count as visits.
+100,000,000; the smoothing passes and the tests of `outer` and `inner` count as visits, and so does
+what `simplify` visits: the inner points of each section its Douglas-Peucker scans, charged as it
+goes, the tests that group a polygon's rings, and the pairs of segments and of rings the validity
+test and the repair compare. The points the repair returns beyond those it was given count as added.
+The validity test is charged the square of a simplified ring's segments, so a polygon whose
+simplified ring keeps more than about 10,000 points passes the bound alone and its layer draws
+nothing, where MapServer draws it. In its worst case, as on a zigzag of falling amplitude, the
+Douglas-Peucker scans about n²/2 points for a part of n points kept, so such a line of more than
+about 14,000 points passes the bound too, and its layer draws nothing.
 
 **A polygon's fill.** A polygon layer's style with a `COLOR` and without a symbol, or with a
 simple one, fills the polygon under the even-odd rule, as `msDrawShadeSymbol` in

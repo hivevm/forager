@@ -240,7 +240,7 @@ renderers/geomtransform-vertex.map geomtransform-vertex.png geometry fails  # no
 renderers/geomtransform-vertex.map geomtransform-vertex.pdf out: another output format, pdf
 renderers/geomtransform-vertex.map geomtransform-vertex.svg out: another output format, svg
 renderers/geomtransform-vertex.map geomtransform-vertex.cairo.png out: another output format, cairopng
-renderers/geomtransform-vertex.map geomtransform-vertex-layer.png geometry fails  # not built yet: the GEOMTRANSFORM of a layer, simplify, which needs a geometry library
+renderers/geomtransform-vertex.map geomtransform-vertex-layer.png geometry passes
 renderers/geomtransform-vertex.map geomtransform-vertex-layer.pdf out: another output format, pdf
 renderers/geomtransform-vertex.map geomtransform-vertex-layer.svg out: another output format, svg
 renderers/geomtransform-vertex.map geomtransform-vertex-layer.cairo.png out: another output format, cairopng

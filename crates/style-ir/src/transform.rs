@@ -1,5 +1,6 @@
 //! The transform tree: a `GEOMTRANSFORM` expression of a layer or of a class's style as a typed
-//! tree of its shape functions, serialized in the shape of CQL2-JSON (ADR-0036).
+//! tree of its shape functions, serialized in the shape of CQL2-JSON (ADR-0036, and its successor
+//! ADR-draft-transform-tree-with-simplify-and-buffer).
 //! The mapfile frontend alone translates MapServer's text into it; the tree holds no text of the
 //! mapfile, and a transform the engine does not draw is the whole tree `{"not_drawn": reason}`.
 
@@ -26,6 +27,8 @@ pub enum TransformShape {
     Generalize(Box<TransformShape>, TransformNumber),
     /// `densify(shape, tolerance)`.
     Densify(Box<TransformShape>, TransformNumber),
+    /// `simplify(shape, tolerance)`: GEOS's Douglas-Peucker simplification.
+    Simplify(Box<TransformShape>, TransformNumber),
     /// `outer(shape)`: the outer rings of a polygon.
     Outer(Box<TransformShape>),
     /// `inner(shape)`: the inner rings of a polygon.
@@ -90,7 +93,6 @@ pub enum NotDrawn {
     Buffer,
     Centerline,
     Difference,
-    Simplify,
     Simplifypt,
     Javascript,
     Length,
@@ -116,7 +118,6 @@ impl NotDrawn {
             NotDrawn::Buffer => "buffer",
             NotDrawn::Centerline => "centerline",
             NotDrawn::Difference => "difference",
-            NotDrawn::Simplify => "simplify",
             NotDrawn::Simplifypt => "simplifypt",
             NotDrawn::Javascript => "javascript",
             NotDrawn::Length => "length",
@@ -162,7 +163,8 @@ impl TransformTree {
                 Node::Shape(TransformShape::Shape) | Node::Leaf => {}
                 Node::Shape(
                     TransformShape::Generalize(shape, number)
-                    | TransformShape::Densify(shape, number),
+                    | TransformShape::Densify(shape, number)
+                    | TransformShape::Simplify(shape, number),
                 ) => {
                     pending.push((Node::Shape(shape), below));
                     pending.push((Node::Number(number), below));
@@ -255,6 +257,11 @@ impl Serialize for TransformShape {
             TransformShape::Densify(shape, number) => call(
                 serializer,
                 "densify",
+                &[Arg::Shape(shape), Arg::Number(number)],
+            ),
+            TransformShape::Simplify(shape, number) => call(
+                serializer,
+                "simplify",
                 &[Arg::Shape(shape), Arg::Number(number)],
             ),
             TransformShape::Outer(shape) => call(serializer, "outer", &[Arg::Shape(shape)]),
@@ -401,6 +408,7 @@ const SHAPE_FUNCTIONS: &[&str] = &[
     "shape",
     "generalize",
     "densify",
+    "simplify",
     "outer",
     "inner",
     "smoothsia",
@@ -429,17 +437,17 @@ fn shape<E: de::Error>(node: Read) -> Result<TransformShape, E> {
     };
     let transformed = match op.as_str() {
         "shape" => TransformShape::Shape,
-        "generalize" | "densify" => {
+        "generalize" | "densify" | "simplify" => {
             let inner = shape_arg(&mut args)?;
             let tolerance = args
                 .next()
                 .map(number::<E>)
                 .transpose()?
                 .ok_or_else(|| arity::<E>(&op, "a shape and a number"))?;
-            if op == "generalize" {
-                TransformShape::Generalize(inner, tolerance)
-            } else {
-                TransformShape::Densify(inner, tolerance)
+            match op.as_str() {
+                "generalize" => TransformShape::Generalize(inner, tolerance),
+                "densify" => TransformShape::Densify(inner, tolerance),
+                _ => TransformShape::Simplify(inner, tolerance),
             }
         }
         "outer" => TransformShape::Outer(shape_arg(&mut args)?),
@@ -575,7 +583,11 @@ mod schema {
                                 a shape.",
                 "oneOf": [
                     call(&["shape"], &[], 0),
-                    call(&["generalize", "densify"], &[shape.clone(), number.clone()], 2),
+                    call(
+                        &["generalize", "densify", "simplify"],
+                        &[shape.clone(), number.clone()],
+                        2,
+                    ),
                     call(&["outer", "inner"], std::slice::from_ref(&shape), 1),
                     call(&["smoothsia"], &[shape, number.clone(), number, preprocessing], 1),
                 ],
