@@ -132,22 +132,32 @@ impl Ellipsoid {
 
     /// WGS84, the frame every datum shift passes through.
     pub(crate) fn wgs84() -> Self {
-        let f = 1.0 / 298.257_223_563;
-        Self::new(6_378_137.0, 2.0 * f - f * f)
+        let f = 1.0 / WGS84_RF;
+        Self::new(WGS84_A, 2.0 * f - f * f)
+    }
+
+    /// Whether it is WGS84's ellipsoid.
+    pub(crate) fn is_wgs84(&self) -> bool {
+        let wgs84 = Self::wgs84();
+        (self.a - wgs84.a).abs() < 1e-8 && (self.es - wgs84.es).abs() < 1e-15
     }
 }
+
+/// WGS84's semimajor axis, in metres, and reverse flattening.
+const WGS84_A: f64 = 6_378_137.0;
+const WGS84_RF: f64 = 298.257_223_563;
 
 /// The ellipsoids of PROJ's table, by their semimajor axis and reverse flattening, that the
 /// datums below and the cases in scope name; another `+ellps` is unsupported until a case or a
 /// ticket needs it (ADR-0037).
 const ELLIPSOIDS: &[(&str, f64, f64)] = &[
-    ("WGS84", 6_378_137.0, 298.257_223_563),
+    ("WGS84", WGS84_A, WGS84_RF),
     ("GRS80", 6_378_137.0, 298.257_222_101),
 ];
 
-/// The datums of PROJ's table that the cases in scope name, by their `towgs84` and ellipsoid; the
-/// `towgs84` is kept as PROJ's table holds it, though a named datum shifts by none (see [`Datum`]).
-const DATUMS: &[(&str, &str, &str)] = &[("WGS84", "0,0,0", "WGS84"), ("NAD83", "0,0,0", "GRS80")];
+/// The datums of PROJ's table that the cases in scope name, by their ellipsoid; a named datum
+/// shifts by none (see [`Datum`]).
+const DATUMS: &[(&str, &str)] = &[("WGS84", "WGS84"), ("NAD83", "GRS80")];
 
 /// The linear units of PROJ's table that the cases in scope name, in metres; `+to_meter` gives
 /// any other.
@@ -180,11 +190,11 @@ pub(crate) fn ellipsoid_and_datum(params: &Params) -> Result<(Ellipsoid, Datum),
         .map(|name| {
             DATUMS
                 .iter()
-                .find(|(id, _, _)| *id == name)
+                .find(|(id, _)| *id == name)
                 .ok_or_else(|| Error::Unsupported(format!("+datum={name}")))
         })
         .transpose()?;
-    let ellipsoid = ellipsoid(params, datum_row.map(|(_, _, ellps)| *ellps))?;
+    let ellipsoid = ellipsoid(params, datum_row.map(|(_, ellps)| *ellps))?;
     let grids = params.text("nadgrids")?;
     // A named datum's own towgs84 does not count: PROJ reads the datum as its EPSG datum.
     let datum = match (grids, params.text("towgs84")?) {
@@ -193,9 +203,7 @@ pub(crate) fn ellipsoid_and_datum(params: &Params) -> Result<(Ellipsoid, Datum),
         (None, None) => Datum::Wgs84,
         (None, Some(text)) => {
             let shift = towgs84_params(text)?;
-            let wgs84 = (ellipsoid.a - 6_378_137.0).abs() < 1e-8
-                && (ellipsoid.es - 0.006_694_379_990_141_3).abs() < 1e-15;
-            if wgs84 && shift.iter().all(|&p| p == 0.0) {
+            if ellipsoid.is_wgs84() && shift.iter().all(|&p| p == 0.0) {
                 Datum::Wgs84
             } else {
                 Datum::Geocentric(crate::datum::Helmert::new(&shift))

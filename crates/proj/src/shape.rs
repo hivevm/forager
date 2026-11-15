@@ -32,7 +32,7 @@ const SEGMENT_TOLERANCE: f64 = 0.01;
 
 /// A line or a ring reprojected: the lines MapServer leaves in its place and after it.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct ShapeLines {
+pub(crate) struct ShapeLines {
     /// What is left in the line's own place, empty where none of it reprojects or where its points
     /// moved into a line of their own after it.
     pub first: Vec<Coord>,
@@ -81,7 +81,7 @@ impl Reprojection {
 
     /// `msProjectShapeLine` of a line, or of a ring where `polygon`, into the projection reprojected
     /// into.
-    pub fn shape_line(&self, points: &[Coord], polygon: bool) -> ShapeLines {
+    pub(crate) fn shape_line(&self, points: &[Coord], polygon: bool) -> ShapeLines {
         let mut out = ShapeLines::default();
         // Which line is written to: false for the line's own place, true for the last added.
         let mut moved = false;
@@ -111,11 +111,7 @@ impl Reprojection {
                 let pt1_geo = written.and_then(|l| l.last().copied()).unwrap_or(wrk);
                 let dist = wrk.x - pt1_geo.x;
                 if dist.abs() > 180.0 && self.need_wrap(this, last, pt1_geo) {
-                    if dist > 0.0 {
-                        wrk.x -= 360.0;
-                    } else if dist < 0.0 {
-                        wrk.x += 360.0;
-                    }
+                    wrk.x = wrapped(wrk.x, dist);
                 }
             }
             let push = |out: &mut ShapeLines, moved: bool, p: Coord| {
@@ -200,11 +196,7 @@ impl Reprojection {
                 if i > 0 {
                     let dist = points[i].x - points[0].x;
                     if dist.abs() > 180.0 && self.need_wrap(this, start, points[0]) {
-                        if dist > 0.0 {
-                            points[i].x -= 360.0;
-                        } else if dist < 0.0 {
-                            points[i].x += 360.0;
-                        }
+                        points[i].x = wrapped(points[i].x, dist);
                     }
                 }
             }
@@ -224,11 +216,17 @@ impl Reprojection {
     /// `ortho` or `tmerc` of `+lat_0=90` are. Its other cases, a rotated pole, a source of
     /// `lon_wrap=0`, and a target written `init=epsg:3857`, no projection here takes.
     pub fn cuts_lines_with_geos(&self) -> bool {
-        !self.from_geographic
-            && self.to_geographic
-            && self
-                .point(Coord { x: 0.0, y: 0.0 })
-                .is_ok_and(|p| (p.y - 90.0).abs() < 1e-8)
+        !self.from_geographic && self.to_geographic && self.pole_at_origin() == Some(1.0)
+    }
+
+    /// The pole the origin of the projection reprojected from lands on, as `msProjectRect` and
+    /// `msProjectGetLineCuttingCase` find it: `Some(1.0)` for the north, `Some(-1.0)` for the
+    /// south, each within 1e-8 of a degree.
+    pub(crate) fn pole_at_origin(&self) -> Option<f64> {
+        let p = self.point(Coord { x: 0.0, y: 0.0 }).ok()?;
+        [1.0, -1.0]
+            .into_iter()
+            .find(|sign: &f64| (p.y - sign * 90.0).abs() < 1e-8)
     }
 
     /// `msTestNeedWrap`: whether the segment from `pt2` to `pt1`, in the projection reprojected
@@ -281,5 +279,17 @@ impl Reprojection {
         let end = self.point(sub_start).ok()?;
         let start = self.point(start).ok()?;
         Some((start, end))
+    }
+}
+
+/// `x` moved by 360° against the direction of `dist`, as `msProjectShapeLine` and
+/// `msProjectLineEx` wrap a longitude.
+fn wrapped(x: f64, dist: f64) -> f64 {
+    if dist > 0.0 {
+        x - 360.0
+    } else if dist < 0.0 {
+        x + 360.0
+    } else {
+        x
     }
 }

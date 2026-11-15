@@ -106,15 +106,15 @@ impl LayerReprojection {
     }
 
     /// Reprojects each of `features` into the map's projection as `msProjectShapeEx` reprojects a
-    /// shape, and returns how many of their points do not reproject. A line or a ring is
+    /// shape, and returns how many of their points do not reproject and how many points the
+    /// horizon search added, those past `bound` leaving out the feature that passes it and the
+    /// features after it (Q-9). A line or a ring is
     /// reprojected by `msProjectShapeLine`: a run of points that do not reproject is cut at the
     /// horizon, a line into parts added after the shape's others, and a longitude into longitude
     /// and latitude is wrapped across the dateline. The points of a point shape are reprojected by
     /// `msProjectLineEx`, all of them left out where one does not reproject, unless the map is in
     /// longitude and latitude and the layer is not. A line left empty is left out, and a feature
     /// left with nothing.
-    /// [`Self::features`], the points the horizon search adds held to `bound`: the feature that
-    /// passes it and those after it are left out.
     pub(crate) fn features_within(&self, features: &mut Vec<Feature>, bound: usize) -> Reprojected {
         let mut done = Reprojected::default();
         let mut kept = 0;
@@ -397,7 +397,7 @@ mod tests {
         };
         let mut features = vec![leaving.clone(), leaving.clone(), leaving];
         let mut diagnostics = Vec::new();
-        crate::reproject_features(
+        crate::reproject_features_within(
             &into_the_conic(),
             &layer,
             &mut features,
