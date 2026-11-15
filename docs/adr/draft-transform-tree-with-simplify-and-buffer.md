@@ -1,4 +1,4 @@
-# ADR-draft-transform-tree-with-simplify-and-buffer: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, `simplify`, `simplifypt`, and `buffer` among its nodes
+# ADR-draft-transform-tree-with-simplify-and-buffer: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, `simplify` and `buffer` among its nodes
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-15
@@ -14,21 +14,24 @@ the forces; they still hold. Its *Decision* lists the tree's nodes: `shape`, `ge
 `densify`, `outer`, `inner`, and `smoothsia`. It names `buffer`, `simplify`, and `simplifypt` as
 reasons a tree is not drawn. Its *Out of scope* leaves the port of any function of that list open.
 
-The fidelity plan ports the three functions (tickets 11 and 12). The code that computes them is
-[ADR-draft-geometry-ported-from-jts](draft-geometry-ported-from-jts.md). The tree must then hold
-them as nodes with their arguments. That changes ADR-0036's list of nodes and its closed list of
-reasons, so this ADR supersedes it. It restates every clause of ADR-0036 in its wording, but
-these:
+The fidelity plan ports `simplify` and `buffer` (tickets 11 and 12). The code that computes them
+is [ADR-draft-geometry-through-geo](draft-geometry-through-geo.md), the geo crate the maintainer
+chose on 2026-11-15. geo does not reproduce GEOS's `simplifypt`, so `simplifypt` stays a reason.
+The tree must hold `simplify` and `buffer` as nodes with their arguments. That changes
+ADR-0036's list of nodes and its closed list of reasons, so this ADR supersedes it. It restates
+every clause of ADR-0036 in its wording, but these:
 
-- *Shape*: the nodes `simplify`, `simplifypt`, and `buffer` are added;
+- *Decision*, its first sentence: it names `simplify` and `buffer` among the nodes;
+- *Shape*: the nodes `simplify` and `buffer` are added;
 - *Order of landing*: a new entry, each node landing with the change that draws it;
 - *Numbers*: a new item, a negative tolerance or distance kept as written;
-- *Not drawn*: `buffer`, `simplify`, and `simplifypt` stay reasons only until their nodes land;
-- *Versions*: two new items, the regenerated file of 1.1 and the version move left to the
-  maintainer;
-- *Out of scope*: the code of the three functions added, after ADR-0036's first item; the
+- *Not drawn*: `buffer` and `simplify` stay reasons only until their nodes land;
+- *Versions*: "this ADR" reads "ADR-0036"; two new items, the regenerated file of 1.1 and the
+  version move left to the maintainer;
+- *Out of scope*: the code of the two functions added, after ADR-0036's first item; the
   bounds of a transform's points narrowed to those Q-9 does not name, since Q-9 now names a
-  layer's; and the port of a not-drawn function no longer giving `buffer` as an example.
+  layer's; and the port of a not-drawn function giving `centerline` and `simplifypt` as examples
+  in place of `buffer` and `centerline`.
 
 **The grammar of the three** (`src/mapparser.y` at `rel-8-6-6`):
 
@@ -55,7 +58,7 @@ at 1.1 and regenerate its file, as ticket 09 added `RenderMode::Circle` and `Sty
 ## Decision
 
 We will hold a `GEOMTRANSFORM` expression in the style IR as a typed tree of its shape functions,
-`simplify`, `simplifypt`, and `buffer` among its nodes. Only the mapfile frontend translates it
+`simplify` and `buffer` among its nodes. Only the mapfile frontend translates it
 from MapServer's text.
 
 - **One type, two places.** The tree is one type of `crates/style-ir`. A layer holds it in the
@@ -65,12 +68,12 @@ from MapServer's text.
   `{"op": name, "args": [...]}`. Its nodes are:
   - `shape`, without arguments, the feature's shape, MapServer's `[shape]`;
   - `generalize` and `densify`, each of a shape and a number;
-  - `simplify` and `simplifypt`, each of a shape and a number, the tolerance;
+  - `simplify`, of a shape and a number, the tolerance;
   - `buffer`, of a shape and a number, the distance;
   - `outer` and `inner`, each of a shape;
   - `smoothsia`, of a shape and up to three further arguments: a size, a number of iterations,
     and a preprocessing of `all` or `angle`.
-- **Order of landing.** Each of `simplify`, `simplifypt`, and `buffer` must enter the tree in the
+- **Order of landing.** Each of `simplify` and `buffer` must enter the tree in the
   change that draws it. Until that change, the frontend must translate the function to its
   `not_drawn` reason. That change must remove the function from the list of reasons.
 - **Numbers.** A number argument is a JSON number, `map_cellsize` without arguments, or `+`, `-`,
@@ -87,7 +90,7 @@ from MapServer's text.
 - **Not drawn.** A transform the engine does not draw is the whole tree `{"not_drawn": reason}`.
   The reason is one name of a closed list:
   - each function of `shape_exp` and `math_exp` the tree lacks: `centerline`, `difference`,
-    `javascript`, `length`, `area`, `round`, and each of `buffer`, `simplify`, and `simplifypt`
+    `javascript`, `length`, `area`, `round`, `simplifypt`, and each of `buffer` and `simplify`
     until it enters the tree;
   - `binding`, for a property's value where a number or a text is due;
   - `text`, for a computed `smoothsia` preprocessing;
@@ -126,13 +129,13 @@ from MapServer's text.
 
 - the evaluation of the tree and each function's semantics, which `docs/semantics/` writes down
   from the C, `[map_cellsize]` and the layer's `UNITS` among them;
-- the code that computes `simplify`, `simplifypt`, and `buffer`, which
-  [ADR-draft-geometry-ported-from-jts](draft-geometry-ported-from-jts.md) decides;
+- the code that computes `simplify` and `buffer`, which
+  [ADR-draft-geometry-through-geo](draft-geometry-through-geo.md) decides;
 - drawing a class style's expression: the engine keeps drawing none, as today;
 - the bounds on the points a transform adds and visits beyond those Q-9 names;
 - a label's style of an expression, which keeps `LabelTransform` and is left out with its label as
   today;
-- porting any function of the not-drawn list, `centerline` among them.
+- porting any function of the not-drawn list, `centerline` and `simplifypt` among them.
 
 ## Alternatives considered
 
@@ -145,10 +148,13 @@ from MapServer's text.
 - **`buffer` with its segments a quadrant as a third argument** — open for a style document that
   wants fewer. No mapfile can write it, and MapServer fixes 30. It can come later as an optional
   argument, which ADR-0014's version rule allows as a minor.
-- **All three nodes at once, before the engine draws `buffer`** — one schema change instead of
+- **Both nodes at once, before the engine draws `buffer`** — one schema change instead of
   two. The tree would hold a node the engine reads as not drawn. ADR-0036 rejected nodes the engine
   never reads, and a `not_drawn` reason says the same with less.
-- **Keep `buffer`, `simplify`, and `simplifypt` in the list of reasons after their nodes land** — a
+- **`simplifypt` as a node computed by geo's `SimplifyVwPreserve`** — the case's style would draw.
+  Visvalingam-Whyatt is another algorithm with an area as its tolerance, and it differs from GEOS
+  on 4 of the case's 6 line results. A node would carry a meaning the reference does not have.
+- **Keep `buffer` and `simplify` in the list of reasons after their nodes land** — a
   document written by an older build of 1.1 with such a reason stays readable. No release holds
   1.1, so no published document has one. The reason would name a function the engine draws.
 - **Move the format version to 1.2** — ADR-0014's version rule allows an added function as a
@@ -159,7 +165,7 @@ from MapServer's text.
   style left out at load, a chain instead of a tree, the numbers as ADR-0015 expressions, literal
   numbers only, and superseding ADR-0015. They stand as ADR-0036 records them. Its alternative of
   a not-drawn function kept in place with its arguments stands for the functions still not drawn;
-  for the three drawn here the engine now reads the arguments.
+  for the two drawn here the engine now reads the arguments.
 
 ## Sources / Prior art
 
@@ -175,14 +181,16 @@ from MapServer's text.
 
 ## Consequences
 
-- Positive: a layer of `simplify` or `simplifypt` draws, and the case of `vertex2` can pass. A
-  style document may write the three functions as CQL2-JSON custom functions.
+- Positive: a layer of `simplify` draws, and the case of `vertex2` can pass. A style document may
+  write both functions as CQL2-JSON custom functions.
 - Positive: every clause of ADR-0036 but those the *Context* lists keeps its wording, so the
   frontend's tests and the engine's rules of a `not_drawn` tree stand unchanged.
 - Negative / trade-offs: a document of 1.1 written before a node lands, with that function's
   reason, fails to load after it. No release holds 1.1, so only local files are affected.
-- Negative / trade-offs: the schema changes with each change that lands a node: two changes, or
-  three if `simplifypt` splits from `simplify`, as ticket 11's *Mode* allows.
+- Negative / trade-offs: the schema changes with each change that lands a node, `simplify` first
+  and `buffer` second.
+- Negative / trade-offs: `simplifypt` stays not drawn. A node for it needs a successor of this
+  ADR, after the backlog entry `docs/backlog/simplifypt-topology-preserving.md` is decided.
 - Follow-ups:
   - the semantics page of the layer's transform, with `[map_cellsize]`, the layer's `UNITS`, and
     GEOS's failures;
@@ -192,8 +200,8 @@ from MapServer's text.
 ## Enforcement
 
 - Tests of the transform tree in `crates/style-ir` cite this ADR with `Verifies:`. They read and
-  write the CQL2-JSON shape of each node, number, and `not_drawn` reason, `simplify`,
-  `simplifypt`, and `buffer` among the nodes once they land.
+  write the CQL2-JSON shape of each node, number, and `not_drawn` reason, `simplify` and
+  `buffer` among the nodes once they land.
 - A test of `crates/style-ir/src/document.rs` cites this ADR and Q-9 with `Verifies:`. It refuses
   a document whose transform tree nests past `MAX_EXPRESSION_DEPTH`.
 - A test of `crates/style-ir/tests/schema.rs` cites this ADR with `Verifies:`. It walks the schema
