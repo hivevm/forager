@@ -1,4 +1,4 @@
-# ADR-draft-geometry-through-geo: `simplify` and `buffer` are computed in `symbolize` with the geo crate, and a simplified polygon is repaired as GEOS repairs it
+# ADR-draft-geometry-through-geo: `simplify` and `buffer` are computed in `symbolize`, by a Douglas-Peucker ported from JTS and with the geo crate, and a simplified polygon is repaired as GEOS repairs it
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-15
@@ -68,8 +68,12 @@ the same coordinates. Every coordinate was printed with 17 significant digits.
 The pipeline is geo's `LineString::simplify` on each ring, then three steps of Forager's own: the
 first-point step, the removal of a ring under 4 coordinates, and a repair of an invalid result by
 geo's `unary_union`. geo's `Validation` decided validity. It agreed with GEOS's `isValid` on every
-one of the 3,053 rough results. The repair by `unary_union` matched GEOS's
-buffer of 0 on every repaired polygon whose rough result matched. The equally far points were
+one of the 3,053 rough results. The repair by `unary_union` matched GEOS's buffer of 0 on the 7
+repaired polygons whose rough result matched. A later measurement of the implementation contradicts
+the general claim: on 2,467 small random valid polygons, of 6 to 9 vertices and 2 decimals, at 3, 6,
+and 10 units, 40 results were repaired. 33 matched GEOS within 10⁻⁷ with its point count. 7 kept
+another lobe of a ring that crosses itself than GEOS keeps, 27 to 54 units away, in either
+orientation of the input. No case in scope simplifies a polygon. The equally far points were
 counted with a script of both rules: on the integer grid, the rule explains every difference; on 6
 decimals it changed nothing.
 
@@ -117,13 +121,29 @@ code, against the session's recommendation of a port of JTS. The maintainer chos
 `Validation` for the validity test and geo's `Simplify` over a Douglas-Peucker of Forager's own.
 `simplifypt` stays not drawn until a later decision.
 
+**The maintainer's reversal.** The implementation found that geo's `Simplify` recurses once for
+each point it keeps. A line that zigzags with a decreasing amplitude keeps every point:
+
+- natively, in a thread of 1 MiB, 4,000 points ran and 4,500 overflowed the stack, about 220 bytes
+  a level;
+- a wasm32 build of geo 0.33.1 run in wasmi 2.0.0, the engine of the G-9 test, ran 900 points and
+  trapped with a stack overflow at 1,000.
+
+The bound of Q-9 could not keep such a line out, since a part of about 14,000 points passes it
+alone. On 2026-11-15 the maintainer chose a Douglas-Peucker of Forager's own, ported from JTS's
+`DouglasPeuckerLineSimplifier`, with a stack of sections of its own in place of recursion. It also
+removes geo's `hypot` from the path of `simplify` and the difference of the rule for equally far
+points. geo stays for `Validation`, `unary_union`, and `buffer`. The maintainer kept `unary_union`
+for the repair, with its measured difference stated.
+
 **Forces.**
 
 - Q-4 and G-6: the cases pass by a raster metric.
 - Q-1: no C. Q-6: permissive licences, and no code of GEOS in the tree.
 - Q-2 and G-9: the same bits on every target.
 - Q-5: the bundle stays under 3 MB, about 2 MB above today's size.
-- Q-9: a buffer adds points, and a simplification visits them.
+- Q-9: a buffer and a repair add points, and a simplification visits them.
+- Q-3: no input may crash the render, the browser's included.
 - [ADR-0008](0008-ports-and-adapters-crates.md): a crate of the workspace needs a row of its
   table; a crate from crates.io needs none.
 - [ADR-0028](0028-hatch-cut-by-i-overlay.md): i_overlay must be a dependency of `render-agg`
@@ -132,8 +152,8 @@ code, against the session's recommendation of a port of JTS. The maintainer chos
 
 ## Decision
 
-We will compute `simplify` and `buffer` in a geometry module of `crates/symbolize` with the geo
-crate, and repair a simplified polygon as GEOS repairs it.
+We will compute `simplify` in a geometry module of `crates/symbolize` by a Douglas-Peucker ported
+from JTS. We will compute `buffer`, and a simplified polygon's validity and repair, with geo.
 
 - **Place.** The module lives in `crates/symbolize`, beside the layer's transform. A layer's
   transform and a style's expression call the same functions. No crate of the workspace is added.
@@ -143,10 +163,14 @@ crate, and repair a simplified polygon as GEOS repairs it.
   must not be accepted before
   [ADR-draft-i-overlay-in-render-agg-and-geo](draft-i-overlay-in-render-agg-and-geo.md), the
   successor of ADR-0028 that allows it.
-- **`simplify` of a line** must be geo's `LineString::simplify` on each part.
+- **Douglas-Peucker.** Forager's own Douglas-Peucker must port JTS's
+  `DouglasPeuckerLineSimplifier`:
+  - it must split a section at the first of its farthest points, as JTS's `>` decides;
+  - it must compute each distance as JTS's `Distance.pointToSegment`, by `f64::sqrt`;
+  - it must keep its pending sections on a stack of its own and must not recurse.
+- **`simplify` of a line** must be that Douglas-Peucker on each part.
 - **`simplify` of a polygon** must take these steps, in this order:
-  - each ring is simplified by geo's `LineString::simplify`, not by `Polygon::simplify`, which
-    keeps 4 points of every ring;
+  - each ring is simplified by that Douglas-Peucker as a line;
   - a ring of 4 or more coordinates loses its first point as JTS's
     `DouglasPeuckerLineSimplifier` decides, with the distance computed by `f64::sqrt`;
   - a ring with fewer than 4 coordinates is removed. A removed shell leaves an empty polygon;
@@ -162,6 +186,8 @@ crate, and repair a simplified polygon as GEOS repairs it.
   may use `f64::sqrt` and IEEE's arithmetic.
 - **Bounds.** The points a function adds and visits must count against the budget of Q-9 that
   `crates/symbolize/src/layer_transform.rs` keeps for a layer's transform.
+  - The Douglas-Peucker must charge the points of each section it scans before it scans them.
+  - The points a repair returns beyond those it was given must count as points added.
 
 **Out of scope:**
 
@@ -188,10 +214,13 @@ crate, and repair a simplified polygon as GEOS repairs it.
 - **A partial port of JTS's `IsValidOp` for the validity test** — only the checks a simplification
   can break, and no 47 KB of geo's `Validation` in the bundle. Not chosen by the maintainer: it is
   code of Forager's own, where geo's check agreed with GEOS on every result measured.
-- **A Douglas-Peucker of Forager's own instead of geo's `Simplify`** — about 20 lines, GEOS's rule
-  for equally far points, and `f64::sqrt` in place of `hypot`. It would remove the differences on
-  an integer grid and the risk to G-9 of `simplify`. Not chosen by the maintainer, who kept geo's
-  `Simplify`.
+- **geo's `Simplify` for lines and rings** — no Douglas-Peucker of Forager's own, the
+  maintainer's first choice. It recurses once for each point it keeps, and overflowed the stack at
+  1,000 points in wasmi and at 4,500 natively in a thread of 1 MiB (*Context*). It keeps the last
+  of equally far points, where GEOS keeps the first: 0.7 % to 2.8 % of polygons on an integer grid
+  differ. Its distance calls `hypot`. Not chosen after the maintainer's reversal.
+- **A bound on the points of a simplified part** — geo's `Simplify` kept, a part past about 900
+  points refused. A new limit of Q-9, a change to the specification, and it refuses real data.
 - **geo's `Polygon::simplify` as it stands** — no code of Forager's own. It keeps collapsed rings
   and the ring's first point, and repairs nothing (*Context*).
 - **geo's `SimplifyVwPreserve` for `simplifypt`** — Visvalingam-Whyatt, whose tolerance is an area.
@@ -228,22 +257,24 @@ crate, and repair a simplified polygon as GEOS repairs it.
 - Positive: the case of `vertex2` reproduces GEOS's points bit for bit, on both targets as
   measured. A polygon's simplification matched GEOS on every polygon measured with 6 decimals.
   geo's `Validation` agreed with GEOS's `isValid` on all 3,053 results. `buffer` comes within
-  2.5 × 10⁻⁷ px on the case's polygons. Forager owns little geometry code: the first-point step,
-  the removal of a ring, and the calls.
+  2.5 × 10⁻⁷ px on the case's polygons. The Douglas-Peucker keeps GEOS's rule for equally far
+  points and needs no recursion, so no line overflows the stack, and `hypot` is off its path.
+  The budget is charged by the work done, so a long part is simplified as MapServer simplifies it.
 - Negative / trade-offs, measured:
-  - on an integer grid, 0.7 % to 2.8 % of polygons differ from GEOS, by geo's rule for equally far
-    points. A line is exposed to the same rule;
   - a buffer and a repaired polygon are not bit-identical to GEOS. A buffer of −3 px differed by up
     to 2.1 × 10⁻³ px, with 2 of 272 rings of another point count;
-  - geo's `hypot` differs in its last bit between native and wasm32 for 0.1 % to 0.6 % of random
-    inputs. A distance within one last bit of the tolerance would make a render differ between the
-    targets, against G-9. None of the case's runs did;
+  - the repair by `unary_union` keeps another lobe than GEOS's buffer of 0 for 7 of 40 repaired
+    random polygons, where the simplified ring crosses itself;
+  - Forager owns a Douglas-Peucker of about 60 lines besides the first-point step and the removal
+    of a ring;
   - 19 crates, among them a second i_overlay family and `rand`, and +129 KB of the bundle with
     `buffer` and `Validation`, of which `Validation` takes about 47 KB.
 - Negative / trade-offs: `simplifypt` stays not drawn, so the style `simplifypt([shape],50)` of
   `geomtransform-vertex.map` draws nothing.
 - Follow-ups:
   - the backlog entry of `simplifypt`;
+  - a measurement, once `buffer` is drawn, of whether a buffer of 0 repairs closer to GEOS than
+    `unary_union`;
   - a record of GEOS's results made in the noise run, as
     [ADR-0038](0038-proj-references-from-mapserver.md) records PROJ's, in place of coordinates
     taken by hand;
@@ -259,11 +290,17 @@ crate, and repair a simplified polygon as GEOS repairs it.
   - a polygon whose simplified result geo's `Validation` finds invalid, repaired with GEOS's point
     count, each vertex within 10⁻⁶ of GEOS's in the shape's unit;
   - a polygon whose simplified result is valid, left as it is, bit for bit;
+  - a line and a polygon on an integer grid whose equally far points GEOS splits at the first, bit
+    for bit;
   - `world_testpoly.shp` in the pixels of `polygon-as-line-offset.map`, buffered by 1 and by −1,
     with GEOS's point count, each vertex within 10⁻⁶ px of GEOS's.
 - The msautotest harness renders `renderers/geomtransform-vertex.map` with `-l vertex2` natively
   and through the wasm32 module in wasmi, and compares the buffers bit for bit (G-9,
   [ADR-0034](0034-wasm-renders-compared-in-wasmi.md)).
+- A test renders a layer of `simplify` over a zigzag line of several thousand points, each kept,
+  natively and through the wasm32 module in wasmi. Both must render without a trap, bit for bit
+  alike (Q-3, G-9).
+- A unit test holds the Douglas-Peucker's charge to the sections it scans (Q-9).
 - The test `only_render_agg_cuts_polygons_with_i_overlay` of `crates/arch-test` holds geo to
   `symbolize`, as the successor of ADR-0028 decides. It cites this ADR with `Verifies:` too.
 - When the engine draws `buffer`, the harness renders `renderers/polygon-as-line-offset.map`
@@ -272,6 +309,5 @@ crate, and repair a simplified polygon as GEOS repairs it.
   JTS's notice.
 - `cargo deny check` runs on every change to `Cargo.lock` ([ADR-0011](0011-crate-supply-chain.md)).
 
-**Not mechanically decidable:** that a target's `hypot` never moves a point across the tolerance
-for an input no test holds. The bit-identity runs cover the cases only. The change that moves
-geo's version repeats the measurement of `hypot` native against wasm32 that the *Context* reports.
+**Not mechanically decidable:** that geo's `Validation`, `unary_union`, and `buffer` give the same
+bits on every target for an input no test holds. The bit-identity runs cover the cases only.
