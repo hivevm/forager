@@ -231,10 +231,12 @@ fn the_source_is_asked_for_the_maps_extent_in_its_own_coordinates() {
 }
 
 #[test]
-fn a_map_around_a_pole_asks_its_source_for_every_longitude_as_mapserver_does() {
+fn a_map_around_a_pole_asks_its_source_for_every_longitude_as_mapserver_asks_its_first() {
     // Verifies: ADR-0037
     // A conic whose origin is the north pole, as msProjectRect detects polar stereographic: the
     // pole lies in the map's extent, so the source is asked for all longitudes up to the pole.
+    // MapServer does so for the first layer of a render only, as it then remembers the map's
+    // projection as polar (crates/proj/src/rect.rs); here every layer is asked as the first.
     let polar = "+proj=lcc +lat_1=70 +lat_2=85 +lat_0=90 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 \
                  +units=m +no_defs";
     let around = Extent {

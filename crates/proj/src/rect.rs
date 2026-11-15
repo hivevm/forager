@@ -18,8 +18,11 @@
 //! `msProjectRect` reprojects it. Not ported here: the `+over` MapServer adds to both projections
 //! and the wrapping of `msTestNeedWrap`, which change nothing for a rectangle that crosses no
 //! antimeridian of its projections (the plan's ticket 05); `lon_wrap`, which no projection here
-//! reads; and the memory of a projection's `is_polar`, which MapServer keeps across calls on the
-//! same projection.
+//! reads; the branch for a polar projection into another projected one, whose only effect is to
+//! skip that `+over`; and the memory of a projection's `is_polar`. MapServer sets it on the map's
+//! projection, which every layer of a render shares, at the first rectangle it projects, so only
+//! the first layer of a polar map gets all longitudes and the later ones take the `+over` path;
+//! here every layer gets them, as the first does.
 
 use forager_style_ir::{Coord, Extent};
 
@@ -129,9 +132,10 @@ impl Reprojection {
 
     /// The first line of the ring reprojected as `msProjectShapeLine` reprojects a polygon's:
     /// a run of points that do not reproject is left out, ended and resumed where the ring
-    /// crosses the horizon. `None` where that line is left empty, either because no point
-    /// reproject or because a run of at most three such points, or one at the ring's start that
-    /// a point reprojecting ends within two, makes MapServer move the line into a second one.
+    /// crosses the horizon. `None` where that line is left empty: where no point reprojects, and
+    /// where the ring comes back over the horizon after a run of at most three points that do
+    /// not (at most two at the ring's start), as MapServer then moves its points into a second
+    /// line, of which `msProjectRectAsPolygon` reads none.
     fn polygon_line(&self, ring: &[Coord]) -> Option<Vec<Coord>> {
         let mut line: Vec<Coord> = Vec::with_capacity(ring.len() + 1);
         let mut valid = false;

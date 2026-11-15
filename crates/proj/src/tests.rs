@@ -314,7 +314,7 @@ fn projections_differ_as_mapserver_compares_their_parameters() {
 }
 
 #[test]
-fn an_extent_reprojects_to_the_rectangle_that_holds_its_sides() {
+fn an_extent_reprojects_to_a_rectangle_that_holds_its_reprojected_points() {
     // Verifies: ADR-0037
     // misc/quoting.map's extent, in longitude and latitude, asked of its layer in EPSG:3978.
     let map = Extent {
