@@ -38,7 +38,7 @@ correct the doc comment, and add the divergence to `docs/semantics/projection.md
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/01-map-projection-held-once.md
+None (can start immediately)
 
 ## Mode
 

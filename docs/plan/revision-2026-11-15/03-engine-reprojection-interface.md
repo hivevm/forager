@@ -26,7 +26,7 @@
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/01-map-projection-held-once.md
+None (can start immediately)
 
 ## Mode
 

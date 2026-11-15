@@ -39,7 +39,7 @@ Each becomes one function or one constant, the items `pub(crate)`, and the reade
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-15/01-map-projection-held-once.md
+None (can start immediately)
 
 ## Mode
 
