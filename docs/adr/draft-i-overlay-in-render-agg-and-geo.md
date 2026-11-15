@@ -1,4 +1,4 @@
-# ADR-draft-i-overlay-in-render-agg-and-geo: The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it, and i_overlay reaches another crate only through geo
+# ADR-draft-i-overlay-in-render-agg-and-geo: The hatch is cut from its polygon by i_overlay's boolean intersection, as MapServer's Clipper cuts it, and geo is the only other package that depends on i_overlay
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-15
@@ -26,17 +26,20 @@ does not fail it.
 
 This ADR restates every clause of ADR-0028 in its wording, but these:
 
-- *The dependency*: i_overlay stays a direct dependency of `render-agg` alone. A new item lets
-  geo bring its own i_overlay into `symbolize`;
+- the title and the *Decision*'s first sentence: they add that geo is the only other package that
+  depends on i_overlay;
+- *The dependency*: i_overlay stays a direct dependency of `render-agg` alone among the workspace's
+  crates. New items let geo depend on it, and `symbolize` alone depend on geo;
 - *Out of scope*: the `buffer` of a `GEOMTRANSFORM` is no longer an example of what is left open,
   since the geometry ADR decides it, and the unification of the two i_overlay majors is added;
-- *Enforcement*: the arch-test gains an assertion on dependencies through other crates;
+- *Consequences*: ADR-0028's are restated, and the two i_overlay families are added;
+- *Enforcement*: the arch-test gains an assertion on the packages outside the workspace;
 - *Applies to*: geo's i_overlay in `symbolize` and the arch-test are added.
 
 ## Decision
 
 We will cut a hatch's stroke from its polygon with i_overlay's integer intersection, as
-MapServer's Clipper cuts it. i_overlay reaches another crate only through geo.
+MapServer's Clipper cuts it. geo is the only other package that may depend on i_overlay.
 
 - **The cut.** The polygon is the subject and the dash rectangles the clip, both under the
   even-odd rule. Each coordinate must be scaled by 100 and rounded half away from zero to an
@@ -46,9 +49,14 @@ MapServer's Clipper cuts it. i_overlay reaches another crate only through geo.
   `Hatch::is_bounded` sets on its lines, its dashes, the polygon's vertices, and an estimate of
   their crossings. The engine must refuse a hatch beyond them with a diagnostic (Q-9).
 - **The dependency.**
-  - i_overlay must be a direct dependency of `render-agg` alone, with its default features off.
-  - `symbolize` may depend on i_overlay through geo, in the version geo asks for.
-  - No other crate of the workspace may depend on i_overlay, directly or through another crate.
+  - i_overlay must be a direct dependency of `render-agg` alone among the workspace's crates, with
+    its default features off.
+  - geo may depend directly on i_overlay, in the version it asks for.
+  - No other package of the resolved graph may depend directly on i_overlay.
+  - `symbolize` must be the only crate of the workspace that depends directly on geo.
+
+  A crate that depends on `render-agg` or `symbolize`, such as `engine`, so reaches i_overlay
+  through them, as ADR-0028 already allowed for `render-agg`.
 
 **Out of scope:**
 
@@ -82,12 +90,20 @@ MapServer's Clipper cuts it. i_overlay reaches another crate only through geo.
 
 ## Consequences
 
-- Positive: the cut of a hatch stays as it is, and its two cases keep passing. The geometry ADR
-  can be accepted without a conflict between two accepted ADRs.
+- Positive: the cut is the intersection MapServer computes, holes stay white, overlapping rings
+  and stroked lines cancel exactly as under Clipper, and `renderers/polygon-hatch.map` and
+  `renderers/polygon-hatch-dashed.map` pass; Forager keeps no clipper of its own.
+- Positive: the geometry ADR can be accepted without a conflict between two accepted ADRs.
+- Negative / trade-offs: a dependency of five crates of one project; a hatch is not drawn whose
+  polygon has more than 16 384 vertices or crosses itself too often, or whose stroke crosses the
+  polygon's edges too often by the estimate, where MapServer draws it however long it takes;
+  i_overlay snaps within a hundredth of a pixel where Clipper does not.
 - Negative / trade-offs: the tree carries two i_overlay families, five crates each, until geo moves
   to i_overlay 9. A defect fixed in one family needs its fix in the other.
-- Follow-ups: when geo depends on i_overlay 9, a change that moves both to one family, with the
-  hatch's tests and the geometry module's tests green.
+- Follow-ups:
+  - the bounds of Q-9 follow the first measurement of the expected scale;
+  - when geo depends on i_overlay 9, a change that moves both to one family, with the hatch's
+    tests and the geometry module's tests green.
 
 ## Enforcement
 
@@ -95,9 +111,10 @@ Tests cite this ADR with `Verifies:`:
 
 - in `crates/arch-test/tests/dependencies.rs`, the test
   `only_render_agg_cuts_polygons_with_i_overlay` moves its `Verifies:` from ADR-0028 to this ADR.
-  It keeps failing when a crate other than `render-agg` depends on i_overlay directly. It gains an
-  assertion on dependencies through other crates. That assertion fails when a crate other than
-  `symbolize` and `render-agg` depends on i_overlay by any chain;
+  It keeps failing when a workspace crate other than `render-agg` depends on i_overlay directly.
+  It gains two assertions on the resolved graph. One fails when a package other than `render-agg`
+  and geo depends directly on i_overlay. The other fails when a workspace crate other than
+  `symbolize` depends directly on geo;
 - in `crates/render-agg` (`src/hatch.rs`, `src/lib.rs`), the polygon and the stroke intersected
   under the even-odd rule, overlapping rings and pieces left empty, coordinates rounded to a
   hundredth of a pixel half away from zero, and a hole left white under rotated dashes;

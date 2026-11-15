@@ -97,9 +97,10 @@ functions in Forager's own code. It does not reach geo's.
 
 - i_overlay 4.5.2 with i_float 1.16, i_shape 1.18, i_key_sort 0.10, and i_tree 0.18, beside the
   9.1.0 family of [ADR-0028](0028-hatch-cut-by-i-overlay.md);
-- `rand` 0.10 with `rand_core` and `rand_pcg`;
-- `geo-types`, `rstar`, `robust`, `geographiclib-rs`, `sif-itree`, `float_next_after`, `approx`,
-  `heapless`, `hash32`, and `byteorder`.
+- `rand` 0.10 with `rand_core` and `rand_pcg`, which geo 0.33.1 calls only in its k-means, off the
+  output path (Q-2);
+- geo itself, `geo-types`, `rstar`, `robust`, `geographiclib-rs`, `sif-itree`, `float_next_after`,
+  `approx`, `heapless`, `hash32`, and `byteorder`.
 
 Growth of the browser bindings' gzipped `.wasm`, 997,445 bytes at faff23d3, with each probe called
 from the layer's transform:
@@ -135,8 +136,8 @@ crate, and repair a simplified polygon as GEOS repairs it.
 
 - **Place.** The module lives in `crates/symbolize`, beside the layer's transform. A layer's
   transform and a style's expression call the same functions. No crate of the workspace is added.
-- **Dependency.** geo must be a dependency of `symbolize` alone, at 0.33, with its default features
-  off.
+- **Dependency.** geo must be a direct dependency of `symbolize` alone among the workspace's
+  crates, at 0.33, with its default features off.
 - **Precondition.** geo brings i_overlay 4.5 into `symbolize`, which ADR-0028 forbids. This ADR
   must not be accepted before
   [ADR-draft-i-overlay-in-render-agg-and-geo](draft-i-overlay-in-render-agg-and-geo.md), the
@@ -149,7 +150,12 @@ crate, and repair a simplified polygon as GEOS repairs it.
     `DouglasPeuckerLineSimplifier` decides, with the distance computed by `f64::sqrt`;
   - a ring with fewer than 4 coordinates is removed. A removed shell leaves an empty polygon;
   - the module decides the result's validity by a port of the checks of JTS's `IsValidOp` that a
-    simplification can break, and of no other;
+    simplification can break, and of no other. It must port the checks of these faults:
+    - a ring that crosses or touches itself;
+    - two rings that cross, or touch in more than one point;
+    - a hole outside its shell or inside another hole;
+    - a shell inside another shell of a multipolygon;
+    - an interior that its holes disconnect;
   - an invalid result is repaired by geo's `unary_union`. A multipolygon is repaired as a whole. A
     valid result is not passed through `unary_union`.
 - **`buffer`** must be geo's `buffer_with_style` with round joins and round caps of π/60 radians,
@@ -225,7 +231,8 @@ crate, and repair a simplified polygon as GEOS repairs it.
 ## Consequences
 
 - Positive: the case of `vertex2` reproduces GEOS's points bit for bit, on both targets as
-  measured. A polygon's simplification matches GEOS on every polygon measured with 6 decimals.
+  measured. A polygon's simplification matched GEOS on every polygon measured with 6 decimals,
+  with geo's `Validation` standing in for the partial port of `IsValidOp`.
   `buffer` comes within 2.5 × 10⁻⁷ px on the case's polygons. Forager owns little geometry code:
   the first-point step, the removal of a ring, the partial validity test, and the calls.
 - Negative / trade-offs, measured:
@@ -261,12 +268,14 @@ crate, and repair a simplified polygon as GEOS repairs it.
 - The msautotest harness renders `renderers/geomtransform-vertex.map` with `-l vertex2` natively
   and through the wasm32 module in wasmi, and compares the buffers bit for bit (G-9,
   [ADR-0034](0034-wasm-renders-compared-in-wasmi.md)).
-- A test of `crates/arch-test` cites this ADR with `Verifies:`. It fails when a crate other than
-  `symbolize` depends on geo. The test `only_render_agg_cuts_polygons_with_i_overlay` changes as
-  the successor of ADR-0028 decides.
+- The test `only_render_agg_cuts_polygons_with_i_overlay` of `crates/arch-test` holds geo to
+  `symbolize`, as the successor of ADR-0028 decides. It cites this ADR with `Verifies:` too.
+- When the engine draws `buffer`, the harness renders `renderers/polygon-as-line-offset.map`
+  natively and through the wasm32 module, and compares the buffers bit for bit (G-9).
 - `scripts/check-notice.sh` fails on a file under `crates/symbolize` that names a JTS source without
   JTS's notice.
 - `cargo deny check` runs on every change to `Cargo.lock` ([ADR-0011](0011-crate-supply-chain.md)).
 
 **Not mechanically decidable:** that a target's `hypot` never moves a point across the tolerance
-for an input no test holds. The bit-identity run covers the cases only.
+for an input no test holds. The bit-identity runs cover the cases only. The change that moves
+geo's version repeats the measurement of `hypot` native against wasm32 that the *Context* reports.
