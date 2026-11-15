@@ -51,11 +51,12 @@ mod datum;
 mod lcc;
 mod merc;
 mod params;
+mod rect;
 mod tmerc;
 
 use std::fmt;
 
-use forager_style_ir::{Coord, Extent};
+use forager_style_ir::Coord;
 
 use crate::common::{HALF_PI, adjlon};
 use crate::params::{DEG_TO_RAD, Datum, Ellipsoid, Params, RAD_TO_DEG};
@@ -283,10 +284,6 @@ pub struct Reprojection {
     to: Projection,
 }
 
-/// The points along each side of a rectangle that [`Reprojection::extent`] reprojects, as
-/// `msProjectRect` samples one: `NUMBER_OF_SAMPLE_POINTS`.
-const SAMPLES_PER_SIDE: u32 = 100;
-
 impl Reprojection {
     /// The way from `from` into `to`.
     pub fn new(from: Projection, to: Projection) -> Self {
@@ -310,53 +307,6 @@ impl Reprojection {
         }
         let (lam, phi) = self.from.to_wgs84(point).ok_or(NotTransformed)?;
         self.to.at_wgs84(lam, phi).ok_or(NotTransformed)
-    }
-
-    /// The rectangle that holds the reprojected points of `extent`'s sides, each side sampled at
-    /// a hundred points, its corners included, as `msProjectRect` samples it; `None` where none
-    /// reprojects.
-    pub fn extent(&self, extent: &Extent) -> Option<Extent> {
-        let mut bounds: Option<Extent> = None;
-        let width = extent.max_x - extent.min_x;
-        let height = extent.max_y - extent.min_y;
-        for i in 0..=SAMPLES_PER_SIDE {
-            let t = f64::from(i) / f64::from(SAMPLES_PER_SIDE);
-            let along = [
-                Coord {
-                    x: extent.min_x + t * width,
-                    y: extent.min_y,
-                },
-                Coord {
-                    x: extent.min_x + t * width,
-                    y: extent.max_y,
-                },
-                Coord {
-                    x: extent.min_x,
-                    y: extent.min_y + t * height,
-                },
-                Coord {
-                    x: extent.max_x,
-                    y: extent.min_y + t * height,
-                },
-            ];
-            for point in along.into_iter().filter_map(|p| self.point(p).ok()) {
-                bounds = Some(match bounds {
-                    None => Extent {
-                        min_x: point.x,
-                        min_y: point.y,
-                        max_x: point.x,
-                        max_y: point.y,
-                    },
-                    Some(b) => Extent {
-                        min_x: if point.x < b.min_x { point.x } else { b.min_x },
-                        min_y: if point.y < b.min_y { point.y } else { b.min_y },
-                        max_x: if point.x > b.max_x { point.x } else { b.max_x },
-                        max_y: if point.y > b.max_y { point.y } else { b.max_y },
-                    },
-                });
-            }
-        }
-        bounds
     }
 }
 

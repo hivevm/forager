@@ -231,6 +231,33 @@ fn the_source_is_asked_for_the_maps_extent_in_its_own_coordinates() {
 }
 
 #[test]
+fn a_map_around_a_pole_asks_its_source_for_every_longitude_as_mapserver_does() {
+    // Verifies: ADR-0037
+    // A conic whose origin is the north pole, as msProjectRect detects polar stereographic: the
+    // pole lies in the map's extent, so the source is asked for all longitudes up to the pole.
+    let polar = "+proj=lcc +lat_1=70 +lat_2=85 +lat_0=90 +lon_0=0 +x_0=0 +y_0=0 +datum=WGS84 \
+                 +units=m +no_defs";
+    let around = Extent {
+        min_x: -1_000_000.0,
+        min_y: -1_000_000.0,
+        max_x: 1_000_000.0,
+        max_y: 1_000_000.0,
+    };
+    let (_, asked) = render_from(
+        &map(polar, around, Some(LONGLAT)),
+        Recording::new(Vec::new()),
+    );
+    let [asked] = asked[..] else {
+        panic!("one query, not {asked:?}");
+    };
+    assert_eq!(
+        (asked.min_x, asked.max_x, asked.max_y),
+        (-180.0, 180.0, 90.0)
+    );
+    assert!(70.0 < asked.min_y && asked.min_y < 80.0, "{asked:?}");
+}
+
+#[test]
 fn a_point_that_does_not_reproject_is_left_out_with_a_warning_naming_the_layer() {
     // Verifies: ADR-0037, Q-3
     // A map in the conic, a layer in longitude and latitude: the south pole, which the conic

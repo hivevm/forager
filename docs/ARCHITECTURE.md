@@ -128,8 +128,10 @@ golden path and the test pattern an agent copies from are named here.
   Its tables hold only the datums, ellipsoids, and units the cases in scope name: WGS84 and NAD83,
   their ellipsoids, and metres. Anything else is an error value naming it; a point that does not
   transform is one too, never a panic. It decides whether two projections differ as
-  `msProjectionsDiffer` compares their parameters, and reprojects a rectangle by its sides' points
-  as `msProjectRect` samples them.
+  `msProjectionsDiffer` compares their parameters, and reprojects a rectangle as `msProjectRect`
+  does (`rect.rs`): its sides and a diagonal sampled, the horizon found where points fail, a grid
+  where none of them reprojects, all longitudes where a polar projection's pole lies inside it;
+  the `+over` it adds is the dateline's ticket.
   Synchronous, without I/O; it depends on `style-ir` and `libm` alone, and each file that ports a
   PROJ source holds PROJ's notice (`scripts/check-notice.sh`).
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's

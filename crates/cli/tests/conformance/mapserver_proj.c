@@ -11,8 +11,14 @@
  * header lines, "# PROJ <release>" from proj_info and "# MapServer <commit>" as its build names it,
  * then for each point of the list its line, a tab, and the result as "x<TAB>y" written with %.17g,
  * or "fail" where msProjectPoint fails. Comment lines and empty lines of the list are skipped. A
- * line of the list that does not hold four tab-separated fields, or a projection that does not
- * load, ends the reader with an error.
+ * line of the list that does not hold four or six tab-separated fields, or a projection that does
+ * not load, ends the reader with an error.
+ *
+ * A line of six fields is a rectangle, crates/proj/tests/reference/rects.tsv: its source and target
+ * and minx, miny, maxx, maxy, projected by msProjectRect as a map's extent is projected into a
+ * layer's to ask its source; the result is "minx<TAB>miny<TAB>maxx<TAB>maxy", or "fail" where
+ * msProjectRect fails. Both projections are loaded afresh for each rectangle, so that none keeps
+ * the is_polar msProjectRect sets on its source; the record is mapserver-rects.tsv.
  *
  * Copyright (c) 1996-2005 Regents of the University of Minnesota.
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
@@ -55,7 +61,7 @@ static void load(projectionObj *p, const char *definition, long line) {
 
 int main(int argc, char *argv[]) {
   if (argc != 2) {
-    fprintf(stderr, "usage: mapserver_proj <points.tsv>\n");
+    fprintf(stderr, "usage: mapserver_proj <points.tsv | rects.tsv>\n");
     return 1;
   }
   FILE *list = fopen(argv[1], "r");
@@ -87,12 +93,34 @@ int main(int argc, char *argv[]) {
     if (length == 0 || buffer[0] == '#')
       continue;
     char *line = strdup(buffer);
-    char *fields[4];
+    char *fields[6];
     int count = 0;
-    for (char *field = strtok(buffer, "\t"); field && count < 4; field = strtok(NULL, "\t"))
+    for (char *field = strtok(buffer, "\t"); field && count < 6; field = strtok(NULL, "\t"))
       fields[count++] = field;
-    if (count != 4 || strtok(NULL, "\t"))
-      fail("a line does not hold four tab-separated fields", number);
+    if ((count != 4 && count != 6) || strtok(NULL, "\t"))
+      fail("a line does not hold four or six tab-separated fields", number);
+    double numbers[4];
+    for (int i = 2; i < count; i++) {
+      char *end;
+      numbers[i - 2] = strtod(fields[i], &end);
+      if (*end)
+        fail("a coordinate is no number", number);
+    }
+    if (count == 6) {
+      load(&in, fields[0], number);
+      load(&out, fields[1], number);
+      free(source);
+      free(target);
+      source = target = NULL;
+      rectObj rect = {numbers[0], numbers[1], numbers[2], numbers[3]};
+      if (msProjectRect(&in, &out, &rect) == MS_SUCCESS)
+        printf("%s\t%.17g\t%.17g\t%.17g\t%.17g\n", line, rect.minx, rect.miny, rect.maxx,
+               rect.maxy);
+      else
+        printf("%s\tfail\n", line);
+      free(line);
+      continue;
+    }
     if (!source || strcmp(source, fields[0]) != 0) {
       free(source);
       source = strdup(fields[0]);
@@ -104,13 +132,8 @@ int main(int argc, char *argv[]) {
       load(&out, target, number);
     }
     pointObj point = {0};
-    char *end;
-    point.x = strtod(fields[2], &end);
-    if (*end)
-      fail("x is no number", number);
-    point.y = strtod(fields[3], &end);
-    if (*end)
-      fail("y is no number", number);
+    point.x = numbers[0];
+    point.y = numbers[1];
     if (msProjectPoint(&in, &out, &point) == MS_SUCCESS)
       printf("%s\t%.17g\t%.17g\n", line, point.x, point.y);
     else

@@ -37,7 +37,7 @@ pub(crate) fn for_layer(map: &Map, layer: &Layer) -> Result<Option<LayerReprojec
 
 impl LayerReprojection {
     /// The area the layer's source is asked for: the map's `extent` reprojected into the layer's
-    /// projection, its sides sampled; `None` where no point of them reprojects.
+    /// projection as `msProjectRect` reprojects it; `None` where no point of it reprojects.
     pub(crate) fn asked(&self, extent: &Extent) -> Option<Extent> {
         self.to_layer.extent(extent)
     }

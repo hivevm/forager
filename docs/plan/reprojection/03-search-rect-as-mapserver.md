@@ -19,9 +19,11 @@ by extent returns the features MapServer would draw.
 
 ## Read first
 
-- Touches: `crates/proj`, `crates/engine/src/lib.rs`, and for MapServer's rectangles the run
-  ADR-0033 binds: `scripts/build-mapserver.sh`, a reader beside
-  `crates/cli/tests/conformance/mapserver_labels.c`, `.github/workflows/noise.yml`
+- Touches: `crates/proj` (`src/rect.rs`, `tests/reference/`), `crates/engine/src/reproject.rs`,
+  and for MapServer's rectangles the reader ADR-0038 binds,
+  `crates/cli/tests/conformance/mapserver_proj.c`, and its run in the noise module
+  (`crates/cli/tests/conformance/noise/`); `scripts/build-mapserver.sh` and
+  `.github/workflows/noise.yml` already build and run it
 - MapServer's `msProjectRect`, `msProjectRectGrid`, and `msProjectRectAsPolygon`
   (`src/mapproject.c`) at the pinned tag
 - Seam: a test of `crates/proj` with rectangles MapServer computed, and the engine's render with a

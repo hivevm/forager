@@ -2,6 +2,7 @@
 //! projections the cases in scope name.
 
 use super::*;
+use forager_style_ir::Extent;
 
 const LONGLAT_WGS84: &str = "+proj=longlat +datum=WGS84 +no_defs";
 /// EPSG:3978 as the suite's `wxs/data/epsg2` defines it, with its stray `no_defs`.
@@ -345,4 +346,58 @@ fn an_extent_reprojects_to_the_rectangle_that_holds_its_sides() {
         max_y: 120.0,
     };
     assert_eq!(way.extent(&beyond), None);
+}
+
+#[test]
+fn a_rectangle_of_the_whole_world_or_of_no_size_takes_mapserver_s_shortcuts() {
+    // Verifies: ADR-0037
+    let world = Extent {
+        min_x: -180.0,
+        min_y: -90.0,
+        max_x: 180.0,
+        max_y: 90.0,
+    };
+    let edge = 20_037_508.342_789_2;
+    let web = way(LONGLAT_WGS84, EPSG_3857).extent(&world).unwrap();
+    assert_eq!(
+        (web.min_x, web.min_y, web.max_x, web.max_y),
+        (-edge, -edge, edge, edge)
+    );
+    let conic = way(LONGLAT_WGS84, EPSG_3978).extent(&world).unwrap();
+    assert_eq!((conic.min_x, conic.max_y), (-1e15, 1e15));
+    let point = Extent {
+        min_x: -63.0,
+        min_y: 45.0,
+        max_x: -63.0,
+        max_y: 45.0,
+    };
+    let to = way(LONGLAT_WGS84, EPSG_3978);
+    let p = to.point(at(-63.0, 45.0)).unwrap();
+    assert_eq!(
+        to.extent(&point),
+        Some(Extent {
+            min_x: p.x,
+            min_y: p.y,
+            max_x: p.x,
+            max_y: p.y
+        })
+    );
+}
+
+#[test]
+fn a_side_that_leaves_the_projection_ends_at_its_horizon() {
+    // Verifies: ADR-0037
+    // The conic opens away from the south pole: the side along it does not reproject, and the
+    // rectangle reaches as far south as the halving of the sides to it finds points that do.
+    let to = way(LONGLAT_WGS84, EPSG_3978);
+    let rect = to
+        .extent(&Extent {
+            min_x: -120.0,
+            min_y: -90.0,
+            max_x: -60.0,
+            max_y: 60.0,
+        })
+        .unwrap();
+    let near_pole = to.point(at(-90.0, -89.9)).unwrap();
+    assert!(rect.min_y < near_pole.y, "{rect:?}");
 }

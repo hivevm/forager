@@ -34,8 +34,9 @@ const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 /// every other field exactly; the test fails on a record that differs or is missing, and the
 /// reader's labels stay in `noise/labels/` to take the record from. The renderings stay in
 /// `noise/` under the test's target directory. Last, the reader of MapServer's reprojection
-/// reprojects G-11's reference points ([`reference_points`]); the test fails where its output and
-/// the record beside the test of `proj` disagree, and the output stays in `noise/proj/`.
+/// reprojects G-11's reference points and rectangles ([`reference_points`]); the test fails where
+/// its output and a record beside the test of `proj` disagree, and the output stays in
+/// `noise/proj/`.
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test, and \
             without it the test skips itself"]
@@ -116,31 +117,53 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
     );
     assert!(
         differences.is_empty(),
-        "MapServer's reprojection of G-11's reference points does not hold the record {}; the \
-         reader's output is in {}:\n{}",
-        REFERENCE_RECORD,
+        "MapServer's reprojection of G-11's reference points and rectangles does not hold its \
+         record; the reader's output is in {}:\n{}",
         out.join("proj").display(),
         differences.join("\n")
     );
 }
 
-/// The list of G-11's reference points and the record of MapServer's reprojection of them, from
-/// the workspace root (ADR-0038).
-const REFERENCE_POINTS: &str = "crates/proj/tests/reference/points.tsv";
-const REFERENCE_RECORD: &str = "crates/proj/tests/reference/mapserver.tsv";
+/// The lists of G-11's reference points and rectangles, each with the record of MapServer's
+/// reprojection of it and the name of the reader's output, from the workspace root (ADR-0038).
+const REFERENCES: [(&str, &str, &str); 2] = [
+    (
+        "crates/proj/tests/reference/points.tsv",
+        "crates/proj/tests/reference/mapserver.tsv",
+        "mapserver.tsv",
+    ),
+    (
+        "crates/proj/tests/reference/rects.tsv",
+        "crates/proj/tests/reference/mapserver-rects.tsv",
+        "mapserver-rects.tsv",
+    ),
+];
 
 /// The largest difference of a coordinate between the reader's output and the record: 1 mm, in
 /// metres for a projected target and in degrees, about 1.0 mm, for a geographic one.
 const PROJECTED_SLACK: f64 = 1e-3;
 const GEOGRAPHIC_SLACK: f64 = 9e-9;
 
-/// Runs the reader of MapServer's reprojection, `reader`, over [`REFERENCE_POINTS`], keeps its
-/// output in `out` as `mapserver.tsv`, and returns how it differs from [`REFERENCE_RECORD`]; an
+/// Runs the reader of MapServer's reprojection, `reader`, over each list of [`REFERENCES`], keeps
+/// its output in `out` under the list's name, and returns how each differs from its record; an
 /// error is a reader that does not run or fails.
 fn reference_points(reader: &Path, out: &Path) -> Result<Vec<String>, String> {
+    let mut differences = Vec::new();
+    for (list, record, name) in REFERENCES {
+        differences.extend(
+            reference(reader, list, record, &out.join(name))?
+                .into_iter()
+                .map(|d| format!("{record}: {d}")),
+        );
+    }
+    Ok(differences)
+}
+
+/// Runs `reader` over `list`, keeps its output at `out`, and returns how it differs from `record`.
+fn reference(reader: &Path, list: &str, record: &str, out: &Path) -> Result<Vec<String>, String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let output = Command::new(reader)
-        .arg(root.join(REFERENCE_POINTS))
+        .arg(root.join(list))
         .output()
         .map_err(|e| format!("{}: {e}", reader.display()))?;
     if !output.status.success() {
@@ -151,17 +174,21 @@ fn reference_points(reader: &Path, out: &Path) -> Result<Vec<String>, String> {
         ));
     }
     let output = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
-    std::fs::write(out.join("mapserver.tsv"), &output).map_err(|e| e.to_string())?;
-    let Ok(record) = std::fs::read_to_string(root.join(REFERENCE_RECORD)) else {
-        return Ok(vec![format!("{REFERENCE_RECORD} is missing")]);
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(out, &output).map_err(|e| e.to_string())?;
+    let Ok(record) = std::fs::read_to_string(root.join(record)) else {
+        return Ok(vec![format!("{record} is missing")]);
     };
     Ok(record_differences(&record, &output))
 }
 
 /// How the reader's `output` differs from the `record`: a line one has and the other lacks, a
-/// header or a point that differs, a point that fails in one only, or a coordinate past the slack
-/// of its target ([`PROJECTED_SLACK`], [`GEOGRAPHIC_SLACK`]).
+/// header or a point or rectangle that differs, one that fails in one only, or a coordinate past
+/// the slack of its target ([`PROJECTED_SLACK`], [`GEOGRAPHIC_SLACK`]). A line of the record is
+/// a point's, its four fields followed by two coordinates or `fail`, or a rectangle's, its six
+/// followed by four or `fail`.
 fn record_differences(record: &str, output: &str) -> Vec<String> {
     let mut differences = Vec::new();
     let (record, output): (Vec<&str>, Vec<&str>) =
@@ -183,7 +210,12 @@ fn record_differences(record: &str, output: &str) -> Vec<String> {
         }
         let r: Vec<&str> = recorded.split('\t').collect();
         let w: Vec<&str> = written.split('\t').collect();
-        if r.len() < 5 || w.len() < 5 || r[..4] != w[..4] {
+        let fields = match r.len() {
+            5 | 6 => 4,
+            7 | 10 => 6,
+            _ => 0,
+        };
+        if fields == 0 || w.len() <= fields || r[..fields] != w[..fields] {
             differences.push(format!("line {line}: {written:?}, recorded {recorded:?}"));
             continue;
         }
@@ -198,14 +230,16 @@ fn record_differences(record: &str, output: &str) -> Vec<String> {
         } else {
             PROJECTED_SLACK
         };
-        let agree = match (&r[4..], &w[4..]) {
+        let (r, w) = (&r[fields..], &w[fields..]);
+        let agree = match (r, w) {
             (["fail"], ["fail"]) => true,
-            ([rx, ry], [wx, wy]) => [(rx, wx), (ry, wy)].iter().all(|(a, b)| {
-                match (a.parse::<f64>(), b.parse::<f64>()) {
+            _ if r.len() == fields - 2 && w.len() == r.len() && !r.contains(&"fail") => r
+                .iter()
+                .zip(w)
+                .all(|(a, b)| match (a.parse::<f64>(), b.parse::<f64>()) {
                     (Ok(a), Ok(b)) => (a - b).abs() <= slack,
                     _ => false,
-                }
-            }),
+                }),
             _ => false,
         };
         if !agree {

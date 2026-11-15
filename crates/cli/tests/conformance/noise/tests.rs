@@ -117,14 +117,16 @@ fn the_noise_measurement_runs_only_where_mapserver_is_named() {
 }
 
 #[test]
-fn the_reprojection_s_output_holds_its_record_within_a_millimetre() {
+fn the_reprojection_s_output_of_points_and_rectangles_holds_its_record_within_a_millimetre() {
     // Verifies: ADR-0038
     let header = "# PROJ 9.4.0\n# MapServer abc\n";
     let ll = "+proj=longlat +datum=WGS84";
     let wm = "+proj=merc +a=6378137 +b=6378137";
     let record = format!(
         "{header}{ll}\t{wm}\t10\t50\t1113194.9079327357\t6446275.8410171578\n\
-         {wm}\t{ll}\t0\t0\t0\t0\n{ll}\t{wm}\t0\t90\tfail\n"
+         {wm}\t{ll}\t0\t0\t0\t0\n{ll}\t{wm}\t0\t90\tfail\n\
+         {ll}\t{wm}\t5\t45\t15\t55\t556597.45\t5621521.48\t1669792.36\t7361866.11\n\
+         {ll}\t{wm}\t0\t100\t1\t120\tfail\n"
     );
     assert!(record_differences(&record, &record).is_empty());
     // Within a millimetre in metres, and in degrees for a geographic target.
@@ -151,6 +153,18 @@ fn the_reprojection_s_output_holds_its_record_within_a_millimetre() {
             format!("{record}{ll}\t{wm}\t1\t1\t1\t1\n"),
         ),
         ("another point", record.replace("\t10\t50\t", "\t11\t50\t")),
+        (
+            "a rectangle's corner a metre off",
+            record.replace("1669792.36", "1669793.36"),
+        ),
+        (
+            "a rectangle that fails on one side",
+            record.replace("\t120\tfail", "\t120\t0\t0\t1\t1"),
+        ),
+        (
+            "a rectangle with a corner missing",
+            record.replace("\t7361866.11", ""),
+        ),
     ] {
         assert!(!record_differences(&record, &written).is_empty(), "{what}");
     }
