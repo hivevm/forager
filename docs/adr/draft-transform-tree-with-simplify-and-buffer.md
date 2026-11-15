@@ -33,9 +33,11 @@ This ADR restates every clause of ADR-0036 in its wording, but these:
 - *Numbers*: a new item, a negative tolerance or distance kept as written;
 - *Not drawn*: `buffer` and `simplify` stay reasons only until their nodes land;
 - *A class's style*: a new entry, a class style's expression drawn as `msDrawTransformedShape`
-  draws it, its `[map_cellsize]` bound as a layer's, its evaluations charged to the layer's
-  bounds of Q-9 on the points added and visited, a failed evaluation drawing nothing on its shape,
-  and one warning for each style and render;
+  draws it, in the pass of a style of a keyword transform, its `[map_cellsize]` bound as a
+  layer's; a point layer's style drawn at the layer's points; its evaluations charged to the
+  layer's bounds of Q-9 on the points added and visited; a failed evaluation drawing nothing on
+  its shape; one warning for each failing style, naming its first failure, and one for the layer
+  past a bound;
 - *Diagnostics*: the warning for a `not_drawn` tree is given for a layer's tree and a class
   style's alike, and the style draws nothing;
 - *Versions*: "this ADR" reads "ADR-0036"; three new items, the regenerated file of 1.1, the
@@ -160,8 +162,10 @@ from MapServer's text.
     on every later shape of the layer. The shapes drawn before stay drawn.
   - Where the evaluation fails on a shape, the style must draw nothing on that shape. MapServer
     makes no map there. The layer's other styles and the rest of the map are drawn.
-  - The engine must warn `geomtransform-over-limit` past a bound, and `geomtransform-not-drawn`
-    for a failure naming it. It must warn at most once for each style and render.
+  - For a failure, the engine must warn `geomtransform-not-drawn` at most once for each style and
+    render. The warning names the style's first failure.
+  - Past a bound, the engine must warn `geomtransform-over-limit` once for the layer and render,
+    whatever the number of style trees it stops.
 - **Who parses.** Only `crates/mapfile` may parse a `GEOMTRANSFORM` expression. The core must read
   the tree and never MapServer's text.
 - **Diagnostics.** The engine must warn `geomtransform-not-drawn` for a `not_drawn` tree, naming
@@ -238,7 +242,9 @@ from MapServer's text.
   The maintainer chose this ADR on 2026-11-15.
 - **The style's tree evaluated in map units, before the pixels, as a layer's** — one path of
   evaluation. MapServer evaluates a style's tree on the shape in pixels, so its numbers are pixels:
-  the case's `generalize([shape],50)` drops each point within 50 pixels of the last kept.
+  the case's `generalize([shape],50)` keeps, of the shape's first part alone, its first point,
+  each point at least 50 pixels from the last kept, and its last point (`msGeneralize`,
+  `src/maputil.c:2823-2871`).
 - **A style's `[map_cellsize]` as 1, a cell in pixels** — a value that fits the pixel shape. The
   pin binds none, so no reference decides. The layer's value keeps one meaning for one name and
   needs no rule of its own.
@@ -266,8 +272,8 @@ from MapServer's text.
   [ADR-0008](0008-ports-and-adapters-crates.md), [ADR-0017](0017-c-ports-in-style-ir.md).
 - MapServer `rel-8-6-6`, `src/mapgeomtransform.c` (`msDrawTransformedShape`, `:115-250`;
   `msGeomTransformShape`, `:283-291`), `src/mapdraw.c` (`:508-519`, `:1402-1405`, `:2034-2085`,
-  `:2140-2148`, `:2304-2311`, `:2429-2437`, `:2505-2518`), and `src/mapparser.y` (`:1121-1128`),
-  read 2026-11-15 from `target/ms-src`.
+  `:2140-2148`, `:2304-2311`, `:2429-2437`, `:2505-2518`), `src/mapparser.y` (`:1121-1128`), and
+  `src/maputil.c` (`msGeneralize`, `:2823-2871`), read 2026-11-15 from `target/ms-src`.
 - `docs/plan/fidelity/10-style-geomtransform-expressions.md`,
   `docs/plan/fidelity/11-simplify-through-a-geometry-library.md`, and
   `docs/plan/fidelity/12-geomtransform-buffer.md`.
@@ -329,12 +335,12 @@ from MapServer's text.
   - a class style of a `not_drawn` tree draws nothing and warns `geomtransform-not-drawn` with its
     reason;
   - a style whose evaluation fails on a shape draws nothing on it, with its warning;
-  - a style whose tree fails on every shape warns once;
+  - a style whose tree fails on two shapes for different reasons warns once, naming the first;
   - a style of `[map_cellsize]` evaluates it at the layer's value;
   - a point layer's style of a tree draws its symbol at the layer's points.
 - Tests of `crates/engine` cite this ADR and Q-9 with `Verifies:`. A style's tree visits past the
   budget its layer's `GEOMTRANSFORM` left, or adds points past it. The style draws nothing on that
-  shape and the later ones, and warns `geomtransform-over-limit` once.
+  shape and the later ones. A layer of two such style trees warns `geomtransform-over-limit` once.
 - The tests that cite [ADR-0036](0036-typed-geomtransform.md) move their `Verifies:` to this ADR in
   the change that implements it.
 
