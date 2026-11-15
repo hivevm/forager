@@ -76,7 +76,7 @@ to invent.
 - **Pushdown** — Handing the part of a filter that an adapter can evaluate natively to that
   adapter; the core evaluates the rest.
 - **Render mode** — What a layer's `TYPE` states: how its features are drawn (point, line,
-  polygon, raster, labels only), independent of their geometry type.
+  polygon, raster, labels only, circle), independent of their geometry type.
   _Avoid:_ layer type, geometry type (for this concept).
 - **Renderer** — What turns a display list into an image; the reference renderer draws with
   agg-rust into an RGBA image.

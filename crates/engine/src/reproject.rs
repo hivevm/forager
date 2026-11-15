@@ -214,6 +214,12 @@ impl LayerReprojection {
         !polygons.is_empty()
     }
 
+    /// A point reprojected into the map's projection as `msProjectPoint` reprojects the centre of
+    /// a circle in circleLayerDrawShape; `None` where it does not reproject.
+    pub(crate) fn point(&self, point: Coord) -> Option<Coord> {
+        self.to_map.point(point).ok()
+    }
+
     /// Whether MapServer would cut the lines of this layer's line shapes with GEOS, which the
     /// engine does not ([`Reprojection::cuts_lines_with_geos`]).
     pub(crate) fn cuts_lines_with_geos(&self) -> bool {

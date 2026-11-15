@@ -30,9 +30,12 @@ use crate::symbol;
 
 /// Whether a layer of the render mode draws the geometry. As in MapServer, a line layer draws
 /// polygons as their outlines and a point layer draws a marker at every vertex; a polygon layer
-/// draws no lines or points, and a line layer no points.
+/// draws no lines or points, and a line layer no points. A circle layer takes every geometry, as
+/// msDrawShape hands every shape to circleLayerDrawShape, which draws only a circle (see
+/// [`crate::circle()`]).
 pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
     match (mode, geometry) {
+        (RenderMode::Circle, _) => true,
         (_, Geometry::Collection(geometries)) => geometries.iter().all(|g| can_draw(mode, g)),
         (RenderMode::Point, _) => true,
         (RenderMode::Polygon, Geometry::Polygon(_) | Geometry::MultiPolygon(_)) => true,
@@ -44,14 +47,17 @@ pub fn can_draw(mode: RenderMode, geometry: &Geometry) -> bool {
 /// The image path of the pixmap symbol that [`draw_ops`] draws as the mark of `style` in a layer
 /// of `mode`: at each point of a point layer, at each point a `GEOMTRANSFORM` places on a line or
 /// a polygon, along each line of a line layer every `GAP` pixels, and tiled over each polygon of
-/// a polygon layer. The engine loads it before the layer is drawn, since this crate does no I/O.
+/// a polygon or a circle layer. The engine loads it before the layer is drawn, since this crate
+/// does no I/O.
 pub fn marked_pixmap<'a>(
     mode: RenderMode,
     style: &Style,
     symbols: &'a [Symbol],
 ) -> Option<&'a str> {
-    let marked = matches!(mode, RenderMode::Point | RenderMode::Polygon)
-        || style.geom_transform.is_some()
+    let marked = matches!(
+        mode,
+        RenderMode::Point | RenderMode::Polygon | RenderMode::Circle
+    ) || style.geom_transform.is_some()
         || (mode == RenderMode::Line && gapped(style));
     match symbol::mark(style, symbols) {
         symbol::Mark::Pixmap(_, symbol) if marked => symbol.image.as_deref(),

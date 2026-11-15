@@ -5,8 +5,9 @@
 //!
 //! Its modules import one another in one direction only: `draw` imports `canvas`, `extent`,
 //! `geom_transform`, `hatch`, `line`, `marker`, `shade`, and `symbol`; `label` imports `canvas`,
-//! `extent`, `marker`, `shade`, and `symbol`; `shade` imports `bounds`, `canvas`, `extent`,
-//! `glyph_marker`, `hatch`, `line`, `style`, `symbol`, and `tile`; `marker` imports `bounds`,
+//! `extent`, `marker`, `shade`, and `symbol`; `circle` imports `canvas`, `extent`, `shade`, and
+//! `symbol`; `shade` imports `bounds`, `canvas`, `extent`, `glyph_marker`, `hatch`, `line`,
+//! `style`, `symbol`, and `tile`; `marker` imports `bounds`,
 //! `canvas`, `glyph_marker`, `line`, `line_marker`, `style`, and `symbol`; `line` imports
 //! `bounds`, `canvas`, `glyph_marker`, `line_marker`, `offset`, `style`, and `symbol`;
 //! `glyph_marker` imports `canvas`, `glyph`, `line_marker`, `style`, `symbol`, and `tile`;
@@ -24,6 +25,7 @@
 
 mod bounds;
 mod canvas;
+mod circle;
 mod draw;
 mod extent;
 mod geom_transform;
@@ -42,6 +44,7 @@ mod symbol;
 mod tile;
 
 pub use crate::canvas::{Canvas, Refusals};
+pub use crate::circle::{Circle, circle, circle_ops};
 pub use crate::draw::{can_draw, clip_pixmaps, draw_ops, marked_pixmap, point_markers, vertices};
 pub use crate::extent::View;
 pub use crate::glyph::{Glyph, Glyphs};

@@ -37,7 +37,7 @@ mod hatch;
 mod pixfmt;
 mod resample;
 
-use agg_rust::basics::{FillingRule, VertexSource};
+use agg_rust::basics::{COVER_FULL, FillingRule, VertexSource};
 use agg_rust::color::Rgba8;
 use agg_rust::conv_dash::ConvDash;
 use agg_rust::conv_stroke::ConvStroke;
@@ -107,8 +107,34 @@ impl AggRenderer {
                 stroke.apply(&mut outline);
                 rasterizer.add_path(&mut outline, 0);
             }
-            render_scanlines_aa_solid(&mut rasterizer, &mut scanline, renderer, &color);
+            if stroke.antialiased {
+                render_scanlines_aa_solid(&mut rasterizer, &mut scanline, renderer, &color);
+            } else {
+                render_scanlines_bin_solid(&mut rasterizer, &mut scanline, renderer, &color);
+            }
         });
+    }
+}
+
+/// Blends every pixel the scanlines of `rasterizer` cover at all, at full cover, as AGG 2.4's
+/// `renderer_scanline_bin_solid` renders the unpacked scanline agg2RenderLine() sweeps for a
+/// stroke that is not anti-aliased: each span one `blend_hline` of the colour at `cover_full`.
+fn render_scanlines_bin_solid(
+    rasterizer: &mut RasterizerScanlineAa,
+    scanline: &mut ScanlineU8,
+    renderer: &mut RendererBase<PixfmtMapserver<'_>>,
+    color: &Rgba8,
+) {
+    if !rasterizer.rewind_scanlines() {
+        return;
+    }
+    scanline.reset(rasterizer.min_x(), rasterizer.max_x());
+    while rasterizer.sweep_scanline(scanline) {
+        let y = scanline.y();
+        for span in scanline.begin() {
+            let end = span.x - 1 + span.len.abs();
+            renderer.blend_hline(span.x, y, end, color, COVER_FULL);
+        }
     }
 }
 
@@ -118,6 +144,7 @@ struct Stroke<'a> {
     cap: LineCap,
     join: LineJoin,
     dashes: &'a Dashes,
+    antialiased: bool,
 }
 
 impl Stroke<'_> {
@@ -395,12 +422,14 @@ impl Draw for AggRenderer {
                 cap,
                 join,
                 dashes,
+                antialiased,
             } => {
                 let stroke = Stroke {
                     width: *width,
                     cap: *cap,
                     join: *join,
                     dashes,
+                    antialiased: *antialiased,
                 };
                 self.stroke(paths, *closed, *color, stroke);
             }
@@ -878,9 +907,47 @@ mod tests {
             cap: LineCap::Round,
             join: LineJoin::None,
             dashes: Dashes::default(),
+            antialiased: true,
         }]);
         assert_eq!(image.pixel(32, 32), Some(RED));
         assert_eq!(image.pixel(32, 20), Some(WHITE));
+    }
+
+    #[test]
+    fn an_aliased_stroke_draws_each_pixel_it_touches_in_its_full_colour() {
+        // A slanted line, 5 wide: anti-aliased, its edges are blends of red and white; aliased,
+        // every pixel the anti-aliased stroke touches is red, and every other stays white.
+        let stroke = |antialiased| {
+            render(&[DrawOp::Stroke {
+                paths: vec![vec![p(5.3, 10.2), p(58.7, 47.9)]],
+                closed: false,
+                color: RED,
+                width: 5.0,
+                cap: LineCap::Round,
+                join: LineJoin::None,
+                dashes: Dashes::default(),
+                antialiased,
+            }])
+        };
+        let (smooth, aliased) = (stroke(true), stroke(false));
+        let pixels = |image: &RgbaImage| -> Vec<Rgba> {
+            (0..64 * 64)
+                .map(|i| image.pixel(i % 64, i / 64).unwrap())
+                .collect()
+        };
+        let blends = pixels(&smooth)
+            .iter()
+            .filter(|&&c| c != RED && c != WHITE)
+            .count();
+        assert!(blends > 50, "the anti-aliased edges are blends: {blends}");
+        for (i, (s, a)) in pixels(&smooth)
+            .into_iter()
+            .zip(pixels(&aliased))
+            .enumerate()
+        {
+            let expected = if s == WHITE { WHITE } else { RED };
+            assert_eq!(a, expected, "pixel ({}, {})", i % 64, i / 64);
+        }
     }
 
     fn line(width: f64, cap: LineCap, pattern: Vec<f64>) -> DrawOp {
@@ -896,6 +963,7 @@ mod tests {
             cap,
             join: LineJoin::None,
             dashes: Dashes { pattern, offset },
+            antialiased: true,
         }
     }
 
@@ -915,6 +983,7 @@ mod tests {
                 cap,
                 join,
                 dashes: Dashes::default(),
+                antialiased: true,
             }])
         };
         let outline = draw(LineCap::Butt, LineJoin::Miter);
@@ -1023,6 +1092,7 @@ mod tests {
                     pattern: vec![1e-300, 1e300, 3.0],
                     offset: 1e300,
                 },
+                antialiased: true,
             },
             DrawOp::Stroke {
                 paths: vec![huge.clone(), broken.clone()],
@@ -1032,6 +1102,17 @@ mod tests {
                 cap: LineCap::Butt,
                 join: LineJoin::Miter,
                 dashes: Dashes::default(),
+                antialiased: true,
+            },
+            DrawOp::Stroke {
+                paths: vec![huge.clone(), broken.clone()],
+                closed: false,
+                color: RED,
+                width: 1e9,
+                cap: LineCap::Round,
+                join: LineJoin::Round,
+                dashes: Dashes::default(),
+                antialiased: false,
             },
         ]);
         // A hatch's dashes walked one by one, and its polygon cut, stay bounded: tiny or empty

@@ -181,7 +181,7 @@ renderers/chartlayer_vbar.map chartlayer_vbar.png out: a non-goal, a layer's TYP
 renderers/chartlayer_vbar.map chartlayer_vbar.pdf out: another output format, pdf
 renderers/chartlayer_vbar.map chartlayer_vbar.svg out: another output format, svg
 renderers/chartlayer_vbar.map chartlayer_vbar.cairo.png out: another output format, cairopng
-renderers/circle_layer.map circle_layer.png geometry fails  # not built yet: circle layers
+renderers/circle_layer.map circle_layer.png geometry passes
 renderers/circle_layer.map circle_layer.pdf out: another output format, pdf
 renderers/circle_layer.map circle_layer.svg out: another output format, svg
 renderers/circle_layer.map circle_layer.cairo.png out: another output format, cairopng
@@ -328,7 +328,7 @@ renderers/legend_sizeunits_meters.map legend_sizeunits_meters.png out: an OGC or
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.cairo.png out: an OGC or CGI request
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.svg out: an OGC or CGI request
 renderers/legend_sizeunits_meters.map legend_sizeunits_meters.pdf out: an OGC or CGI request
-renderers/line_aliased.map line_aliased.png geometry fails  # not built yet: the ANTIALIAS FALSE of a style
+renderers/line_aliased.map line_aliased.png geometry passes
 renderers/line_anchorpoint.map line_anchorpoint.png geometry passes
 renderers/line_anchorpoint.map line_anchorpoint.cairo.png out: another output format, cairopng
 renderers/line_antialiased.map line_anti_aliased.png geometry passes

@@ -22,6 +22,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
         ],
     ),
     ("label", &["canvas", "extent", "marker", "shade", "symbol"]),
+    ("circle", &["canvas", "extent", "shade", "symbol"]),
     (
         "shade",
         &[

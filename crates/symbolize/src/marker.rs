@@ -135,6 +135,7 @@ fn point_ops<T>(ops: &mut Vec<DrawOp>, at: Point, style: &Style<T>) {
             cap,
             join,
             dashes: Dashes::default(),
+            antialiased: true,
         });
     }
 }

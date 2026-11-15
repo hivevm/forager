@@ -625,7 +625,8 @@ impl Translator<'_> {
         match word.as_deref() {
             Some("POINT") => layer.render_mode = Some(RenderMode::Point),
             Some("LINE") => layer.render_mode = Some(RenderMode::Line),
-            Some("POLYGON" | "CIRCLE") => layer.render_mode = Some(RenderMode::Polygon),
+            Some("POLYGON") => layer.render_mode = Some(RenderMode::Polygon),
+            Some("CIRCLE") => layer.render_mode = Some(RenderMode::Circle),
             Some("RASTER") => layer.render_mode = Some(RenderMode::Raster),
             Some("ANNOTATION") => layer.render_mode = Some(RenderMode::Annotation),
             Some("QUERY") => {

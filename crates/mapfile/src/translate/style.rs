@@ -25,6 +25,22 @@ use crate::expression;
 use crate::lexer::TokenKind;
 use crate::syntax::{Block, Directive, Node};
 
+/// The words of `LINECAP`, as loadStyle takes them.
+const LINE_CAPS: &[(&str, LineCap)] = &[
+    ("BUTT", LineCap::Butt),
+    ("ROUND", LineCap::Round),
+    ("SQUARE", LineCap::Square),
+    ("TRIANGLE", LineCap::Triangle),
+];
+
+/// The words of `LINEJOIN`, as loadStyle takes them.
+const LINE_JOINS: &[(&str, LineJoin)] = &[
+    ("NONE", LineJoin::None),
+    ("ROUND", LineJoin::Round),
+    ("MITER", LineJoin::Miter),
+    ("BEVEL", LineJoin::Bevel),
+];
+
 impl Translator<'_> {
     /// A class's or a label's `STYLE`, with the warnings of its `GEOMTRANSFORM` directives that
     /// hold no transform: a name that names none, or an expression's syntax error at its place.
@@ -77,28 +93,9 @@ impl Translator<'_> {
                     }
                     "GAP" => style.gap = self.number(d, Range::any()),
                     "INITIALGAP" => style.initial_gap = self.number(d, Range::at_least(0.0)),
-                    "LINECAP" => {
-                        style.line_cap = self.choice(
-                            d,
-                            &[
-                                ("BUTT", LineCap::Butt),
-                                ("ROUND", LineCap::Round),
-                                ("SQUARE", LineCap::Square),
-                                ("TRIANGLE", LineCap::Triangle),
-                            ],
-                        );
-                    }
-                    "LINEJOIN" => {
-                        style.line_join = self.choice(
-                            d,
-                            &[
-                                ("NONE", LineJoin::None),
-                                ("ROUND", LineJoin::Round),
-                                ("MITER", LineJoin::Miter),
-                                ("BEVEL", LineJoin::Bevel),
-                            ],
-                        );
-                    }
+                    "LINECAP" => style.line_cap = self.choice(d, LINE_CAPS),
+                    "LINEJOIN" => style.line_join = self.choice(d, LINE_JOINS),
+                    "ANTIALIAS" => self.antialias(d, &mut style),
                     "LINEJOINMAXSIZE" => {
                         style.line_join_max_size = self.number(d, Range::above(0.0));
                     }
@@ -137,6 +134,14 @@ impl Translator<'_> {
         }
         opacity_beside_binding(&mut style, opacity_value);
         (style, transform_warnings)
+    }
+
+    /// `ANTIALIAS`, getSymbol(2, MS_TRUE, MS_FALSE): loadStyle turns anti-aliasing off for a
+    /// false and leaves it as it was for a true (src/mapfile.c:2777-2783).
+    fn antialias(&mut self, d: &Directive, style: &mut Style) {
+        if self.choice(d, &[("TRUE", true), ("FALSE", false)]) == Some(false) {
+            style.aliased = true;
+        }
     }
 
     /// `SIZE`, kept to `binding`, the last binding it had: bindStyle evaluates an expression

@@ -764,6 +764,7 @@ fn at_a_factor_a_point_draws_its_symbol_scaled_and_its_stand_in_square_as_writte
             cap: LineCap::Butt,
             join: LineJoin::Miter,
             dashes: Dashes::default(),
+            antialiased: true,
         },
     ];
     assert_eq!(drawn(&style, RenderMode::Point, &point, 2.0), expected);

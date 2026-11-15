@@ -59,8 +59,8 @@ use forager_style_ir::{
     RenderMode, Rgba, Style, Symbol, SymbolKind, TransformTree,
 };
 use forager_symbolize::{
-    Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, clip_pixmaps,
-    draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
+    Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, circle,
+    circle_ops, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
 };
 
 use forager_expr::Evaluator;
@@ -165,7 +165,9 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
         };
-        let Some(mut features) = in_view(map, layer, sources, &view, &mut diagnostics).await else {
+        let Some((mut features, centres)) =
+            in_view(map, layer, mode, sources, &view, &mut diagnostics).await
+        else {
             continue;
         };
         if layer.classes.is_empty() {
@@ -187,12 +189,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         }
         let (drawable, undrawn) = drawable(mode, &features);
         let selected = selector.select(drawable, &map.symbols);
-        let drawing = Drawing {
-            mode,
-            layer,
-            scale,
-            view: &view,
-        };
+        let drawing = Drawing::new(mode, layer, scale, &view, centres.as_ref());
         // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
         // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
         // Any other layer's labels go through the label cache.
@@ -255,7 +252,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
 }
 
 /// The reports on the styles of a layer drawn in `mode`: the symbols no symbol is named, and, but
-/// in a point layer, which draws them at its points, the styles of a GEOMTRANSFORM not drawn.
+/// in a point layer, which draws them at its points, and a circle layer, which draws its circle
+/// whatever the transform (`src/mapdraw.c:2390-2396`), the styles of a GEOMTRANSFORM not drawn.
 fn style_reports(
     layer: &Layer,
     mode: RenderMode,
@@ -263,7 +261,7 @@ fn style_reports(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     unknown_symbols(layer, symbols, diagnostics);
-    if mode != RenderMode::Point {
+    if !matches!(mode, RenderMode::Point | RenderMode::Circle) {
         styles_not_drawn(layer, diagnostics);
     }
 }
@@ -295,7 +293,9 @@ fn layer_mode(layer: &Layer, scale: f64, diagnostics: &mut Vec<Diagnostic>) -> O
     drawable_mode(layer, diagnostics)
 }
 
-/// The features a layer of `mode` draws, and how many of each kind of geometry it cannot.
+/// The features a layer of `mode` draws, and how many of each kind of geometry it cannot. A
+/// circle layer takes every feature, as msDrawVectorLayer counts each against its `MAXFEATURES`,
+/// and counts those that are no circle (see [`circle`]), which it draws nothing of.
 fn drawable(
     mode: RenderMode,
     features: &[Feature],
@@ -303,9 +303,11 @@ fn drawable(
     let mut undrawn = BTreeMap::new();
     let mut drawable = Vec::with_capacity(features.len());
     for feature in features {
-        if can_draw(mode, &feature.geometry) {
+        let drawn = can_draw(mode, &feature.geometry);
+        if drawn {
             drawable.push(feature);
-        } else {
+        }
+        if !drawn || (mode == RenderMode::Circle && circle(&feature.geometry).is_none()) {
             *undrawn.entry(kind(&feature.geometry)).or_insert(0usize) += 1;
         }
     }
@@ -442,9 +444,27 @@ struct Drawing<'a> {
     /// The map's scale, which a style's scale range is compared to.
     scale: f64,
     view: &'a View,
+    /// The reprojection of a circle layer's centres, where the layer is reprojected.
+    centres: Option<&'a reproject::LayerReprojection>,
 }
 
-impl Drawing<'_> {
+impl<'a> Drawing<'a> {
+    fn new(
+        mode: RenderMode,
+        layer: &'a Layer,
+        scale: f64,
+        view: &'a View,
+        centres: Option<&'a reproject::LayerReprojection>,
+    ) -> Self {
+        Self {
+            mode,
+            layer,
+            scale,
+            view,
+            centres,
+        }
+    }
+
     /// Where the layer is drawn: into an image of its own, laid over the map, where the layer has
     /// an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block, and straight onto the
     /// map otherwise.
@@ -548,6 +568,33 @@ impl Drawing<'_> {
         }
     }
 
+    /// Draws a circle layer's `selected` features in order, each as its circle (see [`circle`]),
+    /// its centre reprojected where the layer is, and left where it does not reproject, as
+    /// msProjectPoint leaves it: every style of its class in its scale range, as
+    /// circleLayerDrawShape draws them (`src/mapdraw.c:2008-2029`). A feature without a circle
+    /// draws nothing.
+    fn draw_circles<R: Draw>(
+        &self,
+        renderer: &mut R,
+        canvas: &mut Canvas,
+        selected: &[Selected<'_>],
+    ) {
+        for (feature, _, styles) in selected {
+            let Some(mut circle) = circle(&feature.geometry) else {
+                continue;
+            };
+            if let Some(centre) = self.centres.and_then(|c| c.point(circle.centre)) {
+                circle.centre = centre;
+            }
+            for style in styles {
+                if classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
+                    let ops = circle_ops(circle, style, self.view, canvas);
+                    draw_items(renderer, feature.id, ops);
+                }
+            }
+        }
+    }
+
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
     /// from the cache as the [`Plan`] of each class says. A style outside its scale range draws
     /// nothing, where msDrawShape and the cache's pass skip it. A point layer's features are
@@ -558,6 +605,10 @@ impl Drawing<'_> {
             for one in selected {
                 self.draw_points(renderer, canvas, one, |_, _| {});
             }
+            return;
+        }
+        if mode == RenderMode::Circle {
+            self.draw_circles(renderer, canvas, selected);
             return;
         }
         let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {
@@ -654,7 +705,7 @@ fn shown(layer: &Layer) -> bool {
 fn drawn(mode: RenderMode) -> bool {
     matches!(
         mode,
-        RenderMode::Point | RenderMode::Line | RenderMode::Polygon
+        RenderMode::Point | RenderMode::Line | RenderMode::Polygon | RenderMode::Circle
     )
 }
 
@@ -674,22 +725,51 @@ fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<Ren
     }
 }
 
-/// The features of `layer` in view, in the map's projection: those its source delivers for the
-/// area [`asked`], reprojected where the layer is.
+/// The features of `layer` in view, drawn in `mode`: those its source delivers for the area
+/// [`asked`], in the map's projection, reprojected where the layer is. A circle layer's are left
+/// in the layer's projection, and returned with the reprojection of their centres, where the
+/// layer is reprojected: circleLayerDrawShape reprojects only a circle's centre
+/// (`src/mapdraw.c:2008-2011`).
 async fn in_view<S: FeatureSource>(
     map: &Map,
     layer: &Layer,
+    mode: RenderMode,
     sources: &BTreeMap<String, S>,
     view: &View,
     diagnostics: &mut Vec<Diagnostic>,
-) -> Option<Vec<Feature>> {
+) -> Option<(Vec<Feature>, Option<reproject::LayerReprojection>)> {
     let declared = declared_projection(layer, sources, diagnostics);
     let (reprojection, asked) = asked(map, layer, &declared, view, diagnostics)?;
     let mut features = source_features(layer, sources, asked, diagnostics).await?;
+    if mode == RenderMode::Circle {
+        if let Some(reprojection) = &reprojection {
+            centres_not_reprojected(reprojection, layer, &features, diagnostics);
+        }
+        return Some((features, reprojection));
+    }
     if let Some(reprojection) = &reprojection {
         reproject_features(reprojection, layer, &mut features, diagnostics);
     }
-    Some(features)
+    Some((features, None))
+}
+
+/// Reports the circles of a circle layer's `features` whose centre does not reproject by
+/// `reprojection` (see [`circle`]). The centres are reprojected here to count them and again as
+/// they are drawn, which keeps the warning with the other warnings of the layer's reprojection.
+fn centres_not_reprojected(
+    reprojection: &reproject::LayerReprojection,
+    layer: &Layer,
+    features: &[Feature],
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let failed = features
+        .iter()
+        .filter_map(|feature| circle(&feature.geometry))
+        .filter(|one| reprojection.point(one.centre).is_none())
+        .count();
+    if failed > 0 {
+        diagnostics.push(points_not_reprojected(layer, failed));
+    }
 }
 
 /// How `layer` is reprojected into the map's projection, where it is, and the area its source is

@@ -36,7 +36,9 @@ pub enum DrawOp {
     },
     /// Strokes each path; a closed path joins its last point to its first, an open one ends
     /// in caps at both. The cap, the join, and the dashes are those of MapServer's stroke style,
-    /// its `strokeStyleObj`; how they map onto the rasterizer is the renderer's.
+    /// its `strokeStyleObj`; how they map onto the rasterizer is the renderer's. An aliased
+    /// stroke, `antialiased` false, draws every pixel its outline covers at all in the full
+    /// colour, as MapServer's AGG renderer draws a stroke style's `antialiased` false.
     Stroke {
         paths: Vec<Vec<Point>>,
         closed: bool,
@@ -45,6 +47,7 @@ pub enum DrawOp {
         cap: LineCap,
         join: LineJoin,
         dashes: Dashes,
+        antialiased: bool,
     },
     /// Fills the part of the hatch's stroked lines that lies inside its rings.
     Hatch(Hatch),
