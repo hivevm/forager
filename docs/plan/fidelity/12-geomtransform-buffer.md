@@ -5,7 +5,7 @@
 A style of `GEOMTRANSFORM (buffer([shape], n))` draws the buffered shape as MapServer's GEOS draws
 it, for a positive and a negative distance. `msGEOSBuffer` (`src/mapgeos.c:899`) calls
 `GEOSBuffer_r` with 30 segments a quadrant, and `src/mapparser.y:758` binds it. The geometry code is
-the one ticket 11's ADR chose. `buffer` becomes a node of the tree that ADR-0036's successor adds,
+the one ticket 11's ADR chose. `buffer` becomes a node of the tree that ADR-0043 adds,
 next to `simplify`.
 
 Case: `renderers/polygon-as-line-offset.map polygon-as-line-offset.png`. Its polygons are outlined

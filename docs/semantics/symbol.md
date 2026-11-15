@@ -218,31 +218,31 @@ symbol; at `SIZE 8 GAP 3` the tile is 8 × 8, at `SIZE 5` without a gap 5 × 5. 
 at a point at the tile's centre, turned by `ANGLE`, never in seamless mode, and the tile crops it.
 The tile is kept and bounded as a vector symbol's, and refused with `symbol-not-drawn` likewise.
 
-**A hatch over a polygon.** A polygon layer's style whose symbol is a hatch fills the polygon
-with parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprendering.c` and
+**A hatch over a polygon.** A polygon layer's style whose symbol is a hatch fills the polygon with
+parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprendering.c` and
 `msHatchPolygon` and `createHatch` in `src/mapagg.cpp` draw it, in the `COLOR`; without one, the
 polygon's outline is drawn as a line in the `OUTLINECOLOR`, as for any polygon style. The lines
-stand `SIZE` apart, 1 without one, bounded by `MAXSIZE` and then `MINSIZE`; they are `WIDTH`
-wide, 1 without one or for one not above 0, bounded by `MAXWIDTH` and then `MINWIDTH`, the
-spacing, the width, their bounds, and the clip buffer below each scaled ([`scale.md`](scale.md));
-they turn counter-clockwise from the horizontal by `ANGLE`, and are counted from the pixel of the
-map's origin, so that the hatches of neighbouring polygons line up. The polygon is the feature's
-whole shape, all of its parts at once; where it reaches beyond the map's extent, it is first
-clipped, as `msDrawShape` in `src/mapdraw.c` clips it with `msClipPolygonRect` in
-`src/mapprimitive.cpp`, to the extent grown by the class's clip buffer: per style, the largest of
-its symbol's default size, its `SIZE`, and its `WIDTH`, grown by its larger `OFFSET` unless that is
-a line offset, or its `MINSIZE` or `MINWIDTH` where larger, plus 1, rounded half to even; the
-largest of the styles, plus 2. It is clipped in map units, or, where a style of the class has a
-`GEOMTRANSFORM`, in pixels after the transformation, to the image so grown. Each line runs across
-the clipped polygon's bounding box grown by 0.7072 widths, so that the box sets where its dashes
-fall, is dashed by `PATTERN` from its first point, the lengths scaled by the factor the bounds
-applied to the width, and is stroked with butt caps. The stroke is cut from the polygon as
-MapServer's Clipper cuts it ([ADR-0028](../adr/0028-hatch-cut-by-i-overlay.md)): the intersection of
-the polygon with the stroke's rectangles, both read under the even-odd rule, every coordinate
-rounded to a hundredth of a pixel; so where stroked lines overlap, at a `SIZE` below the `WIDTH`,
-and where the polygon's rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the
-pattern by 0, and AGG draws its infinite dashes as solid lines. `OFFSET` moves the polygon after the
-clip. The cut is filled under the non-zero rule through the AGG output format's gamma
+stand `SIZE` apart, 1 without one, bounded by `MAXSIZE` and then `MINSIZE`; they are `WIDTH` wide, 1
+without one or for one not above 0, bounded by `MAXWIDTH` and then `MINWIDTH`, the spacing, the
+width, their bounds, and the clip buffer below each scaled ([`scale.md`](scale.md)); they turn
+counter-clockwise from the horizontal by `ANGLE`, and are counted from the pixel of the map's
+origin, so that the hatches of neighbouring polygons line up. The polygon is the feature's whole
+shape, all of its parts at once; where it reaches beyond the map's extent, it is first clipped, as
+`msDrawShape` in `src/mapdraw.c` clips it with `msClipPolygonRect` in `src/mapprimitive.cpp`, to the
+extent grown by the class's clip buffer: per style, the largest of its symbol's default size, its
+`SIZE`, and its `WIDTH`, grown by its larger `OFFSET` unless that is a line offset, or its `MINSIZE`
+or `MINWIDTH` where larger, plus 1, rounded half to even; the largest of the styles, plus 2. It is
+clipped in map units, or, where a style of the class has a `GEOMTRANSFORM`, in pixels after the
+transformation, to the image so grown. Each line runs across the clipped polygon's bounding box
+grown by 0.7072 widths, so that the box sets where its dashes fall, is dashed by `PATTERN` from its
+first point, the lengths scaled by the factor the bounds applied to the width, and is stroked with
+butt caps. The stroke is cut from the polygon as MapServer's Clipper cuts it
+([ADR-0042](../adr/0042-i-overlay-in-render-agg-and-geo.md)): the intersection of the polygon with
+the stroke's rectangles, both read under the even-odd rule, every coordinate rounded to a hundredth
+of a pixel; so where stroked lines overlap, at a `SIZE` below the `WIDTH`, and where the polygon's
+rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the pattern by 0, and AGG
+draws its infinite dashes as solid lines. `OFFSET` moves the polygon after the clip. The cut is
+filled under the non-zero rule through the AGG output format's gamma
 ([`style-symbol.md`](style-symbol.md)).
 
 A hatch that would not end or that costs past its bounds is not drawn, and the layer warns with

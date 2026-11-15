@@ -19,12 +19,11 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0036,
-//! ADR-0043) replaces the shape of each feature that
-//! passes the layer's filter before it is classed and drawn. The tree holds `generalize`,
-//! `densify`, `simplify`, `outer`, `inner`, and `smoothsia` of `[shape]`, nested; the frontend has
-//! translated MapServer's text into it. `simplify` is computed by the geometry module
-//! (ADR-0041).
+//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0043) replaces the shape of each
+//! feature that passes the layer's filter before it is classed and drawn. The tree holds
+//! `generalize`, `densify`, `simplify`, `outer`, `inner`, and `smoothsia` of `[shape]`, nested;
+//! the frontend has translated MapServer's text into it. `simplify` is computed by the geometry
+//! module (ADR-0041).
 //!
 //! A shape is MapServer's: a type, point, line, or polygon, and a list of parts, a polygon's
 //! rings listed flat, as a source delivers them. What the transforms add or visit is bounded per

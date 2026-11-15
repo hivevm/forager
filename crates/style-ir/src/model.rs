@@ -267,7 +267,7 @@ pub struct Layer {
     /// counted once their class is found, are not drawn, nor their labels. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_features: Option<u32>,
-    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-0036), which
+    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-0043), which
     /// replaces the shape of each feature that passes the layer's filter before it is classed and
     /// drawn, as MapServer transforms each shape it reads. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]

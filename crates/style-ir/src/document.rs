@@ -351,7 +351,7 @@ impl Map {
 
 impl StyleDocument {
     /// Refuses a document with an expression or a transform tree nested deeper than
-    /// [`MAX_EXPRESSION_DEPTH`] (Q-9, ADR-0036).
+    /// [`MAX_EXPRESSION_DEPTH`] (Q-9, ADR-0043).
     fn bounded(self) -> Result<Self, Diagnostic> {
         let expressions = self.map.expressions().into_iter().map(Expr::depth);
         let transforms = self.map.transforms().into_iter().map(TransformTree::depth);
@@ -690,7 +690,7 @@ mod tests {
 
     #[test]
     fn a_transform_tree_past_the_nesting_limit_is_refused_and_one_at_it_reads() {
-        // Verifies: Q-9, ADR-0036, ADR-0043
+        // Verifies: Q-9, ADR-0043
         // `densify(shape, n)` over a chain of `+`: densify, its number, and the operators below
         // it, each a level.
         let chained = |depth: usize| {
@@ -751,7 +751,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_function_unsets_the_transform_with_a_warning() {
-        // Verifies: ADR-0036, ADR-0043
+        // Verifies: ADR-0043
         // A reader of an older minor unsets an unknown function, and so draws the shapes
         // untransformed: on a layer, and on a class's style.
         let shape = r#"{"op":"shape","args":[]}"#;
@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_not_drawn_reason_is_read_as_not_drawn_with_a_warning() {
-        // Verifies: ADR-0036, ADR-0043
+        // Verifies: ADR-0043
         // A reason added in a minor version fails closed: the transform stays not drawn, on a
         // layer and on a class's style, with a warning naming its path.
         let text = with_transforms(r#"{"not_drawn":"offset"}"#);

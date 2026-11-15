@@ -38,7 +38,7 @@ named by a test that pushes it through a load or a render.
   image; the symbolizer draws neither, and the marker size of either is reported as not computed.
 - A circle layer is read as a polygon layer. A style's `ANTIALIAS` and the map's `ANGLE` are not in
   the style IR.
-- A `GEOMTRANSFORM` expression is a transform tree (ADR-0036). A layer's tree is drawn. On a line or
+- A `GEOMTRANSFORM` expression is a transform tree (ADR-0043). A layer's tree is drawn. On a line or
   polygon layer, a class's style with a drawn tree is reported and draws nothing; on a point layer
   the style draws at the layer's points. `buffer`, `simplify`, and `simplifypt` are
   `not_drawn` nodes.
@@ -137,14 +137,14 @@ named by a test that pushes it through a load or a render.
   document never unattended), ADR-0007 (tools), ADR-0009 and ADR-0010 (the Dev Container and CI, for
   the browser test), ADR-0008 (crates and their edges), ADR-0011
   (dependencies), ADR-0013 and ADR-0014 (the style document's new fields), ADR-0017 (C's ports),
-  ADR-0025, ADR-0026, ADR-0027, ADR-0028 (the renderer and its clip), ADR-0029 (fill tiles and
+  ADR-0025, ADR-0026, ADR-0027, ADR-0042 (the renderer and its clip), ADR-0029 (fill tiles and
   images), ADR-0031 (glyphs), ADR-0033 and ADR-0034 (the harness and G-9), ADR-0035 (the example's
-  vendored files), ADR-0036 (the transform tree), ADR-0037 (reprojection), and ADR-0019 and
+  vendored files), ADR-0043 (the transform tree), ADR-0037 (reprojection), and ADR-0019 and
   ADR-0038 (the resolver and the projection references) if ticket 14 ports `somerc`.
 - New `proposed` ADRs before implementation:
   - the tool of the browser test of G-14 (ticket 02);
-  - the geometry code behind `buffer`, `simplify`, and `simplifypt`, with a successor of ADR-0036,
-    whose *Decision* lists the transform tree's nodes (ticket 11);
+  - the geometry code behind `buffer`, `simplify`, and `simplifypt`, with ADR-0043, whose
+    *Decision* lists the transform tree's nodes (ADR-0043 supersedes ADR-0036) (ticket 11);
   - the map's rotation, if it changes the seam of ADR-0037's reprojection (ticket 13).
 - Specification changes the maintainer lands: G-7 removed (ticket 01); SVG symbols as a non-goal,
   and a layer's `ENCODING` (ticket 04).
