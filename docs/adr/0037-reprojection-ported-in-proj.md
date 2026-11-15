@@ -3,18 +3,20 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-14
 - **Deciders:** Markus Brigl
-- **Applies to:** `crates/proj`, its `[dependencies]`, the reprojection of a layer's features and of the area asked of its source in `crates/engine`, the workspace's `clippy.toml` and the three crate copies of it (`crates/engine/clippy.toml`, `crates/label/clippy.toml`, `crates/symbolize/clippy.toml`), `scripts/check-notice.sh` and `THIRD-PARTY-NOTICES.md` for the notice of PROJ, and the EPSG table the msautotest harness `crates/cli/tests/msautotest.rs` passes to the CLI
+- **Applies to:** `crates/proj`, its `[dependencies]`, the reprojection of a layer's features and of the area asked of its source in `crates/engine`, the workspace's `clippy.toml` and the three crate copies of it (`crates/engine/clippy.toml`, `crates/label/clippy.toml`, `crates/symbolize/clippy.toml`), `scripts/check-notice.sh` and `THIRD-PARTY-NOTICES.md` for the notice of PROJ, the fuzz target of the reprojection `fuzz/fuzz_targets/proj.rs`, and the EPSG table the msautotest harness `crates/cli/tests/msautotest.rs` passes to the CLI
 
 ## Context
 
 A layer whose `PROJECTION` differs from the map's is drawn by MapServer in the map's projection
 (`msDrawShape` in `src/mapdraw.c` calls `msProjectShapeEx` in `src/mapproject.c`). Forager reads
 every `PROJECTION` into the style IR as a proj4 string
-([ADR-0019](0019-projection-resolver.md)) and reprojects nothing
-(`docs/plan/reprojection/spec.md`). [ADR-0008](0008-ports-and-adapters-crates.md) already names
-the core crate `proj`, which may depend on `style-ir` alone. The plan assumed proj4rs inside it,
-as the specification does twice: G-11 says "proj4rs shall agree with PROJ", and its assumptions
-list proj4rs among the crates the work leans on.
+([ADR-0019](0019-projection-resolver.md)), and when this was decided it reprojected nothing
+(the spec of the reprojection plan, deleted when its work landed).
+[ADR-0008](0008-ports-and-adapters-crates.md) already names the core crate `proj`, which may depend
+on `style-ir` alone. The plan assumed proj4rs inside it, as the specification then did twice: G-11
+said "proj4rs shall agree with PROJ", and its assumptions listed proj4rs among the crates the work
+leans on. Neither names proj4rs today: G-11 holds the core's reprojection to MapServer at the pin,
+which reprojects through PROJ, and [ADR-0038](0038-proj-references-from-mapserver.md) measures it.
 
 **proj4rs, read at 0.3.0** (2026-10-26, `MIT OR Apache-2.0`, 3liz). It is pure Rust and implements
 `lcc`, `merc`, `tmerc`, `ortho`, and `+over`, among 29 projections. Its normal dependencies are
@@ -48,8 +50,9 @@ and one differing bit can move an edge across a cell of the rasterizer.
 
 **What the cases need.** The msautotest cases the plan brings into scope use `lcc` (EPSG:3978,
 `misc/quoting.map`), longitude and latitude, `merc` and `tmerc` through EPSG:3857 and the UTM
-zones `adapter-epsg` builds in, and `ortho` with `+over` for the late tickets. Datum grids are out
-of scope ([ADR-0019](0019-projection-resolver.md) refuses a definition that names one).
+zones `adapter-epsg` builds in, and `ortho` with `+over`, which the plan's later tickets brought.
+Datum grids are out of scope ([ADR-0019](0019-projection-resolver.md) refuses a definition that
+names one).
 
 **Where the harness's definitions come from.** `crates/cli/tests/msautotest.rs` passes the CLI an
 EPSG table (`epsg_table`) that maps eleven codes to stand-ins in longitude and latitude, enough to
@@ -62,6 +65,15 @@ name it by a path.
 
 The maintainer chose on 2026-11-14 a port of its own over proj4rs, and the suite's `epsg2` as the
 harness's source.
+
+**What the port holds today.** The tickets of the plan that needed them added, under this
+decision's *Scope*, `ortho` (`ortho.rs`) and the parameter `+over`, and two ports of MapServer's
+`src/mapproject.c` beside the port of PROJ: the area asked of a source as `msProjectRect` computes
+it, with the `+over` it adds to both projections (`rect.rs`), and a shape's lines as
+`msProjectShapeLine` reprojects them, cut at the horizon of `ortho` and wrapped at the dateline of
+`+over` (`shape.rs`). The engine reprojects a layer's features and the area it asks of their source
+through them, the points its horizon search adds bounded by Q-9. The work they are is in scope of
+this decision: the same formulas, the same `libm`, and no crate beyond `style-ir`.
 
 ## Decision
 
@@ -86,9 +98,8 @@ functions and no other dependency but `style-ir`.
 
 **Out of scope:**
 
-- the area asked of a source as `msProjectRect` computes it, horizon clipping into `ortho`, and
-  the dateline of `+over`, each a ticket of the plan;
-- the tolerance of G-11, which a measurement against PROJ sets;
+- the tolerance of G-11, which the specification states and
+  [ADR-0038](0038-proj-references-from-mapserver.md) measures;
 - datum grids, WKT, PROJJSON, PROJ pipelines, and raster reprojection.
 
 ## Alternatives considered
@@ -139,18 +150,19 @@ functions and no other dependency but `style-ir`.
   luck. Errors are this crate's own values, so a malformed proj4 string or a point past a
   projection's domain is a diagnostic (Q-3).
 - Negative / trade-offs: every projection the cases bring is code to port and test. The port can
-  diverge from PROJ where proj4rs would not, so G-11's measurement against PROJ is the guard, not
-  an option. A user's mapfile in a projection `proj` lacks draws nothing of that layer until a
-  ticket adds it. A case whose codes `epsg2` lacks stays out of scope.
-- Follow-ups:
-  - **The specification.** G-11 and the assumption on the crates the work leans on name proj4rs. A
-    human lands the change that names `proj` instead.
-  - **The plan.** The reprojection spec and tickets 01 and 02 name proj4rs and change with it.
+  diverge from PROJ where proj4rs would not, so G-11's measurement against MapServer's call of
+  PROJ is the guard, not an option. A user's mapfile in a projection `proj` lacks draws nothing
+  of that layer until a ticket adds it. A case whose codes `epsg2` lacks stays out of scope.
+- The follow-ups of 2026-11-14 are done:
+  - **The specification.** G-11 and the assumption on the crates the work leans on no longer name
+    proj4rs.
+  - **The plan.** The reprojection spec and its tickets landed and were deleted.
   - **The other crates on the output path.** The bans of the mathematics in `clippy.toml` hold
-    them too; two tests, in `crates/render/src/hatch.rs` and `crates/render-agg/src/lib.rs`, call
-    std's `sin` and `cos` today and move to `libm`.
-  - **The notice of PROJ** joins `THIRD-PARTY-NOTICES.md`, and `scripts/check-notice.sh` learns the
-    files that name a PROJ source.
+    them too; the two tests in `crates/render/src/hatch.rs` and `crates/render-agg/src/lib.rs`
+    that called std's `sin` and `cos` call `libm`.
+  - **The notice of PROJ** stands in `THIRD-PARTY-NOTICES.md`, and `scripts/check-notice.sh` holds
+    the files that name a PROJ source to it.
+- Follow-ups: none.
 
 ## Enforcement
 

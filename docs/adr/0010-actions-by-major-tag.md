@@ -3,7 +3,7 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-24
 - **Deciders:** Markus Brigl
-- **Applies to:** every `uses:` line under `.github/workflows/`, `.github/dependabot.yml`, and the `sensors` job of `checks.yml`
+- **Applies to:** every `uses:` line under `.github/workflows/`, `.github/dependabot.yml`, the `sensors` job of `.github/workflows/checks.yml`, and the sensor of the action references `scripts/sensor-action-refs.sh` with its self-test `scripts/test-sensor-action-refs.sh`
 
 ## Context
 
@@ -31,4 +31,5 @@ None — cheap to reverse.
 ## Enforcement
 
 `scripts/sensor-action-refs.sh --require major-tag` runs in `scripts/check-all.sh` and in the
-`sensors` job of `checks.yml`, each beside a comment that cites this ADR with `Verifies:`.
+`sensors` job of `.github/workflows/checks.yml`, each beside a comment that cites this ADR with
+`Verifies:`.

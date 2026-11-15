@@ -3,7 +3,7 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-10-29
 - **Deciders:** Markus Brigl
-- **Applies to:** `scripts/build-mapserver.sh`, `.github/workflows/noise.yml`, every run of MapServer itself, `crates/cli/tests/conformance/mapserver_labels.c`, `scripts/check-notice.sh`, the records of MapServer's labels under `crates/cli/tests/conformance/labels/` and the mark `labels-hold` of `crates/cli/tests/conformance/cases.txt`, and every comparison of label positions with MapServer's
+- **Applies to:** `scripts/build-mapserver.sh`, `.github/workflows/noise.yml`, every run of MapServer itself, `crates/cli/tests/conformance/mapserver_labels.c`, the harness's noise module `crates/cli/tests/conformance/noise/`, `scripts/check-notice.sh`, the records of MapServer's labels under `crates/cli/tests/conformance/labels/` and the mark `labels-hold` of `crates/cli/tests/conformance/cases.txt`, and every comparison of label positions with MapServer's
 
 ## Context
 

@@ -3,7 +3,7 @@
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-15
 - **Deciders:** Markus Brigl
-- **Applies to:** the `FeatureSource` port of `crates/ports` and its declared projection, its use by a layer of `PROJECTION AUTO` in `crates/engine`, the `.prj` reader of `crates/adapter-shapefile` and its fuzz target under `fuzz/`, and the declaration of `crates/adapter-geojson`
+- **Applies to:** the `FeatureSource` port of `crates/ports` and its declared projection, its use by a layer of `PROJECTION AUTO` in `crates/engine`, the `.prj` reader of `crates/adapter-shapefile` and its fuzz target `fuzz/fuzz_targets/prj.rs`, and the declaration of `crates/adapter-geojson`
 
 ## Context
 
