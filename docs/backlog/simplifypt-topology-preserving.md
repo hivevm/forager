@@ -4,7 +4,7 @@
 through `GEOSTopologyPreserveSimplify_r` (`src/mapgeos.c:946`), GEOS's
 `TopologyPreservingSimplifier`, a Douglas-Peucker that refuses a simplification which would make
 the result cross itself or another ring. The maintainer chose the geo crate for the geometry code
-(ADR-draft-geometry-through-geo). geo's `SimplifyVwPreserve` is Visvalingam-Whyatt, whose
+(ADR-0041). geo's `SimplifyVwPreserve` is Visvalingam-Whyatt, whose
 tolerance is an area, not a distance. Against GEOS 3.12.1 it kept 9, 7, 8, and 3 points where GEOS
 kept 4, 5, 3, and 2, on 4 of the 6 results of `testlines.shp` at 10 and 50 px. So `simplifypt`
 stays a `not_drawn` reason of the transform tree.

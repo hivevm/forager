@@ -2,7 +2,7 @@
 
 **Observed:** fidelity ticket 11 (2026-11-15). GEOS repairs a simplified polygon that is not valid
 by a buffer of 0 (`DPTransformer.createValidArea`); Forager repairs it by geo's `unary_union`
-(ADR-draft-geometry-through-geo). On 2,467 small random valid polygons, of 6 to 9 vertices and 2
+(ADR-0041). On 2,467 small random valid polygons, of 6 to 9 vertices and 2
 decimals, at 3, 6, and 10 units, 40 results were repaired: 33 matched GEOS 3.12.1 within 10⁻⁷ with
 its point count, 7 kept another lobe of a ring that crosses itself than GEOS keeps, 27 to 54 units
 away. For example, `62.55 29.06, 38.94 37.17, 37.4 31.93, 39.85 48.91, 55.51 87.12, 61.37 61.97,

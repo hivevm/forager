@@ -15,7 +15,7 @@ use crate::resource::load_once;
 /// The images of one render, by their path, each the decoded image or why it has none, the
 /// tiles of its polygons' fills, whose bytes count with the images' (ADR-0029), and the fonts and
 /// glyphs of its TrueType markers, whose fonts share the labels' store
-/// (ADR-draft-truetype-marker-glyph-through-a-port).
+/// (ADR-0044).
 #[derive(Default)]
 pub(crate) struct Images {
     loaded: Pixmaps,

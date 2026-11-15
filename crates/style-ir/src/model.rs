@@ -696,7 +696,7 @@ pub enum GeomTransform {
     #[serde(rename = "labelcenter")]
     LabelCenter,
     /// An expression of shape functions, its transform tree
-    /// (ADR-draft-transform-tree-with-simplify-and-buffer), which a class's style of a line or a
+    /// (ADR-0043), which a class's style of a line or a
     /// polygon layer draws: the tree is evaluated on the shape in pixels, `[map_cellsize]` at the
     /// layer's value, and a line result is stroked, a point or a polygon result shaded, in the
     /// style. A tree `not_drawn`, one that fails on a shape, or one past the bounds the layer's

@@ -124,7 +124,7 @@ const TESTLINES_PX: [&[(f64, f64)]; 3] = [
 
 #[test]
 fn the_case_s_lines_keep_geos_s_points_in_map_units() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // The layer vertex2 of renderers/geomtransform-vertex.map: simplify([shape],25).
     let expected: [&[(f64, f64)]; 3] = [
         &[
@@ -153,7 +153,7 @@ fn the_case_s_lines_keep_geos_s_points_in_map_units() {
 
 #[test]
 fn the_case_s_lines_keep_geos_s_points_in_pixels() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // The style simplify([shape],10) of renderers/geomtransform-vertex.map, on the lines in pixels.
     let expected: [&[(f64, f64)]; 3] = [
         &[
@@ -184,7 +184,7 @@ fn the_case_s_lines_keep_geos_s_points_in_pixels() {
 
 #[test]
 fn a_ring_loses_its_first_point_where_it_lies_within_the_tolerance_of_its_neighbours() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // GEOS: POLYGON ((0 0, 0 10.5, 10.25 10.75, 10.5 0.25, 0 0)) at 2.
     let input = area(
         &[
@@ -212,7 +212,7 @@ fn a_ring_loses_its_first_point_where_it_lies_within_the_tolerance_of_its_neighb
 
 #[test]
 fn a_hole_that_collapses_is_removed() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // GEOS: POLYGON ((0 0, 0 100, 100 100, 100 0, 0 0)) at 2.
     let input = area(
         &[
@@ -239,7 +239,7 @@ fn a_hole_that_collapses_is_removed() {
 
 #[test]
 fn a_shell_that_collapses_leaves_no_polygon() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // GEOS: POLYGON EMPTY at 2, the hole removed with its shell.
     let input = area(
         &[
@@ -256,7 +256,7 @@ fn a_shell_that_collapses_leaves_no_polygon() {
 
 #[test]
 fn a_valid_result_is_kept_as_it_is() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // GEOS: POLYGON ((0 0, 0 100, 100 99.75, 100 0, 0 0), (20 20, 40 20, 40 40, 20 40, 20 20)) at
     // 2: the shell's and the hole's slight bends are dropped, and nothing is repaired.
     let input = area(
@@ -299,7 +299,7 @@ fn a_valid_result_is_kept_as_it_is() {
 
 #[test]
 fn an_invalid_result_is_repaired_within_a_millionth_of_geos_s() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // At 10 the ring keeps 51.46 30.09, 26.46 46.85, 73.13 65.88, and 59.31 62.82, whose last
     // edge crosses its first: GEOS's buffer of 0 gives POLYGON ((51.460000000000001 30.09,
     // 26.460000000000001 46.850000000000001, 58.625411520418055 59.965658479399089,
@@ -366,7 +366,7 @@ fn a_tolerance_that_is_no_number_keeps_every_point() {
 
 #[test]
 fn each_section_is_charged_before_it_is_scanned() {
-    // Verifies: Q-9, ADR-draft-geometry-through-geo
+    // Verifies: Q-9, ADR-0041
     // A line of 5 points at 0.5: the whole line's 3 inner points, split at (1, 1), the first of
     // two farthest; then (1, 1) to (4, 0), whose 2 inner points lie equally far, split at the
     // first; then (2, 0) to (4, 0), its 1 inner point. Every point is kept.
@@ -385,7 +385,7 @@ fn each_section_is_charged_before_it_is_scanned() {
 
 #[test]
 fn equally_far_points_split_at_the_first_as_geos_splits() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // (1, 1) and (2, 1) lie 1 from the segment between the ends: GEOS splits at the first and
     // keeps it, LINESTRING (0 0, 1 1, 3 0) at 0.5, where geo's Simplify keeps (2, 1).
     let input = [(0.0, 0.0), (1.0, 1.0), (2.0, 1.0), (3.0, 0.0)];
@@ -430,7 +430,7 @@ fn zigzag(n: u32) -> Vec<Coord> {
 
 #[test]
 fn a_zigzag_that_keeps_every_point_needs_no_recursion() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // geo's recursive Simplify overflowed a stack of 1 MiB at 4,500 such points. The sections
     // shrink by one point each, so 10,000 points visit 49,985,001 inner points in all.
     let input = zigzag(10_000);
@@ -441,7 +441,7 @@ fn a_zigzag_that_keeps_every_point_needs_no_recursion() {
 
 #[test]
 fn the_points_a_repair_adds_are_charged_as_added() {
-    // Verifies: Q-9, ADR-draft-geometry-through-geo
+    // Verifies: Q-9, ADR-0041
     // Two bars that cross, a multipolygon GEOS finds invalid: the union's outline is a cross of 12
     // corners and its closing point, 13 points from the bars' 10, so 3 are added.
     let rectangle = |x0: f64, y0: f64, x1: f64, y1: f64| {

@@ -57,7 +57,7 @@ glyph of its `CHARACTER`, its first character or a numeric entity such as `&#873
 its start, as `msUTF8ToUniChar` reads it, in the font the font set names by its `FONT`, at each
 point inside the map's extent, as the TrueType branch of `msDrawMarkerSymbolInternal` and
 `drawGlyphMarker` in `src/maprendering.c` and `agg2RenderGlyphsPath` in `src/mapagg.cpp` draw it
-([ADR-draft-truetype-marker-glyph-through-a-port](../adr/draft-truetype-marker-glyph-through-a-port.md)).
+([ADR-0044](../adr/0044-truetype-marker-glyph-through-a-port.md)).
 Its colours are a filled symbol's: the glyph is filled with `COLOR` and outlined with
 `OUTLINECOLOR`, at the style's `WIDTH` cut to an integer, plus 1. The glyph is read as a label's is,
 unhinted, at `MS_MAX(MS_NINT(scale), 1)` points, the scale the style's size bounded by `MINSIZE` and

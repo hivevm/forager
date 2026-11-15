@@ -1,4 +1,4 @@
-//! The browser example in a real browser (G-14, ADR-draft-browser-test-over-webdriver): the dev
+//! The browser example in a real browser (G-14, ADR-0040): the dev
 //! server serves `examples/web/` and the bundle `scripts/build-web.sh` wrote, headless Chrome
 //! opens the page over WebDriver, and the canvas and the list of diagnostics are compared with
 //! the native render of the same input.
@@ -200,7 +200,7 @@ fn first_difference(a: &[u8], b: &[u8]) -> Option<usize> {
 
 #[test]
 fn the_page_shows_the_image_the_bindings_return_for_its_sample() {
-    // Verifies: G-14, ADR-draft-browser-test-over-webdriver
+    // Verifies: G-14, ADR-0040
     if !required("the_page_shows_the_image_the_bindings_return_for_its_sample") {
         return;
     }
@@ -259,7 +259,7 @@ END
 
 #[test]
 fn the_page_lists_each_diagnostic_of_a_faulty_mapfile() {
-    // Verifies: ADR-draft-browser-test-over-webdriver
+    // Verifies: ADR-0040
     if !required("the_page_lists_each_diagnostic_of_a_faulty_mapfile") {
         return;
     }
@@ -289,7 +289,7 @@ fn the_page_lists_each_diagnostic_of_a_faulty_mapfile() {
 /// answer of the protocol's errors is returned as an error with its code and message.
 #[test]
 fn the_webdriver_client_reads_answers_and_the_protocol_s_errors() {
-    // Verifies: ADR-draft-browser-test-over-webdriver
+    // Verifies: ADR-0040
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let address = listener.local_addr().unwrap();

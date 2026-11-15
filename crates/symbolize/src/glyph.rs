@@ -14,7 +14,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The port a TrueType marker asks its glyph of, which the engine answers through the render's
-//! fonts and `label` (ADR-draft-truetype-marker-glyph-through-a-port).
+//! fonts and `label` (ADR-0044).
 
 use std::rc::Rc;
 

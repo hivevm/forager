@@ -27,7 +27,7 @@
 # must stand in the table of scripts/lib/notice.sh, which holds the copyright lines each source
 # holds at PROJ 9.4.0, and the header must hold each of those lines.
 # A Rust file under crates/symbolize that names a JTS source — a Java file, such as
-# DouglasPeuckerLineSimplifier.java — follows JTS (ADR-draft-geometry-through-geo) and must hold
+# DouglasPeuckerLineSimplifier.java — follows JTS (ADR-0041) and must hold
 # JTS's notice: the copyright line of its sources, and the third condition and the disclaimer of
 # the Eclipse Distribution License 1.0 (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then
 # hold the same lines, as the licence's second condition asks of a binary.

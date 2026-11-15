@@ -41,7 +41,7 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
 // WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//! The geometry of `simplify` (ADR-draft-geometry-through-geo): a line or a polygon simplified as
+//! The geometry of `simplify` (ADR-0041): a line or a polygon simplified as
 //! GEOS's `DouglasPeuckerSimplifier` simplifies it. A line keeps the points of a Douglas-Peucker
 //! ported from JTS, which keeps its pending sections on a stack of its own, so no line nests it
 //! deeper than the stack allows. A polygon's rings are simplified each as a line, then the steps

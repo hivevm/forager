@@ -1896,7 +1896,7 @@ fn sizeunits_size_a_layers_styles_in_map_units_by_the_cellsize() {
 
 #[test]
 fn a_class_style_of_a_not_drawn_tree_draws_nothing_and_warns_its_reason() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // MapServer evaluates buffer through GEOS, which the tree has no node for yet: the style draws
     // nothing, with a warning naming the reason, and the class's other style draws as alone.
     let plain = line_style(BLUE, 3.0);
@@ -1963,7 +1963,7 @@ fn a_class_style_of_labelcenter_in_a_line_or_polygon_layer_draws_nothing_and_is_
 
 #[test]
 fn a_point_layer_draws_a_style_of_a_geomtransform_expression_at_its_points() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // pointLayerDrawShape draws every style at each point whatever its transform: a point layer's
     // style of an expression, drawn or not, draws its markers, and nothing is reported.
     for tree in [
@@ -2024,7 +2024,7 @@ fn of_tree(tree: TransformTree, style: Style) -> Style {
 
 #[test]
 fn a_line_layers_style_of_generalize_strokes_the_line_generalized_in_pixels() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // msDrawTransformedShape evaluates the style's expression on the shape in pixels and strokes
     // the line by msDrawLineSymbol: a tolerance of 70 drops the peak 64 pixels from the first
     // point, though it lies 640 map units away, and the style strokes the base line as a plain
@@ -2049,7 +2049,7 @@ fn a_line_layers_style_of_generalize_strokes_the_line_generalized_in_pixels() {
 
 #[test]
 fn a_style_whose_tree_yields_a_polygon_is_shaded() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // msDrawTransformedShape shades a polygon result by msDrawShadeSymbol, filled and outlined:
     // outer([shape]) of the square with a hole draws as the square alone in a plain style.
     let style = Style {
@@ -2093,7 +2093,7 @@ fn outer_then_densified_by_zero() -> TransformTree {
 
 #[test]
 fn a_style_whose_tree_fails_on_a_shape_draws_nothing_there_with_one_warning() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // outer fails the line, MapServer's parser failing, and msDrawMap makes no map. Forager draws
     // nothing of the style on the line, the polygon's outer ring, the other style everywhere, and
     // warns once, naming the style and the failure.
@@ -2127,7 +2127,7 @@ fn a_style_whose_tree_fails_on_a_shape_draws_nothing_there_with_one_warning() {
 
 #[test]
 fn a_style_whose_tree_fails_for_two_reasons_warns_once_naming_the_first() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // The line fails outer, the polygon densify's tolerance of 0: the warning names the failure
     // of the shape drawn first.
     let style = of_tree(outer_then_densified_by_zero(), line_style(BLUE, 1.0));
@@ -2153,7 +2153,7 @@ fn a_style_whose_tree_fails_for_two_reasons_warns_once_naming_the_first() {
 
 #[test]
 fn a_styles_map_cellsize_is_the_layers() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // MapServer binds no [map_cellsize] for a style at the pin; Forager binds the layer's: the
     // map's cellsize of 10 feet in the layer's meters, 10 * 12 / 39.3701, about 3.05. 22 times
     // it, about 67, drops the peak 64 pixels away; 20 times, about 61, keeps it. The map's
@@ -2184,7 +2184,7 @@ fn a_styles_map_cellsize_is_the_layers() {
 
 #[test]
 fn a_shape_left_without_a_point_in_pixels_draws_no_style_tree_and_warns_nothing() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // msTransformShapeSimplify empties a line shorter than a pixel, and msDrawShape returns before
     // it draws a style (src/mapdraw.c:2506-2507): simplify, which fails a shape without points, is
     // never evaluated, so no warning is given and nothing is drawn.
@@ -2207,7 +2207,7 @@ fn a_shape_left_without_a_point_in_pixels_draws_no_style_tree_and_warns_nothing(
 
 #[test]
 fn a_part_left_without_points_in_pixels_stays_the_shapes_first() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // msTransformShapeSimplify keeps a part it empties with no points (src/mapprimitive.cpp:
     // 968-969), here the first, closed within a pixel; generalize, which keeps the first part
     // alone, keeps the empty one: the style draws nothing of the second part, along pixel row 80.
@@ -2237,7 +2237,7 @@ const SHORT_LONG_SHORT: &str = r#"{"type": "FeatureCollection", "features": [
 
 #[test]
 fn style_trees_share_the_bounds_of_their_layers_geomtransform() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer, Q-9
+    // Verifies: ADR-0043, Q-9
     // densify by 0.0002 pixels adds about 50 000, 500 000, and 50 000 points to the three lines,
     // within the 1 000 000 a layer's transforms may add. The layer's densify by 0.00025 map units
     // adds 480 000 first: the long line passes the bound, and the style trees draw nothing on it
@@ -2311,7 +2311,7 @@ fn codes(rendered: &Rendered) -> Vec<&str> {
 
 #[test]
 fn a_layer_of_a_not_drawn_transform_draws_nothing_and_warns_its_reason() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0036, ADR-0043
     // MapServer applies the layer's GEOMTRANSFORM to each shape msLayerNextShape reads;
     // simplifypt needs GEOS's topology-preserving simplifier, which Forager has not: the layer
     // draws nothing, with the warning naming the reason.
@@ -2365,7 +2365,7 @@ fn a_layer_of_generalize_draws_the_generalized_line() {
 
 #[test]
 fn a_layer_of_simplify_draws_the_simplified_line() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0043
     // GEOS's Douglas-Peucker drops the peak 40 from the line between the ends at a tolerance of
     // 50, and keeps it at 30.
     let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));

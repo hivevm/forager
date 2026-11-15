@@ -91,7 +91,7 @@ outside the part.
 lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`, the rules `shape_exp`, `math_exp`,
 and `string_exp`), function names without regard to case, without the parentheses `loadLayer` and
 `loadStyle` strip. The frontend translates it into a transform tree (ADR-0036,
-ADR-draft-transform-tree-with-simplify-and-buffer): `[shape]`, and `generalize`, `densify`,
+ADR-0043): `[shape]`, and `generalize`, `densify`,
 `simplify`, `outer`, `inner`, and `smoothsia` of a shape, nested. A number is written,
 `[map_cellsize]`, or computed of those by `+ - * / % ^` and parentheses, as the grammar reduces
 them; the frontend folds every operation without `[map_cellsize]` to one number. A unary `-` leaves
@@ -133,7 +133,7 @@ engine draws its tree's functions:
   longer than `t` cut into `floor(length / t) + 1` equal ones. It fails a point and a `t` not
   above 0.
 - `simplify(s, t)` (`msGEOSSimplify`, `src/mapgeos.c`): `s` as GEOS's Douglas-Peucker simplifies
-  it at the tolerance `t`, by a Douglas-Peucker ported from JTS (ADR-draft-geometry-through-geo).
+  it at the tolerance `t`, by a Douglas-Peucker ported from JTS (ADR-0041).
   A point shape keeps its points. Each part of a line keeps its end points and the points the
   Douglas-Peucker keeps, which splits a section at the first of its farthest points, as GEOS
   does, and needs no recursion, so no line overflows the stack. A part without points is dropped. A
@@ -218,7 +218,7 @@ same failures.
 `msDrawTransformedShape` leaves its parser's `dblval` unset, so a style's `[map_cellsize]` reads an
 uninitialised double at the pin (`src/mapparser.y:1121-1128`). No case of msautotest uses it;
 Forager deviates to the one value the name has on a layer
-(ADR-draft-transform-tree-with-simplify-and-buffer).
+(ADR-0043).
 
 Where a style's tree fails on a shape, MapServer's draw of the layer fails and `msDrawMap` makes no
 map (`src/mapdraw.c:1402-1405`, `508-519`). Forager deviates: the style draws nothing on that

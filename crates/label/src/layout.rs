@@ -167,7 +167,7 @@ pub struct MarkerGlyph {
 }
 
 /// The glyph of `character` in `font` at `glyph_size` points, as the TrueType branch of
-/// `msDrawMarkerSymbolInternal` takes it (ADR-draft-truetype-marker-glyph-through-a-port): the
+/// `msDrawMarkerSymbolInternal` takes it (ADR-0044): the
 /// character mapped through the font's Unicode character map, glyph 0 where the font lacks it, as
 /// `FT_Get_Char_Index` maps it; drawn unhinted at the pixel size of `glyph_size` (see
 /// [`pixel_size`]), or the font's `?` where it cannot be, as `msGetGlyphByIndex` falls back;

@@ -20,11 +20,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0036,
-//! ADR-draft-transform-tree-with-simplify-and-buffer) replaces the shape of each feature that
+//! ADR-0043) replaces the shape of each feature that
 //! passes the layer's filter before it is classed and drawn. The tree holds `generalize`,
 //! `densify`, `simplify`, `outer`, `inner`, and `smoothsia` of `[shape]`, nested; the frontend has
 //! translated MapServer's text into it. `simplify` is computed by the geometry module
-//! (ADR-draft-geometry-through-geo).
+//! (ADR-0041).
 //!
 //! A shape is MapServer's: a type, point, line, or polygon, and a list of parts, a polygon's
 //! rings listed flat, as a source delivers them. What the transforms add or visit is bounded per
@@ -125,7 +125,7 @@ fn evaluated(
 }
 
 /// What the transform trees of a layer's class styles share in one render
-/// (ADR-draft-transform-tree-with-simplify-and-buffer, *A class's style*): the layer's [`Budget`],
+/// (ADR-0043, *A class's style*): the layer's [`Budget`],
 /// which its `GEOMTRANSFORM` charged first; the value of `[map_cellsize]`; the bound of Q-9 once
 /// an evaluation passed it, after which none is evaluated; and the failure of the last
 /// evaluation, until the engine takes it.

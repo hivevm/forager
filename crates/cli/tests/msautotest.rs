@@ -661,7 +661,7 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
     let n = 6_000_u32;

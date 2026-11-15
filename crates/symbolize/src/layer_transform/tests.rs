@@ -540,7 +540,7 @@ fn simplified(tolerance: f64) -> TransformShape {
 
 #[test]
 fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer, ADR-draft-geometry-through-geo
+    // Verifies: ADR-0043, ADR-0041
     // msGEOSSimplify: each part by GEOS's Douglas-Peucker, a part GEOS builds empty dropped from
     // the result by its transformer.
     let parts = Geometry::MultiLineString(vec![
@@ -562,7 +562,7 @@ fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
 
 #[test]
 fn simplify_groups_a_polygon_s_rings_as_mapserver_hands_them_to_geos() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // Three outer rings by msGetOuterList, each with the inner rings msGetInnerList finds inside
     // it, in the order of the outer ones: the hole listed after the third ring goes with the
     // second. A multipolygon of the three, valid, kept as simplified: each square's bend at 10.5
@@ -627,7 +627,7 @@ fn simplify_groups_a_polygon_s_rings_as_mapserver_hands_them_to_geos() {
 
 #[test]
 fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points or a polygon of
     // fewer than 4; GEOS cannot build a line of 1 point or a ring that is not closed; and its
     // DouglasPeuckerSimplifier refuses a tolerance below 0. Each fails "Executing simplify".

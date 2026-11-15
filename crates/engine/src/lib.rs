@@ -417,7 +417,7 @@ fn layer_canvas<'c>(
 }
 
 /// The fonts the TrueType symbols of the `selected` features' styles name, each once, which their
-/// markers draw their glyphs from (ADR-draft-truetype-marker-glyph-through-a-port); those of
+/// markers draw their glyphs from (ADR-0044); those of
 /// styles outside their scale range at the map's `scale` are left out, as their pixmaps are, but
 /// for the first style of a class for which `holds_marker` is true: the label cache sizes that
 /// marker by msGetMarkerSize whatever its scale range (`src/maplabel.c:344-352, 604-608`).
@@ -1082,7 +1082,7 @@ fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diag
 
 /// Warns of each class style of a line or a polygon layer whose `GEOMTRANSFORM` the engine does
 /// not draw on a style: a transform tree `not_drawn`, naming its reason
-/// (ADR-draft-transform-tree-with-simplify-and-buffer, *Diagnostics*), which MapServer evaluates
+/// (ADR-0043, *Diagnostics*), which MapServer evaluates
 /// by msDrawTransformedShape, through GEOS or a JavaScript engine, or fails; and labelcenter, which
 /// fails the layer's draw there (src/mapgeomtransform.c:245), msDrawLabelCache alone drawing it on
 /// a label's style. The style draws nothing; the class's other styles draw in their passes as
@@ -1116,7 +1116,7 @@ fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
 }
 
 /// Warns of the class styles' transform trees of `layer` that drew nothing
-/// (ADR-draft-transform-tree-with-simplify-and-buffer, *A class's style*): of each style in
+/// (ADR-0043, *A class's style*): of each style in
 /// `failures`, its first failure, once, as `geomtransform-not-drawn`; and, where they passed
 /// `over_limit`, a bound of Q-9 they share with the layer's `GEOMTRANSFORM`, once for the layer as
 /// `geomtransform-over-limit`. MapServer makes no map where msDrawTransformedShape fails

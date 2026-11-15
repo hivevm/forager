@@ -340,7 +340,7 @@ fn only_the_cli_s_tests_run_wasm_in_wasmi() {
 
 #[test]
 fn the_dev_server_s_tests_depend_on_the_bindings_and_serde_json_alone() {
-    // Verifies: ADR-draft-browser-test-over-webdriver
+    // Verifies: ADR-0040
     // The browser test's WebDriver client is the project's own, on std and serde_json: a crate
     // that drives a browser, or any other, comes in only by a revision of the ADR.
     let ws = workspace();
@@ -414,7 +414,7 @@ fn package_dependents(ws: &Workspace, dependency: &str) -> BTreeSet<String> {
 
 #[test]
 fn only_render_agg_cuts_polygons_with_i_overlay() {
-    // Verifies: ADR-0028, ADR-draft-i-overlay-in-render-agg-and-geo, ADR-draft-geometry-through-geo
+    // Verifies: ADR-0028, ADR-0042, ADR-0041
     // Of the resolved graph, render-agg and geo alone depend on i_overlay directly, which implies
     // that no other workspace crate does; symbolize alone of the workspace depends on geo.
     let ws = workspace();

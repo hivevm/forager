@@ -799,7 +799,7 @@ mod tests {
 
     #[test]
     fn where_rings_overlap_or_repeat_the_hatch_there_is_empty() {
-        // Verifies: ADR-0028, ADR-draft-i-overlay-in-render-agg-and-geo
+        // Verifies: ADR-0028, ADR-0042
         // Two rings that overlap from x = 20 to 40, and one ring given twice, under a line 3 wide
         // at y = 30.25: under the even-odd rule the part covered twice is outside the polygon,
         // on the line's edge rows 28 and 31 too.
@@ -818,7 +818,7 @@ mod tests {
 
     #[test]
     fn a_hole_stays_white_under_rotated_dashes() {
-        // Verifies: ADR-0028, ADR-draft-i-overlay-in-render-agg-and-geo
+        // Verifies: ADR-0028, ADR-0042
         // A square with a hole, its hole wound as the square is and touching nothing, under
         // dashed lines 3 wide at 30°, 4 apart: no pixel inside the hole is touched.
         let outer = rectangle(4.0, 4.0, 60.0, 60.0);

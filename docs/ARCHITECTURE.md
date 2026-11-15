@@ -35,7 +35,7 @@ golden path and the test pattern an agent copies from are named here.
   of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
   no text of the mapfile and is read to the same nesting bound (`transform.rs`,
   ADR-0036,
-  [ADR-draft-transform-tree-with-simplify-and-buffer](adr/draft-transform-tree-with-simplify-and-buffer.md)),
+  [ADR-0043](adr/0043-transform-tree-with-simplify-and-buffer.md)),
   the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
@@ -167,7 +167,7 @@ golden path and the test pattern an agent copies from are named here.
   tree is `not_drawn` or fails, with a warning (`classes.rs`,
   ADR-0036), hands the budget the layer's transform left to its class styles' trees and warns of
   each style's first failure and of the bound they pass
-  (ADR-draft-transform-tree-with-simplify-and-buffer), draws each feature that passes the layer's
+  (ADR-0043), draws each feature that passes the layer's
   filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
   the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
   bound and computed
@@ -241,7 +241,7 @@ golden path and the test pattern an agent copies from are named here.
   point and the inverse of the image's transformation (`marker.rs`); a TrueType symbol's glyph at
   a point, anchored, along a line, and tiled over a polygon, asked of the port `Glyphs` the engine
   answers through `label`; the label cache sizes a class's TrueType marker by the same glyphs
-  ([ADR-draft-truetype-marker-glyph-through-a-port](adr/draft-truetype-marker-glyph-through-a-port.md),
+  ([ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md),
   `glyph.rs`, `glyph_marker.rs`); a line's dashes, and the
   style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
   canvas a layer draws on, which the images of the render's pixmaps are handed on and which
@@ -269,7 +269,7 @@ golden path and the test pattern an agent copies from are named here.
   layer's transform to its styles' (`layer_transform.rs`, Q-9),
   `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
   collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
-  geo crate (`geometry.rs`, [ADR-draft-geometry-through-geo](adr/draft-geometry-through-geo.md)). A
+  geo crate (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)). A
   line style's symbol with a
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
@@ -324,7 +324,7 @@ golden path and the test pattern an agent copies from are named here.
   is the one crate that may use `unsafe` ([ADR-0025](adr/0025-agg-rust-rasterizer.md)); it cuts a
   hatch from its polygon with i_overlay, the one crate of the workspace that depends on it
   directly
-  ([ADR-draft-i-overlay-in-render-agg-and-geo](adr/draft-i-overlay-in-render-agg-and-geo.md);
+  ([ADR-0042](adr/0042-i-overlay-in-render-agg-and-geo.md);
   geo brings its own i_overlay into `symbolize`).
 - **`encode`** — PNG from and to an RGBA image, and a pixmap symbol's PNG decoded as MapServer's
   `readPNG` decodes it, premultiplied, its header held to Q-9's 4096 × 4096 before anything is
@@ -378,14 +378,14 @@ golden path and the test pattern an agent copies from are named here.
   WebDriver client of its own on `std` and `serde_json`, and compares the canvas and the list of
   diagnostics with the native render of `bindings-wasm` (G-14); `scripts/check-browser.sh` runs
   it, and only where `FORAGER_BROWSER_TEST=required`, as in the browser job of CI, does it open a
-  browser ([ADR-draft-browser-test-over-webdriver](adr/draft-browser-test-over-webdriver.md)).
+  browser ([ADR-0040](adr/0040-browser-test-over-webdriver.md)).
 - **`arch-test`** — the dependency test of [ADR-0008](adr/0008-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`
   ([ADR-0025](adr/0025-agg-rust-rasterizer.md)), skrifa outside `label` (ADR-0031), `regex`
   outside `expr` ([ADR-0016](adr/0016-expression-evaluation.md)), i_overlay as a direct
   dependency of any package but `render-agg` and geo, and geo outside `symbolize`
-  (ADR-draft-i-overlay-in-render-agg-and-geo), `adapter-shapefile` as a dependency of
+  (ADR-0042), `adapter-shapefile` as a dependency of
   `bindings-wasm` ([ADR-0024](adr/0024-browser-bindings-bind-geojson-only.md)), `wasmi` anywhere
   but among the dev-dependencies of `cli` ([ADR-0034](adr/0034-wasm-renders-compared-in-wasmi.md)),
   and a future polled with a no-op waker anywhere but `poll_once` of `ports`, and requires every

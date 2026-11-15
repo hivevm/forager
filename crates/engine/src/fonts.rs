@@ -80,7 +80,7 @@ impl Fonts {
     }
 
     /// The font the font set names `name`, loaded once per render into the store the labels' fonts
-    /// use, as a TrueType marker takes it (ADR-draft-truetype-marker-glyph-through-a-port): its
+    /// use, as a TrueType marker takes it (ADR-0044): its
     /// path and its bytes, or why it cannot be used, naming the font and its path. A font this
     /// renderer cannot read a character map or outlines of cannot be used (ADR-0031).
     pub(crate) async fn named<L: ResourceLoader>(
