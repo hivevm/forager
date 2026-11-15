@@ -260,7 +260,9 @@ dependencies = [
 name = "forager-dev-server"
 version = "0.1.0"
 dependencies = [
+ "forager-bindings-wasm",
  "forager-ports",
+ "serde_json",
 ]
 
 [[package]]

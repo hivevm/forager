@@ -351,6 +351,11 @@ golden path and the test pattern an agent copies from are named here.
   `scripts/generate-example.sh` writes from a fixed seed in bash and awk;
   `scripts/test-generate-example.sh` holds two runs of it to each other and to the checked-in
   files.
+  Its test `tests/browser.rs` opens the page in headless Chrome over ChromeDriver, with a
+  WebDriver client of its own on `std` and `serde_json`, and compares the canvas and the list of
+  diagnostics with the native render of `bindings-wasm` (G-14); `scripts/check-browser.sh` runs
+  it, and only where `FORAGER_BROWSER_TEST=required`, as in the browser job of CI, does it open a
+  browser ([ADR-draft-browser-test-over-webdriver](adr/draft-browser-test-over-webdriver.md)).
 - **`arch-test`** — the dependency test of [ADR-0008](adr/0008-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`

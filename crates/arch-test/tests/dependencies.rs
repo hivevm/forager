@@ -339,6 +339,22 @@ fn only_the_cli_s_tests_run_wasm_in_wasmi() {
 }
 
 #[test]
+fn the_dev_server_s_tests_depend_on_the_bindings_and_serde_json_alone() {
+    // Verifies: ADR-draft-browser-test-over-webdriver
+    // The browser test's WebDriver client is the project's own, on std and serde_json: a crate
+    // that drives a browser, or any other, comes in only by a revision of the ADR.
+    let ws = workspace();
+    let mut dev: Vec<_> = ws
+        .declared
+        .iter()
+        .filter(|(member, _, kind)| member == "dev-server" && kind == "dev")
+        .map(|(_, dep, _)| dep.as_str())
+        .collect();
+    dev.sort_unstable();
+    assert_eq!(dev, ["forager-bindings-wasm", "serde_json"]);
+}
+
+#[test]
 fn proj_depends_on_style_ir_and_libm_alone() {
     // Verifies: ADR-0037
     // The reprojection is the core's own port of PROJ's formulas: no crate that ports them, nor
