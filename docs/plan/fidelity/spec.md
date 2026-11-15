@@ -128,8 +128,7 @@ named by a test that pushes it through a load or a render.
 - Pushdown of a filter to a source.
 - The categories raster and text (G-13) beyond what a geometry case needs.
 - SVG symbols, GIF and other non-PNG pixmaps, chart layers, a layer's `GRID`, a symbol fetched by
-  its URL, and a label's `ENCODING`. A layer's `ENCODING` waits for the maintainer's choice in
-  ticket 04.
+  its URL, and the `ENCODING` of a label and of a layer, all non-goals of the specification.
 - Projections `proj` does not implement yet, unless a case of this spec needs one (ADR-0037).
 
 ## ADR impact
@@ -148,4 +147,4 @@ named by a test that pushes it through a load or a render.
     whose *Decision* lists the transform tree's nodes (ticket 11);
   - the map's rotation, if it changes the seam of ADR-0037's reprojection (ticket 13).
 - Specification changes the maintainer lands: G-7 removed (ticket 01); SVG symbols as a non-goal,
-  and possibly a layer's `ENCODING` (ticket 04).
+  and a layer's `ENCODING` (ticket 04).

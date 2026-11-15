@@ -27,7 +27,9 @@
 # shapefiles; of a case with labels, labels on lines, labels in polygons, a bitmap font (a label
 # without a FONT, which MapServer draws in its built-in font), complex script (a text with a code
 # point at or above U+02B0), or the text of an embedded legend, an embedded scalebar, or a GRID;
-# and a case MapServer itself does not reproduce within any threshold of the noise measurement.
+# a case MapServer itself does not reproduce within any threshold of the noise measurement; and a
+# case that needs what the specification names a non-goal, the non-goal named in its reason
+# (`out: a non-goal, ...`).
 #
 # `blank` marks a case whose reference is nearly one colour: an image of its most common colour
 # passes against it by the metric. The harness checks every mark against the reference.
@@ -55,7 +57,7 @@ misc/contour.map contour.png blank out: a raster source, CONTOUR
 misc/contour_with_expr.map contour_with_expr.png blank out: a raster source, CONTOUR
 misc/dateline.map dateline.png geometry passes
 misc/dbf-invalid.map dbf-invalid-wfs-get-feature.xml out: an OGC or CGI request
-misc/encoding.map encodings.png geometry fails  # not built yet: the ENCODING of a layer
+misc/encoding.map encodings.png out: a non-goal, a layer's ENCODING
 misc/encoding.map encodings.xml out: an OGC or CGI request
 misc/encoding_from_cpg.map shp_encodings.png out: a bitmap font; and complex script, in the encodings of its data
 misc/encrypted_connection.map encrypted_connection_postgis_hits.xml out: an OGC or CGI request
@@ -73,7 +75,7 @@ misc/flatgeobuf.map flatgeobuf-wfs-get-feature-propertyname-geometry.xml out: an
 misc/flatgeobuf.map flatgeobuf-wfs-get-feature-id.xml out: an OGC or CGI request
 misc/geopdf.map geopdf-iso.pdf out: another output format, pdf
 misc/geopdf.map geopdf-ogc.pdf out: another output format, pdf
-misc/grid_without_label.map grid_without_label.png geometry fails  # not built yet: the GRID of a layer
+misc/grid_without_label.map grid_without_label.png out: a non-goal, a layer's GRID
 misc/issue5558.map issue5581-1.png blank out: a bitmap font
 misc/issue5558.map issue5581-2.png blank out: a map2img option not applied, -c
 misc/line_offset_clipped_to_multiline.map line_offset_clipped_to_multiline.png geometry passes
@@ -159,23 +161,23 @@ renderers/baseline_text.map baseline_text.png text passes labels-hold
 renderers/baseline_text.map baseline_text.pdf out: another output format, pdf
 renderers/baseline_text.map baseline_text.svg out: another output format, svg
 renderers/baseline_text.map baseline_text.cairo.png out: another output format, cairopng
-renderers/chartlayer_bar.map chartlayer_bar.png geometry fails  # not built yet: chart layers
+renderers/chartlayer_bar.map chartlayer_bar.png out: a non-goal, a layer's TYPE CHART
 renderers/chartlayer_bar.map chartlayer_bar.pdf out: another output format, pdf
 renderers/chartlayer_bar.map chartlayer_bar.svg out: another output format, svg
 renderers/chartlayer_bar.map chartlayer_bar.cairo.png out: another output format, cairopng
-renderers/chartlayer_pie.map chartlayer_pie.png geometry fails  # not built yet: chart layers
+renderers/chartlayer_pie.map chartlayer_pie.png out: a non-goal, a layer's TYPE CHART
 renderers/chartlayer_pie.map chartlayer_pie.pdf out: another output format, pdf
 renderers/chartlayer_pie.map chartlayer_pie.svg out: another output format, svg
 renderers/chartlayer_pie.map chartlayer_pie.cairo.png out: another output format, cairopng
-renderers/chartlayer_pie2.map chartlayer_pie2.png geometry fails  # not built yet: chart layers
+renderers/chartlayer_pie2.map chartlayer_pie2.png out: a non-goal, a layer's TYPE CHART
 renderers/chartlayer_pie2.map chartlayer_pie2.pdf out: another output format, pdf
 renderers/chartlayer_pie2.map chartlayer_pie2.svg out: another output format, svg
 renderers/chartlayer_pie2.map chartlayer_pie2.cairo.png out: another output format, cairopng
-renderers/chartlayer_pie_expressions.map chartlayer_pie_expressions.png geometry fails  # not built yet: chart layers
+renderers/chartlayer_pie_expressions.map chartlayer_pie_expressions.png out: a non-goal, a layer's TYPE CHART
 renderers/chartlayer_pie_expressions.map chartlayer_pie_expressions.pdf out: another output format, pdf
 renderers/chartlayer_pie_expressions.map chartlayer_pie_expressions.svg out: another output format, svg
 renderers/chartlayer_pie_expressions.map chartlayer_pie_expressions.cairo.png out: another output format, cairopng
-renderers/chartlayer_vbar.map chartlayer_vbar.png geometry fails  # not built yet: chart layers
+renderers/chartlayer_vbar.map chartlayer_vbar.png out: a non-goal, a layer's TYPE CHART
 renderers/chartlayer_vbar.map chartlayer_vbar.pdf out: another output format, pdf
 renderers/chartlayer_vbar.map chartlayer_vbar.svg out: another output format, svg
 renderers/chartlayer_vbar.map chartlayer_vbar.cairo.png out: another output format, cairopng
@@ -355,7 +357,7 @@ renderers/line_marker_pixmap.map line_marker_pixmap.png geometry passes
 renderers/line_marker_pixmap.map line_marker_pixmap.pdf out: another output format, pdf
 renderers/line_marker_pixmap.map line_marker_pixmap.svg out: another output format, svg
 renderers/line_marker_pixmap.map line_marker_pixmap.cairo.png out: another output format, cairopng
-renderers/line_marker_svg.map line_marker_svg.png geometry fails  # not built yet: SVG symbols along a line
+renderers/line_marker_svg.map line_marker_svg.png out: a non-goal, SVG symbols
 renderers/line_marker_svg.map line_marker_svg.pdf out: another output format, pdf
 renderers/line_marker_svg.map line_marker_svg.svg out: another output format, svg
 renderers/line_marker_svg.map line_marker_svg.cairo.png out: another output format, cairopng
@@ -442,16 +444,16 @@ renderers/point_ellipse.map gd_fallback.png out: another output format, gdpng
 renderers/point_ellipse.map gd_fallback_gif.png out: another output format, gif
 renderers/point_ellipse.map gd_fallback_pc256.png out: another output format, gdpc256
 renderers/point_ellipse.map gd_fallback_jpeg.png out: another output format, gdjpg
-renderers/point_pixmap.map point_pixmap.png geometry fails  # a symbol fetched by URL
+renderers/point_pixmap.map point_pixmap.png out: a non-goal, a symbol fetched by its URL
 renderers/point_pixmap.map point_pixmap.pdf out: another output format, pdf
 renderers/point_pixmap.map point_pixmap.svg out: another output format, svg
 renderers/point_pixmap.map point_pixmap.json out: another output format, json
 renderers/point_pixmap.map point_pixmap.cairo.png out: another output format, cairopng
-renderers/point_pixmap_gif.map point_pixmap_gif.png geometry fails  # GIF pixmaps are not read (the maintainer's decision of 2026-11-13)
+renderers/point_pixmap_gif.map point_pixmap_gif.png out: a non-goal, a pixmap symbol in a format other than PNG, GIF
 renderers/point_pixmap_gif.map point_pixmap_gif.pdf out: another output format, pdf
 renderers/point_pixmap_gif.map point_pixmap_gif.svg out: another output format, svg
 renderers/point_pixmap_gif.map point_pixmap_gif.cairo.png out: another output format, cairopng
-renderers/point_svg.map point_svg.png geometry fails  # not built yet: SVG symbols
+renderers/point_svg.map point_svg.png out: a non-goal, SVG symbols
 renderers/point_svg.map point_svg.pdf out: another output format, pdf
 renderers/point_svg.map point_svg.svg out: another output format, svg
 renderers/point_svg.map point_svg.cairo.png out: another output format, cairopng
