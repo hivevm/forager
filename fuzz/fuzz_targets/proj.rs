@@ -32,8 +32,10 @@ fuzz_target!(|data: &[u8]| {
         .take(512)
         .collect();
     let points: Vec<Coord> = numbers
-        .chunks_exact(2)
-        .map(|p| Coord { x: p[0], y: p[1] })
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&[x, y]| Coord { x, y })
         .collect();
     let way = Reprojection::new(from, to);
     for &p in &points {
