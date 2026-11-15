@@ -1,6 +1,6 @@
 # ADR-draft-proj-references-points-rects-shapes: The reference points, rectangles, and shapes of G-11 are reprojected by MapServer's own calls of PROJ at the pinned build, in the noise run, and kept as records beside the test of `proj`
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-15
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/proj/tests/reference/` (the lists `points.tsv`, `rects.tsv`, and `shapes.tsv` and their records `mapserver.tsv`, `mapserver-rects.tsv`, and `mapserver-shapes.tsv`), the test `crates/proj/tests/reference.rs`, `crates/cli/tests/conformance/mapserver_proj.c`, its build in `scripts/build-mapserver.sh` and that script's self-test `scripts/test-build-mapserver.sh`, its run in `.github/workflows/noise.yml` and the harness's noise module `crates/cli/tests/conformance/noise/`, and the paths that start that workflow

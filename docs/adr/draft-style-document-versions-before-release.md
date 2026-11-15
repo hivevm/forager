@@ -1,6 +1,6 @@
 # ADR-draft-style-document-versions-before-release: The style document is versioned by a JSON Schema per format version, moved by the version rule until a release tag holds its schema and frozen from then, a newer minor read leniently by dropping what is unknown at its path, an older major migrated in steps, and a change of meaning a major
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-15
 - **Deciders:** Markus Brigl
 - **Applies to:** `crates/style-ir` (the style document, its readers in `document.rs`, `lenient.rs`, and `migration.rs`, its `schema` feature), `schema/` and `crates/style-ir/tests/schema.rs`, the `serde_ignored`, `serde_path_to_error`, and `schemars` entries of `Cargo.toml`, every read error of the style document that names a path, and every change to a field of the style IR
