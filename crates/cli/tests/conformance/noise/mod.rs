@@ -34,8 +34,8 @@ const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 /// every other field exactly; the test fails on a record that differs or is missing, and the
 /// reader's labels stay in `noise/labels/` to take the record from. The renderings stay in
 /// `noise/` under the test's target directory. Last, the reader of MapServer's reprojection
-/// reprojects G-11's reference points and rectangles ([`reference_points`]); the test fails where
-/// its output and a record beside the test of `proj` disagree, and the output stays in
+/// reprojects G-11's reference points, rectangles, and shapes ([`reference_points`]); the test
+/// fails where its output and a record beside the test of `proj` disagree, and the output stays in
 /// `noise/proj/`.
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test, and \
@@ -117,8 +117,8 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
     );
     assert!(
         differences.is_empty(),
-        "MapServer's reprojection of G-11's reference points and rectangles does not hold its \
-         record; the reader's output is in {}:\n{}",
+        "MapServer's reprojection of G-11's reference points, rectangles, and shapes does not hold \
+         its record; the reader's output is in {}:\n{}",
         out.join("proj").display(),
         differences.join("\n")
     );
