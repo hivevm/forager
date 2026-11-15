@@ -213,8 +213,11 @@ impl Reprojection {
 
     /// Whether MapServer cuts the lines of a line shape with GEOS (`msProjectGetLineCuttingCase`):
     /// from a projected source whose origin is the north pole into longitude and latitude, as
-    /// `ortho` or `tmerc` of `+lat_0=90` are. Its other cases, a rotated pole, a source of
-    /// `lon_wrap=0`, and a target written `init=epsg:3857`, no projection here takes.
+    /// `ortho` or `tmerc` of `+lat_0=90` are. Of its other cases, a rotated pole and a source of
+    /// `lon_wrap=0` no projection here takes. The third, such a source into a map whose projection
+    /// is written `init=epsg:3857`, is reachable but not seen: MapServer tests the map's first
+    /// argument as written, and the frontend has expanded `init=` before `proj` reads it, so such
+    /// a layer is neither cut nor warned of (docs/semantics/projection.md).
     pub fn cuts_lines_with_geos(&self) -> bool {
         !self.from_geographic && self.to_geographic && self.pole_at_origin() == Some(1.0)
     }

@@ -26,7 +26,16 @@ where `msTestNeedWrap` finds the segment crossing the dateline. The points of a 
 reprojected by `msProjectLineEx`: all are left out where one does not reproject, except into
 longitude and latitude from a projected layer, where such a point stays where it was. A warning
 names the layer and how many points did not reproject (Q-3), and the points the horizon search adds
-are bounded per layer (Q-9). `+over` keeps a longitude past ±180° on the way in and out. A
+are bounded per layer (Q-9). `+over` keeps a longitude past ±180° on the way in and out.
+Two parts of MapServer's reprojection are not ported, and each is stated. MapServer cuts the lines
+of a line shape with GEOS where they cross the dateline from a source whose origin is the north
+pole into longitude and latitude (`msProjectGetLineCuttingCase`); Forager draws them uncut and
+warns `lines-not-cut`, naming the layer. The same cut for such a source into a map whose
+projection is written `init=epsg:3857` is not even warned of, since the frontend expands `init=`
+before the engine sees it. And `msProjectRect` remembers on the map's projection whether it is
+polar (`is_polar`) from the first rectangle it projects, so only the first reprojected layer of a
+polar map is asked for every longitude about the pole; Forager asks each such layer as MapServer
+asks the first. A
 projection the core does not implement leaves its layer undrawn with a warning. The core implements
 longitude and latitude, `lcc`, `merc`, `tmerc` with `utm`, and `ortho`, a datum's shift by
 `+towgs84`, and the datums WGS84 and NAD83, as PROJ 9.4.0 computes them (ADR-0037).

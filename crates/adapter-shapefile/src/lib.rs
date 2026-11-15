@@ -57,8 +57,9 @@ pub struct ShapefileSource {
     bounds: Rect,
     /// The `.dbf`, whose records the features share as their properties (ADR-0023).
     dbf: Rc<Dbf>,
-    /// The `.prj` beside the `.shp`, its name and its first bytes, where it loads.
-    prj: Option<(String, Vec<u8>)>,
+    /// The projection the `.prj` beside the `.shp` declares, read once at open; none where it does
+    /// not load.
+    prj: DeclaredProjection,
 }
 
 /// Names the file's shape, records, and bounds, never its bytes, so that a logged source does not
@@ -90,12 +91,11 @@ impl ShapefileSource {
         let dbf = Rc::new(Dbf::open(load(loader, base, "dbf", "DBF").await?)?);
         // msSHPLayerOpen opens the .shp's name with the extension `prj` (CPLResetExtension); a
         // .prj that does not load declares nothing.
-        let mut prj = None;
+        let mut prj = DeclaredProjection::None;
         if let Ok(path) = ResourcePath::new(&format!("{base}.prj"))
-            && let Ok(mut bytes) = loader.load(&path).await
+            && let Ok(bytes) = loader.load(&path).await
         {
-            bytes.truncate(prj::MAX_PRJ_BYTES);
-            prj = Some((path.as_str().to_owned(), bytes));
+            prj = prj::declared(path.as_str(), &bytes);
         }
         Ok(Self {
             shp,
@@ -263,10 +263,7 @@ impl FeatureSource for ShapefileSource {
     /// The projection of the `.prj` beside the `.shp`, none where there is none
     /// (ADR-0039).
     fn declared_projection(&self) -> DeclaredProjection {
-        match &self.prj {
-            Some((file, bytes)) => prj::declared(file, bytes),
-            None => DeclaredProjection::None,
-        }
+        self.prj.clone()
     }
 
     async fn features(&self, query: &FeatureQuery) -> Result<Features, SourceError> {
