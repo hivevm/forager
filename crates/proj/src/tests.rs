@@ -226,8 +226,8 @@ fn an_unknown_projection_or_parameter_is_an_error_naming_it() {
         Error::Invalid(_)
     ));
     assert_eq!(
-        error("+proj=lcc +lat_1=49 +over"),
-        Error::Unsupported("+over".to_owned())
+        error("+proj=lcc +lat_1=49 +lon_wrap=180"),
+        Error::Unsupported("+lon_wrap".to_owned())
     );
     assert_eq!(
         error("+proj=longlat +nadgrids=conus"),
@@ -400,4 +400,30 @@ fn a_side_that_leaves_the_projection_ends_at_its_horizon() {
         .unwrap();
     let near_pole = to.point(at(-90.0, -89.9)).unwrap();
     assert!(rect.min_y < near_pole.y, "{rect:?}");
+}
+
+#[test]
+fn over_keeps_a_longitude_past_the_antimeridian_on_the_way_in_and_out() {
+    // Verifies: ADR-0037
+    let over = "+proj=latlong +datum=WGS84 +over";
+    let merc_over = "+proj=merc +datum=WGS84 +over";
+    let east = way(over, merc_over).point(at(190.0, 10.0)).unwrap();
+    let west = way(LONGLAT_WGS84, "+proj=merc +datum=WGS84")
+        .point(at(-170.0, 10.0))
+        .unwrap();
+    assert!(
+        (east.x - (west.x + 2.0 * 20_037_508.342_789_244)).abs() < 1e-6,
+        "{east:?}"
+    );
+    assert_eq!(east.y, west.y);
+    let back = way(merc_over, over).point(east).unwrap();
+    assert!(
+        (back.x - 190.0).abs() < 1e-9 && (back.y - 10.0).abs() < 1e-9,
+        "{back:?}"
+    );
+    // Without it the longitude comes back within ±180°.
+    let wrapped = way("+proj=merc +datum=WGS84", LONGLAT_WGS84)
+        .point(east)
+        .unwrap();
+    assert!((wrapped.x + 170.0).abs() < 1e-9, "{wrapped:?}");
 }

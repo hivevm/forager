@@ -120,8 +120,9 @@ golden path and the test pattern an agent copies from are named here.
   MapServer build links, every transcendental function from `libm`, so that a point reprojects to
   the same bits on every target (ADR-0037, Q-2). It reads a
   projection as the style IR's proj4 string, parameters and tables as PROJ's `pj_init` reads them
-  (`params.rs`), implements longitude and latitude, `lcc`, `merc`, and `tmerc` with `utm` by
-  PROJ's Poder/Engsager algorithm (`lcc.rs`, `merc.rs`, `tmerc.rs`, their shared functions in
+  (`params.rs`), implements longitude and latitude, `lcc`, `merc`, `tmerc` with `utm` by
+  PROJ's Poder/Engsager algorithm, and `ortho`, with `+over` (`lcc.rs`, `merc.rs`, `tmerc.rs`,
+  `ortho.rs`, their shared functions in
   `common.rs`), and shifts a datum through WGS84 by an exact Helmert transform of an explicit
   `+towgs84`, as PROJ's cs2cs emulation chains it (`datum.rs`); a named `+datum` shifts nothing,
   as MapServer's call of PROJ does not for NAD83.
@@ -130,8 +131,9 @@ golden path and the test pattern an agent copies from are named here.
   transform is one too, never a panic. It decides whether two projections differ as
   `msProjectionsDiffer` compares their parameters, and reprojects a rectangle as `msProjectRect`
   does (`rect.rs`): its sides and a diagonal sampled, the horizon found where points fail, a grid
-  where none of them reprojects, all longitudes where a polar projection's pole lies inside it;
-  the `+over` it adds is the dateline's ticket.
+  where none of them reprojects, all longitudes where a polar projection's pole lies inside it,
+  with the `+over` it adds. It reprojects a shape's lines as `msProjectShapeLine` does and a point
+  shape's as `msProjectLineEx` does (`shape.rs`): cut at the horizon, wrapped at the dateline.
   Synchronous, without I/O; it depends on `style-ir` and `libm` alone, and each file that ports a
   PROJ source holds PROJ's notice (`scripts/check-notice.sh`).
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
@@ -139,8 +141,10 @@ golden path and the test pattern an agent copies from are named here.
   in memory of its own over them, which reports a bound source as not read (`inline.rs`,
   ADR-0018); for a layer whose projection differs from the map's, it asks for the map's extent
   reprojected into the layer's and reprojects each feature's shape into the map's before anything
-  else touches it, the points that do not reproject left out with a warning, and draws nothing of
-  a layer whose projection does not read, with a warning (`reproject.rs`); replaces the shape of
+  else touches it, as `msProjectShapeEx` does, with a warning for the points that do not
+  reproject, the horizon points held to a bound per layer (Q-9), and a map of `AUTO` taken as
+  each layer's base geographic CRS, and draws nothing of a layer whose projection does not read,
+  with a warning (`reproject.rs`); replaces the shape of
   each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
   up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
   tree is `not_drawn` or fails, with a warning (`classes.rs`,

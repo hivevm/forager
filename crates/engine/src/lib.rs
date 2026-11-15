@@ -75,6 +75,7 @@ use crate::labels::Labels;
 use crate::layer::{Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports};
 
 pub use crate::labels::CachedLabel;
+pub use crate::reproject::MAX_HORIZON_POINTS;
 
 /// The largest width or height of an image, MapServer's default `MAXSIZE` (Q-9).
 pub const MAX_IMAGE_SIDE: u32 = 4096;
@@ -647,9 +648,22 @@ async fn in_view<S: FeatureSource>(
     let (reprojection, asked) = asked(map, layer, view, diagnostics)?;
     let mut features = source_features(layer, sources, asked, diagnostics).await?;
     if let Some(reprojection) = &reprojection {
-        let left_out = reprojection.features(&mut features);
-        if left_out > 0 {
-            diagnostics.push(points_not_reprojected(layer, left_out));
+        let done = reprojection.features(&mut features);
+        if done.failed > 0 {
+            diagnostics.push(points_not_reprojected(layer, done.failed));
+        }
+        if done.stopped {
+            let message = format!(
+                "layer {}: the horizon search of its reprojection adds more than {} points to \
+                 its shapes, and it stops at the feature that passes it",
+                name(layer),
+                reproject::MAX_HORIZON_POINTS
+            );
+            diagnostics.push(Diagnostic::warning(
+                "horizon-points-limit",
+                message,
+                layer.span.clone(),
+            ));
         }
     }
     Some(features)

@@ -20,6 +20,13 @@
  * msProjectRect fails. Both projections are loaded afresh for each rectangle, so that none keeps
  * the is_polar msProjectRect sets on its source; the record is mapserver-rects.tsv.
  *
+ * A line of four fields whose third is "point", "line", or "polygon" is a shape,
+ * crates/proj/tests/reference/shapes.tsv: its source and target, that type, and its lines, each "x,y x,y ...", separated by "|";
+ * it is reprojected by msProjectShape as a layer's shape is before it is drawn. The result is each
+ * line the shape is left with, in order, as "x,y x,y ..." written with %.17g and "-" for a line
+ * left without points, tab-separated, or "fail" where msProjectShape fails; the record is
+ * mapserver-shapes.tsv.
+ *
  * Copyright (c) 1996-2005 Regents of the University of Minnesota.
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
  * associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -59,9 +66,62 @@ static void load(projectionObj *p, const char *definition, long line) {
     fail("a projection does not load", line);
 }
 
+/* Prints the result of msProjectShape for the shape's line, `fields`, as the header says. */
+static void shape(char *fields[4], const char *line, long number) {
+  projectionObj in, out;
+  msInitProjection(&in);
+  msInitProjection(&out);
+  load(&in, fields[0], number);
+  load(&out, fields[1], number);
+  shapeObj shape;
+  msInitShape(&shape);
+  if (strcmp(fields[2], "point") == 0)
+    shape.type = MS_SHAPE_POINT;
+  else if (strcmp(fields[2], "line") == 0)
+    shape.type = MS_SHAPE_LINE;
+  else if (strcmp(fields[2], "polygon") == 0)
+    shape.type = MS_SHAPE_POLYGON;
+  else
+    fail("a shape's type is not point, line, or polygon", number);
+  char *save_line;
+  for (char *part = strtok_r(fields[3], "|", &save_line); part;
+       part = strtok_r(NULL, "|", &save_line)) {
+    lineObj points = {0, NULL};
+    char *save_point;
+    for (char *xy = strtok_r(part, " ", &save_point); xy; xy = strtok_r(NULL, " ", &save_point)) {
+      pointObj p = {0};
+      char *end;
+      p.x = strtod(xy, &end);
+      if (*end != ',')
+        fail("a shape's point is not x,y", number);
+      p.y = strtod(end + 1, &end);
+      if (*end)
+        fail("a shape's point is not x,y", number);
+      msAddPointToLine(&points, &p);
+    }
+    msAddLineDirectly(&shape, &points);
+  }
+  if (msProjectShape(&in, &out, &shape) != MS_SUCCESS) {
+    printf("%s\tfail\n", line);
+  } else {
+    printf("%s", line);
+    for (int i = 0; i < shape.numlines; i++) {
+      printf("\t");
+      if (shape.line[i].numpoints == 0)
+        printf("-");
+      for (int j = 0; j < shape.line[i].numpoints; j++)
+        printf("%s%.17g,%.17g", j ? " " : "", shape.line[i].point[j].x, shape.line[i].point[j].y);
+    }
+    printf("\n");
+  }
+  msFreeShape(&shape);
+  msFreeProjection(&in);
+  msFreeProjection(&out);
+}
+
 int main(int argc, char *argv[]) {
   if (argc != 2) {
-    fprintf(stderr, "usage: mapserver_proj <points.tsv | rects.tsv>\n");
+    fprintf(stderr, "usage: mapserver_proj <points.tsv | rects.tsv | shapes.tsv>\n");
     return 1;
   }
   FILE *list = fopen(argv[1], "r");
@@ -82,7 +142,7 @@ int main(int argc, char *argv[]) {
   msInitProjection(&in);
   msInitProjection(&out);
   char *source = NULL, *target = NULL;
-  char buffer[4096];
+  static char buffer[1 << 16];
   long number = 0;
   while (fgets(buffer, sizeof buffer, list)) {
     number++;
@@ -99,6 +159,15 @@ int main(int argc, char *argv[]) {
       fields[count++] = field;
     if ((count != 4 && count != 6) || strtok(NULL, "\t"))
       fail("a line does not hold four or six tab-separated fields", number);
+    if (count == 4 && (strcmp(fields[2], "point") == 0 || strcmp(fields[2], "line") == 0 ||
+                       strcmp(fields[2], "polygon") == 0)) {
+      shape(fields, line, number);
+      free(line);
+      free(source);
+      free(target);
+      source = target = NULL;
+      continue;
+    }
     double numbers[4];
     for (int i = 2; i < count; i++) {
       char *end;

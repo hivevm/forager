@@ -40,7 +40,7 @@
 //! taken from `libm`, so that a coordinate reprojects to the same bits on every target
 //! (ADR-0037, Q-2). It reads a projection as the proj4 string of the
 //! style IR and implements only what a case in scope or a ticket needs: longitude and latitude,
-//! `lcc`, `merc`, and `tmerc` with `utm`, and a datum's shift by `+towgs84`. Anything else is an
+//! `lcc`, `merc`, `tmerc` with `utm`, and `ortho`, `+over`, and a datum's shift by `+towgs84`. Anything else is an
 //! [`Error`] naming it, and a point that does not transform is [`NotTransformed`], never a panic
 //! (Q-3).
 
@@ -50,8 +50,10 @@ mod common;
 mod datum;
 mod lcc;
 mod merc;
+mod ortho;
 mod params;
 mod rect;
+mod shape;
 mod tmerc;
 
 use std::fmt;
@@ -60,6 +62,7 @@ use forager_style_ir::Coord;
 
 use crate::common::{HALF_PI, adjlon};
 use crate::params::{DEG_TO_RAD, Datum, Ellipsoid, Params, RAD_TO_DEG};
+pub use crate::shape::ShapeLines;
 
 /// Why a projection cannot be read.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -102,11 +105,12 @@ enum Kind {
     Lcc(lcc::Lcc),
     Merc(merc::Merc),
     Tmerc(tmerc::Tmerc),
+    Ortho(ortho::Ortho),
 }
 
 /// The projections this crate implements, by the names PROJ gives them.
 const PROJECTIONS: &[&str] = &[
-    "longlat", "latlong", "lonlat", "latlon", "lcc", "merc", "tmerc", "utm",
+    "longlat", "latlong", "lonlat", "latlon", "lcc", "merc", "tmerc", "utm", "ortho",
 ];
 
 /// The parameters this crate reads; any other is unsupported. `no_defs`, `wktext`, and
@@ -114,7 +118,7 @@ const PROJECTIONS: &[&str] = &[
 const KNOWN: &[&str] = &[
     "proj", "datum", "ellps", "R", "a", "b", "rf", "f", "es", "e", "towgs84", "nadgrids", "lat_0",
     "lon_0", "lat_1", "lat_2", "lat_ts", "k", "k_0", "x_0", "y_0", "units", "to_meter", "no_defs",
-    "wktext", "type", "zone", "south",
+    "wktext", "type", "zone", "south", "over",
 ];
 
 /// A projection read from a proj4 string.
@@ -130,6 +134,8 @@ pub struct Projection {
     y0: f64,
     /// The metres of one unit of its coordinates.
     to_meter: f64,
+    /// `+over`: a longitude is not brought back within ±180° on the way in or out.
+    over: bool,
 }
 
 impl Projection {
@@ -182,6 +188,7 @@ impl Projection {
                 Kind::Lcc(lcc::Lcc::new(&params, &ellipsoid, phi0, k0)?)
             }
             "merc" => Kind::Merc(merc::Merc::new(&params, &ellipsoid, k0)?),
+            "ortho" => Kind::Ortho(ortho::Ortho::new(&ellipsoid, phi0)?),
             "tmerc" => Kind::Tmerc(tmerc::Tmerc::new(&ellipsoid, phi0, k0)?),
             "utm" => {
                 let utm = tmerc::utm(&params, &ellipsoid, lam0)?;
@@ -201,6 +208,7 @@ impl Projection {
             x0,
             y0,
             to_meter: params::to_meter(&params)?,
+            over: params.has("over"),
         })
     }
 
@@ -215,7 +223,21 @@ impl Projection {
             x0: 0.0,
             y0: 0.0,
             to_meter: 1.0,
+            over: false,
         }
+    }
+
+    /// The same projection with `+over`, as `msProjectRect` copies a projection with it.
+    pub fn with_over(&self) -> Self {
+        Self {
+            over: true,
+            ..self.clone()
+        }
+    }
+
+    /// `adjlon` of `lam`, unless `+over` keeps it as it is (`inv_finalize`, `fwd_prepare`).
+    fn wrap(&self, lam: f64) -> f64 {
+        if self.over { lam } else { adjlon(lam) }
     }
 
     /// Whether its coordinates are longitude and latitude.
@@ -230,6 +252,7 @@ impl Projection {
             Kind::Lcc(lcc) => Some(lcc),
             Kind::Merc(merc) => Some(merc),
             Kind::Tmerc(tmerc) => Some(tmerc),
+            Kind::Ortho(ortho) => Some(ortho),
         }
     }
 
@@ -237,13 +260,13 @@ impl Projection {
     /// and `inv_finalize` compute them.
     fn to_wgs84(&self, point: Coord) -> Option<(f64, f64)> {
         let (lam, phi) = match self.plane() {
-            None => (adjlon(point.x * DEG_TO_RAD), point.y * DEG_TO_RAD),
+            None => (self.wrap(point.x * DEG_TO_RAD), point.y * DEG_TO_RAD),
             Some(plane) => {
                 let ra = 1.0 / self.ellipsoid.a;
                 let x = (point.x * self.to_meter - self.x0) * ra;
                 let y = (point.y * self.to_meter - self.y0) * ra;
                 let (lam, phi) = plane.inverse(x, y)?;
-                (adjlon(lam + self.lam0), phi)
+                (self.wrap(lam + self.lam0), phi)
             }
         };
         if !(lam.is_finite() && phi.is_finite()) {
@@ -262,8 +285,8 @@ impl Projection {
             return None;
         }
         let phi = phi.clamp(-HALF_PI, HALF_PI);
-        let (lam, phi) = datum::from_wgs84(adjlon(lam), phi, &self.datum, &self.ellipsoid);
-        let lam = adjlon(lam - self.lam0);
+        let (lam, phi) = datum::from_wgs84(self.wrap(lam), phi, &self.datum, &self.ellipsoid);
+        let lam = self.wrap(lam - self.lam0);
         let point = match self.plane() {
             None => Coord {
                 x: lam * RAD_TO_DEG,
@@ -296,12 +319,34 @@ pub fn differ(layer: &str, map: &str) -> bool {
 pub struct Reprojection {
     from: Projection,
     to: Projection,
+    /// Whether each side is longitude and latitude as `msProjIsGeographicCRS` finds it: never a
+    /// map's `AUTO`, which has no PROJ object.
+    from_geographic: bool,
+    to_geographic: bool,
 }
 
 impl Reprojection {
     /// The way from `from` into `to`.
     pub fn new(from: Projection, to: Projection) -> Self {
-        Self { from, to }
+        Self {
+            from_geographic: from.is_geographic(),
+            to_geographic: to.is_geographic(),
+            from,
+            to,
+        }
+    }
+
+    /// The way from `from` into a map's `AUTO`, which has no PROJ object: into `from`'s base
+    /// geographic CRS, as `msProjectCreateReprojector` reprojects it, the map's side never
+    /// longitude and latitude to MapServer's tests.
+    pub fn into_auto(from: Projection) -> Self {
+        let to = from.base_geographic();
+        Self {
+            from_geographic: from.is_geographic(),
+            to_geographic: false,
+            from,
+            to,
+        }
     }
 
     /// The way back, from `to` into `from`.
@@ -309,6 +354,8 @@ impl Reprojection {
         Self {
             from: self.to.clone(),
             to: self.from.clone(),
+            from_geographic: self.to_geographic,
+            to_geographic: self.from_geographic,
         }
     }
 

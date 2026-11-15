@@ -14,14 +14,23 @@ difference).
 where neither lacks parameters and they differ in number or in any one, compared in order as text;
 the IR compares the proj4 strings its frontend wrote, `init=` expanded, where MapServer compares the
 arguments as written. The layer's source is asked for the map's extent reprojected into the layer's
-projection: the rectangle that holds the points of its sides, a hundred along each, as
-`msProjectRect` samples them before it refines the edges. A point that does not reproject is left
-out with a warning naming the layer, and with it a line left with fewer than two points, a ring
-with fewer than three, and a feature left with nothing; MapServer finds a horizon along a line
-instead, and wraps lines at the dateline, which Forager does not do yet. A projection the core does
-not implement leaves its layer undrawn with a warning. The core implements longitude and latitude,
-`lcc`, `merc`, and `tmerc` with `utm`, a datum's shift by `+towgs84`, and the datums WGS84 and
-NAD83, as PROJ 9.4.0 computes them (ADR-0037). A layer of `AUTO` is not reprojected yet.
+projection as `msProjectRect` reprojects it: the points of its sides and of a diagonal, a hundred
+along each, both projections taken with `+over`, a run of points that do not reproject cut at the
+horizon, a grid where none of the ring is left, and every longitude where a polar projection's pole
+lies inside it. A line or a ring is reprojected by `msProjectShapeLine`: a run of points that do not
+reproject is cut at the horizon, found by halving each side to it down to 0.01 units; a line goes
+on in a new part after the shape's others, a ring is closed along the horizon, and after a run of
+no more than three such points its points move after the shape's other lines. Into longitude and
+latitude from a projected layer, a vertex more than 180° from the one before is wrapped by 360°
+where `msTestNeedWrap` finds the segment crossing the dateline. The points of a point shape are
+reprojected by `msProjectLineEx`: all are left out where one does not reproject, except into
+longitude and latitude from a projected layer, where such a point stays where it was. A warning
+names the layer and how many points did not reproject (Q-3), and the points the horizon search adds
+are bounded per layer (Q-9). `+over` keeps a longitude past ±180° on the way in and out. A
+projection the core does not implement leaves its layer undrawn with a warning. The core implements
+longitude and latitude, `lcc`, `merc`, `tmerc` with `utm`, and `ortho`, a datum's shift by
+`+towgs84`, and the datums WGS84 and NAD83, as PROJ 9.4.0 computes them (ADR-0037). A layer of
+`AUTO` is not reprojected yet.
 
 **Parameters.** MapServer hands every parameter to PROJ, so the frontend writes each one with a
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the

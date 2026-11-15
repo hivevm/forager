@@ -126,7 +126,7 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
 
 /// The lists of G-11's reference points and rectangles, each with the record of MapServer's
 /// reprojection of it and the name of the reader's output, from the workspace root (ADR-0038).
-const REFERENCES: [(&str, &str, &str); 2] = [
+const REFERENCES: [(&str, &str, &str); 3] = [
     (
         "crates/proj/tests/reference/points.tsv",
         "crates/proj/tests/reference/mapserver.tsv",
@@ -136,6 +136,11 @@ const REFERENCES: [(&str, &str, &str); 2] = [
         "crates/proj/tests/reference/rects.tsv",
         "crates/proj/tests/reference/mapserver-rects.tsv",
         "mapserver-rects.tsv",
+    ),
+    (
+        "crates/proj/tests/reference/shapes.tsv",
+        "crates/proj/tests/reference/mapserver-shapes.tsv",
+        "mapserver-shapes.tsv",
     ),
 ];
 
@@ -187,8 +192,9 @@ fn reference(reader: &Path, list: &str, record: &str, out: &Path) -> Result<Vec<
 /// How the reader's `output` differs from the `record`: a line one has and the other lacks, a
 /// header or a point or rectangle that differs, one that fails in one only, or a coordinate past
 /// the slack of its target ([`PROJECTED_SLACK`], [`GEOGRAPHIC_SLACK`]). A line of the record is
-/// a point's, its four fields followed by two coordinates or `fail`, or a rectangle's, its six
-/// followed by four or `fail`.
+/// a point's, its four fields followed by two coordinates or `fail`, a rectangle's, its six
+/// followed by four or `fail`, or a shape's, its four, the third its type, followed by its lines,
+/// each `x,y x,y ...` or `-`, or by `fail`.
 fn record_differences(record: &str, output: &str) -> Vec<String> {
     let mut differences = Vec::new();
     let (record, output): (Vec<&str>, Vec<&str>) =
@@ -210,7 +216,9 @@ fn record_differences(record: &str, output: &str) -> Vec<String> {
         }
         let r: Vec<&str> = recorded.split('\t').collect();
         let w: Vec<&str> = written.split('\t').collect();
+        let shape = matches!(r.get(2), Some(&("point" | "line" | "polygon")));
         let fields = match r.len() {
+            _ if shape => 4,
             5 | 6 => 4,
             7 | 10 => 6,
             _ => 0,
@@ -231,7 +239,28 @@ fn record_differences(record: &str, output: &str) -> Vec<String> {
             PROJECTED_SLACK
         };
         let (r, w) = (&r[fields..], &w[fields..]);
+        let close = |a: &str, b: &str| match (a.parse::<f64>(), b.parse::<f64>()) {
+            (Ok(a), Ok(b)) => (a - b).abs() <= slack,
+            _ => false,
+        };
         let agree = match (r, w) {
+            _ if shape => {
+                r.len() == w.len()
+                    && r.iter().zip(w).all(|(a, b)| {
+                        let (a, b): (Vec<&str>, Vec<&str>) =
+                            (a.split(' ').collect(), b.split(' ').collect());
+                        a.len() == b.len()
+                            && a.iter().zip(&b).all(|(a, b)| {
+                                match (a.split_once(','), b.split_once(',')) {
+                                    (Some((ax, ay)), Some((bx, by))) => {
+                                        close(ax, bx) && close(ay, by)
+                                    }
+                                    (None, None) => a == b,
+                                    _ => false,
+                                }
+                            })
+                    })
+            }
             (["fail"], ["fail"]) => true,
             _ if r.len() == fields - 2 && w.len() == r.len() && !r.contains(&"fail") => r
                 .iter()

@@ -15,11 +15,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The rectangle a source is asked for: a map's extent reprojected into a layer's projection as
-//! `msProjectRect` reprojects it. Not ported here: the `+over` MapServer adds to both projections
-//! and the wrapping of `msTestNeedWrap`, which change nothing for a rectangle that crosses no
-//! antimeridian of its projections (the plan's ticket 05); `lon_wrap`, which no projection here
-//! reads; the branch for a polar projection into another projected one, whose only effect is to
-//! skip that `+over`; and the memory of a projection's `is_polar`. MapServer sets it on the map's
+//! `msProjectRect` reprojects it, with the `+over` it adds to both projections and its ring
+//! reprojected by `msProjectShapeLine` (`shape.rs`). Not ported here: `lon_wrap`, which no
+//! projection here reads, and the memory of a projection's `is_polar`. MapServer sets it on the map's
 //! projection, which every layer of a render shares, at the first rectangle it projects, so only
 //! the first layer of a polar map gets all longitudes and the later ones take the `+over` path;
 //! here every layer gets them, as the first does.
@@ -32,9 +30,6 @@ use crate::Reprojection;
 /// `NUMBER_OF_SAMPLE_POINTS`.
 const SAMPLES: i32 = 100;
 
-/// Where `msProjectSegment` stops halving a segment, in the units of its source.
-const SEGMENT_TOLERANCE: f64 = 0.01;
-
 /// Web Mercator's half width, in metres, as `msProjectRectAsPolygon` names it.
 const WEB_MERCATOR_EDGE: f64 = 20_037_508.342_789_2;
 
@@ -45,27 +40,74 @@ impl Reprojection {
     /// its points where none of them reprojects, and the longitudes all round where a pole of a
     /// polar projection lies inside it; `None` where no point of it reprojects.
     pub fn extent(&self, extent: &Extent) -> Option<Extent> {
-        let pole = self.polar_into_longitude_and_latitude();
-        let mut rect = self.as_polygon(extent)?;
-        if let Some(sign) = pole
-            && extent.min_x <= 0.0
-            && extent.min_y <= 0.0
-            && extent.max_x >= 0.0
-            && extent.max_y >= 0.0
+        if let Some(sign) = self.polar_into_longitude_and_latitude() {
+            if extent.min_x <= 0.0
+                && extent.min_y <= 0.0
+                && extent.max_x >= 0.0
+                && extent.max_y >= 0.0
+            {
+                let mut rect = self.as_polygon(extent)?;
+                rect.min_x = -180.0;
+                rect.max_x = 180.0;
+                // As MapServer sets it, for a south pole too.
+                rect.max_y = sign * 90.0;
+                return Some(rect);
+            }
+            // Where the dateline is surely not enclosed, without `+over`.
+            if extent.max_y < 0.0 || extent.max_x < 0.0 || extent.min_x > 0.0 {
+                return self.as_polygon(extent);
+            }
+        } else if self.polar_into_projected()
+            && (extent.min_x <= 0.0
+                && extent.min_y <= 0.0
+                && extent.max_x >= 0.0
+                && extent.max_y >= 0.0
+                || extent.max_y < 0.0
+                || extent.max_x < 0.0
+                || extent.min_x > 0.0)
         {
-            rect.min_x = -180.0;
-            rect.max_x = 180.0;
-            // As MapServer sets it, for a south pole too.
-            rect.max_y = sign * 90.0;
+            // About the pole, or where the dateline is surely not enclosed: without `+over`.
+            return self.as_polygon(extent);
         }
-        Some(rect)
+        self.over().as_polygon(extent)
+    }
+
+    /// Whether a projected `from`, into a projected `to`, has the north pole at its origin, as
+    /// `msProjectRect` detects polar stereographic through `from`'s own longitude and latitude; it
+    /// tests the north pole for either sign.
+    fn polar_into_projected(&self) -> bool {
+        if self.from_geographic || self.to_geographic || self.from.is_geographic() {
+            return false;
+        }
+        let to_long_lat = Reprojection::new(self.from.clone(), self.from.base_geographic());
+        to_long_lat
+            .point(Coord { x: 0.0, y: 0.0 })
+            .is_ok_and(|p| (p.y - 90.0).abs() < 1e-8)
+    }
+
+    /// The way with `+over` on each side but a map's `AUTO`, as `msProjectRect` copies a projection
+    /// whose first argument is `init=` or `proj=`, as every proj4 string the frontend writes is.
+    fn over(&self) -> Self {
+        let side = |p: &crate::Projection, geographic: bool| {
+            // A map's `AUTO`: longitude and latitude that MapServer's tests do not take for any.
+            if p.is_geographic() && !geographic {
+                p.clone()
+            } else {
+                p.with_over()
+            }
+        };
+        Self {
+            from: side(&self.from, self.from_geographic),
+            to: side(&self.to, self.to_geographic),
+            ..self.clone()
+        }
     }
 
     /// The sign of the pole at the origin of a projected `from`, as `msProjectRect` detects polar
     /// stereographic, where `to` is longitude and latitude: `Some(1.0)` for the north, `Some(-1.0)`
     /// for the south.
     fn polar_into_longitude_and_latitude(&self) -> Option<f64> {
-        if self.from.is_geographic() || !self.to.is_geographic() {
+        if self.from_geographic || !self.to_geographic {
             return None;
         }
         let p = self.point(Coord { x: 0.0, y: 0.0 }).ok()?;
@@ -76,8 +118,8 @@ impl Reprojection {
 
     /// `msProjectRectAsPolygon`.
     fn as_polygon(&self, rect: &Extent) -> Option<Extent> {
-        if !self.to.is_geographic()
-            && self.from.is_geographic()
+        if !self.to_geographic
+            && self.from_geographic
             && (rect.min_x + 180.0).abs() < 1e-5
             && (rect.min_y + 90.0).abs() < 1e-5
             && (rect.max_x - 180.0).abs() < 1e-5
@@ -116,93 +158,16 @@ impl Reprojection {
             });
         }
         let ring = ring(rect, dx, dy);
-        let Some(line) = self.polygon_line(&ring) else {
+        let line = self.shape_line(&ring, true).first;
+        if line.is_empty() {
             return self.grid(rect, dx, dy);
-        };
+        }
         let mut bounds = bounds(&line)?;
-        if self.to.is_geographic()
-            && !self.from.is_geographic()
-            && bounds.max_x - bounds.min_x > 360.0
-        {
+        if self.to_geographic && !self.from_geographic && bounds.max_x - bounds.min_x > 360.0 {
             bounds.min_x = -180.0;
             bounds.max_x = 180.0;
         }
         Some(bounds)
-    }
-
-    /// The first line of the ring reprojected as `msProjectShapeLine` reprojects a polygon's:
-    /// a run of points that do not reproject is left out, ended and resumed where the ring
-    /// crosses the horizon. `None` where that line is left empty: where no point reprojects, and
-    /// where the ring comes back over the horizon after a run of at most three points that do
-    /// not (at most two at the ring's start), as MapServer then moves its points into a second
-    /// line, of which `msProjectRectAsPolygon` reads none.
-    fn polygon_line(&self, ring: &[Coord]) -> Option<Vec<Coord>> {
-        let mut line: Vec<Coord> = Vec::with_capacity(ring.len() + 1);
-        let mut valid = false;
-        let mut last = Coord { x: 0.0, y: 0.0 };
-        for (i, &this) in ring.iter().enumerate() {
-            match self.point(this) {
-                Err(_) => {
-                    if i > 0
-                        && valid
-                        && let Some((_, horizon)) = self.segment(last, this)
-                    {
-                        line.push(horizon);
-                    }
-                    valid = false;
-                }
-                Ok(at) => {
-                    if i > 0
-                        && !valid
-                        && let Some((_, horizon)) = self.segment(this, last)
-                    {
-                        // `line->numpoints >= i - 2`: the line moves into a second one, and the
-                        // first is left empty.
-                        if line.len() + 2 >= i {
-                            return None;
-                        }
-                        line.push(horizon);
-                    }
-                    line.push(at);
-                    valid = true;
-                }
-            }
-            last = this;
-        }
-        (!line.is_empty()).then_some(line)
-    }
-
-    /// `msProjectSegment`: of `start` and `end`, one reprojecting and the other not, both
-    /// reprojected, the one that does not replaced by where the segment crosses the horizon, found
-    /// by halving it; `None` where neither reprojects or the halving finds no such point.
-    fn segment(&self, start: Coord, end: Coord) -> Option<(Coord, Coord)> {
-        if self.point(start).is_err() {
-            self.point(end).ok()?;
-            let (end, start) = self.segment(end, start)?;
-            return Some((start, end));
-        }
-        let (mut sub_start, mut sub_end) = (start, end);
-        while (sub_start.x - sub_end.x).abs() + (sub_start.y - sub_end.y).abs() > SEGMENT_TOLERANCE
-        {
-            let mid = Coord {
-                x: (sub_start.x + sub_end.x) * 0.5,
-                y: (sub_start.y + sub_end.y) * 0.5,
-            };
-            if self.point(mid).is_err() {
-                if mid == sub_end {
-                    return None;
-                }
-                sub_end = mid;
-            } else {
-                if mid == sub_start {
-                    return None;
-                }
-                sub_start = mid;
-            }
-        }
-        let end = self.point(sub_start).ok()?;
-        let start = self.point(start).ok()?;
-        Some((start, end))
     }
 
     /// `msProjectRectGrid`: the rectangle that holds the reprojected points of a grid of

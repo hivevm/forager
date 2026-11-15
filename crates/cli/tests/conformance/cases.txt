@@ -40,7 +40,7 @@ misc/attrbind.map attrbind_test001.png text passes labels-hold
 misc/attrbind.map attrbind_test002.png out: a data source other than shapefiles, OGR
 misc/autostyle.map autostyle.png out: a data source other than shapefiles, OGR
 misc/autostyle_quoted.map autostyle_quoted.png out: a data source other than shapefiles, OGR
-misc/bug1526.map bug1526.png blank out: a projection, ortho
+misc/bug1526.map bug1526.png blank geometry passes
 misc/centerline.map centerline1.png out: an OGC or CGI request
 misc/centerline.map centerline2.png out: an OGC or CGI request
 misc/centerline.map centerline3_exception.txt out: an OGC or CGI request
@@ -53,7 +53,7 @@ misc/cluster.map wms_cluster_cap.xml out: an OGC or CGI request
 misc/cluster.map wms_get_map_cluster.png out: an OGC or CGI request
 misc/contour.map contour.png blank out: a raster source, CONTOUR
 misc/contour_with_expr.map contour_with_expr.png blank out: a raster source, CONTOUR
-misc/dateline.map dateline.png out: a projection, merc to latlong with +over
+misc/dateline.map dateline.png geometry passes
 misc/dbf-invalid.map dbf-invalid-wfs-get-feature.xml out: an OGC or CGI request
 misc/encoding.map encodings.png geometry fails  # not built yet: the ENCODING of a layer
 misc/encoding.map encodings.xml out: an OGC or CGI request
@@ -111,7 +111,7 @@ misc/openlayers.map wms_projected_extra.html out: an OGC or CGI request
 misc/openlayers.map wms_invalid_parameter1.html out: an OGC or CGI request
 misc/openlayers.map wms_invalid_parameter2.html out: an OGC or CGI request
 misc/openlayers.map wms_invalid_parameter3.html out: an OGC or CGI request
-misc/ortho.map ortho.png out: a projection, ortho
+misc/ortho.map ortho.png geometry passes
 misc/pg_join.map pg_join.html out: an OGC or CGI request
 misc/quantized.map quantized.png out: a raster source
 misc/quoted_data.map quoted_data.png out: a data source other than shapefiles, PostGIS
