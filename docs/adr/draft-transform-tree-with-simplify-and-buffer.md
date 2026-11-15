@@ -18,20 +18,32 @@ The fidelity plan ports `simplify` and `buffer` (tickets 11 and 12). The code th
 is [ADR-draft-geometry-through-geo](draft-geometry-through-geo.md), the geo crate the maintainer
 chose on 2026-11-15. geo does not reproduce GEOS's `simplifypt`, so `simplifypt` stays a reason.
 The tree must hold `simplify` and `buffer` as nodes with their arguments. That changes
-ADR-0036's list of nodes and its closed list of reasons, so this ADR supersedes it. It restates
-every clause of ADR-0036 in its wording, but these:
+ADR-0036's list of nodes and its closed list of reasons, so this ADR supersedes it.
+
+The fidelity plan also draws a class style's expression (ticket 10), which ADR-0036's *Out of
+scope* leaves undrawn. The maintainer decided on 2026-11-15 that this ADR, still proposed, takes
+it up, rather than a successor of its own. It changes what `GeomTransform::Expression` means on a
+class's style: reported and not drawn before, drawn now.
+
+This ADR restates every clause of ADR-0036 in its wording, but these:
 
 - *Decision*, its first sentence: it names `simplify` and `buffer` among the nodes;
 - *Shape*: the nodes `simplify` and `buffer` are added;
 - *Order of landing*: a new entry, each node landing with the change that draws it;
 - *Numbers*: a new item, a negative tolerance or distance kept as written;
 - *Not drawn*: `buffer` and `simplify` stay reasons only until their nodes land;
-- *Versions*: "this ADR" reads "ADR-0036"; two new items, the regenerated file of 1.1 and the
-  version move left to the maintainer;
-- *Out of scope*: the code of the two functions added, after ADR-0036's first item; the
-  bounds of a transform's points narrowed to those Q-9 does not name, since Q-9 now names a
-  layer's; and the port of a not-drawn function giving `centerline` and `simplifypt` as examples
-  in place of `buffer` and `centerline`.
+- *A class's style*: a new entry, a class style's expression drawn as `msDrawTransformedShape`
+  draws it, its `[map_cellsize]` bound as a layer's, its evaluations charged to the layer's bound
+  of Q-9, and a failed evaluation drawing nothing on its shape;
+- *Diagnostics*: the warning for a `not_drawn` tree is given for a layer's tree and a class
+  style's alike, and the style draws nothing;
+- *Versions*: "this ADR" reads "ADR-0036"; three new items, the regenerated file of 1.1, the
+  version move left to the maintainer, and the description of `GeomTransform::Expression`
+  changed in 1.1;
+- *Out of scope*: the code of the two functions added, after ADR-0036's first item; drawing a
+  class style's expression removed; the bounds of a transform's points narrowed to those Q-9 does
+  not name, since Q-9 now names a layer's and its styles'; and the port of a not-drawn function
+  giving `centerline` and `simplifypt` as examples in place of `buffer` and `centerline`.
 
 **The grammar of the three** (`src/mapparser.y` at `rel-8-6-6`):
 
@@ -42,6 +54,28 @@ every clause of ADR-0036 in its wording, but these:
 
 Each `n` is the rule `math_exp`, as for `generalize` and `densify`. MapServer fixes the 30
 segments a quadrant of `buffer` in the C; no argument carries them.
+
+**A class style's expression** (`rel-8-6-6`):
+
+- `msDrawShape` (`src/mapdraw.c`) needs the unclipped shape where a style of a line or a
+  polygon layer has a `GEOMTRANSFORM` (`:2429-2437`). It transforms the shape to pixels
+  (`:2505`) and copies it before it clips (`:2516-2518`). `lineLayerDrawShape` (`:2140-2148`)
+  and `polygonLayerDrawShape` (`:2304-2311`) hand that unclipped pixel shape to
+  `msDrawTransformedShape`, for each style in its scale range. `pointLayerDrawShape`
+  (`:2034-2085`) draws a point layer's styles at its points whatever their transform.
+- `msDrawTransformedShape` (`src/mapgeomtransform.c:198-240`) evaluates the style's expression
+  on that shape with `yyparse`. It draws a line result with `msDrawLineSymbol`, and a point or a
+  polygon result with `msDrawShadeSymbol`, each with the style itself and its scale factor. A
+  result of another type draws nothing.
+- A failure of the evaluation returns `MS_FAILURE`, as `msGeomTransformShape`'s does for a
+  layer. `msDrawVectorLayer` stops at it (`src/mapdraw.c:1402-1405`, `:1427-1434`), and
+  `msDrawMap` makes no map (`:508-519`). A failure of the drawing is not returned: the inner
+  `int status` of the `case` shadows the function's.
+- `msDrawTransformedShape` sets neither `p.dblval` nor `p.dblval2` of its local `parseObj`.
+  These bind `[map_cellsize]` and `[data_cellsize]` (`src/mapparser.y:1121-1128`).
+  `msGeomTransformShape` sets both for a layer (`src/mapgeomtransform.c:283-291`). So a style's
+  `[map_cellsize]` reads an uninitialised double at the pin. No style of msautotest at 7515cccf
+  uses it.
 
 **What msautotest uses** at 7515cccf: the layer `vertex2` of `renderers/geomtransform-vertex.map`,
 `simplify([shape],25)`; three styles of the same file, `simplify([shape],10)`,
@@ -103,10 +137,26 @@ from MapServer's text.
   A syntax error takes precedence: MapServer refuses the whole expression, so an expression with a
   syntax error is `syntax`. Otherwise the frontend must name the first such construct in the
   expression's reading order. The tree must hold no text of the mapfile.
+- **A class's style.** The engine must draw a class style's tree on a shape of a line or a
+  polygon layer as `msDrawTransformedShape` draws it.
+  - The engine must evaluate the tree on the shape in pixels, unclipped, as `msDrawShape` hands
+    it on.
+  - It must bind `[map_cellsize]` to the value a layer's `GEOMTRANSFORM` binds it to. MapServer
+    binds none for a style at the pin.
+  - It must draw a line result as `msDrawLineSymbol` draws it. It must draw a point or a polygon
+    result as `msDrawShadeSymbol` draws it. Each takes the style itself.
+  - A point layer draws the style at its points, whatever its tree, as `pointLayerDrawShape` does.
+  - The evaluations of a layer's style trees must charge the bound of Q-9 the layer's
+    `GEOMTRANSFORM` charges, one budget per layer and render. Past it, the style must draw
+    nothing, with the warning `geomtransform-over-limit`.
+  - Where the evaluation fails on a shape, the style must draw nothing on that shape, with the
+    warning `geomtransform-not-drawn` naming the failure. MapServer makes no map there. The
+    layer's other styles and the rest of the map are drawn.
 - **Who parses.** Only `crates/mapfile` may parse a `GEOMTRANSFORM` expression. The core must read
   the tree and never MapServer's text.
 - **Diagnostics.** The engine must warn `geomtransform-not-drawn` for a `not_drawn` tree, naming
-  its reason. The frontend must warn at load only of a syntax error, with its place.
+  its reason, of a layer and of a class's style alike. A class's style of a `not_drawn` tree must
+  draw nothing. The frontend must warn at load only of a syntax error, with its place.
 - **Bounds.** The tree must nest at most `MAX_EXPRESSION_DEPTH`, 24 levels, counted as ADR-0015
   counts an expression's depth.
   - The frontend's parser must count each operator of a chain as one level of the tree it builds.
@@ -124,6 +174,10 @@ from MapServer's text.
   - Before a release, the change that adds a node must regenerate the current version's file.
   - The format version stays 1.1 unless the maintainer moves it. A move must follow ADR-0014's
     version rule.
+  - The change that draws a class style's tree must change the doc comment of
+    `GeomTransform::Expression` from not drawn to drawn. That comment is the schema's
+    description, so the change must regenerate `schema/style-document-1.1.json`. The version
+    stays 1.1.
 
 **Out of scope:**
 
@@ -131,7 +185,6 @@ from MapServer's text.
   from the C, `[map_cellsize]` and the layer's `UNITS` among them;
 - the code that computes `simplify` and `buffer`, which
   [ADR-draft-geometry-through-geo](draft-geometry-through-geo.md) decides;
-- drawing a class style's expression: the engine keeps drawing none, as today;
 - the bounds on the points a transform adds and visits beyond those Q-9 names;
 - a label's style of an expression, which keeps `LabelTransform` and is left out with its label as
   today;
@@ -166,6 +219,29 @@ from MapServer's text.
   numbers only, and superseding ADR-0015. They stand as ADR-0036 records them. Its alternative of
   a not-drawn function kept in place with its arguments stands for the functions still not drawn;
   for the two drawn here the engine now reads the arguments.
+- **Keep a class style's expression not drawn** — ADR-0036's line, no change of meaning. The
+  styles of `generalize` and `simplify` in `renderers/geomtransform-vertex.map` stay undrawn, and
+  its case cannot pass.
+- **A successor of its own for the drawn style** — a record for each decision. The drawn style
+  changes the meaning of the type this ADR decides, `GeomTransform::Expression`, and ADR-0036
+  excluded it in the clause this ADR restates. A second successor would supersede ADR-0036 twice.
+  The maintainer chose this ADR on 2026-11-15.
+- **The style's tree evaluated in map units, before the pixels, as a layer's** — one path of
+  evaluation. MapServer evaluates a style's tree on the shape in pixels, so its numbers are pixels:
+  the case's `generalize([shape],50)` keeps points at least 50 pixels apart.
+- **A style's `[map_cellsize]` as 1, a cell in pixels** — a value that fits the pixel shape. The
+  pin binds none, so no reference decides. The layer's value keeps one meaning for one name and
+  needs no rule of its own.
+- **A `not_drawn` reason for a style's `[map_cellsize]`** — true to the read of an uninitialised
+  double. It adds a reason to the closed list, and the frontend's translation would depend on
+  whether the tree sits on a layer or a style.
+- **A budget of its own for each style, or for each shape** — a style's evaluation cannot starve
+  the layer's. A layer of many styles, or many shapes, would multiply the bound of Q-9. The
+  maintainer chose one budget a layer and render.
+- **The whole layer undrawn where a style's evaluation fails, as for a layer's transform** — nearer
+  MapServer, which stops the layer and makes no map. The engine evaluates the style while it
+  draws, after the layer's earlier shapes are drawn, so withdrawing them needs a second pass.
+  Neither form is MapServer's.
 
 ## Sources / Prior art
 
@@ -176,26 +252,43 @@ from MapServer's text.
 - [ADR-0036](0036-typed-geomtransform.md), whose *Context* and *Sources* this ADR keeps.
 - [ADR-0014](0014-style-document-versions.md), [ADR-0015](0015-expressions-as-cql2.md),
   [ADR-0008](0008-ports-and-adapters-crates.md), [ADR-0017](0017-c-ports-in-style-ir.md).
-- `docs/plan/fidelity/11-simplify-through-a-geometry-library.md` and
+- MapServer `rel-8-6-6`, `src/mapgeomtransform.c` (`msDrawTransformedShape`, `:115-250`;
+  `msGeomTransformShape`, `:283-291`), `src/mapdraw.c` (`:508-519`, `:1402-1405`, `:2034-2085`,
+  `:2140-2148`, `:2304-2311`, `:2429-2437`, `:2505-2518`), and `src/mapparser.y` (`:1121-1128`),
+  read 2026-11-15 from `target/ms-src`.
+- `docs/plan/fidelity/10-style-geomtransform-expressions.md`,
+  `docs/plan/fidelity/11-simplify-through-a-geometry-library.md`, and
   `docs/plan/fidelity/12-geomtransform-buffer.md`.
 
 ## Consequences
 
 - Positive: a layer of `simplify` draws, and the case of `vertex2` can pass. A style document may
   write both functions as CQL2-JSON custom functions.
+- Positive: a class style's tree draws as MapServer draws it, on a line or a polygon layer. The
+  styles of `generalize` and `simplify` in `renderers/geomtransform-vertex.map` draw.
 - Positive: every clause of ADR-0036 but those the *Context* lists keeps its wording, so the
   frontend's tests and the engine's rules of a `not_drawn` tree stand unchanged.
 - Negative / trade-offs: a document of 1.1 written before a node lands, with that function's
   reason, fails to load after it. No release holds 1.1, so only local files are affected.
 - Negative / trade-offs: the schema changes with each change that lands a node, `simplify` first
-  and `buffer` second.
+  and `buffer` second, and with the change that draws a class style's tree.
+- Negative / trade-offs: a document of 1.1 written before that change, with a class style's tree,
+  draws the style after it, where it drew nothing. No release holds 1.1, so only local files are
+  affected.
+- Negative / trade-offs: a style's `[map_cellsize]` and a style's failed evaluation deviate from
+  the pin, which reads an uninitialised double and makes no map.
+- Negative / trade-offs: a layer's style trees share one budget with its `GEOMTRANSFORM`. A layer
+  of many such styles reaches the bound sooner, and its styles past it draw nothing.
 - Negative / trade-offs: `simplifypt` stays not drawn. A node for it needs a successor of this
   ADR, after the backlog entry `docs/backlog/simplifypt-topology-preserving.md` is decided.
+  The case `geomtransform-vertex.png` keeps failing on its style of `simplifypt`.
 - Follow-ups:
   - the semantics page of the layer's transform, with `[map_cellsize]`, the layer's `UNITS`, and
     GEOS's failures;
-  - Q-9's bounds on the points a style's expression adds and visits, a change to the
-    specification, if the engine draws a style's expression.
+  - the semantics page of a class style's tree, in pixels, with its `[map_cellsize]` and its
+    failures;
+  - Q-9's bound shared by a layer's style trees, a change to the specification the maintainer
+    lands.
 
 ## Enforcement
 
@@ -216,6 +309,16 @@ from MapServer's text.
   - a syntax error warned with its place.
 - A test of `crates/engine` cites this ADR with `Verifies:`. A layer of a `not_drawn` tree draws
   nothing and warns `geomtransform-not-drawn` with its reason.
+- Tests of `crates/engine` cite this ADR with `Verifies:`. They render with sources in memory:
+  - a line layer's style of `generalize` strokes the generalized line in pixels, without a
+    warning;
+  - a style whose tree yields a polygon is shaded as `msDrawShadeSymbol` shades it;
+  - a class style of a `not_drawn` tree draws nothing and warns `geomtransform-not-drawn` with its
+    reason;
+  - a style whose evaluation fails on a shape draws nothing on it, with its warning.
+- A test of `crates/engine` cites this ADR and Q-9 with `Verifies:`. A style whose tree visits
+  past the budget its layer's `GEOMTRANSFORM` left draws nothing past it and warns
+  `geomtransform-over-limit`.
 - The tests that cite [ADR-0036](0036-typed-geomtransform.md) move their `Verifies:` to this ADR in
   the change that implements it.
 
