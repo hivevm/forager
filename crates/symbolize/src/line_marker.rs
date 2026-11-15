@@ -16,7 +16,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! Symbols along a line: a vector, an ellipse, a pixmap, or a TrueType symbol, whose glyphs
-//! `glyph_marker` places through [`taken`], repeated every `GAP` pixels
+//! `glyph_marker` places through [`Placement::of`] and [`taken`], repeated every `GAP` pixels
 //! from the `INITIALGAP`, upright for a positive gap and turned with each segment for a negative
 //! one, as MapServer places them. The positions of the markers outside the image are not visited
 //! one by one but skipped, and the markers along the lines of one layer, with those at its
@@ -114,19 +114,19 @@ pub(crate) struct Marker {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Placement {
     /// The distance between markers, in pixels.
-    pub spacing: f64,
+    spacing: f64,
     /// The distance to the first marker; a negative one asks for half the spacing.
-    pub initial_gap: f64,
+    initial_gap: f64,
     /// Whether each marker turns with its segment.
-    pub auto_angle: bool,
+    auto_angle: bool,
     /// The style's rotation, in radians.
-    pub rotation: f64,
-    /// The symbol's width and height in pixels, at least 1 each.
-    pub size: (f64, f64),
+    rotation: f64,
+    /// The symbol's width and height in pixels, at least 1 each but for a TrueType symbol's.
+    size: (f64, f64),
     /// The symbol's `ANCHORPOINT`.
-    pub anchor: [f64; 2],
+    anchor: [f64; 2],
     /// The image's width and height in pixels.
-    pub image: (f64, f64),
+    image: (f64, f64),
 }
 
 /// The drawing operations of the markers of `style` with its vector or ellipse `symbol` along
@@ -158,7 +158,7 @@ pub(crate) fn draw<T>(
     let placement = Placement::of(
         style,
         (s.gap, s.rotation),
-        (size_x * s.scale, size_y * s.scale),
+        clamped((size_x * s.scale, size_y * s.scale)),
         symbol.anchor(),
         initial_gap,
         image,
@@ -202,10 +202,10 @@ pub(crate) fn draw_pixmap<T>(
     let placement = Placement::of(
         style,
         (gap, rotation),
-        (
+        clamped((
             f64::from(pixmap.width()) * scale,
             f64::from(pixmap.height()) * scale,
-        ),
+        )),
         symbol.anchor(),
         initial_gap,
         image,
@@ -227,15 +227,22 @@ pub(crate) fn draw_pixmap<T>(
     ops
 }
 
+/// `(width, height)` at least 1 each way, as msImagePolylineMarkers holds the size of a symbol
+/// that is not TrueType (`src/maprendering.c:400-401`).
+fn clamped((width, height): (f64, f64)) -> (f64, f64) {
+    (ms_max(1.0, width), ms_max(1.0, height))
+}
+
 impl Placement {
     /// What msDrawLineSymbol hands msImagePolylineMarkers of `style`, `src/maprendering.c:679-688`,
     /// with computeSymbolStyle's gap and rotation: the spacing the gap's size, turned with the
-    /// line for a negative `GAP`; and the marker's size, the symbol's width and height scaled, at
-    /// least 1 each way (400-401), anchored at `anchor`.
-    fn of<T>(
+    /// line for a negative `GAP`; and the marker's size, `size`, anchored at `anchor`. A vector's,
+    /// an ellipse's, and a pixmap's size is its width and height scaled, at least 1 each way, as
+    /// [`clamped`] holds it (400-401); a TrueType symbol's is its glyph's box as it is (402-413).
+    pub(crate) fn of<T>(
         style: &Style<T>,
         (gap, rotation): (f64, f64),
-        (width, height): (f64, f64),
+        size: (f64, f64),
         anchor: [f64; 2],
         initial_gap: f64,
         image: (f64, f64),
@@ -246,7 +253,7 @@ impl Placement {
             initial_gap,
             auto_angle: turned,
             rotation,
-            size: (ms_max(1.0, width), ms_max(1.0, height)),
+            size,
             anchor,
             image,
         }

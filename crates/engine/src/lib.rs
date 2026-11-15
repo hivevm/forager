@@ -408,16 +408,21 @@ fn layer_canvas<'c>(
 
 /// The fonts the TrueType symbols of the `selected` features' styles name, each once, which their
 /// markers draw their glyphs from (ADR-draft-truetype-marker-glyph-through-a-port); those of
-/// styles outside their scale range at the map's `scale` are left out, as their pixmaps are.
+/// styles outside their scale range at the map's `scale` are left out, as their pixmaps are, but
+/// for the first style of a class for which `holds_marker` is true: the label cache sizes that
+/// marker by msGetMarkerSize whatever its scale range (`src/maplabel.c:344-352, 604-608`).
 fn truetype_fonts<'s>(
     selected: &'s [Selected<'_>],
     symbols: &'s [Symbol],
     scale: f64,
+    holds_marker: impl Fn(usize) -> bool,
 ) -> Vec<&'s str> {
     let mut fonts: Vec<&str> = Vec::new();
-    for (_, _, styles) in selected {
-        for style in styles {
-            if classes::in_scale(scale, style.min_scale_denom, style.max_scale_denom)
+    for (_, class, styles) in selected {
+        let marker = holds_marker(*class);
+        for (place, style) in styles.iter().enumerate() {
+            if ((place == 0 && marker)
+                || classes::in_scale(scale, style.min_scale_denom, style.max_scale_denom))
                 && let Resolved::Found(_, symbol) = resolve(&style.symbol, symbols)
                 && symbol.kind == SymbolKind::Truetype
                 && let Some(font) = symbol.font.as_deref()
@@ -454,8 +459,8 @@ impl Drawing<'_> {
 
     /// Loads what the layer is drawn from, through the resource loader of `labels`: the fonts of
     /// the TrueType symbols the `selected` features' styles name, kept in `images` from the store
-    /// of the labels' fonts (see [`truetype_fonts`]); and into `images` the image of each pixmap
-    /// symbol the styles of the
+    /// of the labels' fonts (see [`truetype_fonts`]), by the scale rule of the pixmaps below; and
+    /// into `images` the image of each pixmap symbol the styles of the
     /// `selected` features draw as a mark, those outside their scale range left out, so that the
     /// layer is drawn from them; one the store refuses leaves its style undrawn, as the canvas
     /// records. On a point layer of the label cache, the first style of a class with labels is
@@ -474,12 +479,14 @@ impl Drawing<'_> {
         images: &mut Images,
         labels: &mut Labels<'_, L>,
     ) {
-        let fonts = truetype_fonts(selected, symbols, self.scale);
+        let holds_markers = self.mode == RenderMode::Point && cached;
+        let holds_marker =
+            |class: usize| holds_markers && !self.layer.classes[class].labels.is_empty();
+        let fonts = truetype_fonts(selected, symbols, self.scale, holds_marker);
         labels.load_marker_fonts(images.glyphs_mut(), &fonts).await;
         let files = labels.files();
-        let holds_markers = self.mode == RenderMode::Point && cached;
         for (_, class, styles) in selected {
-            let marker = holds_markers && !self.layer.classes[*class].labels.is_empty();
+            let marker = holds_marker(*class);
             for (place, style) in styles.iter().enumerate() {
                 if !(place == 0 && marker)
                     && !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom)

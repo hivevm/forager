@@ -74,7 +74,8 @@ anchor point other than the centre moves the glyph as a vector symbol's moves it
 (`msAdjustMarkerPos`), at the size `msGetMarkerSize` gives a TrueType symbol: the width and height
 of its character's control box (`msGetCharacterSize`), the glyph read at the style's size, 1
 without one, times the scale factor, cut to whole pixels and bounded by `MINSIZE` and `MAXSIZE`
-unscaled. The label cache sizes the marker of a class's first style the same way.
+unscaled. The label cache sizes the marker of a class's first style the same way, its font loaded
+whatever the style's scale range, as a pixmap's image is.
 
 **A TrueType symbol along a line.** A line layer's style whose symbol is a TrueType symbol and whose
 `GAP` is not 0 draws its glyph along the line as `msImagePolylineMarkers` places a vector symbol,

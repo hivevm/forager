@@ -218,6 +218,30 @@ fn the_label_cache_sizes_a_truetype_marker_by_its_character() {
 }
 
 #[test]
+fn the_label_cache_sizes_a_truetype_marker_outside_its_scale_range() {
+    // msAddLabel sizes the class's first style by msGetMarkerSize whatever its scale range, so its
+    // font is loaded although the style draws nothing at this scale: the label is cached.
+    let mut map = map("sans", "A");
+    map.layers[0].classes[0].styles[0].max_scale_denom = Some(1.0);
+    map.layers[0].classes[0].labels = vec![Label {
+        text: Some(Expr::String("x".to_owned())),
+        font: Some(Bound::Value("sans".to_owned())),
+        size: Some(Bound::Value(8.0)),
+        color: Some(Bound::Value(BLACK)),
+        position: Some(Bound::Value(Position::Ur)),
+        span: Some(Span::new("m.map", 9, 7)),
+        ..Label::default()
+    }];
+    let rendered = render(&map);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.labels.len(), 1, "{:?}", rendered.labels);
+}
+
+#[test]
 fn a_truetype_symbol_with_a_gap_is_drawn_along_a_line() {
     let mut map = map("sans", "A");
     map.layers[0].render_mode = Some(RenderMode::Line);

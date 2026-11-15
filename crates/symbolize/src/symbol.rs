@@ -414,20 +414,9 @@ pub fn marker_size_of(
     )
 }
 
-/// The font a TrueType symbol names and the character of its `CHARACTER` (see
-/// [`glyph::character`]), or why it has none.
-fn character_of(symbol: &Symbol) -> Result<(&str, char), String> {
-    let font = symbol
-        .font
-        .as_deref()
-        .ok_or_else(|| "the TrueType symbol names no FONT".to_owned())?;
-    let character = glyph::character(symbol.character.as_deref().unwrap_or(""))?;
-    Ok((font, character))
-}
-
 /// [`marker_size_of`] of `style` at the size `size` and of the symbol `symbol` in place of its
-/// own, as a feature binds them; without `pixmaps`, a pixmap's size is not computed, nor without
-/// `glyphs` a TrueType symbol's.
+/// own, as a feature binds them; without `pixmaps`, a pixmap's size is not computed yet, nor
+/// without `glyphs` a TrueType symbol's.
 pub fn marker_size_with<T>(
     style: &Style<T>,
     size: Option<f64>,
@@ -464,12 +453,13 @@ pub fn marker_size_with<T>(
                 ))
             }
             (SymbolKind::Truetype, _) => {
-                let points = marker_points(style, size, scale_factor);
-                let glyph = match glyphs {
-                    Some(glyphs) => character_of(symbol)
-                        .and_then(|(font, character)| glyphs.glyph(font, character, points)),
-                    None => Err("no fonts are kept where its size is asked".to_owned()),
+                // Without the port, as a label's own marker is sized, it is not built yet.
+                let Some(glyphs) = glyphs else {
+                    return Err("a truetype symbol, whose size is not computed yet".to_owned());
                 };
+                let points = marker_points(style, size, scale_factor);
+                let glyph = glyph::font_and_character(symbol)
+                    .and_then(|(font, character)| glyphs.glyph(font, character, points));
                 let named = named(index, Some(symbol));
                 let glyph =
                     glyph.map_err(|why| format!("{named}, whose size is not known: {why}"))?;

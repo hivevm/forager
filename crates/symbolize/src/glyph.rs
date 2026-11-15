@@ -19,6 +19,7 @@
 use std::rc::Rc;
 
 use forager_render::PathCommand;
+use forager_style_ir::Symbol;
 
 /// A glyph a marker draws: its outline in pixels about its origin, y down as the display list has
 /// it, its control box in the same pixels, and whether the font lacks the character, so that
@@ -37,6 +38,19 @@ pub struct Glyph {
 /// set names `font`, at `size` points, or why there is none.
 pub trait Glyphs {
     fn glyph(&self, font: &str, character: char, size: u32) -> Result<Rc<Glyph>, String>;
+}
+
+/// The font a TrueType symbol names and the character of its `CHARACTER` (see [`character`]), as
+/// msGetFontFace and msUTF8ToUniChar take them; or why it has none. A symbol without a `FONT` has
+/// none, where MapServer draws its built-in font, which Forager does not bundle.
+pub(crate) fn font_and_character(symbol: &Symbol) -> Result<(&str, char), String> {
+    let font = symbol.font.as_deref().ok_or_else(|| {
+        "the TrueType symbol names no FONT, where MapServer draws its built-in font, which \
+         Forager does not bundle"
+            .to_owned()
+    })?;
+    let character = character(symbol.character.as_deref().unwrap_or(""))?;
+    Ok((font, character))
 }
 
 /// The character a TrueType symbol's `CHARACTER` names, as msUTF8ToUniChar reads its first: a

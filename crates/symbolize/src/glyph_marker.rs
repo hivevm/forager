@@ -28,7 +28,7 @@ use forager_style_ir::c::lrint;
 use forager_style_ir::{ANCHOR_CENTRE, Style, Symbol};
 
 use crate::canvas::Canvas;
-use crate::glyph::{Glyph, character};
+use crate::glyph::{Glyph, Glyphs, font_and_character};
 use crate::line_marker::{Placement, taken};
 use crate::style::fixed;
 use crate::symbol::{self, Affine, SymbolStyle};
@@ -87,47 +87,55 @@ fn placed(path: &[PathCommand], origin: Point, rotation: f64) -> Vec<PathCommand
 
 /// The glyph of the TrueType symbol `symbol`, at `index` from 1, at `size` points, asked of the
 /// canvas's port, as msGetFontFace, msUTF8ToUniChar, msGetGlyphIndex, and msGetGlyphByIndex find
-/// it. A symbol without a `FONT` has none, where MapServer draws its built-in font, which Forager
-/// does not bundle; nor does one whose `CHARACTER` is refused (see [`character`]), nor one the
-/// port has none for. The canvas records why. One whose font lacks the character is glyph 0, and
-/// the canvas records that too.
+/// it. A symbol whose font or character is refused has none (see [`font_and_character`]), nor
+/// one the port has none for. The canvas records why. One whose font lacks the character is
+/// glyph 0, and the canvas records that too.
 pub(crate) fn glyph_of(
     symbol: &Symbol,
     index: usize,
     size: u32,
     canvas: &mut Canvas,
 ) -> Option<Rc<Glyph>> {
-    let Some(font) = symbol.font.as_deref() else {
-        let why = "the TrueType symbol names no FONT, where MapServer draws its built-in font, \
-                   which Forager does not bundle"
-            .to_owned();
-        canvas.refused_symbols.entry(index).or_insert(why);
-        return None;
+    let asked = ask(canvas.glyphs, symbol, size);
+    record(canvas, index, asked)
+}
+
+/// What [`glyph_of`] finds, before the canvas records it: the glyph and, where the font lacks the
+/// character, what is drawn instead; or why there is none.
+type Asked = Result<(Rc<Glyph>, Option<String>), String>;
+
+/// The glyph of `symbol` at `size` points asked of `glyphs` (see [`glyph_of`]), nothing recorded.
+fn ask(glyphs: Option<&dyn Glyphs>, symbol: &Symbol, size: u32) -> Asked {
+    let (font, character) = font_and_character(symbol)?;
+    let glyph = match glyphs {
+        Some(glyphs) => glyphs.glyph(font, character, size)?,
+        None => return Err("no fonts are kept where it is drawn".to_owned()),
     };
-    let glyph = character(symbol.character.as_deref().unwrap_or("")).and_then(|character| {
-        let glyph = match canvas.glyphs {
-            Some(glyphs) => glyphs.glyph(font, character, size),
-            None => Err("no fonts are kept where it is drawn".to_owned()),
-        };
-        glyph.map(|glyph| (character, glyph))
+    let missing = glyph.missing.then(|| {
+        format!(
+            "the font `{font}` has no glyph for the character U+{:04X}; glyph 0 is drawn, or the \
+             font's `?` where glyph 0 cannot be",
+            u32::from(character)
+        )
     });
-    let (character, glyph) = match glyph {
-        Ok(found) => found,
+    Ok((glyph, missing))
+}
+
+/// The glyph `asked` finds for the symbol at `index` from 1, the canvas recording why there is
+/// none, or that its font lacks the character.
+fn record(canvas: &mut Canvas, index: usize, asked: Asked) -> Option<Rc<Glyph>> {
+    match asked {
+        Ok((glyph, missing)) => {
+            if let Some(missing) = missing {
+                canvas.missing_glyphs.entry(index).or_insert(missing);
+            }
+            Some(glyph)
+        }
         Err(why) => {
             canvas.refused_symbols.entry(index).or_insert(why);
-            return None;
+            None
         }
-    };
-    if glyph.missing {
-        canvas.missing_glyphs.entry(index).or_insert_with(|| {
-            format!(
-                "the font `{font}` has no glyph for the character U+{:04X}; glyph 0 is drawn, or \
-                 the font's `?` where glyph 0 cannot be",
-                u32::from(character)
-            )
-        });
     }
-    Some(glyph)
 }
 
 /// The glyph of the TrueType symbol `symbol`, at `index` from 1, at the size computeSymbolStyle's
@@ -172,9 +180,9 @@ pub(crate) fn glyph_op(glyph: &Glyph, at: Point, s: &SymbolStyle) -> DrawOp {
 /// The TrueType symbol `symbol`, at `index` from 1, at the pixel `at` in `style` at the canvas's
 /// factors, as msDrawMarkerSymbol draws it: computeSymbolStyle's style, nothing without a colour
 /// or at a scale of 0; moved by the style's offsets, and by its `ANCHORPOINT` of the size
-/// msGetMarkerSize gives it, its character's bounds at [`symbol::marker_points`] (msAdjustMarkerPos);
-/// its glyph (see [`styled_glyph`]) drawn by [`glyph_op`]. Where either glyph is not found,
-/// nothing is drawn.
+/// msGetMarkerSize gives it, its character's bounds at [`symbol::marker_points`]
+/// (msAdjustMarkerPos); its glyph (see [`styled_glyph`]) drawn by [`glyph_op`]. Where either
+/// glyph is not found, nothing is drawn.
 pub(crate) fn glyph_ops<T>(
     ops: &mut Vec<DrawOp>,
     at: Point,
@@ -224,16 +232,14 @@ pub(crate) fn line_glyphs<T>(
     let Some(glyph) = styled_glyph(symbol, index, &s, canvas) else {
         return Vec::new();
     };
-    let turned = style.gap.unwrap_or(0.0) < 0.0;
-    let placement = Placement {
-        spacing: if turned { -s.gap } else { s.gap },
+    let placement = Placement::of(
+        style,
+        (s.gap, s.rotation),
+        glyph_extent(&glyph),
+        symbol.anchor(),
         initial_gap,
-        auto_angle: turned,
-        rotation: s.rotation,
-        size: glyph_extent(&glyph),
-        anchor: symbol.anchor(),
-        image: canvas.image(),
-    };
+        canvas.image(),
+    );
     let mut ops = Vec::new();
     let mut each = s;
     for marker in taken(paths, &placement, 1, &mut canvas.markers) {
@@ -245,8 +251,9 @@ pub(crate) fn line_glyphs<T>(
 
 /// The TrueType symbol `symbol`, at `index` from 1, of `style` over `rings`, already moved by the
 /// offset, as msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the
-/// tile of its size, scale, and gap, never seamless (see [`tile::glyph_tile`]), its glyph drawn
-/// at the tile's centre by [`glyph_op`], and the polygon filled with it. Where the glyph is not
+/// tile of its size, scale, and gap, never seamless (see [`tile::glyph_tile`]), its glyph, asked
+/// only for a tile the cache does not hold, drawn at the tile's centre by [`glyph_op`], and the
+/// polygon filled with it. Where the glyph is not
 /// found or the tile is refused (Q-9), nothing is drawn, and the canvas records why.
 pub(crate) fn tiled_glyph<T>(
     ops: &mut Vec<DrawOp>,
@@ -257,15 +264,28 @@ pub(crate) fn tiled_glyph<T>(
     canvas: &mut Canvas,
 ) {
     let s = symbol::symbol_style(style, symbol, canvas.factors);
-    let Some(glyph) = styled_glyph(symbol, index, &s, canvas) else {
-        return;
+    // The glyph is asked only for a tile the cache does not hold, as getTile asks it.
+    let glyphs = canvas.glyphs;
+    let mut asked = None;
+    let mark = |at| {
+        let found = ask(glyphs, symbol, glyph_size(s.scale));
+        let op = found
+            .as_ref()
+            .ok()
+            .map(|(glyph, _)| glyph_op(glyph, at, &s));
+        asked = Some(found);
+        op
     };
     let tile = match canvas.tiles.as_deref_mut() {
-        Some(tiles) => tile::glyph_tile(tiles, index, &s, |at| glyph_op(&glyph, at, &s)),
+        Some(tiles) => tile::glyph_tile(tiles, index, &s, mark),
         None => Err("no tiles are kept where it is drawn".to_owned()),
     };
+    if let Some(asked) = asked {
+        record(canvas, index, asked);
+    }
     match tile {
-        Ok(tile) => ops.push(DrawOp::TiledFill { rings, tile }),
+        Ok(Some(tile)) => ops.push(DrawOp::TiledFill { rings, tile }),
+        Ok(None) => {}
         Err(why) => {
             canvas.refused_symbols.entry(index).or_insert(why);
         }
@@ -344,13 +364,12 @@ mod tests {
         );
         assert_eq!(size, Ok((10.0, 20.0)));
         assert_eq!(*boxes.0.borrow(), [16]);
-        // Without the port it is not known, and says why.
+        // Without the port, as a label's own marker is sized, it is not computed yet.
         let unknown =
             marker_size_with(&style, Some(10.7), &style.symbol, &symbols, None, None, 1.5);
-        assert!(
-            unknown
-                .unwrap_err()
-                .contains("symbol `ttf`, whose size is not known")
+        assert_eq!(
+            unknown,
+            Err("a truetype symbol, whose size is not computed yet".to_owned())
         );
     }
 

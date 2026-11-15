@@ -122,12 +122,20 @@ impl Tiles {
         held + let_go
     }
 
+    /// The tile held that serves `key`, as searchTileCache finds it, if any.
+    fn held(&self, key: &Key) -> Option<Rc<Tile>> {
+        self.held
+            .iter()
+            .find(|(held, _)| held.serves(key))
+            .map(|(_, tile)| Rc::clone(tile))
+    }
+
     /// The tile of `key`, held or made new by `mark`. Where six are held, the one built longest
     /// ago is let go first, as addTileCache drops it. One that would bring the render's images
     /// and tiles past [`MAX_DECODED_IMAGE_BYTES`] is refused, and none let go for it.
     fn tile(&mut self, key: Key, marks: Vec<DrawOp>) -> Result<Rc<Tile>, String> {
-        if let Some((_, tile)) = self.held.iter().find(|(held, _)| held.serves(&key)) {
-            return Ok(Rc::clone(tile));
+        if let Some(tile) = self.held(&key) {
+            return Ok(tile);
         }
         // `tile` bounds the sides first, so this is not reached from it; `Tile::new` keeps a bound
         // of its own, so that no caller of it allocates past Q-9's.
@@ -285,14 +293,15 @@ pub(crate) fn vector_tile(
 /// The tile of the TrueType symbol at `index` from 1, as msDrawShadeSymbol asks getTile for it in
 /// `s`: its size of the symbol's extent, 1 by 1 as initSymbol leaves a TrueType symbol's, at the
 /// scale and gap, held to Q-9's bound first; then the tile the cache holds, or a new one, whose
-/// mark is the glyph `mark` draws at the tile's centre. Never seamless: msDrawShadeSymbol sets
+/// mark is the glyph `mark` draws at the tile's centre, called only for a new one; none where
+/// `mark` draws nothing. Never seamless: msDrawShadeSymbol sets
 /// that for a vector symbol alone.
 pub(crate) fn glyph_tile(
     tiles: &mut Tiles,
     index: usize,
     s: &SymbolStyle,
-    mark: impl FnOnce(Point) -> DrawOp,
-) -> Result<Rc<Tile>, String> {
+    mark: impl FnOnce(Point) -> Option<DrawOp>,
+) -> Result<Option<Rc<Tile>>, String> {
     let (width, height) = size((1.0, 1.0), s.scale, s.gap)?;
     let key = Key {
         symbol: index,
@@ -304,11 +313,17 @@ pub(crate) fn glyph_tile(
         fill: s.fill,
         outline: s.outline,
     };
+    if let Some(tile) = tiles.held(&key) {
+        return Ok(Some(tile));
+    }
     let at = Point {
         x: f64::from(width) / 2.0,
         y: f64::from(height) / 2.0,
     };
-    tiles.tile(key, vec![mark(at)])
+    let Some(mark) = mark(at) else {
+        return Ok(None);
+    };
+    tiles.tile(key, vec![mark]).map(Some)
 }
 
 #[cfg(test)]
