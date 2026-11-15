@@ -186,7 +186,8 @@ run() {
 # On instruction: scripts/build-mapserver.sh — noise.yml runs it; its self-test runs here
 # On instruction: scripts/generate-example.sh — its self-test runs it twice
 # On instruction: scripts/install-shellcheck.sh — install-tools.sh and the shell job run it
-# On instruction: scripts/install-jscpd.sh — install-tools.sh and the sensors job run it
+# On instruction: scripts/install-jscpd.sh — install-tools.sh and the docs, shell, and sensors
+#   jobs run it
 
 run "Documentation self-test" scripts/test-check-docs.sh
 run "Documentation consistency" scripts/check-docs.sh

@@ -126,6 +126,16 @@ mod tests {
 REJECT="fixture-only" expect_sensor 0 "a code a test module writes is no code of the source" \
   "$d" "  - size-missing — crates/engine/src/lib.rs:2"
 
+d="$(tree test-module-file-writes)"
+put "$d" "crates/engine/src/lib.rs" "$PUSH_INLINE
+#[cfg(test)]
+mod tests;"
+put "$d" "crates/engine/src/tests.rs" 'fn fixture() -> Diagnostic {
+    Diagnostic::warning("fixture-only", "made by a test", None)
+}'
+REJECT="fixture-only" expect_sensor 0 "a code the file of a test module writes is no code of the source" \
+  "$d" "1 of 1 code(s)"
+
 d="$(tree longer-code)"
 put "$d" "crates/engine/src/lib.rs" "$PUSH_WRAPPED"
 put "$d" "crates/engine/tests/render.rs" 'assert!(codes.contains(&"layer-not-drawn-twice"));
