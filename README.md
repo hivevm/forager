@@ -76,7 +76,7 @@ error:
 $ forager read crates/cli/tests/fixtures/world.map --format yaml
 world.map:12:5: warning [unsupported-keyword]: METADATA is not yet supported and is ignored
 layers/countries.inc:6:3: warning [unsupported-keyword]: GROUP is not yet supported and is ignored
-version: "1.0"
+version: "1.1"
 map:
   name: world
   …

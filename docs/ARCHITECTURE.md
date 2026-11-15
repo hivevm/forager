@@ -46,14 +46,15 @@ golden path and the test pattern an agent copies from are named here.
   transform tree's unknown `not_drawn` reason kept not drawn, at most
   a hundred times (Q-9); a document of an older major is migrated on its value tree by the chain
   of steps in `migration.rs`, one major at a time, each step stamping it with the `.0` of the
-  major it migrates to, and then read by the current version's reader. The current format
+  major it migrates to, and then read by the current version's reader; a document read, of any
+  version, carries the current version afterwards and is written as it. The current format
   version is 1.1, which adds a map's `projection_auto`, a map of `PROJECTION AUTO` held apart from
   a map without a projection; a layer's projection is a proj4 string or `from_source`. Its
   `schema` feature derives the JSON Schema of the current format version with schemars, checked
-  in under `schema/` (`style-document-1.1.json`, beside the unreleased 1.0 file, which nothing
-  checks any more); `tests/schema.rs` compares a fresh derivation with that file on every push
-  and, once a release tag `v<semver>` holds schema files, freezes them and asks for the bump the
-  change since the last release needs. The browser bindings never enable the feature. Its
+  in under `schema/` (`style-document-1.1.json`); `tests/schema.rs` compares a fresh derivation
+  with that file on every push and, once a release tag `v<semver>` holds schema files, freezes
+  them and asks for the bump the change since the last release needs. The browser bindings never
+  enable the feature. Its
   module `c.rs` ports C's and MapServer's small functions once for the frontend, the core, and
   the adapters: glibc's `strtod`, `atof`, and `atoi`, MapServer's `MS_NINT` as `lrint` on
   x86-64 narrowed to an `int`, C's `(int)` cast of a `double`, `int_cast`, `INT_MIN` past an
