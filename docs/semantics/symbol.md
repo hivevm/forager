@@ -160,6 +160,24 @@ refers to it, an image's bytes with them, so an image a later layer names can be
 tiles before it. A polygon its offset moves wholly off the image builds no tile, so that it takes
 nothing from the polygons on it.
 
+**A vector symbol over a polygon.** A polygon layer's style whose symbol is a vector symbol fills
+the polygon with the symbol repeated in tiles, as the same functions fill it with a pixmap, once
+the style has a `COLOR`; without one it draws the polygon's outline as a line in the
+`OUTLINECOLOR`, as for any symbol but a pixmap. The symbol is drawn as at a point
+(computeSymbolStyle and `agg2RenderVectorSymbol`): a filled one filled in the `COLOR` and outlined
+in the `OUTLINECOLOR`, an open one outlined in the `COLOR`, at the style's `WIDTH`. Its tile's
+sides follow the table above, of the symbol's extent in place of the image's side. With a `GAP` of
+0, msDrawShadeSymbol draws the tile in seamless mode under AGG: the symbol nine times in a grid
+three tiles a side, at `((i + 0.5) × width, (j + 0.5) × height)` for `i` and `j` from 1 to 3, as
+its loops count them, and keeps the middle tile. So the neighbours below and right of the middle
+tile reach into it, those above and left do not. Forager draws the nine marks straight into the
+tile, moved up and left by a tile, rather than into an image nine times the tile's size. With
+another `GAP` the symbol is drawn once at the tile's centre. A tile is kept, as
+`searchTileCache` keeps it, by its symbol, its size, the scale, the rotation, the outline's width,
+and each colour the style asks for. A tile past Q-9's bounds is refused as a pixmap's is, the style
+is not drawn, and the layer warns with `symbol-not-drawn`, once per symbol, naming the limit. An
+ellipse or TrueType symbol over a polygon is still filled in its `COLOR`, as before.
+
 **A hatch over a polygon.** A polygon layer's style whose symbol is a hatch fills the polygon
 with parallel lines, as the hatch branch of `msDrawShadeSymbol` in `src/maprendering.c` and
 `msHatchPolygon` and `createHatch` in `src/mapagg.cpp` draw it, in the `COLOR`; without one, the

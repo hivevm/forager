@@ -137,9 +137,9 @@ pub(crate) fn is_hatch<T>(style: &Style<T>, symbols: &[Symbol]) -> bool {
 /// How a symbol is drawn, computeSymbolStyle's `symbolStyleObj`.
 #[derive(Debug, PartialEq)]
 pub(crate) struct SymbolStyle {
-    fill: Option<Rgba>,
-    outline: Option<Rgba>,
-    outline_width: f64,
+    pub(crate) fill: Option<Rgba>,
+    pub(crate) outline: Option<Rgba>,
+    pub(crate) outline_width: f64,
     /// Of the symbol's extent to pixels.
     pub(crate) scale: f64,
     /// Radians, counter-clockwise.

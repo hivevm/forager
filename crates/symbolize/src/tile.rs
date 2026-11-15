@@ -1,6 +1,6 @@
-// The tile of a polygon's pixmap follows the tile's size in MapServer's msDrawShadeSymbol(),
-// getTile(), searchTileCache(), and addTileCache(), src/maprendering.c, of the release pinned in
-// scripts/fetch-msautotest.sh.
+// The tile of a polygon's pixmap or vector symbol follows the tile's size in MapServer's
+// msDrawShadeSymbol(), getTile(), searchTileCache(), and addTileCache(), src/maprendering.c, of
+// the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
@@ -25,8 +25,9 @@ use std::rc::{Rc, Weak};
 
 use forager_render::{DrawOp, Point, PremultipliedImage, Tile};
 use forager_style_ir::c::{lrint, ms_max};
+use forager_style_ir::{Rgba, Symbol};
 
-use crate::symbol;
+use crate::symbol::{self, SymbolStyle};
 
 /// The most bytes the images one render holds decoded come to, its fill tiles among them (Q-9).
 pub const MAX_DECODED_IMAGE_BYTES: usize = 256 * 1024 * 1024;
@@ -34,14 +35,13 @@ pub const MAX_DECODED_IMAGE_BYTES: usize = 256 * 1024 * 1024;
 /// How many tiles a render holds, MapServer's `MS_IMAGECACHESIZE`.
 const MAX_TILES_HELD: usize = 6;
 
-/// A tile's side in pixels as msDrawShadeSymbol computes it from the image's `side`, `scale`, and
-/// `gap`, before the assignment to `int` narrows it: at a scale other than 1 the side scaled and
-/// rounded, or with a positive gap the larger of the gap rounded and the side scaled, not
-/// rounded; at a scale of 1 the side, or with a positive gap the larger of the gap and the side.
-/// A rounding past a `long` asks for no less than it was given, an infinity, where `MS_NINT`'s
-/// `LONG_MIN` would ask for no pixels.
-fn asked_side(side: u32, scale: f64, gap: f64) -> f64 {
-    let side = f64::from(side);
+/// A tile's side in pixels as msDrawShadeSymbol computes it from the symbol's `side`, its image's
+/// or its extent's, `scale`, and `gap`, before the assignment to `int` narrows it: at a scale
+/// other than 1 the side scaled and rounded, or with a positive gap the larger of the gap rounded
+/// and the side scaled, not rounded; at a scale of 1 the side, or with a positive gap the larger
+/// of the gap and the side. A rounding past a `long` asks for no less than it was given, an
+/// infinity, where `MS_NINT`'s `LONG_MIN` would ask for no pixels.
+fn asked_side(side: f64, scale: f64, gap: f64) -> f64 {
     let nint = |value: f64| match lrint(value) {
         i64::MIN => f64::INFINITY,
         rounded => rounded as f64,
@@ -66,8 +66,9 @@ fn bounded_side(asked: f64) -> Option<u32> {
     side
 }
 
-/// A pixmap's tile, by what MapServer's searchTileCache compares of a pixmap's: its symbol, by
-/// its index from 1, the tile's size, the scale, and the rotation, bit for bit.
+/// A tile, by what MapServer's searchTileCache compares: its symbol, by its index from 1, the
+/// tile's size, the scale, the rotation, and the outline's width, bit for bit, and the fill and
+/// the outline colour; a pixmap's have neither colour and an outline of 0.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Key {
     symbol: usize,
@@ -75,6 +76,22 @@ struct Key {
     height: u32,
     scale: u64,
     rotation: u64,
+    outline_width: u64,
+    fill: Option<Rgba>,
+    outline: Option<Rgba>,
+}
+
+impl Key {
+    /// Whether the tile held under `self` serves `asked`, as searchTileCache decides: the numbers
+    /// equal, and each colour equal where `asked` has one; where it has none, any held serves.
+    fn serves(&self, asked: &Self) -> bool {
+        let colour = |held: Option<Rgba>, asked: Option<Rgba>| asked.is_none() || held == asked;
+        (self.symbol, self.width, self.height) == (asked.symbol, asked.width, asked.height)
+            && (self.scale, self.rotation, self.outline_width)
+                == (asked.scale, asked.rotation, asked.outline_width)
+            && colour(self.fill, asked.fill)
+            && colour(self.outline, asked.outline)
+    }
 }
 
 /// The tiles of one render: at most [`MAX_TILES_HELD`], in the order they were built, those let go
@@ -108,13 +125,13 @@ impl Tiles {
     /// The tile of `key`, held or made new by `mark`. Where six are held, the one built longest
     /// ago is let go first, as addTileCache drops it. One that would bring the render's images
     /// and tiles past [`MAX_DECODED_IMAGE_BYTES`] is refused, and none let go for it.
-    fn tile(&mut self, key: Key, mark: DrawOp) -> Result<Rc<Tile>, String> {
-        if let Some((_, tile)) = self.held.iter().find(|(held, _)| *held == key) {
+    fn tile(&mut self, key: Key, marks: Vec<DrawOp>) -> Result<Rc<Tile>, String> {
+        if let Some((_, tile)) = self.held.iter().find(|(held, _)| held.serves(&key)) {
             return Ok(Rc::clone(tile));
         }
         // `tile` bounds the sides first, so this is not reached from it; `Tile::new` keeps a bound
         // of its own, so that no caller of it allocates past Q-9's.
-        let Some(tile) = Tile::new(key.width, key.height, mark) else {
+        let Some(tile) = Tile::new(key.width, key.height, marks) else {
             return Err(past_side(f64::from(key.width), f64::from(key.height)));
         };
         // What letting go of the oldest frees: nothing while something else refers to it.
@@ -174,25 +191,95 @@ pub(crate) fn tile(
     image: Rc<PremultipliedImage>,
     (scale, rotation, gap): (f64, f64, f64),
 ) -> Result<Rc<Tile>, String> {
-    let asked = (
-        asked_side(image.width(), scale, gap),
-        asked_side(image.height(), scale, gap),
-    );
-    let (Some(width), Some(height)) = (bounded_side(asked.0), bounded_side(asked.1)) else {
-        return Err(past_side(asked.0, asked.1));
-    };
+    let (width, height) = size(
+        (f64::from(image.width()), f64::from(image.height())),
+        scale,
+        gap,
+    )?;
     let key = Key {
         symbol: index,
         width,
         height,
         scale: scale.to_bits(),
         rotation: rotation.to_bits(),
+        outline_width: 0f64.to_bits(),
+        fill: None,
+        outline: None,
     };
     let at = Point {
         x: f64::from(width) / 2.0,
         y: f64::from(height) / 2.0,
     };
-    tiles.tile(key, symbol::render_pixmap(at, image, scale, rotation))
+    tiles.tile(key, vec![symbol::render_pixmap(at, image, scale, rotation)])
+}
+
+/// The tile's width and height for a symbol of `sides`, at `scale` and `gap`, each held to Q-9's
+/// bound (see [`asked_side`] and [`bounded_side`]), or why it is refused.
+fn size(sides: (f64, f64), scale: f64, gap: f64) -> Result<(u32, u32), String> {
+    let asked = (
+        asked_side(sides.0, scale, gap),
+        asked_side(sides.1, scale, gap),
+    );
+    match (bounded_side(asked.0), bounded_side(asked.1)) {
+        (Some(width), Some(height)) => Ok((width, height)),
+        _ => Err(past_side(asked.0, asked.1)),
+    }
+}
+
+/// Where getTile draws a vector symbol in a tile of `width` by `height`: at its centre; in
+/// seamless mode, which msDrawShadeSymbol sets for a vector symbol without a `GAP` under AGG, at
+/// the centres of the nine tiles of a grid three tiles a side, `((i + 0.5) × width,
+/// (j + 0.5) × height)` for `i` and `j` from 1 to 3, as its loops count them, of which the middle
+/// tile is kept. The grid's tiles at `i` or `j` of 0 are left empty, and those at 3 stand outside
+/// it. Each centre is given in the kept tile's pixels, the grid moved by a tile up and left.
+fn centres(width: u32, height: u32, seamless: bool) -> Vec<Point> {
+    let (w, h) = (f64::from(width), f64::from(height));
+    if !seamless {
+        return vec![Point {
+            x: w / 2.0,
+            y: h / 2.0,
+        }];
+    }
+    let mut centres = Vec::with_capacity(9);
+    for i in 1..=3 {
+        for j in 1..=3 {
+            centres.push(Point {
+                x: (f64::from(i) + 0.5) * w - w,
+                y: (f64::from(j) + 0.5) * h - h,
+            });
+        }
+    }
+    centres
+}
+
+/// The tile of the vector symbol `symbol`, at `index` from 1, as msDrawShadeSymbol asks getTile
+/// for it in `s`: its size of the symbol's extent, held to Q-9's bound first; seamless where
+/// `seamless` (see [`centres`]); then the tile the cache holds, or a new one, whose marks are the
+/// symbol as agg2RenderVectorSymbol draws it at each centre.
+pub(crate) fn vector_tile(
+    tiles: &mut Tiles,
+    index: usize,
+    symbol: &Symbol,
+    s: &SymbolStyle,
+    seamless: bool,
+) -> Result<Rc<Tile>, String> {
+    let [size_x, size_y] = symbol.extent.unwrap_or([0.0, 0.0]);
+    let (width, height) = size((size_x, size_y), s.scale, s.gap)?;
+    let key = Key {
+        symbol: index,
+        width,
+        height,
+        scale: s.scale.to_bits(),
+        rotation: s.rotation.to_bits(),
+        outline_width: s.outline_width.to_bits(),
+        fill: s.fill,
+        outline: s.outline,
+    };
+    let mut marks = Vec::new();
+    for at in centres(width, height, seamless) {
+        symbol::render(&mut marks, at, symbol, s);
+    }
+    tiles.tile(key, marks)
 }
 
 #[cfg(test)]
@@ -202,8 +289,8 @@ mod tests {
     /// The size of the tile of an image of `width` by `height` at `scale` and `gap`.
     fn size(width: u32, height: u32, scale: f64, gap: f64) -> (Option<u32>, Option<u32>) {
         (
-            bounded_side(asked_side(width, scale, gap)),
-            bounded_side(asked_side(height, scale, gap)),
+            bounded_side(asked_side(f64::from(width), scale, gap)),
+            bounded_side(asked_side(f64::from(height), scale, gap)),
         )
     }
 
@@ -362,6 +449,114 @@ mod tests {
         assert!(taken.is_ok(), "its bytes free once nothing refers to it");
     }
 
+    /// msautotest's `vector arrow`, 3 × 2, open.
+    fn arrow() -> Symbol {
+        Symbol {
+            name: Some("vector arrow".to_owned()),
+            kind: forager_style_ir::SymbolKind::Vector,
+            paths: vec![
+                vec![[0.0, 1.0], [3.0, 1.0]],
+                vec![[2.0, 0.0], [3.0, 1.0], [2.0, 2.0]],
+            ],
+            extent: Some([3.0, 2.0]),
+            filled: false,
+            anchor_point: None,
+            character: None,
+            font: None,
+            image: None,
+            transparent: None,
+            span: None,
+        }
+    }
+
+    /// computeSymbolStyle of the arrow in black at `size`, `angle`, and `gap`, at factors of 1.
+    fn arrow_style(size: f64, angle: f64, gap: f64) -> SymbolStyle {
+        let style: forager_style_ir::Style = forager_style_ir::Style {
+            size: Some(forager_style_ir::Bound::Value(size)),
+            angle: Some(forager_style_ir::Bound::Value(angle)),
+            gap: Some(gap),
+            color: Some(forager_style_ir::Bound::Value(Rgba::opaque(0, 0, 0))),
+            ..forager_style_ir::Style::default()
+        };
+        symbol::symbol_style(&style, &arrow(), symbol::Factors::new(1.0, 1.0))
+    }
+
+    /// The first point of each stroke among `marks`.
+    fn stroke_starts(marks: &[DrawOp]) -> Vec<(f64, f64)> {
+        marks
+            .iter()
+            .filter_map(|mark| match mark {
+                DrawOp::Stroke { paths, .. } => Some((paths[0][0].x, paths[0][0].y)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_vector_tile_s_size_and_marks_are_get_tile_s() {
+        let mut tiles = Tiles::default();
+        // polygon-vector.map's first style, SIZE 8 GAP 0: scale 8 / 2 = 4, a tile of
+        // MS_NINT(3 × 4) × MS_NINT(2 × 4) = 12 × 8, in seamless mode. The arrow, open, is outlined
+        // in its colour, once at each of the nine centres ((i + 0.5) × 12 - 12,
+        // (j + 0.5) × 8 - 8) for i and j from 1 to 3: its line's start (0, 1) lies 1.5 × 4 left of
+        // the centre, on its row.
+        let s = arrow_style(8.0, 0.0, 0.0);
+        let tile = vector_tile(&mut tiles, 1, &arrow(), &s, true).unwrap();
+        assert_eq!((tile.width(), tile.height()), (12, 8));
+        let mut starts = Vec::new();
+        for x in [6.0, 18.0, 30.0] {
+            for y in [4.0, 12.0, 20.0] {
+                starts.push((x - 6.0, y));
+            }
+        }
+        assert_eq!(stroke_starts(tile.marks()), starts);
+        // Its second style, SIZE 16 ANGLE 40: scale 8, 24 × 16, turned by 40 degrees.
+        let s = arrow_style(16.0, 40.0, 0.0);
+        assert_eq!(s.rotation, 40.0 * forager_style_ir::c::DEG_TO_RAD);
+        let tile = vector_tile(&mut tiles, 1, &arrow(), &s, true).unwrap();
+        assert_eq!((tile.width(), tile.height()), (24, 16));
+        assert_eq!(tile.marks().len(), 9);
+        // Not seamless, with a GAP of 20 at SIZE 8: the larger of MS_NINT(20) and 3 × 4, and of
+        // MS_NINT(20) and 2 × 4, the arrow once at the centre (10, 10).
+        let s = arrow_style(8.0, 0.0, 20.0);
+        let tile = vector_tile(&mut tiles, 1, &arrow(), &s, false).unwrap();
+        assert_eq!((tile.width(), tile.height()), (20, 20));
+        assert_eq!(stroke_starts(tile.marks()), [(4.0, 10.0)]);
+    }
+
+    #[test]
+    fn a_vector_tile_past_4096_a_side_is_refused() {
+        // Verifies: Q-9
+        // A GAP of 5000 at SIZE 8 asks 5000 × 5000; a SIZE alone is held to MAXSIZE first.
+        let s = arrow_style(8.0, 0.0, 5000.0);
+        let why = vector_tile(&mut Tiles::default(), 1, &arrow(), &s, false).unwrap_err();
+        assert!(why.contains("a tile of 5000 × 5000 pixels"), "{why}");
+    }
+
+    #[test]
+    fn a_held_tile_serves_where_its_numbers_match_and_each_colour_asked_for() {
+        // searchTileCache compares a colour only where the style asks one.
+        let black = Some(Rgba::opaque(0, 0, 0));
+        let red = Some(Rgba::opaque(255, 0, 0));
+        let key = |fill, outline, outline_width: f64| Key {
+            symbol: 1,
+            width: 12,
+            height: 8,
+            scale: 4f64.to_bits(),
+            rotation: 0f64.to_bits(),
+            outline_width: outline_width.to_bits(),
+            fill,
+            outline,
+        };
+        let held = key(red, black, 1.0);
+        assert!(held.serves(&key(red, black, 1.0)));
+        assert!(held.serves(&key(None, black, 1.0)), "no fill asked for");
+        assert!(held.serves(&key(None, None, 1.0)), "no colour asked for");
+        assert!(!held.serves(&key(black, black, 1.0)), "another fill");
+        assert!(!held.serves(&key(red, red, 1.0)), "another outline");
+        assert!(!held.serves(&key(red, black, 2.0)), "another outline width");
+    }
+
     #[test]
     fn a_tile_s_mark_is_the_image_at_its_centre_as_at_a_point() {
         // agg2RenderPixmapSymbol at getTile's (width / 2., height / 2.): unscaled and unturned at
@@ -370,14 +565,14 @@ mod tests {
         let mut tiles = Tiles::default();
         let gapped = tile(&mut tiles, 1, Rc::clone(&image), (1.0, 0.0, 40.7)).unwrap();
         assert_eq!((gapped.width(), gapped.height()), (40, 40));
-        match gapped.mark() {
+        match &gapped.marks()[0] {
             DrawOp::Pixmap { left, top, .. } => assert_eq!((*left, *top), (4, 4)),
             other => panic!("{other:?}"),
         }
         // Scaled and turned: resampled about the centre, (7.5, 7.5) of a tile of 15 × 15.
         let turned = tile(&mut tiles, 1, image, (15.0 / 32.0, 1.0, 0.0)).unwrap();
         assert_eq!((turned.width(), turned.height()), (15, 15));
-        match turned.mark() {
+        match &turned.marks()[0] {
             DrawOp::ResampledPixmap { at, .. } => assert_eq!(*at, Point { x: 7.5, y: 7.5 }),
             other => panic!("{other:?}"),
         }

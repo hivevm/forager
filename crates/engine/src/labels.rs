@@ -732,9 +732,10 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
         for (layer, Refusals { mut pixmaps, .. }) in refusals {
             pixmaps.retain(|&index, _| !self.pixmaps_reported.contains(&(layer, index)));
+            // A label's styles fill no polygon, so they refuse no vector symbol's tile.
             let pixmaps = Refusals {
-                hatches: 0,
                 pixmaps,
+                ..Refusals::default()
             };
             diagnostics.extend(refusal_reports(&self.map.layers[layer], pixmaps));
         }

@@ -480,7 +480,7 @@ renderers/polygon-as-line-offset.map polygon-as-line-offset.png geometry fails  
 renderers/polygon-as-line-offset.map polygon-as-line-offset.pdf out: another output format, pdf
 renderers/polygon-as-line-offset.map polygon-as-line-offset.svg out: another output format, svg
 renderers/polygon-as-line-offset.map polygon-as-line-offset.cairo.png out: another output format, cairopng
-renderers/polygon-as-line.map polygon-as-line.png geometry fails  # not built yet: a polygon filled with a tiled vector symbol
+renderers/polygon-as-line.map polygon-as-line.png geometry passes
 renderers/polygon-as-line.map polygon-as-line.pdf out: another output format, pdf
 renderers/polygon-as-line.map polygon-as-line.svg out: another output format, svg
 renderers/polygon-as-line.map polygon-as-line.cairo.png out: another output format, cairopng
@@ -506,7 +506,7 @@ renderers/polygon-ttf.map polygon-ttf.png geometry fails  # not built yet: TrueT
 renderers/polygon-ttf.map polygon-ttf.pdf out: another output format, pdf
 renderers/polygon-ttf.map polygon-ttf.svg out: another output format, svg
 renderers/polygon-ttf.map polygon-ttf.cairo.png out: another output format, cairopng
-renderers/polygon-vector.map polygon-vector.png geometry fails  # not built yet: vector symbols
+renderers/polygon-vector.map polygon-vector.png geometry passes
 renderers/polygon-vector.map polygon-vector.pdf out: another output format, pdf
 renderers/polygon-vector.map polygon-vector.svg out: another output format, svg
 renderers/polygon-vector.map polygon-vector.cairo.png out: another output format, cairopng

@@ -167,12 +167,13 @@ or one the filter leaves out, is never transformed and fails nothing. A layer dr
 **A polygon's fill.** A polygon layer's style with a `COLOR` and without a symbol, or with a
 simple one, fills the polygon under the even-odd rule, as `msDrawShadeSymbol` in
 `src/maprendering.c` and `agg2RenderPolygon` in `src/mapagg.cpp` fill it, a hatch symbol hatches
-it, and a pixmap symbol fills it with its image tiled, with or without a `COLOR`
-([`symbol.md`](symbol.md)). The fill and the hatch go through the gamma of MapServer's AGG output
-format: a pixel covered by at least 0.75 of the polygon is filled fully, one covered less in
-proportion, so that edges come out darker than their coverage; a symbol's fill, a tile's, and a line
-do not. The gamma is MapServer's default of 0.75: `FORMATOPTION "GAMMA=…"` of the output format and
-`PROCESSING "GAMMA=…"` of a layer are not carried yet.
+it, a pixmap symbol fills it with its image tiled, with or without a `COLOR`, and a vector symbol
+with the symbol tiled ([`symbol.md`](symbol.md)). The fill and the hatch go through the gamma of
+MapServer's AGG output format: a pixel covered by at least 0.75 of the polygon is filled fully,
+one covered less in proportion, so that edges come out darker than their coverage; a symbol's
+fill, a tile's, and a line do not. The gamma is MapServer's default of 0.75:
+`FORMATOPTION "GAMMA=…"` of the output format and `PROCESSING "GAMMA=…"` of a layer are not
+carried yet.
 
 **Repeated directives.** A later directive replaces an earlier one, but for a binding:
 `loadStyle` never frees a property's binding when a later directive gives it a number, and

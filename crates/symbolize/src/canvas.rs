@@ -45,25 +45,32 @@ pub struct Canvas<'a> {
     pub(crate) hatching: Hatching,
     /// Each pixmap symbol left undrawn, by its index from 1, and why.
     pub(crate) refused_pixmaps: BTreeMap<usize, String>,
+    /// Each vector symbol whose fill tile is refused, by its index from 1, and why (Q-9).
+    pub(crate) refused_symbols: BTreeMap<usize, String>,
     pub(crate) own_image: bool,
 }
 
 /// What a layer's drawing left undrawn, which it reports: how many hatches were refused (Q-9),
-/// and the pixmap symbols whose image is refused, by their index from 1, each named, with why.
+/// the pixmap symbols whose image is refused, and the vector symbols whose fill tile is refused
+/// (Q-9), each by its index from 1, named, with why.
 #[derive(Debug, Default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Refusals {
     pub hatches: usize,
     pub pixmaps: BTreeMap<usize, (String, String)>,
+    pub symbols: BTreeMap<usize, (String, String)>,
 }
 
 impl Refusals {
-    /// Adds `other`'s hatches to these, and its pixmap symbols not among these, each by its index
-    /// once, the first kept.
+    /// Adds `other`'s hatches to these, and its symbols not among these, each by its index once,
+    /// the first kept.
     pub fn merge(&mut self, other: Self) {
         self.hatches += other.hatches;
         for (index, named) in other.pixmaps {
             self.pixmaps.entry(index).or_insert(named);
+        }
+        for (index, named) in other.symbols {
+            self.symbols.entry(index).or_insert(named);
         }
     }
 }
@@ -82,6 +89,7 @@ impl<'a> Canvas<'a> {
             markers: MarkerBudget::new(),
             hatching: Hatching::default(),
             refused_pixmaps: BTreeMap::new(),
+            refused_symbols: BTreeMap::new(),
             own_image: false,
         }
     }
@@ -137,17 +145,24 @@ impl<'a> Canvas<'a> {
         self.markers.spent()
     }
 
-    /// What the layer left undrawn since this was last asked: the hatches refused (Q-9) and the
-    /// pixmap symbols whose image is refused, each named by its name or its index (see
-    /// [`symbol::named`]).
+    /// What the layer left undrawn since this was last asked: the hatches refused (Q-9), the
+    /// pixmap symbols whose image is refused, and the vector symbols whose fill tile is refused,
+    /// each named by its name or its index (see [`symbol::named`]).
     pub fn take_refusals(&mut self) -> Refusals {
-        let pixmaps = std::mem::take(&mut self.refused_pixmaps)
-            .into_iter()
-            .map(|(index, why)| (index, (self.named(index), why)))
-            .collect();
+        let named = |canvas: &Self, refused: BTreeMap<usize, String>| {
+            refused
+                .into_iter()
+                .map(|(index, why)| (index, (canvas.named(index), why)))
+                .collect()
+        };
+        let refused_pixmaps = std::mem::take(&mut self.refused_pixmaps);
+        let refused_symbols = std::mem::take(&mut self.refused_symbols);
+        let pixmaps = named(self, refused_pixmaps);
+        let symbols = named(self, refused_symbols);
         Refusals {
             hatches: std::mem::take(&mut self.hatching.refused),
             pixmaps,
+            symbols,
         }
     }
 
