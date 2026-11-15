@@ -146,10 +146,9 @@ fn tiled<T>(
 }
 
 /// The vector symbol `symbol`, at `index` from 1, over `rings`, already moved by the offset, as
-/// msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors; nothing where it
-/// has neither a fill nor an outline colour; otherwise the tile of its size, scale, and gap (see
-/// [`tile::vector_tile`]), seamless where the style's `GAP` is 0, as msDrawShadeSymbol sets it for
-/// a vector symbol under AGG, and the polygon filled with it. Where the tile is refused (Q-9),
+/// msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the tile of its
+/// size, scale, and gap (see [`tile::vector_tile`]), seamless where the style's `GAP` is 0, as
+/// msDrawShadeSymbol sets it for a vector symbol under AGG, and the polygon filled with it. Where the tile is refused (Q-9),
 /// nothing is drawn, and the canvas records why. A polygon wholly off the image builds no tile.
 fn vector_tiled<T: Clone>(
     ops: &mut Vec<DrawOp>,
@@ -159,10 +158,9 @@ fn vector_tiled<T: Clone>(
     symbol: &Symbol,
     canvas: &mut Canvas,
 ) {
+    // With the COLOR shade checked, computeSymbolStyle gives a fill or an outline colour: the
+    // check of msDrawShadeSymbol for neither cannot fail here.
     let s = symbol::symbol_style(style, symbol, canvas.factors);
-    if s.fill.is_none() && s.outline.is_none() {
-        return;
-    }
     if !meets_image(&rings, canvas.image()) {
         return;
     }

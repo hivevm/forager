@@ -7,9 +7,10 @@ use crate::{DrawOp, PremultipliedImage};
 
 /// A polygon fill's tile, a display item's counted reference to one image however many polygons
 /// it fills (ADR-0029): `width` by `height` pixels, transparent but for the drawings `marks` in
-/// them, drawn in turn. Whoever keeps count of the bytes of a render's images counts [`Tile::bytes`] from the
-/// moment the tile exists, so that one past the bound is refused before anything is allocated
-/// for it; the renderer builds the pixels from the mark when it first fills with the tile.
+/// them, drawn in turn. Whoever keeps count of the bytes of a render's images counts
+/// [`Tile::bytes`] from the moment the tile exists, so that one past the bound is refused before
+/// anything is allocated for it; the renderer builds the pixels from the marks when it first
+/// fills with the tile.
 #[derive(Debug, PartialEq)]
 pub struct Tile {
     width: u32,

@@ -204,8 +204,9 @@ golden path and the test pattern an agent copies from are named here.
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
-  refused, a label's among them, and geometries its render mode cannot draw (Q-9); the hatches
-  and pixmaps are one value, `Refusals`, which a canvas yields, the labels keep per layer and
+  refused, a label's among them, vector symbols whose fill tile the cache refused, and geometries
+  its render mode cannot draw (Q-9); the hatches, pixmaps, and vector symbols are one value,
+  `Refusals`, which a canvas yields, the labels keep per layer and
   merge, and one function of `layer.rs` turns into the layer's diagnostics. It loads the
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
