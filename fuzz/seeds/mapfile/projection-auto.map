@@ -1,0 +1,25 @@
+MAP
+  EXTENT -10 40 10 60
+  SIZE 100 100
+  PROJECTION
+    AUTO
+  END
+  LAYER
+    NAME "auto"
+    TYPE POLYGON
+    STATUS ON
+    DATA "areas.shp"
+    PROJECTION
+      AUTO
+    END
+  END
+  LAYER
+    NAME "utm"
+    TYPE LINE
+    STATUS ON
+    DATA "lines.shp"
+    PROJECTION
+      "+proj=utm" "+zone=32" "+datum=WGS84"
+    END
+  END
+END
