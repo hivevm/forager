@@ -15,9 +15,11 @@ maintainer kept `unary_union`, with the difference stated.
 
 **What a change weighs:**
 
-- **A buffer of 0 through geo's buffer, as JTS and GEOS repair**, once fidelity ticket 12 brings
-  `buffer`: measure it on the same polygons against GEOS before choosing it. geo's buffer is
-  i_overlay's outline offset, so its lobe choice may follow neither.
+- **A buffer of 0 through geo's buffer, as JTS and GEOS repair**: measured with fidelity ticket
+  12 (2026-11-15) on the same 40 repaired results, with ADR-0041's style of round joins of π/60.
+  It matches GEOS on the same 33 as `unary_union`, within 10⁻⁷ with its point count. On the 7 others
+  geo's buffer of 0 is empty, where `unary_union` keeps a sliver and GEOS the large lobe: a
+  simplified polygon would vanish. It repairs no closer than `unary_union`.
 - **Keeping `unary_union`**: no work; the 7 of 40 stay different, and the semantics page says so.
 - **A repair of Forager's own** that picks the lobe as GEOS's buffer does (how it picks it is not
   yet read from JTS's buffer code): more owned geometry code, under an ADR revision.
