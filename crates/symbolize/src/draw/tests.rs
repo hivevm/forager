@@ -520,20 +520,16 @@ fn the_markers_of_a_point_layer_share_the_layer_s_budget() {
 #[test]
 fn the_stand_in_squares_of_symbols_not_drawn_yet_pay_the_budget_and_symbol_0_s_does_not() {
     // Verifies: Q-9
-    // An SVG, a TrueType, a hatch, or a bound symbol is drawn at a point as Forager's square,
-    // which spends the layer's budget as the symbol would, by the maintainer's decision of
-    // 2026-11-08; the square of no symbol or symbol 0, which MapServer draws nothing for,
-    // spends none.
+    // An SVG, a hatch, or a bound symbol is drawn at a point as Forager's square, which spends
+    // the layer's budget as the symbol would, by the maintainer's decision of 2026-11-08; the
+    // square of no symbol or symbol 0, which MapServer draws nothing for, spends none. A TrueType
+    // symbol draws its glyph instead (ADR-draft-truetype-marker-glyph-through-a-port).
     let three = Geometry::MultiPoint(coords(&[(10.0, 50.0), (50.0, 50.0), (90.0, 50.0)]));
     let of_kind = |kind| Symbol {
         kind,
         ..hatch_symbol()
     };
-    let symbols = [
-        of_kind(SymbolKind::Svg),
-        of_kind(SymbolKind::Truetype),
-        of_kind(SymbolKind::Hatch),
-    ];
+    let symbols = [of_kind(SymbolKind::Svg), of_kind(SymbolKind::Hatch)];
     let at_points = |symbol: Option<Bound<SymbolRef>>| Style {
         symbol,
         geom_transform: None,
@@ -556,7 +552,7 @@ fn the_stand_in_squares_of_symbols_not_drawn_yet_pay_the_budget_and_symbol_0_s_d
         binding: "sym".to_owned(),
     };
     let index = |i| Some(Bound::Value(SymbolRef::Index(i)));
-    for symbol in [index(1), index(2), index(3), Some(bound)] {
+    for symbol in [index(1), index(2), Some(bound)] {
         let style = at_points(symbol.clone());
         let (drawn, _) = point_ops(&style, usize::MAX);
         assert_eq!(drawn.len(), 3, "{symbol:?}");

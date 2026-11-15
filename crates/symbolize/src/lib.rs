@@ -6,12 +6,13 @@
 //! Its modules import one another in one direction only: `draw` imports `canvas`, `extent`,
 //! `geom_transform`, `hatch`, `line`, `marker`, `shade`, and `symbol`; `label` imports `canvas`,
 //! `extent`, `marker`, `shade`, and `symbol`; `shade` imports `bounds`, `canvas`, `extent`,
-//! `hatch`, `line`, `style`, `symbol`, and `tile`; `marker` imports `bounds`, `canvas`, `line`,
-//! `line_marker`, `style`, and `symbol`; `line` imports `bounds`, `canvas`, `line_marker`,
-//! `offset`, `style`, and `symbol`; `canvas` imports `hatch`, `line_marker`, `symbol`, and
-//! `tile`; `hatch` imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile`
-//! import `bounds` and `symbol`; `symbol` imports `bounds` and `style`; `geom_transform` imports
-//! `extent`; `bounds`, `extent`, `layer_transform`, `offset`, and `style` import none. The test
+//! `hatch`, `line`, `style`, `symbol`, and `tile`; `marker` imports `bounds`, `canvas`,
+//! `glyph_marker`, `line`, `line_marker`, `style`, and `symbol`; `glyph_marker` imports `canvas`
+//! and `symbol`; `line` imports `bounds`, `canvas`, `line_marker`, `offset`, `style`, and
+//! `symbol`; `canvas` imports `glyph`, `hatch`, `line_marker`, `symbol`, and `tile`; `hatch`
+//! imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile` import `bounds`
+//! and `symbol`; `symbol` imports `bounds` and `style`; `geom_transform` imports `extent`;
+//! `bounds`, `extent`, `glyph`, `layer_transform`, `offset`, and `style` import none. The test
 //! `symbolize_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a table
 //! in this order.
 
@@ -25,6 +26,8 @@ mod canvas;
 mod draw;
 mod extent;
 mod geom_transform;
+mod glyph;
+mod glyph_marker;
 mod hatch;
 mod label;
 mod layer_transform;
@@ -40,6 +43,7 @@ mod tile;
 pub use crate::canvas::{Canvas, Refusals};
 pub use crate::draw::{can_draw, clip_pixmaps, draw_ops, marked_pixmap, point_markers, vertices};
 pub use crate::extent::View;
+pub use crate::glyph::{Glyph, Glyphs};
 pub use crate::label::{
     LabelGeometry, MarkerValues, label_pixmap, label_style_marker, label_style_ops,
     label_style_refused,

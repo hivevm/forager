@@ -455,7 +455,7 @@ renderers/point_svg.map point_svg.png geometry fails  # not built yet: SVG symbo
 renderers/point_svg.map point_svg.pdf out: another output format, pdf
 renderers/point_svg.map point_svg.svg out: another output format, svg
 renderers/point_svg.map point_svg.cairo.png out: another output format, cairopng
-renderers/point_truetype.map point_truetype.png geometry fails  # not built yet: TrueType symbols
+renderers/point_truetype.map point_truetype.png geometry passes
 renderers/point_truetype.map point_truetype.pdf out: another output format, pdf
 renderers/point_truetype.map point_truetype.svg out: another output format, svg
 renderers/point_truetype.map point_truetype.cairo.png out: another output format, cairopng

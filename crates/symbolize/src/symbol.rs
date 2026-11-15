@@ -211,7 +211,8 @@ pub(crate) fn symbol_style<T>(
     let style_size = fixed(&style.size).unwrap_or(default_size);
     let color = fixed(&style.color);
     let outline_color = fixed(&style.outline_color);
-    let (fill, outline) = if symbol.filled {
+    // computeSymbolStyle takes a TrueType symbol's colours as a filled one's.
+    let (fill, outline) = if symbol.filled || symbol.kind == SymbolKind::Truetype {
         (color, outline_color)
     } else {
         (None, color.or(outline_color))
@@ -623,7 +624,7 @@ fn agg_ellipse(x: f64, y: f64, rx: f64, ry: f64) -> Vec<Point> {
 
 /// AGG's `trans_affine`: `x' = sx·x + shx·y + tx`, `y' = shy·x + sy·y + ty`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Affine {
+pub(crate) struct Affine {
     sx: f64,
     shy: f64,
     shx: f64,
@@ -642,7 +643,7 @@ impl Affine {
         ty: 0.0,
     };
 
-    fn translation(x: f64, y: f64) -> Self {
+    pub(crate) fn translation(x: f64, y: f64) -> Self {
         Self {
             tx: x,
             ty: y,
@@ -658,7 +659,7 @@ impl Affine {
         }
     }
 
-    fn rotation(a: f64) -> Self {
+    pub(crate) fn rotation(a: f64) -> Self {
         Self {
             sx: libm::cos(a),
             shy: libm::sin(a),
@@ -670,7 +671,7 @@ impl Affine {
     }
 
     /// This transformation followed by `m`, AGG's `multiply` (`*=`), in its order of operations.
-    fn then(self, m: Self) -> Self {
+    pub(crate) fn then(self, m: Self) -> Self {
         Self {
             sx: self.sx * m.sx + self.shy * m.shx,
             shx: self.shx * m.sx + self.sy * m.shx,
@@ -698,7 +699,7 @@ impl Affine {
         }
     }
 
-    fn apply(&self, x: f64, y: f64) -> Point {
+    pub(crate) fn apply(&self, x: f64, y: f64) -> Point {
         Point {
             x: x * self.sx + y * self.shx + self.tx,
             y: x * self.shy + y * self.sy + self.ty,

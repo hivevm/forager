@@ -18,16 +18,19 @@ fn refusals_merged_sum_their_hatches_and_keep_the_first_of_each_symbol() {
         hatches: 1,
         pixmaps: [(1, named("a", "first"))].into(),
         symbols: [(4, named("v", "first"))].into(),
+        glyphs: [(6, named("t", "first"))].into(),
     };
     refusals.merge(Refusals {
         hatches: 2,
         pixmaps: [(1, named("a", "second")), (2, named("b", "why"))].into(),
         symbols: [(4, named("v", "second")), (5, named("w", "why"))].into(),
+        glyphs: [(6, named("t", "second"))].into(),
     });
     let merged = Refusals {
         hatches: 3,
         pixmaps: [(1, named("a", "first")), (2, named("b", "why"))].into(),
         symbols: [(4, named("v", "first")), (5, named("w", "why"))].into(),
+        glyphs: [(6, named("t", "first"))].into(),
     };
     assert_eq!(refusals, merged);
 }

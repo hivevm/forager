@@ -17,17 +17,18 @@
 use std::rc::Rc;
 
 use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
-use forager_style_ir::{Bound, Style, Symbol, SymbolRef};
+use forager_style_ir::{Bound, Style, Symbol, SymbolKind, SymbolRef};
 
 use crate::bounds::{self, MAX_SIZE};
 use crate::canvas::Canvas;
+use crate::glyph_marker;
 use crate::line::line_ends;
 use crate::line_marker::MarkerBudget;
 use crate::style::fixed;
 use crate::symbol::{self, Factors};
 
 /// What msDrawMarkerSymbol draws of `style` at the pixel `at` at the canvas's factor: its
-/// symbol, or the square that stands for a symbol not drawn yet, moved as msAdjustMarkerPos
+/// symbol, a TrueType symbol's glyph (see [`glyph_marker::glyph_ops`]), or the square that stands for a symbol not drawn yet, moved as msAdjustMarkerPos
 /// moves it. The square is Forager's, not MapServer's, which draws nothing for symbol 0; it is
 /// drawn at a factor of 1. A pixmap whose image the canvas lacks draws nothing, and the canvas
 /// records why.
@@ -37,6 +38,12 @@ pub(crate) fn marker_ops<T>(
     style: &Style<T>,
     canvas: &mut Canvas,
 ) {
+    if let symbol::Resolved::Found(index, s) = symbol::resolve(&style.symbol, canvas.symbols)
+        && s.kind == SymbolKind::Truetype
+    {
+        glyph_marker::glyph_ops(ops, at, style, index, s, canvas);
+        return;
+    }
     match symbol::mark(style, canvas.symbols) {
         symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style, 1.0), style),
         symbol::Mark::Symbol(s) => {

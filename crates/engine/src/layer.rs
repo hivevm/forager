@@ -23,7 +23,8 @@ pub(crate) fn points_in_view(view: &View, geometry: &Geometry) -> impl Iterator<
 
 /// The reports that `layer` left the hatches and symbols of `refusals` undrawn: the warning for
 /// the hatches (see [`refused_hatches`]), then one for each pixmap symbol, then one for each
-/// vector symbol whose fill tile is refused, each named, and why.
+/// vector symbol whose fill tile is refused or TrueType symbol whose font cannot be used, then one
+/// for each TrueType symbol whose font lacks its character, each named, and why.
 pub(crate) fn refusal_reports(
     layer: &Layer,
     refusals: Refusals,
@@ -36,10 +37,15 @@ pub(crate) fn refusal_reports(
         let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
         Diagnostic::warning("symbol-not-drawn", message, layer.span.clone())
     });
+    let glyphs = refusals.glyphs.into_values().map(|(symbol, what)| {
+        let message = format!("layer {}: {symbol}: {what}", name(layer));
+        Diagnostic::warning("symbol-glyph-missing", message, layer.span.clone())
+    });
     refused_hatches(layer, refusals.hatches)
         .into_iter()
         .chain(pixmaps)
         .chain(symbols)
+        .chain(glyphs)
 }
 
 /// A layer's opacity as MapServer holds it, an integer percent from 0 to 100: the IR's number

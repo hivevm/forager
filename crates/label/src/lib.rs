@@ -20,7 +20,9 @@ pub use crate::cache::{
     walk_label_cache,
 };
 pub use crate::font::{Attempt, Font, Unusable, attempts};
-pub use crate::layout::{Align, Drawn, Glyphs, Layout, LineError, TextPath, lines};
+pub use crate::layout::{
+    Align, Drawn, Glyphs, Layout, LineError, MarkerGlyph, TextPath, lines, marker_glyph,
+};
 pub use crate::place::{
     AUTO_POSITIONS, Anchor, Bounds, Offsets, Placement, PointLabel, Position, TextBox,
     label_poly_at, marker_bounds, member_box, metrics, place, placed_at,

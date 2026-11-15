@@ -9,16 +9,20 @@ use forager_ports::ResourceLoader;
 use forager_render::PremultipliedImage;
 use forager_symbolize::{MAX_DECODED_IMAGE_BYTES, Pixmaps, Tiles};
 
+use crate::marker_glyphs::MarkerGlyphs;
 use crate::resource::load_once;
 
-/// The images of one render, by their path, each the decoded image or why it has none, and the
-/// tiles of its polygons' fills, whose bytes count with the images' (ADR-0029).
+/// The images of one render, by their path, each the decoded image or why it has none, the
+/// tiles of its polygons' fills, whose bytes count with the images' (ADR-0029), and the fonts and
+/// glyphs of its TrueType markers, whose fonts share the labels' store
+/// (ADR-draft-truetype-marker-glyph-through-a-port).
 #[derive(Default)]
 pub(crate) struct Images {
     loaded: Pixmaps,
     /// The bytes of the images decoded.
     held: usize,
     tiles: Tiles,
+    glyphs: MarkerGlyphs,
 }
 
 impl Images {
@@ -44,11 +48,16 @@ impl Images {
         &self.loaded
     }
 
-    /// What a layer is drawn from: every image asked for so far, and the tiles, which count those
-    /// images' bytes with their own.
-    pub(crate) fn drawing(&mut self) -> (&Pixmaps, &mut Tiles) {
+    /// The fonts and glyphs of the TrueType markers, to keep a font in.
+    pub(crate) fn glyphs_mut(&mut self) -> &mut MarkerGlyphs {
+        &mut self.glyphs
+    }
+
+    /// What a layer is drawn from: every image asked for so far, the tiles, which count those
+    /// images' bytes with their own, and the TrueType markers' glyphs.
+    pub(crate) fn drawing(&mut self) -> (&Pixmaps, &mut Tiles, &MarkerGlyphs) {
         self.tiles.count_images(self.held);
-        (&self.loaded, &mut self.tiles)
+        (&self.loaded, &mut self.tiles, &self.glyphs)
     }
 }
 

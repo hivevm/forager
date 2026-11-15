@@ -30,8 +30,17 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ),
     (
         "marker",
-        &["bounds", "canvas", "line", "line_marker", "style", "symbol"],
+        &[
+            "bounds",
+            "canvas",
+            "glyph_marker",
+            "line",
+            "line_marker",
+            "style",
+            "symbol",
+        ],
     ),
+    ("glyph_marker", &["canvas", "symbol"]),
     (
         "line",
         &[
@@ -43,7 +52,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "symbol",
         ],
     ),
-    ("canvas", &["hatch", "line_marker", "symbol", "tile"]),
+    (
+        "canvas",
+        &["glyph", "hatch", "line_marker", "symbol", "tile"],
+    ),
     ("hatch", &["bounds", "extent", "style", "symbol"]),
     ("line_marker", &["bounds", "symbol"]),
     ("tile", &["bounds", "symbol"]),
@@ -51,6 +63,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("geom_transform", &["extent"]),
     ("bounds", &[]),
     ("extent", &[]),
+    ("glyph", &[]),
     ("layer_transform", &[]),
     ("offset", &[]),
     ("style", &[]),

@@ -44,6 +44,7 @@ use crate::label_styles::{self, LabelStyles, Placed, Styled, StylesOf};
 use crate::layer::{
     draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
 };
+use crate::marker_glyphs::MarkerGlyphs;
 
 /// A label of a render's label cache.
 #[derive(Clone, Debug, PartialEq)]
@@ -951,6 +952,23 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 .map_err(Unlaid::Glyph)?;
         }
         Ok(layout.finish(align))
+    }
+
+    /// The resource loader the render's fonts and images are read through.
+    pub(crate) fn files(&self) -> &'r L {
+        self.files
+    }
+
+    /// Keeps in `glyphs` each of `fonts` the TrueType markers of a layer name and that it does not
+    /// hold yet, loaded into the store of the labels' fonts (see [`Fonts::named`]), or why it
+    /// cannot be used.
+    pub(crate) async fn load_marker_fonts(&mut self, glyphs: &mut MarkerGlyphs, fonts: &[&str]) {
+        for &name in fonts {
+            if !glyphs.has(name) {
+                let font = self.fonts.named(self.map, name, self.files).await;
+                glyphs.keep(name, font);
+            }
+        }
     }
 
     /// Draws the labels the label cache places, in the order it places them, each label's path
