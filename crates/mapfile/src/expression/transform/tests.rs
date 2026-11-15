@@ -80,6 +80,14 @@ fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
         tree("(simplify([shape],10))"),
         drawn(TransformShape::Simplify(shape(), num(10.0)))
     );
+    assert_eq!(
+        tree("(buffer([shape], 1))"),
+        drawn(TransformShape::Buffer(shape(), num(1.0)))
+    );
+    assert_eq!(
+        tree("(buffer([shape], -1))"),
+        drawn(TransformShape::Buffer(shape(), num(-1.0)))
+    );
     for (text, reason) in [
         ("(centerline([shape]))", NotDrawn::Centerline),
         ("(centerline(densify([shape], 5)))", NotDrawn::Centerline),
@@ -89,8 +97,6 @@ fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
             NotDrawn::Centerline,
         ),
         ("(simplifypt([shape],50))", NotDrawn::Simplifypt),
-        ("(buffer([shape], 1))", NotDrawn::Buffer),
-        ("(buffer([shape], -1))", NotDrawn::Buffer),
     ] {
         assert_eq!(not_drawn(text), reason, "{text}");
     }
@@ -141,6 +147,18 @@ fn each_function_of_the_tree_translates_with_its_arguments() {
     assert_eq!(
         tree("(smoothsia([shape], 5, 2, 'none'))"),
         smooth(5.0, 2.0, None)
+    );
+    // `buffer`'s distance is a `math_exp`, as `simplify`'s tolerance.
+    assert_eq!(
+        tree("(buffer(simplify([shape], 2), [map_cellsize] * 3))"),
+        drawn(TransformShape::Buffer(
+            Box::new(TransformShape::Simplify(shape(), num(2.0))),
+            TransformNumber::Op(
+                NumberOp::Mul,
+                Box::new(TransformNumber::MapCellsize),
+                Box::new(num(3.0))
+            )
+        ))
     );
     // Function names in any case, as the lexer is built with `flex -i`.
     assert_eq!(
@@ -247,10 +265,10 @@ fn the_first_construct_without_a_node_names_the_reason() {
             "(smoothsia([shape], 3, 1, tostring(1, '%g')))",
             NotDrawn::Text,
         ),
-        // In reading order: buffer before round, round before buffer.
+        // In reading order: simplifypt before round, round before simplifypt.
         (
-            "(generalize(buffer([shape], 1), round(2)))",
-            NotDrawn::Buffer,
+            "(generalize(simplifypt([shape], 1), round(2)))",
+            NotDrawn::Simplifypt,
         ),
         (
             "(difference(generalize([shape], round(2)), buffer([shape], 1)))",
@@ -321,10 +339,10 @@ fn a_syntax_error_is_warned_with_its_place() {
 #[test]
 fn a_syntax_error_takes_precedence_over_an_earlier_construct_without_a_node() {
     // Verifies: ADR-0043
-    // MapServer refuses the whole expression, so `buffer` before the error names nothing.
-    let (what, at) = syntax("(buffer([shape],1) 2)");
+    // MapServer refuses the whole expression, so `simplifypt` before the error names nothing.
+    let (what, at) = syntax("(simplifypt([shape],1) 2)");
     assert!(what.contains("`2` after the shape"), "{what}");
-    assert_eq!(at, 19);
+    assert_eq!(at, 23);
 }
 
 #[test]

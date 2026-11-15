@@ -492,7 +492,7 @@ mod tests {
     }
 
     fn not_drawn_expression() -> GeomTransform {
-        GeomTransform::Expression(TransformTree::NotDrawn(NotDrawn::Buffer))
+        GeomTransform::Expression(TransformTree::NotDrawn(NotDrawn::Centerline))
     }
 
     fn sample_style() -> Style {

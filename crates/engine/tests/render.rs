@@ -1897,13 +1897,13 @@ fn sizeunits_size_a_layers_styles_in_map_units_by_the_cellsize() {
 #[test]
 fn a_class_style_of_a_not_drawn_tree_draws_nothing_and_warns_its_reason() {
     // Verifies: ADR-0043
-    // MapServer evaluates buffer through GEOS, which the tree has no node for yet: the style draws
+    // MapServer evaluates simplifypt through GEOS, which the tree has no node for: the style draws
     // nothing, with a warning naming the reason, and the class's other style draws as alone.
     let plain = line_style(BLUE, 3.0);
     let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
     let alone = render_with(&map_with(RenderMode::Line, vec![plain.clone()]), Some(line));
     let transformed = Style {
-        geom_transform: Some(GeomTransform::Expression(not_drawn(NotDrawn::Buffer))),
+        geom_transform: Some(GeomTransform::Expression(not_drawn(NotDrawn::Simplifypt))),
         ..line_style(GREEN, 9.0)
     };
     let rendered = render_with(
@@ -1919,7 +1919,7 @@ fn a_class_style_of_a_not_drawn_tree_draws_nothing_and_warns_its_reason() {
     assert!(
         rendered.diagnostics[0]
             .message
-            .contains("the function buffer (not_drawn: buffer)"),
+            .contains("the function simplifypt (not_drawn: simplifypt)"),
         "{}",
         rendered.diagnostics[0].message
     );
@@ -1967,7 +1967,7 @@ fn a_point_layer_draws_a_style_of_a_geomtransform_expression_at_its_points() {
     // pointLayerDrawShape draws every style at each point whatever its transform: a point layer's
     // style of an expression, drawn or not, draws its markers, and nothing is reported.
     for tree in [
-        not_drawn(NotDrawn::Buffer),
+        not_drawn(NotDrawn::Simplifypt),
         generalized(TransformNumber::Number(200.0)),
     ] {
         let style = Style {
@@ -2279,6 +2279,140 @@ fn style_trees_share_the_bounds_of_their_layers_geomtransform() {
         assert_eq!(image.pixel(50, 50), Some(WHITE), "past the bound");
         assert_eq!(image.pixel(15, 90), Some(WHITE), "after the bound");
     }
+}
+
+/// `buffer([shape], distance)`.
+fn buffered(distance: f64) -> TransformTree {
+    TransformTree::Drawn(TransformShape::Buffer(
+        Box::new(TransformShape::Shape),
+        TransformNumber::Number(distance),
+    ))
+}
+
+#[test]
+fn a_style_of_buffer_shades_the_shape_buffered_in_pixels() {
+    // Verifies: ADR-0043
+    // msDrawTransformedShape shades buffer's polygon by msDrawShadeSymbol: the square of 10..90
+    // grown by 5 pixels covers the pixel 3 outside its edge, shrunk by 5 leaves the pixel 3 inside
+    // it bare; a line's buffer is a polygon, shaded on a line layer as well.
+    let filled = Style {
+        color: Some(Bound::Value(GREEN)),
+        ..Style::default()
+    };
+    let square = r#"{"type": "Polygon", "coordinates": [
+        [[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}"#;
+    for (distance, outside, inside) in [(5.0, GREEN, GREEN), (-5.0, WHITE, WHITE)] {
+        let rendered = render_with(
+            &map(
+                RenderMode::Polygon,
+                of_tree(buffered(distance), filled.clone()),
+            ),
+            Some(square),
+        );
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        let image = rendered.image.unwrap();
+        assert_eq!(
+            image.pixel(7, 50),
+            Some(outside),
+            "{distance}: 3 px outside"
+        );
+        assert_eq!(image.pixel(13, 50), Some(inside), "{distance}: 3 px inside");
+        assert_eq!(image.pixel(50, 50), Some(GREEN), "{distance}: the middle");
+    }
+    let line = r#"{"type": "LineString", "coordinates": [[20, 50], [80, 50]]}"#;
+    let rendered = render_with(
+        &map(RenderMode::Line, of_tree(buffered(10.0), filled)),
+        Some(line),
+    );
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 42), Some(GREEN), "8 px beside the line");
+    assert_eq!(
+        image.pixel(14, 50),
+        Some(GREEN),
+        "the round cap, 6 px before its end"
+    );
+    assert_eq!(image.pixel(50, 35), Some(WHITE), "15 px beside the line");
+}
+
+#[test]
+fn a_style_of_buffer_past_the_points_q9_lets_its_layer_add_draws_nothing_with_a_warning() {
+    // Verifies: Q-9, ADR-0043
+    // The first style's densify adds 999 950 points to the 80 pixels of the line, within the
+    // 1 000 000 a layer's transforms may add. The second style's buffer by 5 adds the points of its
+    // round caps to the line's 2: past the bound, it draws nothing, and the layer is warned once.
+    // Alone, the buffer is drawn.
+    let line = r#"{"type": "LineString", "coordinates": [[10, 50], [90, 50]]}"#;
+    let filled = Style {
+        color: Some(Bound::Value(GREEN)),
+        ..Style::default()
+    };
+    let buffer = of_tree(buffered(5.0), filled);
+    let alone = render_with(&map(RenderMode::Line, buffer.clone()), Some(line));
+    assert!(alone.diagnostics.is_empty(), "{:?}", alone.diagnostics);
+    assert_eq!(alone.image.unwrap().pixel(50, 47), Some(GREEN));
+    let densify = of_tree(densified(80.0 / 999_950.0), line_style(BLUE, 3.0));
+    let past = render_with(
+        &map_with(RenderMode::Line, vec![densify, buffer]),
+        Some(line),
+    );
+    assert_eq!(codes(&past), ["geomtransform-over-limit"]);
+    let message = &past.diagnostics[0].message;
+    assert!(
+        message.contains("adds more than 1000000 points"),
+        "{message}"
+    );
+    let image = past.image.unwrap();
+    assert_eq!(
+        image.pixel(50, 50),
+        Some(BLUE),
+        "the densified line is drawn"
+    );
+    assert_eq!(image.pixel(50, 47), Some(WHITE), "the buffer is not");
+}
+
+#[test]
+fn a_buffer_whose_round_joins_would_pass_the_points_q9_lets_a_layer_add_is_not_run() {
+    // Verifies: Q-9, ADR-0043
+    // A line of 20 000 points up and down the image, each turning almost a half turn: the round
+    // joins of its buffer would add about 60 points at each, 1 200 000 in all, past the 1 000 000
+    // a layer's transforms may add. The buffer is charged them before it runs, and draws nothing.
+    let points: Vec<String> = (0..20_000)
+        .map(|i| {
+            if i % 2 == 0 {
+                "[10, 10]".to_owned()
+            } else {
+                "[10.5, 90]".to_owned()
+            }
+        })
+        .collect();
+    let line = format!(
+        r#"{{"type": "LineString", "coordinates": [{}]}}"#,
+        points.join(", ")
+    );
+    let filled = Style {
+        color: Some(Bound::Value(GREEN)),
+        ..Style::default()
+    };
+    let past = render_with(
+        &map(RenderMode::Line, of_tree(buffered(5.0), filled)),
+        Some(&line),
+    );
+    assert_eq!(codes(&past), ["geomtransform-over-limit"]);
+    let message = &past.diagnostics[0].message;
+    assert!(
+        message.contains("adds more than 1000000 points"),
+        "{message}"
+    );
+    assert_eq!(past.image.unwrap().pixel(10, 50), Some(WHITE));
 }
 
 fn not_drawn(reason: NotDrawn) -> TransformTree {

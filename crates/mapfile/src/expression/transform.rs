@@ -16,7 +16,7 @@
 
 //! Translates a `GEOMTRANSFORM` expression into its transform tree
 //! (ADR-0043): `[shape]`, and `generalize`,
-//! `densify`, `simplify`, `outer`, `inner`, and `smoothsia` of a shape, their numbers written,
+//! `densify`, `simplify`, `buffer`, `outer`, `inner`, and `smoothsia` of a shape, their numbers written,
 //! `[map_cellsize]`, or computed of those, each operation without `[map_cellsize]` folded at
 //! load. An expression the grammar parses that holds
 //! any other construct is the tree `not_drawn`, naming the first such construct in reading order;
@@ -232,12 +232,13 @@ impl Parser<'_> {
     ) -> Result<(Option<TransformShape>, usize), Fail> {
         let below = level + 1;
         let not_drawn = match name {
-            "buffer" => Some(NotDrawn::Buffer),
             "centerline" => Some(NotDrawn::Centerline),
             "difference" => Some(NotDrawn::Difference),
             "simplifypt" => Some(NotDrawn::Simplifypt),
             "javascript" => Some(NotDrawn::Javascript),
-            "generalize" | "densify" | "simplify" | "outer" | "inner" | "smoothsia" => None,
+            "generalize" | "densify" | "simplify" | "buffer" | "outer" | "inner" | "smoothsia" => {
+                None
+            }
             // msTokenizeExpression reads `fromtext('WKT')` into a shape of the mapfile's text,
             // which the tree cannot hold: `(`, a string, and `)`, or it fails the parse.
             "fromtext" => {
@@ -268,6 +269,7 @@ impl Parser<'_> {
                     ("generalize", Some(s), Some(n)) => Some(TransformShape::Generalize(s, n)),
                     ("densify", Some(s), Some(n)) => Some(TransformShape::Densify(s, n)),
                     ("simplify", Some(s), Some(n)) => Some(TransformShape::Simplify(s, n)),
+                    ("buffer", Some(s), Some(n)) => Some(TransformShape::Buffer(s, n)),
                     _ => None,
                 }
             }

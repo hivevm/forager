@@ -457,3 +457,238 @@ fn the_points_a_repair_adds_are_charged_as_added() {
     assert_eq!(repaired[0].shell.len(), 13, "{repaired:?}");
     assert_eq!(recorder.added, [3]);
 }
+
+/// The rings of `text`, `;` between rings, of points `x y` with `,` between them.
+fn rings_of(text: &str) -> Vec<Vec<Coord>> {
+    text.split(';')
+        .map(|ring| {
+            ring.split(',')
+                .map(|point| {
+                    let (x, y) = point.split_once(' ').unwrap();
+                    c(x.parse().unwrap(), y.parse().unwrap())
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// How far the closed ring `ours` lies from `theirs` at worst, vertex by vertex, where it starts
+/// at any of its points and runs either way; `None` where their point counts differ.
+fn ring_distance(ours: &[Coord], theirs: &[Coord]) -> Option<f64> {
+    if ours.len() != theirs.len() || ours.first() != ours.last() || theirs.first() != theirs.last()
+    {
+        return None;
+    }
+    let open = &ours[..ours.len() - 1];
+    let n = open.len();
+    let distance =
+        |p: Coord, q: Coord| ((p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y)).sqrt();
+    let mut best = f64::INFINITY;
+    for start in 0..n {
+        for forward in [true, false] {
+            let at = |k: usize| {
+                if forward {
+                    open[(start + k) % n]
+                } else {
+                    open[(start + n - k % n) % n]
+                }
+            };
+            let worst = (0..n)
+                .map(|k| distance(at(k), theirs[k]))
+                .fold(0.0, |a: f64, b| if b > a { b } else { a });
+            if worst < best {
+                best = worst;
+            }
+        }
+    }
+    Some(best)
+}
+
+#[test]
+fn the_case_s_polygons_buffer_to_geos_s_rings_within_a_millionth_of_a_pixel() {
+    // Verifies: ADR-0041
+    // The polygons of renderers/polygon-as-line-offset.map in its pixels, buffered by 1 and by -1
+    // with 30 segments a quadrant: each ring of GEOS's result has a ring of Forager's of its point
+    // count, each vertex within 1e-6 px, whatever point the ring starts at and its direction. The
+    // rings of the result are as many as GEOS's.
+    let fixture = include_str!("geos-buffer.txt");
+    let mut lines = fixture.lines().filter(|line| !line.starts_with('#'));
+    let mut compared = 0;
+    while let Some(shape) = lines.next() {
+        let rings = rings_of(shape.strip_prefix("shape ").unwrap());
+        let given = [Area {
+            shell: rings[0].clone(),
+            holes: rings[1..].to_vec(),
+        }];
+        for _ in 0..2 {
+            let (distance, expected) = lines.next().unwrap().split_once(' ').unwrap();
+            let distance: f64 = distance.parse().unwrap();
+            let theirs: Vec<Vec<Coord>> = expected.split('|').flat_map(rings_of).collect();
+            let ours: Vec<Vec<Coord>> =
+                buffer(Buffered::Areas(&given), distance, &mut Recorder::default())
+                    .unwrap()
+                    .into_iter()
+                    .flat_map(|area| std::iter::once(area.shell).chain(area.holes))
+                    .collect();
+            assert_eq!(ours.len(), theirs.len(), "{distance}: {ours:?}");
+            let mut unmatched = ours.clone();
+            for ring in &theirs {
+                let (at, worst) = unmatched
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, mine)| ring_distance(mine, ring).map(|d| (i, d)))
+                    .fold((usize::MAX, f64::INFINITY), |best, next| {
+                        if next.1 < best.1 { next } else { best }
+                    });
+                assert!(
+                    worst <= 1e-6,
+                    "{distance}: GEOS's ring of {} points lies {worst} px from Forager's",
+                    ring.len()
+                );
+                unmatched.remove(at);
+                compared += 1;
+            }
+        }
+    }
+    assert_eq!(compared, 10, "4 shells and a hole by 1 and by -1");
+}
+
+#[test]
+fn a_line_buffers_to_geos_s_ring_and_not_at_all_by_a_distance_not_above_0() {
+    // Verifies: ADR-0041
+    // GEOSBuffer_r(LINESTRING (0 0, 10 0, 10 10), 1, 30): 155 coordinates, round caps and the
+    // round join outside the corner; a line buffered by 0 or less is GEOS's empty polygon.
+    let line = [vec![c(0.0, 0.0), c(10.0, 0.0), c(10.0, 10.0)]];
+    let buffered = buffer(Buffered::Lines(&line), 1.0, &mut Recorder::default()).unwrap();
+    assert_eq!(buffered.len(), 1);
+    assert!(buffered[0].holes.is_empty());
+    assert_eq!(buffered[0].shell.len(), 155);
+    // GEOS's first three coordinates, which lie on the inner corner and the cap's start.
+    for (x, y) in [
+        (9.0, 1.0),
+        (9.0, 10.0),
+        (9.001370465245426, 10.052335956242944),
+    ] {
+        let p = c(x, y);
+        assert!(
+            buffered[0]
+                .shell
+                .iter()
+                .any(|q| (q.x - p.x).abs() < 1e-8 && (q.y - p.y).abs() < 1e-8),
+            "({x}, {y})"
+        );
+    }
+    for distance in [0.0, -1.0] {
+        assert!(
+            buffer(Buffered::Lines(&line), distance, &mut Recorder::default())
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn a_point_buffers_to_a_circle_of_120_segments() {
+    // Verifies: ADR-0041
+    // GEOSBuffer_r(POINT (0 0), 1, 30): 121 coordinates, from (1, 0) clockwise, each at a multiple
+    // of π/60; geo starts elsewhere and runs the other way, over the same vertices.
+    let point = [c(0.0, 0.0)];
+    let buffered = buffer(Buffered::Points(&point), 1.0, &mut Recorder::default()).unwrap();
+    assert_eq!(buffered.len(), 1);
+    let shell = &buffered[0].shell;
+    assert_eq!(shell.len(), 121);
+    for k in 0..120 {
+        let angle = -f64::from(k) * PI / 60.0;
+        let p = c(libm::cos(angle), libm::sin(angle));
+        assert!(
+            shell
+                .iter()
+                .any(|q| (q.x - p.x).abs() < 1e-12 && (q.y - p.y).abs() < 1e-12),
+            "the vertex at {k} × π/60"
+        );
+    }
+    assert!(
+        buffer(Buffered::Points(&point), 0.0, &mut Recorder::default())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_buffer_charges_its_offset_curves_before_it_runs_and_its_added_points_after() {
+    // Verifies: Q-9, ADR-0041
+    // A square of 5 coordinates turns a quarter at each of its 4 corners, 30 steps of π/60 each:
+    // 120 points of arcs, charged as added before the buffer runs, and with the 2 ends of each
+    // point's offset segments, 130, as visited. The result's points beyond the square's 5 and those
+    // 120 are charged after it. A line of 2 points has a half turn of 60 at each end, and is
+    // buffered on both sides: 120 added, 128 visited.
+    let square = [area(
+        &[
+            (0.0, 0.0),
+            (0.0, 10.0),
+            (10.0, 10.0),
+            (10.0, 0.0),
+            (0.0, 0.0),
+        ],
+        &[],
+    )];
+    let mut recorder = Recorder::default();
+    let buffered = buffer(Buffered::Areas(&square), 1.0, &mut recorder).unwrap();
+    assert_eq!(recorder.visits, [130]);
+    assert_eq!(recorder.added[0], 120);
+    assert_eq!(recorder.added[1], count(&buffered).saturating_sub(125));
+    assert!(
+        count(&buffered) <= 125,
+        "the arcs bound what the buffer adds"
+    );
+    let line = [vec![c(0.0, 0.0), c(10.0, 0.0)]];
+    let mut recorder = Recorder::default();
+    buffer(Buffered::Lines(&line), 1.0, &mut recorder).unwrap();
+    assert_eq!((recorder.visits[0], recorder.added[0]), (128, 120));
+    // A point's circle, 120 segments.
+    let mut recorder = Recorder::default();
+    buffer(Buffered::Points(&[c(0.0, 0.0)]), 1.0, &mut recorder).unwrap();
+    assert_eq!(recorder.added[0], 120);
+    // Past the bound on visits, nothing is buffered and nothing more is charged.
+    let mut recorder = Recorder {
+        limit: Some(129),
+        ..Recorder::default()
+    };
+    assert!(buffer(Buffered::Areas(&square), 1.0, &mut recorder).is_err());
+    assert_eq!(recorder.added, [120]);
+}
+
+#[test]
+fn a_repeated_point_hides_no_turn_from_the_charge() {
+    // Verifies: Q-9, ADR-0041
+    // i_overlay drops a point equal to the one before it and still rounds the turn at the next:
+    // a zigzag line and a jagged ring with each point doubled are charged the arcs of the same
+    // turns as without the repeats.
+    let charged = |shape: Buffered<'_>| {
+        let mut recorder = Recorder::default();
+        buffer(shape, 1.0, &mut recorder).unwrap();
+        recorder.added[0]
+    };
+    let zigzag: Vec<Coord> = (0..20)
+        .map(|i| c(f64::from(i), if i % 2 == 0 { 0.0 } else { 10.0 }))
+        .collect();
+    let doubled: Vec<Coord> = zigzag.iter().flat_map(|&p| [p, p]).collect();
+    let once = charged(Buffered::Lines(std::slice::from_ref(&zigzag)));
+    assert!(once > 18 * 50, "{once}");
+    assert_eq!(charged(Buffered::Lines(&[doubled])), once);
+    let mut ring = zigzag.clone();
+    ring.extend([c(19.0, -10.0), c(0.0, -10.0), c(0.0, 0.0)]);
+    let doubled_ring: Vec<Coord> = ring.iter().flat_map(|&p| [p, p]).collect();
+    let jagged = [Area {
+        shell: ring,
+        holes: vec![],
+    }];
+    let doubled_jagged = [Area {
+        shell: doubled_ring,
+        holes: vec![],
+    }];
+    assert_eq!(
+        charged(Buffered::Areas(&doubled_jagged)),
+        charged(Buffered::Areas(&jagged))
+    );
+}

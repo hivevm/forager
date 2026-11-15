@@ -1159,7 +1159,6 @@
         {
           "type": "string",
           "enum": [
-            "buffer",
             "centerline",
             "difference",
             "simplifypt",
@@ -2105,7 +2104,8 @@
               "enum": [
                 "generalize",
                 "densify",
-                "simplify"
+                "simplify",
+                "buffer"
               ]
             }
           },

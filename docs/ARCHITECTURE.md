@@ -268,7 +268,8 @@ golden path and the test pattern an agent copies from are named here.
   layer's transform to its styles' (`layer_transform.rs`, Q-9),
   `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
   collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
-  geo crate (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)). A
+  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant
+  (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)). A
   line style's symbol with a
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and

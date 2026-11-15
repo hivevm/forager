@@ -765,13 +765,13 @@ fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load()
     // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION) keeps the expression; the engine reports
     // it as it draws the layer, so the load does not, but for a syntax error, at its place.
     let (loaded, style) = first_style(
-        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (buffer([shape], 5)) END END END END",
+        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (simplifypt([shape], 5)) END END END END",
     );
     assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
     assert_eq!(
         style.unwrap().geom_transform,
         Some(GeomTransform::Expression(TransformTree::NotDrawn(
-            NotDrawn::Buffer
+            NotDrawn::Simplifypt
         )))
     );
     let (loaded, style) = first_style(
@@ -804,6 +804,41 @@ fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load()
             NotDrawn::Syntax
         )))
     );
+}
+
+#[test]
+fn a_style_of_buffer_holds_its_node_and_round_trips() {
+    // Verifies: ADR-0043, G-3
+    // The two styles of renderers/polygon-as-line-offset.map: `buffer` is a node of the tree, its
+    // distance kept negative as it is written.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER TYPE POLYGON CLASS
+           STYLE GEOMTRANSFORM (buffer([shape], 1)) END
+           STYLE GEOMTRANSFORM (buffer([shape], -1)) END
+         END END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let document = loaded.document.unwrap();
+    let styles = &document.map.layers[0].classes[0].styles;
+    let buffer = |distance: f64| {
+        Some(GeomTransform::Expression(TransformTree::Drawn(
+            TransformShape::Buffer(
+                Box::new(TransformShape::Shape),
+                TransformNumber::Number(distance),
+            ),
+        )))
+    };
+    assert_eq!(styles[0].geom_transform, buffer(1.0));
+    assert_eq!(styles[1].geom_transform, buffer(-1.0));
+    let yaml = document.to_yaml().unwrap();
+    let read = forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap();
+    assert_eq!(read.document, document);
+    assert!(read.warnings.is_empty(), "{:?}", read.warnings);
+    let json = document.to_json().unwrap();
+    assert!(json.contains(r#""buffer""#), "{json}");
+    let read = forager_style_ir::StyleDocument::from_json(&json).unwrap();
+    assert_eq!(read.document, document);
 }
 
 /// loadStyle switches on the lexer's token (src/mapfile.c:2729-2735), and `simple` lexes as

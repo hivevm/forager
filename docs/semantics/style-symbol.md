@@ -91,7 +91,8 @@ outside the part.
 lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`, the rules `shape_exp`, `math_exp`,
 and `string_exp`), function names without regard to case, without the parentheses `loadLayer` and
 `loadStyle` strip. The frontend translates it into a transform tree (ADR-0043): `[shape]`, and
-`generalize`, `densify`, `simplify`, `outer`, `inner`, and `smoothsia` of a shape, nested. A number
+`generalize`, `densify`, `simplify`, `buffer`, `outer`, `inner`, and `smoothsia` of a shape,
+nested. A number
 is written, `[map_cellsize]`, or computed of those by `+ - * / % ^` and parentheses, as the grammar
 reduces them; the frontend folds every operation without `[map_cellsize]` to one number. A unary `-`
 leaves its operand as it is, as the rule `'-' math_exp %prec NEG { $$ = $2; }` does, while `-3`
@@ -104,8 +105,8 @@ preprocessing `all` or `angle` is read without regard to case, as `strcasecmp` r
 other text is none.
 
 An expression the grammar parses that holds any other construct is the tree `not_drawn`, naming the
-first such construct in the expression's reading order: a function the tree lacks, `buffer`,
-`centerline`, `difference`, `simplifypt`, `javascript`, `length`, `area`, or `round`; `binding`, an
+first such construct in the expression's reading order: a function the tree lacks, `centerline`,
+`difference`, `simplifypt`, `javascript`, `length`, `area`, or `round`; `binding`, an
 attribute where a number or a text is due; `text`, a computed preprocessing of `smoothsia`;
 `fromtext`, a shape read from a text, which the tree cannot hold; or `literal`, an operation of
 literals that folds to no finite number, which a style document cannot carry: a `%` by 0 or of
@@ -152,6 +153,29 @@ engine draws its tree's functions:
   no number keeps every point, as GEOS's comparisons with it are false. A multipolygon's
   member whose shell is removed while one of its holes is kept leaves the hole as a stray line
   in GEOS's result, which turns the shape into a line; Forager removes the member with its holes.
+- `buffer(s, d)` (`msGEOSBuffer`, `src/mapgeos.c`): `s` as `GEOSBuffer_r` buffers it by the distance
+  `d` with 30 segments a quadrant, by geo's buffer with round joins and round caps of π/60
+  (ADR-0041). The shape is built as for `simplify`: a point shape is the point, or the multipoint,
+  of its first part; a line's parts are one line or a multiline, a part without points dropped; a
+  polygon's rings are grouped into polygons as `simplify` groups them. The result is always a
+  polygon: each polygon's shell and holes, a point's circle of 120 segments, a line's outline with
+  round ends, and a polygon grown by a positive `d` and shrunk by a negative one. A point or a line
+  buffered by a `d` not above 0, and a polygon shrunk until nothing is left, is GEOS's empty
+  polygon, which `msGEOSGeometry2Shape` turns into one ring without points. The shape keeps GEOS's
+  geometry, so `buffer` or `simplify` after it returns it empty, as `msGEOSBuffer` and
+  `msGEOSSimplify` build no geometry for a shape that has one; a function of MapServer's own after
+  it fails on a ring without points. Forager knows that geometry by the shape alone, a polygon of
+  one ring without points. MapServer also keeps it through a function of its own, so in
+  `buffer(generalize(buffer([shape], 1), 5), 1)` the outer `buffer` takes the inner one's geometry,
+  not the generalized shape; Forager buffers the generalized shape. Each vertex lies within 10⁻⁶ of
+  GEOS's on the case's polygons (measured within 2.3 × 10⁻⁷ px, with GEOS's point count), but the
+  rings run the other way and start at another point, and the polygons of a multipolygon may come in
+  another order; that matters only to a function after `buffer` that reads the first point or the
+  first part, such as `generalize`. A point's circle takes geo's `cos` and `sin` from the platform's
+  libm, not from the `libm` crate, so its last bits need not be alike on every target (Q-2). geo's
+  buffer works on a grid of integers fitted to the shape and the distance: a distance or a
+  coordinate near the limits of a double, such as 10³⁰⁰, buffers to nothing or to a coarse ring,
+  where GEOS buffers it.
 - `outer(s)` and `inner(s)` (`msRings2Shape`, `msIsOuterRing`, `src/mapprimitive.cpp`): the rings
   of a polygon that are outer, or inner, in their order. A ring alone is outer; another is outer
   where its first point lies in an even number of the other rings by `msPointInPolygon`. Where its
@@ -179,7 +203,11 @@ or fails: a tolerance below 0, which GEOS's simplifier refuses; a point shape wi
 whose first part has fewer than 2 points, or a polygon whose first ring has fewer than 4, which
 `msGEOSShape2Geometry` does not convert; and a line's part of 1 point, or a ring of a polygon of
 fewer than 4 points or not closed, which GEOS cannot build; a ring in no polygon is never built and
-fails nothing. The engine treats a geometry collection, or a multipoint, whose parts the IR does not
+fails nothing. `buffer` fails, with "Executing buffer failed", where `msGEOSShape2Geometry` gives
+no geometry or GEOS cannot build one, as for `simplify`, and on a distance that is no finite number,
+for which `GEOSBuffer_r` returns none. The engine also fails `buffer` on a shape with a coordinate
+that is no finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon
+of its own. The engine treats a geometry collection, or a multipoint, whose parts the IR does not
 keep, the same way. MapServer fails `msGeomTransformShape` on these: `msDrawVectorLayer` returns a
 failure (`src/mapdraw.c`, 1427–1434), and `msDrawMap` frees the image and returns none (508–519), so
 MapServer makes no map at all. Forager deviates: the layer draws nothing, with the warning, and the
@@ -191,6 +219,13 @@ leaves out, is never transformed and fails nothing. A layer draws nothing, with
 what `simplify` visits: the inner points of each section its Douglas-Peucker scans, charged as it
 goes, the tests that group a polygon's rings, and the pairs of segments and of rings the validity
 test and the repair compare. The points the repair returns beyond those it was given count as added.
+Before `buffer` runs, its offset curves are charged, so that the bounds stop it before it holds
+them: the points of their round joins and caps count as added, one for each step of π/60 a vertex
+turns by, a half turn at each end of a line, and a whole one about a point; those and the two ends
+of each point's offset segments on each side count as visits. After it, the points of its result
+beyond those of its shape and those arcs count as added too. A vertex's turn is counted whatever
+side of it the buffer rounds, so the charge may come to twice what the buffer adds: a jagged shape
+of about 17,000 sharp vertices passes the bound on its own, where MapServer buffers it.
 The validity test is charged the square of a simplified ring's segments, so a polygon whose
 simplified ring keeps more than about 10,000 points passes the bound alone and its layer draws
 nothing, where MapServer draws it. In its worst case, as on a zigzag of falling amplitude, the
@@ -207,7 +242,9 @@ multipolygon's rings listed flat. A shape left without a point draws no style at
 `msDrawTransformedShape` (`src/mapgeomtransform.c:198-240`) evaluates the tree on that shape, so
 its numbers are pixels:
 `generalize([shape], 50)` keeps, of the first part alone, its first point, each point at least 50
-pixels from the last kept, and its last. A line result is stroked as `msDrawLineSymbol` strokes a
+pixels from the last kept, and its last; `buffer([shape], 1)` grows a polygon by a pixel and
+`buffer([shape], -1)` shrinks it by one, as the styles of `renderers/polygon-as-line-offset.map`
+outline it. A line result is stroked as `msDrawLineSymbol` strokes a
 line of a line layer, a part of fewer than two points drawing nothing; a point or a polygon result
 is shaded as `msDrawShadeSymbol` shades a polygon, below. Each is drawn in the style, as its pass
 prepares it: a line layer draws such a style in the pass of a style of a keyword transform, with

@@ -2,8 +2,8 @@
 // its parser calls, src/mapparser.y: msGeneralize, src/maputil.c; msDensify, msRings2Shape,
 // msGetOuterList, and msIsOuterRing, src/mapprimitive.cpp; msSmoothShapeSIA and its line window
 // and preprocessing, src/mapsmoothing.c; and msPointInPolygon and msDistancePointToPoint,
-// src/mapsearch.c; msGEOSSimplify and the shape's conversion to GEOS's geometry and back,
-// msGEOSShape2Geometry and msGEOSGeometry2Shape, src/mapgeos.c; and msGetInnerList,
+// src/mapsearch.c; msGEOSSimplify, msGEOSBuffer, and the shape's conversion to GEOS's geometry
+// and back, msGEOSShape2Geometry and msGEOSGeometry2Shape, src/mapgeos.c; and msGetInnerList,
 // src/mapprimitive.cpp; of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2008 Regents of the University of Minnesota (src/mapprimitive.cpp).
@@ -21,9 +21,9 @@
 
 //! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0043) replaces the shape of each
 //! feature that passes the layer's filter before it is classed and drawn. The tree holds
-//! `generalize`, `densify`, `simplify`, `outer`, `inner`, and `smoothsia` of `[shape]`, nested;
-//! the frontend has translated MapServer's text into it. `simplify` is computed by the geometry
-//! module (ADR-0041).
+//! `generalize`, `densify`, `simplify`, `buffer`, `outer`, `inner`, and `smoothsia` of `[shape]`,
+//! nested; the frontend has translated MapServer's text into it. `simplify` and `buffer` are
+//! computed by the geometry module (ADR-0041).
 //!
 //! A shape is MapServer's: a type, point, line, or polygon, and a list of parts, a polygon's
 //! rings listed flat, as a source delivers them. What the transforms add or visit is bounded per
@@ -38,13 +38,14 @@ use forager_style_ir::{Coord, Geometry, NumberOp, Preprocessing, TransformNumber
 use crate::geometry::{self, Area, Charge};
 
 /// The most points one layer's transforms add to its shapes, `densify`'s, `smoothsia`'s
-/// preprocessing, and `simplify`'s repair (Q-9): past it, the layer draws nothing.
+/// preprocessing, `simplify`'s repair, and `buffer`'s result beyond its input (Q-9): past it, the
+/// layer draws nothing.
 pub const MAX_ADDED_POINTS: usize = 1_000_000;
 
 /// The most points one layer's transforms visit beyond reading each once, `smoothsia`'s windows
 /// over its passes, the rings `outer`, `inner`, and `simplify` test each ring against, and the
-/// points `simplify`'s Douglas-Peucker scans and its validity test and repair compare (Q-9):
-/// past it, the layer draws nothing.
+/// points `simplify`'s Douglas-Peucker scans and its validity test and repair compare, and the
+/// points `buffer`'s offset curves may hold (Q-9): past it, the layer draws nothing.
 pub const MAX_TRANSFORM_VISITS: usize = 100_000_000;
 
 /// Why a layer's `GEOMTRANSFORM` draws nothing.
@@ -261,6 +262,10 @@ impl Eval<'_> {
                 let shape = self.shape(inner, shape)?;
                 simplify(shape, self.number(tolerance)?, self.budget)
             }
+            TransformShape::Buffer(inner, distance) => {
+                let shape = self.shape(inner, shape)?;
+                buffer(&shape, self.number(distance)?, self.budget)
+            }
             TransformShape::Outer(inner) => {
                 let shape = self.shape(inner, shape)?;
                 rings(&shape, true, self.budget)
@@ -413,54 +418,21 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
 }
 
 /// msGEOSSimplify (src/mapgeos.c:922-943): the shape converted to GEOS's geometry by
-/// msGEOSShape2Geometry (:360-399), simplified by GEOS's Douglas-Peucker, and converted back by
+/// msGEOSShape2Geometry ([`built`]), simplified by GEOS's Douglas-Peucker, and converted back by
 /// msGEOSGeometry2Shape (:686-746), as the geometry module computes it.
 ///
 /// - A point shape is its points, which the simplification keeps.
 /// - A line's parts are simplified each; a part without points is dropped.
-/// - A polygon's rings are grouped as msGEOSShape2Geometry_polygon groups them: each outer ring by
-///   msGetOuterList with the inner rings msGetInnerList finds inside it, one polygon where one ring
-///   is outer, a multipolygon otherwise. The result's rings are each polygon's shell and holes.
+/// - A polygon's rings are grouped as [`built`] groups them. The result's rings are each
+///   polygon's shell and holes.
 ///
-/// It fails where MapServer's does: a tolerance below 0, which GEOS refuses; a shape GEOS is not
-/// given, a point shape without points, a line whose first part has fewer than 2, a polygon whose
-/// first ring has fewer than 4; and a part GEOS cannot build, a line's of 1 point or a ring of a
-/// polygon of fewer than 4 or not closed. A ring in no polygon is never built, so it fails nothing.
-/// The tolerance is tested after the shape is built, as GEOS refuses it after
+/// It fails where [`built`] fails, and on a tolerance below 0, which GEOS refuses after
 /// msGEOSShape2Geometry.
 fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
-    let built = match shape.kind {
-        Kind::Point => shape.parts.first().is_some_and(|part| !part.is_empty()),
-        Kind::Line => shape.parts.first().is_some_and(|part| part.len() >= 2),
-        Kind::Polygon => shape.parts.first().is_some_and(|ring| ring.len() >= 4),
-    };
-    if !built {
-        return Err(Undrawn::Failed(
-            "calls simplify on a shape of too few points, which fails in MapServer".to_owned(),
-        ));
+    if is_empty_from_geos(&shape) {
+        return Ok(shape);
     }
-    if shape.kind == Kind::Line && shape.parts.iter().any(|part| part.len() == 1) {
-        return Err(Undrawn::Failed(
-            "calls simplify on a line part of one point, which GEOS cannot build and which fails \
-             in MapServer"
-                .to_owned(),
-        ));
-    }
-    let areas = match shape.kind {
-        Kind::Polygon => areas(&shape.parts, budget)?,
-        Kind::Point | Kind::Line => Vec::new(),
-    };
-    let unbuilt = |ring: &Vec<Coord>| ring.len() < 4 || ring.first() != ring.last();
-    if areas
-        .iter()
-        .any(|area| unbuilt(&area.shell) || area.holes.iter().any(unbuilt))
-    {
-        return Err(Undrawn::Failed(
-            "calls simplify on a ring of fewer than 4 points or not closed, which GEOS cannot \
-             build and which fails in MapServer"
-                .to_owned(),
-        ));
-    }
+    let areas = built(&shape, "simplify", budget)?;
     if tolerance < 0.0 {
         return Err(Undrawn::Failed(format!(
             "calls simplify with the tolerance {tolerance}, below 0, which fails in MapServer"
@@ -483,6 +455,110 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
         kind: shape.kind,
         parts,
     })
+}
+
+/// msGEOSBuffer (src/mapgeos.c:899-920): the shape converted to GEOS's geometry by
+/// msGEOSShape2Geometry ([`built`]), buffered by `distance` with 30 segments a quadrant by
+/// `GEOSBuffer_r`, and converted back by msGEOSGeometry2Shape (:686-746), as the geometry module
+/// computes it. The result is a polygon of each polygon's shell and holes; where the buffer is
+/// empty, GEOS's empty polygon, which msGEOSGeometry2Shape_polygon turns into one ring without
+/// points.
+///
+/// - A point shape is the point of its first part, or the multipoint of its points.
+/// - A line's parts are its lines; a part without points is dropped.
+/// - A polygon's rings are grouped as [`built`] groups them.
+///
+/// It fails where [`built`] fails, and on a distance that is no finite number, for which
+/// `GEOSBuffer_r` returns no geometry. The engine also fails a shape with a coordinate that is no
+/// finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon of its
+/// own.
+fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
+    if is_empty_from_geos(shape) {
+        return Ok(shape.clone());
+    }
+    let areas = built(shape, "buffer", budget)?;
+    if !distance.is_finite() {
+        return Err(Undrawn::Failed(format!(
+            "calls buffer with the distance {distance}, which fails in MapServer"
+        )));
+    }
+    if shape
+        .parts
+        .iter()
+        .flatten()
+        .any(|p| !p.x.is_finite() || !p.y.is_finite())
+    {
+        return Err(Undrawn::Failed(
+            "calls buffer on a shape with a coordinate that is no finite number".to_owned(),
+        ));
+    }
+    let given = match shape.kind {
+        Kind::Point => geometry::Buffered::Points(shape.parts.first().map_or(&[], Vec::as_slice)),
+        Kind::Line => geometry::Buffered::Lines(&shape.parts),
+        Kind::Polygon => geometry::Buffered::Areas(&areas),
+    };
+    let mut parts: Vec<Vec<Coord>> = geometry::buffer(given, distance, budget)?
+        .into_iter()
+        .flat_map(|area| std::iter::once(area.shell).chain(area.holes))
+        .collect();
+    if parts.is_empty() {
+        parts.push(Vec::new());
+    }
+    Ok(Shape {
+        kind: Kind::Polygon,
+        parts,
+    })
+}
+
+/// Whether `shape` is the empty polygon a function of GEOS returns, which
+/// msGEOSGeometry2Shape_polygon turns into one ring without points. msGEOSBuffer and
+/// msGEOSSimplify keep the geometry GEOS returned on the shape and build none where it has one
+/// (src/mapgeos.c:908-909, 930-931), so a function of GEOS after another is given GEOS's empty
+/// polygon, never msGEOSShape2Geometry's test of too few points, and returns it empty.
+fn is_empty_from_geos(shape: &Shape) -> bool {
+    shape.kind == Kind::Polygon && matches!(shape.parts.as_slice(), [ring] if ring.is_empty())
+}
+
+/// msGEOSShape2Geometry (src/mapgeos.c:360-399), for a function of GEOS named `name`: the areas
+/// of a polygon, grouped as msGEOSShape2Geometry_polygon groups them by [`areas`], and none for a
+/// point or a line, whose parts GEOS takes as they are.
+///
+/// It fails where MapServer's function fails on the shape: a shape GEOS is not given, a point
+/// shape without points, a line whose first part has fewer than 2, a polygon whose first ring has
+/// fewer than 4; and a part GEOS cannot build, a line's of 1 point or a ring of a polygon of fewer
+/// than 4 or not closed. A ring in no polygon is never built, so it fails nothing.
+fn built(shape: &Shape, name: &str, budget: &mut Budget) -> Result<Vec<Area>, Undrawn> {
+    let given = match shape.kind {
+        Kind::Point => shape.parts.first().is_some_and(|part| !part.is_empty()),
+        Kind::Line => shape.parts.first().is_some_and(|part| part.len() >= 2),
+        Kind::Polygon => shape.parts.first().is_some_and(|ring| ring.len() >= 4),
+    };
+    if !given {
+        return Err(Undrawn::Failed(format!(
+            "calls {name} on a shape of too few points, which fails in MapServer"
+        )));
+    }
+    if shape.kind == Kind::Line && shape.parts.iter().any(|part| part.len() == 1) {
+        return Err(Undrawn::Failed(format!(
+            "calls {name} on a line part of one point, which GEOS cannot build and which fails \
+             in MapServer"
+        )));
+    }
+    let areas = match shape.kind {
+        Kind::Polygon => areas(&shape.parts, budget)?,
+        Kind::Point | Kind::Line => Vec::new(),
+    };
+    let unbuilt = |ring: &Vec<Coord>| ring.len() < 4 || ring.first() != ring.last();
+    if areas
+        .iter()
+        .any(|area| unbuilt(&area.shell) || area.holes.iter().any(unbuilt))
+    {
+        return Err(Undrawn::Failed(format!(
+            "calls {name} on a ring of fewer than 4 points or not closed, which GEOS cannot \
+             build and which fails in MapServer"
+        )));
+    }
+    Ok(areas)
 }
 
 /// msGEOSShape2Geometry_polygon (src/mapgeos.c:322-358): a polygon of each ring msGetOuterList
