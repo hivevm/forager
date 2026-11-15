@@ -23,6 +23,7 @@ use forager_style_ir::{Style, Symbol};
 
 use crate::glyph::Glyphs;
 use crate::hatch::Hatching;
+use crate::layer_transform::StyleTrees;
 use crate::line_marker::MarkerBudget;
 use crate::symbol::{self, Factors, Pixmaps};
 use crate::tile::Tiles;
@@ -32,8 +33,8 @@ use crate::tile::Tiles;
 /// layer's scale factor and the image's resolution factor (see the engine's
 /// `classes::scales`), what is left to the layer of
 /// [`crate::line_marker::MAX_MARKER_POINTS`], the hatching of the class drawn, which counts the
-/// hatches refused (Q-9), the pixmap symbols left undrawn, and whether the layer is drawn into an
-/// image of its own.
+/// hatches refused (Q-9), the pixmap symbols left undrawn, what the transform trees of the
+/// layer's class styles share, and whether the layer is drawn into an image of its own.
 pub struct Canvas<'a> {
     pub(crate) symbols: &'a [Symbol],
     pixmaps: Option<&'a Pixmaps>,
@@ -54,6 +55,9 @@ pub struct Canvas<'a> {
     pub(crate) missing_glyphs: BTreeMap<usize, String>,
     /// The port TrueType markers ask their glyphs of.
     pub(crate) glyphs: Option<&'a dyn Glyphs>,
+    /// The budget, the `[map_cellsize]`, and the failures of the class styles' transform trees;
+    /// without them, a class style's tree draws nothing.
+    pub(crate) style_trees: Option<StyleTrees>,
     pub(crate) own_image: bool,
 }
 
@@ -104,8 +108,30 @@ impl<'a> Canvas<'a> {
             refused_symbols: BTreeMap::new(),
             missing_glyphs: BTreeMap::new(),
             glyphs: None,
+            style_trees: None,
             own_image: false,
         }
+    }
+
+    /// The canvas, the transform trees of its class styles evaluated with `style_trees`, which
+    /// carries the layer's budget and `[map_cellsize]`. The engine gives them to the canvas of
+    /// every layer it draws; a canvas without them draws no class style's tree.
+    pub fn with_style_trees(self, style_trees: StyleTrees) -> Self {
+        Self {
+            style_trees: Some(style_trees),
+            ..self
+        }
+    }
+
+    /// Why the transform tree of the style last drawn failed on its shape, if it did; it is
+    /// forgotten here.
+    pub fn take_style_tree_failure(&mut self) -> Option<String> {
+        self.style_trees.as_mut().and_then(StyleTrees::take_failure)
+    }
+
+    /// The bound of Q-9 the transform trees of the layer's class styles passed, if they did.
+    pub fn style_trees_over_limit(&self) -> Option<&str> {
+        self.style_trees.as_ref().and_then(StyleTrees::over_limit)
     }
 
     /// The canvas, its pixmap symbols drawn with the images of `pixmaps`; without them, every

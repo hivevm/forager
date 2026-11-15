@@ -107,7 +107,8 @@ to invent.
 - **Transform tree** — A `GEOMTRANSFORM` expression of a layer or a class's style in the style
   IR: a tree of its shape functions and their numbers in CQL2-JSON's shape, or `not_drawn` with the
   reason the engine does not draw it, translated by the mapfile frontend. Its nodes are `shape`,
-  `generalize`, `densify`, `simplify`, `outer`, `inner`, and `smoothsia`
+  `generalize`, `densify`, `simplify`, `outer`, `inner`, and `smoothsia`. A layer's tree replaces
+  each feature's shape in map units; a class style's tree is drawn on the shape in pixels
   (ADR-0036,
   [ADR-draft-transform-tree-with-simplify-and-buffer](adr/draft-transform-tree-with-simplify-and-buffer.md);
   [`semantics/style-symbol.md`](semantics/style-symbol.md)).

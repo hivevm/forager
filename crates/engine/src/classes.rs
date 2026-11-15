@@ -320,7 +320,8 @@ impl<'a> Selector<'a, '_> {
     /// shape it reads after the filter (src/maplayer.c:437-449). msDrawVectorLayer reads no shape
     /// past the first that its class finds beyond the layer's limit (src/mapdraw.c:1282-1286), so
     /// none past it is transformed, and none fails: those are counted as [`Self::select`] counts
-    /// them, of the render mode `mode`. The reason where a shape fails the transform, or where the
+    /// them, of the render mode `mode`. The transforms charge `budget`, which the layer's style
+    /// trees charge after them. The reason where a shape fails the transform, or where the
     /// layer's transforms pass a bound of Q-9. The filter, and under a limit the classes, are
     /// evaluated here and again by [`Self::select`], which sees the transformed features: the
     /// evaluation is pure and its failures report once, so only a layer with a transform pays
@@ -331,15 +332,15 @@ impl<'a> Selector<'a, '_> {
         features: &mut [Feature],
         shape: &TransformShape,
         cellsize: f64,
+        budget: &mut Budget,
     ) -> Result<(), Undrawn> {
-        let mut budget = Budget::default();
         let limit = self.binder.layer.max_features.map(|max| max as usize);
         let mut counted = 0_usize;
         for feature in features {
             if !self.passes_filter(feature) {
                 continue;
             }
-            feature.geometry = transformed(shape, &feature.geometry, cellsize, &mut budget)?;
+            feature.geometry = transformed(shape, &feature.geometry, cellsize, budget)?;
             if let Some(limit) = limit
                 && can_draw(mode, &feature.geometry)
                 && self.class(feature).is_some()

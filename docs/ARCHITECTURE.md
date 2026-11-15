@@ -165,7 +165,9 @@ golden path and the test pattern an agent copies from are named here.
   each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
   up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
   tree is `not_drawn` or fails, with a warning (`classes.rs`,
-  ADR-0036), draws each feature that passes the layer's
+  ADR-0036), hands the budget the layer's transform left to its class styles' trees and warns of
+  each style's first failure and of the bound they pass
+  (ADR-draft-transform-tree-with-simplify-and-buffer), draws each feature that passes the layer's
   filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
   the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
   bound and computed
@@ -262,7 +264,9 @@ golden path and the test pattern an agent copies from are named here.
   cache of six tiles, counted with the decoded images (`tile.rs`); line offsets (`offset.rs`); and
   the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a layer's
   `GEOMTRANSFORM`, its transform tree evaluated on each feature's shape before the engine classes
-  it, what its transforms add and visit held to a budget per layer (`layer_transform.rs`, Q-9),
+  it, and a class style's tree evaluated on the shape in pixels as it is drawn (`draw.rs`), what
+  both add and visit held to one budget per layer and render, which the canvas carries from the
+  layer's transform to its styles' (`layer_transform.rs`, Q-9),
   `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
   collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
   geo crate (`geometry.rs`, [ADR-draft-geometry-through-geo](adr/draft-geometry-through-geo.md)). A

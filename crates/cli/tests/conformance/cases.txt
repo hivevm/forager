@@ -236,7 +236,7 @@ renderers/force_pc256.map force_pc256.png out: a raster source
 renderers/force_pc256.map force_pc256.cairo.png out: another output format, cairopng
 renderers/force_pc256_rgba.map force_pc256_rgba.png out: a raster source
 renderers/force_pc256_rgba.map force_pc256_rgba.cairo.png out: another output format, cairopng
-renderers/geomtransform-vertex.map geomtransform-vertex.png geometry fails  # not built yet: the GEOMTRANSFORM expressions of a style and TrueType symbols
+renderers/geomtransform-vertex.map geomtransform-vertex.png geometry fails  # not built yet: the style of simplifypt([shape],50), GEOS's topology-preserving simplification; no other pixel differs past the threshold
 renderers/geomtransform-vertex.map geomtransform-vertex.pdf out: another output format, pdf
 renderers/geomtransform-vertex.map geomtransform-vertex.svg out: another output format, svg
 renderers/geomtransform-vertex.map geomtransform-vertex.cairo.png out: another output format, cairopng

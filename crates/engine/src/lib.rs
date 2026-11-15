@@ -59,8 +59,9 @@ use forager_style_ir::{
     RenderMode, Rgba, Style, Symbol, SymbolKind, TransformTree,
 };
 use forager_symbolize::{
-    Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, circle,
-    circle_ops, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
+    Budget, Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, StyleTrees, Tiles, Undrawn,
+    can_draw, circle, circle_ops, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap,
+    point_markers, resolve,
 };
 
 use forager_expr::Evaluator;
@@ -184,9 +185,9 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             scale,
         };
         let cellsize = classes::layer_cellsize(map, view.cellsize);
-        if !transformed(&mut selector, mode, &mut features, cellsize) {
+        let Some(budget) = transformed(&mut selector, mode, &mut features, cellsize) else {
             continue;
-        }
+        };
         let (drawable, undrawn) = drawable(mode, &features);
         let selected = selector.select(drawable, &map.symbols);
         let drawing = Drawing::new(mode, layer, scale, &view, centres.as_ref());
@@ -201,10 +202,11 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .await;
         let (pixmaps, tiles, glyphs) = images.drawing();
         let mut canvas = layer_canvas(map, factors[layer_index], (width, height), pixmaps, tiles)
-            .with_glyphs(glyphs);
+            .with_glyphs(glyphs)
+            .with_style_trees(StyleTrees::new(budget, cellsize));
         let drawn = labelled(&selected);
         let mut target = drawing.target(&mut renderer, &mut canvas);
-        if at_once {
+        let style_failures = if at_once {
             let binder = &mut selector.binder;
             let mut settled = labels.layer_at_once(layer_index, &drawn, pixmaps, binder);
             for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
@@ -221,15 +223,17 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                     labels.out_of_reach(binder.diagnostics, label.at, count);
                 }
             }
+            StyleFailures::new()
         } else {
-            drawing.draw(&mut target, &mut canvas, &selected);
-        }
+            drawing.draw(&mut target, &mut canvas, &selected)
+        };
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
         let refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
         let (spent, diagnostics) = (canvas.markers_spent(), &mut *selector.binder.diagnostics);
         layer_reports(layer, spent, refusals, undrawn, diagnostics);
-        style_reports(layer, mode, &map.symbols, diagnostics);
+        let trees = (style_failures, canvas.style_trees_over_limit());
+        style_reports(layer, mode, &map.symbols, trees, diagnostics);
         // Only a line, polygon, or annotation layer of POSTLABELCACHE TRUE comes here after the
         // cache is drawn: its labels are not drawn yet, each reported, so none enters the cache.
         if !at_once {
@@ -251,19 +255,23 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     }
 }
 
-/// The reports on the styles of a layer drawn in `mode`: the symbols no symbol is named, and, but
-/// in a point layer, which draws them at its points, and a circle layer, which draws its circle
-/// whatever the transform (`src/mapdraw.c:2390-2396`), the styles of a GEOMTRANSFORM not drawn.
+/// The reports on the styles of a layer drawn in `mode`: the symbols no symbol is named; but in a
+/// point layer, which draws them at its points, and a circle layer, which draws its circle
+/// whatever the transform (`src/mapdraw.c:2390-2396`), the styles of a GEOMTRANSFORM not drawn;
+/// and what the class styles' transform trees left undrawn, their failures and the bound they
+/// passed (see [`style_tree_reports`]).
 fn style_reports(
     layer: &Layer,
     mode: RenderMode,
     symbols: &[Symbol],
+    (failures, over_limit): (StyleFailures, Option<&str>),
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     unknown_symbols(layer, symbols, diagnostics);
     if !matches!(mode, RenderMode::Point | RenderMode::Circle) {
         styles_not_drawn(layer, diagnostics);
     }
+    style_tree_reports(layer, failures, over_limit, diagnostics);
 }
 
 /// The map's layers with their indexes in the order msDrawMap draws them, and the position at which
@@ -437,6 +445,10 @@ fn truetype_fonts<'s>(
     fonts
 }
 
+/// The first failure of each class style's transform tree in a layer's drawing, by the places of
+/// its class in the layer and of the style in its class.
+type StyleFailures = BTreeMap<(usize, usize), String>;
+
 /// What a layer's features are drawn with.
 struct Drawing<'a> {
     mode: RenderMode,
@@ -598,26 +610,41 @@ impl<'a> Drawing<'a> {
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
     /// from the cache as the [`Plan`] of each class says. A style outside its scale range draws
     /// nothing, where msDrawShape and the cache's pass skip it. A point layer's features are
-    /// drawn point by point by [`Self::draw_points`], without their labels.
-    fn draw<R: Draw>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
+    /// drawn point by point by [`Self::draw_points`], without their labels. The first failure of
+    /// each class style's transform tree, in the order the shapes are drawn, by the places of its
+    /// class in the layer and of the style in its class.
+    fn draw<R: Draw>(
+        &self,
+        renderer: &mut R,
+        canvas: &mut Canvas,
+        selected: &[Selected<'_>],
+    ) -> StyleFailures {
+        let mut failures = StyleFailures::new();
         let mode = self.mode;
         if mode == RenderMode::Point {
             for one in selected {
                 self.draw_points(renderer, canvas, one, |_, _| {});
             }
-            return;
+            return failures;
         }
         if mode == RenderMode::Circle {
             self.draw_circles(renderer, canvas, selected);
-            return;
+            return failures;
         }
-        let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {
+        let mut draw = |canvas: &mut Canvas,
+                        feature: &Feature,
+                        (class, place): (usize, usize),
+                        style: &Style,
+                        passes: &[Pass]| {
             if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
                 return;
             }
             for &pass in passes {
                 let ops = draw_ops(mode, &feature.geometry, style, pass, self.view, canvas);
                 draw_items(renderer, feature.id, ops);
+                if let Some(why) = canvas.take_style_tree_failure() {
+                    failures.entry((class, place)).or_insert(why);
+                }
             }
         };
         let plans: Vec<Plan> = self
@@ -632,21 +659,22 @@ impl<'a> Drawing<'a> {
             canvas.class(&self.layer.classes[*class].styles);
             let plan = &plans[*class];
             let passes = plan.passes(styles);
-            for (style, passes) in &passes.at_once {
-                draw(canvas, feature, style, passes);
+            for (place, style, passes) in &passes.at_once {
+                draw(canvas, feature, (*class, *place), style, passes);
             }
             if plan.cached() {
                 most_styles = most_styles.max(styles.len());
-                cached.push((*feature, passes.cached));
+                cached.push((*feature, *class, passes.cached));
             }
         }
         for place in 0..most_styles {
-            for (feature, later) in &cached {
+            for (feature, class, later) in &cached {
                 for (_, style, passes) in later.iter().filter(|(p, _, _)| *p == place) {
-                    draw(canvas, feature, style, passes);
+                    draw(canvas, feature, (*class, place), style, passes);
                 }
             }
         }
+        failures
     }
 }
 
@@ -1053,26 +1081,24 @@ fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diag
 }
 
 /// Warns of each class style of a line or a polygon layer whose `GEOMTRANSFORM` the engine does
-/// not draw on a style. An expression MapServer evaluates by msDrawTransformedShape, most of its
-/// functions through GEOS; labelcenter fails the layer's draw there (src/mapgeomtransform.c:245),
-/// msDrawLabelCache alone drawing it on a label's style. The style draws nothing; the class's
-/// other styles draw in their passes as before. A point layer draws such a style at its points, as
-/// pointLayerDrawShape draws every style whatever its transform, and is not warned. The warning
-/// holds for a style document as for a mapfile, whose frontend does not warn of it again.
+/// not draw on a style: a transform tree `not_drawn`, naming its reason
+/// (ADR-draft-transform-tree-with-simplify-and-buffer, *Diagnostics*), which MapServer evaluates
+/// by msDrawTransformedShape, through GEOS or a JavaScript engine, or fails; and labelcenter, which
+/// fails the layer's draw there (src/mapgeomtransform.c:245), msDrawLabelCache alone drawing it on
+/// a label's style. The style draws nothing; the class's other styles draw in their passes as
+/// before. A point layer draws such a style at its points, as pointLayerDrawShape draws every
+/// style whatever its transform, and is not warned. The warning holds for a style document as for
+/// a mapfile, whose frontend does not warn of it again.
 fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
     for style in layer.classes.iter().flat_map(|class| &class.styles) {
         let message = match &style.geom_transform {
-            Some(GeomTransform::Expression(tree)) => {
-                let holding = match tree {
-                    TransformTree::NotDrawn(reason) => format!(", of {},", described(*reason)),
-                    TransformTree::Drawn(_) => String::new(),
-                };
-                format!(
-                    "layer {}: the GEOMTRANSFORM expression{holding} of a class's style is not \
-                     drawn: the style draws nothing",
-                    name(layer),
-                )
-            }
+            Some(GeomTransform::Expression(TransformTree::NotDrawn(reason))) => format!(
+                "layer {}: the GEOMTRANSFORM expression of a class's style holds {} \
+                 (not_drawn: {}), which the engine does not draw: the style draws nothing",
+                name(layer),
+                described(*reason),
+                reason.name()
+            ),
             Some(GeomTransform::LabelCenter) => format!(
                 "layer {}: a class's style of GEOMTRANSFORM labelcenter is not drawn: only a \
                  label's style draws labelcenter, and MapServer fails the layer's draw on it; the \
@@ -1085,6 +1111,58 @@ fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
             "geomtransform-not-drawn",
             message,
             style.span.clone().or_else(|| layer.span.clone()),
+        ));
+    }
+}
+
+/// Warns of the class styles' transform trees of `layer` that drew nothing
+/// (ADR-draft-transform-tree-with-simplify-and-buffer, *A class's style*): of each style in
+/// `failures`, its first failure, once, as `geomtransform-not-drawn`; and, where they passed
+/// `over_limit`, a bound of Q-9 they share with the layer's `GEOMTRANSFORM`, once for the layer as
+/// `geomtransform-over-limit`. MapServer makes no map where msDrawTransformedShape fails
+/// (src/mapdraw.c:1402-1405, 508-519); Forager draws nothing of the style on that shape, and the
+/// rest.
+fn style_tree_reports(
+    layer: &Layer,
+    failures: StyleFailures,
+    over_limit: Option<&str>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for ((c, s), why) in failures {
+        let class = &layer.classes[c];
+        let class_name = class
+            .name
+            .as_deref()
+            .map_or(String::new(), |n| format!(" `{n}`"));
+        let message = format!(
+            "layer {}: style {} of its class {}{class_name} draws nothing on a shape: its \
+             GEOMTRANSFORM expression {why}, where MapServer makes no map",
+            name(layer),
+            s + 1,
+            c + 1,
+        );
+        let span = class.styles[s]
+            .span
+            .clone()
+            .or_else(|| class.span.clone())
+            .or_else(|| layer.span.clone());
+        diagnostics.push(Diagnostic::warning(
+            "geomtransform-not-drawn",
+            message,
+            span,
+        ));
+    }
+    if let Some(why) = over_limit {
+        let message = format!(
+            "layer {}: a GEOMTRANSFORM expression of its styles, charged with the layer's \
+             GEOMTRANSFORM and its other styles', {why}: its styles' expressions draw nothing on \
+             the shape past the limit and on every later one",
+            name(layer),
+        );
+        diagnostics.push(Diagnostic::warning(
+            "geomtransform-over-limit",
+            message,
+            layer.span.clone(),
         ));
     }
 }
@@ -1110,28 +1188,30 @@ fn labelled<'a>(selected: &'a [Selected<'a>]) -> Vec<labels::Labelled<'a>> {
         .collect()
 }
 
-/// Whether the layer of `selector` is drawn after its `GEOMTRANSFORM`: its `features`
-/// transformed, `[map_cellsize]` at `cellsize`, where it has one; none drawn, with a warning,
+/// The budget of Q-9 the layer of `selector` leaves to its class styles' transform trees, where
+/// it is drawn after its `GEOMTRANSFORM`: its `features` transformed, `[map_cellsize]` at
+/// `cellsize`, where it has one, whole where it has none; `None`, none drawn, with a warning,
 /// where its transform tree is `not_drawn` or fails (ADR-0036).
 fn transformed(
     selector: &mut Selector<'_, '_>,
     mode: RenderMode,
     features: &mut [Feature],
     cellsize: f64,
-) -> bool {
+) -> Option<Budget> {
     let layer = selector.binder.layer;
+    let mut budget = Budget::default();
     let warning = match &layer.geom_transform {
-        None => return true,
+        None => return Some(budget),
         Some(TransformTree::NotDrawn(reason)) => transform_not_drawn(layer, *reason),
         Some(TransformTree::Drawn(shape)) => {
-            match selector.transform(mode, features, shape, cellsize) {
-                Ok(()) => return true,
+            match selector.transform(mode, features, shape, cellsize, &mut budget) {
+                Ok(()) => return Some(budget),
                 Err(undrawn) => transform_failed(layer, undrawn),
             }
         }
     };
     selector.binder.diagnostics.push(warning);
-    false
+    None
 }
 
 /// The warning that `layer` draws nothing, its `GEOMTRANSFORM` a transform tree of the reason

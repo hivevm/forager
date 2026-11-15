@@ -44,9 +44,10 @@ value begins with, without regard to case, so `'startpoint'` is `start`; a value
 none is no transform; a class's style of it draws the feature's own geometry, a label's style
 draws at its `labelpnt`, and the frontend warns with `unsupported-value`. A style's expression,
 `(buffer([shape], 5))` and the like, is carried as its transform tree (below). Of a line or a
-polygon layer, the engine draws nothing of a class's style of one, whatever its tree, and warns
-`geomtransform-not-drawn`, naming the tree's reason where it is `not_drawn`, the class's other
-styles drawn in their passes as before.
+polygon layer, the engine draws a class's style of one as `msDrawTransformedShape` draws it, on the
+shape in pixels (*A class style's expression*, below); of a tree `not_drawn`, it draws nothing of
+the style and warns `geomtransform-not-drawn`, naming the reason, the class's other styles drawn in
+their passes as before.
 A point layer draws the style at its points without a warning, as `pointLayerDrawShape` draws
 every style whatever its transform. A label's style draws at its `labelpnt` unless it names
 another. A label with a style of any other transform or of an expression is left out, and its
@@ -195,6 +196,42 @@ simplified ring keeps more than about 10,000 points passes the bound alone and i
 nothing, where MapServer draws it. In its worst case, as on a zigzag of falling amplitude, the
 Douglas-Peucker scans about n²/2 points for a part of n points kept, so such a line of more than
 about 14,000 points passes the bound too, and its layer draws nothing.
+
+**A class style's expression.** On a line or a polygon layer, `lineLayerDrawShape` and
+`polygonLayerDrawShape` (`src/mapdraw.c:2140-2148`, `2304-2311`) hand a class style's expression,
+in its scale range, the feature's unclipped shape in pixels, as `msDrawShape` transforms it before
+it clips (`:2505-2518`): its lines and rings simplified as for the keyword transforms above, a part
+the simplification leaves without points kept empty, as `msTransformShapeSimplify` keeps it, and a
+multipolygon's rings listed flat. A shape left without a point draws no style at all, as
+`msDrawShape` returns before it draws one (`:2506-2507`, `2577-2580`), so its tree is not evaluated.
+`msDrawTransformedShape` (`src/mapgeomtransform.c:198-240`) evaluates the tree on that shape, so
+its numbers are pixels:
+`generalize([shape], 50)` keeps, of the first part alone, its first point, each point at least 50
+pixels from the last kept, and its last. A line result is stroked as `msDrawLineSymbol` strokes a
+line of a line layer, a part of fewer than two points drawing nothing; a point or a polygon result
+is shaded as `msDrawShadeSymbol` shades a polygon, below. Each is drawn in the style, as its pass
+prepares it: a line layer draws such a style in the pass of a style of a keyword transform, with
+its first style, before the rest. The functions are those of a layer's transform, above, with the
+same failures.
+
+`[map_cellsize]` of a style's tree is the layer's value, above. MapServer sets none for a style:
+`msDrawTransformedShape` leaves its parser's `dblval` unset, so a style's `[map_cellsize]` reads an
+uninitialised double at the pin (`src/mapparser.y:1121-1128`). No case of msautotest uses it;
+Forager deviates to the one value the name has on a layer
+(ADR-draft-transform-tree-with-simplify-and-buffer).
+
+Where a style's tree fails on a shape, MapServer's draw of the layer fails and `msDrawMap` makes no
+map (`src/mapdraw.c:1402-1405`, `508-519`). Forager deviates: the style draws nothing on that
+shape, its class's other styles and the rest of the map are drawn, and the engine warns
+`geomtransform-not-drawn` once for each such style and render, naming the style and its first
+failure in the order the shapes are drawn. A geometry collection fails as on a layer.
+
+The trees of a layer's class styles share the bounds of a layer's transform (Q-9) with the layer's
+`GEOMTRANSFORM`, in one budget a layer and render: the points they add, 1,000,000, and the points
+they visit, 100,000,000. Where an evaluation passes a bound, the layer's style trees draw nothing on
+that shape and on every later shape of the layer; the shapes drawn before stay drawn, so what is
+drawn depends on the order of the features. The engine warns `geomtransform-over-limit` once for the
+layer and render, whatever the number of style trees the bound stops.
 
 **A polygon's fill.** A polygon layer's style with a `COLOR` and without a symbol, or with a
 simple one, fills the polygon under the even-odd rule, as `msDrawShadeSymbol` in

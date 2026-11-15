@@ -695,11 +695,14 @@ pub enum GeomTransform {
     /// polygon layer draws nothing at.
     #[serde(rename = "labelcenter")]
     LabelCenter,
-    /// An expression of shape functions, its transform tree (ADR-0036),
-    /// which the engine does not draw on a class's style: a class's style of it in a line or a
-    /// polygon layer draws nothing and is reported, its class's other styles drawn as before; a
-    /// point layer draws the style at its points, as it draws every style whatever its
-    /// transform; a label of a style of it is left out.
+    /// An expression of shape functions, its transform tree
+    /// (ADR-draft-transform-tree-with-simplify-and-buffer), which a class's style of a line or a
+    /// polygon layer draws: the tree is evaluated on the shape in pixels, `[map_cellsize]` at the
+    /// layer's value, and a line result is stroked, a point or a polygon result shaded, in the
+    /// style. A tree `not_drawn`, one that fails on a shape, or one past the bounds the layer's
+    /// transforms share draws nothing there and is reported. A point layer draws the style at its
+    /// points, as it draws every style whatever its transform; a label of a style of it is left
+    /// out.
     #[serde(rename = "expression")]
     Expression(TransformTree),
 }

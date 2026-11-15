@@ -15,6 +15,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "extent",
             "geom_transform",
             "hatch",
+            "layer_transform",
             "line",
             "marker",
             "shade",
@@ -67,7 +68,14 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ),
     (
         "canvas",
-        &["glyph", "hatch", "line_marker", "symbol", "tile"],
+        &[
+            "glyph",
+            "hatch",
+            "layer_transform",
+            "line_marker",
+            "symbol",
+            "tile",
+        ],
     ),
     ("hatch", &["bounds", "extent", "style", "symbol"]),
     ("line_marker", &["bounds", "symbol"]),

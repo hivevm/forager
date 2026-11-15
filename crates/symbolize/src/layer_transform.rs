@@ -29,6 +29,9 @@
 //! A shape is MapServer's: a type, point, line, or polygon, and a list of parts, a polygon's
 //! rings listed flat, as a source delivers them. What the transforms add or visit is bounded per
 //! layer (Q-9, [`Budget`]).
+//!
+//! A class style's transform tree is evaluated here too, on the shape in pixels, charging the
+//! layer's budget ([`StyleTrees`]).
 
 use forager_style_ir::c::int_cast;
 use forager_style_ir::{Coord, Geometry, NumberOp, Preprocessing, TransformNumber, TransformShape};
@@ -106,14 +109,85 @@ pub fn transformed(
     cellsize: f64,
     budget: &mut Budget,
 ) -> Result<Geometry, Undrawn> {
+    Ok(evaluated(shape, geometry, cellsize, budget)?.into_geometry())
+}
+
+/// The shape the transform `shape` computes from `geometry`, `[map_cellsize]` at `cellsize`.
+fn evaluated(
+    shape: &TransformShape,
+    geometry: &Geometry,
+    cellsize: f64,
+    budget: &mut Budget,
+) -> Result<Shape, Undrawn> {
     let read = Shape::of(geometry)?;
     let mut eval = Eval { cellsize, budget };
-    Ok(eval.shape(shape, read)?.into_geometry())
+    eval.shape(shape, read)
+}
+
+/// What the transform trees of a layer's class styles share in one render
+/// (ADR-draft-transform-tree-with-simplify-and-buffer, *A class's style*): the layer's [`Budget`],
+/// which its `GEOMTRANSFORM` charged first; the value of `[map_cellsize]`; the bound of Q-9 once
+/// an evaluation passed it, after which none is evaluated; and the failure of the last
+/// evaluation, until the engine takes it.
+#[derive(Debug)]
+pub struct StyleTrees {
+    budget: Budget,
+    cellsize: f64,
+    over_limit: Option<String>,
+    failure: Option<String>,
+}
+
+impl StyleTrees {
+    /// The style trees of a layer, charging `budget`, what the layer's `GEOMTRANSFORM` left, with
+    /// `[map_cellsize]` at `cellsize`, the value that transform binds it to.
+    pub fn new(budget: Budget, cellsize: f64) -> Self {
+        Self {
+            budget,
+            cellsize,
+            over_limit: None,
+            failure: None,
+        }
+    }
+
+    /// The type and the parts of the shape the tree `shape` computes from `geometry`, a shape in
+    /// pixels, `[map_cellsize]` at the layer's value; `None` where it draws nothing. Once an
+    /// evaluation passes a bound of Q-9, it and every later one draw nothing. A failure draws
+    /// nothing on its shape, and is kept for [`Self::take_failure`].
+    pub(crate) fn evaluated(
+        &mut self,
+        shape: &TransformShape,
+        geometry: &Geometry,
+    ) -> Option<(Kind, Vec<Vec<Coord>>)> {
+        if self.over_limit.is_some() {
+            return None;
+        }
+        match evaluated(shape, geometry, self.cellsize, &mut self.budget) {
+            Ok(shape) => Some((shape.kind, shape.parts)),
+            Err(Undrawn::Failed(why)) => {
+                self.failure = Some(why);
+                None
+            }
+            Err(Undrawn::Limit(why)) => {
+                self.over_limit = Some(why);
+                None
+            }
+        }
+    }
+
+    /// Why the last evaluation failed, if it did; it is forgotten here.
+    pub fn take_failure(&mut self) -> Option<String> {
+        self.failure.take()
+    }
+
+    /// The bound of Q-9 an evaluation passed, if one did.
+    pub fn over_limit(&self) -> Option<&str> {
+        self.over_limit.as_deref()
+    }
 }
 
 /// MapServer's shape type.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Kind {
+pub(crate) enum Kind {
     Point,
     Line,
     Polygon,

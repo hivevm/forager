@@ -41,7 +41,7 @@ pub struct Plan {
 /// The passes of a feature: those drawn at once, and those the cache draws after every feature,
 /// each with the place of its style in the class.
 pub struct Passes<'s> {
-    pub at_once: Vec<(&'s Style, Vec<Pass>)>,
+    pub at_once: Vec<(usize, &'s Style, Vec<Pass>)>,
     pub cached: Vec<(usize, &'s Style, Vec<Pass>)>,
 }
 
@@ -86,7 +86,8 @@ impl Plan {
             return Passes {
                 at_once: styles
                     .iter()
-                    .map(|s| (s.borrow(), vec![Pass::Plain]))
+                    .enumerate()
+                    .map(|(i, s)| (i, s.borrow(), vec![Pass::Plain]))
                     .collect(),
                 cached: Vec::new(),
             };
@@ -117,19 +118,19 @@ impl Plan {
         }
         if !self.cached {
             return Passes {
-                at_once: passes.into_iter().map(|(_, s, p)| (s, p)).collect(),
+                at_once: passes,
                 cached: Vec::new(),
             };
         }
         let mut passes = passes.into_iter();
-        let (_, first_style, first) = passes.next().expect("a cached class has a style");
-        let mut at_once = vec![(first_style, first)];
+        let first = passes.next().expect("a cached class has a style");
+        let mut at_once = vec![first];
         let mut cached = Vec::new();
         for (place, style, kinds) in passes {
             if style.geom_transform.is_none() {
                 cached.push((place, style, kinds));
             } else if place != 0 {
-                at_once.push((style, vec![Pass::Plain]));
+                at_once.push((place, style, vec![Pass::Plain]));
             }
         }
         Passes { at_once, cached }
@@ -159,7 +160,7 @@ mod tests {
     fn kinds(plan: &Plan, styles: &[Style]) -> Kinds {
         let passes = plan.passes(styles);
         (
-            passes.at_once.into_iter().map(|(_, p)| p).collect(),
+            passes.at_once.into_iter().map(|(_, _, p)| p).collect(),
             passes.cached.into_iter().map(|(i, _, p)| (i, p)).collect(),
         )
     }
