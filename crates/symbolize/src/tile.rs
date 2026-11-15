@@ -94,11 +94,17 @@ impl Key {
     }
 }
 
-/// The tiles of one render: at most [`MAX_TILES_HELD`], in the order they were built, those let go
-/// followed until nothing refers to them, since their bytes count until then.
+/// What each layer that draws a tile reports of it, beside the tile: for a TrueType symbol's, that
+/// its font lacks the character and what is drawn instead. A layer that finds the tile held reports
+/// it as the one that built it did.
+type Note = Option<String>;
+
+/// The tiles of one render: at most [`MAX_TILES_HELD`], in the order they were built, each with
+/// the note a layer that draws it reports, those let go followed until nothing refers to them,
+/// since their bytes count until then.
 #[derive(Debug, Default)]
 pub struct Tiles {
-    held: VecDeque<(Key, Rc<Tile>)>,
+    held: VecDeque<(Key, Rc<Tile>, Note)>,
     let_go: Vec<Weak<Tile>>,
     /// The bytes of the images the render holds decoded.
     images: usize,
@@ -112,7 +118,7 @@ impl Tiles {
 
     /// The bytes of the tiles alive: those held and those let go that something still refers to.
     pub fn bytes(&self) -> usize {
-        let held: usize = self.held.iter().map(|(_, tile)| tile.bytes()).sum();
+        let held: usize = self.held.iter().map(|(_, tile, _)| tile.bytes()).sum();
         let let_go: usize = self
             .let_go
             .iter()
@@ -122,20 +128,31 @@ impl Tiles {
         held + let_go
     }
 
-    /// The tile held that serves `key`, as searchTileCache finds it, if any.
-    fn held(&self, key: &Key) -> Option<Rc<Tile>> {
+    /// The tile held that serves `key`, as searchTileCache finds it, and its note, if any.
+    fn held(&self, key: &Key) -> Option<(Rc<Tile>, Note)> {
         self.held
             .iter()
-            .find(|(held, _)| held.serves(key))
-            .map(|(_, tile)| Rc::clone(tile))
+            .find(|(held, _, _)| held.serves(key))
+            .map(|(_, tile, note)| (Rc::clone(tile), note.clone()))
     }
 
-    /// The tile of `key`, held or made new by `mark`. Where six are held, the one built longest
-    /// ago is let go first, as addTileCache drops it. One that would bring the render's images
-    /// and tiles past [`MAX_DECODED_IMAGE_BYTES`] is refused, and none let go for it.
+    /// The tile of `key`, held or made new by `marks`, without a note (see [`Self::noted`]).
     fn tile(&mut self, key: Key, marks: Vec<DrawOp>) -> Result<Rc<Tile>, String> {
-        if let Some(tile) = self.held(&key) {
-            return Ok(tile);
+        self.noted(key, marks, None).map(|(tile, _)| tile)
+    }
+
+    /// The tile of `key` and its note, held, or made new by `marks` and kept with `note`. Where six
+    /// are held, the one built longest ago is let go first, as addTileCache drops it. One that
+    /// would bring the render's images and tiles past [`MAX_DECODED_IMAGE_BYTES`] is refused, and
+    /// none let go for it.
+    fn noted(
+        &mut self,
+        key: Key,
+        marks: Vec<DrawOp>,
+        note: Note,
+    ) -> Result<(Rc<Tile>, Note), String> {
+        if let Some(held) = self.held(&key) {
+            return Ok(held);
         }
         // `tile` bounds the sides first, so this is not reached from it; `Tile::new` keeps a bound
         // of its own, so that no caller of it allocates past Q-9's.
@@ -144,7 +161,7 @@ impl Tiles {
         };
         // What letting go of the oldest frees: nothing while something else refers to it.
         let freed = match self.held.front() {
-            Some((_, oldest))
+            Some((_, oldest, _))
                 if self.held.len() == MAX_TILES_HELD && Rc::strong_count(oldest) == 1 =>
             {
                 oldest.bytes()
@@ -160,13 +177,13 @@ impl Tiles {
             ));
         }
         if self.held.len() == MAX_TILES_HELD
-            && let Some((_, oldest)) = self.held.pop_front()
+            && let Some((_, oldest, _)) = self.held.pop_front()
         {
             self.let_go.push(Rc::downgrade(&oldest));
         }
         let tile = Rc::new(tile);
-        self.held.push_back((key, Rc::clone(&tile)));
-        Ok(tile)
+        self.held.push_back((key, Rc::clone(&tile), note.clone()));
+        Ok((tile, note))
     }
 }
 
@@ -292,16 +309,16 @@ pub(crate) fn vector_tile(
 
 /// The tile of the TrueType symbol at `index` from 1, as msDrawShadeSymbol asks getTile for it in
 /// `s`: its size of the symbol's extent, 1 by 1 as initSymbol leaves a TrueType symbol's, at the
-/// scale and gap, held to Q-9's bound first; then the tile the cache holds, or a new one, whose
-/// mark is the glyph `mark` draws at the tile's centre, called only for a new one; none where
-/// `mark` draws nothing. Never seamless: msDrawShadeSymbol sets
-/// that for a vector symbol alone.
+/// scale and gap, held to Q-9's bound first; then the tile the cache holds and its note, or a new
+/// one, whose mark and note `mark` gives at the tile's centre, called only for a new one; none
+/// where `mark` draws nothing. Never seamless: msDrawShadeSymbol sets that for a vector symbol
+/// alone.
 pub(crate) fn glyph_tile(
     tiles: &mut Tiles,
     index: usize,
     s: &SymbolStyle,
-    mark: impl FnOnce(Point) -> Option<DrawOp>,
-) -> Result<Option<Rc<Tile>>, String> {
+    mark: impl FnOnce(Point) -> Option<(DrawOp, Note)>,
+) -> Result<Option<(Rc<Tile>, Note)>, String> {
     let (width, height) = size((1.0, 1.0), s.scale, s.gap)?;
     let key = Key {
         symbol: index,
@@ -313,17 +330,17 @@ pub(crate) fn glyph_tile(
         fill: s.fill,
         outline: s.outline,
     };
-    if let Some(tile) = tiles.held(&key) {
-        return Ok(Some(tile));
+    if let Some(held) = tiles.held(&key) {
+        return Ok(Some(held));
     }
     let at = Point {
         x: f64::from(width) / 2.0,
         y: f64::from(height) / 2.0,
     };
-    let Some(mark) = mark(at) else {
+    let Some((mark, note)) = mark(at) else {
         return Ok(None);
     };
-    tiles.tile(key, vec![mark]).map(Some)
+    tiles.noted(key, vec![mark], note).map(Some)
 }
 
 #[cfg(test)]

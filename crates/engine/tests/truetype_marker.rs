@@ -194,11 +194,10 @@ fn a_truetype_symbol_is_moved_by_its_anchor_point_by_its_character_s_size() {
     );
 }
 
-#[test]
-fn the_label_cache_sizes_a_truetype_marker_by_its_character() {
-    // A label beside a TrueType marker moves away from the marker's size, which is now computed:
-    // the label is drawn, and nothing reports the size as unknown.
-    let mut map = map("sans", "A");
+/// `map` with a label `x` up and right of its point, rendered: the label cache sizes the marker
+/// of the class's first style, the TrueType symbol, which the label moves away from. It asserts
+/// that nothing is reported and that the label is cached.
+fn assert_labelled(mut map: Map) {
     map.layers[0].classes[0].labels = vec![Label {
         text: Some(Expr::String("x".to_owned())),
         font: Some(Bound::Value("sans".to_owned())),
@@ -218,27 +217,19 @@ fn the_label_cache_sizes_a_truetype_marker_by_its_character() {
 }
 
 #[test]
+fn the_label_cache_sizes_a_truetype_marker_by_its_character() {
+    // A label beside a TrueType marker moves away from the marker's size, which is now computed:
+    // the label is drawn, and nothing reports the size as unknown.
+    assert_labelled(map("sans", "A"));
+}
+
+#[test]
 fn the_label_cache_sizes_a_truetype_marker_outside_its_scale_range() {
     // msAddLabel sizes the class's first style by msGetMarkerSize whatever its scale range, so its
     // font is loaded although the style draws nothing at this scale: the label is cached.
     let mut map = map("sans", "A");
     map.layers[0].classes[0].styles[0].max_scale_denom = Some(1.0);
-    map.layers[0].classes[0].labels = vec![Label {
-        text: Some(Expr::String("x".to_owned())),
-        font: Some(Bound::Value("sans".to_owned())),
-        size: Some(Bound::Value(8.0)),
-        color: Some(Bound::Value(BLACK)),
-        position: Some(Bound::Value(Position::Ur)),
-        span: Some(Span::new("m.map", 9, 7)),
-        ..Label::default()
-    }];
-    let rendered = render(&map);
-    assert!(
-        rendered.diagnostics.is_empty(),
-        "{:?}",
-        rendered.diagnostics
-    );
-    assert_eq!(rendered.labels.len(), 1, "{:?}", rendered.labels);
+    assert_labelled(map);
 }
 
 #[test]
@@ -305,4 +296,32 @@ fn a_truetype_fill_whose_tile_passes_the_bound_warns_and_draws_no_fill() {
         "{message}"
     );
     assert_eq!(drawn(&rendered), 0);
+}
+
+#[test]
+fn each_layer_whose_fill_lacks_its_character_warns_though_the_tile_is_held() {
+    // Two polygon layers fill with the same TrueType symbol, whose font lacks the character: the
+    // second finds the first's tile held, and warns as the first does.
+    let mut map = map("sans", "☃");
+    map.layers[0].render_mode = Some(RenderMode::Polygon);
+    map.layers[0].classes[0].styles[0].size = Some(Bound::Value(8.0));
+    let mut second = map.layers[0].clone();
+    second.name = Some("again".into());
+    map.layers.push(second);
+    let square =
+        r#"{"type": "Polygon", "coordinates": [[[4, 4], [36, 4], [36, 36], [4, 36], [4, 4]]]}"#;
+    let sources = BTreeMap::from(
+        ["points", "again"].map(|name| (name.to_owned(), GeoJsonSource::parse(square).unwrap())),
+    );
+    let rendered = ready(render_with_files(
+        &map,
+        &sources,
+        &files(),
+        AggRenderer::new(),
+    ));
+    assert_eq!(
+        codes(&rendered),
+        ["symbol-glyph-missing", "symbol-glyph-missing"]
+    );
+    assert!(drawn(&rendered) > 0, "glyph 0 is tiled");
 }

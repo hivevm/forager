@@ -251,10 +251,11 @@ pub(crate) fn line_glyphs<T>(
 
 /// The TrueType symbol `symbol`, at `index` from 1, of `style` over `rings`, already moved by the
 /// offset, as msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the
-/// tile of its size, scale, and gap, never seamless (see [`tile::glyph_tile`]), its glyph, asked
-/// only for a tile the cache does not hold, drawn at the tile's centre by [`glyph_op`], and the
-/// polygon filled with it. Where the glyph is not
-/// found or the tile is refused (Q-9), nothing is drawn, and the canvas records why.
+/// tile of its size, scale, and gap, never seamless (see [`tile::glyph_tile`]), and the polygon
+/// filled with it. The glyph is asked only for a tile the cache does not hold, and drawn at the
+/// tile's centre by [`glyph_op`]; a font that lacks the character is noted with the tile, so that
+/// each layer that draws it records that. Where the glyph is not found or the tile is refused
+/// (Q-9), nothing is drawn, and the canvas records why.
 pub(crate) fn tiled_glyph<T>(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
@@ -264,31 +265,30 @@ pub(crate) fn tiled_glyph<T>(
     canvas: &mut Canvas,
 ) {
     let s = symbol::symbol_style(style, symbol, canvas.factors);
-    // The glyph is asked only for a tile the cache does not hold, as getTile asks it.
     let glyphs = canvas.glyphs;
-    let mut asked = None;
-    let mark = |at| {
-        let found = ask(glyphs, symbol, glyph_size(s.scale));
-        let op = found
-            .as_ref()
-            .ok()
-            .map(|(glyph, _)| glyph_op(glyph, at, &s));
-        asked = Some(found);
-        op
+    let mut refused = None;
+    let mark = |at| match ask(glyphs, symbol, glyph_size(s.scale)) {
+        Ok((glyph, missing)) => Some((glyph_op(&glyph, at, &s), missing)),
+        Err(why) => {
+            refused = Some(why);
+            None
+        }
     };
     let tile = match canvas.tiles.as_deref_mut() {
         Some(tiles) => tile::glyph_tile(tiles, index, &s, mark),
         None => Err("no tiles are kept where it is drawn".to_owned()),
     };
-    if let Some(asked) = asked {
-        record(canvas, index, asked);
-    }
-    match tile {
-        Ok(Some(tile)) => ops.push(DrawOp::TiledFill { rings, tile }),
-        Ok(None) => {}
-        Err(why) => {
+    match tile.map_err(Some).and_then(|tile| tile.ok_or(refused)) {
+        Ok((tile, missing)) => {
+            if let Some(missing) = missing {
+                canvas.missing_glyphs.entry(index).or_insert(missing);
+            }
+            ops.push(DrawOp::TiledFill { rings, tile });
+        }
+        Err(Some(why)) => {
             canvas.refused_symbols.entry(index).or_insert(why);
         }
+        Err(None) => {}
     }
 }
 
@@ -301,11 +301,13 @@ mod tests {
     use super::*;
     use crate::glyph::Glyphs;
     use crate::symbol::{Factors, marker_size_with};
+    use crate::tile::Tiles;
 
     /// A port whose every glyph is a box from (1, -18) to (11, 2) y down, its path one move to
-    /// the origin, and which records the sizes it is asked at.
+    /// the origin, glyph 0 where the second field says the font lacks the character, and which
+    /// records the sizes it is asked at.
     #[derive(Default)]
-    struct Boxes(RefCell<Vec<u32>>);
+    struct Boxes(RefCell<Vec<u32>>, bool);
 
     impl Glyphs for Boxes {
         fn glyph(&self, _: &str, _: char, size: u32) -> Result<Rc<Glyph>, String> {
@@ -316,7 +318,7 @@ mod tests {
                 min_y: -18.0,
                 max_x: 11.0,
                 max_y: 2.0,
-                missing: false,
+                missing: self.1,
             }))
         }
     }
@@ -453,5 +455,37 @@ mod tests {
             (p.x - 74.0).abs() < 1e-12 && (p.y - 48.0).abs() < 1e-12,
             "{p:?}"
         );
+    }
+
+    #[test]
+    fn a_held_glyph_tile_asks_no_glyph_and_each_layer_records_its_missing_character() {
+        // Two layers fill with one TrueType symbol whose font lacks the character: the first
+        // builds the tile and asks the port; the second finds it held, asks nothing, and records
+        // the missing character as the first did.
+        let symbols = [truetype(None)];
+        let boxes = Boxes(RefCell::default(), true);
+        let mut tiles = Tiles::default();
+        let square = vec![vec![
+            Point { x: 0.0, y: 0.0 },
+            Point { x: 50.0, y: 0.0 },
+            Point { x: 50.0, y: 50.0 },
+        ]];
+        for layer in 0..2 {
+            let mut canvas = Canvas::new(&symbols, 100, 100, Factors::new(1.0, 1.0))
+                .with_glyphs(&boxes)
+                .with_tiles(&mut tiles);
+            let mut ops = Vec::new();
+            tiled_glyph(
+                &mut ops,
+                square.clone(),
+                &sized(8.0),
+                1,
+                &symbols[0],
+                &mut canvas,
+            );
+            assert!(matches!(ops[..], [DrawOp::TiledFill { .. }]), "{ops:?}");
+            assert_eq!(canvas.take_refusals().glyphs.len(), 1, "layer {layer}");
+        }
+        assert_eq!(*boxes.0.borrow(), [8], "the port is asked once");
     }
 }

@@ -453,7 +453,7 @@ pub fn marker_size_with<T>(
                 ))
             }
             (SymbolKind::Truetype, _) => {
-                // Without the port, as a label's own marker is sized, it is not built yet.
+                // Without the port, as a label's own marker is sized, it is not computed yet.
                 let Some(glyphs) = glyphs else {
                     return Err("a truetype symbol, whose size is not computed yet".to_owned());
                 };
