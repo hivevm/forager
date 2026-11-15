@@ -50,21 +50,27 @@ The forces:
 
 We will draw a TrueType symbol at a point from a glyph that `symbolize` asks of a port of its own,
 which the engine answers through `label`. The glyph is placed and drawn as `drawGlyphMarker` and
-`agg2RenderGlyphsPath` place and draw it.
+`agg2RenderGlyphsPath` place and draw it. The same glyph is anchored, placed along a line, and
+tiled as a polygon's fill.
 
 What binds:
 
 - **The port.** `symbolize` defines a trait that takes a font's name, a character, and a glyph
   size in points. It returns the glyph's outline in pixels about its origin, y down as the display
   list has it, and its metrics. Where there is none, it returns why. The canvas carries the port,
-  as it carries the render's pixmaps. `symbolize` gains no dependency.
+  as it carries the render's pixmaps. The engine's label cache also asks the port, through
+  `marker_size_of` and `marker_size_with`. `symbolize` gains no dependency.
 - **The engine's answer.** The engine looks up the font's path in the font set. It loads the font
   through the resource loader, once per render, into the store the labels' fonts use. `label`
   reads the glyph. `label` reads it as it reads a label's glyph: unhinted, at the pixel size
   `MS_NINT(size * 96 / 72)`, from face 0 at its default instance, through its Unicode character
   map. skrifa stays in `label` alone.
-- **The size.** The glyph is asked at `MS_MAX(MS_NINT(scale), 1)` points. The scale is
-  computeSymbolStyle's for a symbol of default size 1.
+- **The size.** MapServer reads the glyph at two sizes, and Forager asks the port at both:
+  - The drawn glyph is asked at `MS_MAX(MS_NINT(scale), 1)` points. The scale is
+    computeSymbolStyle's for a symbol of default size 1.
+  - The marker's size is the glyph's control box at msGetMarkerSize's size. That size is an `int`:
+    the style's size, 1 without one, times the scale factor, held to `MINSIZE` and `MAXSIZE`
+    unscaled. The anchor shift and the label cache's marker size use it.
 - **The place.** The glyph's origin is the point shifted by the centre of its metrics, as
   `drawGlyphMarker` computes it. Where the style turns it, the centre is turned with `libm`'s sine
   and cosine (Q-2) and the glyph turned by the same angle.
@@ -77,12 +83,20 @@ What binds:
 - **A font that cannot be used.** This covers a `FONT` the font set does not name, a file that does
   not load, and one ADR-0031 calls unusable. Nothing is drawn for that style. The layer warns with
   `symbol-not-drawn`, once per symbol, naming the symbol, the font, and its path.
+- **The anchor.** An `ANCHORPOINT` other than the centre moves the marker as `msAdjustMarkerPos`
+  moves it, by the marker's size.
+- **Along a line.** A style with a `GAP` other than 0 places the glyphs through the line markers
+  that place other symbols, as `msImagePolylineMarkers` places them. The marker's size is the drawn
+  glyph's control box, not held to 1 pixel.
+- **As a polygon's fill.** A style with a `COLOR` fills the polygon with the glyph tiled, as
+  `getTile` draws it. The tile goes through the render's tile cache and is never seamless. Q-9's
+  bound on a fill tile holds it. Where the bound refuses the tile, nothing is drawn, and the layer
+  warns with `symbol-not-drawn`.
 
 **Out of scope:**
 
-- a TrueType symbol along a line, anchored to it, or as a polygon's fill;
+- a TrueType symbol along a line with a `GAP` of 0, which MapServer tiles along the line;
 - a TrueType symbol as a label's marker;
-- its `ANCHORPOINT`;
 - fonts read through a Symbol character map (`msGetGlyphIndex`'s `| 0xf000`), and CFF outlines, as
   in ADR-0031.
 
@@ -108,26 +122,28 @@ What binds:
     `msDrawMarkerSymbolInternal`;
   - `src/fontcache.c`: `msGetGlyphIndex` and `msGetGlyphByIndex`;
   - `src/mapagg.cpp`: `agg2RenderGlyphsPath`;
-  - `src/mapsymbol.c`: `msSymbolGetDefaultSize`.
+  - `src/maprendering.c`: `msAdjustMarkerPos`, `msImagePolylineMarkers`, `getTile`, and
+    `msDrawShadeSymbol`;
+  - `src/mapsymbol.c`: `msSymbolGetDefaultSize`, `msGetMarkerSize`, and `msGetCharacterSize`.
 - [ADR-0031](0031-label-glyphs.md) and [ADR-0008](0008-ports-and-adapters-crates.md).
-- Fidelity ticket 05, `docs/plan/fidelity/05-truetype-symbol-at-a-point.md`, and the case
-  `renderers/point_truetype.map` of msautotest at the pin.
+- Fidelity tickets 05 and 06, and the cases `renderers/point_truetype.map`,
+  `renderers/marker_anchorpoint.map`, `renderers/line_marker_truetype.map`, and
+  `renderers/polygon-ttf.map` of msautotest at the pin.
 
 ## Consequences
 
 - Positive:
-  - A TrueType symbol at a point is drawn as MapServer draws it (G-6, G-9).
+  - A TrueType symbol at a point, anchored, along a line, and as a fill is drawn as MapServer
+    draws it (G-6, G-9).
   - The glyph comes from the one place that reads glyphs, and no crate edge changes.
-  - Ticket 06 (TrueType along lines and as fills) can ask the same port.
 - Negative / trade-offs:
   - The canvas carries one more handle.
   - The engine answers per glyph asked. A cache by font, character, and size may be needed where
     many markers draw one glyph, as MapServer's glyph cache has.
   - `symbol-glyph-missing` is a new public diagnostic code.
 - Follow-ups:
-  - TrueType symbols along lines and as fills;
-  - as a label's marker;
-  - their `ANCHORPOINT`.
+  - a TrueType symbol as a label's marker;
+  - along a line with a `GAP` of 0.
 
 ## Enforcement
 
@@ -135,8 +151,13 @@ What binds:
   and an angle, with the numbers `drawGlyphMarker` computes.
 - An engine test cites this ADR. It holds `symbol-not-drawn` for a `FONT` the font set lacks, and
   `symbol-glyph-missing` with glyph 0 drawn for a character the font lacks.
-- The conformance list holds `renderers/point_truetype.map point_truetype.png` as
-  `geometry passes`.
+- The conformance list holds these cases as `geometry passes`:
+  - `renderers/point_truetype.map point_truetype.png`;
+  - `renderers/marker_anchorpoint.map marker_anchorpoint.png`;
+  - `renderers/line_marker_truetype.map line_marker_truetype.png`;
+  - `renderers/polygon-ttf.map polygon-ttf.png`.
+- An engine test cites Q-9. It holds `symbol-not-drawn`, and no fill, for a TrueType fill whose
+  tile passes the bound.
 - The arch tests already hold the rest:
   - `symbolize` has no edge to `label` (ADR-0008);
   - only `label` reads fonts with skrifa (ADR-0031).
