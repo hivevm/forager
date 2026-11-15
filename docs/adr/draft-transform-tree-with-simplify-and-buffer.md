@@ -17,7 +17,18 @@ reasons a tree is not drawn. Its *Out of scope* leaves the port of any function 
 The fidelity plan ports the three functions (tickets 11 and 12). The code that computes them is
 [ADR-draft-geometry-ported-from-jts](draft-geometry-ported-from-jts.md). The tree must then hold
 them as nodes with their arguments. That changes ADR-0036's list of nodes and its closed list of
-reasons, so this ADR supersedes it. It restates every clause of ADR-0036 and changes only these.
+reasons, so this ADR supersedes it. It restates every clause of ADR-0036 in its wording, but
+these:
+
+- *Shape*: the nodes `simplify`, `simplifypt`, and `buffer` are added;
+- *Order of landing*: a new entry, each node landing with the change that draws it;
+- *Numbers*: a new item, a negative tolerance or distance kept as written;
+- *Not drawn*: `buffer`, `simplify`, and `simplifypt` stay reasons only until their nodes land;
+- *Versions*: two new items, the regenerated file of 1.1 and the version move left to the
+  maintainer;
+- *Out of scope*: the code of the three functions added, after ADR-0036's first item; the
+  bounds of a transform's points narrowed to those Q-9 does not name, since Q-9 now names a
+  layer's; and the port of a not-drawn function no longer giving `buffer` as an example.
 
 **The grammar of the three** (`src/mapparser.y` at `rel-8-6-6`):
 
@@ -37,9 +48,9 @@ nests these functions or gives them arithmetic.
 
 **Versions.** No release tag holds a schema yet. [ADR-0014](0014-style-document-versions.md),
 *Before a release*, lets the change that alters the IR regenerate the current version's file,
-`schema/style-document-1.1.json`. The maintainer chose minor changes within 1.1 for the fidelity
-plan, as ticket 09 added `RenderMode::Circle` and `Style.aliased` to 1.1. A version move stays
-the maintainer's choice, change by change.
+`schema/style-document-1.1.json`. For the fidelity plan the maintainer chose to keep the version
+at 1.1 and regenerate its file, as ticket 09 added `RenderMode::Circle` and `Style.aliased` to
+1.1. A version move stays the maintainer's choice, change by change.
 
 ## Decision
 
@@ -99,29 +110,29 @@ from MapServer's text.
   - It must refuse a deeper tree before it recurses deeper, without overflowing the stack.
   - A deeper tree is the load error `expression-too-deep`, from a mapfile and from a style
     document alike (Q-9).
-- **Versions.** The tree entered the document at 1.0. The current version's file,
-  `schema/style-document-1.1.json`, holds it today.
+- **Versions.** The tree entered the document at 1.0, the version of that day, and
+  `schema/style-document-1.0.json` was regenerated in the change that implemented ADR-0036. The
+  current version's file, `schema/style-document-1.1.json`, holds it today. A function added to
+  the tree after the first release must be a major version. A reader of an older minor unsets an
+  unknown function, and so draws the shapes untransformed. It must read a `not_drawn` reason it
+  does not know as not drawn, with a warning naming the reason and its path. The tree holds such a
+  reason as `syntax`, so the engine's later `geomtransform-not-drawn` names `syntax`. A reason
+  added in a minor version so fails closed.
   - Before a release, the change that adds a node must regenerate the current version's file.
   - The format version stays 1.1 unless the maintainer moves it. A move must follow ADR-0014's
     version rule.
-  - A function added to the tree after the first release must be a major version.
-  - A reader of an older minor unsets an unknown function, and so draws the shapes untransformed.
-  - A reader must read a `not_drawn` reason it does not know as not drawn, with a warning naming
-    the reason and its path. The tree holds such a reason as `syntax`, so the engine's later
-    `geomtransform-not-drawn` names `syntax`. A reason added in a minor version so fails closed.
 
 **Out of scope:**
 
+- the evaluation of the tree and each function's semantics, which `docs/semantics/` writes down
+  from the C, `[map_cellsize]` and the layer's `UNITS` among them;
 - the code that computes `simplify`, `simplifypt`, and `buffer`, which
   [ADR-draft-geometry-ported-from-jts](draft-geometry-ported-from-jts.md) decides;
-- the evaluation of the tree and each function's semantics, which `docs/semantics/` writes down
-  from the C, `[map_cellsize]`, the layer's `UNITS`, and GEOS's failures among them;
-- whether the engine draws a class style's expression, which the fidelity plan's ticket of style
-  expressions puts to the maintainer;
+- drawing a class style's expression: the engine keeps drawing none, as today;
 - the bounds on the points a transform adds and visits beyond those Q-9 names;
 - a label's style of an expression, which keeps `LabelTransform` and is left out with its label as
   today;
-- porting `centerline`, `difference`, `javascript`, `length`, `area`, or `round`.
+- porting any function of the not-drawn list, `centerline` among them.
 
 ## Alternatives considered
 
@@ -140,12 +151,15 @@ from MapServer's text.
 - **Keep `buffer`, `simplify`, and `simplifypt` in the list of reasons after their nodes land** — a
   document written by an older build of 1.1 with such a reason stays readable. No release holds
   1.1, so no published document has one. The reason would name a function the engine draws.
-- **Move the format version to 1.2** — what ADR-0014's freeze would ask after a release, since a
-  node is an added CQL2 function. Before a release ADR-0014 leaves it to the maintainer, who chose
-  minor changes within 1.1 for this plan.
+- **Move the format version to 1.2** — ADR-0014's version rule allows an added function as a
+  minor, while this tree's *Versions* asks a major for a function added after the first release.
+  Before a release ADR-0014 leaves the move to the maintainer, who chose to keep 1.1 for this
+  plan.
 - **The alternatives of ADR-0036** — MapServer's text in the IR, a unit variant `Unsupported`, the
   style left out at load, a chain instead of a tree, the numbers as ADR-0015 expressions, literal
-  numbers only, and superseding ADR-0015. They stand as ADR-0036 records them.
+  numbers only, and superseding ADR-0015. They stand as ADR-0036 records them. Its alternative of
+  a not-drawn function kept in place with its arguments stands for the functions still not drawn;
+  for the three drawn here the engine now reads the arguments.
 
 ## Sources / Prior art
 
@@ -163,12 +177,12 @@ from MapServer's text.
 
 - Positive: a layer of `simplify` or `simplifypt` draws, and the case of `vertex2` can pass. A
   style document may write the three functions as CQL2-JSON custom functions.
-- Positive: every clause of ADR-0036 keeps its wording, so the frontend's tests and the engine's
-  rules of a `not_drawn` tree stand unchanged.
+- Positive: every clause of ADR-0036 but those the *Context* lists keeps its wording, so the
+  frontend's tests and the engine's rules of a `not_drawn` tree stand unchanged.
 - Negative / trade-offs: a document of 1.1 written before a node lands, with that function's
   reason, fails to load after it. No release holds 1.1, so only local files are affected.
-- Negative / trade-offs: the schema changes in each of two changes, `simplify` with `simplifypt`
-  first and `buffer` second.
+- Negative / trade-offs: the schema changes with each change that lands a node: two changes, or
+  three if `simplifypt` splits from `simplify`, as ticket 11's *Mode* allows.
 - Follow-ups:
   - the semantics page of the layer's transform, with `[map_cellsize]`, the layer's `UNITS`, and
     GEOS's failures;
