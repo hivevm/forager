@@ -3,7 +3,7 @@
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-15
 - **Deciders:** Markus Brigl
-- **Applies to:** the geometry module of `crates/symbolize` that computes `simplify`, `simplifypt`, and `buffer` and its callers in `crates/symbolize/src/layer_transform.rs`, the `[dependencies]` of `crates/symbolize`, `scripts/check-notice.sh` and `THIRD-PARTY-NOTICES.md` for the notice of JTS, and the unit tests that hold coordinates taken from GEOS
+- **Applies to:** the geometry module of `crates/symbolize` that computes `simplify`, `simplifypt`, and `buffer` and its callers in `crates/symbolize/src/layer_transform.rs`, `crates/symbolize/Cargo.toml`, `scripts/check-notice.sh` and `THIRD-PARTY-NOTICES.md` for the notice of JTS, and the unit tests that hold coordinates taken from GEOS
 
 ## Context
 
@@ -91,7 +91,10 @@ family of [ADR-0028](0028-hatch-cut-by-i-overlay.md), and `rand` with `rand_pcg`
 - Q-9: a buffer adds points, and a simplification visits them. The layer's budget bounds both.
 - [ADR-0008](0008-ports-and-adapters-crates.md): a new crate needs a new row of its table.
 - [ADR-0028](0028-hatch-cut-by-i-overlay.md): i_overlay must be a dependency of `render-agg`
-  alone. Its *Out of scope* leaves a `buffer` free to choose i_overlay by an ADR of its own.
+  alone, and the test `only_render_agg_cuts_polygons_with_i_overlay` of `crates/arch-test` holds
+  it. Its *Out of scope* leaves a `buffer` free to choose i_overlay by an ADR of its own.
+- No case in scope simplifies a polygon. The repair and the validity test serve the ticket's
+  criterion of a polygon's points, not a case.
 - Simplicity: no dependency without a present need.
 
 ## Decision
@@ -113,13 +116,13 @@ by our own port of JTS 1.20.0, with i_overlay's union where JTS builds a planar 
   caps and joins.
 - **i_overlay.** i_overlay's union must resolve the raw buffer curves into polygons, and must repair
   an invalid simplified area. It stands in for JTS's noding, planar graph, and polygon builder,
-  which are not ported.
-- **Validity.** The module must decide an area's validity as JTS's `IsValidOp` decides it. It must
-  check the faults a simplification can make:
-  - a ring that crosses itself or another ring;
-  - a hole outside its shell.
-
-  A valid area must not pass through i_overlay.
+  which are not ported. The fill rule that reproduces GEOS's depths is left to the implementation,
+  and the tests of the *Fidelity* entry decide it.
+- **Precondition.** i_overlay must become a dependency of `symbolize`, which ADR-0028 forbids. This
+  ADR must not be accepted before a successor of ADR-0028 that allows it.
+- **Validity.** The module must decide an area's validity by a port of the checks of JTS's
+  `IsValidOp`. It must port the checks of every fault a simplification can make, and may leave out
+  the rest. A valid area must not pass through i_overlay.
 - **Reference.** The port must follow JTS 1.20.0's sources. It must not follow GEOS's sources,
   which are under LGPL-2.1. Each file that ports a JTS source must name it and hold JTS's EDL
   notice. `THIRD-PARTY-NOTICES.md` must hold that notice too.
@@ -131,8 +134,8 @@ by our own port of JTS 1.20.0, with i_overlay's union where JTS builds a planar 
     times the larger of 1 and the extent of the shape's bounding box, in the shape's unit.
 - **Mathematics.** The module must take `sin`, `cos`, `atan2`, and every other transcendental
   function from `libm`. It may use `f64::sqrt` and IEEE's arithmetic.
-- **Bounds.** The points a function adds and visits must count against the layer's budget of Q-9,
-  as the ported functions of [ADR-0036](0036-typed-geomtransform.md) count them.
+- **Bounds.** The points a function adds and visits must count against the budget of Q-9 that
+  `crates/symbolize/src/layer_transform.rs` keeps for a layer's transform.
 
 **Out of scope:**
 
@@ -143,7 +146,7 @@ by our own port of JTS 1.20.0, with i_overlay's union where JTS builds a planar 
 - a style's expression being drawn at all, which the fidelity plan's ticket of style expressions
   decides;
 - `centerline`, `difference`, and other functions of GEOS that no case in scope draws;
-- the change to ADR-0028's dependency clause that this decision needs (*Consequences*).
+- the wording of ADR-0028's successor, which the *Precondition* entry requires.
 
 ## Alternatives considered
 
@@ -151,12 +154,19 @@ by our own port of JTS 1.20.0, with i_overlay's union where JTS builds a planar 
   and on every polygon GEOS neither collapses nor repairs. It differs on the rest (*Context*).
   Its `SimplifyVwPreserve` is another algorithm with an area as its tolerance, so `simplifypt`
   would still need a port of JTS's topology-preserving simplifier. Its buffer with round joins of
-  π/60 comes within 2.5 × 10⁻⁷ px of GEOS. Not chosen: it adds 19 crates and 113 KB gzipped for all
-  three functions. It brings a second i_overlay family and `rand`. It calls the platform's `hypot`,
-  which Q-2 bans on the output path. It meets neither criterion for polygons.
+  π/60 comes within 2.5 × 10⁻⁷ px of GEOS. Not chosen: it adds 19 crates. `Simplify`,
+  `SimplifyVwPreserve`, and `Buffer` together add 113 KB gzipped; `Simplify` and `Buffer` without
+  `SimplifyVwPreserve` were not measured. It brings a second i_overlay family and `rand`. It calls
+  the platform's `hypot`, which Q-2 bans on the output path. It misses GEOS's points for a polygon,
+  of `simplify` and of `simplifypt` alike.
 - **geo for `simplify` and `buffer`, a JTS port for `simplifypt`.** The case of `vertex2` passes
   with the least code. Not chosen: the port of JTS's line simplifier is the core of the topology
   port anyway. geo's polygon details would still miss GEOS. The dependency cost stays.
+- **The smallest port: Douglas-Peucker and the topology-preserving simplifier without validity
+  test or repair, and `buffer` through i_overlay's `OutlineOffset`.** It meets every case in
+  scope, since no case simplifies a polygon. It misses GEOS's points wherever GEOS repairs a
+  simplified area, and a buffer's points by up to 0.027 px. Not chosen, because the ticket asks
+  for GEOS's points of a polygon. The maintainer may choose it by relaxing that criterion.
 - **i_overlay 9.1.0's `OutlineOffset` for `buffer`.** No port, and +43 KB. Every vertex lies
   within 0.027 px of GEOS's, but the rings carry 4 to 7 more points. It is the fallback if the
   port of the raw curve proves too costly. Then the tolerance of the *Fidelity* entry for a buffer
@@ -212,8 +222,6 @@ by our own port of JTS 1.20.0, with i_overlay's union where JTS builds a planar 
   to its integer grid where GEOS computes intersections in doubles. GEOS's own releases already
   differ there in the last bit.
 - Follow-ups:
-  - a successor of ADR-0028, whose *Decision* makes i_overlay a dependency of `render-agg` alone;
-    i_overlay must become a dependency of `symbolize` too;
   - a record of GEOS's results made in the noise run, as
     [ADR-0038](0038-proj-references-from-mapserver.md) records PROJ's, in place of coordinates
     taken by hand;
@@ -233,6 +241,8 @@ by our own port of JTS 1.20.0, with i_overlay's union where JTS builds a planar 
 - `crates/symbolize/clippy.toml` bans the platform's transcendental functions, as it does today.
 - `scripts/check-notice.sh` fails on a file under `crates/symbolize` that names a JTS source without
   JTS's notice.
+- The arch-test `only_render_agg_cuts_polygons_with_i_overlay` moves with the successor of
+  ADR-0028 to allow `symbolize`.
 - `cargo deny check` runs on every change to `Cargo.lock` ([ADR-0011](0011-crate-supply-chain.md)).
 
 **Not mechanically decidable:** that the port follows JTS and not GEOS. Review compares a ported
