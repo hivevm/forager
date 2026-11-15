@@ -67,8 +67,9 @@ scripts/sensor-*.sh   # sensors: report for the reviewer; sensor-repo-settings.s
 scripts/test-*.sh     # self-tests of the checks, the sensors, the hooks, and the scripts run by hand
 scripts/lib/          # what the scripts share: adr.sh the ADR header, check.sh the findings,
                       # expect.sh the project's self-tests' expect, verdict, and the fixtures'
-                      # commit, git.sh git, notice.sh the notices, package.sh the artefacts,
-                      # rules.sh the rules, selftest.sh the self-tests, ticket.sh the ticket path
+                      # commit, git.sh git, install.sh the install of a pinned release binary,
+                      # notice.sh the notices, package.sh the artefacts, rules.sh the rules,
+                      # selftest.sh the self-tests, ticket.sh the ticket path
 scripts/*.sh          # run by hand, steps 7 and 8 of the integration branches: number-adrs.sh,
                       # ready-for-main.sh, drop-merged-branch.sh; and the project's tools:
                       # install-tools.sh, build-web.sh, fuzz.sh, mutants.sh, and the like
