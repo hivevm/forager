@@ -39,9 +39,8 @@ fn methods() -> Vec<String> {
         .collect()
 }
 
-#[test]
-fn every_proj4_string_the_prj_reader_writes_parses_in_proj() {
-    // Verifies: ADR-0039
+/// A `.prj` for each branch of the reader's `method_proj4`, named by the projection it matches.
+fn fixtures() -> Vec<(&'static str, String)> {
     let utm = [
         ("False_Easting", 500_000.0),
         ("Central_Meridian", 9.0),
@@ -131,6 +130,13 @@ fn every_proj4_string_the_prj_reader_writes_parses_in_proj() {
             projcs(GCS_WGS84, "Mercator_1SP", &[("Scale_Factor", 1.0)]),
         ),
     ];
+    fixtures
+}
+
+#[test]
+fn every_proj4_string_the_prj_reader_writes_parses_in_proj() {
+    // Verifies: ADR-0039
+    let fixtures = fixtures();
     for (name, wkt) in &fixtures {
         let DeclaredProjection::Proj4(proj4) = declared_projection_of_prj("a.prj", wkt.as_bytes())
         else {
