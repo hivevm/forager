@@ -32,7 +32,12 @@ skimmed. The design revision drops what prevented nothing
   what MapServer does names the function and lines it read at the pin, or asks instead of
   stating; and a port in the engine first reads the parameter's page under `docs/semantics/`,
   which says what part of the C the frontend has already carried into the IR, so that no part is
-  ported twice.
+  ported twice. A comment or a doc that says what the C does, or that no case reaches one of its
+  paths, is held to the same reading. A rule drawn from a measurement is stated no wider than the
+  cases measured. The reprojection broke both: ff9641de made every zero `towgs84` shift nothing,
+  but only NAD83 had been measured (dafbc3b4). A comment of `shape.rs` said that no projection
+  reaches GEOS's cut, but `ortho` does (e0ed507f). The `.prj` reader guessed ESRI's
+  `Orthographic` to be ellipsoidal (9a2b860c).
 - **A reader of untrusted bytes allocates nothing from a count or a size the bytes state before
   checking it against the bytes present** — a header's record count, a part count, a length
   field: each is compared with what the input holds, in checked arithmetic, before anything is
@@ -82,7 +87,9 @@ skimmed. The design revision drops what prevented nothing
   function, and a relation between two outputs of the same code, one doubled at twice the
   resolution, one ordered before another, comes beside a pinned value and never in place of it,
   because a wrong implementation that both sides share passes the relation and the self-derived
-  value alike.
+  value alike. A test against a reference runs the code that ships, never a copy of its
+  composition written in the test: G-11's test of shapes held a copy, which a regression in the
+  engine's path would have left green, until e0ed507f.
 - **A commit typed `refactor` changes nothing a test can see** — a behaviour it moves on the way
   is a `fix` of its own, because the type tells the reviewer and the history which change to read
   as a decision. `scripts/sensor-refactor-tests.sh` lists a `refactor` commit that changes the
