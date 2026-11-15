@@ -24,6 +24,8 @@ forager-adapter-epsg.workspace = true
 forager-adapter-shapefile.workspace = true
 
 [dev-dependencies]
+# Parses each proj4 string the shapefile adapter's .prj reader writes (ADR-0039).
+forager-proj.workspace = true
 forager-render.workspace = true
 # Decodes the reference images, palette and RGB ones included, for the metric, as the
 # conformance-harness spec decides; the same crate and version the encoder uses (ADR-0030).
