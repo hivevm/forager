@@ -119,6 +119,10 @@ We will brush a line style's line with its symbol's tile where the style's `GAP`
 - **The clip.** `render-agg` must clip the line through `clip.rs`
   ([ADR-0027](0027-clip-to-the-image.md)). The image is grown by the reach the operation carries:
   the class's `clip_buf`. A line `symbolize` clipped is then left whole.
+- **The margin of ADR-0025.** A brushed line is a stroke. Its margin, in the sense of
+  [ADR-0025](0025-agg-rust-rasterizer.md)'s clause on clipping, is the reach it carries, the
+  class's `clip_buf`. So no coordinate handed to agg-rust lies further outside the image than
+  that reach. The maintainer chose this reading on 2026-11-16; ADR-0025 stays as it is.
 - **The start across a cut.** Where `clip.rs` cuts a line, `render-agg` must set each piece's
   start before it draws the piece. The start is AGG's start at the end of the piece's first
   segment, less that segment's length:
