@@ -29,7 +29,7 @@ is 0, is drawn by Forager as a plain line in the style's `COLOR`. A pixmap there
   every segment and part (`m_start`), each segment moving it by its length in subpixels.
 - `msDrawShape` clips a line before it draws it, to the image grown by the class's `clip_buf`
   (`src/mapdraw.c`, 2463-2558): the largest size or width of the class's styles, scaled, plus 1.
-  A tile's height never passes it. A layer with `PROCESSING "POLYLINE_NO_CLIP"` is not clipped,
+  A layer with `PROCESSING "POLYLINE_NO_CLIP"` is not clipped,
   and AGG saturates its coordinates instead. Forager's `symbolize` reproduces the clip.
 
 Two accepted ADRs leave this open. [ADR-0026](0026-agg-blender-and-resampler.md) names "a line
@@ -118,11 +118,14 @@ We will brush a line style's line with its symbol's tile where the style's `GAP`
   [ADR-0026](0026-agg-blender-and-resampler.md).
 - **The clip.** `render-agg` must clip the line through `clip.rs`
   ([ADR-0027](0027-clip-to-the-image.md)). The image is grown by the reach the operation carries:
-  the class's `clip_buf`, which no tile's height passes. A line `symbolize` clipped is then left
-  whole.
-- **The start across a cut.** Where `clip.rs` cuts a line, `render-agg` must move the start as AGG
-  moves it over the part cut away. That is the sum of each segment's length in subpixels, `lp.len`
-  between the vertices `line_coord_sat` gives.
+  the class's `clip_buf`. A line `symbolize` clipped is then left whole.
+- **The start across a cut.** Where `clip.rs` cuts a line, `render-agg` must give each piece the
+  start AGG reaches at the piece's first whole segment. All lengths are `uround(lp.len)` between
+  vertices that `line_coord_sat` gives:
+  - the whole segments cut away before the piece count with their lengths;
+  - a segment cut at the piece's start counts with its whole length less its kept fragment's;
+  - the fragment then adds its own length, as the renderer adds it, so that every later segment
+    starts where AGG starts it.
 - **No panic** (Q-3). `render-agg` must keep the start within `i32`. A wrapper of agg-rust's
   `OutlineAaRenderer` trait must reduce it by whole widths of the tile after each segment, which
   moves no pixel.
