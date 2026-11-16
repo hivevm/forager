@@ -1061,7 +1061,7 @@ mod tests {
 
     #[test]
     fn a_map_angle_reads_back_and_one_outside_360_is_dropped_with_a_warning() {
-        // Verifies: G-3, ADR-draft-map-rotation-in-the-reprojection
+        // Verifies: G-3, ADR-0045
         let document = sample();
         assert_eq!(document.map.angle, Some(30.0));
         let text = document.to_json().unwrap();

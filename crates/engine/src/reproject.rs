@@ -57,7 +57,7 @@ enum Side<'a> {
 /// reprojected, as `msProjectionsDiffer` finds a geotransform different from any projection, and
 /// lands in the frame of the image. Where MapServer creates no PROJ object, or one from a CRS into
 /// the same CRS, the way runs no formula and only the geotransform moves a point
-/// (ADR-draft-map-rotation-in-the-reprojection).
+/// (ADR-0045).
 pub(crate) fn for_layer(
     map: &Map,
     layer: &Layer,

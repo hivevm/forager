@@ -44,7 +44,7 @@
 //! Anything else is an [`Error`] naming it, and a point that does not transform is
 //! [`NotTransformed`], never a panic (Q-3). On a rotated map, the map's side of a reprojection
 //! holds the map's [`Geotransform`], MapServer's step between the map's coordinates and the frame
-//! of its image (ADR-draft-map-rotation-in-the-reprojection).
+//! of its image (ADR-0045).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 

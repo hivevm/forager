@@ -345,7 +345,7 @@ fn the_image_colour_keeps_its_alpha_and_takes_every_channel_as_a_byte() {
 
 #[test]
 fn the_maps_angle_loads_within_360_and_none_for_0() {
-    // Verifies: G-3, ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: G-3, ADR-0045
     let angle = |text: &'static str| load_files(&[("m.map", text)]).document.unwrap().map.angle;
     assert_eq!(angle("MAP ANGLE 30 END"), Some(30.0));
     assert_eq!(angle("MAP ANGLE -315 END"), Some(-315.0));

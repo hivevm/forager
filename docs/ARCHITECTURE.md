@@ -148,7 +148,7 @@ golden path and the test pattern an agent copies from are named here.
   (`geotransform.rs`), and a reprojection may hold it on the map's side, the way into the map
   applying its inverse after the formulas and the way back applying it before them; a way from a
   CRS into itself runs no formula, so only the geotransform moves its points
-  (ADR-draft-map-rotation-in-the-reprojection). These ports of MapServer's `mapproject.c` and
+  (ADR-0045). These ports of MapServer's `mapproject.c` and
   `mapobject.c` live here beside the port of PROJ. Its test `tests/reference.rs`
   holds points, rectangles, and shapes against the records MapServer's call of PROJ wrote at the
   pinned build, under `tests/reference/` (ADR-0038, G-11).
@@ -169,7 +169,7 @@ golden path and the test pattern an agent copies from are named here.
   extent and the scale factors from `msGetGeoCellSize`'s cellsize, reprojects every layer with a
   projection through the map's geotransform into the frame of the image, and draws everything
   after in that frame, a layer without a projection unrotated with a warning
-  (`rotation-without-projection`, ADR-draft-map-rotation-in-the-reprojection); replaces the shape of
+  (`rotation-without-projection`, ADR-0045); replaces the shape of
   each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
   up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
   tree is `not_drawn` or fails, with a warning (`classes.rs`,

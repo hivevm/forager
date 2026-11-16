@@ -3,7 +3,7 @@
 //! coordinates (ADR-0037). On a map with an `ANGLE`, each layer with a projection reprojected
 //! through the map's geotransform into the frame of the image, its source asked for the rotated
 //! view, its scale factors from msGetGeoCellSize's cellsize
-//! (ADR-draft-map-rotation-in-the-reprojection); the expected numbers are those the C's formulas
+//! (ADR-0045); the expected numbers are those the C's formulas
 //! give at the pin for `misc/rot_out.map`.
 
 use std::cell::RefCell;
@@ -623,7 +623,7 @@ fn square(centre: Coord, half: f64) -> Geometry {
 
 #[test]
 fn a_layer_in_the_maps_projection_is_asked_for_the_rotated_view() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // msDrawVectorLayer asks for the faked extent 0, 0, 400, 300 through msProjectRect: the
     // bounding box of the rotated view's four corners.
     let rotated_map = rotated(Some(30.0), RenderMode::Polygon, Some(UTM), filled(None));
@@ -646,7 +646,7 @@ fn a_layer_in_the_maps_projection_is_asked_for_the_rotated_view() {
 
 #[test]
 fn a_point_of_a_layer_in_the_maps_projection_lands_where_the_geotransform_puts_it() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     let rotated_map = rotated(Some(30.0), RenderMode::Point, Some(UTM), filled(Some(7.0)));
     let points = vec![Geometry::Point(CENTRE), Geometry::Point(AT_100_100)];
     let (rendered, _) = render_rotated(&rotated_map, points);
@@ -686,7 +686,7 @@ fn a_point_of_a_layer_in_the_maps_projection_lands_where_the_geotransform_puts_i
 
 #[test]
 fn a_width_in_meters_on_a_rotated_map_is_scaled_by_the_geo_cellsize() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // msGetGeoCellSize: the diagonal of the real extent's cell over width and height, over the
     // square root of 2, 9.10380514271694 for rot_out, where the cellsize is 9.130434782608695.
     // A line 91 meters wide is drawn as the one 91 / that many pixels wide.
@@ -725,7 +725,7 @@ fn a_width_in_meters_on_a_rotated_map_is_scaled_by_the_geo_cellsize() {
 
 #[test]
 fn a_layers_buffer_on_a_rotated_map_is_taken_in_the_images_pixels() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // After the reprojection the map's units are the frame's pixels, as in MapServer: a buffer
     // of 10 grows a square of 50 meters a side by 10 pixels, not by 10 meters.
     let mut buffered = rotated(Some(30.0), RenderMode::Polygon, Some(UTM), filled(None));
@@ -749,7 +749,7 @@ fn a_layers_buffer_on_a_rotated_map_is_taken_in_the_images_pixels() {
 
 #[test]
 fn a_layer_without_a_projection_on_a_rotated_map_is_drawn_unrotated_with_a_warning() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // msProjectionsDiffer finds no difference where a side has no parameters: the layer's
     // coordinates are drawn as the frame's, y up, and its source is asked for the frame itself.
     let rotated_map = rotated(Some(30.0), RenderMode::Polygon, None, filled(None));
@@ -784,7 +784,7 @@ fn a_layer_without_a_projection_on_a_rotated_map_is_drawn_unrotated_with_a_warni
 
 #[test]
 fn a_map_of_angle_0_draws_as_one_without_angle() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     let square = || vec![square(CENTRE, 400.0)];
     let (without, asked_without) = render_rotated(
         &rotated(None, RenderMode::Polygon, Some(UTM), filled(None)),
@@ -815,7 +815,7 @@ fn an_angle_that_gives_no_geotransform_draws_no_map() {
 
 #[test]
 fn a_layer_in_another_projection_lands_through_the_formulas_and_the_geotransform() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // msProjectPointEx: PROJ's step from longitude and latitude into UTM, then the inverse
     // geotransform. The centre of the view, in longitude and latitude, lands on (200, 150).
     let centre = way(UTM, LONGLAT).point(CENTRE).unwrap();
@@ -845,7 +845,7 @@ fn a_layer_in_another_projection_lands_through_the_formulas_and_the_geotransform
 
 #[test]
 fn under_a_rotated_map_of_auto_a_layer_of_auto_moves_by_the_geotransform_alone() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // A layer of AUTO whose source declares no projection keeps AUTO; under a map of AUTO both
     // sides are the one argument AUTO, MapServer creates no PROJ object, and only the geotransform
     // moves a point: the extent's centre lands on (200, 150).

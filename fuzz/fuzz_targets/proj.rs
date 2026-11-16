@@ -8,7 +8,7 @@
 //! also as a rectangle. The fifth, where there is one, is the angle of a rotated map whose
 //! extent is that rectangle, 400 × 300 pixels: the same points, rectangle, and lines go through
 //! the reprojection into that map and its way back, and through the way that runs no formula
-//! (ADR-draft-map-rotation-in-the-reprojection).
+//! (ADR-0045).
 // Verifies: Q-3, ADR-0037
 #![no_main]
 

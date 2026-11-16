@@ -752,7 +752,7 @@ fn prepare(
     Some((width, height, scale, factors, rotation))
 }
 
-/// The rotation of a map by its `angle` (ADR-draft-map-rotation-in-the-reprojection).
+/// The rotation of a map by its `angle` (ADR-0045).
 struct Rotation {
     /// The view everything after the reprojection is drawn in: on a rotated map, the frame of its
     /// image, `0, 0, width, height` at a cellsize of 1, as msMapSetFakedExtent fakes it.
@@ -1045,7 +1045,7 @@ fn declared_projection<S: FeatureSource>(
 
 /// The warning that `layer`, on a rotated map, is not reprojected, because it or the map has no
 /// projection, and lands in the frame of the image unrotated, where MapServer draws it. MapServer
-/// is silent; the warning tells the user why (ADR-draft-map-rotation-in-the-reprojection).
+/// is silent; the warning tells the user why (ADR-0045).
 fn rotation_without_projection(layer: &Layer) -> Diagnostic {
     let message = format!(
         "layer {} is not rotated by the map's ANGLE: it or the map has no PROJECTION, so its \

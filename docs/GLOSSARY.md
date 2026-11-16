@@ -47,7 +47,7 @@ to invent.
   _Avoid:_ fake extent, pixel space.
 - **Geotransform** — The affine step between a rotated map's coordinates and the frame of its
   image, which MapServer holds on the map's projection and applies inside each layer's
-  reprojection (ADR-draft-map-rotation-in-the-reprojection).
+  reprojection (ADR-0045).
   _Avoid:_ rotation matrix, affine.
 - **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through
   the WASM bindings, or a server.

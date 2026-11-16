@@ -443,7 +443,7 @@ fn rot_out() -> Geotransform {
 
 #[test]
 fn a_rotated_maps_geotransform_is_mapservers_to_the_bit() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // misc/rot_out.map, ANGLE 30, as msMapComputeGeotransform and msMapSetFakedExtent compute it
     // in IEEE doubles.
     let map = geotransform::map_geotransform(&ROT_OUT, 400, 300, 30.0).unwrap();
@@ -494,7 +494,7 @@ fn a_rotated_maps_geotransform_is_mapservers_to_the_bit() {
 
 #[test]
 fn a_point_in_the_maps_projection_lands_where_the_geotransform_puts_it() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // The extent's centre lands on (200, 150.00000000017462) of the frame, y up, as the C's
     // formulas give it; an unrotated map puts it on (199.5, 149.5).
     let way = Reprojection::identity(false, false).onto_rotated_map(rot_out());
@@ -517,7 +517,7 @@ fn a_point_in_the_maps_projection_lands_where_the_geotransform_puts_it() {
 
 #[test]
 fn the_area_asked_of_a_rotated_map_holds_the_corners_of_its_view() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // msProjectRect samples the faked extent 0, 0, 400, 300 and moves each sample by the map's
     // geotransform; the PROJ step from the CRS into itself runs no formula.
     let asked = Reprojection::identity(false, false)
@@ -543,7 +543,7 @@ fn the_area_asked_of_a_rotated_map_holds_the_corners_of_its_view() {
 
 #[test]
 fn a_rotated_map_skips_the_polar_branches_of_the_area_asked() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // A map in a polar ortho, rotated by -45°, its view placed so that the frame's origin lands a
     // tenth of a millimetre east of the pole: msProjectRect's test of a polar projection would
     // find the pole there and take every longitude up to 90°, but it does not run where a side
@@ -598,7 +598,7 @@ fn a_rotated_map_skips_the_polar_branches_of_the_area_asked() {
 
 #[test]
 fn the_dateline_wrap_into_a_rotated_map_is_measured_in_the_frame() {
-    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // Verifies: ADR-0045
     // A map in longitude and latitude, 2° a pixel. A line from 170° to 190° in a Mercator of
     // +over comes back at -170°, more than 180° from where it started. Rotated by 30°, term 2 of
     // the geotransform is not 0, so msProjectShapeLine measures the distance in the frame's

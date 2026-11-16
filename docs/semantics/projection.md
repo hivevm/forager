@@ -56,7 +56,7 @@ by other than a multiple of 180°. A layer without a projection, or under a map 
 not reprojected: its source is asked for the faked extent itself, and its coordinates are drawn
 as the frame's pixels, unrotated, as MapServer draws them; Forager warns
 `rotation-without-projection`, naming the layer, where MapServer is silent
-(ADR-draft-map-rotation-in-the-reprojection).
+(ADR-0045).
 
 **Parameters.** MapServer hands every parameter to PROJ, so the frontend writes each one with a
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the

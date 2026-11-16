@@ -16,7 +16,7 @@
 
 //! The geotransform of a rotated map: the affine step MapServer applies on the map's side of each
 //! layer's reprojection, between the map's coordinates and the frame of its image, `0, 0, width,
-//! height` with y up (ADR-draft-map-rotation-in-the-reprojection).
+//! height` with y up (ADR-0045).
 
 use forager_style_ir::c::ms_pi_over_180;
 use forager_style_ir::{Coord, Extent};
