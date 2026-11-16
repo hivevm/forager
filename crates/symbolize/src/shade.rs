@@ -14,7 +14,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
+use forager_render::{DrawOp, LineCap, LineJoin, Pen, Point};
 use forager_style_ir::c::{ms_compute_bounds, rect_overlap};
 use forager_style_ir::{Rgba, Style, Symbol, SymbolKind};
 
@@ -109,12 +109,7 @@ pub fn shade<T: Clone>(
                 a: color.a,
                 ..outline
             },
-            width,
-            cap,
-            join,
-            inner_join,
-            dashes: Dashes::default(),
-            antialiased: true,
+            pen: Pen::new(width, cap, join, inner_join),
         });
     }
     true

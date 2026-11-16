@@ -31,7 +31,7 @@
 
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{DrawOp, InnerJoin, LineCap, LineJoin, Pen, Point, PremultipliedImage};
 use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_get_symbol_index, ms_max, ms_nint};
 use forager_style_ir::{
     ANCHOR_CENTRE, Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef, anchor_offset,
@@ -594,12 +594,12 @@ pub(crate) fn render(ops: &mut Vec<DrawOp>, at: Point, symbol: &Symbol, s: &Symb
             paths,
             closed,
             color,
-            width: s.outline_width,
-            cap: LineCap::Butt,
-            join: LineJoin::Miter,
-            inner_join: InnerJoin::Miter,
-            dashes: Dashes::default(),
-            antialiased: true,
+            pen: Pen::new(
+                s.outline_width,
+                LineCap::Butt,
+                LineJoin::Miter,
+                InnerJoin::Miter,
+            ),
         });
     }
 }

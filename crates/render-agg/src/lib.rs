@@ -52,7 +52,7 @@ use agg_rust::scanline_p::ScanlineP8;
 use agg_rust::scanline_u::ScanlineU8;
 use forager_render::clip::{self, Rect, drawn_width};
 use forager_render::{
-    Affine, Dashes, DisplayItem, Draw, DrawOp, Hatch, InnerJoin, LineCap, LineJoin, Point,
+    Affine, Dashes, DisplayItem, Draw, DrawOp, Hatch, InnerJoin, LineCap, LineJoin, Pen, Point,
     PremultipliedImage, Renderer, RgbaImage, Tile,
 };
 use forager_style_ir::Rgba;
@@ -92,23 +92,24 @@ impl AggRenderer {
         f(&mut renderer);
     }
 
-    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, stroke: &Stroke<'_>) {
+    /// Rasterizes `path` stroked with `pen` at `width`, the width drawn.
+    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, pen: &Pen, width: f64) {
         let color = rgba8(color);
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
             let mut scanline = ScanlineU8::new();
-            if stroke.dashes.pattern.len() >= 2 {
+            if pen.dashes.pattern.len() >= 2 {
                 let mut dashed = ConvDash::new(path);
-                add_dashes(&mut dashed, stroke.dashes);
+                add_dashes(&mut dashed, &pen.dashes);
                 let mut outline = ConvStroke::new(dashed);
-                stroke.apply(&mut outline);
+                apply(pen, width, &mut outline);
                 rasterizer.add_path(&mut outline, 0);
             } else {
                 let mut outline = ConvStroke::new(path);
-                stroke.apply(&mut outline);
+                apply(pen, width, &mut outline);
                 rasterizer.add_path(&mut outline, 0);
             }
-            if stroke.antialiased {
+            if pen.antialiased {
                 render_scanlines_aa_solid(&mut rasterizer, &mut scanline, renderer, &color);
             } else {
                 render_scanlines_bin_solid(&mut rasterizer, &mut scanline, renderer, &color);
@@ -139,40 +140,28 @@ fn render_scanlines_bin_solid(
     }
 }
 
-/// What a stroke hands to agg-rust's stroker.
-struct Stroke<'a> {
-    width: f64,
-    cap: LineCap,
-    join: LineJoin,
-    inner_join: InnerJoin,
-    dashes: &'a Dashes,
-    antialiased: bool,
-}
-
-impl Stroke<'_> {
-    /// Sets the stroker's width, cap, and join as applyCJC() does: a join of `none` is a bevel,
-    /// and a cap MapServer does not map, `triangle`, stays AGG's default, butt. The inner join is
-    /// the stroke's; the miter limit stays AGG's default, 4. Forager sets up a fresh stroker for
-    /// every path; MapServer keeps one per image and carries its state from line to line, so
-    /// there a thin line after a wide round-capped one is round-capped, and a wide line after a
-    /// thin one bevels its inner joins.
-    fn apply<VS: VertexSource>(&self, stroke: &mut ConvStroke<VS>) {
-        stroke.set_width(self.width);
-        stroke.set_line_join(match self.join {
-            LineJoin::Round => AggJoin::Round,
-            LineJoin::Miter => AggJoin::Miter,
-            LineJoin::Bevel | LineJoin::None => AggJoin::Bevel,
-        });
-        stroke.set_inner_join(match self.inner_join {
-            InnerJoin::Miter => AggInnerJoin::Miter,
-            InnerJoin::Bevel => AggInnerJoin::Bevel,
-        });
-        match self.cap {
-            LineCap::Butt => stroke.set_line_cap(AggCap::Butt),
-            LineCap::Round => stroke.set_line_cap(AggCap::Round),
-            LineCap::Square => stroke.set_line_cap(AggCap::Square),
-            LineCap::Triangle => {}
-        }
+/// Sets the stroker's width to `width`, the width drawn, and its cap and join to the pen's as
+/// applyCJC() does: a join of `none` is a bevel, and a cap MapServer does not map, `triangle`,
+/// stays AGG's default, butt. The inner join is the pen's; the miter limit stays AGG's default, 4.
+/// Forager sets up a fresh stroker for every path; MapServer keeps one per image and carries its
+/// state from line to line, so there a thin line after a wide round-capped one is round-capped,
+/// and a wide line after a thin one bevels its inner joins.
+fn apply<VS: VertexSource>(pen: &Pen, width: f64, stroke: &mut ConvStroke<VS>) {
+    stroke.set_width(width);
+    stroke.set_line_join(match pen.join {
+        LineJoin::Round => AggJoin::Round,
+        LineJoin::Miter => AggJoin::Miter,
+        LineJoin::Bevel | LineJoin::None => AggJoin::Bevel,
+    });
+    stroke.set_inner_join(match pen.inner_join {
+        InnerJoin::Miter => AggInnerJoin::Miter,
+        InnerJoin::Bevel => AggInnerJoin::Bevel,
+    });
+    match pen.cap {
+        LineCap::Butt => stroke.set_line_cap(AggCap::Butt),
+        LineCap::Round => stroke.set_line_cap(AggCap::Round),
+        LineCap::Square => stroke.set_line_cap(AggCap::Square),
+        LineCap::Triangle => {}
     }
 }
 
@@ -218,15 +207,14 @@ fn add(path: &mut PathStorage, points: &[Point], close: bool) {
 
 impl AggRenderer {
     /// Strokes `paths`, clipped first to the image grown by the reach of the stroke.
-    fn stroke(&mut self, paths: &[Vec<Point>], closed: bool, color: Rgba, stroke: Stroke<'_>) {
-        if !(stroke.width.is_finite() && stroke.width > 0.0) {
+    fn stroke(&mut self, paths: &[Vec<Point>], closed: bool, color: Rgba, pen: &Pen) {
+        if !(pen.width.is_finite() && pen.width > 0.0) {
             return;
         }
-        let width = drawn_width(stroke.width, self.width, self.height);
-        let stroke = Stroke { width, ..stroke };
+        let width = drawn_width(pen.width, self.width, self.height);
         // A miter join reaches up to its limit of 4 half widths past the path, a bevel or round
         // join and a cap no more than about one.
-        let reach = match stroke.join {
+        let reach = match pen.join {
             LineJoin::Miter => 2.0 * width,
             LineJoin::Round | LineJoin::Bevel | LineJoin::None => width / 2.0,
         };
@@ -241,7 +229,7 @@ impl AggRenderer {
                 }
             }
         }
-        self.rasterize(&mut path, color, &stroke);
+        self.rasterize(&mut path, color, pen, width);
     }
 }
 
@@ -425,23 +413,8 @@ impl Draw for AggRenderer {
                 paths,
                 closed,
                 color,
-                width,
-                cap,
-                join,
-                inner_join,
-                dashes,
-                antialiased,
-            } => {
-                let stroke = Stroke {
-                    width: *width,
-                    cap: *cap,
-                    join: *join,
-                    inner_join: *inner_join,
-                    dashes,
-                    antialiased: *antialiased,
-                };
-                self.stroke(paths, *closed, *color, stroke);
-            }
+                pen,
+            } => self.stroke(paths, *closed, *color, pen),
             DrawOp::Hatch(hatch) => self.hatch(hatch),
             DrawOp::Glyphs {
                 path,
@@ -913,12 +886,7 @@ mod tests {
             paths: vec![vec![p(4.0, 32.5), p(60.0, 32.5)]],
             closed: false,
             color: RED,
-            width: 3.0,
-            cap: LineCap::Round,
-            join: LineJoin::None,
-            inner_join: InnerJoin::Miter,
-            dashes: Dashes::default(),
-            antialiased: true,
+            pen: Pen::new(3.0, LineCap::Round, LineJoin::None, InnerJoin::Miter),
         }]);
         assert_eq!(image.pixel(32, 32), Some(RED));
         assert_eq!(image.pixel(32, 20), Some(WHITE));
@@ -933,12 +901,14 @@ mod tests {
                 paths: vec![vec![p(5.3, 10.2), p(58.7, 47.9)]],
                 closed: false,
                 color: RED,
-                width: 5.0,
-                cap: LineCap::Round,
-                join: LineJoin::None,
-                inner_join: InnerJoin::Miter,
-                dashes: Dashes::default(),
-                antialiased,
+                pen: Pen {
+                    width: 5.0,
+                    cap: LineCap::Round,
+                    join: LineJoin::None,
+                    inner_join: InnerJoin::Miter,
+                    dashes: Dashes::default(),
+                    antialiased,
+                },
             }])
         };
         let (smooth, aliased) = (stroke(true), stroke(false));
@@ -971,12 +941,14 @@ mod tests {
             paths: vec![vec![p(10.0, 32.5), p(50.0, 32.5)]],
             closed: false,
             color: RED,
-            width,
-            cap,
-            join: LineJoin::None,
-            inner_join: InnerJoin::Miter,
-            dashes: Dashes { pattern, offset },
-            antialiased: true,
+            pen: Pen {
+                width,
+                cap,
+                join: LineJoin::None,
+                inner_join: InnerJoin::Miter,
+                dashes: Dashes { pattern, offset },
+                antialiased: true,
+            },
         }
     }
 
@@ -992,12 +964,7 @@ mod tests {
                 paths: vec![corner.clone()],
                 closed: false,
                 color: RED,
-                width: 8.0,
-                cap,
-                join,
-                inner_join: InnerJoin::Miter,
-                dashes: Dashes::default(),
-                antialiased: true,
+                pen: Pen::new(8.0, cap, join, InnerJoin::Miter),
             }])
         };
         let outline = draw(LineCap::Butt, LineJoin::Miter);
@@ -1019,12 +986,7 @@ mod tests {
                 paths: vec![turn.clone()],
                 closed: false,
                 color: RED,
-                width: 1.0,
-                cap: LineCap::Butt,
-                join: LineJoin::Bevel,
-                inner_join,
-                dashes: Dashes::default(),
-                antialiased: true,
+                pen: Pen::new(1.0, LineCap::Butt, LineJoin::Bevel, inner_join),
             }])
         };
         let (miter, bevel) = (draw(InnerJoin::Miter), draw(InnerJoin::Bevel));
@@ -1136,37 +1098,36 @@ mod tests {
                 paths: vec![huge.clone(), broken.clone()],
                 closed: false,
                 color: RED,
-                width: 1e9,
-                cap: LineCap::Round,
-                join: LineJoin::Miter,
-                inner_join: InnerJoin::Miter,
-                dashes: Dashes {
-                    pattern: vec![1e-300, 1e300, 3.0],
-                    offset: 1e300,
+                pen: Pen {
+                    width: 1e9,
+                    cap: LineCap::Round,
+                    join: LineJoin::Miter,
+                    inner_join: InnerJoin::Miter,
+                    dashes: Dashes {
+                        pattern: vec![1e-300, 1e300, 3.0],
+                        offset: 1e300,
+                    },
+                    antialiased: true,
                 },
-                antialiased: true,
             },
             DrawOp::Stroke {
                 paths: vec![huge.clone(), broken.clone()],
                 closed: true,
                 color: RED,
-                width: 1e9,
-                cap: LineCap::Butt,
-                join: LineJoin::Miter,
-                inner_join: InnerJoin::Bevel,
-                dashes: Dashes::default(),
-                antialiased: true,
+                pen: Pen::new(1e9, LineCap::Butt, LineJoin::Miter, InnerJoin::Bevel),
             },
             DrawOp::Stroke {
                 paths: vec![huge.clone(), broken.clone()],
                 closed: false,
                 color: RED,
-                width: 1e9,
-                cap: LineCap::Round,
-                join: LineJoin::Round,
-                inner_join: InnerJoin::Miter,
-                dashes: Dashes::default(),
-                antialiased: false,
+                pen: Pen {
+                    width: 1e9,
+                    cap: LineCap::Round,
+                    join: LineJoin::Round,
+                    inner_join: InnerJoin::Miter,
+                    dashes: Dashes::default(),
+                    antialiased: false,
+                },
             },
         ]);
         // A hatch's dashes walked one by one, and its polygon cut, stay bounded: tiny or empty
