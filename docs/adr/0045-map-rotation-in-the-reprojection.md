@@ -1,4 +1,4 @@
-# ADR-draft-map-rotation-in-the-reprojection: A map's `ANGLE` is MapServer's geotransform, a step of every layer's reprojection in `proj`, and a rotated map is drawn in the frame of its image
+# ADR-0045: A map's `ANGLE` is MapServer's geotransform, a step of every layer's reprojection in `proj`, and a rotated map is drawn in the frame of its image
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-16
