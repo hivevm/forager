@@ -43,3 +43,27 @@ The target's input gains these choices, and its seeds reach each of them.
 unattended: the fuzz run decides it, and the change touches only `fuzz/`, so a wrong result costs
 one revert. A crash the run finds is not fixed here: it is filed in `docs/backlog/` with its
 input, and the session stops.
+
+## Where it stands (2026-11-16, stopped at the Mode's stop)
+
+- Built: `fuzz/fuzz_targets/render.rs` reads `simplify`, `simplifypt`, and `buffer` steps in
+  `StepInput`. It also reads a `Fidelity` from the first third of the bytes, back to front: a class
+  style's transform tree on the polygon and line layers, the map's `ANGLE`, a projection of the map
+  and its layers, a circle layer, `ANTIALIAS FALSE` on the first style, and a TrueType symbol at
+  points, along lines, and over polygons. Its font is the test font, or bytes the fuzz input gives.
+  `docs/ARCHITECTURE.md` names the new paths.
+- Seeds: eight new seeds under `fuzz/seeds/render/`: `transform-simplify`,
+  `transform-simplifypt`, `transform-buffer`, `class-geomtransform`, `truetype-marker`,
+  `circle-layer`, `map-angle-projected`, and `antialias-false`. Each was found by a short fuzz
+  run against a temporary panic at its path, and each was checked to fire it. The panics are not
+  committed.
+- The first 300-second run from these seeds crashed: a panic in agg-rust's clipper on the
+  TrueType marker's outline. It is filed with its input in
+  `docs/backlog/truetype-marker-outline-overflows-agg-clipper.md`. The fourth criterion is open
+  until that is fixed and the run is clean.
+- `scripts/check-all.sh` was not run, because the host's disk was full: about 1 MB was free, and
+  the shared `target/` directories took most of the space. The fuzz workspace's `cargo fmt --check`
+  and `cargo clippy -D warnings` from `scripts/check-rust.sh` pass, and so does
+  `scripts/check-docs.sh`.
+- Note: `scripts/fuzz.sh` takes seconds, not a target name, so `scripts/fuzz.sh render` does not
+  run one target. The run above used `cargo fuzz run render` with fuzz.sh's flags.
