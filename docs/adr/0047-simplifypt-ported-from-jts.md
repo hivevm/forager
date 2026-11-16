@@ -1,4 +1,4 @@
-# ADR-draft-simplifypt-ported-from-jts: `simplifypt` is computed in `symbolize` by a port of JTS's `TopologyPreservingSimplifier`
+# ADR-0047: `simplifypt` is computed in `symbolize` by a port of JTS's `TopologyPreservingSimplifier`
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-16
@@ -20,7 +20,7 @@ chose the first option of the backlog entry `docs/backlog/simplifypt-topology-pr
 a port of JTS's `TopologyPreservingSimplifier`.
 [ADR-0043](0043-transform-tree-with-simplify-and-buffer.md) keeps `simplifypt` in the closed list
 of reasons. Its successor,
-[ADR-draft-transform-tree-with-simplifypt](draft-transform-tree-with-simplifypt.md), adds the node.
+[ADR-0048](0048-transform-tree-with-simplifypt.md), adds the node.
 
 **The case.** The style `simplifypt([shape],50)` of `renderers/geomtransform-vertex.map` works on
 the three lines of `misc/data/testlines.shp`, in pixels. Ticket 10 of the fidelity plan measured
@@ -192,7 +192,7 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
 **Out of scope:**
 
 - the transform tree's node, which
-  [ADR-draft-transform-tree-with-simplifypt](draft-transform-tree-with-simplifypt.md) decides;
+  [ADR-0048](0048-transform-tree-with-simplifypt.md) decides;
 - a tolerance that is no number, for which GEOS 3.12.1 flattens every section the topology tests
   allow;
 - a tolerance below 0, for which GEOS fails, and MapServer's reaction to that failure.

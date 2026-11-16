@@ -1,4 +1,4 @@
-# ADR-draft-transform-tree-with-simplifypt: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, `simplify`, `simplifypt`, and `buffer` among its nodes
+# ADR-0048: A `GEOMTRANSFORM` expression is a typed tree of its shape functions in the style IR, `simplify`, `simplifypt`, and `buffer` among its nodes
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-16
@@ -16,7 +16,7 @@ successor once the backlog entry `docs/backlog/simplifypt-topology-preserving.md
 
 On 2026-11-16 the maintainer decided that entry: `simplifypt` is drawn, by a port of JTS's
 `TopologyPreservingSimplifier`. The code is
-[ADR-draft-simplifypt-ported-from-jts](draft-simplifypt-ported-from-jts.md). The tree must hold
+[ADR-0047](0047-simplifypt-ported-from-jts.md). The tree must hold
 `simplifypt` as a node with its argument. That changes ADR-0043's list of nodes and its closed
 list of reasons, so this ADR supersedes it. The style `simplifypt([shape],50)` of
 `renderers/geomtransform-vertex.map` is the last piece that case lacks.
@@ -195,7 +195,7 @@ from MapServer's text.
 - the code that computes `simplify` and `buffer`, which
   [ADR-0041](0041-geometry-through-geo.md) decides;
 - the code that computes `simplifypt`, which
-  [ADR-draft-simplifypt-ported-from-jts](draft-simplifypt-ported-from-jts.md) decides;
+  [ADR-0047](0047-simplifypt-ported-from-jts.md) decides;
 - the bounds on the points a transform adds and visits beyond those Q-9 names;
 - a label's style of an expression, which keeps `LabelTransform` and is left out with its label as
   today;
@@ -219,7 +219,7 @@ from MapServer's text.
   Visvalingam-Whyatt is another algorithm with an area as its tolerance, and it differs from GEOS
   on 4 of the case's 6 line results. A node would carry a meaning the reference does not have.
   The node is computed by the port of
-  [ADR-draft-simplifypt-ported-from-jts](draft-simplifypt-ported-from-jts.md) instead.
+  [ADR-0047](0047-simplifypt-ported-from-jts.md) instead.
 - **Keep `simplifypt` a reason** — ADR-0043's line, no change of the schema. The style
   `simplifypt([shape],50)` of `renderers/geomtransform-vertex.map` stays undrawn, and its case
   cannot pass.

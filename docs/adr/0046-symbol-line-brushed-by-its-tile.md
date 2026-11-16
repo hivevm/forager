@@ -1,4 +1,4 @@
-# ADR-draft-symbol-line-brushed-by-its-tile: A symbol along a line without a GAP brushes the line with its tile, through agg-rust's outline-image rasterizer and a port of AGG 2.4's pattern filter
+# ADR-0046: A symbol along a line without a GAP brushes the line with its tile, through agg-rust's outline-image rasterizer and a port of AGG 2.4's pattern filter
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-16
