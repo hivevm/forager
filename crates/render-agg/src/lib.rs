@@ -92,8 +92,9 @@ impl AggRenderer {
         f(&mut renderer);
     }
 
-    /// Rasterizes `path` stroked with `pen` at `width`, the width drawn.
-    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, pen: &Pen, width: f64) {
+    /// Rasterizes `path` stroked with `pen` at `drawn`, the width [`drawn_width`] bounds the pen's
+    /// to; the pen's own width is never drawn as it is.
+    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, pen: &Pen, drawn: f64) {
         let color = rgba8(color);
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
@@ -102,11 +103,11 @@ impl AggRenderer {
                 let mut dashed = ConvDash::new(path);
                 add_dashes(&mut dashed, &pen.dashes);
                 let mut outline = ConvStroke::new(dashed);
-                apply(pen, width, &mut outline);
+                apply(pen, drawn, &mut outline);
                 rasterizer.add_path(&mut outline, 0);
             } else {
                 let mut outline = ConvStroke::new(path);
-                apply(pen, width, &mut outline);
+                apply(pen, drawn, &mut outline);
                 rasterizer.add_path(&mut outline, 0);
             }
             if pen.antialiased {
@@ -140,14 +141,15 @@ fn render_scanlines_bin_solid(
     }
 }
 
-/// Sets the stroker's width to `width`, the width drawn, and its cap and join to the pen's as
-/// applyCJC() does: a join of `none` is a bevel, and a cap MapServer does not map, `triangle`,
-/// stays AGG's default, butt. The inner join is the pen's; the miter limit stays AGG's default, 4.
+/// Sets the stroker's width to `drawn`, the width [`drawn_width`] bounds the pen's to, and its
+/// cap and join to the pen's as applyCJC() does: a join of `none` is a bevel, and a cap MapServer
+/// does not map, `triangle`, stays AGG's default, butt. The inner join is the pen's; the miter
+/// limit stays AGG's default, 4.
 /// Forager sets up a fresh stroker for every path; MapServer keeps one per image and carries its
 /// state from line to line, so there a thin line after a wide round-capped one is round-capped,
 /// and a wide line after a thin one bevels its inner joins.
-fn apply<VS: VertexSource>(pen: &Pen, width: f64, stroke: &mut ConvStroke<VS>) {
-    stroke.set_width(width);
+fn apply<VS: VertexSource>(pen: &Pen, drawn: f64, stroke: &mut ConvStroke<VS>) {
+    stroke.set_width(drawn);
     stroke.set_line_join(match pen.join {
         LineJoin::Round => AggJoin::Round,
         LineJoin::Miter => AggJoin::Miter,
@@ -902,12 +904,8 @@ mod tests {
                 closed: false,
                 color: RED,
                 pen: Pen {
-                    width: 5.0,
-                    cap: LineCap::Round,
-                    join: LineJoin::None,
-                    inner_join: InnerJoin::Miter,
-                    dashes: Dashes::default(),
                     antialiased,
+                    ..Pen::new(5.0, LineCap::Round, LineJoin::None, InnerJoin::Miter)
                 },
             }])
         };
@@ -1121,12 +1119,8 @@ mod tests {
                 closed: false,
                 color: RED,
                 pen: Pen {
-                    width: 1e9,
-                    cap: LineCap::Round,
-                    join: LineJoin::Round,
-                    inner_join: InnerJoin::Miter,
-                    dashes: Dashes::default(),
                     antialiased: false,
+                    ..Pen::new(1e9, LineCap::Round, LineJoin::Round, InnerJoin::Miter)
                 },
             },
         ]);
