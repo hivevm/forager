@@ -3,18 +3,21 @@
 ## What to build
 
 The clip that `msDrawShape` applies to every line and polygon lives in `hatch.rs` under the hatch's
-name: `line_clip_buffer` and `clip_in_pixels`, beside `line_paths`. `draw.rs` (`clipped_lines`)
-and the brushed line's reach in `line.rs` call it, though neither is a hatch. `hatch_rings` and
-`line_paths` are near-copies. They differ only in the rectangle clipper and the transform into
-pixels.
+name. The struct `Hatching` holds the class's clip buffers, `clip_buffer` and `line_clip_buffer`,
+and whether the clip runs in pixels, `clip_in_pixels`. `hatch.rs` also holds `line_paths`, the clip
+of every line. `draw.rs` calls `hatch::line_paths`, and the brushed line's reach in `line.rs`
+reads `canvas.hatching.line_clip_buffer`. Neither is a hatch. `hatch_rings` and `line_paths` are
+near-copies: the duplication sensor lists two clones between them. They differ only in the
+rectangle clipper and the transform into pixels.
 
-A module `clip.rs` of `symbolize` holds the class's clip buffers and one function of the shape's
-clip that takes the clipper. `hatch.rs` keeps the hatch. This is a `refactor`.
+A module `clip.rs` of `symbolize` holds the class's clip buffers, as a struct named for the clip,
+and one function of the shape's clip that takes the clipper and the transform. `hatch.rs` keeps
+the hatch. This is a `refactor`.
 
 ## Acceptance criteria
 
-- [ ] Given the tree, when `draw.rs` and `line.rs` are read, then they import the clip from
-  `clip`, not from `hatch`.
+- [ ] Given the tree, when `draw.rs` and `line.rs` are read, then they take the clip and its
+  buffers from `clip`, and no field of the canvas that holds them is named for the hatch.
 - [ ] Given `hatch_rings` and `line_paths`, when `scripts/sensor-duplication.sh` runs, then it
   lists no clone between them.
 - [ ] Given `cargo test --workspace` and the msautotest harness, when they run, then all pass

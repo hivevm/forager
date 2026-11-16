@@ -13,8 +13,9 @@ pixmap is one function both call. This is a `refactor`.
 
 ## Acceptance criteria
 
-- [ ] Given `marker_size_with`, when clippy runs, then it needs no `too_many_arguments`, and the
-  error texts of a pixmap's lookup are written once.
+- [ ] Given `marker_size_with`, when it is read, then it takes the resources as one parameter,
+  and the error texts of a pixmap's lookup ("names no image", "is not loaded for this render")
+  are written once in `symbolize`.
 - [ ] Given the label tests of the engine (`marker_size_of` and `marker_size_with`) and the
   msautotest harness, when they run, then all pass unchanged.
 

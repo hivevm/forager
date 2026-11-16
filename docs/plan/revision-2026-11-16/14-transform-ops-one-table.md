@@ -35,7 +35,7 @@ is a `refactor` of the IR's Rust types, not of the style document (ADR-0006, ADR
 ## Blocked by
 
 - docs/plan/revision-2026-11-16/02-check-transform-variants-fuzzed.md (it reads the variants)
-- docs/plan/revision-2026-11-16/12-geometry-owns-the-geos-boundary.md (same module)
+- docs/plan/revision-2026-11-16/12-geos-functions-one-preamble.md (same module)
 
 ## Mode
 
