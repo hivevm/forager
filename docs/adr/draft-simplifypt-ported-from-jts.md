@@ -163,7 +163,8 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
   - the interior intersection of `RobustLineIntersector.java` and `LineIntersector.java`;
   - the crossing count of `RayCrossingCounter.java`;
   - `equalsTopo`, `distance`, and `orientationIndex` of `LineSegment.java`, `pointToSegment` of
-    `Distance.java`, and `isRing` of `CoordinateArrays.java`.
+    `Distance.java`, and `isRing` of `CoordinateArrays.java`;
+  - the bounding boxes the queries and the jump test compare, of `Envelope.java`.
 - **Order.** The port must simplify the lines of one shape in the shape's order: each part of a
   line, or each polygon's shell before its holes. JTS's order of a `HashMap` is not ported.
 - **No recursion.** The port must keep its pending sections on a stack of its own. It must take
@@ -245,7 +246,7 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
   `modules/core/src/main/java/org/locationtech/jts/simplify/` (the five files of the
   *Decision* and `LineSegmentIndex.java`), `algorithm/RobustLineIntersector.java`,
   `algorithm/LineIntersector.java`, `algorithm/RayCrossingCounter.java`,
-  `algorithm/CGAlgorithmsDD.java`, and `LICENSES.md`.
+  `algorithm/CGAlgorithmsDD.java`, `geom/Envelope.java`, and `LICENSES.md`.
 - JTS's history of the simplifier: #925, #1013, #1024, #1059, #1096, read 2026-11-16 through
   GitHub's API.
 - GEOS 3.12.1, its release tarball and `NEWS.md` (GH-718, GH-784, GH-986), built and called
