@@ -21,7 +21,7 @@
 use super::*;
 use std::rc::Rc;
 
-use forager_render::PremultipliedImage;
+use forager_render::{Pen, PremultipliedImage};
 
 const RED: Rgba = Rgba::opaque(255, 0, 0);
 const BLACK: Rgba = Rgba::opaque(0, 0, 0);
@@ -290,10 +290,14 @@ fn a_vector_symbol_not_filled_is_an_open_outline() {
             paths,
             closed,
             color,
-            width,
-            cap,
-            join,
-            inner_join,
+            pen:
+                Pen {
+                    width,
+                    cap,
+                    join,
+                    inner_join,
+                    ..
+                },
             ..
         },
     ] = ops.as_slice()
@@ -523,7 +527,7 @@ fn an_ellipse_turns_about_its_centre_and_its_outline_is_closed() {
         DrawOp::Stroke {
             paths,
             closed,
-            width,
+            pen: Pen { width, .. },
             ..
         },
     ] = ops.as_slice()

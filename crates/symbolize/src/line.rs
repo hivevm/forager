@@ -17,7 +17,7 @@
 
 use std::borrow::Cow;
 
-use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point};
+use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Pen, Point};
 use forager_style_ir::{Bound, Style, Symbol, SymbolKind};
 
 use crate::bounds;
@@ -250,19 +250,18 @@ pub(crate) fn line_symbol<T: Clone>(
         paths: moved(paths, style_offset(style, factor)),
         closed: false,
         color,
-        width,
-        cap,
-        join,
-        inner_join,
-        dashes: Dashes {
-            pattern: style.pattern.iter().map(|p| p * factor).collect(),
-            offset: if initial_gap <= 0.0 {
-                0.0
-            } else {
-                initial_gap * factor
+        pen: Pen {
+            dashes: Dashes {
+                pattern: style.pattern.iter().map(|p| p * factor).collect(),
+                offset: if initial_gap <= 0.0 {
+                    0.0
+                } else {
+                    initial_gap * factor
+                },
             },
+            antialiased: !style.aliased,
+            ..Pen::new(width, cap, join, inner_join)
         },
-        antialiased: !style.aliased,
     });
 }
 

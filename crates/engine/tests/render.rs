@@ -904,7 +904,7 @@ fn at_resolution_144_a_marker_is_drawn_twice_its_size_at_72() {
                 paths,
                 closed: false,
                 color: outline,
-                width,
+                pen: forager_render::Pen { width, .. },
                 ..
             },
         ] => {
