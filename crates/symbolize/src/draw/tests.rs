@@ -492,29 +492,37 @@ fn the_markers_of_a_point_layer_share_the_layer_s_budget() {
         geom_transform: None,
         ..transformed_style(GeomTransform::Vertices, Some(1))
     };
-    let three = Geometry::MultiPoint(coords(&[(10.0, 50.0), (50.0, 50.0), (90.0, 50.0)]));
-    let point_ops = |canvas: &mut Canvas| {
-        draw_ops(
-            RenderMode::Point,
-            &three,
-            &style,
-            Pass::Plain,
-            &unit_view(),
-            canvas,
-        )
-    };
-    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
-    let drawn = point_ops(&mut canvas);
-    assert_eq!(drawn.len(), 3);
-    let cost = points(&drawn);
-    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
-    canvas.markers = MarkerBudget::of(cost - 1);
-    assert!(point_ops(&mut canvas).is_empty());
-    assert!(canvas.markers_spent());
-    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
-    canvas.markers = MarkerBudget::of(cost);
-    assert_eq!(point_ops(&mut canvas).len(), 3);
-    assert!(!canvas.markers_spent());
+    // The three points in one part, as a source delivers a multipoint, and in two, as an inline
+    // feature's two POINTS blocks give them: either is one shape, drawn whole or not at all.
+    let one_part = coords(&[(10.0, 50.0), (50.0, 50.0), (90.0, 50.0)]);
+    let two_parts = vec![one_part[..1].to_vec(), one_part[1..].to_vec()];
+    for three in [
+        Geometry::MultiPoint(vec![one_part]),
+        Geometry::MultiPoint(two_parts),
+    ] {
+        let point_ops = |canvas: &mut Canvas| {
+            draw_ops(
+                RenderMode::Point,
+                &three,
+                &style,
+                Pass::Plain,
+                &unit_view(),
+                canvas,
+            )
+        };
+        let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
+        let drawn = point_ops(&mut canvas);
+        assert_eq!(drawn.len(), 3);
+        let cost = points(&drawn);
+        let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
+        canvas.markers = MarkerBudget::of(cost - 1);
+        assert!(point_ops(&mut canvas).is_empty());
+        assert!(canvas.markers_spent());
+        let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
+        canvas.markers = MarkerBudget::of(cost);
+        assert_eq!(point_ops(&mut canvas).len(), 3);
+        assert!(!canvas.markers_spent());
+    }
 }
 
 #[test]
@@ -524,7 +532,7 @@ fn the_stand_in_squares_of_symbols_not_drawn_yet_pay_the_budget_and_symbol_0_s_d
     // the layer's budget as the symbol would, by the maintainer's decision of 2026-11-08; the
     // square of no symbol or symbol 0, which MapServer draws nothing for, spends none. A TrueType
     // symbol draws its glyph instead (ADR-0044).
-    let three = Geometry::MultiPoint(coords(&[(10.0, 50.0), (50.0, 50.0), (90.0, 50.0)]));
+    let three = Geometry::MultiPoint(vec![coords(&[(10.0, 50.0), (50.0, 50.0), (90.0, 50.0)])]);
     let of_kind = |kind| Symbol {
         kind,
         ..hatch_symbol()

@@ -112,7 +112,9 @@ fn rings(rings: &[Vec<Position>]) -> Result<Vec<Vec<Coord>>, SourceError> {
 fn convert(value: &GeometryValue) -> Result<Geometry, SourceError> {
     Ok(match value {
         GeometryValue::Point { coordinates } => Geometry::Point(coord(coordinates)?),
-        GeometryValue::MultiPoint { coordinates } => Geometry::MultiPoint(coords(coordinates)?),
+        GeometryValue::MultiPoint { coordinates } => {
+            Geometry::MultiPoint(vec![coords(coordinates)?])
+        }
         GeometryValue::LineString { coordinates } => Geometry::LineString(coords(coordinates)?),
         GeometryValue::MultiLineString { coordinates } => {
             Geometry::MultiLineString(rings(coordinates)?)
@@ -163,8 +165,10 @@ fn visit(geometry: &Geometry, f: &mut impl FnMut(Coord)) {
     let mut each = |cs: &[Coord]| cs.iter().copied().for_each(&mut *f);
     match geometry {
         Geometry::Point(c) => each(std::slice::from_ref(c)),
-        Geometry::MultiPoint(cs) | Geometry::LineString(cs) => each(cs),
-        Geometry::MultiLineString(lines) | Geometry::Polygon(lines) => {
+        Geometry::LineString(cs) => each(cs),
+        Geometry::MultiPoint(lines)
+        | Geometry::MultiLineString(lines)
+        | Geometry::Polygon(lines) => {
             lines.iter().for_each(|l| each(l));
         }
         Geometry::MultiPolygon(polygons) => polygons.iter().flatten().for_each(|r| each(r)),

@@ -226,8 +226,10 @@ pub fn point_markers(
 pub fn vertices(geometry: &Geometry) -> Vec<Coord> {
     match geometry {
         Geometry::Point(c) => vec![*c],
-        Geometry::MultiPoint(cs) | Geometry::LineString(cs) => cs.clone(),
-        Geometry::MultiLineString(lines) | Geometry::Polygon(lines) => lines.concat(),
+        Geometry::LineString(cs) => cs.clone(),
+        Geometry::MultiPoint(lines)
+        | Geometry::MultiLineString(lines)
+        | Geometry::Polygon(lines) => lines.concat(),
         Geometry::MultiPolygon(polygons) => polygons.iter().flatten().flatten().copied().collect(),
         Geometry::Collection(geometries) => geometries.iter().flat_map(vertices).collect(),
     }
@@ -384,9 +386,16 @@ fn in_pixels(geometry: &Geometry, view: &View) -> Geometry {
     };
     match geometry {
         Geometry::Point(c) => Geometry::Point(coord(view.point_to_pixel(*c))),
-        Geometry::MultiPoint(cs) => {
-            Geometry::MultiPoint(cs.iter().map(|&c| coord(view.point_to_pixel(c))).collect())
-        }
+        Geometry::MultiPoint(parts) => Geometry::MultiPoint(
+            parts
+                .iter()
+                .map(|part| {
+                    part.iter()
+                        .map(|&c| coord(view.point_to_pixel(c)))
+                        .collect()
+                })
+                .collect(),
+        ),
         Geometry::LineString(line) => Geometry::MultiLineString(lines(std::slice::from_ref(line))),
         Geometry::MultiLineString(parts) => Geometry::MultiLineString(lines(parts)),
         Geometry::Polygon(parts) => Geometry::Polygon(rings(parts)),

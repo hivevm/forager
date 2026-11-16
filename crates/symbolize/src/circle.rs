@@ -51,8 +51,10 @@ pub struct Circle {
 /// draw as nothing.
 pub fn circle(geometry: &Geometry) -> Option<Circle> {
     let part = match geometry {
-        Geometry::MultiPoint(points) | Geometry::LineString(points) => points.as_slice(),
-        Geometry::MultiLineString(parts) | Geometry::Polygon(parts) => match parts.as_slice() {
+        Geometry::LineString(points) => points.as_slice(),
+        Geometry::MultiPoint(parts)
+        | Geometry::MultiLineString(parts)
+        | Geometry::Polygon(parts) => match parts.as_slice() {
             [part] => part.as_slice(),
             _ => return None,
         },

@@ -445,7 +445,7 @@ fn a_point_that_does_not_reproject_is_left_out_with_a_warning_naming_the_layer()
     let island = Coord { x: -63.0, y: 46.4 };
     let source = Recording::new(vec![
         Geometry::Point(pole),
-        Geometry::MultiPoint(vec![island, pole]),
+        Geometry::MultiPoint(vec![vec![island, pole]]),
         Geometry::LineString(vec![island, pole]),
     ]);
     let (rendered, _) = render_from(&layer_map, source);

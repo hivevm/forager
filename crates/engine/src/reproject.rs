@@ -137,8 +137,8 @@ impl LayerReprojection {
     /// features after it (Q-9). A line or a ring is
     /// reprojected by `msProjectShapeLine`: a run of points that do not reproject is cut at the
     /// horizon, a line into parts added after the shape's others, and a longitude into longitude
-    /// and latitude is wrapped across the dateline. The points of a point shape are reprojected by
-    /// `msProjectLineEx`, all of them left out where one does not reproject, unless the map is in
+    /// and latitude is wrapped across the dateline. Each part of a point shape is reprojected by
+    /// `msProjectLineEx`, left out where one of its points does not reproject, unless the map is in
     /// longitude and latitude and the layer is not. A line left empty is left out, and a feature
     /// left with nothing.
     pub(crate) fn features_within(&self, features: &mut Vec<Feature>, bound: usize) -> Reprojected {
@@ -172,7 +172,15 @@ impl LayerReprojection {
                 *point = points[0];
                 kept
             }
-            Geometry::MultiPoint(points) => self.point_line(points, failed),
+            // msProjectShapeEx reprojects each part of a point shape by msProjectLineEx and
+            // deletes a part that fails (`mapproject.c`, 1612-1618); a shape of no parts it keeps,
+            // as a shape of no type (1603-1608).
+            Geometry::MultiPoint(parts) => {
+                parts.is_empty() || {
+                    parts.retain_mut(|points| self.point_line(points, failed));
+                    !parts.is_empty()
+                }
+            }
             Geometry::LineString(line) => {
                 let mut lines = self.lines(vec![std::mem::take(line)], false, failed);
                 match lines.len() {
@@ -369,7 +377,7 @@ mod tests {
         // A point shape loses all its points where one does not reproject.
         let mut points = vec![Feature {
             id: 0,
-            geometry: Geometry::MultiPoint(ring(&[(-64.0, 45.0), (0.0, -90.0)])),
+            geometry: Geometry::MultiPoint(vec![ring(&[(-64.0, 45.0), (0.0, -90.0)])]),
             properties: Properties::default(),
         }];
         assert_eq!(
@@ -379,6 +387,48 @@ mod tests {
             1
         );
         assert!(points.is_empty());
+        // Of a point shape of two parts, as two POINTS blocks give it, the part that does not
+        // reproject is deleted and the other kept, as msProjectShapeEx deletes a part.
+        let mut parts = vec![Feature {
+            id: 0,
+            geometry: Geometry::MultiPoint(vec![ring(&[(-64.0, 45.0)]), ring(&[(0.0, -90.0)])]),
+            properties: Properties::default(),
+        }];
+        assert_eq!(
+            into_the_conic()
+                .features_within(&mut parts, MAX_HORIZON_POINTS)
+                .failed,
+            1
+        );
+        match &parts[..] {
+            [
+                Feature {
+                    geometry: Geometry::MultiPoint(kept),
+                    ..
+                },
+            ] => {
+                // The island, where it lands as a point of its own.
+                let mut island = vec![Feature {
+                    id: 0,
+                    geometry: Geometry::Point(ring(&[(-64.0, 45.0)])[0]),
+                    properties: Properties::default(),
+                }];
+                into_the_conic().features_within(&mut island, MAX_HORIZON_POINTS);
+                let Geometry::Point(at) = island[0].geometry else {
+                    panic!("{island:?}");
+                };
+                assert_eq!(kept, &[vec![at]]);
+            }
+            other => panic!("{other:?}"),
+        }
+        // A point shape of no parts, an inline feature without POINTS, is kept.
+        let mut empty = vec![Feature {
+            id: 0,
+            geometry: Geometry::MultiPoint(Vec::new()),
+            properties: Properties::default(),
+        }];
+        into_the_conic().features_within(&mut empty, MAX_HORIZON_POINTS);
+        assert_eq!(empty.len(), 1);
     }
 
     #[test]

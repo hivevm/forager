@@ -131,6 +131,30 @@ fn a_feature_that_is_no_circle_draws_nothing_and_the_others_draw() {
 }
 
 #[test]
+fn a_feature_of_two_points_blocks_of_a_point_each_draws_nothing() {
+    // loadFeature adds each POINTS block as a part of the shape (msAddLine), and
+    // circleLayerDrawShape draws only a shape of one part of two points: the two points of the
+    // first circle above, written as two blocks, draw nothing, and the layer warns of them.
+    let two_blocks = InlineFeature {
+        parts: vec![vec![[20.0, 20.0]], vec![[40.0, 40.0]]],
+        ..feature(&[])
+    };
+    let rendered = rendered(&map(vec![two_blocks]));
+    assert_eq!(
+        reports(&rendered),
+        [(
+            "geometry-not-drawn",
+            "layer `circles` cannot draw 1 multipoint geometry in its render mode"
+        )]
+    );
+    let image = rendered.image.unwrap();
+    assert!(
+        (0..101).all(|y| (0..101).all(|x| image.pixel(x, y) == Some(WHITE))),
+        "nothing drawn"
+    );
+}
+
+#[test]
 fn a_style_of_a_geomtransform_draws_its_circle_unwarned() {
     // circleLayerDrawShape draws every style in its scale range, whatever its GEOMTRANSFORM,
     // before msDrawShape would look at one.

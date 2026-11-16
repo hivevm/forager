@@ -22,9 +22,12 @@ reproject is cut at the horizon, found by halving each side to it down to 0.01 u
 on in a new part after the shape's others, a ring is closed along the horizon, and after a run of
 no more than three such points its points move after the shape's other lines. Into longitude and
 latitude from a projected layer, a vertex more than 180° from the one before is wrapped by 360°
-where `msTestNeedWrap` finds the segment crossing the dateline. The points of a point shape are
-reprojected by `msProjectLineEx`: all are left out where one does not reproject, except into
-longitude and latitude from a projected layer, where such a point stays where it was. A warning
+where `msTestNeedWrap` finds the segment crossing the dateline. Each part of a point shape is
+reprojected by `msProjectLineEx`: the part is left out where one of its points does not
+reproject, and the shape where no part is left, except into longitude and latitude from a
+projected layer, where such a point stays where it was and a point more than 180° from the
+part's first is wrapped. Only an inline feature has a point shape of several parts, one per
+`POINTS` block. A warning
 names the layer and how many points did not reproject (Q-3), and the points the horizon search adds
 are bounded per layer (Q-9). `+over` keeps a longitude past ±180° on the way in and out.
 Two parts of MapServer's reprojection are not ported, and each is stated. MapServer cuts the lines

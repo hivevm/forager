@@ -56,9 +56,11 @@ they were written, each whose bounds meet the extent drawn, edges included
 -1` that `msInitShape` gives it. `msComputeBounds` folds the points by `MS_MIN` and `MS_MAX`:
 a last vertex of no number makes the bounds no number, which `msRectOverlap` lets through, and an
 earlier one drops the vertices before it, the bounds those of the rest. A point shape of one
-point is delivered as a point and any other as a multipoint, a line shape of one part as a line
-and any other as a multi-line, and a polygon shape as one polygon of all its parts, as a
-shapefile's records are.
+point is delivered as a point and any other as a multipoint of its parts, a line shape of one part
+as a line and any other as a multi-line, and a polygon shape as one polygon of all its parts, as a
+shapefile's records are. Each `POINTS` block is a part, as `loadFeature` adds it (`msAddLine`). A
+point layer draws a marker at every point of every part, but a circle layer draws only a shape of
+one part of two points, so two blocks of a point each draw no circle.
 
 **Item names.** A feature's values are named by the layer's first `PROCESSING` whose key is
 `ITEMS`, without regard to case, followed by `=` or `:` (`msLayerGetItems`, GDAL's

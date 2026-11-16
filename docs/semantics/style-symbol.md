@@ -207,13 +207,14 @@ fails nothing. `buffer` fails, with "Executing buffer failed", where `msGEOSShap
 no geometry or GEOS cannot build one, as for `simplify`, and on a distance that is no finite number,
 for which `GEOSBuffer_r` returns none. The engine also fails `buffer` on a shape with a coordinate
 that is no finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon
-of its own. The engine treats a geometry collection, or a multipoint, whose parts the IR does not
-keep, the same way. MapServer fails `msGeomTransformShape` on these: `msDrawVectorLayer` returns a
-failure (`src/mapdraw.c`, 1427–1434), and `msDrawMap` frees the image and returns none (508–519), so
-MapServer makes no map at all. Forager deviates: the layer draws nothing, with the warning, and the
-rest of the map is drawn. `msDrawVectorLayer` reads no shape past the first whose class it finds
-beyond the layer's `MAXFEATURES` (`src/mapdraw.c:1282-1286`), so a shape past it, or one the filter
-leaves out, is never transformed and fails nothing. A layer draws nothing, with
+of its own. The engine treats a geometry collection the same way. MapServer fails
+`msGeomTransformShape` on these: `msDrawVectorLayer` returns a failure (`src/mapdraw.c`, 1427–1434),
+and `msDrawMap` frees the image and returns none (508–519), so MapServer makes no map at all.
+Forager deviates: the layer draws nothing, with the warning, and the rest of the map is drawn. A
+layer draws nothing on a multipoint likewise, with the warning, as the engine's transforms do not
+yet take one, where MapServer transforms it. `msDrawVectorLayer` reads no shape past the first whose
+class it finds beyond the layer's `MAXFEATURES` (`src/mapdraw.c:1282-1286`), so a shape past it, or
+one the filter leaves out, is never transformed and fails nothing. A layer draws nothing, with
 `geomtransform-over-limit`, where its transforms add more than 1,000,000 points or visit more than
 100,000,000; the smoothing passes and the tests of `outer` and `inner` count as visits, and so does
 what `simplify` visits: the inner points of each section its Douglas-Peucker scans, charged as it
@@ -225,12 +226,12 @@ turns by, a half turn at each end of a line, and a whole one about a point; thos
 of each point's offset segments on each side count as visits. After it, the points of its result
 beyond those of its shape and those arcs count as added too. A vertex's turn is counted whatever
 side of it the buffer rounds, so the charge may come to twice what the buffer adds: a jagged shape
-of about 17,000 sharp vertices passes the bound on its own, where MapServer buffers it.
-The validity test is charged the square of a simplified ring's segments, so a polygon whose
-simplified ring keeps more than about 10,000 points passes the bound alone and its layer draws
-nothing, where MapServer draws it. In its worst case, as on a zigzag of falling amplitude, the
-Douglas-Peucker scans about n²/2 points for a part of n points kept, so such a line of more than
-about 14,000 points passes the bound too, and its layer draws nothing.
+of about 17,000 sharp vertices passes the bound on its own, where MapServer buffers it. The validity
+test is charged the square of a simplified ring's segments, so a polygon whose simplified ring keeps
+more than about 10,000 points passes the bound alone and its layer draws nothing, where MapServer
+draws it. In its worst case, as on a zigzag of falling amplitude, the Douglas-Peucker scans about
+n²/2 points for a part of n points kept, so such a line of more than about 14,000 points passes the
+bound too, and its layer draws nothing.
 
 **A class style's expression.** On a line or a polygon layer, `lineLayerDrawShape` and
 `polygonLayerDrawShape` (`src/mapdraw.c:2140-2148`, `2304-2311`) hand a class style's expression,

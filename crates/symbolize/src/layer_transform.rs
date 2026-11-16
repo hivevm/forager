@@ -210,7 +210,8 @@ impl Shape {
             Geometry::MultiPolygon(polygons) => (Kind::Polygon, polygons.concat()),
             Geometry::MultiPoint(_) => {
                 return Err(Undrawn::Failed(
-                    "is not drawn on a multipoint, whose parts the engine does not keep".to_owned(),
+                    "is not drawn on a multipoint, which the layer's transforms do not yet take"
+                        .to_owned(),
                 ));
             }
             Geometry::Collection(_) => {
@@ -224,7 +225,8 @@ impl Shape {
     }
 
     /// The geometry of the shape: a polygon of all its rings, a line string of a line of one
-    /// part, a multi-line string of any other, a point of one point, a multipoint of more.
+    /// part, a multi-line string of any other, a point of one point in one part, a multipoint of
+    /// its parts otherwise.
     fn into_geometry(self) -> Geometry {
         let mut parts = self.parts;
         match self.kind {
@@ -233,7 +235,7 @@ impl Shape {
             Kind::Line => Geometry::MultiLineString(parts),
             Kind::Point => match parts.as_slice() {
                 [part] if part.len() == 1 => Geometry::Point(part[0]),
-                _ => Geometry::MultiPoint(parts.concat()),
+                _ => Geometry::MultiPoint(parts),
             },
         }
     }

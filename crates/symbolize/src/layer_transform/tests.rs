@@ -485,7 +485,7 @@ fn numbers_are_computed_as_the_rules_of_math_exp_compute_them() {
 
 #[test]
 fn a_multipoint_or_a_collection_is_refused() {
-    let multipoint = Geometry::MultiPoint(coords(&[(0.0, 0.0), (1.0, 1.0)]));
+    let multipoint = Geometry::MultiPoint(vec![coords(&[(0.0, 0.0), (1.0, 1.0)])]);
     let generalized = generalize(TransformShape::Shape, n(1.0));
     let why = failed(apply(&generalized, &multipoint));
     assert!(why.contains("multipoint"), "{why}");

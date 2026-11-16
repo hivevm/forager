@@ -55,7 +55,7 @@ fn every_shape_type_mapserver_reads_is_read_as_its_geometry() {
             &measured(MULTIPOINT, multipoint(LINE), 2),
         );
         assert_eq!(ids(&multi), [0, 2], "type {}", MULTIPOINT + offset);
-        assert_eq!(multi[0].geometry, Geometry::MultiPoint(coords(LINE)));
+        assert_eq!(multi[0].geometry, Geometry::MultiPoint(vec![coords(LINE)]));
 
         let arc = read_as(ARC + offset, &measured(ARC, lines(ARC, &[LINE]), 2));
         assert_eq!(arc[0].geometry, Geometry::LineString(coords(LINE)));
@@ -120,7 +120,7 @@ fn an_arc_or_polygon_of_no_parts_is_a_shape_without_lines() {
     let polygon = read_as(POLYGON, &raw_lines(POLYGON, BOUNDS, &[], &[]));
     assert_eq!(polygon[0].geometry, Geometry::Polygon(vec![]));
     let multi = read_as(MULTIPOINT, &multipoint(&[]));
-    assert_eq!(multi[0].geometry, Geometry::MultiPoint(vec![]));
+    assert_eq!(multi[0].geometry, Geometry::MultiPoint(vec![vec![]]));
 }
 
 #[test]

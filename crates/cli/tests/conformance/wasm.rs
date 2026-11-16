@@ -105,7 +105,7 @@ fn parts(geometry: &Geometry) -> Option<(ShapeType, Vec<Vec<[f64; 2]>>)> {
     let line = |coords: &Vec<forager_style_ir::Coord>| coords.iter().map(|c| [c.x, c.y]).collect();
     Some(match geometry {
         Geometry::Point(c) => (ShapeType::Point, vec![vec![[c.x, c.y]]]),
-        Geometry::MultiPoint(cs) => (ShapeType::Point, vec![line(cs)]),
+        Geometry::MultiPoint(parts) => (ShapeType::Point, parts.iter().map(line).collect()),
         Geometry::LineString(cs) => (ShapeType::Line, vec![line(cs)]),
         Geometry::MultiLineString(ls) => (ShapeType::Line, ls.iter().map(line).collect()),
         Geometry::Polygon(rings) => (ShapeType::Polygon, rings.iter().map(line).collect()),

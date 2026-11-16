@@ -151,7 +151,8 @@ content.
   start names (`points_are_taken_in_sequence_from_the_first_whatever_a_part_starts_at`). An arc of
   one part is a `LineString`, of more a `MultiLineString`; a polygon is one `Polygon` of all its
   parts as rings, in order, which the renderer fills even-odd. A record of no parts is a shape
-  without lines, delivered as an empty geometry, as a multipoint of no points is
+  without lines, delivered as an empty geometry; a multipoint of no points is one part of no
+  points, as `msSHPReadShape` gives it, which draws nothing either
   (`an_arc_or_polygon_of_no_parts_is_a_shape_without_lines`).
 - Every other shape type reads every record as no shape
   (`a_shape_type_mapserver_does_not_read_yields_no_feature`).
