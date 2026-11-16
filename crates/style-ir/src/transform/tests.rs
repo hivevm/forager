@@ -36,7 +36,7 @@ fn round_trip(tree: &TransformTree) -> String {
 
 #[test]
 fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
-    // Verifies: ADR-0043
+    // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt
     let cases = [
         (
             TransformTree::Drawn(TransformShape::Shape),
@@ -72,6 +72,10 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
             r#"{"op":"simplify","args":[{"op":"shape","args":[]},25.0]}"#,
         ),
         (
+            TransformTree::Drawn(TransformShape::Simplifypt(shape(), num(50.0))),
+            r#"{"op":"simplifypt","args":[{"op":"shape","args":[]},50.0]}"#,
+        ),
+        (
             TransformTree::Drawn(TransformShape::Buffer(shape(), num(-1.0))),
             r#"{"op":"buffer","args":[{"op":"shape","args":[]},-1.0]}"#,
         ),
@@ -102,11 +106,10 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
 
 #[test]
 fn every_not_drawn_reason_reads_and_writes_by_its_name() {
-    // Verifies: ADR-0043
+    // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt
     let reasons = [
         (NotDrawn::Centerline, "centerline"),
         (NotDrawn::Difference, "difference"),
-        (NotDrawn::Simplifypt, "simplifypt"),
         (NotDrawn::Javascript, "javascript"),
         (NotDrawn::Length, "length"),
         (NotDrawn::Area, "area"),
@@ -122,10 +125,10 @@ fn every_not_drawn_reason_reads_and_writes_by_its_name() {
         assert_eq!(round_trip(&tree), format!(r#"{{"not_drawn":"{name}"}}"#));
         assert_eq!(reason.name(), name);
     }
-    // `simplify` and `buffer` left the list when their nodes landed: the tree itself no longer
-    // reads them as reasons, which the style document's reader of a newer minor turns into
-    // `syntax`.
-    for gone in ["simplify", "buffer"] {
+    // `simplify`, `buffer`, and `simplifypt` left the list when their nodes landed: the tree
+    // itself no longer reads them as reasons, which the style document's reader of a newer minor
+    // turns into `syntax`.
+    for gone in ["simplify", "buffer", "simplifypt"] {
         let json = format!(r#"{{"not_drawn":"{gone}"}}"#);
         assert!(
             serde_json::from_str::<TransformTree>(&json).is_err(),

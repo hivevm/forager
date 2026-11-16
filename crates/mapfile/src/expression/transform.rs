@@ -15,12 +15,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! Translates a `GEOMTRANSFORM` expression into its transform tree
-//! (ADR-0043): `[shape]`, and `generalize`,
-//! `densify`, `simplify`, `buffer`, `outer`, `inner`, and `smoothsia` of a shape, their numbers written,
-//! `[map_cellsize]`, or computed of those, each operation without `[map_cellsize]` folded at
-//! load. An expression the grammar parses that holds
-//! any other construct is the tree `not_drawn`, naming the first such construct in reading order;
-//! one it does not parse is `not_drawn: syntax`, with a warning at its place.
+//! (ADR-0043, ADR-draft-transform-tree-with-simplifypt): `[shape]`, and `generalize`, `densify`,
+//! `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia` of a shape, their numbers
+//! written, `[map_cellsize]`, or computed of those, each operation without `[map_cellsize]` folded
+//! at load. An expression the grammar parses that holds any other construct is the tree
+//! `not_drawn`, naming the first such construct in reading order; one it does not parse is
+//! `not_drawn: syntax`, with a warning at its place.
 //!
 //! The parser reads the whole expression, the arguments of a function the tree has no node for
 //! among it, so that a syntax error anywhere is found. It counts each node of the tree it builds
@@ -234,11 +234,9 @@ impl Parser<'_> {
         let not_drawn = match name {
             "centerline" => Some(NotDrawn::Centerline),
             "difference" => Some(NotDrawn::Difference),
-            "simplifypt" => Some(NotDrawn::Simplifypt),
             "javascript" => Some(NotDrawn::Javascript),
-            "generalize" | "densify" | "simplify" | "buffer" | "outer" | "inner" | "smoothsia" => {
-                None
-            }
+            "generalize" | "densify" | "simplify" | "simplifypt" | "buffer" | "outer" | "inner"
+            | "smoothsia" => None,
             // msTokenizeExpression reads `fromtext('WKT')` into a shape of the mapfile's text,
             // which the tree cannot hold: `(`, a string, and `)`, or it fails the parse.
             "fromtext" => {
@@ -269,6 +267,7 @@ impl Parser<'_> {
                     ("generalize", Some(s), Some(n)) => Some(TransformShape::Generalize(s, n)),
                     ("densify", Some(s), Some(n)) => Some(TransformShape::Densify(s, n)),
                     ("simplify", Some(s), Some(n)) => Some(TransformShape::Simplify(s, n)),
+                    ("simplifypt", Some(s), Some(n)) => Some(TransformShape::Simplifypt(s, n)),
                     ("buffer", Some(s), Some(n)) => Some(TransformShape::Buffer(s, n)),
                     _ => None,
                 }

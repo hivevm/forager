@@ -1,5 +1,6 @@
 //! The transform tree: a `GEOMTRANSFORM` expression of a layer or of a class's style as a typed
-//! tree of its shape functions, serialized in the shape of CQL2-JSON (ADR-0043).
+//! tree of its shape functions, serialized in the shape of CQL2-JSON (ADR-0043, and its successor
+//! ADR-draft-transform-tree-with-simplifypt).
 //! The mapfile frontend alone translates MapServer's text into it; the tree holds no text of the
 //! mapfile, and a transform the engine does not draw is the whole tree `{"not_drawn": reason}`.
 
@@ -28,6 +29,8 @@ pub enum TransformShape {
     Densify(Box<TransformShape>, TransformNumber),
     /// `simplify(shape, tolerance)`: GEOS's Douglas-Peucker simplification.
     Simplify(Box<TransformShape>, TransformNumber),
+    /// `simplifypt(shape, tolerance)`: GEOS's topology-preserving simplification.
+    Simplifypt(Box<TransformShape>, TransformNumber),
     /// `buffer(shape, distance)`: GEOS's buffer with 30 segments a quadrant, outward for a
     /// positive distance and inward for a negative one.
     Buffer(Box<TransformShape>, TransformNumber),
@@ -94,7 +97,6 @@ pub enum Preprocessing {
 pub enum NotDrawn {
     Centerline,
     Difference,
-    Simplifypt,
     Javascript,
     Length,
     Area,
@@ -118,7 +120,6 @@ impl NotDrawn {
         match self {
             NotDrawn::Centerline => "centerline",
             NotDrawn::Difference => "difference",
-            NotDrawn::Simplifypt => "simplifypt",
             NotDrawn::Javascript => "javascript",
             NotDrawn::Length => "length",
             NotDrawn::Area => "area",
@@ -165,6 +166,7 @@ impl TransformTree {
                     TransformShape::Generalize(shape, number)
                     | TransformShape::Densify(shape, number)
                     | TransformShape::Simplify(shape, number)
+                    | TransformShape::Simplifypt(shape, number)
                     | TransformShape::Buffer(shape, number),
                 ) => {
                     pending.push((Node::Shape(shape), below));
@@ -263,6 +265,11 @@ impl Serialize for TransformShape {
             TransformShape::Simplify(shape, number) => call(
                 serializer,
                 "simplify",
+                &[Arg::Shape(shape), Arg::Number(number)],
+            ),
+            TransformShape::Simplifypt(shape, number) => call(
+                serializer,
+                "simplifypt",
                 &[Arg::Shape(shape), Arg::Number(number)],
             ),
             TransformShape::Buffer(shape, number) => call(
@@ -415,6 +422,7 @@ const SHAPE_FUNCTIONS: &[&str] = &[
     "generalize",
     "densify",
     "simplify",
+    "simplifypt",
     "buffer",
     "outer",
     "inner",
@@ -444,7 +452,7 @@ fn shape<E: de::Error>(node: Read) -> Result<TransformShape, E> {
     };
     let transformed = match op.as_str() {
         "shape" => TransformShape::Shape,
-        "generalize" | "densify" | "simplify" | "buffer" => {
+        "generalize" | "densify" | "simplify" | "simplifypt" | "buffer" => {
             let inner = shape_arg(&mut args)?;
             let number = args
                 .next()
@@ -455,6 +463,7 @@ fn shape<E: de::Error>(node: Read) -> Result<TransformShape, E> {
                 "generalize" => TransformShape::Generalize(inner, number),
                 "densify" => TransformShape::Densify(inner, number),
                 "simplify" => TransformShape::Simplify(inner, number),
+                "simplifypt" => TransformShape::Simplifypt(inner, number),
                 _ => TransformShape::Buffer(inner, number),
             }
         }
@@ -592,7 +601,7 @@ mod schema {
                 "oneOf": [
                     call(&["shape"], &[], 0),
                     call(
-                        &["generalize", "densify", "simplify", "buffer"],
+                        &["generalize", "densify", "simplify", "simplifypt", "buffer"],
                         &[shape.clone(), number.clone()],
                         2,
                     ),

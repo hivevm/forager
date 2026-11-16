@@ -540,7 +540,7 @@ fn simplified(tolerance: f64) -> TransformShape {
 
 #[test]
 fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
-    // Verifies: ADR-0043, ADR-0041
+    // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt, ADR-0041
     // msGEOSSimplify: each part by GEOS's Douglas-Peucker, a part GEOS builds empty dropped from
     // the result by its transformer.
     let parts = Geometry::MultiLineString(vec![
@@ -691,6 +691,112 @@ fn simplify_past_the_points_a_layer_may_visit_is_a_limit() {
     assert!(why.contains("visits more than 100000000 points"), "{why}");
 }
 
+fn preserved(tolerance: f64) -> TransformShape {
+    TransformShape::Simplifypt(shape(), n(tolerance))
+}
+
+#[test]
+fn simplifypt_simplifies_the_parts_of_a_line_together_and_drops_one_without_points() {
+    // Verifies: ADR-draft-transform-tree-with-simplifypt, ADR-draft-simplifypt-ported-from-jts
+    // msGEOSTopologyPreservingSimplify: the parts are the lines of one geometry, so the bend keeps
+    // (10 10), whose flattening would jump the short line; a part GEOS builds empty is dropped.
+    let bend = [(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)];
+    let short = [(9.0, 4.0), (11.0, 4.0)];
+    let parts = Geometry::MultiLineString(vec![coords(&bend), vec![], coords(&short)]);
+    assert_eq!(
+        apply(&preserved(20.0), &parts),
+        Ok(Geometry::MultiLineString(vec![
+            coords(&bend),
+            coords(&short)
+        ]))
+    );
+    // Alone, the bend flattens.
+    assert_eq!(
+        apply(&preserved(20.0), &line(&bend)),
+        Ok(line(&[(0.0, 0.0), (20.0, 0.0)]))
+    );
+    // A point shape is its points, which the simplification keeps.
+    let point = Geometry::Point(c(3.0, 4.0));
+    assert_eq!(apply(&preserved(1.0), &point), Ok(point));
+}
+
+#[test]
+fn simplifypt_simplifies_a_polygon_s_rings_together_and_removes_none() {
+    // Verifies: ADR-draft-transform-tree-with-simplifypt, ADR-draft-simplifypt-ported-from-jts
+    // The hole lies inside the shell by msGetInnerList: dropping the shell's first point would
+    // leave it outside, so the shell keeps it. GEOS 3.12.1 drops it.
+    let shell = [
+        (10.0, -2.0),
+        (20.0, 0.0),
+        (20.0, 20.0),
+        (0.0, 20.0),
+        (0.0, 0.0),
+        (10.0, -2.0),
+    ];
+    let hole = [(9.0, -1.0), (11.0, -1.0), (10.0, -0.5), (9.0, -1.0)];
+    let polygon_with_hole = polygon(&[&shell, &hole]);
+    assert_eq!(
+        apply(&preserved(5.0), &polygon_with_hole),
+        Ok(polygon_with_hole)
+    );
+    // A square at 20 keeps 4 coordinates, where simplify removes it: GEOS gives POLYGON ((10 0,
+    // 0 10, 10 10, 10 0)).
+    let square = polygon(&[&[
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (10.0, 10.0),
+        (10.0, 0.0),
+        (0.0, 0.0),
+    ]]);
+    assert_eq!(
+        apply(&preserved(20.0), &square),
+        Ok(polygon(&[&[
+            (10.0, 0.0),
+            (0.0, 10.0),
+            (10.0, 10.0),
+            (10.0, 0.0)
+        ]]))
+    );
+}
+
+#[test]
+fn simplifypt_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
+    // Verifies: ADR-draft-simplifypt-ported-from-jts
+    // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points, and GEOS's
+    // TopologyPreservingSimplifier refuses a tolerance below 0. Each fails "Executing simplifypt".
+    let why = failed(apply(&preserved(1.0), &line(&[(0.0, 0.0)])));
+    assert!(
+        why.contains("simplifypt on a shape of too few points"),
+        "{why}"
+    );
+    let why = failed(apply(&preserved(-1.0), &line(ELL)));
+    assert!(
+        why.contains("simplifypt with the tolerance -1, below 0"),
+        "{why}"
+    );
+}
+
+#[test]
+fn simplifypt_past_the_points_a_layer_may_visit_is_a_limit() {
+    // Verifies: Q-9, ADR-draft-simplifypt-ported-from-jts
+    // A zigzag of 15,000 points whose amplitude shrinks keeps every point, its sections one point
+    // shorter each: 14,998 * 14,999 / 2 points scanned, past 1e8, and the budget stops it as it
+    // goes.
+    let zigzag = Geometry::LineString(
+        (0..15_000_u32)
+            .map(|i| {
+                let amplitude = f64::from(15_000 - i);
+                c(
+                    f64::from(i),
+                    if i % 2 == 0 { amplitude } else { -amplitude },
+                )
+            })
+            .collect(),
+    );
+    let why = limit(apply(&preserved(0.5), &zigzag));
+    assert!(why.contains("visits more than 100000000 points"), "{why}");
+}
+
 fn buffered(distance: f64) -> TransformShape {
     TransformShape::Buffer(shape(), n(distance))
 }
@@ -705,7 +811,7 @@ fn rings_of(result: Result<Geometry, Undrawn>) -> Vec<Vec<Coord>> {
 
 #[test]
 fn buffer_turns_each_shape_into_a_polygon_as_msgeosbuffer_does() {
-    // Verifies: ADR-0043, ADR-0041
+    // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt, ADR-0041
     // msGEOSBuffer: GEOSBuffer_r of the shape msGEOSShape2Geometry builds, converted back by
     // msGEOSGeometry2Shape, a polygon whatever the shape's type. A point is a circle of 121
     // coordinates; two lines are buffered as one geometry, a part without points dropped; a

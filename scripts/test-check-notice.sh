@@ -178,6 +178,17 @@ expect_check "JTS's notice without THIRD-PARTY-NOTICES.md reproducing it fails" 
 printf '%s\n' "$JTS_NOTICE" > "$jdir/THIRD-PARTY-NOTICES.md"
 expect_check "a port of JTS with its notice, reproduced in THIRD-PARTY-NOTICES.md, passes" \
   "$jdir" 0 "1 JTS's"
+kdir="$(jts_repo jtsjump "$JTS_NOTICE
+// As ComponentJumpChecker.java refuses a jump.")"
+printf '%s\n' "$JTS_NOTICE" > "$kdir/THIRD-PARTY-NOTICES.md"
+expect_check "a port of a JTS source of another copyright line without that line fails" \
+  "$kdir" 1 "follows ComponentJumpChecker.java and lacks its line 'Copyright (c) 2023 Martin Davis.'"
+printf '%s\n' '// Copyright (c) 2023 Martin Davis.' >> "$kdir/crates/symbolize/src/geometry.rs"
+expect_check "THIRD-PARTY-NOTICES.md without that line fails" \
+  "$kdir" 1 "does not reproduce JTS's line 'Copyright (c) 2023 Martin Davis.'"
+printf '%s\n' '// Copyright (c) 2023 Martin Davis.' >> "$kdir/THIRD-PARTY-NOTICES.md"
+expect_check "a port of it with that line, reproduced in THIRD-PARTY-NOTICES.md, passes" \
+  "$kdir" 0 "1 JTS's"
 expect_check "a root that is no directory exits 2" "$work/none" 2 "is not a directory"
 
 if ((failed)); then

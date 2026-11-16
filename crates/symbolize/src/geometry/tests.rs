@@ -5,15 +5,15 @@
 
 use super::*;
 
-fn c(x: f64, y: f64) -> Coord {
+pub(super) fn c(x: f64, y: f64) -> Coord {
     Coord { x, y }
 }
 
-fn coords(points: &[(f64, f64)]) -> Vec<Coord> {
+pub(super) fn coords(points: &[(f64, f64)]) -> Vec<Coord> {
     points.iter().map(|&(x, y)| c(x, y)).collect()
 }
 
-fn bits(points: &[Coord]) -> Vec<(u64, u64)> {
+pub(super) fn bits(points: &[Coord]) -> Vec<(u64, u64)> {
     points
         .iter()
         .map(|p| (p.x.to_bits(), p.y.to_bits()))
@@ -29,10 +29,10 @@ fn area(shell: &[(f64, f64)], holes: &[&[(f64, f64)]]) -> Area {
 
 /// A budget that records each charge, and refuses the first past `limit` visits.
 #[derive(Default)]
-struct Recorder {
-    visits: Vec<usize>,
-    added: Vec<usize>,
-    limit: Option<usize>,
+pub(super) struct Recorder {
+    pub(super) visits: Vec<usize>,
+    pub(super) added: Vec<usize>,
+    pub(super) limit: Option<usize>,
 }
 
 impl Charge for Recorder {
@@ -61,7 +61,7 @@ fn areas(areas: &[Area], tolerance: f64) -> Vec<Area> {
 }
 
 /// The three lines of `testlines.shp`, in map units.
-const TESTLINES: [&[(f64, f64)]; 3] = [
+pub(super) const TESTLINES: [&[(f64, f64)]; 3] = [
     &[
         (-28.106284293591287, 32.95354302414644),
         (-48.43848871542007, 53.88375345838195),
@@ -93,7 +93,7 @@ const TESTLINES: [&[(f64, f64)]; 3] = [
 /// The same lines in the pixels of `renderers/geomtransform-vertex.map`, 500 by 500 over its
 /// extent as msAdjustExtent widens it: x from -170.245673, y down from 173.79891349999997, by a
 /// cellsize of 0.6999307034068136.
-const TESTLINES_PX: [&[(f64, f64)]; 3] = [
+pub(super) const TESTLINES_PX: [&[(f64, f64)]; 3] = [
     &[
         (203.07637315317842, 201.22759266068576),
         (174.02749113833798, 171.32433176305588),
@@ -416,7 +416,7 @@ fn equally_far_points_split_at_the_first_as_geos_splits() {
 /// A zigzag of `n` points whose amplitude shrinks towards its end, so that each section's farthest
 /// point lies beside its first end, and a Douglas-Peucker keeps every point, one section deeper
 /// for each.
-fn zigzag(n: u32) -> Vec<Coord> {
+pub(super) fn zigzag(n: u32) -> Vec<Coord> {
     (0..n)
         .map(|i| {
             let amplitude = f64::from(n - i);

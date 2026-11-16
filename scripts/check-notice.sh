@@ -30,7 +30,9 @@
 # DouglasPeuckerLineSimplifier.java — follows JTS (ADR-0041) and must hold
 # JTS's notice: the copyright line of its sources, and the third condition and the disclaimer of
 # the Eclipse Distribution License 1.0 (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then
-# hold the same lines, as the licence's second condition asks of a binary.
+# hold the same lines, as the licence's second condition asks of a binary. A file that names a JTS
+# source of another copyright line, by the table JTS_SOURCE_COPYRIGHTS of scripts/lib/notice.sh,
+# must hold that line too, and so must THIRD-PARTY-NOTICES.md.
 # Beyond this check's reach are a file that names only a MapServer function, one that names a
 # source without `src/`, one that names a C++ source (`src/map….cpp`), whose holders differ by
 # file, and a port of pnpoly that names neither word.
@@ -57,6 +59,7 @@ proj=0
 proj_failures=0
 jts=0
 jts_failures=0
+jts_lines=()
 while IFS= read -r -d '' file; do
   if grep -qiE '\bmsPointInPolygon\b|\bpnpoly\b' "$file"; then
     pnpoly=$((pnpoly + 1))
@@ -121,6 +124,14 @@ while IFS= read -r -d '' file; do
     echo "ERROR: ${file#"$ROOT"/} follows JTS's source and does not hold JTS's notice" >&2
     jts_failures=$((jts_failures + 1))
   fi
+  for entry in "${JTS_SOURCE_COPYRIGHTS[@]}"; do
+    grep -qF "${entry%%|*}" "$file" || continue
+    jts_lines+=("${entry#*|}")
+    if ! grep -qF "${entry#*|}" "$file"; then
+      echo "ERROR: ${file#"$ROOT"/} follows ${entry%%|*} and lacks its line '${entry#*|}'" >&2
+      jts_failures=$((jts_failures + 1))
+    fi
+  done
 done < <(find "$ROOT/crates/symbolize" -name '*.rs' -not -path '*/target/*' -print0 2>/dev/null)
 
 # A binary carries the notices in THIRD-PARTY-NOTICES.md, pnpoly's condition 2.
@@ -133,6 +144,12 @@ if ((jts)) && { [[ ! -f "$notices" ]] || ! holds_jts "$notices"; }; then
   echo "ERROR: THIRD-PARTY-NOTICES.md does not reproduce JTS's notice" >&2
   jts_failures=$((jts_failures + 1))
 fi
+for line in "${jts_lines[@]}"; do
+  if [[ ! -f "$notices" ]] || ! grep -qF "$line" "$notices"; then
+    echo "ERROR: THIRD-PARTY-NOTICES.md does not reproduce JTS's line '$line'" >&2
+    jts_failures=$((jts_failures + 1))
+  fi
+done
 if ((pnpoly)) && { [[ ! -f "$notices" ]] || ! holds_third_party_notices "$notices"; }; then
   echo "ERROR: THIRD-PARTY-NOTICES.md does not reproduce W. Randolph Franklin's and MapServer's" \
     "notices" >&2

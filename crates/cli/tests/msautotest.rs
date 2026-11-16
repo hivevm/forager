@@ -662,6 +662,22 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm32() {
     // Verifies: ADR-0041
+    zigzag_renders_alike_natively_and_on_wasm32("simplify");
+}
+
+/// The same zigzag through `simplifypt`, whose port of JTS's recursion keeps its sections on a
+/// stack of its own as well (Q-3, G-9).
+#[test]
+#[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
+fn a_zigzag_simplified_with_its_topology_renders_alike_natively_and_on_wasm32() {
+    // Verifies: ADR-draft-simplifypt-ported-from-jts
+    zigzag_renders_alike_natively_and_on_wasm32("simplifypt");
+}
+
+/// A layer of `function` at 0.5 over a zigzag of 6,000 points whose amplitude shrinks, rendered
+/// natively and through the conformance module in wasmi: drawn, without a trap, to the same RGBA
+/// buffer.
+fn zigzag_renders_alike_natively_and_on_wasm32(function: &str) {
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
     let n = 6_000_u32;
@@ -677,12 +693,12 @@ fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm
         .collect();
     let mapfile = format!(
         "MAP SIZE 200 200 EXTENT 0 -6000 6000 6000 \
-         LAYER NAME 'zigzag' TYPE LINE STATUS ON GEOMTRANSFORM (simplify([shape], 0.5)) \
+         LAYER NAME 'zigzag' TYPE LINE STATUS ON GEOMTRANSFORM ({function}([shape], 0.5)) \
          FEATURE POINTS {} END END \
          CLASS STYLE COLOR 0 0 255 END END END END",
         points.join(" ")
     );
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("zigzag");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("zigzag-{function}"));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("zigzag.map");
     std::fs::write(&path, mapfile).unwrap();
@@ -695,7 +711,7 @@ fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm
     let (_, _, pixels) = native.as_ref().expect("the native render");
     assert!(
         pixels.chunks(4).any(|p| p[2] > p[0]),
-        "the simplified zigzag is drawn in blue, not refused"
+        "the {function} zigzag is drawn in blue, not refused"
     );
     let rendered = module
         .render(&document, &files)

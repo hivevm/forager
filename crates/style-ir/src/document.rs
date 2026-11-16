@@ -718,7 +718,7 @@ mod tests {
 
     #[test]
     fn a_transform_tree_past_the_nesting_limit_is_refused_and_one_at_it_reads() {
-        // Verifies: Q-9, ADR-0043
+        // Verifies: Q-9, ADR-0043, ADR-draft-transform-tree-with-simplifypt
         // `densify(shape, n)` over a chain of `+`: densify, its number, and the operators below
         // it, each a level.
         let chained = |depth: usize| {
@@ -779,7 +779,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_function_unsets_the_transform_with_a_warning() {
-        // Verifies: ADR-0043
+        // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt
         // A reader of an older minor unsets an unknown function, and so draws the shapes
         // untransformed: on a layer, and on a class's style.
         let shape = r#"{"op":"shape","args":[]}"#;
@@ -814,7 +814,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_not_drawn_reason_is_read_as_not_drawn_with_a_warning() {
-        // Verifies: ADR-0043
+        // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt
         // A reason added in a minor version fails closed: the transform stays not drawn, on a
         // layer and on a class's style, with a warning naming its path.
         let text = with_transforms(r#"{"not_drawn":"offset"}"#);

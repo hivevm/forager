@@ -2,7 +2,8 @@
 // its parser calls, src/mapparser.y: msGeneralize, src/maputil.c; msDensify, msRings2Shape,
 // msGetOuterList, and msIsOuterRing, src/mapprimitive.cpp; msSmoothShapeSIA and its line window
 // and preprocessing, src/mapsmoothing.c; and msPointInPolygon and msDistancePointToPoint,
-// src/mapsearch.c; msGEOSSimplify, msGEOSBuffer, and the shape's conversion to GEOS's geometry
+// src/mapsearch.c; msGEOSSimplify, msGEOSTopologyPreservingSimplify, msGEOSBuffer, and the
+// shape's conversion to GEOS's geometry
 // and back, msGEOSShape2Geometry and msGEOSGeometry2Shape, src/mapgeos.c; and msGetInnerList,
 // src/mapprimitive.cpp; of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
@@ -21,9 +22,10 @@
 
 //! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0043) replaces the shape of each
 //! feature that passes the layer's filter before it is classed and drawn. The tree holds
-//! `generalize`, `densify`, `simplify`, `buffer`, `outer`, `inner`, and `smoothsia` of `[shape]`,
-//! nested; the frontend has translated MapServer's text into it. `simplify` and `buffer` are
-//! computed by the geometry module (ADR-0041).
+//! `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia`
+//! of `[shape]`, nested; the frontend has translated MapServer's text into it. `simplify` and
+//! `buffer` are computed by the geometry module (ADR-0041), and `simplifypt` by its port of JTS's
+//! topology-preserving simplifier (ADR-draft-simplifypt-ported-from-jts).
 //!
 //! A shape is MapServer's: a type, point, line, or polygon, and a list of parts, a polygon's
 //! rings listed flat, as a source delivers them. What the transforms add or visit is bounded per
@@ -43,9 +45,11 @@ use crate::geometry::{self, Area, Charge};
 pub const MAX_ADDED_POINTS: usize = 1_000_000;
 
 /// The most points one layer's transforms visit beyond reading each once, `smoothsia`'s windows
-/// over its passes, the rings `outer`, `inner`, and `simplify` test each ring against, and the
-/// points `simplify`'s Douglas-Peucker scans and its validity test and repair compare, and the
-/// points `buffer`'s offset curves may hold (Q-9): past it, the layer draws nothing.
+/// over its passes, the rings `outer`, `inner`, `simplify`, and `simplifypt` test each ring against,
+/// the points `simplify`'s Douglas-Peucker scans and its validity test and repair compare, the
+/// points `simplifypt` scans, the segments its indexes examine, and the lines and segments its jump
+/// test compares, and the points `buffer`'s offset curves may hold (Q-9): past it, the layer draws
+/// nothing.
 pub const MAX_TRANSFORM_VISITS: usize = 100_000_000;
 
 /// Why a layer's `GEOMTRANSFORM` draws nothing.
@@ -264,6 +268,10 @@ impl Eval<'_> {
                 let shape = self.shape(inner, shape)?;
                 simplify(shape, self.number(tolerance)?, self.budget)
             }
+            TransformShape::Simplifypt(inner, tolerance) => {
+                let shape = self.shape(inner, shape)?;
+                simplify_preserving(shape, self.number(tolerance)?, self.budget)
+            }
             TransformShape::Buffer(inner, distance) => {
                 let shape = self.shape(inner, shape)?;
                 buffer(&shape, self.number(distance)?, self.budget)
@@ -453,6 +461,56 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
             .flat_map(|area| std::iter::once(area.shell).chain(area.holes))
             .collect(),
     };
+    Ok(Shape {
+        kind: shape.kind,
+        parts,
+    })
+}
+
+/// msGEOSTopologyPreservingSimplify (src/mapgeos.c:946-967): the shape converted to GEOS's
+/// geometry by msGEOSShape2Geometry ([`built`]), simplified by GEOS's topology-preserving
+/// simplifier, and converted back by msGEOSGeometry2Shape (:686-746), as the geometry module
+/// computes it.
+///
+/// - A point shape is its points, which the simplification keeps.
+/// - A line's parts are simplified together; a part without points is dropped.
+/// - A polygon's rings are grouped as [`built`] groups them, and simplified together, each
+///   polygon's shell before its holes. No ring is removed and nothing is repaired.
+///
+/// It fails where [`built`] fails, and on a tolerance below 0, which GEOS refuses after
+/// msGEOSShape2Geometry.
+fn simplify_preserving(
+    shape: Shape,
+    tolerance: f64,
+    budget: &mut Budget,
+) -> Result<Shape, Undrawn> {
+    if is_empty_from_geos(&shape) {
+        return Ok(shape);
+    }
+    let areas = built(&shape, "simplifypt", budget)?;
+    if tolerance < 0.0 {
+        return Err(Undrawn::Failed(format!(
+            "calls simplifypt with the tolerance {tolerance}, below 0, which fails in MapServer"
+        )));
+    }
+    let lines: Vec<geometry::Line<'_>> = match shape.kind {
+        Kind::Point => return Ok(shape),
+        Kind::Line => shape
+            .parts
+            .iter()
+            .filter(|part| !part.is_empty())
+            .map(|points| geometry::Line {
+                points,
+                ring: false,
+            })
+            .collect(),
+        Kind::Polygon => areas
+            .iter()
+            .flat_map(|area| std::iter::once(&area.shell).chain(&area.holes))
+            .map(|points| geometry::Line { points, ring: true })
+            .collect(),
+    };
+    let parts = geometry::simplify_preserving(&lines, tolerance, budget)?;
     Ok(Shape {
         kind: shape.kind,
         parts,

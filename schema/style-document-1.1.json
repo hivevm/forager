@@ -1175,7 +1175,6 @@
           "enum": [
             "centerline",
             "difference",
-            "simplifypt",
             "javascript",
             "length",
             "area",
@@ -2119,6 +2118,7 @@
                 "generalize",
                 "densify",
                 "simplify",
+                "simplifypt",
                 "buffer"
               ]
             }

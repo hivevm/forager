@@ -34,7 +34,8 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0015](adr/0015-expressions-as-cql2.md)), its `GEOMTRANSFORM` expressions, of a layer and
   of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
   no text of the mapfile and is read to the same nesting bound (`transform.rs`,
-  [ADR-0043](adr/0043-transform-tree-with-simplify-and-buffer.md)),
+  [ADR-0043](adr/0043-transform-tree-with-simplify-and-buffer.md),
+  [ADR-draft-transform-tree-with-simplifypt](adr/draft-transform-tree-with-simplifypt.md)),
   the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
@@ -283,7 +284,10 @@ golden path and the test pattern an agent copies from are named here.
   `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
   collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
   geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant
-  (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)). A
+  (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)), and `simplifypt` by a port of
+  JTS's topology-preserving simplifier without recursion and without a spatial index
+  (`geometry/topology.rs`,
+  [ADR-draft-simplifypt-ported-from-jts](adr/draft-simplifypt-ported-from-jts.md)). A
   line style's symbol with a
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and

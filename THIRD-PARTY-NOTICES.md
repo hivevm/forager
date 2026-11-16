@@ -83,12 +83,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 The Douglas-Peucker and the simplification of a polygon in `crates/symbolize/src/geometry.rs`
 follow JTS's `DouglasPeuckerLineSimplifier`, `DouglasPeuckerSimplifier`, `GeometryTransformer`, and
-`Distance`. JTS is offered under the Eclipse Public License 2.0 or the Eclipse Distribution License
-1.0; Forager takes it under the latter, whose second condition asks that a redistribution in binary
-form reproduces the notice here (`scripts/check-notice.sh` holds this):
+`Distance`. The topology-preserving simplification in
+`crates/symbolize/src/geometry/topology.rs` follows JTS's `TopologyPreservingSimplifier`,
+`TaggedLinesSimplifier`, `TaggedLineStringSimplifier`, `TaggedLineString`, `ComponentJumpChecker`,
+`RobustLineIntersector`, `LineIntersector`, `RayCrossingCounter`, `LineSegment`, `Distance`,
+`CoordinateArrays`, and `Envelope`. JTS is offered under the Eclipse Public License 2.0 or the
+Eclipse Distribution License 1.0; Forager takes it under the latter, whose second condition asks
+that a redistribution in binary form reproduces the notice here (`scripts/check-notice.sh` holds
+this):
 
 ```text
 Copyright (c) 2016 Vivid Solutions.
+Copyright (c) 2016 Vivid Solutions, and others.
+Copyright (c) 2023 Martin Davis.
 
 Eclipse Distribution License - v 1.0
 

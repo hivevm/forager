@@ -761,17 +761,17 @@ fn a_bare_keyword_is_no_symbol_name_and_a_quoted_one_is() {
 
 #[test]
 fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load() {
-    // Verifies: ADR-0043
+    // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt
     // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION) keeps the expression; the engine reports
     // it as it draws the layer, so the load does not, but for a syntax error, at its place.
     let (loaded, style) = first_style(
-        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (simplifypt([shape], 5)) END END END END",
+        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (centerline([shape])) END END END END",
     );
     assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
     assert_eq!(
         style.unwrap().geom_transform,
         Some(GeomTransform::Expression(TransformTree::NotDrawn(
-            NotDrawn::Simplifypt
+            NotDrawn::Centerline
         )))
     );
     let (loaded, style) = first_style(
@@ -808,7 +808,7 @@ fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load()
 
 #[test]
 fn a_style_of_buffer_holds_its_node_and_round_trips() {
-    // Verifies: ADR-0043, G-3
+    // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt, G-3
     // The two styles of renderers/polygon-as-line-offset.map: `buffer` is a node of the tree, its
     // distance kept negative as it is written.
     let loaded = load_files(&[(

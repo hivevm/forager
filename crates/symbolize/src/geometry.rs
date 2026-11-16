@@ -41,7 +41,8 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
 // WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//! The geometry of `simplify` and `buffer` (ADR-0041): a line or a polygon simplified as
+//! The geometry of `simplify` and `buffer` (ADR-0041), and of `simplifypt`
+//! (ADR-draft-simplifypt-ported-from-jts) in [`topology`]: a line or a polygon simplified as
 //! GEOS's `DouglasPeuckerSimplifier` simplifies it, and a shape buffered by geo's
 //! `buffer_with_style` with round joins and caps of 30 segments a quadrant, as `GEOSBuffer_r`
 //! buffers it with 30. A line keeps the points of a Douglas-Peucker
@@ -56,6 +57,8 @@
 //! repair returns beyond those it was given; the points a buffer's offset curves may hold, before
 //! it runs, and the points its result holds beyond those it was given.
 
+mod topology;
+
 use std::f64::consts::PI;
 
 use forager_style_ir::Coord;
@@ -64,6 +67,8 @@ use geo::{
     Buffer, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Validation,
     unary_union,
 };
+
+pub(crate) use topology::{Line, simplify_preserving};
 
 /// The angle of one segment of a buffer's round join or cap: 30 segments a quadrant, as
 /// msGEOSBuffer asks of `GEOSBuffer_r`.

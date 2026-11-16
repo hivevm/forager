@@ -433,7 +433,7 @@ mod tests {
             GeomTransform::LabelPoint,
             GeomTransform::LabelPoly,
             GeomTransform::LabelCenter,
-            GeomTransform::Expression(TransformTree::NotDrawn(NotDrawn::Simplifypt)),
+            GeomTransform::Expression(TransformTree::NotDrawn(NotDrawn::Centerline)),
         ] {
             assert!(placed(&transform, &ell(), &view(), IMAGE).is_empty());
         }

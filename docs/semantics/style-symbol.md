@@ -90,9 +90,9 @@ outside the part.
 **A `GEOMTRANSFORM` expression.** An expression of a layer or of a style is read as MapServer's
 lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`, the rules `shape_exp`, `math_exp`,
 and `string_exp`), function names without regard to case, without the parentheses `loadLayer` and
-`loadStyle` strip. The frontend translates it into a transform tree (ADR-0043): `[shape]`, and
-`generalize`, `densify`, `simplify`, `buffer`, `outer`, `inner`, and `smoothsia` of a shape,
-nested. A number
+`loadStyle` strip. The frontend translates it into a transform tree (ADR-0043, and its successor
+ADR-draft-transform-tree-with-simplifypt): `[shape]`, and `generalize`, `densify`, `simplify`,
+`simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia` of a shape, nested. A number
 is written, `[map_cellsize]`, or computed of those by `+ - * / % ^` and parentheses, as the grammar
 reduces them; the frontend folds every operation without `[map_cellsize]` to one number. A unary `-`
 leaves its operand as it is, as the rule `'-' math_exp %prec NEG { $$ = $2; }` does, while `-3`
@@ -106,7 +106,7 @@ other text is none.
 
 An expression the grammar parses that holds any other construct is the tree `not_drawn`, naming the
 first such construct in the expression's reading order: a function the tree lacks, `centerline`,
-`difference`, `simplifypt`, `javascript`, `length`, `area`, or `round`; `binding`, an
+`difference`, `javascript`, `length`, `area`, or `round`; `binding`, an
 attribute where a number or a text is due; `text`, a computed preprocessing of `smoothsia`;
 `fromtext`, a shape read from a text, which the tree cannot hold; or `literal`, an operation of
 literals that folds to no finite number, which a style document cannot carry: a `%` by 0 or of
@@ -153,6 +153,25 @@ engine draws its tree's functions:
   no number keeps every point, as GEOS's comparisons with it are false. A multipolygon's
   member whose shell is removed while one of its holes is kept leaves the hole as a stray line
   in GEOS's result, which turns the shape into a line; Forager removes the member with its holes.
+- `simplifypt(s, t)` (`msGEOSTopologyPreservingSimplify`, `src/mapgeos.c`): `s` as GEOS's
+  topology-preserving simplifier simplifies it at the tolerance `t`, by a port of JTS's
+  `TopologyPreservingSimplifier` (ADR-draft-simplifypt-ported-from-jts). The shape is built as
+  for `simplify`, and a point shape keeps its points. The lines of the shape, each part of a line,
+  or each polygon's shell and then its holes, are simplified together, one after the other in the
+  shape's order. Each is a Douglas-Peucker as for `simplify`, but a section is flattened only
+  where its new segment meets no other segment of the shape, simplified or not yet, in a point
+  interior to either, lies on no equal segment, and carries no other line of the shape to its other
+  side; a line keeps at least 2 points, and a closed one 4. A polygon's ring then loses its first
+  point where it lies within `t` of the segment between its neighbours, the ring holds more than 4
+  coordinates, and the new segment passes the same tests; a closed line keeps its first point. No
+  ring is removed and nothing is repaired. The port follows JTS's `master`, not GEOS 3.12.1, which
+  lacks the test of an equal segment and of a line carried across: where a flattening carries one
+  line of a shape across another, or a hole out of its shell by its ring's first point, MapServer
+  at the pin flattens it and Forager keeps the points. GEOS 3.12.1's results for a polygon with
+  holes also vary from run to run. On the case's lines and on `world_testpoly.shp` the two agree
+  bit for bit. A tolerance that is no number flattens every section the tests allow, as GEOS's
+  comparisons with it are false; a section whose distances are all no number is kept whole where
+  the tests refuse to flatten it, where GEOS would split it again without end.
 - `buffer(s, d)` (`msGEOSBuffer`, `src/mapgeos.c`): `s` as `GEOSBuffer_r` buffers it by the distance
   `d` with 30 segments a quadrant, by geo's buffer with round joins and round caps of π/60
   (ADR-0041). The shape is built as for `simplify`: a point shape is the point, or the multipoint,
@@ -203,11 +222,12 @@ or fails: a tolerance below 0, which GEOS's simplifier refuses; a point shape wi
 whose first part has fewer than 2 points, or a polygon whose first ring has fewer than 4, which
 `msGEOSShape2Geometry` does not convert; and a line's part of 1 point, or a ring of a polygon of
 fewer than 4 points or not closed, which GEOS cannot build; a ring in no polygon is never built and
-fails nothing. `buffer` fails, with "Executing buffer failed", where `msGEOSShape2Geometry` gives
-no geometry or GEOS cannot build one, as for `simplify`, and on a distance that is no finite number,
-for which `GEOSBuffer_r` returns none. The engine also fails `buffer` on a shape with a coordinate
-that is no finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon
-of its own. The engine treats a geometry collection the same way. MapServer fails
+fails nothing. `buffer` fails, with "Executing buffer failed", where `msGEOSShape2Geometry` gives no
+geometry or GEOS cannot build one, as for `simplify`, and on a distance that is no finite number,
+for which `GEOSBuffer_r` returns none. `simplifypt` fails, with "Executing simplifypt failed", where
+`simplify` fails, a tolerance below 0 among them. The engine also fails `buffer` on a shape with a
+coordinate that is no finite number, on which geo's buffer panics; GEOS buffers such a shape into a
+polygon of its own. The engine treats a geometry collection the same way. MapServer fails
 `msGeomTransformShape` on these: `msDrawVectorLayer` returns a failure (`src/mapdraw.c`, 1427–1434),
 and `msDrawMap` frees the image and returns none (508–519), so MapServer makes no map at all.
 Forager deviates: the layer draws nothing, with the warning, and the rest of the map is drawn. A
@@ -220,18 +240,23 @@ one the filter leaves out, is never transformed and fails nothing. A layer draws
 what `simplify` visits: the inner points of each section its Douglas-Peucker scans, charged as it
 goes, the tests that group a polygon's rings, and the pairs of segments and of rings the validity
 test and the repair compare. The points the repair returns beyond those it was given count as added.
-Before `buffer` runs, its offset curves are charged, so that the bounds stop it before it holds
-them: the points of their round joins and caps count as added, one for each step of π/60 a vertex
-turns by, a half turn at each end of a line, and a whole one about a point; those and the two ends
-of each point's offset segments on each side count as visits. After it, the points of its result
-beyond those of its shape and those arcs count as added too. A vertex's turn is counted whatever
-side of it the buffer rounds, so the charge may come to twice what the buffer adds: a jagged shape
-of about 17,000 sharp vertices passes the bound on its own, where MapServer buffers it. The validity
-test is charged the square of a simplified ring's segments, so a polygon whose simplified ring keeps
-more than about 10,000 points passes the bound alone and its layer draws nothing, where MapServer
-draws it. In its worst case, as on a zigzag of falling amplitude, the Douglas-Peucker scans about
-n²/2 points for a part of n points kept, so such a line of more than about 14,000 points passes the
-bound too, and its layer draws nothing.
+So does what `simplifypt` visits: the inner points of each section it scans, each segment its
+indexes hold on each test of a flattening, as it examines every one, and the other lines its test of
+a line carried across compares, with the segments whose crossings it counts. Without a spatial
+index, a wiggling line of about 22,000 points at a tolerance of 1, a ring of 20,000 points at 50, or
+a polygon of about 2,000 holes passes the bound alone, and its layer draws nothing, where MapServer
+draws it. Before `buffer` runs, its offset curves are charged, so that the bounds stop it before it
+holds them: the points of their round joins and caps count as added, one for each step of π/60 a
+vertex turns by, a half turn at each end of a line, and a whole one about a point; those and the two
+ends of each point's offset segments on each side count as visits. After it, the points of its
+result beyond those of its shape and those arcs count as added too. A vertex's turn is counted
+whatever side of it the buffer rounds, so the charge may come to twice what the buffer adds: a
+jagged shape of about 17,000 sharp vertices passes the bound on its own, where MapServer buffers it.
+The validity test is charged the square of a simplified ring's segments, so a polygon whose
+simplified ring keeps more than about 10,000 points passes the bound alone and its layer draws
+nothing, where MapServer draws it. In its worst case, as on a zigzag of falling amplitude, the
+Douglas-Peucker scans about n²/2 points for a part of n points kept, so such a line of more than
+about 14,000 points passes the bound too, and its layer draws nothing.
 
 **A class style's expression.** On a line or a polygon layer, `lineLayerDrawShape` and
 `polygonLayerDrawShape` (`src/mapdraw.c:2140-2148`, `2304-2311`) hand a class style's expression,
