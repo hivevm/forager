@@ -133,8 +133,8 @@ fn an_unknown_symbol_is_a_warning() {
 fn symbols_read_back_equal_from_yaml_and_json() {
     let loaded = load_files(&[("m.map", "MAP SYMBOLSET 's.sym' END"), ("s.sym", SYMBOLS)]);
     let document = loaded.document.unwrap();
-    let yaml = document.to_yaml().unwrap();
-    let json = document.to_json().unwrap();
+    let yaml = document.to_yaml();
+    let json = document.to_json();
     assert_eq!(
         forager_style_ir::StyleDocument::from_yaml(&yaml)
             .unwrap()

@@ -200,15 +200,10 @@ fn read(args: &ReadArgs) -> ExitCode {
     };
     let text = match args.format {
         Format::Yaml => document.to_yaml(),
-        Format::Json => document.to_json().map(|json| json + "\n"),
+        Format::Json => document.to_json() + "\n",
     };
-    match text {
-        Ok(text) => {
-            print!("{text}");
-            ExitCode::SUCCESS
-        }
-        Err(diagnostic) => report(&diagnostic),
-    }
+    print!("{text}");
+    ExitCode::SUCCESS
 }
 
 /// Renders a mapfile with GeoJSON files bound to its layers by name, and writes a PNG.
@@ -237,15 +232,6 @@ fn render(args: &RenderArgs) -> ExitCode {
             ExitCode::FAILURE
         }
     }
-}
-
-#[expect(
-    clippy::print_stderr,
-    reason = "the CLI reports a diagnostic on stderr"
-)]
-fn report(diagnostic: &Diagnostic) -> ExitCode {
-    eprintln!("{diagnostic}");
-    ExitCode::FAILURE
 }
 
 /// The EPSG table a host file supplies (ADR-0019), within the size limit of a source. Each

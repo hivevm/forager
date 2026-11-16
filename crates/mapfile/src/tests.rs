@@ -707,8 +707,8 @@ fn every_expression_reads_back_equal_from_yaml_and_json() {
     )]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     let document = loaded.document.unwrap();
-    let yaml = document.to_yaml().unwrap();
-    let json = document.to_json().unwrap();
+    let yaml = document.to_yaml();
+    let json = document.to_json();
     assert_eq!(
         forager_style_ir::StyleDocument::from_yaml(&yaml)
             .unwrap()
@@ -1247,8 +1247,8 @@ fn scale_ranges_load_on_layers_classes_labels_and_styles() {
         (style.size.clone(), style.min_size, style.max_size),
         (Some(Bound::Value(10.0)), Some(4.0), Some(20.0))
     );
-    let yaml = document.to_yaml().unwrap();
-    let json = document.to_json().unwrap();
+    let yaml = document.to_yaml();
+    let json = document.to_json();
     assert_eq!(
         forager_style_ir::StyleDocument::from_yaml(&yaml)
             .unwrap()
@@ -1766,9 +1766,9 @@ fn a_circle_layer_draws_in_the_render_mode_circle_and_round_trips() {
     let layer = &document.map.layers[0];
     assert_eq!(layer.render_mode, Some(RenderMode::Circle));
     assert_eq!(layer.features[0].shape_type, ShapeType::Point);
-    let yaml = document.to_yaml().unwrap();
+    let yaml = document.to_yaml();
     assert!(yaml.contains("render_mode: circle"), "{yaml}");
-    let json = document.to_json().unwrap();
+    let json = document.to_json();
     let from_yaml = forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap();
     let from_json = forager_style_ir::StyleDocument::from_json(&json).unwrap();
     assert_eq!(from_yaml.document, document);

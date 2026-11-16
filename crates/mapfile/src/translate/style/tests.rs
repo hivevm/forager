@@ -64,8 +64,8 @@ fn bound_style_properties_read_back_equal_from_yaml_and_json() {
     )]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     let document = loaded.document.unwrap();
-    let yaml = document.to_yaml().unwrap();
-    let json = document.to_json().unwrap();
+    let yaml = document.to_yaml();
+    let json = document.to_json();
     assert_eq!(
         forager_style_ir::StyleDocument::from_yaml(&yaml)
             .unwrap()
@@ -421,12 +421,12 @@ fn a_style_of_antialias_false_round_trips() {
     let document = loaded.document.unwrap();
     let styles = &document.map.layers[0].classes[0].styles;
     assert_eq!((styles[0].aliased, styles[1].aliased), (true, false));
-    let yaml = document.to_yaml().unwrap();
+    let yaml = document.to_yaml();
     // The second style, not aliased, writes no field.
     assert_eq!(yaml.matches("aliased").count(), 1, "{yaml}");
     let read = forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap();
     assert_eq!(read.document, document);
-    let json = document.to_json().unwrap();
+    let json = document.to_json();
     assert_eq!(json.matches("\"aliased\"").count(), 1, "{json}");
     let read = forager_style_ir::StyleDocument::from_json(&json).unwrap();
     assert_eq!(read.document, document);
@@ -831,11 +831,11 @@ fn a_style_of_buffer_holds_its_node_and_round_trips() {
     };
     assert_eq!(styles[0].geom_transform, buffer(1.0));
     assert_eq!(styles[1].geom_transform, buffer(-1.0));
-    let yaml = document.to_yaml().unwrap();
+    let yaml = document.to_yaml();
     let read = forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap();
     assert_eq!(read.document, document);
     assert!(read.warnings.is_empty(), "{:?}", read.warnings);
-    let json = document.to_json().unwrap();
+    let json = document.to_json();
     assert!(json.contains(r#""buffer""#), "{json}");
     let read = forager_style_ir::StyleDocument::from_json(&json).unwrap();
     assert_eq!(read.document, document);

@@ -383,9 +383,9 @@ fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
             .ok()
             .and_then(|loaded| loaded.document)
             .unwrap_or_else(|| panic!("{name} does not load; see the G-1 test"));
-        let yaml = first.to_yaml().unwrap();
+        let yaml = first.to_yaml();
         let from_yaml = StyleDocument::from_yaml(&yaml).unwrap().document;
-        let json = from_yaml.to_json().unwrap();
+        let json = from_yaml.to_json();
         let last = StyleDocument::from_json(&json).unwrap().document;
         checked += 1;
         if last != first {
@@ -629,7 +629,7 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
             differences.push(format!("{named}: {why}"));
             continue;
         }
-        let document = StyleDocument::new(map).to_json().unwrap();
+        let document = StyleDocument::new(map).to_json();
         let (native, files) = wasm::native(&document, &base.for_load());
         match module.render(&document, &files) {
             Ok(rendered) => {
@@ -690,7 +690,7 @@ fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm
     let path = ResourcePath::new(&name).unwrap();
     let loaded = forager_cli::now(forager_mapfile::load(&path, &base.for_load(), None)).unwrap();
     let map = loaded.document.expect("the mapfile loads").map;
-    let document = StyleDocument::new(map).to_json().unwrap();
+    let document = StyleDocument::new(map).to_json();
     let (native, files) = wasm::native(&document, &base.for_load());
     let (_, _, pixels) = native.as_ref().expect("the native render");
     assert!(
