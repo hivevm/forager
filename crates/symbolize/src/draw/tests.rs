@@ -17,7 +17,9 @@
 
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{
+    Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Pen, Point, PremultipliedImage,
+};
 use forager_style_ir::{
     Bound, Coord, Extent, GeomTransform, Geometry, RenderMode, Rgba, Style, Symbol, SymbolKind,
     SymbolRef,
@@ -242,7 +244,7 @@ fn bbox_fills_and_outlines_the_bounds_held_by_the_padding_with_symbol_0() {
         DrawOp::Stroke {
             paths,
             color: outline,
-            width,
+            pen: Pen { width, .. },
             ..
         },
     ] = ops.as_slice()
@@ -345,7 +347,7 @@ fn bbox_in_an_outline_pass_pads_by_the_style_the_outline_prepares() {
         DrawOp::Fill { rings, color, .. },
         DrawOp::Stroke {
             color: outline,
-            width,
+            pen: Pen { width, .. },
             ..
         },
     ] = ops.as_slice()
@@ -702,8 +704,7 @@ fn a_multipolygon_is_hatched_as_one_shape() {
 fn stroke(op: &DrawOp) -> (f64, &Dashes, &[Vec<Point>]) {
     match op {
         DrawOp::Stroke {
-            width,
-            dashes,
+            pen: Pen { width, dashes, .. },
             paths,
             ..
         } => (*width, dashes, paths),
@@ -769,12 +770,7 @@ fn at_a_factor_a_point_draws_its_symbol_scaled_and_its_stand_in_square_as_writte
             paths: ring(48.0, 46.0, 60.0, 58.0),
             closed: false,
             color: BLACK,
-            width: 2.0,
-            cap: LineCap::Butt,
-            join: LineJoin::Miter,
-            inner_join: InnerJoin::Miter,
-            dashes: Dashes::default(),
-            antialiased: true,
+            pen: Pen::new(2.0, LineCap::Butt, LineJoin::Miter, InnerJoin::Miter),
         },
     ];
     assert_eq!(drawn(&style, RenderMode::Point, &point, 2.0), expected);

@@ -34,22 +34,13 @@ pub enum DrawOp {
         color: Rgba,
         gamma: Option<f64>,
     },
-    /// Strokes each path; a closed path joins its last point to its first, an open one ends
-    /// in caps at both. The cap, the join, and the dashes are those of MapServer's stroke style,
-    /// its `strokeStyleObj`; how they map onto the rasterizer is the renderer's. The inner join
-    /// is the one MapServer's AGG renderer sets for the stroke, see [`InnerJoin`]. An aliased
-    /// stroke, `antialiased` false, draws every pixel its outline covers at all in the full
-    /// colour, as MapServer's AGG renderer draws a stroke style's `antialiased` false.
+    /// Strokes each path with the pen; a closed path joins its last point to its first, an open
+    /// one ends in caps at both.
     Stroke {
         paths: Vec<Vec<Point>>,
         closed: bool,
         color: Rgba,
-        width: f64,
-        cap: LineCap,
-        join: LineJoin,
-        inner_join: InnerJoin,
-        dashes: Dashes,
-        antialiased: bool,
+        pen: Pen,
     },
     /// Fills the part of the hatch's stroked lines that lies inside its rings.
     Hatch(Hatch),
@@ -103,6 +94,35 @@ pub enum DrawOp {
         tile: Rc<Tile>,
         reach: f64,
     },
+}
+
+/// What a stroke is drawn with. The cap, the join, and the dashes are those of MapServer's stroke
+/// style, its `strokeStyleObj`; how they map onto the rasterizer is the renderer's. The inner join
+/// is the one MapServer's AGG renderer sets for the stroke, see [`InnerJoin`]. An aliased pen,
+/// `antialiased` false, draws every pixel the outline covers at all in the full colour, as
+/// MapServer's AGG renderer draws a stroke style's `antialiased` false.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pen {
+    pub width: f64,
+    pub cap: LineCap,
+    pub join: LineJoin,
+    pub inner_join: InnerJoin,
+    pub dashes: Dashes,
+    pub antialiased: bool,
+}
+
+impl Pen {
+    /// A pen of solid lines, antialiased; a stroke that differs names what differs over it.
+    pub fn new(width: f64, cap: LineCap, join: LineJoin, inner_join: InnerJoin) -> Self {
+        Self {
+            width,
+            cap,
+            join,
+            inner_join,
+            dashes: Dashes::default(),
+            antialiased: true,
+        }
+    }
 }
 
 /// The join on the inner side of a turn, AGG's `inner_join_e`: of its four, the two MapServer's

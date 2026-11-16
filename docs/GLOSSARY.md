@@ -78,6 +78,9 @@ to invent.
   across tile boundaries.
 - **msautotest** — The conformance suite of the MapServer repository: mapfiles, data, and
   reference images.
+- **Pen** — What a stroke of the display list is drawn with: its width, cap, join, inner join,
+  dashes, and whether it is antialiased, as MapServer's `strokeStyleObj` and its AGG renderer set
+  them. The code's `Pen` of `render`; not the pen position of a text path.
 - **Port** — A trait at the edge of the core through which the host supplies data and resources;
   the only place async appears.
 - **Premultiplied image** — The image of a pixmap symbol as a render holds it decoded, each

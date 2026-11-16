@@ -16,7 +16,7 @@
 
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{DrawOp, LineCap, LineJoin, Pen, Point, PremultipliedImage};
 use forager_style_ir::{Bound, Style, Symbol, SymbolKind, SymbolRef};
 
 use crate::bounds::{self, MAX_SIZE};
@@ -131,12 +131,7 @@ fn point_ops<T>(ops: &mut Vec<DrawOp>, at: Point, style: &Style<T>) {
             paths: vec![square],
             closed: true,
             color,
-            width,
-            cap,
-            join,
-            inner_join,
-            dashes: Dashes::default(),
-            antialiased: true,
+            pen: Pen::new(width, cap, join, inner_join),
         });
     }
 }

@@ -46,7 +46,6 @@ mod plan;
 mod reproject;
 mod resource;
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use forager_ports::{
@@ -56,7 +55,7 @@ use forager_ports::{
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
-    Bound, Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
+    Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
     RenderMode, Rgba, Style, Symbol, SymbolKind, TransformTree,
 };
 use forager_symbolize::{
@@ -66,7 +65,6 @@ use forager_symbolize::{
 };
 
 use forager_expr::Evaluator;
-use forager_proj::Geotransform;
 
 use crate::classes::{Binder, Reports, Selector};
 use crate::images::Images;
@@ -79,7 +77,7 @@ pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
 use crate::layer::{
-    Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports, turned_by_map,
+    Rotation, Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports,
 };
 
 pub use crate::labels::CachedLabel;
@@ -156,7 +154,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     };
     let view = &rotation.frame;
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    let mut labels = Labels::new(map, view, &factors, files, (width, height));
+    let mut labels = Labels::new(map, &rotation, &factors, files, (width, height));
     // The images of the render's pixmap symbols, dropped with the render (ADR-0029).
     let mut images = Images::default();
     let mut evaluator = Evaluator::new();
@@ -194,7 +192,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         };
         let (drawable, undrawn) = drawable(mode, &features);
         let selected = selector.select(drawable, &map.symbols);
-        let drawing = Drawing::new(mode, layer, scale, view, centres.as_ref(), map.angle);
+        let drawing = Drawing::new(mode, layer, scale, &rotation, centres.as_ref());
         // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
         // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
         // Any other layer's labels go through the label cache.
@@ -463,11 +461,11 @@ struct Drawing<'a> {
     layer: &'a Layer,
     /// The map's scale, which a style's scale range is compared to.
     scale: f64,
-    view: &'a View,
+    /// The map's rotation: the view of its frame, which the features are drawn in, and the turn
+    /// of a point layer's styles' angles.
+    rotation: &'a Rotation,
     /// The reprojection of a circle layer's centres, where the layer is reprojected.
     centres: Option<&'a reproject::LayerReprojection>,
-    /// The map's `ANGLE`, which turns the angles of a point layer's styles.
-    map_angle: Option<f64>,
 }
 
 impl<'a> Drawing<'a> {
@@ -475,17 +473,15 @@ impl<'a> Drawing<'a> {
         mode: RenderMode,
         layer: &'a Layer,
         scale: f64,
-        view: &'a View,
+        rotation: &'a Rotation,
         centres: Option<&'a reproject::LayerReprojection>,
-        map_angle: Option<f64>,
     ) -> Self {
         Self {
             mode,
             layer,
             scale,
-            view,
+            rotation,
             centres,
-            map_angle,
         }
     }
 
@@ -569,7 +565,8 @@ impl<'a> Drawing<'a> {
     /// (src/mapdraw.c:2062-2105): the markers of a point, then its labels, then the next point's.
     /// It decides the order of a point layer's markers whatever its `LABELCACHE`; a layer of the
     /// label cache draws no label here. On a rotated map, each style's angle is turned by the
-    /// map's (see [`turned_by_map`]), as pointLayerDrawShape turns it for the shape and back.
+    /// map's (see [`Rotation::turned_style`]), as pointLayerDrawShape turns it for the shape and
+    /// back.
     fn draw_points<R: Draw>(
         &self,
         renderer: &mut R,
@@ -582,27 +579,15 @@ impl<'a> Drawing<'a> {
             .iter()
             .filter(|s| classes::in_scale(self.scale, s.min_scale_denom, s.max_scale_denom))
             .map(|style| {
-                let style = self.turned(style);
-                point_markers(&feature.geometry, &style, self.view, canvas)
+                let style = self.rotation.turned_style(style);
+                point_markers(&feature.geometry, &style, &self.rotation.frame, canvas)
             })
             .collect();
-        for (k, point) in points_in_view(self.view, &feature.geometry).enumerate() {
+        for (k, point) in points_in_view(&self.rotation.frame, &feature.geometry).enumerate() {
             for style in &mut markers {
                 draw_items(renderer, feature.id, std::mem::take(&mut style[k]));
             }
             label(renderer, point);
-        }
-    }
-
-    /// `style` with its angle turned by the map's (see [`turned_by_map`]).
-    fn turned<'s>(&self, style: &'s Style) -> Cow<'s, Style> {
-        match style.angle {
-            Some(Bound::Value(angle)) if self.map_angle.is_some() && angle != 0.0 => {
-                let mut style = style.clone();
-                style.angle = Some(Bound::Value(turned_by_map(angle, self.map_angle)));
-                Cow::Owned(style)
-            }
-            _ => Cow::Borrowed(style),
         }
     }
 
@@ -626,7 +611,7 @@ impl<'a> Drawing<'a> {
             }
             for style in styles {
                 if classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
-                    let ops = circle_ops(circle, style, self.view, canvas);
+                    let ops = circle_ops(circle, style, &self.rotation.frame, canvas);
                     draw_items(renderer, feature.id, ops);
                 }
             }
@@ -666,7 +651,14 @@ impl<'a> Drawing<'a> {
                 return;
             }
             for &pass in passes {
-                let ops = draw_ops(mode, &feature.geometry, style, pass, self.view, canvas);
+                let ops = draw_ops(
+                    mode,
+                    &feature.geometry,
+                    style,
+                    pass,
+                    &self.rotation.frame,
+                    canvas,
+                );
                 draw_items(renderer, feature.id, ops);
                 if let Some(why) = canvas.take_style_tree_failure() {
                     failures.entry((class, place)).or_insert(why);
@@ -750,57 +742,6 @@ fn prepare(
     let rotation = Rotation::of(map, &view, (width, height), diagnostics)?;
     let (scale, factors) = classes::scales(map, &view, rotation.geo_cellsize, width);
     Some((width, height, scale, factors, rotation))
-}
-
-/// The rotation of a map by its `angle` (ADR-0045).
-struct Rotation {
-    /// The view everything after the reprojection is drawn in: on a rotated map, the frame of its
-    /// image, `0, 0, width, height` at a cellsize of 1, as msMapSetFakedExtent fakes it.
-    frame: View,
-    /// The map's geotransform, held on the map's side of every reprojection; none unrotated.
-    geotransform: Option<Geotransform>,
-    /// The cellsize the scale factor of a size in units other than pixels divides by.
-    geo_cellsize: f64,
-}
-
-impl Rotation {
-    /// The rotation of `map` in `view`, its image of `size`: none for an angle of 0 or none, as
-    /// msMapSetRotation sets none; `None`, with an error, where the angle gives no geotransform.
-    fn of(
-        map: &Map,
-        view: &View,
-        size: (u32, u32),
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> Option<Self> {
-        let unrotated = Self {
-            frame: *view,
-            geotransform: None,
-            geo_cellsize: view.cellsize,
-        };
-        let Some(angle) = map.angle.filter(|&angle| angle != 0.0) else {
-            return Some(unrotated);
-        };
-        let (width, height) = size;
-        let Some(geotransform) = Geotransform::rotated_map(&view.extent, width, height, angle)
-        else {
-            let message = format!("the map's EXTENT, SIZE, and ANGLE {angle} give no geotransform");
-            diagnostics.push(Diagnostic::error("view-invalid", message, map.span.clone()));
-            return None;
-        };
-        Some(Self {
-            frame: View {
-                extent: Extent {
-                    min_x: 0.0,
-                    min_y: 0.0,
-                    max_x: f64::from(width),
-                    max_y: f64::from(height),
-                },
-                cellsize: 1.0,
-            },
-            geotransform: Some(geotransform),
-            geo_cellsize: classes::rotated_geo_cellsize(&view.extent, width, height),
-        })
-    }
 }
 
 /// Whether [`render`] reads the features of `layer`: one shown, of a TYPE it draws, from its

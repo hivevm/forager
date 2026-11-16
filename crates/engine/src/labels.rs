@@ -33,7 +33,7 @@ use forager_style_ir::c::{DEG_TO_RAD, c_str, int_cast, ms_nint};
 use forager_style_ir::{
     Diagnostic, Expr, LabelMarker, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style,
 };
-use forager_symbolize::{Factors, Pixmaps, Refusals, View, marker_size_of};
+use forager_symbolize::{Factors, Pixmaps, Refusals, marker_size_of};
 
 use crate::classes::{self, Binder};
 use crate::fonts::Fonts;
@@ -42,8 +42,7 @@ use crate::label_binding::{BoundLabel, Fixed, bind, fixed};
 use crate::label_cache::{self, LabelAt, index, push};
 use crate::label_styles::{self, LabelStyles, Placed, Styled, StylesOf};
 use crate::layer::{
-    draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
-    turned_by_map,
+    Rotation, draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
 };
 use crate::marker_glyphs::MarkerGlyphs;
 
@@ -222,7 +221,9 @@ struct Annotation {
 /// box are built only when it is placed and drawn.
 pub(crate) struct Labels<'r, L> {
     map: &'r Map,
-    view: &'r View,
+    /// The map's rotation: the view of its frame, which the labels are laid out in, and the
+    /// turn of their angles.
+    rotation: &'r Rotation,
     /// The factors of each layer, by its index, which its labels inherit.
     factors: &'r [Factors],
     files: &'r L,
@@ -265,18 +266,18 @@ pub(crate) struct Labels<'r, L> {
 pub(crate) type Labelled<'a> = (&'a Feature, usize, Option<&'a Style>);
 
 impl<'r, L: ResourceLoader> Labels<'r, L> {
-    /// The labels of a render of `map` in `view` at `factors`, each layer's by its index, their
-    /// fonts read through `files`, in an image of `size`.
+    /// The labels of a render of `map` by `rotation`, in the view of its frame, at `factors`,
+    /// each layer's by its index, their fonts read through `files`, in an image of `size`.
     pub(crate) fn new(
         map: &'r Map,
-        view: &'r View,
+        rotation: &'r Rotation,
         factors: &'r [Factors],
         files: &'r L,
         size: (u32, u32),
     ) -> Self {
         Self {
             map,
-            view,
+            rotation,
             factors,
             files,
             fonts: Fonts::default(),
@@ -334,7 +335,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                        LABELCACHE OFF, and which are not drawn yet";
         let labels = self.settle_layer(index, RenderMode::Point, drawn, binder, several);
         let (width, height) = self.size;
-        let mut styled = Styled::new(self.map, self.view, self.factors, pixmaps, width, height);
+        let mut styled = Styled::new(
+            self.map,
+            &self.rotation.frame,
+            self.factors,
+            pixmaps,
+            width,
+            height,
+        );
         if layer_opacity(&self.map.layers[index]).is_some() {
             styled.in_own_image();
         }
@@ -585,19 +593,11 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         Some(laid)
     }
 
-    /// The angle `angle` of the label `at` is drawn and tested at, in degrees: on a rotated map,
-    /// turned by the map's (see [`turned_by_map`]) in a point, line, or polygon layer, as
-    /// pointLayerDrawShape, lineLayerDrawShape, and polygonLayerDrawShape turn it
-    /// (`src/mapdraw.c:2050-2054, 2226-2227, 2324-2326`). The last two never turn it back, so
-    /// that MapServer turns a label once more with each shape; each label here is turned once,
-    /// as a point layer's is.
+    /// The angle `angle` of the label `at` is drawn and tested at, in degrees, turned by the
+    /// map's rotation (see [`Rotation::turned_label`]).
     fn turned(&self, at: LabelAt, angle: f64) -> f64 {
-        match self.map.layers[at.0].render_mode {
-            Some(RenderMode::Point | RenderMode::Line | RenderMode::Polygon) => {
-                turned_by_map(angle, self.map.angle)
-            }
-            _ => angle,
-        }
+        let mode = self.map.layers[at.0].render_mode;
+        self.rotation.turned_label(mode, angle)
     }
 
     /// Lays out `label` of `feature`, its text, lines, and bound properties `annotation`, moved
@@ -900,7 +900,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             self.defs[template.def as usize].marker = marker;
         }
         let mut cached = false;
-        for point in points_in_view(self.view, &feature.geometry) {
+        for point in points_in_view(&self.rotation.frame, &feature.geometry) {
             // The label cache holds at most MAX_LABELS labels a render (Q-9, ADR-0032).
             if self.cached.len() >= MAX_LABELS {
                 let first = self
@@ -1032,7 +1032,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         };
         let (width, height) = self.size;
         let image = [0.0, 0.0, f64::from(width), f64::from(height)];
-        let mut styled = Styled::new(self.map, self.view, self.factors, pixmaps, width, height);
+        let mut styled = Styled::new(
+            self.map,
+            &self.rotation.frame,
+            self.factors,
+            pixmaps,
+            width,
+            height,
+        );
         // The report follows the cache's walk, every member it visits with whether it was drawn.
         let mut walked: Vec<(u32, Option<[f64; 4]>)> = Vec::with_capacity(cached.len());
         let gutter = self.map.label_cache_edge_buffer.unwrap_or(0);
@@ -1357,6 +1364,7 @@ fn is_text(expr: &Expr) -> bool {
 mod tests {
     use forager_ports::{Coord, Properties, ResourcePath, SourceError, Stored};
     use forager_style_ir::{Bound, Class, Extent};
+    use forager_symbolize::View;
 
     use super::*;
     use crate::label_cache::MIN_ROOM;
@@ -1403,7 +1411,8 @@ mod tests {
         };
         let view = View::for_image(extent, 100, 100).unwrap();
         let factors = [Factors::new(1.0, 1.0)];
-        let mut labels = Labels::new(&map, &view, &factors, &NoFiles, (100, 100));
+        let rotation = Rotation::unrotated(view);
+        let mut labels = Labels::new(&map, &rotation, &factors, &NoFiles, (100, 100));
         labels.defs.push(Def {
             at: LabelAt(0, 0, 0),
             buffer: 0,

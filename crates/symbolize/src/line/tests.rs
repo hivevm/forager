@@ -17,7 +17,9 @@
 
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{
+    Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Pen, Point, PremultipliedImage,
+};
 use forager_style_ir::{Bound, LineOffset, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use super::*;
@@ -60,8 +62,7 @@ fn strokes(style: &Style, pass: Pass) -> Vec<(Rgba, f64, Dashes, Vec<Vec<Point>>
         .map(|op| match op {
             DrawOp::Stroke {
                 color,
-                width,
-                dashes,
+                pen: Pen { width, dashes, .. },
                 paths,
                 ..
             } => (color, width, dashes, paths),
@@ -220,9 +221,13 @@ fn a_line_no_wider_than_a_pixel_has_butt_caps_and_bevel_joins_and_inner_joins() 
         line_symbol(&mut ops, line(), &style(width), Pass::Plain, &mut plain());
         match &ops[0] {
             DrawOp::Stroke {
-                cap,
-                join,
-                inner_join,
+                pen:
+                    Pen {
+                        cap,
+                        join,
+                        inner_join,
+                        ..
+                    },
                 ..
             } => (*cap, *join, *inner_join),
             DrawOp::Fill { .. }
@@ -274,8 +279,7 @@ fn strokes_at(style: &Style, factor: f64) -> Vec<DrawOp> {
 fn stroke(op: &DrawOp) -> (f64, &Dashes, &[Vec<Point>]) {
     match op {
         DrawOp::Stroke {
-            width,
-            dashes,
+            pen: Pen { width, dashes, .. },
             paths,
             ..
         } => (*width, dashes, paths),

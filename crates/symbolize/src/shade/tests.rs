@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{
+    Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Pen, Point, PremultipliedImage,
+};
 use forager_style_ir::{Bound, Extent, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use super::*;
@@ -69,7 +71,9 @@ fn a_filled_polygon_is_outlined_at_its_fill_s_alpha() {
     ));
     match &ops[1] {
         DrawOp::Stroke {
-            color, cap, join, ..
+            color,
+            pen: Pen { cap, join, .. },
+            ..
         } => {
             assert_eq!(*color, Rgba { a: 100, ..BLACK });
             assert_eq!((*cap, *join), (LineCap::Round, LineJoin::Round));
@@ -110,9 +114,13 @@ fn a_polygon_s_outline_no_wider_than_a_pixel_bevels_its_inner_joins() {
         assert!(shade(&mut ops, line(), &style, &view, &mut plain()));
         match &ops[1] {
             DrawOp::Stroke {
-                cap,
-                join,
-                inner_join,
+                pen:
+                    Pen {
+                        cap,
+                        join,
+                        inner_join,
+                        ..
+                    },
                 ..
             } => (*cap, *join, *inner_join),
             other => panic!("{other:?}"),
@@ -140,7 +148,10 @@ fn antialias_false_reaches_the_stroke_of_a_line_but_not_the_outline_of_a_fill() 
     let antialiased = |ops: &[DrawOp]| -> Vec<bool> {
         ops.iter()
             .filter_map(|op| match op {
-                DrawOp::Stroke { antialiased, .. } => Some(*antialiased),
+                DrawOp::Stroke {
+                    pen: Pen { antialiased, .. },
+                    ..
+                } => Some(*antialiased),
                 _ => None,
             })
             .collect()
@@ -264,8 +275,7 @@ fn a_hatch_is_bounded_on_the_image_s_own_size_not_one_rebuilt_from_the_extent() 
 fn stroke(op: &DrawOp) -> (f64, &Dashes, &[Vec<Point>]) {
     match op {
         DrawOp::Stroke {
-            width,
-            dashes,
+            pen: Pen { width, dashes, .. },
             paths,
             ..
         } => (*width, dashes, paths),
@@ -565,7 +575,7 @@ fn an_ellipse_over_a_polygon_is_tiled_once_at_the_tile_s_centre_never_seamless()
         [
             DrawOp::Stroke {
                 color,
-                width,
+                pen: Pen { width, .. },
                 closed,
                 ..
             },
