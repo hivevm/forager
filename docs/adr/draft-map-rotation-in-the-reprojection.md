@@ -1,6 +1,6 @@
 # ADR-draft-map-rotation-in-the-reprojection: A map's `ANGLE` is MapServer's geotransform, a step of every layer's reprojection in `proj`, and a rotated map is drawn in the frame of its image
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-16
 - **Deciders:** Markus Brigl
 - **Applies to:** the geotransform of a rotated map in `crates/proj` and its use by the reprojection of a layer's features and of the area asked of its source (`crates/proj/src/rect.rs`, `crates/proj/src/shape.rs`, `crates/engine/src/reproject.rs`), the view, the scale, and the scale factors of a rotated map in `crates/engine` and the `View` of `crates/symbolize/src/extent.rs`
