@@ -59,6 +59,9 @@ pub struct Canvas<'a> {
     /// without them, a class style's tree draws nothing.
     pub(crate) style_trees: Option<StyleTrees>,
     pub(crate) own_image: bool,
+    /// Whether a line shape is clipped before it is drawn, as msDrawShape clips it but for a
+    /// layer of `PROCESSING "POLYLINE_NO_CLIP"`.
+    pub(crate) clip_lines: bool,
 }
 
 /// What a layer's drawing left undrawn, which it reports: how many hatches were refused (Q-9),
@@ -110,6 +113,7 @@ impl<'a> Canvas<'a> {
             glyphs: None,
             style_trees: None,
             own_image: false,
+            clip_lines: true,
         }
     }
 
@@ -163,6 +167,15 @@ impl<'a> Canvas<'a> {
     pub fn with_glyphs(self, glyphs: &'a dyn Glyphs) -> Self {
         Self {
             glyphs: Some(glyphs),
+            ..self
+        }
+    }
+
+    /// The canvas, its line shapes drawn unclipped, as msDrawShape draws those of a line layer of
+    /// `PROCESSING "POLYLINE_NO_CLIP"` (`src/mapdraw.c:1341-1344, 2452`).
+    pub fn with_lines_unclipped(self) -> Self {
+        Self {
+            clip_lines: false,
             ..self
         }
     }

@@ -937,6 +937,10 @@
             "null"
           ],
           "format": "double"
+        },
+        "unclipped_lines": {
+          "description": "Whether a line layer draws its lines as they are where they leave the map's extent,\nMapServer's `PROCESSING \"POLYLINE_NO_CLIP\"`. Otherwise each line is cut to the image grown\nby the widest style of its class before it is drawn, and its dashes and symbols count from\nwhere the cut begins it. Absent, it is false.",
+          "type": "boolean"
         }
       }
     },

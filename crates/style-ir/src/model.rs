@@ -272,6 +272,12 @@ pub struct Layer {
     /// its own labels drawn at once, never cached. Absent, it is false.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub post_label_cache: bool,
+    /// Whether a line layer draws its lines as they are where they leave the map's extent,
+    /// MapServer's `PROCESSING "POLYLINE_NO_CLIP"`. Otherwise each line is cut to the image grown
+    /// by the widest style of its class before it is drawn, and its dashes and symbols count from
+    /// where the cut begins it. Absent, it is false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unclipped_lines: bool,
     /// The most features the layer draws, MapServer's limit of `msLayerGetMaxFeaturesToDraw`:
     /// the layer's `MAXFEATURES`, or its `maxfeaturestodraw` metadata, or the map's, or the output
     /// format's `MAXFEATURESTODRAW`. The features past it, in the order the source returns them and
@@ -310,6 +316,7 @@ impl Default for Layer {
             opacity: None,
             label_cache: true,
             post_label_cache: false,
+            unclipped_lines: false,
             max_features: None,
             geom_transform: None,
             classes: Vec::new(),

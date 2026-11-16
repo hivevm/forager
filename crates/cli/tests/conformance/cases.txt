@@ -566,8 +566,8 @@ renderers/rgba_overlay_res.map rgba_overlay_res.cairo.png out: another output fo
 renderers/style-size.map style_size_binding.png geometry passes
 renderers/style-size.map style_size_fixed.png geometry passes
 renderers/style-size.map style_size_expression.png geometry passes
-renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: symbols turned with the ANGLE of the map
-renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: symbols turned with the ANGLE of the map
+renderers/symbolrot.map symbolrot.png geometry passes
+renderers/symbolrot_negative.map symbolrot.png geometry passes
 renderers/text-shaping.map text_shaping_1.png out: complex script, Hindi
 renderers/text-shaping.map text_shaping_1.cairo.png out: another output format, cairopng
 renderers/text-shaping.map text_shaping_1.pdf out: another output format, pdf

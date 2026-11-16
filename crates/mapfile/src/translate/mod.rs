@@ -455,9 +455,7 @@ impl Translator<'_> {
                     "SYMBOLSCALE" | "SYMBOLSCALEDENOM" => {
                         layer.symbol_scale_denom = self.number(d, Range::at_least(1.0));
                     }
-                    "PROCESSING" if inline && feature::items_value(d).is_some() => {
-                        self.string(d);
-                    }
+                    "PROCESSING" => self.processing(&mut layer, d, inline),
                     "CONNECTION" | "DATA" => {
                         if let Some(value) = self.string(d) {
                             props.insert(d.keyword.to_ascii_lowercase(), value);
@@ -788,6 +786,20 @@ impl Translator<'_> {
             class.labels.clear();
         }
         class
+    }
+
+    /// A layer's `PROCESSING`: `ITEMS` of an inline layer, read where its features are; and
+    /// `POLYLINE_NO_CLIP`, whatever its value, as msDrawLayer draws a line layer's lines
+    /// unclipped where the key is there (`src/mapdraw.c:1341-1344`). Any other is not supported.
+    fn processing(&mut self, layer: &mut Layer, d: &Directive, inline: bool) {
+        if inline && feature::items_value(d).is_some() {
+            self.string(d);
+        } else if feature::processing_value(d, "POLYLINE_NO_CLIP").is_some() {
+            self.string(d);
+            layer.unclipped_lines = true;
+        } else {
+            self.unhandled_directive(d);
+        }
     }
 
     /// A directive not carried over, unless the parser has already warned that it is unknown.

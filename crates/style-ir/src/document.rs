@@ -425,6 +425,7 @@ mod tests {
                 opacity: Some(50.0),
                 label_cache: false,
                 post_label_cache: true,
+                unclipped_lines: true,
                 max_features: Some(3),
                 geom_transform: Some(sample_transform()),
                 filter: Some(Expr::call(

@@ -1,7 +1,22 @@
+// The turn of a style's or a label's angle by the map's follows pointLayerDrawShape,
+// src/mapdraw.c, of MapServer at the release pinned in scripts/fetch-msautotest.sh.
+// Copyright (c) 1996-2005 Regents of the University of Minnesota.
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+// associated documentation files (the "Software"), to deal in the Software without restriction,
+// including without limitation the rights to use, copy, modify, merge, publish, distribute,
+// sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions: The above copyright notice and this
+// permission notice shall be included in all copies of this Software or works derived from this
+// Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
+// AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 //! What the crate's root and its modules share of a layer drawn, below them all: the layer's
 //! name, and a text, as a diagnostic quotes them, the reports of what the layer left undrawn, its
-//! opacity, the points of a feature in view, a feature drawn in its class's styles, and the
-//! display items of a feature's drawing operations.
+//! opacity, the points of a feature in view, a feature drawn in its class's styles, an angle
+//! turned by the map's, and the display items of a feature's drawing operations.
 
 use std::borrow::Cow;
 
@@ -67,6 +82,17 @@ pub(crate) fn draw_items<R: Draw>(
             op,
             feature_id: Some(feature_id),
         });
+    }
+}
+
+/// `angle`, a style's or a label's in degrees, turned by `map_angle`, the map's `ANGLE`, as
+/// pointLayerDrawShape turns a point layer's (`src/mapdraw.c:2048-2060`): an angle that is not 0
+/// less the map's, and 0 as it is, so that a symbol of angle 0 stays upright on the image. Any
+/// angle where the map is not rotated.
+pub(crate) fn turned_by_map(angle: f64, map_angle: Option<f64>) -> f64 {
+    match map_angle {
+        Some(map_angle) if angle != 0.0 => angle - map_angle,
+        _ => angle,
     }
 }
 

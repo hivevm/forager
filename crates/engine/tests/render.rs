@@ -363,6 +363,81 @@ fn a_pattern_dashes_a_line_with_its_cap() {
     assert_matches_reference(&image, "line_pattern.png");
 }
 
+/// The paths of the strokes the render of `map` over `geojson` draws.
+fn stroked_paths(map: &Map, geojson: &str) -> Vec<Vec<(f64, f64)>> {
+    recorded(map, geojson)
+        .into_iter()
+        .flat_map(|op| match op {
+            DrawOp::Stroke { paths, .. } => paths,
+            _ => Vec::new(),
+        })
+        .map(|path| path.iter().map(|p| (p.x, p.y)).collect())
+        .collect()
+}
+
+#[test]
+fn a_line_that_leaves_the_extent_is_cut_to_its_class_s_buffer_before_it_is_dashed() {
+    // msDrawShape clips a line that reaches beyond the extent with msClipPolylineRect, to the
+    // extent grown by the class's buffer, MS_NINT(max(1, max(-1, WIDTH)) + 1): 2 for a line
+    // of 1, 6 for one of 5, the widest style of the class. Its dashes count from the cut.
+    let line = r#"{"type": "LineString", "coordinates": [[-1000, 50], [50, 50], [50, 1000]]}"#;
+    let dashed = Style {
+        pattern: vec![10.0, 3.0],
+        ..line_style(BLUE, 1.0)
+    };
+    let one = map_with(RenderMode::Line, vec![dashed.clone()]);
+    assert_eq!(
+        stroked_paths(&one, line),
+        [vec![(-2.0, 50.0), (50.0, 50.0), (50.0, -2.0)]]
+    );
+    let wide = map_with(RenderMode::Line, vec![dashed, line_style(RED, 5.0)]);
+    assert_eq!(
+        stroked_paths(&wide, line),
+        [
+            vec![(-6.0, 50.0), (50.0, 50.0), (50.0, -6.0)],
+            vec![(-6.0, 50.0), (50.0, 50.0), (50.0, -6.0)]
+        ]
+    );
+    // A layer of PROCESSING "POLYLINE_NO_CLIP" hands the line to its styles whole.
+    let mut unclipped = one;
+    unclipped.layers[0].unclipped_lines = true;
+    assert_eq!(
+        stroked_paths(&unclipped, line),
+        [vec![(-1000.0, 50.0), (50.0, 50.0), (50.0, -900.0)]]
+    );
+}
+
+#[test]
+fn a_line_drawn_from_the_shape_cache_keeps_the_clip_of_its_own_class() {
+    // msDrawVectorLayer caches a shape clipped by its own class's buffer and draws its later
+    // styles on it (src/mapdraw.c:1412-1416, 1437-): a wide class's second style is cut at -10,
+    // MS_NINT(9 + 1), though a thin class's feature, cut at -2, is drawn after it.
+    let line = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"k": "wide"},
+         "geometry": {"type": "LineString", "coordinates": [[-1000, 50], [50, 50]]}},
+        {"type": "Feature", "properties": {"k": "thin"},
+         "geometry": {"type": "LineString", "coordinates": [[-1000, 20], [50, 20]]}}
+    ]}"#;
+    let class = |k: &str, width: f64| Class {
+        expression: Some(Expr::call(
+            Op::Eq,
+            vec![
+                Expr::call(Op::ToString, vec![Expr::property("k")]),
+                k.into(),
+            ],
+        )),
+        styles: vec![line_style(BLUE, width), line_style(RED, width)],
+        ..Class::default()
+    };
+    let mut map = map(RenderMode::Line, line_style(BLUE, 1.0));
+    map.layers[0].classes = vec![class("wide", 9.0), class("thin", 1.0)];
+    let starts: Vec<(f64, f64)> = stroked_paths(&map, line).iter().map(|p| p[0]).collect();
+    assert_eq!(
+        starts,
+        [(-10.0, 50.0), (-2.0, 80.0), (-10.0, 50.0), (-2.0, 80.0)]
+    );
+}
+
 #[test]
 fn an_initial_gap_starts_the_pattern_that_far_before_its_end() {
     let style = Style {

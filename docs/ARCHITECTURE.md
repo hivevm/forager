@@ -266,7 +266,8 @@ golden path and the test pattern an agent copies from are named here.
   resolved, its vector and ellipse symbols, a marker's size and anchor point, a pixmap's scale,
   square, and transformation, in the order of operations of AGG's `trans_affine`, and the images
   of a render's pixmaps by their path (`symbol.rs`); hatches, the
-  clip of a hatched polygon, and the reference point its lines count from (`hatch.rs`); vector,
+  clip of a hatched polygon and of a line shape by the class's buffer, as msDrawShape clips them,
+  and the reference point a hatch's lines count from (`hatch.rs`); vector,
   ellipse, and pixmap symbols along a line, and the layer's budget of markers
   (`line_marker.rs`); a polygon's tile, its size held to Q-9's bound, and the render's
   cache of six tiles, counted with the decoded images (`tile.rs`); line offsets (`offset.rs`); and

@@ -67,7 +67,8 @@ separator (`msStringSplit`). Each name takes the value at its place, `""` where 
 fewer values (`msINLINELayerNextShape`); a value past the names is dropped, and without the key a
 feature has no properties. An expression or a binding finds a name without regard to ASCII case,
 the first of two that match (`msLayerGetItemIndex`). `PROCESSING "ITEMS=…"` of a layer without
-features, and every other `PROCESSING` key, is not yet supported and is ignored with a warning.
+features, and every other `PROCESSING` key but `POLYLINE_NO_CLIP` ([line](line.md)), is not yet
+supported and is ignored with a warning.
 
 **Not carried:** the layer's `TRANSFORM` on
 inline features; and a `FEATURE` keyword inside a `FEATURE`, which `loadFeature` skips (`case

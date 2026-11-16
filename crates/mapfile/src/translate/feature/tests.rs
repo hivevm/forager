@@ -199,6 +199,32 @@ fn processing_items_is_carried_only_for_an_inline_layer() {
 }
 
 #[test]
+fn processing_polyline_no_clip_leaves_a_layers_lines_unclipped_whatever_its_value() {
+    // msDrawLayer reads the key by CSLFetchNameValue, without regard to case and before `=` or
+    // `:`, and draws unclipped lines wherever it is there, `false` too.
+    for value in [
+        "POLYLINE_NO_CLIP=true",
+        "polyline_no_clip:false",
+        "POLYLINE_NO_CLIP=",
+    ] {
+        let (loaded, layer) = load_layer(&format!(r#"TYPE LINE PROCESSING "{value}" DATA "x""#));
+        assert!(
+            loaded.diagnostics.is_empty(),
+            "{value}: {:?}",
+            loaded.diagnostics
+        );
+        assert!(layer.unwrap().unclipped_lines, "{value}");
+    }
+    for body in [
+        r#"TYPE LINE DATA "x""#,
+        r#"TYPE LINE PROCESSING "POLYLINE_NO_CLIPS=1" DATA "x""#,
+    ] {
+        let (_, layer) = load_layer(body);
+        assert!(!layer.unwrap().unclipped_lines, "{body}");
+    }
+}
+
+#[test]
 fn a_layer_without_features_carries_none() {
     let (loaded, layer) = load_layer(r#"TYPE POINT DATA "x""#);
     assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);

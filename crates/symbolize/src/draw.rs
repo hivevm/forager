@@ -70,10 +70,16 @@ pub fn marked_pixmap<'a>(
 
 /// The image paths of the pixmap symbols that msDrawShape counts in the clip buffer of a class's
 /// `styles` at their images' heights, having loaded them whatever their scale range
-/// (`src/mapdraw.c:2466-2490`): those of a class with a hatch, the one style the clip buffer
-/// reaches here (see [`hatch::Hatching::for_class`]).
-pub fn clip_pixmaps<'a>(styles: &[Style], symbols: &'a [Symbol]) -> Vec<&'a str> {
-    if !styles.iter().any(|style| symbol::is_hatch(style, symbols)) {
+/// (`src/mapdraw.c:2466-2490`), in a layer drawn in `mode`: those of any class of a line layer,
+/// whose lines the buffer clips, and those of a polygon layer's class with a hatch, the one
+/// polygon style the clip buffer reaches here (see [`hatch::Hatching::for_class`]).
+pub fn clip_pixmaps<'a>(mode: RenderMode, styles: &[Style], symbols: &'a [Symbol]) -> Vec<&'a str> {
+    let clipped = match mode {
+        RenderMode::Line => true,
+        RenderMode::Polygon => styles.iter().any(|style| symbol::is_hatch(style, symbols)),
+        _ => false,
+    };
+    if !clipped {
         return Vec::new();
     }
     styles
@@ -98,14 +104,8 @@ pub fn draw_ops(
     // The shape in pixels as msTransformShape gives it in the AGG renderer's mode, which
     // msImageStartLayer keeps for a layer without APPROXIMATION_SCALE (`src/mapdraw.c:4201-4224`):
     // msTransformShapeSimplify, its lines or its rings as the shape is a line or a polygon,
-    // whatever the layer, a part it leaves without points dropped.
-    let lines = |parts: &[Vec<Coord>]| -> Vec<Vec<Point>> {
-        parts
-            .iter()
-            .map(|l| view.line_to_pixels(l))
-            .filter(|l| !l.is_empty())
-            .collect()
-    };
+    // whatever the layer, a part it leaves without points dropped; a line clipped first (see
+    // [`clipped_lines`]).
     let rings = |parts: &[Vec<Coord>]| -> Vec<Vec<Point>> {
         parts
             .iter()
@@ -152,11 +152,12 @@ pub fn draw_ops(
             }
         }
         (RenderMode::Line, Geometry::LineString(points)) => {
-            let paths = lines(std::slice::from_ref(points));
+            let paths = clipped_lines(std::slice::from_ref(points), view, canvas);
             line_symbol(&mut ops, paths, style, pass, canvas);
         }
         (RenderMode::Line, Geometry::MultiLineString(parts)) => {
-            line_symbol(&mut ops, lines(parts), style, pass, canvas);
+            let paths = clipped_lines(parts, view, canvas);
+            line_symbol(&mut ops, paths, style, pass, canvas);
         }
         (RenderMode::Line, Geometry::Polygon(parts)) => {
             line_symbol(&mut ops, open_rings(rings(parts)), style, pass, canvas);
@@ -168,6 +169,18 @@ pub fn draw_ops(
         _ => {}
     }
     ops
+}
+
+/// A line shape's `parts` in pixels, clipped first as msDrawShape clips a line before it draws it
+/// (see [`hatch::line_paths`]), unless the canvas's layer leaves its lines unclipped.
+fn clipped_lines(parts: &[Vec<Coord>], view: &View, canvas: &Canvas) -> Vec<Vec<Point>> {
+    hatch::line_paths(
+        parts,
+        view,
+        canvas.image(),
+        &canvas.hatching,
+        canvas.clip_lines,
+    )
 }
 
 /// The markers a point layer draws of `style` at each vertex of `geometry` inside the map's

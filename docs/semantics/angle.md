@@ -30,6 +30,19 @@ and the labels work in pixels, as in MapServer
 (ADR-draft-map-rotation-in-the-reprojection). A rotated map's centre sits half a pixel off an
 unrotated one's, as MapServer centres the geotransform on the image's width and height over two.
 
-**Not yet drawn.** The turn of a style's or a label's angle by the map's angle, which
-`pointLayerDrawShape`, `lineLayerDrawShape`, and `polygonLayerDrawShape` apply: symbols and labels
-on a rotated map are drawn at their own angle.
+**Symbols and labels on a rotated map.** `pointLayerDrawShape` in `src/mapdraw.c` subtracts the
+map's angle from each angle of a point layer's styles and labels that is not 0, draws the shape,
+and adds it back (`:2050-2060`, `:2112-2120`). An angle of exactly 0 stays 0, so a symbol of
+`ANGLE 0`, or of none, stands upright on the image, and so does one at the map's own angle, while
+the shapes turn with the map. A label's angle so turned is the one the label cache tests it at.
+`lineLayerDrawShape` and `polygonLayerDrawShape` turn a label's angle alone, not a style's
+(`:2226-2227`, `:2324-2326`). A line's `PATTERN` follows the rotated line: its dashes count from
+where msDrawShape's clip begins the line in the frame of the image ([line](line.md)).
+
+**Not as MapServer.** `lineLayerDrawShape` and `polygonLayerDrawShape` subtract the map's angle
+from a label's and never add it back, so in MapServer the turn accumulates from shape to shape: a
+line layer's first shape is labelled at the label's own angle, since the subtraction comes after
+its text is set up, and each later one turned once more; a polygon layer's labels are turned once
+for the first shape and once more for each after it. Forager turns each shape's label once, as
+`pointLayerDrawShape` does. The labels of line and polygon layers are not drawn yet; they will be
+turned so.

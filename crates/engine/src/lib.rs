@@ -46,6 +46,7 @@ mod plan;
 mod reproject;
 mod resource;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use forager_ports::{
@@ -55,13 +56,13 @@ use forager_ports::{
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
-    Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
+    Bound, Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
     RenderMode, Rgba, Style, Symbol, SymbolKind, TransformTree,
 };
 use forager_symbolize::{
-    Budget, Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, StyleTrees, Tiles, Undrawn,
-    can_draw, circle, circle_ops, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap,
-    point_markers, resolve,
+    Budget, Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, StyleTrees, Undrawn, can_draw,
+    circle, circle_ops, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers,
+    resolve,
 };
 
 use forager_expr::Evaluator;
@@ -77,7 +78,9 @@ pub use crate::resource::MAX_FONT_OR_IMAGE_FILE_BYTES;
 pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
-use crate::layer::{Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports};
+use crate::layer::{
+    Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports, turned_by_map,
+};
 
 pub use crate::labels::CachedLabel;
 pub use crate::reproject::MAX_HORIZON_POINTS;
@@ -191,7 +194,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         };
         let (drawable, undrawn) = drawable(mode, &features);
         let selected = selector.select(drawable, &map.symbols);
-        let drawing = Drawing::new(mode, layer, scale, view, centres.as_ref());
+        let drawing = Drawing::new(mode, layer, scale, view, centres.as_ref(), map.angle);
         // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
         // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
         // Any other layer's labels go through the label cache.
@@ -202,7 +205,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .load_resources(&selected, &map.symbols, !at_once, &mut images, &mut labels)
             .await;
         let (pixmaps, tiles, glyphs) = images.drawing();
-        let mut canvas = layer_canvas(map, factors[layer_index], (width, height), pixmaps, tiles)
+        let mut canvas = layer_canvas(map, layer, factors[layer_index], (width, height), pixmaps)
+            .with_tiles(tiles)
             .with_glyphs(glyphs)
             .with_style_trees(StyleTrees::new(budget, cellsize));
         let drawn = labelled(&selected);
@@ -402,19 +406,22 @@ impl<R: Renderer> Draw for Target<'_, R> {
     }
 }
 
-/// The canvas a layer of `map` is drawn on, in an image `width` by `height`, with the images of
-/// `pixmaps` and the fill tiles of `tiles`, at `factors`, the layer's scale factor, which sizes
-/// its styles, and the image's resolution factor, which bounds them.
+/// The canvas `layer` of `map` is drawn on, in an image `width` by `height`, with the images of
+/// `pixmaps`, at `factors`, the layer's scale factor, which sizes its styles, and the image's
+/// resolution factor, which bounds them; its lines unclipped where the layer says so.
 fn layer_canvas<'c>(
     map: &'c Map,
+    layer: &Layer,
     factors: Factors,
     (width, height): (u32, u32),
     pixmaps: &'c Pixmaps,
-    tiles: &'c mut Tiles,
 ) -> Canvas<'c> {
-    Canvas::new(&map.symbols, width, height, factors)
-        .with_pixmaps(pixmaps)
-        .with_tiles(tiles)
+    let canvas = Canvas::new(&map.symbols, width, height, factors).with_pixmaps(pixmaps);
+    if layer.unclipped_lines {
+        canvas.with_lines_unclipped()
+    } else {
+        canvas
+    }
 }
 
 /// The fonts the TrueType symbols of the `selected` features' styles name, each once, which their
@@ -459,6 +466,8 @@ struct Drawing<'a> {
     view: &'a View,
     /// The reprojection of a circle layer's centres, where the layer is reprojected.
     centres: Option<&'a reproject::LayerReprojection>,
+    /// The map's `ANGLE`, which turns the angles of a point layer's styles.
+    map_angle: Option<f64>,
 }
 
 impl<'a> Drawing<'a> {
@@ -468,6 +477,7 @@ impl<'a> Drawing<'a> {
         scale: f64,
         view: &'a View,
         centres: Option<&'a reproject::LayerReprojection>,
+        map_angle: Option<f64>,
     ) -> Self {
         Self {
             mode,
@@ -475,6 +485,7 @@ impl<'a> Drawing<'a> {
             scale,
             view,
             centres,
+            map_angle,
         }
     }
 
@@ -544,11 +555,9 @@ impl<'a> Drawing<'a> {
                     }
                 }
             }
-            if self.mode == RenderMode::Polygon {
-                for path in clip_pixmaps(&self.layer.classes[*class].styles, symbols) {
-                    if !images.decoded().contains_key(path) {
-                        let _ = images.image(path, files).await;
-                    }
+            for path in clip_pixmaps(self.mode, &self.layer.classes[*class].styles, symbols) {
+                if !images.decoded().contains_key(path) {
+                    let _ = images.image(path, files).await;
                 }
             }
         }
@@ -559,7 +568,8 @@ impl<'a> Drawing<'a> {
     /// `label` draws at that point, as pointLayerDrawShape draws a point layer
     /// (src/mapdraw.c:2062-2105): the markers of a point, then its labels, then the next point's.
     /// It decides the order of a point layer's markers whatever its `LABELCACHE`; a layer of the
-    /// label cache draws no label here.
+    /// label cache draws no label here. On a rotated map, each style's angle is turned by the
+    /// map's (see [`turned_by_map`]), as pointLayerDrawShape turns it for the shape and back.
     fn draw_points<R: Draw>(
         &self,
         renderer: &mut R,
@@ -571,13 +581,28 @@ impl<'a> Drawing<'a> {
         let mut markers: Vec<Vec<Vec<DrawOp>>> = styles
             .iter()
             .filter(|s| classes::in_scale(self.scale, s.min_scale_denom, s.max_scale_denom))
-            .map(|style| point_markers(&feature.geometry, style, self.view, canvas))
+            .map(|style| {
+                let style = self.turned(style);
+                point_markers(&feature.geometry, &style, self.view, canvas)
+            })
             .collect();
         for (k, point) in points_in_view(self.view, &feature.geometry).enumerate() {
             for style in &mut markers {
                 draw_items(renderer, feature.id, std::mem::take(&mut style[k]));
             }
             label(renderer, point);
+        }
+    }
+
+    /// `style` with its angle turned by the map's (see [`turned_by_map`]).
+    fn turned<'s>(&self, style: &'s Style) -> Cow<'s, Style> {
+        match style.angle {
+            Some(Bound::Value(angle)) if self.map_angle.is_some() && angle != 0.0 => {
+                let mut style = style.clone();
+                style.angle = Some(Bound::Value(turned_by_map(angle, self.map_angle)));
+                Cow::Owned(style)
+            }
+            _ => Cow::Borrowed(style),
         }
     }
 
@@ -670,6 +695,8 @@ impl<'a> Drawing<'a> {
         }
         for place in 0..most_styles {
             for (feature, class, later) in &cached {
+                // The shape cached is the one its own class's buffer clipped.
+                canvas.class(&self.layer.classes[*class].styles);
                 for (_, style, passes) in later.iter().filter(|(p, _, _)| *p == place) {
                     draw(canvas, feature, (*class, place), style, passes);
                 }
