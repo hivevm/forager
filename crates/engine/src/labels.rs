@@ -42,8 +42,7 @@ use crate::label_binding::{BoundLabel, Fixed, bind, fixed};
 use crate::label_cache::{self, LabelAt, index, push};
 use crate::label_styles::{self, LabelStyles, Placed, Styled, StylesOf};
 use crate::layer::{
-    draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
-    turned_by_map,
+    Rotation, draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
 };
 use crate::marker_glyphs::MarkerGlyphs;
 
@@ -223,6 +222,8 @@ struct Annotation {
 pub(crate) struct Labels<'r, L> {
     map: &'r Map,
     view: &'r View,
+    /// The map's rotation, which turns the angles of the labels.
+    rotation: &'r Rotation,
     /// The factors of each layer, by its index, which its labels inherit.
     factors: &'r [Factors],
     files: &'r L,
@@ -265,18 +266,19 @@ pub(crate) struct Labels<'r, L> {
 pub(crate) type Labelled<'a> = (&'a Feature, usize, Option<&'a Style>);
 
 impl<'r, L: ResourceLoader> Labels<'r, L> {
-    /// The labels of a render of `map` in `view` at `factors`, each layer's by its index, their
-    /// fonts read through `files`, in an image of `size`.
+    /// The labels of a render of `map` by `rotation`, in the view of its frame, at `factors`,
+    /// each layer's by its index, their fonts read through `files`, in an image of `size`.
     pub(crate) fn new(
         map: &'r Map,
-        view: &'r View,
+        rotation: &'r Rotation,
         factors: &'r [Factors],
         files: &'r L,
         size: (u32, u32),
     ) -> Self {
         Self {
             map,
-            view,
+            view: &rotation.frame,
+            rotation,
             factors,
             files,
             fonts: Fonts::default(),
@@ -585,19 +587,11 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         Some(laid)
     }
 
-    /// The angle `angle` of the label `at` is drawn and tested at, in degrees: on a rotated map,
-    /// turned by the map's (see [`turned_by_map`]) in a point, line, or polygon layer, as
-    /// pointLayerDrawShape, lineLayerDrawShape, and polygonLayerDrawShape turn it
-    /// (`src/mapdraw.c:2050-2054, 2226-2227, 2324-2326`). The last two never turn it back, so
-    /// that MapServer turns a label once more with each shape; each label here is turned once,
-    /// as a point layer's is.
+    /// The angle `angle` of the label `at` is drawn and tested at, in degrees, turned by the
+    /// map's rotation (see [`Rotation::turned_label`]).
     fn turned(&self, at: LabelAt, angle: f64) -> f64 {
-        match self.map.layers[at.0].render_mode {
-            Some(RenderMode::Point | RenderMode::Line | RenderMode::Polygon) => {
-                turned_by_map(angle, self.map.angle)
-            }
-            _ => angle,
-        }
+        let mode = self.map.layers[at.0].render_mode;
+        self.rotation.turned_label(mode, angle)
     }
 
     /// Lays out `label` of `feature`, its text, lines, and bound properties `annotation`, moved
@@ -1403,7 +1397,8 @@ mod tests {
         };
         let view = View::for_image(extent, 100, 100).unwrap();
         let factors = [Factors::new(1.0, 1.0)];
-        let mut labels = Labels::new(&map, &view, &factors, &NoFiles, (100, 100));
+        let rotation = Rotation::unrotated(view);
+        let mut labels = Labels::new(&map, &rotation, &factors, &NoFiles, (100, 100));
         labels.defs.push(Def {
             at: LabelAt(0, 0, 0),
             buffer: 0,
