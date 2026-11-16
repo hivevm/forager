@@ -1,4 +1,4 @@
-# Ticket: A TrueType marker's outline is widened no further than a stroke
+# Ticket: A glyph's outline, a marker's or a label's, is widened no further than a stroke
 
 ## What to build
 
@@ -18,8 +18,12 @@ glyph's path before the contour widens it. A stroke's width goes through `clip::
 first (`crates/render-agg/src/lib.rs`, `stroke`), which keeps the margin within agg-rust's
 fixed-point coordinates. The outline's width does not.
 
-The mapfile frontend refuses only a negative `OUTLINEWIDTH`. So a mapfile with a TrueType symbol
-and a large `OUTLINEWIDTH` likely reaches the same panic. That is a Q-3 failure in the browser.
+The mapfile frontend refuses only a negative `OUTLINEWIDTH`, a style's
+(`crates/mapfile/src/translate/style.rs`) and a label's (`crates/mapfile/src/translate/label.rs`).
+So a mapfile with a TrueType symbol and a large `OUTLINEWIDTH` likely reaches the same panic. A
+label with a large `OUTLINEWIDTH` reaches the same `set_width` too, since the engine hands the
+label's outline to `glyphs` as a `GlyphOutline` (`crates/engine/src/labels.rs`). Each is a Q-3
+failure in the browser.
 
 The outline's width goes through the same bound as a stroke's, `drawn_width` on the image's size,
 before `set_width`. A test of `render-agg` draws a glyph with a huge outline width and expects no
@@ -44,20 +48,25 @@ target of `ticket/revision-2026-11-16/01-render-fuzz-fidelity-paths` (head 8c2bf
 
 ## Acceptance criteria
 
-- [ ] Given a glyph path within `within_glyph_reach` and an outline width of `1e12`, when
+- [ ] Given a glyph path that lies on the image and an outline width of `1e12`, when
   `AggRenderer` draws it with debug assertions on, then it does not panic, and every pixel of
   the image is the outline's colour.
+- [ ] Given a glyph path within `within_glyph_reach` but off the image, and an outline width of
+  `1e12`, when `AggRenderer` draws it, then it does not panic.
 - [ ] Given an outline width of 1 or 2, when the glyph is drawn, then the image is the same as
   before the change: the existing TrueType tests and the msautotest cases with TrueType symbols
   pass unchanged.
 - [ ] Given a mapfile with a TrueType symbol at a point and `OUTLINEWIDTH 1e12`, when the engine
   renders it, then it returns an image and no panic.
+- [ ] Given a mapfile with a label of `OUTLINEWIDTH 1e12`, when the engine renders it, then it
+  returns an image and no panic.
 - [ ] Given ticket 01's branch rebased onto this change, when the crash input above is run by
   `cargo fuzz run render`, then it does not panic.
 
 ## Read first
 
-- Touches: `crates/render-agg/src/glyphs.rs`, its tests, `crates/engine/tests/truetype_marker.rs`
+- Touches: `crates/render-agg/src/glyphs.rs`, its tests, `crates/engine/tests/truetype_marker.rs`,
+  `crates/engine/tests/labels.rs`
 - ADR-0025 (the clip and its margin), ADR-0044 (the glyph's outline), ADR-0026 (agg-rust);
   `docs/SPECIFICATION.md` Q-3; `crates/render/src/clip.rs` (`drawn_width`, `within_glyph_reach`).
 
