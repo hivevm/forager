@@ -14,9 +14,10 @@ the new segment would cross the rest of the geometry. The noise run builds MapSe
 3.12.1, the reference of [ADR-0041](0041-geometry-through-geo.md).
 
 ADR-0041 computes `simplify` by a Douglas-Peucker ported from JTS, in a geometry module of
-`symbolize`. Its *Out of scope* leaves `simplifypt` a `not_drawn` reason until a later decision.
-This ADR is that decision. On 2026-11-16 the maintainer chose the first option of the backlog entry
-`docs/backlog/simplifypt-topology-preserving.md`: a port of JTS's `TopologyPreservingSimplifier`.
+`symbolize`. Its *Out of scope* keeps `simplifypt` a `not_drawn` reason, and its *Context* leaves
+it not drawn until a later decision. This ADR is that decision. On 2026-11-16 the maintainer
+chose the first option of the backlog entry `docs/backlog/simplifypt-topology-preserving.md`:
+a port of JTS's `TopologyPreservingSimplifier`.
 [ADR-0043](0043-transform-tree-with-simplify-and-buffer.md) keeps `simplifypt` in the closed list
 of reasons. Its successor,
 [ADR-draft-transform-tree-with-simplifypt](draft-transform-tree-with-simplifypt.md), adds the node.
@@ -40,8 +41,9 @@ that this style is all that the case `geomtransform-vertex.png` still lacks.
 - Otherwise the section is split at its first farthest point, by recursion.
 - A flattened section leaves the input index, and its new segment enters the output index.
 - After a ring, its first point is dropped where it lies within the tolerance of the segment
-  between its neighbours. The ring must hold more than 4 coordinates before the drop. The new
-  segment passes the same tests. An open or a closed line keeps its first point.
+  between its neighbours. The ring must hold more than 4 coordinates before the drop. Where the
+  first point lies on the new segment's line, the drop is valid at once. Otherwise the new segment
+  passes the same tests. An open or a closed line keeps its first point.
 - No ring is removed and nothing is repaired.
 
 **GEOS 3.12.1 differs from JTS.** JTS's simplifier took five fixes between 2022 and 2024. GEOS
@@ -105,21 +107,30 @@ output index still holds. The case's shapes are single lines without a ring. Nei
 nor the deleted segment reaches them.
 
 **Cost.** A prototype without a spatial index examines every live segment on each query of an
-index. The counts, for a tolerance of 50:
+index. The counts:
 
-| Input | Points scanned | Segments examined | Component tests | Time, native |
-|---|---|---|---|---|
-| a ring of 10,000 points | 212,257 | 24,561,322 | 1,581 | 45 ms |
-| a ring of 100,000 points | 3,628,881 | 3,052,481,130 | 4,290 | 5.3 s |
-| a zigzag of 10,000 points, each kept | 49,984,440 | 9,999 | 36 | 0.35 s |
-| a wiggling line of 100,000 points | 19,764,247 | 53,713,925 | 101,061 | 0.21 s |
-| a shell with 1,000 holes, 12,001 points | 32,277 | 31,756,443 | 4,472,831 | 92 ms |
-| a shell with 5,000 holes, 60,001 points | 185,361 | 862,718,495 | 124,248,559 | 2.2 s |
+| Input | Tolerance | Points scanned | Segments examined | Component tests | Time, native |
+|---|---|---|---|---|---|
+| a ring of 10,000 points | 50 | 212,257 | 24,561,322 | 1,581 | 45 ms |
+| a ring of 20,000 points | 1 | 505,476 | 4,890,858 | 217 | 17 ms |
+| a ring of 20,000 points | 50 | 499,038 | 111,226,623 | 1,866 | 0.16 s |
+| a ring of 100,000 points | 50 | 3,628,881 | 3,052,481,130 | 4,290 | 5.3 s |
+| a zigzag of 10,000 points, each kept | 50 | 49,984,440 | 9,999 | 36 | 0.35 s |
+| a wiggling line of 20,000 points | 1 | 1,918,547 | 79,167,316 | 19,080 | 0.17 s |
+| a wiggling line of 30,000 points | 1 | 3,767,276 | 177,993,205 | 28,705 | 0.41 s |
+| a wiggling line of 100,000 points | 1 | 20,401,817 | 1,966,033,603 | 95,802 | 5.0 s |
+| a wiggling line of 100,000 points | 5 | 19,935,824 | 168,122,602 | 103,254 | 0.33 s |
+| a wiggling line of 100,000 points | 50 | 19,764,247 | 53,713,925 | 101,061 | 0.21 s |
+| a shell with 1,000 holes, 12,001 points | 50 | 32,277 | 31,756,443 | 4,472,831 | 92 ms |
+| a shell with 2,000 holes, 24,001 points | 50 | 68,627 | 134,355,972 | 19,461,618 | 0.35 s |
+| a shell with 5,000 holes, 60,001 points | 50 | 185,361 | 862,718,495 | 124,248,559 | 2.2 s |
 
-With rstar's R-tree as the index, the ring of 100,000 points examines 24,608,377 nodes and
-segments in 0.52 s. GEOS 3.12.1 took 1.4 s for it, with its output written. Q-9 lets one layer's
-transforms visit 100,000,000 points. Without an index, a ring of 20,000 points at 50 examines
-111,226,623 segments, and a shell with 2,000 holes 134,355,972. Each passes the bound alone.
+A ring costs most at a large tolerance, a long open line at a small one. With rstar's R-tree as
+the index, the ring of 100,000 points at 50 examines 24,608,377 nodes and segments in 0.52 s. The
+wiggling line of 100,000 points at 1 examines 3,261,214 in 0.28 s. GEOS 3.12.1 took 1.4 s for the
+ring, with its output written. Q-9 lets one layer's transforms visit 100,000,000 points. Without
+an index, a wiggling line of about 22,000 points at 1 passes that bound alone. So does a ring of
+20,000 points at 50, and a shell with 2,000 holes.
 
 **Bundle.** A wasm32 build of the prototype alone, at the `wasm` profile and gzipped, against an
 empty module: +9,073 B without an index, +29,050 B with rstar. The `robust` crate is counted in
@@ -131,7 +142,9 @@ both. geo already links it into the bundle, so the growth in the bundle is at mo
 - Q-1: no C. Q-6: permissive licences, and no code of GEOS in the tree.
 - Q-2 and G-9: the same bits on every target.
 - Q-3: no input crashes the render, the browser's included.
-- Q-9: the simplification visits points, and its tests visit segments and components.
+- Q-9: the simplification visits points, and its tests visit segments and components. Q-9 counts
+  points visited. This ADR reads a segment examined and a component compared as one point visited
+  each.
 - Q-5: the bundle stays under 3 MB.
 - Simplicity: the smallest port that reproduces the reference.
 
@@ -146,7 +159,9 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
   - `TopologyPreservingSimplifier.java`, `TaggedLinesSimplifier.java`,
     `TaggedLineStringSimplifier.java`, `TaggedLineString.java`, and `ComponentJumpChecker.java`;
   - the interior intersection of `RobustLineIntersector.java` and `LineIntersector.java`;
-  - the crossing count of `RayCrossingCounter.java`.
+  - the crossing count of `RayCrossingCounter.java`;
+  - `equalsTopo`, `distance`, and `orientationIndex` of `LineSegment.java`, `pointToSegment` of
+    `Distance.java`, and `isRing` of `CoordinateArrays.java`.
 - **Order.** The port must simplify the lines of one shape in the shape's order: each part of a
   line, or each polygon's shell before its holes. JTS's order of a `HashMap` is not ported.
 - **No recursion.** The port must keep its pending sections on a stack of its own. It must take
@@ -158,7 +173,9 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
   as ADR-0041's Douglas-Peucker computes it.
 - **Index.** The input and the output index must answer each query by examining every segment
   they hold. The port must not build a spatial index.
-- **A section of no number.** A section whose farthest distance is no number must be kept whole.
+- **A section of no number.** Where every distance in a section is no number, its split point is
+  its first end. The port must keep such a section whole where it cannot flatten it. JTS and GEOS
+  3.12.1 split it again without end there.
 - **Reference.** The port must follow JTS's sources, not GEOS's. Each file that ports a JTS source
   must name it and hold JTS's EDL notice, as ADR-0041 asks.
 - **Mathematics.** The port must take no transcendental function. It may use `f64::sqrt` and
@@ -173,6 +190,8 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
 
 - the transform tree's node, which
   [ADR-draft-transform-tree-with-simplifypt](draft-transform-tree-with-simplifypt.md) decides;
+- a tolerance that is no number, for which GEOS 3.12.1 flattens every section the topology tests
+  allow;
 - a tolerance below 0, for which GEOS fails, and MapServer's reaction to that failure.
   `docs/semantics/` writes them down from the C, and the port follows that page;
 - the shapes MapServer hands to GEOS and takes back, which `docs/semantics/` writes down as for
@@ -190,7 +209,8 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
   defects JTS has fixed since: a line jumps another and changes sides, a hole leaves its shell, an
   equal segment passes, and a replaced segment stays in the output index. Where GEOS 3.12.1 reads
   that segment after deleting it, its results vary with its heap, and no port follows them. GEOS
-  3.13.1 follows JTS's `master`, and a runner of a later Ubuntu would build MapServer against it.
+  3.13.1 follows JTS's `master`, as its notes and source read. A runner of a later Ubuntu would
+  build MapServer against such a release.
 - **JTS's `Quadtree` as the index, ported** — the index JTS and GEOS build. Its queries examine
   fewer segments, so a larger polygon passes Q-9. It is about 600 more lines of Java to port, and
   the result does not depend on it.
@@ -205,8 +225,9 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
   point, as geo's `Simplify` did. That overflowed the stack at 1,000 points in wasmi (ADR-0041).
 - **geo's `SimplifyVwPreserve`** — no code of Forager's own. It is Visvalingam-Whyatt, whose
   tolerance is an area, and it differs from GEOS on 4 of the case's 6 line results.
-- **A successor of ADR-0041 that adds `simplifypt`** — one record for the geometry module. ADR-0041
-  leaves `simplifypt` out of scope until a later decision, and no clause of its *Decision* changes:
+- **A successor of ADR-0041 that adds `simplifypt`** — one record for the geometry module.
+  ADR-0041's *Out of scope* keeps `simplifypt` a `not_drawn` reason. That names what ADR-0041 leaves
+  undecided, and the reason itself is ADR-0043's to remove. No clause of its *Decision* changes:
   its rules on the reference, the mathematics, and the bounds bind its own steps, and this ADR
   states its own. A successor would restate ADR-0041 whole to add a function beside it.
 - **Leave `simplifypt` not drawn** — no code. The case `geomtransform-vertex.png` keeps failing.
@@ -241,15 +262,16 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
   on every result where GEOS's own result is valid and stable.
 - Positive: the port refuses a flattening that makes a hole leave its shell or a line jump
   another, where GEOS 3.12.1 does not. Its results do not vary from run to run. It follows GEOS
-  3.13.1.
+  3.13.1, as that release's notes and source read; 3.13.1 was not run.
 - Positive: no line overflows the stack, and every test is exact or computed by IEEE's arithmetic.
 - Negative / trade-offs:
   - where GEOS 3.12.1 lets a flattening jump another line of the same shape, or a hole leave its
     shell, the port keeps more points than MapServer. Of 200 shapes built to provoke a jump,
     141 differed at 40;
   - without a spatial index, the queries examine the square of a shape's segments in the worst
-    case. A ring of 20,000 points at 50 passes the bound of Q-9 on visits alone, and its layer
-    draws nothing, where MapServer draws it;
+    case. A wiggling line of about 22,000 points at a tolerance of 1, or a ring of 20,000 points
+    at 50, passes the bound of Q-9 on visits alone. Its layer draws nothing, where MapServer draws
+    it in about a second;
   - the jump test compares each section with every other component. With the queries, a polygon
     of 2,000 holes passes the bound in the same way;
   - a zigzag of falling amplitude scans about n²/2 points, as ADR-0041's Douglas-Peucker does;
@@ -272,6 +294,8 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
   - the shape `MULTILINESTRING ((0 0, 10 10, 20 0), (9 4, 11 4))` at 20 keeps its bend;
   - a polygon whose shell would jump its hole when its first point is dropped keeps the hole
     inside the shell.
+- A unit test cites this ADR. A line whose coordinates are no number is simplified without a hang,
+  its sections kept whole.
 - A unit test cites this ADR and Q-9. It holds the charge of the scanned points, of the segments
   examined, and of the components compared.
 - A test renders a layer of `simplifypt` over a zigzag line of several thousand points, each kept,
