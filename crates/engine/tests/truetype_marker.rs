@@ -325,3 +325,19 @@ fn each_layer_whose_fill_lacks_its_character_warns_though_the_tile_is_held() {
     );
     assert!(drawn(&rendered) > 0, "glyph 0 is tiled");
 }
+
+#[test]
+fn a_truetype_symbol_with_an_outline_wider_than_any_stroke_renders_without_a_panic() {
+    // Verifies: ADR-0025
+    // The glyph's outline is bounded as a stroke's width is, so that its contour stays within
+    // agg-rust's fixed-point coordinates. As computeSymbolStyle, a marker's outline is as wide as
+    // the style's `WIDTH`, not its `OUTLINEWIDTH`, and bounded by its `MAXWIDTH`, 32 by default;
+    // both are as wide here, so that the width reaches the renderer.
+    let mut map = map("sans", "A");
+    let style = &mut map.layers[0].classes[0].styles[0];
+    style.outline_color = Some(Bound::Value(Rgba::opaque(200, 30, 30)));
+    style.width = Some(Bound::Value(1e12));
+    style.max_width = Some(1e12);
+    let rendered = render(&map);
+    assert!(rendered.image.is_some(), "{:?}", rendered.diagnostics);
+}
