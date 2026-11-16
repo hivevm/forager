@@ -67,3 +67,7 @@ input, and the session stops.
   `scripts/check-docs.sh`.
 - Note: `scripts/fuzz.sh` takes seconds, not a target name, so `scripts/fuzz.sh render` does not
   run one target. The run above used `cargo fuzz run render` with fuzz.sh's flags.
+- Held on the maintainer's word (2026-11-16): the crash is fixed first by
+  `docs/plan/revision-2026-11-16/16-glyph-outline-width-bounded.md`. This branch then rebases onto
+  that fix, adds the crash input as a seed, deletes its backlog entry, runs the 300 seconds again,
+  and runs `scripts/check-all.sh`.
