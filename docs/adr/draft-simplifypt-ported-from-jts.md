@@ -128,7 +128,9 @@ index. The counts:
 A ring costs most at a large tolerance, a long open line at a small one. With rstar's R-tree as
 the index, the ring of 100,000 points at 50 examines 24,608,377 nodes and segments in 0.52 s. The
 wiggling line of 100,000 points at 1 examines 3,261,214 in 0.28 s. GEOS 3.12.1 took 1.4 s for the
-ring, with its output written. Q-9 lets one layer's transforms visit 100,000,000 points. Without
+ring, with its output written. It took 0.06 s for the wiggling line of 20,000 points at 1,
+0.11 s for 30,000, and 0.66 s for 100,000, each the median of three runs with its output written.
+Q-9 lets one layer's transforms visit 100,000,000 points. Without
 an index, a wiggling line of about 22,000 points at 1 passes that bound alone. So does a ring of
 20,000 points at 50, and a shell with 2,000 holes.
 
@@ -271,7 +273,7 @@ We will compute `simplifypt` in the geometry module of `crates/symbolize` by a p
   - without a spatial index, the queries examine the square of a shape's segments in the worst
     case. A wiggling line of about 22,000 points at a tolerance of 1, or a ring of 20,000 points
     at 50, passes the bound of Q-9 on visits alone. Its layer draws nothing, where MapServer draws
-    it in about a second;
+    it. GEOS 3.12.1 simplified such a line in about a tenth of a second, as measured;
   - the jump test compares each section with every other component. With the queries, a polygon
     of 2,000 holes passes the bound in the same way;
   - a zigzag of falling amplitude scans about n²/2 points, as ADR-0041's Douglas-Peucker does;
