@@ -92,6 +92,17 @@ pub enum DrawOp {
         rings: Vec<Vec<Point>>,
         tile: Rc<Tile>,
     },
+    /// Brushes the paths of one shape in one style with `tile`, its brush tile, as
+    /// `agg2RenderLineTiled` brushes a line: the tile sampled along each segment and across it, as
+    /// wide as the tile is high, turned with the segment, its position along the line starting at
+    /// 0 and carried over every segment and path. The paths are clipped to the image grown by
+    /// `reach`, the class's `clip_buf` in pixels, as every path is (ADR-0027). The tile is the one
+    /// the render holds, shared by every item it brushes or fills (ADR-0029).
+    BrushedLine {
+        paths: Vec<Vec<Point>>,
+        tile: Rc<Tile>,
+        reach: f64,
+    },
 }
 
 /// The join on the inner side of a turn, AGG's `inner_join_e`: of its four, the two MapServer's

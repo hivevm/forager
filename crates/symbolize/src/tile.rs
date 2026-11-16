@@ -1,6 +1,6 @@
-// The tile of a polygon's pixmap or vector symbol follows the tile's size in MapServer's
-// msDrawShadeSymbol(), getTile(), searchTileCache(), and addTileCache(), src/maprendering.c, of
-// the release pinned in scripts/fetch-msautotest.sh.
+// The tile of a polygon's or a line's symbol follows the tile's size in MapServer's
+// msDrawShadeSymbol(), msDrawLineSymbol(), getTile(), searchTileCache(), and addTileCache(),
+// src/maprendering.c, of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
@@ -15,10 +15,10 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The tile a polygon is filled with: its size, as MapServer computes it, held to Q-9's bound
-//! before anything is allocated for it, and the cache of a render's tiles, which builds each once
-//! and holds as many as MapServer holds, their bytes counted with the render's decoded images
-//! (ADR-0029).
+//! The fill tile of a polygon and the brush tile of a line: its size, as MapServer computes it,
+//! held to Q-9's bound before anything is allocated for it, and the cache of a render's tiles,
+//! which builds each once and holds as many as MapServer holds, their bytes counted with the
+//! render's decoded images and, for a brush tile, the copy its brush makes (ADR-0029).
 
 use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
@@ -29,11 +29,41 @@ use forager_style_ir::{Rgba, Symbol};
 
 use crate::symbol::{self, SymbolStyle};
 
-/// The most bytes the images one render holds decoded come to, its fill tiles among them (Q-9).
+/// The most bytes the images one render holds decoded come to, its tiles and the copies a line's
+/// brush makes of them among them (Q-9).
 pub const MAX_DECODED_IMAGE_BYTES: usize = 256 * 1024 * 1024;
 
 /// How many tiles a render holds, MapServer's `MS_IMAGECACHESIZE`.
 const MAX_TILES_HELD: usize = 6;
+
+/// What a tile is asked for, which decides its size and what it counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TileFor {
+    /// A fill tile, of the size msDrawShadeSymbol asks, its gap included.
+    Polygon,
+    /// A brush tile, of the size msDrawLineSymbol asks, without a gap; it counts the copy the
+    /// line's brush makes of it beside it (see [`Tile::brush_bytes`]).
+    Line,
+}
+
+impl TileFor {
+    /// The gap the size of a tile asked for this with `gap` takes: msDrawLineSymbol asks for
+    /// none.
+    fn gap(self, gap: f64) -> f64 {
+        match self {
+            Self::Polygon => gap,
+            Self::Line => 0.0,
+        }
+    }
+
+    /// The bytes the drawing with a tile of `width` by `height` adds while it draws.
+    fn drawing_bytes(self, width: u32, height: u32) -> usize {
+        match self {
+            Self::Polygon => 0,
+            Self::Line => Tile::brush_bytes(width, height),
+        }
+    }
+}
 
 /// A tile's side in pixels as msDrawShadeSymbol computes it from the symbol's `side`, its image's
 /// or its extent's, `scale`, and `gap`, before the assignment to `int` narrows it: at a scale
@@ -128,31 +158,42 @@ impl Tiles {
         held + let_go
     }
 
-    /// The tile held that serves `key`, as searchTileCache finds it, and its note, if any.
-    fn held(&self, key: &Key) -> Option<(Rc<Tile>, Note)> {
-        self.held
+    /// The tile held that serves `key`, as searchTileCache finds it, and its note, if any, or why
+    /// it is refused: asked for a line, where the copy its brush makes would bring the render's
+    /// images and tiles past [`MAX_DECODED_IMAGE_BYTES`].
+    fn held(&mut self, key: &Key, asked: TileFor) -> Option<Result<(Rc<Tile>, Note), String>> {
+        let (tile, note) = self
+            .held
             .iter()
             .find(|(held, _, _)| held.serves(key))
-            .map(|(_, tile, note)| (Rc::clone(tile), note.clone()))
+            .map(|(_, tile, note)| (Rc::clone(tile), note.clone()))?;
+        let drawing = asked.drawing_bytes(key.width, key.height);
+        self.let_go.retain(|tile| tile.strong_count() > 0);
+        if drawing > 0 && self.images + self.bytes() + drawing > MAX_DECODED_IMAGE_BYTES {
+            return Some(Err(past_bytes(key, asked)));
+        }
+        Some(Ok((tile, note)))
     }
 
-    /// The tile of `key`, held or made new by `marks`, without a note (see [`Self::noted`]).
-    fn tile(&mut self, key: Key, marks: Vec<DrawOp>) -> Result<Rc<Tile>, String> {
-        self.noted(key, marks, None).map(|(tile, _)| tile)
+    /// The tile of `key` asked for `asked`, held or made new by `marks`, without a note (see
+    /// [`Self::noted`]).
+    fn tile(&mut self, key: Key, asked: TileFor, marks: Vec<DrawOp>) -> Result<Rc<Tile>, String> {
+        self.noted(key, asked, marks, None).map(|(tile, _)| tile)
     }
 
-    /// The tile of `key` and its note, held, or made new by `marks` and kept with `note`. Where six
-    /// are held, the one built longest ago is let go first, as addTileCache drops it. One that
-    /// would bring the render's images and tiles past [`MAX_DECODED_IMAGE_BYTES`] is refused, and
-    /// none let go for it.
+    /// The tile of `key` asked for `asked` and its note, held, or made new by `marks` and kept with
+    /// `note`. Where six are held, the one built longest ago is let go first, as addTileCache drops
+    /// it. One that would bring the render's images and tiles past [`MAX_DECODED_IMAGE_BYTES`],
+    /// with the copy a line's brush makes of it, is refused, and none let go for it.
     fn noted(
         &mut self,
         key: Key,
+        asked: TileFor,
         marks: Vec<DrawOp>,
         note: Note,
     ) -> Result<(Rc<Tile>, Note), String> {
-        if let Some(held) = self.held(&key) {
-            return Ok(held);
+        if let Some(held) = self.held(&key, asked) {
+            return held;
         }
         // `tile` bounds the sides first, so this is not reached from it; `Tile::new` keeps a bound
         // of its own, so that no caller of it allocates past Q-9's.
@@ -169,12 +210,9 @@ impl Tiles {
             _ => 0,
         };
         self.let_go.retain(|tile| tile.strong_count() > 0);
-        if self.images + self.bytes() - freed + tile.bytes() > MAX_DECODED_IMAGE_BYTES {
-            return Err(format!(
-                "its tile of {} × {} pixels would bring the images and tiles this render holds \
-                 past the limit of {MAX_DECODED_IMAGE_BYTES} bytes",
-                key.width, key.height
-            ));
+        let drawing = asked.drawing_bytes(key.width, key.height);
+        if self.images + self.bytes() - freed + tile.bytes() + drawing > MAX_DECODED_IMAGE_BYTES {
+            return Err(past_bytes(&key, asked));
         }
         if self.held.len() == MAX_TILES_HELD
             && let Some((_, oldest, _)) = self.held.pop_front()
@@ -185,6 +223,19 @@ impl Tiles {
         self.held.push_back((key, Rc::clone(&tile), note.clone()));
         Ok((tile, note))
     }
+}
+
+/// Why the tile of `key` asked for `asked` is refused by the bytes it would bring the render to.
+fn past_bytes(key: &Key, asked: TileFor) -> String {
+    let copy = match asked {
+        TileFor::Polygon => "",
+        TileFor::Line => " and the copy its line's brush makes of it",
+    };
+    format!(
+        "its tile of {} × {} pixels{copy} would bring the images and tiles this render holds past \
+         the limit of {MAX_DECODED_IMAGE_BYTES} bytes",
+        key.width, key.height
+    )
 }
 
 /// Why a tile of `width` by `height` pixels is refused: each side as a number of pixels where it
@@ -205,21 +256,23 @@ fn past_side(width: f64, height: f64) -> String {
     )
 }
 
-/// The tile of the pixmap symbol at `index` from 1 with the image `image`, as msDrawShadeSymbol
-/// asks getTile for it at `scale`, `rotation`, and `gap`: its size held to Q-9's bound first, so
-/// that nothing is allocated for one past it; then the tile the cache holds, or a new one, whose
-/// mark is the image as agg2RenderPixmapSymbol draws it at the tile's centre, unmoved by the
-/// symbol's anchor point. No seamless mode: msDrawShadeSymbol sets it for a vector symbol alone.
+/// The tile of the pixmap symbol at `index` from 1 with the image `image`, as msDrawShadeSymbol,
+/// or msDrawLineSymbol where `asked` is a line's, asks getTile for it at `scale`, `rotation`, and
+/// `gap`: its size held to Q-9's bound first, so that nothing is allocated for one past it; then
+/// the tile the cache holds, or a new one, whose mark is the image as agg2RenderPixmapSymbol draws
+/// it at the tile's centre, unmoved by the symbol's anchor point. No seamless mode:
+/// msDrawShadeSymbol sets it for a vector symbol alone.
 pub(crate) fn tile(
     tiles: &mut Tiles,
     index: usize,
     image: Rc<PremultipliedImage>,
     (scale, rotation, gap): (f64, f64, f64),
+    asked: TileFor,
 ) -> Result<Rc<Tile>, String> {
     let (width, height) = size(
         (f64::from(image.width()), f64::from(image.height())),
         scale,
-        gap,
+        asked.gap(gap),
     )?;
     let key = Key {
         symbol: index,
@@ -235,7 +288,11 @@ pub(crate) fn tile(
         x: f64::from(width) / 2.0,
         y: f64::from(height) / 2.0,
     };
-    tiles.tile(key, vec![symbol::render_pixmap(at, image, scale, rotation)])
+    tiles.tile(
+        key,
+        asked,
+        vec![symbol::render_pixmap(at, image, scale, rotation)],
+    )
 }
 
 /// The tile's width and height for a symbol of `sides`, at `scale` and `gap`, each held to Q-9's
@@ -277,19 +334,20 @@ fn centres(width: u32, height: u32, seamless: bool) -> Vec<Point> {
     centres
 }
 
-/// The tile of the vector or ellipse symbol `symbol`, at `index` from 1, as msDrawShadeSymbol asks
-/// getTile for it in `s`: its size of the symbol's extent, held to Q-9's bound first; seamless
-/// where `seamless` (see [`centres`]); then the tile the cache holds, or a new one, whose marks are
-/// the symbol as agg2RenderVectorSymbol or agg2RenderEllipseSymbol draws it at each centre.
+/// The tile of the vector or ellipse symbol `symbol`, at `index` from 1, as msDrawShadeSymbol, or
+/// msDrawLineSymbol where `asked` is a line's, asks getTile for it in `s`: its size of the
+/// symbol's extent, held to Q-9's bound first; seamless where `seamless` (see [`centres`]); then
+/// the tile the cache holds, a seamless one serving a line too, or a new one, whose marks are the
+/// symbol as agg2RenderVectorSymbol or agg2RenderEllipseSymbol draws it at each centre.
 pub(crate) fn vector_tile(
     tiles: &mut Tiles,
     index: usize,
     symbol: &Symbol,
     s: &SymbolStyle,
-    seamless: bool,
+    (seamless, asked): (bool, TileFor),
 ) -> Result<Rc<Tile>, String> {
     let [size_x, size_y] = symbol.extent.unwrap_or([0.0, 0.0]);
-    let (width, height) = size((size_x, size_y), s.scale, s.gap)?;
+    let (width, height) = size((size_x, size_y), s.scale, asked.gap(s.gap))?;
     let key = Key {
         symbol: index,
         width,
@@ -304,22 +362,23 @@ pub(crate) fn vector_tile(
     for at in centres(width, height, seamless) {
         symbol::render(&mut marks, at, symbol, s);
     }
-    tiles.tile(key, marks)
+    tiles.tile(key, asked, marks)
 }
 
-/// The tile of the TrueType symbol at `index` from 1, as msDrawShadeSymbol asks getTile for it in
-/// `s`: its size of the symbol's extent, 1 by 1 as initSymbol leaves a TrueType symbol's, at the
-/// scale and gap, held to Q-9's bound first; then the tile the cache holds and its note, or a new
-/// one, whose mark and note `mark` gives at the tile's centre, called only for a new one; none
-/// where `mark` draws nothing. Never seamless: msDrawShadeSymbol sets that for a vector symbol
-/// alone.
+/// The tile of the TrueType symbol at `index` from 1, as msDrawShadeSymbol, or msDrawLineSymbol
+/// where `asked` is a line's, asks getTile for it in `s`: its size of the symbol's extent, 1 by 1
+/// as initSymbol leaves a TrueType symbol's, at the scale and gap, held to Q-9's bound first; then
+/// the tile the cache holds and its note, or a new one, whose mark and note `mark` gives at the
+/// tile's centre, called only for a new one; none where `mark` draws nothing. Never seamless:
+/// msDrawShadeSymbol sets that for a vector symbol alone.
 pub(crate) fn glyph_tile(
     tiles: &mut Tiles,
     index: usize,
     s: &SymbolStyle,
+    asked: TileFor,
     mark: impl FnOnce(Point) -> Option<(DrawOp, Note)>,
 ) -> Result<Option<(Rc<Tile>, Note)>, String> {
-    let (width, height) = size((1.0, 1.0), s.scale, s.gap)?;
+    let (width, height) = size((1.0, 1.0), s.scale, asked.gap(s.gap))?;
     let key = Key {
         symbol: index,
         width,
@@ -330,8 +389,8 @@ pub(crate) fn glyph_tile(
         fill: s.fill,
         outline: s.outline,
     };
-    if let Some(held) = tiles.held(&key) {
-        return Ok(Some(held));
+    if let Some(held) = tiles.held(&key, asked) {
+        return held.map(Some);
     }
     let at = Point {
         x: f64::from(width) / 2.0,
@@ -340,7 +399,7 @@ pub(crate) fn glyph_tile(
     let Some((mark, note)) = mark(at) else {
         return Ok(None);
     };
-    tiles.noted(key, vec![mark], note).map(Some)
+    tiles.noted(key, asked, vec![mark], note).map(Some)
 }
 
 #[cfg(test)]
@@ -421,14 +480,20 @@ mod tests {
 
     /// The tile of symbol 1 at a gap of `side`, so `side` pixels a side.
     fn gapped(tiles: &mut Tiles, side: u32) -> Result<Rc<Tile>, String> {
-        tile(tiles, 1, pin(), (1.0, 0.0, f64::from(side)))
+        tile(
+            tiles,
+            1,
+            pin(),
+            (1.0, 0.0, f64::from(side)),
+            TileFor::Polygon,
+        )
     }
 
     #[test]
     fn a_tile_is_kept_by_symbol_size_scale_and_rotation() {
         let mut tiles = Tiles::default();
-        let first = tile(&mut tiles, 1, pin(), (2.0, 0.5, 0.0)).unwrap();
-        let again = tile(&mut tiles, 1, pin(), (2.0, 0.5, 0.0)).unwrap();
+        let first = tile(&mut tiles, 1, pin(), (2.0, 0.5, 0.0), TileFor::Polygon).unwrap();
+        let again = tile(&mut tiles, 1, pin(), (2.0, 0.5, 0.0), TileFor::Polygon).unwrap();
         assert!(Rc::ptr_eq(&first, &again));
         for (index, style) in [
             (2, (2.0, 0.5, 0.0)),
@@ -436,14 +501,22 @@ mod tests {
             (1, (2.0, 0.25, 0.0)),
             (1, (2.0, 0.5, 9.0)),
         ] {
-            let other = tile(&mut tiles, index, pin(), style).unwrap();
+            let other = tile(&mut tiles, index, pin(), style, TileFor::Polygon).unwrap();
             assert!(!Rc::ptr_eq(&first, &other), "{index} {style:?}");
         }
         // SIZE 15.6 and 16.4 of an image of 32 pixels both make tiles of 16 × 16, at scales that
         // differ, so they are kept apart.
         let image = Rc::new(PremultipliedImage::new(32, 32, vec![9; 32 * 32 * 4]).unwrap());
-        let mut at =
-            |size: f64| tile(&mut tiles, 1, image.clone(), (size / 32.0, 0.0, 0.0)).unwrap();
+        let mut at = |size: f64| {
+            tile(
+                &mut tiles,
+                1,
+                image.clone(),
+                (size / 32.0, 0.0, 0.0),
+                TileFor::Polygon,
+            )
+            .unwrap()
+        };
         let (smaller, larger) = (at(15.6), at(16.4));
         assert_eq!((smaller.width(), larger.width()), (16, 16));
         assert!(!Rc::ptr_eq(&smaller, &larger));
@@ -502,11 +575,11 @@ mod tests {
         }
         tiles.count_images(MAX_DECODED_IMAGE_BYTES - tiles.bytes());
         assert!(gapped(&mut tiles, 2).is_ok(), "the tile held");
-        let refused = tile(&mut tiles, 2, pin(), (1.0, 0.0, 2.0));
+        let refused = tile(&mut tiles, 2, pin(), (1.0, 0.0, 2.0), TileFor::Polygon);
         assert!(refused.is_err(), "the oldest still referred to");
         assert_eq!(tiles.held.len(), 6);
         drop(oldest);
-        let taken = tile(&mut tiles, 2, pin(), (1.0, 0.0, 2.0));
+        let taken = tile(&mut tiles, 2, pin(), (1.0, 0.0, 2.0), TileFor::Polygon);
         assert!(taken.is_ok(), "its bytes free once nothing refers to it");
     }
 
@@ -562,7 +635,7 @@ mod tests {
         // (j + 0.5) × 8 - 8) for i and j from 1 to 3: its line's start (0, 1) lies 1.5 × 4 left of
         // the centre, on its row.
         let s = arrow_style(8.0, 0.0, 0.0);
-        let tile = vector_tile(&mut tiles, 1, &arrow(), &s, true).unwrap();
+        let tile = vector_tile(&mut tiles, 1, &arrow(), &s, (true, TileFor::Polygon)).unwrap();
         assert_eq!((tile.width(), tile.height()), (12, 8));
         let mut starts = Vec::new();
         for x in [6.0, 18.0, 30.0] {
@@ -574,13 +647,13 @@ mod tests {
         // Its second style, SIZE 16 ANGLE 40: scale 8, 24 × 16, turned by 40 degrees.
         let s = arrow_style(16.0, 40.0, 0.0);
         assert_eq!(s.rotation, 40.0 * forager_style_ir::c::DEG_TO_RAD);
-        let tile = vector_tile(&mut tiles, 1, &arrow(), &s, true).unwrap();
+        let tile = vector_tile(&mut tiles, 1, &arrow(), &s, (true, TileFor::Polygon)).unwrap();
         assert_eq!((tile.width(), tile.height()), (24, 16));
         assert_eq!(tile.marks().len(), 9);
         // Not seamless, with a GAP of 20 at SIZE 8: the larger of MS_NINT(20) and 3 × 4, and of
         // MS_NINT(20) and 2 × 4, the arrow once at the centre (10, 10).
         let s = arrow_style(8.0, 0.0, 20.0);
-        let tile = vector_tile(&mut tiles, 1, &arrow(), &s, false).unwrap();
+        let tile = vector_tile(&mut tiles, 1, &arrow(), &s, (false, TileFor::Polygon)).unwrap();
         assert_eq!((tile.width(), tile.height()), (20, 20));
         assert_eq!(stroke_starts(tile.marks()), [(4.0, 10.0)]);
     }
@@ -590,7 +663,14 @@ mod tests {
         // Verifies: Q-9
         // A GAP of 5000 at SIZE 8 asks 5000 × 5000; a SIZE alone is held to MAXSIZE first.
         let s = arrow_style(8.0, 0.0, 5000.0);
-        let why = vector_tile(&mut Tiles::default(), 1, &arrow(), &s, false).unwrap_err();
+        let why = vector_tile(
+            &mut Tiles::default(),
+            1,
+            &arrow(),
+            &s,
+            (false, TileFor::Polygon),
+        )
+        .unwrap_err();
         assert!(why.contains("a tile of 5000 × 5000 pixels"), "{why}");
     }
 
@@ -624,14 +704,28 @@ mod tests {
         // MS_NINT(20 - 16) = 4 for a tile of 40 × 40 and a 32 × 32 image.
         let image = Rc::new(PremultipliedImage::new(32, 32, vec![0; 32 * 32 * 4]).unwrap());
         let mut tiles = Tiles::default();
-        let gapped = tile(&mut tiles, 1, Rc::clone(&image), (1.0, 0.0, 40.7)).unwrap();
+        let gapped = tile(
+            &mut tiles,
+            1,
+            Rc::clone(&image),
+            (1.0, 0.0, 40.7),
+            TileFor::Polygon,
+        )
+        .unwrap();
         assert_eq!((gapped.width(), gapped.height()), (40, 40));
         match &gapped.marks()[0] {
             DrawOp::Pixmap { left, top, .. } => assert_eq!((*left, *top), (4, 4)),
             other => panic!("{other:?}"),
         }
         // Scaled and turned: resampled about the centre, (7.5, 7.5) of a tile of 15 × 15.
-        let turned = tile(&mut tiles, 1, image, (15.0 / 32.0, 1.0, 0.0)).unwrap();
+        let turned = tile(
+            &mut tiles,
+            1,
+            image,
+            (15.0 / 32.0, 1.0, 0.0),
+            TileFor::Polygon,
+        )
+        .unwrap();
         assert_eq!((turned.width(), turned.height()), (15, 15));
         match &turned.marks()[0] {
             DrawOp::ResampledPixmap { at, .. } => assert_eq!(*at, Point { x: 7.5, y: 7.5 }),

@@ -56,7 +56,8 @@ fn points(ops: &[DrawOp]) -> usize {
             | DrawOp::Glyphs { .. }
             | DrawOp::Pixmap { .. }
             | DrawOp::ResampledPixmap { .. }
-            | DrawOp::TiledFill { .. } => 0,
+            | DrawOp::TiledFill { .. }
+            | DrawOp::BrushedLine { .. } => 0,
         })
         .sum()
 }

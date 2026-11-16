@@ -32,6 +32,7 @@
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
+mod brush;
 mod glyphs;
 mod hatch;
 mod pixfmt;
@@ -455,6 +456,7 @@ impl Draw for AggRenderer {
                 inverse,
             } => self.resampled_pixmap(image, *at, *half, inverse),
             DrawOp::TiledFill { rings, tile } => self.tiled_fill(rings, tile),
+            DrawOp::BrushedLine { paths, tile, reach } => self.brushed_line(paths, tile, *reach),
         }
     }
 }

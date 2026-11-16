@@ -192,7 +192,8 @@ golden path and the test pattern an agent copies from are named here.
   pixmap symbols name it loads by one load, once per render and path through the host's resource
   loader, each file held to the 32 MiB of Q-9 that a font file and a symbol image's file share
   (`resource.rs`, the fonts and the face a line is drawn in `fonts.rs`); each image it decodes
-  once and holds within Q-9's bound on the bytes one render's images and fill tiles come to
+  once and holds within Q-9's bound on the bytes one render's images, tiles, and brushes' copies
+  come to
   (`images.rs`,
   [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0031), and
@@ -218,7 +219,8 @@ golden path and the test pattern an agent copies from are named here.
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
-  refused, a label's among them, vector and TrueType symbols whose fill tile the cache refused,
+  refused, a label's among them, vector and TrueType symbols whose fill or brush tile the cache
+  refused,
   TrueType symbols whose font cannot be used or lacks the character, and geometries its render
   mode cannot draw (Q-9); the hatches, pixmaps, and symbols are one value, `Refusals`, which a
   canvas yields, the labels keep per layer and merge, and one function of `layer.rs` turns into the
@@ -244,7 +246,8 @@ golden path and the test pattern an agent copies from are named here.
   images a layer's styles will draw, which the engine loads before it draws the layer
   (`draw.rs`); the circle a circle layer draws of a shape of two points, as a polygon in pixels
   (`circle.rs`); a polygon's fill through MapServer's default gamma, and a polygon filled with its
-  pixmap's tile (`shade.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
+  pixmap's tile (`shade.rs`); a line brushed with its symbol's brush tile, where its `GAP` is 0
+  (`line.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
   at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol` fills about the
   point and the inverse of the image's transformation (`marker.rs`); a TrueType symbol's glyph at
   a point, anchored, along a line, and tiled over a polygon, asked of the port `Glyphs` the engine
@@ -269,8 +272,9 @@ golden path and the test pattern an agent copies from are named here.
   clip of a hatched polygon and of a line shape by the class's buffer, as msDrawShape clips them,
   and the reference point a hatch's lines count from (`hatch.rs`); vector,
   ellipse, and pixmap symbols along a line, and the layer's budget of markers
-  (`line_marker.rs`); a polygon's tile, its size held to Q-9's bound, and the render's
-  cache of six tiles, counted with the decoded images (`tile.rs`); line offsets (`offset.rs`); and
+  (`line_marker.rs`); a polygon's fill tile and a line's brush tile, its size held to Q-9's
+  bound, and the render's cache of six tiles, counted with the decoded images and a brush's copy
+  (`tile.rs`); line offsets (`offset.rs`); and
   the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a layer's
   `GEOMTRANSFORM`, its transform tree evaluated on each feature's shape before the engine classes
   it, and a class style's tree evaluated on the shape in pixels as it is drawn (`draw.rs`), what
@@ -310,9 +314,10 @@ golden path and the test pattern an agent copies from are named here.
   depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
   or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
-  transformation, each by a counted reference to the one image, a polygon filled with a tile, by
-  a counted reference to the tile, which holds its size within Q-9's bound, the drawing that makes
-  it, and its image once the renderer has built it (`tile.rs`), the
+  transformation, each by a counted reference to the one image, a polygon filled with a tile and
+  a line brushed with one, by a counted reference to the tile, which holds its size within Q-9's
+  bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
+  renderer has built it (`tile.rs`), the
   renderer trait, the RGBA image, and the premultiplied image a pixmap is decoded to
   (`PremultipliedImage`, ADR-0029); the cost model that bounds a hatch before it is cut
   (`Hatch::is_bounded`, ADR-0042, `hatch.rs`); and the clip of every path to the image, its
@@ -330,7 +335,10 @@ golden path and the test pattern an agent copies from are named here.
   bilinear clip filter and linear interpolator, `iround` being `style-ir`'s `lrint` narrowed to an
   `int`, over the packed scanlines of the square it fills (`resample.rs`,
   [ADR-0026](adr/0026-agg-blender-and-resampler.md)), builds a tile the first time
-  it fills with it, in a transparent image of its own, and repeats it from the image's origin, and
+  it draws with it, in a transparent image of its own, and repeats it from the image's origin,
+  brushes a line with a tile through agg-rust's outline-image rasterizer, a port of AGG 2.4's
+  bilinear pattern filter, and the pattern's start carried across the clip (`brush.rs`,
+  [ADR-draft-symbol-line-brushed-by-its-tile](adr/draft-symbol-line-brushed-by-its-tile.md)), and
   is the one crate that may use `unsafe` ([ADR-0025](adr/0025-agg-rust-rasterizer.md)); it cuts a
   hatch from its polygon with i_overlay, the one crate of the workspace that depends on it
   directly

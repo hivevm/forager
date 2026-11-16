@@ -18,15 +18,15 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use forager_render::PremultipliedImage;
+use forager_render::{PremultipliedImage, Tile};
 use forager_style_ir::{Style, Symbol};
 
 use crate::glyph::Glyphs;
 use crate::hatch::Hatching;
 use crate::layer_transform::StyleTrees;
 use crate::line_marker::MarkerBudget;
-use crate::symbol::{self, Factors, Pixmaps};
-use crate::tile::Tiles;
+use crate::symbol::{self, Factors, Pixmaps, SymbolStyle};
+use crate::tile::{self, TileFor, Tiles};
 
 /// What a layer draws its features on beside the view: the map's symbols, the images of its
 /// pixmap symbols and the render's tiles of them, the image's width and height in pixels, the
@@ -237,25 +237,49 @@ impl<'a> Canvas<'a> {
         symbol::named(index, symbol)
     }
 
-    /// Records the pixmap symbol of `mark`, if it is one, as not drawn where MapServer tiles its
-    /// image along a line, without a GAP, which Forager does not: the style's `COLOR` stands in
-    /// for it, or, for the first style of a class, its `OUTLINECOLOR` without a `COLOR`; nothing
-    /// otherwise. Its image is not read, so that one that does not exist warns too.
-    pub(crate) fn untiled_pixmap(&mut self, mark: &symbol::Mark<'_>) {
-        let symbol::Mark::Pixmap(index, symbol) = *mark else {
-            return;
+    /// The tile of the pixmap symbol at `index` from 1 with the image `image`, of `style` at the
+    /// canvas's factors, asked for `asked`: computeSymbolStyle's scale, rotation, and gap give the
+    /// tile of the canvas's (see [`tile::tile`]). Where it is refused (Q-9), there is none, and the
+    /// canvas records why.
+    pub(crate) fn pixmap_tile<T>(
+        &mut self,
+        style: &Style<T>,
+        index: usize,
+        image: Rc<PremultipliedImage>,
+        asked: TileFor,
+    ) -> Option<Rc<Tile>> {
+        let drawn = symbol::pixmap_style(style, image.height(), self.factors);
+        // The engine's canvas always keeps tiles; one made without them, as a test's is, refuses
+        // the drawing rather than build a tile that nothing would hold or count (Q-9).
+        let tile = match self.tiles.as_deref_mut() {
+            Some(tiles) => tile::tile(tiles, index, image, drawn, asked),
+            None => Err("no tiles are kept where it is drawn".to_owned()),
         };
-        self.refused_pixmaps.entry(index).or_insert_with(|| {
-            let image = symbol
-                .image
-                .as_deref()
-                .map_or("its image".to_owned(), |path| format!("its image {path}"));
-            format!(
-                "MapServer tiles {image} along a line without a GAP, which Forager does not \
-                 yet; the style's COLOR is drawn in its place, or, for the first style of a \
-                 class, its OUTLINECOLOR without a COLOR; nothing otherwise"
-            )
-        });
+        tile.map_err(|why| {
+            self.refused_pixmaps.entry(index).or_insert(why);
+        })
+        .ok()
+    }
+
+    /// The tile of the vector or ellipse symbol `symbol`, at `index` from 1, in
+    /// computeSymbolStyle's `s`, seamless where `seamless`, asked for `asked` (see
+    /// [`tile::vector_tile`]). Where it is refused (Q-9), there is none, and the canvas records
+    /// why.
+    pub(crate) fn symbol_tile(
+        &mut self,
+        index: usize,
+        symbol: &Symbol,
+        s: &SymbolStyle,
+        seamless_and_asked: (bool, TileFor),
+    ) -> Option<Rc<Tile>> {
+        let tile = match self.tiles.as_deref_mut() {
+            Some(tiles) => tile::vector_tile(tiles, index, symbol, s, seamless_and_asked),
+            None => Err("no tiles are kept where it is drawn".to_owned()),
+        };
+        tile.map_err(|why| {
+            self.refused_symbols.entry(index).or_insert(why);
+        })
+        .ok()
     }
 
     /// The image of the pixmap symbol `symbol`, at `index` from 1, or `None`, its refusal

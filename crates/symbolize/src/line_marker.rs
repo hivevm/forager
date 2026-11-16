@@ -281,7 +281,9 @@ pub(crate) fn taken(
 /// The points of a drawing operation.
 pub(crate) fn points(op: &DrawOp) -> usize {
     match op {
-        DrawOp::Stroke { paths, .. } => paths.iter().map(Vec::len).sum(),
+        DrawOp::Stroke { paths, .. } | DrawOp::BrushedLine { paths, .. } => {
+            paths.iter().map(Vec::len).sum()
+        }
         DrawOp::Fill { rings, .. } | DrawOp::TiledFill { rings, .. } => {
             rings.iter().map(Vec::len).sum()
         }

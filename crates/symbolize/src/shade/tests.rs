@@ -79,7 +79,8 @@ fn a_filled_polygon_is_outlined_at_its_fill_s_alpha() {
         | DrawOp::Glyphs { .. }
         | DrawOp::Pixmap { .. }
         | DrawOp::ResampledPixmap { .. }
-        | DrawOp::TiledFill { .. } => {
+        | DrawOp::TiledFill { .. }
+        | DrawOp::BrushedLine { .. } => {
             panic!("the outline is a stroke")
         }
     }

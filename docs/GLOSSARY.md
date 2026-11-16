@@ -17,6 +17,13 @@ to invent.
 - **Binding** — A style property that takes a feature's property, as a mapfile's `[name]` binds
   an attribute: `{"binding": name}` in the style IR, read with MapServer's rules, not as an
   expression ([`semantics/binding.md`](semantics/binding.md)).
+- **Brush tile** — The image a line style's vector, ellipse, pixmap, or TrueType symbol without a
+  `GAP` brushes the line with: the symbol centred in a transparent image of the size
+  `msDrawLineSymbol` computes, sampled along each segment and across it, turned with the segment.
+  It shares the render's cache and key with the fill tile, so one serves as the other
+  ([ADR-draft-symbol-line-brushed-by-its-tile](adr/draft-symbol-line-brushed-by-its-tile.md)). The
+  code's `Tile`, drawn by `DrawOp::BrushedLine`.
+  _Avoid:_ line pattern, line tile.
 - **Core** — The crates that turn a style IR and features into pixels: no I/O, no C code, no
   MapServer syntax, and buildable for `wasm32-unknown-unknown`.
 - **Diagnostic** — A message from loading or rendering, with a severity, a code, a text, and a

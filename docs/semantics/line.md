@@ -10,7 +10,9 @@
   line's width as [`scale.md`](scale.md) states, so dashes grow with a line that grows.
 - `GAP`: the distance between symbols drawn along a line, any number. A positive one keeps the
   symbols upright; a negative one turns them with the line, its size the distance
-  (`msImagePolylineMarkers` with `auto_angle` 1). 0 draws the symbol as a brush along the line. Each
+  (`msImagePolylineMarkers` with `auto_angle` 1). 0 draws the symbol as a brush along the line: a
+  vector, ellipse, pixmap, or TrueType symbol brushes the line with its brush tile, as
+  [`symbol.md`](symbol.md) states, and any other is drawn as a simple symbol's line. Each
   line of a shape counts from its start, a segment carrying on what the one before left over; a line
   on which no symbol falls, without `INITIALGAP`, and longer than the symbol is wide takes one at
   half its length. A pixmap symbol is drawn there as at a point ([`symbol.md`](symbol.md)), without
@@ -75,7 +77,12 @@ rectangle ends there, and one that comes back is a line of its own from there. I
   line `msDrawShape` leaves longer, one of `POLYLINE_NO_CLIP` or one whose class's buffer is
   wider than the renderer's margin, a stroke wider than 2 pixels with round or bevel joins, has
   its dashes counted from the renderer's clip, where MapServer counts them from the line's start.
-- With a `GAP` of 0, `msDrawLineSymbol` tiles a pixmap's image along the line
-  (`renderLineTiled`). Forager strokes the line instead as a simple symbol's, in the `COLOR` or
-  else the `OUTLINECOLOR` for the first style of a class, and a later style without a `COLOR` not
-  at all.
+- A line brushed with its tile, of a `GAP` of 0, that the renderer's clip cuts, as one of
+  `POLYLINE_NO_CLIP` beyond the class's buffer and 2 pixels, draws the segment cut from an end
+  rounded to the clip's edge, without the join before it, where MapServer saturates the line's
+  coordinates instead. The pattern's place along the rest of the line is MapServer's. A piece of
+  it on which the pattern's place would pass an `int` beside a tile some 4096 pixels high is not
+  drawn, where AGG's C++ is undefined.
+- A brushed line's segment longer than 1024 pixels close to 45°, or a join whose bisectrix falls
+  on an exact half, can differ from MapServer by a pixel's shade: agg-rust divides such a
+  segment, and rounds a half away from zero, otherwise than AGG 2.4.

@@ -60,6 +60,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "offset",
             "style",
             "symbol",
+            "tile",
         ],
     ),
     (
