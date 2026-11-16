@@ -461,8 +461,8 @@ struct Drawing<'a> {
     layer: &'a Layer,
     /// The map's scale, which a style's scale range is compared to.
     scale: f64,
-    view: &'a View,
-    /// The map's rotation, which turns the angles of a point layer's styles.
+    /// The map's rotation: the view of its frame, which the features are drawn in, and the turn
+    /// of a point layer's styles' angles.
     rotation: &'a Rotation,
     /// The reprojection of a circle layer's centres, where the layer is reprojected.
     centres: Option<&'a reproject::LayerReprojection>,
@@ -480,7 +480,6 @@ impl<'a> Drawing<'a> {
             mode,
             layer,
             scale,
-            view: &rotation.frame,
             rotation,
             centres,
         }
@@ -581,10 +580,10 @@ impl<'a> Drawing<'a> {
             .filter(|s| classes::in_scale(self.scale, s.min_scale_denom, s.max_scale_denom))
             .map(|style| {
                 let style = self.rotation.turned_style(style);
-                point_markers(&feature.geometry, &style, self.view, canvas)
+                point_markers(&feature.geometry, &style, &self.rotation.frame, canvas)
             })
             .collect();
-        for (k, point) in points_in_view(self.view, &feature.geometry).enumerate() {
+        for (k, point) in points_in_view(&self.rotation.frame, &feature.geometry).enumerate() {
             for style in &mut markers {
                 draw_items(renderer, feature.id, std::mem::take(&mut style[k]));
             }
@@ -612,7 +611,7 @@ impl<'a> Drawing<'a> {
             }
             for style in styles {
                 if classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
-                    let ops = circle_ops(circle, style, self.view, canvas);
+                    let ops = circle_ops(circle, style, &self.rotation.frame, canvas);
                     draw_items(renderer, feature.id, ops);
                 }
             }
@@ -652,7 +651,14 @@ impl<'a> Drawing<'a> {
                 return;
             }
             for &pass in passes {
-                let ops = draw_ops(mode, &feature.geometry, style, pass, self.view, canvas);
+                let ops = draw_ops(
+                    mode,
+                    &feature.geometry,
+                    style,
+                    pass,
+                    &self.rotation.frame,
+                    canvas,
+                );
                 draw_items(renderer, feature.id, ops);
                 if let Some(why) = canvas.take_style_tree_failure() {
                     failures.entry((class, place)).or_insert(why);

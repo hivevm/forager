@@ -13,11 +13,11 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! What the crate's root and its modules share of a layer drawn, below them all: the layer's
-//! name, and a text, as a diagnostic quotes them, the reports of what the layer left undrawn, its
-//! opacity, the points of a feature in view, a feature drawn in its class's styles, the map's
-//! rotation, which turns a style's or a label's angle by the map's, and the display items of a
-//! feature's drawing operations.
+//! What the crate's root and its modules share of a layer drawn and of the map's rotation, below
+//! them all: the layer's name, and a text, as a diagnostic quotes them, the reports of what the
+//! layer left undrawn, its opacity, the points of a feature in view, a feature drawn in its
+//! class's styles, the display items of a feature's drawing operations, and the map's rotation,
+//! the frame its layers are drawn in, which turns a style's or a label's angle by the map's.
 
 use std::borrow::Cow;
 
@@ -128,7 +128,9 @@ pub(crate) fn quoted(text: &str) -> String {
     }
 }
 
-/// The rotation of a map by its `angle` (ADR-0045).
+/// The rotation of a map by its `angle`: its frame, geotransform, and geo cellsize, as ADR-0045
+/// decides them, and the turn of a style's or a label's angle by the map's, which ADR-0045 leaves
+/// out of its scope and pointLayerDrawShape, lineLayerDrawShape, and polygonLayerDrawShape give.
 pub(crate) struct Rotation {
     /// The view everything after the reprojection is drawn in: on a rotated map, the frame of its
     /// image, `0, 0, width, height` at a cellsize of 1, as msMapSetFakedExtent fakes it.
