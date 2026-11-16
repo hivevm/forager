@@ -284,7 +284,7 @@ pub struct Layer {
     /// counted once their class is found, are not drawn, nor their labels. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_features: Option<u32>,
-    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-0043), which
+    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-0048), which
     /// replaces the shape of each feature that passes the layer's filter before it is classed and
     /// drawn, as MapServer transforms each shape it reads. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -714,7 +714,7 @@ pub enum GeomTransform {
     #[serde(rename = "labelcenter")]
     LabelCenter,
     /// An expression of shape functions, its transform tree
-    /// (ADR-0043), which a class's style of a line or a
+    /// (ADR-0048), which a class's style of a line or a
     /// polygon layer draws: the tree is evaluated on the shape in pixels, `[map_cellsize]` at the
     /// layer's value, and a line result is stroked, a point or a polygon result shaded, in the
     /// style. A tree `not_drawn`, one that fails on a shape, or one past the bounds the layer's

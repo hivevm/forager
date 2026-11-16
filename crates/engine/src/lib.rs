@@ -1193,7 +1193,7 @@ fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diag
 
 /// Warns of each class style of a line or a polygon layer whose `GEOMTRANSFORM` the engine does
 /// not draw on a style: a transform tree `not_drawn`, naming its reason
-/// (ADR-0043, *Diagnostics*), which MapServer evaluates
+/// (ADR-0048, *Diagnostics*), which MapServer evaluates
 /// by msDrawTransformedShape, through GEOS or a JavaScript engine, or fails; and labelcenter, which
 /// fails the layer's draw there (src/mapgeomtransform.c:245), msDrawLabelCache alone drawing it on
 /// a label's style. The style draws nothing; the class's other styles draw in their passes as
@@ -1227,7 +1227,7 @@ fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
 }
 
 /// Warns of the class styles' transform trees of `layer` that drew nothing
-/// (ADR-0043, *A class's style*): of each style in
+/// (ADR-0048, *A class's style*): of each style in
 /// `failures`, its first failure, once, as `geomtransform-not-drawn`; and, where they passed
 /// `over_limit`, a bound of Q-9 they share with the layer's `GEOMTRANSFORM`, once for the layer as
 /// `geomtransform-over-limit`. MapServer makes no map where msDrawTransformedShape fails
@@ -1302,7 +1302,7 @@ fn labelled<'a>(selected: &'a [Selected<'a>]) -> Vec<labels::Labelled<'a>> {
 /// The budget of Q-9 the layer of `selector` leaves to its class styles' transform trees, where
 /// it is drawn after its `GEOMTRANSFORM`: its `features` transformed, `[map_cellsize]` at
 /// `cellsize`, where it has one, whole where it has none; `None`, none drawn, with a warning,
-/// where its transform tree is `not_drawn` or fails (ADR-0043).
+/// where its transform tree is `not_drawn` or fails (ADR-0048).
 fn transformed(
     selector: &mut Selector<'_, '_>,
     mode: RenderMode,
@@ -1326,7 +1326,7 @@ fn transformed(
 }
 
 /// The warning that `layer` draws nothing, its `GEOMTRANSFORM` a transform tree of the reason
-/// `reason` (ADR-0043). MapServer evaluates a function the tree has no node
+/// `reason` (ADR-0048). MapServer evaluates a function the tree has no node
 /// for through GEOS, or a JavaScript engine, and fails on a syntax error or a binding where it
 /// makes no number; Forager draws none of the layer, and the rest of the map.
 fn transform_not_drawn(layer: &Layer, reason: NotDrawn) -> Diagnostic {

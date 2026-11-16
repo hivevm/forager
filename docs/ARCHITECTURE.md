@@ -34,7 +34,6 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0015](adr/0015-expressions-as-cql2.md)), its `GEOMTRANSFORM` expressions, of a layer and
   of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
   no text of the mapfile and is read to the same nesting bound (`transform.rs`,
-  [ADR-0043](adr/0043-transform-tree-with-simplify-and-buffer.md),
   [ADR-0048](adr/0048-transform-tree-with-simplifypt.md)),
   the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
@@ -112,7 +111,7 @@ golden path and the test pattern an agent copies from are named here.
   (`expression.rs`), which also reads a `GEOMTRANSFORM` expression of a layer or a style into its
   transform tree, its operations without `[map_cellsize]` folded, and every node and operator
   counted against the nesting bound before it recurses deeper (`expression/transform.rs`,
-  ADR-0043, Q-9), and resolves
+  ADR-0048, Q-9), and resolves
   every other `init=` through the host's projection resolver. A load reports at most a thousand
   diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
   carries means is described per parameter under `docs/semantics/`.
@@ -174,9 +173,9 @@ golden path and the test pattern an agent copies from are named here.
   each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
   up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
   tree is `not_drawn` or fails, with a warning (`classes.rs`,
-  ADR-0043), hands the budget the layer's transform left to its class styles' trees and warns of
+  ADR-0048), hands the budget the layer's transform left to its class styles' trees and warns of
   each style's first failure and of the bound they pass
-  (ADR-0043), draws each feature that passes the layer's
+  (ADR-0048), draws each feature that passes the layer's
   filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
   the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
   bound and computed

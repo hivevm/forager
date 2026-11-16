@@ -18,7 +18,7 @@
 //! label cache, the cache's edge buffer, and the pixmap as the label's labelpoint and labelcenter
 //! marker. The last third of the bytes is read once more for a layer's `GEOMTRANSFORM`, a
 //! transform tree of up to eight functions of arbitrary numbers, `[map_cellsize]` among them,
-//! which the polygon and line layers apply to their features (ADR-0043). `Input` decodes as
+//! which the polygon and line layers apply to their features (ADR-0048). `Input` decodes as
 //! before; the existing seeds now also read a `Cache` from their tail, which changes what they
 //! render.
 // Verifies: Q-3, ADR-0025, ADR-0016, ADR-0046

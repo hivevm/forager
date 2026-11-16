@@ -221,7 +221,7 @@ fn required_dropped(
 
 /// The field that holds what failed at `at`: a class style's transform tree is the whole
 /// `geom_transform`, so that unset, the style draws the feature's shape
-/// (ADR-0043).
+/// (ADR-0048).
 fn whole_transform(at: Pointer) -> Pointer {
     match at.segments() {
         [.., Segment::Key(field), Segment::Key(expression)]
@@ -272,7 +272,7 @@ fn never_matching(
 /// A transform tree's `not_drawn` reason at `path` that this build does not know, as serde's
 /// `reason` says, read as not drawn: the reason `syntax`, the one of the closed list that names no
 /// construct, which the engine's later warning names, with a warning naming the reason and its
-/// path. A reason added in a minor version so fails closed (ADR-0043).
+/// path. A reason added in a minor version so fails closed (ADR-0048).
 fn unknown_reason(value: &mut Value, path: &Pointer, reason: &str) -> Option<Diagnostic> {
     if !matches!(path.segments(), [.., Segment::Key(k)] if k == "not_drawn")
         || !is_unknown_variant(reason)

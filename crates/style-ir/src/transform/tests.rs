@@ -36,7 +36,7 @@ fn round_trip(tree: &TransformTree) -> String {
 
 #[test]
 fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
-    // Verifies: ADR-0043, ADR-0048
+    // Verifies: ADR-0048
     let cases = [
         (
             TransformTree::Drawn(TransformShape::Shape),
@@ -106,7 +106,7 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
 
 #[test]
 fn every_not_drawn_reason_reads_and_writes_by_its_name() {
-    // Verifies: ADR-0043, ADR-0048
+    // Verifies: ADR-0048
     let reasons = [
         (NotDrawn::Centerline, "centerline"),
         (NotDrawn::Difference, "difference"),

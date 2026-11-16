@@ -124,8 +124,7 @@ to invent.
   reason the engine does not draw it, translated by the mapfile frontend. Its nodes are `shape`,
   `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia`.
   A layer's tree replaces each feature's shape in map units; a class style's tree is drawn on the
-  shape in pixels ([ADR-0043](adr/0043-transform-tree-with-simplify-and-buffer.md);
-  [ADR-0048](adr/0048-transform-tree-with-simplifypt.md);
+  shape in pixels ([ADR-0048](adr/0048-transform-tree-with-simplifypt.md);
   [`semantics/style-symbol.md`](semantics/style-symbol.md)).
   _Avoid:_ shape expression, geometry expression.
 - **Viewport** — The part of a map that is drawn: an image size and an extent. A page asks the WASM

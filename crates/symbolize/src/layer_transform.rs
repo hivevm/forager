@@ -20,7 +20,7 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0043) replaces the shape of each
+//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0048) replaces the shape of each
 //! feature that passes the layer's filter before it is classed and drawn. The tree holds
 //! `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia`
 //! of `[shape]`, nested; the frontend has translated MapServer's text into it. `simplify` and
@@ -129,7 +129,7 @@ fn evaluated(
 }
 
 /// What the transform trees of a layer's class styles share in one render
-/// (ADR-0043, *A class's style*): the layer's [`Budget`],
+/// (ADR-0048, *A class's style*): the layer's [`Budget`],
 /// which its `GEOMTRANSFORM` charged first; the value of `[map_cellsize]`; the bound of Q-9 once
 /// an evaluation passed it, after which none is evaluated; and the failure of the last
 /// evaluation, until the engine takes it.

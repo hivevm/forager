@@ -417,7 +417,7 @@
           "const": "labelcenter"
         },
         {
-          "description": "An expression of shape functions, its transform tree\n(ADR-0043), which a class's style of a line or a\npolygon layer draws: the tree is evaluated on the shape in pixels, `[map_cellsize]` at the\nlayer's value, and a line result is stroked, a point or a polygon result shaded, in the\nstyle. A tree `not_drawn`, one that fails on a shape, or one past the bounds the layer's\ntransforms share draws nothing there and is reported. A point layer draws the style at its\npoints, as it draws every style whatever its transform; a label of a style of it is left\nout.",
+          "description": "An expression of shape functions, its transform tree\n(ADR-0048), which a class's style of a line or a\npolygon layer draws: the tree is evaluated on the shape in pixels, `[map_cellsize]` at the\nlayer's value, and a line result is stroked, a point or a polygon result shaded, in the\nstyle. A tree `not_drawn`, one that fails on a shape, or one past the bounds the layer's\ntransforms share draws nothing there and is reported. A point layer draws the style at its\npoints, as it draws every style whatever its transform; a label of a style of it is left\nout.",
           "type": "object",
           "properties": {
             "expression": {
@@ -812,7 +812,7 @@
           ]
         },
         "geom_transform": {
-          "description": "The layer's `GEOMTRANSFORM`, its transform tree (ADR-0043), which\nreplaces the shape of each feature that passes the layer's filter before it is classed and\ndrawn, as MapServer transforms each shape it reads. Absent, there is none.",
+          "description": "The layer's `GEOMTRANSFORM`, its transform tree (ADR-0048), which\nreplaces the shape of each feature that passes the layer's filter before it is classed and\ndrawn, as MapServer transforms each shape it reads. Absent, there is none.",
           "anyOf": [
             {
               "$ref": "#/$defs/TransformTree"
