@@ -19,11 +19,11 @@
 
 //! A TrueType symbol at a point, anchored, along a line, and tiled over a polygon: its glyph asked
 //! of the port [`crate::glyph::Glyphs`], placed as drawGlyphMarker places it and drawn as
-//! agg2RenderGlyphsPath draws it (ADR-draft-truetype-marker-glyph-through-a-port).
+//! agg2RenderGlyphsPath draws it (ADR-0044).
 
 use std::rc::Rc;
 
-use forager_render::{DrawOp, GlyphOutline, PathCommand, Point};
+use forager_render::{DrawOp, GlyphOutline, PathCommand, Point, Tile};
 use forager_style_ir::c::lrint;
 use forager_style_ir::{ANCHOR_CENTRE, Style, Symbol};
 
@@ -32,7 +32,7 @@ use crate::glyph::{Glyph, Glyphs, font_and_character};
 use crate::line_marker::{Placement, taken};
 use crate::style::fixed;
 use crate::symbol::{self, Affine, SymbolStyle};
-use crate::tile;
+use crate::tile::{self, TileFor};
 
 /// The size in points a TrueType marker's glyph is taken at: `MS_MAX(MS_NINT(scale), 1)`, held to
 /// an `unsigned int`, as msDrawMarkerSymbolInternal hands it to msGetGlyphByIndex.
@@ -250,12 +250,8 @@ pub(crate) fn line_glyphs<T>(
 }
 
 /// The TrueType symbol `symbol`, at `index` from 1, of `style` over `rings`, already moved by the
-/// offset, as msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the
-/// tile of its size, scale, and gap, never seamless (see [`tile::glyph_tile`]), and the polygon
-/// filled with it. The glyph is asked only for a tile the cache does not hold, and drawn at the
-/// tile's centre by [`glyph_op`]; a font that lacks the character is noted with the tile, so that
-/// each layer that draws it records that. Where the glyph is not found or the tile is refused
-/// (Q-9), nothing is drawn, and the canvas records why.
+/// offset, as msDrawShadeSymbol tiles it: the polygon filled with its fill tile (see
+/// [`glyph_tile`]), where there is one.
 pub(crate) fn tiled_glyph<T>(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
@@ -264,6 +260,24 @@ pub(crate) fn tiled_glyph<T>(
     symbol: &Symbol,
     canvas: &mut Canvas,
 ) {
+    if let Some(tile) = glyph_tile(style, index, symbol, TileFor::Polygon, canvas) {
+        ops.push(DrawOp::TiledFill { rings, tile });
+    }
+}
+
+/// The tile of the TrueType symbol `symbol`, at `index` from 1, of `style`, asked for `asked`:
+/// computeSymbolStyle's style at the canvas's factors, the tile of its size, scale, and, for a
+/// polygon, its gap, never seamless (see [`tile::glyph_tile`]). The glyph is asked only for a tile
+/// the cache does not hold, and drawn at the tile's centre by [`glyph_op`]; a font that lacks the
+/// character is noted with the tile, so that each layer that draws it records that. Where the
+/// glyph is not found or the tile is refused (Q-9), there is none, and the canvas records why.
+pub(crate) fn glyph_tile<T>(
+    style: &Style<T>,
+    index: usize,
+    symbol: &Symbol,
+    asked: TileFor,
+    canvas: &mut Canvas,
+) -> Option<Rc<Tile>> {
     let s = symbol::symbol_style(style, symbol, canvas.factors);
     let glyphs = canvas.glyphs;
     let mut refused = None;
@@ -275,7 +289,7 @@ pub(crate) fn tiled_glyph<T>(
         }
     };
     let tile = match canvas.tiles.as_deref_mut() {
-        Some(tiles) => tile::glyph_tile(tiles, index, &s, mark),
+        Some(tiles) => tile::glyph_tile(tiles, index, &s, asked, mark),
         None => Err("no tiles are kept where it is drawn".to_owned()),
     };
     match tile.map_err(Some).and_then(|tile| tile.ok_or(refused)) {
@@ -283,12 +297,13 @@ pub(crate) fn tiled_glyph<T>(
             if let Some(missing) = missing {
                 canvas.missing_glyphs.entry(index).or_insert(missing);
             }
-            ops.push(DrawOp::TiledFill { rings, tile });
+            Some(tile)
         }
         Err(Some(why)) => {
             canvas.refused_symbols.entry(index).or_insert(why);
+            None
         }
-        Err(None) => {}
+        Err(None) => None,
     }
 }
 
@@ -407,7 +422,7 @@ mod tests {
 
     #[test]
     fn a_glyph_is_centred_on_its_point_by_its_control_box_as_draw_glyph_marker_centres_it() {
-        // Verifies: ADR-draft-truetype-marker-glyph-through-a-port
+        // Verifies: ADR-0044
         // A box from (1, -2) to (11, 18) in the font's coordinates, y up, is (1, -18) to (11, 2)
         // y down. drawGlyphMarker's centre is (6, 8); unturned, the origin is (100 - 6, 50 + 8).
         let bounds = (1.0, -18.0, 11.0, 2.0);

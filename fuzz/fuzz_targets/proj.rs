@@ -5,11 +5,14 @@
 //!
 //! The input is UTF-8 text: its first line the source projection, its second the target, and the
 //! rest numbers separated by white space, taken in pairs as points (at most 256), the first four
-//! also as a rectangle.
+//! also as a rectangle. The fifth, where there is one, is the angle of a rotated map whose
+//! extent is that rectangle, 400 × 300 pixels: the same points, rectangle, and lines go through
+//! the reprojection into that map and its way back, and through the way that runs no formula
+//! (ADR-0045).
 // Verifies: Q-3, ADR-0037
 #![no_main]
 
-use forager_proj::{Projection, Reprojection};
+use forager_proj::{Geotransform, Projection, Reprojection};
 use forager_style_ir::{Coord, Extent};
 use libfuzzer_sys::fuzz_target;
 
@@ -38,7 +41,30 @@ fuzz_target!(|data: &[u8]| {
         .map(|&[x, y]| Coord { x, y })
         .collect();
     let way = Reprojection::new(from, to);
-    for &p in &points {
+    exercise(&way, &numbers, &points);
+    if let [min_x, min_y, max_x, max_y, angle, ..] = numbers[..] {
+        let rect = Extent {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        };
+        if let Some(gt) = Geotransform::rotated_map(&rect, 400, 300, angle) {
+            let rotated = way.onto_rotated_map(gt);
+            exercise(&rotated, &numbers, &points);
+            exercise(&rotated.reversed(), &numbers, &points);
+            exercise(
+                &Reprojection::identity(false, false).onto_rotated_map(gt),
+                &numbers,
+                &points,
+            );
+        }
+    }
+});
+
+/// Every operation of `way` on `points`, and on the rectangle of the first four `numbers`.
+fn exercise(way: &Reprojection, numbers: &[f64], points: &[Coord]) {
+    for &p in points {
         let _ = way.point(p);
     }
     if let [min_x, min_y, max_x, max_y, ..] = numbers[..] {
@@ -49,8 +75,9 @@ fuzz_target!(|data: &[u8]| {
             max_y,
         });
     }
-    let _ = way.shape(std::slice::from_ref(&points), false);
-    let _ = way.shape(std::slice::from_ref(&points), true);
-    let mut point_shape = points;
+    let _ = way.shape(std::slice::from_ref(&points.to_vec()), false);
+    let _ = way.shape(std::slice::from_ref(&points.to_vec()), true);
+    let _ = way.cuts_lines_with_geos();
+    let mut point_shape = points.to_vec();
     let _ = way.point_line(&mut point_shape);
-});
+}

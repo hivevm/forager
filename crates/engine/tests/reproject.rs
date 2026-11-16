@@ -1,6 +1,10 @@
 //! A layer in another projection than the map's, drawn in the map's: its features reprojected
 //! after its source delivers them, and its source asked for the map's extent in its own
-//! coordinates (ADR-0037).
+//! coordinates (ADR-0037). On a map with an `ANGLE`, each layer with a projection reprojected
+//! through the map's geotransform into the frame of the image, its source asked for the rotated
+//! view, its scale factors from msGetGeoCellSize's cellsize
+//! (ADR-0045); the expected numbers are those the C's formulas
+//! give at the pin for `misc/rot_out.map`.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -15,7 +19,7 @@ use forager_proj::{Projection, Reprojection};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Extent, InlineFeature, Layer, LayerProjection, LayerStatus, Map, RenderMode,
-    Rgba, ShapeType, Style,
+    Rgba, ShapeType, Style, TransformNumber, TransformShape, TransformTree, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -441,7 +445,7 @@ fn a_point_that_does_not_reproject_is_left_out_with_a_warning_naming_the_layer()
     let island = Coord { x: -63.0, y: 46.4 };
     let source = Recording::new(vec![
         Geometry::Point(pole),
-        Geometry::MultiPoint(vec![island, pole]),
+        Geometry::MultiPoint(vec![vec![island, pole]]),
         Geometry::LineString(vec![island, pole]),
     ]);
     let (rendered, _) = render_from(&layer_map, source);
@@ -526,4 +530,335 @@ fn inline_features_in_another_projection_are_reprojected() {
         rendered.diagnostics
     );
     assert_square_drawn(&rendered);
+}
+
+/// `misc/rot_out.map`'s projection, map and layer alike.
+const UTM: &str = "+proj=utm +zone=11 +datum=WGS84";
+
+/// `misc/rot_out.map`'s extent, for its image of 400 × 300.
+const EXTENT: Extent = Extent {
+    min_x: 478_300.0,
+    min_y: 4_762_880.0,
+    max_x: 481_650.0,
+    max_y: 4_765_610.0,
+};
+
+/// The centre of the extent, which lands on (200, 150.00000000017) of the image.
+const CENTRE: Coord = Coord {
+    x: 479_975.0,
+    y: 4_764_245.0,
+};
+
+/// The point the geotransform puts on the pixel (100, 100) of the image, (100, 200) of its frame.
+const AT_100_100: Coord = Coord {
+    x: 478_956.020_283_501_13,
+    y: 4_764_183.837_684_337,
+};
+
+/// `misc/rot_out.map` rotated by `angle`, of one layer `data` in `mode` and in `layer_projection`,
+/// drawn in `style`.
+fn rotated(
+    angle: Option<f64>,
+    mode: RenderMode,
+    layer_projection: Option<&str>,
+    style: Style,
+) -> Map {
+    Map {
+        extent: Some(EXTENT),
+        size: Some([400, 300]),
+        image_color: Some(WHITE),
+        projection: Some(UTM.to_owned()),
+        angle,
+        layers: vec![Layer {
+            name: Some("data".into()),
+            render_mode: Some(mode),
+            status: Some(LayerStatus::On),
+            projection: layer_projection.map(|p| LayerProjection::Proj4(p.to_owned())),
+            classes: vec![Class {
+                styles: vec![style],
+                ..Class::default()
+            }],
+            ..Layer::default()
+        }],
+        ..Map::default()
+    }
+}
+
+fn filled(size: Option<f64>) -> Style {
+    Style {
+        color: Some(Bound::Value(GREEN)),
+        size: size.map(Bound::Value),
+        ..Style::default()
+    }
+}
+
+/// `map` rendered from a source in memory of `geometries`, and the extents it was asked for.
+fn render_rotated(map: &Map, geometries: Vec<Geometry>) -> (Rendered, Vec<Extent>) {
+    render_from(map, Recording::new(geometries))
+}
+
+/// The codes of `rendered`'s diagnostics.
+fn codes(rendered: &Rendered) -> Vec<&str> {
+    rendered
+        .diagnostics
+        .iter()
+        .map(|d| d.code.as_str())
+        .collect()
+}
+
+/// A square of `half` map units each way about `centre`.
+fn square(centre: Coord, half: f64) -> Geometry {
+    let at = |dx: f64, dy: f64| Coord {
+        x: centre.x + dx * half,
+        y: centre.y + dy * half,
+    };
+    Geometry::Polygon(vec![vec![
+        at(-1.0, -1.0),
+        at(1.0, -1.0),
+        at(1.0, 1.0),
+        at(-1.0, 1.0),
+        at(-1.0, -1.0),
+    ]])
+}
+
+#[test]
+fn a_layer_in_the_maps_projection_is_asked_for_the_rotated_view() {
+    // Verifies: ADR-0045
+    // msDrawVectorLayer asks for the faked extent 0, 0, 400, 300 through msProjectRect: the
+    // bounding box of the rotated view's four corners.
+    let rotated_map = rotated(Some(30.0), RenderMode::Polygon, Some(UTM), filled(None));
+    let (rendered, asked) = render_rotated(&rotated_map, vec![square(CENTRE, 100.0)]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        asked,
+        [Extent {
+            min_x: 477_708.779_697_437_1,
+            min_y: 4_762_145.878_251_339,
+            max_x: 482_241.220_302_562_8,
+            max_y: 4_766_344.121_748_662,
+        }]
+    );
+}
+
+#[test]
+fn a_point_of_a_layer_in_the_maps_projection_lands_where_the_geotransform_puts_it() {
+    // Verifies: ADR-0045
+    let rotated_map = rotated(Some(30.0), RenderMode::Point, Some(UTM), filled(Some(7.0)));
+    let points = vec![Geometry::Point(CENTRE), Geometry::Point(AT_100_100)];
+    let (rendered, _) = render_rotated(&rotated_map, points);
+    let image = rendered.image.unwrap();
+    // A mark of 7 pixels covers 2 each way of where it lands fully, and nothing 5 away.
+    for (x, y) in [(200, 150), (100, 100)] {
+        for (dx, dy) in [(0, 0), (2, 0), (0, 2)] {
+            assert_eq!(
+                image.pixel(x + dx, y + dy),
+                Some(GREEN),
+                "{x} {y} +{dx} +{dy}"
+            );
+            assert_eq!(
+                image.pixel(x - dx, y - dy),
+                Some(GREEN),
+                "{x} {y} -{dx} -{dy}"
+            );
+        }
+        for (dx, dy) in [(5, 0), (0, 5)] {
+            assert_eq!(
+                image.pixel(x + dx, y + dy),
+                Some(WHITE),
+                "{x} {y} +{dx} +{dy}"
+            );
+            assert_eq!(
+                image.pixel(x - dx, y - dy),
+                Some(WHITE),
+                "{x} {y} -{dx} -{dy}"
+            );
+        }
+    }
+    // Unrotated, the same point lies elsewhere: the map's own cellsize puts it near (88, 156).
+    let unrotated = rotated(None, RenderMode::Point, Some(UTM), filled(Some(7.0)));
+    let (rendered, _) = render_rotated(&unrotated, vec![Geometry::Point(AT_100_100)]);
+    assert_eq!(rendered.image.unwrap().pixel(100, 100), Some(WHITE));
+}
+
+#[test]
+fn a_width_in_meters_on_a_rotated_map_is_scaled_by_the_geo_cellsize() {
+    // Verifies: ADR-0045
+    // msGetGeoCellSize: the diagonal of the real extent's cell over width and height, over the
+    // square root of 2, 9.10380514271694 for rot_out, where the cellsize is 9.130434782608695.
+    // A line 91 meters wide is drawn as the one 91 / that many pixels wide.
+    let geo_cellsize = 9.103_805_142_716_94;
+    let meters = 91.0;
+    let wide = |width: f64| Style {
+        color: Some(Bound::Value(GREEN)),
+        width: Some(Bound::Value(width)),
+        ..Style::default()
+    };
+    let line = || {
+        vec![Geometry::LineString(vec![
+            Coord {
+                x: CENTRE.x - 1000.0,
+                y: CENTRE.y - 300.0,
+            },
+            Coord {
+                x: CENTRE.x + 1000.0,
+                y: CENTRE.y + 400.0,
+            },
+        ])]
+    };
+    let mut in_meters = rotated(Some(30.0), RenderMode::Line, Some(UTM), wide(meters));
+    in_meters.layers[0].size_units = Some(Units::Meters);
+    let in_pixels = wide(meters * (1.0 / geo_cellsize));
+    let in_pixels = rotated(Some(30.0), RenderMode::Line, Some(UTM), in_pixels);
+    let (meters_drawn, _) = render_rotated(&in_meters, line());
+    let (pixels_drawn, _) = render_rotated(&in_pixels, line());
+    assert!(meters_drawn.image.is_some());
+    assert_eq!(meters_drawn.image, pixels_drawn.image);
+    let by_cellsize = wide(meters * (1.0 / 9.130_434_782_608_695));
+    let by_cellsize = rotated(Some(30.0), RenderMode::Line, Some(UTM), by_cellsize);
+    let (by_cellsize, _) = render_rotated(&by_cellsize, line());
+    assert_ne!(meters_drawn.image, by_cellsize.image);
+}
+
+#[test]
+fn a_layers_buffer_on_a_rotated_map_is_taken_in_the_images_pixels() {
+    // Verifies: ADR-0045
+    // After the reprojection the map's units are the frame's pixels, as in MapServer: a buffer
+    // of 10 grows a square of 50 meters a side by 10 pixels, not by 10 meters.
+    let mut buffered = rotated(Some(30.0), RenderMode::Polygon, Some(UTM), filled(None));
+    buffered.layers[0].geom_transform = Some(TransformTree::Drawn(TransformShape::Buffer(
+        Box::new(TransformShape::Shape),
+        TransformNumber::Number(10.0),
+    )));
+    let (rendered, _) = render_rotated(&buffered, vec![square(CENTRE, 25.0)]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    // The square spans about 2.7 pixels each way from (200, 150), the buffer 10 more.
+    for (x, y) in [(211, 150), (189, 150), (200, 161), (200, 139)] {
+        assert_eq!(image.pixel(x, y), Some(GREEN), "{x} {y}");
+    }
+    assert_eq!(image.pixel(216, 150), Some(WHITE));
+}
+
+#[test]
+fn a_layer_without_a_projection_on_a_rotated_map_is_drawn_unrotated_with_a_warning() {
+    // Verifies: ADR-0045
+    // msProjectionsDiffer finds no difference where a side has no parameters: the layer's
+    // coordinates are drawn as the frame's, y up, and its source is asked for the frame itself.
+    let rotated_map = rotated(Some(30.0), RenderMode::Polygon, None, filled(None));
+    let in_pixels = square(Coord { x: 50.0, y: 250.0 }, 10.0);
+    let (rendered, asked) = render_rotated(&rotated_map, vec![in_pixels]);
+    assert_eq!(codes(&rendered), ["rotation-without-projection"]);
+    assert!(
+        rendered.diagnostics[0].message.contains("layer `data`"),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(
+        asked,
+        [Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 400.0,
+            max_y: 300.0,
+        }]
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(50, 50), Some(GREEN));
+    // A map without a projection leaves its layers so too.
+    let mut unprojected = rotated(Some(30.0), RenderMode::Polygon, Some(UTM), filled(None));
+    unprojected.projection = None;
+    let (rendered, _) = render_rotated(
+        &unprojected,
+        vec![square(Coord { x: 50.0, y: 250.0 }, 10.0)],
+    );
+    assert_eq!(codes(&rendered), ["rotation-without-projection"]);
+}
+
+#[test]
+fn a_map_of_angle_0_draws_as_one_without_angle() {
+    // Verifies: ADR-0045
+    let square = || vec![square(CENTRE, 400.0)];
+    let (without, asked_without) = render_rotated(
+        &rotated(None, RenderMode::Polygon, Some(UTM), filled(None)),
+        square(),
+    );
+    let (zero, asked_zero) = render_rotated(
+        &rotated(Some(0.0), RenderMode::Polygon, Some(UTM), filled(None)),
+        square(),
+    );
+    assert_eq!(zero.image, without.image);
+    assert_eq!(zero.diagnostics, without.diagnostics);
+    assert_eq!(asked_zero, asked_without);
+    let (rotated, _) = render_rotated(
+        &rotated(Some(30.0), RenderMode::Polygon, Some(UTM), filled(None)),
+        square(),
+    );
+    assert_ne!(rotated.image, without.image);
+}
+
+#[test]
+fn an_angle_that_gives_no_geotransform_draws_no_map() {
+    let rotated_map = rotated(Some(f64::NAN), RenderMode::Polygon, Some(UTM), filled(None));
+    let (rendered, asked) = render_rotated(&rotated_map, vec![square(CENTRE, 100.0)]);
+    assert!(rendered.image.is_none());
+    assert!(asked.is_empty());
+    assert_eq!(codes(&rendered), ["view-invalid"]);
+}
+
+#[test]
+fn a_layer_in_another_projection_lands_through_the_formulas_and_the_geotransform() {
+    // Verifies: ADR-0045
+    // msProjectPointEx: PROJ's step from longitude and latitude into UTM, then the inverse
+    // geotransform. The centre of the view, in longitude and latitude, lands on (200, 150).
+    let centre = way(UTM, LONGLAT).point(CENTRE).unwrap();
+    let rotated_map = rotated(
+        Some(30.0),
+        RenderMode::Point,
+        Some(LONGLAT),
+        filled(Some(7.0)),
+    );
+    let (rendered, asked) = render_rotated(&rotated_map, vec![Geometry::Point(centre)]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(200, 150), Some(GREEN));
+    assert_eq!(image.pixel(205, 150), Some(WHITE));
+    let [asked] = asked[..] else {
+        panic!("one query, not {asked:?}");
+    };
+    assert!(
+        asked.min_x < centre.x && centre.x < asked.max_x && asked.max_x - asked.min_x < 0.1,
+        "in degrees about the centre: {asked:?}"
+    );
+}
+
+#[test]
+fn under_a_rotated_map_of_auto_a_layer_of_auto_moves_by_the_geotransform_alone() {
+    // Verifies: ADR-0045
+    // A layer of AUTO whose source declares no projection keeps AUTO; under a map of AUTO both
+    // sides are the one argument AUTO, MapServer creates no PROJ object, and only the geotransform
+    // moves a point: the extent's centre lands on (200, 150).
+    let mut auto = rotated(Some(30.0), RenderMode::Point, None, filled(Some(7.0)));
+    (auto.projection, auto.projection_auto) = (None, true);
+    auto.layers[0].projection = Some(LayerProjection::FromSource);
+    let (rendered, _) = render_rotated(&auto, vec![Geometry::Point(CENTRE)]);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    assert_eq!(image.pixel(200, 150), Some(GREEN));
+    assert_eq!(image.pixel(205, 150), Some(WHITE));
 }

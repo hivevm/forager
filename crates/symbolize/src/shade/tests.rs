@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
 use forager_style_ir::{Bound, Extent, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use super::*;
@@ -79,10 +79,53 @@ fn a_filled_polygon_is_outlined_at_its_fill_s_alpha() {
         | DrawOp::Glyphs { .. }
         | DrawOp::Pixmap { .. }
         | DrawOp::ResampledPixmap { .. }
-        | DrawOp::TiledFill { .. } => {
+        | DrawOp::TiledFill { .. }
+        | DrawOp::BrushedLine { .. } => {
             panic!("the outline is a stroke")
         }
     }
+}
+
+#[test]
+fn a_polygon_s_outline_no_wider_than_a_pixel_bevels_its_inner_joins() {
+    // msDrawShadeSymbol outlines through agg2RenderLine, which bevels the joins and the inner
+    // joins of a line 1 pixel wide or less and leaves a wider one AGG's inner miter.
+    let ends = |width| {
+        let style = Style {
+            width: Some(Bound::Value(width)),
+            ..colored(Some(BLACK), Some(BLACK))
+        };
+        let view = View::for_image(
+            Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 10.0,
+                max_y: 10.0,
+            },
+            11,
+            11,
+        )
+        .unwrap();
+        let mut ops = Vec::new();
+        assert!(shade(&mut ops, line(), &style, &view, &mut plain()));
+        match &ops[1] {
+            DrawOp::Stroke {
+                cap,
+                join,
+                inner_join,
+                ..
+            } => (*cap, *join, *inner_join),
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(
+        ends(1.0),
+        (LineCap::Butt, LineJoin::Bevel, InnerJoin::Bevel)
+    );
+    assert_eq!(
+        ends(2.0),
+        (LineCap::Round, LineJoin::Round, InnerJoin::Miter)
+    );
 }
 
 #[test]
@@ -280,7 +323,8 @@ fn bounded_nan(min_width: f64, max_width: f64, outline: Option<Rgba>) -> Style {
 #[test]
 fn a_polygon_of_a_symbol_past_the_last_or_of_a_name_no_symbol_carries_draws_nothing() {
     // msDrawShadeSymbol draws nothing for an index past the symbols; a style document's name
-    // no symbol carries draws nothing either. Symbol 0 and a name found fill the polygon.
+    // no symbol carries draws nothing either. Symbol 0 and a name found fill the polygon, the
+    // ellipse found by its name with its tile.
     let symbols = [Symbol {
         name: Some("Dot".to_owned()),
         ..circle()
@@ -298,7 +342,9 @@ fn a_polygon_of_a_symbol_past_the_last_or_of_a_name_no_symbol_carries_draws_noth
         (SymbolRef::Name("DOT".to_owned()), true),
     ] {
         let mut ops = Vec::new();
-        let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
+        let mut tiles = Tiles::default();
+        let mut canvas =
+            Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
         let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
         assert!(shade(
             &mut ops,
@@ -438,4 +484,94 @@ fn a_polygon_meets_the_image_as_rect_overlap_decides_a_bound_of_no_number_includ
     // number, which f64::min and f64::max would have passed over.
     assert!(meets_image(&ring(&[(11.0, 1.0), (f64::NAN, 5.0)]), image));
     assert!(meets_image(&ring(&[(f64::NAN, f64::NAN)]), image));
+}
+
+/// An ellipse of `width` by `height`, symbol 1, filled or not.
+fn ellipse(width: f64, height: f64, filled: bool) -> Symbol {
+    Symbol {
+        paths: vec![vec![[width, height]]],
+        extent: Some([width, height]),
+        filled,
+        ..circle()
+    }
+}
+
+#[test]
+fn an_ellipse_over_a_polygon_is_tiled_once_at_the_tile_s_centre_never_seamless() {
+    // msDrawShadeSymbol tiles an ellipse as it tiles a vector symbol, but sets seamless mode
+    // for a vector symbol alone (maprendering.c:876-883): getTile draws the ellipse once,
+    // at the tile's centre (240-271).
+    let shaded = |symbol: Symbol, size: f64, gap: f64| {
+        let symbols = [symbol];
+        let style = Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(1))),
+            size: Some(Bound::Value(size)),
+            gap: Some(gap),
+            ..colored(Some(BLUE), None)
+        };
+        let mut tiles = Tiles::default();
+        let mut canvas =
+            Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
+        let mut ops = Vec::new();
+        let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
+        assert!(shade(&mut ops, ring, &style, &unit_view(), &mut canvas));
+        match ops.as_slice() {
+            [DrawOp::TiledFill { tile, .. }] => {
+                ((tile.width(), tile.height()), tile.marks().to_vec())
+            }
+            other => panic!("{other:?}"),
+        }
+    };
+    // An ellipse of 4 × 2 at SIZE 8: the scale 8 / 2 = 4, a tile of MS_NINT(4 × 4) ×
+    // MS_NINT(2 × 4) = 16 × 8, its one mark the ellipse of 16 × 8 filled in the COLOR about
+    // the centre (8, 4), and no outline, as no OUTLINECOLOR is set.
+    let (size, marks) = shaded(ellipse(4.0, 2.0, true), 8.0, 0.0);
+    assert_eq!(size, (16, 8));
+    match marks.as_slice() {
+        [DrawOp::Fill { rings, color, .. }] => {
+            assert_eq!(*color, BLUE);
+            let [x0, y0, x1, y1] =
+                ms_compute_bounds(rings.iter().flatten().map(|p| [p.x, p.y])).unwrap();
+            assert!(
+                (x0 - 0.0).abs() < 1e-9 && (x1 - 16.0).abs() < 1e-9,
+                "{x0} {x1}"
+            );
+            assert!(
+                (y0 - 0.0).abs() < 1e-2 && (y1 - 8.0).abs() < 1e-2,
+                "{y0} {y1}"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    // With a GAP of 20: the larger of MS_NINT(20) and 16, and of MS_NINT(20) and 8; the ellipse
+    // at the centre (10, 10).
+    let (size, marks) = shaded(ellipse(4.0, 2.0, true), 8.0, 20.0);
+    assert_eq!(size, (20, 20));
+    match marks.as_slice() {
+        [DrawOp::Fill { rings, .. }] => {
+            let [x0, _, x1, _] =
+                ms_compute_bounds(rings.iter().flatten().map(|p| [p.x, p.y])).unwrap();
+            assert!(
+                (x0 - 2.0).abs() < 1e-9 && (x1 - 18.0).abs() < 1e-9,
+                "{x0} {x1}"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    // An ellipse not filled is outlined in the COLOR, computeSymbolStyle's outline colour of
+    // an unfilled symbol (55-56), at the width of 1.
+    let (_, marks) = shaded(ellipse(4.0, 2.0, false), 8.0, 0.0);
+    match marks.as_slice() {
+        [
+            DrawOp::Stroke {
+                color,
+                width,
+                closed,
+                ..
+            },
+        ] => {
+            assert_eq!((*color, *width, *closed), (BLUE, 1.0, true));
+        }
+        other => panic!("{other:?}"),
+    }
 }

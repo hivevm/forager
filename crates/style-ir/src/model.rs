@@ -12,6 +12,9 @@ pub const MIN_RESOLUTION: f64 = 10.0;
 /// The greatest `resolution` and `def_resolution` a map may have, in dpi: MapServer's
 /// `MS_RESOLUTION_MAX`.
 pub const MAX_RESOLUTION: f64 = 1000.0;
+/// The greatest magnitude of a map's `angle`, in degrees, which MapServer's loader holds `ANGLE`
+/// to.
+pub const MAX_MAP_ANGLE: f64 = 360.0;
 
 /// A map: its image, its extent, and its layers in drawing order.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -43,6 +46,14 @@ pub struct Map {
     /// draws a map of `AUTO`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub projection_auto: bool,
+    /// The angle the map is drawn rotated by, in degrees, MapServer's `ANGLE`: the image's x axis
+    /// points that many degrees counterclockwise of the map's, so its content turns clockwise.
+    /// Every layer with a projection reaches the image through the map's geotransform. Absent,
+    /// or 0, the map is not rotated. A reader drops a value outside -360 to 360 with a warning, as
+    /// MapServer's loader refuses one. Added in format version 1.1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(range(min = -MAX_MAP_ANGLE, max = MAX_MAP_ANGLE)))]
+    pub angle: Option<f64>,
     /// The resolution of the image in dpi; MapServer's default is 72. A reader drops a value
     /// outside 10 to 1000 with a warning, as MapServer's loader refuses one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -261,13 +272,19 @@ pub struct Layer {
     /// its own labels drawn at once, never cached. Absent, it is false.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub post_label_cache: bool,
+    /// Whether a line layer draws its lines as they are where they leave the map's extent,
+    /// MapServer's `PROCESSING "POLYLINE_NO_CLIP"`. Otherwise each line is cut to the image grown
+    /// by the widest style of its class before it is drawn, and its dashes and symbols count from
+    /// where the cut begins it. Absent, it is false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unclipped_lines: bool,
     /// The most features the layer draws, MapServer's limit of `msLayerGetMaxFeaturesToDraw`:
     /// the layer's `MAXFEATURES`, or its `maxfeaturestodraw` metadata, or the map's, or the output
     /// format's `MAXFEATURESTODRAW`. The features past it, in the order the source returns them and
     /// counted once their class is found, are not drawn, nor their labels. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_features: Option<u32>,
-    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-0036), which
+    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-0048), which
     /// replaces the shape of each feature that passes the layer's filter before it is classed and
     /// drawn, as MapServer transforms each shape it reads. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -299,6 +316,7 @@ impl Default for Layer {
             opacity: None,
             label_cache: true,
             post_label_cache: false,
+            unclipped_lines: false,
             max_features: None,
             geom_transform: None,
             classes: Vec::new(),
@@ -695,11 +713,14 @@ pub enum GeomTransform {
     /// polygon layer draws nothing at.
     #[serde(rename = "labelcenter")]
     LabelCenter,
-    /// An expression of shape functions, its transform tree (ADR-0036),
-    /// which the engine does not draw on a class's style: a class's style of it in a line or a
-    /// polygon layer draws nothing and is reported, its class's other styles drawn as before; a
-    /// point layer draws the style at its points, as it draws every style whatever its
-    /// transform; a label of a style of it is left out.
+    /// An expression of shape functions, its transform tree
+    /// (ADR-0048), which a class's style of a line or a
+    /// polygon layer draws: the tree is evaluated on the shape in pixels, `[map_cellsize]` at the
+    /// layer's value, and a line result is stroked, a point or a polygon result shaded, in the
+    /// style. A tree `not_drawn`, one that fails on a shape, or one past the bounds the layer's
+    /// transforms share draws nothing there and is reported. A point layer draws the style at its
+    /// points, as it draws every style whatever its transform; a label of a style of it is left
+    /// out.
     #[serde(rename = "expression")]
     Expression(TransformTree),
 }

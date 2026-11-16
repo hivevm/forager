@@ -167,12 +167,14 @@ impl Shape<'_> {
         })
     }
 
-    /// The geometry the port delivers: a point, a multipoint, an arc as a line string of one
+    /// The geometry the port delivers: a point, a multipoint of one part, an arc as a line string of one
     /// part or a multi-line string of more, and a polygon as one polygon of all its parts.
     pub fn geometry(&self) -> Geometry {
         match self {
             Shape::Point(c) => Geometry::Point(*c),
-            Shape::MultiPoint(points) => Geometry::MultiPoint(points.iter().map(xy).collect()),
+            Shape::MultiPoint(points) => {
+                Geometry::MultiPoint(vec![points.iter().map(xy).collect()])
+            }
             Shape::Lines {
                 polygon,
                 parts,

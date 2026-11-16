@@ -363,6 +363,81 @@ fn a_pattern_dashes_a_line_with_its_cap() {
     assert_matches_reference(&image, "line_pattern.png");
 }
 
+/// The paths of the strokes the render of `map` over `geojson` draws.
+fn stroked_paths(map: &Map, geojson: &str) -> Vec<Vec<(f64, f64)>> {
+    recorded(map, geojson)
+        .into_iter()
+        .flat_map(|op| match op {
+            DrawOp::Stroke { paths, .. } => paths,
+            _ => Vec::new(),
+        })
+        .map(|path| path.iter().map(|p| (p.x, p.y)).collect())
+        .collect()
+}
+
+#[test]
+fn a_line_that_leaves_the_extent_is_cut_to_its_class_s_buffer_before_it_is_dashed() {
+    // msDrawShape clips a line that reaches beyond the extent with msClipPolylineRect, to the
+    // extent grown by the class's buffer, MS_NINT(max(1, max(-1, WIDTH)) + 1): 2 for a line
+    // of 1, 6 for one of 5, the widest style of the class. Its dashes count from the cut.
+    let line = r#"{"type": "LineString", "coordinates": [[-1000, 50], [50, 50], [50, 1000]]}"#;
+    let dashed = Style {
+        pattern: vec![10.0, 3.0],
+        ..line_style(BLUE, 1.0)
+    };
+    let one = map_with(RenderMode::Line, vec![dashed.clone()]);
+    assert_eq!(
+        stroked_paths(&one, line),
+        [vec![(-2.0, 50.0), (50.0, 50.0), (50.0, -2.0)]]
+    );
+    let wide = map_with(RenderMode::Line, vec![dashed, line_style(RED, 5.0)]);
+    assert_eq!(
+        stroked_paths(&wide, line),
+        [
+            vec![(-6.0, 50.0), (50.0, 50.0), (50.0, -6.0)],
+            vec![(-6.0, 50.0), (50.0, 50.0), (50.0, -6.0)]
+        ]
+    );
+    // A layer of PROCESSING "POLYLINE_NO_CLIP" hands the line to its styles whole.
+    let mut unclipped = one;
+    unclipped.layers[0].unclipped_lines = true;
+    assert_eq!(
+        stroked_paths(&unclipped, line),
+        [vec![(-1000.0, 50.0), (50.0, 50.0), (50.0, -900.0)]]
+    );
+}
+
+#[test]
+fn a_line_drawn_from_the_shape_cache_keeps_the_clip_of_its_own_class() {
+    // msDrawVectorLayer caches a shape clipped by its own class's buffer and draws its later
+    // styles on it (src/mapdraw.c:1412-1416, 1437-): a wide class's second style is cut at -10,
+    // MS_NINT(9 + 1), though a thin class's feature, cut at -2, is drawn after it.
+    let line = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"k": "wide"},
+         "geometry": {"type": "LineString", "coordinates": [[-1000, 50], [50, 50]]}},
+        {"type": "Feature", "properties": {"k": "thin"},
+         "geometry": {"type": "LineString", "coordinates": [[-1000, 20], [50, 20]]}}
+    ]}"#;
+    let class = |k: &str, width: f64| Class {
+        expression: Some(Expr::call(
+            Op::Eq,
+            vec![
+                Expr::call(Op::ToString, vec![Expr::property("k")]),
+                k.into(),
+            ],
+        )),
+        styles: vec![line_style(BLUE, width), line_style(RED, width)],
+        ..Class::default()
+    };
+    let mut map = map(RenderMode::Line, line_style(BLUE, 1.0));
+    map.layers[0].classes = vec![class("wide", 9.0), class("thin", 1.0)];
+    let starts: Vec<(f64, f64)> = stroked_paths(&map, line).iter().map(|p| p[0]).collect();
+    assert_eq!(
+        starts,
+        [(-10.0, 50.0), (-2.0, 80.0), (-10.0, 50.0), (-2.0, 80.0)]
+    );
+}
+
 #[test]
 fn an_initial_gap_starts_the_pattern_that_far_before_its_end() {
     let style = Style {
@@ -1895,15 +1970,16 @@ fn sizeunits_size_a_layers_styles_in_map_units_by_the_cellsize() {
 }
 
 #[test]
-fn a_style_of_a_geomtransform_expression_draws_nothing_and_is_reported() {
-    // MapServer evaluates such an expression by msGeomTransformShape, most of its functions through
-    // GEOS, which the engine has not: the style draws nothing, with a warning naming it, and the
-    // class's other style draws as alone.
+fn a_class_style_of_a_not_drawn_tree_draws_nothing_and_warns_its_reason() {
+    // Verifies: ADR-0048
+    // MapServer computes centerline through GEOS's Voronoi diagram, which the tree has no node
+    // for: the style draws nothing, with a warning naming the reason, and the class's other style
+    // draws as alone.
     let plain = line_style(BLUE, 3.0);
     let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
     let alone = render_with(&map_with(RenderMode::Line, vec![plain.clone()]), Some(line));
     let transformed = Style {
-        geom_transform: Some(GeomTransform::Expression(not_drawn(NotDrawn::Buffer))),
+        geom_transform: Some(GeomTransform::Expression(not_drawn(NotDrawn::Centerline))),
         ..line_style(GREEN, 9.0)
     };
     let rendered = render_with(
@@ -1919,7 +1995,7 @@ fn a_style_of_a_geomtransform_expression_draws_nothing_and_is_reported() {
     assert!(
         rendered.diagnostics[0]
             .message
-            .contains("of the function buffer"),
+            .contains("the function centerline (not_drawn: centerline)"),
         "{}",
         rendered.diagnostics[0].message
     );
@@ -1963,24 +2039,456 @@ fn a_class_style_of_labelcenter_in_a_line_or_polygon_layer_draws_nothing_and_is_
 
 #[test]
 fn a_point_layer_draws_a_style_of_a_geomtransform_expression_at_its_points() {
+    // Verifies: ADR-0048
     // pointLayerDrawShape draws every style at each point whatever its transform: a point layer's
-    // style of an expression draws its markers, and nothing is reported.
+    // style of an expression, drawn or not, draws its markers, and nothing is reported.
+    for tree in [
+        not_drawn(NotDrawn::Centerline),
+        generalized(TransformNumber::Number(200.0)),
+    ] {
+        let style = Style {
+            color: Some(Bound::Value(BLUE)),
+            size: Some(Bound::Value(5.0)),
+            geom_transform: Some(GeomTransform::Expression(tree)),
+            ..Style::default()
+        };
+        let line = r#"{"type": "LineString", "coordinates": [[20, 20], [50, 50], [80, 80]]}"#;
+        let rendered = render_with(&map(RenderMode::Point, style), Some(line));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        let image = rendered.image.unwrap();
+        assert_eq!(image.pixel(20, 80), Some(BLUE));
+        assert_eq!(
+            image.pixel(50, 50),
+            Some(BLUE),
+            "the point generalize drops"
+        );
+        assert_eq!(image.pixel(80, 20), Some(BLUE));
+    }
+}
+
+/// [`map_with`] of the extent 0..1000, so that ten map units are one pixel.
+fn map_by_ten(mode: RenderMode, styles: Vec<Style>) -> Map {
+    let mut map = map_with(mode, styles);
+    map.extent = Some(Extent {
+        min_x: 0.0,
+        min_y: 0.0,
+        max_x: 1000.0,
+        max_y: 1000.0,
+    });
+    map
+}
+
+/// [`PEAK`] in the map of [`map_by_ten`]: in pixels from (0, 80) up to (50, 40), 64 pixels away,
+/// and down to (100, 80).
+const PEAK_BY_TEN: &str =
+    r#"{"type": "LineString", "coordinates": [[0, 200], [500, 600], [1000, 200]]}"#;
+
+/// The line between the ends of [`PEAK_BY_TEN`].
+const BASE_BY_TEN: &str = r#"{"type": "LineString", "coordinates": [[0, 200], [1000, 200]]}"#;
+
+/// `style` of the transform tree `tree`.
+fn of_tree(tree: TransformTree, style: Style) -> Style {
+    Style {
+        geom_transform: Some(GeomTransform::Expression(tree)),
+        ..style
+    }
+}
+
+#[test]
+fn a_line_layers_style_of_generalize_strokes_the_line_generalized_in_pixels() {
+    // Verifies: ADR-0048
+    // msDrawTransformedShape evaluates the style's expression on the shape in pixels and strokes
+    // the line by msDrawLineSymbol: a tolerance of 70 drops the peak 64 pixels from the first
+    // point, though it lies 640 map units away, and the style strokes the base line as a plain
+    // style does; at 60 the peak is kept.
+    let style = line_style(BLUE, 3.0);
+    let base = render_with(
+        &map_by_ten(RenderMode::Line, vec![style.clone()]),
+        Some(BASE_BY_TEN),
+    );
+    for (tolerance, dropped) in [(70.0, true), (60.0, false)] {
+        let tree = generalized(TransformNumber::Number(tolerance));
+        let styles = vec![of_tree(tree, style.clone())];
+        let rendered = render_with(&map_by_ten(RenderMode::Line, styles), Some(PEAK_BY_TEN));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        assert_eq!(rendered.image == base.image, dropped, "{tolerance}");
+    }
+}
+
+#[test]
+fn a_style_whose_tree_yields_a_polygon_is_shaded() {
+    // Verifies: ADR-0048
+    // msDrawTransformedShape shades a polygon result by msDrawShadeSymbol, filled and outlined:
+    // outer([shape]) of the square with a hole draws as the square alone in a plain style.
     let style = Style {
-        color: Some(Bound::Value(BLUE)),
-        size: Some(Bound::Value(5.0)),
-        geom_transform: Some(GeomTransform::Expression(not_drawn(NotDrawn::Buffer))),
+        color: Some(Bound::Value(GREEN)),
+        outline_color: Some(Bound::Value(BLACK)),
+        width: Some(Bound::Value(2.0)),
         ..Style::default()
     };
-    let line = r#"{"type": "LineString", "coordinates": [[20, 20], [80, 80]]}"#;
-    let rendered = render_with(&map(RenderMode::Point, style), Some(line));
+    let square = r#"{"type": "Polygon", "coordinates": [
+        [[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}"#;
+    let alone = render_with(&map(RenderMode::Polygon, style.clone()), Some(square));
+    let outer = TransformTree::Drawn(TransformShape::Outer(Box::new(TransformShape::Shape)));
+    let rendered = render_with(
+        &map(RenderMode::Polygon, of_tree(outer, style)),
+        Some(SQUARE_WITH_HOLE),
+    );
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image, alone.image);
+    assert_eq!(rendered.image.unwrap().pixel(50, 50), Some(GREEN));
+}
+
+/// A line along y = 20, pixel row 80, then the square of [`SQUARE_WITH_HOLE`] without its hole.
+const LINE_THEN_A_SQUARE: &str = r#"{"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {},
+     "geometry": {"type": "LineString", "coordinates": [[0, 5], [100, 5]]}},
+    {"type": "Feature", "properties": {},
+     "geometry": {"type": "Polygon",
+                  "coordinates": [[[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}}]}"#;
+
+/// `densify(outer([shape]), 0)`: outer fails a line, densify a tolerance of 0.
+fn outer_then_densified_by_zero() -> TransformTree {
+    TransformTree::Drawn(TransformShape::Densify(
+        Box::new(TransformShape::Outer(Box::new(TransformShape::Shape))),
+        TransformNumber::Number(0.0),
+    ))
+}
+
+#[test]
+fn a_style_whose_tree_fails_on_a_shape_draws_nothing_there_with_one_warning() {
+    // Verifies: ADR-0048
+    // outer fails the line, MapServer's parser failing, and msDrawMap makes no map. Forager draws
+    // nothing of the style on the line, the polygon's outer ring, the other style everywhere, and
+    // warns once, naming the style and the failure.
+    let plain = line_style(BLUE, 1.0);
+    let alone = render_with(
+        &map_with(RenderMode::Line, vec![plain.clone()]),
+        Some(LINE_THEN_A_SQUARE),
+    );
+    let outer = TransformTree::Drawn(TransformShape::Outer(Box::new(TransformShape::Shape)));
+    let failing = of_tree(outer, line_style(RED, 5.0));
+    let rendered = render_with(
+        &map_with(RenderMode::Line, vec![plain, failing]),
+        Some(LINE_THEN_A_SQUARE),
+    );
+    assert_eq!(codes(&rendered), ["geomtransform-not-drawn"]);
+    let message = &rendered.diagnostics[0].message;
+    assert!(message.contains("style 2 of its class 1"), "{message}");
+    assert!(
+        message.contains("calls outer on a shape that is no polygon"),
+        "{message}"
+    );
+    let image = rendered.image.unwrap();
+    let alone = alone.image.unwrap();
+    assert_eq!(
+        image.pixel(50, 95),
+        alone.pixel(50, 95),
+        "nothing on the line"
+    );
+    assert_eq!(image.pixel(10, 50), Some(RED), "the polygon's ring");
+}
+
+#[test]
+fn a_style_whose_tree_fails_for_two_reasons_warns_once_naming_the_first() {
+    // Verifies: ADR-0048
+    // The line fails outer, the polygon densify's tolerance of 0: the warning names the failure
+    // of the shape drawn first.
+    let style = of_tree(outer_then_densified_by_zero(), line_style(BLUE, 1.0));
+    let rendered = render_with(
+        &map(RenderMode::Line, style.clone()),
+        Some(LINE_THEN_A_SQUARE),
+    );
+    assert_eq!(codes(&rendered), ["geomtransform-not-drawn"]);
+    let message = &rendered.diagnostics[0].message;
+    assert!(message.contains("calls outer"), "{message}");
+    assert!(!message.contains("densify"), "{message}");
+    let square_then_line = r#"{"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {},
+         "geometry": {"type": "Polygon",
+                      "coordinates": [[[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}},
+        {"type": "Feature", "properties": {},
+         "geometry": {"type": "LineString", "coordinates": [[0, 5], [100, 5]]}}]}"#;
+    let rendered = render_with(&map(RenderMode::Line, style), Some(square_then_line));
+    assert_eq!(codes(&rendered), ["geomtransform-not-drawn"]);
+    let message = &rendered.diagnostics[0].message;
+    assert!(message.contains("calls densify"), "{message}");
+}
+
+#[test]
+fn a_styles_map_cellsize_is_the_layers() {
+    // Verifies: ADR-0048
+    // MapServer binds no [map_cellsize] for a style at the pin; Forager binds the layer's: the
+    // map's cellsize of 10 feet in the layer's meters, 10 * 12 / 39.3701, about 3.05. 22 times
+    // it, about 67, drops the peak 64 pixels away; 20 times, about 61, keeps it. The map's
+    // cellsize, 10, or a pixel, 1, would decide both alike.
+    let style = line_style(BLUE, 3.0);
+    let in_feet = |styles| {
+        let mut map = map_by_ten(RenderMode::Line, styles);
+        map.units = Some(Units::Feet);
+        map
+    };
+    let base = render_with(&in_feet(vec![style.clone()]), Some(BASE_BY_TEN));
+    for (times, dropped) in [(22.0, true), (20.0, false)] {
+        let tree = generalized(TransformNumber::Op(
+            NumberOp::Mul,
+            Box::new(TransformNumber::MapCellsize),
+            Box::new(TransformNumber::Number(times)),
+        ));
+        let styles = vec![of_tree(tree, style.clone())];
+        let rendered = render_with(&in_feet(styles), Some(PEAK_BY_TEN));
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        assert_eq!(rendered.image == base.image, dropped, "{times}");
+    }
+}
+
+#[test]
+fn a_shape_left_without_a_point_in_pixels_draws_no_style_tree_and_warns_nothing() {
+    // Verifies: ADR-0048
+    // msTransformShapeSimplify empties a line shorter than a pixel, and msDrawShape returns before
+    // it draws a style (src/mapdraw.c:2506-2507): simplify, which fails a shape without points, is
+    // never evaluated, so no warning is given and nothing is drawn.
+    let simplify = TransformTree::Drawn(TransformShape::Simplify(
+        Box::new(TransformShape::Shape),
+        TransformNumber::Number(10.0),
+    ));
+    let tiny = r#"{"type": "LineString", "coordinates": [[50, 50], [50.2, 50.2], [50, 50]]}"#;
+    let rendered = render_with(
+        &map(RenderMode::Line, of_tree(simplify, line_style(BLUE, 3.0))),
+        Some(tiny),
+    );
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image.unwrap().pixel(50, 50), Some(WHITE));
+}
+
+#[test]
+fn a_part_left_without_points_in_pixels_stays_the_shapes_first() {
+    // Verifies: ADR-0048
+    // msTransformShapeSimplify keeps a part it empties with no points (src/mapprimitive.cpp:
+    // 968-969), here the first, closed within a pixel; generalize, which keeps the first part
+    // alone, keeps the empty one: the style draws nothing of the second part, along pixel row 80.
+    let lines = r#"{"type": "MultiLineString", "coordinates": [
+        [[50, 50], [50.2, 50.2], [50, 50]], [[0, 20], [100, 20]]]}"#;
+    let tree = generalized(TransformNumber::Number(10.0));
+    let rendered = render_with(
+        &map(RenderMode::Line, of_tree(tree, line_style(BLUE, 3.0))),
+        Some(lines),
+    );
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.image.unwrap().pixel(50, 80), Some(WHITE));
+}
+
+/// Three lines, of 10, 100, and 10 pixels, at pixel rows 10, 50, and 90.
+const SHORT_LONG_SHORT: &str = r#"{"type": "FeatureCollection", "features": [
+    {"type": "Feature", "properties": {},
+     "geometry": {"type": "LineString", "coordinates": [[10, 90], [20, 90]]}},
+    {"type": "Feature", "properties": {},
+     "geometry": {"type": "LineString", "coordinates": [[0, 50], [100, 50]]}},
+    {"type": "Feature", "properties": {},
+     "geometry": {"type": "LineString", "coordinates": [[10, 10], [20, 10]]}}]}"#;
+
+#[test]
+fn style_trees_share_the_bounds_of_their_layers_geomtransform() {
+    // Verifies: ADR-0048, Q-9
+    // densify by 0.0002 pixels adds about 50 000, 500 000, and 50 000 points to the three lines,
+    // within the 1 000 000 a layer's transforms may add. The layer's densify by 0.00025 map units
+    // adds 480 000 first: the long line passes the bound, and the style trees draw nothing on it
+    // and on the short line after it; the first stays drawn. Two such style trees warn once.
+    let densify = |tolerance| {
+        TransformTree::Drawn(TransformShape::Densify(
+            Box::new(TransformShape::Shape),
+            TransformNumber::Number(tolerance),
+        ))
+    };
+    let styles = [
+        of_tree(densify(0.0002), line_style(BLUE, 3.0)),
+        of_tree(densify(0.0002), line_style(BLUE, 1.0)),
+    ];
+    let mut map = map_with(RenderMode::Line, styles[..1].to_vec());
+    let within = render_with(&map, Some(SHORT_LONG_SHORT));
+    assert!(within.diagnostics.is_empty(), "{:?}", within.diagnostics);
+    let image = within.image.unwrap();
+    for (x, y) in [(15, 10), (50, 50), (15, 90)] {
+        assert_eq!(image.pixel(x, y), Some(BLUE), "({x}, {y})");
+    }
+    map.layers[0].geom_transform = Some(densify(0.00025));
+    for styles in [&styles[..1], &styles[..]] {
+        map.layers[0].classes[0].styles = styles.to_vec();
+        let past = render_with(&map, Some(SHORT_LONG_SHORT));
+        assert_eq!(
+            codes(&past),
+            ["geomtransform-over-limit"],
+            "{}",
+            styles.len()
+        );
+        let message = &past.diagnostics[0].message;
+        assert!(
+            message.contains("adds more than 1000000 points"),
+            "{message}"
+        );
+        let image = past.image.unwrap();
+        assert_eq!(image.pixel(15, 10), Some(BLUE), "drawn before the bound");
+        assert_eq!(image.pixel(50, 50), Some(WHITE), "past the bound");
+        assert_eq!(image.pixel(15, 90), Some(WHITE), "after the bound");
+    }
+}
+
+/// `buffer([shape], distance)`.
+fn buffered(distance: f64) -> TransformTree {
+    TransformTree::Drawn(TransformShape::Buffer(
+        Box::new(TransformShape::Shape),
+        TransformNumber::Number(distance),
+    ))
+}
+
+#[test]
+fn a_style_of_buffer_shades_the_shape_buffered_in_pixels() {
+    // Verifies: ADR-0048
+    // msDrawTransformedShape shades buffer's polygon by msDrawShadeSymbol: the square of 10..90
+    // grown by 5 pixels covers the pixel 3 outside its edge, shrunk by 5 leaves the pixel 3 inside
+    // it bare; a line's buffer is a polygon, shaded on a line layer as well.
+    let filled = Style {
+        color: Some(Bound::Value(GREEN)),
+        ..Style::default()
+    };
+    let square = r#"{"type": "Polygon", "coordinates": [
+        [[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}"#;
+    for (distance, outside, inside) in [(5.0, GREEN, GREEN), (-5.0, WHITE, WHITE)] {
+        let rendered = render_with(
+            &map(
+                RenderMode::Polygon,
+                of_tree(buffered(distance), filled.clone()),
+            ),
+            Some(square),
+        );
+        assert!(
+            rendered.diagnostics.is_empty(),
+            "{:?}",
+            rendered.diagnostics
+        );
+        let image = rendered.image.unwrap();
+        assert_eq!(
+            image.pixel(7, 50),
+            Some(outside),
+            "{distance}: 3 px outside"
+        );
+        assert_eq!(image.pixel(13, 50), Some(inside), "{distance}: 3 px inside");
+        assert_eq!(image.pixel(50, 50), Some(GREEN), "{distance}: the middle");
+    }
+    let line = r#"{"type": "LineString", "coordinates": [[20, 50], [80, 50]]}"#;
+    let rendered = render_with(
+        &map(RenderMode::Line, of_tree(buffered(10.0), filled)),
+        Some(line),
+    );
     assert!(
         rendered.diagnostics.is_empty(),
         "{:?}",
         rendered.diagnostics
     );
     let image = rendered.image.unwrap();
-    assert_eq!(image.pixel(20, 80), Some(BLUE));
-    assert_eq!(image.pixel(80, 20), Some(BLUE));
+    assert_eq!(image.pixel(50, 42), Some(GREEN), "8 px beside the line");
+    assert_eq!(
+        image.pixel(14, 50),
+        Some(GREEN),
+        "the round cap, 6 px before its end"
+    );
+    assert_eq!(image.pixel(50, 35), Some(WHITE), "15 px beside the line");
+}
+
+#[test]
+fn a_style_of_buffer_past_the_points_q9_lets_its_layer_add_draws_nothing_with_a_warning() {
+    // Verifies: Q-9, ADR-0048
+    // The first style's densify adds 999 950 points to the 80 pixels of the line, within the
+    // 1 000 000 a layer's transforms may add. The second style's buffer by 5 adds the points of its
+    // round caps to the line's 2: past the bound, it draws nothing, and the layer is warned once.
+    // Alone, the buffer is drawn.
+    let line = r#"{"type": "LineString", "coordinates": [[10, 50], [90, 50]]}"#;
+    let filled = Style {
+        color: Some(Bound::Value(GREEN)),
+        ..Style::default()
+    };
+    let buffer = of_tree(buffered(5.0), filled);
+    let alone = render_with(&map(RenderMode::Line, buffer.clone()), Some(line));
+    assert!(alone.diagnostics.is_empty(), "{:?}", alone.diagnostics);
+    assert_eq!(alone.image.unwrap().pixel(50, 47), Some(GREEN));
+    let densify = of_tree(densified(80.0 / 999_950.0), line_style(BLUE, 3.0));
+    let past = render_with(
+        &map_with(RenderMode::Line, vec![densify, buffer]),
+        Some(line),
+    );
+    assert_eq!(codes(&past), ["geomtransform-over-limit"]);
+    let message = &past.diagnostics[0].message;
+    assert!(
+        message.contains("adds more than 1000000 points"),
+        "{message}"
+    );
+    let image = past.image.unwrap();
+    assert_eq!(
+        image.pixel(50, 50),
+        Some(BLUE),
+        "the densified line is drawn"
+    );
+    assert_eq!(image.pixel(50, 47), Some(WHITE), "the buffer is not");
+}
+
+#[test]
+fn a_buffer_whose_round_joins_would_pass_the_points_q9_lets_a_layer_add_is_not_run() {
+    // Verifies: Q-9, ADR-0048
+    // A line of 20 000 points up and down the image, each turning almost a half turn: the round
+    // joins of its buffer would add about 60 points at each, 1 200 000 in all, past the 1 000 000
+    // a layer's transforms may add. The buffer is charged them before it runs, and draws nothing.
+    let points: Vec<String> = (0..20_000)
+        .map(|i| {
+            if i % 2 == 0 {
+                "[10, 10]".to_owned()
+            } else {
+                "[10.5, 90]".to_owned()
+            }
+        })
+        .collect();
+    let line = format!(
+        r#"{{"type": "LineString", "coordinates": [{}]}}"#,
+        points.join(", ")
+    );
+    let filled = Style {
+        color: Some(Bound::Value(GREEN)),
+        ..Style::default()
+    };
+    let past = render_with(
+        &map(RenderMode::Line, of_tree(buffered(5.0), filled)),
+        Some(&line),
+    );
+    assert_eq!(codes(&past), ["geomtransform-over-limit"]);
+    let message = &past.diagnostics[0].message;
+    assert!(
+        message.contains("adds more than 1000000 points"),
+        "{message}"
+    );
+    assert_eq!(past.image.unwrap().pixel(10, 50), Some(WHITE));
 }
 
 fn not_drawn(reason: NotDrawn) -> TransformTree {
@@ -2013,14 +2521,14 @@ fn codes(rendered: &Rendered) -> Vec<&str> {
 
 #[test]
 fn a_layer_of_a_not_drawn_transform_draws_nothing_and_warns_its_reason() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     // MapServer applies the layer's GEOMTRANSFORM to each shape msLayerNextShape reads;
-    // simplifypt needs GEOS's topology-preserving simplifier, which Forager has not: the layer
-    // draws nothing, with the warning naming the reason.
+    // centerline needs GEOS's Voronoi diagram, which Forager has not: the layer draws nothing,
+    // with the warning naming the reason.
     let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
     let line = r#"{"type": "LineString", "coordinates": [[0, 20], [100, 20]]}"#;
     for (reason, named) in [
-        (NotDrawn::Simplifypt, "not_drawn: simplifypt"),
+        (NotDrawn::Centerline, "not_drawn: centerline"),
         (NotDrawn::Binding, "not_drawn: binding"),
         (NotDrawn::Syntax, "not_drawn: syntax"),
     ] {
@@ -2067,7 +2575,7 @@ fn a_layer_of_generalize_draws_the_generalized_line() {
 
 #[test]
 fn a_layer_of_simplify_draws_the_simplified_line() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     // GEOS's Douglas-Peucker drops the peak 40 from the line between the ends at a tolerance of
     // 50, and keeps it at 30.
     let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));

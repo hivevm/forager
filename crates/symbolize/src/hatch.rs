@@ -1,7 +1,8 @@
 // The hatch of a polygon follows the hatch branch of MapServer's msDrawShadeSymbol(),
 // src/maprendering.c, createHatch() and msHatchPolygon(), src/mapagg.cpp, and the clipping of
-// a polygon before it is drawn, msDrawShape(), src/mapdraw.c, and msClipPolygonRect(),
-// src/mapprimitive.cpp, of the release pinned in scripts/fetch-msautotest.sh.
+// a polygon or a line before it is drawn, msDrawShape(), src/mapdraw.c, msClipPolygonRect(),
+// msClipPolylineRect(), and clipLine(), src/mapprimitive.cpp, of the release pinned in
+// scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2007 Regents of the University of Minnesota (src/mapagg.cpp).
 // Copyright (c) 1996-2011 Regents of the University of Minnesota (src/maprendering.c).
@@ -19,8 +20,9 @@
 
 //! The hatch of a polygon: the lines MapServer lays over the polygon's bounding box, at the
 //! style's spacing, width, and angle, from the image's reference point, for the renderer to stroke
-//! and clip to the polygon; and msDrawShape()'s clip of a hatched polygon before it is hatched, by
-//! the class's clip buffer. Its trigonometry is libm's, the same code on every target (Q-2).
+//! and clip to the polygon; and msDrawShape()'s clip of a hatched polygon before it is hatched,
+//! and of a line shape before it is stroked, by the class's clip buffer. Its trigonometry is
+//! libm's, the same code on every target (Q-2).
 
 use forager_render::{Hatch, Point};
 use forager_style_ir::Coord;
@@ -38,12 +40,16 @@ use crate::symbol::{self, Factors, Pixmaps};
 /// image has some 5800.
 const MAX_LINES: f64 = 1_048_576.0;
 
-/// What the drawing of a class's hatches needs and counts: how far beyond the image MapServer
-/// clips a polygon before it draws it, and how many hatches were refused (Q-9).
+/// What the drawing of a class's hatches and lines needs and counts: how far beyond the image
+/// MapServer clips a polygon or a line before it draws it, and how many hatches were refused
+/// (Q-9).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Hatching {
-    /// msDrawShape()'s `clip_buf` of the class, in pixels.
+    /// msDrawShape()'s `clip_buf` of the class for a polygon, in pixels.
     pub clip_buffer: f64,
+    /// msDrawShape()'s `clip_buf` of the class for a line, in pixels: without the styles'
+    /// offsets and the 2 a polygon adds.
+    pub line_clip_buffer: f64,
     /// Whether a style of the class has a `GEOMTRANSFORM`, which makes MapServer clip the polygon
     /// in pixels, after the transformation to the image, instead of in map units before it.
     pub clip_in_pixels: bool,
@@ -51,11 +57,12 @@ pub struct Hatching {
 }
 
 impl Hatching {
-    /// msDrawShape()'s clip buffer of a polygon drawn in the styles of a class at `factors`, the
-    /// styles' scale factor and the image's resolution factor, which are one here: per style, the
-    /// largest of its symbol's default size, its `SIZE`, and its `WIDTH`, grown by its larger
-    /// `OFFSET` unless that is a line offset, scaled, or its `MINSIZE` or `MINWIDTH` scaled where
-    /// larger, plus 1, rounded as `lrint`; the largest of the styles, plus 2 for a polygon. A size
+    /// msDrawShape()'s clip buffers of a polygon and of a line drawn in the styles of a class at
+    /// `factors`, the styles' scale factor and the image's resolution factor, which are one here:
+    /// per style, the largest of its symbol's default size, its `SIZE`, and its `WIDTH`, for a
+    /// polygon grown by its larger `OFFSET` unless that is a line offset, scaled, or its `MINSIZE`
+    /// or `MINWIDTH` scaled where larger, plus 1, rounded as `lrint`; the largest of the styles,
+    /// plus 2 for a polygon. A size
     /// or width bound to a property or an expression counts as unset, MapServer's -1 and 1;
     /// MapServer computes the buffer before msBindLayerToShape() binds the feature's values, so it
     /// counts the values bound for the feature drawn before. The default size of a pixmap symbol
@@ -70,29 +77,35 @@ impl Hatching {
             resolution,
         }: Factors,
     ) -> Self {
-        // `int clip_buf`, src/mapdraw.c:2463.
-        let mut buffer = 0_i32;
+        // `int clip_buf`, src/mapdraw.c:2463, of a polygon and of a line.
+        let (mut polygon, mut line) = (0_i32, 0_i32);
         for style in styles {
             let default_size = symbol::default_size_of(style, symbols, pixmaps);
             let size = fixed(&style.size).unwrap_or(-1.0);
             let width = fixed(&style.width).unwrap_or(1.0);
-            let mut largest = ms_max(default_size, ms_max(size, width));
+            let largest = ms_max(default_size, ms_max(size, width));
             let unscaled = bounds::clip_buffer_minimum(style, resolution);
+            let mut offset = 0.0;
             if style.line_offset.is_none()
                 && let Some([x, y]) = &style.offset
             {
                 let (x, y) = (x.value().unwrap_or(0.0), y.value().unwrap_or(0.0));
-                largest += ms_max(y.abs(), x.abs());
+                offset = ms_max(y.abs(), x.abs());
             }
             // MS_MAX of the `int` and MS_NINT's `long`, compared as a `long` and narrowed into the
             // `int` (2497-2499).
-            let nint = ms_max(largest * factor, unscaled) + 1.0;
-            if i64::from(buffer) <= lrint(nint) {
-                buffer = ms_nint(nint);
-            }
+            let grow = |buffer: &mut i32, largest: f64| {
+                let nint = ms_max(largest * factor, unscaled) + 1.0;
+                if i64::from(*buffer) <= lrint(nint) {
+                    *buffer = ms_nint(nint);
+                }
+            };
+            grow(&mut polygon, largest + offset);
+            grow(&mut line, largest);
         }
         Self {
-            clip_buffer: f64::from(buffer) + 2.0,
+            clip_buffer: f64::from(polygon) + 2.0,
+            line_clip_buffer: f64::from(line),
             clip_in_pixels: styles.iter().any(|s| s.geom_transform.is_some()),
             refused: 0,
         }
@@ -260,6 +273,145 @@ pub fn hatch_rings(
         y: e.max_y + grow,
     };
     to_pixels(&clip_polygon_rect(&points, min, max))
+}
+
+/// The lines of a line shape in pixels as msDrawShape() hands them to msDrawLineSymbol(): all of
+/// its `parts` as one shape, transformed to pixels as msTransformShapeSimplify() transforms a
+/// line (see [`View::line_to_pixels`]), and, where the shape reaches beyond the map's extent and
+/// `clip` is set, clipped first to the extent grown by the class's line clip buffer (see
+/// [`Hatching::for_class`]) with msClipPolylineRect(); in map units before the transformation to
+/// pixels, or, where a style of the class has a `GEOMTRANSFORM`, to the image so grown after it.
+/// A line's dashes and its symbols count from where the clip leaves it to begin. A layer of
+/// `PROCESSING "POLYLINE_NO_CLIP"` is drawn with `clip` unset (`src/mapdraw.c:1341-1344, 2452`).
+pub fn line_paths(
+    parts: &[Vec<Coord>],
+    view: &View,
+    image: (f64, f64),
+    hatching: &Hatching,
+    clip: bool,
+) -> Vec<Vec<Point>> {
+    let e = view.extent;
+    let beyond = parts
+        .iter()
+        .flatten()
+        .any(|c| c.x < e.min_x || c.y < e.min_y || c.x > e.max_x || c.y > e.max_y);
+    let to_pixels = |lines: &[Vec<Point>]| -> Vec<Vec<Point>> {
+        lines
+            .iter()
+            .map(|l| {
+                let line: Vec<Coord> = l.iter().map(|p| Coord { x: p.x, y: p.y }).collect();
+                view.line_to_pixels(&line)
+            })
+            .filter(|l| !l.is_empty())
+            .collect()
+    };
+    let points: Vec<Vec<Point>> = parts
+        .iter()
+        .map(|l| l.iter().map(|c| Point { x: c.x, y: c.y }).collect())
+        .collect();
+    let buffer = hatching.line_clip_buffer;
+    if !(clip && beyond) {
+        return to_pixels(&points);
+    }
+    if hatching.clip_in_pixels {
+        let (width, height) = image;
+        let min = Point {
+            x: -buffer,
+            y: -buffer,
+        };
+        let max = Point {
+            x: width + buffer,
+            y: height + buffer,
+        };
+        return clip_polyline_rect(&to_pixels(&points), min, max);
+    }
+    let grow = buffer * view.cellsize;
+    let min = Point {
+        x: e.min_x - grow,
+        y: e.min_y - grow,
+    };
+    let max = Point {
+        x: e.max_x + grow,
+        y: e.max_y + grow,
+    };
+    to_pixels(&clip_polyline_rect(&points, min, max))
+}
+
+/// msClipPolylineRect(): every line cut to the rectangle from `min` to `max`, segment by segment
+/// with clipLine(), a line that leaves the rectangle ended where it leaves and one that comes back
+/// begun where it enters; lines wholly inside, by the bounds of all of them, are kept as they are.
+pub(crate) fn clip_polyline_rect(lines: &[Vec<Point>], min: Point, max: Point) -> Vec<Vec<Point>> {
+    let inside = lines
+        .iter()
+        .flatten()
+        .all(|p| p.x <= max.x && p.x >= min.x && p.y <= max.y && p.y >= min.y);
+    if inside {
+        return lines.to_vec();
+    }
+    let mut clipped = Vec::new();
+    for points in lines {
+        let Some(&first) = points.first() else {
+            continue;
+        };
+        let mut line: Vec<Point> = Vec::new();
+        let mut a = first;
+        for &b in &points[1..] {
+            if let Some((a1, b1)) = clip_line(a, b, min, max) {
+                if line.is_empty() {
+                    line.push(a1);
+                }
+                line.push(b1);
+                if b1 != b {
+                    clipped.push(std::mem::take(&mut line));
+                }
+            }
+            a = b;
+        }
+        if !line.is_empty() {
+            clipped.push(line);
+        }
+    }
+    clipped
+}
+
+/// clipLine(): the segment from `a` to `b` cut to the rectangle from `min` to `max`, first in x,
+/// then in y, by the slope of what the cut in x leaves; `None` where it lies wholly to one side.
+fn clip_line(mut a: Point, mut b: Point, min: Point, max: Point) -> Option<(Point, Point)> {
+    // CLIP_CHECK: -1 left of the range, 1 right of it, 0 within.
+    let check = |lo: f64, v: f64, hi: f64| {
+        if v < lo {
+            -1
+        } else if v > hi {
+            1
+        } else {
+            0
+        }
+    };
+    if (a.x < min.x && b.x < min.x) || (a.x > max.x && b.x > max.x) {
+        return None;
+    }
+    let (c1, c2) = (check(min.x, a.x, max.x), check(min.x, b.x, max.x));
+    for (side, edge) in [(-1, min.x), (1, max.x)] {
+        if c1 == side || c2 == side {
+            let slope = (b.y - a.y) / (b.x - a.x);
+            let y = a.y + (edge - a.x) * slope;
+            let end = if c1 == side { &mut a } else { &mut b };
+            *end = Point { x: edge, y };
+        }
+    }
+    if (a.y < min.y && b.y < min.y) || (a.y > max.y && b.y > max.y) {
+        return None;
+    }
+    let (c1, c2) = (check(min.y, a.y, max.y), check(min.y, b.y, max.y));
+    for (side, edge) in [(-1, min.y), (1, max.y)] {
+        if c1 == side || c2 == side {
+            let slope = (b.x - a.x) / (b.y - a.y);
+            let x = a.x + (edge - a.y) * slope;
+            let end = if c1 == side { &mut a } else { &mut b };
+            *end = Point { x, y: edge };
+        }
+    }
+    Some((a, b))
 }
 
 /// The pixel a hatch counts its lines from, the image's `refpt`: the map's origin on the map's

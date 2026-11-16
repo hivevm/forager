@@ -13,7 +13,9 @@ pub struct Coord {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Geometry {
     Point(Coord),
-    MultiPoint(Vec<Coord>),
+    /// A point shape's parts, each a list of points, as MapServer's shape holds them. A feature
+    /// source delivers one part, but an inline feature one per `POINTS` block.
+    MultiPoint(Vec<Vec<Coord>>),
     LineString(Vec<Coord>),
     MultiLineString(Vec<Vec<Coord>>),
     Polygon(Vec<Vec<Coord>>),

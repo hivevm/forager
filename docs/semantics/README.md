@@ -12,7 +12,7 @@ describe and decide nothing: the decisions are the ADRs they cite.
 - [`FILTER` and `FILTERITEM`](filter.md)
 - [Attribute bindings `[name]`](binding.md)
 - [`COLOR` and `OUTLINECOLOR`](color.md)
-- [`SIZE`](size.md), [`WIDTH`](width.md), [`ANGLE`](angle.md) of a style
+- [`SIZE`](size.md), [`WIDTH`](width.md), [`ANGLE`](angle.md) of a style, and the map's `ANGLE`
 - [`LABEL`, `TEXT`, and `LABELITEM`](label.md)
 - [`FONTSET`](fontset.md)
 - [`SYMBOLSET` and `SYMBOL`](symbol.md)

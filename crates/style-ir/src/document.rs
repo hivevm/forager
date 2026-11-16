@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::lenient::{self, Pointer, read_error};
 use crate::migration::{self, STEPS};
 use crate::{
-    Diagnostic, Expr, Fonts, MAX_EXPRESSION_DEPTH, MAX_RESOLUTION, MIN_RESOLUTION, Map,
-    TransformTree,
+    Diagnostic, Expr, Fonts, MAX_EXPRESSION_DEPTH, MAX_MAP_ANGLE, MAX_RESOLUTION, MIN_RESOLUTION,
+    Map, TransformTree,
 };
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
@@ -126,14 +126,30 @@ impl StyleDocument {
         }
     }
 
-    pub fn to_yaml(&self) -> Result<String, Diagnostic> {
-        serde_saphyr::to_string(self)
-            .map_err(|e| Diagnostic::error("yaml-write", e.to_string(), None))
+    /// Writes the document as YAML.
+    ///
+    /// # Panics
+    ///
+    /// Never on the types of the style IR; the `expect` names why.
+    pub fn to_yaml(&self) -> String {
+        serde_saphyr::to_string(self).expect(
+            "the style IR uses no tag, anchor, or wrapper of serde_saphyr, \
+             each Serialize of its own forwards to strings, maps, and sequences, \
+             and the writer is in memory",
+        )
     }
 
-    pub fn to_json(&self) -> Result<String, Diagnostic> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| Diagnostic::error("json-write", e.to_string(), None))
+    /// Writes the document as pretty-printed JSON.
+    ///
+    /// # Panics
+    ///
+    /// Never on the types of the style IR; the `expect` names why.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).expect(
+            "every map of the style IR is keyed by String, \
+             each Serialize of its own forwards to strings, maps, and sequences, \
+             and the writer is in memory",
+        )
     }
 
     /// Reads a document from YAML, with the warnings of reading it (ADR-0014).
@@ -326,7 +342,7 @@ impl Map {
     /// Drops a `resolution` or `def_resolution` outside [`MIN_RESOLUTION`] to
     /// [`MAX_RESOLUTION`], each with a warning, so that its default applies: MapServer's loader
     /// refuses such a value, and the engine's resolution factor is only finite and positive
-    /// within the range.
+    /// within the range. Drops an `angle` outside ±[`MAX_MAP_ANGLE`] with a warning alike.
     fn ranged(&mut self) -> Vec<Diagnostic> {
         let mut warnings = Vec::new();
         let fields = [
@@ -345,13 +361,23 @@ impl Map {
                 warnings.push(Diagnostic::warning("value-out-of-range", message, None));
             }
         }
+        if let Some(angle) = self.angle
+            && !(-MAX_MAP_ANGLE..=MAX_MAP_ANGLE).contains(&angle)
+        {
+            self.angle = None;
+            let message = format!(
+                "/map/angle: {angle} is outside -{MAX_MAP_ANGLE} to {MAX_MAP_ANGLE} and is \
+                 ignored; the map is not rotated"
+            );
+            warnings.push(Diagnostic::warning("value-out-of-range", message, None));
+        }
         warnings
     }
 }
 
 impl StyleDocument {
     /// Refuses a document with an expression or a transform tree nested deeper than
-    /// [`MAX_EXPRESSION_DEPTH`] (Q-9, ADR-0036).
+    /// [`MAX_EXPRESSION_DEPTH`] (Q-9, ADR-0048).
     fn bounded(self) -> Result<Self, Diagnostic> {
         let expressions = self.map.expressions().into_iter().map(Expr::depth);
         let transforms = self.map.transforms().into_iter().map(TransformTree::depth);
@@ -394,6 +420,7 @@ mod tests {
             label_cache_edge_buffer: Some(10),
             projection: Some("+proj=longlat +datum=WGS84".into()),
             projection_auto: false,
+            angle: Some(30.0),
             resolution: Some(96.0),
             def_resolution: None,
             units: Some(Units::Degrees),
@@ -414,6 +441,7 @@ mod tests {
                 opacity: Some(50.0),
                 label_cache: false,
                 post_label_cache: true,
+                unclipped_lines: true,
                 max_features: Some(3),
                 geom_transform: Some(sample_transform()),
                 filter: Some(Expr::call(
@@ -492,7 +520,7 @@ mod tests {
     }
 
     fn not_drawn_expression() -> GeomTransform {
-        GeomTransform::Expression(TransformTree::NotDrawn(NotDrawn::Buffer))
+        GeomTransform::Expression(TransformTree::NotDrawn(NotDrawn::Centerline))
     }
 
     fn sample_style() -> Style {
@@ -583,10 +611,10 @@ mod tests {
     fn a_document_reads_back_equal_from_yaml_and_from_json() {
         // Verifies: ADR-0013
         let document = sample();
-        let from_yaml = StyleDocument::from_yaml(&document.to_yaml().unwrap())
+        let from_yaml = StyleDocument::from_yaml(&document.to_yaml())
             .unwrap()
             .document;
-        let from_json = StyleDocument::from_json(&document.to_json().unwrap())
+        let from_json = StyleDocument::from_json(&document.to_json())
             .unwrap()
             .document;
         assert_eq!(from_yaml, document);
@@ -600,15 +628,15 @@ mod tests {
         assert_eq!(FORMAT_VERSION, "1.1");
         let mut document = sample();
         (document.map.projection, document.map.projection_auto) = (None, true);
-        for text in [document.to_json().unwrap(), document.to_yaml().unwrap()] {
+        for text in [document.to_json(), document.to_yaml()] {
             assert!(text.contains("projection_auto"), "{text}");
         }
-        let from_json = StyleDocument::from_json(&document.to_json().unwrap()).unwrap();
-        let from_yaml = StyleDocument::from_yaml(&document.to_yaml().unwrap()).unwrap();
+        let from_json = StyleDocument::from_json(&document.to_json()).unwrap();
+        let from_yaml = StyleDocument::from_yaml(&document.to_yaml()).unwrap();
         assert_eq!(from_json.document, document);
         assert_eq!(from_yaml.document, document);
         // A map that is not AUTO writes no field, and a document of 1.0 reads with none.
-        assert!(!sample().to_json().unwrap().contains("projection_auto"));
+        assert!(!sample().to_json().contains("projection_auto"));
         let old = r#"{"version":"1.0","map":{"projection":"+proj=longlat"}}"#;
         let read = StyleDocument::from_json(old).unwrap();
         assert!(read.warnings.is_empty(), "{:?}", read.warnings);
@@ -618,7 +646,7 @@ mod tests {
         let stamped = r#"{"version":"1.0","map":{"projection_auto":true}}"#;
         let read = StyleDocument::from_json(stamped).unwrap();
         assert!(read.document.map.projection_auto);
-        let written = read.document.to_json().unwrap();
+        let written = read.document.to_json();
         assert!(written.contains(r#""version": "1.1""#), "{written}");
     }
 
@@ -631,13 +659,13 @@ mod tests {
         assert!(read.document.map.layers[0].label_cache);
         let compact = |text: String| text.split_whitespace().collect::<String>();
         assert_eq!(
-            compact(read.document.to_json().unwrap()),
+            compact(read.document.to_json()),
             r#"{"version":"1.1","map":{"layers":[{}]}}"#
         );
         let off = r#"{"version":"1.1","map":{"layers":[{"label_cache":false}]}}"#;
         let read = StyleDocument::from_json(off).unwrap();
         assert!(!read.document.map.layers[0].label_cache);
-        assert_eq!(compact(read.document.to_json().unwrap()), off);
+        assert_eq!(compact(read.document.to_json()), off);
     }
 
     #[test]
@@ -655,7 +683,7 @@ mod tests {
             }),
             ..Map::default()
         });
-        let read = StyleDocument::from_json(&document.to_json().unwrap())
+        let read = StyleDocument::from_json(&document.to_json())
             .unwrap()
             .document;
         let extent = read.map.extent.unwrap();
@@ -676,21 +704,21 @@ mod tests {
             document
         };
         let at_limit = nested(MAX_EXPRESSION_DEPTH);
-        let yaml = at_limit.to_yaml().unwrap();
+        let yaml = at_limit.to_yaml();
         assert_eq!(StyleDocument::from_yaml(&yaml).unwrap().document, at_limit);
-        let json = at_limit.to_json().unwrap();
+        let json = at_limit.to_json();
         assert_eq!(StyleDocument::from_json(&json).unwrap().document, at_limit);
 
         let past = nested(MAX_EXPRESSION_DEPTH + 1);
-        let error = StyleDocument::from_json(&past.to_json().unwrap()).unwrap_err();
+        let error = StyleDocument::from_json(&past.to_json()).unwrap_err();
         assert_eq!(error.code, "expression-too-deep");
-        let error = StyleDocument::from_yaml(&past.to_yaml().unwrap()).unwrap_err();
+        let error = StyleDocument::from_yaml(&past.to_yaml()).unwrap_err();
         assert_eq!(error.code, "expression-too-deep");
     }
 
     #[test]
     fn a_transform_tree_past_the_nesting_limit_is_refused_and_one_at_it_reads() {
-        // Verifies: Q-9, ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+        // Verifies: Q-9, ADR-0048
         // `densify(shape, n)` over a chain of `+`: densify, its number, and the operators below
         // it, each a level.
         let chained = |depth: usize| {
@@ -721,14 +749,14 @@ mod tests {
         };
         for place in [on_layer, on_style] {
             let at_limit = place(chained(MAX_EXPRESSION_DEPTH));
-            let json = at_limit.to_json().unwrap();
+            let json = at_limit.to_json();
             assert_eq!(StyleDocument::from_json(&json).unwrap().document, at_limit);
-            let yaml = at_limit.to_yaml().unwrap();
+            let yaml = at_limit.to_yaml();
             assert_eq!(StyleDocument::from_yaml(&yaml).unwrap().document, at_limit);
             let past = place(chained(MAX_EXPRESSION_DEPTH + 1));
-            let error = StyleDocument::from_json(&past.to_json().unwrap()).unwrap_err();
+            let error = StyleDocument::from_json(&past.to_json()).unwrap_err();
             assert_eq!(error.code, "expression-too-deep");
-            let error = StyleDocument::from_yaml(&past.to_yaml().unwrap()).unwrap_err();
+            let error = StyleDocument::from_yaml(&past.to_yaml()).unwrap_err();
             assert_eq!(error.code, "expression-too-deep");
         }
     }
@@ -751,7 +779,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_function_unsets_the_transform_with_a_warning() {
-        // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+        // Verifies: ADR-0048
         // A reader of an older minor unsets an unknown function, and so draws the shapes
         // untransformed: on a layer, and on a class's style.
         let shape = r#"{"op":"shape","args":[]}"#;
@@ -786,7 +814,7 @@ mod tests {
 
     #[test]
     fn a_newer_minors_unknown_not_drawn_reason_is_read_as_not_drawn_with_a_warning() {
-        // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+        // Verifies: ADR-0048
         // A reason added in a minor version fails closed: the transform stays not drawn, on a
         // layer and on a class's style, with a warning naming its path.
         let text = with_transforms(r#"{"not_drawn":"offset"}"#);
@@ -884,7 +912,7 @@ mod tests {
             class.labels[0].styles[0].geom_transform,
             LabelTransform::Center
         );
-        let written: Value = serde_json::from_str(&read.document.to_json().unwrap()).unwrap();
+        let written: Value = serde_json::from_str(&read.document.to_json()).unwrap();
         let transform = "/map/layers/0/classes/0/labels/0/styles/0/geom_transform";
         assert_eq!(
             written.pointer(transform),
@@ -1048,6 +1076,31 @@ mod tests {
     }
 
     #[test]
+    fn a_map_angle_reads_back_and_one_outside_360_is_dropped_with_a_warning() {
+        // Verifies: G-3, ADR-0045
+        let document = sample();
+        assert_eq!(document.map.angle, Some(30.0));
+        let text = document.to_json();
+        assert!(text.contains(r#""angle": 30.0"#), "{text}");
+        assert_eq!(StyleDocument::from_json(&text).unwrap().document, document);
+        let read = with_map(r#""angle":-360,"resolution":72"#);
+        assert!(read.warnings.is_empty(), "{:?}", read.warnings);
+        assert_eq!(read.document.map.angle, Some(-360.0));
+        for value in ["360.5", "-1e9"] {
+            let read = with_map(&format!(r#""angle":{value}"#));
+            assert_eq!(read.document.map.angle, None, "{value}");
+            let [warning] = read.warnings.as_slice() else {
+                panic!("{value}: {:?}", read.warnings)
+            };
+            assert_eq!(warning.code, "value-out-of-range");
+            assert!(warning.message.contains("/map/angle"), "{warning:?}");
+        }
+        let read = StyleDocument::from_yaml("version: \"1.1\"\nmap: {angle: .nan}\n").unwrap();
+        assert_eq!(read.document.map.angle, None);
+        assert_eq!(read.warnings.len(), 1, "{:?}", read.warnings);
+    }
+
+    #[test]
     fn a_newer_major_version_is_a_load_error() {
         let error = StyleDocument::from_json(r#"{"version": "2.0", "map": {}}"#).unwrap_err();
         assert_eq!(error.code, "format-version-unsupported");
@@ -1168,12 +1221,12 @@ mod tests {
         assert_eq!(FORMAT_VERSION, "1.1");
         let mut document = sample();
         document.map.layers[0].classes[0].styles[0].geom_transform = Some(GeomTransform::Bbox);
-        let json = document.to_json().unwrap();
+        let json = document.to_json();
         assert!(json.contains(r#""geom_transform": "bbox""#), "{json}");
         let read = StyleDocument::from_json(&json).unwrap();
         assert!(read.warnings.is_empty());
         assert_eq!(read.document, document);
-        let from_yaml = StyleDocument::from_yaml(&document.to_yaml().unwrap()).unwrap();
+        let from_yaml = StyleDocument::from_yaml(&document.to_yaml()).unwrap();
         assert_eq!(from_yaml.document, document);
     }
 
@@ -1193,7 +1246,7 @@ mod tests {
             ]
         );
         assert_eq!(read.warnings[0].code, "unknown-value");
-        let again = StyleDocument::from_yaml(&read.document.to_yaml().unwrap()).unwrap();
+        let again = StyleDocument::from_yaml(&read.document.to_yaml()).unwrap();
         assert_eq!(
             again.document, read.document,
             "the dropped value does not reappear"
@@ -1217,7 +1270,7 @@ mod tests {
             ]
         );
         assert_eq!(read.warnings[0].code, "unknown-operator");
-        let json = read.document.to_json().unwrap();
+        let json = read.document.to_json();
         assert!(!json.contains("s_buffer"), "the operator does not reappear");
         // A filter is kept the same way; JSON reads as YAML does.
         let json = r#"{"version":"1.2","map":{"layers":[{"filter":{"op":"s_buffer","args":[]}}]}}"#;

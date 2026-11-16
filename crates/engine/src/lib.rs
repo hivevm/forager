@@ -46,6 +46,7 @@ mod plan;
 mod reproject;
 mod resource;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use forager_ports::{
@@ -55,15 +56,17 @@ use forager_ports::{
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
-    Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
+    Bound, Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
     RenderMode, Rgba, Style, Symbol, SymbolKind, TransformTree,
 };
 use forager_symbolize::{
-    Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, Tiles, Undrawn, can_draw, circle,
-    circle_ops, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
+    Budget, Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, StyleTrees, Undrawn, can_draw,
+    circle, circle_ops, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers,
+    resolve,
 };
 
 use forager_expr::Evaluator;
+use forager_proj::Geotransform;
 
 use crate::classes::{Binder, Reports, Selector};
 use crate::images::Images;
@@ -75,7 +78,9 @@ pub use crate::resource::MAX_FONT_OR_IMAGE_FILE_BYTES;
 pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
-use crate::layer::{Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports};
+use crate::layer::{
+    Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports, turned_by_map,
+};
 
 pub use crate::labels::CachedLabel;
 pub use crate::reproject::MAX_HORIZON_POINTS;
@@ -146,12 +151,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     mut renderer: R,
 ) -> Rendered {
     let mut diagnostics = Vec::new();
-    let Some((width, height, view)) = view(map, &mut diagnostics) else {
+    let Some((width, height, scale, factors, rotation)) = prepare(map, &mut diagnostics) else {
         return Rendered::no_map(diagnostics);
     };
+    let view = &rotation.frame;
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    let (scale, factors) = classes::scales(map, &view, width);
-    let mut labels = Labels::new(map, &view, &factors, files, (width, height));
+    let mut labels = Labels::new(map, view, &factors, files, (width, height));
     // The images of the render's pixmap symbols, dropped with the render (ADR-0029).
     let mut images = Images::default();
     let mut evaluator = Evaluator::new();
@@ -166,7 +171,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             continue;
         };
         let Some((mut features, centres)) =
-            in_view(map, layer, mode, sources, &view, &mut diagnostics).await
+            in_view(map, layer, mode, sources, &rotation, &mut diagnostics).await
         else {
             continue;
         };
@@ -184,12 +189,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             scale,
         };
         let cellsize = classes::layer_cellsize(map, view.cellsize);
-        if !transformed(&mut selector, mode, &mut features, cellsize) {
+        let Some(budget) = transformed(&mut selector, mode, &mut features, cellsize) else {
             continue;
-        }
+        };
         let (drawable, undrawn) = drawable(mode, &features);
         let selected = selector.select(drawable, &map.symbols);
-        let drawing = Drawing::new(mode, layer, scale, &view, centres.as_ref());
+        let drawing = Drawing::new(mode, layer, scale, view, centres.as_ref(), map.angle);
         // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
         // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
         // Any other layer's labels go through the label cache.
@@ -200,11 +205,13 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             .load_resources(&selected, &map.symbols, !at_once, &mut images, &mut labels)
             .await;
         let (pixmaps, tiles, glyphs) = images.drawing();
-        let mut canvas = layer_canvas(map, factors[layer_index], (width, height), pixmaps, tiles)
-            .with_glyphs(glyphs);
+        let mut canvas = layer_canvas(map, layer, factors[layer_index], (width, height), pixmaps)
+            .with_tiles(tiles)
+            .with_glyphs(glyphs)
+            .with_style_trees(StyleTrees::new(budget, cellsize));
         let drawn = labelled(&selected);
         let mut target = drawing.target(&mut renderer, &mut canvas);
-        if at_once {
+        let style_failures = if at_once {
             let binder = &mut selector.binder;
             let mut settled = labels.layer_at_once(layer_index, &drawn, pixmaps, binder);
             for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
@@ -221,15 +228,17 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
                     labels.out_of_reach(binder.diagnostics, label.at, count);
                 }
             }
+            StyleFailures::new()
         } else {
-            drawing.draw(&mut target, &mut canvas, &selected);
-        }
+            drawing.draw(&mut target, &mut canvas, &selected)
+        };
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
         let refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
         let (spent, diagnostics) = (canvas.markers_spent(), &mut *selector.binder.diagnostics);
         layer_reports(layer, spent, refusals, undrawn, diagnostics);
-        style_reports(layer, mode, &map.symbols, diagnostics);
+        let trees = (style_failures, canvas.style_trees_over_limit());
+        style_reports(layer, mode, &map.symbols, trees, diagnostics);
         // Only a line, polygon, or annotation layer of POSTLABELCACHE TRUE comes here after the
         // cache is drawn: its labels are not drawn yet, each reported, so none enters the cache.
         if !at_once {
@@ -251,19 +260,23 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     }
 }
 
-/// The reports on the styles of a layer drawn in `mode`: the symbols no symbol is named, and, but
-/// in a point layer, which draws them at its points, and a circle layer, which draws its circle
-/// whatever the transform (`src/mapdraw.c:2390-2396`), the styles of a GEOMTRANSFORM not drawn.
+/// The reports on the styles of a layer drawn in `mode`: the symbols no symbol is named; but in a
+/// point layer, which draws them at its points, and a circle layer, which draws its circle
+/// whatever the transform (`src/mapdraw.c:2390-2396`), the styles of a GEOMTRANSFORM not drawn;
+/// and what the class styles' transform trees left undrawn, their failures and the bound they
+/// passed (see [`style_tree_reports`]).
 fn style_reports(
     layer: &Layer,
     mode: RenderMode,
     symbols: &[Symbol],
+    (failures, over_limit): (StyleFailures, Option<&str>),
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     unknown_symbols(layer, symbols, diagnostics);
     if !matches!(mode, RenderMode::Point | RenderMode::Circle) {
         styles_not_drawn(layer, diagnostics);
     }
+    style_tree_reports(layer, failures, over_limit, diagnostics);
 }
 
 /// The map's layers with their indexes in the order msDrawMap draws them, and the position at which
@@ -393,23 +406,26 @@ impl<R: Renderer> Draw for Target<'_, R> {
     }
 }
 
-/// The canvas a layer of `map` is drawn on, in an image `width` by `height`, with the images of
-/// `pixmaps` and the fill tiles of `tiles`, at `factors`, the layer's scale factor, which sizes
-/// its styles, and the image's resolution factor, which bounds them.
+/// The canvas `layer` of `map` is drawn on, in an image `width` by `height`, with the images of
+/// `pixmaps`, at `factors`, the layer's scale factor, which sizes its styles, and the image's
+/// resolution factor, which bounds them; its lines unclipped where the layer says so.
 fn layer_canvas<'c>(
     map: &'c Map,
+    layer: &Layer,
     factors: Factors,
     (width, height): (u32, u32),
     pixmaps: &'c Pixmaps,
-    tiles: &'c mut Tiles,
 ) -> Canvas<'c> {
-    Canvas::new(&map.symbols, width, height, factors)
-        .with_pixmaps(pixmaps)
-        .with_tiles(tiles)
+    let canvas = Canvas::new(&map.symbols, width, height, factors).with_pixmaps(pixmaps);
+    if layer.unclipped_lines {
+        canvas.with_lines_unclipped()
+    } else {
+        canvas
+    }
 }
 
 /// The fonts the TrueType symbols of the `selected` features' styles name, each once, which their
-/// markers draw their glyphs from (ADR-draft-truetype-marker-glyph-through-a-port); those of
+/// markers draw their glyphs from (ADR-0044); those of
 /// styles outside their scale range at the map's `scale` are left out, as their pixmaps are, but
 /// for the first style of a class for which `holds_marker` is true: the label cache sizes that
 /// marker by msGetMarkerSize whatever its scale range (`src/maplabel.c:344-352, 604-608`).
@@ -437,6 +453,10 @@ fn truetype_fonts<'s>(
     fonts
 }
 
+/// The first failure of each class style's transform tree in a layer's drawing, by the places of
+/// its class in the layer and of the style in its class.
+type StyleFailures = BTreeMap<(usize, usize), String>;
+
 /// What a layer's features are drawn with.
 struct Drawing<'a> {
     mode: RenderMode,
@@ -446,6 +466,8 @@ struct Drawing<'a> {
     view: &'a View,
     /// The reprojection of a circle layer's centres, where the layer is reprojected.
     centres: Option<&'a reproject::LayerReprojection>,
+    /// The map's `ANGLE`, which turns the angles of a point layer's styles.
+    map_angle: Option<f64>,
 }
 
 impl<'a> Drawing<'a> {
@@ -455,6 +477,7 @@ impl<'a> Drawing<'a> {
         scale: f64,
         view: &'a View,
         centres: Option<&'a reproject::LayerReprojection>,
+        map_angle: Option<f64>,
     ) -> Self {
         Self {
             mode,
@@ -462,6 +485,7 @@ impl<'a> Drawing<'a> {
             scale,
             view,
             centres,
+            map_angle,
         }
     }
 
@@ -531,11 +555,9 @@ impl<'a> Drawing<'a> {
                     }
                 }
             }
-            if self.mode == RenderMode::Polygon {
-                for path in clip_pixmaps(&self.layer.classes[*class].styles, symbols) {
-                    if !images.decoded().contains_key(path) {
-                        let _ = images.image(path, files).await;
-                    }
+            for path in clip_pixmaps(self.mode, &self.layer.classes[*class].styles, symbols) {
+                if !images.decoded().contains_key(path) {
+                    let _ = images.image(path, files).await;
                 }
             }
         }
@@ -546,7 +568,8 @@ impl<'a> Drawing<'a> {
     /// `label` draws at that point, as pointLayerDrawShape draws a point layer
     /// (src/mapdraw.c:2062-2105): the markers of a point, then its labels, then the next point's.
     /// It decides the order of a point layer's markers whatever its `LABELCACHE`; a layer of the
-    /// label cache draws no label here.
+    /// label cache draws no label here. On a rotated map, each style's angle is turned by the
+    /// map's (see [`turned_by_map`]), as pointLayerDrawShape turns it for the shape and back.
     fn draw_points<R: Draw>(
         &self,
         renderer: &mut R,
@@ -558,13 +581,28 @@ impl<'a> Drawing<'a> {
         let mut markers: Vec<Vec<Vec<DrawOp>>> = styles
             .iter()
             .filter(|s| classes::in_scale(self.scale, s.min_scale_denom, s.max_scale_denom))
-            .map(|style| point_markers(&feature.geometry, style, self.view, canvas))
+            .map(|style| {
+                let style = self.turned(style);
+                point_markers(&feature.geometry, &style, self.view, canvas)
+            })
             .collect();
         for (k, point) in points_in_view(self.view, &feature.geometry).enumerate() {
             for style in &mut markers {
                 draw_items(renderer, feature.id, std::mem::take(&mut style[k]));
             }
             label(renderer, point);
+        }
+    }
+
+    /// `style` with its angle turned by the map's (see [`turned_by_map`]).
+    fn turned<'s>(&self, style: &'s Style) -> Cow<'s, Style> {
+        match style.angle {
+            Some(Bound::Value(angle)) if self.map_angle.is_some() && angle != 0.0 => {
+                let mut style = style.clone();
+                style.angle = Some(Bound::Value(turned_by_map(angle, self.map_angle)));
+                Cow::Owned(style)
+            }
+            _ => Cow::Borrowed(style),
         }
     }
 
@@ -598,26 +636,41 @@ impl<'a> Drawing<'a> {
     /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
     /// from the cache as the [`Plan`] of each class says. A style outside its scale range draws
     /// nothing, where msDrawShape and the cache's pass skip it. A point layer's features are
-    /// drawn point by point by [`Self::draw_points`], without their labels.
-    fn draw<R: Draw>(&self, renderer: &mut R, canvas: &mut Canvas, selected: &[Selected<'_>]) {
+    /// drawn point by point by [`Self::draw_points`], without their labels. The first failure of
+    /// each class style's transform tree, in the order the shapes are drawn, by the places of its
+    /// class in the layer and of the style in its class.
+    fn draw<R: Draw>(
+        &self,
+        renderer: &mut R,
+        canvas: &mut Canvas,
+        selected: &[Selected<'_>],
+    ) -> StyleFailures {
+        let mut failures = StyleFailures::new();
         let mode = self.mode;
         if mode == RenderMode::Point {
             for one in selected {
                 self.draw_points(renderer, canvas, one, |_, _| {});
             }
-            return;
+            return failures;
         }
         if mode == RenderMode::Circle {
             self.draw_circles(renderer, canvas, selected);
-            return;
+            return failures;
         }
-        let mut draw = |canvas: &mut Canvas, feature: &Feature, style: &Style, passes: &[Pass]| {
+        let mut draw = |canvas: &mut Canvas,
+                        feature: &Feature,
+                        (class, place): (usize, usize),
+                        style: &Style,
+                        passes: &[Pass]| {
             if !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
                 return;
             }
             for &pass in passes {
                 let ops = draw_ops(mode, &feature.geometry, style, pass, self.view, canvas);
                 draw_items(renderer, feature.id, ops);
+                if let Some(why) = canvas.take_style_tree_failure() {
+                    failures.entry((class, place)).or_insert(why);
+                }
             }
         };
         let plans: Vec<Plan> = self
@@ -632,21 +685,24 @@ impl<'a> Drawing<'a> {
             canvas.class(&self.layer.classes[*class].styles);
             let plan = &plans[*class];
             let passes = plan.passes(styles);
-            for (style, passes) in &passes.at_once {
-                draw(canvas, feature, style, passes);
+            for (place, style, passes) in &passes.at_once {
+                draw(canvas, feature, (*class, *place), style, passes);
             }
             if plan.cached() {
                 most_styles = most_styles.max(styles.len());
-                cached.push((*feature, passes.cached));
+                cached.push((*feature, *class, passes.cached));
             }
         }
         for place in 0..most_styles {
-            for (feature, later) in &cached {
+            for (feature, class, later) in &cached {
+                // The shape cached is the one its own class's buffer clipped.
+                canvas.class(&self.layer.classes[*class].styles);
                 for (_, style, passes) in later.iter().filter(|(p, _, _)| *p == place) {
-                    draw(canvas, feature, style, passes);
+                    draw(canvas, feature, (*class, place), style, passes);
                 }
             }
         }
+        failures
     }
 }
 
@@ -681,6 +737,70 @@ fn view(map: &Map, diagnostics: &mut Vec<Diagnostic>) -> Option<(u32, u32, View)
         return None;
     };
     Some((width, height, view))
+}
+
+/// What msPrepareImage computes of `map` before its layers are drawn, or `None` with an error:
+/// the image's width and height, the scale from the real extent, the factors of each layer by
+/// its index from msGetGeoCellSize's cellsize (see [`classes::scales`]), and the rotation.
+fn prepare(
+    map: &Map,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(u32, u32, f64, Vec<Factors>, Rotation)> {
+    let (width, height, view) = view(map, diagnostics)?;
+    let rotation = Rotation::of(map, &view, (width, height), diagnostics)?;
+    let (scale, factors) = classes::scales(map, &view, rotation.geo_cellsize, width);
+    Some((width, height, scale, factors, rotation))
+}
+
+/// The rotation of a map by its `angle` (ADR-0045).
+struct Rotation {
+    /// The view everything after the reprojection is drawn in: on a rotated map, the frame of its
+    /// image, `0, 0, width, height` at a cellsize of 1, as msMapSetFakedExtent fakes it.
+    frame: View,
+    /// The map's geotransform, held on the map's side of every reprojection; none unrotated.
+    geotransform: Option<Geotransform>,
+    /// The cellsize the scale factor of a size in units other than pixels divides by.
+    geo_cellsize: f64,
+}
+
+impl Rotation {
+    /// The rotation of `map` in `view`, its image of `size`: none for an angle of 0 or none, as
+    /// msMapSetRotation sets none; `None`, with an error, where the angle gives no geotransform.
+    fn of(
+        map: &Map,
+        view: &View,
+        size: (u32, u32),
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<Self> {
+        let unrotated = Self {
+            frame: *view,
+            geotransform: None,
+            geo_cellsize: view.cellsize,
+        };
+        let Some(angle) = map.angle.filter(|&angle| angle != 0.0) else {
+            return Some(unrotated);
+        };
+        let (width, height) = size;
+        let Some(geotransform) = Geotransform::rotated_map(&view.extent, width, height, angle)
+        else {
+            let message = format!("the map's EXTENT, SIZE, and ANGLE {angle} give no geotransform");
+            diagnostics.push(Diagnostic::error("view-invalid", message, map.span.clone()));
+            return None;
+        };
+        Some(Self {
+            frame: View {
+                extent: Extent {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: f64::from(width),
+                    max_y: f64::from(height),
+                },
+                cellsize: 1.0,
+            },
+            geotransform: Some(geotransform),
+            geo_cellsize: classes::rotated_geo_cellsize(&view.extent, width, height),
+        })
+    }
 }
 
 /// Whether [`render`] reads the features of `layer`: one shown, of a TYPE it draws, from its
@@ -726,7 +846,8 @@ fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<Ren
 }
 
 /// The features of `layer` in view, drawn in `mode`: those its source delivers for the area
-/// [`asked`], in the map's projection, reprojected where the layer is. A circle layer's are left
+/// [`asked`], in the map's projection, reprojected where the layer is, and on a rotated map in the
+/// frame of its image (see [`Rotation`]). A circle layer's are left
 /// in the layer's projection, and returned with the reprojection of their centres, where the
 /// layer is reprojected: circleLayerDrawShape reprojects only a circle's centre
 /// (`src/mapdraw.c:2008-2011`).
@@ -735,11 +856,11 @@ async fn in_view<S: FeatureSource>(
     layer: &Layer,
     mode: RenderMode,
     sources: &BTreeMap<String, S>,
-    view: &View,
+    rotation: &Rotation,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<(Vec<Feature>, Option<reproject::LayerReprojection>)> {
     let declared = declared_projection(layer, sources, diagnostics);
-    let (reprojection, asked) = asked(map, layer, &declared, view, diagnostics)?;
+    let (reprojection, asked) = asked(map, layer, &declared, rotation, diagnostics)?;
     let mut features = source_features(layer, sources, asked, diagnostics).await?;
     if mode == RenderMode::Circle {
         if let Some(reprojection) = &reprojection {
@@ -775,15 +896,18 @@ fn centres_not_reprojected(
 /// How `layer` is reprojected into the map's projection, where it is, and the area its source is
 /// asked for: the map's extent, reprojected into the layer's projection where the layer is
 /// reprojected. None, with a warning, where a projection does not read or no point of the map's
-/// extent reprojects into the layer's.
+/// extent reprojects into the layer's. The map's extent is `rotation`'s frame; on a rotated map,
+/// a layer that is not reprojected is asked for the frame itself, as msDrawVectorLayer asks it,
+/// and drawn unrotated, with a warning.
 fn asked(
     map: &Map,
     layer: &Layer,
     declared: &DeclaredProjection,
-    view: &View,
+    rotation: &Rotation,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<(Option<reproject::LayerReprojection>, Extent)> {
-    let reprojection = match reproject::for_layer(map, layer, declared) {
+    let (view, geotransform) = (&rotation.frame, rotation.geotransform.as_ref());
+    let reprojection = match reproject::for_layer(map, layer, declared, geotransform) {
         Ok(reprojection) => reprojection,
         Err(error) => {
             let message = format!(
@@ -799,6 +923,9 @@ fn asked(
         }
     };
     let Some(reprojection) = reprojection else {
+        if geotransform.is_some() {
+            diagnostics.push(rotation_without_projection(layer));
+        }
         return Some((None, view.extent));
     };
     let Some(extent) = reprojection.asked(&view.extent) else {
@@ -914,6 +1041,18 @@ fn declared_projection<S: FeatureSource>(
         ));
     }
     declared
+}
+
+/// The warning that `layer`, on a rotated map, is not reprojected, because it or the map has no
+/// projection, and lands in the frame of the image unrotated, where MapServer draws it. MapServer
+/// is silent; the warning tells the user why (ADR-0045).
+fn rotation_without_projection(layer: &Layer) -> Diagnostic {
+    let message = format!(
+        "layer {} is not rotated by the map's ANGLE: it or the map has no PROJECTION, so its \
+         coordinates are drawn as the image's pixels, as MapServer draws them",
+        name(layer)
+    );
+    Diagnostic::warning("rotation-without-projection", message, layer.span.clone())
 }
 
 /// The warning that `count` points of `layer`'s features do not reproject into the map's
@@ -1053,26 +1192,24 @@ fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diag
 }
 
 /// Warns of each class style of a line or a polygon layer whose `GEOMTRANSFORM` the engine does
-/// not draw on a style. An expression MapServer evaluates by msDrawTransformedShape, most of its
-/// functions through GEOS; labelcenter fails the layer's draw there (src/mapgeomtransform.c:245),
-/// msDrawLabelCache alone drawing it on a label's style. The style draws nothing; the class's
-/// other styles draw in their passes as before. A point layer draws such a style at its points, as
-/// pointLayerDrawShape draws every style whatever its transform, and is not warned. The warning
-/// holds for a style document as for a mapfile, whose frontend does not warn of it again.
+/// not draw on a style: a transform tree `not_drawn`, naming its reason
+/// (ADR-0048, *Diagnostics*), which MapServer evaluates
+/// by msDrawTransformedShape, through GEOS or a JavaScript engine, or fails; and labelcenter, which
+/// fails the layer's draw there (src/mapgeomtransform.c:245), msDrawLabelCache alone drawing it on
+/// a label's style. The style draws nothing; the class's other styles draw in their passes as
+/// before. A point layer draws such a style at its points, as pointLayerDrawShape draws every
+/// style whatever its transform, and is not warned. The warning holds for a style document as for
+/// a mapfile, whose frontend does not warn of it again.
 fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
     for style in layer.classes.iter().flat_map(|class| &class.styles) {
         let message = match &style.geom_transform {
-            Some(GeomTransform::Expression(tree)) => {
-                let holding = match tree {
-                    TransformTree::NotDrawn(reason) => format!(", of {},", described(*reason)),
-                    TransformTree::Drawn(_) => String::new(),
-                };
-                format!(
-                    "layer {}: the GEOMTRANSFORM expression{holding} of a class's style is not \
-                     drawn: the style draws nothing",
-                    name(layer),
-                )
-            }
+            Some(GeomTransform::Expression(TransformTree::NotDrawn(reason))) => format!(
+                "layer {}: the GEOMTRANSFORM expression of a class's style holds {} \
+                 (not_drawn: {}), which the engine does not draw: the style draws nothing",
+                name(layer),
+                described(*reason),
+                reason.name()
+            ),
             Some(GeomTransform::LabelCenter) => format!(
                 "layer {}: a class's style of GEOMTRANSFORM labelcenter is not drawn: only a \
                  label's style draws labelcenter, and MapServer fails the layer's draw on it; the \
@@ -1085,6 +1222,58 @@ fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
             "geomtransform-not-drawn",
             message,
             style.span.clone().or_else(|| layer.span.clone()),
+        ));
+    }
+}
+
+/// Warns of the class styles' transform trees of `layer` that drew nothing
+/// (ADR-0048, *A class's style*): of each style in
+/// `failures`, its first failure, once, as `geomtransform-not-drawn`; and, where they passed
+/// `over_limit`, a bound of Q-9 they share with the layer's `GEOMTRANSFORM`, once for the layer as
+/// `geomtransform-over-limit`. MapServer makes no map where msDrawTransformedShape fails
+/// (src/mapdraw.c:1402-1405, 508-519); Forager draws nothing of the style on that shape, and the
+/// rest.
+fn style_tree_reports(
+    layer: &Layer,
+    failures: StyleFailures,
+    over_limit: Option<&str>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for ((c, s), why) in failures {
+        let class = &layer.classes[c];
+        let class_name = class
+            .name
+            .as_deref()
+            .map_or(String::new(), |n| format!(" `{n}`"));
+        let message = format!(
+            "layer {}: style {} of its class {}{class_name} draws nothing on a shape: its \
+             GEOMTRANSFORM expression {why}, where MapServer makes no map",
+            name(layer),
+            s + 1,
+            c + 1,
+        );
+        let span = class.styles[s]
+            .span
+            .clone()
+            .or_else(|| class.span.clone())
+            .or_else(|| layer.span.clone());
+        diagnostics.push(Diagnostic::warning(
+            "geomtransform-not-drawn",
+            message,
+            span,
+        ));
+    }
+    if let Some(why) = over_limit {
+        let message = format!(
+            "layer {}: a GEOMTRANSFORM expression of its styles, charged with the layer's \
+             GEOMTRANSFORM and its other styles', {why}: its styles' expressions draw nothing on \
+             the shape past the limit and on every later one",
+            name(layer),
+        );
+        diagnostics.push(Diagnostic::warning(
+            "geomtransform-over-limit",
+            message,
+            layer.span.clone(),
         ));
     }
 }
@@ -1110,32 +1299,34 @@ fn labelled<'a>(selected: &'a [Selected<'a>]) -> Vec<labels::Labelled<'a>> {
         .collect()
 }
 
-/// Whether the layer of `selector` is drawn after its `GEOMTRANSFORM`: its `features`
-/// transformed, `[map_cellsize]` at `cellsize`, where it has one; none drawn, with a warning,
-/// where its transform tree is `not_drawn` or fails (ADR-0036).
+/// The budget of Q-9 the layer of `selector` leaves to its class styles' transform trees, where
+/// it is drawn after its `GEOMTRANSFORM`: its `features` transformed, `[map_cellsize]` at
+/// `cellsize`, where it has one, whole where it has none; `None`, none drawn, with a warning,
+/// where its transform tree is `not_drawn` or fails (ADR-0048).
 fn transformed(
     selector: &mut Selector<'_, '_>,
     mode: RenderMode,
     features: &mut [Feature],
     cellsize: f64,
-) -> bool {
+) -> Option<Budget> {
     let layer = selector.binder.layer;
+    let mut budget = Budget::default();
     let warning = match &layer.geom_transform {
-        None => return true,
+        None => return Some(budget),
         Some(TransformTree::NotDrawn(reason)) => transform_not_drawn(layer, *reason),
         Some(TransformTree::Drawn(shape)) => {
-            match selector.transform(mode, features, shape, cellsize) {
-                Ok(()) => return true,
+            match selector.transform(mode, features, shape, cellsize, &mut budget) {
+                Ok(()) => return Some(budget),
                 Err(undrawn) => transform_failed(layer, undrawn),
             }
         }
     };
     selector.binder.diagnostics.push(warning);
-    false
+    None
 }
 
 /// The warning that `layer` draws nothing, its `GEOMTRANSFORM` a transform tree of the reason
-/// `reason` (ADR-0036). MapServer evaluates a function the tree has no node
+/// `reason` (ADR-0048). MapServer evaluates a function the tree has no node
 /// for through GEOS, or a JavaScript engine, and fails on a syntax error or a binding where it
 /// makes no number; Forager draws none of the layer, and the rest of the map.
 fn transform_not_drawn(layer: &Layer, reason: NotDrawn) -> Diagnostic {

@@ -27,6 +27,7 @@ GEOS bounds a mitre and the own curve does not, and where a segment is shorter t
 the inside of a turn, since GEOS removes the loop such a segment makes and the own curve keeps it.
 A positive distance lies below a line drawn rightwards in the image.
 
-MapServer clips a line to the image, grown by the widest symbol of its class, before it moves it.
-Forager moves the line first and clips it in the renderer, so a line that leaves the image is
+MapServer clips a line to the image, grown by the widest symbol of its class, before it moves it,
+and so does Forager for a line shape ([line](line.md)). A polygon's rings, outlined in a line or a
+polygon layer, Forager moves first and clips in the renderer, so a ring that leaves the image is
 offset as one line where MapServer offsets each clipped part.

@@ -126,7 +126,7 @@ fn point_ops<T>(ops: &mut Vec<DrawOp>, at: Point, style: &Style<T>) {
     }
     if let Some(color) = fixed(&style.outline_color) {
         let width = bounds::symbol_outline_width(fixed(&style.width).unwrap_or(1.0), style, 1.0);
-        let (cap, join) = line_ends(width, LineCap::Round, LineJoin::None);
+        let (cap, join, inner_join) = line_ends(width, LineCap::Round, LineJoin::None);
         ops.push(DrawOp::Stroke {
             paths: vec![square],
             closed: true,
@@ -134,6 +134,7 @@ fn point_ops<T>(ops: &mut Vec<DrawOp>, at: Point, style: &Style<T>) {
             width,
             cap,
             join,
+            inner_join,
             dashes: Dashes::default(),
             antialiased: true,
         });

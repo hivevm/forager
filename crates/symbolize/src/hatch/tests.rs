@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use forager_render::PremultipliedImage;
-use forager_style_ir::{Bound, SymbolKind, SymbolRef};
+use forager_style_ir::{Bound, RenderMode, SymbolKind, SymbolRef};
 
 use super::*;
 use crate::draw::clip_pixmaps;
@@ -340,6 +340,109 @@ fn a_hatch_whose_steps_no_longer_move_is_refused() {
 }
 
 #[test]
+fn the_clip_buffer_of_a_line_counts_no_offset_and_no_polygon_s_2() {
+    // msDrawShape grows a style's size by its offset only for a polygon shape, and adds 2 for a
+    // polygon alone: a style of SIZE 10 and WIDTH 3 offset by (4, 5) gives a line
+    // max(1, max(10, 3)) + 1 = 11.
+    let offset = Style {
+        offset: Some([Bound::Value(4.0), Bound::Value(5.0)]),
+        ..style(Some(10.0), Some(3.0))
+    };
+    let hatching = Hatching::for_class(
+        &[style(None, None), offset],
+        &[],
+        None,
+        Factors::new(1.0, 1.0),
+    );
+    assert_eq!(hatching.line_clip_buffer, 11.0);
+    assert_eq!(hatching.clip_buffer, 18.0);
+}
+
+#[test]
+fn a_line_is_cut_where_it_leaves_the_rectangle_and_begun_again_where_it_comes_back() {
+    // msClipPolylineRect: a line that leaves ends at the edge, one that comes back begins there,
+    // its parts lines of their own.
+    let (min, max) = (p(0.0, 0.0), p(10.0, 10.0));
+    let line = vec![
+        p(-10.0, 5.0),
+        p(5.0, 5.0),
+        p(15.0, 5.0),
+        p(15.0, 8.0),
+        p(5.0, 8.0),
+    ];
+    assert_eq!(
+        clip_polyline_rect(&[line], min, max),
+        vec![
+            vec![p(0.0, 5.0), p(5.0, 5.0), p(10.0, 5.0)],
+            vec![p(10.0, 8.0), p(5.0, 8.0)]
+        ]
+    );
+    // Wholly inside, by the bounds of all the lines, they are kept as they are.
+    let inside = vec![vec![p(1.0, 1.0), p(9.0, 9.0)], vec![p(0.0, 10.0)]];
+    assert_eq!(clip_polyline_rect(&inside, min, max), inside);
+    // Wholly to one side, a segment adds nothing.
+    let outside = vec![p(-5.0, 1.0), p(-1.0, 9.0), p(5.0, 20.0)];
+    assert!(clip_polyline_rect(&[outside], min, max).is_empty());
+}
+
+#[test]
+fn a_segment_is_cut_in_x_then_in_y_by_what_the_cut_in_x_leaves() {
+    // clipLine on (-10, -10) to (20, 5): in x, slope 0.5, the start to (0, -5), then the end, by
+    // the slope of the cut segment, to (10, 0); in y, the start, below, by the slope x over y of
+    // 2, to (10, 0): the segment becomes the corner point twice.
+    let (min, max) = (p(0.0, 0.0), p(10.0, 10.0));
+    assert_eq!(
+        clip_line(p(-10.0, -10.0), p(20.0, 5.0), min, max),
+        Some((p(10.0, 0.0), p(10.0, 0.0)))
+    );
+    assert_eq!(
+        clip_polyline_rect(&[vec![p(-10.0, -10.0), p(20.0, 5.0)]], min, max),
+        vec![vec![p(10.0, 0.0), p(10.0, 0.0)]]
+    );
+    // A diagonal across a corner: (-5, 0) to (5, 10) from (0, 5).
+    assert_eq!(
+        clip_line(p(-5.0, 0.0), p(5.0, 10.0), min, max),
+        Some((p(0.0, 5.0), p(5.0, 10.0)))
+    );
+}
+
+#[test]
+fn a_line_beyond_the_extent_is_clipped_in_map_units_by_the_line_clip_buffer() {
+    // A view of 0..100 at a cellsize of 1: the line from x = -1000 is cut at -2, the extent less
+    // the buffer of 2, before it is turned into pixels; a layer of POLYLINE_NO_CLIP keeps it.
+    let view = View::for_image(
+        forager_style_ir::Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 100.0,
+            max_y: 100.0,
+        },
+        101,
+        101,
+    )
+    .unwrap();
+    let c = |x: f64, y: f64| Coord { x, y };
+    let line = vec![c(-1000.0, 50.0), c(50.0, 50.0)];
+    let hatching = Hatching {
+        line_clip_buffer: 2.0,
+        ..Hatching::default()
+    };
+    let image = (101.0, 101.0);
+    let clipped = line_paths(std::slice::from_ref(&line), &view, image, &hatching, true);
+    assert_eq!(clipped, vec![vec![p(-2.0, 50.0), p(50.0, 50.0)]]);
+    let kept = line_paths(std::slice::from_ref(&line), &view, image, &hatching, false);
+    assert_eq!(kept, vec![vec![p(-1000.0, 50.0), p(50.0, 50.0)]]);
+    // With a GEOMTRANSFORM in the class, the image grown by the buffer cuts it, in pixels.
+    let in_pixels = Hatching {
+        clip_in_pixels: true,
+        ..hatching
+    };
+    let right = vec![c(50.0, 50.0), c(1000.0, 50.0)];
+    let clipped = line_paths(&[right], &view, image, &in_pixels, true);
+    assert_eq!(clipped, vec![vec![p(50.0, 50.0), p(103.0, 50.0)]]);
+}
+
+#[test]
 fn the_clip_buffer_is_msdrawshape_s() {
     // A plain style: max(1, max(-1, 1)) + 1 = 2. A hatch of SIZE 10 and WIDTH 3 offset by
     // (4, 5): max(1, max(10, 3)) + 5 + 1 = 16. The class: 16, and 2 more for a polygon.
@@ -534,9 +637,23 @@ fn a_pixmap_counts_in_the_clip_buffer_at_its_image_s_height() {
     let scaled =
         Hatching::for_class(&class, &symbols, Some(&pixmaps), Factors::new(2.0, 2.0)).clip_buffer;
     assert_eq!(scaled, 99.0);
-    // The engine loads those a hatched class counts, and none of another class.
-    assert_eq!(clip_pixmaps(&class, &symbols), ["tall.png"]);
-    assert!(clip_pixmaps(&class[1..], &symbols).is_empty());
+    // The engine loads those a hatched class counts, and none of another polygon class; a line
+    // layer's class counts them all, its lines clipped by the buffer.
+    let polygon = RenderMode::Polygon;
+    assert_eq!(clip_pixmaps(polygon, &class, &symbols), ["tall.png"]);
+    assert!(clip_pixmaps(polygon, &class[1..], &symbols).is_empty());
+    assert_eq!(
+        clip_pixmaps(RenderMode::Line, &class[1..], &symbols),
+        ["tall.png"]
+    );
+    assert!(clip_pixmaps(RenderMode::Point, &class, &symbols).is_empty());
+    let line = Hatching::for_class(
+        &class[1..],
+        &symbols,
+        Some(&pixmaps),
+        Factors::new(1.0, 1.0),
+    );
+    assert_eq!(line.line_clip_buffer, 49.0);
 }
 
 #[test]
@@ -569,6 +686,7 @@ fn a_hatched_polygon_s_rings_reach_pixels_as_ms_transform_shape_simplify_puts_th
     let three = vec![c(1.0, 1.0), c(2.0, 1.0), c(1.0, 1.0)];
     let hatching = Hatching {
         clip_buffer: 2.0,
+        line_clip_buffer: 0.0,
         clip_in_pixels: false,
         refused: 0,
     };

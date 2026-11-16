@@ -64,8 +64,8 @@ fn bound_style_properties_read_back_equal_from_yaml_and_json() {
     )]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     let document = loaded.document.unwrap();
-    let yaml = document.to_yaml().unwrap();
-    let json = document.to_json().unwrap();
+    let yaml = document.to_yaml();
+    let json = document.to_json();
     assert_eq!(
         forager_style_ir::StyleDocument::from_yaml(&yaml)
             .unwrap()
@@ -421,12 +421,12 @@ fn a_style_of_antialias_false_round_trips() {
     let document = loaded.document.unwrap();
     let styles = &document.map.layers[0].classes[0].styles;
     assert_eq!((styles[0].aliased, styles[1].aliased), (true, false));
-    let yaml = document.to_yaml().unwrap();
+    let yaml = document.to_yaml();
     // The second style, not aliased, writes no field.
     assert_eq!(yaml.matches("aliased").count(), 1, "{yaml}");
     let read = forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap();
     assert_eq!(read.document, document);
-    let json = document.to_json().unwrap();
+    let json = document.to_json();
     assert_eq!(json.matches("\"aliased\"").count(), 1, "{json}");
     let read = forager_style_ir::StyleDocument::from_json(&json).unwrap();
     assert_eq!(read.document, document);
@@ -761,17 +761,17 @@ fn a_bare_keyword_is_no_symbol_name_and_a_quoted_one_is() {
 
 #[test]
 fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION) keeps the expression; the engine reports
     // it as it draws the layer, so the load does not, but for a syntax error, at its place.
     let (loaded, style) = first_style(
-        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (buffer([shape], 5)) END END END END",
+        "MAP LAYER TYPE LINE CLASS STYLE GEOMTRANSFORM (centerline([shape])) END END END END",
     );
     assert!(codes(&loaded).is_empty(), "{:?}", codes(&loaded));
     assert_eq!(
         style.unwrap().geom_transform,
         Some(GeomTransform::Expression(TransformTree::NotDrawn(
-            NotDrawn::Buffer
+            NotDrawn::Centerline
         )))
     );
     let (loaded, style) = first_style(
@@ -804,6 +804,41 @@ fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load()
             NotDrawn::Syntax
         )))
     );
+}
+
+#[test]
+fn a_style_of_buffer_holds_its_node_and_round_trips() {
+    // Verifies: ADR-0048, G-3
+    // The two styles of renderers/polygon-as-line-offset.map: `buffer` is a node of the tree, its
+    // distance kept negative as it is written.
+    let loaded = load_files(&[(
+        "m.map",
+        "MAP LAYER TYPE POLYGON CLASS
+           STYLE GEOMTRANSFORM (buffer([shape], 1)) END
+           STYLE GEOMTRANSFORM (buffer([shape], -1)) END
+         END END END",
+    )]);
+    assert_eq!(codes(&loaded), Vec::<&str>::new());
+    let document = loaded.document.unwrap();
+    let styles = &document.map.layers[0].classes[0].styles;
+    let buffer = |distance: f64| {
+        Some(GeomTransform::Expression(TransformTree::Drawn(
+            TransformShape::Buffer(
+                Box::new(TransformShape::Shape),
+                TransformNumber::Number(distance),
+            ),
+        )))
+    };
+    assert_eq!(styles[0].geom_transform, buffer(1.0));
+    assert_eq!(styles[1].geom_transform, buffer(-1.0));
+    let yaml = document.to_yaml();
+    let read = forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap();
+    assert_eq!(read.document, document);
+    assert!(read.warnings.is_empty(), "{:?}", read.warnings);
+    let json = document.to_json();
+    assert!(json.contains(r#""buffer""#), "{json}");
+    let read = forager_style_ir::StyleDocument::from_json(&json).unwrap();
+    assert_eq!(read.document, document);
 }
 
 /// loadStyle switches on the lexer's token (src/mapfile.c:2729-2735), and `simple` lexes as

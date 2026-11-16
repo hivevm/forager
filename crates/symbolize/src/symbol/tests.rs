@@ -293,6 +293,7 @@ fn a_vector_symbol_not_filled_is_an_open_outline() {
             width,
             cap,
             join,
+            inner_join,
             ..
         },
     ] = ops.as_slice()
@@ -300,8 +301,16 @@ fn a_vector_symbol_not_filled_is_an_open_outline() {
         panic!("{ops:?}");
     };
     assert_eq!((*closed, *color, *width), (false, RED, 1.0));
-    // AGG's defaults, which agg2RenderVectorSymbol leaves as they are.
-    assert_eq!((*cap, *join), (LineCap::Butt, LineJoin::Miter));
+    // AGG's defaults, which agg2RenderVectorSymbol leaves as they are, 1 pixel wide as well: an
+    // inner miter where agg2RenderLine bevels a line as thin.
+    assert_eq!(
+        (*cap, *join, *inner_join),
+        (
+            LineCap::Butt,
+            LineJoin::Miter,
+            forager_render::InnerJoin::Miter
+        )
+    );
     close(&paths[0], &[(45.0, 45.0), (55.0, 45.0), (50.0, 55.0)]);
 }
 

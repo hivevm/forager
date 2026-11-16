@@ -485,7 +485,7 @@ fn numbers_are_computed_as_the_rules_of_math_exp_compute_them() {
 
 #[test]
 fn a_multipoint_or_a_collection_is_refused() {
-    let multipoint = Geometry::MultiPoint(coords(&[(0.0, 0.0), (1.0, 1.0)]));
+    let multipoint = Geometry::MultiPoint(vec![coords(&[(0.0, 0.0), (1.0, 1.0)])]);
     let generalized = generalize(TransformShape::Shape, n(1.0));
     let why = failed(apply(&generalized, &multipoint));
     assert!(why.contains("multipoint"), "{why}");
@@ -540,7 +540,7 @@ fn simplified(tolerance: f64) -> TransformShape {
 
 #[test]
 fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
-    // Verifies: ADR-draft-transform-tree-with-simplify-and-buffer, ADR-draft-geometry-through-geo
+    // Verifies: ADR-0048, ADR-0041
     // msGEOSSimplify: each part by GEOS's Douglas-Peucker, a part GEOS builds empty dropped from
     // the result by its transformer.
     let parts = Geometry::MultiLineString(vec![
@@ -562,7 +562,7 @@ fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
 
 #[test]
 fn simplify_groups_a_polygon_s_rings_as_mapserver_hands_them_to_geos() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // Three outer rings by msGetOuterList, each with the inner rings msGetInnerList finds inside
     // it, in the order of the outer ones: the hole listed after the third ring goes with the
     // second. A multipolygon of the three, valid, kept as simplified: each square's bend at 10.5
@@ -627,7 +627,7 @@ fn simplify_groups_a_polygon_s_rings_as_mapserver_hands_them_to_geos() {
 
 #[test]
 fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points or a polygon of
     // fewer than 4; GEOS cannot build a line of 1 point or a ring that is not closed; and its
     // DouglasPeuckerSimplifier refuses a tolerance below 0. Each fails "Executing simplify".
@@ -689,4 +689,220 @@ fn simplify_past_the_points_a_layer_may_visit_is_a_limit() {
     );
     let why = limit(apply(&simplified(0.5), &zigzag));
     assert!(why.contains("visits more than 100000000 points"), "{why}");
+}
+
+fn preserved(tolerance: f64) -> TransformShape {
+    TransformShape::Simplifypt(shape(), n(tolerance))
+}
+
+#[test]
+fn simplifypt_simplifies_the_parts_of_a_line_together_and_drops_one_without_points() {
+    // Verifies: ADR-0048, ADR-0047
+    // msGEOSTopologyPreservingSimplify: the parts are the lines of one geometry, so the bend keeps
+    // (10 10), whose flattening would jump the short line; a part GEOS builds empty is dropped.
+    let bend = [(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)];
+    let short = [(9.0, 4.0), (11.0, 4.0)];
+    let parts = Geometry::MultiLineString(vec![coords(&bend), vec![], coords(&short)]);
+    assert_eq!(
+        apply(&preserved(20.0), &parts),
+        Ok(Geometry::MultiLineString(vec![
+            coords(&bend),
+            coords(&short)
+        ]))
+    );
+    // Alone, the bend flattens.
+    assert_eq!(
+        apply(&preserved(20.0), &line(&bend)),
+        Ok(line(&[(0.0, 0.0), (20.0, 0.0)]))
+    );
+    // A point shape is its points, which the simplification keeps.
+    let point = Geometry::Point(c(3.0, 4.0));
+    assert_eq!(apply(&preserved(1.0), &point), Ok(point));
+}
+
+#[test]
+fn simplifypt_simplifies_a_polygon_s_rings_together_and_removes_none() {
+    // Verifies: ADR-0048, ADR-0047
+    // The hole lies inside the shell by msGetInnerList: dropping the shell's first point would
+    // leave it outside, so the shell keeps it. GEOS 3.12.1 drops it.
+    let shell = [
+        (10.0, -2.0),
+        (20.0, 0.0),
+        (20.0, 20.0),
+        (0.0, 20.0),
+        (0.0, 0.0),
+        (10.0, -2.0),
+    ];
+    let hole = [(9.0, -1.0), (11.0, -1.0), (10.0, -0.5), (9.0, -1.0)];
+    let polygon_with_hole = polygon(&[&shell, &hole]);
+    assert_eq!(
+        apply(&preserved(5.0), &polygon_with_hole),
+        Ok(polygon_with_hole)
+    );
+    // A square at 20 keeps 4 coordinates, where simplify removes it: GEOS gives POLYGON ((10 0,
+    // 0 10, 10 10, 10 0)).
+    let square = polygon(&[&[
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (10.0, 10.0),
+        (10.0, 0.0),
+        (0.0, 0.0),
+    ]]);
+    assert_eq!(
+        apply(&preserved(20.0), &square),
+        Ok(polygon(&[&[
+            (10.0, 0.0),
+            (0.0, 10.0),
+            (10.0, 10.0),
+            (10.0, 0.0)
+        ]]))
+    );
+}
+
+#[test]
+fn simplifypt_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
+    // Verifies: ADR-0047
+    // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points, and GEOS's
+    // TopologyPreservingSimplifier refuses a tolerance below 0. Each fails "Executing simplifypt".
+    let why = failed(apply(&preserved(1.0), &line(&[(0.0, 0.0)])));
+    assert!(
+        why.contains("simplifypt on a shape of too few points"),
+        "{why}"
+    );
+    let why = failed(apply(&preserved(-1.0), &line(ELL)));
+    assert!(
+        why.contains("simplifypt with the tolerance -1, below 0"),
+        "{why}"
+    );
+}
+
+#[test]
+fn simplifypt_past_the_points_a_layer_may_visit_is_a_limit() {
+    // Verifies: Q-9, ADR-0047
+    // A zigzag of 15,000 points whose amplitude shrinks keeps every point, its sections one point
+    // shorter each: 14,998 * 14,999 / 2 points scanned, past 1e8, and the budget stops it as it
+    // goes.
+    let zigzag = Geometry::LineString(
+        (0..15_000_u32)
+            .map(|i| {
+                let amplitude = f64::from(15_000 - i);
+                c(
+                    f64::from(i),
+                    if i % 2 == 0 { amplitude } else { -amplitude },
+                )
+            })
+            .collect(),
+    );
+    let why = limit(apply(&preserved(0.5), &zigzag));
+    assert!(why.contains("visits more than 100000000 points"), "{why}");
+}
+
+fn buffered(distance: f64) -> TransformShape {
+    TransformShape::Buffer(shape(), n(distance))
+}
+
+/// The rings of a polygon result.
+fn rings_of(result: Result<Geometry, Undrawn>) -> Vec<Vec<Coord>> {
+    match result {
+        Ok(Geometry::Polygon(rings)) => rings,
+        other => panic!("no polygon: {other:?}"),
+    }
+}
+
+#[test]
+fn buffer_turns_each_shape_into_a_polygon_as_msgeosbuffer_does() {
+    // Verifies: ADR-0048, ADR-0041
+    // msGEOSBuffer: GEOSBuffer_r of the shape msGEOSShape2Geometry builds, converted back by
+    // msGEOSGeometry2Shape, a polygon whatever the shape's type. A point is a circle of 121
+    // coordinates; two lines are buffered as one geometry, a part without points dropped; a
+    // square with a hole is grown into a shell and a smaller hole.
+    let circle = rings_of(apply(&buffered(1.0), &Geometry::Point(c(3.0, 4.0))));
+    assert_eq!(circle.len(), 1);
+    assert_eq!(circle[0].len(), 121);
+    let lines = Geometry::MultiLineString(vec![
+        coords(&[(0.0, 0.0), (10.0, 0.0)]),
+        vec![],
+        coords(&[(0.0, 1.0), (10.0, 1.0)]),
+    ]);
+    let rings = rings_of(apply(&buffered(1.0), &lines));
+    assert_eq!(
+        rings.len(),
+        1,
+        "the two lines' buffers overlap into one polygon"
+    );
+    let square = polygon(&[
+        &[
+            (0.0, 0.0),
+            (0.0, 10.0),
+            (10.0, 10.0),
+            (10.0, 0.0),
+            (0.0, 0.0),
+        ],
+        &[(3.0, 3.0), (7.0, 3.0), (7.0, 7.0), (3.0, 7.0), (3.0, 3.0)],
+    ]);
+    let rings = rings_of(apply(&buffered(1.0), &square));
+    assert_eq!(rings.len(), 2, "{rings:?}");
+    let span = |ring: &[Coord]| {
+        let xs = ring.iter().map(|p| p.x);
+        let (lo, hi) = xs.fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), x| {
+            (if x < lo { x } else { lo }, if x > hi { x } else { hi })
+        });
+        hi - lo
+    };
+    let (shell, hole) = if span(&rings[0]) > span(&rings[1]) {
+        (&rings[0], &rings[1])
+    } else {
+        (&rings[1], &rings[0])
+    };
+    assert!((span(shell) - 12.0).abs() < 1e-9, "{shell:?}");
+    assert!((span(hole) - 2.0).abs() < 1e-9, "{hole:?}");
+}
+
+#[test]
+fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
+    // Verifies: ADR-0041
+    // GEOS's buffer of a line by 0 or less, or of a polygon by less than its half width, is the
+    // empty polygon, which msGEOSGeometry2Shape_polygon turns into one ring without points. The
+    // shape keeps GEOS's geometry, which msGEOSBuffer and msGEOSSimplify take where a shape has
+    // one, so buffer or simplify after it returns GEOS's empty polygon empty; densify, a function
+    // of MapServer's own, fails on a ring without points.
+    let empty = Ok(Geometry::Polygon(vec![vec![]]));
+    assert_eq!(apply(&buffered(0.0), &line(ELL)), empty);
+    assert_eq!(apply(&buffered(-1.0), &line(ELL)), empty);
+    let square = polygon(&[&[(0.0, 0.0), (0.0, 4.0), (4.0, 4.0), (4.0, 0.0), (0.0, 0.0)]]);
+    assert_eq!(apply(&buffered(-3.0), &square), empty);
+    let twice = TransformShape::Buffer(Box::new(buffered(-3.0)), n(1.0));
+    assert_eq!(apply(&twice, &square), empty);
+    let simplified = TransformShape::Simplify(Box::new(buffered(-3.0)), n(1.0));
+    assert_eq!(apply(&simplified, &square), empty);
+    let densified = TransformShape::Densify(Box::new(buffered(-3.0)), n(1.0));
+    let why = failed(apply(&densified, &square));
+    assert!(why.contains("densify on a part without points"), "{why}");
+    // A polygon of one ring without points that no function of GEOS returned, inner of a square,
+    // has no rings at all, and buffer fails on it as msGEOSShape2Geometry does.
+    let inner = TransformShape::Buffer(Box::new(TransformShape::Inner(shape())), n(1.0));
+    let why = failed(apply(&inner, &square));
+    assert!(why.contains("buffer on a shape of too few points"), "{why}");
+}
+
+#[test]
+fn buffer_fails_where_geos_is_given_no_shape_or_no_finite_distance() {
+    // Verifies: ADR-0041
+    // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points; GEOS cannot build
+    // a line part of 1 point; and GEOSBuffer_r returns none for a distance that is no finite
+    // number. Each fails "Executing buffer failed".
+    let why = failed(apply(&buffered(1.0), &line(&[(0.0, 0.0)])));
+    assert!(why.contains("buffer on a shape of too few points"), "{why}");
+    let one = Geometry::MultiLineString(vec![coords(ELL), coords(&[(1.0, 1.0)])]);
+    let why = failed(apply(&buffered(1.0), &one));
+    assert!(why.contains("buffer on a line part of one point"), "{why}");
+    for distance in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let why = failed(apply(&buffered(distance), &line(ELL)));
+        assert!(why.contains("buffer with the distance"), "{why}");
+    }
+    // geo's buffer panics on a coordinate that is no number, which the engine refuses instead.
+    for x in [f64::NAN, f64::INFINITY] {
+        let why = failed(apply(&buffered(1.0), &line(&[(0.0, 0.0), (x, 1.0)])));
+        assert!(why.contains("coordinate that is no finite number"), "{why}");
+    }
 }

@@ -44,7 +44,7 @@ fn a_shape_of_one_part_of_two_points_is_a_circle_on_their_midpoint() {
         centre: c(30.0, 30.0),
         radius: 20.0,
     });
-    assert_eq!(circle_of(Geometry::MultiPoint(two.clone())), expected);
+    assert_eq!(circle_of(Geometry::MultiPoint(vec![two.clone()])), expected);
     assert_eq!(circle_of(Geometry::LineString(two.clone())), expected);
     assert_eq!(
         circle_of(Geometry::MultiLineString(vec![two.clone()])),
@@ -71,7 +71,9 @@ fn any_other_shape_and_a_radius_of_0_are_no_circle() {
     let two = vec![c(0.0, 0.0), c(2.0, 2.0)];
     for geometry in [
         Geometry::Point(c(1.0, 1.0)),
-        Geometry::MultiPoint(vec![c(0.0, 0.0)]),
+        Geometry::MultiPoint(vec![vec![c(0.0, 0.0)]]),
+        // Two parts of a point each, as two POINTS blocks of an inline feature give them.
+        Geometry::MultiPoint(vec![vec![c(0.0, 0.0)], vec![c(2.0, 2.0)]]),
         Geometry::LineString(vec![c(0.0, 0.0), c(2.0, 2.0), c(4.0, 4.0)]),
         Geometry::MultiLineString(vec![two.clone(), two.clone()]),
         Geometry::Polygon(vec![two.clone(), two.clone()]),

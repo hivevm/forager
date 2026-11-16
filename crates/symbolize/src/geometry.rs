@@ -41,8 +41,11 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
 // WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//! The geometry of `simplify` (ADR-draft-geometry-through-geo): a line or a polygon simplified as
-//! GEOS's `DouglasPeuckerSimplifier` simplifies it. A line keeps the points of a Douglas-Peucker
+//! The geometry of `simplify` and `buffer` (ADR-0041), and of `simplifypt`
+//! (ADR-0047) in [`topology`]: a line or a polygon simplified as
+//! GEOS's `DouglasPeuckerSimplifier` simplifies it, and a shape buffered by geo's
+//! `buffer_with_style` with round joins and caps of 30 segments a quadrant, as `GEOSBuffer_r`
+//! buffers it with 30. A line keeps the points of a Douglas-Peucker
 //! ported from JTS, which keeps its pending sections on a stack of its own, so no line nests it
 //! deeper than the stack allows. A polygon's rings are simplified each as a line, then the steps
 //! of JTS follow: a ring's first point dropped, a ring of fewer than 4 coordinates removed, and a
@@ -51,10 +54,29 @@
 //! What the functions visit and add is charged to the caller's [`Charge`] as they go (Q-9): each
 //! section the Douglas-Peucker scans, before it scans it; the pairs of segments and of rings the
 //! validity test compares, and the rings the repair compares, before each runs; and the points the
-//! repair returns beyond those it was given.
+//! repair returns beyond those it was given; the points a buffer's offset curves may hold, before
+//! it runs, and the points its result holds beyond those it was given.
+
+mod topology;
+
+use std::f64::consts::PI;
 
 use forager_style_ir::Coord;
-use geo::{LineString, MultiPolygon, Polygon, Validation, unary_union};
+use geo::algorithm::buffer::{BufferStyle, LineCap, LineJoin};
+use geo::{
+    Buffer, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Validation,
+    unary_union,
+};
+
+pub(crate) use topology::{Line, simplify_preserving};
+
+/// The angle of one segment of a buffer's round join or cap: 30 segments a quadrant, as
+/// msGEOSBuffer asks of `GEOSBuffer_r`.
+const SEGMENT_ANGLE: f64 = PI / 60.0;
+
+/// The segments of a round cap, a half turn, and of a point's circle, a whole one.
+const CAP_SEGMENTS: usize = 60;
+const CIRCLE_SEGMENTS: usize = 120;
 
 /// A polygon of MapServer's shape as GEOS builds it: a shell and the holes inside it, each ring
 /// closed and of 4 coordinates or more.
@@ -133,6 +155,128 @@ pub(crate) fn simplify_areas<C: Charge>(
         .collect();
     charge.add(count(&repaired).saturating_sub(points))?;
     Ok(repaired)
+}
+
+/// A shape as GEOS builds it from MapServer's, for [`buffer`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Buffered<'a> {
+    /// A point, or the multipoint of more than one.
+    Points(&'a [Coord]),
+    /// A line, or the multiline of more than one part; a part without points is no line.
+    Lines(&'a [Vec<Coord>]),
+    /// A polygon, or the multipolygon of more than one area.
+    Areas(&'a [Area]),
+}
+
+/// `shape` buffered by `distance`, a finite number, by geo's `buffer_with_style` with round
+/// joins and round caps of [`SEGMENT_ANGLE`]: the polygons of the result, none where it is empty.
+/// A point or a line buffered by a distance not above 0 is empty; a polygon is shrunk by a
+/// negative one.
+///
+/// Before the buffer runs, its offset curves are charged to `charge`, so that a bound of Q-9
+/// stops it before it holds them: the points of their round joins and caps, [`arcs`], as added,
+/// and those and the ends of their offset segments, two for each point on each side, as visited.
+/// After it, the points of the result beyond those of `shape` and those arcs are charged as
+/// added.
+pub(crate) fn buffer<C: Charge>(
+    shape: Buffered<'_>,
+    distance: f64,
+    charge: &mut C,
+) -> Result<Vec<Area>, C::Error> {
+    let (given, sides) = match shape {
+        Buffered::Points(points) => (points.len(), 2),
+        Buffered::Lines(lines) => (lines.iter().map(Vec::len).sum::<usize>(), 2),
+        Buffered::Areas(areas) => (count(areas), 1),
+    };
+    let arcs = arcs(shape);
+    charge.add(arcs)?;
+    charge.visit(given.saturating_mul(2 * sides).saturating_add(arcs))?;
+    let style = BufferStyle::new(distance)
+        .line_join(LineJoin::Round(SEGMENT_ANGLE))
+        .line_cap(LineCap::Round(SEGMENT_ANGLE));
+    let buffered = match shape {
+        Buffered::Points([point]) => Point::new(point.x, point.y).buffer_with_style(style),
+        Buffered::Points(points) => MultiPoint::from(
+            points
+                .iter()
+                .map(|p| Point::new(p.x, p.y))
+                .collect::<Vec<_>>(),
+        )
+        .buffer_with_style(style),
+        Buffered::Lines(lines) => MultiLineString(
+            lines
+                .iter()
+                .filter(|line| !line.is_empty())
+                .map(|line| to_line_string(line))
+                .collect(),
+        )
+        .buffer_with_style(style),
+        Buffered::Areas(areas) => {
+            MultiPolygon(areas.iter().map(to_polygon).collect()).buffer_with_style(style)
+        }
+    };
+    let result: Vec<Area> = buffered.0.iter().map(from_polygon).collect();
+    charge.add(count(&result).saturating_sub(given.saturating_add(arcs)))?;
+    Ok(result)
+}
+
+/// The points the round joins and caps of `shape`'s buffer may add, one for each segment of
+/// their arcs: at each vertex the turn between its two segments in steps of [`SEGMENT_ANGLE`],
+/// rounded, between points that differ, a ring's first vertex among them, which a polygon's offset
+/// curve turns on the one side
+/// and a line's on the other, so that a vertex is counted once whatever the distance's sign; a
+/// half turn at each end of a line, and a whole turn about a point or a line of one place.
+fn arcs(shape: Buffered<'_>) -> usize {
+    let turns = |line: &[Coord], closed: bool| -> usize {
+        // i_overlay drops a point equal to the one before it before it joins the segments, so
+        // the turns are measured between distinct points, a ring's wrapped past its repeats.
+        let mut places: Vec<Coord> = Vec::with_capacity(line.len());
+        for &p in line {
+            if places.last() != Some(&p) {
+                places.push(p);
+            }
+        }
+        if closed {
+            while places.len() > 1 && places.last() == places.first() {
+                places.pop();
+            }
+        }
+        let n = places.len();
+        if n < 3 {
+            return 0;
+        }
+        let mut segments = 0_usize;
+        let inner = if closed { 0..n } else { 1..n - 1 };
+        for i in inner {
+            let before = places[(i + n - 1) % n];
+            let (at, after) = (places[i], places[(i + 1) % n]);
+            let (ax, ay) = (at.x - before.x, at.y - before.y);
+            let (bx, by) = (after.x - at.x, after.y - at.y);
+            let turn = libm::atan2((ax * by - ay * bx).abs(), ax * bx + ay * by);
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a whole number from 0 to 60"
+            )]
+            let steps = libm::round(turn / SEGMENT_ANGLE) as usize;
+            segments = segments.saturating_add(steps);
+        }
+        segments
+    };
+    let line = |line: &Vec<Coord>| match line.as_slice() {
+        [] => 0,
+        [first, rest @ ..] if rest.iter().all(|p| p == first) => CIRCLE_SEGMENTS,
+        _ => turns(line, false).saturating_add(2 * CAP_SEGMENTS),
+    };
+    match shape {
+        Buffered::Points(points) => points.len().saturating_mul(CIRCLE_SEGMENTS),
+        Buffered::Lines(lines) => lines.iter().map(line).fold(0, usize::saturating_add),
+        Buffered::Areas(areas) => areas
+            .iter()
+            .flat_map(|area| std::iter::once(&area.shell).chain(&area.holes))
+            .map(|ring| turns(ring, true))
+            .fold(0, usize::saturating_add),
+    }
 }
 
 /// The points of the rings of `areas`.
@@ -232,7 +376,7 @@ fn point_to_segment(p: Coord, a: Coord, b: Coord) -> f64 {
     s.abs() * len2.sqrt()
 }
 
-fn to_ring(ring: &[Coord]) -> LineString {
+fn to_line_string(ring: &[Coord]) -> LineString {
     LineString::from(ring.iter().map(|c| (c.x, c.y)).collect::<Vec<_>>())
 }
 
@@ -242,8 +386,8 @@ fn from_ring(ring: &LineString) -> Vec<Coord> {
 
 fn to_polygon(area: &Area) -> Polygon {
     Polygon::new(
-        to_ring(&area.shell),
-        area.holes.iter().map(|hole| to_ring(hole)).collect(),
+        to_line_string(&area.shell),
+        area.holes.iter().map(|hole| to_line_string(hole)).collect(),
     )
 }
 

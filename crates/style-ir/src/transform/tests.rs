@@ -36,7 +36,7 @@ fn round_trip(tree: &TransformTree) -> String {
 
 #[test]
 fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     let cases = [
         (
             TransformTree::Drawn(TransformShape::Shape),
@@ -71,6 +71,14 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
             TransformTree::Drawn(TransformShape::Simplify(shape(), num(25.0))),
             r#"{"op":"simplify","args":[{"op":"shape","args":[]},25.0]}"#,
         ),
+        (
+            TransformTree::Drawn(TransformShape::Simplifypt(shape(), num(50.0))),
+            r#"{"op":"simplifypt","args":[{"op":"shape","args":[]},50.0]}"#,
+        ),
+        (
+            TransformTree::Drawn(TransformShape::Buffer(shape(), num(-1.0))),
+            r#"{"op":"buffer","args":[{"op":"shape","args":[]},-1.0]}"#,
+        ),
     ];
     for (tree, json) in cases {
         assert_eq!(round_trip(&tree), json);
@@ -98,12 +106,10 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
 
 #[test]
 fn every_not_drawn_reason_reads_and_writes_by_its_name() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     let reasons = [
-        (NotDrawn::Buffer, "buffer"),
         (NotDrawn::Centerline, "centerline"),
         (NotDrawn::Difference, "difference"),
-        (NotDrawn::Simplifypt, "simplifypt"),
         (NotDrawn::Javascript, "javascript"),
         (NotDrawn::Length, "length"),
         (NotDrawn::Area, "area"),
@@ -119,9 +125,16 @@ fn every_not_drawn_reason_reads_and_writes_by_its_name() {
         assert_eq!(round_trip(&tree), format!(r#"{{"not_drawn":"{name}"}}"#));
         assert_eq!(reason.name(), name);
     }
-    // `simplify` left the list when its node landed: the tree itself no longer reads it as a
-    // reason, which the style document's reader of a newer minor turns into `syntax`.
-    assert!(serde_json::from_str::<TransformTree>(r#"{"not_drawn":"simplify"}"#).is_err());
+    // `simplify`, `buffer`, and `simplifypt` left the list when their nodes landed: the tree
+    // itself no longer reads them as reasons, which the style document's reader of a newer minor
+    // turns into `syntax`.
+    for gone in ["simplify", "buffer", "simplifypt"] {
+        let json = format!(r#"{{"not_drawn":"{gone}"}}"#);
+        assert!(
+            serde_json::from_str::<TransformTree>(&json).is_err(),
+            "{gone}"
+        );
+    }
 }
 
 #[test]
@@ -150,7 +163,7 @@ fn smoothsia_without_its_size_or_iterations_reads_as_mapservers_defaults() {
 #[test]
 fn a_node_that_is_none_of_the_trees_does_not_read() {
     for json in [
-        r#"{"op":"buffer","args":[{"op":"shape","args":[]},1]}"#,
+        r#"{"op":"buffer","args":[{"op":"shape","args":[]}]}"#,
         r#"{"op":"generalize","args":[{"op":"shape","args":[]}]}"#,
         r#"{"op":"outer","args":[{"op":"shape","args":[]},1]}"#,
         r#"{"op":"densify","args":[1,{"op":"shape","args":[]}]}"#,

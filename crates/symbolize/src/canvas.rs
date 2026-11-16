@@ -18,22 +18,23 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use forager_render::PremultipliedImage;
+use forager_render::{PremultipliedImage, Tile};
 use forager_style_ir::{Style, Symbol};
 
 use crate::glyph::Glyphs;
 use crate::hatch::Hatching;
+use crate::layer_transform::StyleTrees;
 use crate::line_marker::MarkerBudget;
-use crate::symbol::{self, Factors, Pixmaps};
-use crate::tile::Tiles;
+use crate::symbol::{self, Factors, Pixmaps, SymbolStyle};
+use crate::tile::{self, TileFor, Tiles};
 
 /// What a layer draws its features on beside the view: the map's symbols, the images of its
 /// pixmap symbols and the render's tiles of them, the image's width and height in pixels, the
 /// layer's scale factor and the image's resolution factor (see the engine's
 /// `classes::scales`), what is left to the layer of
 /// [`crate::line_marker::MAX_MARKER_POINTS`], the hatching of the class drawn, which counts the
-/// hatches refused (Q-9), the pixmap symbols left undrawn, and whether the layer is drawn into an
-/// image of its own.
+/// hatches refused (Q-9), the pixmap symbols left undrawn, what the transform trees of the
+/// layer's class styles share, and whether the layer is drawn into an image of its own.
 pub struct Canvas<'a> {
     pub(crate) symbols: &'a [Symbol],
     pixmaps: Option<&'a Pixmaps>,
@@ -54,7 +55,13 @@ pub struct Canvas<'a> {
     pub(crate) missing_glyphs: BTreeMap<usize, String>,
     /// The port TrueType markers ask their glyphs of.
     pub(crate) glyphs: Option<&'a dyn Glyphs>,
+    /// The budget, the `[map_cellsize]`, and the failures of the class styles' transform trees;
+    /// without them, a class style's tree draws nothing.
+    pub(crate) style_trees: Option<StyleTrees>,
     pub(crate) own_image: bool,
+    /// Whether a line shape is clipped before it is drawn, as msDrawShape clips it but for a
+    /// layer of `PROCESSING "POLYLINE_NO_CLIP"`.
+    pub(crate) clip_lines: bool,
 }
 
 /// What a layer's drawing left undrawn, which it reports: how many hatches were refused (Q-9),
@@ -104,8 +111,31 @@ impl<'a> Canvas<'a> {
             refused_symbols: BTreeMap::new(),
             missing_glyphs: BTreeMap::new(),
             glyphs: None,
+            style_trees: None,
             own_image: false,
+            clip_lines: true,
         }
+    }
+
+    /// The canvas, the transform trees of its class styles evaluated with `style_trees`, which
+    /// carries the layer's budget and `[map_cellsize]`. The engine gives them to the canvas of
+    /// every layer it draws; a canvas without them draws no class style's tree.
+    pub fn with_style_trees(self, style_trees: StyleTrees) -> Self {
+        Self {
+            style_trees: Some(style_trees),
+            ..self
+        }
+    }
+
+    /// Why the transform tree of the style last drawn failed on its shape, if it did; it is
+    /// forgotten here.
+    pub fn take_style_tree_failure(&mut self) -> Option<String> {
+        self.style_trees.as_mut().and_then(StyleTrees::take_failure)
+    }
+
+    /// The bound of Q-9 the transform trees of the layer's class styles passed, if they did.
+    pub fn style_trees_over_limit(&self) -> Option<&str> {
+        self.style_trees.as_ref().and_then(StyleTrees::over_limit)
     }
 
     /// The canvas, its pixmap symbols drawn with the images of `pixmaps`; without them, every
@@ -141,6 +171,15 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// The canvas, its line shapes drawn unclipped, as msDrawShape draws those of a line layer of
+    /// `PROCESSING "POLYLINE_NO_CLIP"` (`src/mapdraw.c:1341-1344, 2452`).
+    pub fn with_lines_unclipped(self) -> Self {
+        Self {
+            clip_lines: false,
+            ..self
+        }
+    }
+
     /// Marks the layer as drawn into an image of its own, which msDrawLayer creates with
     /// msImageCreate: that image's `refpt` stays at its top left corner, where agg2CreateImage's
     /// `calloc` leaves it, and a hatch counts its lines from there.
@@ -169,8 +208,8 @@ impl<'a> Canvas<'a> {
     }
 
     /// What the layer left undrawn since this was last asked: the hatches refused (Q-9), the
-    /// pixmap symbols whose image is refused, and the vector and TrueType symbols whose fill tile
-    /// is refused, each named by its name or its index (see [`symbol::named`]).
+    /// pixmap symbols whose image is refused, and the vector, ellipse, and TrueType symbols whose
+    /// fill tile is refused, each named by its name or its index (see [`symbol::named`]).
     pub fn take_refusals(&mut self) -> Refusals {
         let named = |canvas: &Self, refused: BTreeMap<usize, String>| {
             refused
@@ -198,25 +237,49 @@ impl<'a> Canvas<'a> {
         symbol::named(index, symbol)
     }
 
-    /// Records the pixmap symbol of `mark`, if it is one, as not drawn where MapServer tiles its
-    /// image along a line, without a GAP, which Forager does not: the style's `COLOR` stands in
-    /// for it, or, for the first style of a class, its `OUTLINECOLOR` without a `COLOR`; nothing
-    /// otherwise. Its image is not read, so that one that does not exist warns too.
-    pub(crate) fn untiled_pixmap(&mut self, mark: &symbol::Mark<'_>) {
-        let symbol::Mark::Pixmap(index, symbol) = *mark else {
-            return;
+    /// The tile of the pixmap symbol at `index` from 1 with the image `image`, of `style` at the
+    /// canvas's factors, asked for `asked`: computeSymbolStyle's scale, rotation, and gap give the
+    /// tile of the canvas's (see [`tile::tile`]). Where it is refused (Q-9), there is none, and the
+    /// canvas records why.
+    pub(crate) fn pixmap_tile<T>(
+        &mut self,
+        style: &Style<T>,
+        index: usize,
+        image: Rc<PremultipliedImage>,
+        asked: TileFor,
+    ) -> Option<Rc<Tile>> {
+        let drawn = symbol::pixmap_style(style, image.height(), self.factors);
+        // The engine's canvas always keeps tiles; one made without them, as a test's is, refuses
+        // the drawing rather than build a tile that nothing would hold or count (Q-9).
+        let tile = match self.tiles.as_deref_mut() {
+            Some(tiles) => tile::tile(tiles, index, image, drawn, asked),
+            None => Err("no tiles are kept where it is drawn".to_owned()),
         };
-        self.refused_pixmaps.entry(index).or_insert_with(|| {
-            let image = symbol
-                .image
-                .as_deref()
-                .map_or("its image".to_owned(), |path| format!("its image {path}"));
-            format!(
-                "MapServer tiles {image} along a line without a GAP, which Forager does not \
-                 yet; the style's COLOR is drawn in its place, or, for the first style of a \
-                 class, its OUTLINECOLOR without a COLOR; nothing otherwise"
-            )
-        });
+        tile.map_err(|why| {
+            self.refused_pixmaps.entry(index).or_insert(why);
+        })
+        .ok()
+    }
+
+    /// The tile of the vector or ellipse symbol `symbol`, at `index` from 1, in
+    /// computeSymbolStyle's `s`, seamless where `seamless`, asked for `asked` (see
+    /// [`tile::vector_tile`]). Where it is refused (Q-9), there is none, and the canvas records
+    /// why.
+    pub(crate) fn symbol_tile(
+        &mut self,
+        index: usize,
+        symbol: &Symbol,
+        s: &SymbolStyle,
+        seamless_and_asked: (bool, TileFor),
+    ) -> Option<Rc<Tile>> {
+        let tile = match self.tiles.as_deref_mut() {
+            Some(tiles) => tile::vector_tile(tiles, index, symbol, s, seamless_and_asked),
+            None => Err("no tiles are kept where it is drawn".to_owned()),
+        };
+        tile.map_err(|why| {
+            self.refused_symbols.entry(index).or_insert(why);
+        })
+        .ok()
     }
 
     /// The image of the pixmap symbol `symbol`, at `index` from 1, or `None`, its refusal

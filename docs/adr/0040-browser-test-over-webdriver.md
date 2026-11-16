@@ -1,6 +1,6 @@
-# ADR-draft-browser-test-over-webdriver: The browser test of G-14 drives headless Chrome over WebDriver with a client of its own, compares the canvas with the native render, and runs in a CI job of its own
+# ADR-0040: The browser test of G-14 drives headless Chrome over WebDriver with a client of its own, compares the canvas with the native render, and runs in a CI job of its own
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-15
 - **Deciders:** Markus Brigl
 - **Applies to:** the browser test `crates/dev-server/tests/browser.rs` and its WebDriver client, the dev-dependencies of `crates/dev-server` and their check in `crates/arch-test/tests/dependencies.rs`, the script `scripts/check-browser.sh` that runs the test, the job of the browser test in `.github/workflows/checks.yml` and the line of `scripts/check-all.sh` that run that script, and the variable `FORAGER_BROWSER_TEST` that job sets

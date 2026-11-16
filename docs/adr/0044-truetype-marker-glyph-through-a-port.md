@@ -1,6 +1,6 @@
-# ADR-draft-truetype-marker-glyph-through-a-port: A TrueType symbol at a point is drawn from a glyph symbolize asks of a port, which the engine answers through label
+# ADR-0044: A TrueType symbol at a point is drawn from a glyph symbolize asks of a port, which the engine answers through label
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-15
 - **Deciders:** Markus Brigl
 - **Applies to:** the TrueType marker of `crates/symbolize` and the glyph port it defines, the engine's answer to that port in `crates/engine` with its fonts, and the reading of a single glyph in `crates/label`

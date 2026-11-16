@@ -34,8 +34,7 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0015](adr/0015-expressions-as-cql2.md)), its `GEOMTRANSFORM` expressions, of a layer and
   of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
   no text of the mapfile and is read to the same nesting bound (`transform.rs`,
-  ADR-0036,
-  [ADR-draft-transform-tree-with-simplify-and-buffer](adr/draft-transform-tree-with-simplify-and-buffer.md)),
+  [ADR-0048](adr/0048-transform-tree-with-simplifypt.md)),
   the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
@@ -112,7 +111,7 @@ golden path and the test pattern an agent copies from are named here.
   (`expression.rs`), which also reads a `GEOMTRANSFORM` expression of a layer or a style into its
   transform tree, its operations without `[map_cellsize]` folded, and every node and operator
   counted against the nesting bound before it recurses deeper (`expression/transform.rs`,
-  ADR-0036, Q-9), and resolves
+  ADR-0048, Q-9), and resolves
   every other `init=` through the host's projection resolver. A load reports at most a thousand
   diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
   carries means is described per parameter under `docs/semantics/`.
@@ -144,8 +143,13 @@ golden path and the test pattern an agent copies from are named here.
   shape's as `msProjectLineEx` does (`shape.rs`): cut at the horizon, wrapped at the dateline;
   it says where MapServer would cut a line shape with GEOS, which it does not port, for a
   projected source whose origin is the north pole into longitude and latitude; MapServer's other
-  cases, a target written `init=epsg:3857` among them, it does not see. These ports of
-  MapServer's `mapproject.c` live here beside the port of PROJ. Its test `tests/reference.rs`
+  cases, a target written `init=epsg:3857` among them, it does not see. It computes a rotated
+  map's geotransform as `msMapComputeGeotransform` and `msMapSetFakedExtent` do
+  (`geotransform.rs`), and a reprojection may hold it on the map's side, the way into the map
+  applying its inverse after the formulas and the way back applying it before them; a way from a
+  CRS into itself runs no formula, so only the geotransform moves its points
+  (ADR-0045). These ports of MapServer's `mapproject.c` and
+  `mapobject.c` live here beside the port of PROJ. Its test `tests/reference.rs`
   holds points, rectangles, and shapes against the records MapServer's call of PROJ wrote at the
   pinned build, under `tests/reference/` (ADR-0038, G-11).
   Synchronous, without I/O; it depends on `style-ir` and `libm` alone, and each file that ports a
@@ -161,11 +165,17 @@ golden path and the test pattern an agent copies from are named here.
   with a warning (`reproject.rs`); a layer of `PROJECTION AUTO` takes the projection its bound
   source declares (ADR-0039), longitude and latitude with a warning where that does not read; a
   layer with lines from such a polar source into longitude and latitude is drawn uncut with a
-  warning (`lines-not-cut`); replaces the shape of
+  warning (`lines-not-cut`); on a map with an `ANGLE`, it computes the scale from the real
+  extent and the scale factors from `msGetGeoCellSize`'s cellsize, reprojects every layer with a
+  projection through the map's geotransform into the frame of the image, and draws everything
+  after in that frame, a layer without a projection unrotated with a warning
+  (`rotation-without-projection`, ADR-0045); replaces the shape of
   each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
   up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
   tree is `not_drawn` or fails, with a warning (`classes.rs`,
-  ADR-0036), draws each feature that passes the layer's
+  ADR-0048), hands the budget the layer's transform left to its class styles' trees and warns of
+  each style's first failure and of the bound they pass
+  (ADR-0048), draws each feature that passes the layer's
   filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
   the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
   bound and computed
@@ -182,7 +192,8 @@ golden path and the test pattern an agent copies from are named here.
   pixmap symbols name it loads by one load, once per render and path through the host's resource
   loader, each file held to the 32 MiB of Q-9 that a font file and a symbol image's file share
   (`resource.rs`, the fonts and the face a line is drawn in `fonts.rs`); each image it decodes
-  once and holds within Q-9's bound on the bytes one render's images and fill tiles come to
+  once and holds within Q-9's bound on the bytes one render's images, tiles, and brushes' copies
+  come to
   (`images.rs`,
   [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0031), and
@@ -208,7 +219,8 @@ golden path and the test pattern an agent copies from are named here.
   (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
-  refused, a label's among them, vector and TrueType symbols whose fill tile the cache refused,
+  refused, a label's among them, vector and TrueType symbols whose fill or brush tile the cache
+  refused,
   TrueType symbols whose font cannot be used or lacks the character, and geometries its render
   mode cannot draw (Q-9); the hatches, pixmaps, and symbols are one value, `Refusals`, which a
   canvas yields, the labels keep per layer and merge, and one function of `layer.rs` turns into the
@@ -234,12 +246,13 @@ golden path and the test pattern an agent copies from are named here.
   images a layer's styles will draw, which the engine loads before it draws the layer
   (`draw.rs`); the circle a circle layer draws of a shape of two points, as a polygon in pixels
   (`circle.rs`); a polygon's fill through MapServer's default gamma, and a polygon filled with its
-  pixmap's tile (`shade.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
+  pixmap's tile (`shade.rs`); a line brushed with its symbol's brush tile, where its `GAP` is 0
+  (`line.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
   at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol` fills about the
   point and the inverse of the image's transformation (`marker.rs`); a TrueType symbol's glyph at
   a point, anchored, along a line, and tiled over a polygon, asked of the port `Glyphs` the engine
   answers through `label`; the label cache sizes a class's TrueType marker by the same glyphs
-  ([ADR-draft-truetype-marker-glyph-through-a-port](adr/draft-truetype-marker-glyph-through-a-port.md),
+  ([ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md),
   `glyph.rs`, `glyph_marker.rs`); a line's dashes, and the
   style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
   canvas a layer draws on, which the images of the render's pixmaps are handed on and which
@@ -256,16 +269,24 @@ golden path and the test pattern an agent copies from are named here.
   resolved, its vector and ellipse symbols, a marker's size and anchor point, a pixmap's scale,
   square, and transformation, in the order of operations of AGG's `trans_affine`, and the images
   of a render's pixmaps by their path (`symbol.rs`); hatches, the
-  clip of a hatched polygon, and the reference point its lines count from (`hatch.rs`); vector,
+  clip of a hatched polygon and of a line shape by the class's buffer, as msDrawShape clips them,
+  and the reference point a hatch's lines count from (`hatch.rs`); vector,
   ellipse, and pixmap symbols along a line, and the layer's budget of markers
-  (`line_marker.rs`); a polygon's tile, its size held to Q-9's bound, and the render's
-  cache of six tiles, counted with the decoded images (`tile.rs`); line offsets (`offset.rs`); and
+  (`line_marker.rs`); a polygon's fill tile and a line's brush tile, its size held to Q-9's
+  bound, and the render's cache of six tiles, counted with the decoded images and a brush's copy
+  (`tile.rs`); line offsets (`offset.rs`); and
   the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a layer's
   `GEOMTRANSFORM`, its transform tree evaluated on each feature's shape before the engine classes
-  it, what its transforms add and visit held to a budget per layer (`layer_transform.rs`, Q-9),
+  it, and a class style's tree evaluated on the shape in pixels as it is drawn (`draw.rs`), what
+  both add and visit held to one budget per layer and render, which the canvas carries from the
+  layer's transform to its styles' (`layer_transform.rs`, Q-9),
   `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
   collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
-  geo crate (`geometry.rs`, [ADR-draft-geometry-through-geo](adr/draft-geometry-through-geo.md)). A
+  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant
+  (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)), and `simplifypt` by a port of
+  JTS's topology-preserving simplifier without recursion and without a spatial index
+  (`geometry/topology.rs`,
+  [ADR-0047](adr/0047-simplifypt-ported-from-jts.md)). A
   line style's symbol with a
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
@@ -296,12 +317,13 @@ golden path and the test pattern an agent copies from are named here.
   depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
   or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
-  transformation, each by a counted reference to the one image, a polygon filled with a tile, by
-  a counted reference to the tile, which holds its size within Q-9's bound, the drawing that makes
-  it, and its image once the renderer has built it (`tile.rs`), the
+  transformation, each by a counted reference to the one image, a polygon filled with a tile and
+  a line brushed with one, by a counted reference to the tile, which holds its size within Q-9's
+  bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
+  renderer has built it (`tile.rs`), the
   renderer trait, the RGBA image, and the premultiplied image a pixmap is decoded to
   (`PremultipliedImage`, ADR-0029); the cost model that bounds a hatch before it is cut
-  (`Hatch::is_bounded`, ADR-0028, `hatch.rs`); and the clip of every path to the image, its
+  (`Hatch::is_bounded`, ADR-0042, `hatch.rs`); and the clip of every path to the image, its
   segments, lines, and rings, the image grown by its margin, the width a stroke is drawn at, and the
   reach past the image a glyph's point may have (`MAX_GLYPH_REACH`), properties of the display list
   in one module (`clip.rs`, [ADR-0027](adr/0027-clip-to-the-image.md)),
@@ -316,11 +338,14 @@ golden path and the test pattern an agent copies from are named here.
   bilinear clip filter and linear interpolator, `iround` being `style-ir`'s `lrint` narrowed to an
   `int`, over the packed scanlines of the square it fills (`resample.rs`,
   [ADR-0026](adr/0026-agg-blender-and-resampler.md)), builds a tile the first time
-  it fills with it, in a transparent image of its own, and repeats it from the image's origin, and
+  it draws with it, in a transparent image of its own, and repeats it from the image's origin,
+  brushes a line with a tile through agg-rust's outline-image rasterizer, a port of AGG 2.4's
+  bilinear pattern filter, and the pattern's start carried across the clip (`brush.rs`,
+  [ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)), and
   is the one crate that may use `unsafe` ([ADR-0025](adr/0025-agg-rust-rasterizer.md)); it cuts a
   hatch from its polygon with i_overlay, the one crate of the workspace that depends on it
   directly
-  ([ADR-draft-i-overlay-in-render-agg-and-geo](adr/draft-i-overlay-in-render-agg-and-geo.md);
+  ([ADR-0042](adr/0042-i-overlay-in-render-agg-and-geo.md);
   geo brings its own i_overlay into `symbolize`).
 - **`encode`** — PNG from and to an RGBA image, and a pixmap symbol's PNG decoded as MapServer's
   `readPNG` decodes it, premultiplied, its header held to Q-9's 4096 × 4096 before anything is
@@ -374,14 +399,14 @@ golden path and the test pattern an agent copies from are named here.
   WebDriver client of its own on `std` and `serde_json`, and compares the canvas and the list of
   diagnostics with the native render of `bindings-wasm` (G-14); `scripts/check-browser.sh` runs
   it, and only where `FORAGER_BROWSER_TEST=required`, as in the browser job of CI, does it open a
-  browser ([ADR-draft-browser-test-over-webdriver](adr/draft-browser-test-over-webdriver.md)).
+  browser ([ADR-0040](adr/0040-browser-test-over-webdriver.md)).
 - **`arch-test`** — the dependency test of [ADR-0008](adr/0008-ports-and-adapters-crates.md):
   the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
   frontend; it also refuses `unsafe` outside `render-agg`
   ([ADR-0025](adr/0025-agg-rust-rasterizer.md)), skrifa outside `label` (ADR-0031), `regex`
   outside `expr` ([ADR-0016](adr/0016-expression-evaluation.md)), i_overlay as a direct
   dependency of any package but `render-agg` and geo, and geo outside `symbolize`
-  (ADR-draft-i-overlay-in-render-agg-and-geo), `adapter-shapefile` as a dependency of
+  (ADR-0042), `adapter-shapefile` as a dependency of
   `bindings-wasm` ([ADR-0024](adr/0024-browser-bindings-bind-geojson-only.md)), `wasmi` anywhere
   but among the dev-dependencies of `cli` ([ADR-0034](adr/0034-wasm-renders-compared-in-wasmi.md)),
   and a future polled with a no-op waker anywhere but `poll_once` of `ports`, and requires every

@@ -33,12 +33,8 @@ fuzz_target!(|data: &[u8]| {
         forager_ports::poll_once(forager_mapfile::load(&path, &loader, Some(&AnyProjection)))
             .expect("the mapfile frontend waited on a loader that never waits");
     if let Some(document) = loaded.document {
-        let yaml = document
-            .to_yaml()
-            .expect("a loaded document writes as YAML");
-        let json = document
-            .to_json()
-            .expect("a loaded document writes as JSON");
+        let yaml = document.to_yaml();
+        let json = document.to_json();
         assert_eq!(
             StyleDocument::from_yaml(&yaml)
                 .map(|read| read.document)

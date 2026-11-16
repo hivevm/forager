@@ -43,6 +43,7 @@ use crate::label_cache::{self, LabelAt, index, push};
 use crate::label_styles::{self, LabelStyles, Placed, Styled, StylesOf};
 use crate::layer::{
     draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
+    turned_by_map,
 };
 use crate::marker_glyphs::MarkerGlyphs;
 
@@ -584,6 +585,21 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         Some(laid)
     }
 
+    /// The angle `angle` of the label `at` is drawn and tested at, in degrees: on a rotated map,
+    /// turned by the map's (see [`turned_by_map`]) in a point, line, or polygon layer, as
+    /// pointLayerDrawShape, lineLayerDrawShape, and polygonLayerDrawShape turn it
+    /// (`src/mapdraw.c:2050-2054, 2226-2227, 2324-2326`). The last two never turn it back, so
+    /// that MapServer turns a label once more with each shape; each label here is turned once,
+    /// as a point layer's is.
+    fn turned(&self, at: LabelAt, angle: f64) -> f64 {
+        match self.map.layers[at.0].render_mode {
+            Some(RenderMode::Point | RenderMode::Line | RenderMode::Polygon) => {
+                turned_by_map(angle, self.map.angle)
+            }
+            _ => angle,
+        }
+    }
+
     /// Lays out `label` of `feature`, its text, lines, and bound properties `annotation`, moved
     /// away from the marker of the style `marker` carries, sized among `pixmaps` or by its glyph,
     /// where it has one. None where it is not drawn.
@@ -651,7 +667,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             path,
             ink: Ink {
                 feature_id: feature.id,
-                rotation: bound.angle * DEG_TO_RAD,
+                rotation: self.turned(at, bound.angle) * DEG_TO_RAD,
                 color: bound.color,
                 outline,
             },

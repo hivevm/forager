@@ -44,9 +44,10 @@ value begins with, without regard to case, so `'startpoint'` is `start`; a value
 none is no transform; a class's style of it draws the feature's own geometry, a label's style
 draws at its `labelpnt`, and the frontend warns with `unsupported-value`. A style's expression,
 `(buffer([shape], 5))` and the like, is carried as its transform tree (below). Of a line or a
-polygon layer, the engine draws nothing of a class's style of one, whatever its tree, and warns
-`geomtransform-not-drawn`, naming the tree's reason where it is `not_drawn`, the class's other
-styles drawn in their passes as before.
+polygon layer, the engine draws a class's style of one as `msDrawTransformedShape` draws it, on the
+shape in pixels (*A class style's expression*, below); of a tree `not_drawn`, it draws nothing of
+the style and warns `geomtransform-not-drawn`, naming the reason, the class's other styles drawn in
+their passes as before.
 A point layer draws the style at its points without a warning, as `pointLayerDrawShape` draws
 every style whatever its transform. A label's style draws at its `labelpnt` unless it names
 another. A label with a style of any other transform or of an expression is left out, and its
@@ -89,22 +90,22 @@ outside the part.
 **A `GEOMTRANSFORM` expression.** An expression of a layer or of a style is read as MapServer's
 lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`, the rules `shape_exp`, `math_exp`,
 and `string_exp`), function names without regard to case, without the parentheses `loadLayer` and
-`loadStyle` strip. The frontend translates it into a transform tree (ADR-0036,
-ADR-draft-transform-tree-with-simplify-and-buffer): `[shape]`, and `generalize`, `densify`,
-`simplify`, `outer`, `inner`, and `smoothsia` of a shape, nested. A number is written,
-`[map_cellsize]`, or computed of those by `+ - * / % ^` and parentheses, as the grammar reduces
-them; the frontend folds every operation without `[map_cellsize]` to one number. A unary `-` leaves
-its operand as it is, as the rule `'-' math_exp %prec NEG { $$ = $2; }` does, while `-3` written
-together is one negative number, so `[map_cellsize]-2` does not parse. `%` takes its operands cut to
-`int`s, `INT_MIN` past an `int` (ADR-0017). `[data_cellsize]` is 0, as `msGeomTransformShape` binds
-it on every layer but a contour layer (`src/mapgeomtransform.c:285-291`), which Forager does not
-carry. `smoothsia`'s size and iterations are 3 and 1 where they are not written, as the grammar
-calls `msSmoothShapeSIA(s, 3, 1, NULL)`; its preprocessing `all` or `angle` is read without regard
-to case, as `strcasecmp` reads it, and any other text is none.
+`loadStyle` strip. The frontend translates it into a transform tree (ADR-0048): `[shape]`, and
+`generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia` of a
+shape, nested. A number is written, `[map_cellsize]`, or computed of those by `+ - * / % ^` and
+parentheses, as the grammar reduces them; the frontend folds every operation without
+`[map_cellsize]` to one number. A unary `-` leaves its operand as it is, as the rule `'-' math_exp
+%prec NEG { $$ = $2; }` does, while `-3` written together is one negative number, so
+`[map_cellsize]-2` does not parse. `%` takes its operands cut to `int`s, `INT_MIN` past an `int`
+(ADR-0017). `[data_cellsize]` is 0, as `msGeomTransformShape` binds it on every layer but a contour
+layer (`src/mapgeomtransform.c:285-291`), which Forager does not carry. `smoothsia`'s size and
+iterations are 3 and 1 where they are not written, as the grammar calls `msSmoothShapeSIA(s, 3, 1,
+NULL)`; its preprocessing `all` or `angle` is read without regard to case, as `strcasecmp` reads it,
+and any other text is none.
 
 An expression the grammar parses that holds any other construct is the tree `not_drawn`, naming the
-first such construct in the expression's reading order: a function the tree lacks, `buffer`,
-`centerline`, `difference`, `simplifypt`, `javascript`, `length`, `area`, or `round`; `binding`, an
+first such construct in the expression's reading order: a function the tree lacks, `centerline`,
+`difference`, `javascript`, `length`, `area`, or `round`; `binding`, an
 attribute where a number or a text is due; `text`, a computed preprocessing of `smoothsia`;
 `fromtext`, a shape read from a text, which the tree cannot hold; or `literal`, an operation of
 literals that folds to no finite number, which a style document cannot carry: a `%` by 0 or of
@@ -132,7 +133,7 @@ engine draws its tree's functions:
   longer than `t` cut into `floor(length / t) + 1` equal ones. It fails a point and a `t` not
   above 0.
 - `simplify(s, t)` (`msGEOSSimplify`, `src/mapgeos.c`): `s` as GEOS's Douglas-Peucker simplifies
-  it at the tolerance `t`, by a Douglas-Peucker ported from JTS (ADR-draft-geometry-through-geo).
+  it at the tolerance `t`, by a Douglas-Peucker ported from JTS (ADR-0041).
   A point shape keeps its points. Each part of a line keeps its end points and the points the
   Douglas-Peucker keeps, which splits a section at the first of its farthest points, as GEOS
   does, and needs no recursion, so no line overflows the stack. A part without points is dropped. A
@@ -151,6 +152,48 @@ engine draws its tree's functions:
   no number keeps every point, as GEOS's comparisons with it are false. A multipolygon's
   member whose shell is removed while one of its holes is kept leaves the hole as a stray line
   in GEOS's result, which turns the shape into a line; Forager removes the member with its holes.
+- `simplifypt(s, t)` (`msGEOSTopologyPreservingSimplify`, `src/mapgeos.c`): `s` as GEOS's
+  topology-preserving simplifier simplifies it at the tolerance `t`, by a port of JTS's
+  `TopologyPreservingSimplifier` (ADR-0047). The shape is built as
+  for `simplify`, and a point shape keeps its points. The lines of the shape, each part of a line,
+  or each polygon's shell and then its holes, are simplified together, one after the other in the
+  shape's order. Each is a Douglas-Peucker as for `simplify`, but a section is flattened only
+  where its new segment meets no other segment of the shape, simplified or not yet, in a point
+  interior to either, lies on no equal segment, and carries no other line of the shape to its other
+  side; a line keeps at least 2 points, and a closed one 4. A polygon's ring then loses its first
+  point where it lies within `t` of the segment between its neighbours, the ring holds more than 4
+  coordinates, and the new segment passes the same tests; a closed line keeps its first point. No
+  ring is removed and nothing is repaired. The port follows JTS's `master`, not GEOS 3.12.1, which
+  lacks the test of an equal segment and of a line carried across: where a flattening carries one
+  line of a shape across another, or a hole out of its shell by its ring's first point, MapServer
+  at the pin flattens it and Forager keeps the points. GEOS 3.12.1's results for a polygon with
+  holes also vary from run to run. On the case's lines and on `world_testpoly.shp` the two agree
+  bit for bit. A tolerance that is no number flattens every section the tests allow, as GEOS's
+  comparisons with it are false; a section whose distances are all no number is kept whole where
+  the tests refuse to flatten it, where GEOS would split it again without end.
+- `buffer(s, d)` (`msGEOSBuffer`, `src/mapgeos.c`): `s` as `GEOSBuffer_r` buffers it by the distance
+  `d` with 30 segments a quadrant, by geo's buffer with round joins and round caps of π/60
+  (ADR-0041). The shape is built as for `simplify`: a point shape is the point, or the multipoint,
+  of its first part; a line's parts are one line or a multiline, a part without points dropped; a
+  polygon's rings are grouped into polygons as `simplify` groups them. The result is always a
+  polygon: each polygon's shell and holes, a point's circle of 120 segments, a line's outline with
+  round ends, and a polygon grown by a positive `d` and shrunk by a negative one. A point or a line
+  buffered by a `d` not above 0, and a polygon shrunk until nothing is left, is GEOS's empty
+  polygon, which `msGEOSGeometry2Shape` turns into one ring without points. The shape keeps GEOS's
+  geometry, so `buffer` or `simplify` after it returns it empty, as `msGEOSBuffer` and
+  `msGEOSSimplify` build no geometry for a shape that has one; a function of MapServer's own after
+  it fails on a ring without points. Forager knows that geometry by the shape alone, a polygon of
+  one ring without points. MapServer also keeps it through a function of its own, so in
+  `buffer(generalize(buffer([shape], 1), 5), 1)` the outer `buffer` takes the inner one's geometry,
+  not the generalized shape; Forager buffers the generalized shape. Each vertex lies within 10⁻⁶ of
+  GEOS's on the case's polygons (measured within 2.3 × 10⁻⁷ px, with GEOS's point count), but the
+  rings run the other way and start at another point, and the polygons of a multipolygon may come in
+  another order; that matters only to a function after `buffer` that reads the first point or the
+  first part, such as `generalize`. A point's circle takes geo's `cos` and `sin` from the platform's
+  libm, not from the `libm` crate, so its last bits need not be alike on every target (Q-2). geo's
+  buffer works on a grid of integers fitted to the shape and the distance: a distance or a
+  coordinate near the limits of a double, such as 10³⁰⁰, buffers to nothing or to a coarse ring,
+  where GEOS buffers it.
 - `outer(s)` and `inner(s)` (`msRings2Shape`, `msIsOuterRing`, `src/mapprimitive.cpp`): the rings
   of a polygon that are outer, or inner, in their order. A ring alone is outer; another is outer
   where its first point lies in an even number of the other rings by `msPointInPolygon`. Where its
@@ -178,23 +221,79 @@ or fails: a tolerance below 0, which GEOS's simplifier refuses; a point shape wi
 whose first part has fewer than 2 points, or a polygon whose first ring has fewer than 4, which
 `msGEOSShape2Geometry` does not convert; and a line's part of 1 point, or a ring of a polygon of
 fewer than 4 points or not closed, which GEOS cannot build; a ring in no polygon is never built and
-fails nothing. The engine treats a geometry collection, or a multipoint, whose parts the IR does not
-keep, the same way. MapServer fails `msGeomTransformShape` on these: `msDrawVectorLayer` returns a
-failure (`src/mapdraw.c`, 1427–1434), and `msDrawMap` frees the image and returns none (508–519), so
-MapServer makes no map at all. Forager deviates: the layer draws nothing, with the warning, and the
-rest of the map is drawn. `msDrawVectorLayer` reads no shape past the first whose class it finds
-beyond the layer's `MAXFEATURES` (`src/mapdraw.c:1282-1286`), so a shape past it, or one the filter
-leaves out, is never transformed and fails nothing. A layer draws nothing, with
+fails nothing. `buffer` fails, with "Executing buffer failed", where `msGEOSShape2Geometry` gives no
+geometry or GEOS cannot build one, as for `simplify`, and on a distance that is no finite number,
+for which `GEOSBuffer_r` returns none. `simplifypt` fails, with "Executing simplifypt failed", where
+`simplify` fails, a tolerance below 0 among them. The engine also fails `buffer` on a shape with a
+coordinate that is no finite number, on which geo's buffer panics; GEOS buffers such a shape into a
+polygon of its own. The engine treats a geometry collection the same way. MapServer fails
+`msGeomTransformShape` on these: `msDrawVectorLayer` returns a failure (`src/mapdraw.c`, 1427–1434),
+and `msDrawMap` frees the image and returns none (508–519), so MapServer makes no map at all.
+Forager deviates: the layer draws nothing, with the warning, and the rest of the map is drawn. A
+layer draws nothing on a multipoint likewise, with the warning, as the engine's transforms do not
+yet take one, where MapServer transforms it. `msDrawVectorLayer` reads no shape past the first whose
+class it finds beyond the layer's `MAXFEATURES` (`src/mapdraw.c:1282-1286`), so a shape past it, or
+one the filter leaves out, is never transformed and fails nothing. A layer draws nothing, with
 `geomtransform-over-limit`, where its transforms add more than 1,000,000 points or visit more than
 100,000,000; the smoothing passes and the tests of `outer` and `inner` count as visits, and so does
 what `simplify` visits: the inner points of each section its Douglas-Peucker scans, charged as it
 goes, the tests that group a polygon's rings, and the pairs of segments and of rings the validity
 test and the repair compare. The points the repair returns beyond those it was given count as added.
+So does what `simplifypt` visits: the inner points of each section it scans, each segment its
+indexes hold on each test of a flattening, as it examines every one, and the other lines its test of
+a line carried across compares, with the segments whose crossings it counts. Without a spatial
+index, a wiggling line of about 22,000 points at a tolerance of 1, a ring of 20,000 points at 50, or
+a polygon of about 2,000 holes passes the bound alone, and its layer draws nothing, where MapServer
+draws it. Before `buffer` runs, its offset curves are charged, so that the bounds stop it before it
+holds them: the points of their round joins and caps count as added, one for each step of π/60 a
+vertex turns by, a half turn at each end of a line, and a whole one about a point; those and the two
+ends of each point's offset segments on each side count as visits. After it, the points of its
+result beyond those of its shape and those arcs count as added too. A vertex's turn is counted
+whatever side of it the buffer rounds, so the charge may come to twice what the buffer adds: a
+jagged shape of about 17,000 sharp vertices passes the bound on its own, where MapServer buffers it.
 The validity test is charged the square of a simplified ring's segments, so a polygon whose
 simplified ring keeps more than about 10,000 points passes the bound alone and its layer draws
 nothing, where MapServer draws it. In its worst case, as on a zigzag of falling amplitude, the
 Douglas-Peucker scans about n²/2 points for a part of n points kept, so such a line of more than
 about 14,000 points passes the bound too, and its layer draws nothing.
+
+**A class style's expression.** On a line or a polygon layer, `lineLayerDrawShape` and
+`polygonLayerDrawShape` (`src/mapdraw.c:2140-2148`, `2304-2311`) hand a class style's expression,
+in its scale range, the feature's unclipped shape in pixels, as `msDrawShape` transforms it before
+it clips (`:2505-2518`): its lines and rings simplified as for the keyword transforms above, a part
+the simplification leaves without points kept empty, as `msTransformShapeSimplify` keeps it, and a
+multipolygon's rings listed flat. A shape left without a point draws no style at all, as
+`msDrawShape` returns before it draws one (`:2506-2507`, `2577-2580`), so its tree is not evaluated.
+`msDrawTransformedShape` (`src/mapgeomtransform.c:198-240`) evaluates the tree on that shape, so
+its numbers are pixels:
+`generalize([shape], 50)` keeps, of the first part alone, its first point, each point at least 50
+pixels from the last kept, and its last; `buffer([shape], 1)` grows a polygon by a pixel and
+`buffer([shape], -1)` shrinks it by one, as the styles of `renderers/polygon-as-line-offset.map`
+outline it. A line result is stroked as `msDrawLineSymbol` strokes a
+line of a line layer, a part of fewer than two points drawing nothing; a point or a polygon result
+is shaded as `msDrawShadeSymbol` shades a polygon, below. Each is drawn in the style, as its pass
+prepares it: a line layer draws such a style in the pass of a style of a keyword transform, with
+its first style, before the rest. The functions are those of a layer's transform, above, with the
+same failures.
+
+`[map_cellsize]` of a style's tree is the layer's value, above. MapServer sets none for a style:
+`msDrawTransformedShape` leaves its parser's `dblval` unset, so a style's `[map_cellsize]` reads an
+uninitialised double at the pin (`src/mapparser.y:1121-1128`). No case of msautotest uses it;
+Forager deviates to the one value the name has on a layer
+(ADR-0048).
+
+Where a style's tree fails on a shape, MapServer's draw of the layer fails and `msDrawMap` makes no
+map (`src/mapdraw.c:1402-1405`, `508-519`). Forager deviates: the style draws nothing on that
+shape, its class's other styles and the rest of the map are drawn, and the engine warns
+`geomtransform-not-drawn` once for each such style and render, naming the style and its first
+failure in the order the shapes are drawn. A geometry collection fails as on a layer.
+
+The trees of a layer's class styles share the bounds of a layer's transform (Q-9) with the layer's
+`GEOMTRANSFORM`, in one budget a layer and render: the points they add, 1,000,000, and the points
+they visit, 100,000,000. Where an evaluation passes a bound, the layer's style trees draw nothing on
+that shape and on every later shape of the layer; the shapes drawn before stay drawn, so what is
+drawn depends on the order of the features. The engine warns `geomtransform-over-limit` once for the
+layer and render, whatever the number of style trees the bound stops.
 
 **A polygon's fill.** A polygon layer's style with a `COLOR` and without a symbol, or with a
 simple one, fills the polygon under the even-odd rule, as `msDrawShadeSymbol` in

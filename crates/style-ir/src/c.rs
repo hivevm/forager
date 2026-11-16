@@ -1,7 +1,8 @@
 // C's and MapServer's small functions, ported once for the frontend, the core, and the adapters
 // (ADR-0017): glibc's strtod in the C locale and the atof and atoi it backs, its lrint on x86-64,
 // and the (int) cast of a double as x86-64 computes it; MapServer's MS_NINT, MS_MIN, MS_MAX, and
-// MS_DEG_TO_RAD of src/mapserver.h, msRectOverlap of src/mapsearch.c, msStringSplit of
+// MS_DEG_TO_RAD of src/mapserver.h, the map's angle in radians of msMapComputeGeotransformEx,
+// src/mapobject.c, msRectOverlap of src/mapsearch.c, msStringSplit of
 // src/mapstring.cpp, msComputeBounds of src/mapprimitive.cpp, msGetSymbolIndex's match of a name
 // of src/mapfile.c, and the alpha of an opacity of loadStyle, src/mapfile.c, bindStyle,
 // src/maputil.c, and aggCompositeRasterBufferNoPixman, src/mapagg.cpp, of the release pinned in
@@ -22,7 +23,8 @@
 
 //! C's and MapServer's small functions as MapServer's build at the pin runs them: `strtod`,
 //! `atof`, and `atoi` of glibc in the C locale, `MS_NINT`, which is `lrint` on x86-64, the `(int)`
-//! cast of a `double`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`,
+//! cast of a `double`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD` and a map's angle
+//! in radians, `msRectOverlap`,
 //! `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex`'s match of a symbol's name, and the
 //! alpha `MS_NINT(opacity * 2.55)` of an opacity (ADR-0017).
 
@@ -306,6 +308,13 @@ pub fn ms_max(a: f64, b: f64) -> f64 {
 /// `MS_DEG_TO_RAD`, `src/mapserver.h:251`, `.0174532925199432958`, read to the nearest double.
 pub const DEG_TO_RAD: f64 = 0.017_453_292_519_943_295;
 
+/// Degrees in radians as `msMapComputeGeotransformEx`, `src/mapobject.c:390`, turns a map's angle:
+/// `degrees * MS_PI / 180.0`, multiplied before it is divided. It may differ from `degrees *
+/// DEG_TO_RAD` in the last bit.
+pub fn ms_pi_over_180(degrees: f64) -> f64 {
+    degrees * std::f64::consts::PI / 180.0
+}
+
 /// `msRectOverlap`, `src/mapsearch.c:44-54`, of two rectangles each given as
 /// `[min x, min y, max x, max y]`: whether they share a point, their edges included. A bound that
 /// is no number fails no comparison, so it overlaps.
@@ -566,6 +575,15 @@ mod tests {
         // Verifies: ADR-0017
         assert_eq!(DEG_TO_RAD, ".0174532925199432958".parse::<f64>().unwrap());
         assert_eq!(DEG_TO_RAD, std::f64::consts::PI / 180.0);
+    }
+
+    #[test]
+    fn a_maps_angle_is_multiplied_by_pi_before_it_is_divided() {
+        // Verifies: ADR-0017
+        // -359.75 × MS_PI / 180 rounds apart from -359.75 × MS_DEG_TO_RAD.
+        assert_eq!(ms_pi_over_180(-359.75), -6.278_821_984_049_6);
+        assert_eq!(-359.75 * DEG_TO_RAD, -6.278_821_984_049_601);
+        assert_eq!(ms_pi_over_180(30.0), 30.0 * DEG_TO_RAD);
     }
 
     #[test]

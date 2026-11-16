@@ -57,7 +57,7 @@ fn drawn(shape: TransformShape) -> TransformTree {
 
 #[test]
 fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     // Every GEOMTRANSFORM expression of the msautotest suite at 7515cccf (rel-8-6-6), as the
     // mapfile's token holds it.
     assert_eq!(
@@ -80,6 +80,18 @@ fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
         tree("(simplify([shape],10))"),
         drawn(TransformShape::Simplify(shape(), num(10.0)))
     );
+    assert_eq!(
+        tree("(buffer([shape], 1))"),
+        drawn(TransformShape::Buffer(shape(), num(1.0)))
+    );
+    assert_eq!(
+        tree("(buffer([shape], -1))"),
+        drawn(TransformShape::Buffer(shape(), num(-1.0)))
+    );
+    assert_eq!(
+        tree("(simplifypt([shape],50))"),
+        drawn(TransformShape::Simplifypt(shape(), num(50.0)))
+    );
     for (text, reason) in [
         ("(centerline([shape]))", NotDrawn::Centerline),
         ("(centerline(densify([shape], 5)))", NotDrawn::Centerline),
@@ -88,9 +100,6 @@ fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
             "(smoothsia(centerline(densify([shape], 5))))",
             NotDrawn::Centerline,
         ),
-        ("(simplifypt([shape],50))", NotDrawn::Simplifypt),
-        ("(buffer([shape], 1))", NotDrawn::Buffer),
-        ("(buffer([shape], -1))", NotDrawn::Buffer),
     ] {
         assert_eq!(not_drawn(text), reason, "{text}");
     }
@@ -105,7 +114,7 @@ fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
 
 #[test]
 fn each_function_of_the_tree_translates_with_its_arguments() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     assert_eq!(tree("([shape])"), drawn(TransformShape::Shape));
     assert_eq!(
         tree("(densify(([shape]), 2.5))"),
@@ -142,6 +151,18 @@ fn each_function_of_the_tree_translates_with_its_arguments() {
         tree("(smoothsia([shape], 5, 2, 'none'))"),
         smooth(5.0, 2.0, None)
     );
+    // `buffer`'s distance is a `math_exp`, as `simplify`'s tolerance.
+    assert_eq!(
+        tree("(buffer(simplify([shape], 2), [map_cellsize] * 3))"),
+        drawn(TransformShape::Buffer(
+            Box::new(TransformShape::Simplify(shape(), num(2.0))),
+            TransformNumber::Op(
+                NumberOp::Mul,
+                Box::new(TransformNumber::MapCellsize),
+                Box::new(num(3.0))
+            )
+        ))
+    );
     // Function names in any case, as the lexer is built with `flex -i`.
     assert_eq!(
         tree("(GENERALIZE(Outer([SHAPE]), 1))"),
@@ -154,7 +175,7 @@ fn each_function_of_the_tree_translates_with_its_arguments() {
 
 #[test]
 fn literal_arithmetic_folds_and_map_cellsize_is_kept() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     let tolerance = |text: &str| match tree(&format!("(densify([shape], {text}))")) {
         TransformTree::Drawn(TransformShape::Densify(_, number)) => number,
         other => panic!("{text}: {other:?}"),
@@ -199,7 +220,7 @@ fn literal_arithmetic_folds_and_map_cellsize_is_kept() {
 
 #[test]
 fn a_unary_minus_leaves_its_operand_un_negated() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     // `'-' math_exp %prec NEG { $$ = $2; }`; `-3` written together is one number token.
     let tolerance = |text: &str| match tree(&format!("(densify([shape], {text}))")) {
         TransformTree::Drawn(TransformShape::Densify(_, number)) => number,
@@ -216,7 +237,7 @@ fn a_unary_minus_leaves_its_operand_un_negated() {
 
 #[test]
 fn the_first_construct_without_a_node_names_the_reason() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     for (text, reason) in [
         ("(difference([shape], [shape]))", NotDrawn::Difference),
         ("(javascript([shape], 'f.js'))", NotDrawn::Javascript),
@@ -247,10 +268,10 @@ fn the_first_construct_without_a_node_names_the_reason() {
             "(smoothsia([shape], 3, 1, tostring(1, '%g')))",
             NotDrawn::Text,
         ),
-        // In reading order: buffer before round, round before buffer.
+        // In reading order: centerline before round, difference before round.
         (
-            "(generalize(buffer([shape], 1), round(2)))",
-            NotDrawn::Buffer,
+            "(generalize(centerline([shape]), round(2)))",
+            NotDrawn::Centerline,
         ),
         (
             "(difference(generalize([shape], round(2)), buffer([shape], 1)))",
@@ -264,7 +285,7 @@ fn the_first_construct_without_a_node_names_the_reason() {
 
 #[test]
 fn a_syntax_error_is_warned_with_its_place() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     for (text, found, at) in [
         ("(generalize([shape]))", "`)` where `,` is due", 19),
         ("(outer([shape], 2))", "`,` where `)` is due", 14),
@@ -320,16 +341,16 @@ fn a_syntax_error_is_warned_with_its_place() {
 
 #[test]
 fn a_syntax_error_takes_precedence_over_an_earlier_construct_without_a_node() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
-    // MapServer refuses the whole expression, so `buffer` before the error names nothing.
-    let (what, at) = syntax("(buffer([shape],1) 2)");
+    // Verifies: ADR-0048
+    // MapServer refuses the whole expression, so `centerline` before the error names nothing.
+    let (what, at) = syntax("(centerline([shape]) 2)");
     assert!(what.contains("`2` after the shape"), "{what}");
-    assert_eq!(at, 19);
+    assert_eq!(at, 21);
 }
 
 #[test]
 fn data_cellsize_folds_to_0_as_on_a_layer_that_is_no_contour() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     // msGeomTransformShape sets p.dblval2 = 0 and reads `__data_cellsize__` only for a contour
     // layer (src/mapgeomtransform.c:285-291).
     assert_eq!(
@@ -352,7 +373,7 @@ fn a_diagnostic_quotes_the_expression_bounded() {
 
 #[test]
 fn a_chain_of_25_operators_is_refused_as_too_deep_without_overflowing_the_stack() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer, Q-9
+    // Verifies: ADR-0048, Q-9
     // densify (1), its number's chain of `+` below it, its last operands one level further:
     // 22 operators nest 24 levels and translate; 23 and 25 pass the bound.
     let chain = |operators: usize| {

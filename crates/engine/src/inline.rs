@@ -115,7 +115,8 @@ fn corners(e: &Extent) -> [f64; 4] {
 }
 
 /// The geometry the port delivers of a shape, as the shapefile source delivers a record: a point
-/// shape of one point as a point and any other as a multipoint of all its points, a line shape
+/// shape of one point as a point and any other as a multipoint of its parts, each `POINTS` block
+/// a part as `loadFeature` adds it with `msAddLine` (`src/mapfile.c:1091-1097`), a line shape
 /// of one part as a line string and any other as a multi-line string, and a polygon shape as one
 /// polygon of all its parts.
 fn geometry(feature: &InlineFeature) -> Geometry {
@@ -126,7 +127,7 @@ fn geometry(feature: &InlineFeature) -> Geometry {
     match feature.shape_type {
         ShapeType::Point => match parts.as_slice() {
             [part] if part.len() == 1 => Geometry::Point(coords(part)[0]),
-            _ => Geometry::MultiPoint(parts.iter().flat_map(coords).collect()),
+            _ => Geometry::MultiPoint(parts.iter().map(coords).collect()),
         },
         ShapeType::Line => match parts.as_slice() {
             [part] => Geometry::LineString(coords(part)),
@@ -239,7 +240,7 @@ mod tests {
         );
         assert_eq!(
             geometry_of(feature(ShapeType::Point, &[&[[1.0, 2.0]], &[[3.0, 4.0]]])),
-            Geometry::MultiPoint(vec![c(1.0, 2.0), c(3.0, 4.0)])
+            Geometry::MultiPoint(vec![vec![c(1.0, 2.0)], vec![c(3.0, 4.0)]])
         );
         assert_eq!(
             geometry_of(feature(ShapeType::Line, &[&[[1.0, 2.0], [3.0, 4.0]]])),

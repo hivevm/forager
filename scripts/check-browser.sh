@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Check: the browser example in a real browser (G-14, ADR-draft-browser-test-over-webdriver).
+# Check: the browser example in a real browser (G-14, ADR-0040).
 #
 # Runs the browser test crates/dev-server/tests/browser.rs alone. It opens examples/web/ in
 # headless Chrome over ChromeDriver, served by the dev server with the bundle of

@@ -383,9 +383,9 @@ fn every_msautotest_style_ir_reads_back_equal_from_yaml_and_json() {
             .ok()
             .and_then(|loaded| loaded.document)
             .unwrap_or_else(|| panic!("{name} does not load; see the G-1 test"));
-        let yaml = first.to_yaml().unwrap();
+        let yaml = first.to_yaml();
         let from_yaml = StyleDocument::from_yaml(&yaml).unwrap().document;
-        let json = from_yaml.to_json().unwrap();
+        let json = from_yaml.to_json();
         let last = StyleDocument::from_json(&json).unwrap().document;
         checked += 1;
         if last != first {
@@ -629,7 +629,7 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
             differences.push(format!("{named}: {why}"));
             continue;
         }
-        let document = StyleDocument::new(map).to_json().unwrap();
+        let document = StyleDocument::new(map).to_json();
         let (native, files) = wasm::native(&document, &base.for_load());
         match module.render(&document, &files) {
             Ok(rendered) => {
@@ -661,7 +661,23 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-draft-geometry-through-geo
+    // Verifies: ADR-0041
+    zigzag_renders_alike_natively_and_on_wasm32("simplify");
+}
+
+/// The same zigzag through `simplifypt`, whose port of JTS's recursion keeps its sections on a
+/// stack of its own as well (Q-3, G-9).
+#[test]
+#[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
+fn a_zigzag_simplified_with_its_topology_renders_alike_natively_and_on_wasm32() {
+    // Verifies: ADR-0047
+    zigzag_renders_alike_natively_and_on_wasm32("simplifypt");
+}
+
+/// A layer of `function` at 0.5 over a zigzag of 6,000 points whose amplitude shrinks, rendered
+/// natively and through the conformance module in wasmi: drawn, without a trap, to the same RGBA
+/// buffer.
+fn zigzag_renders_alike_natively_and_on_wasm32(function: &str) {
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
     let n = 6_000_u32;
@@ -677,12 +693,12 @@ fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm
         .collect();
     let mapfile = format!(
         "MAP SIZE 200 200 EXTENT 0 -6000 6000 6000 \
-         LAYER NAME 'zigzag' TYPE LINE STATUS ON GEOMTRANSFORM (simplify([shape], 0.5)) \
+         LAYER NAME 'zigzag' TYPE LINE STATUS ON GEOMTRANSFORM ({function}([shape], 0.5)) \
          FEATURE POINTS {} END END \
          CLASS STYLE COLOR 0 0 255 END END END END",
         points.join(" ")
     );
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("zigzag");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("zigzag-{function}"));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("zigzag.map");
     std::fs::write(&path, mapfile).unwrap();
@@ -690,13 +706,105 @@ fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm
     let path = ResourcePath::new(&name).unwrap();
     let loaded = forager_cli::now(forager_mapfile::load(&path, &base.for_load(), None)).unwrap();
     let map = loaded.document.expect("the mapfile loads").map;
-    let document = StyleDocument::new(map).to_json().unwrap();
+    let document = StyleDocument::new(map).to_json();
     let (native, files) = wasm::native(&document, &base.for_load());
     let (_, _, pixels) = native.as_ref().expect("the native render");
     assert!(
         pixels.chunks(4).any(|p| p[2] > p[0]),
-        "the simplified zigzag is drawn in blue, not refused"
+        "the {function} zigzag is drawn in blue, not refused"
     );
+    let rendered = module
+        .render(&document, &files)
+        .expect("the module renders without a trap");
+    assert_eq!(wasm::difference(&native, &rendered), None);
+}
+
+/// A line of each kind of symbol without a `GAP`, a vector, an ellipse, a pixmap, and a TrueType
+/// symbol, brushed with its brush tile, and one of `POLYLINE_NO_CLIP` that leaves the image and
+/// comes back, cut by `clip.rs` with the pattern's start carried over the cut. No case of the
+/// suite draws one. The map renders natively and on wasm32 to the same RGBA buffer, each line
+/// drawn (G-9).
+#[test]
+#[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
+fn lines_brushed_with_their_tiles_render_alike_natively_and_on_wasm32() {
+    // Verifies: ADR-0046
+    let module = std::fs::read(conformance_module()).expect("the conformance module reads");
+    let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("brushed");
+    std::fs::create_dir_all(dir.join("fonts")).unwrap();
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"));
+    std::fs::copy(
+        fixtures.join("../label/tests/fixtures/dejavu-sans-subset.ttf"),
+        dir.join("fonts/sans.ttf"),
+    )
+    .unwrap();
+    std::fs::copy(fixtures.join("tests/fixtures/pin.png"), dir.join("pin.png")).unwrap();
+    std::fs::write(dir.join("fonts.lst"), "sans fonts/sans.ttf\n").unwrap();
+    let line = |name: &str, processing: &str, points: &str, style: &str| {
+        format!(
+            "LAYER NAME '{name}' TYPE LINE STATUS ON {processing} FEATURE POINTS {points} END END \
+             CLASS STYLE {style} END END END\n"
+        )
+    };
+    let mapfile = [
+        "MAP SIZE 120 120 EXTENT 0 0 120 120 IMAGECOLOR 255 255 255 FONTSET 'fonts.lst'\n\
+         SYMBOL NAME 'arrow' TYPE VECTOR POINTS 0 0 4 2 0 4 0 0 END FILLED TRUE END\n\
+         SYMBOL NAME 'circle' TYPE ELLIPSE POINTS 1 1 END FILLED TRUE END\n\
+         SYMBOL NAME 'pin' TYPE PIXMAP IMAGE 'pin.png' END\n\
+         SYMBOL NAME 'ttf' TYPE TRUETYPE FONT 'sans' CHARACTER 'x' END\n"
+            .to_owned(),
+        line(
+            "vector",
+            "",
+            "10 110 60 100 110 110",
+            "SYMBOL 'arrow' SIZE 8 COLOR 255 0 0",
+        ),
+        line(
+            "ellipse",
+            "",
+            "10 80 110 85",
+            "SYMBOL 'circle' SIZE 6 COLOR 0 128 0",
+        ),
+        line("pixmap", "", "10 50 110 55", "SYMBOL 'pin' SIZE 16"),
+        line(
+            "truetype",
+            "",
+            "10 30 110 25",
+            "SYMBOL 'ttf' SIZE 12 COLOR 0 0 255",
+        ),
+        line(
+            "unclipped",
+            "PROCESSING 'POLYLINE_NO_CLIP=true'",
+            "5 8 130 8 130 -200 60 -200 60 15 5 15",
+            "SYMBOL 'arrow' SIZE 6 COLOR 128 0 128",
+        ),
+        "END\n".to_owned(),
+    ]
+    .concat();
+    let path = dir.join("brushed.map");
+    std::fs::write(&path, mapfile).unwrap();
+    let (base, name) = FileLoader::for_mapfile(&path, None).unwrap();
+    let path = ResourcePath::new(&name).unwrap();
+    let loaded = forager_cli::now(forager_mapfile::load(&path, &base.for_load(), None)).unwrap();
+    let map = loaded.document.expect("the mapfile loads").map;
+    let document = StyleDocument::new(map).to_json();
+    let (native, files) = wasm::native(&document, &base.for_load());
+    let (width, _, pixels) = native.as_ref().expect("the native render");
+    // Each line's row in pixels, y down, has pixels drawn: none is refused or left out.
+    for (name, row) in [
+        ("vector", 15),
+        ("ellipse", 37),
+        ("pixmap", 67),
+        ("truetype", 92),
+        ("unclipped", 106),
+    ] {
+        let start = row * *width as usize * 4;
+        let drawn = pixels[start..start + *width as usize * 4]
+            .chunks(4)
+            .filter(|p| p[..3] != [255, 255, 255])
+            .count();
+        assert!(drawn > 20, "{name}: {drawn} pixels drawn in row {row}");
+    }
     let rendered = module
         .render(&document, &files)
         .expect("the module renders without a trap");

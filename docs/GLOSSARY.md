@@ -17,6 +17,13 @@ to invent.
 - **Binding** — A style property that takes a feature's property, as a mapfile's `[name]` binds
   an attribute: `{"binding": name}` in the style IR, read with MapServer's rules, not as an
   expression ([`semantics/binding.md`](semantics/binding.md)).
+- **Brush tile** — The image a line style's vector, ellipse, pixmap, or TrueType symbol without a
+  `GAP` brushes the line with: the symbol centred in a transparent image of the size
+  `msDrawLineSymbol` computes, sampled along each segment and across it, turned with the segment.
+  It shares the render's cache and key with the fill tile, so one serves as the other
+  ([ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)). The
+  code's `Tile`, drawn by `DrawOp::BrushedLine`.
+  _Avoid:_ line pattern, line tile.
 - **Core** — The crates that turn a style IR and features into pixels: no I/O, no C code, no
   MapServer syntax, and buildable for `wasm32-unknown-unknown`.
 - **Diagnostic** — A message from loading or rendering, with a severity, a code, a text, and a
@@ -32,15 +39,23 @@ to invent.
 - **Feature source** — The port through which the host supplies a layer's features, implemented by
   an adapter the host binds to the layer by its name; the engine asks it for the features in view.
   A layer with inline features is read from those instead.
-- **Fill tile** — The image a polygon's pixmap or vector symbol is repeated from: the symbol
-  scaled and turned, centred in a transparent image of the size `msDrawShadeSymbol` computes, or,
-  for a vector symbol without a `GAP`, drawn nine times as getTile's seamless mode draws it. Built
-  once per symbol, size, scale, and rotation in a render, for a vector symbol also per outline
-  width and colour, and counted with its decoded images
+- **Fill tile** — The image a polygon's pixmap, vector, ellipse, or TrueType symbol is repeated
+  from: the symbol scaled and turned, centred in a transparent image of the size
+  `msDrawShadeSymbol` computes, or, for a vector symbol without a `GAP`, drawn nine times as
+  getTile's seamless mode draws it. Built once per symbol, size, scale, and rotation in a render,
+  for any symbol but a pixmap also per outline width and colour, and counted with its decoded images
   ([ADR-0029](adr/0029-pixmaps-held-once-per-render.md)). The code's `Tile`.
   _Avoid:_ tile alone beside a map's raster tiles, pattern.
 - **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
   crate versions and of the core's API.
+- **Frame of the image** — Where a rotated map draws everything after the reprojection: the
+  extent `0, 0, width, height` at a cellsize of 1, y up, as MapServer's `msMapSetFakedExtent`
+  fakes it. Its map units are the image's pixels. The code's frame `View`.
+  _Avoid:_ fake extent, pixel space.
+- **Geotransform** — The affine step between a rotated map's coordinates and the frame of its
+  image, which MapServer holds on the map's projection and applies inside each layer's
+  reprojection (ADR-0045).
+  _Avoid:_ rotation matrix, affine.
 - **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through
   the WASM bindings, or a server.
 - **Inline feature** — A feature written into a layer of the style IR, a mapfile's `FEATURE`: a
@@ -107,9 +122,9 @@ to invent.
 - **Transform tree** — A `GEOMTRANSFORM` expression of a layer or a class's style in the style
   IR: a tree of its shape functions and their numbers in CQL2-JSON's shape, or `not_drawn` with the
   reason the engine does not draw it, translated by the mapfile frontend. Its nodes are `shape`,
-  `generalize`, `densify`, `simplify`, `outer`, `inner`, and `smoothsia`
-  (ADR-0036,
-  [ADR-draft-transform-tree-with-simplify-and-buffer](adr/draft-transform-tree-with-simplify-and-buffer.md);
+  `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia`.
+  A layer's tree replaces each feature's shape in map units; a class style's tree is drawn on the
+  shape in pixels ([ADR-0048](adr/0048-transform-tree-with-simplifypt.md);
   [`semantics/style-symbol.md`](semantics/style-symbol.md)).
   _Avoid:_ shape expression, geometry expression.
 - **Viewport** — The part of a map that is drawn: an image size and an extent. A page asks the WASM

@@ -38,12 +38,18 @@ pub(super) fn item_names(block: &Block) -> Vec<String> {
 
 /// The value of a `PROCESSING "ITEMS=…"`, or `None` for another key.
 pub(super) fn items_value(d: &Directive) -> Option<&str> {
+    processing_value(d, "ITEMS")
+}
+
+/// The value of a `PROCESSING` of `key`, compared without regard to case and followed by `=` or
+/// `:` as `CSLFetchNameValue` compares it, or `None` for another key.
+pub(super) fn processing_value<'d>(d: &'d Directive, key: &str) -> Option<&'d str> {
     let [token] = d.values.as_slice() else {
         return None;
     };
     let value = token.string()?;
-    let (key, rest) = (value.get(..5)?, value.get(5..)?);
-    if key.eq_ignore_ascii_case("ITEMS") {
+    let (written, rest) = (value.get(..key.len())?, value.get(key.len()..)?);
+    if written.eq_ignore_ascii_case(key) {
         rest.strip_prefix(['=', ':'])
     } else {
         None

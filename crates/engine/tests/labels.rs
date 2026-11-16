@@ -2227,9 +2227,11 @@ fn a_turned_labelpoly_is_moved_by_its_offset_and_outlined_at_its_width() {
             width,
             cap,
             join,
+            inner_join,
             dashes,
             antialiased,
         } => {
+            assert_eq!(*inner_join, forager_render::InnerJoin::Miter);
             assert_eq!(
                 (paths.len(), *closed, *color, *width, *cap, *join),
                 (

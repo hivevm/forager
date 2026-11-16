@@ -10,7 +10,9 @@
   line's width as [`scale.md`](scale.md) states, so dashes grow with a line that grows.
 - `GAP`: the distance between symbols drawn along a line, any number. A positive one keeps the
   symbols upright; a negative one turns them with the line, its size the distance
-  (`msImagePolylineMarkers` with `auto_angle` 1). 0 draws the symbol as a brush along the line. Each
+  (`msImagePolylineMarkers` with `auto_angle` 1). 0 draws the symbol as a brush along the line: a
+  vector, ellipse, pixmap, or TrueType symbol brushes the line with its brush tile, as
+  [`symbol.md`](symbol.md) states, and any other is drawn as a simple symbol's line. Each
   line of a shape counts from its start, a segment carrying on what the one before left over; a line
   on which no symbol falls, without `INITIALGAP`, and longer than the symbol is wide takes one at
   half its length. A pixmap symbol is drawn there as at a point ([`symbol.md`](symbol.md)), without
@@ -53,19 +55,34 @@ line keeps its first vertex and its last unless that equals the one kept before;
 in a line layer too, its first two and its last two. A line left with fewer than two vertices and
 a ring of fewer than four draw nothing.
 
+**Clip.** `msDrawShape` in `src/mapdraw.c` clips a line shape that reaches beyond the map's extent
+before `msDrawLineSymbol` draws it, with `msClipPolylineRect` in `src/mapprimitive.cpp`, and so
+does Forager. The rectangle is the extent grown by the class's buffer in pixels, times the
+cellsize: per style, the largest of its symbol's default size, its `SIZE`, and its `WIDTH`, scaled,
+or its `MINSIZE` or `MINWIDTH` where larger, plus 1, rounded; the largest of the class's styles.
+Where a style of the class has a `GEOMTRANSFORM`, the shape is turned into pixels first and the
+image grown by the buffer cuts it. Each segment is cut in x, then in y; a line that leaves the
+rectangle ends there, and one that comes back is a line of its own from there. Its dashes, its
+`INITIALGAP`, and its symbols count from where the clip begins it, and its vertices are simplified
+(above) from there. A layer of `PROCESSING "POLYLINE_NO_CLIP"`, whatever its value, is not clipped
+(`src/mapdraw.c:1341-1344`): the IR's `unclipped_lines`.
+
 **Not yet as MapServer places symbols along a line.**
 
-- `msDrawShape` in `src/mapdraw.c` clips a line that leaves the map's extent to the image grown by
-  a buffer of the styles' largest size or width before `msDrawLineSymbol` draws it, unless the
-  layer has `PROCESSING "POLYLINE_NO_CLIP=true"`. Each clipped piece is a line of its own: its
-  symbols start again at `INITIALGAP`, or at half the gap, and a piece on which none falls takes
-  its own marker at half its length. Forager does not clip, and counts from the start of the
-  whole line, so the symbols of a line that crosses the edge of the map can stand elsewhere.
-- `msDrawShape` simplifies the clipped shape: the vertices a line or a polygon keeps (above)
-  are counted from where the clip leaves it to begin. Forager clips a hatch's polygon first, as
-  MapServer does, but simplifies the whole shape of a line, an outline, or a fill, so where one
-  crosses the edge of the map the vertices kept near the edge can differ.
-- With a `GAP` of 0, `msDrawLineSymbol` tiles a pixmap's image along the line
-  (`renderLineTiled`). Forager strokes the line instead as a simple symbol's, in the `COLOR` or
-  else the `OUTLINECOLOR` for the first style of a class, and a later style without a `COLOR` not
-  at all.
+- A polygon's rings outlined in a line layer, which `msDrawShape` clips with
+  `msClipPolygonRect` and a buffer 2 larger, are not clipped; they are simplified whole, so
+  where one crosses the edge of the map the vertices kept near the edge can differ.
+- The renderer clips every path near the image ([ADR-0027](../adr/0027-clip-to-the-image.md)),
+  2 pixels beyond it and the stroke's reach, and dashes a line from where that clip begins it. A
+  line `msDrawShape` leaves longer, one of `POLYLINE_NO_CLIP` or one whose class's buffer is
+  wider than the renderer's margin, a stroke wider than 2 pixels with round or bevel joins, has
+  its dashes counted from the renderer's clip, where MapServer counts them from the line's start.
+- A line brushed with its tile, of a `GAP` of 0, that the renderer's clip cuts, as one of
+  `POLYLINE_NO_CLIP` beyond the class's buffer and 2 pixels, draws the segment cut from an end
+  rounded to the clip's edge, without the join before it, where MapServer saturates the line's
+  coordinates instead. The pattern's place along the rest of the line is MapServer's. A piece of
+  it on which the pattern's place would pass an `int` beside a tile some 4096 pixels high is not
+  drawn, where AGG's C++ is undefined.
+- A brushed line's segment longer than 1024 pixels close to 45°, or a join whose bisectrix falls
+  on an exact half, can differ from MapServer by a pixel's shade: agg-rust divides such a
+  segment, and rounds a half away from zero, otherwise than AGG 2.4.

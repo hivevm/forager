@@ -36,7 +36,8 @@ pub enum DrawOp {
     },
     /// Strokes each path; a closed path joins its last point to its first, an open one ends
     /// in caps at both. The cap, the join, and the dashes are those of MapServer's stroke style,
-    /// its `strokeStyleObj`; how they map onto the rasterizer is the renderer's. An aliased
+    /// its `strokeStyleObj`; how they map onto the rasterizer is the renderer's. The inner join
+    /// is the one MapServer's AGG renderer sets for the stroke, see [`InnerJoin`]. An aliased
     /// stroke, `antialiased` false, draws every pixel its outline covers at all in the full
     /// colour, as MapServer's AGG renderer draws a stroke style's `antialiased` false.
     Stroke {
@@ -46,6 +47,7 @@ pub enum DrawOp {
         width: f64,
         cap: LineCap,
         join: LineJoin,
+        inner_join: InnerJoin,
         dashes: Dashes,
         antialiased: bool,
     },
@@ -90,6 +92,26 @@ pub enum DrawOp {
         rings: Vec<Vec<Point>>,
         tile: Rc<Tile>,
     },
+    /// Brushes the paths of one shape in one style with `tile`, its brush tile, as
+    /// `agg2RenderLineTiled` brushes a line: the tile sampled along each segment and across it, as
+    /// wide as the tile is high, turned with the segment, its position along the line starting at
+    /// 0 and carried over every segment and path. The paths are clipped to the image grown by
+    /// `reach`, the class's `clip_buf` in pixels, as every path is (ADR-0027). The tile is the one
+    /// the render holds, shared by every item it brushes or fills (ADR-0029).
+    BrushedLine {
+        paths: Vec<Vec<Point>>,
+        tile: Rc<Tile>,
+        reach: f64,
+    },
+}
+
+/// The join on the inner side of a turn, AGG's `inner_join_e`: of its four, the two MapServer's
+/// AGG renderer strokes with. agg2RenderLine bevels the inner joins of a line 1 pixel wide or
+/// less; agg2RenderVectorSymbol and agg2RenderEllipseSymbol leave AGG's default, a miter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InnerJoin {
+    Miter,
+    Bevel,
 }
 
 /// An affine transformation of positions in pixels, AGG's `trans_affine`: it takes (x, y) to

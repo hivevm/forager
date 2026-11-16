@@ -406,76 +406,133 @@ fn a_pixmap_that_does_not_load_leaves_its_style_undrawn_and_the_map_drawn() {
 }
 
 #[test]
-fn a_pixmap_drawn_as_a_stand_in_on_a_line_warns_that_it_is_not_drawn() {
-    // MapServer tiles a pixmap along a line without a GAP, which Forager does not: it draws the
-    // style's COLOR in its place. The image is never read there, so a file that does not exist
-    // would pass unseen; each such symbol warns instead, once.
+fn a_pixmap_along_a_line_without_a_gap_brushes_it_with_its_tile() {
+    // Verifies: ADR-0046
+    // msDrawLineSymbol asks getTile for the pin's own 32 × 32 at a scale of 1 and brushes the line
+    // with it (agg2RenderLineTiled), 32 pixels wide: the pin's top half, opaque and of blue 160
+    // in every pixel, on the left of the line's way, above it here, and its bottom half, of alpha
+    // 128 or none, below. No COLOR stands in for it, and nothing warns.
     let style = |index| Style {
         color: Some(Bound::Value(BLUE)),
         width: Some(Bound::Value(3.0)),
         ..symbol_style(index)
     };
-    let twice = map(
-        vec![pixmap("brush", "brush.png")],
-        vec![layer("lines", RenderMode::Line, vec![style(1), style(1)])],
+    let brushed = map(
+        vec![pixmap("brush", "pin.png")],
+        vec![layer("lines", RenderMode::Line, vec![style(1)])],
     );
     let sources = [(
         "lines",
-        r#"{"type": "LineString", "coordinates": [[10, 90], [90, 90]]}"#,
+        r#"{"type": "LineString", "coordinates": [[10, 50], [90, 50]]}"#,
     )];
-    let rendered = render(&twice, &Files::default(), &sources);
-    let codes: Vec<_> = rendered.diagnostics.iter().map(|d| &*d.code).collect();
-    assert_eq!(codes, ["pixmap-not-drawn"]);
-    let message = &rendered.diagnostics[0].message;
-    for part in ["`lines`", "`brush`", "brush.png", "COLOR"] {
-        assert!(message.contains(part), "{part}: {message}");
-    }
+    let rendered = render(&brushed, &pin_files(), &sources);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
     let image = rendered.image.unwrap();
-    assert_eq!(rgb(&image, 50, 10), BLUE, "the line's stand-in");
-    // The first style of its class, drawn as written, strokes in its OUTLINECOLOR without a
-    // COLOR, as any line does.
-    let outlined = Style {
-        outline_color: Some(Bound::Value(GREEN)),
-        width: Some(Bound::Value(3.0)),
-        ..symbol_style(1)
-    };
-    let first = map(
-        vec![pixmap("brush", "brush.png")],
-        vec![layer("lines", RenderMode::Line, vec![outlined])],
-    );
-    let rendered = render(&first, &Files::default(), &sources);
-    let codes: Vec<_> = rendered.diagnostics.iter().map(|d| &*d.code).collect();
-    assert_eq!(codes, ["pixmap-not-drawn"]);
-    let message = &rendered.diagnostics[0].message;
-    assert!(message.contains("OUTLINECOLOR"), "{message}");
-    assert_eq!(
-        rgb(&rendered.image.unwrap(), 50, 10),
-        GREEN,
-        "the outline's stand-in"
-    );
-    // A later style without a COLOR draws nothing, as any symbol of a later style without one;
-    // it warns all the same, as its image is not read.
+    for x in 20..80 {
+        let above = image.pixel(x, 42).unwrap();
+        assert_eq!((above.b, above.a), (160, 255), "above the line at {x}");
+        assert_ne!(rgb(&image, x, 58), BLUE, "below the line at {x}");
+        assert_eq!(rgb(&image, x, 30), WHITE, "past the brush at {x}");
+        assert_eq!(rgb(&image, x, 70), WHITE, "past the brush at {x}");
+    }
+    // A later style without a COLOR draws its pixmap all the same, as MapServer's shape cache
+    // draws a later style of a pixmap (src/mapdraw.c:1487-1494).
     let plain = Style {
         color: Some(Bound::Value(BLUE)),
-        width: Some(Bound::Value(3.0)),
+        width: Some(Bound::Value(1.0)),
         ..Style::default()
     };
-    let uncolored = map(
-        vec![pixmap("brush", "brush.png")],
+    let later = map(
+        vec![pixmap("brush", "pin.png")],
         vec![layer(
             "lines",
             RenderMode::Line,
             vec![plain, symbol_style(1)],
         )],
     );
-    let rendered = render(&uncolored, &Files::default(), &sources);
+    let rendered = render(&later, &pin_files(), &sources);
+    assert!(
+        rendered.diagnostics.is_empty(),
+        "{:?}",
+        rendered.diagnostics
+    );
+    let image = rendered.image.unwrap();
+    let above = image.pixel(50, 42).unwrap();
+    assert_eq!((above.b, above.a), (160, 255), "the later style's brush");
+}
+
+#[test]
+fn a_pixmap_along_a_line_without_a_gap_that_does_not_load_warns_and_draws_nothing() {
+    // Verifies: ADR-0046
+    let style = Style {
+        color: Some(Bound::Value(BLUE)),
+        width: Some(Bound::Value(3.0)),
+        ..symbol_style(1)
+    };
+    let gone = map(
+        vec![pixmap("brush", "gone.png")],
+        vec![layer("lines", RenderMode::Line, vec![style.clone(), style])],
+    );
+    let sources = [(
+        "lines",
+        r#"{"type": "LineString", "coordinates": [[10, 50], [90, 50]]}"#,
+    )];
+    let rendered = render(&gone, &pin_files(), &sources);
     let codes: Vec<_> = rendered.diagnostics.iter().map(|d| &*d.code).collect();
     assert_eq!(codes, ["pixmap-not-drawn"]);
-    assert_eq!(
-        rgb(&rendered.image.unwrap(), 50, 10),
-        BLUE,
-        "the first style alone"
+    let message = &rendered.diagnostics[0].message;
+    for part in ["`lines`", "`brush`", "gone.png", "does not load"] {
+        assert!(message.contains(part), "{part}: {message}");
+    }
+    let image = rendered.image.unwrap();
+    for y in 30..70 {
+        assert_eq!(rgb(&image, 50, y), WHITE, "nothing at {y}");
+    }
+}
+
+#[test]
+fn a_vector_symbol_s_brush_tile_past_its_bound_warns_symbol_not_drawn() {
+    // Verifies: ADR-0046, Q-9
+    // A circle of 1 × 1 at SIZE 5000, its MAXSIZE raised past MapServer's 500: a brush tile of
+    // 5000 × 5000, past 4096 a side. The line is not drawn, and the layer warns once.
+    let circle = Symbol {
+        name: Some("dot".to_owned()),
+        kind: SymbolKind::Ellipse,
+        paths: vec![vec![[1.0, 1.0]]],
+        extent: Some([1.0, 1.0]),
+        filled: true,
+        ..pixmap("dot", "unused.png")
+    };
+    let style = Style {
+        color: Some(Bound::Value(BLUE)),
+        size: Some(Bound::Value(5000.0)),
+        max_size: Some(1e6),
+        ..symbol_style(1)
+    };
+    let huge = map(
+        vec![Symbol {
+            image: None,
+            ..circle
+        }],
+        vec![layer("lines", RenderMode::Line, vec![style.clone(), style])],
     );
+    let sources = [(
+        "lines",
+        r#"{"type": "LineString", "coordinates": [[10, 50], [90, 50]]}"#,
+    )];
+    let rendered = render(&huge, &pin_files(), &sources);
+    let codes: Vec<_> = rendered.diagnostics.iter().map(|d| &*d.code).collect();
+    assert_eq!(codes, ["symbol-not-drawn"]);
+    let message = &rendered.diagnostics[0].message;
+    assert!(
+        message.contains("`dot`") && message.contains("4096"),
+        "{message}"
+    );
+    assert_eq!(rgb(&rendered.image.unwrap(), 50, 50), WHITE);
 }
 
 /// The polygon of [`tiled_map`]: from 10 to 90 in pixels, about a hole from 40 to 60.
@@ -804,7 +861,7 @@ fn a_polygon_s_pixmap_at_a_size_of_0_has_a_tile_of_a_pixel_and_draws_without_a_f
 
 #[test]
 fn a_pixmap_of_a_hatched_class_counts_in_the_clip_buffer_loaded_outside_its_scale_range() {
-    // Verifies: ADR-0028, ADR-draft-i-overlay-in-render-agg-and-geo
+    // Verifies: ADR-0042
     // msDrawShape loads every pixmap of the class before the clip, whatever its scale range: the
     // style of the 16 × 48 image never draws, yet it counts at its height: MS_NINT(48 + 1) + 2 =
     // 51 pixels around the extent, where the hatch of SIZE 10 alone would give 13.

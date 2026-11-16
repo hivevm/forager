@@ -22,8 +22,8 @@ use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::c::{atoi, int_cast};
 use forager_style_ir::{
     Bound, Class, Diagnostic, Expr, Extent, Fonts, Layer, LayerProjection, LayerStatus,
-    MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol,
-    TransformTree, Units,
+    MAX_MAP_ANGLE, MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef,
+    Span, Symbol, TransformTree, Units,
 };
 
 use crate::MAX_DEFAULT_BYTES;
@@ -50,6 +50,9 @@ mod symbol;
 
 /// The range MapServer's loader holds `RESOLUTION` and `DEFRESOLUTION` to, the style document's.
 const RESOLUTION: Range = Range::Within(MIN_RESOLUTION, MAX_RESOLUTION);
+
+/// The range MapServer's loader holds the map's `ANGLE` to, the style document's.
+const MAP_ANGLE: Range = Range::Within(-MAX_MAP_ANGLE, MAX_MAP_ANGLE);
 
 /// Keywords out of Forager's scope (specification, Non-Goals): read and discarded.
 const DISCARDED: &[&str] = &[
@@ -300,6 +303,9 @@ impl Translator<'_> {
                     "RESOLUTION" => map.resolution = self.number(d, RESOLUTION),
                     "DEFRESOLUTION" => map.def_resolution = self.number(d, RESOLUTION),
                     "UNITS" => map.units = self.choice(d, &UNITS[1..]),
+                    // loadMapInternal reads it by getDouble, within -360 to 360, and
+                    // msMapSetRotation rotates only by an angle other than 0.
+                    "ANGLE" => map.angle = self.number(d, MAP_ANGLE).filter(|&a| a != 0.0),
                     // Read with the map, before translation.
                     "SYMBOLSET" | "FONTSET" => {}
                     // Read before the layers, whose data it places.
@@ -449,9 +455,7 @@ impl Translator<'_> {
                     "SYMBOLSCALE" | "SYMBOLSCALEDENOM" => {
                         layer.symbol_scale_denom = self.number(d, Range::at_least(1.0));
                     }
-                    "PROCESSING" if inline && feature::items_value(d).is_some() => {
-                        self.string(d);
-                    }
+                    "PROCESSING" => self.processing(&mut layer, d, inline),
                     "CONNECTION" | "DATA" => {
                         if let Some(value) = self.string(d) {
                             props.insert(d.keyword.to_ascii_lowercase(), value);
@@ -782,6 +786,20 @@ impl Translator<'_> {
             class.labels.clear();
         }
         class
+    }
+
+    /// A layer's `PROCESSING`: `ITEMS` of an inline layer, read where its features are; and
+    /// `POLYLINE_NO_CLIP`, whatever its value, as msDrawLayer draws a line layer's lines
+    /// unclipped where the key is there (`src/mapdraw.c:1341-1344`). Any other is not supported.
+    fn processing(&mut self, layer: &mut Layer, d: &Directive, inline: bool) {
+        if inline && feature::items_value(d).is_some() {
+            self.string(d);
+        } else if feature::processing_value(d, "POLYLINE_NO_CLIP").is_some() {
+            self.string(d);
+            layer.unclipped_lines = true;
+        } else {
+            self.unhandled_directive(d);
+        }
     }
 
     /// A directive not carried over, unless the parser has already warned that it is unknown.

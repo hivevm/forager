@@ -1,5 +1,5 @@
 //! The browser test's WebDriver client, written on `std` and `serde_json` alone
-//! (ADR-draft-browser-test-over-webdriver): ChromeDriver started on a free port of localhost, and
+//! (ADR-0040): ChromeDriver started on a free port of localhost, and
 //! the four calls of the W3C protocol the test makes, New Session, Navigate To, Execute Script,
 //! and Delete Session. Each request is HTTP/1.1 on a connection of its own, which the client
 //! closes.

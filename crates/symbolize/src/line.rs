@@ -17,8 +17,8 @@
 
 use std::borrow::Cow;
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
-use forager_style_ir::{Bound, Style, SymbolKind};
+use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point};
+use forager_style_ir::{Bound, Style, Symbol, SymbolKind};
 
 use crate::bounds;
 use crate::canvas::Canvas;
@@ -27,6 +27,7 @@ use crate::line_marker;
 use crate::offset::{self, Offset};
 use crate::style::fixed;
 use crate::symbol::{self, Factors};
+use crate::tile::TileFor;
 
 /// One drawing of a style on a feature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,15 +117,19 @@ pub(crate) fn moved(paths: Vec<Vec<Point>>, offset: Option<Offset>) -> Vec<Vec<P
     }
 }
 
-/// The cap and the join agg2RenderLine() strokes a line of `width` with: those given for a line
-/// wider than a pixel, and for any other bevel joins and AGG's default cap, butt. (It also bevels
-/// the inner joins of such a line, which the display list does not carry; they lie within a
-/// pixel of the path.)
-pub(crate) fn line_ends(width: f64, cap: LineCap, join: LineJoin) -> (LineCap, LineJoin) {
+/// The cap, the join, and the inner join agg2RenderLine() strokes a line of `width` with: for a
+/// line wider than a pixel, the cap and the join given and AGG's default inner join, a miter; for
+/// any other, bevel joins and inner joins and AGG's default cap, butt. At a sharp turn the inner
+/// bevel covers the pixels about the vertex more than the miter does.
+pub(crate) fn line_ends(
+    width: f64,
+    cap: LineCap,
+    join: LineJoin,
+) -> (LineCap, LineJoin, InnerJoin) {
     if width > 1.0 {
-        (cap, join)
+        (cap, join, InnerJoin::Miter)
     } else {
-        (LineCap::Butt, LineJoin::Bevel)
+        (LineCap::Butt, LineJoin::Bevel, InnerJoin::Bevel)
     }
 }
 
@@ -149,8 +154,9 @@ pub(crate) fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
 /// msOutlineRenderingPrepareStyle() prepares it. A style with a vector, an ellipse, a pixmap, or a
 /// TrueType symbol and a `GAP` draws the symbol along the line instead (a TrueType symbol's
 /// glyphs through [`glyph_marker::line_glyphs`]), its markers' points taken from the
-/// canvas's budget, a pixmap without a colour and not at all where its image is refused; one whose
-/// symbol index is past the last draws nothing.
+/// canvas's budget, a pixmap without a colour and not at all where its image is refused; one with
+/// a `GAP` of 0 brushes the line with its brush tile (see [`brushed`]); one whose symbol index is
+/// past the last draws nothing.
 pub(crate) fn line_symbol<T: Clone>(
     ops: &mut Vec<DrawOp>,
     paths: Vec<Vec<Point>>,
@@ -162,16 +168,11 @@ pub(crate) fn line_symbol<T: Clone>(
     let (first, second) = (fixed(&style.color), fixed(&style.outline_color));
     let mark = symbol::mark(style, canvas.symbols);
     let gapped = gapped(style);
-    if !gapped {
-        canvas.untiled_pixmap(&mark);
-    }
     let skipped = match pass {
         Pass::Plain | Pass::Outline => false,
         Pass::PlainIfColored | Pass::OutlineIfOutlined => first.is_none(),
-        // A pixmap with a GAP of 0, which MapServer tiles along the line (src/maprendering.c:
-        // 687-707) and Forager does not, is skipped without a COLOR as any other symbol.
         Pass::PlainIfColoredOrPixmap => {
-            first.is_none() && !(gapped && matches!(mark, symbol::Mark::Pixmap(..)))
+            first.is_none() && !matches!(mark, symbol::Mark::Pixmap(..))
         }
     };
     if skipped {
@@ -179,6 +180,11 @@ pub(crate) fn line_symbol<T: Clone>(
     }
     let (width, written) = bounded_width(style, canvas.factors);
     let factor = if written != 0.0 { width / written } else { 1.0 };
+    if let Some((index, symbol)) = brush(style, canvas.symbols) {
+        let paths = moved(paths, style_offset(style, factor));
+        ops.extend(brushed(paths, style, index, symbol, canvas));
+        return;
+    }
     let initial_gap = style.initial_gap.unwrap_or(-1.0);
     if gapped
         && let symbol::Resolved::Found(index, symbol) =
@@ -235,7 +241,7 @@ pub(crate) fn line_symbol<T: Clone>(
     let Some(color) = first.or(second) else {
         return;
     };
-    let (cap, join) = line_ends(
+    let (cap, join, inner_join) = line_ends(
         width,
         style.line_cap.unwrap_or(LineCap::Round),
         style.line_join.unwrap_or(LineJoin::None),
@@ -247,6 +253,7 @@ pub(crate) fn line_symbol<T: Clone>(
         width,
         cap,
         join,
+        inner_join,
         dashes: Dashes {
             pattern: style.pattern.iter().map(|p| p * factor).collect(),
             offset: if initial_gap <= 0.0 {
@@ -257,6 +264,66 @@ pub(crate) fn line_symbol<T: Clone>(
         },
         antialiased: !style.aliased,
     });
+}
+
+/// The symbol of `style` among `symbols`, and its index from 1, where msDrawLineSymbol brushes the
+/// line with its tile: a vector, an ellipse, a pixmap, or a TrueType symbol, without a `GAP`.
+fn brush<'a, T>(style: &Style<T>, symbols: &'a [Symbol]) -> Option<(usize, &'a Symbol)> {
+    match symbol::resolve(&style.symbol, symbols) {
+        symbol::Resolved::Found(index, symbol)
+            if !gapped(style)
+                && matches!(
+                    symbol.kind,
+                    SymbolKind::Vector
+                        | SymbolKind::Ellipse
+                        | SymbolKind::Pixmap
+                        | SymbolKind::Truetype
+                ) =>
+        {
+            Some((index, symbol))
+        }
+        _ => None,
+    }
+}
+
+/// The line `paths`, in pixels already offset, of `style`, whose symbol `symbol` at `index` from 1
+/// is a vector, an ellipse, a pixmap, or a TrueType symbol, brushed with its brush tile as
+/// msDrawLineSymbol brushes a line without a `GAP`: its tile asked as a line's (see
+/// [`crate::tile::TileFor::Line`]), of computeSymbolStyle's style at the canvas's factors, never
+/// seamless, a seamless one the cache holds serving it; the paths clipped by the renderer to the
+/// image grown by the class's `clip_buf`. Nothing for a shape of no lines, for a symbol of neither
+/// colour but a pixmap, and where the image, the glyph, or the tile is refused, the canvas
+/// recording why.
+fn brushed<T: Clone>(
+    paths: Vec<Vec<Point>>,
+    style: &Style<T>,
+    index: usize,
+    symbol: &Symbol,
+    canvas: &mut Canvas,
+) -> Option<DrawOp> {
+    // msDrawLineSymbol returns at once for a shape of no lines (src/maprendering.c:612-613).
+    if paths.is_empty() {
+        return None;
+    }
+    let tile = if symbol.kind == SymbolKind::Pixmap {
+        let image = canvas.pixmap(index, symbol)?;
+        canvas.pixmap_tile(style, index, image, TileFor::Line)?
+    } else {
+        let s = symbol::symbol_style(style, symbol, canvas.factors);
+        if s.fill.is_none() && s.outline.is_none() {
+            return None;
+        }
+        if symbol.kind == SymbolKind::Truetype {
+            glyph_marker::glyph_tile(style, index, symbol, TileFor::Line, canvas)?
+        } else {
+            canvas.symbol_tile(index, symbol, &s, (false, TileFor::Line))?
+        }
+    };
+    Some(DrawOp::BrushedLine {
+        paths,
+        tile,
+        reach: canvas.hatching.line_clip_buffer,
+    })
 }
 
 /// The style of an outline pass as msOutlineRenderingPrepareStyle() prepares it: its width and

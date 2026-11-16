@@ -1,16 +1,17 @@
-//! The tile a polygon is filled with: its size within Q-9's bound, the drawing of the image that
-//! makes it, and the image, built when it is first drawn with and once only.
+//! The tile a polygon is filled with or a line is brushed with: its size within Q-9's bound, the
+//! drawing of the image that makes it, and the image, built when it is first drawn with and once
+//! only.
 
 use std::cell::OnceCell;
 
 use crate::{DrawOp, PremultipliedImage};
 
-/// A polygon fill's tile, a display item's counted reference to one image however many polygons
-/// it fills (ADR-0029): `width` by `height` pixels, transparent but for the drawings `marks` in
-/// them, drawn in turn. Whoever keeps count of the bytes of a render's images counts
-/// [`Tile::bytes`] from the moment the tile exists, so that one past the bound is refused before
-/// anything is allocated for it; the renderer builds the pixels from the marks when it first
-/// fills with the tile.
+/// A fill tile or a brush tile, a display item's counted reference to one image however many
+/// polygons it fills or lines it brushes (ADR-0029): `width` by `height` pixels, transparent but
+/// for the drawings `marks` in them, drawn in turn. Whoever keeps count of the bytes of a render's
+/// images counts [`Tile::bytes`] from the moment the tile exists, so that one past the bound is
+/// refused before anything is allocated for it; the renderer builds the pixels from the marks when
+/// it first draws with the tile.
 #[derive(Debug, PartialEq)]
 pub struct Tile {
     width: u32,
@@ -46,6 +47,13 @@ impl Tile {
     /// What the tile holds decoded once it is built, counted from its creation.
     pub fn bytes(&self) -> usize {
         self.width as usize * self.height as usize * 4
+    }
+
+    /// The bytes of the copy a renderer makes of a tile of `width` by `height` pixels to brush a
+    /// line with it, while it draws the line: AGG's `line_image_pattern` copies the tile grown by
+    /// 2 pixels on each side, its bilinear filter's dilation and 1, 4 bytes a pixel (Q-9).
+    pub fn brush_bytes(width: u32, height: u32) -> usize {
+        (width as usize + 4) * (height as usize + 4) * 4
     }
 
     /// The drawings that make the tile, in the tile's own pixels, in the order they are drawn.
@@ -87,6 +95,13 @@ mod tests {
         assert!(Tile::new(1, 4097, vec![mark()]).is_none());
         assert!(Tile::new(0, 1, vec![mark()]).is_none());
         assert!(Tile::new(1, 0, vec![mark()]).is_none());
+    }
+
+    #[test]
+    fn a_brush_copies_the_tile_grown_by_two_pixels_a_side() {
+        // Verifies: Q-9
+        assert_eq!(Tile::brush_bytes(1, 1), 5 * 5 * 4);
+        assert_eq!(Tile::brush_bytes(4096, 4096), 4100 * 4100 * 4);
     }
 
     #[test]

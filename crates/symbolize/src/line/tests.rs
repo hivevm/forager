@@ -17,7 +17,7 @@
 
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
 use forager_style_ir::{Bound, LineOffset, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use super::*;
@@ -26,6 +26,7 @@ use crate::line::Pass;
 use crate::line_marker::MarkerBudget;
 use crate::style::fixed;
 use crate::symbol::Pixmaps;
+use crate::tile::Tiles;
 
 const BLUE: Rgba = Rgba::opaque(30, 60, 200);
 const BLACK: Rgba = Rgba::opaque(0, 0, 0);
@@ -69,7 +70,8 @@ fn strokes(style: &Style, pass: Pass) -> Vec<(Rgba, f64, Dashes, Vec<Vec<Point>>
             | DrawOp::Glyphs { .. }
             | DrawOp::Pixmap { .. }
             | DrawOp::ResampledPixmap { .. }
-            | DrawOp::TiledFill { .. } => {
+            | DrawOp::TiledFill { .. }
+            | DrawOp::BrushedLine { .. } => {
                 panic!("a line is not filled")
             }
         })
@@ -204,8 +206,9 @@ fn an_outline_pass_widens_the_line_and_swaps_its_colors() {
 }
 
 #[test]
-fn a_line_no_wider_than_a_pixel_has_butt_caps_and_bevel_joins() {
-    // agg2RenderLine applies the style's cap and join only to a line wider than a pixel.
+fn a_line_no_wider_than_a_pixel_has_butt_caps_and_bevel_joins_and_inner_joins() {
+    // agg2RenderLine applies the style's cap and join only to a line wider than a pixel, and
+    // bevels the inner joins of any other; a wider line keeps AGG's default inner miter.
     let style = |width| Style {
         width: Some(Bound::Value(width)),
         line_cap: Some(LineCap::Square),
@@ -216,19 +219,31 @@ fn a_line_no_wider_than_a_pixel_has_butt_caps_and_bevel_joins() {
         let mut ops = Vec::new();
         line_symbol(&mut ops, line(), &style(width), Pass::Plain, &mut plain());
         match &ops[0] {
-            DrawOp::Stroke { cap, join, .. } => (*cap, *join),
+            DrawOp::Stroke {
+                cap,
+                join,
+                inner_join,
+                ..
+            } => (*cap, *join, *inner_join),
             DrawOp::Fill { .. }
             | DrawOp::Hatch(_)
             | DrawOp::Glyphs { .. }
             | DrawOp::Pixmap { .. }
             | DrawOp::ResampledPixmap { .. }
-            | DrawOp::TiledFill { .. } => {
+            | DrawOp::TiledFill { .. }
+            | DrawOp::BrushedLine { .. } => {
                 panic!("a line is not filled")
             }
         }
     };
-    assert_eq!(ends(1.0), (LineCap::Butt, LineJoin::Bevel));
-    assert_eq!(ends(1.5), (LineCap::Square, LineJoin::Miter));
+    assert_eq!(
+        ends(1.0),
+        (LineCap::Butt, LineJoin::Bevel, InnerJoin::Bevel)
+    );
+    assert_eq!(
+        ends(1.5),
+        (LineCap::Square, LineJoin::Miter, InnerJoin::Miter)
+    );
 }
 
 /// A filled circle, symbol 1.
@@ -466,13 +481,17 @@ fn a_pixmap_along_a_line_costs_one_point_of_the_layer_s_budget() {
 }
 
 #[test]
-fn a_later_cached_pixmap_brush_without_a_colour_draws_nothing() {
+fn a_later_cached_pixmap_brush_without_a_colour_brushes_the_line() {
+    // Verifies: ADR-0046
     // The cache's later pass draws a pixmap without a COLOR (src/mapdraw.c:1487-1494), and
-    // msDrawLineSymbol tiles one with a GAP of 0 along the line (src/maprendering.c:687-707),
-    // which Forager does not: the pass skips it, and strokes no line in the OUTLINECOLOR.
+    // msDrawLineSymbol brushes one with a GAP of 0 along the line with its tile
+    // (src/maprendering.c:687-707), not a line in the OUTLINECOLOR.
     let pixmaps = pin_pixmaps();
     let symbols = [pixmap_symbol(Some("pin.png"))];
-    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_pixmaps(&pixmaps);
+    let mut tiles = Tiles::default();
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0))
+        .with_pixmaps(&pixmaps)
+        .with_tiles(&mut tiles);
     let mut ops = Vec::new();
     let line = vec![vec![p(0.0, 50.0), p(30.0, 50.0)]];
     let brush = gapped_pin(0.0);
@@ -483,7 +502,7 @@ fn a_later_cached_pixmap_brush_without_a_colour_draws_nothing() {
         Pass::PlainIfColoredOrPixmap,
         &mut canvas,
     );
-    assert!(ops.is_empty(), "{ops:?}");
+    assert!(matches!(&ops[..], [DrawOp::BrushedLine { .. }]), "{ops:?}");
 }
 
 #[test]
@@ -496,4 +515,324 @@ fn a_pixmap_at_a_scale_of_0_draws_nothing_along_a_line_and_spends_no_budget() {
     let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(0.0, 0.0)).with_pixmaps(&pixmaps);
     assert!(pixmaps_along(&gapped_pin(10.0), Pass::Plain, &mut canvas).is_empty());
     assert!(!canvas.markers_spent());
+}
+
+/// A vector symbol of the extent 3 × 2.
+fn arrow() -> Symbol {
+    Symbol {
+        name: Some("arrow".into()),
+        kind: SymbolKind::Vector,
+        paths: vec![vec![[0.0, 1.0], [3.0, 1.0]]],
+        extent: Some([3.0, 2.0]),
+        ..circle()
+    }
+}
+
+/// A TrueType symbol, its glyph the box of [`Boxes`].
+fn truetype() -> Symbol {
+    Symbol {
+        name: Some("ttf".into()),
+        kind: SymbolKind::Truetype,
+        paths: Vec::new(),
+        extent: None,
+        character: Some("A".to_owned()),
+        font: Some("sans".to_owned()),
+        ..circle()
+    }
+}
+
+/// A port whose every glyph is a box from (1, -18) to (11, 2) y down.
+struct Boxes;
+
+impl crate::glyph::Glyphs for Boxes {
+    fn glyph(&self, _: &str, _: char, _: u32) -> Result<Rc<crate::glyph::Glyph>, String> {
+        Ok(Rc::new(crate::glyph::Glyph {
+            path: vec![forager_render::PathCommand::MoveTo(p(0.0, 0.0))],
+            min_x: 1.0,
+            min_y: -18.0,
+            max_x: 11.0,
+            max_y: 2.0,
+            missing: false,
+        }))
+    }
+}
+
+/// The symbols of the brush tests: 1 an arrow, 2 an ellipse, 3 a pixmap of the 4 × 3 `pin.png`,
+/// 4 a TrueType symbol, 5 a hatch, 6 an SVG symbol, 7 a simple symbol.
+fn brushes() -> Vec<Symbol> {
+    let kind = |kind| Symbol { kind, ..circle() };
+    vec![
+        arrow(),
+        circle(),
+        pixmap_symbol(Some("pin.png")),
+        truetype(),
+        kind(SymbolKind::Hatch),
+        kind(SymbolKind::Svg),
+        kind(SymbolKind::Simple),
+    ]
+}
+
+/// A style of symbol `index`, without a `GAP`, at `SIZE` `size`, in blue.
+fn brush(index: u32, size: f64) -> Style {
+    Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(index))),
+        size: Some(Bound::Value(size)),
+        ..colored(Some(BLUE), None)
+    }
+}
+
+/// The operations of `style` on (0, 50), (30, 50) on a canvas of the brush tests' symbols with
+/// `tiles`, and what it left undrawn.
+fn brushed(style: &Style, tiles: &mut Tiles) -> (Vec<DrawOp>, crate::canvas::Refusals) {
+    let symbols = brushes();
+    let pixmaps = pin_pixmaps();
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0))
+        .with_pixmaps(&pixmaps)
+        .with_tiles(tiles)
+        .with_glyphs(&Boxes);
+    canvas.class(std::slice::from_ref(style));
+    let mut ops = Vec::new();
+    let line = vec![vec![p(0.0, 50.0), p(30.0, 50.0)]];
+    line_symbol(&mut ops, line, style, Pass::Plain, &mut canvas);
+    (ops, canvas.take_refusals())
+}
+
+/// The width and height of the tile of the one brushed line among `ops`.
+fn brush_tile(ops: &[DrawOp]) -> (u32, u32) {
+    match ops {
+        [DrawOp::BrushedLine { tile, .. }] => (tile.width(), tile.height()),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_vector_ellipse_pixmap_or_truetype_symbol_without_a_gap_brushes_the_line() {
+    // Verifies: ADR-0046
+    for index in 1..=4 {
+        let style = Style {
+            offset: Some([Bound::Value(0.0), Bound::Value(2.0)]),
+            ..brush(index, 6.0)
+        };
+        let (ops, refused) = brushed(&style, &mut Tiles::default());
+        assert_eq!(
+            refused,
+            crate::canvas::Refusals::default(),
+            "symbol {index}"
+        );
+        match &ops[..] {
+            [DrawOp::BrushedLine { paths, reach, .. }] => {
+                // Moved by the offset, and clipped by the renderer at the class's clip_buf: the
+                // SIZE 6 plus 1.
+                assert_eq!(
+                    paths,
+                    &[vec![p(0.0, 52.0), p(30.0, 52.0)]],
+                    "symbol {index}"
+                );
+                assert_eq!(*reach, 7.0, "symbol {index}");
+            }
+            other => panic!("symbol {index}: {other:?}"),
+        }
+    }
+    // A hatch, an SVG symbol, a simple symbol, and symbol 0 keep their line in the COLOR.
+    for index in [5, 6, 7, 0] {
+        let (ops, _) = brushed(&brush(index, 6.0), &mut Tiles::default());
+        assert!(
+            matches!(&ops[..], [DrawOp::Stroke { .. }]),
+            "{index}: {ops:?}"
+        );
+    }
+    // A GAP places the symbol instead.
+    let gapped = Style {
+        gap: Some(-20.0),
+        ..brush(1, 6.0)
+    };
+    let (ops, _) = brushed(&gapped, &mut Tiles::default());
+    assert!(
+        !ops.iter()
+            .any(|op| matches!(op, DrawOp::BrushedLine { .. }))
+    );
+}
+
+#[test]
+fn a_brush_tile_s_sides_are_ms_draw_line_symbol_s() {
+    // Verifies: ADR-0046
+    let size = |index, size| brush_tile(&brushed(&brush(index, size), &mut Tiles::default()).0);
+    // The arrow's 3 × 2 at SIZE 10, a scale of 10 / 2: MS_NINT(15) by MS_NINT(10).
+    assert_eq!(size(1, 10.0), (15, 10));
+    // At SIZE 5, a scale of 2.5: MS_NINT(7.5) and MS_NINT(5), half to even 8 by 5.
+    assert_eq!(size(1, 5.0), (8, 5));
+    // The pixmap's 4 × 3 at SIZE 6, a scale of 2: 8 by 6; the TrueType symbol's 1 × 1 at SIZE
+    // 9.5, MS_NINT(9.5) a side, 10.
+    assert_eq!(size(3, 6.0), (8, 6));
+    assert_eq!(size(4, 9.5), (10, 10));
+    // At a scale of 1 the extent truncated: 3.7 × 2 at SIZE 2 is 3 by 2.
+    let symbols_at_1 = Symbol {
+        extent: Some([3.7, 2.0]),
+        ..arrow()
+    };
+    let symbols = [symbols_at_1];
+    let mut tiles = Tiles::default();
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
+    let mut ops = Vec::new();
+    line_symbol(&mut ops, line(), &brush(1, 2.0), Pass::Plain, &mut canvas);
+    assert_eq!(brush_tile(&ops), (3, 2));
+}
+
+#[test]
+fn a_polygon_s_cached_seamless_tile_serves_a_line_of_the_same_key() {
+    // Verifies: ADR-0046
+    // searchTileCache compares no seamless mode: the arrow's seamless fill tile at SIZE 10,
+    // 15 × 10, serves the line's brush of the same symbol, size, scale, rotation, and colours.
+    let symbols = brushes();
+    let mut tiles = Tiles::default();
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
+    let view = unit_view();
+    let style = brush(1, 10.0);
+    let mut ops = Vec::new();
+    let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
+    assert!(crate::shade::shade(
+        &mut ops,
+        ring,
+        &style,
+        &view,
+        &mut canvas
+    ));
+    line_symbol(&mut ops, line(), &style, Pass::Plain, &mut canvas);
+    match &ops[..] {
+        [
+            DrawOp::TiledFill { tile: fill, .. },
+            DrawOp::BrushedLine { tile: line, .. },
+        ] => {
+            assert!(Rc::ptr_eq(fill, line));
+            // Nine arrows, of getTile's seamless mode.
+            assert_eq!(line.marks().len(), 9);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_brush_tile_past_4096_pixels_a_side_draws_nothing_and_says_why() {
+    // Verifies: ADR-0046, Q-9
+    // MAXSIZE lets the SIZE past MapServer's default bound of 500.
+    let huge = |index, size| Style {
+        max_size: Some(1e6),
+        ..brush(index, size)
+    };
+    for index in [1, 2, 4] {
+        let (ops, refused) = brushed(&huge(index, 8194.0), &mut Tiles::default());
+        assert!(ops.is_empty(), "{index}: {ops:?}");
+        let why = &refused.symbols[&(index as usize)].1;
+        assert!(
+            why.contains("past the limit of 4096 × 4096"),
+            "{index}: {why}"
+        );
+    }
+    // The pixmap's 4 × 3 at SIZE 6000: 8000 × 6000.
+    let (ops, refused) = brushed(&huge(3, 6000.0), &mut Tiles::default());
+    assert!(ops.is_empty(), "{ops:?}");
+    assert!(refused.pixmaps[&3].1.contains("8000 × 6000"), "{refused:?}");
+}
+
+#[test]
+fn a_brush_tile_whose_copy_would_pass_256_mib_draws_nothing_and_says_why() {
+    // Verifies: ADR-0046, Q-9
+    // The arrow at SIZE 200: a tile of 300 × 200, 240,000 bytes, and the brush's copy of
+    // 304 × 204 × 4 = 248,064 more. With 300,000 bytes left the polygon's fill tile fits, and
+    // the line's brush of the same tile does not, built new or found held.
+    let left = 300_000;
+    for held in [false, true] {
+        let mut tiles = Tiles::default();
+        tiles.count_images(crate::tile::MAX_DECODED_IMAGE_BYTES - left);
+        if held {
+            let symbols = brushes();
+            let mut canvas =
+                Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
+            let mut ops = Vec::new();
+            let view = unit_view();
+            let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
+            let fill = Style {
+                gap: Some(0.0),
+                ..brush(1, 200.0)
+            };
+            crate::shade::shade(&mut ops, ring, &fill, &view, &mut canvas);
+            assert!(matches!(&ops[..], [DrawOp::TiledFill { .. }]), "{ops:?}");
+        }
+        let (ops, refused) = brushed(&brush(1, 200.0), &mut tiles);
+        assert!(ops.is_empty(), "{ops:?}");
+        let why = &refused.symbols[&1].1;
+        assert!(why.contains("300 × 200 pixels and the copy"), "{why}");
+    }
+    // A pixmap's says so of the pixmap: the 4 × 3 at SIZE 300, 400 × 300, 480,000 bytes, with
+    // 500,000 left and its copy of 404 × 304 × 4.
+    let mut tiles = Tiles::default();
+    tiles.count_images(crate::tile::MAX_DECODED_IMAGE_BYTES - 500_000);
+    let (ops, refused) = brushed(&brush(3, 300.0), &mut tiles);
+    assert!(ops.is_empty(), "{ops:?}");
+    assert!(
+        refused.pixmaps[&3].1.contains("and the copy"),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_brush_whose_image_or_glyph_is_not_found_draws_nothing_and_says_why() {
+    // Verifies: ADR-0046
+    let symbols = [pixmap_symbol(Some("gone.png")), truetype()];
+    let mut tiles = Tiles::default();
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
+    let mut ops = Vec::new();
+    line_symbol(&mut ops, line(), &brush(1, 6.0), Pass::Plain, &mut canvas);
+    line_symbol(&mut ops, line(), &brush(2, 6.0), Pass::Plain, &mut canvas);
+    assert!(ops.is_empty(), "{ops:?}");
+    let refused = canvas.take_refusals();
+    assert!(refused.pixmaps[&1].1.contains("gone.png"), "{refused:?}");
+    assert!(refused.symbols[&2].1.contains("no fonts"), "{refused:?}");
+}
+
+/// The view of 101 × 101 pixels over 0..100.
+fn unit_view() -> crate::extent::View {
+    crate::extent::View::for_image(
+        forager_style_ir::Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 100.0,
+            max_y: 100.0,
+        },
+        101,
+        101,
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_polygon_s_vector_symbol_without_a_color_brushes_its_outline() {
+    // Verifies: ADR-0046
+    // msDrawShadeSymbol hands a polygon of a symbol other than a pixmap, without a COLOR and with
+    // an OUTLINECOLOR, to msDrawLineSymbol in the same style, which brushes it with the tile
+    // without a GAP; the ring is a line that ends on its first point.
+    let symbols = brushes();
+    let mut tiles = Tiles::default();
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
+    let style = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(1))),
+        size: Some(Bound::Value(10.0)),
+        ..colored(None, Some(BLACK))
+    };
+    let mut ops = Vec::new();
+    let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
+    assert!(crate::shade::shade(
+        &mut ops,
+        ring,
+        &style,
+        &unit_view(),
+        &mut canvas
+    ));
+    match &ops[..] {
+        [DrawOp::BrushedLine { paths, tile, .. }] => {
+            assert_eq!(paths[0].len(), 4);
+            assert_eq!((tile.width(), tile.height()), (15, 10));
+        }
+        other => panic!("{other:?}"),
+    }
 }

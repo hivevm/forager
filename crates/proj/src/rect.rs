@@ -76,7 +76,8 @@ impl Reprojection {
     /// `msProjectRect` detects polar stereographic through `from`'s own longitude and latitude; it
     /// tests the north pole for either sign.
     fn polar_into_projected(&self) -> bool {
-        if self.from_geographic || self.to_geographic || self.from.is_geographic() {
+        if self.rotated() || self.from_geographic || self.to_geographic || self.from.is_geographic()
+        {
             return false;
         }
         let to_long_lat = Reprojection::new(self.from.clone(), self.from.base_geographic());
@@ -103,9 +104,9 @@ impl Reprojection {
 
     /// The sign of the pole at the origin of a projected `from`, as `msProjectRect` detects polar
     /// stereographic, where `to` is longitude and latitude: `Some(1.0)` for the north, `Some(-1.0)`
-    /// for the south.
+    /// for the south. Neither test runs where a side holds a geotransform.
     fn polar_into_longitude_and_latitude(&self) -> Option<f64> {
-        if self.from_geographic || !self.to_geographic {
+        if self.rotated() || self.from_geographic || !self.to_geographic {
             return None;
         }
         self.pole_at_origin()
@@ -158,7 +159,11 @@ impl Reprojection {
             return self.grid(rect, dx, dy);
         }
         let mut bounds = bounds(&line)?;
-        if self.to_geographic && !self.from_geographic && bounds.max_x - bounds.min_x > 360.0 {
+        if self.to_geographic
+            && !self.from_geographic
+            && bounds.max_x - bounds.min_x > 360.0
+            && self.to_gt.is_none()
+        {
             bounds.min_x = -180.0;
             bounds.max_x = 180.0;
         }

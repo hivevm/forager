@@ -1,7 +1,7 @@
 //! A TrueType symbol: its glyph read from the render's fonts through the port the symbolizer asks,
 //! drawn as MapServer's drawGlyphMarker draws it at a point, anchored, along a line, and tiled over
 //! a polygon, and what is reported where the font or the character is missing or the fill's tile
-//! is refused (ADR-draft-truetype-marker-glyph-through-a-port).
+//! is refused (ADR-0044).
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -138,7 +138,7 @@ fn a_truetype_symbol_draws_its_glyph_centred_on_its_point() {
 
 #[test]
 fn a_character_the_font_lacks_draws_glyph_0_and_warns() {
-    // Verifies: ADR-draft-truetype-marker-glyph-through-a-port
+    // Verifies: ADR-0044
     let rendered = render(&map("sans", "☃"));
     assert_eq!(codes(&rendered), ["symbol-glyph-missing"]);
     let message = &rendered.diagnostics[0].message;
@@ -153,7 +153,7 @@ fn a_character_the_font_lacks_draws_glyph_0_and_warns() {
 
 #[test]
 fn a_font_the_font_set_lacks_draws_nothing_and_warns() {
-    // Verifies: ADR-draft-truetype-marker-glyph-through-a-port
+    // Verifies: ADR-0044
     let rendered = render(&map("serif", "A"));
     assert_eq!(codes(&rendered), ["symbol-not-drawn"]);
     let message = &rendered.diagnostics[0].message;

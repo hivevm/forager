@@ -417,7 +417,7 @@
           "const": "labelcenter"
         },
         {
-          "description": "An expression of shape functions, its transform tree (ADR-0036),\nwhich the engine does not draw on a class's style: a class's style of it in a line or a\npolygon layer draws nothing and is reported, its class's other styles drawn as before; a\npoint layer draws the style at its points, as it draws every style whatever its\ntransform; a label of a style of it is left out.",
+          "description": "An expression of shape functions, its transform tree\n(ADR-0048), which a class's style of a line or a\npolygon layer draws: the tree is evaluated on the shape in pixels, `[map_cellsize]` at the\nlayer's value, and a line result is stroked, a point or a polygon result shaded, in the\nstyle. A tree `not_drawn`, one that fails on a shape, or one past the bounds the layer's\ntransforms share draws nothing there and is reported. A point layer draws the style at its\npoints, as it draws every style whatever its transform; a label of a style of it is left\nout.",
           "type": "object",
           "properties": {
             "expression": {
@@ -812,7 +812,7 @@
           ]
         },
         "geom_transform": {
-          "description": "The layer's `GEOMTRANSFORM`, its transform tree (ADR-0036), which\nreplaces the shape of each feature that passes the layer's filter before it is classed and\ndrawn, as MapServer transforms each shape it reads. Absent, there is none.",
+          "description": "The layer's `GEOMTRANSFORM`, its transform tree (ADR-0048), which\nreplaces the shape of each feature that passes the layer's filter before it is classed and\ndrawn, as MapServer transforms each shape it reads. Absent, there is none.",
           "anyOf": [
             {
               "$ref": "#/$defs/TransformTree"
@@ -937,6 +937,10 @@
             "null"
           ],
           "format": "double"
+        },
+        "unclipped_lines": {
+          "description": "Whether a line layer draws its lines as they are where they leave the map's extent,\nMapServer's `PROCESSING \"POLYLINE_NO_CLIP\"`. Otherwise each line is cut to the image grown\nby the widest style of its class before it is drawn, and its dashes and symbols count from\nwhere the cut begins it. Absent, it is false.",
+          "type": "boolean"
         }
       }
     },
@@ -1016,6 +1020,16 @@
       "description": "A map: its image, its extent, and its layers in drawing order.",
       "type": "object",
       "properties": {
+        "angle": {
+          "description": "The angle the map is drawn rotated by, in degrees, MapServer's `ANGLE`: the image's x axis\npoints that many degrees counterclockwise of the map's, so its content turns clockwise.\nEvery layer with a projection reaches the image through the map's geotransform. Absent,\nor 0, the map is not rotated. A reader drops a value outside -360 to 360 with a warning, as\nMapServer's loader refuses one. Added in format version 1.1.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "maximum": 360.0,
+          "minimum": -360.0
+        },
         "def_resolution": {
           "description": "The resolution the map's pixel lengths are written for, in dpi; MapServer's default is 72.\nEvery length in pixels is drawn scaled by `resolution` over this. A reader drops a value\noutside 10 to 1000 with a warning, as MapServer's loader refuses one.",
           "type": [
@@ -1159,10 +1173,8 @@
         {
           "type": "string",
           "enum": [
-            "buffer",
             "centerline",
             "difference",
-            "simplifypt",
             "javascript",
             "length",
             "area",
@@ -2105,7 +2117,9 @@
               "enum": [
                 "generalize",
                 "densify",
-                "simplify"
+                "simplify",
+                "simplifypt",
+                "buffer"
               ]
             }
           },

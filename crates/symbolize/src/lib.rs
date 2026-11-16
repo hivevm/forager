@@ -4,19 +4,19 @@
 //! cache orders it, and reports what a layer left undrawn.
 //!
 //! Its modules import one another in one direction only: `draw` imports `canvas`, `extent`,
-//! `geom_transform`, `hatch`, `line`, `marker`, `shade`, and `symbol`; `label` imports `canvas`,
-//! `extent`, `marker`, `shade`, and `symbol`; `circle` imports `canvas`, `extent`, `shade`, and
-//! `symbol`; `shade` imports `bounds`, `canvas`, `extent`, `glyph_marker`, `hatch`, `line`,
-//! `style`, `symbol`, and `tile`; `marker` imports `bounds`,
+//! `geom_transform`, `hatch`, `layer_transform`, `line`, `marker`, `shade`, and `symbol`; `label`
+//! imports `canvas`, `extent`, `marker`, `shade`, and `symbol`; `circle` imports `canvas`,
+//! `extent`, `shade`, and `symbol`; `shade` imports `bounds`, `canvas`, `extent`, `glyph_marker`,
+//! `hatch`, `line`, `style`, `symbol`, and `tile`; `marker` imports `bounds`,
 //! `canvas`, `glyph_marker`, `line`, `line_marker`, `style`, and `symbol`; `line` imports
 //! `bounds`, `canvas`, `glyph_marker`, `line_marker`, `offset`, `style`, and `symbol`;
 //! `glyph_marker` imports `canvas`, `glyph`, `line_marker`, `style`, `symbol`, and `tile`;
-//! `canvas` imports `glyph`, `hatch`, `line_marker`, `symbol`, and `tile`; `hatch` imports
-//! `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile` import `bounds` and
-//! `symbol`; `symbol` imports `bounds`, `glyph`, and `style`; `geom_transform` imports `extent`;
-//! `layer_transform` imports `geometry`; `bounds`, `extent`, `geometry`, `glyph`, `offset`, and
-//! `style` import none. The test `symbolize_modules.rs` of `crates/arch-test` holds that
-//! direction, its tests aside, by a table in this order.
+//! `canvas` imports `glyph`, `hatch`, `layer_transform`, `line_marker`, `symbol`, and `tile`;
+//! `hatch` imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile` import
+//! `bounds` and `symbol`; `symbol` imports `bounds`, `glyph`, and `style`; `geom_transform`
+//! imports `extent`; `layer_transform` imports `geometry`; `bounds`, `extent`, `geometry`,
+//! `glyph`, `offset`, and `style` import none. The test `symbolize_modules.rs` of
+//! `crates/arch-test` holds that direction, its tests aside, by a table in this order.
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
@@ -54,7 +54,7 @@ pub use crate::label::{
     label_style_refused,
 };
 pub use crate::layer_transform::{
-    Budget, MAX_ADDED_POINTS, MAX_TRANSFORM_VISITS, Undrawn, transformed,
+    Budget, MAX_ADDED_POINTS, MAX_TRANSFORM_VISITS, StyleTrees, Undrawn, transformed,
 };
 pub use crate::line::{Pass, outlined};
 pub use crate::line_marker::MAX_MARKER_POINTS;

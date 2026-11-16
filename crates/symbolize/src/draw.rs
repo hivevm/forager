@@ -17,12 +17,15 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use forager_render::{DrawOp, Point};
-use forager_style_ir::{Bound, Coord, GeomTransform, Geometry, RenderMode, Style, Symbol};
+use forager_style_ir::{
+    Bound, Coord, GeomTransform, Geometry, RenderMode, Style, Symbol, TransformShape, TransformTree,
+};
 
 use crate::canvas::Canvas;
 use crate::extent::View;
 use crate::geom_transform;
 use crate::hatch;
+use crate::layer_transform::Kind;
 use crate::line::{Pass, gapped, line_symbol, open_rings};
 use crate::marker::{marker_ops, marker_price, of_symbol_zero};
 use crate::shade::shade;
@@ -67,10 +70,16 @@ pub fn marked_pixmap<'a>(
 
 /// The image paths of the pixmap symbols that msDrawShape counts in the clip buffer of a class's
 /// `styles` at their images' heights, having loaded them whatever their scale range
-/// (`src/mapdraw.c:2466-2490`): those of a class with a hatch, the one style the clip buffer
-/// reaches here (see [`hatch::Hatching::for_class`]).
-pub fn clip_pixmaps<'a>(styles: &[Style], symbols: &'a [Symbol]) -> Vec<&'a str> {
-    if !styles.iter().any(|style| symbol::is_hatch(style, symbols)) {
+/// (`src/mapdraw.c:2466-2490`), in a layer drawn in `mode`: those of any class of a line layer,
+/// whose lines the buffer clips, and those of a polygon layer's class with a hatch, the one
+/// polygon style the clip buffer reaches here (see [`hatch::Hatching::for_class`]).
+pub fn clip_pixmaps<'a>(mode: RenderMode, styles: &[Style], symbols: &'a [Symbol]) -> Vec<&'a str> {
+    let clipped = match mode {
+        RenderMode::Line => true,
+        RenderMode::Polygon => styles.iter().any(|style| symbol::is_hatch(style, symbols)),
+        _ => false,
+    };
+    if !clipped {
         return Vec::new();
     }
     styles
@@ -95,14 +104,8 @@ pub fn draw_ops(
     // The shape in pixels as msTransformShape gives it in the AGG renderer's mode, which
     // msImageStartLayer keeps for a layer without APPROXIMATION_SCALE (`src/mapdraw.c:4201-4224`):
     // msTransformShapeSimplify, its lines or its rings as the shape is a line or a polygon,
-    // whatever the layer, a part it leaves without points dropped.
-    let lines = |parts: &[Vec<Coord>]| -> Vec<Vec<Point>> {
-        parts
-            .iter()
-            .map(|l| view.line_to_pixels(l))
-            .filter(|l| !l.is_empty())
-            .collect()
-    };
+    // whatever the layer, a part it leaves without points dropped; a line clipped first (see
+    // [`clipped_lines`]).
     let rings = |parts: &[Vec<Coord>]| -> Vec<Vec<Point>> {
         parts
             .iter()
@@ -149,11 +152,12 @@ pub fn draw_ops(
             }
         }
         (RenderMode::Line, Geometry::LineString(points)) => {
-            let paths = lines(std::slice::from_ref(points));
+            let paths = clipped_lines(std::slice::from_ref(points), view, canvas);
             line_symbol(&mut ops, paths, style, pass, canvas);
         }
         (RenderMode::Line, Geometry::MultiLineString(parts)) => {
-            line_symbol(&mut ops, lines(parts), style, pass, canvas);
+            let paths = clipped_lines(parts, view, canvas);
+            line_symbol(&mut ops, paths, style, pass, canvas);
         }
         (RenderMode::Line, Geometry::Polygon(parts)) => {
             line_symbol(&mut ops, open_rings(rings(parts)), style, pass, canvas);
@@ -165,6 +169,18 @@ pub fn draw_ops(
         _ => {}
     }
     ops
+}
+
+/// A line shape's `parts` in pixels, clipped first as msDrawShape clips a line before it draws it
+/// (see [`hatch::line_paths`]), unless the canvas's layer leaves its lines unclipped.
+fn clipped_lines(parts: &[Vec<Coord>], view: &View, canvas: &Canvas) -> Vec<Vec<Point>> {
+    hatch::line_paths(
+        parts,
+        view,
+        canvas.image(),
+        &canvas.hatching,
+        canvas.clip_lines,
+    )
 }
 
 /// The markers a point layer draws of `style` at each vertex of `geometry` inside the map's
@@ -210,15 +226,18 @@ pub fn point_markers(
 pub fn vertices(geometry: &Geometry) -> Vec<Coord> {
     match geometry {
         Geometry::Point(c) => vec![*c],
-        Geometry::MultiPoint(cs) | Geometry::LineString(cs) => cs.clone(),
-        Geometry::MultiLineString(lines) | Geometry::Polygon(lines) => lines.concat(),
+        Geometry::LineString(cs) => cs.clone(),
+        Geometry::MultiPoint(lines)
+        | Geometry::MultiLineString(lines)
+        | Geometry::Polygon(lines) => lines.concat(),
         Geometry::MultiPolygon(polygons) => polygons.iter().flatten().flatten().copied().collect(),
         Geometry::Collection(geometries) => geometries.iter().flat_map(vertices).collect(),
     }
 }
 
 /// A style with a `GEOMTRANSFORM` on a shape of a line or a polygon layer, as
-/// msDrawTransformedShape draws it: with `bbox`, a polygon (see [`bbox`]); otherwise its symbol at
+/// msDrawTransformedShape draws it: with an expression, the shape its tree computes (see
+/// [`expression`]); with `bbox`, a polygon (see [`bbox`]); otherwise its symbol at
 /// each point the transform places, turned there where the style's angle is `AUTO` and the
 /// transform gives one; nothing for a style without a symbol or with symbol 0, as
 /// msDrawMarkerSymbol draws none. The outline pass of a line layer's
@@ -237,8 +256,11 @@ fn transformed(
     let Some(transform) = &style.geom_transform else {
         return;
     };
-    // An expression the engine does not draw draws nothing; the engine reports it.
-    if matches!(transform, GeomTransform::Expression(_)) {
+    if let GeomTransform::Expression(tree) = transform {
+        // A tree the engine does not draw draws nothing; the engine reports it.
+        if let TransformTree::Drawn(shape) = tree {
+            expression(ops, geometry, shape, style, pass, view, canvas);
+        }
         return;
     }
     if *transform == GeomTransform::Bbox {
@@ -277,6 +299,109 @@ fn transformed(
                 marker_ops(ops, at, turned, canvas);
             }
             _ => marker_ops(ops, at, style, canvas),
+        }
+    }
+}
+
+/// A style of the transform tree `shape` on `geometry`, a shape of a line or a polygon layer, as
+/// msDrawTransformedShape draws it (`src/mapgeomtransform.c:198-240`,
+/// ADR-0048): the tree evaluated on the unclipped shape
+/// in pixels (see [`in_pixels`]), as msDrawShape hands it on; a line result drawn as
+/// msDrawLineSymbol draws it, a point or a polygon result as msDrawShadeSymbol draws it, a hatch
+/// refused counted (Q-9), each with the style the pass prepares. A shape left without a point in
+/// pixels draws nothing and is not evaluated, as msDrawShape returns before it draws a style of a
+/// shape msTransformShapeSimplify empties (`src/mapdraw.c:2506-2507`, `2577-2580`). The
+/// evaluation charges the layer's budget of the canvas's style trees, which keeps its failure for
+/// the engine to report; one past a bound of Q-9, or failed, draws nothing, and so does a canvas
+/// without style trees.
+fn expression(
+    ops: &mut Vec<DrawOp>,
+    geometry: &Geometry,
+    shape: &TransformShape,
+    style: &Style,
+    pass: Pass,
+    view: &View,
+    canvas: &mut Canvas,
+) {
+    let in_pixels = in_pixels(geometry, view);
+    if vertices(&in_pixels).is_empty() {
+        return;
+    }
+    let Some(style_trees) = canvas.style_trees.as_mut() else {
+        return;
+    };
+    let Some((kind, parts)) = style_trees.evaluated(shape, &in_pixels) else {
+        return;
+    };
+    let points = |part: Vec<Coord>| -> Vec<Point> {
+        part.into_iter().map(|c| Point { x: c.x, y: c.y }).collect()
+    };
+    match kind {
+        Kind::Line => {
+            // A part of fewer than 2 points strokes nothing in the AGG renderer.
+            let paths = parts
+                .into_iter()
+                .filter(|part| part.len() >= 2)
+                .map(points)
+                .collect();
+            line_symbol(ops, paths, style, pass, canvas);
+        }
+        Kind::Point | Kind::Polygon => {
+            // msDrawShadeSymbol draws nothing of a shape without parts.
+            let rings: Vec<Vec<Point>> = parts
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .map(points)
+                .collect();
+            if rings.is_empty() {
+                return;
+            }
+            let drawn = shade(ops, rings, &pass.style(style, canvas), view, canvas);
+            canvas.hatching.refused += usize::from(!drawn);
+        }
+    }
+}
+
+/// `geometry` in pixels, its coordinates pixels, as msDrawShape transforms a shape of a line or a
+/// polygon layer before it hands it to msDrawTransformedShape: each line by
+/// [`View::line_to_pixels`], each ring by [`View::ring_to_pixels`], a multipolygon's rings listed
+/// flat as MapServer's polygon holds them. A part the simplification leaves without points is
+/// kept empty, as msTransformShapeSimplify keeps it with no points
+/// (`src/mapprimitive.cpp:968-969`, `996-997`). A collection, no shape of MapServer's, is kept a
+/// collection, which the evaluation refuses.
+fn in_pixels(geometry: &Geometry, view: &View) -> Geometry {
+    let coord = |p: Point| Coord { x: p.x, y: p.y };
+    let coords = |points: Vec<Point>| -> Vec<Coord> { points.into_iter().map(coord).collect() };
+    let lines = |parts: &[Vec<Coord>]| -> Vec<Vec<Coord>> {
+        parts
+            .iter()
+            .map(|l| coords(view.line_to_pixels(l)))
+            .collect()
+    };
+    let rings = |parts: &[Vec<Coord>]| -> Vec<Vec<Coord>> {
+        parts
+            .iter()
+            .map(|r| coords(view.ring_to_pixels(r)))
+            .collect()
+    };
+    match geometry {
+        Geometry::Point(c) => Geometry::Point(coord(view.point_to_pixel(*c))),
+        Geometry::MultiPoint(parts) => Geometry::MultiPoint(
+            parts
+                .iter()
+                .map(|part| {
+                    part.iter()
+                        .map(|&c| coord(view.point_to_pixel(c)))
+                        .collect()
+                })
+                .collect(),
+        ),
+        Geometry::LineString(line) => Geometry::MultiLineString(lines(std::slice::from_ref(line))),
+        Geometry::MultiLineString(parts) => Geometry::MultiLineString(lines(parts)),
+        Geometry::Polygon(parts) => Geometry::Polygon(rings(parts)),
+        Geometry::MultiPolygon(polygons) => Geometry::Polygon(rings(&polygons.concat())),
+        Geometry::Collection(geometries) => {
+            Geometry::Collection(geometries.iter().map(|g| in_pixels(g, view)).collect())
         }
     }
 }

@@ -344,6 +344,22 @@ fn the_image_colour_keeps_its_alpha_and_takes_every_channel_as_a_byte() {
 }
 
 #[test]
+fn the_maps_angle_loads_within_360_and_none_for_0() {
+    // Verifies: G-3, ADR-0045
+    let angle = |text: &'static str| load_files(&[("m.map", text)]).document.unwrap().map.angle;
+    assert_eq!(angle("MAP ANGLE 30 END"), Some(30.0));
+    assert_eq!(angle("MAP ANGLE -315 END"), Some(-315.0));
+    assert_eq!(angle("MAP ANGLE 360 END"), Some(360.0));
+    assert_eq!(angle("MAP ANGLE 0 END"), None);
+    assert_eq!(angle("MAP END"), None);
+    // getDouble with MS_NUM_CHECK_RANGE: loadMapInternal fails the map.
+    for text in ["MAP ANGLE 360.5 END", "MAP ANGLE [rot] END"] {
+        let loaded = load_files(&[("m.map", text)]);
+        assert_eq!(codes(&loaded), ["invalid-value"], "{text}");
+    }
+}
+
+#[test]
 fn an_include_without_a_string_keeps_the_next_token() {
     let loaded = load_files(&[("m.map", "MAP INCLUDE END")]);
     assert_eq!(codes(&loaded), ["invalid-value"]);
@@ -691,8 +707,8 @@ fn every_expression_reads_back_equal_from_yaml_and_json() {
     )]);
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     let document = loaded.document.unwrap();
-    let yaml = document.to_yaml().unwrap();
-    let json = document.to_json().unwrap();
+    let yaml = document.to_yaml();
+    let json = document.to_json();
     assert_eq!(
         forager_style_ir::StyleDocument::from_yaml(&yaml)
             .unwrap()
@@ -1231,8 +1247,8 @@ fn scale_ranges_load_on_layers_classes_labels_and_styles() {
         (style.size.clone(), style.min_size, style.max_size),
         (Some(Bound::Value(10.0)), Some(4.0), Some(20.0))
     );
-    let yaml = document.to_yaml().unwrap();
-    let json = document.to_json().unwrap();
+    let yaml = document.to_yaml();
+    let json = document.to_json();
     assert_eq!(
         forager_style_ir::StyleDocument::from_yaml(&yaml)
             .unwrap()
@@ -1458,7 +1474,8 @@ fn an_init_file_tag_that_is_no_code_is_skipped_as_proj_skips_it() {
 #[test]
 fn the_translations_warnings_past_the_limit_are_counted() {
     // Verifies: Q-9
-    let lines = "  ANGLE 0\n".repeat(super::MAX_DIAGNOSTICS + 500);
+    // Each IMAGETYPE read warns that the output format is read only in part.
+    let lines = "  IMAGETYPE png\n".repeat(super::MAX_DIAGNOSTICS + 500);
     let text: &'static str = Box::leak(format!("MAP\n{lines}END\n").into_boxed_str());
     let loaded = load_files(&[("m.map", text)]);
     assert_eq!(loaded.diagnostics.len(), super::MAX_DIAGNOSTICS + 1);
@@ -1470,7 +1487,8 @@ fn the_translations_warnings_past_the_limit_are_counted() {
 #[test]
 fn an_error_past_the_limit_still_fails_the_load() {
     // Verifies: Q-9
-    let lines = "  ANGLE 0\n".repeat(super::MAX_DIAGNOSTICS + 500);
+    // Each IMAGETYPE read warns that the output format is read only in part.
+    let lines = "  IMAGETYPE png\n".repeat(super::MAX_DIAGNOSTICS + 500);
     let text = format!("MAP\n{lines}  PROJECTION 'init=epsg:4326' END\nEND\n");
     let text: &'static str = Box::leak(text.into_boxed_str());
     let loaded = load_files(&[("m.map", text)]);
@@ -1748,9 +1766,9 @@ fn a_circle_layer_draws_in_the_render_mode_circle_and_round_trips() {
     let layer = &document.map.layers[0];
     assert_eq!(layer.render_mode, Some(RenderMode::Circle));
     assert_eq!(layer.features[0].shape_type, ShapeType::Point);
-    let yaml = document.to_yaml().unwrap();
+    let yaml = document.to_yaml();
     assert!(yaml.contains("render_mode: circle"), "{yaml}");
-    let json = document.to_json().unwrap();
+    let json = document.to_json();
     let from_yaml = forager_style_ir::StyleDocument::from_yaml(&yaml).unwrap();
     let from_json = forager_style_ir::StyleDocument::from_json(&json).unwrap();
     assert_eq!(from_yaml.document, document);
@@ -1978,7 +1996,7 @@ fn a_maxfeatures_of_zero_is_an_error() {
 
 #[test]
 fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
-    // Verifies: ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: ADR-0048
     // loadLayer reads GEOMTRANSFORM by getSymbol(1, MS_EXPRESSION): an expression alone.
     let layer_transform = |text: &'static str| {
         let loaded = load_files(&[("m.map", text)]);
@@ -2021,7 +2039,7 @@ fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
 
 #[test]
 fn a_geomtransform_past_the_nesting_bound_fails_the_load() {
-    // Verifies: Q-9, ADR-0036, ADR-draft-transform-tree-with-simplify-and-buffer
+    // Verifies: Q-9, ADR-0048
     let chain = vec!["1"; 26].join(" + ");
     for place in [
         format!("MAP LAYER NAME 'a' GEOMTRANSFORM (densify([shape], {chain})) END END"),
