@@ -1,4 +1,4 @@
-# Clauses of ADR-0041, ADR-0042, and ADR-0048 that the fidelity plan has spent
+# Clauses of ADR-0017, ADR-0041, ADR-0042, and ADR-0048 that are spent or stale
 
 **Observed:** the design revision of 2026-11-16. Three clauses of accepted ADRs bound only the
 order of the fidelity plan's work, or state one rule twice:
@@ -9,10 +9,15 @@ order of the fidelity plan's work, or state one rule twice:
 - ADR-0041 *Dependency* and ADR-0042 *The dependency* both state that `symbolize` alone among the
   workspace's crates depends on geo. A change to the rule has two places to change.
 
+ADR-0017's *The helpers* lists the ports of `crates/style-ir/src/c.rs` by name, but not all of
+them: `ms_compute_bounds`, `ms_get_symbol_index`, and the opacity's alpha (7d09373f, noted by the
+revision of 2026-11-15), and `point_in_polygon` (ticket revision-2026-11-16/11). Its general
+clause, one port in `c` that every crate calls, covers them; the list is the stale part.
+
 ADR-0041, ADR-0047, and ADR-0048 decide one thing between them: the transform tree's nodes and the
 geometry code that computes them.
 
-**Where:** `docs/adr/0041-geometry-through-geo.md`,
+**Where:** `docs/adr/0017-c-ports-in-style-ir.md`, `docs/adr/0041-geometry-through-geo.md`,
 `docs/adr/0042-i-overlay-in-render-agg-and-geo.md`, `docs/adr/0047-simplifypt-ported-from-jts.md`,
 `docs/adr/0048-transform-tree-with-simplifypt.md`.
 
