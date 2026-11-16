@@ -21,16 +21,16 @@ at the pin, line 6733). Three msautotest cases in scope draw a rotated map: `mis
    from that grown extent, and then calls `msMapComputeGeotransform` (`:236`). With
    `res_x = (maxx - minx) / (width - 1)`, `res_y` alike, `θ = angle * MS_PI / 180`, and the
    extent's centre `(cx, cy)`, `msMapComputeGeotransformEx` (`src/mapobject.c:381`) sets
-   `gt = [cx - w/2·gt1 - h/2·gt2, cos θ·res_x, sin θ·res_y, cy - w/2·gt4 - h/2·gt5, sin θ·res_x,
-   -cos θ·res_y]` and its inverse by `InvGeoTransform` (`src/mapresample.c:45`). The image's
-   width and height, not width - 1 and height - 1, centre it (bug 1916's comment).
+   `gt = [cx - w/2·gt1 - h/2·gt2, cos θ·res_x, sin θ·res_y, cy - w/2·gt4 - h/2·gt5,
+   sin θ·res_x, -cos θ·res_y]` and its inverse by `InvGeoTransform` (`src/mapresample.c:45`). The
+   image's width and height, not width - 1 and height - 1, centre it (bug 1916's comment).
 3. `msMapSetFakedExtent` (`src/mapobject.c:465`, called at `src/mapdraw.c:240`) replaces the map's
    extent by `0, 0, width, height` and its cellsize by 1. It copies the geotransform onto the
    map's projection, flipped so that y runs up, and marks every layer to reproject.
 4. `msProjectionsDiffer` (`src/mapproject.c:2149`) returns false where either projection has no
    parameters, then true where their numbers of arguments differ, then true where either holds a
-   geotransform. So on a rotated map every layer with a
-   projection is reprojected, the map's own projection among them (`src/mapdraw.c:848`).
+   geotransform. So on a rotated map every layer with a projection is reprojected, the map's own
+   projection among them (`src/mapdraw.c:848`).
 5. `msProjectPointEx` (`src/mapproject.c:876`) applies the input side's geotransform, then PROJ,
    then the output side's inverse geotransform. A feature goes from the layer into the map's
    faked extent: PROJ, then the inverse geotransform. The area asked goes the other way.
@@ -85,11 +85,13 @@ ADR-0037 does not name:
   (`reproject::for_layer` returns none where the strings do not `differ`);
 - a frame after the reprojection that is the image's, not the map's coordinates.
 
-[ADR-0039](0039-declared-projection.md) is not changed. A layer of `AUTO` whose source declares a
-projection, or none, has parameters and is reprojected as any other. A map of `AUTO` with a layer
-of `AUTO` holds the one argument `AUTO` on both sides, and MapServer applies only the
-geotransform there (*Context*, 6). A source that declares
-`NoProjection` leaves the layer without parameters (see *Without a projection* below).
+[ADR-0039](0039-declared-projection.md) is not changed. MapServer replaces a layer's `AUTO` by
+the projection its source declares when it opens the layer (`src/mapogr.cpp:3914-3919`), as
+ADR-0039 does. Such a layer has parameters and is reprojected as any other. A layer of `AUTO`
+whose source declares no projection, or one that cannot be read, keeps `AUTO`. Under a map of
+`AUTO` it holds the one argument `AUTO` on both sides, and MapServer applies only the geotransform
+there (*Context*, 6). A source that declares `NoProjection` leaves the layer without parameters
+(see *Without a projection* below).
 
 The style IR has no field for the map's angle. The map's angle enters it as an optional field, an
 addition [ADR-0014](0014-style-document-versions.md)'s version rule allows. The maintainer keeps
@@ -104,7 +106,12 @@ the frame after it.
 - **The geotransform.** `proj` must compute it as `msMapComputeGeotransformEx` computes it from the
   grown extent, the image's size, and the angle. `proj` must flip it as `msMapSetFakedExtent`
   does, and invert it as `InvGeoTransform` does. `proj` must take the angle in radians as
-  `angle * π / 180`, multiplied before it is divided, with `sin` and `cos` from `libm`.
+  `angle * π / 180`, multiplied before it is divided, with `sin` and `cos` from `libm`. The
+  engine must hand `proj` the grown extent, the image's size, and the angle, and nothing computed
+  from them. The geotransform is computed in `proj`, beside where it is applied. Its flip, its
+  inverse, and the tests that read its terms (*Context*, 9) all depend on one convention of its six
+  numbers. One module then holds that convention, and a unit test of `proj` checks it against the
+  C's numbers.
 - **The reprojection.** On a rotated map, `proj`'s reprojection must hold the geotransform on the
   map's side. It must move a feature's point by the PROJ step, then by the inverse geotransform.
   For the area asked, it must sample the faked extent `0, 0, width, height` as
@@ -115,8 +122,9 @@ the frame after it.
   `gt.need_geotransform`.
 - **Which layers.** On a rotated map, the engine must reproject every layer where both the layer and
   the map have parameters. That includes a layer whose proj4 string does not differ from the
-  map's, and a layer of `AUTO` under a map of `AUTO`. For such a layer, `proj` must run no formula
-  in the PROJ step.
+  map's. It also includes a layer of `AUTO` whose source declares no projection, or one that
+  cannot be read, under a map of `AUTO`. For such a layer, `proj` must run no formula in the PROJ
+  step.
 - **Without a projection.** The engine must not reproject a layer where it or the map has no
   parameters, as `msProjectionsDiffer` decides. The engine must draw that layer's features in the
   faked extent as the source delivers them. The engine must ask its source for the faked extent
@@ -159,9 +167,13 @@ the frame after it.
   degrees. MapServer runs no PROJ at all for those shapes (*Context*, 6).
 - **A layer without a projection rotated anyway.** The engine would apply the geotransform to it,
   and ask its source for the rotated view. The output would be what a user expects. MapServer
-  draws such a layer in the wrong place, and no case in scope decides it. Not chosen without the
-  maintainer: G-6 holds the engine to MapServer's output. The warning departs from MapServer,
-  which is silent; it tells the user why the layer lands where it does.
+  draws such a layer in the wrong place, and no case in scope decides it. The maintainer chose
+  MapServer's output, since G-6 holds the engine to it, with a warning. The warning departs from
+  MapServer, which is silent; it tells the user why the layer lands where it does.
+- **The geotransform computed in the engine**, handed to `proj` as six numbers. The engine holds
+  the grown extent, the image's size, and the angle already. Not chosen: `proj` would trust six
+  numbers it did not compute, in a convention it applies, flips, inverts, and tests term by term.
+  The convention would live in two crates.
 - **A successor of ADR-0037.** ADR-0037's decision stands unchanged. The rotation adds a MapServer
   port beside `rect.rs` and `shape.rs`, which ADR-0037 already keeps out of its scope. A new
   decision leaves ADR-0037 in force.
@@ -214,8 +226,9 @@ the frame after it.
 - A unit test of `crates/proj` cites this ADR with `Verifies:`. It holds:
   - the map's and the flipped geotransform for `misc/rot_out.map`, as *Context* lists them;
   - the area asked for its faked extent, with no formula in the PROJ step;
-  - the polar branches of the area asked skipped, and the dateline wrap measured without the
-    geotransform, where the map holds one.
+  - the polar branches of the area asked skipped where the map holds a geotransform;
+  - the dateline wrap measured without the geotransform where the map is rotated by other than a
+    multiple of 180°.
 - An engine test with sources in memory cites this ADR. It holds:
   - the area asked of a source on a rotated map;
   - the pixel of a point of a layer in the map's projection, taken from the C's formulas;
