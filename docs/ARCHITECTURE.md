@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-15, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-16, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0005](adr/0005-feature-layer.md)).
@@ -228,7 +228,11 @@ golden path and the test pattern an agent copies from are named here.
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
-  holds beneath each label, and a `labelpoint` style's marker, by them. It turns every drawing
+  holds beneath each label, and a `labelpoint` style's marker, by them. It answers the glyph port
+  of a TrueType marker: it loads the fonts the render's TrueType symbols name before the layer is
+  drawn, into the store the labels' fonts use, and reads each glyph through `label` once per render
+  by its font, character, and size (`marker_glyphs.rs`,
+  [ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md)). It turns every drawing
   operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It is the
   one core crate that awaits the ports. Its modules import one another in one direction only,
   `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `classes.rs`, `fonts.rs` and
