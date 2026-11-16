@@ -124,14 +124,15 @@ We will brush a line style's line with its symbol's tile where the style's `GAP`
   segment, less that segment's length:
   - AGG's start at a vertex is the sum of the lengths of every segment of the whole line before
     it, drawn or cut away;
-  - the segments are those AGG's vertex filter keeps, which drops each vertex 384 subpixels or
-    closer to the vertex kept before it;
+  - the segments are those AGG's vertex filter keeps: it drops each vertex 384 subpixels or closer
+    to the vertex kept before it, and at the line's end it drops the vertex before the last
+    instead;
   - the piece's first segment is the first one the same filter keeps over the piece;
   - a length is `lp.len`, the rounded distance in subpixels between vertices `line_coord_sat`
     gives.
 
   A piece that lies on one segment cut at both ends must take AGG's start at that segment's first
-  vertex.
+  vertex, plus the length from that vertex to the piece's first vertex.
 - **No panic** (Q-3). `render-agg` must keep the start within `i32`:
   - a wrapper of agg-rust's `OutlineAaRenderer` trait must reduce it by whole widths of the tile
     after each segment;
@@ -234,8 +235,8 @@ Tests cite this ADR with `Verifies:`:
   2.4's `pixel_high_res` with its rounding term;
 - a test in `crates/render-agg` that a line within the operation's reach is left whole by the
   clip;
-- a test in `crates/render-agg` that a line that leaves the image and comes back draws the pixels
-  of the whole line on the image, away from the segments cut;
+- a test in `crates/render-agg` of a line that leaves the image and comes back: it draws the
+  pixels of the whole line on the image, away from the segments cut;
 - a test in `crates/render-agg` that a path whose length passes `i32` in the start draws without
   a panic;
 - a test map of `crates/cli/tests/` drawn natively and on wasm32 alike (G-9), with a line of each
