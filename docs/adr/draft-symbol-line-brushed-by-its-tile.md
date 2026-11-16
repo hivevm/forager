@@ -29,8 +29,8 @@ is 0, is drawn by Forager as a plain line in the style's `COLOR`. A pixmap there
   every segment and part (`m_start`), each segment moving it by its length in subpixels.
 - `msDrawShape` clips a line before it draws it, to the image grown by the class's `clip_buf`
   (`src/mapdraw.c`, 2463-2558): the largest size or width of the class's styles, scaled, plus 1.
-  A layer with `PROCESSING "POLYLINE_NO_CLIP"` is not clipped,
-  and AGG saturates its coordinates instead. Forager's `symbolize` reproduces the clip.
+  A layer with `PROCESSING "POLYLINE_NO_CLIP"` is not clipped, and AGG saturates its coordinates
+  instead. Forager's `symbolize` reproduces the clip.
 
 Two accepted ADRs leave this open. [ADR-0026](0026-agg-blender-and-resampler.md) names "a line
 patterned with an image (`agg2RenderLineTiled`)" out of its scope as "a decision of its own".
@@ -119,22 +119,32 @@ We will brush a line style's line with its symbol's tile where the style's `GAP`
 - **The clip.** `render-agg` must clip the line through `clip.rs`
   ([ADR-0027](0027-clip-to-the-image.md)). The image is grown by the reach the operation carries:
   the class's `clip_buf`. A line `symbolize` clipped is then left whole.
-- **The start across a cut.** Where `clip.rs` cuts a line, `render-agg` must give each piece the
-  start AGG reaches at the piece's first whole segment. All lengths are `uround(lp.len)` between
-  vertices that `line_coord_sat` gives:
-  - the whole segments cut away before the piece count with their lengths;
-  - a segment cut at the piece's start counts with its whole length less its kept fragment's;
-  - the fragment then adds its own length, as the renderer adds it, so that every later segment
-    starts where AGG starts it.
-- **No panic** (Q-3). `render-agg` must keep the start within `i32`. A wrapper of agg-rust's
-  `OutlineAaRenderer` trait must reduce it by whole widths of the tile after each segment, which
-  moves no pixel.
+- **The start across a cut.** Where `clip.rs` cuts a line, `render-agg` must set each piece's
+  start before it draws the piece. The start is AGG's start at the end of the piece's first
+  segment, less that segment's length:
+  - AGG's start at a vertex is the sum of the lengths of every segment of the whole line before
+    it, drawn or cut away;
+  - the segments are those AGG's vertex filter keeps, which drops each vertex 384 subpixels or
+    closer to the vertex kept before it;
+  - the piece's first segment is the first one the same filter keeps over the piece;
+  - a length is `lp.len`, the rounded distance in subpixels between vertices `line_coord_sat`
+    gives.
+
+  A piece that lies on one segment cut at both ends must take AGG's start at that segment's first
+  vertex.
+- **No panic** (Q-3). `render-agg` must keep the start within `i32`:
+  - a wrapper of agg-rust's `OutlineAaRenderer` trait must reduce it by whole widths of the tile
+    after each segment;
+  - `render-agg` must reduce a piece's start by whole widths of the tile before it sets it.
+
+  Neither reduction moves a pixel.
 
 **Out of scope:**
 
 - the residual differences of agg-rust from AGG 2.4 that the Context names: `divide`, and `iround`
   on a half;
 - the pixels of a segment `clip.rs` cuts, whose new end is rounded to the clip's edge;
+- the start of a piece whose first segment ends on a vertex AGG's filter drops over the whole line;
 - a line style with a `GAP` other than 0, which places markers;
 - a hatch or an SVG symbol along a line;
 - a label's or a legend's line;
@@ -224,8 +234,8 @@ Tests cite this ADR with `Verifies:`:
   2.4's `pixel_high_res` with its rounding term;
 - a test in `crates/render-agg` that a line within the operation's reach is left whole by the
   clip;
-- a test in `crates/render-agg` that a line cut by the clip draws the pixels of the whole line on
-  the image, away from the segment cut;
+- a test in `crates/render-agg` that a line that leaves the image and comes back draws the pixels
+  of the whole line on the image, away from the segments cut;
 - a test in `crates/render-agg` that a path whose length passes `i32` in the start draws without
   a panic;
 - a test map of `crates/cli/tests/` drawn natively and on wasm32 alike (G-9), with a line of each
