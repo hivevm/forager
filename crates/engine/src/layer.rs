@@ -13,17 +13,19 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! What the crate's root and its modules share of a layer drawn, below them all: the layer's
-//! name, and a text, as a diagnostic quotes them, the reports of what the layer left undrawn, its
-//! opacity, the points of a feature in view, a feature drawn in its class's styles, an angle
-//! turned by the map's, and the display items of a feature's drawing operations.
+//! What the crate's root and its modules share of a layer drawn and of the map's rotation, below
+//! them all: the layer's name, and a text, as a diagnostic quotes them, the reports of what the
+//! layer left undrawn, its opacity, the points of a feature in view, a feature drawn in its
+//! class's styles, the display items of a feature's drawing operations, and the map's rotation,
+//! the frame its layers are drawn in, which turns a style's or a label's angle by the map's.
 
 use std::borrow::Cow;
 
 use forager_ports::{Feature, Geometry};
+use forager_proj::Geotransform;
 use forager_render::{DisplayItem, Draw, DrawOp, Point};
 use forager_style_ir::c::int_cast;
-use forager_style_ir::{Diagnostic, Layer, Style};
+use forager_style_ir::{Bound, Diagnostic, Extent, Layer, Map, RenderMode, Style};
 use forager_symbolize::{Refusals, View, vertices};
 
 /// The points of `geometry` inside the map's extent, in pixels, in order: where
@@ -85,17 +87,6 @@ pub(crate) fn draw_items<R: Draw>(
     }
 }
 
-/// `angle`, a style's or a label's in degrees, turned by `map_angle`, the map's `ANGLE`, as
-/// pointLayerDrawShape turns a point layer's (`src/mapdraw.c:2048-2060`): an angle that is not 0
-/// less the map's, and 0 as it is, so that a symbol of angle 0 stays upright on the image. Any
-/// angle where the map is not rotated.
-pub(crate) fn turned_by_map(angle: f64, map_angle: Option<f64>) -> f64 {
-    match map_angle {
-        Some(map_angle) if angle != 0.0 => angle - map_angle,
-        _ => angle,
-    }
-}
-
 /// A feature drawn: it, the place of its class, and its styles bound to it.
 pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
 
@@ -135,4 +126,110 @@ pub(crate) fn quoted(text: &str) -> String {
         let head: String = text.chars().take(QUOTED_CHARACTERS).collect();
         format!("`{head}\u{2026}` ({count} characters)")
     }
+}
+
+/// The rotation of a map by its `angle`: its frame, geotransform, and geo cellsize, as ADR-0045
+/// decides them, and the turn of a style's or a label's angle by the map's, which ADR-0045 leaves
+/// out of its scope and pointLayerDrawShape, lineLayerDrawShape, and polygonLayerDrawShape give.
+pub(crate) struct Rotation {
+    /// The view everything after the reprojection is drawn in: on a rotated map, the frame of its
+    /// image, `0, 0, width, height` at a cellsize of 1, as msMapSetFakedExtent fakes it.
+    pub(crate) frame: View,
+    /// The map's geotransform, held on the map's side of every reprojection; none unrotated.
+    pub(crate) geotransform: Option<Geotransform>,
+    /// The cellsize the scale factor of a size in units other than pixels divides by.
+    pub(crate) geo_cellsize: f64,
+    /// The map's `ANGLE` in degrees, which turns the angles of styles and labels; none unrotated.
+    angle: Option<f64>,
+}
+
+impl Rotation {
+    /// The rotation of `map` in `view`, its image of `size`: none for an angle of 0 or none, as
+    /// msMapSetRotation sets none; `None`, with an error, where the angle gives no geotransform.
+    pub(crate) fn of(
+        map: &Map,
+        view: &View,
+        size: (u32, u32),
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<Self> {
+        let Some(angle) = map.angle.filter(|&angle| angle != 0.0) else {
+            return Some(Self::unrotated(*view));
+        };
+        let (width, height) = size;
+        let Some(geotransform) = Geotransform::rotated_map(&view.extent, width, height, angle)
+        else {
+            let message = format!("the map's EXTENT, SIZE, and ANGLE {angle} give no geotransform");
+            diagnostics.push(Diagnostic::error("view-invalid", message, map.span.clone()));
+            return None;
+        };
+        Some(Self {
+            frame: View {
+                extent: Extent {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: f64::from(width),
+                    max_y: f64::from(height),
+                },
+                cellsize: 1.0,
+            },
+            geotransform: Some(geotransform),
+            geo_cellsize: geo_cellsize(&view.extent, width, height),
+            angle: Some(angle),
+        })
+    }
+
+    /// No rotation, everything drawn in `view`.
+    pub(crate) fn unrotated(view: View) -> Self {
+        Self {
+            frame: view,
+            geotransform: None,
+            geo_cellsize: view.cellsize,
+            angle: None,
+        }
+    }
+
+    /// `angle`, a style's or a label's in degrees, turned by the map's, as pointLayerDrawShape
+    /// turns a point layer's (`src/mapdraw.c:2048-2060`): an angle that is not 0 less the map's,
+    /// and 0 as it is, so that a symbol of angle 0 stays upright on the image. Any angle where
+    /// the map is not rotated.
+    fn turned(&self, angle: f64) -> f64 {
+        match self.angle {
+            Some(map_angle) if angle != 0.0 => angle - map_angle,
+            _ => angle,
+        }
+    }
+
+    /// `style`, a point layer's, with its angle turned by the map's (see [`Rotation::turned`]).
+    pub(crate) fn turned_style<'s>(&self, style: &'s Style) -> Cow<'s, Style> {
+        match style.angle {
+            Some(Bound::Value(angle)) if self.angle.is_some() && angle != 0.0 => {
+                let mut style = style.clone();
+                style.angle = Some(Bound::Value(self.turned(angle)));
+                Cow::Owned(style)
+            }
+            _ => Cow::Borrowed(style),
+        }
+    }
+
+    /// The angle `angle` of a label of a layer drawn in `mode` is drawn and tested at, in
+    /// degrees: turned by the map's (see [`Rotation::turned`]) in a point, line, or polygon
+    /// layer, as pointLayerDrawShape, lineLayerDrawShape, and polygonLayerDrawShape turn it
+    /// (`src/mapdraw.c:2050-2054, 2226-2227, 2324-2326`). The last two never turn it back, so
+    /// that MapServer turns a label once more with each shape; each label here is turned once,
+    /// as a point layer's is.
+    pub(crate) fn turned_label(&self, mode: Option<RenderMode>, angle: f64) -> f64 {
+        match mode {
+            Some(RenderMode::Point | RenderMode::Line | RenderMode::Polygon) => self.turned(angle),
+            _ => angle,
+        }
+    }
+}
+
+/// msGetGeoCellSize (`src/mapdraw.c:43`) of a rotated map, its `extent` the real one grown to an
+/// image of `width` × `height` pixels: the diagonal of the extent's cell over width and height,
+/// over the square root of 2. An unrotated map's is its cellsize.
+fn geo_cellsize(extent: &Extent, width: u32, height: u32) -> f64 {
+    let cellsize_x = (extent.max_x - extent.min_x) / f64::from(width);
+    let cellsize_y = (extent.max_y - extent.min_y) / f64::from(height);
+    (cellsize_x * cellsize_x + cellsize_y * cellsize_y).sqrt() / 2.0_f64.sqrt()
 }

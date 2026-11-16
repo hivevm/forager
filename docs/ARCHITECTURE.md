@@ -239,7 +239,8 @@ golden path and the test pattern an agent copies from are named here.
   `images.rs`, and `bind.rs`, `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`,
   `marker_glyphs.rs`, `plan.rs`, `reproject.rs`, and `resource.rs` the leaves, and none takes an
   item of the crate's root, as `lib.rs` lists them:
-  what the root and the modules share of a layer drawn lies in `layer.rs`, and the address of a
+  what the root and the modules share of a layer drawn and of the map's rotation lies in
+  `layer.rs`, and the address of a
   label and the growth of the label cache's lists, which the labels and their styles share, in
   `label_cache.rs`; `arch-test`'s `tests/engine_modules.rs` holds this direction.
   Every host binds its sources to the layers by name through the engine's `bind_sources`

@@ -28,8 +28,8 @@ use forager_style_ir::c::{
     atof, atoi, c_str, ms_get_symbol_index, ms_nint, ms_string_split, opacity_alpha,
 };
 use forager_style_ir::{
-    Bound, Diagnostic, Expr, Extent, Layer, Map, RenderMode, Rgba, Span, Style, Symbol,
-    TransformShape, Units,
+    Bound, Diagnostic, Expr, Layer, Map, RenderMode, Rgba, Span, Style, Symbol, TransformShape,
+    Units,
 };
 
 use crate::bindable::{self, Field, Written};
@@ -520,15 +520,6 @@ pub(crate) fn scales(map: &Map, view: &View, geo_cellsize: f64, width: u32) -> (
         })
         .collect();
     (scale_denom, factors)
-}
-
-/// msGetGeoCellSize (`src/mapdraw.c:43`) of a rotated map, its `extent` the real one grown to an
-/// image of `width` × `height` pixels: the diagonal of the extent's cell over width and height,
-/// over the square root of 2. An unrotated map's is its cellsize.
-pub(crate) fn rotated_geo_cellsize(extent: &Extent, width: u32, height: u32) -> f64 {
-    let cellsize_x = (extent.max_x - extent.min_x) / f64::from(width);
-    let cellsize_y = (extent.max_y - extent.min_y) / f64::from(height);
-    (cellsize_x * cellsize_x + cellsize_y * cellsize_y).sqrt() / 2.0_f64.sqrt()
 }
 
 /// msPrepareImage's scale factor of `layer`, at msGetGeoCellSize's `cellsize`, scale `scale_denom`, and
