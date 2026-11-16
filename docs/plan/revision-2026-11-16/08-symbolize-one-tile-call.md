@@ -32,5 +32,5 @@ a `refactor`.
 
 ## Mode
 
-unattended: the existing tests decide it, it stays in one crate, and a wrong result costs one
-revert. Stop if a Q-9 test has to change.
+with the human: it moves the tile cache's refusals under Q-9's bounds on tiles and brushes,
+and ADR-0006 keeps the resource limits from unattended work.

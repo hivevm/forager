@@ -20,8 +20,8 @@ placements share that function, and none tests the kind before it matches the `M
 
 ## Acceptance criteria
 
-- [ ] Given the tree, when `grep -n "SymbolKind::Truetype" crates/symbolize/src` runs, then it
-  finds only `Mark`'s resolution, not `marker.rs`, `line.rs`, or `shade.rs`.
+- [ ] Given `marker.rs`, `line.rs`, and `shade.rs`, when they are read, then none tests
+  `SymbolKind::Truetype` before it matches a `Mark`, and `shade.rs` resolves the symbol once.
 - [ ] Given `draw_pixmap`, when clippy runs, then it needs no `too_many_arguments`.
 - [ ] Given `cargo test --workspace` and the msautotest harness with G-9's comparison, when they
   run, then all pass unchanged.
@@ -38,5 +38,5 @@ placements share that function, and none tests the kind before it matches the `M
 
 ## Mode
 
-unattended: the existing tests and the harness decide it, it stays in one crate, and a wrong
-result costs one revert. Stop if a reference image moves.
+with the human: it moves how each mark is priced against the marker budget (Q-9,
+`MAX_MARKER_POINTS`), and ADR-0006 keeps the resource limits from unattended work.

@@ -40,5 +40,5 @@ images, tiles, and brushes are counted where they are counted now. This is a `re
 
 ## Mode
 
-unattended: the existing tests decide it, it stays in one crate, and a wrong result costs one
-revert. Stop if a Q-9 test has to change.
+with the human: it moves the code that holds Q-9's bounds on files, images, and tiles
+(`resource.rs`, `images.rs`), and ADR-0006 keeps the resource limits from unattended work.

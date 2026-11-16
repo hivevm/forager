@@ -43,5 +43,5 @@ the circle layer's reprojection. This is a `refactor`.
 
 ## Mode
 
-unattended: the existing tests decide it, it stays in one crate, and a wrong result costs one
-revert. Stop if a test has to change.
+with the human: it moves `reproject_features_within`, which holds Q-9's bound on the horizon
+points (`MAX_HORIZON_POINTS`), and ADR-0006 keeps the resource limits from unattended work.

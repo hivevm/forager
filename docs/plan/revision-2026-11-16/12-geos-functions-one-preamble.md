@@ -37,5 +37,5 @@ which place the computations there. The messages do not change. This is a `refac
 
 ## Mode
 
-unattended: the existing tests decide it, it stays in one crate, and a wrong result costs one
-revert. Stop if a test has to change.
+with the human: `built` charges the transform's budget of points (Q-9), and ADR-0006 keeps the
+resource limits from unattended work.

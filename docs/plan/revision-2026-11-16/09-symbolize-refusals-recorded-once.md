@@ -16,7 +16,8 @@ three times, `circle.rs`, and `label.rs`.
 `shade` records its own refused hatch. `Refusals`, the value that `layer.rs` of the engine turns
 into the layer's diagnostics, takes in the spent markers and the trees past their limit. The engine
 reads it with one call per layer. The diagnostics and their order do not change. This is a
-`refactor`.
+`refactor`. The unit tests that read `shade`'s returned `bool` (`shade/tests.rs`, `line/tests.rs`,
+`draw/tests.rs`) read the canvas's count instead, and change only in that.
 
 ## Acceptance criteria
 
@@ -39,5 +40,5 @@ reads it with one call per layer. The diagnostics and their order do not change.
 
 ## Mode
 
-unattended: the tests of the diagnostics decide it, and a wrong result costs one revert. Stop if
-a diagnostic's code, text, or order has to change.
+with the human: it moves the reports of the marker budget and of the transform trees' limit
+(Q-9), and ADR-0006 keeps the resource limits from unattended work.

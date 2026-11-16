@@ -17,8 +17,10 @@ is a `refactor` of the IR's Rust types, not of the style document (ADR-0006, ADR
 
 ## Acceptance criteria
 
-- [ ] Given the tree, when `grep -rn '"simplifypt"' crates/*/src` runs, then it finds the one
-  table.
+- [ ] Given the library code of `crates/style-ir/src/transform.rs`,
+  `crates/mapfile/src/expression/transform.rs`, and `crates/symbolize/src/layer_transform.rs`,
+  when it is searched for `"simplifypt"`, then it is found once, in the table. MapServer's list
+  of function names in `crates/mapfile/src/expression.rs` and the JSON of the tests stay.
 - [ ] Given the schema test of the style document, the frontend's tests of `GEOMTRANSFORM`, and
   `cargo test --workspace`, when they run, then all pass unchanged and the schema file is not in
   the diff.

@@ -36,4 +36,5 @@ the hatch. This is a `refactor`.
 ## Mode
 
 unattended: the existing tests decide it, it stays in one crate, and a wrong result costs one
-revert. Stop if a test has to change.
+revert. The tests that build a `Hatching` change only in how they build the clip's buffers
+(`hatch/tests.rs`). Stop if any other test has to change.

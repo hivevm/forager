@@ -21,8 +21,8 @@ changes.
 
 ## Acceptance criteria
 
-- [ ] Given the tree, when `grep -n "map.angle\|map_angle" crates/engine/src` runs, then only
-  `Rotation::of` reads the map's angle.
+- [ ] Given the tree, when `grep -n "map\.angle" crates/engine/src` runs, then it finds only
+  `Rotation::of`, and `Drawing` holds no `map_angle`.
 - [ ] Given `crates/engine/tests/map_angle.rs` and the msautotest cases of `ANGLE`, when
   `cargo test --workspace` runs, then all pass unchanged and no reference image is re-blessed.
 - [ ] Given the commit, when `scripts/sensor-refactor-tests.sh` runs, then it lists no test the
