@@ -58,8 +58,10 @@ target of `ticket/revision-2026-11-16/01-render-fuzz-fidelity-paths` (head 8c2bf
   pass unchanged.
 - [ ] Given a mapfile with a TrueType symbol at a point and `OUTLINEWIDTH 1e12`, when the engine
   renders it, then it returns an image and no panic.
-- [ ] Given a mapfile with a label of `OUTLINEWIDTH 1e12`, when the engine renders it, then it
-  returns an image and no panic.
+- [ ] Given a mapfile with a label of `OUTLINEWIDTH 1e9`, when the engine renders it, then it
+  returns an image and no panic. The width fits an `int` after `MS_NINT`
+  (`crates/engine/src/labels.rs`), so it reaches the bound; `1e12` wraps negative there, as in
+  MapServer, and would pass without the fix.
 - [ ] Given ticket 01's branch rebased onto this change, when the crash input above is run by
   `cargo fuzz run render`, then it does not panic.
 
