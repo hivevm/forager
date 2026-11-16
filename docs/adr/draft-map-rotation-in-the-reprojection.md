@@ -135,7 +135,10 @@ the frame after it.
 - **The scale.** The engine must compute the scale denominator from the grown real extent. It must
   compute the scale factor of a size in units other than pixels from `msGetGeoCellSize`'s
   cellsize.
-- **No rotation.** The engine must draw a map of `ANGLE 0`, or of none, exactly as before.
+- **No rotation.** The rotation must leave a map of `ANGLE 0`, or of none, drawn as it would be
+  without the rotation's code: no geotransform, no reprojection it adds, and no change of frame,
+  scale, or angle. A change outside the rotation, such as a clip MapServer makes on every map,
+  may still change such a map, and answers for itself.
 
 **Out of scope:**
 
