@@ -1,7 +1,8 @@
 # Clauses of ADR-0017, ADR-0041, ADR-0042, and ADR-0048 that are spent or stale
 
-**Observed:** the design revision of 2026-11-16. Three clauses of accepted ADRs bound only the
-order of the fidelity plan's work, or state one rule twice:
+**Observed:** the design revision of 2026-11-16, and ticket revision-2026-11-16/11. Clauses of
+accepted ADRs that bound only the order of the fidelity plan's work, state one rule twice, or list
+what has since grown. Three of them came from the fidelity plan:
 
 - ADR-0041 *Precondition*: it must not be accepted before ADR-0042. Both are accepted.
 - ADR-0048 *Order of landing*: each of `simplify`, `buffer`, and `simplifypt` enters the tree in
