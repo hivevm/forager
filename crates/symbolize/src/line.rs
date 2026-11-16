@@ -17,7 +17,7 @@
 
 use std::borrow::Cow;
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point};
+use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point};
 use forager_style_ir::{Bound, Style, SymbolKind};
 
 use crate::bounds;
@@ -116,15 +116,19 @@ pub(crate) fn moved(paths: Vec<Vec<Point>>, offset: Option<Offset>) -> Vec<Vec<P
     }
 }
 
-/// The cap and the join agg2RenderLine() strokes a line of `width` with: those given for a line
-/// wider than a pixel, and for any other bevel joins and AGG's default cap, butt. (It also bevels
-/// the inner joins of such a line, which the display list does not carry; they lie within a
-/// pixel of the path.)
-pub(crate) fn line_ends(width: f64, cap: LineCap, join: LineJoin) -> (LineCap, LineJoin) {
+/// The cap, the join, and the inner join agg2RenderLine() strokes a line of `width` with: for a
+/// line wider than a pixel, the cap and the join given and AGG's default inner join, a miter; for
+/// any other, bevel joins and inner joins and AGG's default cap, butt. At a sharp turn the inner
+/// bevel covers the pixels about the vertex more than the miter does.
+pub(crate) fn line_ends(
+    width: f64,
+    cap: LineCap,
+    join: LineJoin,
+) -> (LineCap, LineJoin, InnerJoin) {
     if width > 1.0 {
-        (cap, join)
+        (cap, join, InnerJoin::Miter)
     } else {
-        (LineCap::Butt, LineJoin::Bevel)
+        (LineCap::Butt, LineJoin::Bevel, InnerJoin::Bevel)
     }
 }
 
@@ -235,7 +239,7 @@ pub(crate) fn line_symbol<T: Clone>(
     let Some(color) = first.or(second) else {
         return;
     };
-    let (cap, join) = line_ends(
+    let (cap, join, inner_join) = line_ends(
         width,
         style.line_cap.unwrap_or(LineCap::Round),
         style.line_join.unwrap_or(LineJoin::None),
@@ -247,6 +251,7 @@ pub(crate) fn line_symbol<T: Clone>(
         width,
         cap,
         join,
+        inner_join,
         dashes: Dashes {
             pattern: style.pattern.iter().map(|p| p * factor).collect(),
             offset: if initial_gap <= 0.0 {

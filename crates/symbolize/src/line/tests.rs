@@ -17,7 +17,7 @@
 
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
 use forager_style_ir::{Bound, LineOffset, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use super::*;
@@ -204,8 +204,9 @@ fn an_outline_pass_widens_the_line_and_swaps_its_colors() {
 }
 
 #[test]
-fn a_line_no_wider_than_a_pixel_has_butt_caps_and_bevel_joins() {
-    // agg2RenderLine applies the style's cap and join only to a line wider than a pixel.
+fn a_line_no_wider_than_a_pixel_has_butt_caps_and_bevel_joins_and_inner_joins() {
+    // agg2RenderLine applies the style's cap and join only to a line wider than a pixel, and
+    // bevels the inner joins of any other; a wider line keeps AGG's default inner miter.
     let style = |width| Style {
         width: Some(Bound::Value(width)),
         line_cap: Some(LineCap::Square),
@@ -216,7 +217,12 @@ fn a_line_no_wider_than_a_pixel_has_butt_caps_and_bevel_joins() {
         let mut ops = Vec::new();
         line_symbol(&mut ops, line(), &style(width), Pass::Plain, &mut plain());
         match &ops[0] {
-            DrawOp::Stroke { cap, join, .. } => (*cap, *join),
+            DrawOp::Stroke {
+                cap,
+                join,
+                inner_join,
+                ..
+            } => (*cap, *join, *inner_join),
             DrawOp::Fill { .. }
             | DrawOp::Hatch(_)
             | DrawOp::Glyphs { .. }
@@ -227,8 +233,14 @@ fn a_line_no_wider_than_a_pixel_has_butt_caps_and_bevel_joins() {
             }
         }
     };
-    assert_eq!(ends(1.0), (LineCap::Butt, LineJoin::Bevel));
-    assert_eq!(ends(1.5), (LineCap::Square, LineJoin::Miter));
+    assert_eq!(
+        ends(1.0),
+        (LineCap::Butt, LineJoin::Bevel, InnerJoin::Bevel)
+    );
+    assert_eq!(
+        ends(1.5),
+        (LineCap::Square, LineJoin::Miter, InnerJoin::Miter)
+    );
 }
 
 /// A filled circle, symbol 1.

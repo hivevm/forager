@@ -17,7 +17,7 @@
 
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
 use forager_style_ir::{
     Bound, Coord, Extent, GeomTransform, Geometry, RenderMode, Rgba, Style, Symbol, SymbolKind,
     SymbolRef,
@@ -763,6 +763,7 @@ fn at_a_factor_a_point_draws_its_symbol_scaled_and_its_stand_in_square_as_writte
             width: 2.0,
             cap: LineCap::Butt,
             join: LineJoin::Miter,
+            inner_join: InnerJoin::Miter,
             dashes: Dashes::default(),
             antialiased: true,
         },

@@ -31,7 +31,7 @@
 
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
 use forager_style_ir::c::{DEG_TO_RAD, int_cast, lrint, ms_get_symbol_index, ms_max, ms_nint};
 use forager_style_ir::{
     ANCHOR_CENTRE, Bound, Rgba, Style, Symbol, SymbolKind, SymbolRef, anchor_offset,
@@ -588,7 +588,8 @@ pub(crate) fn render(ops: &mut Vec<DrawOp>, at: Point, symbol: &Symbol, s: &Symb
         && s.outline_width != 0.0
     {
         // AGG's defaults, which agg2RenderVectorSymbol and agg2RenderEllipseSymbol leave as they
-        // are: butt caps and miter joins. A vector symbol's path is open, an ellipse closed.
+        // are: butt caps, miter joins, and miter inner joins, whatever the width. A vector
+        // symbol's path is open, an ellipse closed.
         ops.push(DrawOp::Stroke {
             paths,
             closed,
@@ -596,6 +597,7 @@ pub(crate) fn render(ops: &mut Vec<DrawOp>, at: Point, symbol: &Symbol, s: &Symb
             width: s.outline_width,
             cap: LineCap::Butt,
             join: LineJoin::Miter,
+            inner_join: InnerJoin::Miter,
             dashes: Dashes::default(),
             antialiased: true,
         });

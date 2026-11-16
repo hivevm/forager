@@ -478,7 +478,7 @@ renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.png geometry p
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.pdf out: another output format, pdf
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.svg out: another output format, svg
 renderers/poly_geomtransform_anchor.map poly_geomtransform_anchor.cairo.png out: another output format, cairopng
-renderers/polygon-as-line-offset.map polygon-as-line-offset.png geometry fails  # not built yet: a stroke 1 px wide bevels its inner joins in agg2RenderLine (docs/backlog/thin-stroke-inner-bevel.md); 60 of 30000 pixels differ, 32 at the corners of the OFFSET styles alone
+renderers/polygon-as-line-offset.map polygon-as-line-offset.png geometry passes
 renderers/polygon-as-line-offset.map polygon-as-line-offset.pdf out: another output format, pdf
 renderers/polygon-as-line-offset.map polygon-as-line-offset.svg out: another output format, svg
 renderers/polygon-as-line-offset.map polygon-as-line-offset.cairo.png out: another output format, cairopng

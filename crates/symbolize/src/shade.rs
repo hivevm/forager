@@ -102,7 +102,7 @@ pub fn shade<T: Clone>(
         let width = fixed(&style.width).unwrap_or(1.0);
         let width = if width == 0.0 { factor } else { width * factor };
         let width = bounds::shade_outline_width(width, style);
-        let (cap, join) = line_ends(width, LineCap::Round, LineJoin::Round);
+        let (cap, join, inner_join) = line_ends(width, LineCap::Round, LineJoin::Round);
         ops.push(DrawOp::Stroke {
             paths: open_rings(rings),
             closed: false,
@@ -113,6 +113,7 @@ pub fn shade<T: Clone>(
             width,
             cap,
             join,
+            inner_join,
             dashes: Dashes::default(),
             antialiased: true,
         });

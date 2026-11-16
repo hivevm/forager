@@ -41,7 +41,7 @@ use agg_rust::basics::{COVER_FULL, FillingRule, VertexSource};
 use agg_rust::color::Rgba8;
 use agg_rust::conv_dash::ConvDash;
 use agg_rust::conv_stroke::ConvStroke;
-use agg_rust::math_stroke::{LineCap as AggCap, LineJoin as AggJoin};
+use agg_rust::math_stroke::{InnerJoin as AggInnerJoin, LineCap as AggCap, LineJoin as AggJoin};
 use agg_rust::path_storage::PathStorage;
 use agg_rust::rasterizer_scanline_aa::{RasterizerScanlineAa, Scanline};
 use agg_rust::renderer_base::RendererBase;
@@ -51,8 +51,8 @@ use agg_rust::scanline_p::ScanlineP8;
 use agg_rust::scanline_u::ScanlineU8;
 use forager_render::clip::{self, Rect, drawn_width};
 use forager_render::{
-    Affine, Dashes, DisplayItem, Draw, DrawOp, Hatch, LineCap, LineJoin, Point, PremultipliedImage,
-    Renderer, RgbaImage, Tile,
+    Affine, Dashes, DisplayItem, Draw, DrawOp, Hatch, InnerJoin, LineCap, LineJoin, Point,
+    PremultipliedImage, Renderer, RgbaImage, Tile,
 };
 use forager_style_ir::Rgba;
 
@@ -143,22 +143,28 @@ struct Stroke<'a> {
     width: f64,
     cap: LineCap,
     join: LineJoin,
+    inner_join: InnerJoin,
     dashes: &'a Dashes,
     antialiased: bool,
 }
 
 impl Stroke<'_> {
     /// Sets the stroker's width, cap, and join as applyCJC() does: a join of `none` is a bevel,
-    /// and a cap MapServer does not map, `triangle`, stays AGG's default, butt. The inner join
-    /// and the miter limit stay AGG's defaults, a miter and 4. Forager sets up a fresh stroker for
+    /// and a cap MapServer does not map, `triangle`, stays AGG's default, butt. The inner join is
+    /// the stroke's; the miter limit stays AGG's default, 4. Forager sets up a fresh stroker for
     /// every path; MapServer keeps one per image and carries its state from line to line, so
-    /// there a thin line after a wide round-capped one is round-capped.
+    /// there a thin line after a wide round-capped one is round-capped, and a wide line after a
+    /// thin one bevels its inner joins.
     fn apply<VS: VertexSource>(&self, stroke: &mut ConvStroke<VS>) {
         stroke.set_width(self.width);
         stroke.set_line_join(match self.join {
             LineJoin::Round => AggJoin::Round,
             LineJoin::Miter => AggJoin::Miter,
             LineJoin::Bevel | LineJoin::None => AggJoin::Bevel,
+        });
+        stroke.set_inner_join(match self.inner_join {
+            InnerJoin::Miter => AggInnerJoin::Miter,
+            InnerJoin::Bevel => AggInnerJoin::Bevel,
         });
         match self.cap {
             LineCap::Butt => stroke.set_line_cap(AggCap::Butt),
@@ -421,6 +427,7 @@ impl Draw for AggRenderer {
                 width,
                 cap,
                 join,
+                inner_join,
                 dashes,
                 antialiased,
             } => {
@@ -428,6 +435,7 @@ impl Draw for AggRenderer {
                     width: *width,
                     cap: *cap,
                     join: *join,
+                    inner_join: *inner_join,
                     dashes,
                     antialiased: *antialiased,
                 };
@@ -906,6 +914,7 @@ mod tests {
             width: 3.0,
             cap: LineCap::Round,
             join: LineJoin::None,
+            inner_join: InnerJoin::Miter,
             dashes: Dashes::default(),
             antialiased: true,
         }]);
@@ -925,6 +934,7 @@ mod tests {
                 width: 5.0,
                 cap: LineCap::Round,
                 join: LineJoin::None,
+                inner_join: InnerJoin::Miter,
                 dashes: Dashes::default(),
                 antialiased,
             }])
@@ -962,6 +972,7 @@ mod tests {
             width,
             cap,
             join: LineJoin::None,
+            inner_join: InnerJoin::Miter,
             dashes: Dashes { pattern, offset },
             antialiased: true,
         }
@@ -982,6 +993,7 @@ mod tests {
                 width: 8.0,
                 cap,
                 join,
+                inner_join: InnerJoin::Miter,
                 dashes: Dashes::default(),
                 antialiased: true,
             }])
@@ -992,6 +1004,43 @@ mod tests {
         assert_eq!(line.pixel(35, 29), Some(WHITE), "the bevel");
         assert_eq!(outline.pixel(8, 32), Some(WHITE), "the butt cap");
         assert_eq!(line.pixel(8, 32), Some(RED), "the round cap");
+    }
+
+    #[test]
+    fn the_inner_join_is_the_stroke_s() {
+        // A sharp turn at (50.5, 32.5), 1 wide: the inner bevel of agg2RenderLine adds the turn's
+        // two offset points on its inner side, where AGG's default inner miter stops at its limit
+        // of 1.01 half widths; the bevel covers the pixels about the vertex more.
+        let turn = vec![p(10.5, 12.5), p(50.5, 32.5), p(10.5, 52.5)];
+        let draw = |inner_join| {
+            render(&[DrawOp::Stroke {
+                paths: vec![turn.clone()],
+                closed: false,
+                color: RED,
+                width: 1.0,
+                cap: LineCap::Butt,
+                join: LineJoin::Bevel,
+                inner_join,
+                dashes: Dashes::default(),
+                antialiased: true,
+            }])
+        };
+        let (miter, bevel) = (draw(InnerJoin::Miter), draw(InnerJoin::Bevel));
+        assert_eq!(
+            bevel.pixel(49, 32),
+            Some(RED),
+            "the bevel covers the pixel inside the turn"
+        );
+        assert_ne!(
+            miter.pixel(49, 32),
+            Some(RED),
+            "the miter covers it in part"
+        );
+        let darker = |image: &RgbaImage| image.pixel(50, 32).unwrap().g;
+        assert!(
+            darker(&bevel) < darker(&miter),
+            "and the vertex's pixel more"
+        );
     }
 
     #[test]
@@ -1088,6 +1137,7 @@ mod tests {
                 width: 1e9,
                 cap: LineCap::Round,
                 join: LineJoin::Miter,
+                inner_join: InnerJoin::Miter,
                 dashes: Dashes {
                     pattern: vec![1e-300, 1e300, 3.0],
                     offset: 1e300,
@@ -1101,6 +1151,7 @@ mod tests {
                 width: 1e9,
                 cap: LineCap::Butt,
                 join: LineJoin::Miter,
+                inner_join: InnerJoin::Bevel,
                 dashes: Dashes::default(),
                 antialiased: true,
             },
@@ -1111,6 +1162,7 @@ mod tests {
                 width: 1e9,
                 cap: LineCap::Round,
                 join: LineJoin::Round,
+                inner_join: InnerJoin::Miter,
                 dashes: Dashes::default(),
                 antialiased: false,
             },

@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use forager_render::{Dashes, DrawOp, LineCap, LineJoin, Point, PremultipliedImage};
+use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Point, PremultipliedImage};
 use forager_style_ir::{Bound, Extent, Rgba, Style, Symbol, SymbolKind, SymbolRef};
 
 use super::*;
@@ -83,6 +83,48 @@ fn a_filled_polygon_is_outlined_at_its_fill_s_alpha() {
             panic!("the outline is a stroke")
         }
     }
+}
+
+#[test]
+fn a_polygon_s_outline_no_wider_than_a_pixel_bevels_its_inner_joins() {
+    // msDrawShadeSymbol outlines through agg2RenderLine, which bevels the joins and the inner
+    // joins of a line 1 pixel wide or less and leaves a wider one AGG's inner miter.
+    let ends = |width| {
+        let style = Style {
+            width: Some(Bound::Value(width)),
+            ..colored(Some(BLACK), Some(BLACK))
+        };
+        let view = View::for_image(
+            Extent {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 10.0,
+                max_y: 10.0,
+            },
+            11,
+            11,
+        )
+        .unwrap();
+        let mut ops = Vec::new();
+        assert!(shade(&mut ops, line(), &style, &view, &mut plain()));
+        match &ops[1] {
+            DrawOp::Stroke {
+                cap,
+                join,
+                inner_join,
+                ..
+            } => (*cap, *join, *inner_join),
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(
+        ends(1.0),
+        (LineCap::Butt, LineJoin::Bevel, InnerJoin::Bevel)
+    );
+    assert_eq!(
+        ends(2.0),
+        (LineCap::Round, LineJoin::Round, InnerJoin::Miter)
+    );
 }
 
 #[test]
