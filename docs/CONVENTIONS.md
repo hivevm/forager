@@ -113,6 +113,11 @@ skimmed. The design revision drops what prevented nothing
   goes first and is dropped, as the maintainer kept it on 2026-11-14, unless the port keeps
   MapServer's order; `f64::min` and `f64::max`, refused only in `engine`, `label`, and
   `symbolize`, drop it silently elsewhere.
+- **Code that a user's input reaches recurses no deeper than a constant, a dependency's included**
+  — a depth the input sets is a loop over a stack of its own, and a dependency is read for it
+  before it is chosen, because geo's `Simplify`, chosen for `simplify`, overflowed the stack on a
+  crafted zigzag at about 1,000 points in wasmi, found only by the build's review (#192, at
+  62bd3f17).
 - **An ADR that decides how code is written is tried against the workspace's lints before it is
   proposed** — an attribute, an export, or a pattern it names is compiled once under
   `[workspace.lints]` and the ADRs that bind the crate, because ADR-0034 first decided exports of

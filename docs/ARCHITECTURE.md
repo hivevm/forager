@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-15, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-16, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0005](adr/0005-feature-layer.md)).
@@ -228,12 +228,17 @@ golden path and the test pattern an agent copies from are named here.
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
-  holds beneath each label, and a `labelpoint` style's marker, by them. It turns every drawing
+  holds beneath each label, and a `labelpoint` style's marker, by them. It answers the glyph port
+  of a TrueType marker: the labels load the fonts the render's TrueType symbols name before the
+  layer is drawn, into the store the labels' fonts use (`labels.rs`), and the glyphs are read
+  through `label` once per render by their font, character, and size (`marker_glyphs.rs`,
+  [ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md)). It turns every drawing
   operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It is the
   one core crate that awaits the ports. Its modules import one another in one direction only,
   `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `classes.rs`, `fonts.rs` and
-  `images.rs`, and `bind.rs`, `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `plan.rs`,
-  and `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs` lists them:
+  `images.rs`, and `bind.rs`, `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`,
+  `marker_glyphs.rs`, `plan.rs`, `reproject.rs`, and `resource.rs` the leaves, and none takes an
+  item of the crate's root, as `lib.rs` lists them:
   what the root and the modules share of a layer drawn lies in `layer.rs`, and the address of a
   label and the growth of the label cache's lists, which the labels and their styles share, in
   `label_cache.rs`; `arch-test`'s `tests/engine_modules.rs` holds this direction.
@@ -292,10 +297,10 @@ golden path and the test pattern an agent copies from are named here.
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`,
-  `label.rs`, and `circle.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`, `canvas.rs`,
-  `hatch.rs`, `line_marker.rs` and `tile.rs`, `symbol.rs`, `geom_transform.rs`, and
-  `layer_transform.rs`, and `bounds.rs`, `style.rs`, `extent.rs`, `geometry.rs`, and `offset.rs`
-  the leaves, as
+  `label.rs`, and `circle.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`,
+  `glyph_marker.rs`, `canvas.rs`, `hatch.rs`, `line_marker.rs` and `tile.rs`, `symbol.rs`,
+  `geom_transform.rs`, and `layer_transform.rs`, and `bounds.rs`, `style.rs`, `extent.rs`,
+  `geometry.rs`, `glyph.rs`, and `offset.rs` the leaves, as
   `lib.rs` lists them; ADR-0008 decides the direction only between crates, and `arch-test`'s
   `tests/symbolize_modules.rs` holds this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
@@ -433,10 +438,12 @@ structured shapes with a label of arbitrary text and size and its pixmap markers
 points, along lines, and tiled over polygons, the layers' feature limit and drawing after the label
 cache, the cache's edge buffer, a layer's transform tree, and expressions built from the same
 bytes, the expression
-evaluator on arbitrary trees, patterns, and properties, the browser path on GeoJSON, the shapefile
+evaluator on arbitrary trees, patterns, and properties, the core's reprojection on pairs of
+projections and the points, rectangles, and shapes it moves, through a rotated map's geotransform
+too, the browser path on GeoJSON, the shapefile
 adapter on arbitrary `.shp`, `.shx`, and `.dbf` files and its `.prj` reader on arbitrary
-bytes, the text path on an arbitrary font file, and
-the pixmap decoder on an arbitrary image file — run by `scripts/fuzz.sh`, which reads them from the
+bytes, the text path on an arbitrary font file, and the pixmap decoder on an arbitrary image
+file — run by `scripts/fuzz.sh`, which reads them from the
 manifest, every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly
 toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
 `scripts/mutants.sh` runs cargo-mutants over the workspace every week through
