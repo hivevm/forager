@@ -1996,7 +1996,7 @@ fn a_maxfeatures_of_zero_is_an_error() {
 
 #[test]
 fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
-    // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt
+    // Verifies: ADR-0043, ADR-0048
     // loadLayer reads GEOMTRANSFORM by getSymbol(1, MS_EXPRESSION): an expression alone.
     let layer_transform = |text: &'static str| {
         let loaded = load_files(&[("m.map", text)]);
@@ -2039,7 +2039,7 @@ fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
 
 #[test]
 fn a_geomtransform_past_the_nesting_bound_fails_the_load() {
-    // Verifies: Q-9, ADR-0043, ADR-draft-transform-tree-with-simplifypt
+    // Verifies: Q-9, ADR-0043, ADR-0048
     let chain = vec!["1"; 26].join(" + ");
     for place in [
         format!("MAP LAYER NAME 'a' GEOMTRANSFORM (densify([shape], {chain})) END END"),

@@ -12,7 +12,7 @@ fn rgba8(r: u8, g: u8, b: u8, a: u8) -> Rgba8 {
 
 #[test]
 fn the_filter_rounds_as_agg_2_4_s_bilinear_filter_rounds() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile
+    // Verifies: ADR-0046
     let buf = vec![
         vec![rgba8(1, 10, 0, 255), rgba8(2, 20, 0, 255)],
         vec![rgba8(2, 0, 0, 255), rgba8(2, 0, 0, 255)],
@@ -38,7 +38,7 @@ fn the_filter_rounds_as_agg_2_4_s_bilinear_filter_rounds() {
 
 #[test]
 fn a_coordinate_is_saturated_then_rounded_half_to_even() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile
+    // Verifies: ADR-0046
     assert_eq!(line_coord_sat(0.5 / 256.0), 0);
     assert_eq!(line_coord_sat(1.5 / 256.0), 2);
     assert_eq!(line_coord_sat(-2.5 / 256.0), -2);
@@ -49,7 +49,7 @@ fn a_coordinate_is_saturated_then_rounded_half_to_even() {
 
 #[test]
 fn the_filter_drops_a_vertex_within_384_subpixels_and_at_the_end_the_one_before_the_last() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile
+    // Verifies: ADR-0046
     // B lies 256 from A: AGG keeps A, C, and D, and sums 2560 for A to C, not 256 + 2573.
     let line = [(0, 0), (0, 256), (2560, 0), (2560, 2560)];
     assert_eq!(filtered(&line), [(0, 2560), (2, 2560), (3, 0)]);
@@ -77,7 +77,7 @@ fn square() -> ([(i32, i32); 4], Vec<i64>) {
 
 #[test]
 fn a_piece_starts_at_agg_s_start_of_its_first_whole_segment_less_its_fragment() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile
+    // Verifies: ADR-0046
     let (vertices, at) = square();
     // Cut 6400 into the second segment: 38400 - 6400, so that the fragment brings V2 to 38400.
     let piece = [(25600, 6400), (25600, 12800), (0, 12800)];
@@ -96,7 +96,7 @@ fn a_piece_starts_at_agg_s_start_of_its_first_whole_segment_less_its_fragment() 
 
 #[test]
 fn a_line_within_the_reach_is_left_whole() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile
+    // Verifies: ADR-0046
     let rect = Rect::around_image(40, 20, 5.0);
     let line = vec![p(-6.0, 3.0), p(20.0, 10.0), p(46.0, -6.5)];
     let (vertices, at) = {
@@ -157,7 +157,7 @@ fn brushed(width: u32, height: u32, paths: Vec<Vec<Point>>, reach: f64) -> RgbaI
 
 #[test]
 fn a_line_is_brushed_with_its_tile_as_wide_as_the_tile_is_high() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile
+    // Verifies: ADR-0046
     let image = brushed(40, 20, vec![vec![p(2.0, 10.0), p(37.0, 10.0)]], 3.0);
     let white = Some(Rgba::opaque(255, 255, 255));
     // Within the tile's height about the line the pixels are the tile's; beyond it, untouched.
@@ -173,7 +173,7 @@ fn a_line_is_brushed_with_its_tile_as_wide_as_the_tile_is_high() {
 
 #[test]
 fn a_line_that_leaves_the_image_and_comes_back_draws_the_whole_line_s_pixels_on_it() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile
+    // Verifies: ADR-0046
     // Out over the top edge, along far above, and back in: the reach of 3 cuts the second and
     // the fourth segment, and the last runs along y = 30 well inside.
     let line = vec![
@@ -202,7 +202,7 @@ fn a_line_that_leaves_the_image_and_comes_back_draws_the_whole_line_s_pixels_on_
 
 #[test]
 fn the_start_carries_over_the_paths_of_a_shape() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile
+    // Verifies: ADR-0046
     // The second path starts where the first, 10 pixels long, left the pattern, so its pixel at x
     // shows the pattern where the first path's does at x - 8, or a whole repeat of 7 from there.
     let image = brushed(
@@ -222,7 +222,7 @@ fn the_start_carries_over_the_paths_of_a_shape() {
 
 #[test]
 fn a_path_whose_start_passes_i32_draws_without_a_panic() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile, Q-3
+    // Verifies: ADR-0046, Q-3
     // 90 segments of 100,000 pixels each: 9,000,000 pixels, past the 8,388,607 the start holds in
     // subpixels. The last segment crosses the image.
     let mut line: Vec<Point> = (0..90)

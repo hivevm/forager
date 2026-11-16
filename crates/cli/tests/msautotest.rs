@@ -670,7 +670,7 @@ fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn a_zigzag_simplified_with_its_topology_renders_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-draft-simplifypt-ported-from-jts
+    // Verifies: ADR-0047
     zigzag_renders_alike_natively_and_on_wasm32("simplifypt");
 }
 
@@ -727,7 +727,7 @@ fn zigzag_renders_alike_natively_and_on_wasm32(function: &str) {
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn lines_brushed_with_their_tiles_render_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-draft-symbol-line-brushed-by-its-tile
+    // Verifies: ADR-0046
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("brushed");

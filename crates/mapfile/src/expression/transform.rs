@@ -15,7 +15,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! Translates a `GEOMTRANSFORM` expression into its transform tree
-//! (ADR-0043, ADR-draft-transform-tree-with-simplifypt): `[shape]`, and `generalize`, `densify`,
+//! (ADR-0043, ADR-0048): `[shape]`, and `generalize`, `densify`,
 //! `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia` of a shape, their numbers
 //! written, `[map_cellsize]`, or computed of those, each operation without `[map_cellsize]` folded
 //! at load. An expression the grammar parses that holds any other construct is the tree

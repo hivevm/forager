@@ -540,7 +540,7 @@ fn simplified(tolerance: f64) -> TransformShape {
 
 #[test]
 fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
-    // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt, ADR-0041
+    // Verifies: ADR-0043, ADR-0048, ADR-0041
     // msGEOSSimplify: each part by GEOS's Douglas-Peucker, a part GEOS builds empty dropped from
     // the result by its transformer.
     let parts = Geometry::MultiLineString(vec![
@@ -697,7 +697,7 @@ fn preserved(tolerance: f64) -> TransformShape {
 
 #[test]
 fn simplifypt_simplifies_the_parts_of_a_line_together_and_drops_one_without_points() {
-    // Verifies: ADR-draft-transform-tree-with-simplifypt, ADR-draft-simplifypt-ported-from-jts
+    // Verifies: ADR-0048, ADR-0047
     // msGEOSTopologyPreservingSimplify: the parts are the lines of one geometry, so the bend keeps
     // (10 10), whose flattening would jump the short line; a part GEOS builds empty is dropped.
     let bend = [(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)];
@@ -722,7 +722,7 @@ fn simplifypt_simplifies_the_parts_of_a_line_together_and_drops_one_without_poin
 
 #[test]
 fn simplifypt_simplifies_a_polygon_s_rings_together_and_removes_none() {
-    // Verifies: ADR-draft-transform-tree-with-simplifypt, ADR-draft-simplifypt-ported-from-jts
+    // Verifies: ADR-0048, ADR-0047
     // The hole lies inside the shell by msGetInnerList: dropping the shell's first point would
     // leave it outside, so the shell keeps it. GEOS 3.12.1 drops it.
     let shell = [
@@ -761,7 +761,7 @@ fn simplifypt_simplifies_a_polygon_s_rings_together_and_removes_none() {
 
 #[test]
 fn simplifypt_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
-    // Verifies: ADR-draft-simplifypt-ported-from-jts
+    // Verifies: ADR-0047
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points, and GEOS's
     // TopologyPreservingSimplifier refuses a tolerance below 0. Each fails "Executing simplifypt".
     let why = failed(apply(&preserved(1.0), &line(&[(0.0, 0.0)])));
@@ -778,7 +778,7 @@ fn simplifypt_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
 
 #[test]
 fn simplifypt_past_the_points_a_layer_may_visit_is_a_limit() {
-    // Verifies: Q-9, ADR-draft-simplifypt-ported-from-jts
+    // Verifies: Q-9, ADR-0047
     // A zigzag of 15,000 points whose amplitude shrinks keeps every point, its sections one point
     // shorter each: 14,998 * 14,999 / 2 points scanned, past 1e8, and the budget stops it as it
     // goes.
@@ -811,7 +811,7 @@ fn rings_of(result: Result<Geometry, Undrawn>) -> Vec<Vec<Coord>> {
 
 #[test]
 fn buffer_turns_each_shape_into_a_polygon_as_msgeosbuffer_does() {
-    // Verifies: ADR-0043, ADR-draft-transform-tree-with-simplifypt, ADR-0041
+    // Verifies: ADR-0043, ADR-0048, ADR-0041
     // msGEOSBuffer: GEOSBuffer_r of the shape msGEOSShape2Geometry builds, converted back by
     // msGEOSGeometry2Shape, a polygon whatever the shape's type. A point is a circle of 121
     // coordinates; two lines are buffered as one geometry, a part without points dropped; a

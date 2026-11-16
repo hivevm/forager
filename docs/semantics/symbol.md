@@ -147,7 +147,7 @@ each image as at a point. Without a `GAP` it brushes the line with its image, as
 ellipse, a pixmap, or a TrueType symbol and whose `GAP` is 0 brushes the line with the symbol's
 brush tile, as `msDrawLineSymbol` in `src/maprendering.c` and `agg2RenderLineTiled` in
 `src/mapagg.cpp` draw it
-([ADR-draft-symbol-line-brushed-by-its-tile](../adr/draft-symbol-line-brushed-by-its-tile.md)).
+([ADR-0046](../adr/0046-symbol-line-brushed-by-its-tile.md)).
 The tile's sides are the symbol's extent, a pixmap's image, a TrueType symbol's 1 × 1, times the
 scale, `MS_NINT`, half to even, or at a scale of 1 the extent truncated, at least 1 each; a `GAP`
 plays no part. The symbol is drawn once at the tile's centre, as in a polygon's tile, in

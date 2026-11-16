@@ -91,7 +91,7 @@ outside the part.
 lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`, the rules `shape_exp`, `math_exp`,
 and `string_exp`), function names without regard to case, without the parentheses `loadLayer` and
 `loadStyle` strip. The frontend translates it into a transform tree (ADR-0043, and its successor
-ADR-draft-transform-tree-with-simplifypt): `[shape]`, and `generalize`, `densify`, `simplify`,
+ADR-0048): `[shape]`, and `generalize`, `densify`, `simplify`,
 `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia` of a shape, nested. A number
 is written, `[map_cellsize]`, or computed of those by `+ - * / % ^` and parentheses, as the grammar
 reduces them; the frontend folds every operation without `[map_cellsize]` to one number. A unary `-`
@@ -155,7 +155,7 @@ engine draws its tree's functions:
   in GEOS's result, which turns the shape into a line; Forager removes the member with its holes.
 - `simplifypt(s, t)` (`msGEOSTopologyPreservingSimplify`, `src/mapgeos.c`): `s` as GEOS's
   topology-preserving simplifier simplifies it at the tolerance `t`, by a port of JTS's
-  `TopologyPreservingSimplifier` (ADR-draft-simplifypt-ported-from-jts). The shape is built as
+  `TopologyPreservingSimplifier` (ADR-0047). The shape is built as
   for `simplify`, and a point shape keeps its points. The lines of the shape, each part of a line,
   or each polygon's shell and then its holes, are simplified together, one after the other in the
   shape's order. Each is a Douglas-Peucker as for `simplify`, but a section is flattened only

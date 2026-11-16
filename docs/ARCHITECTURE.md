@@ -35,7 +35,7 @@ golden path and the test pattern an agent copies from are named here.
   of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
   no text of the mapfile and is read to the same nesting bound (`transform.rs`,
   [ADR-0043](adr/0043-transform-tree-with-simplify-and-buffer.md),
-  [ADR-draft-transform-tree-with-simplifypt](adr/draft-transform-tree-with-simplifypt.md)),
+  [ADR-0048](adr/0048-transform-tree-with-simplifypt.md)),
   the diagnostics with their source spans, and the
   style document that serializes it as YAML or JSON through serde
   ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
@@ -287,7 +287,7 @@ golden path and the test pattern an agent copies from are named here.
   (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)), and `simplifypt` by a port of
   JTS's topology-preserving simplifier without recursion and without a spatial index
   (`geometry/topology.rs`,
-  [ADR-draft-simplifypt-ported-from-jts](adr/draft-simplifypt-ported-from-jts.md)). A
+  [ADR-0047](adr/0047-simplifypt-ported-from-jts.md)). A
   line style's symbol with a
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
@@ -342,7 +342,7 @@ golden path and the test pattern an agent copies from are named here.
   it draws with it, in a transparent image of its own, and repeats it from the image's origin,
   brushes a line with a tile through agg-rust's outline-image rasterizer, a port of AGG 2.4's
   bilinear pattern filter, and the pattern's start carried across the clip (`brush.rs`,
-  [ADR-draft-symbol-line-brushed-by-its-tile](adr/draft-symbol-line-brushed-by-its-tile.md)), and
+  [ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)), and
   is the one crate that may use `unsafe` ([ADR-0025](adr/0025-agg-rust-rasterizer.md)); it cuts a
   hatch from its polygon with i_overlay, the one crate of the workspace that depends on it
   directly

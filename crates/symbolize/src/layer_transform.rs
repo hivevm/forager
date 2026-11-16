@@ -25,7 +25,7 @@
 //! `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia`
 //! of `[shape]`, nested; the frontend has translated MapServer's text into it. `simplify` and
 //! `buffer` are computed by the geometry module (ADR-0041), and `simplifypt` by its port of JTS's
-//! topology-preserving simplifier (ADR-draft-simplifypt-ported-from-jts).
+//! topology-preserving simplifier (ADR-0047).
 //!
 //! A shape is MapServer's: a type, point, line, or polygon, and a list of parts, a polygon's
 //! rings listed flat, as a source delivers them. What the transforms add or visit is bounded per

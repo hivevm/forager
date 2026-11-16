@@ -42,7 +42,7 @@
 // WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 //! The geometry of `simplify` and `buffer` (ADR-0041), and of `simplifypt`
-//! (ADR-draft-simplifypt-ported-from-jts) in [`topology`]: a line or a polygon simplified as
+//! (ADR-0047) in [`topology`]: a line or a polygon simplified as
 //! GEOS's `DouglasPeuckerSimplifier` simplifies it, and a shape buffered by geo's
 //! `buffer_with_style` with round joins and caps of 30 segments a quadrant, as `GEOSBuffer_r`
 //! buffers it with 30. A line keeps the points of a Douglas-Peucker

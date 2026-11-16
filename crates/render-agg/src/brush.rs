@@ -1,7 +1,7 @@
 // How a line is brushed with a tile follows agg2RenderLineTiled of MapServer's src/mapagg.cpp, at
 // the release pinned in scripts/fetch-msautotest.sh; its bilinear filter is a port of
 // pattern_filter_bilinear_rgba, and the saturation of its coordinates of line_coord_sat, of the
-// AGG 2.4 MapServer bundles (ADR-draft-symbol-line-brushed-by-its-tile).
+// AGG 2.4 MapServer bundles (ADR-0046).
 // Copyright (c) 1996-2007 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,

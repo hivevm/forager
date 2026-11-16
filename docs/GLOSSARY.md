@@ -21,7 +21,7 @@ to invent.
   `GAP` brushes the line with: the symbol centred in a transparent image of the size
   `msDrawLineSymbol` computes, sampled along each segment and across it, turned with the segment.
   It shares the render's cache and key with the fill tile, so one serves as the other
-  ([ADR-draft-symbol-line-brushed-by-its-tile](adr/draft-symbol-line-brushed-by-its-tile.md)). The
+  ([ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)). The
   code's `Tile`, drawn by `DrawOp::BrushedLine`.
   _Avoid:_ line pattern, line tile.
 - **Core** — The crates that turn a style IR and features into pixels: no I/O, no C code, no
@@ -125,7 +125,7 @@ to invent.
   `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia`.
   A layer's tree replaces each feature's shape in map units; a class style's tree is drawn on the
   shape in pixels ([ADR-0043](adr/0043-transform-tree-with-simplify-and-buffer.md);
-  [ADR-draft-transform-tree-with-simplifypt](adr/draft-transform-tree-with-simplifypt.md);
+  [ADR-0048](adr/0048-transform-tree-with-simplifypt.md);
   [`semantics/style-symbol.md`](semantics/style-symbol.md)).
   _Avoid:_ shape expression, geometry expression.
 - **Viewport** — The part of a map that is drawn: an image size and an extent. A page asks the WASM

@@ -48,7 +48,7 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
 // WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//! The geometry of `simplifypt` (ADR-draft-simplifypt-ported-from-jts): the lines of one shape
+//! The geometry of `simplifypt` (ADR-0047): the lines of one shape
 //! simplified together as JTS's `TopologyPreservingSimplifier` simplifies them, a Douglas-Peucker
 //! that refuses to flatten a section where the new segment would meet the rest of the shape in
 //! an interior point, lie on an equal segment, or jump another line.
