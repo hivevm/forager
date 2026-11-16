@@ -208,8 +208,8 @@ impl<'a> Canvas<'a> {
     }
 
     /// What the layer left undrawn since this was last asked: the hatches refused (Q-9), the
-    /// pixmap symbols whose image is refused, and the vector and TrueType symbols whose fill tile
-    /// is refused, each named by its name or its index (see [`symbol::named`]).
+    /// pixmap symbols whose image is refused, and the vector, ellipse, and TrueType symbols whose
+    /// fill tile is refused, each named by its name or its index (see [`symbol::named`]).
     pub fn take_refusals(&mut self) -> Refusals {
         let named = |canvas: &Self, refused: BTreeMap<usize, String>| {
             refused

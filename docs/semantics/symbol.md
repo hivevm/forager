@@ -207,8 +207,16 @@ tile, moved up and left by a tile, rather than into an image nine times the tile
 another `GAP` the symbol is drawn once at the tile's centre. A tile is kept, as
 `searchTileCache` keeps it, by its symbol, its size, the scale, the rotation, the outline's width,
 and each colour the style asks for. A tile past Q-9's bounds is refused as a pixmap's is, the style
-is not drawn, and the layer warns with `symbol-not-drawn`, once per symbol, naming the limit. An
-ellipse symbol over a polygon is still filled in its `COLOR`, as before.
+is not drawn, and the layer warns with `symbol-not-drawn`, once per symbol, naming the limit.
+
+**An ellipse symbol over a polygon.** A polygon layer's style whose symbol is an ellipse fills the
+polygon with the ellipse repeated in tiles, as a vector symbol's, once the style has a `COLOR`. The
+ellipse is drawn as at a point (`agg2RenderEllipseSymbol`): a filled one filled in the `COLOR` and
+outlined in the `OUTLINECOLOR`, one not filled outlined in the `COLOR`, at the style's `WIDTH`.
+Its tile's sides follow the table above, of the ellipse's extent. msDrawShadeSymbol sets seamless
+mode for a vector symbol alone, so `getTile` draws the ellipse once, at the tile's centre, whatever
+the `GAP`, and the tile crops what passes its edge. An ellipse of 4 × 2 at `SIZE 8` has tiles of
+16 × 8, at `SIZE 8 GAP 20` of 20 × 20. The tile is kept, bounded, and refused as a vector symbol's.
 
 **A TrueType symbol over a polygon.** A polygon layer's style whose symbol is a TrueType symbol
 fills the polygon with its glyph repeated in tiles, as `getTile` draws it, once the style has a

@@ -32,8 +32,8 @@ use crate::tile;
 /// for a symbol past the last or a name no symbol carries; with a pixmap, whatever its colours,
 /// moved by the offset scaled and filled with the image tiled (see [`tiled`]); without a `COLOR`,
 /// its outline as a line in the `OUTLINECOLOR`; with one, moved by the offset scaled, and with a
-/// hatch symbol hatched (see [`hatch::hatch`]), with a vector symbol filled with the symbol tiled
-/// (see [`vector_tiled`]), with a TrueType symbol filled with its glyph tiled (see
+/// hatch symbol hatched (see [`hatch::hatch`]), with a vector or an ellipse symbol filled with the
+/// symbol tiled (see [`vector_tiled`]), with a TrueType symbol filled with its glyph tiled (see
 /// [`glyph_marker::tiled_glyph`]), with any other filled, and outlined in the
 /// `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width scaled, the factor
 /// itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled, as MapServer
@@ -87,7 +87,6 @@ pub fn shade<T: Clone>(
         return true;
     }
     if let symbol::Mark::Symbol(symbol) = symbol::mark(style, canvas.symbols)
-        && symbol.kind == SymbolKind::Vector
         && let symbol::Resolved::Found(index, _) = symbol::resolve(&style.symbol, canvas.symbols)
     {
         vector_tiled(ops, rings, style, index, symbol, canvas);
@@ -157,11 +156,13 @@ fn tiled<T>(
     }
 }
 
-/// The vector symbol `symbol`, at `index` from 1, over `rings`, already moved by the offset, as
-/// msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the tile of its
-/// size, scale, and gap (see [`tile::vector_tile`]), seamless where the style's `GAP` is 0, as
-/// msDrawShadeSymbol sets it for a vector symbol under AGG, and the polygon filled with it. Where the tile is refused (Q-9),
-/// nothing is drawn, and the canvas records why. A polygon wholly off the image builds no tile.
+/// The vector or ellipse symbol `symbol`, at `index` from 1, over `rings`, already moved by the
+/// offset, as msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the
+/// tile of its size, scale, and gap (see [`tile::vector_tile`]), and the polygon filled with it.
+/// The tile is seamless for a vector symbol whose `GAP` is 0, as msDrawShadeSymbol sets it under
+/// AGG (`src/maprendering.c:876-883`), and never for an ellipse, which getTile draws once at the
+/// tile's centre. Where the tile is refused (Q-9), nothing is drawn, and the canvas records why. A
+/// polygon wholly off the image builds no tile.
 fn vector_tiled<T: Clone>(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
@@ -176,7 +177,7 @@ fn vector_tiled<T: Clone>(
     if !meets_image(&rings, canvas.image()) {
         return;
     }
-    let seamless = style.gap.unwrap_or(0.0) == 0.0;
+    let seamless = symbol.kind == SymbolKind::Vector && style.gap.unwrap_or(0.0) == 0.0;
     let tile = match canvas.tiles.as_deref_mut() {
         Some(tiles) => tile::vector_tile(tiles, index, symbol, &s, seamless),
         None => Err("no tiles are kept where it is drawn".to_owned()),

@@ -277,10 +277,10 @@ fn centres(width: u32, height: u32, seamless: bool) -> Vec<Point> {
     centres
 }
 
-/// The tile of the vector symbol `symbol`, at `index` from 1, as msDrawShadeSymbol asks getTile
-/// for it in `s`: its size of the symbol's extent, held to Q-9's bound first; seamless where
-/// `seamless` (see [`centres`]); then the tile the cache holds, or a new one, whose marks are the
-/// symbol as agg2RenderVectorSymbol draws it at each centre.
+/// The tile of the vector or ellipse symbol `symbol`, at `index` from 1, as msDrawShadeSymbol asks
+/// getTile for it in `s`: its size of the symbol's extent, held to Q-9's bound first; seamless
+/// where `seamless` (see [`centres`]); then the tile the cache holds, or a new one, whose marks are
+/// the symbol as agg2RenderVectorSymbol or agg2RenderEllipseSymbol draws it at each centre.
 pub(crate) fn vector_tile(
     tiles: &mut Tiles,
     index: usize,
