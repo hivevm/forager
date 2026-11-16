@@ -41,6 +41,14 @@ to invent.
   _Avoid:_ tile alone beside a map's raster tiles, pattern.
 - **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
   crate versions and of the core's API.
+- **Frame of the image** — Where a rotated map draws everything after the reprojection: the
+  extent `0, 0, width, height` at a cellsize of 1, y up, as MapServer's `msMapSetFakedExtent`
+  fakes it. Its map units are the image's pixels. The code's frame `View`.
+  _Avoid:_ fake extent, pixel space.
+- **Geotransform** — The affine step between a rotated map's coordinates and the frame of its
+  image, which MapServer holds on the map's projection and applies inside each layer's
+  reprojection (ADR-draft-map-rotation-in-the-reprojection).
+  _Avoid:_ rotation matrix, affine.
 - **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through
   the WASM bindings, or a server.
 - **Inline feature** — A feature written into a layer of the style IR, a mapfile's `FEATURE`: a

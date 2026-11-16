@@ -1016,6 +1016,16 @@
       "description": "A map: its image, its extent, and its layers in drawing order.",
       "type": "object",
       "properties": {
+        "angle": {
+          "description": "The angle the map is drawn rotated by, in degrees, MapServer's `ANGLE`: the image's x axis\npoints that many degrees counterclockwise of the map's, so its content turns clockwise.\nEvery layer with a projection reaches the image through the map's geotransform. Absent,\nor 0, the map is not rotated. A reader drops a value outside -360 to 360 with a warning, as\nMapServer's loader refuses one. Added in format version 1.1.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "maximum": 360.0,
+          "minimum": -360.0
+        },
         "def_resolution": {
           "description": "The resolution the map's pixel lengths are written for, in dpi; MapServer's default is 72.\nEvery length in pixels is drawn scaled by `resolution` over this. A reader drops a value\noutside 10 to 1000 with a warning, as MapServer's loader refuses one.",
           "type": [

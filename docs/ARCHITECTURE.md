@@ -143,8 +143,13 @@ golden path and the test pattern an agent copies from are named here.
   shape's as `msProjectLineEx` does (`shape.rs`): cut at the horizon, wrapped at the dateline;
   it says where MapServer would cut a line shape with GEOS, which it does not port, for a
   projected source whose origin is the north pole into longitude and latitude; MapServer's other
-  cases, a target written `init=epsg:3857` among them, it does not see. These ports of
-  MapServer's `mapproject.c` live here beside the port of PROJ. Its test `tests/reference.rs`
+  cases, a target written `init=epsg:3857` among them, it does not see. It computes a rotated
+  map's geotransform as `msMapComputeGeotransform` and `msMapSetFakedExtent` do
+  (`geotransform.rs`), and a reprojection may hold it on the map's side, the way into the map
+  applying its inverse after the formulas and the way back applying it before them; a way from a
+  CRS into itself runs no formula, so only the geotransform moves its points
+  (ADR-draft-map-rotation-in-the-reprojection). These ports of MapServer's `mapproject.c` and
+  `mapobject.c` live here beside the port of PROJ. Its test `tests/reference.rs`
   holds points, rectangles, and shapes against the records MapServer's call of PROJ wrote at the
   pinned build, under `tests/reference/` (ADR-0038, G-11).
   Synchronous, without I/O; it depends on `style-ir` and `libm` alone, and each file that ports a
@@ -160,7 +165,11 @@ golden path and the test pattern an agent copies from are named here.
   with a warning (`reproject.rs`); a layer of `PROJECTION AUTO` takes the projection its bound
   source declares (ADR-0039), longitude and latitude with a warning where that does not read; a
   layer with lines from such a polar source into longitude and latitude is drawn uncut with a
-  warning (`lines-not-cut`); replaces the shape of
+  warning (`lines-not-cut`); on a map with an `ANGLE`, it computes the scale from the real
+  extent and the scale factors from `msGetGeoCellSize`'s cellsize, reprojects every layer with a
+  projection through the map's geotransform into the frame of the image, and draws everything
+  after in that frame, a layer without a projection unrotated with a warning
+  (`rotation-without-projection`, ADR-draft-map-rotation-in-the-reprojection); replaces the shape of
   each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
   up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
   tree is `not_drawn` or fails, with a warning (`classes.rs`,

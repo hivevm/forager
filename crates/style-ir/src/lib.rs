@@ -28,8 +28,8 @@ pub use migration::{STEPS, Step};
 pub use model::{
     Align, AngleMode, Bound, Class, Extent, FeatureProperty, Force, GeomTransform, InlineFeature,
     Label, LabelTransform, Layer, LayerProjection, LayerStatus, LineCap, LineJoin, LineOffset,
-    MAX_RESOLUTION, MIN_RESOLUTION, Map, MinFeatureSize, Position, RenderMode, Rgba, ShapeType,
-    SourceRef, Style, Symbol, SymbolKind, SymbolRef, Transform, Units,
+    MAX_MAP_ANGLE, MAX_RESOLUTION, MIN_RESOLUTION, Map, MinFeatureSize, Position, RenderMode, Rgba,
+    ShapeType, SourceRef, Style, Symbol, SymbolKind, SymbolRef, Transform, Units,
 };
 pub use transform::{
     NotDrawn, NumberOp, Preprocessing, TransformNumber, TransformShape, TransformTree,

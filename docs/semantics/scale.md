@@ -57,5 +57,9 @@ as `loadLayer` checks. `SIZEUNITS` takes `pixels`, `inches`, `feet`, `miles`, `m
 `kilometers`, `nauticalmiles`, and `dd`; the map's `UNITS` the same without `pixels`.
 
 The size of a pixel in map units is the map's cellsize, as `msGetGeoCellSize` takes it for a map
-that is not rotated. Decimal degrees take no correction by latitude, as the build at the pin leaves
-`ENABLE_VARIABLE_INCHES_PER_DEGREE` off.
+that is not rotated. For a rotated map ([`ANGLE`](angle.md)) it is the diagonal of the real
+extent's cell over the image's width and height, `sqrt(cx² + cy²) / sqrt(2)` with `cx` the
+extent's width over the image's width and `cy` its height over the image's height, not over the
+width and height less one. The map's scale is computed from the real extent grown to the image,
+before the extent is faked. Decimal degrees take no correction by latitude, as the build at the
+pin leaves `ENABLE_VARIABLE_INCHES_PER_DEGREE` off.

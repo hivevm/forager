@@ -22,8 +22,8 @@ use forager_ports::{ProjectionResolver, ResourcePath};
 use forager_style_ir::c::{atoi, int_cast};
 use forager_style_ir::{
     Bound, Class, Diagnostic, Expr, Extent, Fonts, Layer, LayerProjection, LayerStatus,
-    MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef, Span, Symbol,
-    TransformTree, Units,
+    MAX_MAP_ANGLE, MAX_RESOLUTION, MIN_RESOLUTION, Map, Op, RenderMode, Rgba, ShapeType, SourceRef,
+    Span, Symbol, TransformTree, Units,
 };
 
 use crate::MAX_DEFAULT_BYTES;
@@ -50,6 +50,9 @@ mod symbol;
 
 /// The range MapServer's loader holds `RESOLUTION` and `DEFRESOLUTION` to, the style document's.
 const RESOLUTION: Range = Range::Within(MIN_RESOLUTION, MAX_RESOLUTION);
+
+/// The range MapServer's loader holds the map's `ANGLE` to, the style document's.
+const MAP_ANGLE: Range = Range::Within(-MAX_MAP_ANGLE, MAX_MAP_ANGLE);
 
 /// Keywords out of Forager's scope (specification, Non-Goals): read and discarded.
 const DISCARDED: &[&str] = &[
@@ -300,6 +303,9 @@ impl Translator<'_> {
                     "RESOLUTION" => map.resolution = self.number(d, RESOLUTION),
                     "DEFRESOLUTION" => map.def_resolution = self.number(d, RESOLUTION),
                     "UNITS" => map.units = self.choice(d, &UNITS[1..]),
+                    // loadMapInternal reads it by getDouble, within -360 to 360, and
+                    // msMapSetRotation rotates only by an angle other than 0.
+                    "ANGLE" => map.angle = self.number(d, MAP_ANGLE).filter(|&a| a != 0.0),
                     // Read with the map, before translation.
                     "SYMBOLSET" | "FONTSET" => {}
                     // Read before the layers, whose data it places.

@@ -42,12 +42,15 @@
 //! what a case in scope or a ticket needs: the projections longitude and latitude, `lcc`, `merc`,
 //! `tmerc` with `utm`, and `ortho`, the parameter `+over`, and a datum's shift by `+towgs84`.
 //! Anything else is an [`Error`] naming it, and a point that does not transform is
-//! [`NotTransformed`], never a panic (Q-3).
+//! [`NotTransformed`], never a panic (Q-3). On a rotated map, the map's side of a reprojection
+//! holds the map's [`Geotransform`], MapServer's step between the map's coordinates and the frame
+//! of its image (ADR-draft-map-rotation-in-the-reprojection).
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
 mod common;
 mod datum;
+mod geotransform;
 mod lcc;
 mod merc;
 mod ortho;
@@ -61,6 +64,7 @@ use std::fmt;
 use forager_style_ir::Coord;
 
 use crate::common::{HALF_PI, adjlon};
+pub use crate::geotransform::Geotransform;
 use crate::params::{DEG_TO_RAD, Datum, Ellipsoid, Params, RAD_TO_DEG};
 pub use crate::shape::Shape;
 
@@ -227,6 +231,21 @@ impl Projection {
         }
     }
 
+    /// Longitude and latitude on WGS84: the projections a way that runs no formula holds, which
+    /// nothing reads.
+    fn stand_in() -> Self {
+        Self {
+            kind: Kind::LongLat,
+            ellipsoid: params::Ellipsoid::wgs84(),
+            datum: Datum::Wgs84,
+            lam0: 0.0,
+            x0: 0.0,
+            y0: 0.0,
+            to_meter: 1.0,
+            over: false,
+        }
+    }
+
     /// The same projection with `+over`, as `msProjectRect` copies a projection with it.
     pub(crate) fn with_over(&self) -> Self {
         Self {
@@ -323,6 +342,13 @@ pub struct Reprojection {
     /// map's `AUTO`, which has no PROJ object.
     from_geographic: bool,
     to_geographic: bool,
+    /// Whether PROJ's formulas run between the two: not where MapServer creates no PROJ object,
+    /// or one from a CRS into the same CRS.
+    formulas: bool,
+    /// The geotransform of a rotated map on the side reprojected from, applied before the
+    /// formulas, and on the side reprojected into, its inverse applied after them.
+    from_gt: Option<Geotransform>,
+    to_gt: Option<Geotransform>,
 }
 
 impl Reprojection {
@@ -333,6 +359,35 @@ impl Reprojection {
             to_geographic: to.is_geographic(),
             from,
             to,
+            formulas: true,
+            from_gt: None,
+            to_gt: None,
+        }
+    }
+
+    /// The way that runs no formula, where MapServer creates no PROJ object or one from a CRS into
+    /// the same CRS, each side longitude and latitude to MapServer's tests as `from_geographic` and
+    /// `to_geographic` say. Only a geotransform moves a point on it
+    /// ([`Self::onto_rotated_map`]).
+    pub fn identity(from_geographic: bool, to_geographic: bool) -> Self {
+        Self {
+            from: Projection::stand_in(),
+            to: Projection::stand_in(),
+            from_geographic,
+            to_geographic,
+            formulas: false,
+            from_gt: None,
+            to_gt: None,
+        }
+    }
+
+    /// The same way into a rotated map, the map's `geotransform` on the side reprojected into, as
+    /// `msMapSetFakedExtent` puts it on the map's projection: a point lands in the frame of the
+    /// image, y up. Its [`Self::reversed`] holds it on the side reprojected from.
+    pub fn onto_rotated_map(self, geotransform: Geotransform) -> Self {
+        Self {
+            to_gt: Some(geotransform),
+            ..self
         }
     }
 
@@ -346,6 +401,9 @@ impl Reprojection {
             to_geographic: false,
             from,
             to,
+            formulas: true,
+            from_gt: None,
+            to_gt: None,
         }
     }
 
@@ -356,18 +414,41 @@ impl Reprojection {
             to: self.from.clone(),
             from_geographic: self.to_geographic,
             to_geographic: self.from_geographic,
+            formulas: self.formulas,
+            from_gt: self.to_gt,
+            to_gt: self.from_gt,
         }
     }
 
+    /// Whether either side holds a geotransform, as MapServer's tests read
+    /// `gt.need_geotransform`.
+    pub(crate) fn rotated(&self) -> bool {
+        self.from_gt.is_some() || self.to_gt.is_some()
+    }
+
     /// `point`, in the projection reprojected from, in the projection reprojected into, its
-    /// longitude and latitude passing through WGS84.
+    /// longitude and latitude passing through WGS84, as `msProjectPointEx` moves it: by the
+    /// geotransform of the side reprojected from, the formulas, and the inverse geotransform of
+    /// the side reprojected into.
     pub fn point(&self, point: Coord) -> Result<Coord, NotTransformed> {
+        let point = match &self.from_gt {
+            Some(gt) => gt.forward(point),
+            None => point,
+        };
         // PROJ refuses a coordinate of HUGE_VAL; here, any that is no finite number.
         if !(point.x.is_finite() && point.y.is_finite()) {
             return Err(NotTransformed);
         }
-        let (lam, phi) = self.from.to_wgs84(point).ok_or(NotTransformed)?;
-        self.to.at_wgs84(lam, phi).ok_or(NotTransformed)
+        let point = if self.formulas {
+            let (lam, phi) = self.from.to_wgs84(point).ok_or(NotTransformed)?;
+            self.to.at_wgs84(lam, phi).ok_or(NotTransformed)?
+        } else {
+            point
+        };
+        Ok(match &self.to_gt {
+            Some(gt) => gt.inverse(point),
+            None => point,
+        })
     }
 }
 

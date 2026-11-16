@@ -40,6 +40,24 @@ projection the core does not implement leaves its layer undrawn with a warning. 
 longitude and latitude, `lcc`, `merc`, `tmerc` with `utm`, and `ortho`, a datum's shift by
 `+towgs84`, and the datums WGS84 and NAD83, as PROJ 9.4.0 computes them (ADR-0037).
 
+**A rotated map.** On a map with an [`ANGLE`](angle.md), `msMapSetFakedExtent` puts the map's
+geotransform on the map's projection, and `msProjectionsDiffer` finds every layer where both sides
+have parameters different from the map, so each is reprojected, a layer in the map's own projection
+among them. `msProjectPointEx` moves a feature's point by PROJ's step, then by the inverse
+geotransform into the frame of the image, y up. The area asked goes the other way:
+`msProjectRect` samples the faked extent `0, 0, width, height`, moves each sample by the
+geotransform, then by PROJ's step. Where both sides are the same single argument, such as
+`init=epsg:21781`, MapServer creates no PROJ object, and where they are the same several, one from
+the CRS into itself; either way only the geotransform moves a point, and the core runs no formula
+for such a layer. A layer of `AUTO` whose source declares no projection, or one that cannot be
+read, under a map of `AUTO`, is the first case. With a geotransform, `msProjectRect` skips its
+polar branches, and the dateline wrap is measured in the frame's pixels, where the map is rotated
+by other than a multiple of 180°. A layer without a projection, or under a map without one, is
+not reprojected: its source is asked for the faked extent itself, and its coordinates are drawn
+as the frame's pixels, unrotated, as MapServer draws them; Forager warns
+`rotation-without-projection`, naming the layer, where MapServer is silent
+(ADR-draft-map-rotation-in-the-reprojection).
+
 **Parameters.** MapServer hands every parameter to PROJ, so the frontend writes each one with a
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the
 host passes in (ADR-0019); without one, or for a code it does not know, it is a load error. As in

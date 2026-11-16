@@ -12,6 +12,9 @@ pub const MIN_RESOLUTION: f64 = 10.0;
 /// The greatest `resolution` and `def_resolution` a map may have, in dpi: MapServer's
 /// `MS_RESOLUTION_MAX`.
 pub const MAX_RESOLUTION: f64 = 1000.0;
+/// The greatest magnitude of a map's `angle`, in degrees, which MapServer's loader holds `ANGLE`
+/// to.
+pub const MAX_MAP_ANGLE: f64 = 360.0;
 
 /// A map: its image, its extent, and its layers in drawing order.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -43,6 +46,14 @@ pub struct Map {
     /// draws a map of `AUTO`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub projection_auto: bool,
+    /// The angle the map is drawn rotated by, in degrees, MapServer's `ANGLE`: the image's x axis
+    /// points that many degrees counterclockwise of the map's, so its content turns clockwise.
+    /// Every layer with a projection reaches the image through the map's geotransform. Absent,
+    /// or 0, the map is not rotated. A reader drops a value outside -360 to 360 with a warning, as
+    /// MapServer's loader refuses one. Added in format version 1.1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schema", schemars(range(min = -MAX_MAP_ANGLE, max = MAX_MAP_ANGLE)))]
+    pub angle: Option<f64>,
     /// The resolution of the image in dpi; MapServer's default is 72. A reader drops a value
     /// outside 10 to 1000 with a warning, as MapServer's loader refuses one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

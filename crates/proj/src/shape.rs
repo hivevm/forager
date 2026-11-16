@@ -109,9 +109,16 @@ impl Reprojection {
                     Some(&out.first)
                 };
                 let pt1_geo = written.and_then(|l| l.last().copied()).unwrap_or(wrk);
-                let dist = wrk.x - pt1_geo.x;
+                // A geotransform into the map counts only where it does not turn x into y.
+                let dist = match self.unturned_gt() {
+                    Some(gt) => gt.term(1) * (wrk.x - pt1_geo.x),
+                    None => wrk.x - pt1_geo.x,
+                };
                 if dist.abs() > 180.0 && self.need_wrap(this, last, pt1_geo) {
-                    wrk.x = wrapped(wrk.x, dist);
+                    let turn = self
+                        .unturned_gt()
+                        .map_or(360.0, |gt| 360.0 * gt.inverse_term(1));
+                    wrk.x = wrapped(wrk.x, dist, turn);
                 }
             }
             let push = |out: &mut ShapeLines, moved: bool, p: Coord| {
@@ -196,7 +203,7 @@ impl Reprojection {
                 if i > 0 {
                     let dist = points[i].x - points[0].x;
                     if dist.abs() > 180.0 && self.need_wrap(this, start, points[0]) {
-                        points[i].x = wrapped(points[i].x, dist);
+                        points[i].x = wrapped(points[i].x, dist, 360.0);
                     }
                 }
             }
@@ -218,8 +225,27 @@ impl Reprojection {
     /// is written `init=epsg:3857`, is reachable but not seen: MapServer tests the map's first
     /// argument as written, and the frontend has expanded `init=` before `proj` reads it, so such
     /// a layer is neither cut nor warned of (docs/semantics/projection.md).
+    /// A source with a geotransform is never cut; into a rotated map, the origin's latitude is
+    /// read back through the map's geotransform, as MapServer reads it.
     pub fn cuts_lines_with_geos(&self) -> bool {
-        !self.from_geographic && self.to_geographic && self.pole_at_origin() == Some(1.0)
+        if self.from_gt.is_some() || self.from_geographic || !self.to_geographic {
+            return false;
+        }
+        let Ok(p) = self.point(Coord { x: 0.0, y: 0.0 }) else {
+            return false;
+        };
+        let latitude = match &self.to_gt {
+            Some(gt) => gt.term(3) + p.x * gt.term(4) + p.y * gt.term(5),
+            None => p.y,
+        };
+        (latitude - 90.0).abs() < 1e-8
+    }
+
+    /// The geotransform of the side reprojected into where its term 2 is 0, which
+    /// `msProjectShapeLine` and `msTestNeedWrap` measure the dateline wrap through; a map rotated
+    /// by other than a multiple of 180° has none.
+    fn unturned_gt(&self) -> Option<&crate::Geotransform> {
+        self.to_gt.as_ref().filter(|gt| gt.term(2) == 0.0)
     }
 
     /// The pole the origin of the projection reprojected from lands on, as `msProjectRect` and
@@ -244,7 +270,11 @@ impl Reprojection {
             return false;
         };
         // If the last point was moved, a move is due.
-        if (pt2_geo.x - pt2.x).abs() > 180.0 {
+        let moved = match self.unturned_gt() {
+            Some(gt) => (pt2_geo.x - pt2.x) * gt.term(1),
+            None => pt2_geo.x - pt2.x,
+        };
+        if moved.abs() > 180.0 {
             return true;
         }
         // Otherwise, wrapped where the middle does not fall between the ends.
@@ -285,13 +315,13 @@ impl Reprojection {
     }
 }
 
-/// `x` moved by 360° against the direction of `dist`, as `msProjectShapeLine` and
-/// `msProjectLineEx` wrap a longitude.
-fn wrapped(x: f64, dist: f64) -> f64 {
+/// `x` moved by `turn`, 360° or its length in the frame of a rotated map's image, against the
+/// direction of `dist`, as `msProjectShapeLine` and `msProjectLineEx` wrap a longitude.
+fn wrapped(x: f64, dist: f64, turn: f64) -> f64 {
     if dist > 0.0 {
-        x - 360.0
+        x - turn
     } else if dist < 0.0 {
-        x + 360.0
+        x + turn
     } else {
         x
     }

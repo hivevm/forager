@@ -121,7 +121,7 @@ misc/quoting.map quoting.png text passes labels-hold
 misc/rfc14.map rfc14.png out: a bitmap font
 misc/rfc36.map rfc36_geojson.js out: an OGC or CGI request
 misc/rfc36_ogr.map rfc36_ogr_geojson.js out: an OGC or CGI request
-misc/rot_out.map rot_out.png geometry fails  # not built yet: the ANGLE of the map
+misc/rot_out.map rot_out.png geometry passes
 misc/runtime_sub.map runtime_sub_test001.txt out: an OGC or CGI request
 misc/runtime_sub.map runtime_sub_test002.png out: an OGC or CGI request
 misc/runtime_sub.map runtime_sub_test003.txt out: an OGC or CGI request
@@ -566,8 +566,8 @@ renderers/rgba_overlay_res.map rgba_overlay_res.cairo.png out: another output fo
 renderers/style-size.map style_size_binding.png geometry passes
 renderers/style-size.map style_size_fixed.png geometry passes
 renderers/style-size.map style_size_expression.png geometry passes
-renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: the ANGLE of the map
-renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: the ANGLE of the map
+renderers/symbolrot.map symbolrot.png geometry fails  # not built yet: symbols turned with the ANGLE of the map
+renderers/symbolrot_negative.map symbolrot.png geometry fails  # not built yet: symbols turned with the ANGLE of the map
 renderers/text-shaping.map text_shaping_1.png out: complex script, Hindi
 renderers/text-shaping.map text_shaping_1.cairo.png out: another output format, cairopng
 renderers/text-shaping.map text_shaping_1.pdf out: another output format, pdf

@@ -65,6 +65,7 @@ use forager_symbolize::{
 };
 
 use forager_expr::Evaluator;
+use forager_proj::Geotransform;
 
 use crate::classes::{Binder, Reports, Selector};
 use crate::images::Images;
@@ -147,12 +148,12 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     mut renderer: R,
 ) -> Rendered {
     let mut diagnostics = Vec::new();
-    let Some((width, height, view)) = view(map, &mut diagnostics) else {
+    let Some((width, height, scale, factors, rotation)) = prepare(map, &mut diagnostics) else {
         return Rendered::no_map(diagnostics);
     };
+    let view = &rotation.frame;
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    let (scale, factors) = classes::scales(map, &view, width);
-    let mut labels = Labels::new(map, &view, &factors, files, (width, height));
+    let mut labels = Labels::new(map, view, &factors, files, (width, height));
     // The images of the render's pixmap symbols, dropped with the render (ADR-0029).
     let mut images = Images::default();
     let mut evaluator = Evaluator::new();
@@ -167,7 +168,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             continue;
         };
         let Some((mut features, centres)) =
-            in_view(map, layer, mode, sources, &view, &mut diagnostics).await
+            in_view(map, layer, mode, sources, &rotation, &mut diagnostics).await
         else {
             continue;
         };
@@ -190,7 +191,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         };
         let (drawable, undrawn) = drawable(mode, &features);
         let selected = selector.select(drawable, &map.symbols);
-        let drawing = Drawing::new(mode, layer, scale, &view, centres.as_ref());
+        let drawing = Drawing::new(mode, layer, scale, view, centres.as_ref());
         // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
         // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
         // Any other layer's labels go through the label cache.
@@ -711,6 +712,70 @@ fn view(map: &Map, diagnostics: &mut Vec<Diagnostic>) -> Option<(u32, u32, View)
     Some((width, height, view))
 }
 
+/// What msPrepareImage computes of `map` before its layers are drawn, or `None` with an error:
+/// the image's width and height, the scale from the real extent, the factors of each layer by
+/// its index from msGetGeoCellSize's cellsize (see [`classes::scales`]), and the rotation.
+fn prepare(
+    map: &Map,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(u32, u32, f64, Vec<Factors>, Rotation)> {
+    let (width, height, view) = view(map, diagnostics)?;
+    let rotation = Rotation::of(map, &view, (width, height), diagnostics)?;
+    let (scale, factors) = classes::scales(map, &view, rotation.geo_cellsize, width);
+    Some((width, height, scale, factors, rotation))
+}
+
+/// The rotation of a map by its `angle` (ADR-draft-map-rotation-in-the-reprojection).
+struct Rotation {
+    /// The view everything after the reprojection is drawn in: on a rotated map, the frame of its
+    /// image, `0, 0, width, height` at a cellsize of 1, as msMapSetFakedExtent fakes it.
+    frame: View,
+    /// The map's geotransform, held on the map's side of every reprojection; none unrotated.
+    geotransform: Option<Geotransform>,
+    /// The cellsize the scale factor of a size in units other than pixels divides by.
+    geo_cellsize: f64,
+}
+
+impl Rotation {
+    /// The rotation of `map` in `view`, its image of `size`: none for an angle of 0 or none, as
+    /// msMapSetRotation sets none; `None`, with an error, where the angle gives no geotransform.
+    fn of(
+        map: &Map,
+        view: &View,
+        size: (u32, u32),
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Option<Self> {
+        let unrotated = Self {
+            frame: *view,
+            geotransform: None,
+            geo_cellsize: view.cellsize,
+        };
+        let Some(angle) = map.angle.filter(|&angle| angle != 0.0) else {
+            return Some(unrotated);
+        };
+        let (width, height) = size;
+        let Some(geotransform) = Geotransform::rotated_map(&view.extent, width, height, angle)
+        else {
+            let message = format!("the map's EXTENT, SIZE, and ANGLE {angle} give no geotransform");
+            diagnostics.push(Diagnostic::error("view-invalid", message, map.span.clone()));
+            return None;
+        };
+        Some(Self {
+            frame: View {
+                extent: Extent {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: f64::from(width),
+                    max_y: f64::from(height),
+                },
+                cellsize: 1.0,
+            },
+            geotransform: Some(geotransform),
+            geo_cellsize: classes::rotated_geo_cellsize(&view.extent, width, height),
+        })
+    }
+}
+
 /// Whether [`render`] reads the features of `layer`: one shown, of a TYPE it draws, from its
 /// inline features or from the source bound to it.
 pub fn reads_features(layer: &Layer) -> bool {
@@ -754,7 +819,8 @@ fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<Ren
 }
 
 /// The features of `layer` in view, drawn in `mode`: those its source delivers for the area
-/// [`asked`], in the map's projection, reprojected where the layer is. A circle layer's are left
+/// [`asked`], in the map's projection, reprojected where the layer is, and on a rotated map in the
+/// frame of its image (see [`Rotation`]). A circle layer's are left
 /// in the layer's projection, and returned with the reprojection of their centres, where the
 /// layer is reprojected: circleLayerDrawShape reprojects only a circle's centre
 /// (`src/mapdraw.c:2008-2011`).
@@ -763,11 +829,11 @@ async fn in_view<S: FeatureSource>(
     layer: &Layer,
     mode: RenderMode,
     sources: &BTreeMap<String, S>,
-    view: &View,
+    rotation: &Rotation,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<(Vec<Feature>, Option<reproject::LayerReprojection>)> {
     let declared = declared_projection(layer, sources, diagnostics);
-    let (reprojection, asked) = asked(map, layer, &declared, view, diagnostics)?;
+    let (reprojection, asked) = asked(map, layer, &declared, rotation, diagnostics)?;
     let mut features = source_features(layer, sources, asked, diagnostics).await?;
     if mode == RenderMode::Circle {
         if let Some(reprojection) = &reprojection {
@@ -803,15 +869,18 @@ fn centres_not_reprojected(
 /// How `layer` is reprojected into the map's projection, where it is, and the area its source is
 /// asked for: the map's extent, reprojected into the layer's projection where the layer is
 /// reprojected. None, with a warning, where a projection does not read or no point of the map's
-/// extent reprojects into the layer's.
+/// extent reprojects into the layer's. The map's extent is `rotation`'s frame; on a rotated map,
+/// a layer that is not reprojected is asked for the frame itself, as msDrawVectorLayer asks it,
+/// and drawn unrotated, with a warning.
 fn asked(
     map: &Map,
     layer: &Layer,
     declared: &DeclaredProjection,
-    view: &View,
+    rotation: &Rotation,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<(Option<reproject::LayerReprojection>, Extent)> {
-    let reprojection = match reproject::for_layer(map, layer, declared) {
+    let (view, geotransform) = (&rotation.frame, rotation.geotransform.as_ref());
+    let reprojection = match reproject::for_layer(map, layer, declared, geotransform) {
         Ok(reprojection) => reprojection,
         Err(error) => {
             let message = format!(
@@ -827,6 +896,9 @@ fn asked(
         }
     };
     let Some(reprojection) = reprojection else {
+        if geotransform.is_some() {
+            diagnostics.push(rotation_without_projection(layer));
+        }
         return Some((None, view.extent));
     };
     let Some(extent) = reprojection.asked(&view.extent) else {
@@ -942,6 +1014,18 @@ fn declared_projection<S: FeatureSource>(
         ));
     }
     declared
+}
+
+/// The warning that `layer`, on a rotated map, is not reprojected, because it or the map has no
+/// projection, and lands in the frame of the image unrotated, where MapServer draws it. MapServer
+/// is silent; the warning tells the user why (ADR-draft-map-rotation-in-the-reprojection).
+fn rotation_without_projection(layer: &Layer) -> Diagnostic {
+    let message = format!(
+        "layer {} is not rotated by the map's ANGLE: it or the map has no PROJECTION, so its \
+         coordinates are drawn as the image's pixels, as MapServer draws them",
+        name(layer)
+    );
+    Diagnostic::warning("rotation-without-projection", message, layer.span.clone())
 }
 
 /// The warning that `count` points of `layer`'s features do not reproject into the map's

@@ -2,7 +2,7 @@
 //! each shape before it draws it, and of the area asked of the layer's source into the layer's.
 
 use forager_ports::{Coord, DeclaredProjection, Feature, Geometry};
-use forager_proj::{Error, Projection, Reprojection, differ};
+use forager_proj::{Error, Geotransform, Projection, Reprojection, differ};
 use forager_style_ir::{Extent, Layer, LayerProjection, Map};
 
 /// The most points the horizon search of one layer's reprojection adds to the shapes of its
@@ -52,10 +52,17 @@ enum Side<'a> {
 /// not read. A side of `AUTO` without a PROJ object is taken as longitude and latitude in the
 /// other's base geographic CRS, as `msProjectCreateReprojector` takes it, and nothing is
 /// reprojected where that is the other side itself.
+///
+/// On a rotated map, `geotransform` the map's, every layer where both sides have parameters is
+/// reprojected, as `msProjectionsDiffer` finds a geotransform different from any projection, and
+/// lands in the frame of the image. Where MapServer creates no PROJ object, or one from a CRS into
+/// the same CRS, the way runs no formula and only the geotransform moves a point
+/// (ADR-draft-map-rotation-in-the-reprojection).
 pub(crate) fn for_layer(
     map: &Map,
     layer: &Layer,
     declared: &DeclaredProjection,
+    geotransform: Option<&Geotransform>,
 ) -> Result<Option<LayerReprojection>, Error> {
     let layer_side = match &layer.projection {
         None => Side::Empty,
@@ -72,25 +79,44 @@ pub(crate) fn for_layer(
         (None, false) => Side::Empty,
     };
     let empty = |p: &str| p.split_whitespace().next().is_none();
+    let rotated = geotransform.is_some();
     let to_map = match (layer_side, map_side) {
-        (Side::Empty, _) | (_, Side::Empty) | (Side::Auto, Side::Auto) => return Ok(None),
+        (Side::Empty, _) | (_, Side::Empty) => return Ok(None),
         (Side::Proj4(l), _) if empty(l) => return Ok(None),
         (_, Side::Proj4(m)) if empty(m) => return Ok(None),
+        // The one argument `AUTO` on both sides: no PROJ object.
+        (Side::Auto, Side::Auto) if rotated => Reprojection::identity(false, false),
+        (Side::Auto, Side::Auto) => return Ok(None),
         (Side::Proj4(l), Side::Auto) => Reprojection::into_auto(Projection::parse(l)?),
         (Side::Auto, Side::Proj4(m)) => {
             let map = Projection::parse(m)?;
-            // Longitude and latitude into its own geographic CRS: MapServer does nothing.
+            // Longitude and latitude into its own geographic CRS: MapServer does nothing but
+            // the geotransform, its map's side longitude and latitude to its tests.
             if map.is_geographic() {
-                return Ok(None);
+                if !rotated {
+                    return Ok(None);
+                }
+                Reprojection::identity(false, true)
+            } else {
+                Reprojection::into_auto(map).reversed()
             }
-            Reprojection::into_auto(map).reversed()
         }
         (Side::Proj4(l), Side::Proj4(m)) => {
-            if !differ(l, m) {
+            if differ(l, m) {
+                Reprojection::new(Projection::parse(l)?, Projection::parse(m)?)
+            } else if rotated {
+                // No PROJ object for one argument, one from the CRS into itself for several:
+                // either moves no point. Both sides alike, MapServer's tests of longitude and
+                // latitude find nothing to wrap.
+                Reprojection::identity(false, false)
+            } else {
                 return Ok(None);
             }
-            Reprojection::new(Projection::parse(l)?, Projection::parse(m)?)
         }
+    };
+    let to_map = match geotransform {
+        Some(gt) => to_map.onto_rotated_map(*gt),
+        None => to_map,
     };
     Ok(Some(LayerReprojection {
         to_layer: to_map.reversed(),
@@ -245,7 +271,7 @@ mod tests {
             projection: Some(LayerProjection::Proj4("+proj=longlat +datum=WGS84".into())),
             ..Layer::default()
         };
-        for_layer(&map, &layer, &DeclaredProjection::None)
+        for_layer(&map, &layer, &DeclaredProjection::None, None)
             .unwrap()
             .unwrap()
     }
@@ -469,7 +495,7 @@ mod tests {
                 projection: Some(LayerProjection::Proj4(layer.into())),
                 ..Layer::default()
             };
-            for_layer(&map, &layer, &DeclaredProjection::None)
+            for_layer(&map, &layer, &DeclaredProjection::None, None)
                 .unwrap()
                 .unwrap()
         };
@@ -520,7 +546,7 @@ mod tests {
                 projection: Some(LayerProjection::Proj4(source.clone())),
                 ..Layer::default()
             };
-            let way = for_layer(&map, &layer, &DeclaredProjection::None)
+            let way = for_layer(&map, &layer, &DeclaredProjection::None, None)
                 .unwrap()
                 .unwrap();
             // A small ring about a point of the polygon that reprojects.

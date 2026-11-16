@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::lenient::{self, Pointer, read_error};
 use crate::migration::{self, STEPS};
 use crate::{
-    Diagnostic, Expr, Fonts, MAX_EXPRESSION_DEPTH, MAX_RESOLUTION, MIN_RESOLUTION, Map,
-    TransformTree,
+    Diagnostic, Expr, Fonts, MAX_EXPRESSION_DEPTH, MAX_MAP_ANGLE, MAX_RESOLUTION, MIN_RESOLUTION,
+    Map, TransformTree,
 };
 
 /// The format version this build writes, `MAJOR.MINOR`. It is independent of the crate version.
@@ -326,7 +326,7 @@ impl Map {
     /// Drops a `resolution` or `def_resolution` outside [`MIN_RESOLUTION`] to
     /// [`MAX_RESOLUTION`], each with a warning, so that its default applies: MapServer's loader
     /// refuses such a value, and the engine's resolution factor is only finite and positive
-    /// within the range.
+    /// within the range. Drops an `angle` outside ±[`MAX_MAP_ANGLE`] with a warning alike.
     fn ranged(&mut self) -> Vec<Diagnostic> {
         let mut warnings = Vec::new();
         let fields = [
@@ -344,6 +344,16 @@ impl Map {
                 );
                 warnings.push(Diagnostic::warning("value-out-of-range", message, None));
             }
+        }
+        if let Some(angle) = self.angle
+            && !(-MAX_MAP_ANGLE..=MAX_MAP_ANGLE).contains(&angle)
+        {
+            self.angle = None;
+            let message = format!(
+                "/map/angle: {angle} is outside -{MAX_MAP_ANGLE} to {MAX_MAP_ANGLE} and is \
+                 ignored; the map is not rotated"
+            );
+            warnings.push(Diagnostic::warning("value-out-of-range", message, None));
         }
         warnings
     }
@@ -394,6 +404,7 @@ mod tests {
             label_cache_edge_buffer: Some(10),
             projection: Some("+proj=longlat +datum=WGS84".into()),
             projection_auto: false,
+            angle: Some(30.0),
             resolution: Some(96.0),
             def_resolution: None,
             units: Some(Units::Degrees),
@@ -1045,6 +1056,31 @@ mod tests {
         assert!(read.warnings.is_empty(), "{:?}", read.warnings);
         assert_eq!(read.document.map.resolution, Some(10.0));
         assert_eq!(read.document.map.def_resolution, Some(1000.0));
+    }
+
+    #[test]
+    fn a_map_angle_reads_back_and_one_outside_360_is_dropped_with_a_warning() {
+        // Verifies: G-3, ADR-draft-map-rotation-in-the-reprojection
+        let document = sample();
+        assert_eq!(document.map.angle, Some(30.0));
+        let text = document.to_json().unwrap();
+        assert!(text.contains(r#""angle": 30.0"#), "{text}");
+        assert_eq!(StyleDocument::from_json(&text).unwrap().document, document);
+        let read = with_map(r#""angle":-360,"resolution":72"#);
+        assert!(read.warnings.is_empty(), "{:?}", read.warnings);
+        assert_eq!(read.document.map.angle, Some(-360.0));
+        for value in ["360.5", "-1e9"] {
+            let read = with_map(&format!(r#""angle":{value}"#));
+            assert_eq!(read.document.map.angle, None, "{value}");
+            let [warning] = read.warnings.as_slice() else {
+                panic!("{value}: {:?}", read.warnings)
+            };
+            assert_eq!(warning.code, "value-out-of-range");
+            assert!(warning.message.contains("/map/angle"), "{warning:?}");
+        }
+        let read = StyleDocument::from_yaml("version: \"1.1\"\nmap: {angle: .nan}\n").unwrap();
+        assert_eq!(read.document.map.angle, None);
+        assert_eq!(read.warnings.len(), 1, "{:?}", read.warnings);
     }
 
     #[test]

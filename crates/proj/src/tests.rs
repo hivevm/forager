@@ -427,3 +427,210 @@ fn over_keeps_a_longitude_past_the_antimeridian_on_the_way_in_and_out() {
         .unwrap();
     assert!((wrapped.x + 170.0).abs() < 1e-9, "{wrapped:?}");
 }
+
+/// The extent of `misc/rot_out.map` grown to its image of 400 × 300, as `msAdjustExtent` grows
+/// it.
+const ROT_OUT: Extent = Extent {
+    min_x: 478_153.478_260_869_57,
+    min_y: 4_762_880.0,
+    max_x: 481_796.521_739_130_43,
+    max_y: 4_765_610.0,
+};
+
+fn rot_out() -> Geotransform {
+    Geotransform::rotated_map(&ROT_OUT, 400, 300, 30.0).unwrap()
+}
+
+#[test]
+fn a_rotated_maps_geotransform_is_mapservers_to_the_bit() {
+    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // misc/rot_out.map, ANGLE 30, as msMapComputeGeotransform and msMapSetFakedExtent compute it
+    // in IEEE doubles.
+    let map = geotransform::map_geotransform(&ROT_OUT, 400, 300, 30.0).unwrap();
+    assert_eq!(
+        map,
+        [
+            477_708.779_697_437_1,
+            7.907_188_469_336_169,
+            4.565_217_391_304_347,
+            4_764_518.034_792_14,
+            4.565_217_391_304_341,
+            -7.907_188_469_336_179
+        ]
+    );
+    let flipped = rot_out();
+    let terms: Vec<f64> = (0..6).map(|i| flipped.term(i)).collect();
+    assert_eq!(
+        terms,
+        [
+            479_078.344_914_828_37,
+            7.907_188_469_336_169,
+            -4.565_217_391_304_347,
+            4_762_145.878_251_339,
+            4.565_217_391_304_341,
+            7.907_188_469_336_179
+        ]
+    );
+    let inverse: Vec<f64> = (0..6).map(|i| flipped.inverse_term(i)).collect();
+    assert_eq!(
+        inverse,
+        [
+            -306_224.952_348_443_4,
+            0.094_850_401_366_867_25,
+            0.054_761_904_761_904_83,
+            -425_456.205_221_994_66,
+            -0.054_761_904_761_904_76,
+            0.094_850_401_366_867_11
+        ]
+    );
+    // MapServer computes none for an image one pixel wide or an extent of no width.
+    assert_eq!(Geotransform::rotated_map(&ROT_OUT, 1, 300, 30.0), None);
+    let flat = Extent {
+        max_x: ROT_OUT.min_x,
+        ..ROT_OUT
+    };
+    assert_eq!(Geotransform::rotated_map(&flat, 400, 300, 30.0), None);
+}
+
+#[test]
+fn a_point_in_the_maps_projection_lands_where_the_geotransform_puts_it() {
+    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // The extent's centre lands on (200, 150.00000000017462) of the frame, y up, as the C's
+    // formulas give it; an unrotated map puts it on (199.5, 149.5).
+    let way = Reprojection::identity(false, false).onto_rotated_map(rot_out());
+    let centre = way.point(at(479_975.0, 4_764_245.0)).unwrap();
+    assert_eq!(centre.x, 200.0);
+    assert_eq!(300.0 - centre.y, 150.000_000_000_174_62);
+    let corner = way.point(at(478_315.531_25, 4_762_880.5)).unwrap();
+    assert!(
+        (corner.x + 32.123_896_040_895_49).abs() < 1e-9,
+        "{corner:?}"
+    );
+    assert!(
+        (300.0 - corner.y - 188.547_703_022_370_1).abs() < 1e-9,
+        "{corner:?}"
+    );
+    // The way back moves the frame by the geotransform alone.
+    let back = way.reversed().point(at(0.0, 0.0)).unwrap();
+    assert_eq!(back, at(479_078.344_914_828_37, 4_762_145.878_251_339));
+}
+
+#[test]
+fn the_area_asked_of_a_rotated_map_holds_the_corners_of_its_view() {
+    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // msProjectRect samples the faked extent 0, 0, 400, 300 and moves each sample by the map's
+    // geotransform; the PROJ step from the CRS into itself runs no formula.
+    let asked = Reprojection::identity(false, false)
+        .onto_rotated_map(rot_out())
+        .reversed()
+        .extent(&Extent {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 400.0,
+            max_y: 300.0,
+        })
+        .unwrap();
+    assert_eq!(
+        asked,
+        Extent {
+            min_x: 477_708.779_697_437_1,
+            min_y: 4_762_145.878_251_339,
+            max_x: 482_241.220_302_562_8,
+            max_y: 4_766_344.121_748_662,
+        }
+    );
+}
+
+#[test]
+fn a_rotated_map_skips_the_polar_branches_of_the_area_asked() {
+    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // A map in a polar ortho, rotated by -45°, its view placed so that the frame's origin lands a
+    // tenth of a millimetre east of the pole: msProjectRect's test of a polar projection would
+    // find the pole there and take every longitude up to 90°, but it does not run where a side
+    // holds a geotransform. The ring of the view, which lies between the meridians 45° and 135°
+    // east, is reprojected with +over as it is.
+    let polar = "+proj=ortho +lat_0=90 +lon_0=0 +datum=WGS84";
+    let near = Extent {
+        min_x: 1_000_000.0,
+        min_y: 1_000_000.0,
+        max_x: 2_000_000.0,
+        max_y: 2_000_000.0,
+    };
+    let origin = Geotransform::rotated_map(&near, 101, 101, -45.0)
+        .unwrap()
+        .forward(at(0.0, 0.0));
+    let shift = at(origin.x - 1e-4, origin.y);
+    let view = Extent {
+        min_x: near.min_x - shift.x,
+        min_y: near.min_y - shift.y,
+        max_x: near.max_x - shift.x,
+        max_y: near.max_y - shift.y,
+    };
+    let gt = Geotransform::rotated_map(&view, 101, 101, -45.0).unwrap();
+    let to_layer = way(LONGLAT_WGS84, polar).onto_rotated_map(gt).reversed();
+    // The frame's origin lies on the pole, as the polar test finds it.
+    let pole = to_layer.point(at(0.0, 0.0)).unwrap();
+    assert!((pole.y - 90.0).abs() < 1e-8, "{pole:?}");
+    let faked = Extent {
+        min_x: 0.0,
+        min_y: 0.0,
+        max_x: 101.0,
+        max_y: 101.0,
+    };
+    let asked = to_layer.extent(&faked).unwrap();
+    assert!(
+        asked.min_x > 40.0 && asked.max_x < 140.0,
+        "not every longitude: {asked:?}"
+    );
+    // Without a geotransform, a view about the pole takes every longitude up to it.
+    let about_pole = Extent {
+        min_x: -1_000_000.0,
+        min_y: -1_000_000.0,
+        max_x: 1_000_000.0,
+        max_y: 1_000_000.0,
+    };
+    let unrotated = way(polar, LONGLAT_WGS84).extent(&about_pole).unwrap();
+    assert_eq!(
+        (unrotated.min_x, unrotated.max_x, unrotated.max_y),
+        (-180.0, 180.0, 90.0)
+    );
+}
+
+#[test]
+fn the_dateline_wrap_into_a_rotated_map_is_measured_in_the_frame() {
+    // Verifies: ADR-draft-map-rotation-in-the-reprojection
+    // A map in longitude and latitude, 2° a pixel. A line from 170° to 190° in a Mercator of
+    // +over comes back at -170°, more than 180° from where it started. Rotated by 30°, term 2 of
+    // the geotransform is not 0, so msProjectShapeLine measures the distance in the frame's
+    // pixels, about 147, and wraps nothing. Rotated by 0°, it measures it through term 1, in
+    // degrees, and wraps by 360° in pixels.
+    let map = Extent {
+        min_x: 0.0,
+        min_y: 0.0,
+        max_x: 200.0,
+        max_y: 100.0,
+    };
+    let merc_over = "+proj=merc +datum=WGS84 +over";
+    let line: Vec<Coord> = [170.0, 190.0]
+        .iter()
+        .map(|&lon| {
+            way("+proj=latlong +datum=WGS84 +over", merc_over)
+                .point(at(lon, 10.0))
+                .unwrap()
+        })
+        .collect();
+    let into = |angle: f64| {
+        let gt = Geotransform::rotated_map(&map, 101, 51, angle).unwrap();
+        (way(merc_over, LONGLAT_WGS84).onto_rotated_map(gt), gt)
+    };
+    let (rotated, gt) = into(30.0);
+    let shape = rotated.shape(std::slice::from_ref(&line), false);
+    assert_eq!(shape.lines[0][1], gt.inverse(at(-170.0, 10.0)));
+    let (unturned, gt) = into(0.0);
+    let shape = unturned.shape(std::slice::from_ref(&line), false);
+    let unwrapped = gt.inverse(at(-170.0, 10.0));
+    assert_eq!(
+        shape.lines[0][1].x,
+        unwrapped.x + 360.0 * gt.inverse_term(1)
+    );
+}

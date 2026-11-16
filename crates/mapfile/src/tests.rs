@@ -344,6 +344,22 @@ fn the_image_colour_keeps_its_alpha_and_takes_every_channel_as_a_byte() {
 }
 
 #[test]
+fn the_maps_angle_loads_within_360_and_none_for_0() {
+    // Verifies: G-3, ADR-draft-map-rotation-in-the-reprojection
+    let angle = |text: &'static str| load_files(&[("m.map", text)]).document.unwrap().map.angle;
+    assert_eq!(angle("MAP ANGLE 30 END"), Some(30.0));
+    assert_eq!(angle("MAP ANGLE -315 END"), Some(-315.0));
+    assert_eq!(angle("MAP ANGLE 360 END"), Some(360.0));
+    assert_eq!(angle("MAP ANGLE 0 END"), None);
+    assert_eq!(angle("MAP END"), None);
+    // getDouble with MS_NUM_CHECK_RANGE: loadMapInternal fails the map.
+    for text in ["MAP ANGLE 360.5 END", "MAP ANGLE [rot] END"] {
+        let loaded = load_files(&[("m.map", text)]);
+        assert_eq!(codes(&loaded), ["invalid-value"], "{text}");
+    }
+}
+
+#[test]
 fn an_include_without_a_string_keeps_the_next_token() {
     let loaded = load_files(&[("m.map", "MAP INCLUDE END")]);
     assert_eq!(codes(&loaded), ["invalid-value"]);
@@ -1458,7 +1474,8 @@ fn an_init_file_tag_that_is_no_code_is_skipped_as_proj_skips_it() {
 #[test]
 fn the_translations_warnings_past_the_limit_are_counted() {
     // Verifies: Q-9
-    let lines = "  ANGLE 0\n".repeat(super::MAX_DIAGNOSTICS + 500);
+    // Each IMAGETYPE read warns that the output format is read only in part.
+    let lines = "  IMAGETYPE png\n".repeat(super::MAX_DIAGNOSTICS + 500);
     let text: &'static str = Box::leak(format!("MAP\n{lines}END\n").into_boxed_str());
     let loaded = load_files(&[("m.map", text)]);
     assert_eq!(loaded.diagnostics.len(), super::MAX_DIAGNOSTICS + 1);
@@ -1470,7 +1487,8 @@ fn the_translations_warnings_past_the_limit_are_counted() {
 #[test]
 fn an_error_past_the_limit_still_fails_the_load() {
     // Verifies: Q-9
-    let lines = "  ANGLE 0\n".repeat(super::MAX_DIAGNOSTICS + 500);
+    // Each IMAGETYPE read warns that the output format is read only in part.
+    let lines = "  IMAGETYPE png\n".repeat(super::MAX_DIAGNOSTICS + 500);
     let text = format!("MAP\n{lines}  PROJECTION 'init=epsg:4326' END\nEND\n");
     let text: &'static str = Box::leak(text.into_boxed_str());
     let loaded = load_files(&[("m.map", text)]);
