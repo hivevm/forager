@@ -1264,7 +1264,7 @@ mod tests {
     }
 
     #[test]
-    fn a_glyph_outline_wider_than_any_stroke_covers_the_image_as_a_stroke_that_wide_does() {
+    fn a_glyph_outline_is_bounded_as_a_stroke_is_and_keeps_its_sign() {
         // Verifies: ADR-0025
         // Unbounded, a contour of 1e12 puts its vertices past agg-rust's fixed-point
         // coordinates and the rasterizer's clip overflows; bounded as a stroke's width is, it
@@ -1294,6 +1294,20 @@ mod tests {
         // A width as far below zero, as a label's wrapped into an int can be, shrinks the
         // contour by no more than the same bound.
         render(&[outlined(square(28.0, 36.0), -1e12)]);
+        // A small width below zero is drawn as AGG's vcgen_contour draws it, the square shrunk
+        // by half of it, not grown: the bound keeps the sign.
+        let image = render(&[outlined(square(20.0, 44.0), -4.0)]);
+        assert_eq!(image.pixel(32, 32), Some(BLUE), "inside the shrunk square");
+        assert_eq!(
+            image.pixel(21, 32),
+            Some(WHITE),
+            "between the square and its contour"
+        );
+        assert_eq!(
+            image.pixel(18, 32),
+            Some(WHITE),
+            "nothing outside the square"
+        );
     }
 
     #[test]
