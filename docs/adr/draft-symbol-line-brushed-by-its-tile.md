@@ -1,6 +1,6 @@
 # ADR-draft-symbol-line-brushed-by-its-tile: A symbol along a line without a GAP brushes the line with its tile, through agg-rust's outline-image rasterizer and a port of AGG 2.4's pattern filter
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-16
 - **Deciders:** Markus Brigl
 - **Applies to:** the drawing of a line style whose symbol is a vector, ellipse, pixmap, or TrueType symbol and whose `GAP` is 0 in `crates/symbolize`, the display item of a line drawn with a tile in `crates/render`, its rasterizing, its pattern filter, and its clip in `crates/render-agg`

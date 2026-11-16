@@ -1,6 +1,6 @@
 # ADR-draft-simplifypt-ported-from-jts: `simplifypt` is computed in `symbolize` by a port of JTS's `TopologyPreservingSimplifier`
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-16
 - **Deciders:** Markus Brigl
 - **Applies to:** the code of `simplifypt` in the geometry module of `crates/symbolize` and its callers in `crates/symbolize/src/layer_transform.rs` and the drawing of a class style's tree, the notice of JTS on the files it ports, and the unit tests that hold coordinates taken from GEOS for it
