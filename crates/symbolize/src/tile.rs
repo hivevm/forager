@@ -112,6 +112,21 @@ struct Key {
 }
 
 impl Key {
+    /// The key of the tile of the symbol at `index` from 1, of `width` by `height` pixels, in
+    /// computeSymbolStyle's `s`: a vector's, an ellipse's, or a TrueType symbol's.
+    fn styled(symbol: usize, (width, height): (u32, u32), s: &SymbolStyle) -> Self {
+        Self {
+            symbol,
+            width,
+            height,
+            scale: s.scale.to_bits(),
+            rotation: s.rotation.to_bits(),
+            outline_width: s.outline_width.to_bits(),
+            fill: s.fill,
+            outline: s.outline,
+        }
+    }
+
     /// Whether the tile held under `self` serves `asked`, as searchTileCache decides: the numbers
     /// equal, and each colour equal where `asked` has one; where it has none, any held serves.
     fn serves(&self, asked: &Self) -> bool {
@@ -348,16 +363,7 @@ pub(crate) fn vector_tile(
 ) -> Result<Rc<Tile>, String> {
     let [size_x, size_y] = symbol.extent.unwrap_or([0.0, 0.0]);
     let (width, height) = size((size_x, size_y), s.scale, asked.gap(s.gap))?;
-    let key = Key {
-        symbol: index,
-        width,
-        height,
-        scale: s.scale.to_bits(),
-        rotation: s.rotation.to_bits(),
-        outline_width: s.outline_width.to_bits(),
-        fill: s.fill,
-        outline: s.outline,
-    };
+    let key = Key::styled(index, (width, height), s);
     let mut marks = Vec::new();
     for at in centres(width, height, seamless) {
         symbol::render(&mut marks, at, symbol, s);
@@ -379,16 +385,7 @@ pub(crate) fn glyph_tile(
     mark: impl FnOnce(Point) -> Option<(DrawOp, Note)>,
 ) -> Result<Option<(Rc<Tile>, Note)>, String> {
     let (width, height) = size((1.0, 1.0), s.scale, asked.gap(s.gap))?;
-    let key = Key {
-        symbol: index,
-        width,
-        height,
-        scale: s.scale.to_bits(),
-        rotation: s.rotation.to_bits(),
-        outline_width: s.outline_width.to_bits(),
-        fill: s.fill,
-        outline: s.outline,
-    };
+    let key = Key::styled(index, (width, height), s);
     if let Some(held) = tiles.held(&key, asked) {
         return held.map(Some);
     }

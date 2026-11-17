@@ -18,15 +18,15 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use forager_render::{PremultipliedImage, Tile};
+use forager_render::PremultipliedImage;
 use forager_style_ir::{Style, Symbol};
 
 use crate::glyph::Glyphs;
 use crate::hatch::Hatching;
 use crate::layer_transform::StyleTrees;
 use crate::line_marker::MarkerBudget;
-use crate::symbol::{self, Factors, Pixmaps, SymbolStyle};
-use crate::tile::{self, TileFor, Tiles};
+use crate::symbol::{self, Factors, Pixmaps};
+use crate::tile::Tiles;
 
 /// What a layer draws its features on beside the view: the map's symbols, the images of its
 /// pixmap symbols and the render's tiles of them, the image's width and height in pixels, the
@@ -237,49 +237,13 @@ impl<'a> Canvas<'a> {
         symbol::named(index, symbol)
     }
 
-    /// The tile of the pixmap symbol at `index` from 1 with the image `image`, of `style` at the
-    /// canvas's factors, asked for `asked`: computeSymbolStyle's scale, rotation, and gap give the
-    /// tile of the canvas's (see [`tile::tile`]). Where it is refused (Q-9), there is none, and the
-    /// canvas records why.
-    pub(crate) fn pixmap_tile<T>(
-        &mut self,
-        style: &Style<T>,
-        index: usize,
-        image: Rc<PremultipliedImage>,
-        asked: TileFor,
-    ) -> Option<Rc<Tile>> {
-        let drawn = symbol::pixmap_style(style, image.height(), self.factors);
-        // The engine's canvas always keeps tiles; one made without them, as a test's is, refuses
-        // the drawing rather than build a tile that nothing would hold or count (Q-9).
-        let tile = match self.tiles.as_deref_mut() {
-            Some(tiles) => tile::tile(tiles, index, image, drawn, asked),
-            None => Err("no tiles are kept where it is drawn".to_owned()),
-        };
-        tile.map_err(|why| {
-            self.refused_pixmaps.entry(index).or_insert(why);
-        })
-        .ok()
-    }
-
-    /// The tile of the vector or ellipse symbol `symbol`, at `index` from 1, in
-    /// computeSymbolStyle's `s`, seamless where `seamless`, asked for `asked` (see
-    /// [`tile::vector_tile`]). Where it is refused (Q-9), there is none, and the canvas records
-    /// why.
-    pub(crate) fn symbol_tile(
-        &mut self,
-        index: usize,
-        symbol: &Symbol,
-        s: &SymbolStyle,
-        seamless_and_asked: (bool, TileFor),
-    ) -> Option<Rc<Tile>> {
-        let tile = match self.tiles.as_deref_mut() {
-            Some(tiles) => tile::vector_tile(tiles, index, symbol, s, seamless_and_asked),
-            None => Err("no tiles are kept where it is drawn".to_owned()),
-        };
-        tile.map_err(|why| {
-            self.refused_symbols.entry(index).or_insert(why);
-        })
-        .ok()
+    /// The render's cache of tiles, or why the layer draws no tile: the engine's canvas always
+    /// keeps one; a canvas made without it, as a test's is, refuses the drawing rather than build a
+    /// tile that nothing would hold or count (Q-9).
+    pub(crate) fn tiles(&mut self) -> Result<&mut Tiles, String> {
+        self.tiles
+            .as_deref_mut()
+            .ok_or_else(|| "no tiles are kept where it is drawn".to_owned())
     }
 
     /// The image of the pixmap symbol `symbol`, at `index` from 1, or `None`, its refusal

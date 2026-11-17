@@ -18,8 +18,9 @@
 //! A style's [`Mark`] where a line or a polygon places it, one dispatch over the kinds for each
 //! placement: along a line, each marker drawn by a [`Styled`] mark at its point and angle and
 //! priced by it against the canvas's budget (see [`along_line`]); as a brush or a fill tile (see
-//! [`tile`]). The point's own dispatch is `marker::marker_ops`.
+//! [`tile()`]). The point's own dispatch is `marker::marker_ops`.
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use forager_render::{DrawOp, Point, PremultipliedImage, Tile};
@@ -30,7 +31,7 @@ use crate::glyph::Glyph;
 use crate::glyph_marker;
 use crate::line_marker::{MarkerBudget, Placement, clamped, taken};
 use crate::symbol::{self, Mark, SymbolStyle};
-use crate::tile::TileFor;
+use crate::tile::{self, TileFor};
 
 /// A mark of a vector, an ellipse, a pixmap, or a TrueType symbol as computeSymbolStyle styles it
 /// at the canvas's factors, with what it draws: its symbol, its pixmap's image, or its glyph.
@@ -178,12 +179,15 @@ pub(crate) fn along_line<T>(
 }
 
 /// The tile of `mark`, of `style` at the canvas's factors, that msDrawShadeSymbol, or
-/// msDrawLineSymbol where `asked` is a line's, asks getTile for: a pixmap's of its image (see
-/// [`Canvas::pixmap_tile`]), a vector's or an ellipse's, seamless where `seamless` (see
-/// [`Canvas::symbol_tile`]), and a TrueType symbol's of its glyph (see
-/// [`glyph_marker::glyph_tile`]). None for a vector, an ellipse, or a TrueType symbol of neither
-/// colour, for a square or no symbol, and where the image or the tile is refused, the canvas
-/// recording why.
+/// msDrawLineSymbol where `asked` is a line's, asks getTile for, from the render's cache of tiles
+/// (see [`Canvas::tiles`]): a pixmap's of its image (see [`pixmap_tile`]); a vector's or an
+/// ellipse's, seamless where `seamless` (see [`tile::vector_tile`]); and a TrueType symbol's of its
+/// glyph, asked only for a tile the cache does not hold and drawn at the tile's centre by
+/// [`glyph_marker::glyph_op`], a font that lacks the character noted with the tile, so that each
+/// layer that draws it records that (see [`tile::glyph_tile`]). None for a vector, an ellipse, or
+/// a TrueType symbol of neither colour, for a square or no symbol, and where the image, the glyph,
+/// or the tile is refused (Q-9): the canvas records why, a pixmap's among the pixmaps, the others
+/// among the symbols.
 pub(crate) fn tile<T>(
     mark: Mark,
     style: &Style<T>,
@@ -193,18 +197,74 @@ pub(crate) fn tile<T>(
     match mark {
         Mark::Pixmap(index, symbol) => {
             let image = canvas.pixmap(index, symbol)?;
-            canvas.pixmap_tile(style, index, image, asked)
+            pixmap_tile(style, index, image, asked, canvas)
         }
         Mark::Symbol(index, symbol) => {
             let s = coloured(style, symbol, canvas)?;
-            canvas.symbol_tile(index, symbol, &s, (seamless, asked))
+            let tile = canvas
+                .tiles()
+                .and_then(|tiles| tile::vector_tile(tiles, index, symbol, &s, (seamless, asked)));
+            recorded(&mut canvas.refused_symbols, index, tile)
         }
         Mark::Glyph(index, symbol) => {
-            coloured(style, symbol, canvas)?;
-            glyph_marker::glyph_tile(style, index, symbol, asked, canvas)
+            let s = coloured(style, symbol, canvas)?;
+            let (glyphs, size) = (canvas.glyphs, glyph_marker::glyph_size(s.scale));
+            let mut refused = None;
+            let mark = |at| match glyph_marker::ask(glyphs, symbol, size) {
+                Ok((glyph, missing)) => Some((glyph_marker::glyph_op(&glyph, at, &s), missing)),
+                Err(why) => {
+                    refused = Some(why);
+                    None
+                }
+            };
+            let tile = canvas
+                .tiles()
+                .and_then(|tiles| tile::glyph_tile(tiles, index, &s, asked, mark));
+            match tile {
+                Ok(Some((tile, missing))) => {
+                    if let Some(missing) = missing {
+                        canvas.missing_glyphs.entry(index).or_insert(missing);
+                    }
+                    Some(tile)
+                }
+                Ok(None) => recorded(&mut canvas.refused_symbols, index, Err(refused?)),
+                Err(why) => recorded(&mut canvas.refused_symbols, index, Err(why)),
+            }
         }
         Mark::Square | Mark::Hatch | Mark::Nothing => None,
     }
+}
+
+/// The tile of the pixmap symbol at `index` from 1 with the image `image`, read already, of
+/// `style` at the canvas's factors, asked for `asked`: computeSymbolStyle's scale, rotation, and
+/// gap give the tile of the render's cache (see [`tile::tile`]). Where it is refused (Q-9), there
+/// is none, and the canvas records why among the pixmaps. A shaded pixmap asks it with the image
+/// it read before it tested whether the polygon meets the image.
+pub(crate) fn pixmap_tile<T>(
+    style: &Style<T>,
+    index: usize,
+    image: Rc<PremultipliedImage>,
+    asked: TileFor,
+    canvas: &mut Canvas,
+) -> Option<Rc<Tile>> {
+    let drawn = symbol::pixmap_style(style, image.height(), canvas.factors);
+    let tile = canvas
+        .tiles()
+        .and_then(|tiles| tile::tile(tiles, index, image, drawn, asked));
+    recorded(&mut canvas.refused_pixmaps, index, tile)
+}
+
+/// The tile `tile`, or `None` with why it is refused recorded in `refused` for the symbol at
+/// `index`, the first reason a layer meets kept.
+fn recorded(
+    refused: &mut BTreeMap<usize, String>,
+    index: usize,
+    tile: Result<Rc<Tile>, String>,
+) -> Option<Rc<Tile>> {
+    tile.map_err(|why| {
+        refused.entry(index).or_insert(why);
+    })
+    .ok()
 }
 
 /// computeSymbolStyle's style of `symbol` in `style` at the canvas's factors, or `None` where it
