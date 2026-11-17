@@ -2,7 +2,7 @@
 // (ADR-0017): glibc's strtod in the C locale and the atof and atoi it backs, its lrint on x86-64,
 // and the (int) cast of a double as x86-64 computes it; MapServer's MS_NINT, MS_MIN, MS_MAX, and
 // MS_DEG_TO_RAD of src/mapserver.h, the map's angle in radians of msMapComputeGeotransformEx,
-// src/mapobject.c, msRectOverlap of src/mapsearch.c, msStringSplit of
+// src/mapobject.c, msRectOverlap and msPointInPolygon of src/mapsearch.c, msStringSplit of
 // src/mapstring.cpp, msComputeBounds of src/mapprimitive.cpp, msGetSymbolIndex's match of a name
 // of src/mapfile.c, and the alpha of an opacity of loadStyle, src/mapfile.c, bindStyle,
 // src/maputil.c, and aggCompositeRasterBufferNoPixman, src/mapagg.cpp, of the release pinned in
@@ -24,7 +24,7 @@
 //! C's and MapServer's small functions as MapServer's build at the pin runs them: `strtod`,
 //! `atof`, and `atoi` of glibc in the C locale, `MS_NINT`, which is `lrint` on x86-64, the `(int)`
 //! cast of a `double`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD` and a map's angle
-//! in radians, `msRectOverlap`,
+//! in radians, `msRectOverlap`, `msPointInPolygon`,
 //! `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex`'s match of a symbol's name, and the
 //! alpha `MS_NINT(opacity * 2.55)` of an opacity (ADR-0017).
 
@@ -324,6 +324,50 @@ pub fn rect_overlap(a: [f64; 4], b: [f64; 4]) -> bool {
     !(a_min_x > b_max_x || a_max_x < b_min_x || a_min_y > b_max_y || a_max_y < b_min_y)
 }
 
+/// `msPointInPolygon`, `src/mapsearch.c:173-185`: whether `p` lies inside the ring `c`, of
+/// whatever point type `xy` reads as `[x, y]`, by the crossings of a ray to its right, the edges
+/// taken as the C takes them, from the last point to the first among them. A ring without points
+/// holds none. It is W. Randolph Franklin's pnpoly, under his notice, which `src/mapsearch.c`
+/// keeps beside it and THIRD-PARTY-NOTICES.md reproduces for the binaries:
+///
+/// Copyright (c) 1970-2003, Wm. Randolph Franklin
+///
+/// Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+/// and associated documentation files (the "Software"), to deal in the Software without
+/// restriction, including without limitation the rights to use, copy, modify, merge, publish,
+/// distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+/// Software is furnished to do so, subject to the following conditions:
+///
+/// 1. Redistributions of source code must retain the above copyright notice, this list of
+///    conditions and the following disclaimers.
+/// 2. Redistributions in binary form must reproduce the above copyright notice in the
+///    documentation and/or other materials provided with the distribution.
+/// 3. The name of W. Randolph Franklin may not be used to endorse or promote products derived from
+///    this Software without specific prior written permission.
+///
+/// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+/// BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+/// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+/// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+/// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+pub fn point_in_polygon<P: Copy>(p: [f64; 2], c: &[P], xy: impl Fn(P) -> [f64; 2]) -> bool {
+    let [px, py] = p;
+    let mut status = false;
+    let Some(mut j) = c.len().checked_sub(1) else {
+        return false;
+    };
+    for i in 0..c.len() {
+        let ([ix, iy], [jx, jy]) = (xy(c[i]), xy(c[j]));
+        if ((iy <= py && py < jy) || (jy <= py && py < iy))
+            && px < (jx - ix) * (py - iy) / (jy - iy) + ix
+        {
+            status = !status;
+        }
+        j = i;
+    }
+    status
+}
+
 /// `msComputeBounds`, `src/mapprimitive.cpp:260-286`, of a shape's points, its parts run
 /// together, as `[min x, min y, max x, max y]`: from its first point, each bound folded over every
 /// point by [`ms_min`] or [`ms_max`]. So a point that is no number makes a bound no number, and
@@ -597,6 +641,32 @@ mod tests {
         // No number across, but apart along y.
         assert!(!rect_overlap(a, [f64::NAN, 50.0, f64::NAN, 60.0]));
         assert!(rect_overlap(a, [f64::NAN; 4]));
+    }
+
+    #[test]
+    fn point_in_polygon_takes_the_left_and_lower_edges_and_leaves_the_others() {
+        // Verifies: ADR-0017
+        // The square 0..10 by 0..10, counter-clockwise; pnpoly's half-open crossings put the
+        // left and the lower edge inside and the right and the upper one outside.
+        let square = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        let cases: &[([f64; 2], bool)] = &[
+            ([5.0, 5.0], true),
+            ([15.0, 5.0], false),
+            ([-1.0, 5.0], false),
+            ([0.0, 5.0], true),
+            ([10.0, 5.0], false),
+            ([5.0, 0.0], true),
+            ([5.0, 10.0], false),
+            ([f64::NAN, 5.0], false),
+            ([5.0, f64::NAN], false),
+        ];
+        for &(p, inside) in cases {
+            assert_eq!(point_in_polygon(p, &square, |c| c), inside, "{p:?}");
+        }
+        // A ring as a type of its own reads through `xy`; a ring without points holds none.
+        let pairs = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)];
+        assert!(point_in_polygon([5.0, 5.0], &pairs, |(x, y)| [x, y]));
+        assert!(!point_in_polygon([5.0, 5.0], &[] as &[[f64; 2]], |c| c));
     }
 
     #[test]

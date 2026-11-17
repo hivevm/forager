@@ -1,8 +1,9 @@
 //! C's and MapServer's small ports live once (ADR-0017): `atof`,
 //! `atoi`, `strtod`, `lrint`, C's `(int)` cast of a `double` and its string end, and MapServer's
-//! `MS_NINT`, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, `msStringSplit`,
-//! `msComputeBounds`, `msGetSymbolIndex` with the key of its match of a name, and the alpha of an
-//! opacity are defined in the module of `style-ir` and nowhere else in the workspace.
+//! `MS_NINT`, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, its test of a point in a
+//! polygon, `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex` with the key of its match of a
+//! name, and the alpha of an opacity are defined in the module of `style-ir` and nowhere else in
+//! the workspace.
 
 use std::path::{Path, PathBuf};
 
@@ -10,7 +11,7 @@ use std::path::{Path, PathBuf};
 const MODULE: &str = "crates/style-ir/src/c.rs";
 
 /// The names of the module's ports.
-const PORTS: [&str; 16] = [
+const PORTS: [&str; 17] = [
     "atof",
     "atoi",
     "strtod",
@@ -20,6 +21,7 @@ const PORTS: [&str; 16] = [
     "ms_min",
     "ms_max",
     "rect_overlap",
+    "point_in_polygon",
     "ms_string_split",
     "ms_compute_bounds",
     "opacity_alpha",
