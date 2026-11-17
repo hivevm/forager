@@ -13,7 +13,9 @@ calls (`take_refusals`, `markers_spent`, `style_trees_over_limit`, `take_style_t
 `shade` returns a `bool`, and five callers add it to `canvas.hatching.refused` by hand: `draw.rs`
 three times, `circle.rs`, and `label.rs`.
 
-`shade` records its own refused hatch. `Refusals`, the value that `layer.rs` of the engine turns
+`shade` records its own refused hatch, in a count of the canvas beside `refused_pixmaps` and
+`refused_symbols`: `Hatching`, which ticket 10 left holding that count alone
+(`crates/symbolize/src/hatch.rs`), goes. `Refusals`, the value that `layer.rs` of the engine turns
 into the layer's diagnostics, takes in the spent markers and the trees past their limit. The engine
 reads it with one call per layer. The diagnostics and their order do not change. This is a
 `refactor`. The unit tests that read `shade`'s returned `bool` (`shade/tests.rs`, `line/tests.rs`,
@@ -21,15 +23,15 @@ reads it with one call per layer. The diagnostics and their order do not change.
 
 ## Acceptance criteria
 
-- [ ] Given the tree, when `grep -rn "hatching.refused +=" crates/symbolize/src` runs, then it
-  finds only `shade`.
+- [ ] Given the tree, when `crates/symbolize/src` is searched for an addition to the canvas's
+  count of refused hatches, then only `shade` adds to it, and no `Hatching` is left.
 - [ ] Given the engine, when a layer is drawn, then it reads what was left undrawn by one call.
 - [ ] Given every test that names a diagnostic of a refusal and the msautotest harness, when they
   run, then all pass unchanged, and `scripts/sensor-diagnostics-untested.sh` reports nothing.
 
 ## Read first
 
-- Touches: `crates/symbolize/src/{canvas,shade,draw,circle,label,layer_transform}.rs`,
+- Touches: `crates/symbolize/src/{canvas,hatch,shade,draw,circle,label,layer_transform}.rs`,
   `crates/engine/src/{lib,layer}.rs`
 - ADR-0048 (the warnings of a style's tree); `docs/SPECIFICATION.md` Q-9 (a bound reports once);
   `docs/CONVENTIONS.md` (a bound of Q-9 reports once).

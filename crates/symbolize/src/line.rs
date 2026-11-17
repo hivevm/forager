@@ -242,7 +242,7 @@ fn brushed<T: Clone>(
     Some(DrawOp::BrushedLine {
         paths,
         tile,
-        reach: canvas.hatching.line_clip_buffer,
+        reach: canvas.clip.line_buffer,
     })
 }
 
