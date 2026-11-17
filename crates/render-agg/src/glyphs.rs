@@ -20,7 +20,7 @@ use agg_rust::path_storage::PathStorage;
 use agg_rust::rasterizer_scanline_aa::RasterizerScanlineAa;
 use agg_rust::renderer_scanline::render_scanlines_aa_solid;
 use agg_rust::scanline_u::ScanlineU8;
-use forager_render::clip::{Rect, within_glyph_reach};
+use forager_render::clip::{Rect, drawn_width, within_glyph_reach};
 use forager_render::{GlyphOutline, PathCommand};
 use forager_style_ir::Rgba;
 
@@ -33,6 +33,10 @@ impl AggRenderer {
     /// a point past [`forager_render::clip::MAX_GLYPH_REACH`] of the image, or one that is no number,
     /// is not drawn: the engine leaves out and reports such a glyph before it reaches the display
     /// list by the same predicate, so this guards the renderer against any other display list.
+    /// The outline's width is bounded by [`drawn_width`] as a stroke's is, so that the contour's
+    /// margin past the path stays within agg-rust's fixed-point coordinates (ADR-0025); a
+    /// negative width, which shrinks the contour, by the same bound on its magnitude, since the
+    /// label's width the engine wraps into an `int` as MapServer does can come out negative.
     pub(crate) fn glyphs(
         &mut self,
         path: &[PathCommand],
@@ -61,7 +65,8 @@ impl AggRenderer {
         {
             let curves = ConvCurve::new(&mut storage);
             let mut contour = ConvContour::new(curves);
-            contour.set_width(outline.width);
+            let width = drawn_width(outline.width.abs(), self.width, self.height);
+            contour.set_width(width.copysign(outline.width));
             self.fill_glyphs(&mut contour, outline.color);
         }
         if let Some(color) = color {

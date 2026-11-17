@@ -1,9 +1,8 @@
 // A layer's GEOMTRANSFORM follows msGeomTransformShape, src/mapgeomtransform.c, and the functions
 // its parser calls, src/mapparser.y: msGeneralize, src/maputil.c; msDensify, msRings2Shape,
 // msGetOuterList, and msIsOuterRing, src/mapprimitive.cpp; msSmoothShapeSIA and its line window
-// and preprocessing, src/mapsmoothing.c; and msPointInPolygon and msDistancePointToPoint,
-// src/mapsearch.c; msGEOSSimplify, msGEOSTopologyPreservingSimplify, msGEOSBuffer, and the
-// shape's conversion to GEOS's geometry
+// and preprocessing, src/mapsmoothing.c; msDistancePointToPoint, src/mapsearch.c; msGEOSSimplify,
+// msGEOSTopologyPreservingSimplify, msGEOSBuffer, and the shape's conversion to GEOS's geometry
 // and back, msGEOSShape2Geometry and msGEOSGeometry2Shape, src/mapgeos.c; and msGetInnerList,
 // src/mapprimitive.cpp; of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
@@ -34,7 +33,7 @@
 //! A class style's transform tree is evaluated here too, on the shape in pixels, charging the
 //! layer's budget ([`StyleTrees`]).
 
-use forager_style_ir::c::int_cast;
+use forager_style_ir::c::{int_cast, point_in_polygon};
 use forager_style_ir::{Coord, Geometry, NumberOp, Preprocessing, TransformNumber, TransformShape};
 
 use crate::geometry::{self, Area, Charge};
@@ -335,6 +334,11 @@ impl Eval<'_> {
     }
 }
 
+/// A coordinate as `[x, y]`, as [`point_in_polygon`] reads a ring.
+fn xy(c: Coord) -> [f64; 2] {
+    [c.x, c.y]
+}
+
 /// msDistancePointToPoint: the square root of the sum of the squared differences.
 fn distance(a: Coord, b: Coord) -> f64 {
     let (dx, dy) = (a.x - b.x, a.y - b.y);
@@ -623,9 +627,9 @@ fn built(shape: &Shape, name: &str, budget: &mut Budget) -> Result<Vec<Area>, Un
 
 /// msGEOSShape2Geometry_polygon (src/mapgeos.c:322-358): a polygon of each ring msGetOuterList
 /// finds outer, in their order, with the rings msGetInnerList (src/mapprimitive.cpp:353-385) finds
-/// inside it, those not outer whose first or second point lies in it by msPointInPolygon. A ring
-/// neither outer nor inside an outer one is in no polygon. The tests of each ring against every
-/// other are charged to `budget` first.
+/// inside it, those not outer whose first or second point lies in it by [`point_in_polygon`]. A
+/// ring neither outer nor inside an outer one is in no polygon. The tests of each ring against
+/// every other are charged to `budget` first.
 fn areas(rings: &[Vec<Coord>], budget: &mut Budget) -> Result<Vec<Area>, Undrawn> {
     let points: usize = rings.iter().map(Vec::len).sum();
     budget.visit(points.saturating_mul(rings.len()).saturating_mul(2))?;
@@ -639,8 +643,8 @@ fn areas(rings: &[Vec<Coord>], budget: &mut Budget) -> Result<Vec<Area>, Undrawn
             holes: (0..rings.len())
                 .filter(|&i| {
                     !outer[i]
-                        && (point_in_polygon(rings[i][0], &rings[r])
-                            || point_in_polygon(rings[i][1], &rings[r]))
+                        && (point_in_polygon(xy(rings[i][0]), &rings[r], xy)
+                            || point_in_polygon(xy(rings[i][1]), &rings[r], xy))
                 })
                 .map(|i| rings[i].clone())
                 .collect(),
@@ -694,57 +698,17 @@ fn is_outer_ring(rings: &[Vec<Coord>], r: usize) -> Result<bool, Undrawn> {
         if i == r {
             continue;
         }
-        let first = point_in_polygon(point(0)?, other);
-        let second = point_in_polygon(point(1)?, other);
+        let first = point_in_polygon(xy(point(0)?), other, xy);
+        let second = point_in_polygon(xy(point(1)?), other, xy);
         if first == second {
             if first {
                 status = !status;
             }
-        } else if point_in_polygon(point(2)?, other) {
+        } else if point_in_polygon(xy(point(2)?), other, xy) {
             status = !status;
         }
     }
     Ok(status)
-}
-
-/// `msPointInPolygon` (src/mapsearch.c:173-185), W. Randolph Franklin's pnpoly, under his notice,
-/// which `src/mapsearch.c` keeps beside it and THIRD-PARTY-NOTICES.md reproduces for the binaries:
-///
-/// Copyright (c) 1970-2003, Wm. Randolph Franklin
-///
-/// Permission is hereby granted, free of charge, to any person obtaining a copy of this software
-/// and associated documentation files (the "Software"), to deal in the Software without
-/// restriction, including without limitation the rights to use, copy, modify, merge, publish,
-/// distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
-/// Software is furnished to do so, subject to the following conditions:
-///
-/// 1. Redistributions of source code must retain the above copyright notice, this list of
-///    conditions and the following disclaimers.
-/// 2. Redistributions in binary form must reproduce the above copyright notice in the
-///    documentation and/or other materials provided with the distribution.
-/// 3. The name of W. Randolph Franklin may not be used to endorse or promote products derived from
-///    this Software without specific prior written permission.
-///
-/// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
-/// BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-/// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-/// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-/// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-fn point_in_polygon(p: Coord, c: &[Coord]) -> bool {
-    let mut status = false;
-    let Some(mut j) = c.len().checked_sub(1) else {
-        return false;
-    };
-    for i in 0..c.len() {
-        let (ci, cj) = (c[i], c[j]);
-        if ((ci.y <= p.y && p.y < cj.y) || (cj.y <= p.y && p.y < ci.y))
-            && (p.x < (cj.x - ci.x) * (p.y - ci.y) / (cj.y - ci.y) + ci.x)
-        {
-            status = !status;
-        }
-        j = i;
-    }
-    status
 }
 
 /// MapServer's `FP_EQ` of src/mapsmoothing.c: within 1e-12.

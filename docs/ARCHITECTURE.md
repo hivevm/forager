@@ -60,10 +60,10 @@ golden path and the test pattern an agent copies from are named here.
   the adapters: glibc's `strtod`, `atof`, and `atoi`, MapServer's `MS_NINT` as `lrint` on
   x86-64 narrowed to an `int`, C's `(int)` cast of a `double`, `int_cast`, `INT_MIN` past an
   `int`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`,
-  `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex`'s match of a symbol's name with the
-  key the frontend's map of names takes, and the alpha `MS_NINT(opacity * 2.55)` of a style's
-  or a layer's opacity, kept in a byte as AGG keeps it
-  ([ADR-0017](adr/0017-c-ports-in-style-ir.md)).
+  `msPointInPolygon`, which the label cache and a layer's transform call, `msStringSplit`,
+  `msComputeBounds`, `msGetSymbolIndex`'s match of a symbol's name with the key the frontend's
+  map of names takes, and the alpha `MS_NINT(opacity * 2.55)` of a style's or a layer's opacity,
+  kept in a byte as AGG keeps it ([ADR-0017](adr/0017-c-ports-in-style-ir.md)).
   `engine`, `symbolize`, and `label` deny clippy's `cast_possible_truncation`, so that such a
   cast is not written as `as`. `style-ir` holds the geometry of a feature (`geometry.rs`), which
   the ports deliver and `symbolize` draws, the one crate both may depend on. It holds the marker

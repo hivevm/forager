@@ -1512,6 +1512,28 @@ fn the_outline_of_a_glyph_just_outside_the_image_still_paints_its_edge() {
 }
 
 #[test]
+fn a_label_with_an_outline_wider_than_any_stroke_renders_without_a_panic() {
+    // Verifies: ADR-0025
+    // 1e9 still fits an int after MS_NINT, so it reaches the renderer, which bounds it as a
+    // stroke's width is bounded; 3e9 wraps there, as in MapServer, to a width far below zero,
+    // which the renderer bounds by its magnitude.
+    for width in [1e9, 3e9] {
+        let label = Label {
+            text: Some(Expr::String("Fen".to_owned())),
+            outline_color: Some(Bound::Value(Rgba::opaque(240, 200, 0))),
+            outline_width: Some(width),
+            ..label_item()
+        };
+        let rendered = render(&map(label), FEN);
+        assert!(
+            rendered.image.is_some(),
+            "{width}: {:?}",
+            rendered.diagnostics
+        );
+    }
+}
+
+#[test]
 fn the_outline_width_is_scaled_by_the_glyph_size_over_the_size_and_rounded_half_to_even() {
     // Verifies: ADR-0031
     // SIZE 10 held at MINSIZE 15: 3 × (15 / 10) = 4.5, MS_NINT gives 4, AGG's contour 5.
