@@ -111,7 +111,7 @@ pub fn shade<T: Clone>(
 
 /// The pixmap symbol `symbol`, at `index` from 1, over a polygon, as msDrawShadeSymbol tiles it:
 /// computeSymbolStyle's scale, rotation, and gap at the canvas's factor give the tile of the
-/// canvas's (see [`Canvas::pixmap_tile`]), and the polygon, moved by the offset scaled, is filled
+/// canvas's (see [`mark::pixmap_tile`]), and the polygon, moved by the offset scaled, is filled
 /// with it. Where the image has not loaded or its tile is refused (Q-9), nothing is drawn, and the
 /// canvas records why. A polygon moved wholly off the image builds no tile, which would draw
 /// nothing and take bytes from the tiles of the polygons on it.
@@ -130,7 +130,7 @@ fn tiled<T>(
     if !meets_image(&rings, canvas.image()) {
         return;
     }
-    if let Some(tile) = canvas.pixmap_tile(style, index, image, TileFor::Polygon) {
+    if let Some(tile) = mark::pixmap_tile(style, index, image, TileFor::Polygon, canvas) {
         ops.push(DrawOp::TiledFill { rings, tile });
     }
 }

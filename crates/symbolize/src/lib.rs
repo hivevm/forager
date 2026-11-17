@@ -10,14 +10,13 @@
 //! `mark`, `style`, `symbol`, and `tile`; `marker` imports `bounds`, `canvas`, `glyph_marker`,
 //! `line`, `line_marker`, `style`, and `symbol`; `line` imports `bounds`, `canvas`, `mark`,
 //! `offset`, `style`, `symbol`, and `tile`; `mark` imports `canvas`, `glyph`, `glyph_marker`,
-//! `line_marker`, `symbol`, and `tile`; `glyph_marker` imports `canvas`, `glyph`, `style`,
-//! `symbol`, and `tile`;
-//! `canvas` imports `glyph`, `hatch`, `layer_transform`, `line_marker`, `symbol`, and `tile`;
-//! `hatch` imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile` import
-//! `bounds` and `symbol`; `symbol` imports `bounds`, `glyph`, and `style`; `geom_transform`
-//! imports `extent`; `layer_transform` imports `geometry`; `bounds`, `extent`, `geometry`,
-//! `glyph`, `offset`, and `style` import none. The test `symbolize_modules.rs` of
-//! `crates/arch-test` holds that direction, its tests aside, by a table in this order.
+//! `line_marker`, `symbol`, and `tile`; `glyph_marker` imports `canvas`, `glyph`, `style`, and
+//! `symbol`; `canvas` imports `glyph`, `hatch`, `layer_transform`, `line_marker`, `symbol`, and
+//! `tile`; `hatch` imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile`
+//! import `bounds` and `symbol`; `symbol` imports `bounds`, `glyph`, and `style`; `geom_transform`
+//! imports `extent`; `layer_transform` imports `geometry`; `bounds`, `extent`, `geometry`, `glyph`,
+//! `offset`, and `style` import none. The test `symbolize_modules.rs` of `crates/arch-test` holds
+//! that direction, its tests aside, by a table in this order.
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]

@@ -59,10 +59,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "tile",
         ],
     ),
-    (
-        "glyph_marker",
-        &["canvas", "glyph", "style", "symbol", "tile"],
-    ),
+    ("glyph_marker", &["canvas", "glyph", "style", "symbol"]),
     (
         "canvas",
         &[
