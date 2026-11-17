@@ -793,7 +793,8 @@ impl<'a> Window<'a> {
 /// from its centre; a point whose window runs off the part kept. The passes are as many as
 /// `iterations`, less one past one: the C smooths the shape it was given on both the first and
 /// the second pass. The preprocessing `all` or `angle` runs first ([`preprocess`]). The work of
-/// the passes is charged to `budget` first.
+/// the passes is charged to `budget` first, every pass MapServer runs, though the passes here go
+/// over the parts of three points or more alone, the others kept as they are.
 fn smooth_sia(
     mut shape: Shape,
     size: i32,
@@ -812,12 +813,18 @@ fn smooth_sia(
     let points: usize = shape.parts.iter().map(Vec::len).sum();
     let per_pass = points.saturating_mul(size.min(points)).max(1);
     budget.visit(per_pass.saturating_mul(passes))?;
+    // `smooth_part` returns a part of fewer than three points as it is, so a pass that skips them
+    // costs what it is charged, however many short parts the shape holds.
+    let smoothed: Vec<usize> = (0..shape.parts.len())
+        .filter(|&i| shape.parts[i].len() >= 3)
+        .collect();
+    if smoothed.is_empty() {
+        return Ok(shape);
+    }
     for _ in 0..passes {
-        shape.parts = shape
-            .parts
-            .iter()
-            .map(|part| smooth_part(part, size))
-            .collect();
+        for &i in &smoothed {
+            shape.parts[i] = smooth_part(&shape.parts[i], size);
+        }
     }
     Ok(shape)
 }

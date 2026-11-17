@@ -550,15 +550,33 @@ fn every_crate_on_the_output_path_warns_the_lints_that_ban_hash_maps_clocks_and_
     );
 }
 
-/// The one place a crate on the output path lifts the ban, with its reason: a test's time bound.
-const LIFTED: &[(&str, &str)] = &[(
-    "render-agg/src/lib.rs",
-    "    #[expect(
+/// The places a crate on the output path lifts the ban, each with its reason: a test's time bound.
+/// An entry is taken out of its file once, so a file with two such tests is listed twice.
+const LIFTED: &[(&str, &str)] = &[
+    (
+        "render-agg/src/lib.rs",
+        "    #[expect(
         clippy::disallowed_types,
         clippy::disallowed_methods,
         reason = \"the clock bounds the test's run time and reaches no output (Q-2)\"
     )]",
-)];
+    ),
+    (
+        "symbolize/src/layer_transform/tests.rs",
+        SMOOTHSIA_TIME_BOUND,
+    ),
+    (
+        "symbolize/src/layer_transform/tests.rs",
+        SMOOTHSIA_TIME_BOUND,
+    ),
+];
+
+/// The attribute of the two tests that bound the run time of a layer's `smoothsia` (Q-3, Q-9).
+const SMOOTHSIA_TIME_BOUND: &str = "#[expect(
+    clippy::disallowed_types,
+    clippy::disallowed_methods,
+    reason = \"the clock bounds the test's run time and reaches no output (Q-2)\"
+)]";
 
 #[test]
 fn no_crate_on_the_output_path_lifts_the_ban_on_hash_maps_clocks_and_randomness() {
