@@ -898,7 +898,7 @@ fn a_ring_buffered_as_a_line_near_the_grid_step_does_not_panic() {
     let ring: Vec<Coord> = (0..=200)
         .map(|i| {
             let angle = f64::from(i) * std::f64::consts::TAU / 200.0;
-            c(0.3 * angle.cos(), 0.3 * angle.sin())
+            c(0.3 * libm::cos(angle), 0.3 * libm::sin(angle))
         })
         .collect();
     let lines = [ring];
