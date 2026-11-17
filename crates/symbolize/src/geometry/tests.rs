@@ -812,3 +812,96 @@ fn a_line_with_edges_too_short_to_square_buffers_by_its_own_size() {
     let buffered = buffer(Buffered::Lines(&line), 1e-164, &mut Recorder::default()).unwrap();
     assert_covers(&buffered, &line[0], 1e-164);
 }
+
+/// The distance `line` is buffered by in place of `distance`, as ticket 19 raises it: the larger
+/// of 2^-24 of its size and 2^-40 of its reach, where `distance` lies below that.
+fn raised(distance: f64, line: &[Coord]) -> f64 {
+    let (mut low, mut high) = (line[0], line[0]);
+    for p in line {
+        low = c(ms_min(low.x, p.x), ms_min(low.y, p.y));
+        high = c(ms_max(high.x, p.x), ms_max(high.y, p.y));
+    }
+    let size = ms_max(high.x - low.x, high.y - low.y);
+    let reach = ms_max(
+        ms_max(low.x.abs(), low.y.abs()),
+        ms_max(high.x.abs(), high.y.abs()),
+    );
+    ms_max(
+        distance,
+        ms_max(libm::scalbn(size, -24), libm::scalbn(reach, -40)),
+    )
+}
+
+#[test]
+fn a_tiny_line_buffered_near_the_grid_step_returns_a_buffer_that_covers_it() {
+    // Verifies: Q-3, Q-9, ADR-0041
+    // The render fuzzer's input: a line some 4.3e-304 long buffered by 5.4e-312, about 1.25e-8 of
+    // its length. Scaled near 1, its stroke's width is a few steps of i_overlay's grid, where
+    // find_contour walks the stroke's graph without end and grows the contour until an
+    // allocation fails.
+    let line = [vec![
+        c(2.177_167_665_407e-311, 4.329_103_712_692_384e-304),
+        c(5.908_302_005e-315, 0.0),
+    ]];
+    let distance = 5.432_309_224_87e-312;
+    let buffered = buffer(Buffered::Lines(&line), distance, &mut Recorder::default()).unwrap();
+    assert_covers(&buffered, &line[0], raised(distance, &line[0]));
+}
+
+#[test]
+fn a_line_buffered_by_some_grid_steps_does_not_loop() {
+    // Verifies: Q-3, Q-9, ADR-0041
+    // i_overlay's grid is about 2^-30 of the line's size: by 1e-8 its stroke allocates gigabytes.
+    let line = [vec![c(0.0, 0.0), c(1.0, 0.0)]];
+    let buffered = buffer(Buffered::Lines(&line), 1e-8, &mut Recorder::default()).unwrap();
+    assert_covers(&buffered, &line[0], raised(1e-8, &line[0]));
+}
+
+#[test]
+fn a_line_buffered_by_a_grid_step_or_less_does_not_vanish() {
+    // Verifies: Q-3, ADR-0041
+    // By 3e-9 and less, about three grid steps and fewer, the stroke returns no polygon.
+    let line = [vec![c(0.0, 0.0), c(1.0, 0.0)]];
+    for distance in [3e-9, 1e-9, 1e-12] {
+        let buffered = buffer(Buffered::Lines(&line), distance, &mut Recorder::default()).unwrap();
+        assert_covers(&buffered, &line[0], raised(distance, &line[0]));
+    }
+}
+
+#[test]
+fn a_line_far_from_the_origin_buffered_by_a_few_ulps_neither_loops_nor_vanishes() {
+    // Verifies: Q-3, Q-9, ADR-0041
+    // Far from the origin the coordinates are coarser than i_overlay's grid: a zigzag 0.1 across
+    // at (2e7, 2e7), as in Web Mercator's metres, buffered by 1e-300 and by 1e-9, and a line 1
+    // long at 1e12 buffered by 8 ulps of its coordinates, each loop or vanish under a floor of the
+    // size alone.
+    let zigzag: Vec<Coord> = (0..5)
+        .map(|i| c(2e7 + f64::from(i) * 0.025, 2e7 + f64::from(i % 2) * 0.1))
+        .collect();
+    let far = vec![c(1e12, 1e12), c(1e12 + 1.0, 1e12 + 0.5)];
+    for (line, distance) in [
+        (&zigzag, 1e-300),
+        (&zigzag, 1e-9),
+        (&far, 8.0 * libm::scalbn(1.0, -13)),
+    ] {
+        let lines = [line.clone()];
+        let buffered = buffer(Buffered::Lines(&lines), distance, &mut Recorder::default()).unwrap();
+        assert_covers(&buffered, line, raised(distance, line));
+    }
+}
+
+#[test]
+fn a_ring_buffered_as_a_line_near_the_grid_step_does_not_panic() {
+    // Verifies: Q-3, ADR-0041
+    // A closed ring of 200 points buffered as a line by 1e-9 breaks i_overlay's debug assertion
+    // that each extracted contour's top runs direct.
+    let ring: Vec<Coord> = (0..=200)
+        .map(|i| {
+            let angle = f64::from(i) * std::f64::consts::TAU / 200.0;
+            c(0.3 * libm::cos(angle), 0.3 * libm::sin(angle))
+        })
+        .collect();
+    let lines = [ring];
+    let buffered = buffer(Buffered::Lines(&lines), 1e-9, &mut Recorder::default()).unwrap();
+    assert_covers(&buffered, &lines[0], raised(1e-9, &lines[0]));
+}
