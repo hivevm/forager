@@ -3,9 +3,33 @@
 
 use std::f64::consts::{FRAC_PI_2, PI};
 
-use forager_style_ir::{Bound, Rgba, SymbolKind, SymbolRef};
+use forager_style_ir::{Bound, Rgba, Symbol, SymbolKind, SymbolRef};
 
 use super::*;
+use crate::canvas::Canvas;
+use crate::symbol::Factors;
+
+/// The markers of `style` with its vector or ellipse `symbol` along `paths`, as a line style with
+/// a `GAP` draws them (see [`crate::mark::along_line`]) on an image of `image` at `factors`,
+/// their points taken from `budget`.
+fn draw(
+    paths: &[Vec<Point>],
+    style: &Style,
+    symbol: &Symbol,
+    initial_gap: f64,
+    (width, height): (f64, f64),
+    factors: Factors,
+    budget: &mut MarkerBudget,
+) -> Vec<DrawOp> {
+    let symbols = [symbol.clone()];
+    let size = |side: f64| u32::try_from(forager_style_ir::c::int_cast(side)).unwrap_or(0);
+    let mut canvas = Canvas::new(&symbols, size(width), size(height), factors);
+    std::mem::swap(&mut canvas.markers, budget);
+    let mark = symbol::Mark::Symbol(1, &symbols[0]);
+    let ops = crate::mark::along_line(paths, style, mark, initial_gap, &mut canvas);
+    std::mem::swap(&mut canvas.markers, budget);
+    ops
+}
 
 fn p(x: f64, y: f64) -> Point {
     Point { x, y }

@@ -73,9 +73,9 @@ pub fn label_style_refused(
 /// pixmap, or of MapServer's default symbol, of which it draws nothing.
 fn marker_drawn(style: &Style<LabelTransform>, symbols: &[Symbol]) -> bool {
     match symbol::mark(style, symbols) {
-        Mark::Symbol(_) | Mark::Pixmap(..) => true,
+        Mark::Symbol(..) | Mark::Pixmap(..) => true,
         Mark::Square => of_symbol_zero(style),
-        Mark::Nothing => false,
+        Mark::Glyph(..) | Mark::Hatch | Mark::Nothing => false,
     }
 }
 
