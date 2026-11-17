@@ -18,7 +18,7 @@
 //! A style's [`Mark`] where a line or a polygon places it, one dispatch over the kinds for each
 //! placement: along a line, each marker drawn by a [`Styled`] mark at its point and angle and
 //! priced by it against the canvas's budget (see [`along_line`]); as a brush or a fill tile (see
-//! [`tile`]). The point's own dispatch is `marker::marker_ops`.
+//! [`tile()`]). The point's own dispatch is `marker::marker_ops`.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;

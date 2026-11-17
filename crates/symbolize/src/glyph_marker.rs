@@ -233,7 +233,7 @@ mod tests {
     }
 
     /// The polygon `rings` filled with the glyph of the TrueType symbol at `index` tiled, as
-    /// msDrawShadeSymbol fills it (see [`glyph_tile`]), where there is a tile.
+    /// msDrawShadeSymbol fills it (see [`crate::mark::tile`]), where there is a tile.
     fn tiled_glyph(
         ops: &mut Vec<DrawOp>,
         rings: Vec<Vec<Point>>,
