@@ -665,6 +665,49 @@ fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
 }
 
 #[test]
+fn simplify_fails_on_a_polygon_with_a_coordinate_that_is_no_finite_number() {
+    // Verifies: ADR-0041, Q-3
+    // geo's repair of an invalid polygon panics on a coordinate that is no number, which the
+    // engine refuses instead. The ring is the render fuzz target's (revision-2026-11-16/20).
+    let far = -6.450_106_543_526_558e30;
+    let fuzzed = polygon(&[&[
+        (122.000_000_000_000_01, far),
+        (f64::NAN, f64::NAN),
+        (122.000_000_000_000_01, f64::NAN),
+        (122.000_000_000_000_01, far),
+    ]]);
+    let infinite = polygon(&[&[
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (f64::INFINITY, 10.0),
+        (10.0, 0.0),
+        (0.0, 0.0),
+    ]]);
+    for (shape, tolerance) in [(&fuzzed, f64::NAN), (&fuzzed, 1.0), (&infinite, 1.0)] {
+        let why = failed(apply(&simplified(tolerance), shape));
+        assert!(why.contains("coordinate that is no finite number"), "{why}");
+    }
+}
+
+#[test]
+fn simplify_keeps_a_line_or_a_point_with_a_coordinate_that_is_no_number() {
+    // Verifies: ADR-0048
+    // A line and a point shape run through the port of Douglas-Peucker, not through geo's
+    // predicates, and are simplified as before (revision-2026-11-16/20).
+    let parts = line(&[(0.0, 0.0), (f64::NAN, 1.0), (10.0, 0.0)]);
+    assert_eq!(
+        apply(&simplified(1.0), &parts),
+        Ok(line(&[(0.0, 0.0), (10.0, 0.0)]))
+    );
+    let point = Geometry::Point(c(f64::NAN, f64::INFINITY));
+    let kept = apply(&simplified(1.0), &point);
+    assert!(
+        matches!(kept, Ok(Geometry::Point(p)) if p.x.is_nan() && p.y == f64::INFINITY),
+        "{kept:?}"
+    );
+}
+
+#[test]
 fn simplify_past_the_points_a_layer_may_visit_is_a_limit() {
     // Verifies: Q-9
     // A straight line of 20,000 points is one section of 19,998 inner points, well inside the
