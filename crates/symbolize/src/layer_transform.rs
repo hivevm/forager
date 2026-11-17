@@ -813,9 +813,8 @@ fn smooth_sia(
     let points: usize = shape.parts.iter().map(Vec::len).sum();
     let per_pass = points.saturating_mul(size.min(points)).max(1);
     budget.visit(per_pass.saturating_mul(passes))?;
-    // A part of fewer than three points comes out of every pass as it went in, so the parts that
-    // change are chosen once and the passes go over them alone: a pass then costs what it is
-    // charged, however many short parts the shape holds. A shape without such a part runs none.
+    // `smooth_part` returns a part of fewer than three points as it is, so a pass that skips them
+    // costs what it is charged, however many short parts the shape holds.
     let smoothed: Vec<usize> = (0..shape.parts.len())
         .filter(|&i| shape.parts[i].len() >= 3)
         .collect();
