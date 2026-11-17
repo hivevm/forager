@@ -78,3 +78,8 @@ input, and the session stops.
   `docs/plan/revision-2026-11-16/17-smoothsia-smooths-only-long-parts.md`, which carries the
   input. This branch then rebases onto that fix, adds the input as a seed, and runs the 300
   seconds again.
+- Rebased onto `main` at 6ed32707, which holds ticket 17 (2026-11-17). The timeout's input is the
+  seed `fuzz/seeds/render/smoothsia-short-parts`. The third 300-second run panicked in i_overlay
+  on a buffer of a polygon some 1e-163 across. On the maintainer's word it is fixed first by
+  `docs/plan/revision-2026-11-16/18-buffer-of-edges-too-short.md`, which carries the input. This
+  branch then rebases onto that fix, adds the input as a seed, and runs the 300 seconds again.
