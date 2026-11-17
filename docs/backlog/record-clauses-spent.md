@@ -1,4 +1,4 @@
-# Clauses of ADR-0017, ADR-0041, ADR-0042, and ADR-0048 that are spent or stale
+# Clauses of ADR-0017, ADR-0041, ADR-0042, ADR-0047, and ADR-0048 that are spent or stale
 
 **Observed:** the design revision of 2026-11-16, and ticket revision-2026-11-16/11. Clauses of
 accepted ADRs that bound only the order of the fidelity plan's work, state one rule twice, or list

@@ -13,7 +13,8 @@ the renderer as a stroke is, grows it to cover the image. Only a `WIDTH` and `MA
 
 **What a change weighs:**
 
-- **The cast of x86, as a helper of `c.rs`:** the marker matches MapServer's build on the
+- **`int_cast` of `c.rs` in `glyph_op`,** the helper that already ports x86's cast with
+  `INT_MIN` past an `int`: the marker matches MapServer's build on the
   noise run's runner at every width, at the cost of drawing a shrunk contour for a width meant
   huge, and of following behaviour C leaves undefined.
 - **Keeping the truncation:** no work; the drawing differs from MapServer's only past `int`,
