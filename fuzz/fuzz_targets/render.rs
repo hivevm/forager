@@ -26,7 +26,9 @@
 //! `ANTIALIAS FALSE` on the first style, and a TrueType symbol at the points, along the lines,
 //! and over the polygons, its glyph drawn through the glyph port (ADR-0044) from the test font or
 //! from a font of the fuzz bytes. `Input` decodes as before; the existing seeds now also read a
-//! `Cache` from their tail, and a `Fidelity` from their head, which changes what they render.
+//! `Cache` from their tail, and a `Fidelity` from their head, which changes what they render. The
+//! angle is read in whole degrees within the readers' range, so that a head made for another
+//! path seldom rotates its map, where a huge angle gave no geotransform and voided the map.
 // Verifies: Q-3, ADR-0025, ADR-0016, ADR-0046, ADR-0041, ADR-0044, ADR-0045, ADR-0047, ADR-0048
 #![no_main]
 
@@ -42,8 +44,9 @@ use forager_ports::{
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Expr, Extent, GeomTransform, Label, LabelTransform, Layer, LayerProjection,
-    LayerStatus, LineCap, LineJoin, LineOffset, Map, NumberOp, Preprocessing, RenderMode, Rgba,
-    Style, Symbol, SymbolKind, SymbolRef, TransformNumber, TransformShape, TransformTree,
+    LayerStatus, LineCap, LineJoin, LineOffset, MAX_MAP_ANGLE, Map, NumberOp, Preprocessing,
+    RenderMode, Rgba, Style, Symbol, SymbolKind, SymbolRef, TransformNumber, TransformShape,
+    TransformTree,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -286,12 +289,26 @@ impl TransformInput {
 /// class style's `GEOMTRANSFORM` tree on the polygon and line layers.
 #[derive(Arbitrary, Debug, Default)]
 struct Fidelity {
+    /// The map's `ANGLE`, as [`Fidelity::angle`] reads it.
     angle: Option<f64>,
     projected: bool,
     circle: bool,
     aliased: bool,
     truetype: Option<TrueTypeInput>,
     transform: TransformInput,
+}
+
+impl Fidelity {
+    /// The map's `ANGLE` in whole degrees: none outside ±[`MAX_MAP_ANGLE`], which the readers
+    /// drop, or for no number, and 0, which rotates nothing, below half a degree. Most `f64`s are
+    /// huge or tiny, so an input made for another path, a seed of before the angle among them,
+    /// seldom rotates its map, where a huge angle gives no geotransform and voids the map. The
+    /// proj target fuzzes the geotransform of any angle.
+    fn angle(&self) -> Option<f64> {
+        self.angle
+            .filter(|angle| (-MAX_MAP_ANGLE..=MAX_MAP_ANGLE).contains(angle))
+            .map(f64::round)
+    }
 }
 
 /// A TrueType symbol: its character, its font, the test font or the bytes given, and its style's
@@ -527,7 +544,7 @@ fuzz_target!(|data: &[u8]| {
         ]
         .into_iter()
         .collect(),
-        angle: fidelity.angle,
+        angle: fidelity.angle(),
         projection: fidelity.projected.then(|| LONGLAT.to_owned()),
         extent: Some(Extent {
             min_x,
