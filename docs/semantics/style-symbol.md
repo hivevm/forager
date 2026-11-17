@@ -181,7 +181,7 @@ engine draws its tree's functions:
   lies above 0 but below a floor is buffered by the floor, where GEOS keeps the thinner buffer: the
   larger of 2^-24 of the size of its parts' joint bounds, the larger of their width and height, and
   2^-40 of their reach, the largest magnitude of their coordinates. i_overlay 4.5.2, under geo,
-  walks a thinner stroke without end or returns no polygon. A point or a line
+  may walk a thinner stroke without end or return no polygon. A point or a line
   buffered by a `d` not above 0, and a polygon shrunk until nothing is left, is GEOS's empty
   polygon, which `msGEOSGeometry2Shape` turns into one ring without points. The shape keeps GEOS's
   geometry, so `buffer` or `simplify` after it returns it empty, as `msGEOSBuffer` and
