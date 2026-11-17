@@ -3,20 +3,21 @@
 //! synchronous and does no I/O (ADR-0008); the engine orders what it draws, as MapServer's shape
 //! cache orders it, and reports what a layer left undrawn.
 //!
-//! Its modules import one another in one direction only: `draw` imports `canvas`, `extent`,
-//! `geom_transform`, `hatch`, `layer_transform`, `line`, `marker`, `shade`, and `symbol`; `label`
+//! Its modules import one another in one direction only: `draw` imports `canvas`, `clip`,
+//! `extent`, `geom_transform`, `layer_transform`, `line`, `marker`, `shade`, and `symbol`; `label`
 //! imports `canvas`, `extent`, `marker`, `shade`, and `symbol`; `circle` imports `canvas`,
 //! `extent`, `shade`, and `symbol`; `shade` imports `bounds`, `canvas`, `extent`, `hatch`, `line`,
 //! `mark`, `style`, `symbol`, and `tile`; `marker` imports `bounds`, `canvas`, `glyph_marker`,
 //! `line`, `line_marker`, `style`, and `symbol`; `line` imports `bounds`, `canvas`, `mark`,
 //! `offset`, `style`, `symbol`, and `tile`; `mark` imports `canvas`, `glyph`, `glyph_marker`,
 //! `line_marker`, `symbol`, and `tile`; `glyph_marker` imports `canvas`, `glyph`, `style`, and
-//! `symbol`; `canvas` imports `glyph`, `hatch`, `layer_transform`, `line_marker`, `symbol`, and
-//! `tile`; `hatch` imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile`
-//! import `bounds` and `symbol`; `symbol` imports `bounds`, `glyph`, and `style`; `geom_transform`
-//! imports `extent`; `layer_transform` imports `geometry`; `bounds`, `extent`, `geometry`, `glyph`,
-//! `offset`, and `style` import none. The test `symbolize_modules.rs` of `crates/arch-test` holds
-//! that direction, its tests aside, by a table in this order.
+//! `symbol`; `canvas` imports `clip`, `glyph`, `hatch`, `layer_transform`, `line_marker`,
+//! `symbol`, and `tile`; `clip` and `hatch` import `bounds`, `extent`, `style`, and `symbol`;
+//! `line_marker` and `tile` import `bounds` and `symbol`; `symbol` imports `bounds`, `glyph`, and
+//! `style`; `geom_transform` imports `extent`; `layer_transform` imports `geometry`; `bounds`,
+//! `extent`, `geometry`, `glyph`, `offset`, and `style` import none. The test
+//! `symbolize_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a table
+//! in this order.
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
@@ -26,6 +27,7 @@
 mod bounds;
 mod canvas;
 mod circle;
+mod clip;
 mod draw;
 mod extent;
 mod geom_transform;

@@ -21,6 +21,7 @@ use std::rc::Rc;
 use forager_render::PremultipliedImage;
 use forager_style_ir::{Style, Symbol};
 
+use crate::clip::Clip;
 use crate::glyph::Glyphs;
 use crate::hatch::Hatching;
 use crate::layer_transform::StyleTrees;
@@ -32,8 +33,8 @@ use crate::tile::Tiles;
 /// pixmap symbols and the render's tiles of them, the image's width and height in pixels, the
 /// layer's scale factor and the image's resolution factor (see the engine's
 /// `classes::scales`), what is left to the layer of
-/// [`crate::line_marker::MAX_MARKER_POINTS`], the hatching of the class drawn, which counts the
-/// hatches refused (Q-9), the pixmap symbols left undrawn, what the transform trees of the
+/// [`crate::line_marker::MAX_MARKER_POINTS`], the clip of the class drawn, the hatches refused
+/// (Q-9), the pixmap symbols left undrawn, what the transform trees of the
 /// layer's class styles share, and whether the layer is drawn into an image of its own.
 pub struct Canvas<'a> {
     pub(crate) symbols: &'a [Symbol],
@@ -44,6 +45,7 @@ pub struct Canvas<'a> {
     /// The layer's scale factor and the image's resolution factor.
     pub(crate) factors: Factors,
     pub(crate) markers: MarkerBudget,
+    pub(crate) clip: Clip,
     pub(crate) hatching: Hatching,
     /// Each pixmap symbol left undrawn, by its index from 1, and why.
     pub(crate) refused_pixmaps: BTreeMap<usize, String>,
@@ -106,6 +108,7 @@ impl<'a> Canvas<'a> {
             size: (width, height),
             factors,
             markers: MarkerBudget::new(),
+            clip: Clip::default(),
             hatching: Hatching::default(),
             refused_pixmaps: BTreeMap::new(),
             refused_symbols: BTreeMap::new(),
@@ -188,12 +191,9 @@ impl<'a> Canvas<'a> {
     }
 
     /// Sets the class whose styles the next features are drawn in, for the clip of its hatches
-    /// (see [`Hatching::for_class`]).
+    /// and its lines (see [`Clip::for_class`]).
     pub fn class(&mut self, styles: &[Style]) {
-        self.hatching = Hatching {
-            refused: self.hatching.refused,
-            ..Hatching::for_class(styles, self.symbols, self.pixmaps, self.factors)
-        };
+        self.clip = Clip::for_class(styles, self.symbols, self.pixmaps, self.factors);
     }
 
     /// The image's width and height in pixels.
