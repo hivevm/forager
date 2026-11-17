@@ -692,3 +692,123 @@ fn a_repeated_point_hides_no_turn_from_the_charge() {
         charged(Buffered::Areas(&jagged))
     );
 }
+
+/// `buffered`, the buffer of the points `given` by `distance`, checked at a scale geo's
+/// arithmetic does not underflow at: its coordinates are finite, it holds a polygon, each point of
+/// `given` lies inside it or within a millionth of the extent of its boundary, and each of its
+/// vertices lies within `given`'s bounds grown by `distance`. The result and `given` are scaled
+/// alike by the power of two that brings `given`'s extent near 1.
+fn assert_covers(buffered: &[Area], given: &[Coord], distance: f64) {
+    let rings: Vec<&Vec<Coord>> = buffered
+        .iter()
+        .flat_map(|area| std::iter::once(&area.shell).chain(&area.holes))
+        .collect();
+    assert!(!rings.is_empty(), "no polygon");
+    assert!(
+        rings
+            .iter()
+            .flat_map(|ring| ring.iter())
+            .all(|p| p.x.is_finite() && p.y.is_finite()),
+        "{buffered:?}"
+    );
+    let (min_x, max_x) = given
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+            (ms_min(lo, p.x), ms_max(hi, p.x))
+        });
+    let (min_y, max_y) = given
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+            (ms_min(lo, p.y), ms_max(hi, p.y))
+        });
+    let (_, e) = libm::frexp(ms_max(max_x - min_x, max_y - min_y));
+    let up = |p: &Coord| c(libm::scalbn(p.x, -e), libm::scalbn(p.y, -e));
+    let tolerance = 1e-6;
+    let scaled: Vec<Vec<Coord>> = rings
+        .iter()
+        .map(|ring| ring.iter().map(up).collect())
+        .collect();
+    for p in given.iter().map(up) {
+        let mut inside = false;
+        let mut near = f64::INFINITY;
+        for ring in &scaled {
+            for pair in ring.windows(2) {
+                let (a, b) = (pair[0], pair[1]);
+                if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x)
+                {
+                    inside = !inside;
+                }
+                let (dx, dy) = (b.x - a.x, b.y - a.y);
+                let length = dx * dx + dy * dy;
+                let t = if length > 0.0 {
+                    (((p.x - a.x) * dx + (p.y - a.y) * dy) / length).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let (qx, qy) = (a.x + t * dx - p.x, a.y + t * dy - p.y);
+                near = ms_min(near, (qx * qx + qy * qy).sqrt());
+            }
+        }
+        assert!(
+            inside || near <= tolerance,
+            "{p:?} lies {near} outside the buffer"
+        );
+    }
+    let grown = libm::scalbn(distance, -e) + tolerance;
+    let (low, high) = (up(&c(min_x, min_y)), up(&c(max_x, max_y)));
+    for q in scaled.iter().flatten() {
+        assert!(
+            q.x >= low.x - grown
+                && q.x <= high.x + grown
+                && q.y >= low.y - grown
+                && q.y <= high.y + grown,
+            "{q:?} lies beyond the bounds grown by the distance"
+        );
+    }
+}
+
+#[test]
+fn a_point_s_tiny_circle_buffers_by_a_tinier_distance_to_a_ring_that_covers_it() {
+    // Verifies: Q-3, ADR-0041
+    // The render fuzzer's input: the point (3.07847e-319, 0) buffered by 6.6e-163 is a circle
+    // some 1.3e-162 across, whose shortest edge is 3.46e-164, so the square of its direction
+    // underflows to 0 in i_overlay's offset. That ring buffered by 9.6e-281 neither panics nor
+    // vanishes.
+    let point = [c(3.07847e-319, 0.0)];
+    let circle = buffer(
+        Buffered::Points(&point),
+        6.607_605_628_962_252e-163,
+        &mut Recorder::default(),
+    )
+    .unwrap();
+    assert_covers(&circle, &point, 6.607_605_628_962_252e-163);
+    assert_eq!(circle.len(), 1);
+    let distance = 9.633_340_286_202_275e-281;
+    let buffered = buffer(Buffered::Areas(&circle), distance, &mut Recorder::default()).unwrap();
+    assert_covers(&buffered, &circle[0].shell, distance);
+}
+
+#[test]
+fn a_ring_with_edges_too_short_to_square_buffers_by_its_own_size() {
+    // Verifies: Q-3, ADR-0041
+    // The fuzzer's circle buffered by 1e-163, a distance about its own size: the squares of its
+    // edges underflow as they do by the fuzzer's distance.
+    let point = [c(3.07847e-319, 0.0)];
+    let circle = buffer(
+        Buffered::Points(&point),
+        6.607_605_628_962_252e-163,
+        &mut Recorder::default(),
+    )
+    .unwrap();
+    let buffered = buffer(Buffered::Areas(&circle), 1e-163, &mut Recorder::default()).unwrap();
+    assert_covers(&buffered, &circle[0].shell, 1e-163);
+}
+
+#[test]
+fn a_line_with_edges_too_short_to_square_buffers_by_its_own_size() {
+    // Verifies: Q-3, ADR-0041
+    // A line of edges 1.4e-164 long buffered by 1e-164: the squares of its edges underflow too.
+    let line = [vec![c(0.0, 0.0), c(1e-164, 1e-164), c(2e-164, 0.0)]];
+    let buffered = buffer(Buffered::Lines(&line), 1e-164, &mut Recorder::default()).unwrap();
+    assert_covers(&buffered, &line[0], 1e-164);
+}

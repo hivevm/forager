@@ -62,6 +62,7 @@ mod topology;
 use std::f64::consts::PI;
 
 use forager_style_ir::Coord;
+use forager_style_ir::c::{ms_max, ms_min};
 use geo::algorithm::buffer::{BufferStyle, LineCap, LineJoin};
 use geo::{
     Buffer, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Validation,
@@ -173,6 +174,10 @@ pub(crate) enum Buffered<'a> {
 /// A point or a line buffered by a distance not above 0 is empty; a polygon is shrunk by a
 /// negative one.
 ///
+/// A tiny buffer, whose edges are too short for the square of their length, is buffered at a
+/// scale near 1: the shape and the distance are scaled by the power of two of [`magnification`]
+/// and the result by its inverse.
+///
 /// Before the buffer runs, its offset curves are charged to `charge`, so that a bound of Q-9
 /// stops it before it holds them: the points of their round joins and caps, [`arcs`], as added,
 /// and those and the ends of their offset segments, two for each point on each side, as visited.
@@ -191,6 +196,127 @@ pub(crate) fn buffer<C: Charge>(
     let arcs = arcs(shape);
     charge.add(arcs)?;
     charge.visit(given.saturating_mul(2 * sides).saturating_add(arcs))?;
+    let n = magnification(shape, distance);
+    let result = if n == 0 {
+        buffer_with_style(shape, distance)
+    } else {
+        let up = |ring: &[Coord]| ring.iter().map(|p| scaled(p, n)).collect::<Vec<_>>();
+        let distance = libm::scalbn(distance, n);
+        let mut result = match shape {
+            Buffered::Points(points) => buffer_with_style(Buffered::Points(&up(points)), distance),
+            Buffered::Lines(lines) => {
+                let lines: Vec<Vec<Coord>> = lines.iter().map(|line| up(line)).collect();
+                buffer_with_style(Buffered::Lines(&lines), distance)
+            }
+            Buffered::Areas(areas) => {
+                let areas: Vec<Area> = areas
+                    .iter()
+                    .map(|area| Area {
+                        shell: up(&area.shell),
+                        holes: area.holes.iter().map(|hole| up(hole)).collect(),
+                    })
+                    .collect();
+                buffer_with_style(Buffered::Areas(&areas), distance)
+            }
+        };
+        for ring in result
+            .iter_mut()
+            .flat_map(|area| std::iter::once(&mut area.shell).chain(&mut area.holes))
+        {
+            for p in ring.iter_mut() {
+                *p = scaled(p, -n);
+            }
+        }
+        result
+    };
+    charge.add(count(&result).saturating_sub(given.saturating_add(arcs)))?;
+    Ok(result)
+}
+
+/// A buffer smaller than 2^`TINY` is scaled, by [`magnification`].
+///
+/// i_overlay snaps the shape to a grid of more than 2^-31 of its size before it offsets each edge
+/// by the edge's direction, which it normalizes by the square of the edge's length. Below a size of
+/// 2^-480 that square can fall below the normal numbers, and lose its precision or underflow to 0,
+/// which makes the direction infinite. Every buffer of a size of at least 2^-450 is left as it is.
+const TINY: i32 = -450;
+
+/// The exponent beyond which a shape scaled by [`magnification`] would lie too far from the
+/// origin: some scaled coordinate would reach 2^512.
+const LARGEST_SCALED: i32 = 512;
+
+/// The power of two that `shape` and `distance` are scaled by before their buffer runs, and its
+/// result by the inverse after; 0 for every buffer but a tiny one.
+///
+/// A buffer's size is the larger of the width and the height of the shape's bounds, and of the
+/// distance's magnitude, as i_overlay sizes its grid. Below 2^[`TINY`] the power
+/// brings that size to between ½ and 1. A power of two scales a coordinate without rounding, unless
+/// the coordinate is subnormal. A point, or a shape of one place, far from the origin and buffered
+/// by a tiny distance is not scaled, where a scaled coordinate would lie past
+/// 2^[`LARGEST_SCALED`].
+fn magnification(shape: Buffered<'_>, distance: f64) -> i32 {
+    let points: Box<dyn Iterator<Item = &Coord>> = match shape {
+        Buffered::Points(points) => Box::new(points.iter()),
+        Buffered::Lines(lines) => Box::new(lines.iter().flatten()),
+        Buffered::Areas(areas) => Box::new(
+            areas
+                .iter()
+                .flat_map(|area| std::iter::once(&area.shell).chain(&area.holes))
+                .flatten(),
+        ),
+    };
+    let (mut low, mut high) = (
+        Coord {
+            x: f64::INFINITY,
+            y: f64::INFINITY,
+        },
+        Coord {
+            x: f64::NEG_INFINITY,
+            y: f64::NEG_INFINITY,
+        },
+    );
+    for p in points {
+        if !(p.x.is_finite() && p.y.is_finite()) {
+            return 0;
+        }
+        low = Coord {
+            x: ms_min(low.x, p.x),
+            y: ms_min(low.y, p.y),
+        };
+        high = Coord {
+            x: ms_max(high.x, p.x),
+            y: ms_max(high.y, p.y),
+        };
+    }
+    let size = ms_max(ms_max(high.x - low.x, high.y - low.y), distance.abs());
+    if !(size.is_finite() && size > 0.0) {
+        return 0;
+    }
+    let (_, e) = libm::frexp(size);
+    if e > TINY {
+        return 0;
+    }
+    let reach = ms_max(
+        ms_max(low.x.abs(), low.y.abs()),
+        ms_max(high.x.abs(), high.y.abs()),
+    );
+    if reach > 0.0 && libm::frexp(reach).1 - e > LARGEST_SCALED {
+        return 0;
+    }
+    -e
+}
+
+/// `p` scaled by 2^`n`.
+fn scaled(p: &Coord, n: i32) -> Coord {
+    Coord {
+        x: libm::scalbn(p.x, n),
+        y: libm::scalbn(p.y, n),
+    }
+}
+
+/// `shape` buffered by `distance` by geo's `buffer_with_style` with round joins and round caps of
+/// [`SEGMENT_ANGLE`], uncharged.
+fn buffer_with_style(shape: Buffered<'_>, distance: f64) -> Vec<Area> {
     let style = BufferStyle::new(distance)
         .line_join(LineJoin::Round(SEGMENT_ANGLE))
         .line_cap(LineCap::Round(SEGMENT_ANGLE));
@@ -215,9 +341,7 @@ pub(crate) fn buffer<C: Charge>(
             MultiPolygon(areas.iter().map(to_polygon).collect()).buffer_with_style(style)
         }
     };
-    let result: Vec<Area> = buffered.0.iter().map(from_polygon).collect();
-    charge.add(count(&result).saturating_sub(given.saturating_add(arcs)))?;
-    Ok(result)
+    buffered.0.iter().map(from_polygon).collect()
 }
 
 /// The points the round joins and caps of `shape`'s buffer may add, one for each segment of
