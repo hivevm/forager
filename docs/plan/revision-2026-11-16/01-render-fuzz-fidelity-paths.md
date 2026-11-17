@@ -71,3 +71,10 @@ input, and the session stops.
   `docs/plan/revision-2026-11-16/16-glyph-outline-width-bounded.md`. This branch then rebases onto
   that fix, adds the crash input as a seed, deletes its backlog entry, runs the 300 seconds again,
   and runs `scripts/check-all.sh`.
+- Rebased onto `main` at c2d97aaf, which holds ticket 16 (2026-11-17). The crash input is the
+  seed `fuzz/seeds/render/truetype-marker-outline-wide` and runs clean; its backlog entry is
+  deleted. The second 300-second run ended on a timeout in a layer's `smoothsia`: 11 seconds
+  without a sanitizer. On the maintainer's word it is fixed first by
+  `docs/plan/revision-2026-11-16/17-smoothsia-smooths-only-long-parts.md`, which carries the
+  input. This branch then rebases onto that fix, adds the input as a seed, and runs the 300
+  seconds again.
