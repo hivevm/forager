@@ -444,8 +444,9 @@ mapfile frontend, the style document readers with and without a migration step, 
 structured shapes with a label of arbitrary text and size and its pixmap markers, a pixmap at
 points, along lines, and tiled over polygons, the layers' feature limit and drawing after the label
 cache, the cache's edge buffer, a layer's and a class style's transform tree, `simplify`,
-`simplifypt`, and `buffer` among its steps, a TrueType marker, a circle layer, `ANTIALIAS FALSE`,
-a rotated map, and expressions built from the same bytes, the expression
+`simplifypt`, and `buffer` among its steps, a TrueType symbol at points, along lines, and over
+polygons, of the test font or of a font in the input, a circle layer, `ANTIALIAS FALSE`, a rotated
+map, and expressions built from the same bytes, the expression
 evaluator on arbitrary trees, patterns, and properties, the core's reprojection on pairs of
 projections and the points, rectangles, and shapes it moves, through a rotated map's geotransform
 too, the browser path on GeoJSON, the shapefile
