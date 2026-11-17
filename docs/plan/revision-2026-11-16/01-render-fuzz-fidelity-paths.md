@@ -83,3 +83,9 @@ input, and the session stops.
   on a buffer of a polygon some 1e-163 across. On the maintainer's word it is fixed first by
   `docs/plan/revision-2026-11-16/18-buffer-of-edges-too-short.md`, which carries the input. This
   branch then rebases onto that fix, adds the input as a seed, and runs the 300 seconds again.
+- Rebased onto `main` at fa1dadcd, which holds ticket 18 (2026-11-17). The panic's input is the
+  seed `fuzz/seeds/render/buffer-edges-too-short`. The fourth 300-second run ran out of memory in
+  i_overlay's stroke of a line buffered by about `1.25e-8` of its length. On the maintainer's word
+  it was fixed in session by `docs/plan/revision-2026-11-16/19-line-buffer-near-the-grid-step.md`.
+- Rebased onto `main` at d6691adf, which holds ticket 19 (2026-11-17). Its input is the seed
+  `fuzz/seeds/render/line-buffer-near-the-grid-step`.
