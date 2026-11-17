@@ -17,12 +17,17 @@ Every pass collects a new vector of the parts, and `smooth_part` copies each par
 points as it is: some 60 nanoseconds a pass for a pass that changes nothing, and some 179 million
 passes over the two layers.
 
-Each pass smooths only the parts of 3 points or more. A part of fewer is kept as it is, read once,
-as `smooth_part` returns it unchanged; a shape with no such part runs no pass. What a pass then
-costs is the smoothing of its parts, which the charge counts already. MapServer's
-msSmoothShapeSIA runs every pass, so what is drawn does not change, nor does what Q-9 counts. A
-pass still allocates for each part it smooths, which the charge of at least 9 visits a part covers
-within the bound. Where the session finds a cost a pass does not charge for, it stops and says so.
+The parts of 3 points or more are chosen once, before the passes, and each pass goes over those
+alone. A part of fewer is kept as it is, read once, as `smooth_part` returns it unchanged; a shape
+with no such part runs no pass. A pass that filtered all parts anew would still read every short
+part every pass, uncharged. What a pass then costs is the smoothing of its parts. The charge does
+not change: `points × min(size, points)` of the whole shape, at least 1, for every pass MapServer
+would run, the passes no longer run included. MapServer's msSmoothShapeSIA runs every pass, so
+what is drawn does not change, nor does what Q-9 counts. A pass still allocates for each part it
+smooths, which the charge of at least 9 visits a part covers within the bound. A part of exactly
+3 points does not change either, its window cut to 1, but smoothing it is charged, so the
+threshold may stay at 3. Where the session finds a cost a pass does not charge for, it stops and
+says so.
 
 The 142-byte input, for `cargo fuzz run render <file>` on the target of
 `ticket/revision-2026-11-16/01-render-fuzz-fidelity-paths` (its target is unchanged since
@@ -45,15 +50,16 @@ ff ff ff ff 22 2d 66 87 87 87 87 87 7e 87 87 87
 - [ ] Given a shape of parts of 0, 0, and 1 points and `smoothsia` at a size of 3 with
   `ITERATIONS` of 89 409 258, when `smooth_sia` runs in a test, then it returns the shape as it
   was within a second. Before the change it runs some 89 million passes.
-- [ ] Given a shape of one part of 4 points and 1 000 empty parts and `smoothsia` at a size of 3
-  with `ITERATIONS` of 1 000 000, when `smooth_sia` runs in a test, then it returns within a
-  second the 4-point part as a shape of it alone is smoothed, and the empty parts as they were.
-  Before the change each of its passes copies the 1 000 empty parts.
+- [ ] Given a shape of one part of 4 points and 100 000 empty parts and `smoothsia` at a size of 3
+  with `ITERATIONS` of 10 000, when `smooth_sia` runs in a test, then it returns within a second
+  the 4-point part as a shape of it alone is smoothed, and the empty parts as they were. Before
+  the change each of its passes copies the 100 000 empty parts, some 19 seconds in a debug build;
+  a pass that filters all parts anew reads 1e9 parts, some 2 seconds.
 - [ ] Given the `smoothsia` tests and the msautotest cases that hold it today, when they run, then
   they pass unchanged.
-- [ ] Given ticket 01's branch rebased onto this change, when the input above is run by
-  `cargo fuzz run render`, the AddressSanitizer build `scripts/fuzz.sh` runs, then it ends within
-  10 seconds.
+- [ ] Given ticket 01's target with this change merged in a scratch worktree, nothing committed
+  there, when the input above is run by `cargo fuzz run render`, the AddressSanitizer build
+  `scripts/fuzz.sh` runs, then it ends within 10 seconds.
 
 ## Read first
 

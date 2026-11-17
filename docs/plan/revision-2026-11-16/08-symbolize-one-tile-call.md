@@ -13,7 +13,11 @@ calls `Canvas::pixmap_tile` from `shade.rs` itself, with the image it read first
 One call of the canvas takes the style, the symbol, and whether the tile is a polygon's fill or a
 line's brush. It chooses the kind, builds the key once, asks the cache, and records a refusal as
 ADR-0029 and ADR-0046 have it warn. `mark::tile` and `shade.rs`'s pixmap fill call it, and
-`glyph_marker.rs` keeps the glyph it draws in the tile. This is a `refactor`.
+`glyph_marker.rs` keeps the glyph it draws in the tile. A shaded pixmap reads its image before it
+tests whether the polygon meets the image, so that a refused image is recorded wherever the
+polygon lies: the call takes that image as read, rather than read it a second time or move the
+refusal. `mark::tile` stays only if it still does more than pass its arguments on; otherwise its
+callers call the canvas. This is a `refactor`.
 
 ## Acceptance criteria
 
