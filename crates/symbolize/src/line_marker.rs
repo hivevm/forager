@@ -15,21 +15,19 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! Symbols along a line: a vector, an ellipse, a pixmap, or a TrueType symbol, whose glyphs
-//! `glyph_marker` places through [`Placement::of`] and [`taken`], repeated every `GAP` pixels
+//! Symbols along a line: a vector, an ellipse, a pixmap, or a TrueType symbol, which `mark`
+//! places through [`Placement::of`] and [`taken`], repeated every `GAP` pixels
 //! from the `INITIALGAP`, upright for a positive gap and turned with each segment for a negative
 //! one, as MapServer places them. The positions of the markers outside the image are not visited
 //! one by one but skipped, and the markers along the lines of one layer, with those at its
 //! features and the symbols its `GEOMTRANSFORM`s place, amount to at most [`MAX_MARKER_POINTS`]
 //! points (Q-9).
 
-use std::rc::Rc;
-
-use forager_render::{DrawOp, Point, PremultipliedImage};
+use forager_render::{DrawOp, Point};
+use forager_style_ir::Style;
 use forager_style_ir::c::{ms_max, ms_min};
-use forager_style_ir::{Style, Symbol};
 
-use crate::symbol::{self, Factors};
+use crate::symbol;
 
 /// The most points the markers along the lines of one layer, those at the points of a point
 /// layer's features, and the symbols a `GEOMTRANSFORM` places on its lines and polygons, amount
@@ -129,107 +127,9 @@ pub(crate) struct Placement {
     image: (f64, f64),
 }
 
-/// The drawing operations of the markers of `style` with its vector or ellipse `symbol` along
-/// `paths`, in pixels already offset, as msDrawLineSymbol draws a symbol with a `GAP` on an image of `image` width and
-/// height, with computeSymbolStyle at `factors`, the layer's scale factor and the image's
-/// resolution factor: `initial_gap` is the `INITIALGAP` scaled as the width is. The markers'
-/// points are taken from the layer's `budget`; where they would exceed what is left, none is
-/// drawn, and none after them once it is spent.
-pub(crate) fn draw<T>(
-    paths: &[Vec<Point>],
-    style: &Style<T>,
-    symbol: &Symbol,
-    initial_gap: f64,
-    image: (f64, f64),
-    factors: Factors,
-    budget: &mut MarkerBudget,
-) -> Vec<DrawOp> {
-    if budget.spent() {
-        return Vec::new();
-    }
-    let s = symbol::symbol_style(style, symbol, factors);
-    // What one marker costs; a symbol that draws nothing has no markers to place.
-    let mut probe = Vec::new();
-    symbol::render(&mut probe, Point { x: 0.0, y: 0.0 }, symbol, &s);
-    let Some(price) = MarkerBudget::price(&probe) else {
-        return Vec::new();
-    };
-    let [size_x, size_y] = symbol.extent.unwrap_or([0.0, 0.0]);
-    let placement = Placement::of(
-        style,
-        (s.gap, s.rotation),
-        clamped((size_x * s.scale, size_y * s.scale)),
-        symbol.anchor(),
-        initial_gap,
-        image,
-    );
-    let mut ops = Vec::new();
-    let mut turned = s;
-    for marker in taken(paths, &placement, price, budget) {
-        turned.rotation = marker.rotation;
-        symbol::render(&mut ops, marker.at, symbol, &turned);
-    }
-    ops
-}
-
-/// The drawing operations of the markers of `style` with the pixmap `symbol` of `pixmap` along
-/// `paths`, as [`draw`] places a vector symbol's: msImagePolylineMarkers sizes the marker as
-/// the image times the scale, at least 1 each way (`src/maprendering.c:400-401`, the symbol's
-/// `sizex` and `sizey` the image's, `src/mapsymbol.c:969-970`), and draws the image as at a
-/// point (478-480, 559-561; see [`symbol::render_pixmap`]). Nothing at a scale of 0, as a vector
-/// symbol at that scale draws nothing. Each marker costs one point of the `budget`.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "msDrawLineSymbol's inputs, as draw takes them, and the image"
-)]
-pub(crate) fn draw_pixmap<T>(
-    paths: &[Vec<Point>],
-    style: &Style<T>,
-    symbol: &Symbol,
-    pixmap: &Rc<PremultipliedImage>,
-    initial_gap: f64,
-    image: (f64, f64),
-    factors: Factors,
-    budget: &mut MarkerBudget,
-) -> Vec<DrawOp> {
-    if budget.spent() {
-        return Vec::new();
-    }
-    let (scale, rotation, gap) = symbol::pixmap_style(style, pixmap.height(), factors);
-    if scale == 0.0 {
-        return Vec::new();
-    }
-    let placement = Placement::of(
-        style,
-        (gap, rotation),
-        clamped((
-            f64::from(pixmap.width()) * scale,
-            f64::from(pixmap.height()) * scale,
-        )),
-        symbol.anchor(),
-        initial_gap,
-        image,
-    );
-    // What one marker costs: a pixmap is drawn as one operation, of one point.
-    let probe = symbol::render_pixmap(Point { x: 0.0, y: 0.0 }, Rc::clone(pixmap), scale, rotation);
-    let Some(price) = MarkerBudget::price(&[probe]) else {
-        return Vec::new();
-    };
-    let mut ops = Vec::new();
-    for marker in taken(paths, &placement, price, budget) {
-        ops.push(symbol::render_pixmap(
-            marker.at,
-            Rc::clone(pixmap),
-            scale,
-            marker.rotation,
-        ));
-    }
-    ops
-}
-
 /// `(width, height)` at least 1 each way, as msImagePolylineMarkers holds the size of a symbol
 /// that is not TrueType (`src/maprendering.c:400-401`).
-fn clamped((width, height): (f64, f64)) -> (f64, f64) {
+pub(crate) fn clamped((width, height): (f64, f64)) -> (f64, f64) {
     (ms_max(1.0, width), ms_max(1.0, height))
 }
 

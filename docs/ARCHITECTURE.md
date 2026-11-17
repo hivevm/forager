@@ -276,10 +276,12 @@ golden path and the test pattern an agent copies from are named here.
   square, and transformation, in the order of operations of AGG's `trans_affine`, and the images
   of a render's pixmaps by their path (`symbol.rs`); hatches, the
   clip of a hatched polygon and of a line shape by the class's buffer, as msDrawShape clips them,
-  and the reference point a hatch's lines count from (`hatch.rs`); vector,
-  ellipse, and pixmap symbols along a line, and the layer's budget of markers
-  (`line_marker.rs`); a polygon's fill tile and a line's brush tile, its size held to Q-9's
-  bound, and the render's cache of six tiles, counted with the decoded images and a brush's copy
+  and the reference point a hatch's lines count from (`hatch.rs`); a style's symbol by its kind,
+  `Mark`, placed along a line, each marker drawn and priced by one styled mark, and asked as a
+  brush or a fill tile, one dispatch over the kinds per placement (`mark.rs`); the placement of
+  symbols along a line, and the layer's budget of markers (`line_marker.rs`); a polygon's fill
+  tile and a line's brush tile, its size held to Q-9's bound, and the render's cache of six tiles,
+  counted with the decoded images and a brush's copy
   (`tile.rs`); line offsets (`offset.rs`); and
   the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a layer's
   `GEOMTRANSFORM`, its transform tree evaluated on each feature's shape before the engine classes
@@ -298,7 +300,7 @@ golden path and the test pattern an agent copies from are named here.
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`,
-  `label.rs`, and `circle.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`,
+  `label.rs`, and `circle.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`, `mark.rs`,
   `glyph_marker.rs`, `canvas.rs`, `hatch.rs`, `line_marker.rs` and `tile.rs`, `symbol.rs`,
   `geom_transform.rs`, and `layer_transform.rs`, and `bounds.rs`, `style.rs`, `extent.rs`,
   `geometry.rs`, `glyph.rs`, and `offset.rs` the leaves, as

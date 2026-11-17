@@ -102,8 +102,8 @@ fn a_style_marks_by_its_symbol() {
     let index = |i| by(Some(Bound::Value(SymbolRef::Index(i))));
     assert_eq!(mark(&by(None), &symbols), Mark::Square);
     assert_eq!(mark(&index(0), &symbols), Mark::Square);
-    assert_eq!(mark(&index(1), &symbols), Mark::Symbol(&symbols[0]));
-    assert_eq!(mark(&index(2), &symbols), Mark::Symbol(&symbols[1]));
+    assert_eq!(mark(&index(1), &symbols), Mark::Symbol(1, &symbols[0]));
+    assert_eq!(mark(&index(2), &symbols), Mark::Symbol(2, &symbols[1]));
     assert_eq!(mark(&index(3), &symbols), Mark::Pixmap(3, &symbols[2]));
     assert_eq!(mark(&index(4), &symbols), Mark::Nothing, "past the last");
 }
@@ -128,7 +128,10 @@ fn a_style_s_symbol_by_name_is_the_first_of_that_name_whatever_its_case() {
         symbol: Some(Bound::Value(SymbolRef::Name(name.to_owned()))),
         ..style(Some(10.0), None)
     };
-    assert_eq!(mark(&by_name("Dot"), &symbols), Mark::Symbol(&symbols[1]));
+    assert_eq!(
+        mark(&by_name("Dot"), &symbols),
+        Mark::Symbol(2, &symbols[1])
+    );
     assert_eq!(
         mark(&by_name("PIN"), &symbols),
         Mark::Pixmap(4, &symbols[3])
@@ -711,8 +714,8 @@ fn each_reader_of_a_styles_symbol_tells_the_default_the_missing_the_unresolved_a
         assert_eq!(default_size_of(style, &symbols, None), 1.0, "{case}");
     }
     assert_eq!(mark(&past, &symbols), Mark::Nothing);
-    assert_eq!(mark(&vector, &symbols), Mark::Symbol(&symbols[0]));
-    assert_eq!(mark(&hatched, &symbols), Mark::Square);
+    assert_eq!(mark(&vector, &symbols), Mark::Symbol(1, &symbols[0]));
+    assert_eq!(mark(&hatched, &symbols), Mark::Hatch);
 
     assert!(!is_hatch(&past, &symbols));
     assert!(!is_hatch(&vector, &symbols));
