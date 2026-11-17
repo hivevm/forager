@@ -152,9 +152,9 @@ pub(crate) fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
 /// the style widened by twice its outline width with its colours swapped, as
 /// msOutlineRenderingPrepareStyle() prepares it. A style with a vector, an ellipse, a pixmap, or a
 /// TrueType symbol and a `GAP` draws the symbol along the line instead (see
-/// [`mark::along_line`]), its markers' points taken from the canvas's budget, a pixmap without a colour and not at all where its image is refused; one with
-/// a `GAP` of 0 brushes the line with its brush tile (see [`brushed`]); one whose symbol index is
-/// past the last draws nothing.
+/// [`mark::along_line`]), its markers' points taken from the canvas's budget, a pixmap without a
+/// colour and not at all where its image is refused; one with a `GAP` of 0 brushes the line with
+/// its brush tile (see [`brushed`]); one whose symbol index is past the last draws nothing.
 pub(crate) fn line_symbol<T: Clone>(
     ops: &mut Vec<DrawOp>,
     paths: Vec<Vec<Point>>,

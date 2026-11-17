@@ -18,18 +18,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The bounds of a style's width and size as msDrawLineSymbol(), computeSymbolStyle(),
-//! msDrawShadeSymbol(), msGetMarkerSize(), and msDrawShape() apply them, one function per site,
-//! the style's bounds with their defaults, and the constants they bound by. Two sites bound a size
-//! outside this module: the stand-in square of `draw::point_ops`, Forager's and not MapServer's,
+//! msDrawShadeSymbol(), msGetMarkerSize(), and msDrawShape() apply them, one function per site, the
+//! style's bounds with their defaults, and the constants they bound by. Two sites bound a size
+//! outside this module: the stand-in square of `marker::point_ops`, Forager's and not MapServer's,
 //! which cuts its size to between 0 and [`MAX_SIZE`] and ignores the style's `MINSIZE` and
 //! `MAXSIZE`, as the images blessed with it draw it; and msImagePolylineMarkers()'s marker along a
-//! line (`line_marker::draw`), which keeps its symbol's scaled extent at 1 pixel or more, by no
-//! bound of the style. `draw::outline_style` bounds nothing: it widens the style's `MINWIDTH` and
-//! `MAXWIDTH`, read here with their defaults, for the outline pass. MapServer bounds in two
-//! orders: the maximum first where it draws a line or a polygon, the minimum first where it draws
-//! a symbol. With `MS_MIN` and `MS_MAX`, which keep their second operand where they cannot
-//! compare, the order decides what a width that is no number, as an expression may bind, comes
-//! out as: the style's `MINWIDTH` in the one order, its `MAXWIDTH` in the other.
+//! line (`mark::along_line`, through `line_marker::clamped`), which keeps its symbol's scaled
+//! extent at 1 pixel or more, by no bound of the style. `line::outline_style` bounds nothing: it
+//! widens the style's `MINWIDTH` and `MAXWIDTH`, read here with their defaults, for the outline
+//! pass. MapServer bounds in two orders: the maximum first where it draws a line or a polygon, the
+//! minimum first where it draws a symbol. With `MS_MIN` and `MS_MAX`, which keep their second
+//! operand where they cannot compare, the order decides what a width that is no number, as an
+//! expression may bind, comes out as: the style's `MINWIDTH` in the one order, its `MAXWIDTH` in
+//! the other.
 
 use forager_style_ir::Style;
 use forager_style_ir::c::{int_cast, ms_max, ms_min};

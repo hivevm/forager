@@ -51,7 +51,7 @@ pub fn shade<T: Clone>(
         symbol::Mark::Nothing => return true,
         // A pixmap needs no colour (753), and draws neither its COLOR nor an outline.
         symbol::Mark::Pixmap(index, symbol) => {
-            tiled(ops, rings, style, (index, symbol), canvas);
+            tiled(ops, rings, style, index, symbol, canvas);
             return true;
         }
         _ => {}
@@ -111,28 +111,26 @@ pub fn shade<T: Clone>(
 
 /// The pixmap symbol `symbol`, at `index` from 1, over a polygon, as msDrawShadeSymbol tiles it:
 /// computeSymbolStyle's scale, rotation, and gap at the canvas's factor give the tile of the
-/// canvas's (see [`mark::tile`]), and the polygon, moved by the offset scaled, is filled with it.
-/// Where the image has not loaded or its tile is refused (Q-9), nothing is drawn, and the canvas
-/// records why. A polygon moved wholly off the image builds no tile, which would draw nothing
-/// and take bytes from the tiles of the polygons on it.
+/// canvas's (see [`Canvas::pixmap_tile`]), and the polygon, moved by the offset scaled, is filled
+/// with it. Where the image has not loaded or its tile is refused (Q-9), nothing is drawn, and the
+/// canvas records why. A polygon moved wholly off the image builds no tile, which would draw
+/// nothing and take bytes from the tiles of the polygons on it.
 fn tiled<T>(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
     style: &Style<T>,
-    (index, symbol): (usize, &Symbol),
+    index: usize,
+    symbol: &Symbol,
     canvas: &mut Canvas,
 ) {
-    // The image is read before the polygon is placed, so that a refused one is recorded wherever
-    // the polygon lies; the tile reads it again.
-    if canvas.pixmap(index, symbol).is_none() {
+    let Some(image) = canvas.pixmap(index, symbol) else {
         return;
-    }
+    };
     let rings = moved(rings, style_offset(style, canvas.factors.scale));
     if !meets_image(&rings, canvas.image()) {
         return;
     }
-    let mark = symbol::Mark::Pixmap(index, symbol);
-    if let Some(tile) = mark::tile(mark, style, (false, TileFor::Polygon), canvas) {
+    if let Some(tile) = canvas.pixmap_tile(style, index, image, TileFor::Polygon) {
         ops.push(DrawOp::TiledFill { rings, tile });
     }
 }
@@ -156,8 +154,8 @@ fn symbol_tiled<T>(
     if !meets_image(&rings, canvas.image()) {
         return;
     }
-    let seamless = matches!(mark, symbol::Mark::Symbol(_, symbol) if symbol.kind == SymbolKind::Vector)
-        && style.gap.unwrap_or(0.0) == 0.0;
+    let vector = matches!(mark, symbol::Mark::Symbol(_, s) if s.kind == SymbolKind::Vector);
+    let seamless = vector && style.gap.unwrap_or(0.0) == 0.0;
     if let Some(tile) = mark::tile(mark, style, (seamless, TileFor::Polygon), canvas) {
         ops.push(DrawOp::TiledFill { rings, tile });
     }
