@@ -17,9 +17,9 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A TrueType symbol at a point, anchored, and the glyph and tile that `mark` places along a line
-//! and over a polygon: its glyph asked of the port [`crate::glyph::Glyphs`], placed as
-//! drawGlyphMarker places it and drawn as agg2RenderGlyphsPath draws it (ADR-0044).
+//! A TrueType symbol at a point, anchored, and the glyph that `mark` places along a line and draws
+//! into a tile: its glyph asked of the port [`crate::glyph::Glyphs`], placed as drawGlyphMarker
+//! places it and drawn as agg2RenderGlyphsPath draws it (ADR-0044).
 
 use std::rc::Rc;
 

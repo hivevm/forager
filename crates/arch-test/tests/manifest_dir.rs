@@ -1,8 +1,8 @@
-//! A test that reads the tree, under `tests/` or in a crate's `src/`, finds it at run time: `cargo test` sets `CARGO_MANIFEST_DIR` for
-//! the package it runs, and the path compiled in is only the fallback where it is unset. A binary
-//! built in another checkout over the same `target/` holds that checkout's path, which may be gone,
-//! and Cargo may judge the binary fresh; a test that walks the tree there passes or fails on files
-//! it did not read.
+//! A test that reads the tree, under `tests/` or in a crate's `src/`, finds it at run time: `cargo
+//! test` sets `CARGO_MANIFEST_DIR` for the package it runs, and the path compiled in is only the
+//! fallback where it is unset. A binary built in another checkout over the same `target/` holds
+//! that checkout's path, which may be gone, and Cargo may judge the binary fresh; a test that walks
+//! the tree there passes or fails on files it did not read.
 
 use std::path::{Path, PathBuf};
 
