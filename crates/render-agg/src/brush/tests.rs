@@ -258,12 +258,52 @@ fn dot() -> Rc<Tile> {
     Rc::new(Tile::new(1, 1, vec![mark]).unwrap())
 }
 
+/// `path` brushed with [`dot`] on a white image of `width` by `height` pixels.
+fn dotted(width: u32, height: u32, path: Vec<Point>, reach: f64) -> RgbaImage {
+    let mut renderer = AggRenderer::new();
+    renderer.begin(width, height, Rgba::opaque(255, 255, 255));
+    renderer.draw(&DisplayItem {
+        op: DrawOp::BrushedLine {
+            paths: vec![path],
+            tile: dot(),
+            reach,
+        },
+        feature_id: None,
+    });
+    renderer.finish()
+}
+
+/// How many pixels of `image` are not white.
+fn drawn(image: &RgbaImage) -> usize {
+    image
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|&&pixel| pixel != [255; 4])
+        .count()
+}
+
+/// Whether [`JoinProbe`] admits `path`, fed whole, with [`dot`]'s pattern.
+fn joins_admit(path: &[Point]) -> bool {
+    let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(dot().image(built_tile)));
+    let mut rasterizer = RasterizerOutlineAa::new();
+    let (x, y) = (line_coord_sat(path[0].x), line_coord_sat(path[0].y));
+    rasterizer.move_to(x, y);
+    for q in &path[1..] {
+        rasterizer.line_to(line_coord_sat(q.x), line_coord_sat(q.y));
+    }
+    let mut probe = JoinProbe::new(&pattern);
+    rasterizer.render(&mut probe, false);
+    probe.within
+}
+
 #[test]
-fn a_piece_whose_join_lies_far_past_its_short_segment_draws_without_a_panic() {
+fn a_piece_whose_join_lies_far_past_its_short_segment_is_not_drawn_and_does_not_panic() {
     // Verifies: Q-3
     // Ticket 21's fuzz input: the short first segment's join with the segment of some 8650 pixels
-    // after it lies two of those lengths away, past what `DistanceInterpolator4` multiplies in
-    // `i32`.
+    // after it lies thousands of pixels away, past what `DistanceInterpolator4` multiplies in
+    // `i32`, so the piece, the whole path, is not drawn.
     let line = vec![
         p(94.00000786351512, -7.817504489577309e-6),
         p(61.000000000000114, 33.00000000000001),
@@ -271,17 +311,22 @@ fn a_piece_whose_join_lies_far_past_its_short_segment_draws_without_a_panic() {
         p(61.00000000000001, 56.17101458477057),
         p(94.00000786351512, -7.817504489577309e-6),
     ];
-    let mut renderer = AggRenderer::new();
-    renderer.begin(123, 34, Rgba::opaque(255, 255, 255));
-    renderer.draw(&DisplayItem {
-        op: DrawOp::BrushedLine {
-            paths: vec![line],
-            tile: dot(),
-            reach: 1.517439853e9,
-        },
-        feature_id: None,
-    });
-    renderer.finish();
+    assert!(!joins_admit(&line));
+    assert_eq!(drawn(&dotted(123, 34, line, 1.517439853e9)), 0);
+}
+
+#[test]
+fn a_long_segment_after_a_short_one_at_a_gentle_angle_is_drawn() {
+    // Verifies: ADR-0046, Q-3
+    // A segment of 2 pixels, then one of 2100 at 10°: their join lies some 2100 × 0.17 pixels
+    // from the vertex, far within the bound, and the line is drawn as agg-rust draws it unbounded.
+    let line = vec![
+        p(10.0, 10.0),
+        p(12.0, 10.0),
+        p(2080.096281325637, 374.6611731005537),
+    ];
+    assert!(joins_admit(&line));
+    assert_eq!(drawn(&dotted(2200, 400, line, 10.0)), 4207);
 }
 
 /// A short segment of 3620 subpixels down and to the right at 45°, then one back up and to the
@@ -293,54 +338,20 @@ fn hairpin(run: i32) -> Vec<Point> {
     vec![p(2.0, 2.0), p(12.0, 12.0), p(back(run), back(run - 2560))]
 }
 
-/// The run of [`hairpin`] whose long segment is the longest `within_i32` admits with [`dot`],
-/// 512999 subpixels. The short segment's end join reaches `j = 2 × 512999 + 512999 / 770 + 3 =
-/// 1026667`, so `|v| = (j + 3) >> 4 + 3 = 64169`; its pixels lie within `|u| = (3620 + 256 × (2
-/// × 2 + 68) + 3) >> 4 + 3 = 1381`; and `|u| × |v| + |v|² / 2 = 88617389 + 2058830280 =
-/// 2147447669` is within `i32::MAX`. At 513000 subpixels, `|v|` is 64170 and the sum
-/// 2147513220, past it; the next run makes the long segment 513001.
-const HAIRPIN_RUN: i32 = 364_023;
+/// The longest run of [`hairpin`] that [`JoinProbe`] admits with [`dot`]. The short segment,
+/// from (512, 512) to (3072, 3072) in subpixels, ends at the join (734831, 732271) that
+/// `bisectrix` gives with the long segment of 516501, so `|v_x| = 45926 - 192 = 45734` and
+/// `|v_y| = 45766 - 192 = 45574` in `line_mr` units. Its pixels lie within
+/// `|u| = ((3620 + 256 × (2 × 2 + 68) + 3) >> 4) + 3 = 1381`, and the larger product,
+/// `(|u| + |v_y|) × |v_x| = 46955 × 45734 = 2147439970`, is within `i32::MAX`. One subpixel more
+/// moves the join to (734833, 732273), and `46956 × 45735 = 2147532660` passes it.
+const HAIRPIN_RUN: i32 = 366_499;
 
 #[test]
 fn a_piece_within_the_join_bound_is_drawn_and_one_past_it_is_not() {
     // Verifies: Q-3
-    let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(dot().image(built_tile)));
-    assert_eq!((pattern.pattern_width(), pattern.line_width()), (256, 256));
-    assert!(within_i32(&pattern, &[3620, 512_999]));
-    assert!(!within_i32(&pattern, &[3620, 513_000]));
-
-    let subpixels = |run| {
-        let fed: Vec<(i32, i32)> = hairpin(run)
-            .iter()
-            .map(|q| (line_coord_sat(q.x), line_coord_sat(q.y)))
-            .collect();
-        filtered(&fed)
-    };
-    assert_eq!(subpixels(HAIRPIN_RUN), [(0, 3620), (1, 512_999), (2, 0)]);
-    assert_eq!(
-        subpixels(HAIRPIN_RUN + 1),
-        [(0, 3620), (1, 513_001), (2, 0)]
-    );
-
-    let draw = |run| {
-        let mut renderer = AggRenderer::new();
-        renderer.begin(20, 20, Rgba::opaque(255, 255, 255));
-        renderer.draw(&DisplayItem {
-            op: DrawOp::BrushedLine {
-                paths: vec![hairpin(run)],
-                tile: dot(),
-                reach: 1e6,
-            },
-            feature_id: None,
-        });
-        renderer.finish()
-    };
-    let white = Some(Rgba::opaque(255, 255, 255));
-    assert_ne!(draw(HAIRPIN_RUN).pixel(7, 7), white);
-    let past = draw(HAIRPIN_RUN + 1);
-    for y in 0..20 {
-        for x in 0..20 {
-            assert_eq!(past.pixel(x, y), white, "at {x}, {y}");
-        }
-    }
+    assert!(joins_admit(&hairpin(HAIRPIN_RUN)));
+    assert!(!joins_admit(&hairpin(HAIRPIN_RUN + 1)));
+    assert_ne!(drawn(&dotted(20, 20, hairpin(HAIRPIN_RUN), 1e6)), 0);
+    assert_eq!(drawn(&dotted(20, 20, hairpin(HAIRPIN_RUN + 1), 1e6)), 0);
 }
