@@ -442,7 +442,8 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
 ///
 /// It fails where [`built`] fails, and on a tolerance below 0, which GEOS refuses after
 /// msGEOSShape2Geometry. The engine also fails a polygon with a coordinate that is no finite
-/// number, on which geo's repair of the simplified polygon panics.
+/// number, on which geo's repair of the simplified polygon may panic, as it does by a tolerance
+/// that is no number.
 fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
     if is_empty_from_geos(&shape) {
         return Ok(shape);
