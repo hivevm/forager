@@ -17,9 +17,9 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A TrueType symbol at a point, anchored, along a line, and tiled over a polygon: its glyph asked
-//! of the port [`crate::glyph::Glyphs`], placed as drawGlyphMarker places it and drawn as
-//! agg2RenderGlyphsPath draws it (ADR-0044).
+//! A TrueType symbol at a point, anchored, and the glyph and tile that `mark` places along a line
+//! and over a polygon: its glyph asked of the port [`crate::glyph::Glyphs`], placed as
+//! drawGlyphMarker places it and drawn as agg2RenderGlyphsPath draws it (ADR-0044).
 
 use std::rc::Rc;
 
@@ -29,7 +29,6 @@ use forager_style_ir::{ANCHOR_CENTRE, Style, Symbol};
 
 use crate::canvas::Canvas;
 use crate::glyph::{Glyph, Glyphs, font_and_character};
-use crate::line_marker::{Placement, taken};
 use crate::style::fixed;
 use crate::symbol::{self, Affine, SymbolStyle};
 use crate::tile::{self, TileFor};
@@ -209,65 +208,6 @@ pub(crate) fn glyph_ops<T>(
     }
 }
 
-/// The glyphs of the TrueType symbol `symbol`, at `index` from 1, of `style` along `paths`, in
-/// pixels already offset, as msDrawLineSymbol hands them to msImagePolylineMarkers: the glyph
-/// at computeSymbolStyle's size, its control box the marker's size, not held to 1 as another
-/// symbol's is (`src/maprendering.c:402-413`), each marker drawn by [`glyph_op`]. `initial_gap`
-/// is the `INITIALGAP` scaled as the width is. Each glyph costs one point of the canvas's budget;
-/// the glyph is asked, and what it lacks recorded, even where the budget is spent.
-pub(crate) fn line_glyphs<T>(
-    paths: &[Vec<Point>],
-    style: &Style<T>,
-    index: usize,
-    symbol: &Symbol,
-    initial_gap: f64,
-    canvas: &mut Canvas,
-) -> Vec<DrawOp> {
-    let s = symbol::symbol_style(style, symbol, canvas.factors);
-    if (s.fill.is_none() && s.outline.is_none()) || s.scale == 0.0 {
-        return Vec::new();
-    }
-    // Asked before the budget is read, as a pixmap's image is read, so that a missing character
-    // or a refused glyph is recorded whether or not markers are left.
-    let Some(glyph) = styled_glyph(symbol, index, &s, canvas) else {
-        return Vec::new();
-    };
-    if canvas.markers.spent() {
-        return Vec::new();
-    }
-    let placement = Placement::of(
-        style,
-        (s.gap, s.rotation),
-        glyph_extent(&glyph),
-        symbol.anchor(),
-        initial_gap,
-        canvas.image(),
-    );
-    let mut ops = Vec::new();
-    let mut each = s;
-    for marker in taken(paths, &placement, 1, &mut canvas.markers) {
-        each.rotation = marker.rotation;
-        ops.push(glyph_op(&glyph, marker.at, &each));
-    }
-    ops
-}
-
-/// The TrueType symbol `symbol`, at `index` from 1, of `style` over `rings`, already moved by the
-/// offset, as msDrawShadeSymbol tiles it: the polygon filled with its fill tile (see
-/// [`glyph_tile`]), where there is one.
-pub(crate) fn tiled_glyph<T>(
-    ops: &mut Vec<DrawOp>,
-    rings: Vec<Vec<Point>>,
-    style: &Style<T>,
-    index: usize,
-    symbol: &Symbol,
-    canvas: &mut Canvas,
-) {
-    if let Some(tile) = glyph_tile(style, index, symbol, TileFor::Polygon, canvas) {
-        ops.push(DrawOp::TiledFill { rings, tile });
-    }
-}
-
 /// The tile of the TrueType symbol `symbol`, at `index` from 1, of `style`, asked for `asked`:
 /// computeSymbolStyle's style at the canvas's factors, the tile of its size, scale, and, for a
 /// polygon, its gap, never seamless (see [`tile::glyph_tile`]). The glyph is asked only for a tile
@@ -320,6 +260,35 @@ mod tests {
     use crate::glyph::Glyphs;
     use crate::symbol::{Factors, marker_size_with};
     use crate::tile::Tiles;
+
+    /// The glyphs of the TrueType symbol at `index` along `paths`, as a line style with a `GAP`
+    /// draws them (see [`crate::mark::along_line`]).
+    fn line_glyphs(
+        paths: &[Vec<Point>],
+        style: &Style,
+        index: usize,
+        symbol: &Symbol,
+        initial_gap: f64,
+        canvas: &mut Canvas,
+    ) -> Vec<DrawOp> {
+        let mark = crate::symbol::Mark::Glyph(index, symbol);
+        crate::mark::along_line(paths, style, mark, initial_gap, canvas)
+    }
+
+    /// The polygon `rings` filled with the glyph of the TrueType symbol at `index` tiled, as
+    /// msDrawShadeSymbol fills it (see [`glyph_tile`]), where there is a tile.
+    fn tiled_glyph(
+        ops: &mut Vec<DrawOp>,
+        rings: Vec<Vec<Point>>,
+        style: &Style,
+        index: usize,
+        symbol: &Symbol,
+        canvas: &mut Canvas,
+    ) {
+        if let Some(tile) = glyph_tile(style, index, symbol, TileFor::Polygon, canvas) {
+            ops.push(DrawOp::TiledFill { rings, tile });
+        }
+    }
 
     /// A port whose every glyph is a box from (1, -18) to (11, 2) y down, its path one move to
     /// the origin, glyph 0 where the second field says the font lacks the character, and which

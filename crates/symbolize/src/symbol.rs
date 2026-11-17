@@ -50,15 +50,20 @@ pub type Pixmaps = std::collections::BTreeMap<String, Result<Rc<PremultipliedIma
 /// 425 000 pixels, far past any image, and bound what a hostile symbol costs (Q-9).
 pub(crate) const MAX_ELLIPSE_STEPS: u32 = 4096;
 
-/// What a point style draws at each point.
-#[derive(Debug, PartialEq)]
+/// What a style's symbol draws, by its kind, which each placement dispatches on.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mark<'a> {
     /// A square of the style's size: a style without a symbol, or with one not drawn yet.
     Square,
-    /// A vector or ellipse symbol.
-    Symbol(&'a Symbol),
+    /// A vector or ellipse symbol, and its index among MapServer's symbols, from 1.
+    Symbol(usize, &'a Symbol),
     /// A pixmap symbol, and its index among MapServer's symbols, from 1.
     Pixmap(usize, &'a Symbol),
+    /// A TrueType symbol, drawn as its character's glyph (ADR-0044), and its index among
+    /// MapServer's symbols, from 1.
+    Glyph(usize, &'a Symbol),
+    /// A hatch symbol, which shades a polygon (see `hatch`) and draws a square at a point.
+    Hatch,
     /// Nothing, for an index past the last symbol, as msDrawMarkerSymbol draws nothing, and for a
     /// name no symbol carries: an image MapServer would read by that name, which a style document
     /// does not carry.
@@ -122,17 +127,23 @@ fn is_vector_or_ellipse(symbol: &Symbol) -> bool {
 pub fn mark<'a, T>(style: &Style<T>, symbols: &'a [Symbol]) -> Mark<'a> {
     match resolve(&style.symbol, symbols) {
         Resolved::Missing(_) | Resolved::Unnamed(_) => Mark::Nothing,
-        Resolved::Found(_, symbol) if is_vector_or_ellipse(symbol) => Mark::Symbol(symbol),
+        Resolved::Found(index, symbol) if is_vector_or_ellipse(symbol) => {
+            Mark::Symbol(index, symbol)
+        }
         Resolved::Found(index, symbol) if symbol.kind == SymbolKind::Pixmap => {
             Mark::Pixmap(index, symbol)
         }
+        Resolved::Found(index, symbol) if symbol.kind == SymbolKind::Truetype => {
+            Mark::Glyph(index, symbol)
+        }
+        Resolved::Found(_, symbol) if symbol.kind == SymbolKind::Hatch => Mark::Hatch,
         Resolved::Default | Resolved::Unresolved | Resolved::Found(..) => Mark::Square,
     }
 }
 
 /// Whether the style's symbol among `symbols` is a hatch.
 pub(crate) fn is_hatch<T>(style: &Style<T>, symbols: &[Symbol]) -> bool {
-    matches!(resolve(&style.symbol, symbols), Resolved::Found(_, symbol) if symbol.kind == SymbolKind::Hatch)
+    mark(style, symbols) == Mark::Hatch
 }
 
 /// How a symbol is drawn, computeSymbolStyle's `symbolStyleObj`.

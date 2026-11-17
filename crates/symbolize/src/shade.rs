@@ -21,9 +21,9 @@ use forager_style_ir::{Rgba, Style, Symbol, SymbolKind};
 use crate::bounds;
 use crate::canvas::Canvas;
 use crate::extent::View;
-use crate::glyph_marker;
 use crate::hatch::{self, Hatched};
 use crate::line::{Pass, line_ends, line_symbol, moved, open_rings, style_offset};
+use crate::mark;
 use crate::style::{GAMMA, fixed};
 use crate::symbol;
 use crate::tile::TileFor;
@@ -33,8 +33,8 @@ use crate::tile::TileFor;
 /// moved by the offset scaled and filled with the image tiled (see [`tiled`]); without a `COLOR`,
 /// its outline as msDrawLineSymbol draws a line in the style (see [`line_symbol`]); with one, moved
 /// by the offset scaled, and with a hatch symbol hatched (see [`hatch::hatch`]), with a vector or
-/// an ellipse symbol filled with the symbol tiled (see [`vector_tiled`]), with a TrueType symbol
-/// filled with its glyph tiled (see [`glyph_marker::tiled_glyph`]), with any other filled, and
+/// an ellipse symbol filled with the symbol tiled, seamless for a vector without a `GAP`, with a
+/// TrueType symbol filled with its glyph tiled (see [`symbol_tiled`]), with any other filled, and
 /// outlined in the `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width
 /// scaled, the factor itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled,
 /// as MapServer bounds it there. False where a hatch is refused (Q-9).
@@ -45,12 +45,13 @@ pub fn shade<T: Clone>(
     view: &View,
     canvas: &mut Canvas,
 ) -> bool {
-    match symbol::mark(style, canvas.symbols) {
+    let mark = symbol::mark(style, canvas.symbols);
+    match mark {
         // No such symbol (src/maprendering.c:742-743).
         symbol::Mark::Nothing => return true,
         // A pixmap needs no colour (753), and draws neither its COLOR nor an outline.
         symbol::Mark::Pixmap(index, symbol) => {
-            tiled(ops, rings, style, index, symbol, canvas);
+            tiled(ops, rings, style, (index, symbol), canvas);
             return true;
         }
         _ => {}
@@ -61,36 +62,29 @@ pub fn shade<T: Clone>(
     };
     let factor = canvas.factors.scale;
     let rings = moved(rings, style_offset(style, factor));
-    if symbol::is_hatch(style, canvas.symbols) {
-        return match hatch::hatch(
-            rings,
-            style,
-            color,
-            canvas.size,
-            hatch::reference(canvas.own_image, view),
-            canvas.factors,
-        ) {
-            Hatched::Drawn(hatch) => {
-                ops.push(DrawOp::Hatch(hatch));
-                true
-            }
-            Hatched::Nothing => true,
-            Hatched::Refused => false,
-        };
-    }
-    if let symbol::Resolved::Found(index, symbol) = symbol::resolve(&style.symbol, canvas.symbols)
-        && symbol.kind == SymbolKind::Truetype
-    {
-        if meets_image(&rings, canvas.image()) {
-            glyph_marker::tiled_glyph(ops, rings, style, index, symbol, canvas);
+    match mark {
+        symbol::Mark::Hatch => {
+            return match hatch::hatch(
+                rings,
+                style,
+                color,
+                canvas.size,
+                hatch::reference(canvas.own_image, view),
+                canvas.factors,
+            ) {
+                Hatched::Drawn(hatch) => {
+                    ops.push(DrawOp::Hatch(hatch));
+                    true
+                }
+                Hatched::Nothing => true,
+                Hatched::Refused => false,
+            };
         }
-        return true;
-    }
-    if let symbol::Mark::Symbol(symbol) = symbol::mark(style, canvas.symbols)
-        && let symbol::Resolved::Found(index, _) = symbol::resolve(&style.symbol, canvas.symbols)
-    {
-        vector_tiled(ops, rings, style, index, symbol, canvas);
-        return true;
+        symbol::Mark::Symbol(..) | symbol::Mark::Glyph(..) => {
+            symbol_tiled(ops, rings, style, mark, canvas);
+            return true;
+        }
+        symbol::Mark::Square | symbol::Mark::Pixmap(..) | symbol::Mark::Nothing => {}
     }
     ops.push(DrawOp::Fill {
         rings: rings.clone(),
@@ -117,7 +111,7 @@ pub fn shade<T: Clone>(
 
 /// The pixmap symbol `symbol`, at `index` from 1, over a polygon, as msDrawShadeSymbol tiles it:
 /// computeSymbolStyle's scale, rotation, and gap at the canvas's factor give the tile of the
-/// canvas's (see [`tile::tile`]), and the polygon, moved by the offset scaled, is filled with it.
+/// canvas's (see [`mark::tile`]), and the polygon, moved by the offset scaled, is filled with it.
 /// Where the image has not loaded or its tile is refused (Q-9), nothing is drawn, and the canvas
 /// records why. A polygon moved wholly off the image builds no tile, which would draw nothing
 /// and take bytes from the tiles of the polygons on it.
@@ -125,45 +119,46 @@ fn tiled<T>(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
     style: &Style<T>,
-    index: usize,
-    symbol: &Symbol,
+    (index, symbol): (usize, &Symbol),
     canvas: &mut Canvas,
 ) {
-    let Some(image) = canvas.pixmap(index, symbol) else {
+    // The image is read before the polygon is placed, so that a refused one is recorded wherever
+    // the polygon lies; the tile reads it again.
+    if canvas.pixmap(index, symbol).is_none() {
         return;
-    };
+    }
     let rings = moved(rings, style_offset(style, canvas.factors.scale));
     if !meets_image(&rings, canvas.image()) {
         return;
     }
-    if let Some(tile) = canvas.pixmap_tile(style, index, image, TileFor::Polygon) {
+    let mark = symbol::Mark::Pixmap(index, symbol);
+    if let Some(tile) = mark::tile(mark, style, (false, TileFor::Polygon), canvas) {
         ops.push(DrawOp::TiledFill { rings, tile });
     }
 }
 
-/// The vector or ellipse symbol `symbol`, at `index` from 1, over `rings`, already moved by the
-/// offset, as msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the
-/// tile of its size, scale, and gap (see [`tile::vector_tile`]), and the polygon filled with it.
-/// The tile is seamless for a vector symbol whose `GAP` is 0, as msDrawShadeSymbol sets it under
-/// AGG (`src/maprendering.c:876-883`), and never for an ellipse, which getTile draws once at the
-/// tile's centre. Where the tile is refused (Q-9), nothing is drawn, and the canvas records why. A
-/// polygon wholly off the image builds no tile.
-fn vector_tiled<T: Clone>(
+/// The vector, ellipse, or TrueType symbol of `mark` over `rings`, already moved by the offset, as
+/// msDrawShadeSymbol tiles it: computeSymbolStyle's style at the canvas's factors, the tile of its
+/// size, scale, and gap (see [`mark::tile`]), and the polygon filled with it. The tile is seamless
+/// for a vector symbol whose `GAP` is 0, as msDrawShadeSymbol sets it under AGG
+/// (`src/maprendering.c:876-883`), and never for an ellipse, which getTile draws once at the
+/// tile's centre, or a TrueType symbol. With the `COLOR` checked, computeSymbolStyle gives a fill
+/// or an outline colour, so the check of msDrawShadeSymbol for neither cannot fail here. Where
+/// the tile is refused (Q-9), nothing is drawn, and the canvas records why. A polygon wholly off
+/// the image builds no tile.
+fn symbol_tiled<T>(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
     style: &Style<T>,
-    index: usize,
-    symbol: &Symbol,
+    mark: symbol::Mark,
     canvas: &mut Canvas,
 ) {
-    // With the COLOR shade checked, computeSymbolStyle gives a fill or an outline colour: the
-    // check of msDrawShadeSymbol for neither cannot fail here.
-    let s = symbol::symbol_style(style, symbol, canvas.factors);
     if !meets_image(&rings, canvas.image()) {
         return;
     }
-    let seamless = symbol.kind == SymbolKind::Vector && style.gap.unwrap_or(0.0) == 0.0;
-    if let Some(tile) = canvas.symbol_tile(index, symbol, &s, (seamless, TileFor::Polygon)) {
+    let seamless = matches!(mark, symbol::Mark::Symbol(_, symbol) if symbol.kind == SymbolKind::Vector)
+        && style.gap.unwrap_or(0.0) == 0.0;
+    if let Some(tile) = mark::tile(mark, style, (seamless, TileFor::Polygon), canvas) {
         ops.push(DrawOp::TiledFill { rings, tile });
     }
 }

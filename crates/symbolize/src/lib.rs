@@ -6,11 +6,12 @@
 //! Its modules import one another in one direction only: `draw` imports `canvas`, `extent`,
 //! `geom_transform`, `hatch`, `layer_transform`, `line`, `marker`, `shade`, and `symbol`; `label`
 //! imports `canvas`, `extent`, `marker`, `shade`, and `symbol`; `circle` imports `canvas`,
-//! `extent`, `shade`, and `symbol`; `shade` imports `bounds`, `canvas`, `extent`, `glyph_marker`,
-//! `hatch`, `line`, `style`, `symbol`, and `tile`; `marker` imports `bounds`,
-//! `canvas`, `glyph_marker`, `line`, `line_marker`, `style`, and `symbol`; `line` imports
-//! `bounds`, `canvas`, `glyph_marker`, `line_marker`, `offset`, `style`, and `symbol`;
-//! `glyph_marker` imports `canvas`, `glyph`, `line_marker`, `style`, `symbol`, and `tile`;
+//! `extent`, `shade`, and `symbol`; `shade` imports `bounds`, `canvas`, `extent`, `hatch`, `line`,
+//! `mark`, `style`, `symbol`, and `tile`; `marker` imports `bounds`, `canvas`, `glyph_marker`,
+//! `line`, `line_marker`, `style`, and `symbol`; `line` imports `bounds`, `canvas`, `mark`,
+//! `offset`, `style`, `symbol`, and `tile`; `mark` imports `canvas`, `glyph`, `glyph_marker`,
+//! `line_marker`, `symbol`, and `tile`; `glyph_marker` imports `canvas`, `glyph`, `style`,
+//! `symbol`, and `tile`;
 //! `canvas` imports `glyph`, `hatch`, `layer_transform`, `line_marker`, `symbol`, and `tile`;
 //! `hatch` imports `bounds`, `extent`, `style`, and `symbol`; `line_marker` and `tile` import
 //! `bounds` and `symbol`; `symbol` imports `bounds`, `glyph`, and `style`; `geom_transform`
@@ -37,6 +38,7 @@ mod label;
 mod layer_transform;
 mod line;
 mod line_marker;
+mod mark;
 mod marker;
 mod offset;
 mod shade;

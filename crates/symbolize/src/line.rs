@@ -18,12 +18,11 @@
 use std::borrow::Cow;
 
 use forager_render::{Dashes, DrawOp, InnerJoin, LineCap, LineJoin, Pen, Point};
-use forager_style_ir::{Bound, Style, Symbol, SymbolKind};
+use forager_style_ir::{Bound, Style};
 
 use crate::bounds;
 use crate::canvas::Canvas;
-use crate::glyph_marker;
-use crate::line_marker;
+use crate::mark;
 use crate::offset::{self, Offset};
 use crate::style::fixed;
 use crate::symbol::{self, Factors};
@@ -152,9 +151,8 @@ pub(crate) fn open_rings(mut rings: Vec<Vec<Point>>) -> Vec<Vec<Point>> {
 /// the width; and the style's cap and join, by default `round` and `none`. An outline pass draws
 /// the style widened by twice its outline width with its colours swapped, as
 /// msOutlineRenderingPrepareStyle() prepares it. A style with a vector, an ellipse, a pixmap, or a
-/// TrueType symbol and a `GAP` draws the symbol along the line instead (a TrueType symbol's
-/// glyphs through [`glyph_marker::line_glyphs`]), its markers' points taken from the
-/// canvas's budget, a pixmap without a colour and not at all where its image is refused; one with
+/// TrueType symbol and a `GAP` draws the symbol along the line instead (see
+/// [`mark::along_line`]), its markers' points taken from the canvas's budget, a pixmap without a colour and not at all where its image is refused; one with
 /// a `GAP` of 0 brushes the line with its brush tile (see [`brushed`]); one whose symbol index is
 /// past the last draws nothing.
 pub(crate) fn line_symbol<T: Clone>(
@@ -180,63 +178,20 @@ pub(crate) fn line_symbol<T: Clone>(
     }
     let (width, written) = bounded_width(style, canvas.factors);
     let factor = if written != 0.0 { width / written } else { 1.0 };
-    if let Some((index, symbol)) = brush(style, canvas.symbols) {
-        let paths = moved(paths, style_offset(style, factor));
-        ops.extend(brushed(paths, style, index, symbol, canvas));
-        return;
-    }
     let initial_gap = style.initial_gap.unwrap_or(-1.0);
-    if gapped
-        && let symbol::Resolved::Found(index, symbol) =
-            symbol::resolve(&style.symbol, canvas.symbols)
-        && symbol.kind == SymbolKind::Truetype
-    {
-        let paths = moved(paths, style_offset(style, factor));
-        ops.extend(glyph_marker::line_glyphs(
-            &paths,
-            style,
-            index,
-            symbol,
-            initial_gap * factor,
-            canvas,
-        ));
-        return;
-    }
     match mark {
         symbol::Mark::Nothing => return,
-        symbol::Mark::Pixmap(index, symbol) if gapped => {
-            // computeSymbolStyle sets no colour for a pixmap (src/maprendering.c:47-48), and
-            // msDrawLineSymbol asks for none on this branch (666-688).
-            if let Some(pixmap) = canvas.pixmap(index, symbol) {
-                let paths = moved(paths, style_offset(style, factor));
-                ops.extend(line_marker::draw_pixmap(
-                    &paths,
-                    style,
-                    symbol,
-                    &pixmap,
-                    initial_gap * factor,
-                    canvas.image(),
-                    canvas.factors,
-                    &mut canvas.markers,
-                ));
+        symbol::Mark::Symbol(..) | symbol::Mark::Pixmap(..) | symbol::Mark::Glyph(..) => {
+            let paths = moved(paths, style_offset(style, factor));
+            if gapped {
+                let initial_gap = initial_gap * factor;
+                ops.extend(mark::along_line(&paths, style, mark, initial_gap, canvas));
+            } else {
+                ops.extend(brushed(paths, style, mark, canvas));
             }
             return;
         }
-        symbol::Mark::Symbol(symbol) if gapped => {
-            let paths = moved(paths, style_offset(style, factor));
-            let initial_gap = initial_gap * factor;
-            ops.extend(line_marker::draw(
-                &paths,
-                style,
-                symbol,
-                initial_gap,
-                canvas.image(),
-                canvas.factors,
-                &mut canvas.markers,
-            ));
-            return;
-        }
-        symbol::Mark::Symbol(_) | symbol::Mark::Pixmap(..) | symbol::Mark::Square => {}
+        symbol::Mark::Square | symbol::Mark::Hatch => {}
     }
     let Some(color) = first.or(second) else {
         return;
@@ -265,29 +220,9 @@ pub(crate) fn line_symbol<T: Clone>(
     });
 }
 
-/// The symbol of `style` among `symbols`, and its index from 1, where msDrawLineSymbol brushes the
-/// line with its tile: a vector, an ellipse, a pixmap, or a TrueType symbol, without a `GAP`.
-fn brush<'a, T>(style: &Style<T>, symbols: &'a [Symbol]) -> Option<(usize, &'a Symbol)> {
-    match symbol::resolve(&style.symbol, symbols) {
-        symbol::Resolved::Found(index, symbol)
-            if !gapped(style)
-                && matches!(
-                    symbol.kind,
-                    SymbolKind::Vector
-                        | SymbolKind::Ellipse
-                        | SymbolKind::Pixmap
-                        | SymbolKind::Truetype
-                ) =>
-        {
-            Some((index, symbol))
-        }
-        _ => None,
-    }
-}
-
-/// The line `paths`, in pixels already offset, of `style`, whose symbol `symbol` at `index` from 1
-/// is a vector, an ellipse, a pixmap, or a TrueType symbol, brushed with its brush tile as
-/// msDrawLineSymbol brushes a line without a `GAP`: its tile asked as a line's (see
+/// The line `paths`, in pixels already offset, of `style`, whose mark `mark` is a vector, an
+/// ellipse, a pixmap, or a TrueType symbol, brushed with its brush tile as msDrawLineSymbol
+/// brushes a line without a `GAP`: its tile asked as a line's (see [`mark::tile`] and
 /// [`crate::tile::TileFor::Line`]), of computeSymbolStyle's style at the canvas's factors, never
 /// seamless, a seamless one the cache holds serving it; the paths clipped by the renderer to the
 /// image grown by the class's `clip_buf`. Nothing for a shape of no lines, for a symbol of neither
@@ -296,28 +231,14 @@ fn brush<'a, T>(style: &Style<T>, symbols: &'a [Symbol]) -> Option<(usize, &'a S
 fn brushed<T: Clone>(
     paths: Vec<Vec<Point>>,
     style: &Style<T>,
-    index: usize,
-    symbol: &Symbol,
+    mark: symbol::Mark,
     canvas: &mut Canvas,
 ) -> Option<DrawOp> {
     // msDrawLineSymbol returns at once for a shape of no lines (src/maprendering.c:612-613).
     if paths.is_empty() {
         return None;
     }
-    let tile = if symbol.kind == SymbolKind::Pixmap {
-        let image = canvas.pixmap(index, symbol)?;
-        canvas.pixmap_tile(style, index, image, TileFor::Line)?
-    } else {
-        let s = symbol::symbol_style(style, symbol, canvas.factors);
-        if s.fill.is_none() && s.outline.is_none() {
-            return None;
-        }
-        if symbol.kind == SymbolKind::Truetype {
-            glyph_marker::glyph_tile(style, index, symbol, TileFor::Line, canvas)?
-        } else {
-            canvas.symbol_tile(index, symbol, &s, (false, TileFor::Line))?
-        }
-    };
+    let tile = mark::tile(mark, style, (false, TileFor::Line), canvas)?;
     Some(DrawOp::BrushedLine {
         paths,
         tile,

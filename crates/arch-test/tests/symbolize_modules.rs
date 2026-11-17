@@ -27,15 +27,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     (
         "shade",
         &[
-            "bounds",
-            "canvas",
-            "extent",
-            "glyph_marker",
-            "hatch",
-            "line",
-            "style",
-            "symbol",
-            "tile",
+            "bounds", "canvas", "extent", "hatch", "line", "mark", "style", "symbol", "tile",
         ],
     ),
     (
@@ -53,19 +45,23 @@ const ALLOWED: &[(&str, &[&str])] = &[
     (
         "line",
         &[
-            "bounds",
+            "bounds", "canvas", "mark", "offset", "style", "symbol", "tile",
+        ],
+    ),
+    (
+        "mark",
+        &[
             "canvas",
+            "glyph",
             "glyph_marker",
             "line_marker",
-            "offset",
-            "style",
             "symbol",
             "tile",
         ],
     ),
     (
         "glyph_marker",
-        &["canvas", "glyph", "line_marker", "style", "symbol", "tile"],
+        &["canvas", "glyph", "style", "symbol", "tile"],
     ),
     (
         "canvas",

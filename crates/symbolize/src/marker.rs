@@ -17,7 +17,7 @@
 use std::rc::Rc;
 
 use forager_render::{DrawOp, LineCap, LineJoin, Pen, Point, PremultipliedImage};
-use forager_style_ir::{Bound, Style, Symbol, SymbolKind, SymbolRef};
+use forager_style_ir::{Bound, Style, Symbol, SymbolRef};
 
 use crate::bounds::{self, MAX_SIZE};
 use crate::canvas::Canvas;
@@ -38,15 +38,11 @@ pub(crate) fn marker_ops<T>(
     style: &Style<T>,
     canvas: &mut Canvas,
 ) {
-    if let symbol::Resolved::Found(index, s) = symbol::resolve(&style.symbol, canvas.symbols)
-        && s.kind == SymbolKind::Truetype
-    {
-        glyph_marker::glyph_ops(ops, at, style, index, s, canvas);
-        return;
-    }
     match symbol::mark(style, canvas.symbols) {
-        symbol::Mark::Square => point_ops(ops, symbol::shifted(at, style, 1.0), style),
-        symbol::Mark::Symbol(s) => {
+        symbol::Mark::Square | symbol::Mark::Hatch => {
+            point_ops(ops, symbol::shifted(at, style, 1.0), style)
+        }
+        symbol::Mark::Symbol(_, s) => {
             symbol::symbol_ops(ops, at, style, s, canvas.factors);
         }
         symbol::Mark::Pixmap(index, s) => {
@@ -54,6 +50,7 @@ pub(crate) fn marker_ops<T>(
                 pixmap_ops(ops, at, style, s, image, canvas.factors);
             }
         }
+        symbol::Mark::Glyph(index, s) => glyph_marker::glyph_ops(ops, at, style, index, s, canvas),
         symbol::Mark::Nothing => {}
     }
 }
