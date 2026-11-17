@@ -5,12 +5,15 @@
 A tile and its refusal are fetched in two places: `canvas.rs` (`pixmap_tile`, `symbol_tile`)
 for pixmaps and vector symbols, and `glyph_marker.rs` again for glyphs. The message "no tiles are
 kept where it is drawn" is written three times. `tile.rs` builds the same `Key` from a
-`SymbolStyle` twice. `line.rs` and `shade.rs` each choose the kind of tile for themselves.
+`SymbolStyle` twice. Since ticket 07, `mark::tile` (`mark.rs`) chooses the kind of tile once for a
+brushed line and a shaded vector, ellipse, or glyph, but it still calls three fetchers:
+`Canvas::pixmap_tile`, `Canvas::symbol_tile`, and `glyph_marker::glyph_tile`. A shaded pixmap
+calls `Canvas::pixmap_tile` from `shade.rs` itself, with the image it read first.
 
 One call of the canvas takes the style, the symbol, and whether the tile is a polygon's fill or a
 line's brush. It chooses the kind, builds the key once, asks the cache, and records a refusal as
-ADR-0029 and ADR-0046 have it warn. `line.rs`, `shade.rs`, and `glyph_marker.rs` call it. This is
-a `refactor`.
+ADR-0029 and ADR-0046 have it warn. `mark::tile` and `shade.rs`'s pixmap fill call it, and
+`glyph_marker.rs` keeps the glyph it draws in the tile. This is a `refactor`.
 
 ## Acceptance criteria
 
@@ -23,7 +26,7 @@ a `refactor`.
 
 ## Read first
 
-- Touches: `crates/symbolize/src/{canvas,tile,glyph_marker,line,shade}.rs`
+- Touches: `crates/symbolize/src/{canvas,tile,glyph_marker,mark,shade}.rs`
 - ADR-0029, ADR-0046, ADR-0044; `docs/SPECIFICATION.md` Q-9.
 
 ## Blocked by
