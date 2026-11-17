@@ -1264,6 +1264,53 @@ mod tests {
     }
 
     #[test]
+    fn a_glyph_outline_is_bounded_as_a_stroke_is_and_keeps_its_sign() {
+        // Verifies: ADR-0025
+        // Unbounded, a contour of 1e12 puts its vertices past agg-rust's fixed-point
+        // coordinates and the rasterizer's clip overflows; bounded as a stroke's width is, it
+        // covers the image.
+        use forager_render::GlyphOutline;
+        use forager_render::PathCommand::{Close, LineTo, MoveTo};
+        const BLUE: Rgba = Rgba::opaque(30, 60, 200);
+        let square = |a: f64, b: f64| {
+            vec![
+                MoveTo(p(a, a)),
+                LineTo(p(b, a)),
+                LineTo(p(b, b)),
+                LineTo(p(a, b)),
+                Close,
+            ]
+        };
+        let outlined = |path, width| DrawOp::Glyphs {
+            path,
+            color: None,
+            outline: Some(GlyphOutline { color: BLUE, width }),
+        };
+        let image = render(&[outlined(square(28.0, 36.0), 1e12)]);
+        assert!(image.pixels.chunks(4).all(|px| px == [30, 60, 200, 255]));
+        // Off the image, yet within the glyph's reach: drawn without a panic.
+        let far = forager_render::clip::MAX_GLYPH_REACH - 10.0;
+        render(&[outlined(square(far, far + 8.0), 1e12)]);
+        // A width as far below zero, as a label's wrapped into an int can be, shrinks the
+        // contour by no more than the same bound.
+        render(&[outlined(square(28.0, 36.0), -1e12)]);
+        // A small width below zero is drawn as AGG's vcgen_contour draws it, the square shrunk
+        // by half of it, not grown: the bound keeps the sign.
+        let image = render(&[outlined(square(20.0, 44.0), -4.0)]);
+        assert_eq!(image.pixel(32, 32), Some(BLUE), "inside the shrunk square");
+        assert_eq!(
+            image.pixel(21, 32),
+            Some(WHITE),
+            "between the square and its contour"
+        );
+        assert_eq!(
+            image.pixel(18, 32),
+            Some(WHITE),
+            "nothing outside the square"
+        );
+    }
+
+    #[test]
     fn a_glyph_far_larger_than_the_image_is_clipped_to_it() {
         // Verifies: ADR-0025
         // Six million pixels a side: without the rasterizer's clip box its cells would span the
