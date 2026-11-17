@@ -274,8 +274,8 @@ golden path and the test pattern an agent copies from are named here.
   the pixels msTransformShapeSimplify keeps (`extent.rs`); a style's symbol
   resolved, its vector and ellipse symbols, a marker's size and anchor point, a pixmap's scale,
   square, and transformation, in the order of operations of AGG's `trans_affine`, and the images
-  of a render's pixmaps by their path (`symbol.rs`); hatches, the
-  clip of a hatched polygon and of a line shape by the class's buffer, as msDrawShape clips them,
+  of a render's pixmaps by their path (`symbol.rs`); the class's clip buffers, and the clip of a
+  hatched polygon and of a line shape by them, as msDrawShape clips them (`clip.rs`); hatches,
   and the reference point a hatch's lines count from (`hatch.rs`); a style's symbol by its kind,
   `Mark`, placed along a line, each marker drawn and priced by one styled mark, and asked as a
   brush or a fill tile, one dispatch over the kinds per placement (`mark.rs`); the placement of
@@ -301,11 +301,11 @@ golden path and the test pattern an agent copies from are named here.
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`,
   `label.rs`, and `circle.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`, `mark.rs`,
-  `glyph_marker.rs`, `canvas.rs`, `hatch.rs`, `line_marker.rs` and `tile.rs`, `symbol.rs`,
-  `geom_transform.rs`, and `layer_transform.rs`, and `bounds.rs`, `style.rs`, `extent.rs`,
-  `geometry.rs`, `glyph.rs`, and `offset.rs` the leaves, as
-  `lib.rs` lists them; ADR-0008 decides the direction only between crates, and `arch-test`'s
-  `tests/symbolize_modules.rs` holds this one.
+  `glyph_marker.rs`, `canvas.rs`, `clip.rs` and `hatch.rs`, `line_marker.rs` and `tile.rs`,
+  `symbol.rs`, `geom_transform.rs`, and `layer_transform.rs`, and `bounds.rs`, `style.rs`,
+  `extent.rs`, `geometry.rs`, `glyph.rs`, and `offset.rs` the leaves, as `lib.rs` lists them;
+  ADR-0008 decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs`
+  holds this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list, read by `style-ir`'s `font_list`, in the order MapServer tries them, and its glyphs
   read with skrifa, unhinted with FreeType's arithmetic, laid out by their advances, broken into

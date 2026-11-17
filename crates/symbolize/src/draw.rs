@@ -22,9 +22,9 @@ use forager_style_ir::{
 };
 
 use crate::canvas::Canvas;
+use crate::clip;
 use crate::extent::View;
 use crate::geom_transform;
-use crate::hatch;
 use crate::layer_transform::Kind;
 use crate::line::{Pass, gapped, line_symbol, open_rings};
 use crate::marker::{marker_ops, marker_price, of_symbol_zero};
@@ -72,7 +72,7 @@ pub fn marked_pixmap<'a>(
 /// `styles` at their images' heights, having loaded them whatever their scale range
 /// (`src/mapdraw.c:2466-2490`), in a layer drawn in `mode`: those of any class of a line layer,
 /// whose lines the buffer clips, and those of a polygon layer's class with a hatch, the one
-/// polygon style the clip buffer reaches here (see [`hatch::Hatching::for_class`]).
+/// polygon style the clip buffer reaches here (see [`clip::Clip::for_class`]).
 pub fn clip_pixmaps<'a>(mode: RenderMode, styles: &[Style], symbols: &'a [Symbol]) -> Vec<&'a str> {
     let clipped = match mode {
         RenderMode::Line => true,
@@ -92,7 +92,7 @@ pub fn clip_pixmaps<'a>(mode: RenderMode, styles: &[Style], symbols: &'a [Symbol
 }
 
 /// The drawing operations of one pass of a style on a geometry [`can_draw`] accepts, a hatch
-/// drawn as the canvas's hatching says, a hatch it refuses to draw counted there (Q-9).
+/// clipped as the canvas's clip says, a hatch it refuses to draw counted there (Q-9).
 pub fn draw_ops(
     mode: RenderMode,
     geometry: &Geometry,
@@ -139,7 +139,7 @@ pub fn draw_ops(
                 Geometry::MultiPolygon(polygons) => polygons.concat(),
                 _ => Vec::new(),
             };
-            let rings = hatch::hatch_rings(&rings, view, canvas.image(), &canvas.hatching);
+            let rings = clip::hatch_rings(&rings, view, canvas.image(), &canvas.clip);
             let drawn = shade(&mut ops, rings, style, view, canvas);
             canvas.hatching.refused += usize::from(!drawn);
         }
@@ -172,15 +172,9 @@ pub fn draw_ops(
 }
 
 /// A line shape's `parts` in pixels, clipped first as msDrawShape clips a line before it draws it
-/// (see [`hatch::line_paths`]), unless the canvas's layer leaves its lines unclipped.
+/// (see [`clip::line_paths`]), unless the canvas's layer leaves its lines unclipped.
 fn clipped_lines(parts: &[Vec<Coord>], view: &View, canvas: &Canvas) -> Vec<Vec<Point>> {
-    hatch::line_paths(
-        parts,
-        view,
-        canvas.image(),
-        &canvas.hatching,
-        canvas.clip_lines,
-    )
+    clip::line_paths(parts, view, canvas.image(), &canvas.clip, canvas.clip_lines)
 }
 
 /// The markers a point layer draws of `style` at each vertex of `geometry` inside the map's
