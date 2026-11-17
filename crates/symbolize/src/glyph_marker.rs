@@ -213,7 +213,8 @@ pub(crate) fn glyph_ops<T>(
 /// pixels already offset, as msDrawLineSymbol hands them to msImagePolylineMarkers: the glyph
 /// at computeSymbolStyle's size, its control box the marker's size, not held to 1 as another
 /// symbol's is (`src/maprendering.c:402-413`), each marker drawn by [`glyph_op`]. `initial_gap`
-/// is the `INITIALGAP` scaled as the width is. Each glyph costs one point of the canvas's budget.
+/// is the `INITIALGAP` scaled as the width is. Each glyph costs one point of the canvas's budget;
+/// the glyph is asked, and what it lacks recorded, even where the budget is spent.
 pub(crate) fn line_glyphs<T>(
     paths: &[Vec<Point>],
     style: &Style<T>,
@@ -222,16 +223,18 @@ pub(crate) fn line_glyphs<T>(
     initial_gap: f64,
     canvas: &mut Canvas,
 ) -> Vec<DrawOp> {
-    if canvas.markers.spent() {
-        return Vec::new();
-    }
     let s = symbol::symbol_style(style, symbol, canvas.factors);
     if (s.fill.is_none() && s.outline.is_none()) || s.scale == 0.0 {
         return Vec::new();
     }
+    // Asked before the budget is read, as a pixmap's image is read, so that a missing character
+    // or a refused glyph is recorded whether or not markers are left.
     let Some(glyph) = styled_glyph(symbol, index, &s, canvas) else {
         return Vec::new();
     };
+    if canvas.markers.spent() {
+        return Vec::new();
+    }
     let placement = Placement::of(
         style,
         (s.gap, s.rotation),
@@ -502,5 +505,26 @@ mod tests {
             assert_eq!(canvas.take_refusals().glyphs.len(), 1, "layer {layer}");
         }
         assert_eq!(*boxes.0.borrow(), [8], "the port is asked once");
+    }
+
+    #[test]
+    fn a_glyph_along_a_line_is_asked_and_its_missing_character_recorded_once_the_budget_is_spent() {
+        // A pixmap's image is read, and its refusal recorded, whether the budget of markers is
+        // spent or not; MapServer asks every symbol's resource. A TrueType symbol's glyph is
+        // asked alike: its missing character is recorded, and no glyph is drawn.
+        let symbols = [truetype(None)];
+        let boxes = Boxes(RefCell::default(), true);
+        let mut canvas =
+            Canvas::new(&symbols, 100, 100, Factors::new(1.0, 1.0)).with_glyphs(&boxes);
+        canvas.markers = crate::line_marker::MarkerBudget::of(0);
+        assert!(!canvas.markers.take(1, 1));
+        let line = [vec![Point { x: 0.0, y: 50.0 }, Point { x: 100.0, y: 50.0 }]];
+        let style = Style {
+            gap: Some(20.0),
+            ..sized(8.0)
+        };
+        let ops = line_glyphs(&line, &style, 1, &symbols[0], -1.0, &mut canvas);
+        assert!(ops.is_empty(), "{ops:?}");
+        assert_eq!(canvas.take_refusals().glyphs.len(), 1);
     }
 }
