@@ -13,7 +13,7 @@ mod webdriver;
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -21,12 +21,18 @@ use forager_bindings_wasm::{Output, Viewport, render_map_with_files};
 use serde_json::{Value, json};
 use webdriver::{Driver, Process, Session};
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 /// How long the page may take to load the bundle, the sample, and the font, and to render.
 const PAGE_RENDER: Duration = Duration::from_secs(120);
 
 /// The repository's root, whose `examples/web/` and `target/web/` the dev server serves.
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    manifest_dir().join("../..")
 }
 
 /// Whether the cases run: only where the variable requires them.
@@ -63,7 +69,7 @@ impl Page {
         let port = webdriver::free_port();
         let mut server = Command::new(env!("CARGO_BIN_EXE_forager-dev-server"))
             .args(["--port", &port.to_string()])
-            .env("CARGO_MANIFEST_DIR", env!("CARGO_MANIFEST_DIR"))
+            .env("CARGO_MANIFEST_DIR", manifest_dir())
             .stdout(Stdio::piped())
             .spawn()
             .expect("the dev server starts");

@@ -49,6 +49,12 @@ fn comparisons(source: &str) -> Vec<usize> {
         .collect()
 }
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 /// Every `.rs` file under `dir`, `target` directories left out.
 fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -68,7 +74,7 @@ fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
 
 #[test]
 fn a_symbols_name_is_compared_only_in_the_module_of_style_ir() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = manifest_dir().join("../..");
     let mut files = Vec::new();
     rust_files(&root.join("crates"), &mut files);
     rust_files(&root.join("fuzz"), &mut files);

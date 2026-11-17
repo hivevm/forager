@@ -1,5 +1,7 @@
 //! The fonts of a render's labels, loaded through the host's resource loader (ADR-0031).
 
+use std::path::PathBuf;
+
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -12,11 +14,15 @@ use forager_style_ir::{
     Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, RenderMode, SourceRef, Span,
 };
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 /// A test font of the label crate, subsets of DejaVu Sans whose licence lies beside them.
 fn font(name: &str) -> Vec<u8> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../label/tests/fixtures")
-        .join(name);
+    let path = manifest_dir().join("../label/tests/fixtures").join(name);
     std::fs::read(path).unwrap()
 }
 

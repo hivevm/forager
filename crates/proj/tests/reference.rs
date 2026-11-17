@@ -6,16 +6,21 @@
 //! `tests/reference/mapserver-rects.tsv`, by the same reader through `msProjectRect`, hold the area
 //! asked of a source to MapServer's within the same tolerance.
 
+use std::path::PathBuf;
+
 use forager_proj::{Projection, Reprojection};
 use forager_style_ir::{Coord, Extent};
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 const POINTS: &str = include_str!("reference/points.tsv");
-const RECORD_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/reference/mapserver.tsv");
+const RECORD_PATH: &str = "tests/reference/mapserver.tsv";
 const RECTS: &str = include_str!("reference/rects.tsv");
-const RECTS_RECORD_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/reference/mapserver-rects.tsv"
-);
+const RECTS_RECORD_PATH: &str = "tests/reference/mapserver-rects.tsv";
 
 /// The tolerance of G-11, in metres, as the specification states it: 1 mm, set by the maintainer
 /// from the spread this test reports (1.9 nm over the reference points at the time).
@@ -79,9 +84,10 @@ fn points() -> Vec<(String, String, String, Coord)> {
         .collect()
 }
 
-/// A record, read from `path`: its two header lines, and its lines after them.
+/// A record, read from `path` under this crate's directory: its two header lines, and its lines
+/// after them.
 fn record(path: &str) -> (String, String, Vec<String>) {
-    let record = std::fs::read_to_string(path).unwrap_or_else(|e| {
+    let record = std::fs::read_to_string(manifest_dir().join(path)).unwrap_or_else(|e| {
         panic!(
             "the record {path} ({e}) is taken from the noise run's artifact, noise/proj/ \
              (ADR-0038)"
@@ -254,10 +260,7 @@ fn the_area_asked_of_a_source_is_mapserver_s_rectangle_within_g_11() {
 }
 
 const SHAPES: &str = include_str!("reference/shapes.tsv");
-const SHAPES_RECORD_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/reference/mapserver-shapes.tsv"
-);
+const SHAPES_RECORD_PATH: &str = "tests/reference/mapserver-shapes.tsv";
 
 /// The points of `text`, `x,y x,y ...`.
 fn shape_points(text: &str) -> Vec<Coord> {

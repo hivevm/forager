@@ -3,6 +3,8 @@
 //! a polygon, and what is reported where the font or the character is missing or the fill's tile
 //! is refused (ADR-0044).
 
+use std::path::PathBuf;
+
 use std::collections::BTreeMap;
 use std::future::Future;
 
@@ -14,6 +16,12 @@ use forager_style_ir::{
     Bound, Class, Expr, Extent, Label, Layer, LayerStatus, Map, Position, RenderMode, Rgba,
     SourceRef, Span, Style, Symbol, SymbolKind, SymbolRef,
 };
+
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
 const BLACK: Rgba = Rgba::opaque(0, 0, 0);
@@ -34,8 +42,7 @@ impl ResourceLoader for Files {
 }
 
 fn files() -> Files {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+    let path = manifest_dir().join("../label/tests/fixtures/dejavu-sans-subset.ttf");
     Files([("sans.ttf", std::fs::read(path).unwrap())].into())
 }
 

@@ -434,6 +434,10 @@ golden path and the test pattern an agent copies from are named here.
   `to_uppercase` near a symbol's name outside `style-ir`'s `c.rs`, whose
   `ms_get_symbol_index` and `symbol_name_key` the frontend, the engine, and `symbolize` call;
   `tests/c_numbers.rs` refuses a function of either name outside it.
+  `tests/manifest_dir.rs` refuses code under `crates/` that takes the crate's directory from the
+  path compiled in rather than from `CARGO_MANIFEST_DIR` at run time, which `cargo test` and
+  `cargo run` set: a binary built in another checkout over the same `target/` holds that
+  checkout's path.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on

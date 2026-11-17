@@ -71,6 +71,12 @@ fn degrees_to_radians(source: &str) -> impl Iterator<Item = usize> + '_ {
     })
 }
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 /// Every `.rs` file under `dir`, `target` directories left out.
 fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -91,7 +97,7 @@ fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
 #[test]
 fn c_number_reading_is_defined_only_in_the_module_of_style_ir() {
     // Verifies: ADR-0017
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = manifest_dir().join("../..");
     let mut files = Vec::new();
     rust_files(&root.join("crates"), &mut files);
     rust_files(&root.join("fuzz"), &mut files);
@@ -153,4 +159,45 @@ fn the_check_reads_definitions_and_not_calls_or_comments() {
         .filter(|n| ports_a_c_number_reading(n))
         .collect();
     assert_eq!(names, ["lrint_int", "ms_nint"]);
+}
+
+/// This binary's run of the scan above over the tree of a second checkout, whose module of
+/// `style-ir` holds `module`: whether it passed, and what it wrote.
+fn scan_in_second_checkout(name: &str, module: &str) -> (bool, String) {
+    let checkout =
+        std::env::temp_dir().join(format!("forager-arch-test-{name}-{}", std::process::id()));
+    let crate_dir = checkout.join("crates/arch-test");
+    std::fs::create_dir_all(&crate_dir).unwrap();
+    let path = checkout.join(MODULE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, module).unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "c_number_reading_is_defined_only_in_the_module_of_style_ir",
+        ])
+        .env("CARGO_MANIFEST_DIR", &crate_dir)
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&checkout).unwrap();
+    let text = String::from_utf8_lossy(&output.stdout).into_owned()
+        + &String::from_utf8_lossy(&output.stderr);
+    assert!(
+        text.contains("1 passed") || text.contains("1 failed"),
+        "{text}"
+    );
+    (output.status.success(), text)
+}
+
+#[test]
+fn the_scan_reads_the_tree_of_the_checkout_it_runs_in() {
+    // A binary built in one checkout reads the files of the checkout `cargo test` runs it for,
+    // not those of the path it was compiled at: the real module passes there, and an empty one
+    // fails where the compiled-in tree would have passed.
+    let real = std::fs::read_to_string(manifest_dir().join("../..").join(MODULE)).unwrap();
+    let (passed, text) = scan_in_second_checkout("real", &real);
+    assert!(passed, "{text}");
+    let (passed, text) = scan_in_second_checkout("empty", "");
+    assert!(!passed, "{text}");
+    assert!(text.contains("defines no `atof`"), "{text}");
 }

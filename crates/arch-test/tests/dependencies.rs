@@ -2,6 +2,7 @@
 //! no crate that links C code under the IR, the core, the ports, or the frontend (Q-1).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::process::Command;
 
 use serde_json::Value;
@@ -131,8 +132,8 @@ fn held_to_q2(table: &[Row], name: &str) -> bool {
 }
 
 /// The directories of the crates held to the ban (Q-2), by their names.
-fn held_crates(table: &[Row]) -> Vec<(String, std::path::PathBuf)> {
-    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+fn held_crates(table: &[Row]) -> Vec<(String, PathBuf)> {
+    let crates = manifest_dir().join("..");
     let mut held: Vec<_> = std::fs::read_dir(&crates)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -161,10 +162,16 @@ struct Workspace {
     declared: Vec<(String, String, String)>,
 }
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 fn workspace() -> Workspace {
     let output = Command::new(env!("CARGO"))
         .args(["metadata", "--format-version", "1", "--locked"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(manifest_dir())
         .output()
         .expect("cargo metadata runs");
     assert!(output.status.success(), "{output:?}");
@@ -384,10 +391,7 @@ fn the_output_path_takes_its_transcendental_functions_from_libm() {
     // Verifies: ADR-0037, Q-2
     // The workspace's clippy.toml bans each, for f64 and f32, with the reason Q-2; the copies of
     // the three crates that port MapServer's drawing are held equal to it by the test below.
-    let text = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../clippy.toml"),
-    )
-    .unwrap();
+    let text = std::fs::read_to_string(manifest_dir().join("../../clippy.toml")).unwrap();
     let mut missing = Vec::new();
     for ty in ["f64", "f32"] {
         for method in LIBM_METHODS {
@@ -466,7 +470,7 @@ fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
     assert!(!held_to_q2(t, "cli") && !held_to_q2(t, "arch-test"));
 
     // Every crate directory has exactly one row, so each rule above reaches it.
-    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let crates = manifest_dir().join("..");
     for entry in std::fs::read_dir(&crates).unwrap() {
         let path = entry.unwrap().path();
         if !path.join("Cargo.toml").is_file() {
@@ -498,7 +502,7 @@ fn only_render_agg_allows_unsafe_code() {
     // The workspace denies `unsafe_code`; any mention of the lint in a crate's code or manifest is
     // a way to lift it (`allow`, `expect`, a lint table), so it may appear in render-agg alone,
     // and every crate must take the workspace's lints.
-    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let crates = manifest_dir().join("..");
     let mut offenders = Vec::new();
     for entry in std::fs::read_dir(&crates).unwrap() {
         let dir = entry.unwrap().path();
@@ -584,7 +588,7 @@ fn no_crate_on_the_output_path_lifts_the_ban_on_hash_maps_clocks_and_randomness(
     // Any other mention of the two lints in a crate on the output path is a way to lift them
     // (`allow`, `expect`, a lint table), as for `unsafe_code`; the opt-in line and the places named
     // in LIFTED are the only ones.
-    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let crates = manifest_dir().join("..");
     let line = "#![warn(clippy::disallowed_types, clippy::disallowed_methods)]";
     let mut offenders = Vec::new();
     for (_, dir) in held_crates(TABLE) {
@@ -634,7 +638,7 @@ fn the_crates_that_port_mapservers_drawing_ban_what_the_workspace_bans() {
     // drawing carry the workspace's lists with the bans of NAN_BANS added; no other crate, nor
     // the directory of the crates, carries one, nor anything under it a `.clippy.toml`, which
     // clippy reads as well.
-    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let crates = manifest_dir().join("..");
     let entries = |text: &str| -> Vec<String> {
         text.lines()
             .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
@@ -691,7 +695,7 @@ fn only_poll_once_polls_with_a_no_op_waker() {
     // ports, so that every host and test treats a port that waits alike. The needle is built so
     // that this file holds none, and the ports hold exactly the one in `poll_once`.
     let needle = concat!("Waker", "::noop");
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = manifest_dir().join("../..");
     let mut found = Vec::new();
     let mut stack = vec![root.join("crates"), root.join("fuzz")];
     while let Some(path) = stack.pop() {
