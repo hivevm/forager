@@ -167,7 +167,7 @@ fn reference_points(reader: &Path, out: &Path) -> Result<Vec<String>, String> {
 
 /// Runs `reader` over `list`, keeps its output at `out`, and returns how it differs from `record`.
 fn reference(reader: &Path, list: &str, record: &str, out: &Path) -> Result<Vec<String>, String> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = crate::manifest_dir().join("../..");
     let output = Command::new(reader)
         .arg(root.join(list))
         .output()

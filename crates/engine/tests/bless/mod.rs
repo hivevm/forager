@@ -8,12 +8,16 @@ use std::path::{Path, PathBuf};
 
 use forager_render::RgbaImage;
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+pub fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 /// Compares `image` with the reference `tests/fixtures/<name>`, blessing it first when
 /// FORAGER_BLESS is set.
 pub fn assert_matches_reference(image: &RgbaImage, name: &str) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name);
+    let path = manifest_dir().join("tests/fixtures").join(name);
     if std::env::var_os("FORAGER_BLESS").is_some()
         && let Some(report) = bless(&path, image)
     {

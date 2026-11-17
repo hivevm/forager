@@ -33,6 +33,12 @@ use forager_style_ir::{
     RenderMode, Rgba, ShapeType, Style, Symbol, SymbolKind, SymbolRef,
 };
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
 const BLUE: Rgba = Rgba::opaque(30, 60, 200);
 
@@ -66,8 +72,7 @@ impl ResourceLoader for Files {
         if path.as_str() != "fonts/sans.ttf" {
             return Err(SourceError::new("no such file"));
         }
-        let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+        let file = manifest_dir().join("../label/tests/fixtures/dejavu-sans-subset.ttf");
         std::fs::read(file).map_err(|e| SourceError::new(e.to_string()))
     }
 }

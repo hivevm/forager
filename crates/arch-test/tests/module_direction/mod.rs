@@ -10,14 +10,18 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 /// The problems of the crate whose sources lie at `sources`, from the workspace root, against
 /// `allowed`, each module of the crate and the modules it may import: an import outside a test
 /// that its row does not allow, naming the module and the one it imports, and a module the table
 /// has no row for.
 pub fn problems(sources: &str, allowed: &[(&str, &[&str])]) -> Vec<String> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(sources);
+    let root = manifest_dir().join("../..").join(sources);
     let mut files = Vec::new();
     rust_files(&root, &root, &mut files);
     files.sort();

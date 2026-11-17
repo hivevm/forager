@@ -31,6 +31,12 @@ use serde_json::Value;
 use crate::conformance::{Case, Category, Entry, Listed, Tally, Verdict, labels, wasm};
 use crate::metric::Metric;
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 /// The cases of the suite and the list that scopes them, for the harness.
 mod conformance;
 /// The comparison of a rendering with its reference image, for the harness.
@@ -732,7 +738,7 @@ fn lines_brushed_with_their_tiles_render_alike_natively_and_on_wasm32() {
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("brushed");
     std::fs::create_dir_all(dir.join("fonts")).unwrap();
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let fixtures = manifest_dir();
     std::fs::copy(
         fixtures.join("../label/tests/fixtures/dejavu-sans-subset.ttf"),
         dir.join("fonts/sans.ttf"),

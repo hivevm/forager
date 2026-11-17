@@ -16,13 +16,19 @@ use std::process::Command;
 use forager_style_ir::{FORMAT_VERSION, StyleDocument};
 use serde_json::{Map, Value, json};
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 fn derived() -> String {
     let schema = schemars::schema_for!(StyleDocument);
     serde_json::to_string_pretty(&schema).unwrap() + "\n"
 }
 
 fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    manifest_dir().join("../..")
 }
 
 fn schema_file(version: &str) -> String {

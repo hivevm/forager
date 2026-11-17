@@ -21,7 +21,6 @@
 
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::path::PathBuf;
 
 mod bless;
 
@@ -63,7 +62,7 @@ impl ResourceLoader for Files {
                 None => return Err(SourceError::new("no such file")),
             },
         };
-        let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        let file = bless::manifest_dir()
             .join("../label/tests/fixtures")
             .join(fixture);
         std::fs::read(file).map_err(|e| SourceError::new(e.to_string()))
@@ -1080,8 +1079,7 @@ fn expected(
     (ox, oy): (i32, i32),
     degrees: f64,
 ) -> Vec<PathCommand> {
-    let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+    let file = bless::manifest_dir().join("../label/tests/fixtures/dejavu-sans-subset.ttf");
     let data = std::fs::read(file).unwrap();
     let font = Font::new(&data).unwrap();
     let chars: Vec<char> = text.chars().collect();
@@ -1319,8 +1317,7 @@ fn a_label_stands_by_the_point_pixel_ms_transform_point_computes() {
     let ops = recorded(&map, point);
     assert_eq!(ops.len(), 1);
 
-    let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+    let file = bless::manifest_dir().join("../label/tests/fixtures/dejavu-sans-subset.ttf");
     let data = std::fs::read(file).unwrap();
     let font = Font::new(&data).unwrap();
     let ids = font.glyphs(&['F', 'e', 'n'], true).unwrap().unwrap();

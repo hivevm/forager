@@ -25,16 +25,19 @@ the hatch. This is a `refactor`.
 
 ## Read first
 
-- Touches: `crates/symbolize/src/{hatch,draw,line,lib}.rs`, a new `crates/symbolize/src/clip.rs`
+- Touches: `crates/symbolize/src/{hatch,draw,line,lib}.rs`, a new `crates/symbolize/src/clip.rs`,
+  and the table of `crates/arch-test/tests/symbolize_modules.rs`, which gains a row for `clip` and
+  the imports of it
 - ADR-0042 (the hatch's cut), ADR-0046 (the brushed line's reach); `docs/ARCHITECTURE.md` (the
   `symbolize` section and its order of modules, updated in the same change).
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-16/08-symbolize-one-tile-call.md (both change `line.rs`)
+- None (can start immediately); ticket 08, which it waited for, has landed
 
 ## Mode
 
 unattended: the existing tests decide it, it stays in one crate, and a wrong result costs one
 revert. The tests that build a `Hatching` change only in how they build the clip's buffers
-(`hatch/tests.rs`). Stop if any other test has to change.
+(`hatch/tests.rs`), and the module table of `symbolize_modules.rs` gains `clip` as the new
+module's imports require. Stop if any other test has to change.

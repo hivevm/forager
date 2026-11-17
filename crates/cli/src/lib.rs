@@ -211,6 +211,12 @@ mod tests {
 
     use super::*;
 
+    /// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+    fn manifest_dir() -> PathBuf {
+        std::env::var_os("CARGO_MANIFEST_DIR")
+            .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+    }
+
     #[test]
     fn the_fonts_of_a_label_are_read_from_the_base_context_within_the_font_limit() {
         // The conformance harness hands `render` the suite as the base context; the fonts of a
@@ -219,8 +225,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("forager-lib-fonts-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("fonts")).unwrap();
         // A test font of the label crate, a subset of DejaVu Sans whose licence lies beside it.
-        let sans = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+        let sans = manifest_dir().join("../label/tests/fixtures/dejavu-sans-subset.ttf");
         std::fs::copy(sans, dir.join("fonts/sans.ttf")).unwrap();
         // One byte past the limit, sparse on disk.
         std::fs::File::create(dir.join("fonts/huge.ttf"))

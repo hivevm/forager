@@ -17,13 +17,13 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A TrueType symbol at a point, anchored, and the glyph and tile that `mark` places along a line
-//! and over a polygon: its glyph asked of the port [`crate::glyph::Glyphs`], placed as
-//! drawGlyphMarker places it and drawn as agg2RenderGlyphsPath draws it (ADR-0044).
+//! A TrueType symbol at a point, anchored, and the glyph that `mark` places along a line and draws
+//! into a tile: its glyph asked of the port [`crate::glyph::Glyphs`], placed as drawGlyphMarker
+//! places it and drawn as agg2RenderGlyphsPath draws it (ADR-0044).
 
 use std::rc::Rc;
 
-use forager_render::{DrawOp, GlyphOutline, PathCommand, Point, Tile};
+use forager_render::{DrawOp, GlyphOutline, PathCommand, Point};
 use forager_style_ir::c::lrint;
 use forager_style_ir::{ANCHOR_CENTRE, Style, Symbol};
 
@@ -31,11 +31,10 @@ use crate::canvas::Canvas;
 use crate::glyph::{Glyph, Glyphs, font_and_character};
 use crate::style::fixed;
 use crate::symbol::{self, Affine, SymbolStyle};
-use crate::tile::{self, TileFor};
 
 /// The size in points a TrueType marker's glyph is taken at: `MS_MAX(MS_NINT(scale), 1)`, held to
 /// an `unsigned int`, as msDrawMarkerSymbolInternal hands it to msGetGlyphByIndex.
-fn glyph_size(scale: f64) -> u32 {
+pub(crate) fn glyph_size(scale: f64) -> u32 {
     let rounded = lrint(scale).max(1);
     u32::try_from(rounded).unwrap_or(u32::MAX)
 }
@@ -101,10 +100,10 @@ pub(crate) fn glyph_of(
 
 /// What [`glyph_of`] finds, before the canvas records it: the glyph and, where the font lacks the
 /// character, what is drawn instead; or why there is none.
-type Asked = Result<(Rc<Glyph>, Option<String>), String>;
+pub(crate) type Asked = Result<(Rc<Glyph>, Option<String>), String>;
 
 /// The glyph of `symbol` at `size` points asked of `glyphs` (see [`glyph_of`]), nothing recorded.
-fn ask(glyphs: Option<&dyn Glyphs>, symbol: &Symbol, size: u32) -> Asked {
+pub(crate) fn ask(glyphs: Option<&dyn Glyphs>, symbol: &Symbol, size: u32) -> Asked {
     let (font, character) = font_and_character(symbol)?;
     let glyph = match glyphs {
         Some(glyphs) => glyphs.glyph(font, character, size)?,
@@ -208,48 +207,6 @@ pub(crate) fn glyph_ops<T>(
     }
 }
 
-/// The tile of the TrueType symbol `symbol`, at `index` from 1, of `style`, asked for `asked`:
-/// computeSymbolStyle's style at the canvas's factors, the tile of its size, scale, and, for a
-/// polygon, its gap, never seamless (see [`tile::glyph_tile`]). The glyph is asked only for a tile
-/// the cache does not hold, and drawn at the tile's centre by [`glyph_op`]; a font that lacks the
-/// character is noted with the tile, so that each layer that draws it records that. Where the
-/// glyph is not found or the tile is refused (Q-9), there is none, and the canvas records why.
-pub(crate) fn glyph_tile<T>(
-    style: &Style<T>,
-    index: usize,
-    symbol: &Symbol,
-    asked: TileFor,
-    canvas: &mut Canvas,
-) -> Option<Rc<Tile>> {
-    let s = symbol::symbol_style(style, symbol, canvas.factors);
-    let glyphs = canvas.glyphs;
-    let mut refused = None;
-    let mark = |at| match ask(glyphs, symbol, glyph_size(s.scale)) {
-        Ok((glyph, missing)) => Some((glyph_op(&glyph, at, &s), missing)),
-        Err(why) => {
-            refused = Some(why);
-            None
-        }
-    };
-    let tile = match canvas.tiles.as_deref_mut() {
-        Some(tiles) => tile::glyph_tile(tiles, index, &s, asked, mark),
-        None => Err("no tiles are kept where it is drawn".to_owned()),
-    };
-    match tile.map_err(Some).and_then(|tile| tile.ok_or(refused)) {
-        Ok((tile, missing)) => {
-            if let Some(missing) = missing {
-                canvas.missing_glyphs.entry(index).or_insert(missing);
-            }
-            Some(tile)
-        }
-        Err(Some(why)) => {
-            canvas.refused_symbols.entry(index).or_insert(why);
-            None
-        }
-        Err(None) => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -259,7 +216,7 @@ mod tests {
     use super::*;
     use crate::glyph::Glyphs;
     use crate::symbol::{Factors, marker_size_with};
-    use crate::tile::Tiles;
+    use crate::tile::{TileFor, Tiles};
 
     /// The glyphs of the TrueType symbol at `index` along `paths`, as a line style with a `GAP`
     /// draws them (see [`crate::mark::along_line`]).
@@ -276,7 +233,7 @@ mod tests {
     }
 
     /// The polygon `rings` filled with the glyph of the TrueType symbol at `index` tiled, as
-    /// msDrawShadeSymbol fills it (see [`glyph_tile`]), where there is a tile.
+    /// msDrawShadeSymbol fills it (see [`crate::mark::tile`]), where there is a tile.
     fn tiled_glyph(
         ops: &mut Vec<DrawOp>,
         rings: Vec<Vec<Point>>,
@@ -285,7 +242,8 @@ mod tests {
         symbol: &Symbol,
         canvas: &mut Canvas,
     ) {
-        if let Some(tile) = glyph_tile(style, index, symbol, TileFor::Polygon, canvas) {
+        let mark = crate::symbol::Mark::Glyph(index, symbol);
+        if let Some(tile) = crate::mark::tile(mark, style, (false, TileFor::Polygon), canvas) {
             ops.push(DrawOp::TiledFill { rings, tile });
         }
     }

@@ -1,14 +1,18 @@
 //! `forager render` end to end: a mapfile and GeoJSON in, a PNG out.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 use forager_style_ir::Rgba;
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name)
+    manifest_dir().join("tests/fixtures").join(name)
 }
 
 #[test]
@@ -139,8 +143,7 @@ fn labelled(font: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("forager-fonts-{}-{font}", std::process::id()));
     std::fs::create_dir_all(dir.join("fonts")).unwrap();
     // A test font of the label crate, a subset of DejaVu Sans whose licence lies beside it.
-    let sans = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+    let sans = manifest_dir().join("../label/tests/fixtures/dejavu-sans-subset.ttf");
     std::fs::copy(sans, dir.join("fonts/sans.ttf")).unwrap();
     std::fs::write(
         dir.join("fonts.lst"),
@@ -255,8 +258,7 @@ fn a_pixmap_symbol_is_read_from_the_base_context_and_drawn_at_its_point() {
     assert!(stderr.is_empty(), "{stderr}");
     let image = forager_encode::decode_png(&std::fs::read(&output).unwrap()).unwrap();
     std::fs::remove_file(&output).unwrap();
-    let reference =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../engine/tests/fixtures/pixmap_point.png");
+    let reference = manifest_dir().join("../engine/tests/fixtures/pixmap_point.png");
     let reference = forager_encode::decode_png(&std::fs::read(reference).unwrap()).unwrap();
     assert!(
         image == reference,
@@ -431,8 +433,7 @@ fn a_label_style_of_a_name_that_names_no_transform_is_drawn_at_the_label_point()
     // the load warns of the name once, at its directive.
     let dir = std::env::temp_dir().join(format!("forager-unknown-name-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("fonts")).unwrap();
-    let sans = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+    let sans = manifest_dir().join("../label/tests/fixtures/dejavu-sans-subset.ttf");
     std::fs::copy(sans, dir.join("fonts/sans.ttf")).unwrap();
     std::fs::write(dir.join("fonts.lst"), "sans fonts/sans.ttf\n").unwrap();
     let map = |transform: &str| {
