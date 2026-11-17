@@ -176,7 +176,7 @@ pub(crate) enum Buffered<'a> {
 ///
 /// A tiny buffer, whose edges are too short for the square of their length, is buffered at a
 /// scale near 1: the shape and the distance are scaled by the power of two of [`magnification`]
-/// and the result by its inverse.
+/// and the result by its inverse. A line's distance is raised to its [`floored`] one first.
 ///
 /// Before the buffer runs, its offset curves are charged to `charge`, so that a bound of Q-9
 /// stops it before it holds them: the points of their round joins and caps, [`arcs`], as added,
@@ -196,6 +196,7 @@ pub(crate) fn buffer<C: Charge>(
     let arcs = arcs(shape);
     charge.add(arcs)?;
     charge.visit(given.saturating_mul(2 * sides).saturating_add(arcs))?;
+    let distance = floored(shape, distance);
     let n = magnification(shape, distance);
     let result = if n == 0 {
         buffer_with_style(shape, distance)
@@ -255,39 +256,9 @@ const LARGEST_SCALED: i32 = 512;
 /// by a tiny distance is not scaled, where a scaled coordinate would lie past
 /// 2^[`LARGEST_SCALED`].
 fn magnification(shape: Buffered<'_>, distance: f64) -> i32 {
-    let points: Box<dyn Iterator<Item = &Coord>> = match shape {
-        Buffered::Points(points) => Box::new(points.iter()),
-        Buffered::Lines(lines) => Box::new(lines.iter().flatten()),
-        Buffered::Areas(areas) => Box::new(
-            areas
-                .iter()
-                .flat_map(|area| std::iter::once(&area.shell).chain(&area.holes))
-                .flatten(),
-        ),
+    let Some((low, high)) = bounds(shape) else {
+        return 0;
     };
-    let (mut low, mut high) = (
-        Coord {
-            x: f64::INFINITY,
-            y: f64::INFINITY,
-        },
-        Coord {
-            x: f64::NEG_INFINITY,
-            y: f64::NEG_INFINITY,
-        },
-    );
-    for p in points {
-        if !(p.x.is_finite() && p.y.is_finite()) {
-            return 0;
-        }
-        low = Coord {
-            x: ms_min(low.x, p.x),
-            y: ms_min(low.y, p.y),
-        };
-        high = Coord {
-            x: ms_max(high.x, p.x),
-            y: ms_max(high.y, p.y),
-        };
-    }
     let size = ms_max(ms_max(high.x - low.x, high.y - low.y), distance.abs());
     if !(size.is_finite() && size > 0.0) {
         return 0;
@@ -304,6 +275,85 @@ fn magnification(shape: Buffered<'_>, distance: f64) -> i32 {
         return 0;
     }
     -e
+}
+
+/// A line's buffer narrower than 2^`FLOOR` of the line's size is buffered by that width.
+///
+/// i_overlay 4.5.2 snaps the shape to a grid of about 2^-30 of its size. A line's stroke whose
+/// width is a few steps of that grid leaves its graph inconsistent: `find_contour` walks it
+/// without end and grows the contour until an allocation fails, or the stroke returns no polygon,
+/// or a debug assertion fails. At 2^-24, 64 or more steps of the grid, it holds.
+const FLOOR: i32 = -24;
+
+/// A line's buffer narrower than 2^`REACH_FLOOR` of its reach, the largest magnitude of its
+/// coordinates, is buffered by that width.
+///
+/// Far from the origin the coordinates themselves are coarser than i_overlay's grid: a stroke
+/// within some 2^-47 of the reach, a few ulps of its coordinates, walks or vanishes as one of a few
+/// grid steps does, however large the line. At 2^-40 it holds.
+const REACH_FLOOR: i32 = -40;
+
+/// The distance a line's buffer runs by: `distance`, raised to the larger of 2^[`FLOOR`] of the
+/// size of the lines' joint bounds, the larger of their width and height, and 2^[`REACH_FLOOR`] of
+/// their reach, where it lies below that. The bounds are joint since geo strokes the parts of a
+/// multiline as one. A distance not above 0, and that of a point or a polygon, is kept. GEOS keeps
+/// the thinner buffer; the two differ by at most the floor.
+fn floored(shape: Buffered<'_>, distance: f64) -> f64 {
+    if !matches!(shape, Buffered::Lines(_)) || distance <= 0.0 {
+        return distance;
+    }
+    let Some((low, high)) = bounds(shape) else {
+        return distance;
+    };
+    let size = libm::scalbn(ms_max(high.x - low.x, high.y - low.y), FLOOR);
+    let reach = libm::scalbn(
+        ms_max(
+            ms_max(low.x.abs(), low.y.abs()),
+            ms_max(high.x.abs(), high.y.abs()),
+        ),
+        REACH_FLOOR,
+    );
+    let floor = if size.is_finite() {
+        ms_max(size, reach)
+    } else {
+        reach
+    };
+    ms_max(distance, floor)
+}
+
+/// The lowest and the highest corner of the bounds of `shape`'s points; none where it has no
+/// point, or a point of a coordinate that is no finite number.
+fn bounds(shape: Buffered<'_>) -> Option<(Coord, Coord)> {
+    let points: Box<dyn Iterator<Item = &Coord>> = match shape {
+        Buffered::Points(points) => Box::new(points.iter()),
+        Buffered::Lines(lines) => Box::new(lines.iter().flatten()),
+        Buffered::Areas(areas) => Box::new(
+            areas
+                .iter()
+                .flat_map(|area| std::iter::once(&area.shell).chain(&area.holes))
+                .flatten(),
+        ),
+    };
+    let mut corners: Option<(Coord, Coord)> = None;
+    for p in points {
+        if !(p.x.is_finite() && p.y.is_finite()) {
+            return None;
+        }
+        corners = Some(match corners {
+            None => (*p, *p),
+            Some((low, high)) => (
+                Coord {
+                    x: ms_min(low.x, p.x),
+                    y: ms_min(low.y, p.y),
+                },
+                Coord {
+                    x: ms_max(high.x, p.x),
+                    y: ms_max(high.y, p.y),
+                },
+            ),
+        });
+    }
+    corners
 }
 
 /// `p` scaled by 2^`n`.

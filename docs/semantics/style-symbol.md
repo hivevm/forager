@@ -177,7 +177,11 @@ engine draws its tree's functions:
   of its first part; a line's parts are one line or a multiline, a part without points dropped; a
   polygon's rings are grouped into polygons as `simplify` groups them. The result is always a
   polygon: each polygon's shell and holes, a point's circle of 120 segments, a line's outline with
-  round ends, and a polygon grown by a positive `d` and shrunk by a negative one. A point or a line
+  round ends, and a polygon grown by a positive `d` and shrunk by a negative one. A line whose `d`
+  lies above 0 but below a floor is buffered by the floor, where GEOS keeps the thinner buffer: the
+  larger of 2^-24 of the size of its parts' joint bounds, the larger of their width and height, and
+  2^-40 of their reach, the largest magnitude of their coordinates. i_overlay 4.5.2, under geo,
+  walks a thinner stroke without end or returns no polygon. A point or a line
   buffered by a `d` not above 0, and a polygon shrunk until nothing is left, is GEOS's empty
   polygon, which `msGEOSGeometry2Shape` turns into one ring without points. The shape keeps GEOS's
   geometry, so `buffer` or `simplify` after it returns it empty, as `msGEOSBuffer` and
