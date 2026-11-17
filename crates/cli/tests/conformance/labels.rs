@@ -31,7 +31,7 @@ pub struct Recorded {
 
 /// The directory of the records beside the list.
 pub fn records_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/conformance/labels")
+    crate::manifest_dir().join("tests/conformance/labels")
 }
 
 /// The record of `case`'s labels beside the list: `labels/<directory>/<result>.tsv`.

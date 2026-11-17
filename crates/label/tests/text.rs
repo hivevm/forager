@@ -2,16 +2,22 @@
 //! unhinted, and its line laid out and centred as MapServer lays it out. The fonts are subsets of
 //! DejaVu Sans under `fixtures/`, whose licence and changes `fixtures/LICENSE` records.
 
+use std::path::PathBuf;
+
 use forager_label::{
     Align, Anchor, Attempt, Font, Glyphs, Layout, LineError, TextPath, Unusable, attempts,
     glyph_size, lines, metrics,
 };
 use forager_render::{PathCommand, Point};
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 fn fixture(name: &str) -> Vec<u8> {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(name);
+    let path = manifest_dir().join("tests/fixtures").join(name);
     std::fs::read(path).unwrap()
 }
 

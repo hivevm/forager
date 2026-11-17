@@ -23,6 +23,12 @@ use forager_style_ir::{
 };
 use peak_alloc::PeakAlloc;
 
+/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
+fn manifest_dir() -> PathBuf {
+    std::env::var_os("CARGO_MANIFEST_DIR")
+        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
+}
+
 // Counts the bytes allocated, and their peak, around the system allocator.
 #[global_allocator]
 static ALLOCATOR: PeakAlloc = PeakAlloc;
@@ -40,8 +46,7 @@ impl ResourceLoader for Files {
         if path.as_str() == "pin.png" {
             return Ok(include_bytes!("../../cli/tests/fixtures/pin.png").to_vec());
         }
-        let file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../label/tests/fixtures/dejavu-sans-subset.ttf");
+        let file = manifest_dir().join("../label/tests/fixtures/dejavu-sans-subset.ttf");
         Ok(std::fs::read(file).unwrap())
     }
 }
