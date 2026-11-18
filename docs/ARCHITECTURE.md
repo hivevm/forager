@@ -467,8 +467,11 @@ adapter on arbitrary `.shp`, `.shx`, and `.dbf` files and its `.prj` reader on a
 bytes, the text path on an arbitrary font file, and the pixmap decoder on an arbitrary image
 file — run by `scripts/fuzz.sh`, which reads them from the
 manifest, every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly
-toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
-`scripts/mutants.sh` runs cargo-mutants over the workspace every week through
+toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push and runs
+its test `fuzz/tests/render_seeds.rs`, which decodes each seed of the render target through the
+target's own decoding, `fuzz_targets/render_input.rs`, and holds it to the path it was made for,
+told from the map it builds and from the display items a recorder in front of agg-rust sees.
+Beside it, `scripts/mutants.sh` runs cargo-mutants over the workspace every week through
 `.github/workflows/mutants.yml` and reports the edits no test notices. `scripts/package.sh` packs
 the CLI's archive and the browser bindings' package under `target/package/`, each with
 `THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive back for them, by the check
