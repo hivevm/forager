@@ -2491,6 +2491,68 @@ fn a_buffer_whose_round_joins_would_pass_the_points_q9_lets_a_layer_add_is_not_r
     assert_eq!(past.image.unwrap().pixel(10, 50), Some(WHITE));
 }
 
+#[test]
+fn a_layer_past_its_markers_hatches_and_style_trees_bounds_reports_each_once_in_order() {
+    // Verifies: Q-9
+    // One polygon layer passes three bounds: its outline's heads a ten-thousandth of a pixel
+    // apart pass the budget of markers, its hatch's dashes of a billionth of a pixel pass a
+    // hatch's, and its style's densify by a ten-thousandth of a pixel adds some 4 000 000 points
+    // to the 400 pixels of the polygon's rings, past what its transforms may add. Each is
+    // reported once, in that order, as two features pass them.
+    let heads = Style {
+        outline_color: Some(Bound::Value(BLUE)),
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        size: Some(Bound::Value(9.0)),
+        gap: Some(-0.0001),
+        ..Style::default()
+    };
+    let hatch = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(5))),
+        ..hatch_style(BLACK, 10.0, 1.0, 0.0, vec![1e-9, 1e-9])
+    };
+    let densify = of_tree(densified(0.0001), line_style(GREEN, 1.0));
+    let mut map = map_with(RenderMode::Polygon, vec![heads, hatch, densify]);
+    map.symbols = symbols();
+    map.symbols.push(Symbol {
+        name: Some("hatch".into()),
+        kind: SymbolKind::Hatch,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    });
+    let square = r#"{"type": "Polygon", "coordinates": [
+        [[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}"#;
+    let two = format!(
+        r#"{{"type": "FeatureCollection", "features": [
+            {{"type": "Feature", "properties": {{}}, "geometry": {square}}},
+            {{"type": "Feature", "properties": {{}}, "geometry": {square}}}]}}"#
+    );
+    let rendered = render_with(&map, Some(&two));
+    assert_eq!(
+        codes(&rendered),
+        [
+            "line-markers-over-limit",
+            "hatch-not-drawn",
+            "geomtransform-over-limit"
+        ],
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert!(
+        rendered.diagnostics[1]
+            .message
+            .contains("2 hatch fills are not drawn"),
+        "{}",
+        rendered.diagnostics[1].message
+    );
+}
+
 fn not_drawn(reason: NotDrawn) -> TransformTree {
     TransformTree::NotDrawn(reason)
 }
