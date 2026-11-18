@@ -15,15 +15,14 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The positions of the symbols along a line, which `mark` asks for through [`Placement::of`]
-//! and [`taken`] and draws each in its kind, repeated every `GAP` pixels from the `INITIALGAP`,
-//! upright for a positive gap and turned with each segment for a negative one, as MapServer
-//! places them, and one marker at half its length on a line on which none fell; and the
-//! [`MarkerBudget`] of a layer's markers, from which every path that places them takes its
-//! points. The positions of the markers outside the image are not visited
-//! one by one but skipped, and the markers along the lines of one layer, with those at its
-//! features and the symbols its `GEOMTRANSFORM`s place, amount to at most [`MAX_MARKER_POINTS`]
-//! points (Q-9).
+//! The positions of the symbols along a line, which `mark` asks for through [`Placement::of`] and
+//! [`taken`] and draws each in its kind, repeated every `GAP` pixels from the `INITIALGAP`, upright
+//! for a positive gap and turned with each segment for a negative one, as MapServer places them,
+//! and one marker at half its length on a line on which none fell; and the [`MarkerBudget`] of a
+//! layer's markers, from which every path that places them takes its points. The positions of the
+//! markers outside the image are not visited one by one but skipped, and the markers along the
+//! lines of one layer, with those at its features and the symbols its `GEOMTRANSFORM`s place,
+//! amount to at most [`MAX_MARKER_POINTS`] points (Q-9).
 
 use forager_render::{DrawOp, Point};
 use forager_style_ir::Style;
