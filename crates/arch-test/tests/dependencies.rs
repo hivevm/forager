@@ -561,6 +561,14 @@ const LIFTED: &[(&str, &str)] = &[
     )]",
     ),
     (
+        "render-agg/src/lib.rs",
+        "    #[expect(
+        clippy::disallowed_types,
+        clippy::disallowed_methods,
+        reason = \"the clock bounds the test's run time and reaches no output (Q-2)\"
+    )]",
+    ),
+    (
         "symbolize/src/layer_transform/tests.rs",
         SMOOTHSIA_TIME_BOUND,
     ),
