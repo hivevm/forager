@@ -3,6 +3,7 @@
 //! a polygon, and what is reported where the font or the character is missing or the fill's tile
 //! is refused (ADR-0044).
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 
 use std::collections::BTreeMap;
@@ -228,6 +229,49 @@ fn the_label_cache_sizes_a_truetype_marker_by_its_character() {
     // A label beside a TrueType marker moves away from the marker's size, which is now computed:
     // the label is drawn, and nothing reports the size as unknown.
     assert_labelled(map("sans", "A"));
+}
+
+/// The files of [`files`], recording every path asked for.
+struct Recorded {
+    files: Files,
+    asked: RefCell<Vec<String>>,
+}
+
+impl ResourceLoader for Recorded {
+    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        self.asked.borrow_mut().push(path.as_str().to_owned());
+        self.files.load(path).await
+    }
+}
+
+#[test]
+fn a_font_a_truetype_marker_and_a_label_share_is_loaded_once() {
+    // Verifies: ADR-0044
+    // The marker's font is loaded into the store the labels' fonts use: the label in the same
+    // font, laid out after the marker's font is loaded, asks the loader for nothing more.
+    let mut map = map("sans", "A");
+    map.layers[0].classes[0].labels = vec![Label {
+        text: Some(Expr::String("x".to_owned())),
+        font: Some(Bound::Value("sans".to_owned())),
+        size: Some(Bound::Value(8.0)),
+        color: Some(Bound::Value(BLACK)),
+        ..Label::default()
+    }];
+    let point = r#"{"type": "Point", "coordinates": [20, 20]}"#;
+    let sources = BTreeMap::from([("points".to_owned(), GeoJsonSource::parse(point).unwrap())]);
+    let files = Recorded {
+        files: files(),
+        asked: RefCell::new(Vec::new()),
+    };
+    let rendered = ready(render_with_files(
+        &map,
+        &sources,
+        &files,
+        AggRenderer::new(),
+    ));
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+    assert_eq!(rendered.labels.len(), 1, "{:?}", rendered.labels);
+    assert_eq!(*files.asked.borrow(), ["sans.ttf"]);
 }
 
 #[test]
