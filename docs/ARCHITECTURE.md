@@ -486,11 +486,10 @@ tree and every kind of symbol, but those its allow-list names with a reason. Bes
 `// Guard: <crate> <version>` in `render`, `render-agg`, and `symbolize`, to a version that
 `Cargo.lock` holds (ADR-0049), and `scripts/mutants.sh` runs cargo-mutants over the workspace
 every week through `.github/workflows/mutants.yml` and reports the edits no test notices.
-`scripts/package.sh` packs
-the CLI's archive and the browser bindings' package under `target/package/`, each with
-`THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive back for them, by the check
-of the notices that `scripts/check-notice.sh` shares (`scripts/lib/notice.sh`); nothing is
-published.
+`scripts/package.sh` packs the CLI's archive and the browser bindings' package under
+`target/package/`, each with `THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive
+back for them, by the check of the notices that `scripts/check-notice.sh` shares
+(`scripts/lib/notice.sh`); nothing is published.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
 pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles, fonts,

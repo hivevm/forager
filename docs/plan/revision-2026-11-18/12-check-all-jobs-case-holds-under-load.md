@@ -27,12 +27,18 @@ No retry, longer sleep, or looser bound passes for a fix.
 
 ## Acceptance criteria
 
-- [ ] Given a loaded machine, such as one running `scripts/check-all.sh` beside it or `nproc`
-  busy loops, when the case runs 50 times, then it passes each time.
-- [ ] Given the runner's cap removed by hand (every check started at once), when the case runs,
-  then it fails.
-- [ ] Given the cause, when the hand-off is written, then it names the cause with the reproduction
-  that showed it.
+The load in each criterion is the same: one busy loop per processor,
+`for _ in $(seq "$(nproc)"); do yes > /dev/null & done`, running for the whole measurement and
+stopped after it.
+
+- [ ] Given that load, on the code before the fix, when the case runs up to 200 times, then it
+  fails at least once, and the hand-off records the run count and the failing count: the
+  reproduction the fix is measured against.
+- [ ] Given that load, after the fix, when the case runs 200 times, then it passes each time.
+- [ ] Given the runner's cap removed by hand (every check started at once), when the case runs
+  without load, then it fails.
+- [ ] Given the cause, when the hand-off is written, then it names the cause, whether the runner or
+  the measurement, with the reproduction that showed it.
 
 ## Read first
 
@@ -46,6 +52,9 @@ No retry, longer sleep, or looser bound passes for a fix.
 
 ## Mode
 
-unattended: the self-test decides it, a wrong result costs one revert, and it touches only a
-script and its self-test. Stop when no reproduction under load fails the case within 200 runs;
-hand off with what was tried, rather than change the runner without a cause.
+with the human: no single test decides a timing flake. Criteria 1, 2, and 4 are measurements
+under load, which the human judges from the hand-off, so the conditions of
+[`AGENTS.md` §4](../../../AGENTS.md#4-working-style) for an unattended run do not hold. The
+session works alone up to the hand-off. It stops when 200 runs under the load above do not fail
+the case on the code before the fix. It then hands off with what it tried, and does not change the
+runner without a cause.

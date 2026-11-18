@@ -36,6 +36,11 @@ same change wraps.
 - Touches: `scripts/check-rust.sh` or a new `scripts/check-*.sh` and its `scripts/test-*.sh`,
   `scripts/check-all.sh`, `.github/workflows/checks.yml`, the 21 comment lines (list them with
   the check), `docs/ARCHITECTURE.md` if the check is a script of its own
+- `scripts/check-notice.sh` and `scripts/test-check-notice.sh`: some of the 21 lines are the
+  provenance lines of a notice header (`crates/engine/src/classes.rs:2`, `crates/expr/src/c.rs:3`,
+  `crates/symbolize/src/geometry.rs:9`, `crates/symbolize/src/geometry/topology.rs:7`), which
+  `check-notice.sh` parses (its lines 97-111). A header is wrapped only as that check still reads
+  it.
 - Check 15 of `scripts/check-docs.sh` (`check_prose_width`), the precedent;
   `scripts/test-check-guards.sh`, a self-test of a check of the same size; the convention *A
   self-test asserts what it builds*.
