@@ -103,8 +103,7 @@ pub fn circle_ops(circle: Circle, style: &Style, view: &View, canvas: &mut Canva
         return ops;
     }
     let ring = rasterize_arc(centre, radius);
-    let drawn = shade(&mut ops, vec![ring], style, view, canvas);
-    canvas.hatching.refused += usize::from(!drawn);
+    shade(&mut ops, vec![ring], style, view, canvas);
     ops
 }
 

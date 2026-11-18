@@ -130,8 +130,7 @@ pub fn label_style_ops(
                     ]
                 }
             };
-            let drawn = shade(ops, vec![ring], style, view, canvas);
-            canvas.hatching.refused += usize::from(!drawn);
+            shade(ops, vec![ring], style, view, canvas);
         }
         // The label cache refuses a label without text that has such a style before it is
         // cached; should one reach here, it draws nothing rather than fail the map (Q-3).

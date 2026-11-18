@@ -19,18 +19,21 @@ fn refusals_merged_sum_their_hatches_and_keep_the_first_of_each_symbol() {
         pixmaps: [(1, named("a", "first"))].into(),
         symbols: [(4, named("v", "first"))].into(),
         glyphs: [(6, named("t", "first"))].into(),
+        ..Refusals::default()
     };
     refusals.merge(Refusals {
         hatches: 2,
         pixmaps: [(1, named("a", "second")), (2, named("b", "why"))].into(),
         symbols: [(4, named("v", "second")), (5, named("w", "why"))].into(),
         glyphs: [(6, named("t", "second"))].into(),
+        ..Refusals::default()
     });
     let merged = Refusals {
         hatches: 3,
         pixmaps: [(1, named("a", "first")), (2, named("b", "why"))].into(),
         symbols: [(4, named("v", "first")), (5, named("w", "why"))].into(),
         glyphs: [(6, named("t", "first"))].into(),
+        ..Refusals::default()
     };
     assert_eq!(refusals, merged);
 }
@@ -38,7 +41,7 @@ fn refusals_merged_sum_their_hatches_and_keep_the_first_of_each_symbol() {
 #[test]
 fn the_canvas_yields_its_refusals_once() {
     let mut canvas = Canvas::new(&[], 101, 101, Factors::new(1.0, 1.0));
-    canvas.hatching.refused = 2;
+    canvas.refused_hatches = 2;
     canvas.refused_pixmaps.insert(3, "gone".to_owned());
     canvas.refused_symbols.insert(4, "too large".to_owned());
     let refusals = canvas.take_refusals();

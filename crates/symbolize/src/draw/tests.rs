@@ -390,14 +390,14 @@ fn bbox_on_a_polygon_layer_hatches_and_counts_a_hatch_refused() {
     let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
     let ops = polygon_ops(&style, &mut canvas);
     assert!(matches!(ops.as_slice(), [DrawOp::Hatch(_)]), "{ops:?}");
-    assert_eq!(canvas.hatching.refused, 0);
+    assert_eq!(canvas.refused_hatches, 0);
     let refused = Style {
         min_size: Some(0.0),
         max_size: Some(0.0),
         ..style
     };
     assert!(polygon_ops(&refused, &mut canvas).is_empty());
-    assert_eq!(canvas.hatching.refused, 1);
+    assert_eq!(canvas.refused_hatches, 1);
 }
 
 #[test]
@@ -1030,13 +1030,8 @@ fn a_pixmap_along_a_line_needs_no_colour_and_a_polygon_s_draws_no_line() {
         p(90.0, 90.0),
         p(10.0, 10.0),
     ]];
-    assert!(shade(
-        &mut ops,
-        ring,
-        &style(1, 10.0),
-        &unit_view(),
-        &mut canvas
-    ));
+    shade(&mut ops, ring, &style(1, 10.0), &unit_view(), &mut canvas);
+    assert_eq!(canvas.refused_hatches, 0);
     assert!(canvas.take_refusals().pixmaps.is_empty());
     match ops.as_slice() {
         [DrawOp::TiledFill { tile, .. }] => {

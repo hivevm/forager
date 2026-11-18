@@ -348,11 +348,10 @@ async fn draw_layer<S: FeatureSource, L: ResourceLoader, R: Renderer>(
     };
     // A layer of its own is laid over the map here, before the layer's labels are cached.
     drop(target);
-    let refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
-    let refused = renderer.take_refused();
-    let (spent, diagnostics) = (canvas.markers_spent(), &mut *binder.diagnostics);
-    layer_reports(layer, spent, refusals, refused, undrawn, diagnostics);
-    let trees = (style_failures, canvas.style_trees_over_limit());
+    let mut refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
+    let trees = (style_failures, refusals.trees_over_limit.take());
+    let (refused, diagnostics) = (renderer.take_refused(), &mut *binder.diagnostics);
+    layer_reports(layer, refusals, refused, undrawn, diagnostics);
     style_reports(layer, &shapes, &map.symbols, trees, diagnostics);
     // A point layer of the label cache holds its labels for the cache; a point layer of
     // POSTLABELCACHE TRUE, which may come here after the cache is drawn, has drawn its own at
@@ -380,14 +379,14 @@ fn style_reports(
     layer: &Layer,
     shapes: &Shapes,
     symbols: &[Symbol],
-    (failures, over_limit): (StyleFailures, Option<&str>),
+    (failures, over_limit): (StyleFailures, Option<String>),
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     unknown_symbols(layer, symbols, diagnostics);
     if matches!(shapes, Shapes::Paths) {
         styles_not_drawn(layer, diagnostics);
     }
-    style_tree_reports(layer, failures, over_limit, diagnostics);
+    style_tree_reports(layer, failures, over_limit.as_deref(), diagnostics);
 }
 
 /// The map's layers with their indexes in the order msDrawMap draws them, and the position at which
@@ -440,19 +439,18 @@ fn drawable<'f>(
     (drawable, undrawn)
 }
 
-/// Reports what `layer` left undrawn: symbols past the budget of markers where `markers_spent`,
-/// the hatches and pixmaps of `refusals`, its features' and those of its labels drawn at once,
-/// then what the renderer refused of it in `refused` (see [`renderer_refusals`]), then the
-/// geometries of `undrawn`, by kind, its render mode cannot draw.
+/// Reports what `layer` left undrawn of `refusals`, its features' and those of its labels drawn
+/// at once: symbols past the budget of markers where they were left out, then its hatches and
+/// symbols (see [`refusal_reports`]); then what the renderer refused of it in `refused` (see
+/// [`renderer_refusals`]), then the geometries of `undrawn`, by kind, its render mode cannot draw.
 fn layer_reports(
     layer: &Layer,
-    markers_spent: bool,
     refusals: Refusals,
     refused: Refused,
     undrawn: BTreeMap<&'static str, usize>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if markers_spent {
+    if refusals.markers_spent {
         let message = format!(
             "layer {}: its symbols at its features, along its lines, or placed by a \
              GEOMTRANSFORM exceed {MAX_MARKER_POINTS} points; those past the limit are not drawn",
