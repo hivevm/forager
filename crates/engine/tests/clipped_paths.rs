@@ -110,12 +110,18 @@ fn drawn(rendered: &Rendered) -> usize {
 }
 
 /// Asserts that `rendered` carries exactly one diagnostic, the warning `path-not-drawn` on the
-/// layer `paths`, and draws what the clip left.
-fn warns_once(rendered: &Rendered) {
+/// layer `paths` for `paths`, such as "1 path is", and draws what the clip left.
+fn warns_once(rendered: &Rendered, paths: &str) {
     let codes: Vec<&str> = rendered.diagnostics.iter().map(|d| &*d.code).collect();
     assert_eq!(codes, ["path-not-drawn"], "{:?}", rendered.diagnostics);
     let warning = &rendered.diagnostics[0];
-    assert!(warning.message.contains("`paths`"), "{}", warning.message);
+    for part in ["`paths`", paths] {
+        assert!(
+            warning.message.contains(part),
+            "{part}: {}",
+            warning.message
+        );
+    }
     assert_eq!(warning.span, Some(Span::new("m.map", 2, 1)));
     assert!(drawn(rendered) > 0, "the points left are drawn");
 }
@@ -145,19 +151,22 @@ fn a_line_with_a_vertex_that_is_no_finite_number_in_pixels_warns_once() {
     // Verifies: ADR-0027, ADR-0049, Q-3
     // 1e306 map units are 1e309 pixels, past every finite number. Two such vertices, in one line
     // and in another part, still warn once.
-    warns_once(&rendered(&line_map(), &line(&[1e306])));
+    warns_once(&rendered(&line_map(), &line(&[1e306])), "1 path is drawn");
     let two_parts = r#"{"type": "MultiLineString", "coordinates": [
         [[0.01, 0.049], [1e306, 0.049], [0.09, 0.049]],
         [[0.01, 0.02], [0.05, 1e306], [0.09, 0.02]]
     ]}"#;
-    warns_once(&rendered(&line_map(), two_parts));
+    warns_once(&rendered(&line_map(), two_parts), "2 paths are drawn");
 }
 
 #[test]
 fn a_line_whose_two_vertices_differ_past_every_finite_number_warns_once() {
     // Verifies: ADR-0027, ADR-0049, Q-3
     // ±1e305 map units are ±1e308 pixels, each finite, their difference not.
-    warns_once(&rendered(&line_map(), &line(&[1e305, -1e305])));
+    warns_once(
+        &rendered(&line_map(), &line(&[1e305, -1e305])),
+        "1 path is drawn",
+    );
 }
 
 /// A square of 25 pixels a side around the image's centre, with a vertex at `far` map units
@@ -184,5 +193,8 @@ fn a_filled_polygon_with_a_vertex_that_is_no_finite_number_in_pixels_warns_once(
     // Verifies: ADR-0027, ADR-0049, Q-3
     // 1.7e308 map units lie 2.5e308 map units right of the extent's left edge, past every finite
     // number, before they are scaled to pixels.
-    warns_once(&rendered(&polygon_map(), &polygon(1.7e308)));
+    warns_once(
+        &rendered(&polygon_map(), &polygon(1.7e308)),
+        "1 path is drawn",
+    );
 }

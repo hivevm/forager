@@ -114,7 +114,7 @@ pub(crate) fn renderer_refusals(
             "path-not-drawn",
             paths,
             format!(
-                "layer {}: {paths} of its path{} {} drawn without a point, a segment, or a \
+                "layer {}: {paths} path{} {} drawn without a point, a segment, or a \
                  crossing that is no finite number in pixels (Q-3)",
                 name(layer),
                 plural(paths),
