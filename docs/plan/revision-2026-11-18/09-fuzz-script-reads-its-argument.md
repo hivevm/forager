@@ -40,6 +40,8 @@ The script serves both:
   no `cargo deny`, and the script exits with the stand-in's status.
 - [ ] Given `scripts/fuzz.sh --replay render <missing file>`, when it runs, then it fails before
   the toolchain is installed and names the file.
+- [ ] Given `scripts/fuzz.sh --replay nothing <file>`, when it runs, then it fails before the
+  toolchain is installed and lists the targets of `fuzz/Cargo.toml`.
 
 ## Read first
 

@@ -31,9 +31,19 @@ untouched. Thirteen guards, eight older and five from tickets 16 to 21 of revisi
   12. `simplify`'s refusal of a polygon with a coordinate that is no finite number (ticket 20);
   13. `buffer`'s refusal of a shape with one.
 
-The session classifies `render-agg`'s refusal of a stroke of no positive width in `stroke`
-(`lib.rs`). As a guard of agg-rust it takes a marker here and a warning in ticket 11; as a rule of
-the display list it takes neither. The warnings of the older silent refusals are ticket 11's.
+The session classifies four silent skips of `render-agg`, each from the code and agg-rust 1.2.0's
+source. As a guard of agg-rust a skip takes a marker here and a warning in ticket 11; as a rule of
+the display list it takes neither:
+
+- a stroke of no positive width in `stroke` (`lib.rs`, about line 213). MapServer's
+  `msDrawLineSymbol` hands the renderer `style->width * scalefactor` bounded by `MINWIDTH` and
+  `MAXWIDTH`, a width of 0 included (`src/maprendering.c:622-624, 645` at the pin);
+- a glyph outline whose width is no finite number (`glyphs.rs`, about line 64);
+- a hatch of no positive width (`lib.rs`, about line 286);
+- a hatch's run of no positive or no finite length (`hatch.rs`, about line 106). The clip hands it
+  finite points only, so a run of length NaN may be unreachable; the session says so if it is.
+
+The warnings of the older silent refusals, the clip's drops among them, are ticket 11's.
 
 A check under `scripts/` lists the markers under `crates/`. It fails where `Cargo.lock` holds the
 crate at no version the marker names, or does not hold it. A crate held at two versions, as
