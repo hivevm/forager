@@ -49,7 +49,7 @@ if [[ "${1:-}" == --replay ]]; then
   REPLAY="$(cd "$(dirname "$3")" && pwd)/$(basename "$3")"
 else
   (($# <= 2)) || usage
-  SECONDS_PER_TARGET="${1:-300}"
+  SECONDS_PER_TARGET="${1-300}"
   ONLY="${2:-}"
   if [[ ! "$SECONDS_PER_TARGET" =~ ^[1-9][0-9]*$ ]]; then
     echo "the seconds per target are a positive whole number, not '$SECONDS_PER_TARGET'" >&2

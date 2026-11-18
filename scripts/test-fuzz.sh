@@ -120,6 +120,8 @@ expect_fuzz 2 "a replay without its input fails, with the usage" "$d" \
   "bash scripts/fuzz.sh --replay <target> <input>" "" --replay one
 expect_fuzz 2 "seconds that are no whole number fail" "$d" \
   "the seconds per target are a positive whole number, not '1.5'" "" 1.5
+expect_fuzz 2 "empty seconds fail, not the default" "$d" \
+  "the seconds per target are a positive whole number, not ''" "" "" one
 
 d="$(fixture no-bins "")"
 expect_fuzz 1 "a manifest without a bin fails" "$d" "fuzz/Cargo.toml names no [[bin]] target" ""
