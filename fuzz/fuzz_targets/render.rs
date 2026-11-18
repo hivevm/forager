@@ -18,10 +18,16 @@
 //! label cache, the cache's edge buffer, and the pixmap as the label's labelpoint and labelcenter
 //! marker. The last third of the bytes is read once more for a layer's `GEOMTRANSFORM`, a
 //! transform tree of up to eight functions of arbitrary numbers, `[map_cellsize]` among them,
-//! which the polygon and line layers apply to their features (ADR-0048). `Input` decodes as
-//! before; the existing seeds now also read a `Cache` from their tail, which changes what they
-//! render.
-// Verifies: Q-3, ADR-0025, ADR-0016, ADR-0046
+//! which the polygon and line layers apply to their features (ADR-0048); its steps include
+//! `simplify` and `buffer` (ADR-0041) and `simplifypt` (ADR-0047). The first third of the bytes,
+//! back to front, is read once more for what the fidelity spec added: a class style's
+//! `GEOMTRANSFORM` tree of the same steps on the polygon and line layers (ADR-0048), the map's
+//! `ANGLE` with or without a projection of the map and its layers (ADR-0045), a circle layer,
+//! `ANTIALIAS FALSE` on the first style, and a TrueType symbol at the points, along the lines,
+//! and over the polygons, its glyph drawn through the glyph port (ADR-0044) from the test font or
+//! from a font of the fuzz bytes. `Input` decodes as before; the existing seeds now also read a
+//! `Cache` from their tail, and a `Fidelity` from their head, which changes what they render.
+// Verifies: Q-3, ADR-0025, ADR-0016, ADR-0046, ADR-0041, ADR-0044, ADR-0045, ADR-0047, ADR-0048
 #![no_main]
 
 mod expr_input;
@@ -35,9 +41,10 @@ use forager_ports::{
 };
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    Bound, Class, Expr, Extent, Label, LabelTransform, Layer, LayerStatus, LineCap, LineJoin,
-    LineOffset, Map, NumberOp, Preprocessing, RenderMode, Rgba, Style, Symbol, SymbolKind,
-    SymbolRef, TransformNumber, TransformShape, TransformTree,
+    Bound, Class, Expr, Extent, GeomTransform, Label, LabelTransform, Layer, LayerProjection,
+    LayerStatus, LineCap, LineJoin, LineOffset, MAX_MAP_ANGLE, Map, NumberOp, Preprocessing,
+    RenderMode, Rgba, Style, Symbol, SymbolKind, SymbolRef, TransformNumber, TransformShape,
+    TransformTree,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -75,13 +82,24 @@ const SANS: &[u8] = include_bytes!("../../crates/label/tests/fixtures/dejavu-san
 /// A PNG of 3 × 3 RGBA pixels, one of the pixmap target's seeds, as every pixmap's image.
 const PIN: &[u8] = include_bytes!("../seeds/pixmap/rgba.png");
 
-/// The font for every font path, and the PNG for every image path.
-struct Files;
+/// The path of the font the fuzz bytes supply.
+const INPUT_FONT: &str = "input.ttf";
+
+/// The proj4 string of the map and of its layers where they are projected.
+const LONGLAT: &str = "+proj=longlat +datum=WGS84 +no_defs";
+
+/// The PNG for every image path, the font of the fuzz bytes at [`INPUT_FONT`], and the test font
+/// for every other font path.
+struct Files {
+    font: Vec<u8>,
+}
 
 impl ResourceLoader for Files {
     async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
         if path.as_str().ends_with(".png") {
             Ok(PIN.to_vec())
+        } else if path.as_str() == INPUT_FONT {
+            Ok(self.font.clone())
         } else {
             Ok(SANS.to_vec())
         }
@@ -189,6 +207,9 @@ struct TransformInput(Vec<StepInput>);
 enum StepInput {
     Generalize(NumberInput),
     Densify(NumberInput),
+    Simplify(NumberInput),
+    Simplifypt(NumberInput),
+    Buffer(NumberInput),
     Outer,
     Inner,
     SmoothSia(NumberInput, NumberInput, Option<bool>),
@@ -235,6 +256,9 @@ impl TransformInput {
             shape = match step {
                 StepInput::Generalize(n) => TransformShape::Generalize(inner, n.number()),
                 StepInput::Densify(n) => TransformShape::Densify(inner, n.number()),
+                StepInput::Simplify(n) => TransformShape::Simplify(inner, n.number()),
+                StepInput::Simplifypt(n) => TransformShape::Simplifypt(inner, n.number()),
+                StepInput::Buffer(n) => TransformShape::Buffer(inner, n.number()),
                 StepInput::Outer => TransformShape::Outer(inner),
                 StepInput::Inner => TransformShape::Inner(inner),
                 StepInput::SmoothSia(size, iterations, preprocessing) => {
@@ -255,6 +279,45 @@ impl TransformInput {
         }
         Some(TransformTree::Drawn(shape))
     }
+}
+
+/// What the fidelity spec added to the renderer: the map's `ANGLE`, and whether the map and its
+/// layers are in a projection, which a rotated map reprojects through its geotransform; whether a
+/// circle layer is drawn; whether the first style is `ANTIALIAS FALSE`; the TrueType symbol; and a
+/// class style's `GEOMTRANSFORM` tree on the polygon and line layers.
+#[derive(Arbitrary, Debug, Default)]
+struct Fidelity {
+    /// The map's `ANGLE`, as [`Fidelity::angle`] reads it.
+    angle: Option<f64>,
+    projected: bool,
+    circle: bool,
+    aliased: bool,
+    truetype: Option<TrueTypeInput>,
+    transform: TransformInput,
+}
+
+impl Fidelity {
+    /// The map's `ANGLE` in whole degrees: none outside ±[`MAX_MAP_ANGLE`], which the readers
+    /// drop, or for no number, and 0, which rotates nothing, below half a degree, so that a huge
+    /// angle leaves the map unrotated rather than without a geotransform. The proj target fuzzes
+    /// the geotransform of any angle.
+    fn angle(&self) -> Option<f64> {
+        self.angle
+            .filter(|angle| (-MAX_MAP_ANGLE..=MAX_MAP_ANGLE).contains(angle))
+            .map(f64::round)
+    }
+}
+
+/// A TrueType symbol: its character, its font, the test font or the bytes given, and its style's
+/// `SIZE`, `ANGLE`, `GAP` along a line, and whether it has an `OUTLINECOLOR` of an outline width.
+#[derive(Arbitrary, Debug)]
+struct TrueTypeInput {
+    character: String,
+    font: Option<Vec<u8>>,
+    size: Option<f64>,
+    angle: f64,
+    gap: Option<f64>,
+    outline_width: Option<f64>,
 }
 
 #[derive(Arbitrary, Debug)]
@@ -324,6 +387,8 @@ fuzz_target!(|data: &[u8]| {
         TransformInput::arbitrary_take_rest(Unstructured::new(&data[data.len() / 3 * 2..]))
             .unwrap_or_default()
             .tree();
+    let head: Vec<u8> = data[..data.len() / 3].iter().rev().copied().collect();
+    let fidelity = Fidelity::arbitrary_take_rest(Unstructured::new(&head)).unwrap_or_default();
     let features: Vec<Feature> = input
         .shapes
         .iter()
@@ -357,6 +422,7 @@ fuzz_target!(|data: &[u8]| {
             Bound::Value(input.line_width)
         }),
         size: Some(computed(&exprs.size).map_or(Bound::Value(input.symbol_size), Bound::Expr)),
+        aliased: fidelity.aliased,
         ..Style::default()
     };
     let symbol = &input.symbol;
@@ -397,6 +463,23 @@ fuzz_target!(|data: &[u8]| {
         image: Some("pin.png".to_owned()),
         ..symbols[0].clone()
     });
+    let truetype = fidelity.truetype.as_ref();
+    if let Some(glyph) = truetype {
+        let font = if glyph.font.is_some() {
+            "input"
+        } else {
+            "sans"
+        };
+        symbols.push(Symbol {
+            kind: SymbolKind::Truetype,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            character: Some(glyph.character.clone()),
+            font: Some(font.to_owned()),
+            ..symbols[0].clone()
+        });
+    }
     let pixmap = &input.pixmap;
     let pixmap_style = Style {
         symbol: Some(Bound::Value(SymbolRef::Index(3))),
@@ -441,6 +524,10 @@ fuzz_target!(|data: &[u8]| {
     let styles: Vec<Style> = std::iter::once(style)
         .chain(further.iter().map(LineStyle::style))
         .collect();
+    let class_transform = fidelity.transform.tree().map(|tree| Style {
+        geom_transform: Some(GeomTransform::Expression(tree)),
+        ..styles[0].clone()
+    });
     let mut points = layer("points", RenderMode::Point, styles.clone(), &exprs);
     for class in &mut points.classes {
         class.labels.push(label.clone());
@@ -448,9 +535,14 @@ fuzz_target!(|data: &[u8]| {
     let [min_x, min_y, max_x, max_y] = input.extent;
     let mut map = Map {
         resolution: Some(input.resolution),
-        fonts: [("sans".to_owned(), "sans.ttf".to_owned())]
-            .into_iter()
-            .collect(),
+        fonts: [
+            ("sans".to_owned(), "sans.ttf".to_owned()),
+            ("input".to_owned(), INPUT_FONT.to_owned()),
+        ]
+        .into_iter()
+        .collect(),
+        angle: fidelity.angle(),
+        projection: fidelity.projected.then(|| LONGLAT.to_owned()),
         extent: Some(Extent {
             min_x,
             min_y,
@@ -489,25 +581,68 @@ fuzz_target!(|data: &[u8]| {
     };
     for layer in &mut map.layers[..2] {
         layer.geom_transform = transform.clone();
+        if let Some(style) = &class_transform {
+            for class in &mut layer.classes {
+                class.styles.push(style.clone());
+            }
+        }
+    }
+    if fidelity.circle {
+        let layer = layer("circles", RenderMode::Circle, styles.clone(), &exprs);
+        map.layers.push(layer);
+    }
+    if let Some(glyph) = truetype {
+        let glyph_style = Style {
+            symbol: Some(Bound::Value(SymbolRef::Index(4))),
+            size: glyph.size.map(Bound::Value),
+            angle: Some(Bound::Value(glyph.angle)),
+            outline_color: glyph
+                .outline_width
+                .map(|_| Bound::Value(Rgba::opaque(0, 0, 0))),
+            outline_width: glyph.outline_width.map(Bound::Value),
+            ..styles[0].clone()
+        };
+        let along = Style {
+            gap: glyph.gap,
+            ..glyph_style.clone()
+        };
+        map.layers.extend([
+            layer(
+                "glyph-points",
+                RenderMode::Point,
+                vec![glyph_style.clone()],
+                &exprs,
+            ),
+            layer("glyph-lines", RenderMode::Line, vec![along], &exprs),
+            layer(
+                "glyph-fills",
+                RenderMode::Polygon,
+                vec![glyph_style],
+                &exprs,
+            ),
+        ]);
+    }
+    if fidelity.projected {
+        for layer in &mut map.layers {
+            layer.projection = Some(LayerProjection::Proj4(LONGLAT.to_owned()));
+        }
     }
     // One bit for each layer; a layer past the eighth is drawn before the cache.
     for (layer, bit) in map.layers.iter_mut().zip(0u32..) {
         layer.max_features = cache.max_features.map(u32::from);
         layer.post_label_cache = cache.post_label_cache.checked_shr(bit).unwrap_or(0) & 1 == 1;
     }
-    let sources: BTreeMap<String, Shapes> = [
-        "polygons",
-        "lines",
-        "points",
-        "symbols",
-        "hatches",
-        "pixmap-points",
-        "pixmap-lines",
-        "pixmap-fills",
-    ]
-    .into_iter()
-    .map(|name| (name.to_owned(), Shapes(features.clone())))
-    .collect();
-    let render = forager_engine::render_with_files(&map, &sources, &Files, AggRenderer::new());
+    let sources: BTreeMap<String, Shapes> = map
+        .layers
+        .iter()
+        .filter_map(|layer| layer.name.clone())
+        .map(|name| (name, Shapes(features.clone())))
+        .collect();
+    let files = Files {
+        font: truetype
+            .and_then(|glyph| glyph.font.clone())
+            .unwrap_or_default(),
+    };
+    let render = forager_engine::render_with_files(&map, &sources, &files, AggRenderer::new());
     let _ = forager_ports::poll_once(render).expect("the engine waited on a port that never waits");
 });
