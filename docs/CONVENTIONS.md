@@ -51,7 +51,9 @@ skimmed. The design revision drops what prevented nothing
   decodes its bytes runs each of its seeds again against the path the seed was made for, and
   re-derives a seed that lost it: three seeds of the render target lost theirs, likely when the
   target came to read more of their bytes after they were made, unnoticed until ticket 01 of
-  revision-2026-11-16 probed them.
+  revision-2026-11-16 probed them. For the nodes of the transform tree and the kinds of symbol,
+  [`scripts/check-fuzz-variants.sh`](../scripts/check-fuzz-variants.sh) decides the first half:
+  the render target names each variant, or the check's allow-list names it with its reason.
 - **A fix of a fuzz finding is cut from the cause its decoded input shows** — the ticket names the
   cause, read from what the input decodes to and from the code that fails. Its first criterion
   fails on the code before the fix. Its tests hold an ordinary input beside the failing one,
