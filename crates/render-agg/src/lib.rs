@@ -1470,6 +1470,59 @@ mod tests {
     }
 
     #[test]
+    fn a_brushed_line_and_a_resampled_pixmap_the_clip_cuts_are_counted() {
+        // Verifies: ADR-0027, ADR-0049
+        let image = Rc::new(PremultipliedImage::new(1, 1, vec![200, 40, 40, 255]).unwrap());
+        let mark = DrawOp::Pixmap {
+            image: Rc::clone(&image),
+            left: 0,
+            top: 0,
+        };
+        let tile = Rc::new(Tile::new(1, 1, vec![mark]).unwrap());
+        let brushed = |path: Vec<Point>| DrawOp::BrushedLine {
+            paths: vec![path],
+            tile: Rc::clone(&tile),
+            reach: 0.0,
+        };
+        let resampled = |at| DrawOp::ResampledPixmap {
+            image: Rc::clone(&image),
+            at,
+            half: 4,
+            inverse: Affine {
+                sx: 1.0,
+                shy: 0.0,
+                shx: 0.0,
+                sy: 1.0,
+                tx: 0.0,
+                ty: 0.0,
+            },
+        };
+        // Drawn whole: nothing is counted.
+        let whole = [
+            brushed(vec![p(4.0, 32.0), p(60.0, 32.0)]),
+            resampled(p(32.0, 32.0)),
+        ];
+        for in_layer in [false, true] {
+            assert_eq!(refused_of(&whole, in_layer).0, Refused::default());
+        }
+        // The brushed line's second segment, whose ends differ past every finite number, and the
+        // square about a centre that is no number: a path each.
+        let brushed_cut = brushed(vec![p(4.0, 32.0), p(1e308, 32.0), p(-1e308, 32.0)]);
+        let resampled_cut = resampled(p(f64::NAN, 32.0));
+        for (item, in_layer) in [brushed_cut, resampled_cut]
+            .into_iter()
+            .flat_map(|item| [(item.clone(), false), (item, true)])
+        {
+            let (taken, _) = refused_of(std::slice::from_ref(&item), in_layer);
+            let expected = Refused {
+                paths: 1,
+                ..Refused::default()
+            };
+            assert_eq!(taken, expected, "{item:?}");
+        }
+    }
+
+    #[test]
     fn an_image_whose_size_overflows_is_empty() {
         let mut renderer = AggRenderer::new();
         renderer.begin(u32::MAX, u32::MAX, WHITE);
