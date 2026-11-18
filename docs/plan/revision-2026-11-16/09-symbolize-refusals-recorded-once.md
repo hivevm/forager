@@ -7,7 +7,8 @@ calls (`take_refusals`, `markers_spent`, `style_trees_over_limit`, `take_style_t
 `crates/engine/src/lib.rs`):
 
 - the canvas keeps three maps and a counter of refused hatches;
-- the layer's transform keeps a tree's failure and its limit (`layer_transform.rs`);
+- the layer's transform keeps a tree's failure and its limit (`layer_transform.rs`), which the
+  canvas hands on (`canvas.rs`);
 - the marker budget keeps whether it is spent.
 
 `shade` returns a `bool`, and five callers add it to `canvas.hatching.refused` by hand: `draw.rs`
@@ -17,7 +18,9 @@ three times, `circle.rs`, and `label.rs`.
 `refused_symbols`: `Hatching`, which ticket 10 left holding that count alone
 (`crates/symbolize/src/hatch.rs`), goes. `Refusals`, the value that `layer.rs` of the engine turns
 into the layer's diagnostics, takes in the spent markers and the trees past their limit. The engine
-reads it with one call per layer. The diagnostics and their order do not change. This is a
+reads it with one call per layer. A tree's failure stays taken by `take_style_tree_failure` after
+each style is drawn, since the engine names the style it reports by its class and its place, which
+the canvas does not know. The diagnostics and their order do not change. This is a
 `refactor`. The unit tests that read `shade`'s returned `bool` (`shade/tests.rs`, `line/tests.rs`,
 `draw/tests.rs`) read the canvas's count instead, and change only in that.
 
@@ -31,8 +34,9 @@ reads it with one call per layer. The diagnostics and their order do not change.
 
 ## Read first
 
-- Touches: `crates/symbolize/src/{canvas,hatch,shade,draw,circle,label,layer_transform}.rs`,
-  `crates/engine/src/{lib,layer}.rs`
+- Touches: `crates/symbolize/src/{canvas,hatch,shade,draw,circle,label}.rs`, the tests of
+  `crates/symbolize/src/{canvas,shade,draw,line}/`, `crates/engine/src/{lib,layer}.rs`, and
+  `crates/engine/tests/render.rs` for a test that pins the order of the reports
 - ADR-0048 (the warnings of a style's tree); `docs/SPECIFICATION.md` Q-9 (a bound reports once);
   `docs/CONVENTIONS.md` (a bound of Q-9 reports once).
 
