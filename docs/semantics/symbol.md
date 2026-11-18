@@ -163,9 +163,9 @@ tile's columns follow one another from the line's start, turned with the segment
 sampled bilinearly from the tile's premultiplied pixels, as AGG 2.4's
 `pattern_filter_bilinear_rgba8` samples them, its rounding included, and blended as a pixmap's
 are. The tile's place along the line starts at 0 and carries over every segment and every line of
-the shape; a vertex within 1.5 pixels of the one before it is passed over, as AGG passes it. Each
-coordinate is held to AGG's `line_max_coord`, 2^28 - 1 subpixels, some 1,048,576 pixels, before it
-is rounded, as MapServer's `line_coord_sat` holds it: the bound of agg-rust's guard
+the shape; a vertex within 1.5 pixels of the one before it is passed over, as AGG passes it.
+Each coordinate is held to AGG's `line_max_coord`, 2^28 - 1 subpixels, some 1,048,576 pixels,
+before it is rounded, as MapServer's `line_coord_sat` holds it: the bound of agg-rust's guard
 ([ADR-0049](../adr/0049-third-party-failures-guarded.md)), which does not differ from MapServer.
 The style's `WIDTH`, `PATTERN`, `LINECAP`, and `LINEJOIN` play no part. A pixmap needs no `COLOR`, and
 a later style of a cached line layer draws it without one ([`line.md`](line.md)).
