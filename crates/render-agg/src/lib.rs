@@ -1293,7 +1293,11 @@ mod tests {
         render(&[outlined(square(far, far + 8.0), 1e12)]);
         // A width as far below zero, as a label's wrapped into an int can be, shrinks the
         // contour by no more than the same bound.
-        render(&[outlined(square(28.0, 36.0), -1e12)]);
+        // It is drawn as the bound itself below zero, twice the image's width and height.
+        assert_eq!(
+            render(&[outlined(square(28.0, 36.0), -1e12)]).pixels,
+            render(&[outlined(square(28.0, 36.0), -256.0)]).pixels
+        );
         // A small width below zero is drawn as AGG's vcgen_contour draws it, the square shrunk
         // by half of it, not grown: the bound keeps the sign.
         let image = render(&[outlined(square(20.0, 44.0), -4.0)]);

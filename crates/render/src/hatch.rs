@@ -405,6 +405,31 @@ mod tests {
     }
 
     #[test]
+    fn a_hatch_of_a_negative_width_is_measured_at_its_magnitude() {
+        // Verifies: Q-9
+        // The cost model measures the lines at the width drawn whatever its sign: a width below
+        // zero counts as the same width above it, and a huge one is bounded as a stroke's is.
+        let at = |width| Hatch {
+            width,
+            ..hatch(vec![[p(0.0, 5.0), p(100.0, 5.0)]], vec![])
+        };
+        assert_eq!(
+            at(-3.0).drawn_width(100, 100),
+            at(3.0).drawn_width(100, 100)
+        );
+        assert_eq!(at(-1e7).drawn_width(100, 100), 400.0);
+        assert_eq!(
+            Hatch::line_rect_at(-3.0, 100, 100),
+            Hatch::line_rect_at(3.0, 100, 100)
+        );
+        assert_eq!(
+            Hatch::line_rect_at(-1e7, 100, 100),
+            Hatch::line_rect_at(1e7, 100, 100)
+        );
+        assert_eq!(at(-3.0).line_rect(100, 100), at(3.0).line_rect(100, 100));
+    }
+
+    #[test]
     fn lines_with_both_ends_far_out_count_the_part_the_renderer_draws() {
         // Verifies: Q-9
         // A line from -1e150 to 1e150 meets the margin's edges at t = 0.5 either way, rounded;
