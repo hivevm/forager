@@ -13,6 +13,8 @@ are silent today:
 
   A plain stroked line or a filled polygon with such a vertex is drawn through the points left,
   with no warning.
+  `Hatch::is_bounded` measures through the same clip; only a renderer's clip call warns, not
+  that bound's measurement.
 - **A brushed line's points** that are no finite number, which `crates/render-agg/src/brush.rs`
   drops before it turns them into subpixels (about line 452).
 - **A TrueType marker's glyph** with a point past `within_glyph_reach`, of which
@@ -70,3 +72,5 @@ with the human: it changes the diagnostics a map reports and uses a channel of t
 trait, an interface every renderer implements, and it implements a proposed ADR. It may exceed
 one session; the clip's drops and the renderer's refusals may land as two pull requests. Stop
 when a refusal's warning would fire on a case of the msautotest harness; hand off with the case.
+Stop too when reporting the clip's drops needs a public item of `clip` that ADR-0027's *Public
+items* clause does not list; that is an ADR.
