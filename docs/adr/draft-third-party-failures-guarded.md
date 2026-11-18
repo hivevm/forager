@@ -47,8 +47,8 @@ This draft was written by the design revision of 2026-11-18 without the interrog
 
 ## Decision
 
-We will guard a render against a third-party crate's failure on a user's input in the crate of
-Forager that calls it, derived from the version `Cargo.lock` pins.
+We will guard a render against a third-party crate's failure on a user's input in the Forager
+crate that calls it, by the version `Cargo.lock` pins.
 
 - A guard must take one of three forms:
   - **exact:** it changes the input and changes the result back, and moves no pixel;
