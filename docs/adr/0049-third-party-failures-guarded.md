@@ -1,6 +1,6 @@
 # ADR-0049: A third-party crate's failure on a user's input is kept out of a render by a guard Forager derives from the pinned version, and a guard that leaves a part undrawn warns
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-18
 - **Deciders:** Markus Brigl
 - **Applies to:** every guard in Forager's code that keeps an input from a third-party crate's computation where the crate panics, loops, overflows, or runs out of memory: `crates/render/src/clip.rs`, `crates/render-agg/src/brush.rs`, `crates/render-agg/src/glyphs.rs`, `crates/render-agg/src/lib.rs`, `crates/symbolize/src/geometry.rs`, `crates/symbolize/src/layer_transform.rs`, the diagnostics of a refused part in `crates/engine`, and `Cargo.lock` for the crates the guards name
