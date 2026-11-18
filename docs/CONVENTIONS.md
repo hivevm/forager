@@ -20,10 +20,10 @@ skimmed. The design revision drops what prevented nothing
 - **A `Verifies:` marker claims every *shall* of its criterion** — a test cites a goal, a quality
   goal, or an ADR only when it decides all the criterion asks for, or a clause of the ADR's
   *Decision*, never because a test beside it does; a test that decides a part cites nothing and
-  the criterion stays pending, unless the criterion asks for a test per item itself, as Q-8 and
-  Q-9 do, and, by the maintainer's ruling of 2026-11-08, G-13 per category and G-10 per case: a
-  marker such as `Verifies: G-13, for the category text` decides only the item it names. The
-  traceability check counts a marker as met and cannot tell how much its test decides.
+  the criterion stays pending, unless the criterion asks for a test per item itself, as Q-3,
+  Q-8, and Q-9 do, and, by the maintainer's ruling of 2026-11-08, G-13 per category and G-10 per
+  case: a marker such as `Verifies: G-13, for the category text` decides only the item it names.
+  The traceability check counts a marker as met and cannot tell how much its test decides.
 - **Behaviour ported from MapServer or PROJ is read in their source, and its branches are
   tested** — a rule that follows their code names the function it follows, read at the pinned
   release, never as a ticket or memory describes it, and each branch of that function the port
