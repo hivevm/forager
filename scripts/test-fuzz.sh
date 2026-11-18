@@ -114,8 +114,8 @@ LIMITS="-timeout=10 -rss_limit_mb=2048"
 d="$(fixture seconds "$BIN_ONE" one)"
 expect_fuzz 2 "a target's name where the seconds belong fails, naming the seconds it expects" "$d" \
   "the seconds per target are a positive whole number, not 'render'" "" render
-expect_fuzz 2 "zero seconds fail, with the usage" "$d" \
-  "usage: bash scripts/fuzz.sh [seconds per target, default 300] [target]" "" 0
+expect_fuzz 2 "zero seconds fail" "$d" \
+  "the seconds per target are a positive whole number, not '0'" "" 0
 expect_fuzz 2 "a replay without its input fails, with the usage" "$d" \
   "bash scripts/fuzz.sh --replay <target> <input>" "" --replay one
 expect_fuzz 2 "seconds that are no whole number fail" "$d" \
