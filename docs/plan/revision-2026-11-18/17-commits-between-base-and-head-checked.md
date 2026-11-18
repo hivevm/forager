@@ -32,6 +32,12 @@ costs time on every push. The forms to weigh with the human:
   It also needs a way out for a reviewed commit that may not be rewritten.
 - **Nothing**: the review keeps naming it, and a bisect skips such a commit.
 
+The refusing check with its rule would set the cost of every push and constrain the toolchain's
+checks. That is a decision for an ADR, revising or superseding ADR-0007, the toolchain and its
+checks. So that form goes through the `propose-adr` skill as a `proposed` ADR before anything is
+built, per [`AGENTS.md` §3](../../../AGENTS.md#3-adr-rules). The sensor fails nothing and needs no
+ADR.
+
 ## Acceptance criteria
 
 - [ ] Given the human's choice among the forms, when the ticket is worked, then the hand-off

@@ -26,8 +26,9 @@ A module may not take an item of the root (`engine_modules.rs`). So a report lie
 where a module calls it and in the root where only the root does: where it is written follows who
 calls it, not what it is.
 
-These twelve functions move into one new module, a leaf of the engine's module direction. The root
-and `labels.rs` call it.
+These twelve functions move into one new module that imports only `layer`, for `name` and
+`quoted`. In the direction table of `crates/arch-test/tests/engine_modules.rs` it stands below
+`labels`, which calls it, and above `layer`. The root and `labels.rs` call it.
 
 **Stay where they are**, because they report before or outside a layer's drawing, or are shared
 wider than these reports:
