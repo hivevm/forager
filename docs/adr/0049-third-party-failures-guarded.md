@@ -1,4 +1,4 @@
-# ADR-draft-third-party-failures-guarded: A third-party crate's failure on a user's input is kept out of a render by a guard Forager derives from the pinned version, and a guard that leaves a part undrawn warns
+# ADR-0049: A third-party crate's failure on a user's input is kept out of a render by a guard Forager derives from the pinned version, and a guard that leaves a part undrawn warns
 
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-18
