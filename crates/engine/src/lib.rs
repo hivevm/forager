@@ -52,7 +52,7 @@ use forager_ports::{
     DeclaredProjection, Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader,
     ResourcePath, SourceError,
 };
-use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, DrawOp, Point, Refused, Renderer, RgbaImage};
 use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
     Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
@@ -78,6 +78,7 @@ pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 use crate::labels::Labels;
 use crate::layer::{
     Rotation, Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports,
+    refused_pieces,
 };
 
 pub use crate::labels::CachedLabel;
@@ -233,8 +234,9 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         // A layer of its own is laid over the map here, before the layer's labels are cached.
         drop(target);
         let refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
+        let refused = renderer.take_refused();
         let (spent, diagnostics) = (canvas.markers_spent(), &mut *selector.binder.diagnostics);
-        layer_reports(layer, spent, refusals, undrawn, diagnostics);
+        layer_reports(layer, spent, refusals, refused, undrawn, diagnostics);
         let trees = (style_failures, canvas.style_trees_over_limit());
         style_reports(layer, mode, &map.symbols, trees, diagnostics);
         // Only a line, polygon, or annotation layer of POSTLABELCACHE TRUE comes here after the
@@ -326,12 +328,14 @@ fn drawable(
 }
 
 /// Reports what `layer` left undrawn: symbols past the budget of markers where `markers_spent`,
-/// the hatches and pixmaps of `refusals`, its features' and those of its labels drawn at once, and
-/// the geometries of `undrawn`, by kind, its render mode cannot draw.
+/// the hatches and pixmaps of `refusals`, its features' and those of its labels drawn at once,
+/// then the brushed pieces the renderer refused, then the geometries of `undrawn`, by kind, its
+/// render mode cannot draw.
 fn layer_reports(
     layer: &Layer,
     markers_spent: bool,
     refusals: Refusals,
+    refused: Refused,
     undrawn: BTreeMap<&'static str, usize>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -348,6 +352,7 @@ fn layer_reports(
         ));
     }
     diagnostics.extend(refusal_reports(layer, refusals));
+    diagnostics.extend(refused_pieces(layer, refused));
     for (kind, count) in undrawn {
         let message = format!(
             "layer {} cannot draw {count} {kind} geometr{} in its render mode",

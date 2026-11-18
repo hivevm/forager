@@ -23,7 +23,7 @@ use std::borrow::Cow;
 
 use forager_ports::{Feature, Geometry};
 use forager_proj::Geotransform;
-use forager_render::{DisplayItem, Draw, DrawOp, Point};
+use forager_render::{DisplayItem, Draw, DrawOp, Point, Refused};
 use forager_style_ir::c::int_cast;
 use forager_style_ir::{Bound, Diagnostic, Extent, Layer, Map, RenderMode, Style};
 use forager_symbolize::{Refusals, View, vertices};
@@ -63,6 +63,34 @@ pub(crate) fn refusal_reports(
         .chain(pixmaps)
         .chain(symbols)
         .chain(glyphs)
+}
+
+/// The warnings that `layer` left pieces of its brushed lines undrawn, as the renderer counted
+/// them in `refused`: one for those of pixmap symbols, then one for those of the other symbols,
+/// each where there are any (ADR-0049).
+pub(crate) fn refused_pieces(layer: &Layer, refused: Refused) -> impl Iterator<Item = Diagnostic> {
+    let kinds = [
+        ("pixmap-not-drawn", "a pixmap symbol", refused.pixmaps),
+        (
+            "symbol-not-drawn",
+            "a vector, ellipse, or TrueType symbol",
+            refused.symbols,
+        ),
+    ];
+    kinds
+        .into_iter()
+        .filter(|&(_, _, count)| count > 0)
+        .map(|(code, kind, count)| {
+            let message = format!(
+                "layer {}: {count} piece{} of its lines brushed with {kind} {} not drawn (Q-3): \
+                 the rasterizer would compute past its integers on {}",
+                name(layer),
+                if count == 1 { "" } else { "s" },
+                if count == 1 { "is" } else { "are" },
+                if count == 1 { "it" } else { "them" },
+            );
+            Diagnostic::warning(code, message, layer.span.clone())
+        })
 }
 
 /// A layer's opacity as MapServer holds it, an integer percent from 0 to 100: the IR's number
