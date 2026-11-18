@@ -206,3 +206,17 @@ fn depth_counts_the_levels_of_the_tree_as_an_expressions_depth() {
     });
     assert_eq!(smooth.depth(), 3);
 }
+
+#[test]
+fn a_function_the_tree_does_not_know_is_refused_naming_each_function_of_a_shape() {
+    // Verifies: ADR-0048
+    // The reader of a style document reports the message with the path of the transform.
+    let error = serde_json::from_str::<TransformTree>(r#"{"op":"twist","args":[]}"#).unwrap_err();
+    assert!(
+        error.to_string().starts_with(
+            "unknown variant `twist`, expected one of `shape`, `generalize`, `densify`, \
+             `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, `smoothsia`"
+        ),
+        "{error}"
+    );
+}
