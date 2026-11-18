@@ -2,7 +2,7 @@
 
 ## What to build
 
-ADR-draft-third-party-failures-guarded binds every guard against a third-party crate. The guards
+ADR-0049 binds every guard against a third-party crate. The guards
 are derived from the versions `Cargo.lock` pins: agg-rust 1.2.0, geo 0.33.1, and i_overlay 4.5.2
 with i_float 1.16.0 under geo. Nothing ties them to those versions, and the older ones were never
 named guards.
@@ -67,7 +67,7 @@ i_overlay is (4.5.2 under geo, 9.1.0 in `render-agg`), matches where one of them
 - Touches: `scripts/check-guards.sh` (new), its self-test `scripts/test-check-guards.sh`,
   `scripts/check-all.sh`, `.github/workflows/checks.yml`, `CONTRIBUTING.md` (the scripts list),
   the five files above and their tests
-- `docs/adr/draft-third-party-failures-guarded.md`; ADR-0007, ADR-0011, ADR-0027, ADR-0046;
+- `docs/adr/0049-third-party-failures-guarded.md`; ADR-0007, ADR-0011, ADR-0027, ADR-0046;
   `scripts/lib/check.sh`, `scripts/lib/selftest.sh`.
 
 ## Blocked by
@@ -77,7 +77,7 @@ i_overlay is (4.5.2 under geo, 9.1.0 in `render-agg`), matches where one of them
 
 ## Mode
 
-with the human: it implements ADR-draft-third-party-failures-guarded, which waits for the
+with the human: it implements ADR-0049, which waits for the
 maintainer's decision, and the guards of `layer_transform.rs` and `geometry.rs` charge or refuse
 under Q-9's budget, which ADR-0006 keeps from unattended work. Stop when a guard's failing input
 cannot be rebuilt from its commit's test; hand off with the list of guards done.

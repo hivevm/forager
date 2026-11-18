@@ -26,7 +26,7 @@ One function takes the shape, the function's name, and the argument's check, and
 back or its `Areas`. The three GEOS functions call it. The finiteness check is part of what each
 function passes it, so that each keeps the refusals above. `built` and `areas` stay in
 `layer_transform.rs`, as the maintainer decided; the finiteness check stays there too, a guard of
-ADR-draft-third-party-failures-guarded in the crate that calls geo. The messages do not change.
+ADR-0049 in the crate that calls geo. The messages do not change.
 This is a `refactor`. (Amended by the design revision of 2026-11-18 for ticket 20's check.)
 
 ## Acceptance criteria
@@ -39,7 +39,7 @@ This is a `refactor`. (Amended by the design revision of 2026-11-18 for ticket 2
 ## Read first
 
 - Touches: `crates/symbolize/src/{layer_transform,geometry}.rs`
-- ADR-0041, ADR-0047, ADR-0048; `docs/adr/draft-third-party-failures-guarded.md`;
+- ADR-0041, ADR-0047, ADR-0048; `docs/adr/0049-third-party-failures-guarded.md`;
   `docs/ARCHITECTURE.md` (the `symbolize` section).
 
 ## Blocked by

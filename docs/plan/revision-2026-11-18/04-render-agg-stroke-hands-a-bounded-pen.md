@@ -11,7 +11,7 @@ ignore is a trap for the next caller, the smell of an interface that widened.
 The review of that ticket saw the trap, and 8b7cf655 answered it by naming the width `drawn` and
 saying in both docs that the pen's own width is never drawn. That documents the trap and keeps
 it: a third caller still gets a pen whose width is wrong to use. Since then,
-ADR-draft-third-party-failures-guarded names `drawn_width` a guard of agg-rust's fixed-point
+ADR-0049 names `drawn_width` a guard of agg-rust's fixed-point
 coordinates, which stands in one place with its marker. A pen bounded once in `stroke` keeps that
 guard in one place on the stroke's path.
 
@@ -42,7 +42,7 @@ No pixel moves. This is a `refactor`.
 - Touches: `crates/render-agg/src/lib.rs`, `crates/render-agg/src/glyphs.rs`,
   `crates/render/src/clip.rs`, `crates/render/src/hatch.rs`
 - ADR-0025, ADR-0027, ADR-0042 (the hatch's cost model);
-  `docs/adr/draft-third-party-failures-guarded.md`; the commit 8b7cf655; `docs/CONVENTIONS.md`
+  `docs/adr/0049-third-party-failures-guarded.md`; the commit 8b7cf655; `docs/CONVENTIONS.md`
   (a commit typed `refactor`).
 
 ## Blocked by

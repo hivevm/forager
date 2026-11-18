@@ -12,7 +12,7 @@ The probe's `line3` already receives each kept segment's `lp.len`, the length `w
 from `filtered`. Each piece is walked three times, and both steps refuse silently. A user sees a
 line with a gap and no diagnostic.
 
-As ADR-draft-third-party-failures-guarded decides, with the maintainer's answer of 2026-11-18
+As ADR-0049 decides, with the maintainer's answer of 2026-11-18
 that a refused piece warns on its layer:
 
 - the probe takes the place's bound too, so that one guard and one pass before the draw remain,
@@ -49,7 +49,7 @@ are two commits that may land as two pull requests.
   `crates/render-agg/src/lib.rs`, `crates/render/src/lib.rs` (the renderer trait),
   `crates/engine/src/layer.rs` and `crates/engine/src/lib.rs` (the layer's diagnostics), a test
   under `crates/engine/tests/`
-- `docs/adr/draft-third-party-failures-guarded.md`; ADR-0025, ADR-0046; the merge message
+- `docs/adr/0049-third-party-failures-guarded.md`; ADR-0025, ADR-0046; the merge message
   2156170e; `docs/backlog/brushed-line-join-bound-loose-at-sharp-turns.md`.
 
 ## Blocked by
@@ -58,7 +58,7 @@ are two commits that may land as two pull requests.
 
 ## Mode
 
-with the human: it implements ADR-draft-third-party-failures-guarded, which waits for the
+with the human: it implements ADR-0049, which waits for the
 maintainer's decision, and no blocker under `docs/plan/` can name an ADR. It changes the renderer
 trait and the diagnostics a map reports. Stop after the channel has landed if the probe's merge
 does not fit the same session; hand off with the channel landed.

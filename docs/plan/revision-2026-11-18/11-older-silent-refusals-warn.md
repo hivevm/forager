@@ -2,7 +2,7 @@
 
 ## What to build
 
-ADR-draft-third-party-failures-guarded has every refusal warn, by the maintainer's answer of
+ADR-0049 has every refusal warn, by the maintainer's answer of
 2026-11-18, the refusals written before it included. These refusals of `render` and `render-agg`
 are silent today:
 
@@ -60,7 +60,7 @@ sensor then holds to a test.
 - Touches: `crates/render/src/clip.rs`, `crates/render-agg/src/{brush,glyphs,lib,hatch}.rs`, the
   channel of ticket 02 in `crates/render/src/lib.rs`, `crates/engine/src/layer.rs`, tests under
   `crates/engine/tests/`
-- `docs/adr/draft-third-party-failures-guarded.md`; ADR-0025, ADR-0027, ADR-0031, ADR-0044,
+- `docs/adr/0049-third-party-failures-guarded.md`; ADR-0025, ADR-0027, ADR-0031, ADR-0044,
   ADR-0046; the warning `label-glyph-out-of-reach` in `crates/engine/src/labels.rs`.
 
 ## Blocked by

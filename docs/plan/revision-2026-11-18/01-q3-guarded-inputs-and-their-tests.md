@@ -14,7 +14,7 @@ text:
   (5a003cb0). One leaves a piece of a brushed line undrawn without a diagnostic (44a91d4e). One
   raises a line's buffer distance to a floor, a drawing GEOS does not make (cb56e3ba). Two move
   nothing (8bb2ed83, a13dc8bb). Q-3's "become diagnostics" holds the first only.
-  `docs/adr/draft-third-party-failures-guarded.md` records the maintainer's answer that a
+  `docs/adr/0049-third-party-failures-guarded.md` records the maintainer's answer that a
   refusal warns on its layer, and binds every guard, the older ones of `render` and `render-agg`
   included.
 - **The regression tests.** Some 29 markers under `crates/` and every fuzz target cite `Verifies:
@@ -47,12 +47,12 @@ whose list of criteria with a test per item gains Q-3.
 ## Read first
 
 - Touches: `docs/SPECIFICATION.md` (Q-3), `docs/CONVENTIONS.md` (the `Verifies:` entry)
-- `docs/adr/draft-third-party-failures-guarded.md`; ADR-0002, ADR-0025, ADR-0041, ADR-0046
+- `docs/adr/0049-third-party-failures-guarded.md`; ADR-0002, ADR-0025, ADR-0041, ADR-0046
   (*Decision*); the merge messages 2156170e and 53421100.
 
 ## Blocked by
 
-- None (can start immediately). It is decided with ADR-draft-third-party-failures-guarded.
+- None (can start immediately). It is decided with ADR-0049.
 
 ## Mode
 
