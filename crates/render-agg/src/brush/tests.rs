@@ -408,3 +408,16 @@ fn a_piece_whose_place_would_pass_i32_is_not_drawn_and_a_short_one_beside_it_is(
     // A line of 35 pixels, the tile higher than the image: 35 columns of 40 pixels.
     assert_eq!(drawn(&broadly(vec![p(2.0, 20.0), p(37.0, 20.0)])), 1400);
 }
+
+#[test]
+fn the_probe_admits_a_segment_at_the_place_bound_and_refuses_one_past_it() {
+    // Verifies: ADR-0049, Q-3
+    let k = DIAGONAL_HALF;
+    let at = [p(-k / 256.0, -k / 256.0), p(k / 256.0, k / 256.0)];
+    let past = [p(-k / 256.0, -k / 256.0), p((k + 1.0) / 256.0, (k + 1.0) / 256.0)];
+    let tile = broad();
+    assert!(admits(&at, &tile, |_| {}));
+    assert!(!admits(&past, &tile, |_| {}));
+    // The joins alone admit the one past it: the place's bound refuses it.
+    assert!(admits(&past, &tile, |probe| probe.longest = i64::MAX));
+}
