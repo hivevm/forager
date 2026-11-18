@@ -118,6 +118,10 @@ expect_fuzz 2 "zero seconds fail" "$d" \
   "the seconds per target are a positive whole number, not '0'" "" 0
 expect_fuzz 2 "a replay without its input fails, with the usage" "$d" \
   "bash scripts/fuzz.sh --replay <target> <input>" "" --replay one
+expect_fuzz 2 "a replay with an argument past its input fails, with the usage" "$d" \
+  "bash scripts/fuzz.sh --replay <target> <input>" "" --replay one "$d/scripts/fuzz.sh" more
+expect_fuzz 2 "a run with an argument past its target fails, with the usage" "$d" \
+  "usage: bash scripts/fuzz.sh [seconds per target, default 300] [target]" "" 30 one more
 expect_fuzz 2 "seconds that are no whole number fail" "$d" \
   "the seconds per target are a positive whole number, not '1.5'" "" 1.5
 expect_fuzz 2 "empty seconds fail, not the default" "$d" \
