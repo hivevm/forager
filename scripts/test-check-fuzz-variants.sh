@@ -23,24 +23,28 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
 
 CHECK="$ROOT/scripts/check-fuzz-variants.sh"
 
-# The transform tree's enums: an enum before TransformShape whose variant is not one of its own, a
-# brace in a doc comment, an attribute, and a struct variant with a variant after it.
+# The transform tree's enums: an enum before TransformShape whose variant is not one of its own,
+# doc comments, attributes, a tuple variant broken over lines, as rustfmt breaks a long one, and
+# a struct variant with a variant after it.
 TRANSFORM='/// The tree of a GEOMTRANSFORM.
 pub enum TransformTree {
     Drawn(TransformShape),
 }
 
-/// A shape the tree computes, as {shape} does.
+/// A shape the tree computes.
 #[derive(Clone, Debug, PartialEq)]
 pub enum TransformShape {
     /// The shape of the feature, [shape] in MapServer.
     Shape,
     /// generalize(shape, tolerance).
-    Generalize(Box<TransformShape>, TransformNumber),
-    /// smoothsia(shape, size) {
+    Generalize(
+        Box<TransformShape>,
+        TransformNumber,
+    ),
+    /// smoothsia(shape, size).
     SmoothSia {
         shape: Box<TransformShape>,
-        preprocessing: Option<Preprocessing>, // }
+        preprocessing: Option<Preprocessing>,
     },
     /// buffer(shape, distance).
     Buffer(Box<TransformShape>, TransformNumber),
@@ -115,8 +119,8 @@ expect_check() { expect "$1" "$3" "$4" bash "$CHECK" "$2"; }
 dir="$(repo named)"
 expect_check "a target that names every variant passes" "$dir" 0 \
   "Fuzz variants check passed (5 enums, 13 variants, 2 allowed)."
-expect_check "a passing run lists each enum's variants, a struct variant's fields not among them" \
-  "$dir" 0 "TransformShape: Shape Generalize SmoothSia Buffer"
+expect_check "a passing run lists each enum's variants, and only them, deeper lines not read" \
+  "$dir" 0 $'TransformShape: Shape Generalize SmoothSia Buffer\nTransformNumber: Number MapCellsize\n'
 expect_check "a passing run lists an allowed variant with its reason" "$dir" 0 \
   "SymbolKind::Svg is allowed:"
 

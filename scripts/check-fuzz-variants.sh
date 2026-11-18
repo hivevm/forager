@@ -15,8 +15,9 @@
 #   4. the tree has no fuzz/fuzz_targets/render.rs.
 #
 # The variants are read as rustfmt lays an enum out, and check-rust.sh holds the crates to cargo
-# fmt: a line of four spaces and a capitalised name, at the enum's own depth of braces, so that a
-# struct variant's fields are not read; a brace or a name in a comment is not counted. That the
+# fmt: each line between the enum's header and the first line that is a lone '}' that begins with
+# four spaces and a capitalised name. A doc comment, an attribute, and what stands deeper, a
+# struct variant's fields and the types of a tuple variant broken over lines, are not read. That the
 # target draws what it builds, and that its seeds reach it, no check decides; the convention does.
 #
 # Pure bash + grep, sed, and awk, and _contains of scripts/lib/check.sh. Usage:
@@ -71,14 +72,10 @@ allowed() {
 # variants <file> <enum> — the enum's variants, one a line.
 variants() {
   awk -v header="pub enum $2 {" '
-    !inside && $0 == header { inside = 1; depth = 1; next }
-    inside {
-      line = $0
-      sub(/\/\/.*/, "", line)
-      if (depth == 1 && match(line, /^    [A-Z][A-Za-z0-9_]*/)) print substr(line, 5, RLENGTH - 4)
-      depth += gsub(/\{/, "{", line) - gsub(/\}/, "}", line)
-      if (depth <= 0) exit
-    }' "$1"
+    !inside && $0 == header { inside = 1; next }
+    inside && $0 == "}" { exit }
+    inside && match($0, /^    [A-Z][A-Za-z0-9_]*/) { print substr($0, 5, RLENGTH - 4) }
+  ' "$1"
 }
 
 enums=0 count=0 allowed_count=0
