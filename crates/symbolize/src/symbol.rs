@@ -51,6 +51,48 @@ use crate::style::fixed;
 /// it has none, as the engine's store of the render holds them (ADR-0029).
 pub type Pixmaps = std::collections::BTreeMap<String, Result<Rc<PremultipliedImage>, String>>;
 
+/// What a render's pixmap and TrueType symbols are drawn and sized from: the images of its
+/// pixmaps and the port its TrueType markers ask their glyphs of (ADR-0044). The canvas holds
+/// them, and the engine's label cache hands the same to [`marker_size_of`]. Without the images, a
+/// pixmap's image is not loaded; without the port, a TrueType symbol is not drawn.
+#[derive(Clone, Copy, Default)]
+pub struct SymbolResources<'a> {
+    pub(crate) pixmaps: Option<&'a Pixmaps>,
+    pub(crate) glyphs: Option<&'a dyn Glyphs>,
+}
+
+impl<'a> SymbolResources<'a> {
+    /// These resources, the pixmaps drawn with the images of `pixmaps`.
+    #[must_use]
+    pub fn with_pixmaps(self, pixmaps: &'a Pixmaps) -> Self {
+        Self {
+            pixmaps: Some(pixmaps),
+            ..self
+        }
+    }
+
+    /// These resources, the TrueType symbols drawn with the glyphs of `glyphs`.
+    #[must_use]
+    pub fn with_glyphs(self, glyphs: &'a dyn Glyphs) -> Self {
+        Self {
+            glyphs: Some(glyphs),
+            ..self
+        }
+    }
+
+    /// The image of the pixmap symbol `symbol`, or why it has none: it names no image, or its
+    /// image is not among the pixmaps, or did not load.
+    pub(crate) fn pixmap(&self, symbol: &Symbol) -> Result<Rc<PremultipliedImage>, String> {
+        let Some(path) = &symbol.image else {
+            return Err("the pixmap symbol names no image".to_owned());
+        };
+        self.pixmaps
+            .and_then(|pixmaps| pixmaps.get(path))
+            .cloned()
+            .unwrap_or_else(|| Err(format!("the image {path} is not loaded for this render")))
+    }
+}
+
 /// The most vertices of one ellipse. AGG takes as many as the radius asks for, about 2π√r: 16
 /// for a radius of 6, some 2000 for 100 000 pixels; this many are reached at a radius of some
 /// 425 000 pixels, far past any image, and bound what a hostile symbol costs (Q-9).
@@ -425,17 +467,16 @@ pub fn pixmap_marker_size<T>(
 /// msGetMarkerSize of `style` among `symbols` at `scale_factor`, the size of the marker a label
 /// of a point moves away from: 1 by 1 for MapServer's default symbol, a vector's, an ellipse's,
 /// or any other symbol's MapServer sizes by its extent as it sizes them, a pixmap's by its
-/// image among `pixmaps`, which msGetMarkerSize loads where it has not been
+/// image among the pixmaps of `resources`, which msGetMarkerSize loads where it has not been
 /// (`src/mapsymbol.c:736-738`), and a TrueType symbol's by its character's bounds, the glyph
-/// asked of `glyphs` at [`marker_points`] (msGetCharacterSize); the error names an SVG symbol,
-/// whose size is not computed yet, a pixmap that names no image or whose image is not among
-/// `pixmaps` or does not load, a TrueType symbol whose glyph is not found, or a symbol the symbol
+/// asked of their port at [`marker_points`] (msGetCharacterSize); the error names an SVG symbol,
+/// whose size is not computed yet, a pixmap that names no image or whose image is not among the
+/// pixmaps or does not load, a TrueType symbol whose glyph is not found, or a symbol the symbol
 /// set does not hold; for the pixmap, the glyph, and the missing symbol, MapServer fails the map.
 pub fn marker_size_of(
     style: &Style,
     symbols: &[Symbol],
-    pixmaps: &Pixmaps,
-    glyphs: Option<&dyn Glyphs>,
+    resources: SymbolResources<'_>,
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
     marker_size_with(
@@ -443,22 +484,20 @@ pub fn marker_size_of(
         fixed(&style.size),
         &style.symbol,
         symbols,
-        Some(pixmaps),
-        glyphs,
+        resources,
         scale_factor,
     )
 }
 
 /// [`marker_size_of`] of `style` at the size `size` and of the symbol `symbol` in place of its
-/// own, as a feature binds them; without `pixmaps`, a pixmap's size is not computed yet, nor
-/// without `glyphs` a TrueType symbol's.
+/// own, as a feature binds them; without the images of `resources`, a pixmap's size is not
+/// computed yet, nor without their glyph port a TrueType symbol's.
 pub fn marker_size_with<T>(
     style: &Style<T>,
     size: Option<f64>,
     symbol: &Option<Bound<SymbolRef>>,
     symbols: &[Symbol],
-    pixmaps: Option<&Pixmaps>,
-    glyphs: Option<&dyn Glyphs>,
+    resources: SymbolResources<'_>,
     scale_factor: f64,
 ) -> Result<(f64, f64), String> {
     match resolve(symbol, symbols) {
@@ -468,14 +507,9 @@ pub fn marker_size_with<T>(
             "symbol {index}, which the symbol set does not hold"
         )),
         Resolved::Unnamed(name) => Err(format!("no symbol is named `{name}`")),
-        Resolved::Found(index, symbol) => match (symbol.kind, pixmaps) {
-            (SymbolKind::Pixmap, Some(pixmaps)) => {
-                let image = match &symbol.image {
-                    None => Err("the pixmap symbol names no image".to_owned()),
-                    Some(path) => pixmaps.get(path).cloned().unwrap_or_else(|| {
-                        Err(format!("the image {path} is not loaded for this render"))
-                    }),
-                };
+        Resolved::Found(index, symbol) => match (symbol.kind, resources.pixmaps) {
+            (SymbolKind::Pixmap, Some(_)) => {
+                let image = resources.pixmap(symbol);
                 let named = named(index, Some(symbol));
                 let image =
                     image.map_err(|why| format!("{named}, whose size is not known: {why}"))?;
@@ -489,7 +523,7 @@ pub fn marker_size_with<T>(
             }
             (SymbolKind::Truetype, _) => {
                 // Without the port, as a label's own marker is sized, it is not computed yet.
-                let Some(glyphs) = glyphs else {
+                let Some(glyphs) = resources.glyphs else {
                     return Err("a truetype symbol, whose size is not computed yet".to_owned());
                 };
                 let points = marker_points(style, size, scale_factor);

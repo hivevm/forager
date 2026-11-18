@@ -94,7 +94,7 @@ pub(crate) fn glyph_of(
     size: u32,
     canvas: &mut Canvas,
 ) -> Option<Rc<Glyph>> {
-    let asked = ask(canvas.glyphs, symbol, size);
+    let asked = ask(canvas.resources.glyphs, symbol, size);
     record(canvas, index, asked)
 }
 
@@ -215,7 +215,7 @@ mod tests {
 
     use super::*;
     use crate::glyph::Glyphs;
-    use crate::symbol::{Factors, marker_size_with};
+    use crate::symbol::{Factors, SymbolResources, marker_size_with};
     use crate::tile::{TileFor, Tiles};
 
     /// The glyphs of the TrueType symbol at `index` along `paths`, as a line style with a `GAP`
@@ -302,20 +302,19 @@ mod tests {
         let symbols = [truetype(None)];
         let style = sized(10.7);
         let boxes = Boxes::default();
-        let size = marker_size_with(
+        let resources = SymbolResources::default().with_glyphs(&boxes);
+        let size = marker_size_with(&style, Some(10.7), &style.symbol, &symbols, resources, 1.5);
+        assert_eq!(size, Ok((10.0, 20.0)));
+        assert_eq!(*boxes.0.borrow(), [16]);
+        // Without the port, as a label's own marker is sized, it is not computed yet.
+        let unknown = marker_size_with(
             &style,
             Some(10.7),
             &style.symbol,
             &symbols,
-            None,
-            Some(&boxes),
+            SymbolResources::default(),
             1.5,
         );
-        assert_eq!(size, Ok((10.0, 20.0)));
-        assert_eq!(*boxes.0.borrow(), [16]);
-        // Without the port, as a label's own marker is sized, it is not computed yet.
-        let unknown =
-            marker_size_with(&style, Some(10.7), &style.symbol, &symbols, None, None, 1.5);
         assert_eq!(
             unknown,
             Err("a truetype symbol, whose size is not computed yet".to_owned())

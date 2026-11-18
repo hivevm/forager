@@ -208,7 +208,7 @@ pub(crate) fn tile<T>(
         }
         Mark::Glyph(index, symbol) => {
             let s = coloured(style, symbol, canvas)?;
-            let (glyphs, size) = (canvas.glyphs, glyph_marker::glyph_size(s.scale));
+            let (glyphs, size) = (canvas.resources.glyphs, glyph_marker::glyph_size(s.scale));
             let mut refused = None;
             let mark = |at| match glyph_marker::ask(glyphs, symbol, size) {
                 Ok((glyph, missing)) => Some((glyph_marker::glyph_op(&glyph, at, &s), missing)),

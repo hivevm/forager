@@ -17,9 +17,9 @@
 //! one core crate that awaits the ports (ADR-0008).
 //!
 //! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
-//! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, `marker_glyphs`, and
-//! `render_resources`; `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`;
-//! `label_binding` imports `classes`; `circle` imports `classes`, `layer`, and `reproject`;
+//! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, and `render_resources`;
+//! `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`; `label_binding`
+//! imports `classes`; `circle` imports `classes`, `layer`, and `reproject`;
 //! `classes` imports `bindable` and `layer`; `render_resources` imports `fonts`, `images`, and
 //! `marker_glyphs`; `reproject` imports `layer`; `fonts` and `images` import `resource`; `bind`,
 //! `bindable`, `inline`, `label_cache`, `layer`, `marker_glyphs`, `plan`, and `resource` import
@@ -63,8 +63,8 @@ use forager_style_ir::{
     RenderMode, Rgba, Style, Symbol, SymbolKind, TransformTree,
 };
 use forager_symbolize::{
-    Budget, Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, StyleTrees, Undrawn, can_draw,
-    clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
+    Budget, Canvas, Factors, Pass, Refusals, Resolved, StyleTrees, SymbolResources, Undrawn,
+    can_draw, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
 };
 
 use forager_expr::Evaluator;
@@ -313,9 +313,9 @@ async fn draw_layer<S: FeatureSource, L: ResourceLoader, R: Renderer>(
         .await;
     let mut lent = store.lend();
     let factors = prepared.factors[layer_index];
-    let mut canvas = layer_canvas(map, layer, factors, prepared.size, lent.shared.pixmaps)
+    let resources = lent.shared.symbol_resources();
+    let mut canvas = layer_canvas(map, layer, factors, prepared.size, resources)
         .with_tiles(lent.tiles)
-        .with_glyphs(lent.glyphs)
         .with_style_trees(StyleTrees::new(budget, cellsize));
     let drawn = labelled(&selected);
     let binder = &mut selector.binder;
@@ -361,7 +361,7 @@ async fn draw_layer<S: FeatureSource, L: ResourceLoader, R: Renderer>(
         Shapes::Points => {
             let settled = labels.layer(layer_index, &drawn, binder);
             labels
-                .collect(&settled, &drawn, &mut lent.shared, lent.glyphs, binder)
+                .collect(&settled, &drawn, &mut lent.shared, binder)
                 .await;
         }
         Shapes::PointsLabelledAtOnce => {}
@@ -520,17 +520,17 @@ impl<R: Renderer> Draw for Target<'_, R> {
     }
 }
 
-/// The canvas `layer` of `map` is drawn on, in an image `width` by `height`, with the images of
-/// `pixmaps`, at `factors`, the layer's scale factor, which sizes its styles, and the image's
+/// The canvas `layer` of `map` is drawn on, in an image `width` by `height`, with the images and
+/// the glyph port of `resources`, at `factors`, the layer's scale factor, which sizes its styles, and the image's
 /// resolution factor, which bounds them; its lines unclipped where the layer says so.
 fn layer_canvas<'c>(
     map: &'c Map,
     layer: &Layer,
     factors: Factors,
     (width, height): (u32, u32),
-    pixmaps: &'c Pixmaps,
+    resources: SymbolResources<'c>,
 ) -> Canvas<'c> {
-    let canvas = Canvas::new(&map.symbols, width, height, factors).with_pixmaps(pixmaps);
+    let canvas = Canvas::new(&map.symbols, width, height, factors).with_resources(resources);
     if layer.unclipped_lines {
         canvas.with_lines_unclipped()
     } else {

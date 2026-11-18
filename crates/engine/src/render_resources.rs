@@ -5,7 +5,7 @@
 
 use forager_ports::ResourceLoader;
 use forager_style_ir::Map;
-use forager_symbolize::{Pixmaps, Tiles};
+use forager_symbolize::{Pixmaps, SymbolResources, Tiles};
 
 use crate::fonts::Fonts;
 use crate::images::Images;
@@ -23,17 +23,17 @@ pub(crate) struct Resources<'r, L> {
 pub(crate) struct Lent<'a, 'r, L> {
     /// The tiles of the fills, which count the images' bytes with their own.
     pub(crate) tiles: &'a mut Tiles,
-    /// The TrueType markers' glyphs.
-    pub(crate) glyphs: &'a MarkerGlyphs,
     /// What the canvas and the labels share.
     pub(crate) shared: Shared<'a, 'r, L>,
 }
 
-/// What the canvas draws its pixmaps from and a layer's labels are laid out from: the images and
-/// the fonts.
+/// What the canvas draws its pixmaps and TrueType markers from and a layer's labels are laid out
+/// from: the images, the TrueType markers' glyphs, and the fonts.
 pub(crate) struct Shared<'a, 'r, L> {
     /// Every image asked for so far, which size the markers a label moves away from or draws.
     pub(crate) pixmaps: &'a Pixmaps,
+    /// The TrueType markers' glyphs, which size the marker a label moves away from.
+    glyphs: &'a MarkerGlyphs,
     /// The fonts, which a label's text is laid out in.
     pub(crate) fonts: &'a mut Fonts<'r, L>,
 }
@@ -77,11 +77,21 @@ impl<'r, L: ResourceLoader> Resources<'r, L> {
         let (pixmaps, tiles) = self.images.drawing();
         Lent {
             tiles,
-            glyphs: &self.glyphs,
             shared: Shared {
                 pixmaps,
+                glyphs: &self.glyphs,
                 fonts: &mut self.fonts,
             },
         }
+    }
+}
+
+impl<'a, L> Shared<'a, '_, L> {
+    /// The images and the TrueType markers' glyphs, one value, which the canvas draws with and
+    /// the label cache sizes the marker of a class's first style with.
+    pub(crate) fn symbol_resources(&self) -> SymbolResources<'a> {
+        SymbolResources::default()
+            .with_pixmaps(self.pixmaps)
+            .with_glyphs(self.glyphs)
     }
 }
