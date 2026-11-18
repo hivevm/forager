@@ -348,3 +348,28 @@ fn a_truetype_symbol_with_an_outline_wider_than_any_stroke_renders_without_a_pan
     let rendered = render(&map);
     assert!(rendered.image.is_some(), "{:?}", rendered.diagnostics);
 }
+
+#[test]
+fn a_truetype_marker_whose_glyph_passes_the_reach_is_not_drawn_and_warns_once() {
+    // Verifies: ADR-0027, ADR-0049, Q-3
+    // Moved 4,194,400 pixels right by its `OFFSET`, the `A` of 20 points lies past
+    // `MAX_GLYPH_REACH` of the image, 4,194,304 pixels, so the renderer draws none of it. Two
+    // such markers of the layer warn once.
+    let mut map = map("sans", "A");
+    let style = &mut map.layers[0].classes[0].styles[0];
+    style.offset = Some([Bound::Value(4_194_400.0), Bound::Value(0.0)]);
+    let two = r#"{"type": "MultiPoint", "coordinates": [[20, 20], [10, 10]]}"#;
+    for geometry in [r#"{"type": "Point", "coordinates": [20, 20]}"#, two] {
+        let rendered = render_geometry(&map, geometry);
+        assert_eq!(
+            codes(&rendered),
+            ["symbol-not-drawn"],
+            "{:?}",
+            rendered.diagnostics
+        );
+        let warning = &rendered.diagnostics[0];
+        assert!(warning.message.contains("`points`"), "{}", warning.message);
+        assert_eq!(warning.span, Some(Span::new("m.map", 3, 1)));
+        assert_eq!(drawn(&rendered), 0);
+    }
+}

@@ -78,7 +78,7 @@ pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 use crate::labels::Labels;
 use crate::layer::{
     Rotation, Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports,
-    refused_pieces,
+    renderer_refusals,
 };
 
 pub use crate::labels::CachedLabel;
@@ -352,7 +352,7 @@ fn layer_reports(
         ));
     }
     diagnostics.extend(refusal_reports(layer, refusals));
-    diagnostics.extend(refused_pieces(layer, refused));
+    diagnostics.extend(renderer_refusals(layer, refused));
     for (kind, count) in undrawn {
         let message = format!(
             "layer {} cannot draw {count} {kind} geometr{} in its render mode",
