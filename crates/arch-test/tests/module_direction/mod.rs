@@ -19,12 +19,14 @@ fn manifest_dir() -> PathBuf {
 /// The problems of the crate whose sources lie at `sources`, from the workspace root, against
 /// `allowed`, each module of the crate and the modules it may import: an import outside a test
 /// that its row does not allow, naming the module and the one it imports, and a module the table
-/// has no row for.
+/// has no row for. Sources that hold no `.rs` file, a path gone stale, fail the check.
 pub fn problems(sources: &str, allowed: &[(&str, &[&str])]) -> Vec<String> {
     let root = manifest_dir().join("../..").join(sources);
     let mut files = Vec::new();
     rust_files(&root, &root, &mut files);
     files.sort();
+    // The check itself reads the crate: sources that hold no file would hold no problem.
+    assert!(!files.is_empty(), "no .rs file under {}", root.display());
     let mut problems = Vec::new();
     for file in &files {
         let Some(module) = module_of(file) else {
