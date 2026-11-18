@@ -328,18 +328,18 @@ golden path and the test pattern an agent copies from are named here.
   `msDrawLabelCache`'s offset of a label from its markers (`cache.rs`). It is the one crate that
   depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
-  or none, a stroke's width, cap, join, and dashes as one value (`Pen`), a pixmap's image placed
-  at a whole pixel or resampled into a square through an affine transformation, each by a counted
-  reference to the one image, a polygon filled with a tile and a line brushed with one, by a
-  counted reference to the tile, which holds its size within Q-9's bound, the bytes a brush's
-  copy of it takes, the drawing that makes it, and its image once the renderer has built it
-  (`tile.rs`), the renderer trait, the RGBA image, and the premultiplied image a pixmap is
-  decoded to (`PremultipliedImage`, ADR-0029); the cost model that bounds a hatch before it is cut
-  (`Hatch::is_bounded`, ADR-0042, `hatch.rs`); and the clip of every path to the image, its
-  segments, lines, and rings, the image grown by its margin, the width a stroke is drawn at, and the
-  reach past the image a glyph's point may have (`MAX_GLYPH_REACH`), properties of the display list
-  in one module (`clip.rs`, [ADR-0027](adr/0027-clip-to-the-image.md)),
-  which the bound measures a hatch's lines with and every renderer clips with.
+  or none, a stroke's width, cap, join, inner join, dashes, and antialiasing as one value (`Pen`), a
+  pixmap's image placed at a whole pixel or resampled into a square through an affine
+  transformation, each by a counted reference to the one image, a polygon filled with a tile and a
+  line brushed with one, by a counted reference to the tile, which holds its size within Q-9's
+  bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
+  renderer has built it (`tile.rs`), the renderer trait, the RGBA image, and the premultiplied image
+  a pixmap is decoded to (`PremultipliedImage`, ADR-0029); the cost model that bounds a hatch before
+  it is cut (`Hatch::is_bounded`, ADR-0042, `hatch.rs`); and the clip of every path to the image,
+  its segments, lines, and rings, the image grown by its margin, the width a stroke is drawn at, and
+  the reach past the image a glyph's point may have (`MAX_GLYPH_REACH`), properties of the display
+  list in one module (`clip.rs`, [ADR-0027](adr/0027-clip-to-the-image.md)), which the bound
+  measures a hatch's lines with and every renderer clips with.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, by the clip of `render`, fills through the gamma it is given, strokes an
   aliased line by blending each pixel agg-rust's scanlines cover at full cover, as AGG's

@@ -1,4 +1,4 @@
-# Ticket: `symbolize`'s module sentence, its arch-test table, and three module docs say what the code holds
+# Ticket: `symbolize`'s module sentence, its arch-test table, and two module docs say what the code holds
 
 ## What to build
 
@@ -15,8 +15,8 @@ left their descriptions behind:
   `mark.rs` draws the kinds.
 
 The table and the sentence drop `bounds` for `line_marker` and `tile`. The two module docs say
-what their files hold. `docs/ARCHITECTURE.md`'s `symbolize` paragraph is checked against them
-and corrected where it differs. No code changes.
+what their files hold. `docs/ARCHITECTURE.md`'s `symbolize` paragraph was checked by the design
+revision of 2026-11-18 and agrees with the code; it stays as it is. No code changes.
 
 ## Acceptance criteria
 
@@ -24,13 +24,14 @@ and corrected where it differs. No code changes.
   `symbolize_modules.rs` runs, then it passes.
 - [ ] Given a temporary `use crate::bounds;` in `tile.rs`, when `symbolize_modules.rs` runs, then
   it fails on that import. The temporary line is not committed.
-- [ ] Given the module docs of `symbol.rs` and `line_marker.rs`, when they are read beside the
-  items of their files, then each names what the file holds.
+- [ ] Given the module docs of `symbol.rs` and `line_marker.rs`, when the reviewer reads them
+  beside the items of their files, then each names what the file holds. No test decides this
+  criterion; the review does.
 
 ## Read first
 
 - Touches: `crates/symbolize/src/{lib,symbol,line_marker}.rs`,
-  `crates/arch-test/tests/symbolize_modules.rs`, `docs/ARCHITECTURE.md` (the `symbolize` section)
+  `crates/arch-test/tests/symbolize_modules.rs`
 - ADR-0008 (it decides the direction between crates only); the module order in `lib.rs`.
 
 ## Blocked by
@@ -39,5 +40,6 @@ and corrected where it differs. No code changes.
 
 ## Mode
 
-unattended: `symbolize_modules.rs` decides the table, and a wrong result costs one revert. Stop
+unattended: `symbolize_modules.rs` decides the table, the review decides the two docs, and a wrong
+result costs one revert. Stop
 when a module the docs describe imports what the table would refuse; hand off with the import.

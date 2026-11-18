@@ -2,7 +2,8 @@
 
 ## What to build
 
-`crates/arch-test` holds seven checks under `tests/`, but its `src/lib.rs` reads "No code: this
+`crates/arch-test` holds six test binaries under `tests/`, `engine_modules.rs` and
+`symbolize_modules.rs` sharing `module_direction/mod.rs`, but its `src/lib.rs` reads "No code: this
 crate holds the dependency test of ADR-0008 under `tests/`", and its `Cargo.toml` description
 says the same. Ticket 15 of revision-2026-11-16 added a `manifest_dir()` to each test binary.
 Five of the copies are in `arch-test` (`c_numbers.rs`, `dependencies.rs`, `manifest_dir.rs`,

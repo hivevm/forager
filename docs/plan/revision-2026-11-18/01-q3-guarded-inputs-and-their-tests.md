@@ -14,7 +14,9 @@ text:
   (5a003cb0). One leaves a piece of a brushed line undrawn without a diagnostic (44a91d4e). One
   raises a line's buffer distance to a floor, a drawing GEOS does not make (cb56e3ba). Two move
   nothing (8bb2ed83, a13dc8bb). Q-3's "become diagnostics" holds the first only.
-  `docs/adr/draft-third-party-failures-guarded.md` proposes that a refusal warns.
+  `docs/adr/draft-third-party-failures-guarded.md` records the maintainer's answer that a
+  refusal warns on its layer, and binds every guard, the older ones of `render` and `render-agg`
+  included.
 - **The regression tests.** Some 29 markers under `crates/` and every fuzz target cite `Verifies:
   Q-3`. Each test under `crates/` decides one input, not the weekly run Q-3 is measured by. The
   convention "A `Verifies:` marker claims every *shall* of its criterion" lets a test cite a part
