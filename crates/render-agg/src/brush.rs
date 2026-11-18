@@ -217,12 +217,12 @@ struct Piece {
 
 /// The pieces of `points`, its points that are no number dropped, inside `rect`, as
 /// [`clip::line`] cuts them, segment by segment through [`clip::segment`], with what the start of
-/// each needs.
-fn pieces(points: &[Point], rect: &Rect) -> Vec<Piece> {
+/// each needs; `dropped` set where the clip drops a segment, as [`clip::segment`] sets it.
+fn pieces(points: &[Point], rect: &Rect, dropped: &mut bool) -> Vec<Piece> {
     let mut pieces: Vec<Piece> = Vec::new();
     let mut run: Option<Piece> = None;
     for (k, pair) in points.windows(2).enumerate() {
-        let Some((a, b)) = clip::segment(pair[0], pair[1], rect) else {
+        let Some((a, b)) = clip::segment(pair[0], pair[1], rect, dropped) else {
             pieces.extend(run.take().filter(|p| p.points.len() > 1));
             continue;
         };
@@ -457,13 +457,14 @@ impl AggRenderer {
     /// image grown by `reach` (ADR-0027) and fed as integers by [`line_coord_sat`]. A path the clip
     /// leaves whole starts where AGG starts it; each piece of one it cuts starts where AGG starts
     /// it at the piece's first segment (see [`piece_start`]). A piece [`JoinProbe`] refuses is not
-    /// drawn and counts among the refusals of the tile's kind (ADR-0049).
+    /// drawn and counts among the refusals of the tile's kind, and a path the clip drops a segment
+    /// of counts among the paths refused (ADR-0049).
     pub(crate) fn brushed_line(&mut self, paths: &[Vec<Point>], tile: &Tile, reach: f64) {
         let image = tile.image(built_tile);
         let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(image));
         let reach = if reach > 0.0 { reach } else { 0.0 };
         let rect = Rect::around_image(self.width, self.height, reach);
-        let mut refused = 0;
+        let (mut refused, mut clipped) = (0, 0);
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerOutlineAa::new();
             let mut carried = Carried {
@@ -486,7 +487,10 @@ impl AggRenderer {
                 let vertices: Vec<(i32, i32)> = points.iter().map(subpixels).collect();
                 let (starts, left) = starts(&vertices, carry);
                 carry = left;
-                for piece in pieces(&points, &rect) {
+                let mut dropped = false;
+                let pieces = pieces(&points, &rect, &mut dropped);
+                clipped += usize::from(dropped);
+                for piece in pieces {
                     let fed: Vec<(i32, i32)> = piece.points.iter().map(subpixels).collect();
                     let Some(start) =
                         piece_start(&fed, piece.first_segment, piece.cut_end, &vertices, &starts)
@@ -518,6 +522,7 @@ impl AggRenderer {
         } else {
             self.refused.symbols += refused;
         }
+        self.refused.paths += clipped;
     }
 }
 

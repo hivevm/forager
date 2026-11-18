@@ -1,4 +1,4 @@
-# Clauses of ADR-0017, ADR-0041, ADR-0042, ADR-0047, and ADR-0048 that are spent or stale
+# Clauses of ADR-0017, ADR-0041, ADR-0042, ADR-0047, ADR-0048, and ADR-0049 that are spent or stale
 
 **Observed:** the design revision of 2026-11-16, and ticket revision-2026-11-16/11. Clauses of
 accepted ADRs that bound only the order of the fidelity plan's work, state one rule twice, or list
@@ -18,9 +18,14 @@ clause, one port in `c` that every crate calls, covers them; the list is the sta
 ADR-0041, ADR-0047, and ADR-0048 decide one thing between them: the transform tree's nodes and the
 geometry code that computes them.
 
+ADR-0049's *Enforcement* asks a test in `crates/engine` that the layer warns once for points of a
+brushed line that are no finite number. By the maintainer's ruling of 2026-11-18 (ticket
+revision-2026-11-18/03, merged in f4e57a15), leaving such a point out is a rule of the display
+list, not a guard, and it warns nothing (ticket revision-2026-11-18/11). The item is spent.
+
 **Where:** `docs/adr/0017-c-ports-in-style-ir.md`, `docs/adr/0041-geometry-through-geo.md`,
 `docs/adr/0042-i-overlay-in-render-agg-and-geo.md`, `docs/adr/0047-simplifypt-ported-from-jts.md`,
-`docs/adr/0048-transform-tree-with-simplifypt.md`.
+`docs/adr/0048-transform-tree-with-simplifypt.md`, `docs/adr/0049-third-party-failures-guarded.md`.
 
 **What a change weighs:**
 

@@ -74,7 +74,9 @@ impl Hatch {
             .lines
             .iter()
             .map(|&[a, b]| {
-                segment(a, b, &rect).map_or(0.0, |(s, e)| {
+                // A measure, not a drawing: what the clip drops here the renderer's own clip
+                // drops and reports (ADR-0049).
+                segment(a, b, &rect, &mut false).map_or(0.0, |(s, e)| {
                     // IEEE's square root, exact on every target, where `hypot` is the
                     // platform's (Q-2).
                     let (dx, dy) = (e.x - s.x, e.y - s.y);

@@ -333,15 +333,16 @@ golden path and the test pattern an agent copies from are named here.
   transformation, each by a counted reference to the one image, a polygon filled with a tile and a
   line brushed with one, by a counted reference to the tile, which holds its size within Q-9's
   bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
-  renderer has built it (`tile.rs`), the renderer trait, whose `take_refused` hands the engine the
-  pieces a renderer refused by the kind of their tile's symbol (`Refused`,
-  [ADR-0049](adr/0049-third-party-failures-guarded.md)), the RGBA image, and the premultiplied image
-  a pixmap is decoded to (`PremultipliedImage`, ADR-0029); the cost model that bounds a hatch before
-  it is cut (`Hatch::is_bounded`, ADR-0042, `hatch.rs`); and the clip of every path to the image,
-  its segments, lines, and rings, the image grown by its margin, the width a stroke is drawn at, and
-  the reach past the image a glyph's point may have (`MAX_GLYPH_REACH`), properties of the display
-  list in one module (`clip.rs`, [ADR-0027](adr/0027-clip-to-the-image.md)), which the bound
-  measures a hatch's lines with and every renderer clips with.
+  renderer has built it (`tile.rs`), the renderer trait, whose `take_refused` hands the engine what
+  a renderer refused: brushed pieces by the kind of their tile's symbol, the paths the clip cut,
+  and the glyphs past their reach (`Refused`, [ADR-0049](adr/0049-third-party-failures-guarded.md)),
+  the RGBA image, and the premultiplied image a pixmap is decoded to (`PremultipliedImage`,
+  ADR-0029); the cost model that bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0042,
+  `hatch.rs`); and the clip of every path to the image, its segments, lines, and rings, each
+  saying whether it dropped a part, the image grown by its margin, the width a stroke is drawn at,
+  and the reach past the image a glyph's point may have (`MAX_GLYPH_REACH`), properties of the
+  display list in one module (`clip.rs`, [ADR-0027](adr/0027-clip-to-the-image.md)), which the
+  bound measures a hatch's lines with and every renderer clips with.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, by the clip of `render`, fills through the gamma it is given, strokes an
   aliased line by blending each pixel agg-rust's scanlines cover at full cover, as AGG's

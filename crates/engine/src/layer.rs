@@ -65,32 +65,72 @@ pub(crate) fn refusal_reports(
         .chain(glyphs)
 }
 
-/// The warnings that `layer` left pieces of its brushed lines undrawn, as the renderer counted
-/// them in `refused`: one for those of pixmap symbols, then one for those of the other symbols,
-/// each where there are any (ADR-0049).
-pub(crate) fn refused_pieces(layer: &Layer, refused: Refused) -> impl Iterator<Item = Diagnostic> {
+/// The warnings that `layer` left undrawn what the renderer counted in `refused` (ADR-0049): one
+/// for the pieces of its brushed lines of pixmap symbols, then one for those of the other symbols,
+/// then one for its TrueType markers' glyphs out of reach, then one for its paths the clip cut,
+/// each where there are any.
+pub(crate) fn renderer_refusals(
+    layer: &Layer,
+    refused: Refused,
+) -> impl Iterator<Item = Diagnostic> {
+    let pieces = |code, kind, count: usize| {
+        let message = format!(
+            "layer {}: {count} piece{} of its lines brushed with {kind} {} not drawn (Q-3): \
+             the rasterizer would compute past its integers on {}",
+            name(layer),
+            plural(count),
+            if count == 1 { "is" } else { "are" },
+            if count == 1 { "it" } else { "them" },
+        );
+        (code, count, message)
+    };
+    let glyphs = refused.glyphs;
+    let paths = refused.paths;
     let kinds = [
-        ("pixmap-not-drawn", "a pixmap symbol", refused.pixmaps),
-        (
+        pieces("pixmap-not-drawn", "a pixmap symbol", refused.pixmaps),
+        pieces(
             "symbol-not-drawn",
             "a vector, ellipse, or TrueType symbol",
             refused.symbols,
         ),
+        (
+            "symbol-not-drawn",
+            glyphs,
+            format!(
+                "layer {}: {glyphs} glyph{} of its TrueType symbols {} not drawn (Q-3): \
+                 {} past the image by more than {} pixels, past the rasterizer's integers",
+                name(layer),
+                plural(glyphs),
+                if glyphs == 1 { "is" } else { "are" },
+                if glyphs == 1 {
+                    "it reaches"
+                } else {
+                    "they reach"
+                },
+                forager_render::clip::MAX_GLYPH_REACH,
+            ),
+        ),
+        (
+            "path-not-drawn",
+            paths,
+            format!(
+                "layer {}: {paths} path{} {} drawn without a point, a segment, or a \
+                 crossing that is no finite number in pixels (Q-3)",
+                name(layer),
+                plural(paths),
+                if paths == 1 { "is" } else { "are" },
+            ),
+        ),
     ];
     kinds
         .into_iter()
-        .filter(|&(_, _, count)| count > 0)
-        .map(|(code, kind, count)| {
-            let message = format!(
-                "layer {}: {count} piece{} of its lines brushed with {kind} {} not drawn (Q-3): \
-                 the rasterizer would compute past its integers on {}",
-                name(layer),
-                if count == 1 { "" } else { "s" },
-                if count == 1 { "is" } else { "are" },
-                if count == 1 { "it" } else { "them" },
-            );
-            Diagnostic::warning(code, message, layer.span.clone())
-        })
+        .filter(|&(_, count, _)| count > 0)
+        .map(|(code, _, message)| Diagnostic::warning(code, message, layer.span.clone()))
+}
+
+/// The plural's `s` of a noun counted `count` times.
+fn plural(count: usize) -> &'static str {
+    if count == 1 { "" } else { "s" }
 }
 
 /// A layer's opacity as MapServer holds it, an integer percent from 0 to 100: the IR's number

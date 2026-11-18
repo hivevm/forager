@@ -75,7 +75,10 @@ anchor point other than the centre moves the glyph as a vector symbol's moves it
 of its character's control box (`msGetCharacterSize`), the glyph read at the style's size, 1
 without one, times the scale factor, cut to whole pixels and bounded by `MINSIZE` and `MAXSIZE`
 unscaled. The label cache sizes the marker of a class's first style the same way, its font loaded
-whatever the style's scale range, as a pixmap's image is.
+whatever the style's scale range, as a pixmap's image is. A glyph with a point more than 4194304
+pixels past the image, `MAX_GLYPH_REACH`, is not drawn, where AGG's fixed-point coordinates would
+overflow, and the layer warns with `symbol-not-drawn`, once
+([ADR-0049](../adr/0049-third-party-failures-guarded.md)).
 
 **A TrueType symbol along a line.** A line layer's style whose symbol is a TrueType symbol and whose
 `GAP` is not 0 draws its glyph along the line as `msImagePolylineMarkers` places a vector symbol,

@@ -28,7 +28,7 @@ use forager_label::{
     pixel_size, placed_at, walk_label_cache,
 };
 use forager_ports::{Feature, ResourceLoader};
-use forager_render::{Draw, DrawOp, GlyphOutline, Point};
+use forager_render::{Draw, DrawOp, GlyphOutline, Point, Renderer};
 use forager_style_ir::c::{DEG_TO_RAD, c_str, int_cast, ms_nint};
 use forager_style_ir::{
     Diagnostic, Expr, LabelMarker, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style,
@@ -998,8 +998,10 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// built just before it is drawn. A glyph left out for reaching too far from the image is
     /// reported once for its label, and the labels left out past [`MAX_LABELS`] once. The cache is
     /// emptied; the fonts and glyphs stay for the labels of the layers of `POSTLABELCACHE TRUE`,
-    /// drawn at once after it.
-    pub(crate) fn finish<R: Draw>(
+    /// drawn at once after it. What the renderer refused while drawing the cache belongs to no
+    /// layer: it is taken and dropped, so that no layer drawn after the cache is blamed for it,
+    /// and it is not reported (`docs/backlog/refusals-of-no-layer.md`).
+    pub(crate) fn finish<R: Renderer>(
         &mut self,
         renderer: &mut R,
         pixmaps: &Pixmaps,
@@ -1079,6 +1081,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         // so the cache leaves none out of what it is handed.
         debug_assert_eq!(left_out, 0, "the engine holds at most MAX_LABELS labels");
         self.report_refusals(diagnostics);
+        renderer.take_refused();
         // The labels of the report share their feature's text.
         let texts: Vec<Arc<str>> = texts.into_iter().map(Arc::from).collect();
         let report = walked

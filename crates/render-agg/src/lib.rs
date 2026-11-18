@@ -211,7 +211,8 @@ fn add(path: &mut PathStorage, points: &[Point], close: bool) {
 
 impl AggRenderer {
     /// Strokes `paths` with `pen` at its width bounded by [`drawn_width`], clipped first to the
-    /// image grown by the reach of the stroke.
+    /// image grown by the reach of the stroke; each path the clip drops a part of counts among the
+    /// paths refused (ADR-0049).
     fn stroke(&mut self, paths: &[Vec<Point>], closed: bool, color: Rgba, pen: &Pen) {
         if !(pen.width.is_finite() && pen.width > 0.0) {
             return;
@@ -229,25 +230,30 @@ impl AggRenderer {
         let rect = Rect::around_image(self.width, self.height, reach);
         let mut path = PathStorage::new();
         for points in paths {
+            let mut dropped = false;
             if closed {
-                add(&mut path, &clip::ring(points, &rect), true);
+                add(&mut path, &clip::ring(points, &rect, &mut dropped), true);
             } else {
-                for run in clip::line(points, &rect) {
+                for run in clip::line(points, &rect, &mut dropped) {
                     add(&mut path, &run, false);
                 }
             }
+            self.refused.paths += usize::from(dropped);
         }
         self.rasterize(&mut path, color, &pen);
     }
 }
 
 impl AggRenderer {
-    /// The rings as a path, each clipped to the image enlarged by the margin.
-    fn area(&self, rings: &[Vec<Point>]) -> PathStorage {
+    /// The rings as a path, each clipped to the image enlarged by the margin; each ring the clip
+    /// drops a part of counts among the paths refused (ADR-0049).
+    fn area(&mut self, rings: &[Vec<Point>]) -> PathStorage {
         let mut path = PathStorage::new();
         let rect = Rect::around_image(self.width, self.height, 0.0);
         for ring in rings {
-            add(&mut path, &clip::ring(ring, &rect), true);
+            let mut dropped = false;
+            add(&mut path, &clip::ring(ring, &rect, &mut dropped), true);
+            self.refused.paths += usize::from(dropped);
         }
         path
     }
@@ -296,19 +302,28 @@ impl AggRenderer {
         }
         let width = hatch.drawn_width(self.width, self.height);
         let fill_rect = Rect::around_image(self.width, self.height, 0.0);
+        let mut dropped = 0;
         let rings: Vec<Vec<Point>> = hatch
             .rings
             .iter()
-            .map(|ring| clip::ring(ring, &fill_rect))
+            .map(|ring| {
+                let mut ring_dropped = false;
+                let ring = clip::ring(ring, &fill_rect, &mut ring_dropped);
+                dropped += usize::from(ring_dropped);
+                ring
+            })
             .collect();
         let rect = hatch.line_rect(self.width, self.height);
-        let Some(pieces) = hatch::pieces(
+        let pieces = hatch::pieces(
             &hatch.lines,
             &rect,
             hatch.dashes(),
             width,
             Hatch::MAX_DASHES,
-        ) else {
+            &mut dropped,
+        );
+        self.refused.paths += dropped;
+        let Some(pieces) = pieces else {
             return;
         };
         let mut path = PathStorage::new();
@@ -505,7 +520,9 @@ impl AggRenderer {
         let square = [corner(-h, -h), corner(h, -h), corner(h, h), corner(-h, h)];
         let rect = Rect::around_image(self.width, self.height, 0.0);
         let mut path = PathStorage::new();
-        add(&mut path, &clip::ring(&square, &rect), true);
+        let mut dropped = false;
+        add(&mut path, &clip::ring(&square, &rect, &mut dropped), true);
+        self.refused.paths += usize::from(dropped);
         let mut area = RasterizerScanlineAa::new();
         area.filling_rule(FillingRule::NonZero);
         area.add_path(&mut path, 0);
@@ -1366,6 +1383,143 @@ mod tests {
             outline: None,
         }]);
         assert!(image.pixels.chunks(4).all(|px| px == [255, 255, 255, 255]));
+    }
+
+    /// What a renderer of 64 by 64 pixels refuses of `items`, drawn into a layer where
+    /// `in_layer`, and what it refuses when asked again.
+    fn refused_of(items: &[DrawOp], in_layer: bool) -> (Refused, Refused) {
+        let mut renderer = AggRenderer::new();
+        renderer.begin(64, 64, WHITE);
+        let items = items.iter().map(|op| DisplayItem {
+            op: op.clone(),
+            feature_id: None,
+        });
+        if in_layer {
+            let mut layer = renderer.layer(128);
+            items.for_each(|item| layer.draw(&item));
+        } else {
+            items.for_each(|item| renderer.draw(&item));
+        }
+        (renderer.take_refused(), renderer.take_refused())
+    }
+
+    #[test]
+    fn each_path_the_clip_drops_a_part_of_and_each_glyph_out_of_reach_is_counted() {
+        // Verifies: ADR-0027, ADR-0049
+        let pen = Pen::new(3.0, LineCap::Round, LineJoin::None, InnerJoin::Miter);
+        let gap = p(f64::NAN, 30.0);
+        let stroke = |paths: Vec<Vec<Point>>, closed| DrawOp::Stroke {
+            paths,
+            closed,
+            color: RED,
+            pen: pen.clone(),
+        };
+        let whole = vec![p(4.0, 32.0), p(60.0, 32.0), p(30.0, 60.0)];
+        let gapped = vec![p(4.0, 32.0), gap, p(60.0, 32.0), p(30.0, 60.0)];
+        let overflowing = vec![p(4.0, 32.0), p(1e308, 32.0), p(-1e308, 32.0)];
+        use forager_render::PathCommand::{Close, LineTo, MoveTo};
+        let far_glyph = DrawOp::Glyphs {
+            path: vec![
+                MoveTo(p(0.0, 0.0)),
+                LineTo(p(5e6, 0.0)),
+                LineTo(p(0.0, 9.0)),
+                Close,
+            ],
+            color: Some(RED),
+            outline: None,
+        };
+        let items = [
+            // Drawn whole: nothing is counted.
+            stroke(vec![whole.clone()], false),
+            stroke(vec![whole.clone()], true),
+            DrawOp::Fill {
+                rings: vec![whole.clone()],
+                color: RED,
+                gamma: None,
+            },
+            // A path each: one of the two lines, the ring, the fill's ring, and the hatch's ring
+            // and line; and the glyph.
+            stroke(vec![whole.clone(), gapped.clone()], false),
+            stroke(vec![overflowing], false),
+            stroke(vec![gapped.clone()], true),
+            DrawOp::Fill {
+                rings: vec![gapped.clone()],
+                color: RED,
+                gamma: None,
+            },
+            DrawOp::Hatch(Hatch {
+                rings: vec![gapped],
+                lines: vec![[p(0.0, 32.25), gap]],
+                color: RED,
+                width: 1.0,
+                pattern: vec![],
+                gamma: None,
+            }),
+            far_glyph,
+        ];
+        for in_layer in [false, true] {
+            let (taken, again) = refused_of(&items, in_layer);
+            let expected = Refused {
+                paths: 6,
+                glyphs: 1,
+                ..Refused::default()
+            };
+            assert_eq!(taken, expected, "in a layer: {in_layer}");
+            assert_eq!(again, Refused::default(), "taken once");
+        }
+    }
+
+    #[test]
+    fn a_brushed_line_and_a_resampled_pixmap_the_clip_cuts_are_counted() {
+        // Verifies: ADR-0027, ADR-0049
+        let image = Rc::new(PremultipliedImage::new(1, 1, vec![200, 40, 40, 255]).unwrap());
+        let mark = DrawOp::Pixmap {
+            image: Rc::clone(&image),
+            left: 0,
+            top: 0,
+        };
+        let tile = Rc::new(Tile::new(1, 1, vec![mark]).unwrap());
+        let brushed = |path: Vec<Point>| DrawOp::BrushedLine {
+            paths: vec![path],
+            tile: Rc::clone(&tile),
+            reach: 0.0,
+        };
+        let resampled = |at| DrawOp::ResampledPixmap {
+            image: Rc::clone(&image),
+            at,
+            half: 4,
+            inverse: Affine {
+                sx: 1.0,
+                shy: 0.0,
+                shx: 0.0,
+                sy: 1.0,
+                tx: 0.0,
+                ty: 0.0,
+            },
+        };
+        // Drawn whole: nothing is counted.
+        let whole = [
+            brushed(vec![p(4.0, 32.0), p(60.0, 32.0)]),
+            resampled(p(32.0, 32.0)),
+        ];
+        for in_layer in [false, true] {
+            assert_eq!(refused_of(&whole, in_layer).0, Refused::default());
+        }
+        // The brushed line's second segment, whose ends differ past every finite number, and the
+        // square about a centre that is no number: a path each.
+        let brushed_cut = brushed(vec![p(4.0, 32.0), p(1e308, 32.0), p(-1e308, 32.0)]);
+        let resampled_cut = resampled(p(f64::NAN, 32.0));
+        for (item, in_layer) in [brushed_cut, resampled_cut]
+            .into_iter()
+            .flat_map(|item| [(item.clone(), false), (item, true)])
+        {
+            let (taken, _) = refused_of(std::slice::from_ref(&item), in_layer);
+            let expected = Refused {
+                paths: 1,
+                ..Refused::default()
+            };
+            assert_eq!(taken, expected, "{item:?}");
+        }
     }
 
     #[test]
