@@ -9,7 +9,14 @@ open with the same three steps:
 - the port of msGEOSShape2Geometry (`built`);
 - the check of the number argument, a tolerance below 0 or a distance that is not finite.
 
-Each step is written three times, with the function's name in the message. The conversion to
+Each step is written three times, with the function's name in the message. Ticket 20 added a
+fourth to two of them: `simplify` of a polygon and `buffer` refuse a shape with a coordinate that
+is no finite number, through one helper, `is_finite`, with the function's name in the message.
+`simplifypt` does not refuse one. The preamble takes that check too, for `simplify` and `buffer`
+alone, so that `simplifypt` keeps its behaviour. Where the check lives, here or in
+`geometry.rs`, follows ADR-draft-third-party-failures-guarded once the maintainer decides it;
+until then it stays in `layer_transform.rs`. (Amended by the design revision of 2026-11-18.) The
+conversion to
 geo's types already lives in `geometry.rs` (`to_polygon`, `from_polygon`). The steps in front of
 it stay in `layer_transform.rs`, 960 lines, beside the tree's evaluation and the ports of
 `generalize`, `densify`, `smoothsia`, `outer`, and `inner`.
@@ -29,7 +36,8 @@ which place the computations there. The messages do not change. This is a `refac
 ## Read first
 
 - Touches: `crates/symbolize/src/{layer_transform,geometry}.rs`
-- ADR-0041, ADR-0047, ADR-0048; `docs/ARCHITECTURE.md` (the `symbolize` section).
+- ADR-0041, ADR-0047, ADR-0048; `docs/adr/draft-third-party-failures-guarded.md`;
+  `docs/ARCHITECTURE.md` (the `symbolize` section).
 
 ## Blocked by
 

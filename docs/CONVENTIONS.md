@@ -47,7 +47,17 @@ skimmed. The design revision drops what prevented nothing
   adds it, not from a ticket after it, because a fuzz target reaches only what its harness builds
   and its seeds lead to: the pixmap decoder of 1eec7a6 panicked in the png crate on a ragged
   `PLTE` until its target came in a later ticket, and the render target drew no pixmap through
-  two changes that added resampling and tiled fills, until c39b845.
+  two changes that added resampling and tiled fills, until c39b845. A change to how a target
+  decodes its bytes runs each of its seeds again against the path the seed was made for, and
+  re-derives a seed that lost it: three seeds of the render target lost theirs to fields added
+  before them, unnoticed until ticket 01 of revision-2026-11-16 probed them.
+- **A fix of a fuzz finding starts from its decoded input, and its tests hold an ordinary input
+  beside it** — the ticket states the cause read from what the input decodes to and from the code
+  that fails, and its first criterion fails on the code before the fix. The fix's tests hold the
+  failing input and one beside it that drew before, which draws as it did. The first drafts of
+  tickets 17 and 18 of revision-2026-11-16 guessed the cause, one passing on the code before it,
+  one leaving the panic reachable, and ticket 21's first fix, 8feb9c16, left ordinary lines on
+  large images undrawn until its review.
 - **A reader that skips what it cannot read fails closed** — a condition it cannot read becomes
   one that never matches, never one that is absent, a value it cannot carry over leaves what it
   belongs to undrawn, never at the default an absent value takes, and what it skips is still held

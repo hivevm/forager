@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-16, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-18, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0005](adr/0005-feature-layer.md)).
@@ -290,8 +290,12 @@ golden path and the test pattern an agent copies from are named here.
   layer's transform to its styles' (`layer_transform.rs`, Q-9),
   `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
   collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
-  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant
-  (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)), and `simplifypt` by a port of
+  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant, a
+  tiny shape scaled by a power of two around it and back, and a line's distance raised to a floor,
+  so that i_overlay's grid neither drops the shape nor loops on it
+  (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)), a polygon's `simplify` and any
+  `buffer` of a coordinate that is no finite number failing before geo sees it
+  (`layer_transform.rs`), and `simplifypt` by a port of
   JTS's topology-preserving simplifier without recursion and without a spatial index
   (`geometry/topology.rs`,
   [ADR-0047](adr/0047-simplifypt-ported-from-jts.md)). A
@@ -324,13 +328,13 @@ golden path and the test pattern an agent copies from are named here.
   `msDrawLabelCache`'s offset of a label from its markers (`cache.rs`). It is the one crate that
   depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
-  or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
-  transformation, each by a counted reference to the one image, a polygon filled with a tile and
-  a line brushed with one, by a counted reference to the tile, which holds its size within Q-9's
-  bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
-  renderer has built it (`tile.rs`), the
-  renderer trait, the RGBA image, and the premultiplied image a pixmap is decoded to
-  (`PremultipliedImage`, ADR-0029); the cost model that bounds a hatch before it is cut
+  or none, a stroke's width, cap, join, and dashes as one value (`Pen`), a pixmap's image placed
+  at a whole pixel or resampled into a square through an affine transformation, each by a counted
+  reference to the one image, a polygon filled with a tile and a line brushed with one, by a
+  counted reference to the tile, which holds its size within Q-9's bound, the bytes a brush's
+  copy of it takes, the drawing that makes it, and its image once the renderer has built it
+  (`tile.rs`), the renderer trait, the RGBA image, and the premultiplied image a pixmap is
+  decoded to (`PremultipliedImage`, ADR-0029); the cost model that bounds a hatch before it is cut
   (`Hatch::is_bounded`, ADR-0042, `hatch.rs`); and the clip of every path to the image, its
   segments, lines, and rings, the image grown by its margin, the width a stroke is drawn at, and the
   reach past the image a glyph's point may have (`MAX_GLYPH_REACH`), properties of the display list
@@ -348,8 +352,10 @@ golden path and the test pattern an agent copies from are named here.
   [ADR-0026](adr/0026-agg-blender-and-resampler.md)), builds a tile the first time
   it draws with it, in a transparent image of its own, and repeats it from the image's origin,
   brushes a line with a tile through agg-rust's outline-image rasterizer, a port of AGG 2.4's
-  bilinear pattern filter, and the pattern's start carried across the clip (`brush.rs`,
-  [ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)), and
+  bilinear pattern filter, and the pattern's start carried across the clip, a piece whose
+  pattern's place or joins would pass agg-rust's `i32` left undrawn (`brush.rs`,
+  [ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)), bounds a glyph's outline width as a
+  stroke's (`glyphs.rs`), and
   is the one crate that may use `unsafe` ([ADR-0025](adr/0025-agg-rust-rasterizer.md)); it cuts a
   hatch from its polygon with i_overlay, the one crate of the workspace that depends on it
   directly
