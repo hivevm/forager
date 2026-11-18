@@ -333,7 +333,7 @@ const MAX_HALF_WIDTH: i64 = 64;
 ///   segment that keeps it within `i32`;
 /// - the joins: `DistanceInterpolator4` multiplies, in `line_mr` units of 16 subpixels, the pixel
 ///   less the join point by the join point less the segment's end, coordinate by coordinate, for
-///   the start join `sx`, `sy` and the end join `ex`, `ey` (lines 452-456). It steps by those
+///   the start join `sx`, `sy` and the end join `ex`, `ey` (lines 453-457). It steps by those
 ///   terms from pixel to pixel, which keeps its value that difference of products at each pixel.
 ///   [`joins_within_i32`] follows `line3_no_clip` to the joins the interpolator gets and bounds
 ///   those products.
