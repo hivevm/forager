@@ -4,13 +4,7 @@
 //! that checkout's path, which may be gone, and Cargo may judge the binary fresh; a test that walks
 //! the tree there passes or fails on files it did not read.
 
-use std::path::{Path, PathBuf};
-
-/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
-fn manifest_dir() -> PathBuf {
-    std::env::var_os("CARGO_MANIFEST_DIR")
-        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
-}
+use forager_arch_test::{manifest_dir, rust_files};
 
 /// The compiled-in path, written so that this file holds no use of it.
 const COMPILED: &str = concat!("env!(\"CARGO_", "MANIFEST_DIR\")");
@@ -43,28 +37,10 @@ fn uses(source: &str) -> (Vec<usize>, usize) {
     (wrong, fallbacks)
 }
 
-/// Every `.rs` file under `dir`, `target` directories left out.
-fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.map(Result::unwrap) {
-        let path = entry.path();
-        if path.is_dir() {
-            if entry.file_name() != "target" {
-                rust_files(&path, files);
-            }
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            files.push(path);
-        }
-    }
-}
-
 #[test]
 fn the_crates_take_the_manifest_dir_from_the_run_time_first() {
     let crates = manifest_dir().join("..");
-    let mut files = Vec::new();
-    rust_files(&crates, &mut files);
+    let mut files = rust_files(&crates);
     files.sort();
     let mut wrong = Vec::new();
     let mut fallbacks = 0;
@@ -78,7 +54,7 @@ fn the_crates_take_the_manifest_dir_from_the_run_time_first() {
         wrong.is_empty(),
         "the compiled-in path read first: {wrong:#?}"
     );
-    // The check itself sees the fallbacks: this file holds one.
+    // The check itself sees the fallbacks: this crate's `src/lib.rs` holds one.
     assert!(
         fallbacks > 0,
         "no fallback found under {}",
