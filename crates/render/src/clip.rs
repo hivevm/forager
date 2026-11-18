@@ -65,9 +65,10 @@ pub fn drawn_width(width: f64, image_width: u32, image_height: u32) -> f64 {
 /// ADR-0049), read from agg-rust 1.2.0: the scanline rasterizer takes a point into 24.8 fixed
 /// point by `iround`, which saturates at `i32` (`rasterizer_sl_clip.rs:20-22`,
 /// `basics.rs:15-21`), and `RasterizerCellsAa::line` walks a cell for every pixel a line crosses
-/// (`rasterizer_cells_aa.rs:348-358`), so a fill reaching ten million pixels out runs for
-/// more than 40 seconds unclipped in a debug build. The clip moves no pixel of a path it keeps. It refuses a point that is no finite
-/// number, a segment whose coordinate difference overflows, and a crossing that is not finite.
+/// (`rasterizer_cells_aa.rs:348-358`), so a fill reaching ten million pixels out runs for more
+/// than 40 seconds unclipped in a debug build. The clip moves no pixel of a path it keeps. It
+/// refuses a point that is no finite number, a segment whose coordinate difference overflows,
+/// and a crossing that is not finite.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
     min_x: f64,
