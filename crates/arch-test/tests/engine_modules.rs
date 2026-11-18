@@ -30,6 +30,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("label_binding", &["classes"]),
     ("classes", &["bindable", "layer"]),
     ("render_resources", &["fonts", "images", "marker_glyphs"]),
+    ("reproject", &["layer"]),
     ("fonts", &["resource"]),
     ("images", &["resource"]),
     ("bind", &[]),
@@ -39,7 +40,6 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("layer", &[]),
     ("marker_glyphs", &[]),
     ("plan", &[]),
-    ("reproject", &[]),
     ("resource", &[]),
 ];
 

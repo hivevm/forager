@@ -3,7 +3,9 @@
 
 use forager_ports::{Coord, DeclaredProjection, Feature, Geometry};
 use forager_proj::{Error, Geotransform, Projection, Reprojection, differ};
-use forager_style_ir::{Extent, Layer, LayerProjection, Map};
+use forager_style_ir::{Diagnostic, Extent, Layer, LayerProjection, Map};
+
+use crate::layer::name;
 
 /// The most points the horizon search of one layer's reprojection adds to the shapes of its
 /// features (Q-9); the layer stops there with a diagnostic.
@@ -129,6 +131,39 @@ impl LayerReprojection {
     /// projection as `msProjectRect` reprojects it; `None` where no point of it reprojects.
     pub(crate) fn asked(&self, extent: &Extent) -> Option<Extent> {
         self.to_layer.extent(extent)
+    }
+
+    /// Reprojects `layer`'s `features` into the map's projection as [`Self::features_within`]
+    /// does, the horizon points held to `bound`, [`MAX_HORIZON_POINTS`] but in a test, with a
+    /// warning for lines MapServer would cut with GEOS, for points that do not reproject, and for
+    /// horizon points past the bound (Q-9), at which the layer stops.
+    pub(crate) fn layer_features(
+        &self,
+        layer: &Layer,
+        features: &mut Vec<Feature>,
+        bound: usize,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) {
+        if self.cuts_lines_with_geos() && features.iter().any(|f| has_lines(&f.geometry)) {
+            let message = format!(
+                "layer {}: MapServer cuts its lines with GEOS where they cross the dateline from \
+                 a polar projection into longitude and latitude, which Forager does not; they \
+                 are drawn uncut",
+                name(layer)
+            );
+            diagnostics.push(Diagnostic::warning(
+                "lines-not-cut",
+                message,
+                layer.span.clone(),
+            ));
+        }
+        let done = self.features_within(features, bound);
+        if done.failed > 0 {
+            diagnostics.push(points_not_reprojected(layer, done.failed));
+        }
+        if done.stopped {
+            diagnostics.push(horizon_points_limit(layer));
+        }
     }
 
     /// Reprojects each of `features` into the map's projection as `msProjectShapeEx` reprojects a
@@ -259,6 +294,40 @@ impl LayerReprojection {
     pub(crate) fn cuts_lines_with_geos(&self) -> bool {
         self.to_map.cuts_lines_with_geos()
     }
+}
+
+/// Whether `geometry` holds a line, which a line shape of MapServer holds.
+fn has_lines(geometry: &Geometry) -> bool {
+    match geometry {
+        Geometry::LineString(_) | Geometry::MultiLineString(_) => true,
+        Geometry::Collection(members) => members.iter().any(has_lines),
+        _ => false,
+    }
+}
+
+/// The warning that the horizon search of `layer`'s reprojection passes [`MAX_HORIZON_POINTS`]
+/// and the layer stops at the feature that passes it (Q-9).
+fn horizon_points_limit(layer: &Layer) -> Diagnostic {
+    let message = format!(
+        "layer {}: the horizon search of its reprojection adds more than {} points to its shapes \
+         (Q-9), and it stops at the feature that passes it",
+        name(layer),
+        MAX_HORIZON_POINTS
+    );
+    Diagnostic::warning("horizon-points-limit", message, layer.span.clone())
+}
+
+/// The warning that `count` points of `layer`'s features do not reproject into the map's
+/// projection (Q-3): cut at the horizon, left out with their point shape, or, into longitude and
+/// latitude from a projected layer, left where they were, as MapServer reprojects them.
+pub(crate) fn points_not_reprojected(layer: &Layer, count: usize) -> Diagnostic {
+    let message = format!(
+        "layer {}: {count} point{} of its features do{} not reproject into the map's projection",
+        name(layer),
+        if count == 1 { "" } else { "s" },
+        if count == 1 { "es" } else { "" },
+    );
+    Diagnostic::warning("points-not-reprojected", message, layer.span.clone())
 }
 
 #[cfg(test)]
@@ -479,13 +548,7 @@ mod tests {
         };
         let mut features = vec![leaving.clone(), leaving.clone(), leaving];
         let mut diagnostics = Vec::new();
-        crate::reproject_features_within(
-            &into_the_conic(),
-            &layer,
-            &mut features,
-            &mut diagnostics,
-            3,
-        );
+        into_the_conic().layer_features(&layer, &mut features, 3, &mut diagnostics);
         let codes: Vec<&str> = diagnostics.iter().map(|d| d.code.as_str()).collect();
         assert_eq!(codes, ["points-not-reprojected", "horizon-points-limit"]);
         assert_eq!(features.len(), 1);

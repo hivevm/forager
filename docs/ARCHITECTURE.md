@@ -162,8 +162,9 @@ golden path and the test pattern an agent copies from are named here.
   else touches it, as `msProjectShapeEx` does, with a warning for the points that do not
   reproject, the horizon points held to a bound per layer (Q-9), and a map of `AUTO` taken as
   each layer's base geographic CRS, and draws nothing of a layer whose projection does not read,
-  with a warning (`reproject.rs`); a layer of `PROJECTION AUTO` takes the projection its bound
-  source declares (ADR-0039), longitude and latitude with a warning where that does not read; a
+  with a warning (`reproject.rs`, which warns of a layer's features as it reprojects them); a
+  layer of `PROJECTION AUTO` takes the projection its bound source declares (ADR-0039), longitude
+  and latitude with a warning where that does not read; a
   layer with lines from such a polar source into longitude and latitude is drawn uncut with a
   warning (`lines-not-cut`); on a map with an `ANGLE`, it computes the scale from the real
   extent and the scale factors from `msGetGeoCellSize`'s cellsize, reprojects every layer with a
@@ -239,9 +240,9 @@ golden path and the test pattern an agent copies from are named here.
   operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It is the
   one core crate that awaits the ports. Its modules import one another in one direction only,
   `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `classes.rs`,
-  `render_resources.rs`, `fonts.rs` and `images.rs`, and `bind.rs`, `bindable.rs`, `inline.rs`,
-  `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`, `plan.rs`, `reproject.rs`, and `resource.rs`
-  the leaves, and none takes an item of the crate's root, as `lib.rs` lists them:
+  `render_resources.rs`, `reproject.rs`, `fonts.rs` and `images.rs`, and `bind.rs`,
+  `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`, `plan.rs`, and
+  `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs` lists them:
   what the root and the modules share of a layer drawn and of the map's rotation lies in
   `layer.rs`, and the address of a
   label and the growth of the label cache's lists, which the labels and their styles share, in
