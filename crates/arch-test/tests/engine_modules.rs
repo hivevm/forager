@@ -20,6 +20,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "label_styles",
             "layer",
             "marker_glyphs",
+            "render_resources",
         ],
     ),
     (
@@ -28,8 +29,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ),
     ("label_binding", &["classes"]),
     ("classes", &["bindable", "layer"]),
+    ("render_resources", &["fonts", "images", "marker_glyphs"]),
     ("fonts", &["resource"]),
-    ("images", &["marker_glyphs", "resource"]),
+    ("images", &["resource"]),
     ("bind", &[]),
     ("bindable", &[]),
     ("inline", &[]),

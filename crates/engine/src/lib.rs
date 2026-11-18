@@ -17,13 +17,14 @@
 //! one core crate that awaits the ports (ADR-0008).
 //!
 //! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
-//! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, and `marker_glyphs`;
-//! `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`; `label_binding`
-//! imports `classes`; `classes` imports `bindable` and `layer`; `fonts` imports `resource`, and
-//! `images` imports `marker_glyphs` and `resource`; `bind`, `bindable`, `inline`, `label_cache`,
-//! `layer`, `marker_glyphs`, `plan`, `reproject`, and `resource` import none, nor does a
-//! module take an item of this root. The test `engine_modules.rs` of `crates/arch-test` holds that
-//! direction, its tests aside, by a table in this order.
+//! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, `marker_glyphs`, and
+//! `render_resources`; `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`;
+//! `label_binding` imports `classes`; `classes` imports `bindable` and `layer`;
+//! `render_resources` imports `fonts`, `images`, and `marker_glyphs`; `fonts` and `images`
+//! import `resource`; `bind`, `bindable`, `inline`, `label_cache`, `layer`, `marker_glyphs`,
+//! `plan`, `reproject`, and `resource` import none, nor does a module take an item of this root.
+//! The test `engine_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a
+//! table in this order.
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
@@ -43,6 +44,7 @@ mod labels;
 mod layer;
 mod marker_glyphs;
 mod plan;
+mod render_resources;
 mod reproject;
 mod resource;
 
@@ -67,8 +69,8 @@ use forager_symbolize::{
 use forager_expr::Evaluator;
 
 use crate::classes::{Binder, Reports, Selector};
-use crate::images::Images;
 use crate::plan::Plan;
+use crate::render_resources::{Lent, Resources};
 
 pub use crate::bind::bind_sources;
 pub use crate::inline::is_inline;
@@ -155,16 +157,16 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     };
     let view = &rotation.frame;
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    let mut labels = Labels::new(map, &rotation, &factors, files, (width, height));
-    // The images of the render's pixmap symbols, dropped with the render (ADR-0029).
-    let mut images = Images::default();
+    let mut labels = Labels::new(map, &rotation, &factors, (width, height));
+    // The store of what the render reads through `files`, dropped with the render (ADR-0029).
+    let mut store = Resources::new(files);
     let mut evaluator = Evaluator::new();
     let mut reports = Reports::default();
     let (order, cache_at) = drawing_order(map);
     let mut cached_labels = None;
     for (position, &(layer_index, layer)) in order.iter().enumerate() {
         if position == cache_at {
-            cached_labels = Some(labels.finish(&mut renderer, images.decoded(), &mut diagnostics));
+            cached_labels = Some(labels.finish(&mut renderer, store.images(), &mut diagnostics));
         }
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
@@ -200,13 +202,13 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         // A layer of POSTLABELCACHE TRUE draws its labels at once whatever its label_cache says,
         // as msDrawLayer turns the cache off for it as it draws it (src/mapdraw.c:850-856).
         let at_once = mode == RenderMode::Point && (!layer.label_cache || layer.post_label_cache);
-        drawing
-            .load_resources(&selected, &map.symbols, !at_once, &mut images, &mut labels)
+        let mut lent = drawing
+            .load_resources(&selected, map, !at_once, &mut store)
             .await;
-        let (pixmaps, tiles, glyphs) = images.drawing();
+        let pixmaps = lent.labels.pixmaps;
         let mut canvas = layer_canvas(map, layer, factors[layer_index], (width, height), pixmaps)
-            .with_tiles(tiles)
-            .with_glyphs(glyphs)
+            .with_tiles(lent.tiles)
+            .with_glyphs(lent.glyphs)
             .with_style_trees(StyleTrees::new(budget, cellsize));
         let drawn = labelled(&selected);
         let mut target = drawing.target(&mut renderer, &mut canvas);
@@ -215,7 +217,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             let mut settled = labels.layer_at_once(layer_index, &drawn, pixmaps, binder);
             for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
                 let laid = labels
-                    .label_at_once(&settled, feature, class, pixmaps, binder)
+                    .label_at_once(&settled, feature, class, &mut lent.labels, binder)
                     .await;
                 let mut out_of_reach = vec![0; laid.len()];
                 drawing.draw_points(&mut target, &mut canvas, one, |target, point| {
@@ -245,14 +247,14 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             let binder = &mut selector.binder;
             let settled = labels.layer(layer_index, mode, &drawn, binder);
             labels
-                .collect(&settled, &drawn, pixmaps, glyphs, binder)
+                .collect(&settled, &drawn, &mut lent.labels, lent.glyphs, binder)
                 .await;
         }
     }
     // The labels of the cache are drawn after every layer but those of POSTLABELCACHE TRUE, as
     // MapServer's label cache draws them.
     let labels = cached_labels
-        .unwrap_or_else(|| labels.finish(&mut renderer, images.decoded(), &mut diagnostics));
+        .unwrap_or_else(|| labels.finish(&mut renderer, store.images(), &mut diagnostics));
     Rendered {
         image: Some(renderer.finish()),
         labels,
@@ -502,10 +504,10 @@ impl<'a> Drawing<'a> {
         Target::Layer(renderer.layer(opacity_alpha(opacity)))
     }
 
-    /// Loads what the layer is drawn from, through the resource loader of `labels`: the fonts of
-    /// the TrueType symbols the `selected` features' styles name, kept in `images` from the store
-    /// of the labels' fonts (see [`truetype_fonts`]), by the scale rule of the pixmaps below; and
-    /// into `images` the image of each pixmap symbol the styles of the
+    /// Loads into `resources` what the layer is drawn from: the fonts of the TrueType symbols the
+    /// `selected` features' styles name, by the font set of `map`, kept among the markers' glyphs
+    /// from the store of the labels' fonts (see [`truetype_fonts`]), by the scale rule of the
+    /// pixmaps below; and the image of each pixmap symbol of `map` the styles of the
     /// `selected` features draw as a mark, those outside their scale range left out, so that the
     /// layer is drawn from them; one the store refuses leaves its style undrawn, as the canvas
     /// records. On a point layer of the label cache, the first style of a class with labels is
@@ -515,21 +517,20 @@ impl<'a> Drawing<'a> {
     /// hatched polygon's class counts are loaded whatever theirs too, as msDrawShape loads them
     /// (see [`clip_pixmaps`]), and those of the labelpoint and labelcenter styles of the classes'
     /// labels (see [`label_pixmap`]). `cached` tells whether the layer's labels go through the
-    /// label cache.
-    async fn load_resources<L: ResourceLoader>(
+    /// label cache. It lends what it loaded, to draw the layer and lay out its labels.
+    async fn load_resources<'s, 'r, L: ResourceLoader>(
         &self,
         selected: &[Selected<'_>],
-        symbols: &[forager_style_ir::Symbol],
+        map: &Map,
         cached: bool,
-        images: &mut Images,
-        labels: &mut Labels<'_, L>,
-    ) {
+        resources: &'s mut Resources<'r, L>,
+    ) -> Lent<'s, 'r, L> {
+        let symbols = &map.symbols;
         let holds_markers = self.mode == RenderMode::Point && cached;
         let holds_marker =
             |class: usize| holds_markers && !self.layer.classes[class].labels.is_empty();
         let fonts = truetype_fonts(selected, symbols, self.scale, holds_marker);
-        labels.load_marker_fonts(images.glyphs_mut(), &fonts).await;
-        let files = labels.files();
+        resources.load_marker_fonts(map, &fonts).await;
         for (_, class, styles) in selected {
             let marker = holds_marker(*class);
             for (place, style) in styles.iter().enumerate() {
@@ -538,30 +539,24 @@ impl<'a> Drawing<'a> {
                 {
                     continue;
                 }
-                if let Some(path) = marked_pixmap(self.mode, style, symbols)
-                    && !images.decoded().contains_key(path)
-                {
-                    // The image, or why it has none, is kept by the store for the canvas.
-                    let _ = images.image(path, files).await;
+                if let Some(path) = marked_pixmap(self.mode, style, symbols) {
+                    resources.load_pixmap(path).await;
                 }
             }
             // The pixmaps of its labels' labelpoint and labelcenter styles, which msDrawMarkerSymbol
             // and msGetMarkerSize load as they draw and size them.
             for label in &self.layer.classes[*class].labels {
                 for style in &label.styles {
-                    if let Some(path) = label_pixmap(style, symbols)
-                        && !images.decoded().contains_key(path)
-                    {
-                        let _ = images.image(path, files).await;
+                    if let Some(path) = label_pixmap(style, symbols) {
+                        resources.load_pixmap(path).await;
                     }
                 }
             }
             for path in clip_pixmaps(self.mode, &self.layer.classes[*class].styles, symbols) {
-                if !images.decoded().contains_key(path) {
-                    let _ = images.image(path, files).await;
-                }
+                resources.load_pixmap(path).await;
             }
         }
+        resources.lend()
     }
 
     /// Draws the markers of a point layer's feature `selected` at each of its points inside the

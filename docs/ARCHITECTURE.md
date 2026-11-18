@@ -195,7 +195,10 @@ golden path and the test pattern an agent copies from are named here.
   once and holds within Q-9's bound on the bytes one render's images, tiles, and brushes' copies
   come to
   (`images.rs`,
-  [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); it draws the labels of point
+  [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); one value holds what a render reads
+  through the loader, its fonts, images, tiles, and TrueType markers' glyphs, loads a pixmap by
+  one call, and lends the images and fonts to the labels and the images, tiles, and glyphs to the
+  canvas (`render_resources.rs`); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0031), and
   those of a point layer of `LABELCACHE OFF` at each point after its markers, before the next
   point's, as `pointLayerDrawShape` draws them, without a test against other labels, markers, or
@@ -229,16 +232,16 @@ golden path and the test pattern an agent copies from are named here.
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
   holds beneath each label, and a `labelpoint` style's marker, by them. It answers the glyph port
-  of a TrueType marker: the labels load the fonts the render's TrueType symbols name before the
-  layer is drawn, into the store the labels' fonts use (`labels.rs`), and the glyphs are read
+  of a TrueType marker: it loads the fonts the render's TrueType symbols name before the layer
+  is drawn, into the store the labels' fonts use (`render_resources.rs`), and the glyphs are read
   through `label` once per render by their font, character, and size (`marker_glyphs.rs`,
   [ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md)). It turns every drawing
   operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It is the
   one core crate that awaits the ports. Its modules import one another in one direction only,
-  `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `classes.rs`, `fonts.rs` and
-  `images.rs`, and `bind.rs`, `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`,
-  `marker_glyphs.rs`, `plan.rs`, `reproject.rs`, and `resource.rs` the leaves, and none takes an
-  item of the crate's root, as `lib.rs` lists them:
+  `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `classes.rs`,
+  `render_resources.rs`, `fonts.rs` and `images.rs`, and `bind.rs`, `bindable.rs`, `inline.rs`,
+  `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`, `plan.rs`, `reproject.rs`, and `resource.rs`
+  the leaves, and none takes an item of the crate's root, as `lib.rs` lists them:
   what the root and the modules share of a layer drawn and of the map's rotation lies in
   `layer.rs`, and the address of a
   label and the growth of the label cache's lists, which the labels and their styles share, in
