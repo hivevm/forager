@@ -39,7 +39,7 @@ moves, and one font store still serves the labels and the TrueType markers.
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-18/15-labels-carry-no-layer-state.md
+- docs/plan/revision-2026-11-18/14-engine-layer-reports-one-module.md
 
 ## Mode
 
