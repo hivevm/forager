@@ -240,7 +240,8 @@ impl Shapes {
         }
         // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
         // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
-        // Any other layer's labels go through the label cache.
+        // Any other point layer's labels go through the label cache; a line, polygon, or circle
+        // layer's are not drawn, each reported (see [`Labels::unlabelled`]).
         // A layer of POSTLABELCACHE TRUE draws its labels at once whatever its label_cache says,
         // as msDrawLayer turns the cache off for it as it draws it (src/mapdraw.c:850-856).
         match mode {
@@ -353,8 +354,10 @@ async fn draw_layer<S: FeatureSource, L: ResourceLoader, R: Renderer>(
     layer_reports(layer, spent, refusals, refused, undrawn, diagnostics);
     let trees = (style_failures, canvas.style_trees_over_limit());
     style_reports(layer, &shapes, &map.symbols, trees, diagnostics);
-    // Only a line, polygon, or annotation layer of POSTLABELCACHE TRUE comes here after the
-    // cache is drawn: its labels are not drawn yet, each reported, so none enters the cache.
+    // A point layer of the label cache holds its labels for the cache; a point layer of
+    // POSTLABELCACHE TRUE, which may come here after the cache is drawn, has drawn its own at
+    // once. A line, polygon, or circle layer's labels are not drawn, each reported, so none of
+    // them enters the cache.
     match shapes {
         Shapes::Points => {
             let settled = labels.layer(layer_index, &drawn, binder);
