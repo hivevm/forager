@@ -666,7 +666,7 @@ fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
 
 #[test]
 fn simplify_fails_on_a_polygon_with_a_coordinate_that_is_no_finite_number() {
-    // Verifies: ADR-0041, Q-3
+    // Verifies: ADR-0041, ADR-0049, Q-3
     // geo's repair of an invalid polygon panics on a coordinate that is no number, which the
     // engine refuses instead. The ring is the render fuzz target's (revision-2026-11-16/20).
     let far = -6.450_106_543_526_558e30;
@@ -687,6 +687,29 @@ fn simplify_fails_on_a_polygon_with_a_coordinate_that_is_no_finite_number() {
         let why = failed(apply(&simplified(tolerance), shape));
         assert!(why.contains("coordinate that is no finite number"), "{why}");
     }
+}
+
+#[test]
+fn simplify_simplifies_a_polygon_of_finite_coordinates() {
+    // Verifies: ADR-0049
+    // The ordinary input beside the refusal of a polygon with a coordinate that is no finite
+    // number: the square with a point 0.1 off its bottom edge, simplified by 1, loses that point.
+    let square = [
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (10.0, 10.0),
+        (10.0, 0.0),
+        (0.0, 0.0),
+    ];
+    let bent = polygon(&[&[
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (10.0, 10.0),
+        (10.0, 0.0),
+        (5.0, 0.1),
+        (0.0, 0.0),
+    ]]);
+    assert_eq!(apply(&simplified(1.0), &bent), Ok(polygon(&[&square])));
 }
 
 #[test]
@@ -902,6 +925,28 @@ fn buffer_turns_each_shape_into_a_polygon_as_msgeosbuffer_does() {
 }
 
 #[test]
+fn buffer_buffers_a_line_of_finite_coordinates() {
+    // Verifies: ADR-0049
+    // The ordinary input beside the refusal of a shape with a coordinate that is no finite
+    // number: the line from (0, 0) to (0, 1) buffered by 1 is one ring from x = -1 to 1 and from
+    // y = -1 to 2.
+    let rings = rings_of(apply(&buffered(1.0), &line(&[(0.0, 0.0), (0.0, 1.0)])));
+    assert_eq!(rings.len(), 1);
+    let extent = |pick: fn(&Coord) -> f64| {
+        rings[0]
+            .iter()
+            .map(pick)
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+                (if v < lo { v } else { lo }, if v > hi { v } else { hi })
+            })
+    };
+    let near =
+        |(lo, hi): (f64, f64), (a, b): (f64, f64)| (lo - a).abs() < 1e-12 && (hi - b).abs() < 1e-12;
+    assert!(near(extent(|p| p.x), (-1.0, 1.0)), "{:?}", rings[0]);
+    assert!(near(extent(|p| p.y), (-1.0, 2.0)), "{:?}", rings[0]);
+}
+
+#[test]
 fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
     // Verifies: ADR-0041
     // GEOS's buffer of a line by 0 or less, or of a polygon by less than its half width, is the
@@ -930,7 +975,7 @@ fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
 
 #[test]
 fn buffer_fails_where_geos_is_given_no_shape_or_no_finite_distance() {
-    // Verifies: ADR-0041
+    // Verifies: ADR-0041, ADR-0049
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points; GEOS cannot build
     // a line part of 1 point; and GEOSBuffer_r returns none for a distance that is no finite
     // number. Each fails "Executing buffer failed".

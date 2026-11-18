@@ -769,7 +769,7 @@ fn assert_covers(buffered: &[Area], given: &[Coord], distance: f64) {
 
 #[test]
 fn a_point_s_tiny_circle_buffers_by_a_tinier_distance_to_a_ring_that_covers_it() {
-    // Verifies: Q-3, ADR-0041
+    // Verifies: Q-3, ADR-0041, ADR-0049
     // The render fuzzer's input: the point (3.07847e-319, 0) buffered by 6.6e-163 is a circle
     // some 1.3e-162 across, whose shortest edge is 3.46e-164, so the square of its direction
     // underflows to 0 in i_overlay's offset. That ring buffered by 9.6e-281 neither panics nor
@@ -834,7 +834,7 @@ fn raised(distance: f64, line: &[Coord]) -> f64 {
 
 #[test]
 fn a_tiny_line_buffered_near_the_grid_step_returns_a_buffer_that_covers_it() {
-    // Verifies: Q-3, Q-9, ADR-0041
+    // Verifies: Q-3, Q-9, ADR-0041, ADR-0049
     // The render fuzzer's input: a line some 4.3e-304 long buffered by 5.4e-312, about 1.25e-8 of
     // its length. Scaled near 1, its stroke's width is a few steps of i_overlay's grid, where
     // find_contour walks the stroke's graph without end and grows the contour until an
@@ -904,4 +904,43 @@ fn a_ring_buffered_as_a_line_near_the_grid_step_does_not_panic() {
     let lines = [ring];
     let buffered = buffer(Buffered::Lines(&lines), 1e-9, &mut Recorder::default()).unwrap();
     assert_covers(&buffered, &lines[0], raised(1e-9, &lines[0]));
+}
+
+#[test]
+fn a_buffer_of_at_least_2_to_the_minus_450_is_buffered_unscaled() {
+    // Verifies: ADR-0049
+    // The ordinary input beside the scaling of a tiny buffer: a point buffered by 2^-449, a size
+    // of at least 2^-450, is buffered as it is, to the same circle geo's buffer gives unscaled.
+    let point = [c(0.0, 0.0)];
+    let distance = libm::scalbn(1.0, -449);
+    assert_eq!(magnification(Buffered::Points(&point), distance), 0);
+    let buffered = buffer(Buffered::Points(&point), distance, &mut Recorder::default()).unwrap();
+    assert_eq!(buffered[0].shell.len(), 121);
+    assert_eq!(
+        buffered,
+        buffer_with_style(Buffered::Points(&point), distance)
+    );
+}
+
+#[test]
+fn a_line_s_distance_at_or_above_its_floor_is_kept() {
+    // Verifies: ADR-0049
+    // The ordinary input beside the floor of a line's buffer: a line 1 long at the origin has a
+    // floor of 2^-24, and a distance of 2^-24 or 0.5 is buffered as it is, as geo's buffer gives
+    // it unfloored.
+    let line = [vec![c(0.0, 0.0), c(1.0, 0.0)]];
+    for distance in [libm::scalbn(1.0, -24), 0.5] {
+        assert_eq!(floored(Buffered::Lines(&line), distance), distance);
+        let buffered = buffer(Buffered::Lines(&line), distance, &mut Recorder::default()).unwrap();
+        assert_eq!(
+            buffered,
+            buffer_with_style(Buffered::Lines(&line), distance)
+        );
+    }
+    // Just below the floor, the distance is raised to it.
+    let below = libm::scalbn(1.0, -25);
+    assert_eq!(
+        floored(Buffered::Lines(&line), below),
+        libm::scalbn(1.0, -24)
+    );
 }

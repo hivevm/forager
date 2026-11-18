@@ -109,9 +109,16 @@ impl ImagePatternSource for Source<'_> {
     }
 }
 
+// Guard: agg-rust 1.2.0
 /// `line_coord_sat::conv`: the coordinate in subpixels, held to AGG's `line_max_coord` before it
 /// is rounded, as `saturation<line_max_coord>::iround` holds it, and rounded with `lrint`, half
 /// to even, as MapServer's AGG rounds.
+///
+/// A bounded change (ADR-0049), its bound `LINE_MAX_COORD`, 2^28 - 1 subpixels
+/// (`line_aa_basics.rs:15`), read from agg-rust 1.2.0, which takes the coordinates as given:
+/// past it, `LineAaVertex::calc_distance` subtracts two of them in `i32`
+/// (`rasterizer_outline_aa.rs:38-39`), which overflows. MapServer's AGG holds them to the same
+/// bound, so the change moves no pixel of MapServer's drawing.
 pub(crate) fn line_coord_sat(x: f64) -> i32 {
     let v = x * f64::from(SCALE);
     let limit = f64::from(LINE_MAX_COORD);
@@ -259,8 +266,13 @@ fn piece_start(
     Some(starts[first_segment + end] - len)
 }
 
+// Guard: agg-rust 1.2.0
 /// agg-rust's outline-image renderer, its start reduced by whole widths of the pattern after each
 /// segment, which moves no pixel, so that it stays within `i32` however long the path is (Q-3).
+///
+/// An exact guard, ADR-0046's *No panic* (ADR-0049), read from agg-rust 1.2.0: `line3_no_clip`
+/// adds the start to the pattern's place in `i32` (`renderer_outline_image.rs:937`), which a
+/// path of some 8.4e6 pixels passes unreduced.
 struct Carried<'r, 'p, 'b> {
     inner: RendererOutlineImage<'r, PixfmtMapserver<'b>, LineImagePattern<BilinearRgba8>>,
     pattern: &'p LineImagePattern<BilinearRgba8>,
@@ -460,6 +472,11 @@ impl AggRenderer {
             };
             let mut carry = 0;
             for path in paths {
+                // A rule of the display list, not a guard (the maintainer's ruling of
+                // 2026-11-18): a point that is no finite number is left out and its neighbours
+                // are joined, as `clip::line` joins them for a stroke. Nothing fails without it:
+                // `line_coord_sat` gives an integer of any number, and `clip::segment` drops a
+                // segment to such a point, which would break the line there instead.
                 let points: Vec<Point> = path
                     .iter()
                     .copied()

@@ -1080,7 +1080,9 @@ mod tests {
         reason = "the clock bounds the test's run time and reaches no output (Q-2)"
     )]
     fn hostile_coordinates_render_quickly_without_a_panic() {
-        // Verifies: ADR-0025, Q-3, Q-9
+        // Verifies: ADR-0025, ADR-0049, Q-3, Q-9
+        // The failing inputs of the clip and of drawn_width: unclipped, the paths 1e15 out run
+        // far past the bound; unbounded, the strokes 1e9 wide do.
         let started = std::time::Instant::now();
         // AGG walks a dash start dash by dash: a huge INITIALGAP or PATTERN costs no more.
         let _ = render(&[
@@ -1242,7 +1244,7 @@ mod tests {
 
     #[test]
     fn a_glyph_outline_is_drawn_before_its_fill_as_the_contour_of_its_width() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0031, ADR-0049
         use forager_render::GlyphOutline;
         use forager_render::PathCommand::{Close, LineTo, MoveTo};
         const BLUE: Rgba = Rgba::opaque(30, 60, 200);
@@ -1275,7 +1277,7 @@ mod tests {
 
     #[test]
     fn a_glyph_outline_is_bounded_as_a_stroke_is_and_keeps_its_sign() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0025, ADR-0049
         // Unbounded, a contour of 1e12 puts its vertices past agg-rust's fixed-point
         // coordinates and the rasterizer's clip overflows; bounded as a stroke's width is, it
         // covers the image.
@@ -1348,6 +1350,9 @@ mod tests {
 
     #[test]
     fn a_glyph_path_out_of_reach_is_not_drawn() {
+        // Verifies: ADR-0049
+        // Drawn, a point 1e12 pixels out overflows the subtraction of agg-rust's clip box
+        // (`rasterizer_sl_clip.rs:128`).
         use forager_render::PathCommand::{Close, LineTo, MoveTo};
         let path = vec![
             MoveTo(p(-1e12, -1e12)),

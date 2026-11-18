@@ -462,6 +462,11 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
             .filter(|part| !part.is_empty())
             .map(|part| geometry::simplify_line(part, tolerance, budget))
             .collect::<Result<_, _>>()?,
+        // Guard: geo 0.33.1
+        // A refusal (ADR-0049): geo's repair of the simplified polygon orders its points by
+        // `lex_cmp`, which unwraps `partial_cmp` of a coordinate that is no number
+        // (`utils.rs:92-97`), reached from `winding_order.rs:149` through `bool_ops/mod.rs:270`.
+        // The layer fails with a diagnostic.
         Kind::Polygon if !is_finite(&shape) => {
             return Err(Undrawn::Failed(
                 "calls simplify on a polygon with a coordinate that is no finite number".to_owned(),
@@ -562,6 +567,12 @@ fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Un
             "calls buffer with the distance {distance}, which fails in MapServer"
         )));
     }
+    // Guard: geo 0.33.1
+    // Guard: i_float 1.16.0
+    // A refusal (ADR-0049): geo's `buffer_with_style` strokes a line through i_overlay
+    // (`buffer.rs:377`), whose adapter takes a point that is no finite number outside its rect,
+    // which fails the debug assertion of `float_to_int` (i_float's `adapter.rs:115-123`). The
+    // layer fails with a diagnostic.
     if !is_finite(shape) {
         return Err(Undrawn::Failed(
             "calls buffer on a shape with a coordinate that is no finite number".to_owned(),

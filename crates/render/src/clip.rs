@@ -8,9 +8,16 @@ use crate::{PathCommand, Point};
 /// Pixels beyond the image that a clipped path may reach, besides the reach of its stroke.
 const CLIP_MARGIN: f64 = 2.0;
 
+// Guard: agg-rust 1.2.0
 /// How far, in pixels, a point of a glyph path may lie outside the image: agg-rust holds
 /// coordinates in 24.8 fixed point, which a farther point would overflow. The text path leaves out
 /// a glyph that reaches farther, and a renderer draws no path that does.
+///
+/// A refusal (ADR-0049), with [`within_glyph_reach`], read from agg-rust 1.2.0: the scanline
+/// rasterizer takes a point into 24.8 fixed point by `iround`, which saturates at `i32`
+/// (`rasterizer_sl_clip.rs:20-22`, `basics.rs:15-21`), and its clip box subtracts such points in
+/// `i32` (`rasterizer_sl_clip.rs:128`), which overflows. At 2^22 pixels a point is 2^30
+/// subpixels, so the difference of two points, the image's and the reach's, stays within `i32`.
 pub const MAX_GLYPH_REACH: f64 = 4_194_304.0;
 
 /// Whether every point of `path` lies within [`MAX_GLYPH_REACH`] of `image`,
@@ -33,18 +40,35 @@ pub fn within_glyph_reach(image: [f64; 4], path: &[PathCommand]) -> bool {
     })
 }
 
+// Guard: agg-rust 1.2.0
 /// The width a stroke of `width` is drawn at on an image of `image_width` × `image_height`
 /// pixels, its magnitude bounded: a wider stroke covers the image all the same, and the margin
 /// stays small enough for agg-rust's fixed-point coordinates. A caller that draws a negative
 /// width keeps its sign itself.
+///
+/// An exact guard (ADR-0049), read from agg-rust 1.2.0: the clip's margin grows with the width,
+/// and past some 8.4e6 pixels `iround` saturates a point's 24.8 fixed point at `i32`
+/// (`rasterizer_sl_clip.rs:20-22`, `basics.rs:15-21`). Short of that, `RasterizerCellsAa::line`
+/// walks a cell for every pixel a line crosses (`rasterizer_cells_aa.rs:348-358`), so a stroke a
+/// trillion pixels wide, unbounded, runs past two minutes in a debug build.
 pub fn drawn_width(width: f64, image_width: u32, image_height: u32) -> f64 {
     width
         .abs()
         .min(2.0 * (f64::from(image_width) + f64::from(image_height)))
 }
 
+// Guard: agg-rust 1.2.0
 /// An axis-aligned rectangle in pixels: outside this module, only the image grown by the margin,
 /// [`Rect::around_image`], so that no clip skips the margin.
+///
+/// The clip of every path to it, by [`line`], [`ring`], and [`segment`], is a guard (ADR-0027,
+/// ADR-0049), read from agg-rust 1.2.0: the scanline rasterizer takes a point into 24.8 fixed
+/// point by `iround`, which saturates at `i32` (`rasterizer_sl_clip.rs:20-22`,
+/// `basics.rs:15-21`), and `RasterizerCellsAa::line` walks a cell for every pixel a line crosses
+/// (`rasterizer_cells_aa.rs:348-358`), so a fill reaching ten million pixels out runs for more
+/// than 40 seconds unclipped in a debug build. The clip moves no pixel of a path it keeps. It
+/// refuses a point that is no finite number, a segment whose coordinate difference overflows,
+/// and a crossing that is not finite.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
     min_x: f64,
@@ -466,5 +490,45 @@ mod tests {
         let r = image(10, 10);
         let points = [p(1.0, 1.0), p(5.0, 5.0), p(9.0, 1.0)];
         assert_eq!(line(&points, &r), vec![points.to_vec()]);
+    }
+
+    #[test]
+    fn a_path_within_the_image_grown_by_its_margin_is_handed_on_as_it_is() {
+        // Verifies: ADR-0049
+        // The ordinary input beside the clip's guard: a line and a ring on the image and in its
+        // margin of 2 pixels are kept point for point, so the renderer draws them as unclipped.
+        let r = Rect::around_image(64, 64, 0.0);
+        let line_points = [p(-2.0, 10.0), p(30.5, 0.25), p(66.0, 66.0)];
+        assert_eq!(line(&line_points, &r), vec![line_points.to_vec()]);
+        let ring_points = [p(-2.0, -2.0), p(66.0, -2.0), p(40.0, 50.5), p(3.0, 66.0)];
+        assert_eq!(ring(&ring_points, &r), ring_points.to_vec());
+    }
+
+    #[test]
+    fn a_width_within_the_bound_is_drawn_as_it_is() {
+        // Verifies: ADR-0049
+        // The ordinary input beside drawn_width's guard: up to twice the image's width and
+        // height, 400 pixels on an image of 100 by 100, a width is drawn as given.
+        for width in [0.25, 3.0, 399.5, 400.0] {
+            assert_eq!(drawn_width(width, 100, 100), width);
+        }
+    }
+
+    #[test]
+    fn a_glyph_within_its_reach_is_kept_and_one_a_pixel_past_it_is_not() {
+        // Verifies: ADR-0049
+        // The ordinary input beside the glyph's reach: a point 4,194,304 pixels, 2^22, off the
+        // image is within it, one a pixel farther is not.
+        let image = [0.0, 0.0, 64.0, 32.0];
+        let at = |x: f64, y: f64| {
+            [
+                PathCommand::MoveTo(p(10.0, 10.0)),
+                PathCommand::LineTo(p(x, y)),
+            ]
+        };
+        assert!(within_glyph_reach(image, &at(-4_194_304.0, 10.0)));
+        assert!(within_glyph_reach(image, &at(10.0, 32.0 + 4_194_304.0)));
+        assert!(!within_glyph_reach(image, &at(-4_194_305.0, 10.0)));
+        assert!(!within_glyph_reach(image, &at(10.0, 32.0 + 4_194_305.0)));
     }
 }

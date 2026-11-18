@@ -246,6 +246,8 @@ const TINY: i32 = -450;
 /// origin: some scaled coordinate would reach 2^512.
 const LARGEST_SCALED: i32 = 512;
 
+// Guard: i_overlay 4.5.2
+// Guard: i_float 1.16.0
 /// The power of two that `shape` and `distance` are scaled by before their buffer runs, and its
 /// result by the inverse after; 0 for every buffer but a tiny one.
 ///
@@ -255,6 +257,14 @@ const LARGEST_SCALED: i32 = 512;
 /// the coordinate is subnormal. A point, or a shape of one place, far from the origin and buffered
 /// by a tiny distance is not scaled, where a scaled coordinate would lie past
 /// 2^[`LARGEST_SCALED`].
+///
+/// An exact guard (ADR-0049), read from i_overlay 4.5.2 and the i_float 1.16.0 it takes:
+/// `FloatPointAdapter::new` sets the grid to 2^(29 - log2 of the size) (i_float's
+/// `adapter.rs:37-41`), and the offset of an edge, `outline/builder.rs:192` and `Math::normal` of
+/// `mesh/math.rs:10-13` in i_overlay, normalizes the edge by `FloatPointMath::normalize`, which
+/// divides by its length without a check (i_float's `float/vector.rs:34-37`). The point offset
+/// by that infinite direction fails the debug assertion of `float_to_int` (i_float's
+/// `adapter.rs:115-123`), and in a release build the shape vanishes.
 fn magnification(shape: Buffered<'_>, distance: f64) -> i32 {
     let Some((low, high)) = bounds(shape) else {
         return 0;
@@ -293,11 +303,18 @@ const FLOOR: i32 = -24;
 /// grid steps does, however large the line. At 2^-40 it holds.
 const REACH_FLOOR: i32 = -40;
 
+// Guard: i_overlay 4.5.2
+// Guard: i_float 1.16.0
 /// The distance a line's buffer runs by: `distance`, raised to the larger of 2^[`FLOOR`] of the
 /// size of the lines' joint bounds, the larger of their width and height, and 2^[`REACH_FLOOR`] of
 /// their reach, where it lies below that. The bounds are joint since geo strokes the parts of a
 /// multiline as one. A distance not above 0, and that of a point or a polygon, is kept. GEOS keeps
 /// the thinner buffer; the two differ by at most the floor.
+///
+/// A bounded change (ADR-0049), its bound the floor, read from i_overlay 4.5.2 and the i_float
+/// 1.16.0 it takes: the grid of `FloatPointAdapter::new`, 2^(29 - log2 of the size) (i_float's
+/// `adapter.rs:37-41`), and `find_contour` of i_overlay's `core/extract.rs:181-208`, whose walk
+/// of the stroke's graph does not end where the graph is inconsistent.
 fn floored(shape: Buffered<'_>, distance: f64) -> f64 {
     if !matches!(shape, Buffered::Lines(_)) || distance <= 0.0 {
         return distance;
