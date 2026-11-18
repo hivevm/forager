@@ -238,7 +238,7 @@ fn brushed<T: Clone>(
     if paths.is_empty() {
         return None;
     }
-    let tile = mark::tile(mark, style, (false, TileFor::Line), canvas)?;
+    let tile = mark::tile(mark, style, TileFor::Line, canvas)?;
     Some(DrawOp::BrushedLine {
         paths,
         tile,

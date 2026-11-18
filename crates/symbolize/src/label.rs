@@ -24,7 +24,7 @@ use crate::canvas::Canvas;
 use crate::extent::View;
 use crate::marker::{marker_ops, of_symbol_zero};
 use crate::shade::shade;
-use crate::symbol::{self, Mark, Pixmaps, Resolved, marker_size_with};
+use crate::symbol::{self, Mark, Pixmaps, Resolved, SymbolResources, marker_size_with};
 
 /// Where a label's styles are drawn: its point, and the box around its text, which a label
 /// without text lacks.
@@ -130,8 +130,7 @@ pub fn label_style_ops(
                     ]
                 }
             };
-            let drawn = shade(ops, vec![ring], style, view, canvas);
-            canvas.hatching.refused += usize::from(!drawn);
+            shade(ops, vec![ring], style, view, canvas);
         }
         // The label cache refuses a label without text that has such a style before it is
         // cached; should one reach here, it draws nothing rather than fail the map (Q-3).
@@ -173,16 +172,10 @@ pub fn label_style_marker(
     pixmaps: &Pixmaps,
     factor: f64,
 ) -> Result<LabelMarker, String> {
-    let size = marker_size_with(
-        style,
-        values.size,
-        symbol,
-        symbols,
-        Some(pixmaps),
-        None,
-        factor,
-    )
-    .map_err(|what| format!("its labelpoint style draws {what}"))?;
+    // A TrueType symbol as a label's marker is out of ADR-0044's scope: no glyph is asked.
+    let resources = SymbolResources::default().with_pixmaps(pixmaps);
+    let size = marker_size_with(style, values.size, symbol, symbols, resources, factor)
+        .map_err(|what| format!("its labelpoint style draws {what}"))?;
     let anchor_point = match symbol::resolve(symbol, symbols) {
         Resolved::Found(_, symbol) => symbol.anchor(),
         _ => ANCHOR_CENTRE,
@@ -238,5 +231,42 @@ mod tests {
         assert_eq!(marker(SymbolRef::Index(2)), [0.0, 0.25]);
         assert_eq!(marker(SymbolRef::Name("SQUARE".to_owned())), [0.0, 0.25]);
         assert_eq!(marker(SymbolRef::Name("dot".to_owned())), [0.5, 0.5]);
+    }
+
+    #[test]
+    fn a_labelpnt_marker_of_a_truetype_symbol_is_not_sized() {
+        // A TrueType symbol as a label's marker is out of ADR-0044's scope: the label's styles ask
+        // no glyph of the port.
+        let symbols = [Symbol {
+            name: None,
+            kind: SymbolKind::Truetype,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            anchor_point: None,
+            character: Some("A".to_owned()),
+            font: Some("sans".to_owned()),
+            image: None,
+            transparent: None,
+            span: None,
+        }];
+        let symbol = Some(Bound::Value(SymbolRef::Index(1)));
+        let style = Style {
+            symbol: symbol.clone(),
+            ..Style::new(LabelTransform::Point)
+        };
+        let values = MarkerValues {
+            size: Some(10.0),
+            angle: 0.0,
+            offset: [0.0, 0.0],
+        };
+        let marker = label_style_marker(&style, values, &symbol, &symbols, &Pixmaps::new(), 1.0);
+        assert_eq!(
+            marker.map(|marker| marker.size),
+            Err(
+                "its labelpoint style draws a truetype symbol, whose size is not computed yet"
+                    .to_owned()
+            )
+        );
     }
 }

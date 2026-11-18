@@ -31,6 +31,7 @@ forager-style-ir = { path = "../crates/style-ir" }
 forager-bindings-wasm = { path = "../crates/bindings-wasm" }
 forager-engine = { path = "../crates/engine" }
 forager-expr = { path = "../crates/expr" }
+forager-render = { path = "../crates/render" }
 forager-render-agg = { path = "../crates/render-agg" }
 forager-adapter-shapefile = { path = "../crates/adapter-shapefile" }
 forager-proj = { path = "../crates/proj" }

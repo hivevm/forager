@@ -22,11 +22,9 @@ use forager_render::PremultipliedImage;
 use forager_style_ir::{Style, Symbol};
 
 use crate::clip::Clip;
-use crate::glyph::Glyphs;
-use crate::hatch::Hatching;
 use crate::layer_transform::StyleTrees;
 use crate::line_marker::MarkerBudget;
-use crate::symbol::{self, Factors, Pixmaps};
+use crate::symbol::{self, Factors, Pixmaps, SymbolResources};
 use crate::tile::Tiles;
 
 /// What a layer draws its features on beside the view: the map's symbols, the images of its
@@ -38,7 +36,8 @@ use crate::tile::Tiles;
 /// layer's class styles share, and whether the layer is drawn into an image of its own.
 pub struct Canvas<'a> {
     pub(crate) symbols: &'a [Symbol],
-    pixmaps: Option<&'a Pixmaps>,
+    /// The images of the pixmap symbols and the port TrueType markers ask their glyphs of.
+    pub(crate) resources: SymbolResources<'a>,
     pub(crate) tiles: Option<&'a mut Tiles>,
     /// The image's width and height in pixels, as the renderer is handed them.
     pub(crate) size: (u32, u32),
@@ -46,7 +45,8 @@ pub struct Canvas<'a> {
     pub(crate) factors: Factors,
     pub(crate) markers: MarkerBudget,
     pub(crate) clip: Clip,
-    pub(crate) hatching: Hatching,
+    /// How many hatches were refused (Q-9), which [`crate::shade::shade`] alone counts.
+    pub(crate) refused_hatches: usize,
     /// Each pixmap symbol left undrawn, by its index from 1, and why.
     pub(crate) refused_pixmaps: BTreeMap<usize, String>,
     /// Each vector or TrueType symbol whose fill tile is refused (Q-9), and each TrueType symbol
@@ -55,8 +55,6 @@ pub struct Canvas<'a> {
     /// Each TrueType symbol whose font lacks its character, by its index from 1, and what is
     /// drawn instead.
     pub(crate) missing_glyphs: BTreeMap<usize, String>,
-    /// The port TrueType markers ask their glyphs of.
-    pub(crate) glyphs: Option<&'a dyn Glyphs>,
     /// The budget, the `[map_cellsize]`, and the failures of the class styles' transform trees;
     /// without them, a class style's tree draws nothing.
     pub(crate) style_trees: Option<StyleTrees>,
@@ -66,24 +64,33 @@ pub struct Canvas<'a> {
     pub(crate) clip_lines: bool,
 }
 
-/// What a layer's drawing left undrawn, which it reports: how many hatches were refused (Q-9),
-/// the pixmap symbols whose image is refused, and the vector and TrueType symbols whose fill tile
-/// is refused (Q-9), each by its index from 1, named, with why.
+/// What a layer's drawing left undrawn, which it reports: whether markers were left out past the
+/// budget of markers (Q-9), how many hatches were refused (Q-9), the pixmap symbols whose image is
+/// refused, and the vector and TrueType symbols whose fill tile is refused (Q-9), each by its index
+/// from 1, named, with why, and the bound of Q-9 the transform trees of its class styles passed, if
+/// they did.
 #[derive(Debug, Default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Refusals {
+    pub markers_spent: bool,
     pub hatches: usize,
     pub pixmaps: BTreeMap<usize, (String, String)>,
     pub symbols: BTreeMap<usize, (String, String)>,
     /// The TrueType symbols whose font lacks their character, drawn with glyph 0.
     pub glyphs: BTreeMap<usize, (String, String)>,
+    /// The bound of Q-9 the transform trees of the class styles passed, once for the layer.
+    pub trees_over_limit: Option<String>,
 }
 
 impl Refusals {
     /// Adds `other`'s hatches to these, and its symbols not among these, each by its index once,
-    /// the first kept.
+    /// the first kept; its markers spent and its trees' bound where these have none.
     pub fn merge(&mut self, other: Self) {
+        self.markers_spent |= other.markers_spent;
         self.hatches += other.hatches;
+        if self.trees_over_limit.is_none() {
+            self.trees_over_limit = other.trees_over_limit;
+        }
         for (index, named) in other.pixmaps {
             self.pixmaps.entry(index).or_insert(named);
         }
@@ -103,17 +110,16 @@ impl<'a> Canvas<'a> {
     pub fn new(symbols: &'a [Symbol], width: u32, height: u32, factors: Factors) -> Self {
         Self {
             symbols,
-            pixmaps: None,
+            resources: SymbolResources::default(),
             tiles: None,
             size: (width, height),
             factors,
             markers: MarkerBudget::new(),
             clip: Clip::default(),
-            hatching: Hatching::default(),
+            refused_hatches: 0,
             refused_pixmaps: BTreeMap::new(),
             refused_symbols: BTreeMap::new(),
             missing_glyphs: BTreeMap::new(),
-            glyphs: None,
             style_trees: None,
             own_image: false,
             clip_lines: true,
@@ -136,16 +142,11 @@ impl<'a> Canvas<'a> {
         self.style_trees.as_mut().and_then(StyleTrees::take_failure)
     }
 
-    /// The bound of Q-9 the transform trees of the layer's class styles passed, if they did.
-    pub fn style_trees_over_limit(&self) -> Option<&str> {
-        self.style_trees.as_ref().and_then(StyleTrees::over_limit)
-    }
-
     /// The canvas, its pixmap symbols drawn with the images of `pixmaps`; without them, every
     /// pixmap is left undrawn.
     pub fn with_pixmaps(self, pixmaps: &'a Pixmaps) -> Self {
         Self {
-            pixmaps: Some(pixmaps),
+            resources: self.resources.with_pixmaps(pixmaps),
             ..self
         }
     }
@@ -165,13 +166,10 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    /// The canvas, its TrueType markers drawn with the glyphs of `glyphs`; without them, each is
-    /// left undrawn.
-    pub fn with_glyphs(self, glyphs: &'a dyn Glyphs) -> Self {
-        Self {
-            glyphs: Some(glyphs),
-            ..self
-        }
+    /// The canvas, its pixmap symbols and TrueType markers drawn with `resources`, the same the
+    /// engine's label cache sizes a marker with (see [`symbol::marker_size_of`]).
+    pub fn with_resources(self, resources: SymbolResources<'a>) -> Self {
+        Self { resources, ..self }
     }
 
     /// The canvas, its line shapes drawn unclipped, as msDrawShape draws those of a line layer of
@@ -193,7 +191,7 @@ impl<'a> Canvas<'a> {
     /// Sets the class whose styles the next features are drawn in, for the clip of its hatches
     /// and its lines (see [`Clip::for_class`]).
     pub fn class(&mut self, styles: &[Style]) {
-        self.clip = Clip::for_class(styles, self.symbols, self.pixmaps, self.factors);
+        self.clip = Clip::for_class(styles, self.symbols, self.resources.pixmaps, self.factors);
     }
 
     /// The image's width and height in pixels.
@@ -203,13 +201,17 @@ impl<'a> Canvas<'a> {
 
     /// Whether markers of the layer were left out, their points past the budget: at its
     /// features, along its lines, or where a style's `GEOMTRANSFORM` places them.
-    pub fn markers_spent(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn markers_spent(&self) -> bool {
         self.markers.spent()
     }
 
-    /// What the layer left undrawn since this was last asked: the hatches refused (Q-9), the
+    /// What the layer left undrawn: since this was last asked, the hatches refused (Q-9), the
     /// pixmap symbols whose image is refused, and the vector, ellipse, and TrueType symbols whose
-    /// fill tile is refused, each named by its name or its index (see [`symbol::named`]).
+    /// fill tile is refused, each named by its name or its index (see [`symbol::named`]); and
+    /// whether its markers were left out past their budget (Q-9) and the bound of Q-9 the
+    /// transform trees of its class styles passed, which the layer's budgets hold on to and are
+    /// not forgotten here.
     pub fn take_refusals(&mut self) -> Refusals {
         let named = |canvas: &Self, refused: BTreeMap<usize, String>| {
             refused
@@ -223,11 +225,18 @@ impl<'a> Canvas<'a> {
         let pixmaps = named(self, refused_pixmaps);
         let symbols = named(self, refused_symbols);
         let glyphs = named(self, missing_glyphs);
+        let trees_over_limit = self
+            .style_trees
+            .as_ref()
+            .and_then(StyleTrees::over_limit)
+            .map(str::to_owned);
         Refusals {
-            hatches: std::mem::take(&mut self.hatching.refused),
+            markers_spent: self.markers.spent(),
+            hatches: std::mem::take(&mut self.refused_hatches),
             pixmaps,
             symbols,
             glyphs,
+            trees_over_limit,
         }
     }
 
@@ -253,15 +262,8 @@ impl<'a> Canvas<'a> {
         index: usize,
         symbol: &Symbol,
     ) -> Option<Rc<PremultipliedImage>> {
-        let image = match (&symbol.image, self.pixmaps) {
-            (None, _) => Err("the pixmap symbol names no image".to_owned()),
-            (Some(path), Some(pixmaps)) => match pixmaps.get(path) {
-                Some(image) => image.clone(),
-                None => Err(format!("the image {path} is not loaded for this render")),
-            },
-            (Some(path), None) => Err(format!("the image {path} is not loaded for this render")),
-        };
-        image
+        self.resources
+            .pixmap(symbol)
             .map_err(|why| {
                 self.refused_pixmaps.entry(index).or_insert(why);
             })

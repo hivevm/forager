@@ -31,8 +31,9 @@ impl AggRenderer {
     /// `conv_curve`, under the non-zero rule, with no gamma: first its outline, the
     /// `conv_contour` of the curves at the outline's width, then its fill in `color`. A path with
     /// a point past [`forager_render::clip::MAX_GLYPH_REACH`] of the image, or one that is no number,
-    /// is not drawn: the engine leaves out and reports such a glyph before it reaches the display
-    /// list by the same predicate, so this guards the renderer against any other display list.
+    /// is not drawn and counts among the glyphs refused (ADR-0049): the engine leaves out and
+    /// reports a label's glyph before it reaches the display list by the same predicate, so only
+    /// another glyph, a TrueType marker's, is refused here.
     /// The outline's width is bounded by [`drawn_width`] as a stroke's is, so that the contour's
     /// margin past the path stays within agg-rust's fixed-point coordinates (ADR-0025); a
     /// negative width, which shrinks the contour, by the same bound on its magnitude, since the
@@ -46,6 +47,7 @@ impl AggRenderer {
         // The same image the engine hands the text path, so that a glyph it kept is drawn here.
         let image = [0.0, 0.0, f64::from(self.width), f64::from(self.height)];
         if !within_glyph_reach(image, path) {
+            self.refused.glyphs += 1;
             return;
         }
         let mut storage = PathStorage::new();
@@ -65,7 +67,12 @@ impl AggRenderer {
         {
             let curves = ConvCurve::new(&mut storage);
             let mut contour = ConvContour::new(curves);
-            let width = drawn_width(outline.width.abs(), self.width, self.height);
+            // Guard: agg-rust 1.2.0
+            // An exact guard (ADR-0049), read from agg-rust 1.2.0: unbounded, the contour of a
+            // huge width lies past the 24.8 fixed point `iround` saturates at `i32`
+            // (`rasterizer_sl_clip.rs:20-22`), and the clip box subtracts its points in `i32`
+            // (`rasterizer_sl_clip.rs:128`), which overflows.
+            let width = drawn_width(outline.width, self.width, self.height);
             contour.set_width(width.copysign(outline.width));
             self.fill_glyphs(&mut contour, outline.color);
         }

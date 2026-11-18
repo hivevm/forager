@@ -28,12 +28,10 @@ use forager_label::{
     pixel_size, placed_at, walk_label_cache,
 };
 use forager_ports::{Feature, ResourceLoader};
-use forager_render::{Draw, DrawOp, GlyphOutline, Point};
+use forager_render::{Draw, DrawOp, GlyphOutline, Point, Renderer};
 use forager_style_ir::c::{DEG_TO_RAD, c_str, int_cast, ms_nint};
-use forager_style_ir::{
-    Diagnostic, Expr, LabelMarker, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style,
-};
-use forager_symbolize::{Factors, Pixmaps, Refusals, marker_size_of};
+use forager_style_ir::{Diagnostic, Expr, LabelMarker, LabelTransform, Map, Op, Rgba, Span, Style};
+use forager_symbolize::{Factors, Pixmaps, Refusals, SymbolResources, marker_size_of};
 
 use crate::classes::{self, Binder};
 use crate::fonts::Fonts;
@@ -44,7 +42,7 @@ use crate::label_styles::{self, LabelStyles, Placed, Styled, StylesOf};
 use crate::layer::{
     Rotation, draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
 };
-use crate::marker_glyphs::MarkerGlyphs;
+use crate::render_resources::Shared;
 
 /// A label of a render's label cache.
 #[derive(Clone, Debug, PartialEq)]
@@ -114,6 +112,9 @@ struct Def {
     /// for each label (Q-9).
     marker: Option<(f64, f64)>,
 }
+
+/// Why the labels of a line or a polygon layer are not drawn: not yet.
+pub(crate) const PATHS_UNLABELLED: &str = "labels of line and polygon layers are not drawn yet";
 
 /// A path that stands for a text of line breaks only, which has no box.
 const NO_PATH: u32 = u32::MAX;
@@ -219,15 +220,13 @@ struct Annotation {
 /// cache, with each problem of a label reported once. A label is held as its glyphs' indices and
 /// its point; the glyphs' outlines are drawn once per font and size, and a label's path and its
 /// box are built only when it is placed and drawn.
-pub(crate) struct Labels<'r, L> {
+pub(crate) struct Labels<'r> {
     map: &'r Map,
     /// The map's rotation: the view of its frame, which the labels are laid out in, and the
     /// turn of their angles.
     rotation: &'r Rotation,
     /// The factors of each layer, by its index, which its labels inherit.
     factors: &'r [Factors],
-    files: &'r L,
-    fonts: Fonts,
     /// The glyphs of each font and pixel size, by the font's path and the size.
     glyphs: Vec<Glyphs>,
     caches: BTreeMap<(String, u16), usize>,
@@ -265,22 +264,19 @@ pub(crate) struct Labels<'r, L> {
 /// whose marker a label of a point moves away from.
 pub(crate) type Labelled<'a> = (&'a Feature, usize, Option<&'a Style>);
 
-impl<'r, L: ResourceLoader> Labels<'r, L> {
+impl<'r> Labels<'r> {
     /// The labels of a render of `map` by `rotation`, in the view of its frame, at `factors`,
-    /// each layer's by its index, their fonts read through `files`, in an image of `size`.
+    /// each layer's by its index, in an image of `size`.
     pub(crate) fn new(
         map: &'r Map,
         rotation: &'r Rotation,
         factors: &'r [Factors],
-        files: &'r L,
         size: (u32, u32),
     ) -> Self {
         Self {
             map,
             rotation,
             factors,
-            files,
-            fonts: Fonts::default(),
             glyphs: Vec::new(),
             caches: BTreeMap::new(),
             paths: Vec::new(),
@@ -304,18 +300,28 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         }
     }
 
-    /// Settles the labels of layer `index`, drawn in `mode` with its labels cached, for the
-    /// classes of `drawn` before its features, each label not drawn reported once: a label of a
-    /// circle layer is never drawn, and one of any other layer but a point layer not yet.
+    /// Settles the labels of point layer `index`, its labels cached, for the classes of `drawn`
+    /// before its features, each label not drawn reported once.
     pub(crate) fn layer(
         &mut self,
         index: usize,
-        mode: RenderMode,
         drawn: &[Labelled<'_>],
         binder: &mut Binder<'_, '_>,
     ) -> LayerLabels<'r> {
         let several = "its class has several labels, which MapServer places as a group";
-        self.settle_layer(index, mode, drawn, binder, several)
+        self.settle_layer(index, None, drawn, binder, several)
+    }
+
+    /// Reports each label of layer `index` for the classes of `drawn`, of a layer whose labels
+    /// are not drawn for the reason `why`, once, as [`Self::layer`] reports a label not drawn.
+    pub(crate) fn unlabelled(
+        &mut self,
+        index: usize,
+        drawn: &[Labelled<'_>],
+        binder: &mut Binder<'_, '_>,
+        why: &str,
+    ) {
+        self.settle_layer(index, Some(why), drawn, binder, "");
     }
 
     /// Settles the labels of point layer `index` of `LABELCACHE OFF` as [`Self::layer`] does,
@@ -333,7 +339,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     {
         let several = "its class has several labels, which MapServer draws each on its own under \
                        LABELCACHE OFF, and which are not drawn yet";
-        let labels = self.settle_layer(index, RenderMode::Point, drawn, binder, several);
+        let labels = self.settle_layer(index, None, drawn, binder, several);
         let (width, height) = self.size;
         let mut styled = Styled::new(
             self.map,
@@ -349,12 +355,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         AtOnce { labels, styled }
     }
 
-    /// Settles the labels of layer `index` as [`Self::layer`] says, a label of a class with
-    /// several of them not drawn for the reason `several`.
+    /// Settles the labels of layer `index` as [`Self::layer`] says, each not drawn for the reason
+    /// `unlabelled` where the layer's labels are not drawn, and a label of a class with several
+    /// of them for the reason `several`.
     fn settle_layer(
         &mut self,
         index: usize,
-        mode: RenderMode,
+        unlabelled: Option<&str>,
         drawn: &[Labelled<'_>],
         binder: &mut Binder<'_, '_>,
         several: &str,
@@ -388,12 +395,8 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     fixed_labels.insert((class_index, n), None);
                     continue;
                 }
-                // msDrawShape returns after circleLayerDrawShape, which draws no label
-                // (src/mapdraw.c:2390-2396).
-                let fixed = if mode == RenderMode::Circle {
-                    Err("a circle layer draws no label, as MapServer draws none".to_owned())
-                } else if mode != RenderMode::Point {
-                    Err("labels of line and polygon layers are not drawn yet".to_owned())
+                let fixed = if let Some(why) = unlabelled {
+                    Err(why.to_owned())
                 } else if class.labels.len() > 1 {
                     Err(several.to_owned())
                 } else {
@@ -417,14 +420,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     /// Caches the labels of `layer` for each of `drawn`, in the order the layer draws them, as
     /// msDrawShape adds each feature's labels to the cache: at each of its points inside the
     /// map's extent, as `pointLayerDrawShape` places them. A pixmap that a class's first style
-    /// draws is sized by its image among `pixmaps`, loaded before the layer's labels are
-    /// collected, and a TrueType symbol by its glyph among `glyphs`.
-    pub(crate) async fn collect(
+    /// draws is sized by its image among the pixmaps of `shared`, loaded before the layer's labels
+    /// are collected, and a TrueType symbol by its glyph among the glyphs of `shared`; the text is
+    /// laid out in the fonts of `shared`.
+    pub(crate) async fn collect<L: ResourceLoader>(
         &mut self,
         layer: &LayerLabels<'r>,
         drawn: &[Labelled<'_>],
-        pixmaps: &Pixmaps,
-        glyphs: &MarkerGlyphs,
+        shared: &mut Shared<'_, '_, L>,
         binder: &mut Binder<'_, '_>,
     ) {
         for &(feature, class, style) in drawn {
@@ -434,8 +437,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                     continue;
                 };
                 let fixed = label.fixed;
-                let marker = style.map(|style| (style, glyphs));
-                let one = self.lay_out_cached(label, feature, marker, pixmaps, binder);
+                let one = self.lay_out_cached(label, feature, style, shared, binder);
                 laid.extend(one.await.map(|one| (one, fixed)));
             }
             for (one, fixed) in laid {
@@ -445,13 +447,13 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 
     /// The labels of `feature`, which class `class` of `layer` draws, laid out to be drawn at
-    /// once, each as [`Self::matched`] gives it.
-    pub(crate) async fn label_at_once(
+    /// once, each as [`Self::matched`] gives it, from `shared`.
+    pub(crate) async fn label_at_once<L: ResourceLoader>(
         &mut self,
         layer: &AtOnce<'r, '_>,
         feature: &Feature,
         class: usize,
-        pixmaps: &Pixmaps,
+        shared: &mut Shared<'_, '_, L>,
         binder: &mut Binder<'_, '_>,
     ) -> Vec<Laid> {
         let mut laid = Vec::new();
@@ -462,7 +464,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             let Some(label) = self.matched(&layer.labels, feature, class, n, binder) else {
                 continue;
             };
-            laid.extend(self.lay_out_at_once(label, feature, pixmaps, binder).await);
+            laid.extend(self.lay_out_at_once(label, feature, shared, binder).await);
         }
         laid
     }
@@ -506,14 +508,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 
     /// Lays out `label` of `feature` for the cache, with the first style of its class in
-    /// `marker`, sized among `pixmaps` or by its glyph asked of the glyphs `marker` carries, the
-    /// marker the label moves away from. None where it is not drawn.
-    async fn lay_out_cached(
+    /// `marker`, sized among the pixmaps of `shared` or by its glyph asked of the glyphs of
+    /// `shared`, the marker the label moves away from. None where it is not drawn.
+    async fn lay_out_cached<L: ResourceLoader>(
         &mut self,
         label: Matched<'_, '_>,
         feature: &Feature,
-        marker: Option<ClassMarker<'_>>,
-        pixmaps: &Pixmaps,
+        marker: Option<&Style>,
+        shared: &mut Shared<'_, '_, L>,
         binder: &mut Binder<'_, '_>,
     ) -> Option<Laid> {
         let at = label.at;
@@ -555,17 +557,17 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
             return None;
         }
         let annotation = Annotation { text, lines, bound };
-        self.lay_out(label, annotation, marker, pixmaps, feature, binder)
+        self.lay_out(label, annotation, marker, shared, feature, binder)
             .await
     }
 
     /// Lays out `label` of `feature` to be drawn at once, a text that is empty or of line breaks
     /// only drawing its styles. None where it is not drawn.
-    async fn lay_out_at_once(
+    async fn lay_out_at_once<L: ResourceLoader>(
         &mut self,
         label: Matched<'_, '_>,
         feature: &Feature,
-        pixmaps: &Pixmaps,
+        shared: &mut Shared<'_, '_, L>,
         binder: &mut Binder<'_, '_>,
     ) -> Option<Laid> {
         let at = label.at;
@@ -575,7 +577,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         });
         let annotation = Annotation { text, lines, bound };
         // msDrawLabel moves a label off no marker: the class's style is not read for it.
-        let laid = self.lay_out(label, annotation, None, pixmaps, feature, binder);
+        let laid = self.lay_out(label, annotation, None, shared, feature, binder);
         let mut laid = laid.await?;
         let written = &at.label(self.map).styles;
         if laid.path.is_none() && written.iter().any(boxed) {
@@ -601,25 +603,28 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
     }
 
     /// Lays out `label` of `feature`, its text, lines, and bound properties `annotation`, moved
-    /// away from the marker of the style `marker` carries, sized among `pixmaps` or by its glyph,
-    /// where it has one. None where it is not drawn.
-    async fn lay_out(
+    /// away from the marker of the style `marker` carries, sized among the pixmaps of `shared` or
+    /// by its glyph, where it has one, its text laid out in the fonts of `shared`. None where it is
+    /// not drawn.
+    async fn lay_out<L: ResourceLoader>(
         &mut self,
         label: Matched<'_, '_>,
         annotation: Annotation,
-        marker: Option<ClassMarker<'_>>,
-        pixmaps: &Pixmaps,
+        marker: Option<&Style>,
+        shared: &mut Shared<'_, '_, L>,
         feature: &Feature,
         binder: &mut Binder<'_, '_>,
     ) -> Option<Laid> {
+        let pixmaps = shared.pixmaps;
         let Matched { at, fixed, styles } = label;
         let Annotation { text, lines, bound } = annotation;
         let written = &at.label(self.map).styles;
         let blank = lines.iter().all(Vec::is_empty);
         let label_styles: &[Style<LabelTransform>] =
             if styles.is_empty() { written } else { &styles };
+        let resources = shared.symbol_resources();
         let settled =
-            settle(fixed, &bound, lines.len(), marker, pixmaps, self.map).and_then(|settled| {
+            settle(fixed, &bound, lines.len(), marker, resources, self.map).and_then(|settled| {
                 let marker = label_styles::label_marker(
                     label_styles,
                     self.map,
@@ -645,7 +650,10 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         let path = if blank {
             None
         } else {
-            match self.layout(fixed, lines, glyph_size, align).await {
+            match self
+                .layout(shared.fonts, fixed, lines, glyph_size, align)
+                .await
+            {
                 Ok(path) => Some(path),
                 Err(unlaid) => {
                     let (code, outcome) = unlaid.code();
@@ -939,11 +947,12 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         })
     }
 
-    /// Lays out `lines` at `glyph_size`, each in the font of the label's list that draws it, or
-    /// says why it cannot. Each line is let go once its glyphs are laid out, so that a long text
-    /// is not held as characters and as glyphs at once.
-    async fn layout(
+    /// Lays out `lines` at `glyph_size`, each in the font of the label's list among `fonts` that
+    /// draws it, or says why it cannot. Each line is let go once its glyphs are laid out, so that
+    /// a long text is not held as characters and as glyphs at once.
+    async fn layout<L: ResourceLoader>(
         &mut self,
+        fonts: &mut Fonts<'_, L>,
         fixed: &Fixed<'_>,
         lines: Vec<Vec<char>>,
         glyph_size: f64,
@@ -956,10 +965,9 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
                 continue;
             }
             // get_face_for_run chooses a font for each line.
-            let fonts = fixed.fonts.ok_or(Unlaid::NoFont)?;
-            let face = self
-                .fonts
-                .face(self.map, fonts, &line, self.files)
+            let list = fixed.fonts.ok_or(Unlaid::NoFont)?;
+            let face = fonts
+                .face(self.map, list, &line)
                 .await
                 .map_err(Unlaid::Font)?;
             let key = (face.path, pixel_size(glyph_size));
@@ -977,29 +985,14 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         Ok(layout.finish(align))
     }
 
-    /// The resource loader the render's fonts and images are read through.
-    pub(crate) fn files(&self) -> &'r L {
-        self.files
-    }
-
-    /// Keeps in `glyphs` each of `fonts` the TrueType markers of a layer name and that it does not
-    /// hold yet, loaded into the store of the labels' fonts (see [`Fonts::named`]), or why it
-    /// cannot be used.
-    pub(crate) async fn load_marker_fonts(&mut self, glyphs: &mut MarkerGlyphs, fonts: &[&str]) {
-        for &name in fonts {
-            if !glyphs.has(name) {
-                let font = self.fonts.named(self.map, name, self.files).await;
-                glyphs.keep(name, font);
-            }
-        }
-    }
-
     /// Draws the labels the label cache places, in the order it places them, each label's path
     /// built just before it is drawn. A glyph left out for reaching too far from the image is
     /// reported once for its label, and the labels left out past [`MAX_LABELS`] once. The cache is
     /// emptied; the fonts and glyphs stay for the labels of the layers of `POSTLABELCACHE TRUE`,
-    /// drawn at once after it.
-    pub(crate) fn finish<R: Draw>(
+    /// drawn at once after it. What the renderer refused while drawing the cache belongs to no
+    /// layer: it is taken and dropped, so that no layer drawn after the cache is blamed for it,
+    /// and it is not reported (`docs/backlog/refusals-of-no-layer.md`).
+    pub(crate) fn finish<R: Renderer>(
         &mut self,
         renderer: &mut R,
         pixmaps: &Pixmaps,
@@ -1079,6 +1072,7 @@ impl<'r, L: ResourceLoader> Labels<'r, L> {
         // so the cache leaves none out of what it is handed.
         debug_assert_eq!(left_out, 0, "the engine holds at most MAX_LABELS labels");
         self.report_refusals(diagnostics);
+        renderer.take_refused();
         // The labels of the report share their feature's text.
         let texts: Vec<Arc<str>> = texts.into_iter().map(Arc::from).collect();
         let report = walked
@@ -1268,24 +1262,21 @@ impl Members for Cache<'_> {
     }
 }
 
-/// The first style of a label's class, the marker the label cache holds beneath it, and the
-/// glyphs a TrueType symbol of it is sized by.
-type ClassMarker<'a> = (&'a Style, &'a MarkerGlyphs);
-
 /// A label's position, its alignment, and the width and height of the marker it moves away from.
 type Settled = (Position, Align, Option<(f64, f64)>);
 
 /// Where a label stands for one feature: its position, its alignment over `num_lines` lines, and
-/// the size of the marker it moves away from, that of `style`, a pixmap's by its image among
-/// `pixmaps`; or the diagnostic's code and why it is not drawn. A pixmap whose image does not
+/// the size of the marker it moves away from, that of `marker`, a pixmap's by its image among the
+/// pixmaps of `resources` and a TrueType symbol's by its glyph asked of their port; or the
+/// diagnostic's code and why it is not drawn. A pixmap whose image does not
 /// load fails msAddLabelGroup and the map in MapServer (`src/maplabel.c:350-352`); its label is
 /// left out here, and the rest of the map drawn.
 fn settle(
     fixed: &Fixed<'_>,
     bound: &BoundLabel,
     num_lines: usize,
-    marker: Option<ClassMarker<'_>>,
-    pixmaps: &Pixmaps,
+    marker: Option<&Style>,
+    resources: SymbolResources<'_>,
     map: &Map,
 ) -> Result<Settled, (&'static str, String)> {
     let Some(position) = bound.position else {
@@ -1307,13 +1298,7 @@ fn settle(
     // moves away from.
     let marker = match marker {
         None => None,
-        Some((style, glyphs)) => match marker_size_of(
-            style,
-            &map.symbols,
-            pixmaps,
-            Some(glyphs),
-            fixed.factors.scale,
-        ) {
+        Some(style) => match marker_size_of(style, &map.symbols, resources, fixed.factors.scale) {
             Ok(size) => Some(size),
             Err(what) => {
                 let why =
@@ -1362,21 +1347,13 @@ fn is_text(expr: &Expr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use forager_ports::{Coord, Properties, ResourcePath, SourceError, Stored};
+    use forager_ports::{Coord, Properties, Stored};
     use forager_style_ir::{Bound, Class, Extent};
     use forager_symbolize::View;
 
     use super::*;
     use crate::label_cache::MIN_ROOM;
     use forager_style_ir::Layer;
-
-    struct NoFiles;
-
-    impl ResourceLoader for NoFiles {
-        async fn load(&self, _: &ResourcePath) -> Result<Vec<u8>, SourceError> {
-            Err(SourceError::new("no files"))
-        }
-    }
 
     /// Whether `list` holds no more room than a quarter of what it fills, and the fewest entries
     /// a list grows by, as [`label_cache::make_room`] grows it.
@@ -1412,7 +1389,7 @@ mod tests {
         let view = View::for_image(extent, 100, 100).unwrap();
         let factors = [Factors::new(1.0, 1.0)];
         let rotation = Rotation::unrotated(view);
-        let mut labels = Labels::new(&map, &rotation, &factors, &NoFiles, (100, 100));
+        let mut labels = Labels::new(&map, &rotation, &factors, (100, 100));
         labels.defs.push(Def {
             at: LabelAt(0, 0, 0),
             buffer: 0,

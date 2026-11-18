@@ -19,7 +19,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "label_cache",
             "label_styles",
             "layer",
-            "marker_glyphs",
+            "render_resources",
         ],
     ),
     (
@@ -27,9 +27,12 @@ const ALLOWED: &[(&str, &[&str])] = &[
         &["bindable", "classes", "label_cache", "layer"],
     ),
     ("label_binding", &["classes"]),
+    ("circle", &["classes", "layer", "reproject"]),
     ("classes", &["bindable", "layer"]),
+    ("render_resources", &["fonts", "images", "marker_glyphs"]),
+    ("reproject", &["layer"]),
     ("fonts", &["resource"]),
-    ("images", &["marker_glyphs", "resource"]),
+    ("images", &["resource"]),
     ("bind", &[]),
     ("bindable", &[]),
     ("inline", &[]),
@@ -37,7 +40,6 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("layer", &[]),
     ("marker_glyphs", &[]),
     ("plan", &[]),
-    ("reproject", &[]),
     ("resource", &[]),
 ];
 

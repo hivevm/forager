@@ -53,7 +53,7 @@ use agg_rust::scanline_u::ScanlineU8;
 use forager_render::clip::{self, Rect, drawn_width};
 use forager_render::{
     Affine, Dashes, DisplayItem, Draw, DrawOp, Hatch, InnerJoin, LineCap, LineJoin, Pen, Point,
-    PremultipliedImage, Renderer, RgbaImage, Tile,
+    PremultipliedImage, Refused, Renderer, RgbaImage, Tile,
 };
 use forager_style_ir::Rgba;
 
@@ -69,6 +69,8 @@ pub struct AggRenderer {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
+    /// What it refused to draw since [`Renderer::take_refused`] was last called.
+    refused: Refused,
 }
 
 impl AggRenderer {
@@ -92,9 +94,9 @@ impl AggRenderer {
         f(&mut renderer);
     }
 
-    /// Rasterizes `path` stroked with `pen` at `drawn`, the width [`drawn_width`] bounds the pen's
-    /// to; the pen's own width is never drawn as it is.
-    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, pen: &Pen, drawn: f64) {
+    /// Rasterizes `path` stroked with `pen`, whose width [`AggRenderer::stroke`] has bounded by
+    /// [`drawn_width`].
+    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, pen: &Pen) {
         let color = rgba8(color);
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
@@ -103,11 +105,11 @@ impl AggRenderer {
                 let mut dashed = ConvDash::new(path);
                 add_dashes(&mut dashed, &pen.dashes);
                 let mut outline = ConvStroke::new(dashed);
-                apply(pen, drawn, &mut outline);
+                apply(pen, &mut outline);
                 rasterizer.add_path(&mut outline, 0);
             } else {
                 let mut outline = ConvStroke::new(path);
-                apply(pen, drawn, &mut outline);
+                apply(pen, &mut outline);
                 rasterizer.add_path(&mut outline, 0);
             }
             if pen.antialiased {
@@ -141,15 +143,15 @@ fn render_scanlines_bin_solid(
     }
 }
 
-/// Sets the stroker's width to `drawn`, the width [`drawn_width`] bounds the pen's to, and its
-/// cap and join to the pen's as applyCJC() does: a join of `none` is a bevel, and a cap MapServer
-/// does not map, `triangle`, stays AGG's default, butt. The inner join is the pen's; the miter
-/// limit stays AGG's default, 4.
+/// Sets the stroker's width to the pen's, which [`drawn_width`] has bounded, and its cap and join
+/// to the pen's as applyCJC() does: a join of `none` is a bevel, and a cap MapServer does not
+/// map, `triangle`, stays AGG's default, butt. The inner join is the pen's; the miter limit stays
+/// AGG's default, 4.
 /// Forager sets up a fresh stroker for every path; MapServer keeps one per image and carries its
 /// state from line to line, so there a thin line after a wide round-capped one is round-capped,
 /// and a wide line after a thin one bevels its inner joins.
-fn apply<VS: VertexSource>(pen: &Pen, drawn: f64, stroke: &mut ConvStroke<VS>) {
-    stroke.set_width(drawn);
+fn apply<VS: VertexSource>(pen: &Pen, stroke: &mut ConvStroke<VS>) {
+    stroke.set_width(pen.width);
     stroke.set_line_join(match pen.join {
         LineJoin::Round => AggJoin::Round,
         LineJoin::Miter => AggJoin::Miter,
@@ -208,40 +210,50 @@ fn add(path: &mut PathStorage, points: &[Point], close: bool) {
 }
 
 impl AggRenderer {
-    /// Strokes `paths`, clipped first to the image grown by the reach of the stroke.
+    /// Strokes `paths` with `pen` at its width bounded by [`drawn_width`], clipped first to the
+    /// image grown by the reach of the stroke; each path the clip drops a part of counts among the
+    /// paths refused (ADR-0049).
     fn stroke(&mut self, paths: &[Vec<Point>], closed: bool, color: Rgba, pen: &Pen) {
         if !(pen.width.is_finite() && pen.width > 0.0) {
             return;
         }
-        let width = drawn_width(pen.width, self.width, self.height);
+        let pen = Pen {
+            width: drawn_width(pen.width, self.width, self.height),
+            ..pen.clone()
+        };
         // A miter join reaches up to its limit of 4 half widths past the path, a bevel or round
         // join and a cap no more than about one.
         let reach = match pen.join {
-            LineJoin::Miter => 2.0 * width,
-            LineJoin::Round | LineJoin::Bevel | LineJoin::None => width / 2.0,
+            LineJoin::Miter => 2.0 * pen.width,
+            LineJoin::Round | LineJoin::Bevel | LineJoin::None => pen.width / 2.0,
         };
         let rect = Rect::around_image(self.width, self.height, reach);
         let mut path = PathStorage::new();
         for points in paths {
+            let mut dropped = false;
             if closed {
-                add(&mut path, &clip::ring(points, &rect), true);
+                add(&mut path, &clip::ring(points, &rect, &mut dropped), true);
             } else {
-                for run in clip::line(points, &rect) {
+                for run in clip::line(points, &rect, &mut dropped) {
                     add(&mut path, &run, false);
                 }
             }
+            self.refused.paths += usize::from(dropped);
         }
-        self.rasterize(&mut path, color, pen, width);
+        self.rasterize(&mut path, color, &pen);
     }
 }
 
 impl AggRenderer {
-    /// The rings as a path, each clipped to the image enlarged by the margin.
-    fn area(&self, rings: &[Vec<Point>]) -> PathStorage {
+    /// The rings as a path, each clipped to the image enlarged by the margin; each ring the clip
+    /// drops a part of counts among the paths refused (ADR-0049).
+    fn area(&mut self, rings: &[Vec<Point>]) -> PathStorage {
         let mut path = PathStorage::new();
         let rect = Rect::around_image(self.width, self.height, 0.0);
         for ring in rings {
-            add(&mut path, &clip::ring(ring, &rect), true);
+            let mut dropped = false;
+            add(&mut path, &clip::ring(ring, &rect, &mut dropped), true);
+            self.refused.paths += usize::from(dropped);
         }
         path
     }
@@ -290,19 +302,28 @@ impl AggRenderer {
         }
         let width = hatch.drawn_width(self.width, self.height);
         let fill_rect = Rect::around_image(self.width, self.height, 0.0);
+        let mut dropped = 0;
         let rings: Vec<Vec<Point>> = hatch
             .rings
             .iter()
-            .map(|ring| clip::ring(ring, &fill_rect))
+            .map(|ring| {
+                let mut ring_dropped = false;
+                let ring = clip::ring(ring, &fill_rect, &mut ring_dropped);
+                dropped += usize::from(ring_dropped);
+                ring
+            })
             .collect();
         let rect = hatch.line_rect(self.width, self.height);
-        let Some(pieces) = hatch::pieces(
+        let pieces = hatch::pieces(
             &hatch.lines,
             &rect,
             hatch.dashes(),
             width,
             Hatch::MAX_DASHES,
-        ) else {
+            &mut dropped,
+        );
+        self.refused.paths += dropped;
+        let Some(pieces) = pieces else {
             return;
         };
         let mut path = PathStorage::new();
@@ -362,6 +383,10 @@ impl Renderer for AggRenderer {
             beneath,
             opacity,
         }
+    }
+
+    fn take_refused(&mut self) -> Refused {
+        std::mem::take(&mut self.refused)
     }
 
     fn finish(mut self) -> RgbaImage {
@@ -495,7 +520,9 @@ impl AggRenderer {
         let square = [corner(-h, -h), corner(h, -h), corner(h, h), corner(-h, h)];
         let rect = Rect::around_image(self.width, self.height, 0.0);
         let mut path = PathStorage::new();
-        add(&mut path, &clip::ring(&square, &rect), true);
+        let mut dropped = false;
+        add(&mut path, &clip::ring(&square, &rect, &mut dropped), true);
+        self.refused.paths += usize::from(dropped);
         let mut area = RasterizerScanlineAa::new();
         area.filling_rule(FillingRule::NonZero);
         area.add_path(&mut path, 0);
@@ -1070,7 +1097,9 @@ mod tests {
         reason = "the clock bounds the test's run time and reaches no output (Q-2)"
     )]
     fn hostile_coordinates_render_quickly_without_a_panic() {
-        // Verifies: ADR-0025, Q-3, Q-9
+        // Verifies: ADR-0025, ADR-0049, Q-3, Q-9
+        // The failing inputs of the clip and of drawn_width: unclipped, the paths 1e15 out run
+        // far past the bound; unbounded, the strokes 1e9 wide do.
         let started = std::time::Instant::now();
         // AGG walks a dash start dash by dash: a huge INITIALGAP or PATTERN costs no more.
         let _ = render(&[
@@ -1232,7 +1261,7 @@ mod tests {
 
     #[test]
     fn a_glyph_outline_is_drawn_before_its_fill_as_the_contour_of_its_width() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0031, ADR-0049
         use forager_render::GlyphOutline;
         use forager_render::PathCommand::{Close, LineTo, MoveTo};
         const BLUE: Rgba = Rgba::opaque(30, 60, 200);
@@ -1265,7 +1294,7 @@ mod tests {
 
     #[test]
     fn a_glyph_outline_is_bounded_as_a_stroke_is_and_keeps_its_sign() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0025, ADR-0049
         // Unbounded, a contour of 1e12 puts its vertices past agg-rust's fixed-point
         // coordinates and the rasterizer's clip overflows; bounded as a stroke's width is, it
         // covers the image.
@@ -1293,7 +1322,11 @@ mod tests {
         render(&[outlined(square(far, far + 8.0), 1e12)]);
         // A width as far below zero, as a label's wrapped into an int can be, shrinks the
         // contour by no more than the same bound.
-        render(&[outlined(square(28.0, 36.0), -1e12)]);
+        // It is drawn as the bound itself below zero, twice the image's width and height.
+        assert_eq!(
+            render(&[outlined(square(28.0, 36.0), -1e12)]).pixels,
+            render(&[outlined(square(28.0, 36.0), -256.0)]).pixels
+        );
         // A small width below zero is drawn as AGG's vcgen_contour draws it, the square shrunk
         // by half of it, not grown: the bound keeps the sign.
         let image = render(&[outlined(square(20.0, 44.0), -4.0)]);
@@ -1334,6 +1367,9 @@ mod tests {
 
     #[test]
     fn a_glyph_path_out_of_reach_is_not_drawn() {
+        // Verifies: ADR-0049
+        // Drawn, a point 1e12 pixels out overflows the subtraction of agg-rust's clip box
+        // (`rasterizer_sl_clip.rs:128`).
         use forager_render::PathCommand::{Close, LineTo, MoveTo};
         let path = vec![
             MoveTo(p(-1e12, -1e12)),
@@ -1347,6 +1383,143 @@ mod tests {
             outline: None,
         }]);
         assert!(image.pixels.chunks(4).all(|px| px == [255, 255, 255, 255]));
+    }
+
+    /// What a renderer of 64 by 64 pixels refuses of `items`, drawn into a layer where
+    /// `in_layer`, and what it refuses when asked again.
+    fn refused_of(items: &[DrawOp], in_layer: bool) -> (Refused, Refused) {
+        let mut renderer = AggRenderer::new();
+        renderer.begin(64, 64, WHITE);
+        let items = items.iter().map(|op| DisplayItem {
+            op: op.clone(),
+            feature_id: None,
+        });
+        if in_layer {
+            let mut layer = renderer.layer(128);
+            items.for_each(|item| layer.draw(&item));
+        } else {
+            items.for_each(|item| renderer.draw(&item));
+        }
+        (renderer.take_refused(), renderer.take_refused())
+    }
+
+    #[test]
+    fn each_path_the_clip_drops_a_part_of_and_each_glyph_out_of_reach_is_counted() {
+        // Verifies: ADR-0027, ADR-0049
+        let pen = Pen::new(3.0, LineCap::Round, LineJoin::None, InnerJoin::Miter);
+        let gap = p(f64::NAN, 30.0);
+        let stroke = |paths: Vec<Vec<Point>>, closed| DrawOp::Stroke {
+            paths,
+            closed,
+            color: RED,
+            pen: pen.clone(),
+        };
+        let whole = vec![p(4.0, 32.0), p(60.0, 32.0), p(30.0, 60.0)];
+        let gapped = vec![p(4.0, 32.0), gap, p(60.0, 32.0), p(30.0, 60.0)];
+        let overflowing = vec![p(4.0, 32.0), p(1e308, 32.0), p(-1e308, 32.0)];
+        use forager_render::PathCommand::{Close, LineTo, MoveTo};
+        let far_glyph = DrawOp::Glyphs {
+            path: vec![
+                MoveTo(p(0.0, 0.0)),
+                LineTo(p(5e6, 0.0)),
+                LineTo(p(0.0, 9.0)),
+                Close,
+            ],
+            color: Some(RED),
+            outline: None,
+        };
+        let items = [
+            // Drawn whole: nothing is counted.
+            stroke(vec![whole.clone()], false),
+            stroke(vec![whole.clone()], true),
+            DrawOp::Fill {
+                rings: vec![whole.clone()],
+                color: RED,
+                gamma: None,
+            },
+            // A path each: one of the two lines, the ring, the fill's ring, and the hatch's ring
+            // and line; and the glyph.
+            stroke(vec![whole.clone(), gapped.clone()], false),
+            stroke(vec![overflowing], false),
+            stroke(vec![gapped.clone()], true),
+            DrawOp::Fill {
+                rings: vec![gapped.clone()],
+                color: RED,
+                gamma: None,
+            },
+            DrawOp::Hatch(Hatch {
+                rings: vec![gapped],
+                lines: vec![[p(0.0, 32.25), gap]],
+                color: RED,
+                width: 1.0,
+                pattern: vec![],
+                gamma: None,
+            }),
+            far_glyph,
+        ];
+        for in_layer in [false, true] {
+            let (taken, again) = refused_of(&items, in_layer);
+            let expected = Refused {
+                paths: 6,
+                glyphs: 1,
+                ..Refused::default()
+            };
+            assert_eq!(taken, expected, "in a layer: {in_layer}");
+            assert_eq!(again, Refused::default(), "taken once");
+        }
+    }
+
+    #[test]
+    fn a_brushed_line_and_a_resampled_pixmap_the_clip_cuts_are_counted() {
+        // Verifies: ADR-0027, ADR-0049
+        let image = Rc::new(PremultipliedImage::new(1, 1, vec![200, 40, 40, 255]).unwrap());
+        let mark = DrawOp::Pixmap {
+            image: Rc::clone(&image),
+            left: 0,
+            top: 0,
+        };
+        let tile = Rc::new(Tile::new(1, 1, vec![mark]).unwrap());
+        let brushed = |path: Vec<Point>| DrawOp::BrushedLine {
+            paths: vec![path],
+            tile: Rc::clone(&tile),
+            reach: 0.0,
+        };
+        let resampled = |at| DrawOp::ResampledPixmap {
+            image: Rc::clone(&image),
+            at,
+            half: 4,
+            inverse: Affine {
+                sx: 1.0,
+                shy: 0.0,
+                shx: 0.0,
+                sy: 1.0,
+                tx: 0.0,
+                ty: 0.0,
+            },
+        };
+        // Drawn whole: nothing is counted.
+        let whole = [
+            brushed(vec![p(4.0, 32.0), p(60.0, 32.0)]),
+            resampled(p(32.0, 32.0)),
+        ];
+        for in_layer in [false, true] {
+            assert_eq!(refused_of(&whole, in_layer).0, Refused::default());
+        }
+        // The brushed line's second segment, whose ends differ past every finite number, and the
+        // square about a centre that is no number: a path each.
+        let brushed_cut = brushed(vec![p(4.0, 32.0), p(1e308, 32.0), p(-1e308, 32.0)]);
+        let resampled_cut = resampled(p(f64::NAN, 32.0));
+        for (item, in_layer) in [brushed_cut, resampled_cut]
+            .into_iter()
+            .flat_map(|item| [(item.clone(), false), (item, true)])
+        {
+            let (taken, _) = refused_of(std::slice::from_ref(&item), in_layer);
+            let expected = Refused {
+                paths: 1,
+                ..Refused::default()
+            };
+            assert_eq!(taken, expected, "{item:?}");
+        }
     }
 
     #[test]

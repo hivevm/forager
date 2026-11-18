@@ -31,8 +31,8 @@ use forager_render::{DrawOp, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Expr, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset,
-    Map, NotDrawn, NumberOp, Op, RenderMode, Rgba, SourceRef, Span, Style, Symbol, SymbolKind,
-    SymbolRef, TransformNumber, TransformShape, TransformTree, Units,
+    Map, NotDrawn, NumberOp, Op, RenderMode, Rgba, ShapeOp, SourceRef, Span, Style, Symbol,
+    SymbolKind, SymbolRef, TransformNumber, TransformShape, TransformTree, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -2161,7 +2161,8 @@ const LINE_THEN_A_SQUARE: &str = r#"{"type": "FeatureCollection", "features": [
 
 /// `densify(outer([shape]), 0)`: outer fails a line, densify a tolerance of 0.
 fn outer_then_densified_by_zero() -> TransformTree {
-    TransformTree::Drawn(TransformShape::Densify(
+    TransformTree::Drawn(TransformShape::Op(
+        ShapeOp::Densify,
         Box::new(TransformShape::Outer(Box::new(TransformShape::Shape))),
         TransformNumber::Number(0.0),
     ))
@@ -2264,7 +2265,8 @@ fn a_shape_left_without_a_point_in_pixels_draws_no_style_tree_and_warns_nothing(
     // msTransformShapeSimplify empties a line shorter than a pixel, and msDrawShape returns before
     // it draws a style (src/mapdraw.c:2506-2507): simplify, which fails a shape without points, is
     // never evaluated, so no warning is given and nothing is drawn.
-    let simplify = TransformTree::Drawn(TransformShape::Simplify(
+    let simplify = TransformTree::Drawn(TransformShape::Op(
+        ShapeOp::Simplify,
         Box::new(TransformShape::Shape),
         TransformNumber::Number(10.0),
     ));
@@ -2319,7 +2321,8 @@ fn style_trees_share_the_bounds_of_their_layers_geomtransform() {
     // adds 480 000 first: the long line passes the bound, and the style trees draw nothing on it
     // and on the short line after it; the first stays drawn. Two such style trees warn once.
     let densify = |tolerance| {
-        TransformTree::Drawn(TransformShape::Densify(
+        TransformTree::Drawn(TransformShape::Op(
+            ShapeOp::Densify,
             Box::new(TransformShape::Shape),
             TransformNumber::Number(tolerance),
         ))
@@ -2359,7 +2362,8 @@ fn style_trees_share_the_bounds_of_their_layers_geomtransform() {
 
 /// `buffer([shape], distance)`.
 fn buffered(distance: f64) -> TransformTree {
-    TransformTree::Drawn(TransformShape::Buffer(
+    TransformTree::Drawn(TransformShape::Op(
+        ShapeOp::Buffer,
         Box::new(TransformShape::Shape),
         TransformNumber::Number(distance),
     ))
@@ -2491,13 +2495,76 @@ fn a_buffer_whose_round_joins_would_pass_the_points_q9_lets_a_layer_add_is_not_r
     assert_eq!(past.image.unwrap().pixel(10, 50), Some(WHITE));
 }
 
+#[test]
+fn a_layer_past_its_markers_hatches_and_style_trees_bounds_reports_each_once_in_order() {
+    // Verifies: Q-9
+    // One polygon layer passes three bounds: its outline's heads a ten-thousandth of a pixel
+    // apart pass the budget of markers, its hatch's dashes of a billionth of a pixel pass a
+    // hatch's, and its style's densify by a ten-thousandth of a pixel adds some 4 000 000 points
+    // to the 400 pixels of the polygon's rings, past what its transforms may add. Each is
+    // reported once, in that order, as two features pass them.
+    let heads = Style {
+        outline_color: Some(Bound::Value(BLUE)),
+        symbol: Some(Bound::Value(SymbolRef::Index(2))),
+        size: Some(Bound::Value(9.0)),
+        gap: Some(-0.0001),
+        ..Style::default()
+    };
+    let hatch = Style {
+        symbol: Some(Bound::Value(SymbolRef::Index(5))),
+        ..hatch_style(BLACK, 10.0, 1.0, 0.0, vec![1e-9, 1e-9])
+    };
+    let densify = of_tree(densified(0.0001), line_style(GREEN, 1.0));
+    let mut map = map_with(RenderMode::Polygon, vec![heads, hatch, densify]);
+    map.symbols = symbols();
+    map.symbols.push(Symbol {
+        name: Some("hatch".into()),
+        kind: SymbolKind::Hatch,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: None,
+        transparent: None,
+        span: None,
+    });
+    let square = r#"{"type": "Polygon", "coordinates": [
+        [[10, 10], [90, 10], [90, 90], [10, 90], [10, 10]]]}"#;
+    let two = format!(
+        r#"{{"type": "FeatureCollection", "features": [
+            {{"type": "Feature", "properties": {{}}, "geometry": {square}}},
+            {{"type": "Feature", "properties": {{}}, "geometry": {square}}}]}}"#
+    );
+    let rendered = render_with(&map, Some(&two));
+    assert_eq!(
+        codes(&rendered),
+        [
+            "line-markers-over-limit",
+            "hatch-not-drawn",
+            "geomtransform-over-limit"
+        ],
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert!(
+        rendered.diagnostics[1]
+            .message
+            .contains("2 hatch fills are not drawn"),
+        "{}",
+        rendered.diagnostics[1].message
+    );
+}
+
 fn not_drawn(reason: NotDrawn) -> TransformTree {
     TransformTree::NotDrawn(reason)
 }
 
 /// `generalize([shape], tolerance)`.
 fn generalized(tolerance: TransformNumber) -> TransformTree {
-    TransformTree::Drawn(TransformShape::Generalize(
+    TransformTree::Drawn(TransformShape::Op(
+        ShapeOp::Generalize,
         Box::new(TransformShape::Shape),
         tolerance,
     ))
@@ -2505,7 +2572,8 @@ fn generalized(tolerance: TransformNumber) -> TransformTree {
 
 /// `densify([shape], tolerance)`.
 fn densified(tolerance: f64) -> TransformTree {
-    TransformTree::Drawn(TransformShape::Densify(
+    TransformTree::Drawn(TransformShape::Op(
+        ShapeOp::Densify,
         Box::new(TransformShape::Shape),
         TransformNumber::Number(tolerance),
     ))
@@ -2580,7 +2648,8 @@ fn a_layer_of_simplify_draws_the_simplified_line() {
     // 50, and keeps it at 30.
     let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
     let simplified = |tolerance| {
-        TransformTree::Drawn(TransformShape::Simplify(
+        TransformTree::Drawn(TransformShape::Op(
+            ShapeOp::Simplify,
             Box::new(TransformShape::Shape),
             TransformNumber::Number(tolerance),
         ))

@@ -154,11 +154,13 @@ if ! grep -qF "use of a disallowed method \`f64::max\`" <<< "$output" \
 fi
 echo "refused, as it should be"
 
-step "Fuzz targets: formatting and clippy"
+step "Fuzz targets: formatting, clippy, and the test of the render seeds"
 # The fuzz workspace is not a member of the main one; built here, an API change of the crates it
-# fuzzes breaks the push, not next week's fuzz run.
+# fuzzes breaks the push, not next week's fuzz run. Its test holds each seed of the render target
+# to the path it was made for, which a change of the target's decoding can take from it.
 cargo fmt --manifest-path fuzz/Cargo.toml --check
 cargo clippy --manifest-path fuzz/Cargo.toml --locked --all-targets -- -D warnings
+cargo test --manifest-path fuzz/Cargo.toml --locked
 
 step "Build for wasm32-unknown-unknown"
 browser=()

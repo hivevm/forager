@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-16, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-18, due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0005](adr/0005-feature-layer.md)).
@@ -162,8 +162,9 @@ golden path and the test pattern an agent copies from are named here.
   else touches it, as `msProjectShapeEx` does, with a warning for the points that do not
   reproject, the horizon points held to a bound per layer (Q-9), and a map of `AUTO` taken as
   each layer's base geographic CRS, and draws nothing of a layer whose projection does not read,
-  with a warning (`reproject.rs`); a layer of `PROJECTION AUTO` takes the projection its bound
-  source declares (ADR-0039), longitude and latitude with a warning where that does not read; a
+  with a warning (`reproject.rs`, which warns of a layer's features as it reprojects them); a
+  layer of `PROJECTION AUTO` takes the projection its bound source declares (ADR-0039), longitude
+  and latitude with a warning where that does not read; a
   layer with lines from such a polar source into longitude and latitude is drawn uncut with a
   warning (`lines-not-cut`); on a map with an `ANGLE`, it computes the scale from the real
   extent and the scale factors from `msGetGeoCellSize`'s cellsize, reprojects every layer with a
@@ -186,7 +187,8 @@ golden path and the test pattern an agent copies from are named here.
   and turns each feature and style into display items
   by the layer's render mode; a circle layer's features it keeps in the layer's projection and
   reprojects only each circle's centre, as `circleLayerDrawShape` does, and draws none of its
-  labels. A layer without a source, or whose source fails, is skipped with a
+  labels (`circle.rs`, which the one dispatch on a layer's render mode in `lib.rs` hands a circle
+  layer). A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer
   ([ADR-0022](adr/0022-skipped-records.md)); the fonts a label names and the images its
   pixmap symbols name it loads by one load, once per render and path through the host's resource
@@ -195,7 +197,10 @@ golden path and the test pattern an agent copies from are named here.
   once and holds within Q-9's bound on the bytes one render's images, tiles, and brushes' copies
   come to
   (`images.rs`,
-  [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); it draws the labels of point
+  [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); one value holds what a render reads
+  through the loader, its fonts, images, tiles, and TrueType markers' glyphs, loads a pixmap by
+  one call, and lends the images and fonts to the labels and the images, tiles, and glyphs to the
+  canvas (`render_resources.rs`); it draws the labels of point
   layers after every layer, as MapServer's label cache does, through `label` (ADR-0031), and
   those of a point layer of `LABELCACHE OFF` at each point after its markers, before the next
   point's, as `pointLayerDrawShape` draws them, without a test against other labels, markers, or
@@ -216,29 +221,31 @@ golden path and the test pattern an agent copies from are named here.
   its member box, that of its text and its `labelpoint` marker, where it was drawn, or none where
   it was discarded. It draws each feature in its styles through
   `symbolize`, in the order MapServer's shape cache draws a line layer's styles and their outlines
-  (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
+  (`plan.rs`, its `Drawing` in `lib.rs`, which draws a layer in `draw_layer`), into an image of
+  its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
   refused, a label's among them, vector and TrueType symbols whose fill or brush tile the cache
   refused,
   TrueType symbols whose font cannot be used or lacks the character, and geometries its render
-  mode cannot draw (Q-9); the hatches, pixmaps, and symbols are one value, `Refusals`, which a
-  canvas yields, the labels keep per layer and merge, and one function of `layer.rs` turns into the
-  layer's diagnostics. It loads the
+  mode cannot draw (Q-9); the markers, hatches, pixmaps, and symbols, and the bound the transform
+  trees of its class styles passed, are one value, `Refusals`, which a canvas yields in one call,
+  the labels keep per layer and merge, and the layer's reports turn into its diagnostics, its
+  symbols through one function of `layer.rs`. It loads the
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
   holds beneath each label, and a `labelpoint` style's marker, by them. It answers the glyph port
-  of a TrueType marker: the labels load the fonts the render's TrueType symbols name before the
-  layer is drawn, into the store the labels' fonts use (`labels.rs`), and the glyphs are read
+  of a TrueType marker: it loads the fonts the render's TrueType symbols name before the layer
+  is drawn, into the store the labels' fonts use (`render_resources.rs`), and the glyphs are read
   through `label` once per render by their font, character, and size (`marker_glyphs.rs`,
   [ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md)). It turns every drawing
   operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It is the
   one core crate that awaits the ports. Its modules import one another in one direction only,
-  `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `classes.rs`, `fonts.rs` and
-  `images.rs`, and `bind.rs`, `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`,
-  `marker_glyphs.rs`, `plan.rs`, `reproject.rs`, and `resource.rs` the leaves, and none takes an
-  item of the crate's root, as `lib.rs` lists them:
+  `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `circle.rs`, `classes.rs`,
+  `render_resources.rs`, `reproject.rs`, `fonts.rs` and `images.rs`, and `bind.rs`,
+  `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`, `plan.rs`, and
+  `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs` lists them:
   what the root and the modules share of a layer drawn and of the map's rotation lies in
   `layer.rs`, and the address of a
   label and the growth of the label cache's lists, which the labels and their styles share, in
@@ -261,8 +268,10 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md),
   `glyph.rs`, `glyph_marker.rs`); a line's dashes, and the
   style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
-  canvas a layer draws on, which the images of the render's pixmaps are handed on and which
-  yields what it left undrawn (`canvas.rs`); a label's styles, which of them are drawn, and their
+  canvas a layer draws on, which holds the render's symbol resources, the images of its pixmaps and
+  the glyph port, in one value, `SymbolResources`, the label cache sizes a marker with too, whose
+  one lookup of a pixmap's image both share, and which yields what it left undrawn (`canvas.rs`,
+  `symbol.rs`); a label's styles, which of them are drawn, and their
   operations on the label's point and the box around its text: a `labelpoly` style shaded on the
   box, a `labelpoint` style's marker at the point, and a `labelcenter` style's at the centre of the
   box, a vector, an ellipse, or a pixmap drawn as a point's marker is, MapServer's default symbol
@@ -290,8 +299,12 @@ golden path and the test pattern an agent copies from are named here.
   layer's transform to its styles' (`layer_transform.rs`, Q-9),
   `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
   collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
-  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant
-  (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)), and `simplifypt` by a port of
+  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant, a
+  tiny shape scaled by a power of two around it and back, and a line's distance raised to a floor,
+  so that i_overlay's grid neither drops the shape nor loops on it
+  (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)), a polygon's `simplify` and any
+  `buffer` of a coordinate that is no finite number failing before geo sees it
+  (`layer_transform.rs`), and `simplifypt` by a port of
   JTS's topology-preserving simplifier without recursion and without a spatial index
   (`geometry/topology.rs`,
   [ADR-0047](adr/0047-simplifypt-ported-from-jts.md)). A
@@ -324,18 +337,21 @@ golden path and the test pattern an agent copies from are named here.
   `msDrawLabelCache`'s offset of a label from its markers (`cache.rs`). It is the one crate that
   depends on skrifa, and does no I/O (ADR-0031).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
-  or none, a pixmap's image placed at a whole pixel or resampled into a square through an affine
-  transformation, each by a counted reference to the one image, a polygon filled with a tile and
-  a line brushed with one, by a counted reference to the tile, which holds its size within Q-9's
+  or none, a stroke's width, cap, join, inner join, dashes, and antialiasing as one value (`Pen`), a
+  pixmap's image placed at a whole pixel or resampled into a square through an affine
+  transformation, each by a counted reference to the one image, a polygon filled with a tile and a
+  line brushed with one, by a counted reference to the tile, which holds its size within Q-9's
   bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
-  renderer has built it (`tile.rs`), the
-  renderer trait, the RGBA image, and the premultiplied image a pixmap is decoded to
-  (`PremultipliedImage`, ADR-0029); the cost model that bounds a hatch before it is cut
-  (`Hatch::is_bounded`, ADR-0042, `hatch.rs`); and the clip of every path to the image, its
-  segments, lines, and rings, the image grown by its margin, the width a stroke is drawn at, and the
-  reach past the image a glyph's point may have (`MAX_GLYPH_REACH`), properties of the display list
-  in one module (`clip.rs`, [ADR-0027](adr/0027-clip-to-the-image.md)),
-  which the bound measures a hatch's lines with and every renderer clips with.
+  renderer has built it (`tile.rs`), the renderer trait, whose `take_refused` hands the engine what
+  a renderer refused: brushed pieces by the kind of their tile's symbol, the paths the clip cut,
+  and the glyphs past their reach (`Refused`, [ADR-0049](adr/0049-third-party-failures-guarded.md)),
+  the RGBA image, and the premultiplied image a pixmap is decoded to (`PremultipliedImage`,
+  ADR-0029); the cost model that bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0042,
+  `hatch.rs`); and the clip of every path to the image, its segments, lines, and rings, each
+  saying whether it dropped a part, the image grown by its margin, the width a stroke is drawn at,
+  and the reach past the image a glyph's point may have (`MAX_GLYPH_REACH`), properties of the
+  display list in one module (`clip.rs`, [ADR-0027](adr/0027-clip-to-the-image.md)), which the
+  bound measures a hatch's lines with and every renderer clips with.
 - **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
   before rasterizing, by the clip of `render`, fills through the gamma it is given, strokes an
   aliased line by blending each pixel agg-rust's scanlines cover at full cover, as AGG's
@@ -348,8 +364,11 @@ golden path and the test pattern an agent copies from are named here.
   [ADR-0026](adr/0026-agg-blender-and-resampler.md)), builds a tile the first time
   it draws with it, in a transparent image of its own, and repeats it from the image's origin,
   brushes a line with a tile through agg-rust's outline-image rasterizer, a port of AGG 2.4's
-  bilinear pattern filter, and the pattern's start carried across the clip (`brush.rs`,
-  [ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)), and
+  bilinear pattern filter, and the pattern's start carried across the clip, a piece whose
+  pattern's place or joins would pass agg-rust's `i32` left undrawn and counted as a pixmap's or
+  another symbol's by its tile's marks (`brush.rs`,
+  [ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)), bounds a glyph's outline width as a
+  stroke's (`glyphs.rs`), and
   is the one crate that may use `unsafe` ([ADR-0025](adr/0025-agg-rust-rasterizer.md)); it cuts a
   hatch from its polygon with i_overlay, the one crate of the workspace that depends on it
   directly
@@ -437,7 +456,10 @@ golden path and the test pattern an agent copies from are named here.
   `tests/manifest_dir.rs` refuses code under `crates/` that takes the crate's directory from the
   path compiled in rather than from `CARGO_MANIFEST_DIR` at run time, which `cargo test` and
   `cargo run` set: a binary built in another checkout over the same `target/` holds that
-  checkout's path.
+  checkout's path. The checks share the crate's directory and one walk of the `.rs` files under a
+  directory, `target` left out, from the crate's `src/lib.rs`; the other crates' tests keep a copy
+  of the directory's reading each, since a crate they shared would add an edge ADR-0008 does not
+  allow.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
@@ -454,8 +476,11 @@ adapter on arbitrary `.shp`, `.shx`, and `.dbf` files and its `.prj` reader on a
 bytes, the text path on an arbitrary font file, and the pixmap decoder on an arbitrary image
 file — run by `scripts/fuzz.sh`, which reads them from the
 manifest, every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly
-toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push. Beside it,
-`scripts/mutants.sh` runs cargo-mutants over the workspace every week through
+toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push and runs
+its test `fuzz/tests/render_seeds.rs`, which decodes each seed of the render target through the
+target's own decoding, `fuzz_targets/render_input.rs`, and holds it to the path it was made for,
+told from the map it builds and from the display items a recorder in front of agg-rust sees.
+Beside it, `scripts/mutants.sh` runs cargo-mutants over the workspace every week through
 `.github/workflows/mutants.yml` and reports the edits no test notices. `scripts/package.sh` packs
 the CLI's archive and the browser bindings' package under `target/package/`, each with
 `THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive back for them, by the check

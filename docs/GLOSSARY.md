@@ -120,6 +120,10 @@ to invent.
 - **Style IR** — The data model of a map, its layers, classes, styles, symbols, and labels, free
   of MapServer syntax, with expressions as CQL2.
   _Avoid:_ model, AST (for the whole map).
+- **Symbol resources** — What a render's pixmap and TrueType symbols are drawn and sized from:
+  the decoded images of its pixmaps and the glyph port of its TrueType markers
+  ([ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md)). The canvas holds them, and the
+  label cache sizes a class's marker with the same. The code's `SymbolResources` of `symbolize`.
 - **Text path** — A label's glyphs laid out from its point on the baseline, each at its pen
   position, with the box they span, as MapServer's `textPathObj` holds them.
 - **Transform tree** — A `GEOMTRANSFORM` expression of a layer or a class's style in the style

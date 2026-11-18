@@ -94,7 +94,7 @@ pub(crate) fn glyph_of(
     size: u32,
     canvas: &mut Canvas,
 ) -> Option<Rc<Glyph>> {
-    let asked = ask(canvas.glyphs, symbol, size);
+    let asked = ask(canvas.resources.glyphs, symbol, size);
     record(canvas, index, asked)
 }
 
@@ -190,7 +190,7 @@ pub(crate) fn glyph_ops<T>(
     canvas: &mut Canvas,
 ) {
     let s = symbol::symbol_style(style, symbol, canvas.factors);
-    if (s.fill.is_none() && s.outline.is_none()) || s.scale == 0.0 {
+    if s.draws_nothing() {
         return;
     }
     let factor = canvas.factors.scale;
@@ -215,7 +215,7 @@ mod tests {
 
     use super::*;
     use crate::glyph::Glyphs;
-    use crate::symbol::{Factors, marker_size_with};
+    use crate::symbol::{Factors, SymbolResources, marker_size_with};
     use crate::tile::{TileFor, Tiles};
 
     /// The glyphs of the TrueType symbol at `index` along `paths`, as a line style with a `GAP`
@@ -243,7 +243,9 @@ mod tests {
         canvas: &mut Canvas,
     ) {
         let mark = crate::symbol::Mark::Glyph(index, symbol);
-        if let Some(tile) = crate::mark::tile(mark, style, (false, TileFor::Polygon), canvas) {
+        if let Some(tile) =
+            crate::mark::tile(mark, style, TileFor::Polygon { seamless: false }, canvas)
+        {
             ops.push(DrawOp::TiledFill { rings, tile });
         }
     }
@@ -266,6 +268,11 @@ mod tests {
                 missing: self.1,
             }))
         }
+    }
+
+    /// The resources of a canvas handed the glyph port `glyphs` and no pixmaps.
+    fn glyphs_of(glyphs: &dyn Glyphs) -> SymbolResources<'_> {
+        SymbolResources::default().with_glyphs(glyphs)
     }
 
     fn truetype(anchor_point: Option<[f64; 2]>) -> Symbol {
@@ -300,20 +307,19 @@ mod tests {
         let symbols = [truetype(None)];
         let style = sized(10.7);
         let boxes = Boxes::default();
-        let size = marker_size_with(
+        let resources = glyphs_of(&boxes);
+        let size = marker_size_with(&style, Some(10.7), &style.symbol, &symbols, resources, 1.5);
+        assert_eq!(size, Ok((10.0, 20.0)));
+        assert_eq!(*boxes.0.borrow(), [16]);
+        // Without the port, as a label's own marker is sized, it is not computed yet.
+        let unknown = marker_size_with(
             &style,
             Some(10.7),
             &style.symbol,
             &symbols,
-            None,
-            Some(&boxes),
+            SymbolResources::default(),
             1.5,
         );
-        assert_eq!(size, Ok((10.0, 20.0)));
-        assert_eq!(*boxes.0.borrow(), [16]);
-        // Without the port, as a label's own marker is sized, it is not computed yet.
-        let unknown =
-            marker_size_with(&style, Some(10.7), &style.symbol, &symbols, None, None, 1.5);
         assert_eq!(
             unknown,
             Err("a truetype symbol, whose size is not computed yet".to_owned())
@@ -326,8 +332,8 @@ mod tests {
         // glyph is centred there by its box's centre, (6, -8) y down: its origin is (99, 68).
         let symbols = [truetype(Some([0.0, 0.0]))];
         let boxes = Boxes::default();
-        let mut canvas =
-            Canvas::new(&symbols, 200, 200, Factors::new(1.0, 1.0)).with_glyphs(&boxes);
+        let mut canvas = Canvas::new(&symbols, 200, 200, Factors::new(1.0, 1.0))
+            .with_resources(glyphs_of(&boxes));
         let mut ops = Vec::new();
         let at = Point { x: 100.0, y: 50.0 };
         glyph_ops(&mut ops, at, &sized(10.0), 1, &symbols[0], &mut canvas);
@@ -417,7 +423,7 @@ mod tests {
         ]];
         for layer in 0..2 {
             let mut canvas = Canvas::new(&symbols, 100, 100, Factors::new(1.0, 1.0))
-                .with_glyphs(&boxes)
+                .with_resources(glyphs_of(&boxes))
                 .with_tiles(&mut tiles);
             let mut ops = Vec::new();
             tiled_glyph(
@@ -441,8 +447,8 @@ mod tests {
         // asked alike: its missing character is recorded, and no glyph is drawn.
         let symbols = [truetype(None)];
         let boxes = Boxes(RefCell::default(), true);
-        let mut canvas =
-            Canvas::new(&symbols, 100, 100, Factors::new(1.0, 1.0)).with_glyphs(&boxes);
+        let mut canvas = Canvas::new(&symbols, 100, 100, Factors::new(1.0, 1.0))
+            .with_resources(glyphs_of(&boxes));
         canvas.markers = crate::line_marker::MarkerBudget::of(0);
         assert!(!canvas.markers.take(1, 1));
         let line = [vec![Point { x: 0.0, y: 50.0 }, Point { x: 100.0, y: 50.0 }]];

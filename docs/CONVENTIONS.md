@@ -20,10 +20,10 @@ skimmed. The design revision drops what prevented nothing
 - **A `Verifies:` marker claims every *shall* of its criterion** — a test cites a goal, a quality
   goal, or an ADR only when it decides all the criterion asks for, or a clause of the ADR's
   *Decision*, never because a test beside it does; a test that decides a part cites nothing and
-  the criterion stays pending, unless the criterion asks for a test per item itself, as Q-8 and
-  Q-9 do, and, by the maintainer's ruling of 2026-11-08, G-13 per category and G-10 per case: a
-  marker such as `Verifies: G-13, for the category text` decides only the item it names. The
-  traceability check counts a marker as met and cannot tell how much its test decides.
+  the criterion stays pending, unless the criterion asks for a test per item itself, as Q-3,
+  Q-8, and Q-9 do, and, by the maintainer's ruling of 2026-11-08, G-13 per category and G-10 per
+  case: a marker such as `Verifies: G-13, for the category text` decides only the item it names.
+  The traceability check counts a marker as met and cannot tell how much its test decides.
 - **Behaviour ported from MapServer or PROJ is read in their source, and its branches are
   tested** — a rule that follows their code names the function it follows, read at the pinned
   release, never as a ticket or memory describes it, and each branch of that function the port
@@ -47,7 +47,26 @@ skimmed. The design revision drops what prevented nothing
   adds it, not from a ticket after it, because a fuzz target reaches only what its harness builds
   and its seeds lead to: the pixmap decoder of 1eec7a6 panicked in the png crate on a ragged
   `PLTE` until its target came in a later ticket, and the render target drew no pixmap through
-  two changes that added resampling and tiled fills, until c39b845.
+  two changes that added resampling and tiled fills, until c39b845. For the nodes of the transform
+  tree and the kinds of symbol,
+  [`scripts/check-fuzz-variants.sh`](../scripts/check-fuzz-variants.sh) decides that the render
+  target names each variant, or that the check's allow-list names it with its reason. That each
+  seed of the render target still builds the path it was made for, after a change to how the
+  target decodes its bytes, [`fuzz/tests/render_seeds.rs`](../fuzz/tests/render_seeds.rs) decides,
+  and a new seed names its path there. That test covers the render target only: a change to how
+  another target decodes structured bytes, as the expression target reads its trees, runs each of
+  that target's seeds again against the path it was made for, and re-derives a seed that lost it,
+  as three seeds of the render target lost theirs unnoticed until ticket 01 of revision-2026-11-16
+  probed them.
+- **A fix of a fuzz finding is cut from the cause its decoded input shows** — the ticket names the
+  cause, read from what the input decodes to and from the code that fails. Its first criterion
+  fails on the code before the fix. Its tests hold an ordinary input beside the failing one,
+  which draws as before the fix. In revision-2026-11-16, review caught four first attempts:
+  - ticket 17's first draft had a first criterion that passed on the code before it (5f943956);
+  - ticket 18's first draft framed the panic by the distance, so a tiny shape buffered by its own
+    size still panicked (aa34dc9f);
+  - ticket 19's first floor, of the shape's size alone, missed lines far from the origin;
+  - ticket 21's first fix, 8feb9c16, left ordinary lines on large images undrawn.
 - **A reader that skips what it cannot read fails closed** — a condition it cannot read becomes
   one that never matches, never one that is absent, a value it cannot carry over leaves what it
   belongs to undrawn, never at the default an absent value takes, and what it skips is still held

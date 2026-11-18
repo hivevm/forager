@@ -28,11 +28,11 @@ fn shape() -> Box<TransformShape> {
 }
 
 fn generalize(inner: TransformShape, tolerance: TransformNumber) -> TransformShape {
-    TransformShape::Generalize(Box::new(inner), tolerance)
+    TransformShape::Op(ShapeOp::Generalize, Box::new(inner), tolerance)
 }
 
 fn densify(inner: TransformShape, tolerance: TransformNumber) -> TransformShape {
-    TransformShape::Densify(Box::new(inner), tolerance)
+    TransformShape::Op(ShapeOp::Densify, Box::new(inner), tolerance)
 }
 
 fn smooth(size: f64, iterations: f64, preprocessing: Option<Preprocessing>) -> TransformShape {
@@ -535,7 +535,7 @@ fn a_size_or_iterations_past_an_int_is_int_min_and_clamped() {
 }
 
 fn simplified(tolerance: f64) -> TransformShape {
-    TransformShape::Simplify(shape(), n(tolerance))
+    TransformShape::Op(ShapeOp::Simplify, shape(), n(tolerance))
 }
 
 #[test]
@@ -666,7 +666,7 @@ fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
 
 #[test]
 fn simplify_fails_on_a_polygon_with_a_coordinate_that_is_no_finite_number() {
-    // Verifies: ADR-0041, Q-3
+    // Verifies: ADR-0041, ADR-0049, Q-3
     // geo's repair of an invalid polygon panics on a coordinate that is no number, which the
     // engine refuses instead. The ring is the render fuzz target's (revision-2026-11-16/20).
     let far = -6.450_106_543_526_558e30;
@@ -687,6 +687,29 @@ fn simplify_fails_on_a_polygon_with_a_coordinate_that_is_no_finite_number() {
         let why = failed(apply(&simplified(tolerance), shape));
         assert!(why.contains("coordinate that is no finite number"), "{why}");
     }
+}
+
+#[test]
+fn simplify_simplifies_a_polygon_of_finite_coordinates() {
+    // Verifies: ADR-0049
+    // The ordinary input beside the refusal of a polygon with a coordinate that is no finite
+    // number: the square with a point 0.1 off its bottom edge, simplified by 1, loses that point.
+    let square = [
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (10.0, 10.0),
+        (10.0, 0.0),
+        (0.0, 0.0),
+    ];
+    let bent = polygon(&[&[
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (10.0, 10.0),
+        (10.0, 0.0),
+        (5.0, 0.1),
+        (0.0, 0.0),
+    ]]);
+    assert_eq!(apply(&simplified(1.0), &bent), Ok(polygon(&[&square])));
 }
 
 #[test]
@@ -735,7 +758,7 @@ fn simplify_past_the_points_a_layer_may_visit_is_a_limit() {
 }
 
 fn preserved(tolerance: f64) -> TransformShape {
-    TransformShape::Simplifypt(shape(), n(tolerance))
+    TransformShape::Op(ShapeOp::Simplifypt, shape(), n(tolerance))
 }
 
 #[test]
@@ -841,7 +864,7 @@ fn simplifypt_past_the_points_a_layer_may_visit_is_a_limit() {
 }
 
 fn buffered(distance: f64) -> TransformShape {
-    TransformShape::Buffer(shape(), n(distance))
+    TransformShape::Op(ShapeOp::Buffer, shape(), n(distance))
 }
 
 /// The rings of a polygon result.
@@ -902,6 +925,28 @@ fn buffer_turns_each_shape_into_a_polygon_as_msgeosbuffer_does() {
 }
 
 #[test]
+fn buffer_buffers_a_line_of_finite_coordinates() {
+    // Verifies: ADR-0049
+    // The ordinary input beside the refusal of a shape with a coordinate that is no finite
+    // number: the line from (0, 0) to (0, 1) buffered by 1 is one ring from x = -1 to 1 and from
+    // y = -1 to 2.
+    let rings = rings_of(apply(&buffered(1.0), &line(&[(0.0, 0.0), (0.0, 1.0)])));
+    assert_eq!(rings.len(), 1);
+    let extent = |pick: fn(&Coord) -> f64| {
+        rings[0]
+            .iter()
+            .map(pick)
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+                (if v < lo { v } else { lo }, if v > hi { v } else { hi })
+            })
+    };
+    let near =
+        |(lo, hi): (f64, f64), (a, b): (f64, f64)| (lo - a).abs() < 1e-12 && (hi - b).abs() < 1e-12;
+    assert!(near(extent(|p| p.x), (-1.0, 1.0)), "{:?}", rings[0]);
+    assert!(near(extent(|p| p.y), (-1.0, 2.0)), "{:?}", rings[0]);
+}
+
+#[test]
 fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
     // Verifies: ADR-0041
     // GEOS's buffer of a line by 0 or less, or of a polygon by less than its half width, is the
@@ -914,23 +959,27 @@ fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
     assert_eq!(apply(&buffered(-1.0), &line(ELL)), empty);
     let square = polygon(&[&[(0.0, 0.0), (0.0, 4.0), (4.0, 4.0), (4.0, 0.0), (0.0, 0.0)]]);
     assert_eq!(apply(&buffered(-3.0), &square), empty);
-    let twice = TransformShape::Buffer(Box::new(buffered(-3.0)), n(1.0));
+    let twice = TransformShape::Op(ShapeOp::Buffer, Box::new(buffered(-3.0)), n(1.0));
     assert_eq!(apply(&twice, &square), empty);
-    let simplified = TransformShape::Simplify(Box::new(buffered(-3.0)), n(1.0));
+    let simplified = TransformShape::Op(ShapeOp::Simplify, Box::new(buffered(-3.0)), n(1.0));
     assert_eq!(apply(&simplified, &square), empty);
-    let densified = TransformShape::Densify(Box::new(buffered(-3.0)), n(1.0));
+    let densified = TransformShape::Op(ShapeOp::Densify, Box::new(buffered(-3.0)), n(1.0));
     let why = failed(apply(&densified, &square));
     assert!(why.contains("densify on a part without points"), "{why}");
     // A polygon of one ring without points that no function of GEOS returned, inner of a square,
     // has no rings at all, and buffer fails on it as msGEOSShape2Geometry does.
-    let inner = TransformShape::Buffer(Box::new(TransformShape::Inner(shape())), n(1.0));
+    let inner = TransformShape::Op(
+        ShapeOp::Buffer,
+        Box::new(TransformShape::Inner(shape())),
+        n(1.0),
+    );
     let why = failed(apply(&inner, &square));
     assert!(why.contains("buffer on a shape of too few points"), "{why}");
 }
 
 #[test]
 fn buffer_fails_where_geos_is_given_no_shape_or_no_finite_distance() {
-    // Verifies: ADR-0041
+    // Verifies: ADR-0041, ADR-0049
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points; GEOS cannot build
     // a line part of 1 point; and GEOSBuffer_r returns none for a distance that is no finite
     // number. Each fails "Executing buffer failed".
@@ -947,6 +996,77 @@ fn buffer_fails_where_geos_is_given_no_shape_or_no_finite_distance() {
     for x in [f64::NAN, f64::INFINITY] {
         let why = failed(apply(&buffered(1.0), &line(&[(0.0, 0.0), (x, 1.0)])));
         assert!(why.contains("coordinate that is no finite number"), "{why}");
+    }
+}
+
+#[test]
+fn the_geos_functions_build_the_shape_before_they_check_their_number() {
+    // Verifies: ADR-0041, ADR-0047, ADR-0049
+    // msGEOSBuffer, msGEOSSimplify, and msGEOSTopologyPreservingSimplify call
+    // msGEOSShape2Geometry before GEOS is given the tolerance or the distance, so a shape of too
+    // few points fails as such whatever the number. The engine's refusal of a coordinate that is
+    // no finite number comes after the number's check.
+    let short = line(&[(0.0, 0.0)]);
+    for (transform, expected) in [
+        (
+            simplified(-1.0),
+            "calls simplify on a shape of too few points",
+        ),
+        (
+            preserved(-1.0),
+            "calls simplifypt on a shape of too few points",
+        ),
+        (
+            buffered(f64::NAN),
+            "calls buffer on a shape of too few points",
+        ),
+    ] {
+        let why = failed(apply(&transform, &short));
+        assert!(why.contains(expected), "{why}");
+    }
+    let infinite = polygon(&[&[
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (f64::INFINITY, 10.0),
+        (10.0, 0.0),
+        (0.0, 0.0),
+    ]]);
+    let why = failed(apply(&simplified(-1.0), &infinite));
+    assert!(
+        why.contains("calls simplify with the tolerance -1, below 0"),
+        "{why}"
+    );
+    let not_a_number = line(&[(0.0, 0.0), (f64::NAN, 1.0)]);
+    let why = failed(apply(&buffered(f64::NAN), &not_a_number));
+    assert!(why.contains("calls buffer with the distance NaN"), "{why}");
+}
+
+#[test]
+fn the_geos_functions_return_geos_s_empty_polygon_whatever_the_number() {
+    // Verifies: ADR-0041, ADR-0047
+    // msGEOSBuffer and msGEOSSimplify hand GEOS's empty polygon on without building it, so
+    // neither the shape nor the number is checked; the engine's simplifypt does the same.
+    let square = polygon(&[&[(0.0, 0.0), (0.0, 4.0), (4.0, 4.0), (4.0, 0.0), (0.0, 0.0)]]);
+    let empty = Ok(Geometry::Polygon(vec![vec![]]));
+    for transform in [
+        TransformShape::Op(ShapeOp::Simplify, Box::new(buffered(-3.0)), n(-1.0)),
+        TransformShape::Op(ShapeOp::Simplifypt, Box::new(buffered(-3.0)), n(-1.0)),
+        TransformShape::Op(ShapeOp::Buffer, Box::new(buffered(-3.0)), n(f64::NAN)),
+    ] {
+        assert_eq!(apply(&transform, &square), empty, "{transform:?}");
+    }
+}
+
+#[test]
+fn the_geos_functions_charge_a_polygon_s_rings_before_they_check_their_number() {
+    // Verifies: Q-9, ADR-0041, ADR-0047
+    // 5 001 rings of 4 points, each tested against all twice as msGEOSShape2Geometry groups them:
+    // 20 004 * 5 001 * 2 points, past 1e8, a limit before the number is checked.
+    let ring = |i: f64| coords(&[(i, 0.0), (i + 0.5, 0.0), (i, 0.5), (i, 0.0)]);
+    let many = Geometry::Polygon((0..5001).map(|i| ring(f64::from(i))).collect());
+    for transform in [simplified(-1.0), preserved(-1.0), buffered(f64::NAN)] {
+        let why = limit(apply(&transform, &many));
+        assert!(why.contains("visits more than 100000000 points"), "{why}");
     }
 }
 

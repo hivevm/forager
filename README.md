@@ -66,8 +66,10 @@ it after creation (ADR-0007, ADR-0009).
 - **Package:** `bash scripts/package.sh` — the CLI's archive and the browser bindings' package
   under `target/package/`, each carrying `THIRD-PARTY-NOTICES.md`, `LICENSE`, and
   `LICENSE-APACHE`, and checked for them; nothing is published
-- **Fuzz:** `bash scripts/fuzz.sh [seconds per target]` — the weekly fuzz run of Q-3, locally; it
-  installs its nightly toolchain and cargo-fuzz
+- **Fuzz:** `bash scripts/fuzz.sh [seconds per target [target]]` — the weekly fuzz run of Q-3,
+  locally, of every target or the one named; it installs its nightly toolchain and cargo-fuzz.
+  `bash scripts/fuzz.sh --replay <target> <input>` runs the target once on one input, such as a
+  crash's under `fuzz/artifacts/`, on that toolchain, and exits with the target's result
 - **Mutants:** `bash scripts/mutants.sh [shard such as 1/20]` — the weekly mutation testing of
   ADR-0007, locally; it reports the mutants no test caught
 

@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use agg_rust::pattern_filters_rgba::PatternFilterBilinearRgba;
-use forager_render::{DisplayItem, Draw, DrawOp, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, DrawOp, Refused, Renderer, RgbaImage};
 use forager_style_ir::Rgba;
 
 use super::*;
@@ -38,7 +38,7 @@ fn the_filter_rounds_as_agg_2_4_s_bilinear_filter_rounds() {
 
 #[test]
 fn a_coordinate_is_saturated_then_rounded_half_to_even() {
-    // Verifies: ADR-0046
+    // Verifies: ADR-0046, ADR-0049
     assert_eq!(line_coord_sat(0.5 / 256.0), 0);
     assert_eq!(line_coord_sat(1.5 / 256.0), 2);
     assert_eq!(line_coord_sat(-2.5 / 256.0), -2);
@@ -107,7 +107,7 @@ fn a_line_within_the_reach_is_left_whole() {
         let (at, _) = starts(&v, 0);
         (v, at)
     };
-    let cut = pieces(&line, &rect);
+    let cut = pieces(&line, &rect, &mut false);
     assert_eq!(
         cut,
         [Piece {
@@ -202,7 +202,7 @@ fn a_line_that_leaves_the_image_and_comes_back_draws_the_whole_line_s_pixels_on_
 
 #[test]
 fn the_start_carries_over_the_paths_of_a_shape() {
-    // Verifies: ADR-0046
+    // Verifies: ADR-0046, ADR-0049
     // The second path starts where the first, 10 pixels long, left the pattern, so its pixel at x
     // shows the pattern where the first path's does at x - 8, or a whole repeat of 7 from there.
     let image = brushed(
@@ -222,7 +222,7 @@ fn the_start_carries_over_the_paths_of_a_shape() {
 
 #[test]
 fn a_path_whose_start_passes_i32_draws_without_a_panic() {
-    // Verifies: ADR-0046, Q-3
+    // Verifies: ADR-0046, ADR-0049, Q-3
     // 90 segments of 100,000 pixels each: 9,000,000 pixels, past the 8,388,607 the start holds in
     // subpixels. The last segment crosses the image.
     let mut line: Vec<Point> = (0..90)
@@ -235,7 +235,9 @@ fn a_path_whose_start_passes_i32_draws_without_a_panic() {
 
 #[test]
 fn hostile_coordinates_brush_without_a_panic() {
-    // Verifies: Q-3
+    // Verifies: ADR-0049, Q-3
+    // Unsaturated, a coordinate of 1e12 within the reach of 1e300 overflows the subtraction of
+    // agg-rust's `calc_distance` (`rasterizer_outline_aa.rs:39`).
     let paths = vec![
         vec![p(f64::NAN, 0.0), p(1e300, -1e300), p(5.0, 5.0)],
         vec![p(f64::INFINITY, 3.0), p(-1e12, 7.0), p(1e12, 7.5)],
@@ -284,9 +286,31 @@ fn drawn(image: &RgbaImage) -> usize {
         .count()
 }
 
-/// Whether [`JoinProbe`] admits `path`, fed whole, with [`dot`]'s pattern.
-fn joins_admit(path: &[Point]) -> bool {
-    let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(dot().image(built_tile)));
+#[test]
+fn a_brushed_line_is_drawn_as_its_points_give_it() {
+    // A line of 35 pixels, the dot's 1 pixel wide, lays 35 pixels along y = 10.5.
+    let line = vec![p(2.0, 10.5), p(20.0, 10.5), p(37.0, 10.5)];
+    assert_eq!(drawn(&dotted(40, 20, line, 3.0)), 35);
+}
+
+#[test]
+fn a_brushed_line_s_points_that_are_no_finite_number_are_left_out() {
+    // A rule of the display list: the same line with a point of no number and one of an infinite
+    // coordinate between its points is drawn as its finite points give it, the neighbours of
+    // each joined, where the clip alone would drop each segment to such a point, here all four.
+    let line = vec![
+        p(2.0, 10.5),
+        p(f64::NAN, 5.0),
+        p(20.0, 10.5),
+        p(f64::INFINITY, 3.0),
+        p(37.0, 10.5),
+    ];
+    assert_eq!(drawn(&dotted(40, 20, line, 3.0)), 35);
+}
+
+/// Whether a [`JoinProbe`] for `tile`'s pattern, changed by `adjust`, admits `path`, fed whole.
+fn admits(path: &[Point], tile: &Tile, adjust: impl FnOnce(&mut JoinProbe)) -> bool {
+    let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(tile.image(built_tile)));
     let mut rasterizer = RasterizerOutlineAa::new();
     let (x, y) = (line_coord_sat(path[0].x), line_coord_sat(path[0].y));
     rasterizer.move_to(x, y);
@@ -294,13 +318,19 @@ fn joins_admit(path: &[Point]) -> bool {
         rasterizer.line_to(line_coord_sat(q.x), line_coord_sat(q.y));
     }
     let mut probe = JoinProbe::new(&pattern);
+    adjust(&mut probe);
     rasterizer.render(&mut probe, false);
     probe.within
 }
 
+/// Whether [`JoinProbe`] admits `path`, fed whole, with [`dot`]'s pattern.
+fn joins_admit(path: &[Point]) -> bool {
+    admits(path, &dot(), |_| {})
+}
+
 #[test]
 fn a_piece_whose_join_lies_far_past_its_short_segment_is_not_drawn_and_does_not_panic() {
-    // Verifies: Q-3
+    // Verifies: ADR-0049, Q-3
     // Ticket 21's fuzz input: the short first segment's join with the segment of some 8650 pixels
     // after it lies thousands of pixels away, past what `DistanceInterpolator4` multiplies in
     // `i32`, so the piece, the whole path, is not drawn.
@@ -317,7 +347,7 @@ fn a_piece_whose_join_lies_far_past_its_short_segment_is_not_drawn_and_does_not_
 
 #[test]
 fn a_long_segment_after_a_short_one_at_a_gentle_angle_is_drawn() {
-    // Verifies: ADR-0046, Q-3
+    // Verifies: ADR-0046, ADR-0049, Q-3
     // A segment of 2 pixels, then one of 2100 at 10°: their join lies some 2100 × 0.17 pixels
     // from the vertex, far within the bound, and the line is drawn as agg-rust draws it unbounded.
     let line = vec![
@@ -352,6 +382,136 @@ fn a_piece_within_the_join_bound_is_drawn_and_one_past_it_is_not() {
     // Verifies: Q-3
     assert!(joins_admit(&hairpin(HAIRPIN_RUN)));
     assert!(!joins_admit(&hairpin(HAIRPIN_RUN + 1)));
-    assert_ne!(drawn(&dotted(20, 20, hairpin(HAIRPIN_RUN), 1e6)), 0);
+    // The short segment and the start of the long one, as agg-rust draws them unbounded.
+    assert_eq!(drawn(&dotted(20, 20, hairpin(HAIRPIN_RUN), 1e6)), 41);
     assert_eq!(drawn(&dotted(20, 20, hairpin(HAIRPIN_RUN + 1), 1e6)), 0);
+}
+
+/// A tile of 4096 by 1600 pixels, all one opaque colour: a pattern 1,048,576 subpixels wide with
+/// a line width of 204,928, so an extent of 801 across the line.
+fn broad() -> Rc<Tile> {
+    let corners = [(0.0, 0.0), (4096.0, 0.0), (4096.0, 1600.0), (0.0, 1600.0)];
+    let mark = DrawOp::Fill {
+        rings: vec![corners.iter().map(|&(x, y)| p(x, y)).collect()],
+        color: Rgba::opaque(40, 120, 200),
+        gamma: None,
+    };
+    Rc::new(Tile::new(4096, 1600, vec![mark]).unwrap())
+}
+
+/// `path` brushed with [`broad`] on a white image of 40 by 40 pixels, its reach 1e7 pixels.
+fn broadly(path: Vec<Point>) -> RgbaImage {
+    let mut renderer = AggRenderer::new();
+    renderer.begin(40, 40, Rgba::opaque(255, 255, 255));
+    renderer.draw(&DisplayItem {
+        op: DrawOp::BrushedLine {
+            paths: vec![path],
+            tile: broad(),
+            reach: 1e7,
+        },
+        feature_id: None,
+    });
+    renderer.finish()
+}
+
+/// The half of the longest diagonal, in subpixels, whose place [`broad`]'s pattern keeps within
+/// `i32`: from (-k, -k) to (k, k) the segment is 652,214,271 subpixels long, and the place is at
+/// most `(801 + 3) × 1,048,576 + 2 × 652,214,271 = 2,147,483,646`. To (k + 1, k + 1) it is
+/// 652,214,273, and the place passes `i32::MAX` by 3.
+const DIAGONAL_HALF: f64 = 230_592_567.0;
+
+#[test]
+fn a_piece_whose_place_would_pass_i32_is_not_drawn_and_a_short_one_beside_it_is() {
+    // Verifies: Q-3
+    let k = DIAGONAL_HALF;
+    let past = vec![
+        p(-k / 256.0, -k / 256.0),
+        p((k + 1.0) / 256.0, (k + 1.0) / 256.0),
+    ];
+    assert_eq!(drawn(&broadly(past)), 0);
+    // A line of 35 pixels, the tile higher than the image: 35 columns of 40 pixels.
+    assert_eq!(drawn(&broadly(vec![p(2.0, 20.0), p(37.0, 20.0)])), 1400);
+}
+
+#[test]
+fn the_probe_admits_a_segment_at_the_place_bound_and_refuses_one_past_it() {
+    // Verifies: ADR-0049, Q-3
+    let k = DIAGONAL_HALF;
+    let at = [p(-k / 256.0, -k / 256.0), p(k / 256.0, k / 256.0)];
+    let past = [
+        p(-k / 256.0, -k / 256.0),
+        p((k + 1.0) / 256.0, (k + 1.0) / 256.0),
+    ];
+    let tile = broad();
+    assert!(admits(&at, &tile, |_| {}));
+    assert!(!admits(&past, &tile, |_| {}));
+    // The joins alone admit the one past it: the place's bound refuses it.
+    assert!(admits(&past, &tile, |probe| probe.longest = i64::MAX));
+}
+
+/// What a renderer of 40 by 40 pixels refuses of each of `paths` brushed with `tile`, its reach
+/// 1e7 pixels, each drawn as an item of its own, drawn into a layer where `in_layer`.
+fn refused(tile: &Rc<Tile>, paths: Vec<Vec<Point>>, in_layer: bool) -> Refused {
+    let mut renderer = AggRenderer::new();
+    renderer.begin(40, 40, Rgba::opaque(255, 255, 255));
+    let items: Vec<DisplayItem> = paths
+        .into_iter()
+        .map(|path| DisplayItem {
+            op: DrawOp::BrushedLine {
+                paths: vec![path],
+                tile: Rc::clone(tile),
+                reach: 1e7,
+            },
+            feature_id: None,
+        })
+        .collect();
+    if in_layer {
+        let mut layer = renderer.layer(128);
+        items.iter().for_each(|item| layer.draw(item));
+    } else {
+        items.iter().for_each(|item| renderer.draw(item));
+    }
+    let taken = renderer.take_refused();
+    assert_eq!(renderer.take_refused(), Refused::default(), "taken once");
+    taken
+}
+
+#[test]
+fn a_refused_piece_counts_once_by_its_tile_s_kind_and_a_drawn_one_does_not() {
+    // Verifies: ADR-0049
+    let k = DIAGONAL_HALF;
+    let past = vec![
+        p(-k / 256.0, -k / 256.0),
+        p((k + 1.0) / 256.0, (k + 1.0) / 256.0),
+    ];
+    // The dot's tile lays an image, a pixmap's; the broad tile fills, a vector symbol's.
+    for in_layer in [false, true] {
+        let dot = refused(&dot(), vec![hairpin(HAIRPIN_RUN + 1); 2], in_layer);
+        assert_eq!(
+            dot,
+            Refused {
+                pixmaps: 2,
+                symbols: 0,
+                ..Refused::default()
+            },
+            "in a layer: {in_layer}"
+        );
+        let broad = refused(&broad(), vec![past.clone()], in_layer);
+        assert_eq!(
+            broad,
+            Refused {
+                pixmaps: 0,
+                symbols: 1,
+                ..Refused::default()
+            },
+            "in a layer: {in_layer}"
+        );
+    }
+    let gentle = vec![
+        p(10.0, 10.0),
+        p(12.0, 10.0),
+        p(2080.096281325637, 374.6611731005537),
+    ];
+    let drawn = refused(&dot(), vec![hairpin(HAIRPIN_RUN), gentle], false);
+    assert_eq!(drawn, Refused::default());
 }

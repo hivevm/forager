@@ -11,9 +11,10 @@ use forager_style_ir::Map;
 
 use crate::resource::load_once;
 
-/// The fonts loaded during one render, by their path, each its bytes or why it does not open.
-#[derive(Default)]
-pub(crate) struct Fonts {
+/// The fonts loaded during one render through its resource loader, by their path, each its bytes
+/// or why it does not open.
+pub(crate) struct Fonts<'r, L> {
+    loader: &'r L,
     loaded: BTreeMap<String, Result<Rc<[u8]>, String>>,
 }
 
@@ -25,19 +26,26 @@ pub(crate) struct Face {
     pub(crate) glyphs: Vec<u32>,
 }
 
-impl Fonts {
+impl<'r, L: ResourceLoader> Fonts<'r, L> {
+    /// No font yet, each to be loaded through `loader`.
+    pub(crate) fn new(loader: &'r L) -> Self {
+        Self {
+            loader,
+            loaded: BTreeMap::new(),
+        }
+    }
+
     /// The font of the font list `list` that draws `line`: the steps of [`attempts`] in order,
     /// each trying its names until one the font set holds, matched without regard to case as
     /// `msLookupHashTable` matches it, opens; the first font with every glyph of the line, or the
     /// last entry with its `?` for those it lacks. A font that opens but that this renderer
     /// cannot read the line in ends the search, as MapServer would have drawn with it. The error
     /// says why no font draws the line, naming the font and its path.
-    pub(crate) async fn face<L: ResourceLoader>(
+    pub(crate) async fn face(
         &mut self,
         map: &Map,
         list: &str,
         line: &[char],
-        loader: &L,
     ) -> Result<Face, String> {
         let mut why = "the label's font list names no font".to_owned();
         for attempt in attempts(list) {
@@ -47,7 +55,7 @@ impl Fonts {
                     why = format!("the font set has no font `{name}`");
                     continue;
                 };
-                match self.load(path, loader).await {
+                match self.load(path).await {
                     Ok(bytes) => {
                         opened = Some((name, path, bytes));
                         break;
@@ -83,17 +91,16 @@ impl Fonts {
     /// use, as a TrueType marker takes it (ADR-0044): its
     /// path and its bytes, or why it cannot be used, naming the font and its path. A font this
     /// renderer cannot read a character map or outlines of cannot be used (ADR-0031).
-    pub(crate) async fn named<L: ResourceLoader>(
+    pub(crate) async fn named(
         &mut self,
         map: &Map,
         name: &str,
-        loader: &L,
     ) -> Result<(String, Rc<[u8]>), String> {
         let Some(path) = map.fonts.get(name) else {
             return Err(format!("the font set has no font `{name}`"));
         };
         let bytes = self
-            .load(path, loader)
+            .load(path)
             .await
             .map_err(|reason| format!("the font `{name}` ({path}) {reason}"))?;
         let font = Font::new(&bytes).map_err(|e| format!("the font `{name}` ({path}): {e}"))?;
@@ -107,12 +114,8 @@ impl Fonts {
     }
 
     /// The font at `path`, loaded once per render whatever names the font set gives it.
-    async fn load<L: ResourceLoader>(
-        &mut self,
-        path: &str,
-        loader: &L,
-    ) -> Result<Rc<[u8]>, String> {
-        load_once(&mut self.loaded, path, loader, |file| {
+    async fn load(&mut self, path: &str) -> Result<Rc<[u8]>, String> {
+        load_once(&mut self.loaded, path, self.loader, |file| {
             let bytes = file?;
             match Font::new(&bytes) {
                 Err(e) => Err(format!("is no font: {e}")),

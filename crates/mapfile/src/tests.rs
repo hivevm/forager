@@ -18,8 +18,8 @@ use std::collections::BTreeMap;
 
 use forager_ports::{ResourceLoader, ResourcePath, SourceError};
 use forager_style_ir::{
-    Bound, LayerStatus, NotDrawn, RenderMode, Rgba, Severity, ShapeType, Span, TransformNumber,
-    TransformShape, TransformTree,
+    Bound, LayerStatus, NotDrawn, RenderMode, Rgba, Severity, ShapeOp, ShapeType, Span,
+    TransformNumber, TransformShape, TransformTree,
 };
 
 use super::{Loaded, load};
@@ -2020,7 +2020,8 @@ fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
     assert!(codes.is_empty(), "{codes:?}");
     assert_eq!(
         transform,
-        Some(Some(TransformTree::Drawn(TransformShape::Simplify(
+        Some(Some(TransformTree::Drawn(TransformShape::Op(
+            ShapeOp::Simplify,
             Box::new(TransformShape::Shape),
             TransformNumber::Number(25.0)
         ))))

@@ -3,6 +3,7 @@
 //! a polygon, and what is reported where the font or the character is missing or the fill's tile
 //! is refused (ADR-0044).
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 
 use std::collections::BTreeMap;
@@ -230,6 +231,49 @@ fn the_label_cache_sizes_a_truetype_marker_by_its_character() {
     assert_labelled(map("sans", "A"));
 }
 
+/// The files of [`files`], recording every path asked for.
+struct Recorded {
+    files: Files,
+    asked: RefCell<Vec<String>>,
+}
+
+impl ResourceLoader for Recorded {
+    async fn load(&self, path: &ResourcePath) -> Result<Vec<u8>, SourceError> {
+        self.asked.borrow_mut().push(path.as_str().to_owned());
+        self.files.load(path).await
+    }
+}
+
+#[test]
+fn a_font_a_truetype_marker_and_a_label_share_is_loaded_once() {
+    // Verifies: ADR-0044
+    // The marker's font is loaded into the store the labels' fonts use: the label in the same
+    // font, laid out after the marker's font is loaded, asks the loader for nothing more.
+    let mut map = map("sans", "A");
+    map.layers[0].classes[0].labels = vec![Label {
+        text: Some(Expr::String("x".to_owned())),
+        font: Some(Bound::Value("sans".to_owned())),
+        size: Some(Bound::Value(8.0)),
+        color: Some(Bound::Value(BLACK)),
+        ..Label::default()
+    }];
+    let point = r#"{"type": "Point", "coordinates": [20, 20]}"#;
+    let sources = BTreeMap::from([("points".to_owned(), GeoJsonSource::parse(point).unwrap())]);
+    let files = Recorded {
+        files: files(),
+        asked: RefCell::new(Vec::new()),
+    };
+    let rendered = ready(render_with_files(
+        &map,
+        &sources,
+        &files,
+        AggRenderer::new(),
+    ));
+    assert_eq!(codes(&rendered), Vec::<&str>::new());
+    assert_eq!(rendered.labels.len(), 1, "{:?}", rendered.labels);
+    assert_eq!(*files.asked.borrow(), ["sans.ttf"]);
+}
+
 #[test]
 fn the_label_cache_sizes_a_truetype_marker_outside_its_scale_range() {
     // msAddLabel sizes the class's first style by msGetMarkerSize whatever its scale range, so its
@@ -237,6 +281,52 @@ fn the_label_cache_sizes_a_truetype_marker_outside_its_scale_range() {
     let mut map = map("sans", "A");
     map.layers[0].classes[0].styles[0].max_scale_denom = Some(1.0);
     assert_labelled(map);
+}
+
+/// The paths a render of the point layer of [`map`] asks for, its TrueType symbol in the font
+/// `marker` outside its scale range, labelled in `sans`, of `LABELCACHE` `label_cache`.
+fn asked_outside_the_scale_range(label_cache: bool) -> Vec<String> {
+    let mut map = map("marker", "A");
+    map.fonts.insert("marker", "marker.ttf".to_owned());
+    let layer = &mut map.layers[0];
+    layer.label_cache = label_cache;
+    layer.classes[0].styles[0].max_scale_denom = Some(1.0);
+    layer.classes[0].labels = vec![Label {
+        text: Some(Expr::String("x".to_owned())),
+        font: Some(Bound::Value("sans".to_owned())),
+        size: Some(Bound::Value(8.0)),
+        color: Some(Bound::Value(BLACK)),
+        ..Label::default()
+    }];
+    let point = r#"{"type": "Point", "coordinates": [20, 20]}"#;
+    let sources = BTreeMap::from([("points".to_owned(), GeoJsonSource::parse(point).unwrap())]);
+    let mut files = files();
+    let font = files.0["sans.ttf"].clone();
+    files.0.insert("marker.ttf", font);
+    let files = Recorded {
+        files,
+        asked: RefCell::new(Vec::new()),
+    };
+    let rendered = ready(render_with_files(
+        &map,
+        &sources,
+        &files,
+        AggRenderer::new(),
+    ));
+    assert!(rendered.image.is_some());
+    files.asked.into_inner()
+}
+
+#[test]
+fn only_a_layer_of_the_label_cache_loads_the_font_of_a_marker_outside_its_scale_range() {
+    // The label cache sizes the marker beneath a label whatever its style's scale range, so it
+    // loads the marker's font; a layer of LABELCACHE OFF draws its labels at once, beside no
+    // marker the style does not draw, and loads only the label's.
+    assert_eq!(
+        asked_outside_the_scale_range(true),
+        ["marker.ttf", "sans.ttf"]
+    );
+    assert_eq!(asked_outside_the_scale_range(false), ["sans.ttf"]);
 }
 
 #[test]
@@ -347,4 +437,29 @@ fn a_truetype_symbol_with_an_outline_wider_than_any_stroke_renders_without_a_pan
     style.max_width = Some(1e12);
     let rendered = render(&map);
     assert!(rendered.image.is_some(), "{:?}", rendered.diagnostics);
+}
+
+#[test]
+fn a_truetype_marker_whose_glyph_passes_the_reach_is_not_drawn_and_warns_once() {
+    // Verifies: ADR-0027, ADR-0049, Q-3
+    // Moved 4,194,400 pixels right by its `OFFSET`, the `A` of 20 points lies past
+    // `MAX_GLYPH_REACH` of the image, 4,194,304 pixels, so the renderer draws none of it. Two
+    // such markers of the layer warn once.
+    let mut map = map("sans", "A");
+    let style = &mut map.layers[0].classes[0].styles[0];
+    style.offset = Some([Bound::Value(4_194_400.0), Bound::Value(0.0)]);
+    let two = r#"{"type": "MultiPoint", "coordinates": [[20, 20], [10, 10]]}"#;
+    for geometry in [r#"{"type": "Point", "coordinates": [20, 20]}"#, two] {
+        let rendered = render_geometry(&map, geometry);
+        assert_eq!(
+            codes(&rendered),
+            ["symbol-not-drawn"],
+            "{:?}",
+            rendered.diagnostics
+        );
+        let warning = &rendered.diagnostics[0];
+        assert!(warning.message.contains("`points`"), "{}", warning.message);
+        assert_eq!(warning.span, Some(Span::new("m.map", 3, 1)));
+        assert_eq!(drawn(&rendered), 0);
+    }
 }

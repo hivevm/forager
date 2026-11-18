@@ -34,7 +34,9 @@
 //! layer's budget ([`StyleTrees`]).
 
 use forager_style_ir::c::{int_cast, point_in_polygon};
-use forager_style_ir::{Coord, Geometry, NumberOp, Preprocessing, TransformNumber, TransformShape};
+use forager_style_ir::{
+    Coord, Geometry, NumberOp, Preprocessing, ShapeOp, TransformNumber, TransformShape,
+};
 
 use crate::geometry::{self, Area, Charge};
 
@@ -255,25 +257,16 @@ impl Eval<'_> {
     fn shape(&mut self, transform: &TransformShape, shape: Shape) -> Result<Shape, Undrawn> {
         match transform {
             TransformShape::Shape => Ok(shape),
-            TransformShape::Generalize(inner, tolerance) => {
+            TransformShape::Op(op, inner, number) => {
                 let shape = self.shape(inner, shape)?;
-                Ok(generalize(&shape, self.number(tolerance)?))
-            }
-            TransformShape::Densify(inner, tolerance) => {
-                let shape = self.shape(inner, shape)?;
-                densify(&shape, self.number(tolerance)?, self.budget)
-            }
-            TransformShape::Simplify(inner, tolerance) => {
-                let shape = self.shape(inner, shape)?;
-                simplify(shape, self.number(tolerance)?, self.budget)
-            }
-            TransformShape::Simplifypt(inner, tolerance) => {
-                let shape = self.shape(inner, shape)?;
-                simplify_preserving(shape, self.number(tolerance)?, self.budget)
-            }
-            TransformShape::Buffer(inner, distance) => {
-                let shape = self.shape(inner, shape)?;
-                buffer(&shape, self.number(distance)?, self.budget)
+                let number = self.number(number)?;
+                match op {
+                    ShapeOp::Generalize => Ok(generalize(&shape, number)),
+                    ShapeOp::Densify => densify(&shape, number, self.budget),
+                    ShapeOp::Simplify => simplify(shape, number, self.budget),
+                    ShapeOp::Simplifypt => simplify_preserving(shape, number, self.budget),
+                    ShapeOp::Buffer => buffer(&shape, number, self.budget),
+                }
             }
             TransformShape::Outer(inner) => {
                 let shape = self.shape(inner, shape)?;
@@ -445,10 +438,9 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
 /// number, on which geo's repair of the simplified polygon may panic, as it does by a tolerance
 /// that is no number.
 fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
-    if is_empty_from_geos(&shape) {
+    let Some(areas) = given_to_geos(&shape, ShapeOp::Simplify, budget)? else {
         return Ok(shape);
-    }
-    let areas = built(&shape, "simplify", budget)?;
+    };
     if tolerance < 0.0 {
         return Err(Undrawn::Failed(format!(
             "calls simplify with the tolerance {tolerance}, below 0, which fails in MapServer"
@@ -462,6 +454,11 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
             .filter(|part| !part.is_empty())
             .map(|part| geometry::simplify_line(part, tolerance, budget))
             .collect::<Result<_, _>>()?,
+        // Guard: geo 0.33.1
+        // A refusal (ADR-0049): geo's repair of the simplified polygon orders its points by
+        // `lex_cmp`, which unwraps `partial_cmp` of a coordinate that is no number
+        // (`utils.rs:92-97`), reached from `winding_order.rs:149` through `bool_ops/mod.rs:270`.
+        // The layer fails with a diagnostic.
         Kind::Polygon if !is_finite(&shape) => {
             return Err(Undrawn::Failed(
                 "calls simplify on a polygon with a coordinate that is no finite number".to_owned(),
@@ -504,10 +501,9 @@ fn simplify_preserving(
     tolerance: f64,
     budget: &mut Budget,
 ) -> Result<Shape, Undrawn> {
-    if is_empty_from_geos(&shape) {
+    let Some(areas) = given_to_geos(&shape, ShapeOp::Simplifypt, budget)? else {
         return Ok(shape);
-    }
-    let areas = built(&shape, "simplifypt", budget)?;
+    };
     if tolerance < 0.0 {
         return Err(Undrawn::Failed(format!(
             "calls simplifypt with the tolerance {tolerance}, below 0, which fails in MapServer"
@@ -553,15 +549,20 @@ fn simplify_preserving(
 /// finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon of its
 /// own.
 fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
-    if is_empty_from_geos(shape) {
+    let Some(areas) = given_to_geos(shape, ShapeOp::Buffer, budget)? else {
         return Ok(shape.clone());
-    }
-    let areas = built(shape, "buffer", budget)?;
+    };
     if !distance.is_finite() {
         return Err(Undrawn::Failed(format!(
             "calls buffer with the distance {distance}, which fails in MapServer"
         )));
     }
+    // Guard: geo 0.33.1
+    // Guard: i_float 1.16.0
+    // A refusal (ADR-0049): geo's `buffer_with_style` strokes a line through i_overlay
+    // (`buffer.rs:377`), whose adapter takes a point that is no finite number outside its rect,
+    // which fails the debug assertion of `float_to_int` (i_float's `adapter.rs:115-123`). The
+    // layer fails with a diagnostic.
     if !is_finite(shape) {
         return Err(Undrawn::Failed(
             "calls buffer on a shape with a coordinate that is no finite number".to_owned(),
@@ -583,6 +584,19 @@ fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Un
         kind: Kind::Polygon,
         parts,
     })
+}
+
+/// The areas msGEOSShape2Geometry builds of `shape` for the function of GEOS `function`, by
+/// [`built`]. `None` where the shape is GEOS's empty polygon, which the function returns as it is.
+fn given_to_geos(
+    shape: &Shape,
+    function: ShapeOp,
+    budget: &mut Budget,
+) -> Result<Option<Vec<Area>>, Undrawn> {
+    if is_empty_from_geos(shape) {
+        return Ok(None);
+    }
+    built(shape, function.name(), budget).map(Some)
 }
 
 /// Whether `shape` is the empty polygon a function of GEOS returns, which

@@ -894,6 +894,40 @@ fn a_glyph_reaching_too_far_from_the_image_is_left_out_with_a_diagnostic() {
 }
 
 #[test]
+fn a_glyph_past_the_reach_drawn_with_its_layer_warns_only_label_glyph_out_of_reach() {
+    // Verifies: ADR-0031, ADR-0049
+    // The label of the test above, drawn with its layer, where the renderer's refusals are taken
+    // for the layer: without the label cache, and after it. The text path leaves the `1` out, so
+    // the renderer never meets it and adds no warning of its own.
+    let label = Label {
+        font: Some(Bound::Value("huge".to_owned())),
+        text: Some(Expr::String("21".to_owned())),
+        size: Some(Bound::Value(6000.0)),
+        max_size: Some(6000.0),
+        partials: Some(true),
+        ..label_item()
+    };
+    let mut uncached = map(label);
+    uncached.layers[0].label_cache = false;
+    let mut after = uncached.clone();
+    after.layers[0].post_label_cache = true;
+    for map in [uncached, after] {
+        let rendered = render(&map, PLACES);
+        let codes: Vec<&str> = rendered
+            .diagnostics
+            .iter()
+            .map(|d| d.code.as_str())
+            .collect();
+        assert_eq!(codes, ["label-glyph-out-of-reach"]);
+        let image = rendered.image.unwrap();
+        assert!(
+            image.pixels.chunks(4).any(|p| p != [255, 255, 255, 255]),
+            "the `2` is drawn"
+        );
+    }
+}
+
+#[test]
 fn a_glyph_at_the_reach_with_an_outline_is_drawn_or_left_out_with_a_diagnostic() {
     // Verifies: ADR-0031
     // The `1` of the huge test font, a square about 8,000,000 pixels wide at 3000 points, outlined

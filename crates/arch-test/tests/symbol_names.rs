@@ -5,7 +5,7 @@
 //! outside the module where the identifier `symbol`, `symbols`, or `Symbol` stands on its line or
 //! one of the four lines before it. Another form of the comparison passes it.
 
-use std::path::{Path, PathBuf};
+use forager_arch_test::{manifest_dir, rust_files};
 
 /// The one module that may compare a symbol's name, from the workspace root.
 const MODULE: &str = "crates/style-ir/src/c.rs";
@@ -49,35 +49,11 @@ fn comparisons(source: &str) -> Vec<usize> {
         .collect()
 }
 
-/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
-fn manifest_dir() -> PathBuf {
-    std::env::var_os("CARGO_MANIFEST_DIR")
-        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
-}
-
-/// Every `.rs` file under `dir`, `target` directories left out.
-fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.map(Result::unwrap) {
-        let path = entry.path();
-        if path.is_dir() {
-            if entry.file_name() != "target" {
-                rust_files(&path, files);
-            }
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            files.push(path);
-        }
-    }
-}
-
 #[test]
 fn a_symbols_name_is_compared_only_in_the_module_of_style_ir() {
     let root = manifest_dir().join("../..");
-    let mut files = Vec::new();
-    rust_files(&root.join("crates"), &mut files);
-    rust_files(&root.join("fuzz"), &mut files);
+    let mut files = rust_files(&root.join("crates"));
+    files.extend(rust_files(&root.join("fuzz")));
     let module = root.join(MODULE);
     let this = root.join("crates/arch-test/tests/symbol_names.rs");
     let mut copies = Vec::new();
