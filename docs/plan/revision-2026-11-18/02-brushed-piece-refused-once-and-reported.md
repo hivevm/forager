@@ -33,14 +33,14 @@ are two commits that may land as two pull requests.
 
 ## Acceptance criteria
 
-- [ ] Given the hairpin of `brush/tests.rs` at `HAIRPIN_RUN` and one subpixel past it, when each
+- [x] Given the hairpin of `brush/tests.rs` at `HAIRPIN_RUN` and one subpixel past it, when each
   is drawn, then the first draws as today and the second draws nothing.
 - [ ] Given a map whose layer brushes the fuzz path of
   `a_piece_whose_join_lies_far_past_its_short_segment_…`, when the engine renders it, then the
   layer carries the warning, once. The test lives in `crates/engine` and cites the ADR.
 - [ ] Given `a_long_segment_after_a_short_one_at_a_gentle_angle_is_drawn`, when it runs, then it
   still counts 4207 pixels, and its layer carries no warning.
-- [ ] Given `brush.rs`, when it is read, then `within_i32` and its call are gone, or a reason why
+- [x] Given `brush.rs`, when it is read, then `within_i32` and its call are gone, or a reason why
   the probe cannot take the place's bound stands in the hand-off.
 
 ## Read first
@@ -62,3 +62,29 @@ with the human: it implements ADR-0049, which waits for the
 maintainer's decision, and no blocker under `docs/plan/` can name an ADR. It changes the renderer
 trait and the diagnostics a map reports. Stop after the channel has landed if the probe's merge
 does not fit the same session; hand off with the channel landed.
+
+## Where it stands (2026-11-18)
+
+The probe's merge has landed on the branch; the channel waits for a decision.
+
+- 42a221b9 pins what stays: the hairpin at `HAIRPIN_RUN` draws 41 pixels, and a tile of 4096 by
+  1600 pixels refuses a diagonal one subpixel past the place's bound and draws a short line.
+- b23dfff3 moves the place's bound into `JoinProbe::line3`, on `lp.len`, and deletes
+  `within_i32` and its call. The guard carries `// Guard: agg-rust 1.2.0` and names
+  `renderer_outline_image.rs` lines 452-456, 694, and 743. `filtered` stays, since `starts`
+  and `piece_start` take AGG's starts from it.
+- 399ac7b8 tests the probe at the place's bound and one subpixel past it, the joins alone
+  admitting the longer one.
+
+The channel stopped on this: `DrawOp::BrushedLine` carries a `Tile` of draw operations and no
+symbol, so `render-agg` cannot tell a pixmap symbol's refusal from another's. The maintainer
+chooses one of:
+
+- A: `render-agg` takes the kind from the tile's marks: one that draws a `Pixmap` or a
+  `ResampledPixmap` counts as `pixmap-not-drawn`, any other as `symbol-not-drawn`. Only the new
+  method changes the trait. The warning cannot name the symbol, and two symbols of one kind in
+  a layer give one warning.
+- B: the tile carries its symbol's kind, which changes `Tile::new`, a second public interface.
+- C: the renderer reports the refused tiles themselves, and the engine finds each tile's symbol.
+  It warns once per symbol and names it, but the method returns tiles, not counts by kind, and
+  a tile held until the engine takes it counts against ADR-0029's bytes longer than today.
