@@ -1,4 +1,11 @@
-//! No code: this crate holds the dependency test of ADR-0008 under `tests/`.
+//! The architecture checks of the workspace, each a test binary under `tests/`: the dependency
+//! edges between the crates and what each may link or lift (`dependencies.rs`, ADR-0008), the
+//! direction of the imports between the modules of the engine and of `symbolize`
+//! (`engine_modules.rs` and `symbolize_modules.rs`, both reading them by `module_direction/`),
+//! C's and MapServer's small ports defined once (`c_numbers.rs`, ADR-0017), a symbol's name
+//! compared once (`symbol_names.rs`), and the crate's directory taken at run time
+//! (`manifest_dir.rs`). This lib holds what the checks that read the tree share, the crate's
+//! directory and the walk of the `.rs` files under a directory; no other crate depends on it.
 
 use std::path::{Path, PathBuf};
 
