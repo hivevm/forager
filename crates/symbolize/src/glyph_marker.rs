@@ -270,6 +270,11 @@ mod tests {
         }
     }
 
+    /// The resources of a canvas handed the glyph port `glyphs` and no pixmaps.
+    fn glyphs_of(glyphs: &dyn Glyphs) -> SymbolResources<'_> {
+        SymbolResources::default().with_glyphs(glyphs)
+    }
+
     fn truetype(anchor_point: Option<[f64; 2]>) -> Symbol {
         Symbol {
             name: Some("ttf".to_owned()),
@@ -302,7 +307,7 @@ mod tests {
         let symbols = [truetype(None)];
         let style = sized(10.7);
         let boxes = Boxes::default();
-        let resources = SymbolResources::default().with_glyphs(&boxes);
+        let resources = glyphs_of(&boxes);
         let size = marker_size_with(&style, Some(10.7), &style.symbol, &symbols, resources, 1.5);
         assert_eq!(size, Ok((10.0, 20.0)));
         assert_eq!(*boxes.0.borrow(), [16]);
@@ -327,8 +332,8 @@ mod tests {
         // glyph is centred there by its box's centre, (6, -8) y down: its origin is (99, 68).
         let symbols = [truetype(Some([0.0, 0.0]))];
         let boxes = Boxes::default();
-        let mut canvas =
-            Canvas::new(&symbols, 200, 200, Factors::new(1.0, 1.0)).with_glyphs(&boxes);
+        let mut canvas = Canvas::new(&symbols, 200, 200, Factors::new(1.0, 1.0))
+            .with_resources(glyphs_of(&boxes));
         let mut ops = Vec::new();
         let at = Point { x: 100.0, y: 50.0 };
         glyph_ops(&mut ops, at, &sized(10.0), 1, &symbols[0], &mut canvas);
@@ -418,7 +423,7 @@ mod tests {
         ]];
         for layer in 0..2 {
             let mut canvas = Canvas::new(&symbols, 100, 100, Factors::new(1.0, 1.0))
-                .with_glyphs(&boxes)
+                .with_resources(glyphs_of(&boxes))
                 .with_tiles(&mut tiles);
             let mut ops = Vec::new();
             tiled_glyph(
@@ -442,8 +447,8 @@ mod tests {
         // asked alike: its missing character is recorded, and no glyph is drawn.
         let symbols = [truetype(None)];
         let boxes = Boxes(RefCell::default(), true);
-        let mut canvas =
-            Canvas::new(&symbols, 100, 100, Factors::new(1.0, 1.0)).with_glyphs(&boxes);
+        let mut canvas = Canvas::new(&symbols, 100, 100, Factors::new(1.0, 1.0))
+            .with_resources(glyphs_of(&boxes));
         canvas.markers = crate::line_marker::MarkerBudget::of(0);
         assert!(!canvas.markers.take(1, 1));
         let line = [vec![Point { x: 0.0, y: 50.0 }, Point { x: 100.0, y: 50.0 }]];

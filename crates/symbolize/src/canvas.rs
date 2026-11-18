@@ -22,7 +22,6 @@ use forager_render::PremultipliedImage;
 use forager_style_ir::{Style, Symbol};
 
 use crate::clip::Clip;
-use crate::glyph::Glyphs;
 use crate::layer_transform::StyleTrees;
 use crate::line_marker::MarkerBudget;
 use crate::symbol::{self, Factors, Pixmaps, SymbolResources};
@@ -163,15 +162,6 @@ impl<'a> Canvas<'a> {
     pub fn with_tiles(self, tiles: &'a mut Tiles) -> Self {
         Self {
             tiles: Some(tiles),
-            ..self
-        }
-    }
-
-    /// The canvas, its TrueType markers drawn with the glyphs of `glyphs`; without them, each is
-    /// left undrawn.
-    pub fn with_glyphs(self, glyphs: &'a dyn Glyphs) -> Self {
-        Self {
-            resources: self.resources.with_glyphs(glyphs),
             ..self
         }
     }

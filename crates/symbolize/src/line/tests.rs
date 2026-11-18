@@ -27,7 +27,7 @@ use crate::canvas::Canvas;
 use crate::line::Pass;
 use crate::line_marker::MarkerBudget;
 use crate::style::fixed;
-use crate::symbol::Pixmaps;
+use crate::symbol::{Pixmaps, SymbolResources};
 use crate::tile::Tiles;
 
 const BLUE: Rgba = Rgba::opaque(30, 60, 200);
@@ -591,9 +591,12 @@ fn brushed(style: &Style, tiles: &mut Tiles) -> (Vec<DrawOp>, crate::canvas::Ref
     let symbols = brushes();
     let pixmaps = pin_pixmaps();
     let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0))
-        .with_pixmaps(&pixmaps)
-        .with_tiles(tiles)
-        .with_glyphs(&Boxes);
+        .with_resources(
+            SymbolResources::default()
+                .with_pixmaps(&pixmaps)
+                .with_glyphs(&Boxes),
+        )
+        .with_tiles(tiles);
     canvas.class(std::slice::from_ref(style));
     let mut ops = Vec::new();
     let line = vec![vec![p(0.0, 50.0), p(30.0, 50.0)]];
