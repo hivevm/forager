@@ -3,47 +3,69 @@
 - **Status:** 🟡 proposed
 - **Date:** 2026-11-18
 - **Deciders:** Markus Brigl
-- **Applies to:** every guard in Forager's code that keeps an input from a computation of a third-party crate where that crate panics, loops, overflows, or runs out of memory, today in `crates/render-agg` (agg-rust) and `crates/symbolize` (geo and the i_overlay it brings), and the versions `Cargo.lock` pins of those crates
+- **Applies to:** every guard in Forager's code that keeps an input from a third-party crate's computation where the crate panics, loops, overflows, or runs out of memory: `crates/render/src/clip.rs`, `crates/render-agg/src/brush.rs`, `crates/render-agg/src/glyphs.rs`, `crates/render-agg/src/lib.rs`, `crates/symbolize/src/geometry.rs`, `crates/symbolize/src/layer_transform.rs`, the diagnostics of a refused part in `crates/engine`, and `Cargo.lock` for the crates the guards name
 
 ## Context
 
 Q-3 asks that errors of third-party crates become diagnostics, measured by a fuzz run of 5 minutes
 per target that ends without a panic, a crash, a hang past 10 s, or more than 2 GiB. The render
-target reaches agg-rust, geo, and i_overlay with any `f64`. Between 2026-11-16 and 2026-11-18,
-each 300-second run of it, and two reviewers' runs of 45 and 60 seconds, found a new failure in a
-third-party crate. Each was fixed by a guard in Forager's own code, read from the crate's source
-at the version `Cargo.lock` pins:
+target reaches agg-rust, geo, and the i_overlay that geo brings with any `f64`.
+
+Between 2026-11-16 and 2026-11-18, ticket 01 of revision-2026-11-16 ran the render target for 300
+seconds five times. Two reviewers ran it for 45 and 60 seconds. Five of those runs found a failure
+in a third-party crate, one found a timeout in Forager's own smoothsia (72c437a6), and the fifth
+300-second run was clean (3befb4ec). Each third-party failure was fixed by a guard in Forager's
+code, read from the crate's source at the version `Cargo.lock` pins:
 
 - agg-rust 1.2.0's clipper overflowed on a glyph's outline of a huge width. `render-agg` now bounds
-  that width as a stroke's (8bb2ed83). Nothing visible moves.
-- i_overlay 4.5.2 squared an edge of some `1e-164` to 0 in geo's buffer, and the shape vanished.
-  `symbolize` now scales a tiny shape by a power of two around the buffer and back (a13dc8bb).
-  Nothing moves.
+  that width as a stroke's (2f27e2bf, ticket 16). Nothing visible moves.
+- i_overlay 4.5.2 squared an edge of some `1e-164` to 0 in i_float 1.16.0's `normalize`, and the
+  shape vanished from geo's buffer. `symbolize` now scales a tiny shape by a power of two around
+  the buffer and back (a13dc8bb in fa1dadcd, ticket 18). Nothing moves.
 - i_overlay 4.5.2 looped or vanished on a line buffered by a distance near its grid's step.
-  `symbolize` now raises a line's distance to a floor (cb56e3ba). The buffer is wider than GEOS's
-  by at most the floor.
-- geo 0.33.1's repair panicked on a polygon with a coordinate that is no number. `simplify` now
-  fails the layer with a diagnostic (5a003cb0).
-- agg-rust 1.2.0's image line multiplied past `i32` at a join far from its short segment.
-  `render-agg` now leaves such a piece of a brushed line undrawn (8feb9c16, 44a91d4e). It warns
-  nothing.
+  `symbolize` now raises a line's distance to a floor (cb56e3ba in d6691adf, ticket 19). The
+  buffer is wider than GEOS's by at most the floor. The maintainer chose the floor; a first floor
+  of the shape's size alone was rejected in review, since it missed lines far from the origin.
+- geo 0.33.1's `lex_cmp` unwrapped `partial_cmp` of a NaN in the repair of a simplified polygon.
+  `simplify` now fails the layer with a diagnostic (53421100, ticket 20).
+- agg-rust 1.2.0's image line multiplied past `i32` at a join far from its short segment
+  (`renderer_outline_image.rs:456`). `render-agg` now leaves such a piece of a brushed line
+  undrawn (2156170e, ticket 21). It warns nothing.
+
+Older guards of the same kind were written without that name:
+
+- `drawn_width` and `MAX_GLYPH_REACH` with `within_glyph_reach` in `crates/render/src/clip.rs`,
+  which keep a stroke's width and a glyph's points within agg-rust's fixed-point coordinates;
+- in `crates/render-agg/src/brush.rs`, the filter of points that are no finite number,
+  `line_coord_sat`, which holds a coordinate to agg-rust's `LINE_MAX_COORD`, `within_i32`, which
+  bounds the pattern's place, and the start reductions of ADR-0046's *No panic* clause.
 
 Three forces meet here. Q-3 forbids the crash. Q-4 asks for MapServer's drawing, so a guard that
-moves a pixel is a departure. And a guard derived from a crate's internals holds only for the
-version it was read at: the bound of 44a91d4e copies `line3_no_clip`'s halving and
+moves a pixel is a departure. A guard derived from a crate's internals holds only for the version
+it was read at: the bound of 44a91d4e copies `line3_no_clip`'s halving and
 `fix_degenerate_bisectrix` from agg-rust 1.2.0, and the floor of cb56e3ba is set from i_overlay
-4.5.2's grid. Upgrading either crate in `Cargo.lock` can break a guard silently. ADR-0025 says
-the renderer's memory safety rests on agg-rust's `unsafe` code and on the clipping, and ADR-0041
-says `buffer` is geo's `buffer_with_style`. Neither says how a failure of the crate is kept out,
-nor that a guard may refuse or change an input. ADR-0046 decides only the brushed start's
-reductions, which move no pixel, and asks a refused tile to warn.
+4.5.2's grid. An update of `Cargo.lock` can break a guard and leave no failing test, since the
+regression tests hold the inputs that failed at the old version.
 
-The guards answer the five findings in four ways: exact, refused with a diagnostic, refused
-silently, and changed within a bound. A reader without this history would take the silent refusal
-and the floor for mistakes.
+ADR-0025 says the renderer's memory safety rests on agg-rust's `unsafe` code and on the clipping.
+ADR-0041 says `buffer` is geo's `buffer_with_style`. Neither says how a failure of the crate is
+kept out, nor that a guard may refuse or change an input. ADR-0046 decides only the brushed start's
+reductions, which move no pixel, and asks a refused tile to warn. A reader without this history
+would take the silent refusal and the floor for mistakes.
 
-This draft was written by the design revision of 2026-11-18 without the interrogation of the
-`propose-adr` skill. Its questions for the maintainer are under *Follow-ups*.
+**The maintainer's answers** (2026-11-18, the interrogation of `propose-adr`, held through the
+session that ran the design revision):
+
+- The decision binds every guard against a third-party crate, the older ones above included.
+- A refused piece of a brushed line is reported as a warning on the layer that draws it.
+- A guard is bound to its crate's version by a marker in the code and a check against
+  `Cargo.lock`, not by an exact `=` requirement in `Cargo.toml`.
+- Still open: whether the guards are reported upstream, and whether Q-4 accepts the floor of a
+  line's buffer.
+
+The forms, the warning, the marker, and the tests are stated as one decision. Each is a duty of the
+same piece of code, a guard. A guard decided without its binding to a version, or without what a
+user sees of a refusal, is half-decided, and the next fix would choose the rest again.
 
 ## Decision
 
@@ -54,13 +76,13 @@ crate that calls it, by the version `Cargo.lock` pins.
   - **exact:** it changes the input and changes the result back, and moves no pixel;
   - **refusal:** it leaves the input or its part undrawn;
   - **bounded change:** it changes the input within a bound it states.
-- A refusal must report a diagnostic of the layer that draws the input.
-- A bounded change must name its bound in the doc comment of the guard. The page of
-  `docs/semantics/` of the function it changes must name the bound under **Not as MapServer**.
-- Each guard must name the crate, its version, and the source lines it was derived from, in a
-  marker comment `// Guard: <crate> <version>` above the guard.
-- A change of `Cargo.lock` that moves a crate a guard names to another version must re-derive
-  each guard that names it, in the same change.
+- The layer that draws a refused input must report a warning.
+- A bounded change must name its bound in the guard's doc comment. The page of `docs/semantics/`
+  that describes the changed function must name the bound and how it differs from MapServer.
+- A marker comment `// Guard: <crate> <version>` must stand above each guard. The guard's doc
+  comment must name the source lines of that version it was derived from.
+- A change of `Cargo.lock` that moves a named crate to another version must re-derive each guard
+  that names it, in the same change.
 - Each guard must ship two tests. In one, the failing input must not fail. In the other, an
   ordinary input beside it must draw as before the guard.
 
@@ -68,6 +90,8 @@ crate that calls it, by the version `Cargo.lock` pins.
 
 - Forager's own code that loops or overflows, such as the smoothsia timeout of ad075a4c. It is a
   bug fix under Q-9, not a guard.
+- The clip of every path to the image grown by its margin, which
+  [ADR-0027](0027-clip-to-the-image.md) decides with its own margin.
 - Whether a guard is reported upstream, and whether Forager takes up a fixed version.
 - The bound of each guard, which its own fix decides.
 
@@ -76,51 +100,71 @@ crate that calls it, by the version `Cargo.lock` pins.
 - **Catch the panic at the crate's call.** It is recalled, not verified here, that
   `wasm32-unknown-unknown` builds abort on a panic, so `catch_unwind` does not return in the
   browser. It would not stop a loop, a timeout, or an allocation of gigabytes in any case.
-- **Patch the crate in a fork or a vendored copy.** It fixes the cause, but the fork has to be kept
-  in step with upstream, and ADR-0011 takes crates from crates.io only, so a Git fork is refused
-  by `cargo deny`'s check of sources.
+- **Patch the crate.** It fixes the cause, but each form has a cost of its own:
+  - a Git fork is refused by `cargo deny`'s check of sources, since ADR-0011 takes crates from
+    crates.io only;
+  - a vendored copy in the tree, through `[patch]` with a path, is kept in step with upstream by
+    hand, and its licence and notice become Forager's to carry;
+  - a fork published on crates.io passes ADR-0011, but Forager maintains a crate of its own.
 - **Report upstream and wait.** Q-3's weekly run stays red until a release, and a guard is
   needed meanwhile. Reporting stays open beside this decision.
-- **Refuse silently, as 44a91d4e does.** It is the smallest code, but Q-3 asks for a diagnostic,
-  and a part that vanishes without one looks like a renderer's bug to a user.
-- **Keep the guards undecided, one bug fix each, as today.** Each fix chose its own form, and no
+- **Pin each guarded crate with `=` in `Cargo.toml`.** Rejected by the maintainer. A pin stops an
+  update, but it does not say which guard to re-derive when the pin moves, and `Cargo.lock`
+  already holds the version.
+- **No binding to a version.** Rejected by the maintainer. An update can break a guard silently,
+  and no record says which guard to re-check.
+- **Refuse silently, as 44a91d4e does.** Rejected by the maintainer. It is the smallest code, but
+  Q-3 asks for a diagnostic, and a part that vanishes without one looks like a renderer's bug.
+- **Keep the guards undecided, one bug fix each, as before.** Each fix chose its own form, and no
   record ties a guard to the version it was derived from.
 
 ## Sources / Prior art
 
-- The merge messages of tickets 16, 18, 19, 20, and 21 of `docs/plan/revision-2026-11-16/`
-  (2156170e, 53421100, aa34dc9f, d6691adf), with the lines of agg-rust 1.2.0 and i_overlay 4.5.2
-  each read.
+- The merges of tickets 16 (2f27e2bf in c2d97aaf, #204), 18 (a13dc8bb in fa1dadcd, #210),
+  19 (cb56e3ba in d6691adf, #211, a merge without a body), 20 (53421100), and 21 (2156170e), and
+  the plan commits of tickets 17 and 18 (b350ec1a, aa34dc9f).
+- The pinned crates' sources in the local cargo registry, read for this draft:
+  - agg-rust 1.2.0: `renderer_outline_image.rs:452-456`, the products of `dist_start` and
+    `dist_end`; `line_aa_basics.rs:15-16`, `LINE_MAX_COORD` and `LINE_MAX_LENGTH`;
+    `renderer_outline_aa.rs:671`, `MAX_HALF_WIDTH`;
+  - geo 0.33.1: `utils.rs:92-97`, `lex_cmp`, which unwraps `partial_cmp`;
+  - i_float 1.16.0, which i_overlay 4.5.2 takes: `float/vector.rs:34-37`, `normalize`, which
+    divides by the length without a check.
 - `docs/backlog/line-buffer-vanishes-or-runs-long.md` and
   `docs/backlog/brushed-line-join-bound-loose-at-sharp-turns.md`, two guards' known limits.
-- No external source was consulted for this draft.
+- Not consulted: the crates' issue trackers and later releases, since no network was used.
+  Whether a later release fixes a failure is unknown.
 
 ## Consequences
 
-- Positive: each guard is found by its marker, and an upgrade of agg-rust, geo, or i_overlay names
-  the guards to re-derive. A user sees a diagnostic where a part of the map is left out.
-- Negative / trade-offs: a refused piece of a brushed line warns where it is silent today, a
-  change of the drawing's diagnostics. Each guard costs two tests and a marker. An update of
-  the three crates in `Cargo.lock` becomes work of its own.
-- Follow-ups, for the maintainer:
-  - Does a refused piece of a brushed line warn `symbol-not-drawn`, as a refused tile does, or with
-    a code of its own?
-  - Is the floor of a line's buffer a bounded change Q-4 accepts, or does it wait for a fix
-    upstream?
-  - Does the guard's marker suffice, or is the crate's version pinned with `=` in `Cargo.toml`
-    too?
-  - Do the guards' upstream reports become a backlog entry?
+- Positive: each guard is found by its marker, and an update of agg-rust, geo, i_overlay, or
+  i_float names the guards to re-derive. A user sees a warning where a part of the map is left
+  out.
+- Negative / trade-offs:
+  - a refused piece of a brushed line warns where it is silent today, a change of the map's
+    diagnostics;
+  - `render-agg` needs a way to report to the layer, which the renderer trait of `crates/render`
+    lacks today;
+  - each guard costs two tests and a marker, the older guards included;
+  - an update of the guarded crates in `Cargo.lock` becomes work of its own.
+- Follow-ups:
+  - whether the guards' failures are reported upstream, and whether that becomes a backlog
+    entry;
+  - whether Q-4 accepts the floor of a line's buffer, or the floor waits for a fix upstream;
+  - Q-3's wording, which says "become diagnostics" and does not name a guard's refusal.
 
 ## Enforcement
 
 Tests cite this ADR with `Verifies:`:
 
-- a test in `crates/render-agg` that a refused piece of a brushed line warns;
+- a test in `crates/engine` that a layer whose brushed line has a piece `render-agg` refuses
+  carries the warning;
 - the two tests of each guard, the failing input and the ordinary one beside it.
 
 A check under `scripts/` lists each `// Guard: <crate> <version>` marker under `crates/`. It
-fails where `Cargo.lock` holds the crate at another version, and where a marker names a crate
-`Cargo.lock` does not hold.
+fails where `Cargo.lock` holds the crate at no version the marker names, and where a marker names
+a crate `Cargo.lock` does not hold.
 
-**Not mechanically decidable:** that a guard is derived from the lines it names, and that a
-bounded change's page names its bound. The review decides them.
+**Not mechanically decidable:** that a guard is derived from the lines it names, and that every
+guard carries a marker. The same holds for a bounded change's page naming its bound. The review
+decides them.
