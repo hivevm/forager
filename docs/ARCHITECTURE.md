@@ -268,8 +268,10 @@ golden path and the test pattern an agent copies from are named here.
   ([ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md),
   `glyph.rs`, `glyph_marker.rs`); a line's dashes, and the
   style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
-  canvas a layer draws on, which the images of the render's pixmaps are handed on and which
-  yields what it left undrawn (`canvas.rs`); a label's styles, which of them are drawn, and their
+  canvas a layer draws on, which holds the render's symbol resources, the images of its pixmaps and
+  the glyph port, in one value, `SymbolResources`, the label cache sizes a marker with too, whose
+  one lookup of a pixmap's image both share, and which yields what it left undrawn (`canvas.rs`,
+  `symbol.rs`); a label's styles, which of them are drawn, and their
   operations on the label's point and the box around its text: a `labelpoly` style shaded on the
   box, a `labelpoint` style's marker at the point, and a `labelcenter` style's at the centre of the
   box, a vector, an ellipse, or a pixmap drawn as a point's marker is, MapServer's default symbol
