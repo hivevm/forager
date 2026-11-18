@@ -167,8 +167,8 @@ the shape; a vertex within 1.5 pixels of the one before it is passed over, as AG
 Each coordinate is held to AGG's `line_max_coord`, 2^28 - 1 subpixels, some 1,048,576 pixels,
 before it is rounded, as MapServer's `line_coord_sat` holds it: the bound of agg-rust's guard
 ([ADR-0049](../adr/0049-third-party-failures-guarded.md)), which does not differ from MapServer.
-The style's `WIDTH`, `PATTERN`, `LINECAP`, and `LINEJOIN` play no part. A pixmap needs no `COLOR`, and
-a later style of a cached line layer draws it without one ([`line.md`](line.md)).
+The style's `WIDTH`, `PATTERN`, `LINECAP`, and `LINEJOIN` play no part. A pixmap needs no
+`COLOR`, and a later style of a cached line layer draws it without one ([`line.md`](line.md)).
 
 Its bounds (Q-9) are a polygon's tile's: 4096 × 4096 pixels, and the 256 MiB of what one render
 holds decoded, which count beside the tile the copy its brush makes of it while it draws, the tile
