@@ -11,6 +11,9 @@
 # main check does not see; its licences are not checked, since the harness is never distributed.
 # The weekly workflow fuzz.yml runs it, after install-tools.sh.
 #
+# An argument that is no positive whole number of seconds is refused with the usage, before
+# anything is read or installed.
+#
 # Usage: bash scripts/fuzz.sh [seconds per target, default 300]
 # Verifies: Q-3
 set -euo pipefail
@@ -18,7 +21,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NIGHTLY="nightly-2026-10-20"
 CARGO_FUZZ_VERSION="0.13.2"
+
+usage() {
+  echo "usage: bash scripts/fuzz.sh [seconds per target, default 300]" >&2
+  exit 2
+}
+
+(($# <= 1)) || usage
 SECONDS_PER_TARGET="${1:-300}"
+if [[ ! "$SECONDS_PER_TARGET" =~ ^[1-9][0-9]*$ ]]; then
+  echo "the seconds per target are a positive whole number, not '$SECONDS_PER_TARGET'" >&2
+  usage
+fi
 
 cd "$ROOT"
 # The name of every binary target of the fuzz manifest, as cargo reads it, so that no way of

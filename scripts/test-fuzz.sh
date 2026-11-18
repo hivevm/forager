@@ -108,6 +108,14 @@ LIMITS="-timeout=10 -rss_limit_mb=2048"
 
 # --- refusals before anything is fuzzed ------------------------------------------------------
 
+d="$(fixture seconds "$BIN_ONE" one)"
+expect_fuzz 2 "a target's name where the seconds belong fails, naming the seconds it expects" "$d" \
+  "the seconds per target are a positive whole number, not 'render'" "" render
+expect_fuzz 2 "zero seconds fail, with the usage" "$d" \
+  "usage: bash scripts/fuzz.sh [seconds per target, default 300]" "" 0
+expect_fuzz 2 "seconds that are no whole number fail" "$d" \
+  "the seconds per target are a positive whole number, not '1.5'" "" 1.5
+
 d="$(fixture no-bins "")"
 expect_fuzz 1 "a manifest without a bin fails" "$d" "fuzz/Cargo.toml names no [[bin]] target" ""
 
