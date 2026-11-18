@@ -148,6 +148,22 @@ dir="$(repo allowed-gone '/^    Svg,$/d' model)"
 expect_check "an allowed variant the enum no longer has fails" "$dir" 1 \
   "the allow-list names SymbolKind::Svg, which crates/style-ir/src/model.rs does not declare"
 
+dir="$(repo unread-allowed 's/^    \([A-Z][a-z]*\),$/  \1,/' model)"
+REJECT="does not declare" expect_check \
+  "an enum whose variants are not read fails once, not again for its allowed variants" "$dir" 1 \
+  "no variant of SymbolKind is read from crates/style-ir/src/model.rs"
+
+# The allow-list is the script's own: this case runs a copy whose ALLOWED names a variant of an
+# enum ENUMS does not list.
+dir="$(repo unlisted)"
+awk '{ print } /^ALLOWED=\($/ { print "  \"Unlisted::Variant a reason\"" }' "$CHECK" \
+  > "$dir/check.sh"
+mkdir -p "$dir/scripts/lib" && cp "$ROOT/scripts/lib/check.sh" "$dir/scripts/lib/"
+mv "$dir/check.sh" "$dir/scripts/check-fuzz-variants.sh"
+expect "an allowed variant of an enum the check does not list fails" 1 \
+  "the allow-list names Unlisted::Variant, but ENUMS lists no Unlisted" \
+  bash "$dir/scripts/check-fuzz-variants.sh" "$dir"
+
 dir="$(repo no-enum 's/^pub enum Preprocessing {$/pub enum Preprocess {/' transform)"
 expect_check "an enum the file no longer declares fails" "$dir" 1 \
   "crates/style-ir/src/transform.rs declares no 'pub enum Preprocessing {'"

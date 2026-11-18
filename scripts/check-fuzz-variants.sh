@@ -9,7 +9,8 @@
 #
 #   1. fuzz/fuzz_targets/render.rs names no '<Enum>::<Variant>' outside a '//' comment, and
 #      ALLOWED does not name the variant;
-#   2. ALLOWED names a variant the target names, or one the enum does not declare;
+#   2. ALLOWED names a variant the target names, one the enum does not declare, or one of an enum
+#      ENUMS does not list;
 #   3. the file declares no 'pub enum <Enum> {', or no variant of it is read;
 #   4. the tree has no fuzz/fuzz_targets/render.rs.
 #
@@ -18,13 +19,16 @@
 # struct variant's fields are not read; a brace or a name in a comment is not counted. That the
 # target draws what it builds, and that its seeds reach it, no check decides; the convention does.
 #
-# Pure bash + grep, sed, and awk. Usage:
+# Pure bash + grep, sed, and awk, and _contains of scripts/lib/check.sh. Usage:
 #     scripts/check-fuzz-variants.sh [repository root]
 # The root defaults to this repository; scripts/test-check-fuzz-variants.sh passes fixtures.
 # Exit code 0 when the target names every variant the allow-list leaves out, 1 otherwise, 2 on a
 # root that is no directory.
 
 set -uo pipefail
+
+# shellcheck source-path=SCRIPTDIR source=lib/check.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/check.sh"
 
 ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
   || { echo "Fuzz variants check: '${1:-}' is not a directory." >&2; exit 2; }
@@ -78,9 +82,14 @@ variants() {
 }
 
 enums=0 count=0 allowed_count=0
-declared=()
+# The enums ENUMS lists, those whose variants were read, and the variants read, as
+# '<Enum>::<Variant>'.
+listed=() parsed=() declared=()
+declare -A files=()
 for pair in "${ENUMS[@]}"; do
   file="${pair% *}" enum="${pair#* }"
+  listed+=("$enum")
+  files[$enum]="$file"
   if ! grep -qxF "pub enum $enum {" "$ROOT/$file" 2>/dev/null; then
     fail "$file declares no 'pub enum $enum {'"
     continue
@@ -90,6 +99,7 @@ for pair in "${ENUMS[@]}"; do
     fail "no variant of $enum is read from $file; is it laid out as cargo fmt lays it out?"
     continue
   fi
+  parsed+=("$enum")
   enums=$((enums + 1)) count=$((count + ${#names[@]}))
   echo "$enum: ${names[*]}"
   for name in "${names[@]}"; do
@@ -109,17 +119,15 @@ for pair in "${ENUMS[@]}"; do
   done
 done
 
+# An enum whose variants were not read has failed above already.
 for entry in "${ALLOWED[@]}"; do
   variant="${entry%% *}"
   enum="${variant%%::*}"
-  for pair in "${ENUMS[@]}"; do
-    [[ "${pair#* }" == "$enum" ]] || continue
-    if ! grep -qxF "$variant" <<< "$(printf '%s\n' "${declared[@]}")"; then
-      # An enum the file does not declare has failed above already.
-      grep -qxF "pub enum $enum {" "$ROOT/${pair% *}" 2>/dev/null \
-        && fail "the allow-list names $variant, which ${pair% *} does not declare"
-    fi
-  done
+  if ! _contains "$enum" "${listed[@]}"; then
+    fail "the allow-list names $variant, but ENUMS lists no $enum"
+  elif _contains "$enum" "${parsed[@]}" && ! _contains "$variant" "${declared[@]}"; then
+    fail "the allow-list names $variant, which ${files[$enum]} does not declare"
+  fi
 done
 
 if ((failures)); then
