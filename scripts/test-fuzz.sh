@@ -9,6 +9,9 @@
 # call, failing the 'fuzz run' of each target named in $FAKE_FAIL. The case asserts the exit code,
 # a line of the output, and the calls that would have installed the toolchain and fuzzed; a target
 # without seeds fails before any of them is made, and a target that fails does not stop the others.
+# An argument the script cannot read, seconds that are none, a target the manifest does not list,
+# or an input to replay that is no file, fails before any call is made; a named target is fuzzed
+# alone, and a replay makes one 'fuzz run' of its input and no cargo deny.
 # The pins, the nightly toolchain and the version of cargo-fuzz, are read from scripts/fuzz.sh, so
 # that a bump there needs no edit here.
 # Each fixture carries the repository's rust-toolchain.toml, so that cargo reads the manifests
@@ -108,8 +111,44 @@ LIMITS="-timeout=10 -rss_limit_mb=2048"
 
 # --- refusals before anything is fuzzed ------------------------------------------------------
 
+d="$(fixture seconds "$BIN_ONE" one)"
+expect_fuzz 2 "a target's name where the seconds belong fails, naming the seconds it expects" "$d" \
+  "the seconds per target are a positive whole number, not 'render'" "" render
+expect_fuzz 2 "zero seconds fail" "$d" \
+  "the seconds per target are a positive whole number, not '0'" "" 0
+expect_fuzz 2 "a replay without its input fails, with the usage" "$d" \
+  "bash scripts/fuzz.sh --replay <target> <input>" "" --replay one
+expect_fuzz 2 "a replay with an argument past its input fails, with the usage" "$d" \
+  "bash scripts/fuzz.sh --replay <target> <input>" "" --replay one "$d/scripts/fuzz.sh" more
+expect_fuzz 2 "a run with an argument past its target fails, with the usage" "$d" \
+  "usage: bash scripts/fuzz.sh [seconds per target, default 300 [target]]" "" 30 one more
+expect_fuzz 2 "seconds that are no whole number fail" "$d" \
+  "the seconds per target are a positive whole number, not '1.5'" "" 1.5
+expect_fuzz 2 "empty seconds fail, not the default" "$d" \
+  "the seconds per target are a positive whole number, not ''" "" "" one
+
 d="$(fixture no-bins "")"
 expect_fuzz 1 "a manifest without a bin fails" "$d" "fuzz/Cargo.toml names no [[bin]] target" ""
+
+d="$(fixture unknown-target "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
+# cargo, not the manifest, decides the order of the names, so each is asserted on its own.
+expect_fuzz 1 "a target the manifest does not list fails" "$d" \
+  "fuzz/Cargo.toml lists no fuzz target nothing; it lists: " "" 30 nothing
+expect_fuzz 1 "a target the manifest does not list fails, listing its first target" "$d" \
+  " one" "" 30 nothing
+expect_fuzz 1 "a target the manifest does not list fails, listing its other target" "$d" \
+  " declared" "" 30 nothing
+
+d="$(fixture replay-refused "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
+: > "$d/crash-1"
+expect_fuzz 1 "a replay of an input file that does not exist fails naming it" "$d" \
+  "the input to replay, $d/missing, is no file" "" --replay one "$d/missing"
+expect_fuzz 1 "a replay of a target the manifest does not list fails" "$d" \
+  "fuzz/Cargo.toml lists no fuzz target nothing; it lists: " "" --replay nothing "$d/crash-1"
+expect_fuzz 1 "a replay of a target the manifest does not list fails, listing its first target" \
+  "$d" " one" "" --replay nothing "$d/crash-1"
+expect_fuzz 1 "a replay of a target the manifest does not list fails, listing its other target" \
+  "$d" " declared" "" --replay nothing "$d/crash-1"
 
 d="$(fixture no-seeds "$BIN_ONE")"
 expect_fuzz 1 "a bin without seeds fails naming it, before anything is fuzzed" "$d" \
@@ -143,6 +182,51 @@ expect_fuzz 0 "every seeded bin is fuzzed for the seconds given" "$d" "--> fuzz 
 cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=7 $LIMITS
 cargo +$NIGHTLY fuzz run one fuzz/corpus/one fuzz/seeds/one -- -max_total_time=7 $LIMITS" \
   7
+
+d="$(fixture named-target "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
+expect_fuzz 0 "a target named after the seconds is fuzzed alone, for those seconds" "$d" \
+  "--> fuzz declared for 30 s" \
+  "$SETUP
+cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=30 $LIMITS" \
+  30 declared
+
+d="$(fixture named-target-others-unseeded "$BIN_ONE"$'\n\n'"$BIN_PATH" declared)"
+expect_fuzz 0 "a target named alone needs no seeds of the targets it does not fuzz" "$d" \
+  "--> fuzz declared for 30 s" \
+  "$SETUP
+cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=30 $LIMITS" \
+  30 declared
+
+d="$(fixture named-target-unseeded "$BIN_ONE"$'\n\n'"$BIN_PATH" one)"
+expect_fuzz 1 "a target named alone without seeds fails naming it" "$d" \
+  "the fuzz target declared has no seeds under fuzz/seeds/declared" "" 30 declared
+
+# --- the replay ------------------------------------------------------------------------------
+
+REPLAY_SETUP="rustup toolchain install $NIGHTLY --profile minimal"
+
+# No seeds: a replay reads the one input it is given.
+d="$(fixture replay "$BIN_ONE"$'\n\n'"$BIN_PATH")"
+: > "$d/crash-1"
+expect_fuzz 0 "a replay runs the target once on the input, on the pinned nightly, without cargo deny" \
+  "$d" "" "$REPLAY_SETUP
+cargo +$NIGHTLY fuzz run declared $d/crash-1 -- $LIMITS" --replay declared "$d/crash-1"
+FAKE_FAIL="declared" expect_fuzz 77 "a replay exits with the target's result" "$d" \
+  "stand-in crash in declared" "$REPLAY_SETUP
+cargo +$NIGHTLY fuzz run declared $d/crash-1 -- $LIMITS" --replay declared "$d/crash-1"
+
+# An input named relative to the caller's directory, not the repository's, is the one replayed.
+mkdir -p "$d/fuzz/artifacts/declared"
+: > "$d/fuzz/artifacts/declared/crash-2"
+log="$work/replay-relative.log"
+: > "$log"
+out="$(cd "$d/fuzz" && PATH="$work/bin:$PATH" FAKE_LOG="$log" \
+  bash ../scripts/fuzz.sh --replay declared artifacts/declared/crash-2 2>&1)"; rc=$?
+same=0
+[[ "$(cat "$log")" == "$REPLAY_SETUP
+cargo +$NIGHTLY fuzz run declared $d/fuzz/artifacts/declared/crash-2 -- $LIMITS" ]] && same=1
+verdict "a replay reads an input named relative to the caller's directory" 0 "" "$rc" "$out" \
+  "$same" || sed 's/^/    calls got:      /' "$log" >&2
 
 # Each of the two targets fails in turn, so that whichever cargo runs first, a case fails it and
 # asserts that the other is fuzzed too and is not named.

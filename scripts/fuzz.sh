@@ -11,14 +11,51 @@
 # main check does not see; its licences are not checked, since the harness is never distributed.
 # The weekly workflow fuzz.yml runs it, after install-tools.sh.
 #
-# Usage: bash scripts/fuzz.sh [seconds per target, default 300]
+# An argument that is no positive whole number of seconds is refused with the usage, before
+# anything is read or installed. A target named after the seconds is fuzzed alone; a name the
+# manifest does not list is refused with the names it lists, before anything is installed.
+#
+# '--replay <target> <input>' runs the target once on the input file, as a fix's session checks
+# a crash's input, on the pinned toolchain and with the limits of a run, and exits with the
+# target's result. It installs what a run installs, but runs no cargo deny, which guards the
+# weekly run's supply chain and not one input's replay, and needs no seeds. A target the manifest
+# does not list and an input file that does not exist are refused before anything is installed.
+#
+# Usage: bash scripts/fuzz.sh [seconds per target, default 300 [target]]
+#        bash scripts/fuzz.sh --replay <target> <input>
 # Verifies: Q-3
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NIGHTLY="nightly-2026-10-20"
 CARGO_FUZZ_VERSION="0.13.2"
-SECONDS_PER_TARGET="${1:-300}"
+LIMITS=(-timeout=10 -rss_limit_mb=2048)
+
+usage() {
+  echo "usage: bash scripts/fuzz.sh [seconds per target, default 300 [target]]" >&2
+  echo "       bash scripts/fuzz.sh --replay <target> <input>" >&2
+  exit 2
+}
+
+REPLAY=""
+if [[ "${1:-}" == --replay ]]; then
+  (($# == 3)) || usage
+  ONLY="$2"
+  if [[ ! -f "$3" ]]; then
+    echo "the input to replay, $3, is no file" >&2
+    exit 1
+  fi
+  # The input as the caller named it, from wherever the script is called; it runs from $ROOT.
+  REPLAY="$(cd "$(dirname "$3")" && pwd)/$(basename "$3")"
+else
+  (($# <= 2)) || usage
+  SECONDS_PER_TARGET="${1-300}"
+  ONLY="${2:-}"
+  if [[ ! "$SECONDS_PER_TARGET" =~ ^[1-9][0-9]*$ ]]; then
+    echo "the seconds per target are a positive whole number, not '$SECONDS_PER_TARGET'" >&2
+    usage
+  fi
+fi
 
 cd "$ROOT"
 # The name of every binary target of the fuzz manifest, as cargo reads it, so that no way of
@@ -36,16 +73,28 @@ if [ "${#targets[@]}" -eq 0 ]; then
   echo "fuzz/Cargo.toml names no [[bin]] target" >&2
   exit 1
 fi
-for target in "${targets[@]}"; do
-  if [ ! -d "fuzz/seeds/$target" ]; then
-    echo "the fuzz target $target has no seeds under fuzz/seeds/$target" >&2
+if [ -n "$ONLY" ]; then
+  if ! grep -qxF -- "$ONLY" <<< "$names"; then
+    echo "fuzz/Cargo.toml lists no fuzz target $ONLY; it lists: ${targets[*]}" >&2
     exit 1
   fi
-done
+  targets=("$ONLY")
+fi
+if [ -z "$REPLAY" ]; then
+  for target in "${targets[@]}"; do
+    if [ ! -d "fuzz/seeds/$target" ]; then
+      echo "the fuzz target $target has no seeds under fuzz/seeds/$target" >&2
+      exit 1
+    fi
+  done
+fi
 
 rustup toolchain install "$NIGHTLY" --profile minimal
 if ! grep -qF " $CARGO_FUZZ_VERSION" <<< "$(cargo fuzz --version 2> /dev/null)"; then
   cargo install --locked cargo-fuzz --version "$CARGO_FUZZ_VERSION"
+fi
+if [ -n "$REPLAY" ]; then
+  exec cargo "+$NIGHTLY" fuzz run "$ONLY" "$REPLAY" -- "${LIMITS[@]}"
 fi
 cargo deny --manifest-path fuzz/Cargo.toml --config deny.toml --locked check advisories sources
 
@@ -54,7 +103,7 @@ for target in "${targets[@]}"; do
   printf '\n--> fuzz %s for %s s\n' "$target" "$SECONDS_PER_TARGET"
   mkdir -p "fuzz/corpus/$target"
   if ! cargo "+$NIGHTLY" fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- \
-    -max_total_time="$SECONDS_PER_TARGET" -timeout=10 -rss_limit_mb=2048; then
+    -max_total_time="$SECONDS_PER_TARGET" "${LIMITS[@]}"; then
     failed+=("$target")
   fi
 done
