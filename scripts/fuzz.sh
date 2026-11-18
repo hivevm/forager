@@ -21,7 +21,7 @@
 # weekly run's supply chain and not one input's replay, and needs no seeds. A target the manifest
 # does not list and an input file that does not exist are refused before anything is installed.
 #
-# Usage: bash scripts/fuzz.sh [seconds per target, default 300] [target]
+# Usage: bash scripts/fuzz.sh [seconds per target, default 300 [target]]
 #        bash scripts/fuzz.sh --replay <target> <input>
 # Verifies: Q-3
 set -euo pipefail
@@ -32,7 +32,7 @@ CARGO_FUZZ_VERSION="0.13.2"
 LIMITS=(-timeout=10 -rss_limit_mb=2048)
 
 usage() {
-  echo "usage: bash scripts/fuzz.sh [seconds per target, default 300] [target]" >&2
+  echo "usage: bash scripts/fuzz.sh [seconds per target, default 300 [target]]" >&2
   echo "       bash scripts/fuzz.sh --replay <target> <input>" >&2
   exit 2
 }
