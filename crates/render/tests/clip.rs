@@ -33,15 +33,19 @@ fn segments_lines_and_rings_with_both_ends_far_out_are_cut_to_the_image() {
     // Verifies: ADR-0027
     let r = Rect::around_image(100, 100, 0.0);
     let (a, b) = (p(-1e150, 5.0), p(1e150, 5.0));
-    assert_eq!(clip::segment(a, b, &r), Some((p(-2.0, 5.0), p(102.0, 5.0))));
     assert_eq!(
-        clip::line(&[a, b], &r),
+        clip::segment(a, b, &r, &mut false),
+        Some((p(-2.0, 5.0), p(102.0, 5.0)))
+    );
+    assert_eq!(
+        clip::line(&[a, b], &r, &mut false),
         vec![vec![p(-2.0, 5.0), p(102.0, 5.0)]]
     );
     let big = 1e150;
     let ring = clip::ring(
         &[p(-big, -big), p(big, -big), p(big, big), p(-big, big)],
         &r,
+        &mut false,
     );
     assert_eq!(ring.len(), 4, "{ring:?}");
     for corner in [
@@ -75,7 +79,7 @@ fn the_hatch_s_measure_is_the_length_of_what_the_clip_leaves() {
         gamma: None,
     };
     let rect = hatch(0).line_rect(width, height);
-    let each = length(clip::segment(p(-1e150, 0.0), p(1e150, 0.0), &rect).unwrap());
+    let each = length(clip::segment(p(-1e150, 0.0), p(1e150, 0.0), &rect, &mut false).unwrap());
     // The image, the margin of 2 on either side, and half the stroke beyond it.
     assert_eq!(each, 4096.0 + 2.0 * 2.5);
     #[expect(clippy::cast_possible_truncation, reason = "some two thousand")]

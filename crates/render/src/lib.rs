@@ -245,13 +245,18 @@ impl PremultipliedImage {
     }
 }
 
-/// The pieces of brushed lines a renderer left undrawn, since a part of them would make a
-/// third-party crate fail (ADR-0049), counted by the kind of symbol their tile was drawn from: a
-/// pixmap's, or a vector's, an ellipse's, or a TrueType symbol's.
+/// What a renderer left undrawn, since it would make a third-party crate fail (ADR-0049).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Refused {
+    /// The pieces of brushed lines whose tile was drawn from a pixmap symbol.
     pub pixmaps: usize,
+    /// The pieces of brushed lines whose tile was drawn from a vector, an ellipse, or a TrueType
+    /// symbol.
     pub symbols: usize,
+    /// The paths of which the clip dropped a point, a segment, or a crossing (ADR-0027).
+    pub paths: usize,
+    /// The glyph paths with a point past the reach of a glyph, drawn not at all.
+    pub glyphs: usize,
 }
 
 /// Draws display items one by one, onto an image or into a layer of it.

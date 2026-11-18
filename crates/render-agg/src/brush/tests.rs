@@ -107,7 +107,7 @@ fn a_line_within_the_reach_is_left_whole() {
         let (at, _) = starts(&v, 0);
         (v, at)
     };
-    let cut = pieces(&line, &rect);
+    let cut = pieces(&line, &rect, &mut false);
     assert_eq!(
         cut,
         [Piece {
@@ -491,7 +491,8 @@ fn a_refused_piece_counts_once_by_its_tile_s_kind_and_a_drawn_one_does_not() {
             dot,
             Refused {
                 pixmaps: 2,
-                symbols: 0
+                symbols: 0,
+                ..Refused::default()
             },
             "in a layer: {in_layer}"
         );
@@ -500,7 +501,8 @@ fn a_refused_piece_counts_once_by_its_tile_s_kind_and_a_drawn_one_does_not() {
             broad,
             Refused {
                 pixmaps: 0,
-                symbols: 1
+                symbols: 1,
+                ..Refused::default()
             },
             "in a layer: {in_layer}"
         );

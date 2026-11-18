@@ -88,19 +88,23 @@ fn length(dx: f64, dy: f64) -> f64 {
 /// `rect` and dashed by `dashes` from its first point on, as AGG's dasher walks the pattern: the
 /// dashes of a clipped line keep the phase they had where the line began. `None` once the walk
 /// takes more than `steps` dashes and gaps (Q-9): a dash too short to move the walk along, so far
-/// from the image, would never end it.
+/// from the image, would never end it. Each line the clip drops a part of counts in `dropped`.
 pub fn pieces(
     lines: &[[Point; 2]],
     rect: &Rect,
     dashes: &[f64],
     width: f64,
     steps: f64,
+    dropped: &mut usize,
 ) -> Option<Vec<Piece>> {
     let period: f64 = dashes.iter().sum();
     let mut walked = 0.0;
     let mut pieces = Vec::new();
     for &[a, b] in lines {
-        for run in clip::line(&[a, b], rect) {
+        let mut line_dropped = false;
+        let runs = clip::line(&[a, b], rect, &mut line_dropped);
+        *dropped += usize::from(line_dropped);
+        for run in runs {
             let (start, end) = (run[0], run[run.len() - 1]);
             let run_length = length(end.x - start.x, end.y - start.y);
             if run_length.is_nan() || run_length <= 0.0 {
@@ -256,6 +260,7 @@ mod tests {
             &[10.0, 10.0],
             2.0,
             9.0,
+            &mut 0,
         )
         .unwrap();
         let spans: Vec<(f64, f64)> = pieces
@@ -275,12 +280,15 @@ mod tests {
         // The image 96 × 3 grown by the margin and 1: from -3 to 99 across, -3 to 6 down.
         let rect = Rect::around_image(96, 3, 1.0);
         let far = [[p(-3.4e125, 2.1e125), p(0.0, 1.29)]];
-        assert_eq!(pieces(&far, &rect, &[1.8e-278, 5.8e-277], 1.0, 1e6), None);
+        assert_eq!(
+            pieces(&far, &rect, &[1.8e-278, 5.8e-277], 1.0, 1e6, &mut 0),
+            None
+        );
         // A line of 65 pixels, the whole of it inside, walks 7 dashes and gaps.
         let near = [[p(-25.0, 0.0), p(40.0, 0.0)]];
         let wide = Rect::around_image(40, 0, 28.0);
-        assert!(pieces(&near, &wide, &[10.0, 10.0], 2.0, 7.0).is_some());
-        assert_eq!(pieces(&near, &wide, &[10.0, 10.0], 2.0, 6.0), None);
+        assert!(pieces(&near, &wide, &[10.0, 10.0], 2.0, 7.0, &mut 0).is_some());
+        assert_eq!(pieces(&near, &wide, &[10.0, 10.0], 2.0, 6.0, &mut 0), None);
     }
 
     #[test]

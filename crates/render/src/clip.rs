@@ -191,10 +191,13 @@ fn past(t: f64, u: f64, t_other: f64, u_other: f64) -> bool {
 }
 
 /// The part of the segment from `a` to `b` inside the rectangle, by Liang–Barsky; `None` where
-/// the segment misses it, or where an end or a crossing is not finite.
-pub fn segment(a: Point, b: Point, r: &Rect) -> Option<(Point, Point)> {
+/// the segment misses it, or where an end or a crossing is not finite. It sets `dropped` where it
+/// drops the segment for an end, a difference, or a crossing that is not finite, so that a
+/// renderer reports the refusal (ADR-0049); a segment that misses the rectangle leaves it as it is.
+pub fn segment(a: Point, b: Point, r: &Rect, dropped: &mut bool) -> Option<(Point, Point)> {
     if !((b.x - a.x).is_finite() && (b.y - a.y).is_finite()) {
         // The difference of two huge coordinates overflows; such a segment is dropped.
+        *dropped = true;
         return None;
     }
     // Each parameter is kept twice, as t measured from `a` and as u = 1 - t measured from `b`:
@@ -238,7 +241,9 @@ pub fn segment(a: Point, b: Point, r: &Rect) -> Option<(Point, Point)> {
         Some(edge) => r.clamp(edge.crossing(a, b)),
     };
     let (start, end) = (point(entry, a), point(exit, b));
-    (finite(start) && finite(end)).then_some((start, end))
+    let kept = finite(start) && finite(end);
+    *dropped |= !kept;
+    kept.then_some((start, end))
 }
 
 fn finite(p: Point) -> bool {
@@ -246,13 +251,15 @@ fn finite(p: Point) -> bool {
 }
 
 /// Clips an open polyline with Liang–Barsky, segment by segment, into the runs inside; points that
-/// are not finite are dropped.
-pub fn line(line: &[Point], rect: &Rect) -> Vec<Vec<Point>> {
+/// are not finite are dropped. It sets `dropped` where it drops a point, or a segment as
+/// [`segment`] does.
+pub fn line(line: &[Point], rect: &Rect, dropped: &mut bool) -> Vec<Vec<Point>> {
     let points: Vec<Point> = line.iter().copied().filter(|p| finite(*p)).collect();
+    *dropped |= points.len() < line.len();
     let mut runs: Vec<Vec<Point>> = Vec::new();
     let mut run: Vec<Point> = Vec::new();
     for pair in points.windows(2) {
-        match segment(pair[0], pair[1], rect) {
+        match segment(pair[0], pair[1], rect, dropped) {
             Some((a, b)) => {
                 if run.last() != Some(&a) {
                     if run.len() > 1 {
@@ -279,9 +286,10 @@ pub fn line(line: &[Point], rect: &Rect) -> Vec<Vec<Point>> {
 
 /// Clips a closed ring with Sutherland–Hodgman; points that are not finite are dropped. The
 /// result may run along the rectangle's edges, which lie outside the image when the margin covers
-/// the stroke.
-pub fn ring(ring: &[Point], rect: &Rect) -> Vec<Point> {
+/// the stroke. It sets `dropped` where it drops a point, or a crossing that is not finite.
+pub fn ring(ring: &[Point], rect: &Rect, dropped: &mut bool) -> Vec<Point> {
     let mut points: Vec<Point> = ring.iter().copied().filter(|p| finite(*p)).collect();
+    *dropped |= points.len() < ring.len();
     for edge in rect.edges() {
         let Some(&last) = points.last() else {
             break;
@@ -303,7 +311,9 @@ pub fn ring(ring: &[Point], rect: &Rect) -> Vec<Point> {
         points = output;
     }
     // Huge coordinates can still overflow an intersection; such points are dropped as well.
+    let crossed = points.len();
     points.retain(|p| finite(*p));
+    *dropped |= points.len() < crossed;
     if points.len() < 3 { Vec::new() } else { points }
 }
 
@@ -335,7 +345,11 @@ mod tests {
     fn a_ring_far_outside_is_cut_to_the_rectangle() {
         // Verifies: ADR-0025
         let r = Rect::around_image(64, 64, 0.0);
-        let ring = ring(&[p(-1e15, -1e15), p(1e15, 5.0), p(30.0, 1e15)], &r);
+        let ring = ring(
+            &[p(-1e15, -1e15), p(1e15, 5.0), p(30.0, 1e15)],
+            &r,
+            &mut false,
+        );
         assert!(ring.len() >= 3);
         assert!(inside(&ring, &r), "{ring:?}");
     }
@@ -345,9 +359,9 @@ mod tests {
         // Verifies: ADR-0025
         let r = Rect::around_image(64, 64, 0.0);
         for big in [1e200, 1e300, f64::MAX] {
-            let ring = ring(&[p(-big, -big), p(big, 5.0), p(30.0, big)], &r);
+            let ring = ring(&[p(-big, -big), p(big, 5.0), p(30.0, big)], &r, &mut false);
             assert!(inside(&ring, &r), "{big}: {ring:?}");
-            for run in line(&[p(-big, 1.0), p(big, 50.0), p(3.0, -big)], &r) {
+            for run in line(&[p(-big, 1.0), p(big, 50.0), p(3.0, -big)], &r, &mut false) {
                 assert!(inside(&run, &r), "{big}: {run:?}");
             }
         }
@@ -375,10 +389,53 @@ mod tests {
                 Rect::around_image(96, 3, 0.0),
             ),
         ] {
-            assert_eq!(line(&points, &r), Vec::<Vec<Point>>::new(), "{points:?}");
-            let ring = ring(&[points[0], points[1], p(1.0, 1.0)], &r);
+            assert_eq!(
+                line(&points, &r, &mut false),
+                Vec::<Vec<Point>>::new(),
+                "{points:?}"
+            );
+            let ring = ring(&[points[0], points[1], p(1.0, 1.0)], &r, &mut false);
             assert!(inside(&ring, &r), "{points:?}: {ring:?}");
         }
+    }
+
+    /// What each clip says it dropped of its path, by `clip`, with `dropped` unset before.
+    fn dropped(clip: impl FnOnce(&mut bool)) -> bool {
+        let mut dropped = false;
+        clip(&mut dropped);
+        dropped
+    }
+
+    #[test]
+    fn a_clip_says_what_it_drops_and_not_what_lies_outside() {
+        // Verifies: ADR-0027, ADR-0049
+        let r = Rect::around_image(64, 64, 0.0);
+        let crossing = [p(-10.0, 30.0), p(100.0, 30.0), p(30.0, 100.0)];
+        assert!(!dropped(|d| _ = line(&crossing, &r, d)));
+        assert!(!dropped(|d| _ = ring(&crossing, &r, d)));
+        assert!(!dropped(
+            |d| _ = segment(p(-10.0, -10.0), p(-5.0, 90.0), &r, d)
+        ));
+        // A point that is no finite number.
+        for far in [p(f64::NAN, 30.0), p(30.0, f64::INFINITY)] {
+            let points = [p(10.0, 10.0), far, p(50.0, 10.0)];
+            assert!(dropped(|d| _ = line(&points, &r, d)), "{far:?}");
+            assert!(dropped(|d| _ = ring(&points, &r, d)), "{far:?}");
+            assert!(dropped(|d| _ = segment(points[0], far, &r, d)), "{far:?}");
+        }
+        // A coordinate difference that overflows, of two finite points.
+        let (a, b) = (p(1e308, 30.0), p(-1e308, 30.0));
+        assert!(dropped(|d| _ = segment(a, b, &r, d)));
+        assert!(dropped(|d| _ = line(&[a, b], &r, d)));
+        // A crossing that is not finite: the triangle's diagonal, from corner to corner of
+        // `f64`, crosses the left edge at a height no finite number gives, and the triangle,
+        // which covers the image's half above the diagonal, is dropped whole.
+        let max = 1.7e308;
+        let wide = [p(-max, -max), p(-max, -3.0), p(max, max)];
+        let mut said = false;
+        let kept = ring(&wide, &r, &mut said);
+        assert!(said, "{kept:?}");
+        assert_eq!(kept, Vec::<Point>::new());
     }
 
     #[test]
@@ -386,11 +443,11 @@ mod tests {
         // Verifies: ADR-0025
         let r = Rect::around_image(64, 64, 0.0);
         assert_eq!(
-            line(&[p(-1e19, 30.0), p(100.0, 30.0)], &r),
+            line(&[p(-1e19, 30.0), p(100.0, 30.0)], &r, &mut false),
             vec![vec![p(-2.0, 30.0), p(66.0, 30.0)]]
         );
         assert_eq!(
-            line(&[p(-1e19, -1e19), p(100.0, 100.0)], &r),
+            line(&[p(-1e19, -1e19), p(100.0, 100.0)], &r, &mut false),
             vec![vec![p(-2.0, -2.0), p(66.0, 66.0)]]
         );
         // Ends 1e17 to 1e19 out, where every t of a crossing rounds to 1.0 or its neighbour and
@@ -417,7 +474,7 @@ mod tests {
                 ],
             ),
         ] {
-            let runs = line(&points, &r);
+            let runs = line(&points, &r, &mut false);
             assert!(
                 runs.len() == 1
                     && runs[0].len() == 2
@@ -428,7 +485,11 @@ mod tests {
         }
         // The exact crossings of the triangle's two edges from its far vertex are (-2, 8) and
         // (48, -2).
-        let ring = ring(&[p(-1e300, -1e300), p(50.0, 60.0), p(60.0, 10.0)], &r);
+        let ring = ring(
+            &[p(-1e300, -1e300), p(50.0, 60.0), p(60.0, 10.0)],
+            &r,
+            &mut false,
+        );
         for corner in [p(-2.0, 8.0), p(-2.0, -2.0), p(48.0, -2.0)] {
             assert!(
                 ring.iter()
@@ -442,9 +503,9 @@ mod tests {
     fn a_ring_inside_is_kept_and_one_outside_vanishes() {
         let r = image(64, 64);
         let square = [p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0), p(10.0, 20.0)];
-        assert_eq!(ring(&square, &r).len(), 4);
+        assert_eq!(ring(&square, &r, &mut false).len(), 4);
         let outside = [p(100.0, 100.0), p(200.0, 100.0), p(200.0, 200.0)];
-        assert!(ring(&outside, &r).is_empty());
+        assert!(ring(&outside, &r, &mut false).is_empty());
     }
 
     #[test]
@@ -468,6 +529,7 @@ mod tests {
                 p(15.0, 20.0),
             ],
             &r,
+            &mut false,
         );
         assert_eq!(ring, vec![p(10.0, 10.0), p(20.0, 10.0), p(15.0, 20.0)]);
     }
@@ -475,7 +537,11 @@ mod tests {
     #[test]
     fn a_line_leaving_and_reentering_splits_into_runs() {
         let r = image(10, 10);
-        let runs = line(&[p(2.0, 2.0), p(20.0, 2.0), p(20.0, 8.0), p(2.0, 8.0)], &r);
+        let runs = line(
+            &[p(2.0, 2.0), p(20.0, 2.0), p(20.0, 8.0), p(2.0, 8.0)],
+            &r,
+            &mut false,
+        );
         assert_eq!(
             runs,
             vec![
@@ -489,7 +555,7 @@ mod tests {
     fn a_line_inside_stays_one_run() {
         let r = image(10, 10);
         let points = [p(1.0, 1.0), p(5.0, 5.0), p(9.0, 1.0)];
-        assert_eq!(line(&points, &r), vec![points.to_vec()]);
+        assert_eq!(line(&points, &r, &mut false), vec![points.to_vec()]);
     }
 
     #[test]
@@ -499,9 +565,12 @@ mod tests {
         // margin of 2 pixels are kept point for point, so the renderer draws them as unclipped.
         let r = Rect::around_image(64, 64, 0.0);
         let line_points = [p(-2.0, 10.0), p(30.5, 0.25), p(66.0, 66.0)];
-        assert_eq!(line(&line_points, &r), vec![line_points.to_vec()]);
+        assert_eq!(
+            line(&line_points, &r, &mut false),
+            vec![line_points.to_vec()]
+        );
         let ring_points = [p(-2.0, -2.0), p(66.0, -2.0), p(40.0, 50.5), p(3.0, 66.0)];
-        assert_eq!(ring(&ring_points, &r), ring_points.to_vec());
+        assert_eq!(ring(&ring_points, &r, &mut false), ring_points.to_vec());
     }
 
     #[test]
