@@ -243,7 +243,9 @@ mod tests {
         canvas: &mut Canvas,
     ) {
         let mark = crate::symbol::Mark::Glyph(index, symbol);
-        if let Some(tile) = crate::mark::tile(mark, style, (false, TileFor::Polygon), canvas) {
+        if let Some(tile) =
+            crate::mark::tile(mark, style, TileFor::Polygon { seamless: false }, canvas)
+        {
             ops.push(DrawOp::TiledFill { rings, tile });
         }
     }

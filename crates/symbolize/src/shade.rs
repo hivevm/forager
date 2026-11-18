@@ -130,7 +130,13 @@ fn tiled<T>(
     if !meets_image(&rings, canvas.image()) {
         return;
     }
-    if let Some(tile) = mark::pixmap_tile(style, index, image, TileFor::Polygon, canvas) {
+    if let Some(tile) = mark::pixmap_tile(
+        style,
+        index,
+        image,
+        TileFor::Polygon { seamless: false },
+        canvas,
+    ) {
         ops.push(DrawOp::TiledFill { rings, tile });
     }
 }
@@ -156,7 +162,7 @@ fn symbol_tiled<T>(
     }
     let vector = matches!(mark, symbol::Mark::Symbol(_, s) if s.kind == SymbolKind::Vector);
     let seamless = vector && style.gap.unwrap_or(0.0) == 0.0;
-    if let Some(tile) = mark::tile(mark, style, (seamless, TileFor::Polygon), canvas) {
+    if let Some(tile) = mark::tile(mark, style, TileFor::Polygon { seamless }, canvas) {
         ops.push(DrawOp::TiledFill { rings, tile });
     }
 }
