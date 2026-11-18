@@ -1,6 +1,7 @@
 use forager_style_ir::Style;
 
 use crate::canvas::{Canvas, Refusals};
+use crate::line_marker::MarkerBudget;
 use crate::symbol::Factors;
 
 #[test]
@@ -49,4 +50,36 @@ fn the_canvas_yields_its_refusals_once() {
     assert_eq!(refusals.pixmaps[&3].1, "gone");
     assert_eq!(refusals.symbols[&4].1, "too large");
     assert_eq!(canvas.take_refusals(), Refusals::default());
+}
+
+#[test]
+fn the_canvas_yields_its_markers_spent_with_its_refusals_and_holds_on_to_them() {
+    // Verifies: Q-9
+    let mut canvas = Canvas::new(&[], 101, 101, Factors::new(1.0, 1.0));
+    assert!(!canvas.take_refusals().markers_spent);
+    canvas.markers = MarkerBudget::of(1);
+    assert!(!canvas.markers.take(2, 1));
+    assert!(canvas.take_refusals().markers_spent);
+    // The budget stays spent for the layer's later features, and so does its report.
+    assert!(canvas.take_refusals().markers_spent);
+}
+
+#[test]
+fn refusals_merged_keep_markers_spent_and_the_first_bound_of_the_trees() {
+    // Verifies: Q-9
+    let mut refusals = Refusals {
+        markers_spent: true,
+        trees_over_limit: Some("first".to_owned()),
+        ..Refusals::default()
+    };
+    refusals.merge(Refusals {
+        trees_over_limit: Some("second".to_owned()),
+        ..Refusals::default()
+    });
+    assert!(refusals.markers_spent);
+    assert_eq!(refusals.trees_over_limit.as_deref(), Some("first"));
+    let mut none = Refusals::default();
+    none.merge(refusals);
+    assert!(none.markers_spent);
+    assert_eq!(none.trees_over_limit.as_deref(), Some("first"));
 }
