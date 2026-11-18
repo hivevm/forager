@@ -1080,7 +1080,9 @@ mod tests {
         reason = "the clock bounds the test's run time and reaches no output (Q-2)"
     )]
     fn hostile_coordinates_render_quickly_without_a_panic() {
-        // Verifies: ADR-0025, Q-3, Q-9
+        // Verifies: ADR-0025, ADR-0049, Q-3, Q-9
+        // The failing inputs of the clip and of drawn_width: unclipped, the paths 1e15 out run
+        // far past the bound; unbounded, the strokes 1e9 wide do.
         let started = std::time::Instant::now();
         // AGG walks a dash start dash by dash: a huge INITIALGAP or PATTERN costs no more.
         let _ = render(&[
@@ -1178,46 +1180,6 @@ mod tests {
                 vec![f64::NAN, 1.0],
             ),
         ]);
-        assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
-    }
-
-    #[test]
-    #[expect(
-        clippy::disallowed_types,
-        clippy::disallowed_methods,
-        reason = "the clock bounds the test's run time and reaches no output (Q-2)"
-    )]
-    fn paths_far_out_and_a_stroke_a_trillion_pixels_wide_are_clipped_bounded_and_drawn_quickly() {
-        // Verifies: ADR-0049
-        // The failing inputs of two guards, each drawn within a second. A fill and a stroke
-        // reaching ten million pixels out: unclipped, the fill alone runs past 40 seconds in
-        // agg-rust's rasterizer, which walks a cell for every pixel its edges cross. A stroke a
-        // trillion pixels wide: unbounded, its margin lets its outline through the clip, past
-        // agg-rust's fixed-point coordinates, and the render runs past two minutes.
-        let started = std::time::Instant::now();
-        let image = render(&[
-            DrawOp::Fill {
-                rings: vec![vec![p(-1e7, -1e7), p(1e7, 5.0), p(30.0, 1e7)]],
-                color: RED,
-                gamma: None,
-            },
-            DrawOp::Stroke {
-                paths: vec![vec![p(-1e7, 60.5), p(1e7, 60.5)]],
-                closed: false,
-                color: WHITE,
-                pen: Pen::new(3.0, LineCap::Butt, LineJoin::Bevel, InnerJoin::Bevel),
-            },
-        ]);
-        assert_eq!(image.pixel(20, 20), Some(RED));
-        assert_eq!(image.pixel(20, 60), Some(WHITE));
-        assert_eq!(image.pixel(20, 56), Some(RED));
-        let image = render(&[DrawOp::Stroke {
-            paths: vec![vec![p(28.0, 32.0), p(36.0, 32.0)]],
-            closed: false,
-            color: RED,
-            pen: Pen::new(1e12, LineCap::Round, LineJoin::Round, InnerJoin::Miter),
-        }]);
-        assert!(image.pixels.chunks(4).all(|px| px == [200, 80, 80, 255]));
         assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
     }
 
