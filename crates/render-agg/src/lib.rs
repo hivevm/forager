@@ -1182,6 +1182,57 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::disallowed_types,
+        clippy::disallowed_methods,
+        reason = "the clock bounds the test's run time and reaches no output (Q-2)"
+    )]
+    fn a_fill_and_a_stroke_reaching_ten_million_pixels_out_are_clipped_and_drawn_quickly() {
+        // Verifies: ADR-0049
+        // Unclipped, the fill alone runs past 40 seconds in agg-rust's rasterizer, which walks a
+        // cell for every pixel its edges cross.
+        let started = std::time::Instant::now();
+        let image = render(&[
+            DrawOp::Fill {
+                rings: vec![vec![p(-1e7, -1e7), p(1e7, 5.0), p(30.0, 1e7)]],
+                color: RED,
+                gamma: None,
+            },
+            DrawOp::Stroke {
+                paths: vec![vec![p(-1e7, 60.5), p(1e7, 60.5)]],
+                closed: false,
+                color: WHITE,
+                pen: Pen::new(3.0, LineCap::Butt, LineJoin::Bevel, InnerJoin::Bevel),
+            },
+        ]);
+        assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
+        assert_eq!(image.pixel(20, 20), Some(RED));
+        assert_eq!(image.pixel(20, 60), Some(WHITE));
+        assert_eq!(image.pixel(20, 56), Some(RED));
+    }
+
+    #[test]
+    #[expect(
+        clippy::disallowed_types,
+        clippy::disallowed_methods,
+        reason = "the clock bounds the test's run time and reaches no output (Q-2)"
+    )]
+    fn a_stroke_a_trillion_pixels_wide_is_drawn_at_its_bound_and_quickly() {
+        // Verifies: ADR-0049
+        // Unbounded, the stroke's margin lets its outline through the clip, past agg-rust's
+        // fixed-point coordinates, and the render runs past two minutes.
+        let started = std::time::Instant::now();
+        let image = render(&[DrawOp::Stroke {
+            paths: vec![vec![p(28.0, 32.0), p(36.0, 32.0)]],
+            closed: false,
+            color: RED,
+            pen: Pen::new(1e12, LineCap::Round, LineJoin::Round, InnerJoin::Miter),
+        }]);
+        assert!(started.elapsed().as_secs() < 1, "{:?}", started.elapsed());
+        assert!(image.pixels.chunks(4).all(|px| px == [200, 80, 80, 255]));
+    }
+
+    #[test]
     fn a_huge_square_around_the_image_still_fills_it() {
         // Verifies: ADR-0025
         for big in [1e15, 1e200] {
@@ -1242,7 +1293,7 @@ mod tests {
 
     #[test]
     fn a_glyph_outline_is_drawn_before_its_fill_as_the_contour_of_its_width() {
-        // Verifies: ADR-0031
+        // Verifies: ADR-0031, ADR-0049
         use forager_render::GlyphOutline;
         use forager_render::PathCommand::{Close, LineTo, MoveTo};
         const BLUE: Rgba = Rgba::opaque(30, 60, 200);
@@ -1275,7 +1326,7 @@ mod tests {
 
     #[test]
     fn a_glyph_outline_is_bounded_as_a_stroke_is_and_keeps_its_sign() {
-        // Verifies: ADR-0025
+        // Verifies: ADR-0025, ADR-0049
         // Unbounded, a contour of 1e12 puts its vertices past agg-rust's fixed-point
         // coordinates and the rasterizer's clip overflows; bounded as a stroke's width is, it
         // covers the image.
@@ -1348,6 +1399,9 @@ mod tests {
 
     #[test]
     fn a_glyph_path_out_of_reach_is_not_drawn() {
+        // Verifies: ADR-0049
+        // Drawn, a point 1e12 pixels out overflows the subtraction of agg-rust's clip box
+        // (`rasterizer_sl_clip.rs:128`).
         use forager_render::PathCommand::{Close, LineTo, MoveTo};
         let path = vec![
             MoveTo(p(-1e12, -1e12)),

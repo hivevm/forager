@@ -490,4 +490,44 @@ mod tests {
         let points = [p(1.0, 1.0), p(5.0, 5.0), p(9.0, 1.0)];
         assert_eq!(line(&points, &r), vec![points.to_vec()]);
     }
+
+    #[test]
+    fn a_path_within_the_image_grown_by_its_margin_is_handed_on_as_it_is() {
+        // Verifies: ADR-0049
+        // The ordinary input beside the clip's guard: a line and a ring on the image and in its
+        // margin of 2 pixels are kept point for point, so the renderer draws them as unclipped.
+        let r = Rect::around_image(64, 64, 0.0);
+        let line_points = [p(-2.0, 10.0), p(30.5, 0.25), p(66.0, 66.0)];
+        assert_eq!(line(&line_points, &r), vec![line_points.to_vec()]);
+        let ring_points = [p(-2.0, -2.0), p(66.0, -2.0), p(40.0, 50.5), p(3.0, 66.0)];
+        assert_eq!(ring(&ring_points, &r), ring_points.to_vec());
+    }
+
+    #[test]
+    fn a_width_within_the_bound_is_drawn_as_it_is() {
+        // Verifies: ADR-0049
+        // The ordinary input beside drawn_width's guard: up to twice the image's width and
+        // height, 400 pixels on an image of 100 by 100, a width is drawn as given.
+        for width in [0.25, 3.0, 399.5, 400.0] {
+            assert_eq!(drawn_width(width, 100, 100), width);
+        }
+    }
+
+    #[test]
+    fn a_glyph_within_its_reach_is_kept_and_one_a_pixel_past_it_is_not() {
+        // Verifies: ADR-0049
+        // The ordinary input beside the glyph's reach: a point 4,194,304 pixels, 2^22, off the
+        // image is within it, one a pixel farther is not.
+        let image = [0.0, 0.0, 64.0, 32.0];
+        let at = |x: f64, y: f64| {
+            [
+                PathCommand::MoveTo(p(10.0, 10.0)),
+                PathCommand::LineTo(p(x, y)),
+            ]
+        };
+        assert!(within_glyph_reach(image, &at(-4_194_304.0, 10.0)));
+        assert!(within_glyph_reach(image, &at(10.0, 32.0 + 4_194_304.0)));
+        assert!(!within_glyph_reach(image, &at(-4_194_305.0, 10.0)));
+        assert!(!within_glyph_reach(image, &at(10.0, 32.0 + 4_194_305.0)));
+    }
 }

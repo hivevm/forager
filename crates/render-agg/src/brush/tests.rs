@@ -38,7 +38,7 @@ fn the_filter_rounds_as_agg_2_4_s_bilinear_filter_rounds() {
 
 #[test]
 fn a_coordinate_is_saturated_then_rounded_half_to_even() {
-    // Verifies: ADR-0046
+    // Verifies: ADR-0046, ADR-0049
     assert_eq!(line_coord_sat(0.5 / 256.0), 0);
     assert_eq!(line_coord_sat(1.5 / 256.0), 2);
     assert_eq!(line_coord_sat(-2.5 / 256.0), -2);
@@ -202,7 +202,7 @@ fn a_line_that_leaves_the_image_and_comes_back_draws_the_whole_line_s_pixels_on_
 
 #[test]
 fn the_start_carries_over_the_paths_of_a_shape() {
-    // Verifies: ADR-0046
+    // Verifies: ADR-0046, ADR-0049
     // The second path starts where the first, 10 pixels long, left the pattern, so its pixel at x
     // shows the pattern where the first path's does at x - 8, or a whole repeat of 7 from there.
     let image = brushed(
@@ -222,7 +222,7 @@ fn the_start_carries_over_the_paths_of_a_shape() {
 
 #[test]
 fn a_path_whose_start_passes_i32_draws_without_a_panic() {
-    // Verifies: ADR-0046, Q-3
+    // Verifies: ADR-0046, ADR-0049, Q-3
     // 90 segments of 100,000 pixels each: 9,000,000 pixels, past the 8,388,607 the start holds in
     // subpixels. The last segment crosses the image.
     let mut line: Vec<Point> = (0..90)
@@ -235,7 +235,9 @@ fn a_path_whose_start_passes_i32_draws_without_a_panic() {
 
 #[test]
 fn hostile_coordinates_brush_without_a_panic() {
-    // Verifies: Q-3
+    // Verifies: ADR-0049, Q-3
+    // Unsaturated, a coordinate of 1e12 within the reach of 1e300 overflows the subtraction of
+    // agg-rust's `calc_distance` (`rasterizer_outline_aa.rs:39`).
     let paths = vec![
         vec![p(f64::NAN, 0.0), p(1e300, -1e300), p(5.0, 5.0)],
         vec![p(f64::INFINITY, 3.0), p(-1e12, 7.0), p(1e12, 7.5)],
@@ -284,6 +286,30 @@ fn drawn(image: &RgbaImage) -> usize {
         .count()
 }
 
+#[test]
+fn a_brushed_line_is_drawn_as_its_points_give_it() {
+    // Verifies: ADR-0049
+    // The ordinary input beside the filter of points that are no finite number: a line of 35
+    // pixels, the dot's 1 pixel wide, lays 35 pixels along y = 10.5.
+    let line = vec![p(2.0, 10.5), p(20.0, 10.5), p(37.0, 10.5)];
+    assert_eq!(drawn(&dotted(40, 20, line, 3.0)), 35);
+}
+
+#[test]
+fn a_brushed_line_s_points_that_are_no_finite_number_are_left_out() {
+    // Verifies: ADR-0049
+    // The same line with a point of no number and one of an infinite coordinate between its
+    // points: they are left out, and the line is drawn as its finite points give it.
+    let line = vec![
+        p(2.0, 10.5),
+        p(f64::NAN, 5.0),
+        p(20.0, 10.5),
+        p(f64::INFINITY, 3.0),
+        p(37.0, 10.5),
+    ];
+    assert_eq!(drawn(&dotted(40, 20, line, 3.0)), 35);
+}
+
 /// Whether a [`JoinProbe`] for `tile`'s pattern, changed by `adjust`, admits `path`, fed whole.
 fn admits(path: &[Point], tile: &Tile, adjust: impl FnOnce(&mut JoinProbe)) -> bool {
     let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(tile.image(built_tile)));
@@ -306,7 +332,7 @@ fn joins_admit(path: &[Point]) -> bool {
 
 #[test]
 fn a_piece_whose_join_lies_far_past_its_short_segment_is_not_drawn_and_does_not_panic() {
-    // Verifies: Q-3
+    // Verifies: ADR-0049, Q-3
     // Ticket 21's fuzz input: the short first segment's join with the segment of some 8650 pixels
     // after it lies thousands of pixels away, past what `DistanceInterpolator4` multiplies in
     // `i32`, so the piece, the whole path, is not drawn.
@@ -323,7 +349,7 @@ fn a_piece_whose_join_lies_far_past_its_short_segment_is_not_drawn_and_does_not_
 
 #[test]
 fn a_long_segment_after_a_short_one_at_a_gentle_angle_is_drawn() {
-    // Verifies: ADR-0046, Q-3
+    // Verifies: ADR-0046, ADR-0049, Q-3
     // A segment of 2 pixels, then one of 2100 at 10°: their join lies some 2100 × 0.17 pixels
     // from the vertex, far within the bound, and the line is drawn as agg-rust draws it unbounded.
     let line = vec![
