@@ -20,7 +20,10 @@ The script serves both:
   manifest does not list is refused with the names it lists;
 - `scripts/fuzz.sh --replay <target> <input>` runs the target once on the input file, on the
   script's pinned toolchain, and exits with the target's result. That is the run a fix's session
-  needs, without copying the pin.
+  needs, without copying the pin. It installs the pinned nightly and cargo-fuzz where they are
+  missing, as a campaign does, and skips `cargo deny`, which guards the weekly run's supply chain
+  and not one input's replay. It refuses a target the manifest does not list, and an input file
+  that does not exist, before it installs anything.
 
 `README.md`'s *Fuzz* line gives the new usage.
 
@@ -33,7 +36,10 @@ The script serves both:
 - [ ] Given `scripts/fuzz.sh 30 nothing`, when it runs, then it fails and lists the targets of
   `fuzz/Cargo.toml`.
 - [ ] Given `scripts/fuzz.sh --replay render <file>`, when the self-test runs it, then the
-  stand-in records one `fuzz run render <file>` on the pinned nightly and no `-max_total_time`.
+  stand-in records one `fuzz run render <file>` on the pinned nightly, no `-max_total_time`, and
+  no `cargo deny`, and the script exits with the stand-in's status.
+- [ ] Given `scripts/fuzz.sh --replay render <missing file>`, when it runs, then it fails before
+  the toolchain is installed and names the file.
 
 ## Read first
 

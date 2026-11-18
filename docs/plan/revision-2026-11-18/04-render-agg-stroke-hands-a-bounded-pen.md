@@ -23,8 +23,12 @@ The bound of a width is written three ways around `render::clip::drawn_width`:
   (`crates/render-agg/src/glyphs.rs`).
 
 `stroke` hands on a pen whose width is the drawn one, and `rasterize` and `apply` take that pen
-alone. Where the three bounds share one rule, `clip` holds it once, a sign-keeping variant if the
-glyph needs one. No pixel moves. This is a `refactor`.
+alone. Where the three bounds share one rule, `clip`'s `drawn_width` holds it once.
+[ADR-0027](../../../docs/adr/0027-clip-to-the-image.md)'s *Public items* clause lets `clip`
+publish only what it lists, the width a stroke is drawn at among them, so no public sign-keeping
+variant is added: the glyph keeps its sign at its own call, as today, or through a private helper
+of `render-agg`. A shared rule that needs a new public item of `clip` stops the ticket for an ADR.
+No pixel moves. This is a `refactor`.
 
 ## Acceptance criteria
 

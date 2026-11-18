@@ -33,7 +33,7 @@ second takes up the other's lines.
 
 ## Blocked by
 
-- None (can start immediately)
+- docs/plan/revision-2026-11-18/05-symbolize-draws-nothing-asked-once.md (mark.rs, glyph_marker.rs)
 
 ## Mode
 

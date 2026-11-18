@@ -54,9 +54,8 @@ skimmed. The design revision drops what prevented nothing
   revision-2026-11-16 probed them.
 - **A fix of a fuzz finding is cut from the cause its decoded input shows** — the ticket names the
   cause, read from what the input decodes to and from the code that fails. Its first criterion
-  fails on the code before the fix. A guard against a third-party crate also ships the two tests
-  of [ADR-draft-third-party-failures-guarded](adr/draft-third-party-failures-guarded.md). In
-  revision-2026-11-16, review caught four first attempts:
+  fails on the code before the fix. Its tests hold an ordinary input beside the failing one,
+  which draws as before the fix. In revision-2026-11-16, review caught four first attempts:
   - ticket 17's first draft had a first criterion that passed on the code before it (5f943956);
   - ticket 18's first draft framed the panic by the distance, so a tiny shape buffered by its own
     size still panicked (aa34dc9f);
