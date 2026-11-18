@@ -1,4 +1,4 @@
-# Ticket: The labels take a render's resources in one shape, and the symbol resources are built once
+# Ticket: The labels take a render's resources in one shape
 
 ## What to build
 
@@ -9,24 +9,24 @@ cache one `SymbolResources` (merge 9ce92326). Their reviews named four seams tha
 - `Labels::collect` and `Labels::label_at_once` take `&mut Shared`, while
   `Labels::layer_at_once` and `Labels::finish` take `&Pixmaps` (`crates/engine/src/labels.rs`),
   because those two lay out no text;
-- `Shared::symbol_resources()` is called twice per layer, once for the canvas
-  (`crates/engine/src/lib.rs`) and once in `lay_out` (`labels.rs`), from the same fields;
+- `Shared::symbol_resources()` builds the value once per layer for the canvas
+  (`crates/engine/src/lib.rs`) and again for each label laid out (`lay_out`, `labels.rs`), from the
+  same fields. It holds references only, so the copies cost nothing measurable; the seam is that
+  the canvas and the labels each build what is one value;
 - the loader is held twice, as `Resources::loader` and inside `Fonts`;
 - `load_resources` both loads and lends, since splitting it put `render_with_files` past clippy's
   100 lines at the time. Ticket 06 has since moved the drawing of a layer into `draw_layer`.
 
-The labels take the render's resources in one shape, and the symbol resources a layer's canvas and
-its labels use are the one value built once. Whether the loader is held once and whether loading
-and lending split, the session decides by what the change shows: either is done only where it
-makes the code smaller, and the hand-off says which and why. No count, refusal, bound, or
-diagnostic of Q-9 moves, and one font store still serves the labels and the TrueType markers.
+The labels take the render's resources in one shape. Whether the symbol resources are built once
+for a layer and its labels, whether the loader is held once, and whether loading and lending
+split, the session decides by what the change shows: each is done only where it makes the code
+smaller, and the hand-off says which and why. No count, refusal, bound, or diagnostic of Q-9
+moves, and one font store still serves the labels and the TrueType markers.
 
 ## Acceptance criteria
 
 - [ ] Given `crates/engine/src/labels.rs`, when its methods are read, then each that needs the
   render's images or fonts takes them in the same shape, and none takes `&Pixmaps` beside it.
-- [ ] Given `crates/engine/src`, when it is searched for `symbol_resources()`, then a layer's
-  drawing builds the value once.
 - [ ] Given every test of the workspace, the pin of 992572b2 (one font store for labels and
   markers) among them, when they run, then all pass, no assertion changed.
 
@@ -39,7 +39,7 @@ diagnostic of Q-9 moves, and one font store still serves the labels and the True
 
 ## Blocked by
 
-- docs/plan/revision-2026-11-18/15-symbolize-refusals-taken-once.md
+- docs/plan/revision-2026-11-18/15-labels-carry-no-layer-state.md
 
 ## Mode
 
