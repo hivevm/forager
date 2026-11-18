@@ -996,6 +996,77 @@ fn buffer_fails_where_geos_is_given_no_shape_or_no_finite_distance() {
 }
 
 #[test]
+fn the_geos_functions_build_the_shape_before_they_check_their_number() {
+    // Verifies: ADR-0041, ADR-0047, ADR-0049
+    // msGEOSBuffer, msGEOSSimplify, and msGEOSTopologyPreservingSimplify call
+    // msGEOSShape2Geometry before GEOS is given the tolerance or the distance, so a shape of too
+    // few points fails as such whatever the number. The engine's refusal of a coordinate that is
+    // no finite number comes after the number's check.
+    let short = line(&[(0.0, 0.0)]);
+    for (transform, expected) in [
+        (
+            simplified(-1.0),
+            "calls simplify on a shape of too few points",
+        ),
+        (
+            preserved(-1.0),
+            "calls simplifypt on a shape of too few points",
+        ),
+        (
+            buffered(f64::NAN),
+            "calls buffer on a shape of too few points",
+        ),
+    ] {
+        let why = failed(apply(&transform, &short));
+        assert!(why.contains(expected), "{why}");
+    }
+    let infinite = polygon(&[&[
+        (0.0, 0.0),
+        (0.0, 10.0),
+        (f64::INFINITY, 10.0),
+        (10.0, 0.0),
+        (0.0, 0.0),
+    ]]);
+    let why = failed(apply(&simplified(-1.0), &infinite));
+    assert!(
+        why.contains("calls simplify with the tolerance -1, below 0"),
+        "{why}"
+    );
+    let not_a_number = line(&[(0.0, 0.0), (f64::NAN, 1.0)]);
+    let why = failed(apply(&buffered(f64::NAN), &not_a_number));
+    assert!(why.contains("calls buffer with the distance NaN"), "{why}");
+}
+
+#[test]
+fn the_geos_functions_return_geos_s_empty_polygon_whatever_the_number() {
+    // Verifies: ADR-0041, ADR-0047
+    // msGEOSBuffer and msGEOSSimplify hand GEOS's empty polygon on without building it, so
+    // neither the shape nor the number is checked; the engine's simplifypt does the same.
+    let square = polygon(&[&[(0.0, 0.0), (0.0, 4.0), (4.0, 4.0), (4.0, 0.0), (0.0, 0.0)]]);
+    let empty = Ok(Geometry::Polygon(vec![vec![]]));
+    for transform in [
+        TransformShape::Simplify(Box::new(buffered(-3.0)), n(-1.0)),
+        TransformShape::Simplifypt(Box::new(buffered(-3.0)), n(-1.0)),
+        TransformShape::Buffer(Box::new(buffered(-3.0)), n(f64::NAN)),
+    ] {
+        assert_eq!(apply(&transform, &square), empty, "{transform:?}");
+    }
+}
+
+#[test]
+fn the_geos_functions_charge_a_polygon_s_rings_before_they_check_their_number() {
+    // Verifies: Q-9, ADR-0041, ADR-0047
+    // 5 001 rings of 4 points, each tested against all twice as msGEOSShape2Geometry groups them:
+    // 20 004 * 5 001 * 2 points, past 1e8, a limit before the number is checked.
+    let ring = |i: f64| coords(&[(i, 0.0), (i + 0.5, 0.0), (i, 0.5), (i, 0.0)]);
+    let many = Geometry::Polygon((0..5001).map(|i| ring(f64::from(i))).collect());
+    for transform in [simplified(-1.0), preserved(-1.0), buffered(f64::NAN)] {
+        let why = limit(apply(&transform, &many));
+        assert!(why.contains("visits more than 100000000 points"), "{why}");
+    }
+}
+
+#[test]
 #[expect(
     clippy::disallowed_types,
     clippy::disallowed_methods,
