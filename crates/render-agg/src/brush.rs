@@ -472,12 +472,11 @@ impl AggRenderer {
             };
             let mut carry = 0;
             for path in paths {
-                // Guard: agg-rust 1.2.0
-                // A refusal (ADR-0049): a point that is no finite number is left out, and its
-                // neighbours are joined, as `clip::line` leaves it out of a stroke. agg-rust
-                // 1.2.0 takes integers only (`rasterizer_outline_aa.rs:38-39`), which
-                // `line_coord_sat` gives of any number, and `clip::segment` drops a segment to
-                // such a point, so no input fails agg-rust without this filter today.
+                // A rule of the display list, not a guard (the maintainer's ruling of
+                // 2026-11-18): a point that is no finite number is left out and its neighbours
+                // are joined, as `clip::line` joins them for a stroke. Nothing fails without it:
+                // `line_coord_sat` gives an integer of any number, and `clip::segment` drops a
+                // segment to such a point, which would break the line there instead.
                 let points: Vec<Point> = path
                     .iter()
                     .copied()

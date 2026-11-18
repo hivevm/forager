@@ -288,18 +288,16 @@ fn drawn(image: &RgbaImage) -> usize {
 
 #[test]
 fn a_brushed_line_is_drawn_as_its_points_give_it() {
-    // Verifies: ADR-0049
-    // The ordinary input beside the filter of points that are no finite number: a line of 35
-    // pixels, the dot's 1 pixel wide, lays 35 pixels along y = 10.5.
+    // A line of 35 pixels, the dot's 1 pixel wide, lays 35 pixels along y = 10.5.
     let line = vec![p(2.0, 10.5), p(20.0, 10.5), p(37.0, 10.5)];
     assert_eq!(drawn(&dotted(40, 20, line, 3.0)), 35);
 }
 
 #[test]
 fn a_brushed_line_s_points_that_are_no_finite_number_are_left_out() {
-    // Verifies: ADR-0049
-    // The same line with a point of no number and one of an infinite coordinate between its
-    // points: they are left out, and the line is drawn as its finite points give it.
+    // A rule of the display list: the same line with a point of no number and one of an infinite
+    // coordinate between its points is drawn as its finite points give it, the neighbours of
+    // each joined, where the clip alone would drop each segment to such a point, here all four.
     let line = vec![
         p(2.0, 10.5),
         p(f64::NAN, 5.0),
