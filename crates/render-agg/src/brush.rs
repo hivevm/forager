@@ -38,7 +38,7 @@ use agg_rust::renderer_outline_image::{
     ImagePatternSource, LineImagePattern, RendererOutlineImage,
 };
 use forager_render::clip::{self, Rect};
-use forager_render::{Point, PremultipliedImage, Tile};
+use forager_render::{DrawOp, Point, PremultipliedImage, Tile};
 use forager_style_ir::c::lrint;
 
 use crate::pixfmt::PixfmtMapserver;
@@ -429,6 +429,14 @@ fn joins_within_i32(lp: &LineParameters, start: (i32, i32), end: (i32, i32), gro
     within((sx, sy), (lp.x1, lp.y1)) && within((ex, ey), (lp.x2, lp.y2))
 }
 
+/// Whether `tile` was drawn from a pixmap symbol: its marks lay an image, as a pixmap's tile
+/// does, where a vector's, an ellipse's, or a TrueType symbol's fill, stroke, or draw glyphs.
+fn of_pixmap(tile: &Tile) -> bool {
+    tile.marks()
+        .iter()
+        .any(|mark| matches!(mark, DrawOp::Pixmap { .. } | DrawOp::ResampledPixmap { .. }))
+}
+
 impl AggRenderer {
     /// Brushes `paths` with `tile` as `agg2RenderLineTiled` brushes a shape's lines: the tile
     /// copied into AGG's `line_image_pattern` through [`BilinearRgba8`], drawn by agg-rust's
@@ -436,12 +444,14 @@ impl AggRenderer {
     /// and a start of 0 carried over every segment and path. Each path is clipped first to the
     /// image grown by `reach` (ADR-0027) and fed as integers by [`line_coord_sat`]. A path the clip
     /// leaves whole starts where AGG starts it; each piece of one it cuts starts where AGG starts
-    /// it at the piece's first segment (see [`piece_start`]).
+    /// it at the piece's first segment (see [`piece_start`]). A piece [`JoinProbe`] refuses is not
+    /// drawn and counts among the refusals of the tile's kind (ADR-0049).
     pub(crate) fn brushed_line(&mut self, paths: &[Vec<Point>], tile: &Tile, reach: f64) {
         let image = tile.image(built_tile);
         let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(image));
         let reach = if reach > 0.0 { reach } else { 0.0 };
         let rect = Rect::around_image(self.width, self.height, reach);
+        let mut refused = 0;
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerOutlineAa::new();
             let mut carried = Carried {
@@ -477,6 +487,7 @@ impl AggRenderer {
                     feed(&mut rasterizer);
                     rasterizer.render(&mut probe, false);
                     if !probe.within {
+                        refused += 1;
                         continue;
                     }
                     carried.set_start(start);
@@ -485,6 +496,11 @@ impl AggRenderer {
                 }
             }
         });
+        if of_pixmap(tile) {
+            self.refused.pixmaps += refused;
+        } else {
+            self.refused.symbols += refused;
+        }
     }
 }
 

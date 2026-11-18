@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use agg_rust::pattern_filters_rgba::PatternFilterBilinearRgba;
-use forager_render::{DisplayItem, Draw, DrawOp, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, DrawOp, Refused, Renderer, RgbaImage};
 use forager_style_ir::Rgba;
 
 use super::*;
@@ -423,4 +423,69 @@ fn the_probe_admits_a_segment_at_the_place_bound_and_refuses_one_past_it() {
     assert!(!admits(&past, &tile, |_| {}));
     // The joins alone admit the one past it: the place's bound refuses it.
     assert!(admits(&past, &tile, |probe| probe.longest = i64::MAX));
+}
+
+/// What a renderer of 40 by 40 pixels refuses of each of `paths` brushed with `tile`, its reach
+/// 1e7 pixels, each drawn as an item of its own, drawn into a layer where `in_layer`.
+fn refused(tile: &Rc<Tile>, paths: Vec<Vec<Point>>, in_layer: bool) -> Refused {
+    let mut renderer = AggRenderer::new();
+    renderer.begin(40, 40, Rgba::opaque(255, 255, 255));
+    let items: Vec<DisplayItem> = paths
+        .into_iter()
+        .map(|path| DisplayItem {
+            op: DrawOp::BrushedLine {
+                paths: vec![path],
+                tile: Rc::clone(tile),
+                reach: 1e7,
+            },
+            feature_id: None,
+        })
+        .collect();
+    if in_layer {
+        let mut layer = renderer.layer(128);
+        items.iter().for_each(|item| layer.draw(item));
+    } else {
+        items.iter().for_each(|item| renderer.draw(item));
+    }
+    let taken = renderer.take_refused();
+    assert_eq!(renderer.take_refused(), Refused::default(), "taken once");
+    taken
+}
+
+#[test]
+fn a_refused_piece_counts_once_by_its_tile_s_kind_and_a_drawn_one_does_not() {
+    // Verifies: ADR-0049
+    let k = DIAGONAL_HALF;
+    let past = vec![
+        p(-k / 256.0, -k / 256.0),
+        p((k + 1.0) / 256.0, (k + 1.0) / 256.0),
+    ];
+    // The dot's tile lays an image, a pixmap's; the broad tile fills, a vector symbol's.
+    for in_layer in [false, true] {
+        let dot = refused(&dot(), vec![hairpin(HAIRPIN_RUN + 1); 2], in_layer);
+        assert_eq!(
+            dot,
+            Refused {
+                pixmaps: 2,
+                symbols: 0
+            },
+            "in a layer: {in_layer}"
+        );
+        let broad = refused(&broad(), vec![past.clone()], in_layer);
+        assert_eq!(
+            broad,
+            Refused {
+                pixmaps: 0,
+                symbols: 1
+            },
+            "in a layer: {in_layer}"
+        );
+    }
+    let gentle = vec![
+        p(10.0, 10.0),
+        p(12.0, 10.0),
+        p(2080.096281325637, 374.6611731005537),
+    ];
+    let drawn = refused(&dot(), vec![hairpin(HAIRPIN_RUN), gentle], false);
+    assert_eq!(drawn, Refused::default());
 }

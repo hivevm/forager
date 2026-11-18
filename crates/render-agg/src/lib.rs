@@ -53,7 +53,7 @@ use agg_rust::scanline_u::ScanlineU8;
 use forager_render::clip::{self, Rect, drawn_width};
 use forager_render::{
     Affine, Dashes, DisplayItem, Draw, DrawOp, Hatch, InnerJoin, LineCap, LineJoin, Pen, Point,
-    PremultipliedImage, Renderer, RgbaImage, Tile,
+    PremultipliedImage, Refused, Renderer, RgbaImage, Tile,
 };
 use forager_style_ir::Rgba;
 
@@ -69,6 +69,8 @@ pub struct AggRenderer {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
+    /// What it refused to draw since [`Renderer::take_refused`] was last called.
+    refused: Refused,
 }
 
 impl AggRenderer {
@@ -366,6 +368,10 @@ impl Renderer for AggRenderer {
             beneath,
             opacity,
         }
+    }
+
+    fn take_refused(&mut self) -> Refused {
+        std::mem::take(&mut self.refused)
     }
 
     fn finish(mut self) -> RgbaImage {
