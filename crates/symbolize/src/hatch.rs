@@ -36,12 +36,6 @@ use crate::symbol::Factors;
 /// image has some 5800.
 const MAX_LINES: f64 = 1_048_576.0;
 
-/// What the drawing of a class's hatches counts: how many hatches were refused (Q-9).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Hatching {
-    pub refused: usize,
-}
-
 /// The pixel a hatch counts its lines from, the image's `refpt`: the map's origin on the map's
 /// image, where msPrepareImage() puts it, and the corner on a layer's own image, which msDrawLayer
 /// creates with msImageCreate and whose `refpt` stays where agg2CreateImage's `calloc` leaves it.

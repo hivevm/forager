@@ -23,7 +23,6 @@ use forager_style_ir::{Style, Symbol};
 
 use crate::clip::Clip;
 use crate::glyph::Glyphs;
-use crate::hatch::Hatching;
 use crate::layer_transform::StyleTrees;
 use crate::line_marker::MarkerBudget;
 use crate::symbol::{self, Factors, Pixmaps};
@@ -46,7 +45,8 @@ pub struct Canvas<'a> {
     pub(crate) factors: Factors,
     pub(crate) markers: MarkerBudget,
     pub(crate) clip: Clip,
-    pub(crate) hatching: Hatching,
+    /// How many hatches were refused (Q-9), which [`crate::shade::shade`] alone counts.
+    pub(crate) refused_hatches: usize,
     /// Each pixmap symbol left undrawn, by its index from 1, and why.
     pub(crate) refused_pixmaps: BTreeMap<usize, String>,
     /// Each vector or TrueType symbol whose fill tile is refused (Q-9), and each TrueType symbol
@@ -66,24 +66,33 @@ pub struct Canvas<'a> {
     pub(crate) clip_lines: bool,
 }
 
-/// What a layer's drawing left undrawn, which it reports: how many hatches were refused (Q-9),
-/// the pixmap symbols whose image is refused, and the vector and TrueType symbols whose fill tile
-/// is refused (Q-9), each by its index from 1, named, with why.
+/// What a layer's drawing left undrawn, which it reports: whether markers were left out past the
+/// budget of markers (Q-9), how many hatches were refused (Q-9), the pixmap symbols whose image is
+/// refused, and the vector and TrueType symbols whose fill tile is refused (Q-9), each by its index
+/// from 1, named, with why, and the bound of Q-9 the transform trees of its class styles passed, if
+/// they did.
 #[derive(Debug, Default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Refusals {
+    pub markers_spent: bool,
     pub hatches: usize,
     pub pixmaps: BTreeMap<usize, (String, String)>,
     pub symbols: BTreeMap<usize, (String, String)>,
     /// The TrueType symbols whose font lacks their character, drawn with glyph 0.
     pub glyphs: BTreeMap<usize, (String, String)>,
+    /// The bound of Q-9 the transform trees of the class styles passed, once for the layer.
+    pub trees_over_limit: Option<String>,
 }
 
 impl Refusals {
     /// Adds `other`'s hatches to these, and its symbols not among these, each by its index once,
-    /// the first kept.
+    /// the first kept; its markers spent and its trees' bound where these have none.
     pub fn merge(&mut self, other: Self) {
+        self.markers_spent |= other.markers_spent;
         self.hatches += other.hatches;
+        if self.trees_over_limit.is_none() {
+            self.trees_over_limit = other.trees_over_limit;
+        }
         for (index, named) in other.pixmaps {
             self.pixmaps.entry(index).or_insert(named);
         }
@@ -109,7 +118,7 @@ impl<'a> Canvas<'a> {
             factors,
             markers: MarkerBudget::new(),
             clip: Clip::default(),
-            hatching: Hatching::default(),
+            refused_hatches: 0,
             refused_pixmaps: BTreeMap::new(),
             refused_symbols: BTreeMap::new(),
             missing_glyphs: BTreeMap::new(),
@@ -134,11 +143,6 @@ impl<'a> Canvas<'a> {
     /// forgotten here.
     pub fn take_style_tree_failure(&mut self) -> Option<String> {
         self.style_trees.as_mut().and_then(StyleTrees::take_failure)
-    }
-
-    /// The bound of Q-9 the transform trees of the layer's class styles passed, if they did.
-    pub fn style_trees_over_limit(&self) -> Option<&str> {
-        self.style_trees.as_ref().and_then(StyleTrees::over_limit)
     }
 
     /// The canvas, its pixmap symbols drawn with the images of `pixmaps`; without them, every
@@ -203,13 +207,17 @@ impl<'a> Canvas<'a> {
 
     /// Whether markers of the layer were left out, their points past the budget: at its
     /// features, along its lines, or where a style's `GEOMTRANSFORM` places them.
-    pub fn markers_spent(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn markers_spent(&self) -> bool {
         self.markers.spent()
     }
 
-    /// What the layer left undrawn since this was last asked: the hatches refused (Q-9), the
+    /// What the layer left undrawn: since this was last asked, the hatches refused (Q-9), the
     /// pixmap symbols whose image is refused, and the vector, ellipse, and TrueType symbols whose
-    /// fill tile is refused, each named by its name or its index (see [`symbol::named`]).
+    /// fill tile is refused, each named by its name or its index (see [`symbol::named`]); and
+    /// whether its markers were left out past their budget (Q-9) and the bound of Q-9 the
+    /// transform trees of its class styles passed, which the layer's budgets hold on to and are
+    /// not forgotten here.
     pub fn take_refusals(&mut self) -> Refusals {
         let named = |canvas: &Self, refused: BTreeMap<usize, String>| {
             refused
@@ -223,11 +231,18 @@ impl<'a> Canvas<'a> {
         let pixmaps = named(self, refused_pixmaps);
         let symbols = named(self, refused_symbols);
         let glyphs = named(self, missing_glyphs);
+        let trees_over_limit = self
+            .style_trees
+            .as_ref()
+            .and_then(StyleTrees::over_limit)
+            .map(str::to_owned);
         Refusals {
-            hatches: std::mem::take(&mut self.hatching.refused),
+            markers_spent: self.markers.spent(),
+            hatches: std::mem::take(&mut self.refused_hatches),
             pixmaps,
             symbols,
             glyphs,
+            trees_over_limit,
         }
     }
 

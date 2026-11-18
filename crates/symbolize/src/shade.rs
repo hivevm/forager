@@ -37,34 +37,34 @@ use crate::tile::TileFor;
 /// TrueType symbol filled with its glyph tiled (see [`symbol_tiled`]), with any other filled, and
 /// outlined in the `OUTLINECOLOR` at the colour's alpha, with round caps and joins, its width
 /// scaled, the factor itself for a width of 0, and bounded by `MAXWIDTH` and `MINWIDTH` unscaled,
-/// as MapServer bounds it there. False where a hatch is refused (Q-9).
+/// as MapServer bounds it there. A hatch refused (Q-9) is counted on the canvas.
 pub fn shade<T: Clone>(
     ops: &mut Vec<DrawOp>,
     rings: Vec<Vec<Point>>,
     style: &Style<T>,
     view: &View,
     canvas: &mut Canvas,
-) -> bool {
+) {
     let mark = symbol::mark(style, canvas.symbols);
     match mark {
         // No such symbol (src/maprendering.c:742-743).
-        symbol::Mark::Nothing => return true,
+        symbol::Mark::Nothing => return,
         // A pixmap needs no colour (753), and draws neither its COLOR nor an outline.
         symbol::Mark::Pixmap(index, symbol) => {
             tiled(ops, rings, style, index, symbol, canvas);
-            return true;
+            return;
         }
         _ => {}
     }
     let Some(color) = fixed(&style.color) else {
         line_symbol(ops, open_rings(rings), style, Pass::Plain, canvas);
-        return true;
+        return;
     };
     let factor = canvas.factors.scale;
     let rings = moved(rings, style_offset(style, factor));
     match mark {
         symbol::Mark::Hatch => {
-            return match hatch::hatch(
+            match hatch::hatch(
                 rings,
                 style,
                 color,
@@ -72,17 +72,15 @@ pub fn shade<T: Clone>(
                 hatch::reference(canvas.own_image, view),
                 canvas.factors,
             ) {
-                Hatched::Drawn(hatch) => {
-                    ops.push(DrawOp::Hatch(hatch));
-                    true
-                }
-                Hatched::Nothing => true,
-                Hatched::Refused => false,
-            };
+                Hatched::Drawn(hatch) => ops.push(DrawOp::Hatch(hatch)),
+                Hatched::Nothing => {}
+                Hatched::Refused => canvas.refused_hatches += 1,
+            }
+            return;
         }
         symbol::Mark::Symbol(..) | symbol::Mark::Glyph(..) => {
             symbol_tiled(ops, rings, style, mark, canvas);
-            return true;
+            return;
         }
         symbol::Mark::Square | symbol::Mark::Pixmap(..) | symbol::Mark::Nothing => {}
     }
@@ -106,7 +104,6 @@ pub fn shade<T: Clone>(
             pen: Pen::new(width, cap, join, inner_join),
         });
     }
-    true
 }
 
 /// The pixmap symbol `symbol`, at `index` from 1, over a polygon, as msDrawShadeSymbol tiles it:

@@ -228,9 +228,10 @@ golden path and the test pattern an agent copies from are named here.
   refused, a label's among them, vector and TrueType symbols whose fill or brush tile the cache
   refused,
   TrueType symbols whose font cannot be used or lacks the character, and geometries its render
-  mode cannot draw (Q-9); the hatches, pixmaps, and symbols are one value, `Refusals`, which a
-  canvas yields, the labels keep per layer and merge, and one function of `layer.rs` turns into the
-  layer's diagnostics. It loads the
+  mode cannot draw (Q-9); the markers, hatches, pixmaps, and symbols, and the bound the transform
+  trees of its class styles passed, are one value, `Refusals`, which a canvas yields in one call,
+  the labels keep per layer and merge, and the layer's reports turn into its diagnostics, its
+  symbols through one function of `layer.rs`. It loads the
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style

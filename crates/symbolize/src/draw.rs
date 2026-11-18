@@ -140,8 +140,7 @@ pub fn draw_ops(
                 _ => Vec::new(),
             };
             let rings = clip::hatch_rings(&rings, view, canvas.image(), &canvas.clip);
-            let drawn = shade(&mut ops, rings, style, view, canvas);
-            canvas.hatching.refused += usize::from(!drawn);
+            shade(&mut ops, rings, style, view, canvas);
         }
         (RenderMode::Polygon, Geometry::Polygon(parts)) => {
             shade(&mut ops, rings(parts), style, view, canvas);
@@ -350,8 +349,7 @@ fn expression(
             if rings.is_empty() {
                 return;
             }
-            let drawn = shade(ops, rings, &pass.style(style, canvas), view, canvas);
-            canvas.hatching.refused += usize::from(!drawn);
+            shade(ops, rings, &pass.style(style, canvas), view, canvas);
         }
     }
 }
@@ -418,8 +416,7 @@ fn bbox(
     let Some(ring) = geom_transform::bbox(geometry, view, canvas.size, width, size) else {
         return;
     };
-    let drawn = shade(ops, vec![ring], style, view, canvas);
-    canvas.hatching.refused += usize::from(!drawn);
+    shade(ops, vec![ring], style, view, canvas);
 }
 
 #[cfg(test)]

@@ -58,7 +58,9 @@ fn a_filled_polygon_is_outlined_at_its_fill_s_alpha() {
         11,
     )
     .unwrap();
-    assert!(shade(&mut ops, line(), &style, &view, &mut plain()));
+    let mut canvas = plain();
+    shade(&mut ops, line(), &style, &view, &mut canvas);
+    assert_eq!(canvas.refused_hatches, 0);
     // The polygon shape is one fill item, through MapServer's default gamma, the 0.75 of
     // agg2CreateImage's msGetOutputFormatOption(format, "GAMMA", "0.75").
     assert!(matches!(
@@ -111,7 +113,9 @@ fn a_polygon_s_outline_no_wider_than_a_pixel_bevels_its_inner_joins() {
         )
         .unwrap();
         let mut ops = Vec::new();
-        assert!(shade(&mut ops, line(), &style, &view, &mut plain()));
+        let mut canvas = plain();
+        shade(&mut ops, line(), &style, &view, &mut canvas);
+        assert_eq!(canvas.refused_hatches, 0);
         match &ops[1] {
             DrawOp::Stroke {
                 pen:
@@ -175,9 +179,13 @@ fn antialias_false_reaches_the_stroke_of_a_line_but_not_the_outline_of_a_fill() 
     let mut ops = Vec::new();
     let view = unit_view();
     let fill = aliased(colored(Some(BLACK), Some(BLACK)));
-    assert!(shade(&mut ops, line(), &fill, &view, &mut plain()));
+    let mut canvas = plain();
+    shade(&mut ops, line(), &fill, &view, &mut canvas);
+    assert_eq!(canvas.refused_hatches, 0);
     let outline = aliased(colored(None, Some(BLACK)));
-    assert!(shade(&mut ops, line(), &outline, &view, &mut plain()));
+    let mut canvas = plain();
+    shade(&mut ops, line(), &outline, &view, &mut canvas);
+    assert_eq!(canvas.refused_hatches, 0);
     assert_eq!(antialiased(&ops), [true, false]);
 }
 
@@ -262,14 +270,15 @@ fn a_hatch_is_bounded_on_the_image_s_own_size_not_one_rebuilt_from_the_extent() 
     let shaded = |width: u32, ring| {
         let mut canvas = Canvas::new(&symbols, width, width, Factors::new(1.0, 1.0));
         let mut ops = Vec::new();
-        shade(&mut ops, ring, &style, &view, &mut canvas)
+        shade(&mut ops, ring, &style, &view, &mut canvas);
+        canvas.refused_hatches
     };
-    assert!(!shaded(1001, ring(1100.0)), "refused on 1001 × 1001");
+    assert_eq!(shaded(1001, ring(1100.0)), 1, "refused on 1001 × 1001");
     // For contrast, not deciding: the hatch over a polygon about an image that is truly
     // 100 × 100 is drawn. The view is built by hand, since `View::for_image` always gives
     // an extent that rebuilds the image's own size, and the criterion is the case where the
     // two disagree.
-    assert!(shaded(100, ring(110.0)), "drawn on 100 × 100");
+    assert_eq!(shaded(100, ring(110.0)), 0, "drawn on 100 × 100");
 }
 
 fn stroke(op: &DrawOp) -> (f64, &Dashes, &[Vec<Point>]) {
@@ -298,7 +307,8 @@ fn at_a_factor_a_polygon_moves_by_its_offset_scaled_and_its_outline_bounds_stay(
         let mut ops = Vec::new();
         let mut canvas = Canvas::new(&[], 101, 101, Factors::new(2.0, 2.0));
         let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
-        assert!(shade(&mut ops, ring, &style, &unit_view(), &mut canvas));
+        shade(&mut ops, ring, &style, &unit_view(), &mut canvas);
+        assert_eq!(canvas.refused_hatches, 0);
         ops
     };
     let ops = outlined(3.0, None);
@@ -356,13 +366,14 @@ fn a_polygon_of_a_symbol_past_the_last_or_of_a_name_no_symbol_carries_draws_noth
         let mut canvas =
             Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
         let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
-        assert!(shade(
+        shade(
             &mut ops,
             ring,
             &by(symbol.clone()),
             &unit_view(),
-            &mut canvas
-        ));
+            &mut canvas,
+        );
+        assert_eq!(canvas.refused_hatches, 0);
         assert_eq!(!ops.is_empty(), drawn, "{symbol:?}: {ops:?}");
     }
 }
@@ -376,7 +387,8 @@ fn a_polygon_bounds_its_outline_as_ms_draw_shade_symbol_does() {
         let mut ops = Vec::new();
         let mut canvas = Canvas::new(&[], 101, 101, Factors::new(2.0, 2.0));
         let ring = vec![vec![p(10.0, 10.0), p(20.0, 10.0), p(20.0, 20.0)]];
-        assert!(shade(&mut ops, ring, style, &unit_view(), &mut canvas));
+        shade(&mut ops, ring, style, &unit_view(), &mut canvas);
+        assert_eq!(canvas.refused_hatches, 0);
         stroke(&ops[1]).0
     };
     assert_eq!(outline(&bounded_nan(2.0, 5.0, Some(BLACK))), 5.0);
@@ -424,7 +436,8 @@ fn a_polygon_s_pixmap_is_moved_by_its_offset_and_draws_neither_colour_nor_outlin
         .with_tiles(&mut tiles);
     let mut ops = Vec::new();
     let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
-    assert!(shade(&mut ops, ring, &style, &unit_view(), &mut canvas));
+    shade(&mut ops, ring, &style, &unit_view(), &mut canvas);
+    assert_eq!(canvas.refused_hatches, 0);
     match ops.as_slice() {
         [DrawOp::TiledFill { rings, tile }] => {
             assert_eq!(rings[0][0], p(16.0, 6.0), "the offset scaled by the factor");
@@ -462,7 +475,8 @@ fn a_polygon_s_pixmap_without_its_image_or_past_its_bound_draws_nothing_and_says
         };
         let mut ops = Vec::new();
         let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
-        assert!(shade(&mut ops, ring, style, &unit_view(), &mut canvas));
+        shade(&mut ops, ring, style, &unit_view(), &mut canvas);
+        assert_eq!(canvas.refused_hatches, 0);
         assert!(ops.is_empty(), "{ops:?}");
         let refused = canvas.take_refusals().pixmaps;
         assert_eq!(refused.len(), 1);
@@ -524,7 +538,8 @@ fn an_ellipse_over_a_polygon_is_tiled_once_at_the_tile_s_centre_never_seamless()
             Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
         let mut ops = Vec::new();
         let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
-        assert!(shade(&mut ops, ring, &style, &unit_view(), &mut canvas));
+        shade(&mut ops, ring, &style, &unit_view(), &mut canvas);
+        assert_eq!(canvas.refused_hatches, 0);
         match ops.as_slice() {
             [DrawOp::TiledFill { tile, .. }] => {
                 ((tile.width(), tile.height()), tile.marks().to_vec())

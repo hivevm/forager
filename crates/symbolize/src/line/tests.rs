@@ -694,13 +694,8 @@ fn a_polygon_s_cached_seamless_tile_serves_a_line_of_the_same_key() {
     let style = brush(1, 10.0);
     let mut ops = Vec::new();
     let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
-    assert!(crate::shade::shade(
-        &mut ops,
-        ring,
-        &style,
-        &view,
-        &mut canvas
-    ));
+    crate::shade::shade(&mut ops, ring, &style, &view, &mut canvas);
+    assert_eq!(canvas.refused_hatches, 0);
     line_symbol(&mut ops, line(), &style, Pass::Plain, &mut canvas);
     match &ops[..] {
         [
@@ -825,13 +820,8 @@ fn a_polygon_s_vector_symbol_without_a_color_brushes_its_outline() {
     };
     let mut ops = Vec::new();
     let ring = vec![vec![p(10.0, 10.0), p(90.0, 10.0), p(90.0, 90.0)]];
-    assert!(crate::shade::shade(
-        &mut ops,
-        ring,
-        &style,
-        &unit_view(),
-        &mut canvas
-    ));
+    crate::shade::shade(&mut ops, ring, &style, &unit_view(), &mut canvas);
+    assert_eq!(canvas.refused_hatches, 0);
     match &ops[..] {
         [DrawOp::BrushedLine { paths, tile, .. }] => {
             assert_eq!(paths[0].len(), 4);
