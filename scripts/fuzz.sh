@@ -12,9 +12,10 @@
 # The weekly workflow fuzz.yml runs it, after install-tools.sh.
 #
 # An argument that is no positive whole number of seconds is refused with the usage, before
-# anything is read or installed.
+# anything is read or installed. A target named after the seconds is fuzzed alone; a name the
+# manifest does not list is refused with the names it lists, before anything is installed.
 #
-# Usage: bash scripts/fuzz.sh [seconds per target, default 300]
+# Usage: bash scripts/fuzz.sh [seconds per target, default 300] [target]
 # Verifies: Q-3
 set -euo pipefail
 
@@ -23,12 +24,13 @@ NIGHTLY="nightly-2026-10-20"
 CARGO_FUZZ_VERSION="0.13.2"
 
 usage() {
-  echo "usage: bash scripts/fuzz.sh [seconds per target, default 300]" >&2
+  echo "usage: bash scripts/fuzz.sh [seconds per target, default 300] [target]" >&2
   exit 2
 }
 
-(($# <= 1)) || usage
+(($# <= 2)) || usage
 SECONDS_PER_TARGET="${1:-300}"
+ONLY="${2:-}"
 if [[ ! "$SECONDS_PER_TARGET" =~ ^[1-9][0-9]*$ ]]; then
   echo "the seconds per target are a positive whole number, not '$SECONDS_PER_TARGET'" >&2
   usage
@@ -49,6 +51,13 @@ fi
 if [ "${#targets[@]}" -eq 0 ]; then
   echo "fuzz/Cargo.toml names no [[bin]] target" >&2
   exit 1
+fi
+if [ -n "$ONLY" ]; then
+  if ! printf '%s\n' "${targets[@]}" | grep -qxF -- "$ONLY"; then
+    echo "fuzz/Cargo.toml lists no fuzz target $ONLY; it lists: ${targets[*]}" >&2
+    exit 1
+  fi
+  targets=("$ONLY")
 fi
 for target in "${targets[@]}"; do
   if [ ! -d "fuzz/seeds/$target" ]; then

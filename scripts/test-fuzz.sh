@@ -112,12 +112,21 @@ d="$(fixture seconds "$BIN_ONE" one)"
 expect_fuzz 2 "a target's name where the seconds belong fails, naming the seconds it expects" "$d" \
   "the seconds per target are a positive whole number, not 'render'" "" render
 expect_fuzz 2 "zero seconds fail, with the usage" "$d" \
-  "usage: bash scripts/fuzz.sh [seconds per target, default 300]" "" 0
+  "usage: bash scripts/fuzz.sh [seconds per target, default 300] [target]" "" 0
 expect_fuzz 2 "seconds that are no whole number fail" "$d" \
   "the seconds per target are a positive whole number, not '1.5'" "" 1.5
 
 d="$(fixture no-bins "")"
 expect_fuzz 1 "a manifest without a bin fails" "$d" "fuzz/Cargo.toml names no [[bin]] target" ""
+
+d="$(fixture unknown-target "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
+# cargo, not the manifest, decides the order of the names, so each is asserted on its own.
+expect_fuzz 1 "a target the manifest does not list fails" "$d" \
+  "fuzz/Cargo.toml lists no fuzz target nothing; it lists: " "" 30 nothing
+expect_fuzz 1 "a target the manifest does not list fails, listing its first target" "$d" \
+  " one" "" 30 nothing
+expect_fuzz 1 "a target the manifest does not list fails, listing its other target" "$d" \
+  " declared" "" 30 nothing
 
 d="$(fixture no-seeds "$BIN_ONE")"
 expect_fuzz 1 "a bin without seeds fails naming it, before anything is fuzzed" "$d" \
@@ -151,6 +160,24 @@ expect_fuzz 0 "every seeded bin is fuzzed for the seconds given" "$d" "--> fuzz 
 cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=7 $LIMITS
 cargo +$NIGHTLY fuzz run one fuzz/corpus/one fuzz/seeds/one -- -max_total_time=7 $LIMITS" \
   7
+
+d="$(fixture named-target "$BIN_ONE"$'\n\n'"$BIN_PATH" one declared)"
+expect_fuzz 0 "a target named after the seconds is fuzzed alone, for those seconds" "$d" \
+  "--> fuzz declared for 30 s" \
+  "$SETUP
+cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=30 $LIMITS" \
+  30 declared
+
+d="$(fixture named-target-others-unseeded "$BIN_ONE"$'\n\n'"$BIN_PATH" declared)"
+expect_fuzz 0 "a target named alone needs no seeds of the targets it does not fuzz" "$d" \
+  "--> fuzz declared for 30 s" \
+  "$SETUP
+cargo +$NIGHTLY fuzz run declared fuzz/corpus/declared fuzz/seeds/declared -- -max_total_time=30 $LIMITS" \
+  30 declared
+
+d="$(fixture named-target-unseeded "$BIN_ONE"$'\n\n'"$BIN_PATH" one)"
+expect_fuzz 1 "a target named alone without seeds fails naming it" "$d" \
+  "the fuzz target declared has no seeds under fuzz/seeds/declared" "" 30 declared
 
 # Each of the two targets fails in turn, so that whichever cargo runs first, a case fails it and
 # asserts that the other is fuzzed too and is not named.
