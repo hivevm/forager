@@ -6,8 +6,8 @@ The fuzz seed convention is prose, and it did not stop three nodes of the transf
 `simplify`, `simplifypt`, and `buffer`, from landing unfuzzed (ticket 01 of this revision). For
 the transform tree, a script can decide it. A check lists each variant of `TransformShape` in
 `crates/style-ir/src/transform.rs`. It fails where `fuzz/fuzz_targets/render.rs` never names
-`TransformShape::<Variant>`. `scripts/check-all.sh` runs it, and CI runs it in the job that runs
-the other checks of `scripts/`. A variant left out on purpose is named in an allow-list in the
+`TransformShape::<Variant>`. `scripts/check-all.sh` runs it, and CI runs it in the `sensors` job,
+beside `scripts/check-guards.sh`. A variant left out on purpose is named in an allow-list in the
 script with its reason.
 
 If the check also fits other enums the renderer draws, such as `SymbolKind`, it takes them in the
@@ -23,8 +23,10 @@ same way. Otherwise the convention stays the rule for them.
 
 ## Read first
 
-- Touches: `scripts/check-fuzz-variants.sh` (new), its self-test `scripts/test-*.sh`,
-  `scripts/check-all.sh`, `.github/workflows/checks.yml`, `CONTRIBUTING.md` (the scripts list)
+- Touches: `scripts/check-fuzz-variants.sh` (new), its self-test
+  `scripts/test-check-fuzz-variants.sh`, `scripts/check-all.sh`, `.github/workflows/checks.yml`
+  (the `sensors` job). `CONTRIBUTING.md` names the scripts by `scripts/check-*.sh` and
+  `scripts/test-*.sh`, so a new check needs no line there (checked 2026-11-18).
 - ADR-0007 (the checks `check-all.sh` runs); `scripts/lib/check.sh`, `scripts/lib/expect.sh`,
   `scripts/lib/selftest.sh`; `docs/CONVENTIONS.md` (the fuzz seed convention).
 
