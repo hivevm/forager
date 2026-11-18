@@ -65,6 +65,11 @@ impl AggRenderer {
         {
             let curves = ConvCurve::new(&mut storage);
             let mut contour = ConvContour::new(curves);
+            // Guard: agg-rust 1.2.0
+            // An exact guard (ADR-0049), read from agg-rust 1.2.0: unbounded, the contour of a
+            // huge width lies past the 24.8 fixed point `iround` saturates at `i32`
+            // (`rasterizer_sl_clip.rs:20-22`), and the clip box subtracts its points in `i32`
+            // (`rasterizer_sl_clip.rs:128`), which overflows.
             let width = drawn_width(outline.width, self.width, self.height);
             contour.set_width(width.copysign(outline.width));
             self.fill_glyphs(&mut contour, outline.color);
