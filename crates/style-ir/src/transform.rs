@@ -57,7 +57,7 @@ pub enum ShapeOp {
 
 impl ShapeOp {
     /// Every function, in the order the tree's functions of a shape list them.
-    pub const ALL: [ShapeOp; 5] = [
+    const ALL: [ShapeOp; 5] = [
         ShapeOp::Generalize,
         ShapeOp::Densify,
         ShapeOp::Simplify,
@@ -426,13 +426,17 @@ impl<'de> Deserialize<'de> for Read {
 
 /// The functions of a shape, the values of `op` where a shape is due: `shape`, the functions of
 /// a shape and a number, `outer`, `inner`, and `smoothsia`.
-const SHAPE_FUNCTIONS: [&str; 9] = {
-    let mut names = ["shape", "", "", "", "", "", "outer", "inner", "smoothsia"];
+const SHAPE_FUNCTIONS: [&str; ShapeOp::ALL.len() + 4] = {
+    let ops = ShapeOp::ALL.len();
+    let mut names = ["shape"; ShapeOp::ALL.len() + 4];
     let mut i = 0;
-    while i < ShapeOp::ALL.len() {
+    while i < ops {
         names[1 + i] = ShapeOp::ALL[i].name();
         i += 1;
     }
+    names[ops + 1] = "outer";
+    names[ops + 2] = "inner";
+    names[ops + 3] = "smoothsia";
     names
 };
 
