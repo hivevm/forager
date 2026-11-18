@@ -238,4 +238,41 @@ mod tests {
         assert_eq!(marker(SymbolRef::Name("SQUARE".to_owned())), [0.0, 0.25]);
         assert_eq!(marker(SymbolRef::Name("dot".to_owned())), [0.5, 0.5]);
     }
+
+    #[test]
+    fn a_labelpnt_marker_of_a_truetype_symbol_is_not_sized() {
+        // A TrueType symbol as a label's marker is out of ADR-0044's scope: the label's styles ask
+        // no glyph of the port.
+        let symbols = [Symbol {
+            name: None,
+            kind: SymbolKind::Truetype,
+            paths: Vec::new(),
+            extent: None,
+            filled: false,
+            anchor_point: None,
+            character: Some("A".to_owned()),
+            font: Some("sans".to_owned()),
+            image: None,
+            transparent: None,
+            span: None,
+        }];
+        let symbol = Some(Bound::Value(SymbolRef::Index(1)));
+        let style = Style {
+            symbol: symbol.clone(),
+            ..Style::new(LabelTransform::Point)
+        };
+        let values = MarkerValues {
+            size: Some(10.0),
+            angle: 0.0,
+            offset: [0.0, 0.0],
+        };
+        let marker = label_style_marker(&style, values, &symbol, &symbols, &Pixmaps::new(), 1.0);
+        assert_eq!(
+            marker.map(|marker| marker.size),
+            Err(
+                "its labelpoint style draws a truetype symbol, whose size is not computed yet"
+                    .to_owned()
+            )
+        );
+    }
 }
