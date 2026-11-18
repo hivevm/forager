@@ -284,9 +284,9 @@ fn drawn(image: &RgbaImage) -> usize {
         .count()
 }
 
-/// Whether [`JoinProbe`] admits `path`, fed whole, with [`dot`]'s pattern.
-fn joins_admit(path: &[Point]) -> bool {
-    let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(dot().image(built_tile)));
+/// Whether a [`JoinProbe`] for `tile`'s pattern, changed by `adjust`, admits `path`, fed whole.
+fn admits(path: &[Point], tile: &Tile, adjust: impl FnOnce(&mut JoinProbe)) -> bool {
+    let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(tile.image(built_tile)));
     let mut rasterizer = RasterizerOutlineAa::new();
     let (x, y) = (line_coord_sat(path[0].x), line_coord_sat(path[0].y));
     rasterizer.move_to(x, y);
@@ -294,8 +294,14 @@ fn joins_admit(path: &[Point]) -> bool {
         rasterizer.line_to(line_coord_sat(q.x), line_coord_sat(q.y));
     }
     let mut probe = JoinProbe::new(&pattern);
+    adjust(&mut probe);
     rasterizer.render(&mut probe, false);
     probe.within
+}
+
+/// Whether [`JoinProbe`] admits `path`, fed whole, with [`dot`]'s pattern.
+fn joins_admit(path: &[Point]) -> bool {
+    admits(path, &dot(), |_| {})
 }
 
 #[test]
