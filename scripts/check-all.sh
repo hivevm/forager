@@ -239,6 +239,10 @@ run "Vendor check" scripts/check-vendor.sh
 run "Example generator self-test" scripts/test-generate-example.sh
 run "Notice check self-test" scripts/test-check-notice.sh
 run "MapServer notice check" scripts/check-notice.sh
+run "Guard check self-test" scripts/test-check-guards.sh
+# Every guard against a third-party crate names a version Cargo.lock holds.
+# Verifies: ADR-0049
+run "Guard check" scripts/check-guards.sh
 # The packaging script builds the binary artefacts and checks each carries the notices; it runs on
 # a human's instruction, before a binary is distributed, and its self-test runs here.
 # On instruction: scripts/package.sh
