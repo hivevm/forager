@@ -4,11 +4,12 @@
 
 Five nodes of the transform tree have one shape, a shape and a number: `generalize`, `densify`,
 `simplify`, `simplifypt`, and `buffer` (ADR-0048). Each is a variant of its own of `TransformShape`
-(`crates/style-ir/src/transform.rs`). Their names are written six times in `transform.rs`
-(the variants, the size, the serializer, the reader), twice in the mapfile frontend
-(`crates/mapfile/src/expression/transform.rs`), and again as budget labels in
-`crates/symbolize/src/layer_transform.rs`. ADR-0043 and then ADR-0048 each added operators by
-writing every list again.
+(`crates/style-ir/src/transform.rs`). Their names are written seven times in `transform.rs`
+(the variants, the depth, the serializer, the reader's two matches, the list of shape functions,
+the schema), three times in the mapfile frontend (`crates/mapfile/src/expression/transform.rs`),
+and again as the names `given_to_geos` puts in its messages in
+`crates/symbolize/src/layer_transform.rs` (corrected 2026-11-18). ADR-0043 and then ADR-0048
+each added operators by writing every list again.
 
 The five become one variant of an operator and its two arguments. One table of the operator's
 names serves the serializer, the reader, and the frontend. The JSON the style document writes and
@@ -29,9 +30,15 @@ is a `refactor` of the IR's Rust types, not of the style document (ADR-0006, ADR
 
 ## Read first
 
-- Touches: `crates/style-ir/src/transform.rs`, `crates/mapfile/src/expression/transform.rs`,
-  `crates/symbolize/src/layer_transform.rs`, `crates/engine/src/classes.rs`,
-  `fuzz/fuzz_targets/render_input.rs`
+- Touches: `crates/style-ir/src/transform.rs`, `crates/style-ir/src/lib.rs`,
+  `crates/mapfile/src/expression/transform.rs`, `crates/symbolize/src/layer_transform.rs`,
+  `fuzz/fuzz_targets/render_input.rs`, `fuzz/tests/render_seeds.rs`,
+  `scripts/check-fuzz-variants.sh`, and the tests that build the five variants: the `tests.rs`
+  beside `transform.rs` in `style-ir`, `mapfile`, and `symbolize`, `crates/mapfile/src/tests.rs`,
+  `crates/mapfile/src/translate/style/tests.rs`, `crates/engine/tests/render.rs`, and
+  `crates/engine/tests/reproject.rs`. `crates/engine/src/classes.rs` names the type only and is
+  not touched (corrected 2026-11-18). The criterion on `"simplifypt"` is held by a test of
+  `crates/arch-test/tests/`.
 - ADR-0048, ADR-0013, ADR-0014; `schema/style-document-1.1.json`.
 
 ## Blocked by
