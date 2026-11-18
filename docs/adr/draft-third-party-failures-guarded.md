@@ -37,7 +37,7 @@ Older guards of the same kind were written without that name:
 - in `crates/render/src/clip.rs`, the clip of every path to the image grown by its margin
   ([ADR-0027](0027-clip-to-the-image.md)), and `drawn_width` and `MAX_GLYPH_REACH` with
   `within_glyph_reach`, which keep a stroke's width and a glyph's points within agg-rust's
-  fixed-point coordinates. The width moves no pixel. The clip moves no pixel of a finite path,
+  fixed-point coordinates. The width moves no pixel. The clip moves no pixel of a path it keeps,
   but drops silently a point that is no finite number, a segment whose coordinate difference
   overflows, and a crossing that is not finite. A TrueType marker's glyph past its reach is not
   drawn, silently; a label's glyph past it is cut by `label` and warns
