@@ -65,7 +65,7 @@ impl AggRenderer {
         {
             let curves = ConvCurve::new(&mut storage);
             let mut contour = ConvContour::new(curves);
-            let width = drawn_width(outline.width.abs(), self.width, self.height);
+            let width = drawn_width(outline.width, self.width, self.height);
             contour.set_width(width.copysign(outline.width));
             self.fill_glyphs(&mut contour, outline.color);
         }

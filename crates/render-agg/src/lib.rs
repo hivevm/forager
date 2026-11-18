@@ -92,9 +92,9 @@ impl AggRenderer {
         f(&mut renderer);
     }
 
-    /// Rasterizes `path` stroked with `pen` at `drawn`, the width [`drawn_width`] bounds the pen's
-    /// to; the pen's own width is never drawn as it is.
-    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, pen: &Pen, drawn: f64) {
+    /// Rasterizes `path` stroked with `pen`, whose width [`AggRenderer::stroke`] has bounded by
+    /// [`drawn_width`].
+    fn rasterize(&mut self, path: &mut PathStorage, color: Rgba, pen: &Pen) {
         let color = rgba8(color);
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerScanlineAa::new();
@@ -103,11 +103,11 @@ impl AggRenderer {
                 let mut dashed = ConvDash::new(path);
                 add_dashes(&mut dashed, &pen.dashes);
                 let mut outline = ConvStroke::new(dashed);
-                apply(pen, drawn, &mut outline);
+                apply(pen, &mut outline);
                 rasterizer.add_path(&mut outline, 0);
             } else {
                 let mut outline = ConvStroke::new(path);
-                apply(pen, drawn, &mut outline);
+                apply(pen, &mut outline);
                 rasterizer.add_path(&mut outline, 0);
             }
             if pen.antialiased {
@@ -141,15 +141,15 @@ fn render_scanlines_bin_solid(
     }
 }
 
-/// Sets the stroker's width to `drawn`, the width [`drawn_width`] bounds the pen's to, and its
-/// cap and join to the pen's as applyCJC() does: a join of `none` is a bevel, and a cap MapServer
-/// does not map, `triangle`, stays AGG's default, butt. The inner join is the pen's; the miter
-/// limit stays AGG's default, 4.
+/// Sets the stroker's width to the pen's, which [`drawn_width`] has bounded, and its cap and join
+/// to the pen's as applyCJC() does: a join of `none` is a bevel, and a cap MapServer does not
+/// map, `triangle`, stays AGG's default, butt. The inner join is the pen's; the miter limit stays
+/// AGG's default, 4.
 /// Forager sets up a fresh stroker for every path; MapServer keeps one per image and carries its
 /// state from line to line, so there a thin line after a wide round-capped one is round-capped,
 /// and a wide line after a thin one bevels its inner joins.
-fn apply<VS: VertexSource>(pen: &Pen, drawn: f64, stroke: &mut ConvStroke<VS>) {
-    stroke.set_width(drawn);
+fn apply<VS: VertexSource>(pen: &Pen, stroke: &mut ConvStroke<VS>) {
+    stroke.set_width(pen.width);
     stroke.set_line_join(match pen.join {
         LineJoin::Round => AggJoin::Round,
         LineJoin::Miter => AggJoin::Miter,
@@ -208,17 +208,21 @@ fn add(path: &mut PathStorage, points: &[Point], close: bool) {
 }
 
 impl AggRenderer {
-    /// Strokes `paths`, clipped first to the image grown by the reach of the stroke.
+    /// Strokes `paths` with `pen` at its width bounded by [`drawn_width`], clipped first to the
+    /// image grown by the reach of the stroke.
     fn stroke(&mut self, paths: &[Vec<Point>], closed: bool, color: Rgba, pen: &Pen) {
         if !(pen.width.is_finite() && pen.width > 0.0) {
             return;
         }
-        let width = drawn_width(pen.width, self.width, self.height);
+        let pen = Pen {
+            width: drawn_width(pen.width, self.width, self.height),
+            ..pen.clone()
+        };
         // A miter join reaches up to its limit of 4 half widths past the path, a bevel or round
         // join and a cap no more than about one.
         let reach = match pen.join {
-            LineJoin::Miter => 2.0 * width,
-            LineJoin::Round | LineJoin::Bevel | LineJoin::None => width / 2.0,
+            LineJoin::Miter => 2.0 * pen.width,
+            LineJoin::Round | LineJoin::Bevel | LineJoin::None => pen.width / 2.0,
         };
         let rect = Rect::around_image(self.width, self.height, reach);
         let mut path = PathStorage::new();
@@ -231,7 +235,7 @@ impl AggRenderer {
                 }
             }
         }
-        self.rasterize(&mut path, color, pen, width);
+        self.rasterize(&mut path, color, &pen);
     }
 }
 
@@ -1293,7 +1297,11 @@ mod tests {
         render(&[outlined(square(far, far + 8.0), 1e12)]);
         // A width as far below zero, as a label's wrapped into an int can be, shrinks the
         // contour by no more than the same bound.
-        render(&[outlined(square(28.0, 36.0), -1e12)]);
+        // It is drawn as the bound itself below zero, twice the image's width and height.
+        assert_eq!(
+            render(&[outlined(square(28.0, 36.0), -1e12)]).pixels,
+            render(&[outlined(square(28.0, 36.0), -256.0)]).pixels
+        );
         // A small width below zero is drawn as AGG's vcgen_contour draws it, the square shrunk
         // by half of it, not grown: the bound keeps the sign.
         let image = render(&[outlined(square(20.0, 44.0), -4.0)]);
