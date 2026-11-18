@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-18, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-18 (2), due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0005](adr/0005-feature-layer.md)).
@@ -479,9 +479,14 @@ manifest, every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer 
 toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push and runs
 its test `fuzz/tests/render_seeds.rs`, which decodes each seed of the render target through the
 target's own decoding, `fuzz_targets/render_input.rs`, and holds it to the path it was made for,
-told from the map it builds and from the display items a recorder in front of agg-rust sees.
-Beside it, `scripts/mutants.sh` runs cargo-mutants over the workspace every week through
-`.github/workflows/mutants.yml` and reports the edits no test notices. `scripts/package.sh` packs
+told from the map it builds and from the display items a recorder in front of agg-rust sees;
+`scripts/check-fuzz-variants.sh` holds the render target to naming every node of the transform
+tree and every kind of symbol, but those its allow-list names with a reason. Beside it,
+`scripts/check-guards.sh` holds each guard against a third-party crate, marked
+`// Guard: <crate> <version>` in `render`, `render-agg`, and `symbolize`, to a version that
+`Cargo.lock` holds (ADR-0049), and `scripts/mutants.sh` runs cargo-mutants over the workspace
+every week through `.github/workflows/mutants.yml` and reports the edits no test notices.
+`scripts/package.sh` packs
 the CLI's archive and the browser bindings' package under `target/package/`, each with
 `THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive back for them, by the check
 of the notices that `scripts/check-notice.sh` shares (`scripts/lib/notice.sh`); nothing is

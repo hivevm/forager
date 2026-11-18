@@ -20,8 +20,11 @@ geometry code that computes them.
 
 ADR-0049's *Enforcement* asks a test in `crates/engine` that the layer warns once for points of a
 brushed line that are no finite number. By the maintainer's ruling of 2026-11-18 (ticket
-revision-2026-11-18/03, merged in f4e57a15), leaving such a point out is a rule of the display
-list, not a guard, and it warns nothing (ticket revision-2026-11-18/11). The item is spent.
+revision-2026-11-18/03, merged in f4e57a15), leaving such a point out is a rule of the display list,
+not a guard, and it warns nothing (ticket revision-2026-11-18/11). The item is spent. Its follow-up
+"Q-3's wording" is settled too: ticket revision-2026-11-18/01 (merge 0f9b133b) gave Q-3 a guard's
+undrawn input as a diagnostic, and the ADR's accepted text still lists it as open (the design
+revision of 2026-11-18 (2)).
 
 **Where:** `docs/adr/0017-c-ports-in-style-ir.md`, `docs/adr/0041-geometry-through-geo.md`,
 `docs/adr/0042-i-overlay-in-render-agg-and-geo.md`, `docs/adr/0047-simplifypt-ported-from-jts.md`,
