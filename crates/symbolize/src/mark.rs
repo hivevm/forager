@@ -65,7 +65,7 @@ impl<'a> Styled<'a> {
             }
             Mark::Glyph(index, symbol) => {
                 let s = symbol::symbol_style(style, symbol, canvas.factors);
-                if (s.fill.is_none() && s.outline.is_none()) || s.scale == 0.0 {
+                if s.draws_nothing() {
                     return None;
                 }
                 let glyph = glyph_marker::styled_glyph(symbol, index, &s, canvas)?;
@@ -272,5 +272,5 @@ fn recorded(
 /// nothing.
 fn coloured<T>(style: &Style<T>, symbol: &Symbol, canvas: &Canvas) -> Option<SymbolStyle> {
     let s = symbol::symbol_style(style, symbol, canvas.factors);
-    (s.fill.is_some() || s.outline.is_some()).then_some(s)
+    s.is_coloured().then_some(s)
 }

@@ -190,7 +190,7 @@ pub(crate) fn glyph_ops<T>(
     canvas: &mut Canvas,
 ) {
     let s = symbol::symbol_style(style, symbol, canvas.factors);
-    if (s.fill.is_none() && s.outline.is_none()) || s.scale == 0.0 {
+    if s.draws_nothing() {
         return;
     }
     let factor = canvas.factors.scale;

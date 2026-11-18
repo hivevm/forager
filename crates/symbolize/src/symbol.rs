@@ -160,6 +160,20 @@ pub(crate) struct SymbolStyle {
     pub(crate) gap: f64,
 }
 
+impl SymbolStyle {
+    /// Whether the style has a fill or an outline colour, without which msDrawMarkerSymbol,
+    /// msDrawLineSymbol, and msDrawShadeSymbol draw nothing.
+    pub(crate) fn is_coloured(&self) -> bool {
+        self.fill.is_some() || self.outline.is_some()
+    }
+
+    /// Whether a symbol drawn in the style draws nothing: it has neither colour, or its scale is
+    /// 0.
+    pub(crate) fn draws_nothing(&self) -> bool {
+        !self.is_coloured() || self.scale == 0.0
+    }
+}
+
 /// msSymbolGetDefaultSize for a vector or ellipse symbol: its height, or its width where it has
 /// none, and 1 where neither is positive.
 fn default_size(symbol: &Symbol) -> f64 {
@@ -578,7 +592,7 @@ pub fn symbol_ops<T>(
 /// The drawing operations of `symbol` centred on the pixel `at` in `s`, as the AGG renderer
 /// draws a vector or an ellipse symbol: filled first, then outlined.
 pub(crate) fn render(ops: &mut Vec<DrawOp>, at: Point, symbol: &Symbol, s: &SymbolStyle) {
-    if (s.fill.is_none() && s.outline.is_none()) || s.scale == 0.0 {
+    if s.draws_nothing() {
         return;
     }
     let (paths, closed) = match symbol.kind {
