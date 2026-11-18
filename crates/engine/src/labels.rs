@@ -45,7 +45,7 @@ use crate::layer::{
     Rotation, draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
 };
 use crate::marker_glyphs::MarkerGlyphs;
-use crate::render_resources::LabelResources;
+use crate::render_resources::Shared;
 
 /// A label of a render's label cache.
 #[derive(Clone, Debug, PartialEq)]
@@ -413,14 +413,14 @@ impl<'r> Labels<'r> {
     /// Caches the labels of `layer` for each of `drawn`, in the order the layer draws them, as
     /// msDrawShape adds each feature's labels to the cache: at each of its points inside the
     /// map's extent, as `pointLayerDrawShape` places them. A pixmap that a class's first style
-    /// draws is sized by its image among the pixmaps of `from`, loaded before the layer's labels
+    /// draws is sized by its image among the pixmaps of `shared`, loaded before the layer's labels
     /// are collected, and a TrueType symbol by its glyph among `glyphs`; the text is laid out in
-    /// the fonts of `from`.
+    /// the fonts of `shared`.
     pub(crate) async fn collect<L: ResourceLoader>(
         &mut self,
         layer: &LayerLabels<'r>,
         drawn: &[Labelled<'_>],
-        from: &mut LabelResources<'_, '_, L>,
+        shared: &mut Shared<'_, '_, L>,
         glyphs: &MarkerGlyphs,
         binder: &mut Binder<'_, '_>,
     ) {
@@ -432,7 +432,7 @@ impl<'r> Labels<'r> {
                 };
                 let fixed = label.fixed;
                 let marker = style.map(|style| (style, glyphs));
-                let one = self.lay_out_cached(label, feature, marker, from, binder);
+                let one = self.lay_out_cached(label, feature, marker, shared, binder);
                 laid.extend(one.await.map(|one| (one, fixed)));
             }
             for (one, fixed) in laid {
@@ -442,13 +442,13 @@ impl<'r> Labels<'r> {
     }
 
     /// The labels of `feature`, which class `class` of `layer` draws, laid out to be drawn at
-    /// once, each as [`Self::matched`] gives it, from `from`.
+    /// once, each as [`Self::matched`] gives it, from `shared`.
     pub(crate) async fn label_at_once<L: ResourceLoader>(
         &mut self,
         layer: &AtOnce<'r, '_>,
         feature: &Feature,
         class: usize,
-        from: &mut LabelResources<'_, '_, L>,
+        shared: &mut Shared<'_, '_, L>,
         binder: &mut Binder<'_, '_>,
     ) -> Vec<Laid> {
         let mut laid = Vec::new();
@@ -459,7 +459,7 @@ impl<'r> Labels<'r> {
             let Some(label) = self.matched(&layer.labels, feature, class, n, binder) else {
                 continue;
             };
-            laid.extend(self.lay_out_at_once(label, feature, from, binder).await);
+            laid.extend(self.lay_out_at_once(label, feature, shared, binder).await);
         }
         laid
     }
@@ -503,14 +503,14 @@ impl<'r> Labels<'r> {
     }
 
     /// Lays out `label` of `feature` for the cache, with the first style of its class in
-    /// `marker`, sized among the pixmaps of `from` or by its glyph asked of the glyphs `marker`
+    /// `marker`, sized among the pixmaps of `shared` or by its glyph asked of the glyphs `marker`
     /// carries, the marker the label moves away from. None where it is not drawn.
     async fn lay_out_cached<L: ResourceLoader>(
         &mut self,
         label: Matched<'_, '_>,
         feature: &Feature,
         marker: Option<ClassMarker<'_>>,
-        from: &mut LabelResources<'_, '_, L>,
+        shared: &mut Shared<'_, '_, L>,
         binder: &mut Binder<'_, '_>,
     ) -> Option<Laid> {
         let at = label.at;
@@ -552,7 +552,7 @@ impl<'r> Labels<'r> {
             return None;
         }
         let annotation = Annotation { text, lines, bound };
-        self.lay_out(label, annotation, marker, from, feature, binder)
+        self.lay_out(label, annotation, marker, shared, feature, binder)
             .await
     }
 
@@ -562,7 +562,7 @@ impl<'r> Labels<'r> {
         &mut self,
         label: Matched<'_, '_>,
         feature: &Feature,
-        from: &mut LabelResources<'_, '_, L>,
+        shared: &mut Shared<'_, '_, L>,
         binder: &mut Binder<'_, '_>,
     ) -> Option<Laid> {
         let at = label.at;
@@ -572,7 +572,7 @@ impl<'r> Labels<'r> {
         });
         let annotation = Annotation { text, lines, bound };
         // msDrawLabel moves a label off no marker: the class's style is not read for it.
-        let laid = self.lay_out(label, annotation, None, from, feature, binder);
+        let laid = self.lay_out(label, annotation, None, shared, feature, binder);
         let mut laid = laid.await?;
         let written = &at.label(self.map).styles;
         if laid.path.is_none() && written.iter().any(boxed) {
@@ -598,19 +598,19 @@ impl<'r> Labels<'r> {
     }
 
     /// Lays out `label` of `feature`, its text, lines, and bound properties `annotation`, moved
-    /// away from the marker of the style `marker` carries, sized among the pixmaps of `from` or by
-    /// its glyph, where it has one, its text laid out in the fonts of `from`. None where it is not
-    /// drawn.
+    /// away from the marker of the style `marker` carries, sized among the pixmaps of `shared` or
+    /// by its glyph, where it has one, its text laid out in the fonts of `shared`. None where it is
+    /// not drawn.
     async fn lay_out<L: ResourceLoader>(
         &mut self,
         label: Matched<'_, '_>,
         annotation: Annotation,
         marker: Option<ClassMarker<'_>>,
-        from: &mut LabelResources<'_, '_, L>,
+        shared: &mut Shared<'_, '_, L>,
         feature: &Feature,
         binder: &mut Binder<'_, '_>,
     ) -> Option<Laid> {
-        let pixmaps = from.pixmaps;
+        let pixmaps = shared.pixmaps;
         let Matched { at, fixed, styles } = label;
         let Annotation { text, lines, bound } = annotation;
         let written = &at.label(self.map).styles;
@@ -645,7 +645,7 @@ impl<'r> Labels<'r> {
             None
         } else {
             match self
-                .layout(from.fonts, fixed, lines, glyph_size, align)
+                .layout(shared.fonts, fixed, lines, glyph_size, align)
                 .await
             {
                 Ok(path) => Some(path),

@@ -205,7 +205,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
         let mut lent = drawing
             .load_resources(&selected, map, !at_once, &mut store)
             .await;
-        let pixmaps = lent.labels.pixmaps;
+        let pixmaps = lent.shared.pixmaps;
         let mut canvas = layer_canvas(map, layer, factors[layer_index], (width, height), pixmaps)
             .with_tiles(lent.tiles)
             .with_glyphs(lent.glyphs)
@@ -217,7 +217,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             let mut settled = labels.layer_at_once(layer_index, &drawn, pixmaps, binder);
             for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
                 let laid = labels
-                    .label_at_once(&settled, feature, class, &mut lent.labels, binder)
+                    .label_at_once(&settled, feature, class, &mut lent.shared, binder)
                     .await;
                 let mut out_of_reach = vec![0; laid.len()];
                 drawing.draw_points(&mut target, &mut canvas, one, |target, point| {
@@ -247,7 +247,7 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
             let binder = &mut selector.binder;
             let settled = labels.layer(layer_index, mode, &drawn, binder);
             labels
-                .collect(&settled, &drawn, &mut lent.labels, lent.glyphs, binder)
+                .collect(&settled, &drawn, &mut lent.shared, lent.glyphs, binder)
                 .await;
         }
     }

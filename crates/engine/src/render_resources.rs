@@ -25,12 +25,13 @@ pub(crate) struct Lent<'a, 'r, L> {
     pub(crate) tiles: &'a mut Tiles,
     /// The TrueType markers' glyphs.
     pub(crate) glyphs: &'a MarkerGlyphs,
-    /// The images and the fonts.
-    pub(crate) labels: LabelResources<'a, 'r, L>,
+    /// What the canvas and the labels share.
+    pub(crate) shared: Shared<'a, 'r, L>,
 }
 
-/// What a layer's labels are laid out from, and the canvas draws its pixmaps from.
-pub(crate) struct LabelResources<'a, 'r, L> {
+/// What the canvas draws its pixmaps from and a layer's labels are laid out from: the images and
+/// the fonts.
+pub(crate) struct Shared<'a, 'r, L> {
     /// Every image asked for so far, which size the markers a label moves away from or draws.
     pub(crate) pixmaps: &'a Pixmaps,
     /// The fonts, which a label's text is laid out in.
@@ -77,7 +78,7 @@ impl<'r, L: ResourceLoader> Resources<'r, L> {
         Lent {
             tiles,
             glyphs: &self.glyphs,
-            labels: LabelResources {
+            shared: Shared {
                 pixmaps,
                 fonts: &mut self.fonts,
             },
