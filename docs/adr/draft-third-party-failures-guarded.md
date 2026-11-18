@@ -37,8 +37,11 @@ Older guards of the same kind were written without that name:
 - in `crates/render/src/clip.rs`, the clip of every path to the image grown by its margin
   ([ADR-0027](0027-clip-to-the-image.md)), and `drawn_width` and `MAX_GLYPH_REACH` with
   `within_glyph_reach`, which keep a stroke's width and a glyph's points within agg-rust's
-  fixed-point coordinates. The clip and the width move no pixel, and a glyph past its reach is
-  not drawn, silently;
+  fixed-point coordinates. The width moves no pixel. The clip moves no pixel of a finite path,
+  but drops silently a point that is no finite number, a segment whose coordinate difference
+  overflows, and a crossing that is not finite. A TrueType marker's glyph past its reach is not
+  drawn, silently; a label's glyph past it is cut by `label` and warns
+  `label-glyph-out-of-reach`;
 - in `crates/render-agg/src/brush.rs`, the filter of points that are no finite number, silent,
   `line_coord_sat`, which holds a coordinate to agg-rust's `LINE_MAX_COORD`, `within_i32`, which
   bounds the pattern's place, and the start reductions of ADR-0046's *No panic* clause.
@@ -148,10 +151,16 @@ crate that calls it, by the version `Cargo.lock` pins.
   i_float names the guards to re-derive. A user sees a warning where a part of the map is left
   out.
 - Negative / trade-offs:
-  - the map's diagnostics change where a refusal is silent today. A layer warns for a refused
-    piece of a brushed line, for points of a brushed line that are no finite number, and for a
-    glyph past `within_glyph_reach`. It warns for a stroke of no positive width if that refusal
-    guards agg-rust;
+  - the map's diagnostics change where a refusal is silent today. A layer warns for:
+    - a refused piece of a brushed line;
+    - points of a brushed line that are no finite number;
+    - what the clip drops of a stroked or filled path: a point that is no finite number, a
+      segment whose coordinate difference overflows, and a crossing that is not finite;
+    - a TrueType marker's glyph past `within_glyph_reach`;
+    - a stroke of no positive width, and the other silent skips of `render-agg`, where the
+      refusal guards agg-rust.
+
+    A label's glyph past the reach keeps its one warning, `label-glyph-out-of-reach`;
   - `render-agg` needs a way to report to the layer, which the renderer trait of `crates/render`
     lacks today;
   - each guard costs two tests and a marker, the older guards included;
@@ -166,9 +175,11 @@ crate that calls it, by the version `Cargo.lock` pins.
 
 Tests cite this ADR with `Verifies:`:
 
-- a test in `crates/engine` for each refusal that the layer carries its warning. The refusals are
-  a piece of a brushed line, points of a brushed line that are no finite number, and a glyph
-  past `within_glyph_reach`;
+- a test in `crates/engine` for each refusal that the layer carries its warning once:
+  - a refused piece of a brushed line;
+  - points of a brushed line that are no finite number;
+  - each drop of the clip;
+  - a TrueType marker's glyph past `within_glyph_reach`;
 - the two tests of each guard, the failing input and the ordinary one beside it.
 
 A check under `scripts/` lists each `// Guard: <crate> <version>` marker under `crates/`. It
