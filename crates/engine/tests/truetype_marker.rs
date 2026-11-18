@@ -283,6 +283,52 @@ fn the_label_cache_sizes_a_truetype_marker_outside_its_scale_range() {
     assert_labelled(map);
 }
 
+/// The paths a render of the point layer of [`map`] asks for, its TrueType symbol in the font
+/// `marker` outside its scale range, labelled in `sans`, of `LABELCACHE` `label_cache`.
+fn asked_outside_the_scale_range(label_cache: bool) -> Vec<String> {
+    let mut map = map("marker", "A");
+    map.fonts.insert("marker", "marker.ttf".to_owned());
+    let layer = &mut map.layers[0];
+    layer.label_cache = label_cache;
+    layer.classes[0].styles[0].max_scale_denom = Some(1.0);
+    layer.classes[0].labels = vec![Label {
+        text: Some(Expr::String("x".to_owned())),
+        font: Some(Bound::Value("sans".to_owned())),
+        size: Some(Bound::Value(8.0)),
+        color: Some(Bound::Value(BLACK)),
+        ..Label::default()
+    }];
+    let point = r#"{"type": "Point", "coordinates": [20, 20]}"#;
+    let sources = BTreeMap::from([("points".to_owned(), GeoJsonSource::parse(point).unwrap())]);
+    let mut files = files();
+    let font = files.0["sans.ttf"].clone();
+    files.0.insert("marker.ttf", font);
+    let files = Recorded {
+        files,
+        asked: RefCell::new(Vec::new()),
+    };
+    let rendered = ready(render_with_files(
+        &map,
+        &sources,
+        &files,
+        AggRenderer::new(),
+    ));
+    assert!(rendered.image.is_some());
+    files.asked.into_inner()
+}
+
+#[test]
+fn only_a_layer_of_the_label_cache_loads_the_font_of_a_marker_outside_its_scale_range() {
+    // The label cache sizes the marker beneath a label whatever its style's scale range, so it
+    // loads the marker's font; a layer of LABELCACHE OFF draws its labels at once, beside no
+    // marker the style does not draw, and loads only the label's.
+    assert_eq!(
+        asked_outside_the_scale_range(true),
+        ["marker.ttf", "sans.ttf"]
+    );
+    assert_eq!(asked_outside_the_scale_range(false), ["sans.ttf"]);
+}
+
 #[test]
 fn a_truetype_symbol_with_a_gap_is_drawn_along_a_line() {
     let mut map = map("sans", "A");

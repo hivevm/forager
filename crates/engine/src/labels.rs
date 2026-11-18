@@ -30,9 +30,7 @@ use forager_label::{
 use forager_ports::{Feature, ResourceLoader};
 use forager_render::{Draw, DrawOp, GlyphOutline, Point, Renderer};
 use forager_style_ir::c::{DEG_TO_RAD, c_str, int_cast, ms_nint};
-use forager_style_ir::{
-    Diagnostic, Expr, LabelMarker, LabelTransform, Map, Op, RenderMode, Rgba, Span, Style,
-};
+use forager_style_ir::{Diagnostic, Expr, LabelMarker, LabelTransform, Map, Op, Rgba, Span, Style};
 use forager_symbolize::{Factors, Pixmaps, Refusals, marker_size_of};
 
 use crate::classes::{self, Binder};
@@ -115,6 +113,9 @@ struct Def {
     /// for each label (Q-9).
     marker: Option<(f64, f64)>,
 }
+
+/// Why the labels of a line or a polygon layer are not drawn: not yet.
+pub(crate) const PATHS_UNLABELLED: &str = "labels of line and polygon layers are not drawn yet";
 
 /// A path that stands for a text of line breaks only, which has no box.
 const NO_PATH: u32 = u32::MAX;
@@ -300,18 +301,28 @@ impl<'r> Labels<'r> {
         }
     }
 
-    /// Settles the labels of layer `index`, drawn in `mode` with its labels cached, for the
-    /// classes of `drawn` before its features, each label not drawn reported once: a label of a
-    /// circle layer is never drawn, and one of any other layer but a point layer not yet.
+    /// Settles the labels of point layer `index`, its labels cached, for the classes of `drawn`
+    /// before its features, each label not drawn reported once.
     pub(crate) fn layer(
         &mut self,
         index: usize,
-        mode: RenderMode,
         drawn: &[Labelled<'_>],
         binder: &mut Binder<'_, '_>,
     ) -> LayerLabels<'r> {
         let several = "its class has several labels, which MapServer places as a group";
-        self.settle_layer(index, mode, drawn, binder, several)
+        self.settle_layer(index, None, drawn, binder, several)
+    }
+
+    /// Reports each label of layer `index` for the classes of `drawn`, of a layer whose labels
+    /// are not drawn for the reason `why`, once, as [`Self::layer`] reports a label not drawn.
+    pub(crate) fn unlabelled(
+        &mut self,
+        index: usize,
+        drawn: &[Labelled<'_>],
+        binder: &mut Binder<'_, '_>,
+        why: &str,
+    ) {
+        self.settle_layer(index, Some(why), drawn, binder, "");
     }
 
     /// Settles the labels of point layer `index` of `LABELCACHE OFF` as [`Self::layer`] does,
@@ -329,7 +340,7 @@ impl<'r> Labels<'r> {
     {
         let several = "its class has several labels, which MapServer draws each on its own under \
                        LABELCACHE OFF, and which are not drawn yet";
-        let labels = self.settle_layer(index, RenderMode::Point, drawn, binder, several);
+        let labels = self.settle_layer(index, None, drawn, binder, several);
         let (width, height) = self.size;
         let mut styled = Styled::new(
             self.map,
@@ -345,12 +356,13 @@ impl<'r> Labels<'r> {
         AtOnce { labels, styled }
     }
 
-    /// Settles the labels of layer `index` as [`Self::layer`] says, a label of a class with
-    /// several of them not drawn for the reason `several`.
+    /// Settles the labels of layer `index` as [`Self::layer`] says, each not drawn for the reason
+    /// `unlabelled` where the layer's labels are not drawn, and a label of a class with several
+    /// of them for the reason `several`.
     fn settle_layer(
         &mut self,
         index: usize,
-        mode: RenderMode,
+        unlabelled: Option<&str>,
         drawn: &[Labelled<'_>],
         binder: &mut Binder<'_, '_>,
         several: &str,
@@ -384,12 +396,8 @@ impl<'r> Labels<'r> {
                     fixed_labels.insert((class_index, n), None);
                     continue;
                 }
-                // msDrawShape returns after circleLayerDrawShape, which draws no label
-                // (src/mapdraw.c:2390-2396).
-                let fixed = if mode == RenderMode::Circle {
-                    Err("a circle layer draws no label, as MapServer draws none".to_owned())
-                } else if mode != RenderMode::Point {
-                    Err("labels of line and polygon layers are not drawn yet".to_owned())
+                let fixed = if let Some(why) = unlabelled {
+                    Err(why.to_owned())
                 } else if class.labels.len() > 1 {
                     Err(several.to_owned())
                 } else {

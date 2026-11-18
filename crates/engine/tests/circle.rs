@@ -191,3 +191,49 @@ fn only_the_centre_of_a_circle_is_reprojected() {
         assert_eq!(image.pixel(x, y), Some(WHITE), "({x}, {y}) outside");
     }
 }
+
+#[test]
+fn a_circle_whose_centre_does_not_reproject_is_drawn_about_it_unreprojected_with_a_warning() {
+    // Verifies: ADR-0037
+    // An orthographic map about 0° 0°, a layer in longitude and latitude: the centre (180, 0), on
+    // the far side, does not reproject, and circleLayerDrawShape draws the circle about it as
+    // msProjectPoint leaves it, at 180 metres east, a radius of 180 metres, some 9 pixels each.
+    // The warning comes with the layer's reprojection, before the geometry its mode cannot draw.
+    let mut map = map(vec![
+        feature(&[[0.0, 0.0], [360.0, 0.0]]),
+        feature(&[[0.0, 0.0]]),
+    ]);
+    map.extent = Some(Extent {
+        min_x: -1000.0,
+        min_y: -1000.0,
+        max_x: 1000.0,
+        max_y: 1000.0,
+    });
+    map.projection = Some("+proj=ortho +lat_0=0 +lon_0=0 +ellps=WGS84".to_owned());
+    map.layers[0].projection = Some(LayerProjection::Proj4(
+        "+proj=longlat +datum=WGS84".to_owned(),
+    ));
+    let rendered = rendered(&map);
+    assert_eq!(
+        reports(&rendered),
+        [
+            (
+                "points-not-reprojected",
+                "layer `circles`: 1 point of its features does not reproject into the map's \
+                 projection"
+            ),
+            (
+                "geometry-not-drawn",
+                "layer `circles` cannot draw 1 point geometry in its render mode"
+            ),
+        ]
+    );
+    let image = rendered.image.unwrap();
+    // The centre at the pixel (59, 50).
+    for (x, y) in [(59, 50), (52, 50), (66, 50), (59, 43), (59, 57)] {
+        assert_eq!(image.pixel(x, y), Some(BLACK), "({x}, {y}) inside");
+    }
+    for (x, y) in [(48, 50), (70, 50), (59, 39), (59, 61)] {
+        assert_eq!(image.pixel(x, y), Some(WHITE), "({x}, {y}) outside");
+    }
+}
