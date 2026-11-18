@@ -268,8 +268,7 @@ fn recorded(
 }
 
 /// computeSymbolStyle's style of `symbol` in `style` at the canvas's factors, or `None` where it
-/// has neither a fill nor an outline colour, and msDrawLineSymbol and msDrawShadeSymbol draw
-/// nothing.
+/// is not [`SymbolStyle::is_coloured`].
 fn coloured<T>(style: &Style<T>, symbol: &Symbol, canvas: &Canvas) -> Option<SymbolStyle> {
     let s = symbol::symbol_style(style, symbol, canvas.factors);
     s.is_coloured().then_some(s)

@@ -161,14 +161,18 @@ pub(crate) struct SymbolStyle {
 }
 
 impl SymbolStyle {
-    /// Whether the style has a fill or an outline colour, without which msDrawMarkerSymbol,
-    /// msDrawLineSymbol, and msDrawShadeSymbol draw nothing.
+    /// Whether the style has a fill or an outline colour. Without one, msDrawMarkerSymbol
+    /// (`src/maprendering.c:930-934`) and msDrawShadeSymbol (`src/maprendering.c:839-844`)
+    /// return before they draw a vector, ellipse, or TrueType symbol. msDrawLineSymbol asks for
+    /// no colour, but the AGG renderer fills and outlines a symbol only in the colours it has
+    /// (`src/mapagg.cpp:625-640`), so its markers and tiles draw nothing.
     pub(crate) fn is_coloured(&self) -> bool {
         self.fill.is_some() || self.outline.is_some()
     }
 
-    /// Whether a symbol drawn in the style draws nothing: it has neither colour, or its scale is
-    /// 0.
+    /// Whether a symbol drawn in the style draws nothing: it has neither colour (see
+    /// [`Self::is_coloured`]), or its scale is 0, where msDrawMarkerSymbol returns too
+    /// (`src/maprendering.c:935-937`).
     pub(crate) fn draws_nothing(&self) -> bool {
         !self.is_coloured() || self.scale == 0.0
     }
