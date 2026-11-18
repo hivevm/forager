@@ -211,6 +211,12 @@ jobs:
       # Every guard against a third-party crate names a version Cargo.lock holds (ADR-0049).
       - name: Check that every guard's marker names a version Cargo.lock holds
         run: bash scripts/check-guards.sh
+      - name: Self-test the fuzz variants check
+        run: bash scripts/test-check-fuzz-variants.sh
+      # The render fuzz target builds every node of the transform tree and every kind of symbol
+      # (Q-3).
+      - name: Check that the render fuzz target builds every variant it must
+        run: bash scripts/check-fuzz-variants.sh
       # The packaging script itself builds the artefacts on a human's instruction.
       - name: Self-test the check that every binary artefact carries the notices
         run: bash scripts/test-package.sh
