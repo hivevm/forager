@@ -74,7 +74,7 @@ if [ "${#targets[@]}" -eq 0 ]; then
   exit 1
 fi
 if [ -n "$ONLY" ]; then
-  if ! printf '%s\n' "${targets[@]}" | grep -qxF -- "$ONLY"; then
+  if ! grep -qxF -- "$ONLY" <<< "$names"; then
     echo "fuzz/Cargo.toml lists no fuzz target $ONLY; it lists: ${targets[*]}" >&2
     exit 1
   fi
