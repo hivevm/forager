@@ -10,21 +10,24 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
-fn manifest_dir() -> PathBuf {
-    std::env::var_os("CARGO_MANIFEST_DIR")
-        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
-}
+use forager_arch_test::{manifest_dir, rust_files};
 
 /// The problems of the crate whose sources lie at `sources`, from the workspace root, against
 /// `allowed`, each module of the crate and the modules it may import: an import outside a test
 /// that its row does not allow, naming the module and the one it imports, and a module the table
-/// has no row for.
+/// has no row for. Sources that hold no `.rs` file, a path gone stale, fail the check. The shared
+/// walk leaves out a directory `target` under them, which a crate's sources do not hold, and reads
+/// no file of a directory below them it cannot read, where the walk before it panicked.
 pub fn problems(sources: &str, allowed: &[(&str, &[&str])]) -> Vec<String> {
     let root = manifest_dir().join("../..").join(sources);
-    let mut files = Vec::new();
-    rust_files(&root, &root, &mut files);
+    // Each file relative to the sources, as `module_of` reads it.
+    let mut files: Vec<PathBuf> = rust_files(&root)
+        .into_iter()
+        .map(|file| file.strip_prefix(&root).unwrap().to_path_buf())
+        .collect();
     files.sort();
+    // The check itself reads the crate: sources that hold no file would hold no problem.
+    assert!(!files.is_empty(), "no .rs file under {}", root.display());
     let mut problems = Vec::new();
     for file in &files {
         let Some(module) = module_of(file) else {
@@ -146,16 +149,4 @@ fn module_of(file: &Path) -> Option<String> {
     }
     let first = file.components().next()?.as_os_str().to_str()?;
     Some(first.trim_end_matches(".rs").to_owned())
-}
-
-/// Every `.rs` file under `dir`, relative to `root`.
-fn rust_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) {
-    for entry in std::fs::read_dir(dir).unwrap().map(Result::unwrap) {
-        let path = entry.path();
-        if path.is_dir() {
-            rust_files(root, &path, files);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            files.push(path.strip_prefix(root).unwrap().to_path_buf());
-        }
-    }
 }

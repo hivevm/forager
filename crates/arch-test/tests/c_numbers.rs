@@ -5,7 +5,7 @@
 //! name, and the alpha of an opacity are defined in the module of `style-ir` and nowhere else in
 //! the workspace.
 
-use std::path::{Path, PathBuf};
+use forager_arch_test::{manifest_dir, rust_files};
 
 /// The one module that may define them, from the workspace root.
 const MODULE: &str = "crates/style-ir/src/c.rs";
@@ -71,36 +71,12 @@ fn degrees_to_radians(source: &str) -> impl Iterator<Item = usize> + '_ {
     })
 }
 
-/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
-fn manifest_dir() -> PathBuf {
-    std::env::var_os("CARGO_MANIFEST_DIR")
-        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
-}
-
-/// Every `.rs` file under `dir`, `target` directories left out.
-fn rust_files(dir: &Path, files: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.map(Result::unwrap) {
-        let path = entry.path();
-        if path.is_dir() {
-            if entry.file_name() != "target" {
-                rust_files(&path, files);
-            }
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            files.push(path);
-        }
-    }
-}
-
 #[test]
 fn c_number_reading_is_defined_only_in_the_module_of_style_ir() {
     // Verifies: ADR-0017
     let root = manifest_dir().join("../..");
-    let mut files = Vec::new();
-    rust_files(&root.join("crates"), &mut files);
-    rust_files(&root.join("fuzz"), &mut files);
+    let mut files = rust_files(&root.join("crates"));
+    files.extend(rust_files(&root.join("fuzz")));
     let module = root.join(MODULE);
     let mut copies = Vec::new();
     let mut in_module = Vec::new();

@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::Command;
 
+use forager_arch_test::manifest_dir;
 use serde_json::Value;
 
 /// The groups of ADR-0008's table.
@@ -160,12 +161,6 @@ struct Workspace {
     /// Each dependency a workspace crate's manifest declares: the crate's short name, the
     /// dependency's name, and its kind, `normal`, `dev`, or `build`.
     declared: Vec<(String, String, String)>,
-}
-
-/// This crate's directory: the run time's `CARGO_MANIFEST_DIR`, else the compiled-in path.
-fn manifest_dir() -> PathBuf {
-    std::env::var_os("CARGO_MANIFEST_DIR")
-        .map_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")), PathBuf::from)
 }
 
 fn workspace() -> Workspace {

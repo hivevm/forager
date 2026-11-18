@@ -443,7 +443,10 @@ golden path and the test pattern an agent copies from are named here.
   `tests/manifest_dir.rs` refuses code under `crates/` that takes the crate's directory from the
   path compiled in rather than from `CARGO_MANIFEST_DIR` at run time, which `cargo test` and
   `cargo run` set: a binary built in another checkout over the same `target/` holds that
-  checkout's path.
+  checkout's path. The checks share the crate's directory and one walk of the `.rs` files under a
+  directory, `target` left out, from the crate's `src/lib.rs`; the other crates' tests keep a copy
+  of the directory's reading each, since a crate they shared would add an edge ADR-0008 does not
+  allow.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
