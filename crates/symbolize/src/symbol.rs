@@ -25,9 +25,15 @@
 // copyright notice appears in all copies. This software is provided "as is" without express or
 // implied warranty, and with no claim as to its suitability for any purpose.
 
-//! The marks a point style draws: a vector or an ellipse symbol, sized, rotated, and anchored as
-//! MapServer's AGG renderer draws it at a point. Its trigonometry is libm's, the same code on
-//! every target, so that the native and the browser build draw the same bytes (Q-2).
+//! The symbol of a style and what MapServer makes of it: [`resolve`] finds a style's symbol by its
+//! index or its name as a [`Resolved`], and [`mark`] turns what it resolves to into the [`Mark`] a
+//! style draws. It holds the [`Pixmaps`] a render decodes, the [`Factors`] a layer's styles are
+//! drawn at, a symbol's default size and the marker sizes MapServer computes, the style a vector,
+//! an ellipse, or a pixmap symbol is drawn in, and the anchor and shift of a marker. It renders a
+//! vector or an ellipse symbol, sized, rotated, and anchored as MapServer's AGG renderer draws it
+//! at a point, an ellipse of at most [`MAX_ELLIPSE_STEPS`] vertices (Q-9), and a pixmap resampled
+//! through its square and transformation. Its trigonometry is libm's, the same code on every
+//! target, so that the native and the browser build draw the same bytes (Q-2).
 
 use std::rc::Rc;
 

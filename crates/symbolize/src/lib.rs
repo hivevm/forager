@@ -13,7 +13,7 @@
 //! `line_marker`, `symbol`, and `tile`; `glyph_marker` imports `canvas`, `glyph`, `style`, and
 //! `symbol`; `canvas` imports `clip`, `glyph`, `hatch`, `layer_transform`, `line_marker`,
 //! `symbol`, and `tile`; `clip` and `hatch` import `bounds`, `extent`, `style`, and `symbol`;
-//! `line_marker` and `tile` import `bounds` and `symbol`; `symbol` imports `bounds`, `glyph`, and
+//! `line_marker` and `tile` import `symbol`; `symbol` imports `bounds`, `glyph`, and
 //! `style`; `geom_transform` imports `extent`; `layer_transform` imports `geometry`; `bounds`,
 //! `extent`, `geometry`, `glyph`, `offset`, and `style` import none. The test
 //! `symbolize_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a table
