@@ -165,10 +165,6 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     for (position, &(layer_index, layer)) in order.iter().enumerate() {
         if position == cache_at {
             cached_labels = Some(labels.finish(&mut renderer, images.decoded(), &mut diagnostics));
-            // What the renderer refused while it drew the label cache belongs to no layer, so no
-            // layer drawn after the cache is blamed for it. It is not reported
-            // (docs/backlog/refusals-of-no-layer.md).
-            renderer.take_refused();
         }
         let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
             continue;
