@@ -22,7 +22,7 @@ text:
   convention "A `Verifies:` marker claims every *shall* of its criterion" lets a test cite a part
   only where the criterion asks for a test per item, as Q-8 and Q-9 do. Q-3 does not ask for one.
 
-The draft, for the maintainer to reword or reject:
+The draft, which the maintainer chose as it stands on 2026-11-18:
 
 > **Q-3** — Robustness: mapfiles and data come from users, and a panic in the browser loses the
 > whole map. Invalid geometries, broken files, and errors of third-party crates become
@@ -30,7 +30,7 @@ The draft, for the maintainer to reword or reject:
 > diagnostic too. Each failure a fuzz run finds is held by a test of its input. Measured by a
 > weekly scheduled fuzz run of 5 minutes per target […, as today].
 
-The accepted ADRs whose basis it moves, for the maintainer to confirm: ADR-0046 (its *No panic*
+The accepted ADRs whose basis it moves: ADR-0046 (its *No panic*
 clause decides the brushed start's reductions only, and its *What is not drawn* asks a refused
 tile to warn), ADR-0025 (the renderer's safety rests on agg-rust and the clipping), ADR-0041
 (`buffer` is geo's `buffer_with_style`), and ADR-0002 with the convention on `Verifies:` markers,
@@ -38,11 +38,11 @@ whose list of criteria with a test per item gains Q-3.
 
 ## Acceptance criteria
 
-- [ ] Given the draft, when the maintainer decides, then `docs/SPECIFICATION.md` carries the
-  wording the maintainer chose, or the ticket is dropped with the reason.
+- [ ] Given the draft, when the ticket lands, then `docs/SPECIFICATION.md` carries it word for
+  word.
 - [ ] Given the wording landed, when `scripts/check-traceability.sh` runs, then it passes.
-- [ ] Given the wording landed with "a test of its input", when `docs/CONVENTIONS.md` is read,
-  then the `Verifies:` entry names Q-3 among the criteria with a test per item.
+- [ ] Given the wording landed, when `docs/CONVENTIONS.md` is read, then the `Verifies:` entry
+  names Q-3 among the criteria with a test per item.
 
 ## Read first
 

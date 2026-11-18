@@ -30,9 +30,11 @@ are silent today:
   03 classifies as a rule of the display list takes no warning.
 
 Each refusal reaches the diagnostics of the layer that drew it as a warning, once per layer and
-kind of refusal, through the channel ticket 02 builds from `render-agg` to the layer. The code of
-each is agreed with the maintainer in the ticket's first step: `symbol-not-drawn`,
-`pixmap-not-drawn`, or one of its own, such as one for the clip's drops.
+kind of refusal, through the channel ticket 02 builds from `render-agg` to the layer. The codes
+are the maintainer's choice of 2026-11-18, by kind: a TrueType marker's glyph and a glyph outline
+warn `symbol-not-drawn`, a hatch warns `hatch-not-drawn`, and the clip's drops, a brushed line's
+points, and a refused stroke warn a new code, `path-not-drawn`, which the diagnostics untested
+sensor then holds to a test.
 
 ## Acceptance criteria
 
