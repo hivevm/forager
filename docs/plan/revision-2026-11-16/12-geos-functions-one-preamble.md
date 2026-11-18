@@ -19,7 +19,7 @@ fourth to two of them, through one helper, `is_finite`, with the function's name
 - `simplifypt` refuses none.
 
 The conversion to geo's types already lives in `geometry.rs` (`to_polygon`, `from_polygon`). The
-steps in front of it stay in `layer_transform.rs`, 960 lines, beside the tree's evaluation and the
+steps in front of it stay in `layer_transform.rs`, 953 lines, beside the tree's evaluation and the
 ports of `generalize`, `densify`, `smoothsia`, `outer`, and `inner`.
 
 One function takes the shape, the function's name, and the argument's check, and gives the shape
@@ -32,13 +32,17 @@ This is a `refactor`. (Amended by the design revision of 2026-11-18 for ticket 2
 ## Acceptance criteria
 
 - [ ] Given the tree, when `layer_transform.rs` is read, then `is_empty_from_geos` and `built`
-  are each called once on the way to `simplify`, `simplifypt`, and `buffer`.
+  are each called once on the way to `simplify`, `simplifypt` (`simplify_preserving`), and
+  `buffer`.
 - [ ] Given `crates/symbolize/src/geometry/tests.rs`, `layer_transform/tests.rs`, and the
   msautotest harness, when they run, then all pass unchanged.
 
 ## Read first
 
-- Touches: `crates/symbolize/src/{layer_transform,geometry}.rs`
+- Touches: `crates/symbolize/src/layer_transform.rs`,
+  `crates/symbolize/src/layer_transform/tests.rs` (corrected 2026-11-18: the preamble stays in
+  `layer_transform.rs`, so `geometry.rs` is not touched; the tests that pin the preamble's order
+  are added beside the others)
 - ADR-0041, ADR-0047, ADR-0048; `docs/adr/0049-third-party-failures-guarded.md`;
   `docs/ARCHITECTURE.md` (the `symbolize` section).
 
