@@ -18,9 +18,11 @@ that a refused piece warns on its layer:
 - the probe takes the place's bound too, so that one guard and one pass before the draw remain,
   and `filtered` goes if nothing else uses it;
 - a refused piece reaches the diagnostics of the layer that draws it as a warning, once per
-  layer and symbol, as a refused tile warns (`crates/engine/src/layer.rs`). The code is
+  layer and kind, beside a refused tile's warnings (`crates/engine/src/layer.rs`). The code is
   `symbol-not-drawn` or `pixmap-not-drawn` by the symbol's kind, as the maintainer chose on
-  2026-11-18;
+  2026-11-18. `render-agg` reads the kind from the tile's marks: a tile drawn by a `Pixmap` or a
+  `ResampledPixmap` is a pixmap's, any other a symbol's. The warning does not name the symbol, as
+  the maintainer answered the stop on 2026-11-18;
 - the guard carries the marker `// Guard: agg-rust 1.2.0`, and its doc comment names the lines
   it was derived from.
 
@@ -37,7 +39,7 @@ are two commits that may land as two pull requests.
   is drawn, then the first draws as today and the second draws nothing.
 - [ ] Given a map whose layer brushes the fuzz path of
   `a_piece_whose_join_lies_far_past_its_short_segment_…`, when the engine renders it, then the
-  layer carries the warning, once. The test lives in `crates/engine` and cites the ADR.
+  layer carries the warning, once for its kind. The test lives in `crates/engine` and cites the ADR.
 - [ ] Given `a_long_segment_after_a_short_one_at_a_gentle_angle_is_drawn`, when it runs, then it
   still counts 4207 pixels, and its layer carries no warning.
 - [x] Given `brush.rs`, when it is read, then `within_i32` and its call are gone, or a reason why
@@ -76,15 +78,7 @@ The probe's merge has landed on the branch; the channel waits for a decision.
 - 399ac7b8 tests the probe at the place's bound and one subpixel past it, the joins alone
   admitting the longer one.
 
-The channel stopped on this: `DrawOp::BrushedLine` carries a `Tile` of draw operations and no
-symbol, so `render-agg` cannot tell a pixmap symbol's refusal from another's. The maintainer
-chooses one of:
-
-- A: `render-agg` takes the kind from the tile's marks: one that draws a `Pixmap` or a
-  `ResampledPixmap` counts as `pixmap-not-drawn`, any other as `symbol-not-drawn`. Only the new
-  method changes the trait. The warning cannot name the symbol, and two symbols of one kind in
-  a layer give one warning.
-- B: the tile carries its symbol's kind, which changes `Tile::new`, a second public interface.
-- C: the renderer reports the refused tiles themselves, and the engine finds each tile's symbol.
-  It warns once per symbol and names it, but the method returns tiles, not counts by kind, and
-  a tile held until the engine takes it counts against ADR-0029's bytes longer than today.
+The channel stopped on how `render-agg` tells a symbol's kind, since `DrawOp::BrushedLine`
+carries a `Tile` and no symbol. The maintainer answered on 2026-11-18: the kind is read from the
+tile's marks, the trait takes one new method returning counts by kind with a default of none,
+and a layer warns once per kind, not naming the symbol.
