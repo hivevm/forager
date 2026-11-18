@@ -24,7 +24,7 @@ use forager_render::clip::drawn_width;
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Refused, Renderer, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    GeomTransform, LabelTransform, Rgba, SymbolKind, TransformShape, TransformTree,
+    GeomTransform, LabelTransform, Layer, Rgba, SymbolKind, TransformShape, TransformTree,
 };
 use render_input::{Decoded, decode};
 
@@ -56,12 +56,18 @@ enum Path {
     GlyphOutlineBounded,
     /// The circle layer, drawn alone, hands the renderer an item.
     CircleLayer,
-    /// A transform tree, of a layer or of a class's style, holds the step, and the polygon and
-    /// line layers it applies to have a line or a polygon among their features.
+    /// A transform tree of the polygon and line layers, theirs or a class style's, holds the step,
+    /// and the layers transform a feature: see [`transforms`].
     Step(Step),
-    /// The polygon and line layers apply a transform tree that is more than `[shape]`.
+    /// A tree of the polygon and line layers holds `simplifypt`, and a line or a ring among the
+    /// features has three points or more, so that `simplifypt` has a shape it can simplify,
+    /// rather than stopping at one of a point or two.
+    SimplifyptOfThreePoints,
+    /// The polygon or the line layer applies a tree of its own that is more than `[shape]`, and
+    /// the layers transform a feature: see [`transforms`].
     LayerTransform,
-    /// A class's style on the polygon and line layers applies a transform tree.
+    /// A class's style on the polygon or the line layer applies a tree, and the layers transform a
+    /// feature: see [`transforms`].
     ClassTransform,
     /// A polygon filled with a tile of the pixmap.
     TiledPixmap,
@@ -95,6 +101,9 @@ impl fmt::Display for Path {
             Path::GlyphOutlineBounded => write!(f, "a glyph outline past the bound of a stroke"),
             Path::CircleLayer => write!(f, "a circle drawn by the circle layer"),
             Path::Step(step) => write!(f, "a step {step:?} of the transform tree"),
+            Path::SimplifyptOfThreePoints => {
+                write!(f, "a simplifypt step over a shape of three points or more")
+            }
             Path::LayerTransform => write!(f, "a layer's transform tree"),
             Path::ClassTransform => write!(f, "a class style's transform tree"),
             Path::TiledPixmap => write!(f, "a tiled fill of the pixmap"),
@@ -138,7 +147,10 @@ const SEEDS: &[(&str, &[Path])] = &[
     ("smoothsia-short-parts", &[Path::Step(Step::SmoothSia)]),
     ("transform-buffer", &[Path::Step(Step::Buffer)]),
     ("transform-simplify", &[Path::Step(Step::Simplify)]),
-    ("transform-simplifypt", &[Path::Step(Step::Simplifypt)]),
+    (
+        "transform-simplifypt",
+        &[Path::Step(Step::Simplifypt), Path::SimplifyptOfThreePoints],
+    ),
     ("truetype-fill", &[Path::TrueType("glyph-fills")]),
     (
         "truetype-input-font",
@@ -286,9 +298,37 @@ fn drawn_alone(decoded: &mut Decoded, layer: &str) -> Vec<Op> {
     drawn(decoded).0
 }
 
-/// Every transform tree the map applies: the layers' and their classes' styles'.
+/// The layers that apply transform trees, the polygon and the line layer: the first two.
+const TRANSFORMED: [&str; 2] = ["polygons", "lines"];
+
+fn transformed_layers(decoded: &Decoded) -> impl Iterator<Item = &Layer> {
+    decoded
+        .map
+        .layers
+        .iter()
+        .filter(|layer| TRANSFORMED.contains(&layer.name.as_deref().unwrap_or_default()))
+}
+
+/// Whether the polygon and line layers, drawn alone, transform a feature: the map has a view the
+/// engine draws, a line or a polygon among the features, and the layers hand the renderer an item
+/// or report that a transform drew nothing (`geomtransform-*`).
+fn transforms(decoded: &mut Decoded) -> bool {
+    if !has_line_or_polygon(decoded) {
+        return false;
+    }
+    decoded
+        .map
+        .layers
+        .retain(|layer| TRANSFORMED.contains(&layer.name.as_deref().unwrap_or_default()));
+    let (ops, rendered) = drawn(decoded);
+    let codes = || rendered.diagnostics.iter().map(|d| d.code.as_str());
+    !codes().any(|code| code == "view-invalid")
+        && (!ops.is_empty() || codes().any(|code| code.starts_with("geomtransform-")))
+}
+
+/// The transform trees of the polygon and line layers: theirs and their classes' styles'.
 fn trees(decoded: &Decoded) -> impl Iterator<Item = &TransformShape> {
-    decoded.map.layers.iter().flat_map(|layer| {
+    transformed_layers(decoded).flat_map(|layer| {
         let styles = layer
             .classes
             .iter()
@@ -374,24 +414,37 @@ fn reaches(data: &[u8], path: Path) -> bool {
         }
         Path::CircleLayer => !drawn_alone(&mut decoded, "circles").is_empty(),
         Path::Step(step) => {
-            has_line_or_polygon(&decoded) && trees(&decoded).any(|tree| holds(tree, step))
+            trees(&decoded).any(|tree| holds(tree, step)) && transforms(&mut decoded)
+        }
+        Path::SimplifyptOfThreePoints => {
+            let three = decoded
+                .features
+                .iter()
+                .any(|feature| match &feature.geometry {
+                    Geometry::LineString(line) => line.len() >= 3,
+                    Geometry::Polygon(rings) => rings.iter().any(|ring| ring.len() >= 3),
+                    _ => false,
+                });
+            three && trees(&decoded).any(|tree| holds(tree, Step::Simplifypt))
         }
         Path::LayerTransform => {
-            has_line_or_polygon(&decoded)
-                && matches!(
-                    &decoded.map.layers[0].geom_transform,
+            let own = transformed_layers(&decoded).any(|layer| {
+                matches!(
+                    &layer.geom_transform,
                     Some(TransformTree::Drawn(shape)) if *shape != TransformShape::Shape
                 )
+            });
+            own && transforms(&mut decoded)
         }
         Path::ClassTransform => {
-            has_line_or_polygon(&decoded)
-                && decoded.map.layers[..2].iter().all(|layer| {
-                    layer.classes.iter().all(|class| {
-                        class.styles.iter().any(|style| {
-                            matches!(&style.geom_transform, Some(GeomTransform::Expression(_)))
-                        })
+            let styled = transformed_layers(&decoded).any(|layer| {
+                layer.classes.iter().any(|class| {
+                    class.styles.iter().any(|style| {
+                        matches!(&style.geom_transform, Some(GeomTransform::Expression(_)))
                     })
                 })
+            });
+            styled && transforms(&mut decoded)
         }
         Path::TiledPixmap => drawn(&decoded)
             .0
