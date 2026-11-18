@@ -19,11 +19,11 @@
 //! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
 //! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, `marker_glyphs`, and
 //! `render_resources`; `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`;
-//! `label_binding` imports `classes`; `classes` imports `bindable` and `layer`;
-//! `render_resources` imports `fonts`, `images`, and `marker_glyphs`; `reproject` imports
-//! `layer`; `fonts` and `images` import `resource`; `bind`, `bindable`, `inline`, `label_cache`,
-//! `layer`, `marker_glyphs`, `plan`, and `resource` import none, nor does a module take an item of
-//! this root.
+//! `label_binding` imports `classes`; `circle` imports `classes`, `layer`, and `reproject`;
+//! `classes` imports `bindable` and `layer`; `render_resources` imports `fonts`, `images`, and
+//! `marker_glyphs`; `reproject` imports `layer`; `fonts` and `images` import `resource`; `bind`,
+//! `bindable`, `inline`, `label_cache`, `layer`, `marker_glyphs`, `plan`, and `resource` import
+//! none, nor does a module take an item of this root.
 //! The test `engine_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a
 //! table in this order.
 
@@ -34,6 +34,7 @@
 
 mod bind;
 mod bindable;
+mod circle;
 mod classes;
 mod fonts;
 mod images;
@@ -63,15 +64,14 @@ use forager_style_ir::{
 };
 use forager_symbolize::{
     Budget, Canvas, Factors, Pass, Pixmaps, Refusals, Resolved, StyleTrees, Undrawn, can_draw,
-    circle, circle_ops, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers,
-    resolve,
+    clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
 };
 
 use forager_expr::Evaluator;
 
 use crate::classes::{Binder, Reports, Selector};
 use crate::plan::Plan;
-use crate::render_resources::{Lent, Resources};
+use crate::render_resources::{Resources, Shared};
 
 pub use crate::bind::bind_sources;
 pub use crate::inline::is_inline;
@@ -153,130 +153,235 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     mut renderer: R,
 ) -> Rendered {
     let mut diagnostics = Vec::new();
-    let Some((width, height, scale, factors, rotation)) = prepare(map, &mut diagnostics) else {
+    let Some(prepared) = prepare(map, &mut diagnostics) else {
         return Rendered::no_map(diagnostics);
     };
-    let view = &rotation.frame;
+    let (width, height) = prepared.size;
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
-    let mut labels = Labels::new(map, &rotation, &factors, (width, height));
-    // The store of what the render reads through `files`, dropped with the render (ADR-0029).
-    let mut store = Resources::new(files);
-    let mut evaluator = Evaluator::new();
-    let mut reports = Reports::default();
+    let mut layers = Layers {
+        labels: Labels::new(map, &prepared.rotation, &prepared.factors, prepared.size),
+        // The store of what the render reads through `files`, dropped with the render (ADR-0029).
+        store: Resources::new(files),
+        evaluator: Evaluator::new(),
+        reports: Reports::default(),
+        diagnostics,
+    };
     let (order, cache_at) = drawing_order(map);
     let mut cached_labels = None;
-    for (position, &(layer_index, layer)) in order.iter().enumerate() {
+    for (position, &layer) in order.iter().enumerate() {
         if position == cache_at {
-            cached_labels = Some(labels.finish(&mut renderer, store.images(), &mut diagnostics));
+            cached_labels = Some(layers.finish_labels(&mut renderer));
         }
-        let Some(mode) = layer_mode(layer, scale, &mut diagnostics) else {
-            continue;
-        };
-        let Some((mut features, centres)) =
-            in_view(map, layer, mode, sources, &rotation, &mut diagnostics).await
-        else {
-            continue;
-        };
-        if layer.classes.is_empty() {
-            continue;
-        }
-        let mut selector = Selector {
-            binder: Binder {
+        draw_layer(map, &prepared, &mut layers, &mut renderer, sources, layer).await;
+    }
+    // The labels of the cache are drawn after every layer but those of POSTLABELCACHE TRUE, as
+    // MapServer's label cache draws them.
+    let labels = cached_labels.unwrap_or_else(|| layers.finish_labels(&mut renderer));
+    Rendered {
+        image: Some(renderer.finish()),
+        labels,
+        diagnostics: layers.diagnostics,
+    }
+}
+
+/// What the drawing of a map's layers carries from one layer to the next.
+struct Layers<'a, 'r, L> {
+    labels: Labels<'a>,
+    store: Resources<'r, L>,
+    evaluator: Evaluator,
+    reports: Reports,
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl<L: ResourceLoader> Layers<'_, '_, L> {
+    /// Draws the labels of the label cache with `renderer`, and returns them.
+    fn finish_labels<R: Renderer>(&mut self, renderer: &mut R) -> Vec<CachedLabel> {
+        let images = self.store.images();
+        self.labels.finish(renderer, images, &mut self.diagnostics)
+    }
+}
+
+/// How a layer's features are drawn, as its render mode and its labels decide.
+enum Shapes {
+    /// A point layer's, point by point, its labels through the label cache, which holds the
+    /// marker of each class's first style beneath them.
+    Points,
+    /// A point layer's, point by point, each point's labels drawn after its markers.
+    PointsLabelledAtOnce,
+    /// A line or a polygon layer's, by the [`Plan`] of each class, its labels not drawn yet.
+    Paths,
+    /// A circle layer's, each as its circle, its labels never drawn.
+    Circles(circle::Centres),
+}
+
+impl Shapes {
+    /// The dispatch on the render mode `mode` of `layer`: how its `features` are drawn, each
+    /// reprojected into the map's projection by `reprojection`, where the layer is reprojected,
+    /// as [`reproject::LayerReprojection::layer_features`] does; but a circle layer's, which
+    /// keeps them in its projection and reprojects only its circles' centres (see
+    /// [`circle::Centres`]).
+    fn of(
+        mode: RenderMode,
+        layer: &Layer,
+        reprojection: Option<reproject::LayerReprojection>,
+        features: &mut Vec<Feature>,
+        diagnostics: &mut Vec<Diagnostic>,
+    ) -> Self {
+        if mode == RenderMode::Circle {
+            return Self::Circles(circle::Centres::new(
+                reprojection,
                 layer,
-                layer_index,
-                evaluator: &mut evaluator,
-                reports: &mut reports,
-                diagnostics: &mut diagnostics,
-            },
-            scale,
-        };
-        let cellsize = classes::layer_cellsize(map, view.cellsize);
-        let Some(budget) = transformed(&mut selector, mode, &mut features, cellsize) else {
-            continue;
-        };
-        let (drawable, undrawn) = drawable(mode, &features);
-        let selected = selector.select(drawable, &map.symbols);
-        let drawing = Drawing::new(mode, layer, scale, &rotation, centres.as_ref());
+                features,
+                diagnostics,
+            ));
+        }
+        if let Some(reprojection) = &reprojection {
+            reprojection.layer_features(layer, features, MAX_HORIZON_POINTS, diagnostics);
+        }
         // A point layer of LABELCACHE OFF draws each feature's labels into the layer's image as
         // pointLayerDrawShape draws them: at each point, after its markers, before the next's.
         // Any other layer's labels go through the label cache.
         // A layer of POSTLABELCACHE TRUE draws its labels at once whatever its label_cache says,
         // as msDrawLayer turns the cache off for it as it draws it (src/mapdraw.c:850-856).
-        let at_once = mode == RenderMode::Point && (!layer.label_cache || layer.post_label_cache);
-        let mut lent = drawing
-            .load_resources(&selected, map, !at_once, &mut store)
-            .await;
-        let pixmaps = lent.shared.pixmaps;
-        let mut canvas = layer_canvas(map, layer, factors[layer_index], (width, height), pixmaps)
-            .with_tiles(lent.tiles)
-            .with_glyphs(lent.glyphs)
-            .with_style_trees(StyleTrees::new(budget, cellsize));
-        let drawn = labelled(&selected);
-        let mut target = drawing.target(&mut renderer, &mut canvas);
-        let style_failures = if at_once {
-            let binder = &mut selector.binder;
-            let mut settled = labels.layer_at_once(layer_index, &drawn, pixmaps, binder);
-            for (one, &(feature, class, _)) in selected.iter().zip(&drawn) {
-                let laid = labels
-                    .label_at_once(&settled, feature, class, &mut lent.shared, binder)
-                    .await;
-                let mut out_of_reach = vec![0; laid.len()];
-                drawing.draw_points(&mut target, &mut canvas, one, |target, point| {
-                    for (label, count) in laid.iter().zip(&mut out_of_reach) {
-                        *count += labels.draw_at_once(&mut settled, target, label, point);
-                    }
-                });
-                for (label, count) in laid.iter().zip(out_of_reach) {
-                    labels.out_of_reach(binder.diagnostics, label.at, count);
-                }
+        match mode {
+            RenderMode::Point if !layer.label_cache || layer.post_label_cache => {
+                Self::PointsLabelledAtOnce
+            }
+            RenderMode::Point => Self::Points,
+            _ => Self::Paths,
+        }
+    }
+}
+
+/// Draws `layer` of `map`, at `layer_index` among the map's layers, with `renderer`, reading its
+/// features from the source bound to its name in `sources`, from what the map is `prepared` by
+/// and what the drawing of the `layers` before it left: none where it is not drawn, its labels
+/// drawn at once or held for the cache, and what it left undrawn reported.
+async fn draw_layer<S: FeatureSource, L: ResourceLoader, R: Renderer>(
+    map: &Map,
+    prepared: &Prepared,
+    layers: &mut Layers<'_, '_, L>,
+    renderer: &mut R,
+    sources: &BTreeMap<String, S>,
+    (layer_index, layer): (usize, &Layer),
+) {
+    let Layers {
+        labels,
+        store,
+        evaluator,
+        reports,
+        diagnostics,
+    } = layers;
+    let (scale, rotation) = (prepared.scale, &prepared.rotation);
+    let Some(mode) = layer_mode(layer, scale, diagnostics) else {
+        return;
+    };
+    let Some((mut features, reprojection)) =
+        in_view(map, layer, sources, rotation, diagnostics).await
+    else {
+        return;
+    };
+    let shapes = Shapes::of(mode, layer, reprojection, &mut features, diagnostics);
+    if layer.classes.is_empty() {
+        return;
+    }
+    let binder = Binder {
+        layer,
+        layer_index,
+        evaluator,
+        reports,
+        diagnostics,
+    };
+    let mut selector = Selector { binder, scale };
+    let cellsize = classes::layer_cellsize(map, rotation.frame.cellsize);
+    let Some(budget) = transformed(&mut selector, mode, &mut features, cellsize) else {
+        return;
+    };
+    let (drawable, undrawn) = drawable(mode, &shapes, &features);
+    let selected = selector.select(drawable, &map.symbols);
+    let drawing = Drawing {
+        mode,
+        layer,
+        scale,
+        rotation,
+    };
+    let marker_held =
+        |class: usize| matches!(shapes, Shapes::Points) && !layer.classes[class].labels.is_empty();
+    drawing
+        .load_resources(&selected, map, marker_held, store)
+        .await;
+    let mut lent = store.lend();
+    let factors = prepared.factors[layer_index];
+    let mut canvas = layer_canvas(map, layer, factors, prepared.size, lent.shared.pixmaps)
+        .with_tiles(lent.tiles)
+        .with_glyphs(lent.glyphs)
+        .with_style_trees(StyleTrees::new(budget, cellsize));
+    let drawn = labelled(&selected);
+    let binder = &mut selector.binder;
+    let mut target = drawing.target(renderer, &mut canvas);
+    let style_failures = match &shapes {
+        Shapes::Points => {
+            for one in &selected {
+                drawing.draw_points(&mut target, &mut canvas, one, |_, _| {});
             }
             StyleFailures::new()
-        } else {
-            drawing.draw(&mut target, &mut canvas, &selected)
-        };
-        // A layer of its own is laid over the map here, before the layer's labels are cached.
-        drop(target);
-        let refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
-        let refused = renderer.take_refused();
-        let (spent, diagnostics) = (canvas.markers_spent(), &mut *selector.binder.diagnostics);
-        layer_reports(layer, spent, refusals, refused, undrawn, diagnostics);
-        let trees = (style_failures, canvas.style_trees_over_limit());
-        style_reports(layer, mode, &map.symbols, trees, diagnostics);
-        // Only a line, polygon, or annotation layer of POSTLABELCACHE TRUE comes here after the
-        // cache is drawn: its labels are not drawn yet, each reported, so none enters the cache.
-        if !at_once {
-            let binder = &mut selector.binder;
-            let settled = labels.layer(layer_index, mode, &drawn, binder);
+        }
+        Shapes::PointsLabelledAtOnce => {
+            let draw = (&mut target, &mut canvas);
+            let shared = &mut lent.shared;
+            drawing
+                .draw_points_labelled(labels, draw, &selected, &drawn, shared, binder)
+                .await;
+            StyleFailures::new()
+        }
+        Shapes::Paths => drawing.draw_paths(&mut target, &mut canvas, &selected),
+        Shapes::Circles(centres) => {
+            centres.draw(
+                &mut target,
+                &mut canvas,
+                &selected,
+                (scale, &rotation.frame),
+            );
+            StyleFailures::new()
+        }
+    };
+    // A layer of its own is laid over the map here, before the layer's labels are cached.
+    drop(target);
+    let refusals = labels.layer_refusals(layer_index, canvas.take_refusals());
+    let refused = renderer.take_refused();
+    let (spent, diagnostics) = (canvas.markers_spent(), &mut *binder.diagnostics);
+    layer_reports(layer, spent, refusals, refused, undrawn, diagnostics);
+    let trees = (style_failures, canvas.style_trees_over_limit());
+    style_reports(layer, &shapes, &map.symbols, trees, diagnostics);
+    // Only a line, polygon, or annotation layer of POSTLABELCACHE TRUE comes here after the
+    // cache is drawn: its labels are not drawn yet, each reported, so none enters the cache.
+    match shapes {
+        Shapes::Points => {
+            let settled = labels.layer(layer_index, &drawn, binder);
             labels
                 .collect(&settled, &drawn, &mut lent.shared, lent.glyphs, binder)
                 .await;
         }
-    }
-    // The labels of the cache are drawn after every layer but those of POSTLABELCACHE TRUE, as
-    // MapServer's label cache draws them.
-    let labels = cached_labels
-        .unwrap_or_else(|| labels.finish(&mut renderer, store.images(), &mut diagnostics));
-    Rendered {
-        image: Some(renderer.finish()),
-        labels,
-        diagnostics,
+        Shapes::PointsLabelledAtOnce => {}
+        Shapes::Paths => labels.unlabelled(layer_index, &drawn, binder, labels::PATHS_UNLABELLED),
+        Shapes::Circles(_) => labels.unlabelled(layer_index, &drawn, binder, circle::NO_LABELS),
     }
 }
 
-/// The reports on the styles of a layer drawn in `mode`: the symbols no symbol is named; but in a
-/// point layer, which draws them at its points, and a circle layer, which draws its circle
-/// whatever the transform (`src/mapdraw.c:2390-2396`), the styles of a GEOMTRANSFORM not drawn;
-/// and what the class styles' transform trees left undrawn, their failures and the bound they
-/// passed (see [`style_tree_reports`]).
+/// The reports on the styles of a layer drawn as `shapes` says: the symbols no symbol is named;
+/// but in a point layer, which draws them at its points, and a circle layer, which draws its
+/// circle whatever the transform (`src/mapdraw.c:2390-2396`), the styles of a GEOMTRANSFORM not
+/// drawn; and what the class styles' transform trees left undrawn, their failures and the bound
+/// they passed (see [`style_tree_reports`]).
 fn style_reports(
     layer: &Layer,
-    mode: RenderMode,
+    shapes: &Shapes,
     symbols: &[Symbol],
     (failures, over_limit): (StyleFailures, Option<&str>),
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     unknown_symbols(layer, symbols, diagnostics);
-    if !matches!(mode, RenderMode::Point | RenderMode::Circle) {
+    if matches!(shapes, Shapes::Paths) {
         styles_not_drawn(layer, diagnostics);
     }
     style_tree_reports(layer, failures, over_limit, diagnostics);
@@ -311,11 +416,12 @@ fn layer_mode(layer: &Layer, scale: f64, diagnostics: &mut Vec<Diagnostic>) -> O
 
 /// The features a layer of `mode` draws, and how many of each kind of geometry it cannot. A
 /// circle layer takes every feature, as msDrawVectorLayer counts each against its `MAXFEATURES`,
-/// and counts those that are no circle (see [`circle`]), which it draws nothing of.
-fn drawable(
+/// and counts those that are no circle (see [`circle::no_circle`]), which it draws nothing of.
+fn drawable<'f>(
     mode: RenderMode,
-    features: &[Feature],
-) -> (Vec<&Feature>, BTreeMap<&'static str, usize>) {
+    shapes: &Shapes,
+    features: &'f [Feature],
+) -> (Vec<&'f Feature>, BTreeMap<&'static str, usize>) {
     let mut undrawn = BTreeMap::new();
     let mut drawable = Vec::with_capacity(features.len());
     for feature in features {
@@ -323,7 +429,8 @@ fn drawable(
         if drawn {
             drawable.push(feature);
         }
-        if !drawn || (mode == RenderMode::Circle && circle(&feature.geometry).is_none()) {
+        let circles = matches!(shapes, Shapes::Circles(_));
+        if !drawn || (circles && circle::no_circle(&feature.geometry)) {
             *undrawn.entry(kind(&feature.geometry)).or_insert(0usize) += 1;
         }
     }
@@ -472,27 +579,9 @@ struct Drawing<'a> {
     /// The map's rotation: the view of its frame, which the features are drawn in, and the turn
     /// of a point layer's styles' angles.
     rotation: &'a Rotation,
-    /// The reprojection of a circle layer's centres, where the layer is reprojected.
-    centres: Option<&'a reproject::LayerReprojection>,
 }
 
-impl<'a> Drawing<'a> {
-    fn new(
-        mode: RenderMode,
-        layer: &'a Layer,
-        scale: f64,
-        rotation: &'a Rotation,
-        centres: Option<&'a reproject::LayerReprojection>,
-    ) -> Self {
-        Self {
-            mode,
-            layer,
-            scale,
-            rotation,
-            centres,
-        }
-    }
-
+impl Drawing<'_> {
     /// Where the layer is drawn: into an image of its own, laid over the map, where the layer has
     /// an opacity, as msDrawLayer draws a layer with a `COMPOSITE` block, and straight onto the
     /// map otherwise.
@@ -514,26 +603,22 @@ impl<'a> Drawing<'a> {
     /// records. On a point layer of the label cache, the first style of a class with labels is
     /// loaded at any scale, as msAddLabelGroup and msAddLabel (`src/maplabel.c:344-352, 604-608`)
     /// size the marker the cache holds by msGetMarkerSize, which loads it
-    /// (`src/mapsymbol.c:736-738`) whatever the style's scale range. Those the clip buffer of a
-    /// hatched polygon's class counts are loaded whatever theirs too, as msDrawShape loads them
-    /// (see [`clip_pixmaps`]), and those of the labelpoint and labelcenter styles of the classes'
-    /// labels (see [`label_pixmap`]). `cached` tells whether the layer's labels go through the
-    /// label cache. It lends what it loaded, to draw the layer and lay out its labels.
-    async fn load_resources<'s, 'r, L: ResourceLoader>(
+    /// (`src/mapsymbol.c:736-738`) whatever the style's scale range: those of the classes for
+    /// which `marker_held` is true. Those the clip buffer of a hatched polygon's class counts are
+    /// loaded whatever theirs too, as msDrawShape loads them (see [`clip_pixmaps`]), and those of
+    /// the labelpoint and labelcenter styles of the classes' labels (see [`label_pixmap`]).
+    async fn load_resources<L: ResourceLoader>(
         &self,
         selected: &[Selected<'_>],
         map: &Map,
-        cached: bool,
-        resources: &'s mut Resources<'r, L>,
-    ) -> Lent<'s, 'r, L> {
+        marker_held: impl Fn(usize) -> bool,
+        resources: &mut Resources<'_, L>,
+    ) {
         let symbols = &map.symbols;
-        let holds_markers = self.mode == RenderMode::Point && cached;
-        let holds_marker =
-            |class: usize| holds_markers && !self.layer.classes[class].labels.is_empty();
-        let fonts = truetype_fonts(selected, symbols, self.scale, holds_marker);
+        let fonts = truetype_fonts(selected, symbols, self.scale, &marker_held);
         resources.load_marker_fonts(map, &fonts).await;
         for (_, class, styles) in selected {
-            let marker = holds_marker(*class);
+            let marker = marker_held(*class);
             for (place, style) in styles.iter().enumerate() {
                 if !(place == 0 && marker)
                     && !classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom)
@@ -557,7 +642,6 @@ impl<'a> Drawing<'a> {
                 resources.load_pixmap(path).await;
             }
         }
-        resources.lend()
     }
 
     /// Draws the markers of a point layer's feature `selected` at each of its points inside the
@@ -592,40 +676,44 @@ impl<'a> Drawing<'a> {
         }
     }
 
-    /// Draws a circle layer's `selected` features in order, each as its circle (see [`circle`]),
-    /// its centre reprojected where the layer is, and left where it does not reproject, as
-    /// msProjectPoint leaves it: every style of its class in its scale range, as
-    /// circleLayerDrawShape draws them (`src/mapdraw.c:2008-2029`). A feature without a circle
-    /// draws nothing.
-    fn draw_circles<R: Draw>(
+    /// Draws a point layer's `selected` features as [`Self::draw_points`] does, onto the target
+    /// and the canvas of `draw`, each point's labels of `labels` drawn at once after its markers,
+    /// before the next point's, as pointLayerDrawShape draws them. `drawn` holds the features
+    /// as they are labelled, whose labels are laid out in the fonts of `shared`, bound by
+    /// `binder`.
+    async fn draw_points_labelled<R: Draw, L: ResourceLoader>(
         &self,
-        renderer: &mut R,
-        canvas: &mut Canvas,
+        labels: &mut Labels<'_>,
+        (target, canvas): (&mut R, &mut Canvas<'_>),
         selected: &[Selected<'_>],
+        drawn: &[labels::Labelled<'_>],
+        shared: &mut Shared<'_, '_, L>,
+        binder: &mut Binder<'_, '_>,
     ) {
-        for (feature, _, styles) in selected {
-            let Some(mut circle) = circle(&feature.geometry) else {
-                continue;
-            };
-            if let Some(centre) = self.centres.and_then(|c| c.point(circle.centre)) {
-                circle.centre = centre;
-            }
-            for style in styles {
-                if classes::in_scale(self.scale, style.min_scale_denom, style.max_scale_denom) {
-                    let ops = circle_ops(circle, style, &self.rotation.frame, canvas);
-                    draw_items(renderer, feature.id, ops);
+        let pixmaps = shared.pixmaps;
+        let mut settled = labels.layer_at_once(binder.layer_index, drawn, pixmaps, binder);
+        for (one, &(feature, class, _)) in selected.iter().zip(drawn) {
+            let laid = labels
+                .label_at_once(&settled, feature, class, shared, binder)
+                .await;
+            let mut out_of_reach = vec![0; laid.len()];
+            self.draw_points(target, canvas, one, |target, point| {
+                for (label, count) in laid.iter().zip(&mut out_of_reach) {
+                    *count += labels.draw_at_once(&mut settled, target, label, point);
                 }
+            });
+            for (label, count) in laid.iter().zip(out_of_reach) {
+                labels.out_of_reach(binder.diagnostics, label.at, count);
             }
         }
     }
 
-    /// Draws a layer's selected features in the order msDrawVectorLayer draws them, at once or
-    /// from the cache as the [`Plan`] of each class says. A style outside its scale range draws
-    /// nothing, where msDrawShape and the cache's pass skip it. A point layer's features are
-    /// drawn point by point by [`Self::draw_points`], without their labels. The first failure of
-    /// each class style's transform tree, in the order the shapes are drawn, by the places of its
-    /// class in the layer and of the style in its class.
-    fn draw<R: Draw>(
+    /// Draws a line or a polygon layer's selected features in the order msDrawVectorLayer draws
+    /// them, at once or from the cache as the [`Plan`] of each class says. A style outside its
+    /// scale range draws nothing, where msDrawShape and the cache's pass skip it. The first
+    /// failure of each class style's transform tree, in the order the shapes are drawn, by the
+    /// places of its class in the layer and of the style in its class.
+    fn draw_paths<R: Draw>(
         &self,
         renderer: &mut R,
         canvas: &mut Canvas,
@@ -633,16 +721,6 @@ impl<'a> Drawing<'a> {
     ) -> StyleFailures {
         let mut failures = StyleFailures::new();
         let mode = self.mode;
-        if mode == RenderMode::Point {
-            for one in selected {
-                self.draw_points(renderer, canvas, one, |_, _| {});
-            }
-            return failures;
-        }
-        if mode == RenderMode::Circle {
-            self.draw_circles(renderer, canvas, selected);
-            return failures;
-        }
         let mut draw = |canvas: &mut Canvas,
                         feature: &Feature,
                         (class, place): (usize, usize),
@@ -732,17 +810,29 @@ fn view(map: &Map, diagnostics: &mut Vec<Diagnostic>) -> Option<(u32, u32, View)
     Some((width, height, view))
 }
 
-/// What msPrepareImage computes of `map` before its layers are drawn, or `None` with an error:
-/// the image's width and height, the scale from the real extent, the factors of each layer by
-/// its index from msGetGeoCellSize's cellsize (see [`classes::scales`]), and the rotation.
-fn prepare(
-    map: &Map,
-    diagnostics: &mut Vec<Diagnostic>,
-) -> Option<(u32, u32, f64, Vec<Factors>, Rotation)> {
+/// What msPrepareImage computes of a map before its layers are drawn.
+struct Prepared {
+    /// The image's width and height.
+    size: (u32, u32),
+    /// The scale from the real extent.
+    scale: f64,
+    /// The factors of each layer by its index from msGetGeoCellSize's cellsize (see
+    /// [`classes::scales`]).
+    factors: Vec<Factors>,
+    rotation: Rotation,
+}
+
+/// What msPrepareImage computes of `map` before its layers are drawn, or `None` with an error.
+fn prepare(map: &Map, diagnostics: &mut Vec<Diagnostic>) -> Option<Prepared> {
     let (width, height, view) = view(map, diagnostics)?;
     let rotation = Rotation::of(map, &view, (width, height), diagnostics)?;
     let (scale, factors) = classes::scales(map, &view, rotation.geo_cellsize, width);
-    Some((width, height, scale, factors, rotation))
+    Some(Prepared {
+        size: (width, height),
+        scale,
+        factors,
+        rotation,
+    })
 }
 
 /// Whether [`render`] reads the features of `layer`: one shown, of a TYPE it draws, from its
@@ -787,52 +877,20 @@ fn drawable_mode(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) -> Option<Ren
     }
 }
 
-/// The features of `layer` in view, drawn in `mode`: those its source delivers for the area
-/// [`asked`], in the map's projection, reprojected where the layer is, and on a rotated map in the
-/// frame of its image (see [`Rotation`]). A circle layer's are left
-/// in the layer's projection, and returned with the reprojection of their centres, where the
-/// layer is reprojected: circleLayerDrawShape reprojects only a circle's centre
-/// (`src/mapdraw.c:2008-2011`).
+/// The features of `layer` in view: those its source delivers for the area [`asked`], in the
+/// layer's projection, with the way they are reprojected into the map's, where the layer is
+/// reprojected, and on a rotated map into the frame of its image (see [`Rotation`]).
 async fn in_view<S: FeatureSource>(
     map: &Map,
     layer: &Layer,
-    mode: RenderMode,
     sources: &BTreeMap<String, S>,
     rotation: &Rotation,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Option<(Vec<Feature>, Option<reproject::LayerReprojection>)> {
     let declared = declared_projection(layer, sources, diagnostics);
     let (reprojection, asked) = asked(map, layer, &declared, rotation, diagnostics)?;
-    let mut features = source_features(layer, sources, asked, diagnostics).await?;
-    if mode == RenderMode::Circle {
-        if let Some(reprojection) = &reprojection {
-            centres_not_reprojected(reprojection, layer, &features, diagnostics);
-        }
-        return Some((features, reprojection));
-    }
-    if let Some(reprojection) = &reprojection {
-        reprojection.layer_features(layer, &mut features, MAX_HORIZON_POINTS, diagnostics);
-    }
-    Some((features, None))
-}
-
-/// Reports the circles of a circle layer's `features` whose centre does not reproject by
-/// `reprojection` (see [`circle`]). The centres are reprojected here to count them and again as
-/// they are drawn, which keeps the warning with the other warnings of the layer's reprojection.
-fn centres_not_reprojected(
-    reprojection: &reproject::LayerReprojection,
-    layer: &Layer,
-    features: &[Feature],
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    let failed = features
-        .iter()
-        .filter_map(|feature| circle(&feature.geometry))
-        .filter(|one| reprojection.point(one.centre).is_none())
-        .count();
-    if failed > 0 {
-        diagnostics.push(reproject::points_not_reprojected(layer, failed));
-    }
+    let features = source_features(layer, sources, asked, diagnostics).await?;
+    Some((features, reprojection))
 }
 
 /// How `layer` is reprojected into the map's projection, where it is, and the area its source is

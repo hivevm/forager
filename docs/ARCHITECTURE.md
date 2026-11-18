@@ -187,7 +187,8 @@ golden path and the test pattern an agent copies from are named here.
   and turns each feature and style into display items
   by the layer's render mode; a circle layer's features it keeps in the layer's projection and
   reprojects only each circle's centre, as `circleLayerDrawShape` does, and draws none of its
-  labels. A layer without a source, or whose source fails, is skipped with a
+  labels (`circle.rs`, which the one dispatch on a layer's render mode in `lib.rs` hands a circle
+  layer). A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer
   ([ADR-0022](adr/0022-skipped-records.md)); the fonts a label names and the images its
   pixmap symbols name it loads by one load, once per render and path through the host's resource
@@ -220,7 +221,8 @@ golden path and the test pattern an agent copies from are named here.
   its member box, that of its text and its `labelpoint` marker, where it was drawn, or none where
   it was discarded. It draws each feature in its styles through
   `symbolize`, in the order MapServer's shape cache draws a line layer's styles and their outlines
-  (`plan.rs`, its `Drawing` in `lib.rs`), into an image of its own for a layer with an opacity, and
+  (`plan.rs`, its `Drawing` in `lib.rs`, which draws a layer in `draw_layer`), into an image of
+  its own for a layer with an opacity, and
   reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
   a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
   refused, a label's among them, vector and TrueType symbols whose fill or brush tile the cache
@@ -239,7 +241,7 @@ golden path and the test pattern an agent copies from are named here.
   [ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md)). It turns every drawing
   operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It is the
   one core crate that awaits the ports. Its modules import one another in one direction only,
-  `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `classes.rs`,
+  `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `circle.rs`, `classes.rs`,
   `render_resources.rs`, `reproject.rs`, `fonts.rs` and `images.rs`, and `bind.rs`,
   `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`, `plan.rs`, and
   `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs` lists them:

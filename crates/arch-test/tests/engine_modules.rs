@@ -28,6 +28,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
         &["bindable", "classes", "label_cache", "layer"],
     ),
     ("label_binding", &["classes"]),
+    ("circle", &["classes", "layer", "reproject"]),
     ("classes", &["bindable", "layer"]),
     ("render_resources", &["fonts", "images", "marker_glyphs"]),
     ("reproject", &["layer"]),
