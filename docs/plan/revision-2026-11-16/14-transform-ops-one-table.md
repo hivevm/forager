@@ -31,7 +31,7 @@ is a `refactor` of the IR's Rust types, not of the style document (ADR-0006, ADR
 
 - Touches: `crates/style-ir/src/transform.rs`, `crates/mapfile/src/expression/transform.rs`,
   `crates/symbolize/src/layer_transform.rs`, `crates/engine/src/classes.rs`,
-  `fuzz/fuzz_targets/render.rs`
+  `fuzz/fuzz_targets/render_input.rs`
 - ADR-0048, ADR-0013, ADR-0014; `schema/style-document-1.1.json`.
 
 ## Blocked by

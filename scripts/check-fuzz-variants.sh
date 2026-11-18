@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 #
 # Check: the render fuzz target builds every variant of the enums of the style IR it fuzzes the
-# renderer through, each node of the transform tree and each kind of symbol (Q-3).
+# renderer through, each node of the transform tree and each kind of symbol (Q-3). What the target
+# builds of its bytes is fuzz/fuzz_targets/render_input.rs, which the target and the test of its
+# seeds share.
 #
 # The fuzz seed convention of docs/CONVENTIONS.md did not stop three nodes of the transform tree
 # from landing unfuzzed (ticket 01 of revision-2026-11-16). For the enums of ENUMS below, this
 # check decides it. It reads each enum's variants from the file that declares it, and fails where:
 #
-#   1. fuzz/fuzz_targets/render.rs names no '<Enum>::<Variant>' outside a '//' comment, and
+#   1. fuzz/fuzz_targets/render_input.rs names no '<Enum>::<Variant>' outside a '//' comment, and
 #      ALLOWED does not name the variant;
 #   2. ALLOWED names a variant the target names, one the enum does not declare, or one of an enum
 #      ENUMS does not list;
 #   3. the file declares no 'pub enum <Enum> {', or no variant of it is read;
-#   4. the tree has no fuzz/fuzz_targets/render.rs.
+#   4. the tree has no fuzz/fuzz_targets/render_input.rs.
 #
 # The variants are read as rustfmt lays an enum out, and check-rust.sh holds the crates to cargo
 # fmt: each line between the enum's header and the first line that is a lone '}' that begins with
 # four spaces and a capitalised name. A doc comment, an attribute, and what stands deeper, a
 # struct variant's fields and the types of a tuple variant broken over lines, are not read. That the
-# target draws what it builds, and that its seeds reach it, no check decides; the convention does.
+# target draws what it builds no check decides; that each seed builds the path it was made for,
+# fuzz/tests/render_seeds.rs decides.
 #
 # Pure bash + grep, sed, and awk, and _contains of scripts/lib/check.sh. Usage:
 #     scripts/check-fuzz-variants.sh [repository root]
@@ -33,7 +36,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/check.sh"
 
 ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
   || { echo "Fuzz variants check: '${1:-}' is not a directory." >&2; exit 2; }
-TARGET=fuzz/fuzz_targets/render.rs
+TARGET=fuzz/fuzz_targets/render_input.rs
 
 # '<file> <enum>': each enum whose variants the target must name, and the file that declares it.
 ENUMS=(
