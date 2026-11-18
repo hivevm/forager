@@ -445,10 +445,9 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
 /// number, on which geo's repair of the simplified polygon may panic, as it does by a tolerance
 /// that is no number.
 fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
-    if is_empty_from_geos(&shape) {
+    let Some(areas) = given_to_geos(&shape, "simplify", budget)? else {
         return Ok(shape);
-    }
-    let areas = built(&shape, "simplify", budget)?;
+    };
     if tolerance < 0.0 {
         return Err(Undrawn::Failed(format!(
             "calls simplify with the tolerance {tolerance}, below 0, which fails in MapServer"
@@ -509,10 +508,9 @@ fn simplify_preserving(
     tolerance: f64,
     budget: &mut Budget,
 ) -> Result<Shape, Undrawn> {
-    if is_empty_from_geos(&shape) {
+    let Some(areas) = given_to_geos(&shape, "simplifypt", budget)? else {
         return Ok(shape);
-    }
-    let areas = built(&shape, "simplifypt", budget)?;
+    };
     if tolerance < 0.0 {
         return Err(Undrawn::Failed(format!(
             "calls simplifypt with the tolerance {tolerance}, below 0, which fails in MapServer"
@@ -558,10 +556,9 @@ fn simplify_preserving(
 /// finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon of its
 /// own.
 fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
-    if is_empty_from_geos(shape) {
+    let Some(areas) = given_to_geos(shape, "buffer", budget)? else {
         return Ok(shape.clone());
-    }
-    let areas = built(shape, "buffer", budget)?;
+    };
     if !distance.is_finite() {
         return Err(Undrawn::Failed(format!(
             "calls buffer with the distance {distance}, which fails in MapServer"
@@ -594,6 +591,19 @@ fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Un
         kind: Kind::Polygon,
         parts,
     })
+}
+
+/// The areas msGEOSShape2Geometry builds of `shape` for a function of GEOS named `name`, by
+/// [`built`]. `None` where the shape is GEOS's empty polygon, which the function returns as it is.
+fn given_to_geos(
+    shape: &Shape,
+    name: &str,
+    budget: &mut Budget,
+) -> Result<Option<Vec<Area>>, Undrawn> {
+    if is_empty_from_geos(shape) {
+        return Ok(None);
+    }
+    built(shape, name, budget).map(Some)
 }
 
 /// Whether `shape` is the empty polygon a function of GEOS returns, which
