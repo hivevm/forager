@@ -181,17 +181,17 @@ pub(crate) fn along_line<T>(
 /// The tile of `mark`, of `style` at the canvas's factors, that msDrawShadeSymbol, or
 /// msDrawLineSymbol where `asked` is a line's, asks getTile for, from the render's cache of tiles
 /// (see [`Canvas::tiles`]): a pixmap's of its image (see [`pixmap_tile`]); a vector's or an
-/// ellipse's, seamless where `seamless` (see [`tile::vector_tile`]); and a TrueType symbol's of its
-/// glyph, asked only for a tile the cache does not hold and drawn at the tile's centre by
-/// [`glyph_marker::glyph_op`], a font that lacks the character noted with the tile, so that each
-/// layer that draws it records that (see [`tile::glyph_tile`]). None for a vector, an ellipse, or
+/// ellipse's, seamless where `asked` is a fill tile's that is (see [`tile::vector_tile`]); and a
+/// TrueType symbol's of its glyph, asked only for a tile the cache does not hold and drawn at the
+/// tile's centre by [`glyph_marker::glyph_op`], a font that lacks the character noted with the
+/// tile, so that each layer that draws it records that (see [`tile::glyph_tile`]). None for a vector, an ellipse, or
 /// a TrueType symbol of neither colour, for a square or no symbol, and where the image, the glyph,
 /// or the tile is refused (Q-9): the canvas records why, a pixmap's among the pixmaps, the others
 /// among the symbols.
 pub(crate) fn tile<T>(
     mark: Mark,
     style: &Style<T>,
-    (seamless, asked): (bool, TileFor),
+    asked: TileFor,
     canvas: &mut Canvas,
 ) -> Option<Rc<Tile>> {
     match mark {
@@ -203,7 +203,7 @@ pub(crate) fn tile<T>(
             let s = coloured(style, symbol, canvas)?;
             let tile = canvas
                 .tiles()
-                .and_then(|tiles| tile::vector_tile(tiles, index, symbol, &s, (seamless, asked)));
+                .and_then(|tiles| tile::vector_tile(tiles, index, symbol, &s, asked));
             recorded(&mut canvas.refused_symbols, index, tile)
         }
         Mark::Glyph(index, symbol) => {
