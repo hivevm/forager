@@ -445,27 +445,14 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
 /// number, on which geo's repair of the simplified polygon may panic, as it does by a tolerance
 /// that is no number.
 fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
-    let checked = || {
-        if tolerance < 0.0 {
-            return Err(Undrawn::Failed(format!(
-                "calls simplify with the tolerance {tolerance}, below 0, which fails in MapServer"
-            )));
-        }
-        // Guard: geo 0.33.1
-        // A refusal (ADR-0049): geo's repair of the simplified polygon orders its points by
-        // `lex_cmp`, which unwraps `partial_cmp` of a coordinate that is no number
-        // (`utils.rs:92-97`), reached from `winding_order.rs:149` through `bool_ops/mod.rs:270`.
-        // The layer fails with a diagnostic.
-        if shape.kind == Kind::Polygon && !is_finite(&shape) {
-            return Err(Undrawn::Failed(
-                "calls simplify on a polygon with a coordinate that is no finite number".to_owned(),
-            ));
-        }
-        Ok(())
-    };
-    let Some(areas) = given_to_geos(&shape, "simplify", checked, budget)? else {
+    let Some(areas) = given_to_geos(&shape, "simplify", budget)? else {
         return Ok(shape);
     };
+    if tolerance < 0.0 {
+        return Err(Undrawn::Failed(format!(
+            "calls simplify with the tolerance {tolerance}, below 0, which fails in MapServer"
+        )));
+    }
     let parts = match shape.kind {
         Kind::Point => shape.parts,
         Kind::Line => shape
@@ -474,6 +461,16 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
             .filter(|part| !part.is_empty())
             .map(|part| geometry::simplify_line(part, tolerance, budget))
             .collect::<Result<_, _>>()?,
+        // Guard: geo 0.33.1
+        // A refusal (ADR-0049): geo's repair of the simplified polygon orders its points by
+        // `lex_cmp`, which unwraps `partial_cmp` of a coordinate that is no number
+        // (`utils.rs:92-97`), reached from `winding_order.rs:149` through `bool_ops/mod.rs:270`.
+        // The layer fails with a diagnostic.
+        Kind::Polygon if !is_finite(&shape) => {
+            return Err(Undrawn::Failed(
+                "calls simplify on a polygon with a coordinate that is no finite number".to_owned(),
+            ));
+        }
         Kind::Polygon => geometry::simplify_areas(&areas, tolerance, budget)?
             .into_iter()
             .flat_map(|area| std::iter::once(area.shell).chain(area.holes))
@@ -511,17 +508,14 @@ fn simplify_preserving(
     tolerance: f64,
     budget: &mut Budget,
 ) -> Result<Shape, Undrawn> {
-    let checked = || {
-        if tolerance < 0.0 {
-            return Err(Undrawn::Failed(format!(
-                "calls simplifypt with the tolerance {tolerance}, below 0, which fails in MapServer"
-            )));
-        }
-        Ok(())
-    };
-    let Some(areas) = given_to_geos(&shape, "simplifypt", checked, budget)? else {
+    let Some(areas) = given_to_geos(&shape, "simplifypt", budget)? else {
         return Ok(shape);
     };
+    if tolerance < 0.0 {
+        return Err(Undrawn::Failed(format!(
+            "calls simplifypt with the tolerance {tolerance}, below 0, which fails in MapServer"
+        )));
+    }
     let lines: Vec<geometry::Line<'_>> = match shape.kind {
         Kind::Point => return Ok(shape),
         Kind::Line => shape
@@ -562,28 +556,25 @@ fn simplify_preserving(
 /// finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon of its
 /// own.
 fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
-    let checked = || {
-        if !distance.is_finite() {
-            return Err(Undrawn::Failed(format!(
-                "calls buffer with the distance {distance}, which fails in MapServer"
-            )));
-        }
-        // Guard: geo 0.33.1
-        // Guard: i_float 1.16.0
-        // A refusal (ADR-0049): geo's `buffer_with_style` strokes a line through i_overlay
-        // (`buffer.rs:377`), whose adapter takes a point that is no finite number outside its
-        // rect, which fails the debug assertion of `float_to_int` (i_float's
-        // `adapter.rs:115-123`). The layer fails with a diagnostic.
-        if !is_finite(shape) {
-            return Err(Undrawn::Failed(
-                "calls buffer on a shape with a coordinate that is no finite number".to_owned(),
-            ));
-        }
-        Ok(())
-    };
-    let Some(areas) = given_to_geos(shape, "buffer", checked, budget)? else {
+    let Some(areas) = given_to_geos(shape, "buffer", budget)? else {
         return Ok(shape.clone());
     };
+    if !distance.is_finite() {
+        return Err(Undrawn::Failed(format!(
+            "calls buffer with the distance {distance}, which fails in MapServer"
+        )));
+    }
+    // Guard: geo 0.33.1
+    // Guard: i_float 1.16.0
+    // A refusal (ADR-0049): geo's `buffer_with_style` strokes a line through i_overlay
+    // (`buffer.rs:377`), whose adapter takes a point that is no finite number outside its rect,
+    // which fails the debug assertion of `float_to_int` (i_float's `adapter.rs:115-123`). The
+    // layer fails with a diagnostic.
+    if !is_finite(shape) {
+        return Err(Undrawn::Failed(
+            "calls buffer on a shape with a coordinate that is no finite number".to_owned(),
+        ));
+    }
     let given = match shape.kind {
         Kind::Point => geometry::Buffered::Points(shape.parts.first().map_or(&[], Vec::as_slice)),
         Kind::Line => geometry::Buffered::Lines(&shape.parts),
@@ -602,24 +593,17 @@ fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Un
     })
 }
 
-/// The steps in front of a function of GEOS named `name`, msGEOSBuffer's, msGEOSSimplify's, and
-/// msGEOSTopologyPreservingSimplify's, in their order: none on GEOS's empty polygon
-/// ([`is_empty_from_geos`]), which the function returns as it is, so `None`; otherwise the shape
-/// built by msGEOSShape2Geometry ([`built`]), its polygon's rings charged to `budget`, then
-/// `checked`, the check of the function's number and the engine's refusals of an input a crate
-/// it calls fails on (ADR-0049), and the built areas.
+/// The areas msGEOSShape2Geometry builds of `shape` for a function of GEOS named `name`, by
+/// [`built`]. `None` where the shape is GEOS's empty polygon, which the function returns as it is.
 fn given_to_geos(
     shape: &Shape,
     name: &str,
-    checked: impl FnOnce() -> Result<(), Undrawn>,
     budget: &mut Budget,
 ) -> Result<Option<Vec<Area>>, Undrawn> {
     if is_empty_from_geos(shape) {
         return Ok(None);
     }
-    let areas = built(shape, name, budget)?;
-    checked()?;
-    Ok(Some(areas))
+    built(shape, name, budget).map(Some)
 }
 
 /// Whether `shape` is the empty polygon a function of GEOS returns, which
