@@ -48,12 +48,10 @@ impl<'r, L: ResourceLoader> Resources<'r, L> {
         }
     }
 
-    /// Loads and decodes the image at `path` unless it has been asked for already; the image, or
-    /// why it has none, is kept for the canvas and the labels.
+    /// Loads and decodes the image at `path` the first time it is asked for; the image, or why it
+    /// has none, is kept for the canvas and the labels.
     pub(crate) async fn load_pixmap(&mut self, path: &str) {
-        if !self.images.decoded().contains_key(path) {
-            let _ = self.images.image(path, self.loader).await;
-        }
+        let _ = self.images.image(path, self.loader).await;
     }
 
     /// Keeps among the glyphs each of `fonts` the TrueType markers of a layer name and that they
