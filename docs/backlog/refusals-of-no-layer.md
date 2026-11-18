@@ -13,8 +13,9 @@ on that layer (ADR-0049). Two drawings belong to no layer:
   image (`Tile::image`). What that renderer refuses, a TrueType glyph of the tile past its reach,
   or a path its clip cuts, is never taken.
 
-**Where:** `crates/engine/src/lib.rs` (`render_with_files`, the take after `labels.finish` and
-after each layer), `crates/render/src/tile.rs` (`Tile::image`), `crates/render-agg/src/lib.rs`
+**Where:** `crates/engine/src/labels.rs` (`Labels::finish`, the take at its end),
+`crates/engine/src/lib.rs` (`render_with_files`, the take after each layer),
+`crates/render/src/tile.rs` (`Tile::image`), `crates/render-agg/src/lib.rs`
 (`built_tile`); Q-3 of `docs/SPECIFICATION.md`.
 
 **What a change weighs:**
