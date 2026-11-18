@@ -3,14 +3,14 @@
 **Observed:** ticket revision-2026-11-16/02 (2026-11-18). The check
 `scripts/check-fuzz-variants.sh` could take `GeomTransform` and `LabelTransform` as it takes the
 transform tree and `SymbolKind`, but it would fail on the tree as it stands:
-`fuzz/fuzz_targets/render.rs` names `GeomTransform::Expression` only, none of `Start`, `End`,
-`Vertices`, `Bbox`, `Centroid`, `LabelPoint`, `LabelPoly`, and `LabelCenter`, and of
-`LabelTransform` it names `Point` and `Center`, not `Poly`. No other fuzz target builds a style
-IR with them: the `mapfile` target loads a mapfile without drawing it, and the `geojson` target
-draws a fixed map. Grep found them in no target; whether the browser or another path reaches them
-with arbitrary numbers was not probed.
+`fuzz/fuzz_targets/render_input.rs`, what the render target builds, names
+`GeomTransform::Expression` only, none of `Start`, `End`, `Vertices`, `Bbox`, `Centroid`,
+`LabelPoint`, `LabelPoly`, and `LabelCenter`, and of `LabelTransform` it names `Point` and
+`Center`, not `Poly`. No other fuzz target builds a style IR with them: the `mapfile` target loads
+a mapfile without drawing it, and the `geojson` target draws a fixed map. Grep found them in no
+target; whether the browser or another path reaches them with arbitrary numbers was not probed.
 
-**Where:** `fuzz/fuzz_targets/render.rs`, `crates/style-ir/src/model.rs` (`GeomTransform`,
+**Where:** `fuzz/fuzz_targets/render_input.rs`, `crates/style-ir/src/model.rs` (`GeomTransform`,
 `LabelTransform`), the `ENUMS` list of `scripts/check-fuzz-variants.sh`; Q-3 of
 `docs/SPECIFICATION.md`, the fuzz seed convention of `docs/CONVENTIONS.md`.
 

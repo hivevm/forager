@@ -53,7 +53,11 @@ skimmed. The design revision drops what prevented nothing
   target names each variant, or that the check's allow-list names it with its reason. That each
   seed of the render target still builds the path it was made for, after a change to how the
   target decodes its bytes, [`fuzz/tests/render_seeds.rs`](../fuzz/tests/render_seeds.rs) decides,
-  and a new seed names its path there.
+  and a new seed names its path there. That test covers the render target only: a change to how
+  another target decodes structured bytes, as the expression target reads its trees, runs each of
+  that target's seeds again against the path it was made for, and re-derives a seed that lost it,
+  as three seeds of the render target lost theirs unnoticed until ticket 01 of revision-2026-11-16
+  probed them.
 - **A fix of a fuzz finding is cut from the cause its decoded input shows** — the ticket names the
   cause, read from what the input decodes to and from the code that fails. Its first criterion
   fails on the code before the fix. Its tests hold an ordinary input beside the failing one,
