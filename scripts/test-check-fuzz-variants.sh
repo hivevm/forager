@@ -3,11 +3,11 @@
 # Self-test of scripts/check-fuzz-variants.sh. Verifies: Q-3
 #
 # Each case writes a fixture with the three files the check reads, the transform tree's enums in
-# crates/style-ir/src/transform.rs, SymbolKind in crates/style-ir/src/model.rs, and the render
-# fuzz target fuzz/fuzz_targets/render.rs, laid out as rustfmt lays them out; it changes one of
-# them, runs the check against the fixture, and asserts the exit code and the line that names the
-# variant or the problem. The fixture's SymbolKind holds the two variants the check's allow-list
-# names, Simple and Svg, which its target does not name.
+# crates/style-ir/src/transform.rs, SymbolKind in crates/style-ir/src/model.rs, and what the
+# render fuzz target builds, fuzz/fuzz_targets/render_input.rs, laid out as rustfmt lays them out;
+# it changes one of them, runs the check against the fixture, and asserts the exit code and the
+# line that names the variant or the problem. The fixture's SymbolKind holds the two variants the
+# check's allow-list names, Simple and Svg, which its target does not name.
 #
 # Usage:
 #     scripts/test-check-fuzz-variants.sh
@@ -99,12 +99,12 @@ repo() {
   mkdir -p "$dir/crates/style-ir/src" "$dir/fuzz/fuzz_targets"
   printf '%s\n' "$TRANSFORM" > "$dir/crates/style-ir/src/transform.rs"
   printf '%s\n' "$MODEL" > "$dir/crates/style-ir/src/model.rs"
-  printf '%s\n' "$TARGET" > "$dir/fuzz/fuzz_targets/render.rs"
+  printf '%s\n' "$TARGET" > "$dir/fuzz/fuzz_targets/render_input.rs"
   while (($# >= 2)); do
     case "$2" in
       transform) file="$dir/crates/style-ir/src/transform.rs" ;;
       model) file="$dir/crates/style-ir/src/model.rs" ;;
-      target) file="$dir/fuzz/fuzz_targets/render.rs" ;;
+      target) file="$dir/fuzz/fuzz_targets/render_input.rs" ;;
     esac
     sed "$1" "$file" > "$file.tmp" && cat "$file.tmp" > "$file" && rm "$file.tmp"
     shift 2
@@ -126,15 +126,15 @@ expect_check "a passing run lists an allowed variant with its reason" "$dir" 0 \
 
 dir="$(repo missing '/TransformShape::Buffer/d' target)"
 expect_check "a variant the target never names fails, naming the variant" "$dir" 1 \
-  "fuzz/fuzz_targets/render.rs never names TransformShape::Buffer"
+  "fuzz/fuzz_targets/render_input.rs never names TransformShape::Buffer"
 
 dir="$(repo added 's/^    MapCellsize,$/    Op(NumberOp),/' transform)"
 expect_check "a variant new to an enum fails until the target names it" "$dir" 1 \
-  "fuzz/fuzz_targets/render.rs never names TransformNumber::Op"
+  "fuzz/fuzz_targets/render_input.rs never names TransformNumber::Op"
 
 dir="$(repo symbol '/SymbolKind::Vector/d' target)"
 expect_check "a symbol kind the target never names fails" "$dir" 1 \
-  "fuzz/fuzz_targets/render.rs never names SymbolKind::Vector"
+  "fuzz/fuzz_targets/render_input.rs never names SymbolKind::Vector"
 
 dir="$(repo comment 's|^    shape = TransformShape::Buffer|    // TransformShape::Buffer|' target)"
 expect_check "a variant named only in a comment is not named" "$dir" 1 \
@@ -146,7 +146,7 @@ expect_check "a name that begins with a variant's is not that variant" "$dir" 1 
 
 dir="$(repo allowed-named 's/SymbolKind::Vector;/[SymbolKind::Vector, SymbolKind::Svg];/' target)"
 expect_check "an allowed variant the target names fails, so the allow-list stays true" "$dir" 1 \
-  "fuzz/fuzz_targets/render.rs names SymbolKind::Svg, which the allow-list leaves out"
+  "fuzz/fuzz_targets/render_input.rs names SymbolKind::Svg, which the allow-list leaves out"
 
 dir="$(repo allowed-gone '/^    Svg,$/d' model)"
 expect_check "an allowed variant the enum no longer has fails" "$dir" 1 \
@@ -177,9 +177,9 @@ expect_check "an enum of which no variant is read fails" "$dir" 1 \
   "no variant of Preprocessing is read from crates/style-ir/src/transform.rs"
 
 dir="$(repo no-target)"
-rm "$dir/fuzz/fuzz_targets/render.rs"
+rm "$dir/fuzz/fuzz_targets/render_input.rs"
 expect_check "a tree without the render target fails" "$dir" 1 \
-  "there is no fuzz/fuzz_targets/render.rs"
+  "there is no fuzz/fuzz_targets/render_input.rs"
 
 expect_check "a root that is no directory is refused" "$work/absent" 2 "is not a directory"
 
