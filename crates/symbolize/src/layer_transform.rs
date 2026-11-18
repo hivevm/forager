@@ -441,7 +441,9 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
 ///   polygon's shell and holes.
 ///
 /// It fails where [`built`] fails, and on a tolerance below 0, which GEOS refuses after
-/// msGEOSShape2Geometry.
+/// msGEOSShape2Geometry. The engine also fails a polygon with a coordinate that is no finite
+/// number, on which geo's repair of the simplified polygon may panic, as it does by a tolerance
+/// that is no number.
 fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
     if is_empty_from_geos(&shape) {
         return Ok(shape);
@@ -460,6 +462,11 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
             .filter(|part| !part.is_empty())
             .map(|part| geometry::simplify_line(part, tolerance, budget))
             .collect::<Result<_, _>>()?,
+        Kind::Polygon if !is_finite(&shape) => {
+            return Err(Undrawn::Failed(
+                "calls simplify on a polygon with a coordinate that is no finite number".to_owned(),
+            ));
+        }
         Kind::Polygon => geometry::simplify_areas(&areas, tolerance, budget)?
             .into_iter()
             .flat_map(|area| std::iter::once(area.shell).chain(area.holes))
@@ -469,6 +476,15 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
         kind: shape.kind,
         parts,
     })
+}
+
+/// Whether each coordinate of the shape is a finite number.
+fn is_finite(shape: &Shape) -> bool {
+    shape
+        .parts
+        .iter()
+        .flatten()
+        .all(|p| p.x.is_finite() && p.y.is_finite())
 }
 
 /// msGEOSTopologyPreservingSimplify (src/mapgeos.c:946-967): the shape converted to GEOS's
@@ -546,12 +562,7 @@ fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Un
             "calls buffer with the distance {distance}, which fails in MapServer"
         )));
     }
-    if shape
-        .parts
-        .iter()
-        .flatten()
-        .any(|p| !p.x.is_finite() || !p.y.is_finite())
-    {
+    if !is_finite(shape) {
         return Err(Undrawn::Failed(
             "calls buffer on a shape with a coordinate that is no finite number".to_owned(),
         ));

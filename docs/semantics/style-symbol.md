@@ -230,9 +230,13 @@ geometry or GEOS cannot build one, as for `simplify`, and on a distance that is 
 for which `GEOSBuffer_r` returns none. `simplifypt` fails, with "Executing simplifypt failed", where
 `simplify` fails, a tolerance below 0 among them. The engine also fails `buffer` on a shape with a
 coordinate that is no finite number, on which geo's buffer panics; GEOS buffers such a shape into a
-polygon of its own. The engine treats a geometry collection the same way. MapServer fails
-`msGeomTransformShape` on these: `msDrawVectorLayer` returns a failure (`src/mapdraw.c`, 1427–1434),
-and `msDrawMap` frees the image and returns none (508–519), so MapServer makes no map at all.
+polygon of its own. It fails `simplify` of a polygon with a coordinate that is no finite number, on
+which geo's repair of the simplified polygon may panic, as it does by a tolerance that is no number;
+whether GEOS simplifies such a polygon is not confirmed. A line and a point shape with such a
+coordinate are simplified. The engine treats a geometry collection the same way. MapServer fails
+`msGeomTransformShape` on these:
+`msDrawVectorLayer` returns a failure (`src/mapdraw.c`, 1427–1434), and `msDrawMap` frees the image
+and returns none (508–519), so MapServer makes no map at all.
 Forager deviates: the layer draws nothing, with the warning, and the rest of the map is drawn. A
 layer draws nothing on a multipoint likewise, with the warning, as the engine's transforms do not
 yet take one, where MapServer transforms it. `msDrawVectorLayer` reads no shape past the first whose
