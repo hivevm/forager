@@ -29,8 +29,8 @@
 
 use forager_style_ir::c::int_cast;
 use forager_style_ir::{
-    MAX_EXPRESSION_DEPTH, NotDrawn, NumberOp, Preprocessing, TransformNumber, TransformShape,
-    TransformTree,
+    MAX_EXPRESSION_DEPTH, NotDrawn, NumberOp, Preprocessing, ShapeOp, TransformNumber,
+    TransformShape, TransformTree,
 };
 
 use super::{Lexeme, Problem, Scanner, Tok, too_deep};
@@ -231,12 +231,13 @@ impl Parser<'_> {
         level: usize,
     ) -> Result<(Option<TransformShape>, usize), Fail> {
         let below = level + 1;
+        let function = ShapeOp::from_name(name);
         let not_drawn = match name {
             "centerline" => Some(NotDrawn::Centerline),
             "difference" => Some(NotDrawn::Difference),
             "javascript" => Some(NotDrawn::Javascript),
-            "generalize" | "densify" | "simplify" | "simplifypt" | "buffer" | "outer" | "inner"
-            | "smoothsia" => None,
+            "outer" | "inner" | "smoothsia" => None,
+            _ if function.is_some() => None,
             // msTokenizeExpression reads `fromtext('WKT')` into a shape of the mapfile's text,
             // which the tree cannot hold: `(`, a string, and `)`, or it fails the parse.
             "fromtext" => {
@@ -259,18 +260,13 @@ impl Parser<'_> {
         let shape = shape.map(Box::new);
         let mut height = shape_height;
         let built = match name {
-            "generalize" | "densify" | "buffer" | "simplify" | "simplifypt" => {
+            _ if let Some(function) = function => {
                 self.expect(",")?;
                 let (number, number_height) = self.math(below, 0)?;
                 height = height.max(number_height);
-                match (name, shape, number) {
-                    ("generalize", Some(s), Some(n)) => Some(TransformShape::Generalize(s, n)),
-                    ("densify", Some(s), Some(n)) => Some(TransformShape::Densify(s, n)),
-                    ("simplify", Some(s), Some(n)) => Some(TransformShape::Simplify(s, n)),
-                    ("simplifypt", Some(s), Some(n)) => Some(TransformShape::Simplifypt(s, n)),
-                    ("buffer", Some(s), Some(n)) => Some(TransformShape::Buffer(s, n)),
-                    _ => None,
-                }
+                shape
+                    .zip(number)
+                    .map(|(shape, number)| TransformShape::Op(function, shape, number))
             }
             "outer" => shape.map(TransformShape::Outer),
             "inner" => shape.map(TransformShape::Inner),

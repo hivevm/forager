@@ -19,7 +19,7 @@ use forager_proj::{Projection, Reprojection};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Extent, InlineFeature, Layer, LayerProjection, LayerStatus, Map, RenderMode,
-    Rgba, ShapeType, Style, TransformNumber, TransformShape, TransformTree, Units,
+    Rgba, ShapeOp, ShapeType, Style, TransformNumber, TransformShape, TransformTree, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -729,7 +729,8 @@ fn a_layers_buffer_on_a_rotated_map_is_taken_in_the_images_pixels() {
     // After the reprojection the map's units are the frame's pixels, as in MapServer: a buffer
     // of 10 grows a square of 50 meters a side by 10 pixels, not by 10 meters.
     let mut buffered = rotated(Some(30.0), RenderMode::Polygon, Some(UTM), filled(None));
-    buffered.layers[0].geom_transform = Some(TransformTree::Drawn(TransformShape::Buffer(
+    buffered.layers[0].geom_transform = Some(TransformTree::Drawn(TransformShape::Op(
+        ShapeOp::Buffer,
         Box::new(TransformShape::Shape),
         TransformNumber::Number(10.0),
     )));

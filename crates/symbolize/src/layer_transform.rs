@@ -34,7 +34,9 @@
 //! layer's budget ([`StyleTrees`]).
 
 use forager_style_ir::c::{int_cast, point_in_polygon};
-use forager_style_ir::{Coord, Geometry, NumberOp, Preprocessing, TransformNumber, TransformShape};
+use forager_style_ir::{
+    Coord, Geometry, NumberOp, Preprocessing, ShapeOp, TransformNumber, TransformShape,
+};
 
 use crate::geometry::{self, Area, Charge};
 
@@ -255,25 +257,16 @@ impl Eval<'_> {
     fn shape(&mut self, transform: &TransformShape, shape: Shape) -> Result<Shape, Undrawn> {
         match transform {
             TransformShape::Shape => Ok(shape),
-            TransformShape::Generalize(inner, tolerance) => {
+            TransformShape::Op(op, inner, number) => {
                 let shape = self.shape(inner, shape)?;
-                Ok(generalize(&shape, self.number(tolerance)?))
-            }
-            TransformShape::Densify(inner, tolerance) => {
-                let shape = self.shape(inner, shape)?;
-                densify(&shape, self.number(tolerance)?, self.budget)
-            }
-            TransformShape::Simplify(inner, tolerance) => {
-                let shape = self.shape(inner, shape)?;
-                simplify(shape, self.number(tolerance)?, self.budget)
-            }
-            TransformShape::Simplifypt(inner, tolerance) => {
-                let shape = self.shape(inner, shape)?;
-                simplify_preserving(shape, self.number(tolerance)?, self.budget)
-            }
-            TransformShape::Buffer(inner, distance) => {
-                let shape = self.shape(inner, shape)?;
-                buffer(&shape, self.number(distance)?, self.budget)
+                let number = self.number(number)?;
+                match op {
+                    ShapeOp::Generalize => Ok(generalize(&shape, number)),
+                    ShapeOp::Densify => densify(&shape, number, self.budget),
+                    ShapeOp::Simplify => simplify(shape, number, self.budget),
+                    ShapeOp::Simplifypt => simplify_preserving(shape, number, self.budget),
+                    ShapeOp::Buffer => buffer(&shape, number, self.budget),
+                }
             }
             TransformShape::Outer(inner) => {
                 let shape = self.shape(inner, shape)?;
@@ -445,7 +438,7 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
 /// number, on which geo's repair of the simplified polygon may panic, as it does by a tolerance
 /// that is no number.
 fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
-    let Some(areas) = given_to_geos(&shape, "simplify", budget)? else {
+    let Some(areas) = given_to_geos(&shape, ShapeOp::Simplify, budget)? else {
         return Ok(shape);
     };
     if tolerance < 0.0 {
@@ -508,7 +501,7 @@ fn simplify_preserving(
     tolerance: f64,
     budget: &mut Budget,
 ) -> Result<Shape, Undrawn> {
-    let Some(areas) = given_to_geos(&shape, "simplifypt", budget)? else {
+    let Some(areas) = given_to_geos(&shape, ShapeOp::Simplifypt, budget)? else {
         return Ok(shape);
     };
     if tolerance < 0.0 {
@@ -556,7 +549,7 @@ fn simplify_preserving(
 /// finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon of its
 /// own.
 fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
-    let Some(areas) = given_to_geos(shape, "buffer", budget)? else {
+    let Some(areas) = given_to_geos(shape, ShapeOp::Buffer, budget)? else {
         return Ok(shape.clone());
     };
     if !distance.is_finite() {
@@ -593,17 +586,17 @@ fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Un
     })
 }
 
-/// The areas msGEOSShape2Geometry builds of `shape` for a function of GEOS named `name`, by
+/// The areas msGEOSShape2Geometry builds of `shape` for the function of GEOS `function`, by
 /// [`built`]. `None` where the shape is GEOS's empty polygon, which the function returns as it is.
 fn given_to_geos(
     shape: &Shape,
-    name: &str,
+    function: ShapeOp,
     budget: &mut Budget,
 ) -> Result<Option<Vec<Area>>, Undrawn> {
     if is_empty_from_geos(shape) {
         return Ok(None);
     }
-    built(shape, name, budget).map(Some)
+    built(shape, function.name(), budget).map(Some)
 }
 
 /// Whether `shape` is the empty polygon a function of GEOS returns, which

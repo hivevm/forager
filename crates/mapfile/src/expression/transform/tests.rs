@@ -70,27 +70,27 @@ fn the_expressions_of_msautotest_translate_to_their_trees_or_reasons() {
     );
     assert_eq!(
         tree("(generalize([shape],50))"),
-        drawn(TransformShape::Generalize(shape(), num(50.0)))
+        drawn(TransformShape::Op(ShapeOp::Generalize, shape(), num(50.0)))
     );
     assert_eq!(
         tree("(simplify([shape],25))"),
-        drawn(TransformShape::Simplify(shape(), num(25.0)))
+        drawn(TransformShape::Op(ShapeOp::Simplify, shape(), num(25.0)))
     );
     assert_eq!(
         tree("(simplify([shape],10))"),
-        drawn(TransformShape::Simplify(shape(), num(10.0)))
+        drawn(TransformShape::Op(ShapeOp::Simplify, shape(), num(10.0)))
     );
     assert_eq!(
         tree("(buffer([shape], 1))"),
-        drawn(TransformShape::Buffer(shape(), num(1.0)))
+        drawn(TransformShape::Op(ShapeOp::Buffer, shape(), num(1.0)))
     );
     assert_eq!(
         tree("(buffer([shape], -1))"),
-        drawn(TransformShape::Buffer(shape(), num(-1.0)))
+        drawn(TransformShape::Op(ShapeOp::Buffer, shape(), num(-1.0)))
     );
     assert_eq!(
         tree("(simplifypt([shape],50))"),
-        drawn(TransformShape::Simplifypt(shape(), num(50.0)))
+        drawn(TransformShape::Op(ShapeOp::Simplifypt, shape(), num(50.0)))
     );
     for (text, reason) in [
         ("(centerline([shape]))", NotDrawn::Centerline),
@@ -118,7 +118,7 @@ fn each_function_of_the_tree_translates_with_its_arguments() {
     assert_eq!(tree("([shape])"), drawn(TransformShape::Shape));
     assert_eq!(
         tree("(densify(([shape]), 2.5))"),
-        drawn(TransformShape::Densify(shape(), num(2.5)))
+        drawn(TransformShape::Op(ShapeOp::Densify, shape(), num(2.5)))
     );
     let smooth = |size: f64, iterations: f64, preprocessing| {
         drawn(TransformShape::SmoothSia {
@@ -154,8 +154,9 @@ fn each_function_of_the_tree_translates_with_its_arguments() {
     // `buffer`'s distance is a `math_exp`, as `simplify`'s tolerance.
     assert_eq!(
         tree("(buffer(simplify([shape], 2), [map_cellsize] * 3))"),
-        drawn(TransformShape::Buffer(
-            Box::new(TransformShape::Simplify(shape(), num(2.0))),
+        drawn(TransformShape::Op(
+            ShapeOp::Buffer,
+            Box::new(TransformShape::Op(ShapeOp::Simplify, shape(), num(2.0))),
             TransformNumber::Op(
                 NumberOp::Mul,
                 Box::new(TransformNumber::MapCellsize),
@@ -166,7 +167,8 @@ fn each_function_of_the_tree_translates_with_its_arguments() {
     // Function names in any case, as the lexer is built with `flex -i`.
     assert_eq!(
         tree("(GENERALIZE(Outer([SHAPE]), 1))"),
-        drawn(TransformShape::Generalize(
+        drawn(TransformShape::Op(
+            ShapeOp::Generalize,
             Box::new(TransformShape::Outer(shape())),
             num(1.0)
         ))
@@ -177,7 +179,7 @@ fn each_function_of_the_tree_translates_with_its_arguments() {
 fn literal_arithmetic_folds_and_map_cellsize_is_kept() {
     // Verifies: ADR-0048
     let tolerance = |text: &str| match tree(&format!("(densify([shape], {text}))")) {
-        TransformTree::Drawn(TransformShape::Densify(_, number)) => number,
+        TransformTree::Drawn(TransformShape::Op(ShapeOp::Densify, _, number)) => number,
         other => panic!("{text}: {other:?}"),
     };
     for (text, value) in [
@@ -223,7 +225,7 @@ fn a_unary_minus_leaves_its_operand_un_negated() {
     // Verifies: ADR-0048
     // `'-' math_exp %prec NEG { $$ = $2; }`; `-3` written together is one number token.
     let tolerance = |text: &str| match tree(&format!("(densify([shape], {text}))")) {
-        TransformTree::Drawn(TransformShape::Densify(_, number)) => number,
+        TransformTree::Drawn(TransformShape::Op(ShapeOp::Densify, _, number)) => number,
         other => panic!("{text}: {other:?}"),
     };
     assert_eq!(tolerance("- 3"), num(3.0));
@@ -355,11 +357,11 @@ fn data_cellsize_folds_to_0_as_on_a_layer_that_is_no_contour() {
     // layer (src/mapgeomtransform.c:285-291).
     assert_eq!(
         tree("(generalize([shape],[data_cellsize]))"),
-        drawn(TransformShape::Generalize(shape(), num(0.0)))
+        drawn(TransformShape::Op(ShapeOp::Generalize, shape(), num(0.0)))
     );
     assert_eq!(
         tree("(densify([shape], [DATA_CELLSIZE] + 2))"),
-        drawn(TransformShape::Densify(shape(), num(2.0)))
+        drawn(TransformShape::Op(ShapeOp::Densify, shape(), num(2.0)))
     );
 }
 

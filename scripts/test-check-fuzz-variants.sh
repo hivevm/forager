@@ -50,6 +50,11 @@ pub enum TransformShape {
     Buffer(Box<TransformShape>, TransformNumber),
 }
 
+pub enum ShapeOp {
+    Densify,
+    Simplifypt,
+}
+
 pub enum TransformNumber {
     Number(f64),
     MapCellsize,
@@ -75,7 +80,7 @@ pub enum SymbolKind {
 }'
 
 # The target: every variant named, but the allow-listed ones.
-TARGET='use forager_style_ir::{NumberOp, Preprocessing, SymbolKind, TransformNumber, TransformShape};
+TARGET='use forager_style_ir::{NumberOp, Preprocessing, ShapeOp, SymbolKind, TransformNumber, TransformShape};
 
 fn build() {
     let mut shape = TransformShape::Shape;
@@ -85,6 +90,7 @@ fn build() {
         preprocessing: Some(Preprocessing::All),
     };
     shape = TransformShape::Buffer(Box::new(shape), number());
+    let _ = [ShapeOp::Densify, ShapeOp::Simplifypt];
     let _ = Preprocessing::Angle;
     let _ = [NumberOp::Add, NumberOp::Pow];
     let _ = [TransformNumber::Number(1.0), TransformNumber::MapCellsize];
@@ -118,9 +124,9 @@ expect_check() { expect "$1" "$3" "$4" bash "$CHECK" "$2"; }
 
 dir="$(repo named)"
 expect_check "a target that names every variant passes" "$dir" 0 \
-  "Fuzz variants check passed (5 enums, 13 variants, 2 allowed)."
+  "Fuzz variants check passed (6 enums, 15 variants, 2 allowed)."
 expect_check "a passing run lists each enum's variants, and only them, deeper lines not read" \
-  "$dir" 0 $'TransformShape: Shape Generalize SmoothSia Buffer\nTransformNumber: Number MapCellsize\n'
+  "$dir" 0 $'TransformShape: Shape Generalize SmoothSia Buffer\nShapeOp: Densify Simplifypt\nTransformNumber: Number MapCellsize\n'
 expect_check "a passing run lists an allowed variant with its reason" "$dir" 0 \
   "SymbolKind::Svg is allowed:"
 
