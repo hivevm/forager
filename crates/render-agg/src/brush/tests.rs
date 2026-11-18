@@ -414,7 +414,10 @@ fn the_probe_admits_a_segment_at_the_place_bound_and_refuses_one_past_it() {
     // Verifies: ADR-0049, Q-3
     let k = DIAGONAL_HALF;
     let at = [p(-k / 256.0, -k / 256.0), p(k / 256.0, k / 256.0)];
-    let past = [p(-k / 256.0, -k / 256.0), p((k + 1.0) / 256.0, (k + 1.0) / 256.0)];
+    let past = [
+        p(-k / 256.0, -k / 256.0),
+        p((k + 1.0) / 256.0, (k + 1.0) / 256.0),
+    ];
     let tile = broad();
     assert!(admits(&at, &tile, |_| {}));
     assert!(!admits(&past, &tile, |_| {}));
