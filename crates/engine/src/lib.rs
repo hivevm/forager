@@ -19,11 +19,11 @@
 //! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
 //! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, and `render_resources`;
 //! `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`; `label_binding`
-//! imports `classes`; `circle` imports `classes`, `layer`, and `reproject`;
-//! `classes` imports `bindable` and `layer`; `render_resources` imports `fonts`, `images`, and
-//! `marker_glyphs`; `reproject` imports `layer`; `fonts` and `images` import `resource`; `bind`,
-//! `bindable`, `inline`, `label_cache`, `layer`, `marker_glyphs`, `plan`, and `resource` import
-//! none, nor does a module take an item of this root.
+//! imports `classes`; `circle` imports `classes`, `layer`, and `reproject`; `classes` imports
+//! `bindable` and `layer`; `render_resources` imports `fonts`, `images`, and `marker_glyphs`;
+//! `reproject` imports `layer`; `fonts` and `images` import `resource`; `bind`, `bindable`,
+//! `inline`, `label_cache`, `layer`, `marker_glyphs`, `plan`, and `resource` import none, nor does
+//! a module take an item of this root.
 //! The test `engine_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a
 //! table in this order.
 
@@ -521,8 +521,9 @@ impl<R: Renderer> Draw for Target<'_, R> {
 }
 
 /// The canvas `layer` of `map` is drawn on, in an image `width` by `height`, with the images and
-/// the glyph port of `resources`, at `factors`, the layer's scale factor, which sizes its styles, and the image's
-/// resolution factor, which bounds them; its lines unclipped where the layer says so.
+/// the glyph port of `resources`, at `factors`, the layer's scale factor, which sizes its styles,
+/// and the image's resolution factor, which bounds them; its lines unclipped where the layer says
+/// so.
 fn layer_canvas<'c>(
     map: &'c Map,
     layer: &Layer,
