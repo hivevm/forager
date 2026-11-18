@@ -1,6 +1,6 @@
 [package]
 name = "forager-arch-test"
-description = "The architecture checks of Forager: the edges between its crates (ADR-0008), the direction of the modules of the engine and symbolize, the ports of ADR-0017 and the match of a symbol's name defined once, and the crate directory read at run time."
+description = "The architecture checks of Forager: the edges between its crates (ADR-0008), the direction of the modules of the engine and symbolize, the ports of ADR-0017 defined once, a symbol's name compared once, and the crate directory read at run time."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -15,8 +15,9 @@ use forager_arch_test::{manifest_dir, rust_files};
 /// The problems of the crate whose sources lie at `sources`, from the workspace root, against
 /// `allowed`, each module of the crate and the modules it may import: an import outside a test
 /// that its row does not allow, naming the module and the one it imports, and a module the table
-/// has no row for. Sources that hold no `.rs` file, a path gone stale, fail the check; a
-/// directory `target` under them is left out by the shared walk, and a crate's sources hold none.
+/// has no row for. Sources that hold no `.rs` file, a path gone stale, fail the check. The shared
+/// walk leaves out a directory `target` under them, which a crate's sources do not hold, and reads
+/// no file of a directory below them it cannot read, where the walk before it panicked.
 pub fn problems(sources: &str, allowed: &[(&str, &[&str])]) -> Vec<String> {
     let root = manifest_dir().join("../..").join(sources);
     // Each file relative to the sources, as `module_of` reads it.
