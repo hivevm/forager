@@ -8,8 +8,9 @@ middle, `TransformInput` from the last third, and `Fidelity` from the first thir
 field added to any view, or a variant added before others, as `StepInput`'s `Simplify`,
 `Simplifypt`, and `Buffer` were, changes what every older seed decodes to. Three seeds lost the
 path they were made for this way and went unnoticed, and the target's own header says the
-seeds "now … render" differently. `docs/backlog/render-seeds-lost-their-paths.md` describes it,
-and this ticket deletes that entry.
+seeds "now … render" differently. The backlog entry that described it,
+`docs/backlog/render-seeds-lost-their-paths.md` of 5e7dcffc, was deleted by the revision that made
+this ticket (e59e95a6).
 
 A mistake a check could have caught becomes a check
 ([`AGENTS.md` §5](../../../AGENTS.md#5-quality-bar--definition-of-done)):
@@ -41,10 +42,11 @@ change to re-run each seed is dropped: the check decides it.
 ## Read first
 
 - Touches: `fuzz/fuzz_targets/render.rs`, a test of the fuzz workspace (new), `fuzz/Cargo.toml`,
-  `fuzz/seeds/render/`, `scripts/check-rust.sh`, `docs/CONVENTIONS.md` (the fuzz seed entry),
-  `docs/backlog/render-seeds-lost-their-paths.md` (deleted)
+  `fuzz/seeds/render/`, `scripts/check-rust.sh`, `docs/CONVENTIONS.md` (the fuzz seed entry);
+  `scripts/check-fuzz-variants.sh` and its self-test, which read the decoding from
+  `fuzz/fuzz_targets/render.rs`
 - Q-3; ADR-0007; `scripts/check-rust.sh` (it lints the fuzz workspace with the pinned toolchain,
-  lines 158-161); the commit message of e265e323.
+  lines 157-161); the commit message of e265e323; the backlog entry of 5e7dcffc.
 
 ## Blocked by
 
