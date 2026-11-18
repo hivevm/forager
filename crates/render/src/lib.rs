@@ -245,6 +245,15 @@ impl PremultipliedImage {
     }
 }
 
+/// The pieces of brushed lines a renderer left undrawn, since a part of them would make a
+/// third-party crate fail (ADR-0049), counted by the kind of symbol their tile was drawn from: a
+/// pixmap's, or a vector's, an ellipse's, or a TrueType symbol's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Refused {
+    pub pixmaps: usize,
+    pub symbols: usize,
+}
+
 /// Draws display items one by one, onto an image or into a layer of it.
 pub trait Draw {
     fn draw(&mut self, item: &DisplayItem);
@@ -269,5 +278,10 @@ pub trait Renderer: Draw {
     /// The layer borrows the renderer, so no layer begins within another, and it draws an item
     /// as it is handed, holding none.
     fn layer(&mut self, opacity: u8) -> Self::Layer<'_>;
+    /// What the renderer refused to draw since it was last asked, its layers' drawing included,
+    /// and the count set back to none. A renderer that refuses nothing keeps this default.
+    fn take_refused(&mut self) -> Refused {
+        Refused::default()
+    }
     fn finish(self) -> RgbaImage;
 }

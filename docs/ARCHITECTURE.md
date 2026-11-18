@@ -333,7 +333,9 @@ golden path and the test pattern an agent copies from are named here.
   transformation, each by a counted reference to the one image, a polygon filled with a tile and a
   line brushed with one, by a counted reference to the tile, which holds its size within Q-9's
   bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
-  renderer has built it (`tile.rs`), the renderer trait, the RGBA image, and the premultiplied image
+  renderer has built it (`tile.rs`), the renderer trait, whose `take_refused` hands the engine the
+  pieces a renderer refused by the kind of their tile's symbol (`Refused`,
+  [ADR-0049](adr/0049-third-party-failures-guarded.md)), the RGBA image, and the premultiplied image
   a pixmap is decoded to (`PremultipliedImage`, ADR-0029); the cost model that bounds a hatch before
   it is cut (`Hatch::is_bounded`, ADR-0042, `hatch.rs`); and the clip of every path to the image,
   its segments, lines, and rings, the image grown by its margin, the width a stroke is drawn at, and
@@ -353,7 +355,8 @@ golden path and the test pattern an agent copies from are named here.
   it draws with it, in a transparent image of its own, and repeats it from the image's origin,
   brushes a line with a tile through agg-rust's outline-image rasterizer, a port of AGG 2.4's
   bilinear pattern filter, and the pattern's start carried across the clip, a piece whose
-  pattern's place or joins would pass agg-rust's `i32` left undrawn (`brush.rs`,
+  pattern's place or joins would pass agg-rust's `i32` left undrawn and counted as a pixmap's or
+  another symbol's by its tile's marks (`brush.rs`,
   [ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)), bounds a glyph's outline width as a
   stroke's (`glyphs.rs`), and
   is the one crate that may use `unsafe` ([ADR-0025](adr/0025-agg-rust-rasterizer.md)); it cuts a

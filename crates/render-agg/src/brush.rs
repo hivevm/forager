@@ -38,7 +38,7 @@ use agg_rust::renderer_outline_image::{
     ImagePatternSource, LineImagePattern, RendererOutlineImage,
 };
 use forager_render::clip::{self, Rect};
-use forager_render::{Point, PremultipliedImage, Tile};
+use forager_render::{DrawOp, Point, PremultipliedImage, Tile};
 use forager_style_ir::c::lrint;
 
 use crate::pixfmt::PixfmtMapserver;
@@ -313,36 +313,35 @@ impl OutlineAaRenderer for Carried<'_, '_, '_> {
     }
 }
 
-/// Whether agg-rust's renderer keeps the pattern's place within `i32` on a piece whose longest
-/// segment, as AGG's filter keeps it, is `longest` subpixels with `pattern`: it offsets the start,
-/// below one width of the pattern when a segment begins, by the pattern's width times its extent
-/// across the line plus 2, moves it by up to the segment's length within the segment, and adds
-/// the pixel's distance along it, again up to that length. Where it would pass, AGG's C++ is
-/// undefined, and the piece is not drawn (Q-3). [`JoinProbe`] bounds the products of the joins.
-fn within_i32(pattern: &LineImagePattern<BilinearRgba8>, longest: i64) -> bool {
-    let width = i64::from(pattern.pattern_width());
-    let extent = i64::from((pattern.line_width() + SCALE) >> SHIFT);
-    (extent + 3) * width + 2 * longest <= i64::from(i32::MAX)
-}
-
 /// agg-rust's `max_half_width` of `render_line_image`: the pixels it steps across the line from
 /// each pixel along it, at most.
 const MAX_HALF_WIDTH: i64 = 64;
 
-/// A renderer that draws nothing and learns, from the join points `rasterizer_outline_aa` hands
-/// its `line3`, whether agg-rust's `DistanceInterpolator4` stays within `i32` on each segment of a
-/// piece. Where it would pass, AGG's C++ is undefined, and the piece is not drawn (Q-3). Only
-/// `line3` matters, since agg-rust's `line0` to `line2` draw nothing for the outline-image
-/// renderer, which asks for accurate joins.
+// Guard: agg-rust 1.2.0
+/// A renderer that draws nothing and learns, from the segments and join points
+/// `rasterizer_outline_aa` hands its `line3`, whether agg-rust's outline-image renderer stays
+/// within `i32` on each segment of a piece, as AGG's filter keeps them. Where it would pass,
+/// AGG's C++ is undefined, and the piece is not drawn (Q-3, ADR-0049). Only `line3` matters,
+/// since agg-rust's `line0` to `line2` draw nothing for the outline-image renderer, which asks
+/// for accurate joins. It bounds two things, read from agg-rust 1.2.0's
+/// `renderer_outline_image.rs`:
 ///
-/// `DistanceInterpolator4` multiplies, in `line_mr` units of 16 subpixels, the pixel less the
-/// join point by the join point less the segment's end, coordinate by coordinate, for the start
-/// join `sx`, `sy` and the end join `ex`, `ey`. It steps by those terms from pixel to pixel, which
-/// keeps its value that difference of products at each pixel. [`joins_within_i32`] follows
-/// `line3_no_clip` to the joins the interpolator gets and bounds those products.
+/// - the pattern's place: `line3_no_clip` offsets the start, below one width of the pattern when
+///   a segment begins, by the pattern's width times its extent across the line plus 2 (line
+///   743), moves it by up to the segment's length within the segment (line 694), and adds the
+///   pixel's distance along it, again up to that length; [`JoinProbe::new`] gives the longest
+///   segment that keeps it within `i32`;
+/// - the joins: `DistanceInterpolator4` multiplies, in `line_mr` units of 16 subpixels, the pixel
+///   less the join point by the join point less the segment's end, coordinate by coordinate, for
+///   the start join `sx`, `sy` and the end join `ex`, `ey` (lines 453-457). It steps by those
+///   terms from pixel to pixel, which keeps its value that difference of products at each pixel.
+///   [`joins_within_i32`] follows `line3_no_clip` to the joins the interpolator gets and bounds
+///   those products.
 struct JoinProbe {
     /// How far the pixels `render_line_image` visits lie from a segment, in subpixels, at most.
     growth: i64,
+    /// The longest segment, in subpixels, whose pattern's place stays within `i32`.
+    longest: i64,
     within: bool,
 }
 
@@ -350,11 +349,14 @@ impl JoinProbe {
     /// A probe for `pattern`. The pixels lie within the segment grown by `256 × (2 × extent +
     /// 68)` subpixels: the `extent + 1` steps before its start and after its end, each up to 1.5
     /// pixels, a pixel's rounding, the [`MAX_HALF_WIDTH`] pixels across, and one step of the
-    /// interpolator.
+    /// interpolator. The place is at most `(extent + 3) × width + 2 × length`: the offset of
+    /// `extent + 2` widths, the start below one width, and the segment's length twice.
     fn new(pattern: &LineImagePattern<BilinearRgba8>) -> Self {
+        let width = i64::from(pattern.pattern_width());
         let extent = i64::from((pattern.line_width() + SCALE) >> SHIFT);
         Self {
             growth: i64::from(SCALE) * (2 * extent + 4 + MAX_HALF_WIDTH),
+            longest: (i64::from(i32::MAX) - (extent + 3) * width) / 2,
             within: true,
         }
     }
@@ -372,7 +374,9 @@ impl OutlineAaRenderer for JoinProbe {
     fn line2(&mut self, _lp: &LineParameters, _ex: i32, _ey: i32) {}
 
     fn line3(&mut self, lp: &LineParameters, sx: i32, sy: i32, ex: i32, ey: i32) {
-        self.within = self.within && joins_within_i32(lp, (sx, sy), (ex, ey), self.growth);
+        self.within = self.within
+            && i64::from(lp.len) <= self.longest
+            && joins_within_i32(lp, (sx, sy), (ex, ey), self.growth);
     }
 
     fn semidot(&mut self, _cmp: fn(i32) -> bool, _xc1: i32, _yc1: i32, _xc2: i32, _yc2: i32) {}
@@ -425,6 +429,14 @@ fn joins_within_i32(lp: &LineParameters, start: (i32, i32), end: (i32, i32), gro
     within((sx, sy), (lp.x1, lp.y1)) && within((ex, ey), (lp.x2, lp.y2))
 }
 
+/// Whether `tile` was drawn from a pixmap symbol: its marks lay an image, as a pixmap's tile
+/// does, where a vector's, an ellipse's, or a TrueType symbol's fill, stroke, or draw glyphs.
+fn of_pixmap(tile: &Tile) -> bool {
+    tile.marks()
+        .iter()
+        .any(|mark| matches!(mark, DrawOp::Pixmap { .. } | DrawOp::ResampledPixmap { .. }))
+}
+
 impl AggRenderer {
     /// Brushes `paths` with `tile` as `agg2RenderLineTiled` brushes a shape's lines: the tile
     /// copied into AGG's `line_image_pattern` through [`BilinearRgba8`], drawn by agg-rust's
@@ -432,12 +444,14 @@ impl AggRenderer {
     /// and a start of 0 carried over every segment and path. Each path is clipped first to the
     /// image grown by `reach` (ADR-0027) and fed as integers by [`line_coord_sat`]. A path the clip
     /// leaves whole starts where AGG starts it; each piece of one it cuts starts where AGG starts
-    /// it at the piece's first segment (see [`piece_start`]).
+    /// it at the piece's first segment (see [`piece_start`]). A piece [`JoinProbe`] refuses is not
+    /// drawn and counts among the refusals of the tile's kind (ADR-0049).
     pub(crate) fn brushed_line(&mut self, paths: &[Vec<Point>], tile: &Tile, reach: f64) {
         let image = tile.image(built_tile);
         let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(image));
         let reach = if reach > 0.0 { reach } else { 0.0 };
         let rect = Rect::around_image(self.width, self.height, reach);
+        let mut refused = 0;
         self.with_agg(|renderer| {
             let mut rasterizer = RasterizerOutlineAa::new();
             let mut carried = Carried {
@@ -462,10 +476,6 @@ impl AggRenderer {
                     else {
                         continue;
                     };
-                    let longest = filtered(&fed).iter().map(|&(_, len)| len).max();
-                    if !within_i32(&pattern, longest.unwrap_or(0)) {
-                        continue;
-                    }
                     let feed = |rasterizer: &mut RasterizerOutlineAa| {
                         let (x, y) = fed[0];
                         rasterizer.move_to(x, y);
@@ -477,6 +487,7 @@ impl AggRenderer {
                     feed(&mut rasterizer);
                     rasterizer.render(&mut probe, false);
                     if !probe.within {
+                        refused += 1;
                         continue;
                     }
                     carried.set_start(start);
@@ -485,6 +496,11 @@ impl AggRenderer {
                 }
             }
         });
+        if of_pixmap(tile) {
+            self.refused.pixmaps += refused;
+        } else {
+            self.refused.symbols += refused;
+        }
     }
 }
 
