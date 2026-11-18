@@ -9,6 +9,9 @@
 # call, failing the 'fuzz run' of each target named in $FAKE_FAIL. The case asserts the exit code,
 # a line of the output, and the calls that would have installed the toolchain and fuzzed; a target
 # without seeds fails before any of them is made, and a target that fails does not stop the others.
+# An argument the script cannot read, seconds that are none, a target the manifest does not list,
+# or an input to replay that is no file, fails before any call is made; a named target is fuzzed
+# alone, and a replay makes one 'fuzz run' of its input and no cargo deny.
 # The pins, the nightly toolchain and the version of cargo-fuzz, are read from scripts/fuzz.sh, so
 # that a bump there needs no edit here.
 # Each fixture carries the repository's rust-toolchain.toml, so that cargo reads the manifests
