@@ -34,10 +34,13 @@ pub fn within_glyph_reach(image: [f64; 4], path: &[PathCommand]) -> bool {
 }
 
 /// The width a stroke of `width` is drawn at on an image of `image_width` × `image_height`
-/// pixels: a wider stroke covers the image all the same, and the margin stays small enough for
-/// agg-rust's fixed-point coordinates.
+/// pixels, its magnitude bounded: a wider stroke covers the image all the same, and the margin
+/// stays small enough for agg-rust's fixed-point coordinates. A caller that draws a negative
+/// width keeps its sign itself.
 pub fn drawn_width(width: f64, image_width: u32, image_height: u32) -> f64 {
-    width.min(2.0 * (f64::from(image_width) + f64::from(image_height)))
+    width
+        .abs()
+        .min(2.0 * (f64::from(image_width) + f64::from(image_height)))
 }
 
 /// An axis-aligned rectangle in pixels: outside this module, only the image grown by the margin,
@@ -418,6 +421,15 @@ mod tests {
         assert_eq!(ring(&square, &r).len(), 4);
         let outside = [p(100.0, 100.0), p(200.0, 100.0), p(200.0, 200.0)];
         assert!(ring(&outside, &r).is_empty());
+    }
+
+    #[test]
+    fn the_width_drawn_is_the_magnitude_bounded_by_twice_the_image_s_width_and_height() {
+        // Verifies: ADR-0025
+        assert_eq!(drawn_width(3.0, 100, 100), 3.0);
+        assert_eq!(drawn_width(-3.0, 100, 100), 3.0);
+        assert_eq!(drawn_width(1e7, 100, 100), 400.0);
+        assert_eq!(drawn_width(-1e7, 100, 100), 400.0);
     }
 
     #[test]
