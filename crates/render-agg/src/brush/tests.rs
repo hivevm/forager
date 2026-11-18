@@ -246,3 +246,112 @@ fn hostile_coordinates_brush_without_a_panic() {
         brushed(20, 20, paths.clone(), reach);
     }
 }
+
+/// A tile of 1 by 1 pixel: a pattern 256 subpixels wide and a line width of 256 subpixels.
+fn dot() -> Rc<Tile> {
+    let image = Rc::new(PremultipliedImage::new(1, 1, vec![200, 40, 40, 255]).unwrap());
+    let mark = DrawOp::Pixmap {
+        image,
+        left: 0,
+        top: 0,
+    };
+    Rc::new(Tile::new(1, 1, vec![mark]).unwrap())
+}
+
+/// `path` brushed with [`dot`] on a white image of `width` by `height` pixels.
+fn dotted(width: u32, height: u32, path: Vec<Point>, reach: f64) -> RgbaImage {
+    let mut renderer = AggRenderer::new();
+    renderer.begin(width, height, Rgba::opaque(255, 255, 255));
+    renderer.draw(&DisplayItem {
+        op: DrawOp::BrushedLine {
+            paths: vec![path],
+            tile: dot(),
+            reach,
+        },
+        feature_id: None,
+    });
+    renderer.finish()
+}
+
+/// How many pixels of `image` are not white.
+fn drawn(image: &RgbaImage) -> usize {
+    image
+        .pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|&&pixel| pixel != [255; 4])
+        .count()
+}
+
+/// Whether [`JoinProbe`] admits `path`, fed whole, with [`dot`]'s pattern.
+fn joins_admit(path: &[Point]) -> bool {
+    let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(dot().image(built_tile)));
+    let mut rasterizer = RasterizerOutlineAa::new();
+    let (x, y) = (line_coord_sat(path[0].x), line_coord_sat(path[0].y));
+    rasterizer.move_to(x, y);
+    for q in &path[1..] {
+        rasterizer.line_to(line_coord_sat(q.x), line_coord_sat(q.y));
+    }
+    let mut probe = JoinProbe::new(&pattern);
+    rasterizer.render(&mut probe, false);
+    probe.within
+}
+
+#[test]
+fn a_piece_whose_join_lies_far_past_its_short_segment_is_not_drawn_and_does_not_panic() {
+    // Verifies: Q-3
+    // Ticket 21's fuzz input: the short first segment's join with the segment of some 8650 pixels
+    // after it lies thousands of pixels away, past what `DistanceInterpolator4` multiplies in
+    // `i32`, so the piece, the whole path, is not drawn.
+    let line = vec![
+        p(94.00000786351512, -7.817504489577309e-6),
+        p(61.000000000000114, 33.00000000000001),
+        p(-8584.616083133831, -0.003023169095998576),
+        p(61.00000000000001, 56.17101458477057),
+        p(94.00000786351512, -7.817504489577309e-6),
+    ];
+    assert!(!joins_admit(&line));
+    assert_eq!(drawn(&dotted(123, 34, line, 1.517439853e9)), 0);
+}
+
+#[test]
+fn a_long_segment_after_a_short_one_at_a_gentle_angle_is_drawn() {
+    // Verifies: ADR-0046, Q-3
+    // A segment of 2 pixels, then one of 2100 at 10°: their join lies some 2100 × 0.17 pixels
+    // from the vertex, far within the bound, and the line is drawn as agg-rust draws it unbounded.
+    let line = vec![
+        p(10.0, 10.0),
+        p(12.0, 10.0),
+        p(2080.096281325637, 374.6611731005537),
+    ];
+    assert!(joins_admit(&line));
+    assert_eq!(drawn(&dotted(2200, 400, line, 10.0)), 4207);
+}
+
+/// A short segment of 3620 subpixels down and to the right at 45°, then one back up and to the
+/// left, `run` subpixels across and 2560 fewer up: their join, `bisectrix` of the two, lies some
+/// twice the long segment's length from the short segment's end, at about 45° too, and not along
+/// the short segment, so `fix_degenerate_bisectrix` keeps it.
+fn hairpin(run: i32) -> Vec<Point> {
+    let back = |by: i32| 12.0 - f64::from(by) / 256.0;
+    vec![p(2.0, 2.0), p(12.0, 12.0), p(back(run), back(run - 2560))]
+}
+
+/// The longest run of [`hairpin`] that [`JoinProbe`] admits with [`dot`]. The short segment,
+/// from (512, 512) to (3072, 3072) in subpixels, ends at the join (734831, 732271) that
+/// `bisectrix` gives with the long segment of 516501, so `|v_x| = 45926 - 192 = 45734` and
+/// `|v_y| = 45766 - 192 = 45574` in `line_mr` units. Its pixels lie within
+/// `|u| = ((3620 + 256 × (2 × 2 + 68) + 3) >> 4) + 3 = 1381`, and the larger product,
+/// `(|u| + |v_y|) × |v_x| = 46955 × 45734 = 2147439970`, is within `i32::MAX`. One subpixel more
+/// moves the join to (734833, 732273), and `46956 × 45735 = 2147532660` passes it.
+const HAIRPIN_RUN: i32 = 366_499;
+
+#[test]
+fn a_piece_within_the_join_bound_is_drawn_and_one_past_it_is_not() {
+    // Verifies: Q-3
+    assert!(joins_admit(&hairpin(HAIRPIN_RUN)));
+    assert!(!joins_admit(&hairpin(HAIRPIN_RUN + 1)));
+    assert_ne!(drawn(&dotted(20, 20, hairpin(HAIRPIN_RUN), 1e6)), 0);
+    assert_eq!(drawn(&dotted(20, 20, hairpin(HAIRPIN_RUN + 1), 1e6)), 0);
+}

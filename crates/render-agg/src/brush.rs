@@ -27,7 +27,10 @@
 //! carried across a cut as AGG reaches it.
 
 use agg_rust::color::Rgba8;
-use agg_rust::line_aa_basics::{LINE_MAX_COORD, LineParameters};
+use agg_rust::line_aa_basics::{
+    LINE_MAX_COORD, LINE_MAX_LENGTH, LineParameters, fix_degenerate_bisectrix_end,
+    fix_degenerate_bisectrix_start, line_mr,
+};
 use agg_rust::pattern_filters_rgba::PatternFilter;
 use agg_rust::rasterizer_outline_aa::RasterizerOutlineAa;
 use agg_rust::renderer_outline_aa::OutlineAaRenderer;
@@ -310,15 +313,116 @@ impl OutlineAaRenderer for Carried<'_, '_, '_> {
     }
 }
 
-/// Whether agg-rust's renderer stays within `i32` on a piece whose longest segment is `longest`
-/// subpixels with `pattern`: it offsets the start, below one width of the pattern when a segment
-/// begins, by the pattern's width times its extent across the line plus 2, moves it by up to the
-/// segment's length within the segment, and adds the pixel's distance along it, again up to that
-/// length. Where it would pass, AGG's C++ is undefined, and the piece is not drawn (Q-3).
+/// Whether agg-rust's renderer keeps the pattern's place within `i32` on a piece whose longest
+/// segment, as AGG's filter keeps it, is `longest` subpixels with `pattern`: it offsets the start,
+/// below one width of the pattern when a segment begins, by the pattern's width times its extent
+/// across the line plus 2, moves it by up to the segment's length within the segment, and adds
+/// the pixel's distance along it, again up to that length. Where it would pass, AGG's C++ is
+/// undefined, and the piece is not drawn (Q-3). [`JoinProbe`] bounds the products of the joins.
 fn within_i32(pattern: &LineImagePattern<BilinearRgba8>, longest: i64) -> bool {
     let width = i64::from(pattern.pattern_width());
     let extent = i64::from((pattern.line_width() + SCALE) >> SHIFT);
     (extent + 3) * width + 2 * longest <= i64::from(i32::MAX)
+}
+
+/// agg-rust's `max_half_width` of `render_line_image`: the pixels it steps across the line from
+/// each pixel along it, at most.
+const MAX_HALF_WIDTH: i64 = 64;
+
+/// A renderer that draws nothing and learns, from the join points `rasterizer_outline_aa` hands
+/// its `line3`, whether agg-rust's `DistanceInterpolator4` stays within `i32` on each segment of a
+/// piece. Where it would pass, AGG's C++ is undefined, and the piece is not drawn (Q-3). Only
+/// `line3` matters, since agg-rust's `line0` to `line2` draw nothing for the outline-image
+/// renderer, which asks for accurate joins.
+///
+/// `DistanceInterpolator4` multiplies, in `line_mr` units of 16 subpixels, the pixel less the
+/// join point by the join point less the segment's end, coordinate by coordinate, for the start
+/// join `sx`, `sy` and the end join `ex`, `ey`. It steps by those terms from pixel to pixel, which
+/// keeps its value that difference of products at each pixel. [`joins_within_i32`] follows
+/// `line3_no_clip` to the joins the interpolator gets and bounds those products.
+struct JoinProbe {
+    /// How far the pixels `render_line_image` visits lie from a segment, in subpixels, at most.
+    growth: i64,
+    within: bool,
+}
+
+impl JoinProbe {
+    /// A probe for `pattern`. The pixels lie within the segment grown by `256 × (2 × extent +
+    /// 68)` subpixels: the `extent + 1` steps before its start and after its end, each up to 1.5
+    /// pixels, a pixel's rounding, the [`MAX_HALF_WIDTH`] pixels across, and one step of the
+    /// interpolator.
+    fn new(pattern: &LineImagePattern<BilinearRgba8>) -> Self {
+        let extent = i64::from((pattern.line_width() + SCALE) >> SHIFT);
+        Self {
+            growth: i64::from(SCALE) * (2 * extent + 4 + MAX_HALF_WIDTH),
+            within: true,
+        }
+    }
+}
+
+impl OutlineAaRenderer for JoinProbe {
+    fn accurate_join_only(&self) -> bool {
+        true
+    }
+
+    fn line0(&mut self, _lp: &LineParameters) {}
+
+    fn line1(&mut self, _lp: &LineParameters, _sx: i32, _sy: i32) {}
+
+    fn line2(&mut self, _lp: &LineParameters, _ex: i32, _ey: i32) {}
+
+    fn line3(&mut self, lp: &LineParameters, sx: i32, sy: i32, ex: i32, ey: i32) {
+        self.within = self.within && joins_within_i32(lp, (sx, sy), (ex, ey), self.growth);
+    }
+
+    fn semidot(&mut self, _cmp: fn(i32) -> bool, _xc1: i32, _yc1: i32, _xc2: i32, _yc2: i32) {}
+
+    fn pie(&mut self, _xc: i32, _yc: i32, _x1: i32, _y1: i32, _x2: i32, _y2: i32) {}
+}
+
+/// Whether `DistanceInterpolator4` stays within `i32` on the segment `lp` with the join points
+/// `start` and `end`, the pixels within `growth` subpixels of it, as `line3_no_clip` draws it:
+///
+/// - a segment longer than `line_max_length` is halved, its join points moved halfway to its
+///   ends by `(x + sx) >> 1`, which must not pass `i32` either, and the halves meet at the first
+///   half's perpendicular;
+/// - `fix_degenerate_bisectrix_start` and `_end` may replace a join point with the segment's
+///   perpendicular;
+/// - `v`, the join point less the segment's end it joins, is known; `u`, the pixel less that end,
+///   is at most the segment's length plus `growth` plus 3 for the halving's shifts, which in
+///   `line_mr` units is at most its subpixels `>> 4` plus 3 for their rounding;
+/// - the pixel less the join point is `u - v`, so a product of one coordinate of it and one of
+///   `v` is at most `(|u| + |v_x|) × |v_y|`, or with `x` and `y` swapped, and the difference of
+///   the two products, `u × v` crosswise, at most `|u| × (|v_x| + |v_y|)`; each stays within
+///   `i32`.
+fn joins_within_i32(lp: &LineParameters, start: (i32, i32), end: (i32, i32), growth: i64) -> bool {
+    if lp.len > LINE_MAX_LENGTH {
+        let (lp1, lp2) = lp.divide();
+        let mid = (lp1.x2 + (lp1.y2 - lp1.y1), lp1.y2 - (lp1.x2 - lp1.x1));
+        let half = |a: i32, b: i32| a.checked_add(b).map(|sum| sum >> 1);
+        let (Some(sx), Some(sy), Some(ex), Some(ey)) = (
+            half(lp.x1, start.0),
+            half(lp.y1, start.1),
+            half(lp.x2, end.0),
+            half(lp.y2, end.1),
+        ) else {
+            return false;
+        };
+        return joins_within_i32(&lp1, (sx, sy), mid, growth)
+            && joins_within_i32(&lp2, mid, (ex, ey), growth);
+    }
+    let (mut sx, mut sy, mut ex, mut ey) = (start.0, start.1, end.0, end.1);
+    fix_degenerate_bisectrix_start(lp, &mut sx, &mut sy);
+    fix_degenerate_bisectrix_end(lp, &mut ex, &mut ey);
+    let u = ((i64::from(lp.len) + growth + 3) >> 4) + 3;
+    let within = |(jx, jy): (i32, i32), (x, y): (i32, i32)| {
+        let vx = (i64::from(line_mr(jx)) - i64::from(line_mr(x))).abs();
+        let vy = (i64::from(line_mr(jy)) - i64::from(line_mr(y))).abs();
+        [(u + vx) * vy, (u + vy) * vx, u * (vx + vy)]
+            .into_iter()
+            .all(|product| product <= i64::from(i32::MAX))
+    };
+    within((sx, sy), (lp.x1, lp.y1)) && within((ex, ey), (lp.x2, lp.y2))
 }
 
 impl AggRenderer {
@@ -358,20 +462,25 @@ impl AggRenderer {
                     else {
                         continue;
                     };
-                    let longest = fed
-                        .windows(2)
-                        .map(|pair| distance(pair[0], pair[1]))
-                        .max()
-                        .unwrap_or(0);
-                    if !within_i32(&pattern, longest) {
+                    let longest = filtered(&fed).iter().map(|&(_, len)| len).max();
+                    if !within_i32(&pattern, longest.unwrap_or(0)) {
+                        continue;
+                    }
+                    let feed = |rasterizer: &mut RasterizerOutlineAa| {
+                        let (x, y) = fed[0];
+                        rasterizer.move_to(x, y);
+                        for &(x, y) in &fed[1..] {
+                            rasterizer.line_to(x, y);
+                        }
+                    };
+                    let mut probe = JoinProbe::new(&pattern);
+                    feed(&mut rasterizer);
+                    rasterizer.render(&mut probe, false);
+                    if !probe.within {
                         continue;
                     }
                     carried.set_start(start);
-                    let (x, y) = fed[0];
-                    rasterizer.move_to(x, y);
-                    for &(x, y) in &fed[1..] {
-                        rasterizer.line_to(x, y);
-                    }
+                    feed(&mut rasterizer);
                     rasterizer.render(&mut carried, false);
                 }
             }
