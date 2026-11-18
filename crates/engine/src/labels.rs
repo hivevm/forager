@@ -31,7 +31,7 @@ use forager_ports::{Feature, ResourceLoader};
 use forager_render::{Draw, DrawOp, GlyphOutline, Point, Renderer};
 use forager_style_ir::c::{DEG_TO_RAD, c_str, int_cast, ms_nint};
 use forager_style_ir::{Diagnostic, Expr, LabelMarker, LabelTransform, Map, Op, Rgba, Span, Style};
-use forager_symbolize::{Factors, Pixmaps, Refusals, marker_size_of};
+use forager_symbolize::{Factors, Pixmaps, Refusals, SymbolResources, marker_size_of};
 
 use crate::classes::{self, Binder};
 use crate::fonts::Fonts;
@@ -42,7 +42,6 @@ use crate::label_styles::{self, LabelStyles, Placed, Styled, StylesOf};
 use crate::layer::{
     Rotation, draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
 };
-use crate::marker_glyphs::MarkerGlyphs;
 use crate::render_resources::Shared;
 
 /// A label of a render's label cache.
@@ -422,14 +421,13 @@ impl<'r> Labels<'r> {
     /// msDrawShape adds each feature's labels to the cache: at each of its points inside the
     /// map's extent, as `pointLayerDrawShape` places them. A pixmap that a class's first style
     /// draws is sized by its image among the pixmaps of `shared`, loaded before the layer's labels
-    /// are collected, and a TrueType symbol by its glyph among `glyphs`; the text is laid out in
-    /// the fonts of `shared`.
+    /// are collected, and a TrueType symbol by its glyph among the glyphs of `shared`; the text is
+    /// laid out in the fonts of `shared`.
     pub(crate) async fn collect<L: ResourceLoader>(
         &mut self,
         layer: &LayerLabels<'r>,
         drawn: &[Labelled<'_>],
         shared: &mut Shared<'_, '_, L>,
-        glyphs: &MarkerGlyphs,
         binder: &mut Binder<'_, '_>,
     ) {
         for &(feature, class, style) in drawn {
@@ -439,8 +437,7 @@ impl<'r> Labels<'r> {
                     continue;
                 };
                 let fixed = label.fixed;
-                let marker = style.map(|style| (style, glyphs));
-                let one = self.lay_out_cached(label, feature, marker, shared, binder);
+                let one = self.lay_out_cached(label, feature, style, shared, binder);
                 laid.extend(one.await.map(|one| (one, fixed)));
             }
             for (one, fixed) in laid {
@@ -511,13 +508,13 @@ impl<'r> Labels<'r> {
     }
 
     /// Lays out `label` of `feature` for the cache, with the first style of its class in
-    /// `marker`, sized among the pixmaps of `shared` or by its glyph asked of the glyphs `marker`
-    /// carries, the marker the label moves away from. None where it is not drawn.
+    /// `marker`, sized among the pixmaps of `shared` or by its glyph asked of the glyphs of
+    /// `shared`, the marker the label moves away from. None where it is not drawn.
     async fn lay_out_cached<L: ResourceLoader>(
         &mut self,
         label: Matched<'_, '_>,
         feature: &Feature,
-        marker: Option<ClassMarker<'_>>,
+        marker: Option<&Style>,
         shared: &mut Shared<'_, '_, L>,
         binder: &mut Binder<'_, '_>,
     ) -> Option<Laid> {
@@ -613,7 +610,7 @@ impl<'r> Labels<'r> {
         &mut self,
         label: Matched<'_, '_>,
         annotation: Annotation,
-        marker: Option<ClassMarker<'_>>,
+        marker: Option<&Style>,
         shared: &mut Shared<'_, '_, L>,
         feature: &Feature,
         binder: &mut Binder<'_, '_>,
@@ -625,8 +622,9 @@ impl<'r> Labels<'r> {
         let blank = lines.iter().all(Vec::is_empty);
         let label_styles: &[Style<LabelTransform>] =
             if styles.is_empty() { written } else { &styles };
+        let resources = shared.symbol_resources();
         let settled =
-            settle(fixed, &bound, lines.len(), marker, pixmaps, self.map).and_then(|settled| {
+            settle(fixed, &bound, lines.len(), marker, resources, self.map).and_then(|settled| {
                 let marker = label_styles::label_marker(
                     label_styles,
                     self.map,
@@ -1264,24 +1262,21 @@ impl Members for Cache<'_> {
     }
 }
 
-/// The first style of a label's class, the marker the label cache holds beneath it, and the
-/// glyphs a TrueType symbol of it is sized by.
-type ClassMarker<'a> = (&'a Style, &'a MarkerGlyphs);
-
 /// A label's position, its alignment, and the width and height of the marker it moves away from.
 type Settled = (Position, Align, Option<(f64, f64)>);
 
 /// Where a label stands for one feature: its position, its alignment over `num_lines` lines, and
-/// the size of the marker it moves away from, that of `style`, a pixmap's by its image among
-/// `pixmaps`; or the diagnostic's code and why it is not drawn. A pixmap whose image does not
+/// the size of the marker it moves away from, that of `marker`, a pixmap's by its image among the
+/// pixmaps of `resources` and a TrueType symbol's by its glyph asked of their port; or the
+/// diagnostic's code and why it is not drawn. A pixmap whose image does not
 /// load fails msAddLabelGroup and the map in MapServer (`src/maplabel.c:350-352`); its label is
 /// left out here, and the rest of the map drawn.
 fn settle(
     fixed: &Fixed<'_>,
     bound: &BoundLabel,
     num_lines: usize,
-    marker: Option<ClassMarker<'_>>,
-    pixmaps: &Pixmaps,
+    marker: Option<&Style>,
+    resources: SymbolResources<'_>,
     map: &Map,
 ) -> Result<Settled, (&'static str, String)> {
     let Some(position) = bound.position else {
@@ -1303,13 +1298,7 @@ fn settle(
     // moves away from.
     let marker = match marker {
         None => None,
-        Some((style, glyphs)) => match marker_size_of(
-            style,
-            &map.symbols,
-            pixmaps,
-            Some(glyphs),
-            fixed.factors.scale,
-        ) {
+        Some(style) => match marker_size_of(style, &map.symbols, resources, fixed.factors.scale) {
             Ok(size) => Some(size),
             Err(what) => {
                 let why =

@@ -1,4 +1,4 @@
-use forager_style_ir::Style;
+use forager_style_ir::{Style, Symbol, SymbolKind};
 
 use crate::canvas::{Canvas, Refusals};
 use crate::line_marker::MarkerBudget;
@@ -82,4 +82,28 @@ fn refusals_merged_keep_markers_spent_and_the_first_bound_of_the_trees() {
     none.merge(refusals);
     assert!(none.markers_spent);
     assert_eq!(none.trees_over_limit.as_deref(), Some("first"));
+}
+
+#[test]
+fn a_canvas_handed_no_pixmaps_refuses_a_pixmap_as_not_loaded() {
+    let pin = Symbol {
+        name: None,
+        kind: SymbolKind::Pixmap,
+        paths: Vec::new(),
+        extent: None,
+        filled: false,
+        anchor_point: None,
+        character: None,
+        font: None,
+        image: Some("pin.png".to_owned()),
+        transparent: None,
+        span: None,
+    };
+    let symbols = [pin];
+    let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0));
+    assert!(canvas.pixmap(1, &symbols[0]).is_none());
+    assert_eq!(
+        canvas.take_refusals().pixmaps[&1].1,
+        "the image pin.png is not loaded for this render"
+    );
 }

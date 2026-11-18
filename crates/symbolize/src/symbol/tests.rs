@@ -26,6 +26,11 @@ use forager_render::{Pen, PremultipliedImage};
 const RED: Rgba = Rgba::opaque(255, 0, 0);
 const BLACK: Rgba = Rgba::opaque(0, 0, 0);
 
+/// The resources of a canvas handed `pixmaps` and no glyph port.
+fn held_in(pixmaps: &Pixmaps) -> SymbolResources<'_> {
+    SymbolResources::default().with_pixmaps(pixmaps)
+}
+
 fn symbol(kind: SymbolKind, paths: Vec<Vec<[f64; 2]>>, extent: [f64; 2], filled: bool) -> Symbol {
     Symbol {
         name: None,
@@ -141,7 +146,7 @@ fn a_style_s_symbol_by_name_is_the_first_of_that_name_whatever_its_case() {
         2.0
     );
     assert_eq!(
-        marker_size_of(&by_name("dot"), &symbols, &Pixmaps::new(), None, 1.0),
+        marker_size_of(&by_name("dot"), &symbols, held_in(&Pixmaps::new()), 1.0),
         Ok((10.0, 10.0))
     );
     let mut hatch = named("lines", triangle(false));
@@ -152,7 +157,7 @@ fn a_style_s_symbol_by_name_is_the_first_of_that_name_whatever_its_case() {
     assert!(!is_hatch(&unknown, &symbols));
     assert_eq!(default_size_of(&unknown, &symbols, None), 1.0);
     assert_eq!(
-        marker_size_of(&unknown, &symbols, &Pixmaps::new(), None, 1.0),
+        marker_size_of(&unknown, &symbols, held_in(&Pixmaps::new()), 1.0),
         Err("no symbol is named `x.png`".to_owned())
     );
 }
@@ -441,7 +446,7 @@ fn a_label_moves_away_from_a_marker_of_the_size_ms_get_marker_size_gives() {
     let mut drawn = style(Some(10.0), None);
     drawn.symbol = Some(Bound::Value(SymbolRef::Index(1)));
     assert_eq!(
-        marker_size_of(&drawn, &symbols, &Pixmaps::new(), None, 1.0),
+        marker_size_of(&drawn, &symbols, held_in(&Pixmaps::new()), 1.0),
         Ok((20.0, 10.0))
     );
     // MapServer's default symbol, a point.
@@ -449,15 +454,14 @@ fn a_label_moves_away_from_a_marker_of_the_size_ms_get_marker_size_gives() {
         marker_size_of(
             &style(Some(10.0), None),
             &symbols,
-            &Pixmaps::new(),
-            None,
+            held_in(&Pixmaps::new()),
             1.0
         ),
         Ok((1.0, 1.0))
     );
     drawn.symbol = Some(Bound::Value(SymbolRef::Index(2)));
     assert!(
-        marker_size_of(&drawn, &symbols, &Pixmaps::new(), None, 1.0).is_err(),
+        marker_size_of(&drawn, &symbols, held_in(&Pixmaps::new()), 1.0).is_err(),
         "no such symbol"
     );
 }
@@ -474,22 +478,22 @@ fn a_pixmap_s_marker_is_sized_by_its_image_and_one_without_an_image_is_named() {
     let held = Pixmaps::from([("pin.png".to_owned(), Ok(image))]);
     let symbols = [pin.clone()];
     assert_eq!(
-        marker_size_of(&drawn, &symbols, &held, None, 1.0),
+        marker_size_of(&drawn, &symbols, held_in(&held), 1.0),
         Ok((20.0, 10.0))
     );
     // msGetMarkerSize fails where the image does not load (736-738); the error names the
     // symbol, by its name where it has one, and why.
     let refused = Pixmaps::from([("pin.png".to_owned(), Err("refused".to_owned()))]);
-    let error = marker_size_of(&drawn, &symbols, &refused, None, 1.0).unwrap_err();
+    let error = marker_size_of(&drawn, &symbols, held_in(&refused), 1.0).unwrap_err();
     assert!(
         error.starts_with("symbol 1,") && error.ends_with("refused"),
         "{error}"
     );
-    let error = marker_size_of(&drawn, &symbols, &Pixmaps::new(), None, 1.0).unwrap_err();
+    let error = marker_size_of(&drawn, &symbols, held_in(&Pixmaps::new()), 1.0).unwrap_err();
     assert!(error.contains("pin.png is not loaded"), "{error}");
     pin.name = Some("pin".to_owned());
     pin.image = None;
-    let error = marker_size_of(&drawn, &[pin], &held, None, 1.0).unwrap_err();
+    let error = marker_size_of(&drawn, &[pin], held_in(&held), 1.0).unwrap_err();
     assert!(
         error.starts_with("symbol `pin`,") && error.ends_with("names no image"),
         "{error}"
@@ -726,27 +730,27 @@ fn each_reader_of_a_styles_symbol_tells_the_default_the_missing_the_unresolved_a
     assert_eq!(default_size_of(&hatched, &symbols, None), 1.0);
 
     assert_eq!(
-        marker_size_of(&none, &symbols, &Pixmaps::new(), None, 1.0),
+        marker_size_of(&none, &symbols, held_in(&Pixmaps::new()), 1.0),
         Ok((1.0, 1.0))
     );
     assert_eq!(
-        marker_size_of(&zero, &symbols, &Pixmaps::new(), None, 1.0),
+        marker_size_of(&zero, &symbols, held_in(&Pixmaps::new()), 1.0),
         Ok((1.0, 1.0))
     );
     assert_eq!(
-        marker_size_of(&past, &symbols, &Pixmaps::new(), None, 1.0),
+        marker_size_of(&past, &symbols, held_in(&Pixmaps::new()), 1.0),
         Err("symbol 3, which the symbol set does not hold".to_owned())
     );
     assert_eq!(
-        marker_size_of(&binding, &symbols, &Pixmaps::new(), None, 1.0),
+        marker_size_of(&binding, &symbols, held_in(&Pixmaps::new()), 1.0),
         Err("a symbol bound to a property that is not read".to_owned())
     );
     assert_eq!(
-        marker_size_of(&vector, &symbols, &Pixmaps::new(), None, 1.0),
+        marker_size_of(&vector, &symbols, held_in(&Pixmaps::new()), 1.0),
         Ok((10.0, 10.0))
     );
     assert_eq!(
-        marker_size_of(&hatched, &symbols, &Pixmaps::new(), None, 1.0),
+        marker_size_of(&hatched, &symbols, held_in(&Pixmaps::new()), 1.0),
         Ok((10.0, 10.0))
     );
 }

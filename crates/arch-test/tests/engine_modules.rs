@@ -19,7 +19,6 @@ const ALLOWED: &[(&str, &[&str])] = &[
             "label_cache",
             "label_styles",
             "layer",
-            "marker_glyphs",
             "render_resources",
         ],
     ),

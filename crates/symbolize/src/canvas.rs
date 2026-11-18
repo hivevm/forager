@@ -22,10 +22,9 @@ use forager_render::PremultipliedImage;
 use forager_style_ir::{Style, Symbol};
 
 use crate::clip::Clip;
-use crate::glyph::Glyphs;
 use crate::layer_transform::StyleTrees;
 use crate::line_marker::MarkerBudget;
-use crate::symbol::{self, Factors, Pixmaps};
+use crate::symbol::{self, Factors, Pixmaps, SymbolResources};
 use crate::tile::Tiles;
 
 /// What a layer draws its features on beside the view: the map's symbols, the images of its
@@ -37,7 +36,8 @@ use crate::tile::Tiles;
 /// layer's class styles share, and whether the layer is drawn into an image of its own.
 pub struct Canvas<'a> {
     pub(crate) symbols: &'a [Symbol],
-    pixmaps: Option<&'a Pixmaps>,
+    /// The images of the pixmap symbols and the port TrueType markers ask their glyphs of.
+    pub(crate) resources: SymbolResources<'a>,
     pub(crate) tiles: Option<&'a mut Tiles>,
     /// The image's width and height in pixels, as the renderer is handed them.
     pub(crate) size: (u32, u32),
@@ -55,8 +55,6 @@ pub struct Canvas<'a> {
     /// Each TrueType symbol whose font lacks its character, by its index from 1, and what is
     /// drawn instead.
     pub(crate) missing_glyphs: BTreeMap<usize, String>,
-    /// The port TrueType markers ask their glyphs of.
-    pub(crate) glyphs: Option<&'a dyn Glyphs>,
     /// The budget, the `[map_cellsize]`, and the failures of the class styles' transform trees;
     /// without them, a class style's tree draws nothing.
     pub(crate) style_trees: Option<StyleTrees>,
@@ -112,7 +110,7 @@ impl<'a> Canvas<'a> {
     pub fn new(symbols: &'a [Symbol], width: u32, height: u32, factors: Factors) -> Self {
         Self {
             symbols,
-            pixmaps: None,
+            resources: SymbolResources::default(),
             tiles: None,
             size: (width, height),
             factors,
@@ -122,7 +120,6 @@ impl<'a> Canvas<'a> {
             refused_pixmaps: BTreeMap::new(),
             refused_symbols: BTreeMap::new(),
             missing_glyphs: BTreeMap::new(),
-            glyphs: None,
             style_trees: None,
             own_image: false,
             clip_lines: true,
@@ -149,7 +146,7 @@ impl<'a> Canvas<'a> {
     /// pixmap is left undrawn.
     pub fn with_pixmaps(self, pixmaps: &'a Pixmaps) -> Self {
         Self {
-            pixmaps: Some(pixmaps),
+            resources: self.resources.with_pixmaps(pixmaps),
             ..self
         }
     }
@@ -169,13 +166,10 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    /// The canvas, its TrueType markers drawn with the glyphs of `glyphs`; without them, each is
-    /// left undrawn.
-    pub fn with_glyphs(self, glyphs: &'a dyn Glyphs) -> Self {
-        Self {
-            glyphs: Some(glyphs),
-            ..self
-        }
+    /// The canvas, its pixmap symbols and TrueType markers drawn with `resources`, the same the
+    /// engine's label cache sizes a marker with (see [`symbol::marker_size_of`]).
+    pub fn with_resources(self, resources: SymbolResources<'a>) -> Self {
+        Self { resources, ..self }
     }
 
     /// The canvas, its line shapes drawn unclipped, as msDrawShape draws those of a line layer of
@@ -197,7 +191,7 @@ impl<'a> Canvas<'a> {
     /// Sets the class whose styles the next features are drawn in, for the clip of its hatches
     /// and its lines (see [`Clip::for_class`]).
     pub fn class(&mut self, styles: &[Style]) {
-        self.clip = Clip::for_class(styles, self.symbols, self.pixmaps, self.factors);
+        self.clip = Clip::for_class(styles, self.symbols, self.resources.pixmaps, self.factors);
     }
 
     /// The image's width and height in pixels.
@@ -268,15 +262,8 @@ impl<'a> Canvas<'a> {
         index: usize,
         symbol: &Symbol,
     ) -> Option<Rc<PremultipliedImage>> {
-        let image = match (&symbol.image, self.pixmaps) {
-            (None, _) => Err("the pixmap symbol names no image".to_owned()),
-            (Some(path), Some(pixmaps)) => match pixmaps.get(path) {
-                Some(image) => image.clone(),
-                None => Err(format!("the image {path} is not loaded for this render")),
-            },
-            (Some(path), None) => Err(format!("the image {path} is not loaded for this render")),
-        };
-        image
+        self.resources
+            .pixmap(symbol)
             .map_err(|why| {
                 self.refused_pixmaps.entry(index).or_insert(why);
             })
