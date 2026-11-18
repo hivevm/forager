@@ -24,7 +24,7 @@ use forager_render::clip::drawn_width;
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Refused, Renderer, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    GeomTransform, LabelTransform, Layer, Rgba, SymbolKind, TransformShape, TransformTree,
+    GeomTransform, LabelTransform, Layer, Rgba, ShapeOp, SymbolKind, TransformShape, TransformTree,
 };
 use render_input::{Decoded, decode};
 
@@ -352,12 +352,12 @@ fn trees(decoded: &Decoded) -> impl Iterator<Item = &TransformShape> {
 fn holds(shape: &TransformShape, step: Step) -> bool {
     let (this, inner) = match shape {
         TransformShape::Shape => return false,
-        TransformShape::Simplify(inner, _) => (Some(Step::Simplify), inner),
-        TransformShape::Simplifypt(inner, _) => (Some(Step::Simplifypt), inner),
-        TransformShape::Buffer(inner, _) => (Some(Step::Buffer), inner),
+        TransformShape::Op(ShapeOp::Simplify, inner, _) => (Some(Step::Simplify), inner),
+        TransformShape::Op(ShapeOp::Simplifypt, inner, _) => (Some(Step::Simplifypt), inner),
+        TransformShape::Op(ShapeOp::Buffer, inner, _) => (Some(Step::Buffer), inner),
         TransformShape::SmoothSia { shape, .. } => (Some(Step::SmoothSia), shape),
-        TransformShape::Generalize(inner, _)
-        | TransformShape::Densify(inner, _)
+        TransformShape::Op(ShapeOp::Generalize, inner, _)
+        | TransformShape::Op(ShapeOp::Densify, inner, _)
         | TransformShape::Outer(inner)
         | TransformShape::Inner(inner) => (None, inner),
     };

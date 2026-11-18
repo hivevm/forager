@@ -22,17 +22,8 @@ pub enum TransformTree {
 pub enum TransformShape {
     /// The feature's shape, MapServer's `[shape]`.
     Shape,
-    /// `generalize(shape, tolerance)`.
-    Generalize(Box<TransformShape>, TransformNumber),
-    /// `densify(shape, tolerance)`.
-    Densify(Box<TransformShape>, TransformNumber),
-    /// `simplify(shape, tolerance)`: GEOS's Douglas-Peucker simplification.
-    Simplify(Box<TransformShape>, TransformNumber),
-    /// `simplifypt(shape, tolerance)`: GEOS's topology-preserving simplification.
-    Simplifypt(Box<TransformShape>, TransformNumber),
-    /// `buffer(shape, distance)`: GEOS's buffer with 30 segments a quadrant, outward for a
-    /// positive distance and inward for a negative one.
-    Buffer(Box<TransformShape>, TransformNumber),
+    /// A function of a shape and a number, `op(shape, number)`.
+    Op(ShapeOp, Box<TransformShape>, TransformNumber),
     /// `outer(shape)`: the outer rings of a polygon.
     Outer(Box<TransformShape>),
     /// `inner(shape)`: the inner rings of a polygon.
@@ -46,6 +37,50 @@ pub enum TransformShape {
         iterations: TransformNumber,
         preprocessing: Option<Preprocessing>,
     },
+}
+
+/// The functions of a shape and a number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShapeOp {
+    /// `generalize(shape, tolerance)`.
+    Generalize,
+    /// `densify(shape, tolerance)`.
+    Densify,
+    /// `simplify(shape, tolerance)`: GEOS's Douglas-Peucker simplification.
+    Simplify,
+    /// `simplifypt(shape, tolerance)`: GEOS's topology-preserving simplification.
+    Simplifypt,
+    /// `buffer(shape, distance)`: GEOS's buffer with 30 segments a quadrant, outward for a
+    /// positive distance and inward for a negative one.
+    Buffer,
+}
+
+impl ShapeOp {
+    /// Every function, in the order the tree's functions of a shape list them.
+    pub const ALL: [ShapeOp; 5] = [
+        ShapeOp::Generalize,
+        ShapeOp::Densify,
+        ShapeOp::Simplify,
+        ShapeOp::Simplifypt,
+        ShapeOp::Buffer,
+    ];
+
+    /// The function's name, as the tree writes it and MapServer's grammar calls it: the one table
+    /// of the names.
+    pub const fn name(self) -> &'static str {
+        match self {
+            ShapeOp::Generalize => "generalize",
+            ShapeOp::Densify => "densify",
+            ShapeOp::Simplify => "simplify",
+            ShapeOp::Simplifypt => "simplifypt",
+            ShapeOp::Buffer => "buffer",
+        }
+    }
+
+    /// The function named `name`, if there is one.
+    pub fn from_name(name: &str) -> Option<ShapeOp> {
+        ShapeOp::ALL.into_iter().find(|op| op.name() == name)
+    }
 }
 
 /// A number argument: a number, the map's cellsize in the layer's units, or an operation of two
@@ -161,13 +196,7 @@ impl TransformTree {
             let below = depth + 1;
             match node {
                 Node::Shape(TransformShape::Shape) | Node::Leaf => {}
-                Node::Shape(
-                    TransformShape::Generalize(shape, number)
-                    | TransformShape::Densify(shape, number)
-                    | TransformShape::Simplify(shape, number)
-                    | TransformShape::Simplifypt(shape, number)
-                    | TransformShape::Buffer(shape, number),
-                ) => {
+                Node::Shape(TransformShape::Op(_, shape, number)) => {
                     pending.push((Node::Shape(shape), below));
                     pending.push((Node::Number(number), below));
                 }
@@ -251,29 +280,9 @@ impl Serialize for TransformShape {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
             TransformShape::Shape => call(serializer, "shape", &[]),
-            TransformShape::Generalize(shape, number) => call(
+            TransformShape::Op(op, shape, number) => call(
                 serializer,
-                "generalize",
-                &[Arg::Shape(shape), Arg::Number(number)],
-            ),
-            TransformShape::Densify(shape, number) => call(
-                serializer,
-                "densify",
-                &[Arg::Shape(shape), Arg::Number(number)],
-            ),
-            TransformShape::Simplify(shape, number) => call(
-                serializer,
-                "simplify",
-                &[Arg::Shape(shape), Arg::Number(number)],
-            ),
-            TransformShape::Simplifypt(shape, number) => call(
-                serializer,
-                "simplifypt",
-                &[Arg::Shape(shape), Arg::Number(number)],
-            ),
-            TransformShape::Buffer(shape, number) => call(
-                serializer,
-                "buffer",
+                op.name(),
                 &[Arg::Shape(shape), Arg::Number(number)],
             ),
             TransformShape::Outer(shape) => call(serializer, "outer", &[Arg::Shape(shape)]),
@@ -415,18 +424,17 @@ impl<'de> Deserialize<'de> for Read {
     }
 }
 
-/// The functions of a shape, the values of `op` where a shape is due.
-const SHAPE_FUNCTIONS: &[&str] = &[
-    "shape",
-    "generalize",
-    "densify",
-    "simplify",
-    "simplifypt",
-    "buffer",
-    "outer",
-    "inner",
-    "smoothsia",
-];
+/// The functions of a shape, the values of `op` where a shape is due: `shape`, the functions of
+/// a shape and a number, `outer`, `inner`, and `smoothsia`.
+const SHAPE_FUNCTIONS: [&str; 9] = {
+    let mut names = ["shape", "", "", "", "", "", "outer", "inner", "smoothsia"];
+    let mut i = 0;
+    while i < ShapeOp::ALL.len() {
+        names[1 + i] = ShapeOp::ALL[i].name();
+        i += 1;
+    }
+    names
+};
 
 /// The values of `op` where a number is due.
 const NUMBER_FUNCTIONS: &[&str] = &["map_cellsize", "+", "-", "*", "/", "%", "^"];
@@ -451,20 +459,14 @@ fn shape<E: de::Error>(node: Read) -> Result<TransformShape, E> {
     };
     let transformed = match op.as_str() {
         "shape" => TransformShape::Shape,
-        "generalize" | "densify" | "simplify" | "simplifypt" | "buffer" => {
+        name if let Some(function) = ShapeOp::from_name(name) => {
             let inner = shape_arg(&mut args)?;
             let number = args
                 .next()
                 .map(number::<E>)
                 .transpose()?
                 .ok_or_else(|| arity::<E>(&op, "a shape and a number"))?;
-            match op.as_str() {
-                "generalize" => TransformShape::Generalize(inner, number),
-                "densify" => TransformShape::Densify(inner, number),
-                "simplify" => TransformShape::Simplify(inner, number),
-                "simplifypt" => TransformShape::Simplifypt(inner, number),
-                _ => TransformShape::Buffer(inner, number),
-            }
+            TransformShape::Op(function, inner, number)
         }
         "outer" => TransformShape::Outer(shape_arg(&mut args)?),
         "inner" => TransformShape::Inner(shape_arg(&mut args)?),
@@ -486,7 +488,7 @@ fn shape<E: de::Error>(node: Read) -> Result<TransformShape, E> {
                 preprocessing,
             }
         }
-        other => return Err(E::unknown_variant(other, SHAPE_FUNCTIONS)),
+        other => return Err(E::unknown_variant(other, &SHAPE_FUNCTIONS)),
     };
     if args.next().is_some() {
         return Err(arity(&op, "no further argument"));
@@ -541,7 +543,7 @@ mod schema {
     use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 
     use super::{
-        NotDrawn, NumberOp, Preprocessing, TransformNumber, TransformShape, TransformTree,
+        NotDrawn, NumberOp, Preprocessing, ShapeOp, TransformNumber, TransformShape, TransformTree,
     };
 
     /// `{"op": op, "args": args}`, its `op` one of `ops`, its `args` the schemas `args` in order,
@@ -600,7 +602,7 @@ mod schema {
                 "oneOf": [
                     call(&["shape"], &[], 0),
                     call(
-                        &["generalize", "densify", "simplify", "simplifypt", "buffer"],
+                        &ShapeOp::ALL.map(ShapeOp::name),
                         &[shape.clone(), number.clone()],
                         2,
                     ),

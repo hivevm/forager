@@ -403,7 +403,7 @@ mod tests {
         LineJoin, LineOffset, MinFeatureSize, Op, Position, RenderMode, Rgba, ShapeType, SourceRef,
         Span, Style, Symbol, SymbolKind, SymbolRef, Units,
     };
-    use crate::{NotDrawn, NumberOp, Preprocessing, TransformNumber, TransformShape};
+    use crate::{NotDrawn, NumberOp, Preprocessing, ShapeOp, TransformNumber, TransformShape};
     use serde_json::Value;
 
     fn sample() -> StyleDocument {
@@ -730,7 +730,8 @@ mod tests {
                     Box::new(TransformNumber::MapCellsize),
                 );
             }
-            TransformTree::Drawn(TransformShape::Densify(
+            TransformTree::Drawn(TransformShape::Op(
+                ShapeOp::Densify,
                 Box::new(TransformShape::Shape),
                 number,
             ))

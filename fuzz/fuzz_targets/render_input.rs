@@ -13,8 +13,8 @@ use forager_render::Renderer;
 use forager_style_ir::{
     Bound, Class, Expr, Extent, GeomTransform, Label, LabelTransform, Layer, LayerProjection,
     LayerStatus, LineCap, LineJoin, LineOffset, MAX_MAP_ANGLE, Map, NumberOp, Preprocessing,
-    RenderMode, Rgba, Style, Symbol, SymbolKind, SymbolRef, TransformNumber, TransformShape,
-    TransformTree,
+    RenderMode, Rgba, ShapeOp, Style, Symbol, SymbolKind, SymbolRef, TransformNumber,
+    TransformShape, TransformTree,
 };
 
 use crate::expr_input;
@@ -226,11 +226,15 @@ impl TransformInput {
         for step in self.0.iter().take(8) {
             let inner = Box::new(shape);
             shape = match step {
-                StepInput::Generalize(n) => TransformShape::Generalize(inner, n.number()),
-                StepInput::Densify(n) => TransformShape::Densify(inner, n.number()),
-                StepInput::Simplify(n) => TransformShape::Simplify(inner, n.number()),
-                StepInput::Simplifypt(n) => TransformShape::Simplifypt(inner, n.number()),
-                StepInput::Buffer(n) => TransformShape::Buffer(inner, n.number()),
+                StepInput::Generalize(n) => {
+                    TransformShape::Op(ShapeOp::Generalize, inner, n.number())
+                }
+                StepInput::Densify(n) => TransformShape::Op(ShapeOp::Densify, inner, n.number()),
+                StepInput::Simplify(n) => TransformShape::Op(ShapeOp::Simplify, inner, n.number()),
+                StepInput::Simplifypt(n) => {
+                    TransformShape::Op(ShapeOp::Simplifypt, inner, n.number())
+                }
+                StepInput::Buffer(n) => TransformShape::Op(ShapeOp::Buffer, inner, n.number()),
                 StepInput::Outer => TransformShape::Outer(inner),
                 StepInput::Inner => TransformShape::Inner(inner),
                 StepInput::SmoothSia(size, iterations, preprocessing) => {

@@ -14,7 +14,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 use forager_style_ir::{
-    Bound, GeomTransform, NotDrawn, Rgba, TransformNumber, TransformShape, TransformTree,
+    Bound, GeomTransform, NotDrawn, Rgba, ShapeOp, TransformNumber, TransformShape, TransformTree,
 };
 
 use crate::test_support::{binding, codes, first_style, load_files};
@@ -781,7 +781,8 @@ fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load()
     assert_eq!(
         style.unwrap().geom_transform,
         Some(GeomTransform::Expression(TransformTree::Drawn(
-            TransformShape::Generalize(
+            TransformShape::Op(
+                ShapeOp::Generalize,
                 Box::new(TransformShape::Shape),
                 TransformNumber::Number(2.0)
             )
@@ -823,7 +824,8 @@ fn a_style_of_buffer_holds_its_node_and_round_trips() {
     let styles = &document.map.layers[0].classes[0].styles;
     let buffer = |distance: f64| {
         Some(GeomTransform::Expression(TransformTree::Drawn(
-            TransformShape::Buffer(
+            TransformShape::Op(
+                ShapeOp::Buffer,
                 Box::new(TransformShape::Shape),
                 TransformNumber::Number(distance),
             ),

@@ -43,14 +43,16 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
             r#"{"op":"shape","args":[]}"#,
         ),
         (
-            TransformTree::Drawn(TransformShape::Generalize(
+            TransformTree::Drawn(TransformShape::Op(
+                ShapeOp::Generalize,
                 shape(),
                 op(NumberOp::Mul, TransformNumber::MapCellsize, num(2.5)),
             )),
             r#"{"op":"generalize","args":[{"op":"shape","args":[]},{"op":"*","args":[{"op":"map_cellsize","args":[]},2.5]}]}"#,
         ),
         (
-            TransformTree::Drawn(TransformShape::Densify(
+            TransformTree::Drawn(TransformShape::Op(
+                ShapeOp::Densify,
                 Box::new(TransformShape::Outer(Box::new(TransformShape::Inner(
                     shape(),
                 )))),
@@ -68,15 +70,15 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
             r#"{"op":"smoothsia","args":[{"op":"shape","args":[]},5.0,2.0,"angle"]}"#,
         ),
         (
-            TransformTree::Drawn(TransformShape::Simplify(shape(), num(25.0))),
+            TransformTree::Drawn(TransformShape::Op(ShapeOp::Simplify, shape(), num(25.0))),
             r#"{"op":"simplify","args":[{"op":"shape","args":[]},25.0]}"#,
         ),
         (
-            TransformTree::Drawn(TransformShape::Simplifypt(shape(), num(50.0))),
+            TransformTree::Drawn(TransformShape::Op(ShapeOp::Simplifypt, shape(), num(50.0))),
             r#"{"op":"simplifypt","args":[{"op":"shape","args":[]},50.0]}"#,
         ),
         (
-            TransformTree::Drawn(TransformShape::Buffer(shape(), num(-1.0))),
+            TransformTree::Drawn(TransformShape::Op(ShapeOp::Buffer, shape(), num(-1.0))),
             r#"{"op":"buffer","args":[{"op":"shape","args":[]},-1.0]}"#,
         ),
     ];
@@ -92,7 +94,8 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
         (NumberOp::Mod, "%"),
         (NumberOp::Pow, "^"),
     ] {
-        let tree = TransformTree::Drawn(TransformShape::Densify(
+        let tree = TransformTree::Drawn(TransformShape::Op(
+            ShapeOp::Densify,
             shape(),
             op(operator, TransformNumber::MapCellsize, num(1.0)),
         ));
@@ -189,7 +192,8 @@ fn depth_counts_the_levels_of_the_tree_as_an_expressions_depth() {
     assert_eq!(TransformTree::NotDrawn(NotDrawn::Syntax).depth(), 1);
     assert_eq!(TransformTree::Drawn(TransformShape::Shape).depth(), 1);
     // generalize, then `+`, then `*`, then its operands: 4 levels.
-    let tree = TransformTree::Drawn(TransformShape::Generalize(
+    let tree = TransformTree::Drawn(TransformShape::Op(
+        ShapeOp::Generalize,
         shape(),
         op(
             NumberOp::Add,

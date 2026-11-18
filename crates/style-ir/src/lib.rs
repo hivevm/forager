@@ -32,5 +32,5 @@ pub use model::{
     ShapeType, SourceRef, Style, Symbol, SymbolKind, SymbolRef, Transform, Units,
 };
 pub use transform::{
-    NotDrawn, NumberOp, Preprocessing, TransformNumber, TransformShape, TransformTree,
+    NotDrawn, NumberOp, Preprocessing, ShapeOp, TransformNumber, TransformShape, TransformTree,
 };

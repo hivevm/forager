@@ -28,11 +28,11 @@ fn shape() -> Box<TransformShape> {
 }
 
 fn generalize(inner: TransformShape, tolerance: TransformNumber) -> TransformShape {
-    TransformShape::Generalize(Box::new(inner), tolerance)
+    TransformShape::Op(ShapeOp::Generalize, Box::new(inner), tolerance)
 }
 
 fn densify(inner: TransformShape, tolerance: TransformNumber) -> TransformShape {
-    TransformShape::Densify(Box::new(inner), tolerance)
+    TransformShape::Op(ShapeOp::Densify, Box::new(inner), tolerance)
 }
 
 fn smooth(size: f64, iterations: f64, preprocessing: Option<Preprocessing>) -> TransformShape {
@@ -535,7 +535,7 @@ fn a_size_or_iterations_past_an_int_is_int_min_and_clamped() {
 }
 
 fn simplified(tolerance: f64) -> TransformShape {
-    TransformShape::Simplify(shape(), n(tolerance))
+    TransformShape::Op(ShapeOp::Simplify, shape(), n(tolerance))
 }
 
 #[test]
@@ -758,7 +758,7 @@ fn simplify_past_the_points_a_layer_may_visit_is_a_limit() {
 }
 
 fn preserved(tolerance: f64) -> TransformShape {
-    TransformShape::Simplifypt(shape(), n(tolerance))
+    TransformShape::Op(ShapeOp::Simplifypt, shape(), n(tolerance))
 }
 
 #[test]
@@ -864,7 +864,7 @@ fn simplifypt_past_the_points_a_layer_may_visit_is_a_limit() {
 }
 
 fn buffered(distance: f64) -> TransformShape {
-    TransformShape::Buffer(shape(), n(distance))
+    TransformShape::Op(ShapeOp::Buffer, shape(), n(distance))
 }
 
 /// The rings of a polygon result.
@@ -959,16 +959,20 @@ fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
     assert_eq!(apply(&buffered(-1.0), &line(ELL)), empty);
     let square = polygon(&[&[(0.0, 0.0), (0.0, 4.0), (4.0, 4.0), (4.0, 0.0), (0.0, 0.0)]]);
     assert_eq!(apply(&buffered(-3.0), &square), empty);
-    let twice = TransformShape::Buffer(Box::new(buffered(-3.0)), n(1.0));
+    let twice = TransformShape::Op(ShapeOp::Buffer, Box::new(buffered(-3.0)), n(1.0));
     assert_eq!(apply(&twice, &square), empty);
-    let simplified = TransformShape::Simplify(Box::new(buffered(-3.0)), n(1.0));
+    let simplified = TransformShape::Op(ShapeOp::Simplify, Box::new(buffered(-3.0)), n(1.0));
     assert_eq!(apply(&simplified, &square), empty);
-    let densified = TransformShape::Densify(Box::new(buffered(-3.0)), n(1.0));
+    let densified = TransformShape::Op(ShapeOp::Densify, Box::new(buffered(-3.0)), n(1.0));
     let why = failed(apply(&densified, &square));
     assert!(why.contains("densify on a part without points"), "{why}");
     // A polygon of one ring without points that no function of GEOS returned, inner of a square,
     // has no rings at all, and buffer fails on it as msGEOSShape2Geometry does.
-    let inner = TransformShape::Buffer(Box::new(TransformShape::Inner(shape())), n(1.0));
+    let inner = TransformShape::Op(
+        ShapeOp::Buffer,
+        Box::new(TransformShape::Inner(shape())),
+        n(1.0),
+    );
     let why = failed(apply(&inner, &square));
     assert!(why.contains("buffer on a shape of too few points"), "{why}");
 }
@@ -1045,9 +1049,9 @@ fn the_geos_functions_return_geos_s_empty_polygon_whatever_the_number() {
     let square = polygon(&[&[(0.0, 0.0), (0.0, 4.0), (4.0, 4.0), (4.0, 0.0), (0.0, 0.0)]]);
     let empty = Ok(Geometry::Polygon(vec![vec![]]));
     for transform in [
-        TransformShape::Simplify(Box::new(buffered(-3.0)), n(-1.0)),
-        TransformShape::Simplifypt(Box::new(buffered(-3.0)), n(-1.0)),
-        TransformShape::Buffer(Box::new(buffered(-3.0)), n(f64::NAN)),
+        TransformShape::Op(ShapeOp::Simplify, Box::new(buffered(-3.0)), n(-1.0)),
+        TransformShape::Op(ShapeOp::Simplifypt, Box::new(buffered(-3.0)), n(-1.0)),
+        TransformShape::Op(ShapeOp::Buffer, Box::new(buffered(-3.0)), n(f64::NAN)),
     ] {
         assert_eq!(apply(&transform, &square), empty, "{transform:?}");
     }

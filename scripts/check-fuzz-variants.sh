@@ -41,6 +41,7 @@ TARGET=fuzz/fuzz_targets/render_input.rs
 # '<file> <enum>': each enum whose variants the target must name, and the file that declares it.
 ENUMS=(
   "crates/style-ir/src/transform.rs TransformShape"
+  "crates/style-ir/src/transform.rs ShapeOp"
   "crates/style-ir/src/transform.rs TransformNumber"
   "crates/style-ir/src/transform.rs NumberOp"
   "crates/style-ir/src/transform.rs Preprocessing"
