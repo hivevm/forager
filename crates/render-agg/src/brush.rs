@@ -404,13 +404,31 @@ impl OutlineAaRenderer for JoinProbe {
 ///   half's perpendicular;
 /// - `fix_degenerate_bisectrix_start` and `_end` may replace a join point with the segment's
 ///   perpendicular;
-/// - `v`, the join point less the segment's end it joins, is known; `u`, the pixel less that end,
-///   is at most the segment's length plus `growth` plus 3 for the halving's shifts, which in
-///   `line_mr` units is at most its subpixels `>> 4` plus 3 for their rounding;
-/// - the pixel less the join point is `u - v`, so a product of one coordinate of it and one of
-///   `v` is at most `(|u| + |v_x|) × |v_y|`, or with `x` and `y` swapped, and the difference of
-///   the two products, `u × v` crosswise, at most `|u| × (|v_x| + |v_y|)`; each stays within
-///   `i32`.
+/// - with `J` the join point, `X` the segment's end it joins, and `v = J - X`, all in `line_mr`
+///   units, the interpolator holds `(P - J)_x × v_y - (P - J)_y × v_x` at each pixel `P` it steps
+///   over, the products first (lines 453-457), and steps by `v` shifted by 4 from pixel to pixel,
+///   which keeps that value at each pixel (`inc_x` to `dec_y`, lines 487-562, and the steps
+///   across the line in `render_line_image`).
+///
+/// Why the box bounds it. Every pixel the interpolator steps over lies within `growth` subpixels
+/// of the segment ([`JoinProbe::new`]), so on each axis within the segment's range grown by
+/// `growth`: the box. `line_mr`, a shift, keeps that order, so in `line_mr` units `P` lies in the
+/// box's range shifted by 4. On each axis `|(P - J)_x|` is then at most the larger distance of
+/// `J_x` to the ends of the box's range, which bounds each product with `|v_y|` or `|v_x|`. The
+/// difference is `(P - J) × v = (P - X) × v`, linear in `P`, so over the box it is largest in
+/// size at one of its four corners. Where each stays within `i32`, so does every value the
+/// interpolator holds, since each is that difference at a pixel of the box: its steps along the
+/// line (lines 487-562) and those across it, up to `MAX_HALF_WIDTH` pixels (lines 774-830,
+/// 871-890, and 956-975).
+///
+/// The shifted `v`, `dx_start <<= 4` and its twins (lines 474-477), stays within `i32` too: the
+/// box reaches at least `growth >> 4`, over 1100, from `J` on each axis, so `|v| × 1100` within
+/// `i32` keeps `|v| << 4` within it. Rust's overflow checks do not trap bits a `<<` shifts out,
+/// so no probe can show this clause; this argument alone covers it.
+///
+/// The box never refuses a segment the scalar bound before it admitted, `|P - X|` at most the
+/// segment's length plus `growth`, its products `(|u| + |v_x|) × |v_y|` and `|u| × (|v_x| +
+/// |v_y|)`: each end of the box lies within that `|u|` of `X` on its axis.
 fn joins_within_i32(lp: &LineParameters, start: (i32, i32), end: (i32, i32), growth: i64) -> bool {
     if lp.len > LINE_MAX_LENGTH {
         let (lp1, lp2) = lp.divide();
@@ -430,13 +448,21 @@ fn joins_within_i32(lp: &LineParameters, start: (i32, i32), end: (i32, i32), gro
     let (mut sx, mut sy, mut ex, mut ey) = (start.0, start.1, end.0, end.1);
     fix_degenerate_bisectrix_start(lp, &mut sx, &mut sy);
     fix_degenerate_bisectrix_end(lp, &mut ex, &mut ey);
-    let u = ((i64::from(lp.len) + growth + 3) >> 4) + 3;
+    // The box, in `line_mr` units: `line_mr` shifts by 4, here in `i64`, past `i32`'s ends.
+    let range = |a: i32, b: i32| {
+        let (low, high) = (i64::from(a.min(b)), i64::from(a.max(b)));
+        ((low - growth) >> 4, (high + growth) >> 4)
+    };
+    let (xs, ys) = (range(lp.x1, lp.x2), range(lp.y1, lp.y2));
     let within = |(jx, jy): (i32, i32), (x, y): (i32, i32)| {
-        let vx = (i64::from(line_mr(jx)) - i64::from(line_mr(x))).abs();
-        let vy = (i64::from(line_mr(jy)) - i64::from(line_mr(y))).abs();
-        [(u + vx) * vy, (u + vy) * vx, u * (vx + vy)]
+        let (jx, jy) = (i64::from(line_mr(jx)), i64::from(line_mr(jy)));
+        let (vx, vy) = (jx - i64::from(line_mr(x)), jy - i64::from(line_mr(y)));
+        let farthest = |(low, high): (i64, i64), j: i64| (low - j).abs().max((high - j).abs());
+        let corners = [(xs.0, ys.0), (xs.0, ys.1), (xs.1, ys.0), (xs.1, ys.1)];
+        [farthest(xs, jx) * vy, farthest(ys, jy) * vx]
             .into_iter()
-            .all(|product| product <= i64::from(i32::MAX))
+            .chain(corners.map(|(px, py)| (px - jx) * vy - (py - jy) * vx))
+            .all(|value| value.abs() <= i64::from(i32::MAX))
     };
     within((sx, sy), (lp.x1, lp.y1)) && within((ex, ey), (lp.x2, lp.y2))
 }
