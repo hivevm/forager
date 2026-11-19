@@ -213,6 +213,11 @@ jobs:
       # Every guard against a third-party crate names a version Cargo.lock holds (ADR-0049).
       - name: Check that every guard's marker names a version Cargo.lock holds
         run: bash scripts/check-guards.sh
+      - name: Self-test the comment width check
+        run: bash scripts/test-check-comment-width.sh
+      # rustfmt wraps no comment on the stable toolchain; a Rust comment line fits in 100 characters.
+      - name: Check that every comment line of a Rust file fits in 100 characters
+        run: bash scripts/check-comment-width.sh
       - name: Self-test the fuzz variants check
         run: bash scripts/test-check-fuzz-variants.sh
       # The render fuzz target builds every node of the transform tree and every kind of symbol
