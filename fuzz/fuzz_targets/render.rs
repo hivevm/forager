@@ -25,10 +25,11 @@
 //! `ANGLE` with or without a projection of the map and its layers (ADR-0045), a circle layer,
 //! `ANTIALIAS FALSE` on the first style, and a TrueType symbol at the points, along the lines,
 //! and over the polygons, its glyph drawn through the glyph port (ADR-0044) from the test font or
-//! from a font of the fuzz bytes. The second half of the bytes, back to front, is read once more
-//! for a class style's `GEOMTRANSFORM` other than a tree on the polygon and line layers, from
-//! `start` to `labelcenter`, the label's style of `labelpoly`, and a multipoint among the features,
-//! which the layers' `GEOMTRANSFORM` takes as the point shape of its parts. What the target
+//! from a font of the fuzz bytes. The first half of the bytes, back to front from the middle, is
+//! read once more for a class style's `GEOMTRANSFORM` other than a tree on the polygon and line
+//! layers, from `start` to `labelcenter`, the label's style of `labelpoly`, and a multipoint, drawn
+//! by a line layer of its own under the polygon and line layers' `GEOMTRANSFORM`, which takes it
+//! as the point shape of its parts. What the target
 //! builds of its bytes is `render_input.rs`. A
 //! field added to a view changes what every older seed decodes to; `fuzz/tests/render_seeds.rs`
 //! holds each seed to the path it was made for.

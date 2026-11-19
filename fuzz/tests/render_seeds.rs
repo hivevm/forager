@@ -111,12 +111,14 @@ enum Path {
     ClassTransform,
     /// A class's style on the polygon or the line layer has the transform, and the layers
     /// transform a feature: see [`transforms`]. Of a transform that draws, the layers drawn alone
-    /// hand the renderer more items with the style than without it.
+    /// hand the renderer more items with the style than without it. Of a label's transform, which
+    /// draws nothing there, the layers drawn alone hand the renderer an item and neither reports
+    /// that its own `GEOMTRANSFORM` drew nothing, so that their class styles ran; of labelcenter,
+    /// the engine also warns of the style.
     StyleTransform(Placed),
-    /// A multipoint of several parts among the features, and the polygon or the line layer
-    /// applies a tree of its own that is more than `[shape]`: with the multipoint their one
-    /// feature and no class style's transform, the layers drawn alone hand the renderer an item,
-    /// which neither layer draws of a multipoint untransformed.
+    /// A multipoint of several parts is the feature of the layer `MULTIPOINTS`, which applies a
+    /// tree of its own that is more than `[shape]`, and the layer drawn alone hands the renderer
+    /// an item, which a line layer draws of no multipoint untransformed.
     MultiPointLayerTransform,
     /// A polygon filled with a tile of the pixmap.
     TiledPixmap,
@@ -558,7 +560,17 @@ fn reaches(data: &[u8], path: Path) -> bool {
                 return false;
             }
             if !placed.draws() {
-                return true;
+                decoded.map.layers.retain(|layer| {
+                    TRANSFORMED.contains(&layer.name.as_deref().unwrap_or_default())
+                });
+                let (ops, rendered) = drawn(&decoded);
+                let messages = || rendered.diagnostics.iter().map(|d| d.message.as_str());
+                let layer_undrawn =
+                    messages().any(|message| message.contains(" draws nothing: its GEOMTRANSFORM"));
+                let warned = placed != Placed::LabelCenter
+                    || messages()
+                        .any(|message| message.contains("style of GEOMTRANSFORM labelcenter"));
+                return !ops.is_empty() && !layer_undrawn && warned;
             }
             let with = drawn(&decoded).0.len();
             for layer in &mut decoded.map.layers {
@@ -571,25 +583,17 @@ fn reaches(data: &[u8], path: Path) -> bool {
             with > drawn(&decoded).0.len()
         }
         Path::MultiPointLayerTransform => {
-            let own = transformed_layers(&decoded).any(|layer| {
-                matches!(
-                    &layer.geom_transform,
-                    Some(TransformTree::Drawn(shape)) if *shape != TransformShape::Shape
-                )
-            });
-            decoded.features.retain(|feature| {
+            let parts = decoded.multipoint.as_ref().is_some_and(|feature| {
                 matches!(&feature.geometry, Geometry::MultiPoint(parts) if parts.len() >= 2)
             });
-            decoded
-                .map
-                .layers
-                .retain(|layer| TRANSFORMED.contains(&layer.name.as_deref().unwrap_or_default()));
-            for layer in &mut decoded.map.layers {
-                for class in &mut layer.classes {
-                    class.styles.retain(|style| style.geom_transform.is_none());
-                }
-            }
-            own && !decoded.features.is_empty() && !drawn(&decoded).0.is_empty()
+            let own = decoded.map.layers.iter().any(|layer| {
+                layer.name.as_deref() == Some(render_input::MULTIPOINTS)
+                    && matches!(
+                        &layer.geom_transform,
+                        Some(TransformTree::Drawn(shape)) if *shape != TransformShape::Shape
+                    )
+            });
+            parts && own && !drawn_alone(&mut decoded, render_input::MULTIPOINTS).is_empty()
         }
         Path::LabelPoly => {
             let mut without = decode(data).expect("decoded above");

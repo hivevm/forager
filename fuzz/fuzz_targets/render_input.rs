@@ -286,9 +286,10 @@ impl Fidelity {
 
 /// The transforms of a style other than a tree, and a multipoint: a class style's `GEOMTRANSFORM`
 /// on the polygon and line layers, drawn with the vector symbol; whether the label draws a style
-/// of `labelpoly`, of the hatch symbol or of none; and the parts of a multipoint, a feature of
-/// every layer after the shapes, which the layers' `GEOMTRANSFORM` takes as the point shape of
-/// its parts.
+/// of `labelpoly`, of the hatch symbol or of none; and the parts of a multipoint, the one feature
+/// of a line layer of its own under the polygon and line layers' `GEOMTRANSFORM`, which takes it
+/// as the point shape of its parts. A transform that fails on the multipoint leaves that layer
+/// undrawn, not the others.
 #[derive(Arbitrary, Debug, Default)]
 struct Transforms {
     style: Option<StyleTransform>,
@@ -389,12 +390,18 @@ fn layer(name: &str, mode: RenderMode, styles: Vec<Style>, exprs: &Expressions) 
     }
 }
 
+/// The name of the layer that draws the multipoint of [`Transforms`] under the polygon and line
+/// layers' `GEOMTRANSFORM`, and the one layer whose features are not the shapes.
+pub const MULTIPOINTS: &str = "multipoints";
+
 /// The map the render target draws, the features of each of its layers, and the files it loads,
 /// as the target decodes them from its bytes.
 pub struct Decoded {
     pub map: Map,
-    /// The features of every layer, each with its index among them as its id.
+    /// The features of every layer but [`MULTIPOINTS`], each with its index among them as its id.
     pub features: Vec<Feature>,
+    /// The one feature of the layer [`MULTIPOINTS`], where the map has the layer.
+    pub multipoint: Option<Feature>,
     files: Files,
 }
 
@@ -406,7 +413,14 @@ impl Decoded {
             .layers
             .iter()
             .filter_map(|layer| layer.name.clone())
-            .map(|name| (name, Shapes(self.features.clone())))
+            .map(|name| {
+                let features = if name == MULTIPOINTS {
+                    self.multipoint.iter().cloned().collect()
+                } else {
+                    self.features.clone()
+                };
+                (name, Shapes(features))
+            })
             .collect();
         let render = forager_engine::render_with_files(&self.map, &sources, &self.files, renderer);
         forager_ports::poll_once(render).expect("the engine waited on a port that never waits")
@@ -428,9 +442,12 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
             .tree();
     let head: Vec<u8> = data[..data.len() / 3].iter().rev().copied().collect();
     let fidelity = Fidelity::arbitrary_take_rest(Unstructured::new(&head)).unwrap_or_default();
-    let tail: Vec<u8> = data[data.len() / 2..].iter().rev().copied().collect();
-    let transforms = Transforms::arbitrary_take_rest(Unstructured::new(&tail)).unwrap_or_default();
-    let mut features: Vec<Feature> = input
+    // Back to front from the middle, where no other view starts, so that what it reads is not
+    // what another view reads from its first byte on.
+    let middle: Vec<u8> = data[..data.len() / 2].iter().rev().copied().collect();
+    let transforms =
+        Transforms::arbitrary_take_rest(Unstructured::new(&middle)).unwrap_or_default();
+    let features: Vec<Feature> = input
         .shapes
         .iter()
         .zip(0u64..)
@@ -449,23 +466,20 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
             },
         })
         .collect();
-    if !transforms.multipoint.is_empty() {
-        let id = features.len() as u64;
-        features.push(Feature {
-            id,
-            geometry: Geometry::MultiPoint(
-                transforms
-                    .multipoint
-                    .iter()
-                    .map(|part| coords(part))
-                    .collect(),
-            ),
-            properties: match exprs.values.len() {
-                0 => Properties::default(),
-                n => expr_input::properties(&exprs.values[id as usize % n]),
-            },
-        });
-    }
+    let multipoint = (!transforms.multipoint.is_empty() && transform.is_some()).then(|| Feature {
+        id: 0,
+        geometry: Geometry::MultiPoint(
+            transforms
+                .multipoint
+                .iter()
+                .map(|part| coords(part))
+                .collect(),
+        ),
+        properties: exprs
+            .values
+            .first()
+            .map_or_else(Properties::default, |values| expr_input::properties(values)),
+    });
     let computed = |tree: &Option<expr_input::Tree>| tree.as_ref().and_then(expr_input::Tree::expr);
     let style = Style {
         color: Some(
@@ -657,6 +671,11 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
             }
         }
     }
+    if multipoint.is_some() {
+        let mut layer = layer(MULTIPOINTS, RenderMode::Line, styles.clone(), &exprs);
+        layer.geom_transform = transform.clone();
+        map.layers.push(layer);
+    }
     if fidelity.circle {
         let layer = layer("circles", RenderMode::Circle, styles.clone(), &exprs);
         map.layers.push(layer);
@@ -710,6 +729,7 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
     Some(Decoded {
         map,
         features,
+        multipoint,
         files,
     })
 }
