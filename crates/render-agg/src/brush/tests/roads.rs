@@ -30,7 +30,7 @@ impl Rng {
 }
 
 /// A tile of `width` by `height` pixels of one opaque colour, laying an image.
-fn tile(width: u32, height: u32) -> Rc<Tile> {
+pub(super) fn tile(width: u32, height: u32) -> Rc<Tile> {
     let pixels = (0..width * height)
         .flat_map(|_| [200, 40, 40, 255])
         .collect();

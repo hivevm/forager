@@ -417,11 +417,18 @@ impl OutlineAaRenderer for JoinProbe {
 /// `J_x` to the ends of the box's range, which bounds each product with `|v_y|` or `|v_x|`. The
 /// difference is `(P - J) × v = (P - X) × v`, linear in `P`, so over the box it is largest in
 /// size at one of its four corners. Where each stays within `i32`, so does every value the
-/// interpolator holds, its steps among them, since each is that difference at a pixel of the box.
-/// The shifted `v` stays within `i32` too: the box reaches at least `growth >> 4`, over 1100, from
-/// `J` on each axis, so `|v| × 1100` within `i32` keeps `|v| << 4` within it. The bound adds no
-/// slack: the box is the premise of the scalar bound before it, `|P - X|` at most the segment's
-/// length plus `growth`, taken on each axis, which is loose where `P - X` and `v` point alike.
+/// interpolator holds, since each is that difference at a pixel of the box: its steps along the
+/// line (lines 487-562) and those across it, up to `MAX_HALF_WIDTH` pixels (lines 774-830,
+/// 871-890, and 956-975).
+///
+/// The shifted `v`, `dx_start <<= 4` and its twins (lines 472-477), stays within `i32` too: the
+/// box reaches at least `growth >> 4`, over 1100, from `J` on each axis, so `|v| × 1100` within
+/// `i32` keeps `|v| << 4` within it. Rust's overflow checks do not trap bits a `<<` shifts out,
+/// so no probe can show this clause; this argument alone covers it.
+///
+/// The box never refuses a segment the scalar bound before it admitted, `|P - X|` at most the
+/// segment's length plus `growth`, its products `(|u| + |v_x|) × |v_y|` and `|u| × (|v_x| +
+/// |v_y|)`: each end of the box lies within that `|u|` of `X` on its axis.
 fn joins_within_i32(lp: &LineParameters, start: (i32, i32), end: (i32, i32), growth: i64) -> bool {
     if lp.len > LINE_MAX_LENGTH {
         let (lp1, lp2) = lp.divide();

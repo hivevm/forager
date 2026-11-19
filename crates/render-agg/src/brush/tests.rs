@@ -398,26 +398,15 @@ fn sharp_turn(by: f64) -> Vec<Point> {
     vec![at(2000.0, 2000.0), at(2180.0, 2672.0), at(1009.0, 1000.0)]
 }
 
-/// A tile of 64 by 40 pixels, all one opaque colour, laying an image.
-fn wide() -> Rc<Tile> {
-    let image =
-        Rc::new(PremultipliedImage::new(64, 40, [200, 40, 40, 255].repeat(64 * 40)).unwrap());
-    let mark = DrawOp::Pixmap {
-        image,
-        left: 0,
-        top: 0,
-    };
-    Rc::new(Tile::new(64, 40, vec![mark]).unwrap())
-}
-
-/// `path` brushed with [`wide`] on a white image of 4000 by 4000 pixels, its reach 10 pixels.
+/// `path` brushed with a tile of 64 by 40 pixels, [`roads::tile`], on a white image of 4000 by
+/// 4000 pixels, its reach 10 pixels.
 fn widely(path: Vec<Point>) -> RgbaImage {
     let mut renderer = AggRenderer::new();
     renderer.begin(4000, 4000, Rgba::opaque(255, 255, 255));
     renderer.draw(&DisplayItem {
         op: DrawOp::BrushedLine {
             paths: vec![path],
-            tile: wide(),
+            tile: roads::tile(64, 40),
             reach: 10.0,
         },
         feature_id: None,
@@ -431,12 +420,12 @@ fn a_piece_at_a_sharp_turn_below_agg_rust_s_overflow_is_drawn() {
     // The join's distance and the pixel's offset from the turn point the same way, so adding
     // them as scalars refused the piece; the box its pixels lie in admits it, and agg-rust draws
     // it, as it draws it unbounded (`roads::draws`).
-    let tile = wide();
+    let tile = roads::tile(64, 40);
     assert!(admits(&sharp_turn(1.0), &tile, |_| {}));
     assert_eq!(drawn(&widely(sharp_turn(1.0))), SHARP_TURN_DRAWN);
 }
 
-/// The pixels agg-rust draws of [`sharp_turn`] with [`wide`], unbounded.
+/// The pixels agg-rust draws of [`sharp_turn`] with a tile of 64 by 40 pixels, unbounded.
 const SHARP_TURN_DRAWN: usize = 110_632;
 
 #[test]
@@ -444,7 +433,7 @@ fn a_piece_at_a_sharp_turn_past_agg_rust_s_overflow_is_not_drawn_and_does_not_pa
     // Verifies: ADR-0049, Q-3
     // Scaled by 1.2, agg-rust's `DistanceInterpolator4` multiplies past `i32` on the turn's
     // join (`roads::draws` panics on it): the probe refuses it, and nothing is drawn.
-    let tile = wide();
+    let tile = roads::tile(64, 40);
     assert!(!admits(&sharp_turn(1.2), &tile, |_| {}));
     assert_eq!(drawn(&widely(sharp_turn(1.2))), 0);
 }
