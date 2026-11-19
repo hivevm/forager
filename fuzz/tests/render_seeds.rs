@@ -145,10 +145,12 @@ enum Path {
     /// with it than without it.
     LabelPoly,
     /// A label of two lines or more at a glyph size whose line height, times the rows of its first
-    /// line above its last, passes C's `int`, and the point layer, drawn alone, hands the renderer
-    /// an item and refuses no label (no `label-*` diagnostic), so that it lays the label out: the
-    /// pen MapServer computes in an `int` overflows there, and `Layout::line` panicked on its
-    /// product until c39b8450. Its lines stand past any image, so no glyph of it is drawn.
+    /// line above its last, passes C's `int`, held in the label cache of the point layer drawn
+    /// alone, with no `label-*` diagnostic: the pen of its first line stands past C's `int`, where
+    /// MapServer's arithmetic overflows. The weekly runs of 2026-11-01 and 11-08 panicked on
+    /// another path, an `i64` product of a line height saturated from a glyph size past an `i64`,
+    /// which c39b8450 made saturate. That path is dead since ef639d7a cut the line height to an
+    /// `int`, so this path, its nearest reachable neighbour, holds them; this seed never panicked.
     LabelLinesPastAnInt,
     /// The map has a view the engine refuses.
     ViewInvalid,
@@ -499,10 +501,14 @@ fn truetype(decoded: &Decoded) -> Option<&forager_style_ir::Symbol> {
         .find(|symbol| symbol.kind == SymbolKind::Truetype)
 }
 
-/// Whether the label of the point layer has two lines or more at a glyph size whose line height,
-/// `ceil(glyph_size × 1.33)` as `msComputeTextPath` sets it, times the rows of the first line
-/// above the last passes `i32::MAX`. The map's resolution over 72 scales the label, as for every
-/// layer of the target, which sets no `SIZEUNITS` or `SYMBOLSCALEDENOM`.
+/// Whether the label of the point layer has two lines or more at a glyph size whose line height
+/// times the rows of the first line above the last passes `i32::MAX`. It repeats three steps of
+/// the engine, each true of the target alone:
+/// - the scale is the map's resolution over 72, as `resolution_factor` and `layer_scale_factor`
+///   of `crates/engine/src/classes.rs` give it without `DEFRESOLUTION`, `SIZEUNITS`, or
+///   `SYMBOLSCALEDENOM`, none of which the target sets;
+/// - the text ends at its first NUL;
+/// - the line height is `ceil(trunc(glyph_size) × 1.33)`, as `Layout::new` sets it.
 fn lines_past_an_int(decoded: &Decoded) -> bool {
     let label = decoded
         .map
@@ -719,12 +725,12 @@ fn reaches(data: &[u8], path: Path) -> bool {
                     .map
                     .layers
                     .retain(|layer| layer.name.as_deref() == Some("points"));
-                let (ops, rendered) = drawn(&decoded);
+                let rendered = drawn(&decoded).1;
                 let refused = rendered
                     .diagnostics
                     .iter()
                     .any(|diagnostic| diagnostic.code.starts_with("label-"));
-                !ops.is_empty() && !refused
+                !rendered.labels.is_empty() && !refused
             }
         }
         Path::LabelMarkers => {
