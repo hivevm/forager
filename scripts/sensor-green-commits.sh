@@ -30,9 +30,11 @@
 # (ADR-0002): it renumbers the ADRs, and the second commit moves the references. The
 # documentation checks are not run on it.
 #
-# Each verdict, by commit and check, is kept in 'green-commits-verdicts' of the repository's git
-# directory, shared by its worktrees, as the pre-push hook keeps its green trees. A later run
-# judges only the commits it has no verdict for: a branch pushed again costs its new commits. A
+# Each passing verdict, by commit and check, is kept in 'green-commits-verdicts' of the repository's
+# git directory, shared by its worktrees, as the pre-push hook keeps its green trees. A later run
+# judges only the commits it has no passing verdict for: a branch pushed again costs its new
+# commits and those that failed. A failure is judged again on each run, since the machine may have
+# caused it, such as a toolchain rustup could not fetch or a check killed under load. A
 # commit's hash names its content and its own check scripts, so a rewritten commit is judged
 # again. The verdicts stand under a key of this script, scripts/lib/git.sh, and the versions of
 # rustfmt and ShellCheck found on PATH; a change of any judges every commit again. CI starts
@@ -130,7 +132,7 @@ run_check() {
 
 # verdict["<sha> <i>"] is pass or fail; known["<sha> <i>"] is set where it was judged, here or by
 # an earlier run, and not taken from a parent outside the range that counts as passing. Only a
-# known verdict is kept for the next run.
+# known pass is kept for the next run.
 declare -A verdict known
 new_entries=()
 findings=() count=0 rustfmt_seen=0 shell_seen=0
@@ -162,7 +164,8 @@ while read -r sha; do
         else
           verdict["$sha $i"]=pass
         fi
-        [[ -n "${known["$sha $i"]:-}" ]] && new_entries+=("$tool_key $sha $i ${verdict["$sha $i"]}")
+        [[ -n "${known["$sha $i"]:-}" && "${verdict["$sha $i"]}" == pass ]] \
+          && new_entries+=("$tool_key $sha $i pass")
         continue
       fi
     fi
@@ -183,7 +186,7 @@ while read -r sha; do
     [[ -n "${pids[i]:-}" ]] || continue
     if wait "${pids[i]}"; then verdict["$sha $i"]=pass; else verdict["$sha $i"]=fail; fi
     known["$sha $i"]=1
-    new_entries+=("$tool_key $sha $i ${verdict["$sha $i"]}")
+    [[ "${verdict["$sha $i"]}" == pass ]] && new_entries+=("$tool_key $sha $i pass")
   done
   subject="$(git rev-parse --short "$sha") $(git log -1 --format=%s "$sha")"
   if ((unchecked)); then

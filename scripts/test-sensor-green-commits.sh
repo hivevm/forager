@@ -147,24 +147,27 @@ commit "$d" "feat: a docs check that leaves a mark"
 : > "$d/TODO"
 commit "$d" "feat: a todo"
 bad="$(short "$d")"
+judged() { wc -l < "$marks"; }
 expect_sensor 0 "a first run judges each commit" "$d" "$bad feat: a todo — fails: docs"
-first="$(wc -l < "$marks")"
-check "a first run runs the check on each of the two commits" [ "$first" -eq 2 ]
-expect_sensor 0 "a second run reports the cached failure" "$d" "$bad feat: a todo — fails: docs"
-check "a second run runs no check again" [ "$(wc -l < "$marks")" -eq "$first" ]
+check "a first run runs the check on each of the two commits" [ "$(judged)" -eq 2 ]
+expect_sensor 0 "a second run reports the failure again" "$d" "$bad feat: a todo — fails: docs"
+check "a second run judges the failing commit again, and not the passing one" [ "$(judged)" -eq 3 ]
+check "the commit judged again is the failing one" [ "$(tail -n 1 "$marks")" == "$(git -C "${d:?}" rev-parse HEAD)" ]
 rm "$d/TODO"
 commit "$d" "fix: no todo"
 REJECT="fix: no todo" expect_sensor 0 "a run after one new commit lists the old failure" "$d" "1 commit(s) of 3"
-check "a run after one new commit runs the check on it alone" [ "$(wc -l < "$marks")" -eq $((first + 1)) ]
+check "a run after one new commit runs the check on it and the failing one" [ "$(judged)" -eq 5 ]
+expect_sensor 0 "a run without new commits" "$d" "1 commit(s) of 3"
+check "a run without new commits runs the check on the failing one alone" [ "$(judged)" -eq 6 ]
 git -C "${d:?}" -c user.name=fixture -c user.email=fixture@example.invalid \
   commit -q --amend -m "fix: no todo, reworded"
 expect_sensor 0 "a rewritten commit is judged again" "$d" "1 commit(s) of 3"
-check "a rewritten commit runs the check again" [ "$(wc -l < "$marks")" -eq $((first + 2)) ]
+check "a rewritten commit runs the check again" [ "$(judged)" -eq 8 ]
 mkdir -p "$work/changed-sensor/scripts"
 cp -R "$ROOT/scripts/lib" "$work/changed-sensor/scripts/"
 { cat "$SENSOR"; echo "# changed"; } > "$work/changed-sensor/scripts/sensor-green-commits.sh"
 bash "$work/changed-sensor/scripts/sensor-green-commits.sh" --root "$d" base >/dev/null 2>&1
-check "a changed sensor judges every commit again" [ "$(wc -l < "$marks")" -eq $((first + 5)) ]
+check "a changed sensor judges every commit again" [ "$(judged)" -eq 11 ]
 
 d="$(repo numbering)"
 stub "$d" check-docs 'if [[ -e TODO ]]; then exit 1; fi'
