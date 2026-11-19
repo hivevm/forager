@@ -421,7 +421,7 @@ impl OutlineAaRenderer for JoinProbe {
 /// line (lines 487-562) and those across it, up to `MAX_HALF_WIDTH` pixels (lines 774-830,
 /// 871-890, and 956-975).
 ///
-/// The shifted `v`, `dx_start <<= 4` and its twins (lines 472-477), stays within `i32` too: the
+/// The shifted `v`, `dx_start <<= 4` and its twins (lines 474-477), stays within `i32` too: the
 /// box reaches at least `growth >> 4`, over 1100, from `J` on each axis, so `|v| × 1100` within
 /// `i32` keeps `|v| << 4` within it. Rust's overflow checks do not trap bits a `<<` shifts out,
 /// so no probe can show this clause; this argument alone covers it.
