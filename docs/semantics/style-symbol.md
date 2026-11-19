@@ -123,8 +123,9 @@ more than 24 levels, each node and each operator of a chain one level, fails the
 **A layer's `GEOMTRANSFORM`.** A layer's `GEOMTRANSFORM` is an expression alone (RFC 89, read by
 `getSymbol(1, MS_EXPRESSION)`); anything else fails the load. `msLayerNextShape` in
 `src/maplayer.c` replaces each shape it reads by the expression, after the layer's filter passes
-it and before it is classed or drawn (`msGeomTransformShape`, `src/mapgeomtransform.c`). The
-engine draws its tree's functions:
+it and before it is classed or drawn (`msGeomTransformShape`, `src/mapgeomtransform.c`). A
+multipoint is the point shape of its parts: one for a GeoJSON or a shapefile multipoint, one per
+`POINTS` block of an inline feature. The engine draws its tree's functions:
 
 - `generalize(s, t)` (`msGeneralize`, `src/maputil.c`): the first part of `s` alone, of its points
   the first, each at least `t` from the last kept, and the last. A polygon's other rings and a
@@ -134,12 +135,14 @@ engine draws its tree's functions:
   above 0.
 - `simplify(s, t)` (`msGEOSSimplify`, `src/mapgeos.c`): `s` as GEOS's Douglas-Peucker simplifies
   it at the tolerance `t`, by a Douglas-Peucker ported from JTS (ADR-0041).
-  A point shape keeps its points. Each part of a line keeps its end points and the points the
-  Douglas-Peucker keeps, which splits a section at the first of its farthest points, as GEOS
-  does, and needs no recursion, so no line overflows the stack. A part without points is dropped. A
-  polygon's rings are grouped as `msGEOSShape2Geometry` groups them: each outer ring, by
-  `msIsOuterRing`, with the inner rings whose first or second point lies in it, one polygon where
-  one ring is outer, a multipolygon otherwise; a ring neither outer nor in an outer one is dropped.
+  A point shape keeps the points of its first part, which `msGEOSShape2Geometry` builds into a
+  point or a multipoint, and loses its other parts. Each part of a line keeps its end points and
+  the points the Douglas-Peucker keeps, which splits a section at the first of its farthest
+  points, as GEOS does, and needs no recursion, so no line overflows the stack. A part without
+  points is dropped. A polygon's rings are grouped as `msGEOSShape2Geometry` groups them: each
+  outer ring, by `msIsOuterRing`, with the inner rings whose first or second point lies in it, one
+  polygon where one ring is outer, a multipolygon otherwise; a ring neither outer nor in an outer
+  one is dropped.
   Each ring is simplified as a line, then loses its first point where it lies within `t` of the
   segment between its neighbours, and is removed below 4 coordinates. A polygon whose shell is
   removed is removed with its holes, and a shape without polygons draws nothing. The result is
@@ -154,9 +157,9 @@ engine draws its tree's functions:
   in GEOS's result, which turns the shape into a line; Forager removes the member with its holes.
 - `simplifypt(s, t)` (`msGEOSTopologyPreservingSimplify`, `src/mapgeos.c`): `s` as GEOS's
   topology-preserving simplifier simplifies it at the tolerance `t`, by a port of JTS's
-  `TopologyPreservingSimplifier` (ADR-0047). The shape is built as
-  for `simplify`, and a point shape keeps its points. The lines of the shape, each part of a line,
-  or each polygon's shell and then its holes, are simplified together, one after the other in the
+  `TopologyPreservingSimplifier` (ADR-0047). The shape is built as for `simplify`, and a point
+  shape keeps the points of its first part. The lines of the shape, each part of a line, or each
+  polygon's shell and then its holes, are simplified together, one after the other in the
   shape's order. Each is a Douglas-Peucker as for `simplify`, but a section is flattened only
   where its new segment meets no other segment of the shape, simplified or not yet, in a point
   interior to either, lies on no equal segment, and carries no other line of the shape to its other
@@ -229,17 +232,17 @@ fails nothing. `buffer` fails, with "Executing buffer failed", where `msGEOSShap
 geometry or GEOS cannot build one, as for `simplify`, and on a distance that is no finite number,
 for which `GEOSBuffer_r` returns none. `simplifypt` fails, with "Executing simplifypt failed", where
 `simplify` fails, a tolerance below 0 among them. The engine also fails `buffer` on a shape with a
-coordinate that is no finite number, on which geo's buffer panics; GEOS buffers such a shape into a
-polygon of its own. It fails `simplify` of a polygon with a coordinate that is no finite number, on
-which geo's repair of the simplified polygon may panic, as it does by a tolerance that is no number;
+coordinate that is no finite number, on which geo's buffer panics, anywhere `msGEOSShape2Geometry`
+reads it, so not in a point shape's later parts; GEOS buffers such a shape into a polygon of its
+own. It fails `simplify` of a polygon with a coordinate that is no finite number, on which geo's
+repair of the simplified polygon may panic, as it does by a tolerance that is no number;
 whether GEOS simplifies such a polygon is not confirmed. A line and a point shape with such a
 coordinate are simplified. The engine treats a geometry collection the same way. MapServer fails
 `msGeomTransformShape` on these:
 `msDrawVectorLayer` returns a failure (`src/mapdraw.c`, 1427–1434), and `msDrawMap` frees the image
 and returns none (508–519), so MapServer makes no map at all.
-Forager deviates: the layer draws nothing, with the warning, and the rest of the map is drawn. A
-layer draws nothing on a multipoint likewise, with the warning, as the engine's transforms do not
-yet take one, where MapServer transforms it. `msDrawVectorLayer` reads no shape past the first whose
+Forager deviates: the layer draws nothing, with the warning, and the rest of the map is drawn.
+`msDrawVectorLayer` reads no shape past the first whose
 class it finds beyond the layer's `MAXFEATURES` (`src/mapdraw.c:1282-1286`), so a shape past it, or
 one the filter leaves out, is never transformed and fails nothing. A layer draws nothing, with
 `geomtransform-over-limit`, where its transforms add more than 1,000,000 points or visit more than
