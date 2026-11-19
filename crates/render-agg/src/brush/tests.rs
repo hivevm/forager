@@ -369,13 +369,15 @@ fn hairpin(run: i32) -> Vec<Point> {
 }
 
 /// The longest run of [`hairpin`] that [`JoinProbe`] admits with [`dot`]. The short segment,
-/// from (512, 512) to (3072, 3072) in subpixels, ends at the join (734831, 732271) that
-/// `bisectrix` gives with the long segment of 516501, so `|v_x| = 45926 - 192 = 45734` and
-/// `|v_y| = 45766 - 192 = 45574` in `line_mr` units. Its pixels lie within
-/// `|u| = ((3620 + 256 × (2 × 2 + 68) + 3) >> 4) + 3 = 1381`, and the larger product,
-/// `(|u| + |v_y|) × |v_x| = 46955 × 45734 = 2147439970`, is within `i32::MAX`. One subpixel more
-/// moves the join to (734833, 732273), and `46956 × 45735 = 2147532660` passes it.
-const HAIRPIN_RUN: i32 = 366_499;
+/// from (512, 512) to (3072, 3072) in subpixels, ends at the join (735375, 732815) that
+/// `bisectrix` gives with the long segment, so `J = (45960, 45800)` and `v = J - X = (45768,
+/// 45608)` in `line_mr` units. Its pixels lie in the box from `(512 - 18432) >> 4 = -1120` to
+/// `(3072 + 18432) >> 4 = 1344` on each axis, its growth `256 × (2 × 2 + 68) = 18432`, so the
+/// larger product, `(45800 + 1120) × 45768 = 2147434560`, is within `i32::MAX`, and the corners'
+/// differences are within some 1.2e8. One subpixel more moves the join to (735377, 732817), `J`
+/// to (45961, 45801), and `46921 × 45769 = 2147527249` passes it. agg-rust itself overflows from
+/// a run of some 371 303 (revision-2026-11-16 ticket 21).
+const HAIRPIN_RUN: i32 = 366_771;
 
 #[test]
 fn a_piece_within_the_join_bound_is_drawn_and_one_past_it_is_not() {
@@ -385,6 +387,66 @@ fn a_piece_within_the_join_bound_is_drawn_and_one_past_it_is_not() {
     // The short segment and the start of the long one, as agg-rust draws them unbounded.
     assert_eq!(drawn(&dotted(20, 20, hairpin(HAIRPIN_RUN), 1e6)), 41);
     assert_eq!(drawn(&dotted(20, 20, hairpin(HAIRPIN_RUN + 1), 1e6)), 0);
+}
+
+/// The road of the backlog entry `brushed-line-join-bound-loose-at-sharp-turns`, scaled by `by`
+/// about its first point: a segment of some 696 pixels at 75°, then one of some 2041 turning
+/// 160° back, at 235°. Their join lies some 4020 pixels from the turn, at about 65° from both
+/// axes.
+fn sharp_turn(by: f64) -> Vec<Point> {
+    let at = |x: f64, y: f64| p(2000.0 + (x - 2000.0) * by, 2000.0 + (y - 2000.0) * by);
+    vec![at(2000.0, 2000.0), at(2180.0, 2672.0), at(1009.0, 1000.0)]
+}
+
+/// A tile of 64 by 40 pixels, all one opaque colour, laying an image.
+fn wide() -> Rc<Tile> {
+    let image =
+        Rc::new(PremultipliedImage::new(64, 40, [200, 40, 40, 255].repeat(64 * 40)).unwrap());
+    let mark = DrawOp::Pixmap {
+        image,
+        left: 0,
+        top: 0,
+    };
+    Rc::new(Tile::new(64, 40, vec![mark]).unwrap())
+}
+
+/// `path` brushed with [`wide`] on a white image of 4000 by 4000 pixels, its reach 10 pixels.
+fn widely(path: Vec<Point>) -> RgbaImage {
+    let mut renderer = AggRenderer::new();
+    renderer.begin(4000, 4000, Rgba::opaque(255, 255, 255));
+    renderer.draw(&DisplayItem {
+        op: DrawOp::BrushedLine {
+            paths: vec![path],
+            tile: wide(),
+            reach: 10.0,
+        },
+        feature_id: None,
+    });
+    renderer.finish()
+}
+
+#[test]
+fn a_piece_at_a_sharp_turn_below_agg_rust_s_overflow_is_drawn() {
+    // Verifies: ADR-0046, ADR-0049, Q-3
+    // The join's distance and the pixel's offset from the turn point the same way, so adding
+    // them as scalars refused the piece; the box its pixels lie in admits it, and agg-rust draws
+    // it, as it draws it unbounded (`roads::draws`).
+    let tile = wide();
+    assert!(admits(&sharp_turn(1.0), &tile, |_| {}));
+    assert_eq!(drawn(&widely(sharp_turn(1.0))), SHARP_TURN_DRAWN);
+}
+
+/// The pixels agg-rust draws of [`sharp_turn`] with [`wide`], unbounded.
+const SHARP_TURN_DRAWN: usize = 110_632;
+
+#[test]
+fn a_piece_at_a_sharp_turn_past_agg_rust_s_overflow_is_not_drawn_and_does_not_panic() {
+    // Verifies: ADR-0049, Q-3
+    // Scaled by 1.2, agg-rust's `DistanceInterpolator4` multiplies past `i32` on the turn's
+    // join (`roads::draws` panics on it): the probe refuses it, and nothing is drawn.
+    let tile = wide();
+    assert!(!admits(&sharp_turn(1.2), &tile, |_| {}));
+    assert_eq!(drawn(&widely(sharp_turn(1.2))), 0);
 }
 
 /// A tile of 4096 by 1600 pixels, all one opaque colour: a pattern 1,048,576 subpixels wide with
@@ -515,3 +577,5 @@ fn a_refused_piece_counts_once_by_its_tile_s_kind_and_a_drawn_one_does_not() {
     let drawn = refused(&dot(), vec![hairpin(HAIRPIN_RUN), gentle], false);
     assert_eq!(drawn, Refused::default());
 }
+
+mod roads;
