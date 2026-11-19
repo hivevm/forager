@@ -145,9 +145,9 @@ enum Path {
     /// with it than without it.
     LabelPoly,
     /// A label of two lines or more at a glyph size whose line height, times the rows of its first
-    /// line above its last, passes C's `int`, held in the label cache of the point layer drawn
-    /// alone, with no `label-*` diagnostic: the pen of its first line stands past C's `int`, where
-    /// MapServer's arithmetic overflows. The weekly runs of 2026-11-01 and 11-08 panicked on
+    /// line with glyphs above its last, passes C's `int`, held in the label cache of the point
+    /// layer drawn alone, with no `label-*` diagnostic: the pen of its first line with glyphs
+    /// stands past C's `int`, where MapServer's arithmetic overflows. The weekly runs of 2026-11-01 and 11-08 panicked on
     /// another path, an `i64` product of a line height saturated from a glyph size past an `i64`,
     /// which c39b8450 made saturate. That path is dead since ef639d7a cut the line height to an
     /// `int`, so this path, its nearest reachable neighbour, holds them; this seed never panicked.
@@ -501,8 +501,10 @@ fn truetype(decoded: &Decoded) -> Option<&forager_style_ir::Symbol> {
         .find(|symbol| symbol.kind == SymbolKind::Truetype)
 }
 
-/// Whether the label of the point layer has two lines or more at a glyph size whose line height
-/// times the rows of the first line above the last passes `i32::MAX`. It repeats three steps of
+/// Whether the label of the point layer has a line with glyphs at a glyph size whose line height
+/// times the rows of that line above the last passes `i32::MAX`, for the first such line:
+/// `Layout::line` computes a pen only for a line with glyphs, and an empty line takes none.
+/// It repeats three steps of
 /// the engine, each true of the target alone:
 /// - the scale is the map's resolution over 72, as `resolution_factor` and `layer_scale_factor`
 ///   of `crates/engine/src/classes.rs` give it without `DEFRESOLUTION`, `SIZEUNITS`, or
@@ -526,11 +528,17 @@ fn lines_past_an_int(decoded: &Decoded) -> bool {
         return false;
     };
     let text = text.split('\0').next().unwrap_or_default();
-    let lines = forager_label::lines(text, None, 0).map_or(0, |lines| lines.len());
+    let Ok(lines) = forager_label::lines(text, None, 0) else {
+        return false;
+    };
+    let Some(first) = lines.iter().position(|line| !line.is_empty()) else {
+        return false;
+    };
+    let rows = lines.len() - 1 - first;
     let resolution = decoded.map.resolution.unwrap_or(72.0) / 72.0;
     let glyph_size = forager_label::glyph_size(*size, resolution, min, max, resolution);
     let line_height = (glyph_size.trunc() * 1.33).ceil();
-    lines >= 2 && (lines - 1) as f64 * line_height.abs() > f64::from(i32::MAX)
+    rows as f64 * line_height.abs() > f64::from(i32::MAX)
 }
 
 /// Whether the seed of `data` builds `path`.
