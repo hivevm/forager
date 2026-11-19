@@ -131,8 +131,8 @@ out="$(mktemp -d)"
 labels=() kinds=() running=0
 # stop — on every exit, a signal's included: stop every job the runner still has, the one started
 # an instant before included, wait for them, and remove their files. It acts in the runner only:
-# a subshell of run() holds the runner's EXIT trap and list of jobs from its fork until its own
-# trap stands, and a TERM in that instant runs stop() there. Acting, it would TERM every other
+# a subshell of run() holds the runner's EXIT trap and list of jobs from its fork until bash
+# resets its traps, and a TERM in that instant runs stop() there. Acting, it would TERM every other
 # check's subshell a second time, which breaks off that subshell's wait for its check, and remove
 # the files the runner still prints.
 # shellcheck disable=SC2317 # run by the trap
