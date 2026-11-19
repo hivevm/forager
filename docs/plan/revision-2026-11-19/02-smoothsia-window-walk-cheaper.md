@@ -23,9 +23,10 @@ outer one takes `angle`. Each layer is charged within `MAX_TRANSFORM_VISITS`:
 | `lines` | the same rings | 168,037 of 432 | 72,592,632 |
 
 The layers charge 160,812,858 visits together. A release build draws the input in about 0.87 s,
-5.4 ns a visit. The fuzz build takes about 95 ns a visit, under its sanitizer and coverage, so it
-sits at 10 s. It took 6.2 to 9.8 s at loads of 17 to 44 on 24 cores, and 13.5 to 16 s at loads of
-41 to 61 or above. The charge counts the work: nothing undercounts and nothing loops.
+5.4 ns a visit. The fuzz build, under its sanitizer and coverage, took 6.2 to 9.8 s at loads of
+17 to 44 on 24 cores, some 40 to 60 ns a visit, so it sits at 10 s; at loads of 41 to 61 and
+above it took 13.5 to 16 s, up to 95 ns a visit. The charge counts the work: nothing
+undercounts and nothing loops.
 
 **What to build.** Make each visit of the window walk cheaper, in `Window::next`, `Window::point`,
 and the loop of `Buffers::smooth`, so that the input ends well within 10 s on the fuzz build. The
@@ -54,17 +55,20 @@ h4f4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4
 ## Acceptance criteria
 
 - [ ] Given the input above, when `bash scripts/fuzz.sh --replay render <file>` runs on the fuzz
-  build before and after the fix, five times each at the same load, then each run after the fix
-  takes less time than every run before it. The commit message states both sets of times, the
-  load, and the share saved.
+  build of the base and of the fix, alternated five times each, so that both see the same
+  load, then the median after the fix is at most 70 % of the median before it, and at most 7 s
+  where the 1 minute load stays under the core count. The commit message states every time, the
+  load beside each, and the share saved.
 - [ ] Given 20,000 random parts and window sizes, when the old and the new walk both smooth them,
-  then their results are bit-identical. The comparison is a test, or a probe committed beside the
-  ticket's tests (see the convention *A measurement a later change is to repeat is kept in the
-  tree*).
+  then their results are bit-identical. The old walk is not kept as a second copy in the crate:
+  the comparison runs once as a probe against the base commit, for example on results the base
+  writes out, and the probe is committed under `crates/symbolize/` as a script or an example
+  (see the convention *A measurement a later change is to repeat is kept in the tree*).
 - [ ] Given the existing tests of `smoothsia`, among them those at the bound of
   `MAX_TRANSFORM_VISITS`, when they run, then they pass unchanged.
-- [ ] Given a 300-second run of the render target from `fuzz/seeds/render/`, when it ends, then
-  it reports no timeout on this input. If it reports another finding, that finding is filed in
+- [ ] Given the input above added as a seed of the render target, with its path in
+  `fuzz/tests/render_seeds.rs`, when a 300-second run starts from `fuzz/seeds/render/`, then the
+  run's first pass over the seeds reports no timeout. Any later finding of the run is filed in
   the backlog with its decoded input, not fixed here.
 
 ## Read first

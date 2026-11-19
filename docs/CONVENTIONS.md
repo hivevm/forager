@@ -147,7 +147,7 @@ skimmed. The design revision drops what prevented nothing
   same change. A link check sees the anchor, never a sentence that restates it.
 - **A measurement a later change is to repeat is kept in the tree** — a probe, a sampler, or a
   timing whose numbers a ticket, a backlog entry, or a criterion cites, to be run again on a later
-  version of the code, is committed as an ignored test or a script beside the code it measures,
+  version of the code, is committed as a script or an example beside the code it measures,
   never left in `.scratch/` or `/tmp`. Otherwise the next change rebuilds it from prose, and its
   numbers can no longer be compared. Ticket 21 of revision-2026-11-16's adversarial road probe
   was lost that way, and ticket 04 of backlog-deviations had to rebuild it and restate its

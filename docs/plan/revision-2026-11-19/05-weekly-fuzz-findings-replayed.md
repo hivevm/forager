@@ -19,8 +19,10 @@ code has moved since 11-08. Nothing in the tree says which.
 
 Replay each input against `main`, on the fuzz build and in a release build, and decode it with
 `fuzz/fuzz_targets/render_input.rs`. The decoding has changed since the oldest runs, so an input
-may decode to another map today. Read each failure on the code of its own run's commit
-(`gh run view <id> --json headSha`). For each finding:
+may decode to another map today. Read each failure on the code of its own run's commit: the
+tip of `main` at the run's start, `git rev-list -1 --first-parent --before=<start> main`, with
+the start times of the table's dates (each run started between 08:41 and 11:26 UTC). For each
+finding:
 
 - **still fails on main:** a backlog entry with its decoded input, the cause read from the code,
   and the input in base64, as `docs/backlog/` entries of fuzz findings hold it. A fix is a ticket
@@ -57,8 +59,9 @@ may decode to another map today. Read each failure on the code of its own run's 
 
 ## Mode
 
-with the human. The artifacts come down through `gh run download`, which waits for the human's
-instruction ([`AGENTS.md` §6](../../../AGENTS.md#6-project-rules)). The human may also download
-them into `.scratch/` beforehand. After that, the session works the ticket unattended. Stop
+unattended. The maintainer allowed the `gh run download` of the four artifacts on 2026-11-19,
+and the dispatcher ran it: they lie under `.scratch/fuzz-ci/<run>/render/` of the main checkout.
+The session runs no `gh` of its own
+([`AGENTS.md` §6](../../../AGENTS.md#6-project-rules)). Stop
 after the four inputs, or if an input reproduces neither on the commit of its run nor on `main`.
 Hand off with the table.

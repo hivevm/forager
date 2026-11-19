@@ -14,8 +14,9 @@ mutants: the run failed (exit 1)
 ```
 
 `scripts/mutants.sh` passes `--output target/mutants` (line 51). It creates `target/` only on the
-path of a diff (`mkdir -p target`, line 63). A fresh checkout whose cache restores no `target/`
-therefore has no parent directory, and cargo-mutants 27.1.0 does not create it. No sensor of
+path of a diff (`mkdir -p target`, line 63). The workflow caches `~/.cargo/bin` and
+`~/.cargo/registry`, never `target/`, so the fresh checkout of every scheduled run has no parent
+directory, and cargo-mutants 27.1.0 does not create it. No sensor of
 ADR-0007's mutation testing has reported for four weeks.
 
 Create the output's parent before cargo-mutants runs, on every path of the script. The script's
@@ -34,8 +35,7 @@ self-test, `scripts/test-mutants.sh`, gains a case that runs without `target/`.
 ## Read first
 
 - Touches: `scripts/mutants.sh`, `scripts/test-mutants.sh`
-- `.github/workflows/mutants.yml` (its cache of `target/`), ADR-0007's paragraph on mutation
-  testing
+- `.github/workflows/mutants.yml` (its caches), ADR-0007's paragraph on mutation testing
 - `docs/CONVENTIONS.md`: *A test that expects a refusal asserts its reason*
 
 ## Blocked by
@@ -45,5 +45,5 @@ self-test, `scripts/test-mutants.sh`, gains a case that runs without `target/`.
 ## Mode
 
 unattended. The self-test decides the fix, and a wrong result costs one revert. The run in CI
-is the human's to dispatch. Stop if cargo-mutants fails in the stubbed case for another reason
-than the directory. Hand off with its output.
+is the human's to dispatch. Stop if the stand-in `cargo` cannot see the directory without a
+change to how the self-test stubs it. Hand off with the case as it stands.
