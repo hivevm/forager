@@ -14,19 +14,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! What the crate's root and its modules share of a layer drawn and of the map's rotation, below
-//! them all: the layer's name, and a text, as a diagnostic quotes them, the reports of what the
-//! layer left undrawn, its opacity, the points of a feature in view, a feature drawn in its
-//! class's styles, the display items of a feature's drawing operations, and the map's rotation,
-//! the frame its layers are drawn in, which turns a style's or a label's angle by the map's.
+//! them all: the layer's name, and a text, as a diagnostic quotes them, its opacity, the points of
+//! a feature in view, a feature drawn in its class's styles, the display items of a feature's
+//! drawing operations, and the map's rotation, the frame its layers are drawn in, which turns a
+//! style's or a label's angle by the map's.
 
 use std::borrow::Cow;
 
 use forager_ports::{Feature, Geometry};
 use forager_proj::Geotransform;
-use forager_render::{DisplayItem, Draw, DrawOp, Point, Refused};
+use forager_render::{DisplayItem, Draw, DrawOp, Point};
 use forager_style_ir::c::int_cast;
 use forager_style_ir::{Bound, Diagnostic, Extent, Layer, Map, RenderMode, Style};
-use forager_symbolize::{Refusals, View, vertices};
+use forager_symbolize::{View, vertices};
 
 /// The points of `geometry` inside the map's extent, in pixels, in order: where
 /// pointLayerDrawShape draws a point layer's markers and labels, which skips a point outside
@@ -36,103 +36,6 @@ pub(crate) fn points_in_view(view: &View, geometry: &Geometry) -> impl Iterator<
         .into_iter()
         .filter(|&c| view.contains(c))
         .map(|c| view.point_to_pixel(c))
-}
-
-/// The reports that `layer` left the hatches and symbols of `refusals` undrawn: the warning for
-/// the hatches (see [`refused_hatches`]), then one for each pixmap symbol, then one for each
-/// vector, ellipse, or TrueType symbol whose fill tile is refused or TrueType symbol whose font
-/// cannot be used, then one for each TrueType symbol whose font lacks its character, each named,
-/// and why. Its markers left out and its trees' bound are the layer's own, which the crate's root
-/// reports where a layer's reports put them.
-pub(crate) fn refusal_reports(
-    layer: &Layer,
-    refusals: Refusals,
-) -> impl Iterator<Item = Diagnostic> {
-    let pixmaps = refusals.pixmaps.into_values().map(|(symbol, why)| {
-        let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
-        Diagnostic::warning("pixmap-not-drawn", message, layer.span.clone())
-    });
-    let symbols = refusals.symbols.into_values().map(|(symbol, why)| {
-        let message = format!("layer {}: {symbol} is not drawn: {why}", name(layer));
-        Diagnostic::warning("symbol-not-drawn", message, layer.span.clone())
-    });
-    let glyphs = refusals.glyphs.into_values().map(|(symbol, what)| {
-        let message = format!("layer {}: {symbol}: {what}", name(layer));
-        Diagnostic::warning("symbol-glyph-missing", message, layer.span.clone())
-    });
-    refused_hatches(layer, refusals.hatches)
-        .into_iter()
-        .chain(pixmaps)
-        .chain(symbols)
-        .chain(glyphs)
-}
-
-/// The warnings that `layer` left undrawn what the renderer counted in `refused` (ADR-0049): one
-/// for the pieces of its brushed lines of pixmap symbols, then one for those of the other symbols,
-/// then one for its TrueType markers' glyphs out of reach, then one for its paths the clip cut,
-/// each where there are any.
-pub(crate) fn renderer_refusals(
-    layer: &Layer,
-    refused: Refused,
-) -> impl Iterator<Item = Diagnostic> {
-    let pieces = |code, kind, count: usize| {
-        let message = format!(
-            "layer {}: {count} piece{} of its lines brushed with {kind} {} not drawn (Q-3): \
-             the rasterizer would compute past its integers on {}",
-            name(layer),
-            plural(count),
-            if count == 1 { "is" } else { "are" },
-            if count == 1 { "it" } else { "them" },
-        );
-        (code, count, message)
-    };
-    let glyphs = refused.glyphs;
-    let paths = refused.paths;
-    let kinds = [
-        pieces("pixmap-not-drawn", "a pixmap symbol", refused.pixmaps),
-        pieces(
-            "symbol-not-drawn",
-            "a vector, ellipse, or TrueType symbol",
-            refused.symbols,
-        ),
-        (
-            "symbol-not-drawn",
-            glyphs,
-            format!(
-                "layer {}: {glyphs} glyph{} of its TrueType symbols {} not drawn (Q-3): \
-                 {} past the image by more than {} pixels, past the rasterizer's integers",
-                name(layer),
-                plural(glyphs),
-                if glyphs == 1 { "is" } else { "are" },
-                if glyphs == 1 {
-                    "it reaches"
-                } else {
-                    "they reach"
-                },
-                forager_render::clip::MAX_GLYPH_REACH,
-            ),
-        ),
-        (
-            "path-not-drawn",
-            paths,
-            format!(
-                "layer {}: {paths} path{} {} drawn without a point, a segment, or a \
-                 crossing that is no finite number in pixels (Q-3)",
-                name(layer),
-                plural(paths),
-                if paths == 1 { "is" } else { "are" },
-            ),
-        ),
-    ];
-    kinds
-        .into_iter()
-        .filter(|&(_, count, _)| count > 0)
-        .map(|(code, _, message)| Diagnostic::warning(code, message, layer.span.clone()))
-}
-
-/// The plural's `s` of a noun counted `count` times.
-fn plural(count: usize) -> &'static str {
-    if count == 1 { "" } else { "s" }
 }
 
 /// A layer's opacity as MapServer holds it, an integer percent from 0 to 100: the IR's number
@@ -159,20 +62,6 @@ pub(crate) fn draw_items<R: Draw>(
 
 /// A feature drawn: it, the place of its class, and its styles bound to it.
 pub(crate) type Selected<'a> = (&'a Feature, usize, Vec<Cow<'a, Style>>);
-
-/// The warning for the hatch fills of a layer refused to be drawn (Q-9), if any.
-pub(crate) fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnostic> {
-    (refused > 0).then(|| {
-        let message = format!(
-            "layer {}: {refused} hatch fill{} not drawn (Q-9): its spacing or its dash pattern \
-             would never end the hatch, or it would lay more lines or dashes over the image, or \
-             cut them from a polygon of more vertices or crossings, than a hatch may",
-            name(layer),
-            if refused == 1 { " is" } else { "s are" }
-        );
-        Diagnostic::warning("hatch-not-drawn", message, layer.span.clone())
-    })
-}
 
 pub(crate) fn name(layer: &Layer) -> String {
     layer

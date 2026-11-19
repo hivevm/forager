@@ -17,13 +17,13 @@
 //! one core crate that awaits the ports (ADR-0008).
 //!
 //! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
-//! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, and `render_resources`;
-//! `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`; `label_binding`
-//! imports `classes`; `circle` imports `classes`, `layer`, and `reproject`; `classes` imports
-//! `bindable` and `layer`; `render_resources` imports `fonts`, `images`, and `marker_glyphs`;
-//! `reproject` imports `layer`; `fonts` and `images` import `resource`; `bind`, `bindable`,
-//! `inline`, `label_cache`, `layer`, `marker_glyphs`, `plan`, and `resource` import none, nor does
-//! a module take an item of this root.
+//! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, `layer_reports`, and
+//! `render_resources`; `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`;
+//! `label_binding` imports `classes`; `circle` imports `classes`, `layer`, and `reproject`;
+//! `classes` imports `bindable` and `layer`; `render_resources` imports `fonts`, `images`, and
+//! `marker_glyphs`; `reproject` and `layer_reports` import `layer`; `fonts` and `images` import
+//! `resource`; `bind`, `bindable`, `inline`, `label_cache`, `layer`, `marker_glyphs`, `plan`, and
+//! `resource` import none, nor does a module take an item of this root.
 //! The test `engine_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a
 //! table in this order.
 
@@ -44,6 +44,7 @@ mod label_cache;
 mod label_styles;
 mod labels;
 mod layer;
+mod layer_reports;
 mod marker_glyphs;
 mod plan;
 mod render_resources;
@@ -79,10 +80,8 @@ pub use crate::resource::MAX_FONT_OR_IMAGE_FILE_BYTES;
 pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
-use crate::layer::{
-    Rotation, Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports,
-    renderer_refusals,
-};
+use crate::layer::{Rotation, Selected, draw_items, layer_opacity, name, points_in_view};
+use crate::layer_reports::{refusal_reports, renderer_refusals};
 
 pub use crate::labels::CachedLabel;
 pub use crate::reproject::MAX_HORIZON_POINTS;
