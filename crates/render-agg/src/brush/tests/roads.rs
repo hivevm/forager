@@ -97,7 +97,10 @@ fn road(rng: &mut Rng, turn: f64) -> Vec<(f64, f64)> {
                 heading + rng.within(-turn, turn)
             };
             let length = rng.within(2.0, 3000.0);
-            let (dx, dy) = (towards.to_radians().cos(), towards.to_radians().sin());
+            let (dx, dy) = (
+                libm::cos(towards.to_radians()),
+                libm::sin(towards.to_radians()),
+            );
             let end = (x + length * dx, y + length * dy);
             if (0.0..=4000.0).contains(&end.0) && (0.0..=4000.0).contains(&end.1) {
                 points.push(end);
@@ -207,6 +210,10 @@ fn probe(roads: usize, edges: usize, seed: u64) -> Vec<(u32, Found)> {
 /// losses) and those it overflows on (saved). A panic agg-rust raises on a road it overflows on
 /// is caught, and its message kept with the test's output.
 #[test]
+#[expect(
+    clippy::print_stderr,
+    reason = "the probe's counts are its report, read with --nocapture"
+)]
 fn random_roads_the_probe_admits_draw_without_an_overflow() {
     // Verifies: ADR-0049, Q-3
     let count = |name: &str, otherwise: usize| {
