@@ -10,6 +10,7 @@
 #   - rustfmt: 'cargo fmt --all --check', where the commit has a Cargo.toml at its root;
 #   - shell lint: the commit's own scripts/check-shell.sh;
 #   - notice: the commit's own scripts/check-notice.sh;
+#   - comment width: the commit's own scripts/check-comment-width.sh;
 #   - docs: the commit's own scripts/check-docs.sh.
 # A check a commit does not have is not run on it. Clippy, the build, and the tests are left out:
 # they cost minutes a commit.
@@ -75,11 +76,14 @@ fi
 # The checks: the label a finding names, the script a commit runs (empty for rustfmt), and the
 # paths whose change can move the verdict, as git pathspecs ('*' matches across '/'); none means
 # every commit runs it.
-labels=("rustfmt" "shell lint (scripts/check-shell.sh)" "notice (scripts/check-notice.sh)" "docs (scripts/check-docs.sh)")
-scripts=("" scripts/check-shell.sh scripts/check-notice.sh scripts/check-docs.sh)
+labels=("rustfmt" "shell lint (scripts/check-shell.sh)" "notice (scripts/check-notice.sh)"
+        "comment width (scripts/check-comment-width.sh)" "docs (scripts/check-docs.sh)")
+scripts=("" scripts/check-shell.sh scripts/check-notice.sh scripts/check-comment-width.sh
+         scripts/check-docs.sh)
 inputs=("*.rs *Cargo.toml *rustfmt.toml rust-toolchain.toml"
         "*.sh .githooks scripts .gitignore .shellcheckrc"
         "crates fuzz THIRD-PARTY-NOTICES.md scripts/check-notice.sh scripts/lib"
+        "*.rs .gitignore scripts/check-comment-width.sh"
         "")
 
 have_cargo=1 have_shellcheck=1

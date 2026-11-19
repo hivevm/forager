@@ -5,9 +5,10 @@
 # Each case builds a throwaway git repository under a temporary directory with a base commit
 # holding a formatted Rust crate, adds commits, runs the sensor against the base, and asserts the
 # exit code and the line the reviewer would read. A case either lists a commit on which a fast
-# check fails, with the check, or holds the sensor silent on one it must not list. The notice and
-# documentation checks of a fixture are stubs the fixture commits, as the sensor runs each
-# commit's own scripts. The rustfmt cases need cargo with rustfmt, as the rust job of CI has it.
+# check fails, with the check, or holds the sensor silent on one it must not list. The notice,
+# comment width, and documentation checks of a fixture are stubs the fixture commits, as the
+# sensor runs each commit's own scripts. The rustfmt cases need cargo with rustfmt, as the rust
+# job of CI has it.
 #
 # Verifies: ADR-0002
 # Inputs: scripts/sensor-green-commits.sh scripts/lib/
@@ -104,6 +105,17 @@ commit "$d" "fix: the port keeps its notice"
 expect_sensor 0 "a commit that fails the commit's own notice check is named with it" "$d" \
   "$bad feat: a port without its notice — fails: notice (scripts/check-notice.sh)"
 REJECT="fix: the port" expect_sensor 0 "the commit that fixes it is not listed" "$d" "1 commit(s)"
+
+d="$(repo comment-width)"
+stub "$d" check-comment-width 'if grep -rl WIDE src; then exit 1; fi'
+commit "$d" "feat: a comment width check"
+printf '// WIDE\n' >> "$d/src/lib.rs"
+commit "$d" "feat: a wide comment"
+bad="$(short "$d")"
+lib "$d" "$FORMATTED"
+commit "$d" "style: the comment wrapped"
+expect_sensor 0 "a commit that fails the commit's own comment width check is named with it" "$d" \
+  "$bad feat: a wide comment — fails: comment width (scripts/check-comment-width.sh)"
 
 d="$(repo two-checks)"
 stub "$d" check-docs 'if [[ -e TODO ]]; then exit 1; fi'
