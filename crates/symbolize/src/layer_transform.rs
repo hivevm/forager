@@ -106,8 +106,7 @@ impl Charge for Budget {
 
 /// `geometry` replaced by the transform `shape`, as msGeomTransformShape evaluates it with
 /// `[map_cellsize]` at `cellsize`, the map's cellsize in the layer's units; the reason where
-/// MapServer's parser fails it, or where the engine cannot hold the geometry as MapServer's
-/// shape: a collection, or a multipoint, whose parts it does not know.
+/// MapServer's parser fails it, or where the geometry is no shape of MapServer's: a collection.
 pub fn transformed(
     shape: &TransformShape,
     geometry: &Geometry,
@@ -213,12 +212,7 @@ impl Shape {
             Geometry::MultiLineString(lines) => (Kind::Line, lines.clone()),
             Geometry::Polygon(rings) => (Kind::Polygon, rings.clone()),
             Geometry::MultiPolygon(polygons) => (Kind::Polygon, polygons.concat()),
-            Geometry::MultiPoint(_) => {
-                return Err(Undrawn::Failed(
-                    "is not drawn on a multipoint, which the layer's transforms do not yet take"
-                        .to_owned(),
-                ));
-            }
+            Geometry::MultiPoint(parts) => (Kind::Point, parts.clone()),
             Geometry::Collection(_) => {
                 return Err(Undrawn::Failed(
                     "is not drawn on a geometry collection, which is no shape of MapServer's"
@@ -227,6 +221,15 @@ impl Shape {
             }
         };
         Ok(Self { kind, parts })
+    }
+
+    /// The parts msGEOSShape2Geometry (src/mapgeos.c:360-399) reads: a point shape's first part
+    /// alone, a point or a multipoint of its points (365-374), and every part of another shape.
+    fn given(&self) -> &[Vec<Coord>] {
+        match self.kind {
+            Kind::Point => &self.parts[..self.parts.len().min(1)],
+            Kind::Line | Kind::Polygon => &self.parts,
+        }
     }
 
     /// The geometry of the shape: a polygon of all its rings, a line string of a line of one
@@ -428,7 +431,8 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
 /// msGEOSShape2Geometry ([`built`]), simplified by GEOS's Douglas-Peucker, and converted back by
 /// msGEOSGeometry2Shape (:686-746), as the geometry module computes it.
 ///
-/// - A point shape is its points, which the simplification keeps.
+/// - A point shape is the points of its first part, which the simplification keeps, its other
+///   parts dropped.
 /// - A line's parts are simplified each; a part without points is dropped.
 /// - A polygon's rings are grouped as [`built`] groups them. The result's rings are each
 ///   polygon's shell and holes.
@@ -447,7 +451,7 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
         )));
     }
     let parts = match shape.kind {
-        Kind::Point => shape.parts,
+        Kind::Point => shape.given().to_vec(),
         Kind::Line => shape
             .parts
             .iter()
@@ -459,7 +463,7 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
         // `lex_cmp`, which unwraps `partial_cmp` of a coordinate that is no number
         // (`utils.rs:92-97`), reached from `winding_order.rs:149` through `bool_ops/mod.rs:270`.
         // The layer fails with a diagnostic.
-        Kind::Polygon if !is_finite(&shape) => {
+        Kind::Polygon if !is_finite(&shape.parts) => {
             return Err(Undrawn::Failed(
                 "calls simplify on a polygon with a coordinate that is no finite number".to_owned(),
             ));
@@ -475,10 +479,9 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
     })
 }
 
-/// Whether each coordinate of the shape is a finite number.
-fn is_finite(shape: &Shape) -> bool {
-    shape
-        .parts
+/// Whether each coordinate of `parts` is a finite number.
+fn is_finite(parts: &[Vec<Coord>]) -> bool {
+    parts
         .iter()
         .flatten()
         .all(|p| p.x.is_finite() && p.y.is_finite())
@@ -489,7 +492,8 @@ fn is_finite(shape: &Shape) -> bool {
 /// simplifier, and converted back by msGEOSGeometry2Shape (:686-746), as the geometry module
 /// computes it.
 ///
-/// - A point shape is its points, which the simplification keeps.
+/// - A point shape is the points of its first part, which the simplification keeps, its other
+///   parts dropped.
 /// - A line's parts are simplified together; a part without points is dropped.
 /// - A polygon's rings are grouped as [`built`] groups them, and simplified together, each
 ///   polygon's shell before its holes. No ring is removed and nothing is repaired.
@@ -510,7 +514,12 @@ fn simplify_preserving(
         )));
     }
     let lines: Vec<geometry::Line<'_>> = match shape.kind {
-        Kind::Point => return Ok(shape),
+        Kind::Point => {
+            return Ok(Shape {
+                kind: Kind::Point,
+                parts: shape.given().to_vec(),
+            });
+        }
         Kind::Line => shape
             .parts
             .iter()
@@ -540,14 +549,15 @@ fn simplify_preserving(
 /// empty, GEOS's empty polygon, which msGEOSGeometry2Shape_polygon turns into one ring without
 /// points.
 ///
-/// - A point shape is the point of its first part, or the multipoint of its points.
+/// - A point shape is the point of its first part, or the multipoint of its points; its other
+///   parts are not read.
 /// - A line's parts are its lines; a part without points is dropped.
 /// - A polygon's rings are grouped as [`built`] groups them.
 ///
 /// It fails where [`built`] fails, and on a distance that is no finite number, for which
 /// `GEOSBuffer_r` returns no geometry. The engine also fails a shape with a coordinate that is no
-/// finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon of its
-/// own.
+/// finite number in what GEOS is given, on which geo's buffer panics; GEOS buffers such a shape
+/// into a polygon of its own.
 fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
     let Some(areas) = given_to_geos(shape, ShapeOp::Buffer, budget)? else {
         return Ok(shape.clone());
@@ -563,13 +573,13 @@ fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Un
     // (`buffer.rs:377`), whose adapter takes a point that is no finite number outside its rect,
     // which fails the debug assertion of `float_to_int` (i_float's `adapter.rs:115-123`). The
     // layer fails with a diagnostic.
-    if !is_finite(shape) {
+    if !is_finite(shape.given()) {
         return Err(Undrawn::Failed(
             "calls buffer on a shape with a coordinate that is no finite number".to_owned(),
         ));
     }
     let given = match shape.kind {
-        Kind::Point => geometry::Buffered::Points(shape.parts.first().map_or(&[], Vec::as_slice)),
+        Kind::Point => geometry::Buffered::Points(shape.given().first().map_or(&[], Vec::as_slice)),
         Kind::Line => geometry::Buffered::Lines(&shape.parts),
         Kind::Polygon => geometry::Buffered::Areas(&areas),
     };

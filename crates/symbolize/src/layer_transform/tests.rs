@@ -484,14 +484,168 @@ fn numbers_are_computed_as_the_rules_of_math_exp_compute_them() {
 }
 
 #[test]
-fn a_multipoint_or_a_collection_is_refused() {
-    let multipoint = Geometry::MultiPoint(vec![coords(&[(0.0, 0.0), (1.0, 1.0)])]);
+fn a_collection_is_refused() {
     let generalized = generalize(TransformShape::Shape, n(1.0));
-    let why = failed(apply(&generalized, &multipoint));
-    assert!(why.contains("multipoint"), "{why}");
     let collection = Geometry::Collection(vec![line(ELL)]);
     let why = failed(apply(&generalized, &collection));
     assert!(why.contains("collection"), "{why}");
+}
+
+/// A point shape of three parts, as an inline feature of three `POINTS` blocks gives it: a first
+/// part of four points, a part of one, and a part of three.
+fn multipoint_of_three() -> Geometry {
+    Geometry::MultiPoint(vec![
+        coords(&[(0.0, 0.0), (1.0, 0.0), (4.0, 0.0), (4.0, 4.0)]),
+        coords(&[(9.0, 9.0)]),
+        coords(&[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0)]),
+    ])
+}
+
+#[test]
+fn shape_alone_keeps_each_part_of_a_multipoint() {
+    // Verifies: ADR-0048
+    let three = multipoint_of_three();
+    assert_eq!(apply(&TransformShape::Shape, &three), Ok(three.clone()));
+}
+
+#[test]
+fn generalize_keeps_the_first_part_of_a_multipoint() {
+    // Verifies: ADR-0048
+    // msGeneralize keeps shape->line[0] alone and the type: (1, 0) lies within 2 of (0, 0).
+    assert_eq!(
+        apply(
+            &generalize(TransformShape::Shape, n(2.0)),
+            &multipoint_of_three()
+        ),
+        Ok(Geometry::MultiPoint(vec![coords(&[
+            (0.0, 0.0),
+            (4.0, 0.0),
+            (4.0, 4.0)
+        ])]))
+    );
+}
+
+#[test]
+fn densify_outer_and_inner_fail_on_a_multipoint() {
+    // Verifies: ADR-0048
+    // msDensify and msRings2Shape return NULL for a point shape.
+    let three = multipoint_of_three();
+    let why = failed(apply(&densify(TransformShape::Shape, n(1.0)), &three));
+    assert!(why.contains("densify on a point shape"), "{why}");
+    let why = failed(apply(&TransformShape::Outer(shape()), &three));
+    assert!(why.contains("outer on a shape that is no polygon"), "{why}");
+    let why = failed(apply(&TransformShape::Inner(shape()), &three));
+    assert!(why.contains("inner on a shape that is no polygon"), "{why}");
+}
+
+/// The first part of [`multipoint_of_three`] alone, as msGEOSShape2Geometry builds it into GEOS's
+/// multipoint and msGEOSGeometry2Shape_multipoint returns it, one part.
+fn first_of_three() -> Geometry {
+    Geometry::MultiPoint(vec![coords(&[
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (4.0, 0.0),
+        (4.0, 4.0),
+    ])])
+}
+
+#[test]
+fn simplify_keeps_the_points_of_a_multipoint_s_first_part() {
+    // Verifies: ADR-0048
+    // GEOS's Douglas-Peucker keeps a multipoint point by point; the other parts never reach it.
+    assert_eq!(
+        apply(&simplified(1.0), &multipoint_of_three()),
+        Ok(first_of_three())
+    );
+}
+
+#[test]
+fn simplifypt_keeps_the_points_of_a_multipoint_s_first_part() {
+    // Verifies: ADR-0048, ADR-0047
+    // GEOS's topology-preserving simplifier keeps a multipoint as it is; the other parts never
+    // reach it.
+    assert_eq!(
+        apply(&preserved(1.0), &multipoint_of_three()),
+        Ok(first_of_three())
+    );
+}
+
+#[test]
+fn buffer_buffers_the_first_part_of_a_multipoint() {
+    // Verifies: ADR-0048, ADR-0041
+    // GEOSBuffer_r of the multipoint of shape->line[0]: the buffer of the first part alone.
+    assert_eq!(
+        apply(&buffered(1.0), &multipoint_of_three()),
+        apply(&buffered(1.0), &first_of_three())
+    );
+}
+
+#[test]
+fn smoothsia_smooths_each_part_of_a_multipoint_as_a_line() {
+    // Verifies: ADR-0048
+    // msSmoothShapeSIA smooths each part of three points or more as a line, whatever the type,
+    // and copies the part of one. A window of 3 weighs 0.5, 1, 0.5, summing to 2: (1.5, 0) =
+    // ((0 + 2 + 2) / 2, 0), (3.25, 1) = ((0.5 + 4 + 2) / 2, (0 + 0 + 2) / 2). The third part's
+    // window is cut to its count less one, 2, and to the odd 1, which keeps each point.
+    assert_eq!(
+        apply(&smooth(3.0, 1.0, None), &multipoint_of_three()),
+        Ok(Geometry::MultiPoint(vec![
+            coords(&[(0.0, 0.0), (1.5, 0.0), (3.25, 1.0), (4.0, 4.0)]),
+            coords(&[(9.0, 9.0)]),
+            coords(&[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0)]),
+        ]))
+    );
+}
+
+#[test]
+fn a_geos_function_takes_no_part_of_a_multipoint_past_the_first() {
+    // Verifies: ADR-0048, ADR-0049
+    // msGEOSShape2Geometry reads shape->line[0] alone, so a coordinate that is no finite number
+    // in a later part reaches neither GEOS nor the guard of geo's buffer.
+    let later = Geometry::MultiPoint(vec![coords(&[(3.0, 4.0)]), coords(&[(f64::NAN, 0.0)])]);
+    assert_eq!(
+        apply(&buffered(1.0), &later),
+        apply(&buffered(1.0), &Geometry::Point(c(3.0, 4.0)))
+    );
+    assert_eq!(
+        apply(&simplified(1.0), &later),
+        Ok(Geometry::Point(c(3.0, 4.0)))
+    );
+    // A multipoint without parts, or whose first part has no point, is not enough for a point to
+    // msGEOSShape2Geometry: the GEOS functions fail.
+    for empty in [
+        Geometry::MultiPoint(Vec::new()),
+        Geometry::MultiPoint(vec![Vec::new(), coords(&[(1.0, 1.0)])]),
+    ] {
+        for function in [simplified(1.0), preserved(1.0), buffered(1.0)] {
+            let why = failed(apply(&function, &empty));
+            assert!(why.contains("too few points"), "{empty:?}: {why}");
+        }
+    }
+}
+
+#[test]
+fn a_multipoint_of_one_point_draws_as_that_point_through_each_function() {
+    // Verifies: ADR-0048
+    // A point shape of one part of one point is the shape of the point: each function gives
+    // the same, or fails the same.
+    let one = Geometry::MultiPoint(vec![coords(&[(3.0, 4.0)])]);
+    let point = Geometry::Point(c(3.0, 4.0));
+    let trees = [
+        TransformShape::Shape,
+        generalize(TransformShape::Shape, n(2.0)),
+        densify(TransformShape::Shape, n(1.0)),
+        simplified(1.0),
+        preserved(1.0),
+        buffered(1.0),
+        TransformShape::Outer(shape()),
+        TransformShape::Inner(shape()),
+        smooth(3.0, 1.0, Some(Preprocessing::All)),
+    ];
+    for tree in &trees {
+        assert_eq!(apply(tree, &one), apply(tree, &point), "{tree:?}");
+    }
+    assert_eq!(apply(&TransformShape::Shape, &one), Ok(point));
 }
 
 #[test]
