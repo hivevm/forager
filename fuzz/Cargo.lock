@@ -310,6 +310,7 @@ dependencies = [
  "forager-encode",
  "forager-engine",
  "forager-expr",
+ "forager-label",
  "forager-mapfile",
  "forager-ports",
  "forager-proj",

@@ -24,7 +24,8 @@ use forager_render::clip::drawn_width;
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Refused, Renderer, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    GeomTransform, LabelTransform, Layer, Rgba, ShapeOp, SymbolKind, TransformShape, TransformTree,
+    Bound, Expr, GeomTransform, LabelTransform, Layer, Rgba, ShapeOp, SymbolKind, TransformShape,
+    TransformTree,
 };
 use render_input::{Decoded, decode};
 
@@ -143,6 +144,12 @@ enum Path {
     /// The label's style of `labelpoly`: the point layer drawn alone hands the renderer more items
     /// with it than without it.
     LabelPoly,
+    /// A label of two lines or more at a glyph size whose line height, times the rows of its first
+    /// line above its last, passes C's `int`, and the point layer, drawn alone, hands the renderer
+    /// an item and refuses no label (no `label-*` diagnostic), so that it lays the label out: the
+    /// pen MapServer computes in an `int` overflows there, and `Layout::line` panicked on its
+    /// product until c39b8450. Its lines stand past any image, so no glyph of it is drawn.
+    LabelLinesPastAnInt,
     /// The map has a view the engine refuses.
     ViewInvalid,
 }
@@ -179,6 +186,7 @@ impl fmt::Display for Path {
             Path::LabelCache => write!(f, "a label cached, walked with an edge buffer"),
             Path::LabelMarkers => write!(f, "a label's labelpoint and labelcenter markers"),
             Path::LabelPoly => write!(f, "a label's labelpoly style"),
+            Path::LabelLinesPastAnInt => write!(f, "a label whose lines stand past an int"),
             Path::ViewInvalid => write!(f, "a view the engine refuses"),
         }
     }
@@ -195,6 +203,7 @@ const SEEDS: &[(&str, &[Path])] = &[
     ("far-end-rounds-to-its-parameter-slow", &[Path::FarSegment]),
     ("label-cache-edge-buffer", &[Path::LabelCache]),
     ("label-labelpoly", &[Path::LabelPoly]),
+    ("label-lines-past-an-int", &[Path::LabelLinesPastAnInt]),
     ("label-markers", &[Path::LabelMarkers]),
     ("layer-geomtransform", &[Path::LayerTransform]),
     (
@@ -490,6 +499,34 @@ fn truetype(decoded: &Decoded) -> Option<&forager_style_ir::Symbol> {
         .find(|symbol| symbol.kind == SymbolKind::Truetype)
 }
 
+/// Whether the label of the point layer has two lines or more at a glyph size whose line height,
+/// `ceil(glyph_size × 1.33)` as `msComputeTextPath` sets it, times the rows of the first line
+/// above the last passes `i32::MAX`. The map's resolution over 72 scales the label, as for every
+/// layer of the target, which sets no `SIZEUNITS` or `SYMBOLSCALEDENOM`.
+fn lines_past_an_int(decoded: &Decoded) -> bool {
+    let label = decoded
+        .map
+        .layers
+        .iter()
+        .find(|layer| layer.name.as_deref() == Some("points"))
+        .and_then(|layer| layer.classes.first())
+        .and_then(|class| class.labels.first());
+    let Some(label) = label else {
+        return false;
+    };
+    let (Some(Expr::String(text)), Some(Bound::Value(size)), Some(min), Some(max)) =
+        (&label.text, &label.size, label.min_size, label.max_size)
+    else {
+        return false;
+    };
+    let text = text.split('\0').next().unwrap_or_default();
+    let lines = forager_label::lines(text, None, 0).map_or(0, |lines| lines.len());
+    let resolution = decoded.map.resolution.unwrap_or(72.0) / 72.0;
+    let glyph_size = forager_label::glyph_size(*size, resolution, min, max, resolution);
+    let line_height = (glyph_size.trunc() * 1.33).ceil();
+    lines >= 2 && (lines - 1) as f64 * line_height.abs() > f64::from(i32::MAX)
+}
+
 /// Whether the seed of `data` builds `path`.
 fn reaches(data: &[u8], path: Path) -> bool {
     let Some(mut decoded) = decode(data) else {
@@ -675,6 +712,20 @@ fn reaches(data: &[u8], path: Path) -> bool {
                     .iter()
                     .any(|layer| layer.post_label_cache)
                 && !drawn(&decoded).1.labels.is_empty()
+        }
+        Path::LabelLinesPastAnInt => {
+            lines_past_an_int(&decoded) && {
+                decoded
+                    .map
+                    .layers
+                    .retain(|layer| layer.name.as_deref() == Some("points"));
+                let (ops, rendered) = drawn(&decoded);
+                let refused = rendered
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code.starts_with("label-"));
+                !ops.is_empty() && !refused
+            }
         }
         Path::LabelMarkers => {
             drawn_alone(&mut decoded, "points")
