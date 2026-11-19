@@ -107,12 +107,13 @@ expect_sensor 0 "a commit that fails the commit's own notice check is named with
 REJECT="fix: the port" expect_sensor 0 "the commit that fixes it is not listed" "$d" "1 commit(s)"
 
 d="$(repo comment-width)"
-stub "$d" check-comment-width 'if grep -rl WIDE src; then exit 1; fi'
+stub "$d" check-comment-width 'if grep -rl WIDE crates; then exit 1; fi'
 commit "$d" "feat: a comment width check"
-printf '// WIDE\n' >> "$d/src/lib.rs"
+mkdir -p "$d/crates"
+printf '// WIDE\n' > "$d/crates/port.rs"
 commit "$d" "feat: a wide comment"
 bad="$(short "$d")"
-lib "$d" "$FORMATTED"
+printf '// NARROW\n' > "$d/crates/port.rs"
 commit "$d" "style: the comment wrapped"
 expect_sensor 0 "a commit that fails the commit's own comment width check is named with it" "$d" \
   "$bad feat: a wide comment — fails: comment width (scripts/check-comment-width.sh)"

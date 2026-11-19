@@ -83,7 +83,7 @@ scripts=("" scripts/check-shell.sh scripts/check-notice.sh scripts/check-comment
 inputs=("*.rs *Cargo.toml *rustfmt.toml rust-toolchain.toml"
         "*.sh .githooks scripts .gitignore .shellcheckrc"
         "crates fuzz THIRD-PARTY-NOTICES.md scripts/check-notice.sh scripts/lib"
-        "*.rs .gitignore scripts/check-comment-width.sh"
+        "crates/*.rs fuzz/*.rs scripts/check-comment-width.sh"
         "")
 
 have_cargo=1 have_shellcheck=1
