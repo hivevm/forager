@@ -310,7 +310,9 @@ golden path and the test pattern an agent copies from are named here.
   (`layer_transform.rs`), and `simplifypt` by a port of
   JTS's topology-preserving simplifier without recursion and without a spatial index
   (`geometry/topology.rs`,
-  [ADR-0047](adr/0047-simplifypt-ported-from-jts.md)). A
+  [ADR-0047](adr/0047-simplifypt-ported-from-jts.md)), and `smoothsia` by a port of MapServer's
+  `src/mapsmoothing.c`, its line window, its passes, and its preprocessing, in a module of its own
+  beneath the transform tree (`layer_transform/smoothsia.rs`). A
   line style's symbol with a
   `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and

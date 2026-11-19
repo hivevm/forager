@@ -1,21 +1,24 @@
 //! The expected shapes are worked by hand from the C functions each test names, at the pin: the
 //! arithmetic is chosen exact in doubles, so that a shape is held equal, not near.
 
+use forager_style_ir::Preprocessing;
+
+use super::smoothsia::preprocess;
 use super::*;
 
 fn c(x: f64, y: f64) -> Coord {
     Coord { x, y }
 }
 
-fn coords(points: &[(f64, f64)]) -> Vec<Coord> {
+pub(super) fn coords(points: &[(f64, f64)]) -> Vec<Coord> {
     points.iter().map(|&(x, y)| c(x, y)).collect()
 }
 
-fn line(points: &[(f64, f64)]) -> Geometry {
+pub(super) fn line(points: &[(f64, f64)]) -> Geometry {
     Geometry::LineString(coords(points))
 }
 
-fn polygon(rings: &[&[(f64, f64)]]) -> Geometry {
+pub(super) fn polygon(rings: &[&[(f64, f64)]]) -> Geometry {
     Geometry::Polygon(rings.iter().map(|r| coords(r)).collect())
 }
 
