@@ -1,7 +1,7 @@
 // The C functions MapServer's expressions call, as glibc runs them in the C locale: the printf
 // conversions msToString admits, and toupper and tolower; and msToString,
-// msCommifyString, msStringInitCap, and msStringFirstCap of src/mapstring.cpp, which src/mapparser.y
-// calls, of the release pinned in scripts/fetch-msautotest.sh.
+// msCommifyString, msStringInitCap, and msStringFirstCap of src/mapstring.cpp, which
+// src/mapparser.y calls, of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,

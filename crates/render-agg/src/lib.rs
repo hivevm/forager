@@ -5,10 +5,10 @@
 // scripts/fetch-msautotest.sh; how a hatch is stroked and clipped to its polygon follows
 // msHatchPolygon(), src/mapagg.cpp, there; how a layer's image is laid over the map follows
 // aggCompositeRasterBufferNoPixman(), src/mapagg.cpp, and the blend_from() of the AGG it bundles;
-// how a pixmap is blended or, turned or scaled, filled as a square follows agg2RenderPixmapSymbol(),
-// src/mapagg.cpp; how a polygon is filled with a tile follows agg2RenderPolygonTiled(),
-// src/mapagg.cpp, and the wrap_mode_repeat and span_pattern_rgba of the AGG it bundles; how the
-// alpha is divided out follows saveAsPNG(), src/mapimageio.c.
+// how a pixmap is blended or, turned or scaled, filled as a square follows
+// agg2RenderPixmapSymbol(), src/mapagg.cpp; how a polygon is filled with a tile follows
+// agg2RenderPolygonTiled(), src/mapagg.cpp, and the wrap_mode_repeat and span_pattern_rgba of the
+// AGG it bundles; how the alpha is divided out follows saveAsPNG(), src/mapimageio.c.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2007 Regents of the University of Minnesota (src/mapagg.cpp).
 // Copyright (c) 2009 Thomas Bonfort (src/mapimageio.c).
@@ -171,10 +171,10 @@ fn apply<VS: VertexSource>(pen: &Pen, stroke: &mut ConvStroke<VS>) {
 
 /// Adds the dashes as agg2RenderLine() does: each length rounded to whole pixels, half to even
 /// as `lrint`, and at least 1, one that is not finite 1; an odd last length dropped; and the
-/// start moved back by the pattern's offset. AGG walks a start dash by dash, so the start is first reduced to one period
-/// of the pattern, which draws the same, and each length is bounded by the largest `int`, the
-/// type MapServer sums the pattern's length in, so that the length stays finite; a huge
-/// INITIALGAP or PATTERN then costs no more than any other (Q-3, Q-9). A start before the
+/// start moved back by the pattern's offset. AGG walks a start dash by dash, so the start is first
+/// reduced to one period of the pattern, which draws the same, and each length is bounded by the
+/// largest `int`, the type MapServer sums the pattern's length in, so that the length stays finite;
+/// a huge INITIALGAP or PATTERN then costs no more than any other (Q-3, Q-9). A start before the
 /// pattern keeps its sign, which AGG reads as a start for the first path only.
 fn add_dashes<VS: VertexSource>(dashed: &mut ConvDash<VS>, dashes: &Dashes) {
     // lrint of a length that is not finite gives no number, which MapServer's bound turns to 1.

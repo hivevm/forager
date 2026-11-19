@@ -30,10 +30,10 @@ impl AggRenderer {
     /// Draws `path` as `agg2RenderGlyphsPath` draws a text path, its curves flattened by
     /// `conv_curve`, under the non-zero rule, with no gamma: first its outline, the
     /// `conv_contour` of the curves at the outline's width, then its fill in `color`. A path with
-    /// a point past [`forager_render::clip::MAX_GLYPH_REACH`] of the image, or one that is no number,
-    /// is not drawn and counts among the glyphs refused (ADR-0049): the engine leaves out and
-    /// reports a label's glyph before it reaches the display list by the same predicate, so only
-    /// another glyph, a TrueType marker's, is refused here.
+    /// a point past [`forager_render::clip::MAX_GLYPH_REACH`] of the image, or one that is no
+    /// number, is not drawn and counts among the glyphs refused (ADR-0049): the engine leaves out
+    /// and reports a label's glyph before it reaches the display list by the same predicate, so
+    /// only another glyph, a TrueType marker's, is refused here.
     /// The outline's width is bounded by [`drawn_width`] as a stroke's is, so that the contour's
     /// margin past the path stays within agg-rust's fixed-point coordinates (ADR-0025); a
     /// negative width, which shrinks the contour, by the same bound on its magnitude, since the

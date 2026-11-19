@@ -1,11 +1,12 @@
 // The topology-preserving simplification follows JTS, the Java Topology Suite, at its `master`
 // commit 722a943c of 2026-11-14: the sections, the minimum size, the indexes, and the ring's first
-// point as modules/core/src/main/java/org/locationtech/jts/simplify/TopologyPreservingSimplifier.java,
+// point as
+// modules/core/src/main/java/org/locationtech/jts/simplify/TopologyPreservingSimplifier.java,
 // TaggedLinesSimplifier.java, TaggedLineStringSimplifier.java, and TaggedLineString.java decide;
-// the jump test as ComponentJumpChecker.java of the same package decides; the interior
-// intersection as `computeIntersect`, `computeCollinearIntersection`, and
-// `isInteriorIntersection` of modules/core/src/main/java/org/locationtech/jts/algorithm/RobustLineIntersector.java
-// and LineIntersector.java decide; the crossing count as `countSegment` of
+// the jump test as ComponentJumpChecker.java of the same package decides; the interior intersection
+// as `computeIntersect`, `computeCollinearIntersection`, and `isInteriorIntersection` of
+// modules/core/src/main/java/org/locationtech/jts/algorithm/RobustLineIntersector.java and
+// LineIntersector.java decide; the crossing count as `countSegment` of
 // modules/core/src/main/java/org/locationtech/jts/algorithm/RayCrossingCounter.java decides; and
 // `equalsTopo`, `distance`, and `orientationIndex` of
 // modules/core/src/main/java/org/locationtech/jts/geom/LineSegment.java, `pointToSegment` of
