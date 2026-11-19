@@ -4,8 +4,10 @@
 average near 100 on 24 processors. Two cases of `scripts/test-check-all.sh` failed: "and returns
 once a check that cleans up on TERM has done so" and "and no check it started outlives it". Run
 alone three times afterwards, the self-test passed, failed one of its 33 cases, and passed. The
-cause of the ticket's flake, a job bash keeps after the plain `wait` of `settle`, is not theirs:
-the TERM case stops the runner while its first checks run, before it reaches the settle line.
+cause of the ticket's flake, a job bash kept after the plain `wait` with which `settle` waited
+before that ticket's fix, is not theirs. The TERM case stops the runner while its first checks
+run. With the default of one check per processor, fewer than the 56 checks before the settle line
+on 24 processors, the runner has not reached that line then.
 
 **Where:** the TERM case of `scripts/test-check-all.sh` (the fixture `stopped`), `stop` and the
 subshell's TERM trap of `run` in `scripts/check-all.sh`. The fix of a7e10c2b addressed an earlier
