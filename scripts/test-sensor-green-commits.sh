@@ -138,6 +138,34 @@ git -C "${d:?}" -c user.name=fixture -c user.email=fixture@example.invalid \
 expect_sensor 0 "a merge that brings a failing commit fails too" "$d" "$(short "$d") merge side — fails: rustfmt"
 REJECT="docs: a readme" expect_sensor 0 "the green commit beside the side branch is not listed" "$d" "2 commit(s)"
 
+# The cache: a stub documentation check writes the commit it judges to a file outside the fixture,
+# so each run's judged commits can be counted.
+d="$(repo cached)"
+marks="$work/cached-marks"
+stub "$d" check-docs "git rev-parse HEAD >> '$marks'; if [[ -e TODO ]]; then exit 1; fi"
+commit "$d" "feat: a docs check that leaves a mark"
+: > "$d/TODO"
+commit "$d" "feat: a todo"
+bad="$(short "$d")"
+expect_sensor 0 "a first run judges each commit" "$d" "$bad feat: a todo — fails: docs"
+first="$(wc -l < "$marks")"
+check "a first run runs the check on each of the two commits" [ "$first" -eq 2 ]
+expect_sensor 0 "a second run reports the cached failure" "$d" "$bad feat: a todo — fails: docs"
+check "a second run runs no check again" [ "$(wc -l < "$marks")" -eq "$first" ]
+rm "$d/TODO"
+commit "$d" "fix: no todo"
+REJECT="fix: no todo" expect_sensor 0 "a run after one new commit lists the old failure" "$d" "1 commit(s) of 3"
+check "a run after one new commit runs the check on it alone" [ "$(wc -l < "$marks")" -eq $((first + 1)) ]
+git -C "${d:?}" -c user.name=fixture -c user.email=fixture@example.invalid \
+  commit -q --amend -m "fix: no todo, reworded"
+expect_sensor 0 "a rewritten commit is judged again" "$d" "1 commit(s) of 3"
+check "a rewritten commit runs the check again" [ "$(wc -l < "$marks")" -eq $((first + 2)) ]
+mkdir -p "$work/changed-sensor/scripts"
+cp -R "$ROOT/scripts/lib" "$work/changed-sensor/scripts/"
+{ cat "$SENSOR"; echo "# changed"; } > "$work/changed-sensor/scripts/sensor-green-commits.sh"
+bash "$work/changed-sensor/scripts/sensor-green-commits.sh" --root "$d" base >/dev/null 2>&1
+check "a changed sensor judges every commit again" [ "$(wc -l < "$marks")" -eq $((first + 5)) ]
+
 d="$(repo green)"
 printf '# App\n' > "$d/README.md"
 commit "$d" "docs: a readme"

@@ -24,6 +24,14 @@
 # check-docs.sh), and without CI=true, so a ShellCheck of another version warns instead of
 # failing. Where cargo is missing, rustfmt is not run, and the report says so.
 #
+# Each verdict, by commit and check, is kept in 'green-commits-verdicts' of the repository's git
+# directory, shared by its worktrees, as the pre-push hook keeps its green trees. A later run
+# judges only the commits it has no verdict for: a branch pushed again costs its new commits. A
+# commit's hash names its content and its own check scripts, so a rewritten commit is judged
+# again. The verdicts stand under a key of this script, scripts/lib/git.sh, and the versions of
+# rustfmt and ShellCheck found on PATH; a change of any judges every commit again. CI starts
+# without the file and judges every commit.
+#
 # Pure bash + git, and cargo for rustfmt. Usage:
 #     scripts/sensor-green-commits.sh [--root <dir>] [base [head]]
 # It reads the repository it lives in, as the checks do; --root names another, as its self-test
@@ -43,6 +51,8 @@ unset $(git rev-parse --local-env-vars)
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
 
 NAME="Green commits sensor"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$SELF_DIR/$(basename "${BASH_SOURCE[0]}")"
 enter_root "$NAME" "${BASH_SOURCE[0]}" "$@"
 shift "$ROOT_TAKEN"
 
@@ -66,12 +76,36 @@ inputs=("*.rs *Cargo.toml *rustfmt.toml rust-toolchain.toml"
 have_cargo=1
 command -v cargo >/dev/null 2>&1 || have_cargo=0
 
+# The verdicts of earlier runs, by commit and check, under a key of the sensor's own code and the
+# versions of rustfmt and ShellCheck: a change of either judges every commit again.
+cache="$(cd "$(git rev-parse --git-common-dir)" && pwd)/green-commits-verdicts"
+tool_key="$(
+  { cat "$SELF" "$SELF_DIR/lib/git.sh"
+    ((have_cargo)) && cargo fmt --version 2>&1
+    command -v shellcheck >/dev/null 2>&1 && shellcheck --version 2>&1
+  } | git hash-object --stdin
+)"
+declare -A cached # "<sha> <i>" → pass or fail, from an earlier run
+if [[ -f "$cache" ]]; then
+  while read -r key sha i verdict; do
+    [[ "$key" == "$tool_key" ]] && cached["$sha $i"]="$verdict"
+  done < "$cache"
+fi
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 tree="$tmp/tree"
-git clone -q --shared --no-checkout . "$tree" 2>/dev/null \
-  || { echo "$NAME: could not clone the repository into a temporary directory." >&2; exit 0; }
-git -C "$tree" remote remove origin
+cloned=0
+
+# checkout <sha> — check the commit out into the temporary clone, made at the first call.
+checkout() {
+  if ((!cloned)); then
+    git clone -q --shared --no-checkout . "$tree" 2>/dev/null || return 1
+    git -C "$tree" remote remove origin
+    cloned=1
+  fi
+  git -C "$tree" checkout -q --detach "$1" 2>/dev/null
+}
 
 # run_check <i> — run check i on the commit checked out in the clone; 0 when it passes or the
 # commit does not have it.
@@ -87,22 +121,44 @@ run_check() {
       -u PULL_REQUEST_DRAFT bash "$script") >/dev/null 2>&1
 }
 
-declare -A failing # "<sha> <i>" of a commit on which check i fails
+# verdict["<sha> <i>"] is pass or fail; known["<sha> <i>"] is set where it was judged, here or by
+# an earlier run, and not taken from a parent outside the range that counts as passing. Only a
+# known verdict is kept for the next run.
+declare -A verdict known
+new_entries=()
 findings=() count=0 rustfmt_seen=0
 while read -r sha; do
   count=$((count + 1))
   parent="$(git rev-parse -q --verify "$sha^1" 2>/dev/null)"
-  git -C "$tree" checkout -q --detach "$sha" 2>/dev/null
-  failed=() pids=()
+  failed=() pids=() checked_out=0 unchecked=0
   for i in "${!labels[@]}"; do
     pids[i]=""
+    if [[ -n "${cached["$sha $i"]:-}" ]]; then
+      verdict["$sha $i"]="${cached["$sha $i"]}" known["$sha $i"]=1
+      continue
+    fi
     # Unchanged inputs keep the parent's verdict.
     if [[ -n "$parent" && -n "${inputs[i]}" ]]; then
       read -r -a specs <<< "${inputs[i]}"
       if git diff --quiet "$parent" "$sha" -- "${specs[@]}"; then
-        [[ -n "${failing["$parent $i"]:-}" ]] && failing["$sha $i"]=1
+        if [[ -n "${verdict["$parent $i"]:-}" ]]; then
+          verdict["$sha $i"]="${verdict["$parent $i"]}"
+          [[ -n "${known["$parent $i"]:-}" ]] && known["$sha $i"]=1
+        elif [[ -n "${cached["$parent $i"]:-}" ]]; then
+          verdict["$sha $i"]="${cached["$parent $i"]}" known["$sha $i"]=1
+        else
+          verdict["$sha $i"]=pass
+        fi
+        [[ -n "${known["$sha $i"]:-}" ]] && new_entries+=("$tool_key $sha $i ${verdict["$sha $i"]}")
         continue
       fi
+    fi
+    if ((!checked_out)); then
+      if ! checkout "$sha"; then
+        unchecked=1
+        break
+      fi
+      checked_out=1
     fi
     ((i == 0)) && [[ -f "$tree/Cargo.toml" ]] && rustfmt_seen=1
     # The checks of one commit run side by side; each only reads the clone.
@@ -110,16 +166,32 @@ while read -r sha; do
     pids[i]=$!
   done
   for i in "${!labels[@]}"; do
-    [[ -n "${pids[i]}" ]] || continue
-    wait "${pids[i]}" || failing["$sha $i"]=1
+    [[ -n "${pids[i]:-}" ]] || continue
+    if wait "${pids[i]}"; then verdict["$sha $i"]=pass; else verdict["$sha $i"]=fail; fi
+    known["$sha $i"]=1
+    new_entries+=("$tool_key $sha $i ${verdict["$sha $i"]}")
   done
+  subject="$(git rev-parse --short "$sha") $(git log -1 --format=%s "$sha")"
+  if ((unchecked)); then
+    # Its children judge on their own, as after a parent outside the range.
+    for i in "${!labels[@]}"; do unset 'verdict["$sha $i"]' 'known["$sha $i"]'; done
+    findings+=("$subject — not checked: git could not check it out into a temporary clone")
+    continue
+  fi
   for i in "${!labels[@]}"; do
-    [[ -n "${failing["$sha $i"]:-}" ]] && failed+=("${labels[i]}")
+    [[ "${verdict["$sha $i"]:-}" == fail ]] && failed+=("${labels[i]}")
   done
   ((${#failed[@]})) || continue
   joined="$(printf '%s, ' "${failed[@]}")"
-  findings+=("$(git rev-parse --short "$sha") $(git log -1 --format=%s "$sha") — fails: ${joined%, }")
+  findings+=("$subject — fails: ${joined%, }")
 done < <(git rev-list --reverse --topo-order "$base..$head")
+
+# The cache keeps its last 20000 verdicts, about 5000 commits; a run beside another may lose the
+# other's, which the next run judges again.
+if ((${#new_entries[@]})); then
+  { tail -n 20000 "$cache" 2>/dev/null; printf '%s\n' "${new_entries[@]}"; } \
+    | tail -n 20000 > "$cache.$$" && mv "$cache.$$" "$cache"
+fi
 
 short_base="$(git rev-parse --short "$base")"
 short_head="$(git rev-parse --short "$head")"
