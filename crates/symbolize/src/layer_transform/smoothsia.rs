@@ -15,7 +15,7 @@
 
 //! `smoothsia`, the port of src/mapsmoothing.c: the line window, the passes of
 //! [`smooth_sia`], and its preprocessing, [`preprocess`]. The transform tree of the parent module
-//! calls the two, with its budget and its shape.
+//! calls [`smooth_sia`] alone, with its budget and its shape; the preprocessing is its own.
 
 use forager_style_ir::{Coord, Preprocessing};
 
