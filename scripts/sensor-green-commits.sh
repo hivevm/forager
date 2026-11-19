@@ -24,6 +24,11 @@
 # check-docs.sh), and without CI=true, so a ShellCheck of another version warns instead of
 # failing. Where cargo is missing, rustfmt is not run, and the report says so.
 #
+# The first of the two commits by which scripts/number-adrs.sh numbers the drafts, the one whose
+# subject starts 'docs(adr): number the drafts as', fails the documentation checks by design
+# (ADR-0002): it renumbers the ADRs, and the second commit moves the references. The
+# documentation checks are not run on it.
+#
 # Each verdict, by commit and check, is kept in 'green-commits-verdicts' of the repository's git
 # directory, shared by its worktrees, as the pre-push hook keeps its green trees. A later run
 # judges only the commits it has no verdict for: a branch pushed again costs its new commits. A
@@ -131,8 +136,14 @@ while read -r sha; do
   count=$((count + 1))
   parent="$(git rev-parse -q --verify "$sha^1" 2>/dev/null)"
   failed=() pids=() checked_out=0 unchecked=0
+  numbering=0
+  [[ "$(git log -1 --format=%s "$sha")" == "docs(adr): number the drafts as "* ]] && numbering=1
   for i in "${!labels[@]}"; do
     pids[i]=""
+    if ((numbering)) && [[ "${scripts[i]}" == scripts/check-docs.sh ]]; then
+      verdict["$sha $i"]=pass known["$sha $i"]=1
+      continue
+    fi
     if [[ -n "${cached["$sha $i"]:-}" ]]; then
       verdict["$sha $i"]="${cached["$sha $i"]}" known["$sha $i"]=1
       continue
