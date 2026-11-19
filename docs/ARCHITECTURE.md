@@ -482,7 +482,8 @@ its test `fuzz/tests/render_seeds.rs`, which decodes each seed of the render tar
 target's own decoding, `fuzz_targets/render_input.rs`, and holds it to the path it was made for,
 told from the map it builds and from the display items a recorder in front of agg-rust sees;
 `scripts/check-fuzz-variants.sh` holds the render target to naming every node of the transform
-tree and every kind of symbol, but those its allow-list names with a reason. Beside it,
+tree, every kind of symbol, and every transform of a class's and a label's style, but those its
+allow-list names with a reason. Beside it,
 `scripts/check-guards.sh` holds each guard against a third-party crate, marked
 `// Guard: <crate> <version>` in `render`, `render-agg`, and `symbolize`, to a version that
 `Cargo.lock` holds (ADR-0049), `scripts/check-comment-width.sh` holds each comment line of a Rust

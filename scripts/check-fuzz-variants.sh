@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Check: the render fuzz target builds every variant of the enums of the style IR it fuzzes the
-# renderer through, each node of the transform tree and each kind of symbol (Q-3). What the target
+# renderer through, each node of the transform tree, each kind of symbol, and each transform of a
+# class's style and of a label's style (Q-3). What the target
 # builds of its bytes is fuzz/fuzz_targets/render_input.rs, which the target and the test of its
 # seeds share.
 #
@@ -46,6 +47,8 @@ ENUMS=(
   "crates/style-ir/src/transform.rs NumberOp"
   "crates/style-ir/src/transform.rs Preprocessing"
   "crates/style-ir/src/model.rs SymbolKind"
+  "crates/style-ir/src/model.rs GeomTransform"
+  "crates/style-ir/src/model.rs LabelTransform"
 )
 
 # '<Enum>::<Variant> <reason>': each variant the target leaves out on purpose.
