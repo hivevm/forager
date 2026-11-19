@@ -667,7 +667,7 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-draft-geometry-through-geo-and-own-circle
+    // Verifies: ADR-0050
     zigzag_renders_alike_natively_and_on_wasm32("simplify");
 }
 
@@ -734,7 +734,7 @@ fn zigzag_renders_alike_natively_and_on_wasm32(function: &str) {
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn points_buffered_to_circles_render_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-draft-geometry-through-geo-and-own-circle
+    // Verifies: ADR-0050
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
     let mapfile = "MAP SIZE 120 120 EXTENT 0 0 120 120 IMAGECOLOR 255 255 255\n\

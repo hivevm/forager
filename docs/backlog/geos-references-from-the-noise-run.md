@@ -6,7 +6,7 @@ that `scripts/build-mapserver.sh` builds MapServer against. They were taken by h
 build of GEOS's release tarball, by a C program outside the tree that calls `GEOSSimplify_r` on
 the coordinates `msGEOSShape2Geometry` builds. Nothing holds them to the GEOS the noise run uses:
 a move of the runner's image to another GEOS would go unnoticed, and the program that took them
-is not kept. ADR-draft-geometry-through-geo-and-own-circle lists this as a follow-up.
+is not kept. ADR-0050 lists this as a follow-up.
 
 **Where:** `crates/symbolize/src/geometry/tests.rs`; `.github/workflows/noise.yml` and the
 harness's noise module `crates/cli/tests/conformance/noise/`.

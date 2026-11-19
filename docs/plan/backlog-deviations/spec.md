@@ -50,7 +50,7 @@ render fuzz target runs its convention's time without a timeout.
   and the adversarial probes of the revision of 2026-11-16 pin that no rejected path is drawn and
   that no drawn path panics.
 - A point's buffer is geo's, a circle of 120 segments within 10⁻¹² of GEOS's.
-  ADR-0041 (superseded by ADR-draft-geometry-through-geo-and-own-circle) decided that `buffer` is
+  ADR-0041 (superseded by ADR-0050) decided that `buffer` is
   geo's. The unit tests of the geometry module hold GEOS's coordinates.
 
 ## Goals served
@@ -86,7 +86,7 @@ render fuzz target runs its convention's time without a timeout.
 - The brush's bound becomes the bound by the box the pixels lie in, which the review of the
   revision of 2026-11-16 measured. The adversarial probe runs again on it.
 - A point's buffer becomes a circle Forager computes with `libm`, as GEOS's `createCircle` does,
-  under a successor of ADR-0041 (superseded by ADR-draft-geometry-through-geo-and-own-circle) the
+  under a successor of ADR-0041 (superseded by ADR-0050) the
   maintainer accepts first.
 
 ## Testing decisions
@@ -109,7 +109,7 @@ render fuzz target runs its convention's time without a timeout.
 
 ## ADR impact
 
-- ADR-0041 bound the point buffer; ADR-draft-geometry-through-geo-and-own-circle binds it now.
+- ADR-0041 bound the point buffer; ADR-0050 binds it now.
   Ticket 05 proposes its successor through `propose-adr`, and the maintainer accepts it before the
   implementation.
 - ADR-0043 and ADR-0048 bind the layer's transform; the multipoint changes no clause of them.

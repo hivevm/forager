@@ -47,7 +47,7 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
 // WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//! The geometry of `simplify` and `buffer` (ADR-draft-geometry-through-geo-and-own-circle), and of
+//! The geometry of `simplify` and `buffer` (ADR-0050), and of
 //! `simplifypt` (ADR-0047) in [`topology`]: a line or a polygon simplified as
 //! GEOS's `DouglasPeuckerSimplifier` simplifies it, and a shape buffered by geo's
 //! `buffer_with_style` with round joins and caps of 30 segments a quadrant, as `GEOSBuffer_r`

@@ -19,7 +19,7 @@
 //! marker. The last third of the bytes is read once more for a layer's `GEOMTRANSFORM`, a
 //! transform tree of up to eight functions of arbitrary numbers, `[map_cellsize]` among them,
 //! which the polygon and line layers apply to their features (ADR-0048); its steps include
-//! `simplify` and `buffer` (ADR-draft-geometry-through-geo-and-own-circle) and `simplifypt`
+//! `simplify` and `buffer` (ADR-0050) and `simplifypt`
 //! (ADR-0047). The first third of the bytes, back to front, is read once more for what the fidelity
 //! spec added: a class style's `GEOMTRANSFORM` tree of the same steps on the polygon and line
 //! layers (ADR-0048), the map's `ANGLE` with or without a projection of the map and its layers
@@ -33,7 +33,7 @@
 //! of its bytes is `render_input.rs`. A field added to a view changes what every older seed decodes
 //! to; `fuzz/tests/render_seeds.rs` holds each seed to the path it was made for.
 // Verifies: Q-3, ADR-0025, ADR-0016, ADR-0046, ADR-0044, ADR-0045, ADR-0047, ADR-0048
-// Verifies: ADR-draft-geometry-through-geo-and-own-circle
+// Verifies: ADR-0050
 #![no_main]
 
 mod expr_input;

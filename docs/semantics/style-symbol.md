@@ -135,7 +135,7 @@ multipoint is the point shape of its parts: one for a GeoJSON or a shapefile mul
   above 0.
 - `simplify(s, t)` (`msGEOSSimplify`, `src/mapgeos.c`): `s` as GEOS's Douglas-Peucker simplifies
   it at the tolerance `t`, by a Douglas-Peucker ported from JTS
-  (ADR-draft-geometry-through-geo-and-own-circle). A point shape keeps the points of its first part,
+  (ADR-0050). A point shape keeps the points of its first part,
   which `msGEOSShape2Geometry` builds into a point or a multipoint, and loses its other parts. Each
   part of a line keeps its end points and
   the points the Douglas-Peucker keeps, which splits a section at the first of its farthest
@@ -177,7 +177,7 @@ multipoint is the point shape of its parts: one for a GeoJSON or a shapefile mul
   the tests refuse to flatten it, where GEOS would split it again without end.
 - `buffer(s, d)` (`msGEOSBuffer`, `src/mapgeos.c`): `s` as `GEOSBuffer_r` buffers it by the distance
   `d` with 30 segments a quadrant, by geo's buffer with round joins and round caps of π/60, but for
-  a point's circle (ADR-draft-geometry-through-geo-and-own-circle). The shape is built as for
+  a point's circle (ADR-0050). The shape is built as for
   `simplify`: a point shape is the point, or the multipoint, of its first part; a line's parts are
   one line or a multiline, a part without points dropped; a polygon's rings are grouped into
   polygons as `simplify` groups them. The result is always a polygon: each polygon's shell and

@@ -304,7 +304,7 @@ golden path and the test pattern an agent copies from are named here.
   for a point's circle, which a port of JTS's draws with `libm` and geo's unions merge, a
   tiny shape scaled by a power of two around it and back, and a line's distance raised to a floor,
   so that i_overlay's grid neither drops the shape nor loops on it (`geometry.rs`,
-  [ADR-draft-geometry-through-geo-and-own-circle](adr/draft-geometry-through-geo-and-own-circle.md)),
+  [ADR-0050](adr/0050-geometry-through-geo-and-own-circle.md)),
   a polygon's `simplify` and any `buffer` of a coordinate that is no finite number failing before
   geo sees it
   (`layer_transform.rs`), and `simplifypt` by a port of
