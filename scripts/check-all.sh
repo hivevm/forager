@@ -142,9 +142,15 @@ stop() {
 }
 trap stop EXIT
 
+# drain <n> — wait until no more than n checks run, one 'wait -n' for each check that ends.
+# 'wait -n' returns each job once and then forgets it. A plain 'wait' does not forget the job of
+# the last check started when that check ended before 'wait' got to it, and a later 'wait -n'
+# returns that job again, as though a running check had ended.
+drain() { while ((running > $1)); do wait -n; running=$((running - 1)); done; }
+
 # settle — wait until every check started so far has ended, for a line of the list that needs
 # what an earlier one leaves behind.
-settle() { wait; running=0; }
+settle() { drain 0; }
 
 # run <label> <script> [args...] — start one check, its output and exit code kept under $out. The
 # subshell passes a TERM on to the check and waits for it, so stop() returns once each has ended;
@@ -160,7 +166,7 @@ run() {
     echo 0 > "$out/$i.rc"
     return
   fi
-  while ((running >= max_jobs)); do wait -n; running=$((running - 1)); done
+  drain $((max_jobs - 1))
   {
     # shellcheck disable=SC2046 # one process id per word
     trap 'kill $(jobs -p) 2>/dev/null; wait; exit 143' TERM
