@@ -26,7 +26,8 @@
 # lint skips it and passes; the report's first line says so of either.
 #
 # The first of the two commits by which scripts/number-adrs.sh numbers the drafts, the one whose
-# subject starts 'docs(adr): number the drafts as', fails the documentation checks by design
+# subject starts 'docs(adr): number the drafts as' and that changes nothing outside docs/adr/
+# against its first parent, fails the documentation checks by design
 # (ADR-0002): it renumbers the ADRs, and the second commit moves the references. The
 # documentation checks are not run on it.
 #
@@ -141,7 +142,10 @@ while read -r sha; do
   parent="$(git rev-parse -q --verify "$sha^1" 2>/dev/null)"
   failed=() pids=() checked_out=0 unchecked=0
   numbering=0
-  [[ "$(git log -1 --format=%s "$sha")" == "docs(adr): number the drafts as "* ]] && numbering=1
+  if [[ -n "$parent" && "$(git log -1 --format=%s "$sha")" == "docs(adr): number the drafts as "* ]] \
+    && [[ -z "$(git diff --name-only "$parent" "$sha" -- . ':(exclude)docs/adr/')" ]]; then
+    numbering=1
+  fi
   for i in "${!labels[@]}"; do
     pids[i]=""
     if ((numbering)) && [[ "${scripts[i]}" == scripts/check-docs.sh ]]; then
