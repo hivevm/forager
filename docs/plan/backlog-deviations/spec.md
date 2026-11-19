@@ -1,4 +1,4 @@
-# Spec: Five deviations taken from the backlog
+# Spec: Deviations taken from the backlog
 
 <!-- Copy to docs/plan/<spec>/spec.md. The destination of a piece of work larger than one agent
      session, written from the user's side; its tickets lie next to it in the same directory. It
@@ -24,13 +24,18 @@ maintainer chose them on 2026-11-19 to be fixed together:
 - a point's buffer takes `cos` and `sin` from the platform, so it need not have the same bits
   natively and on wasm32.
 
+Ticket 03's first fuzz run found a sixth: two layers that share a nested `smoothsia` tree run past
+the fuzz run's 10 s within the visit budget. The maintainer chose on 2026-11-19 to fix it in this
+plan as ticket 06.
+
 ## Solution
 
 The check runner's self-test passes under load and fails on a broken runner. A layer's transform
 draws on a multipoint as MapServer draws it. The render fuzz target builds every geometry
 transform and every label transform, and the fuzz variant check holds both enums. A brushed line
 draws every piece the rasterizer can draw without an overflow, within a tighter bound that still
-rejects each piece that would overflow. A point's buffer has the same bits on every target.
+rejects each piece that would overflow. A point's buffer has the same bits on every target. The
+render fuzz target runs its convention's time without a timeout.
 
 ## Existing behaviour
 
@@ -95,7 +100,7 @@ rejects each piece that would overflow. A point's buffer has the same bits on ev
 
 ## Out of scope
 
-- The other nine entries of the backlog.
+- The other nine entries of the backlog of 2026-11-19, and the entries the tickets file.
 - A multipoint in a style's geometry transform; only a layer's transform changes.
 - A buffer of a line or a polygon; only a point's circle leaves geo.
 - A record of GEOS's coordinates made by the noise run.
