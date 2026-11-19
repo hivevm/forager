@@ -39,9 +39,8 @@ use crate::inline::feature_text;
 use crate::label_binding::{BoundLabel, Fixed, bind, fixed};
 use crate::label_cache::{self, LabelAt, index, push};
 use crate::label_styles::{self, LabelStyles, Placed, Styled, StylesOf};
-use crate::layer::{
-    Rotation, draw_items, layer_opacity, points_in_view, quoted, refusal_reports, refused_hatches,
-};
+use crate::layer::{Rotation, draw_items, layer_opacity, points_in_view, quoted};
+use crate::layer_reports::{refusal_reports, refused_hatches};
 use crate::render_resources::Shared;
 
 /// A label of a render's label cache.

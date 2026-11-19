@@ -17,13 +17,13 @@
 //! one core crate that awaits the ports (ADR-0008).
 //!
 //! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
-//! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, and `render_resources`;
-//! `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`; `label_binding`
-//! imports `classes`; `circle` imports `classes`, `layer`, and `reproject`; `classes` imports
-//! `bindable` and `layer`; `render_resources` imports `fonts`, `images`, and `marker_glyphs`;
-//! `reproject` imports `layer`; `fonts` and `images` import `resource`; `bind`, `bindable`,
-//! `inline`, `label_cache`, `layer`, `marker_glyphs`, `plan`, and `resource` import none, nor does
-//! a module take an item of this root.
+//! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, `layer_reports`, and
+//! `render_resources`; `label_styles` imports `bindable`, `classes`, `label_cache`, and `layer`;
+//! `label_binding` imports `classes`; `circle` imports `classes`, `layer`, and `reproject`;
+//! `classes` imports `bindable` and `layer`; `render_resources` imports `fonts`, `images`, and
+//! `marker_glyphs`; `reproject` and `layer_reports` import `layer`; `fonts` and `images` import
+//! `resource`; `bind`, `bindable`, `inline`, `label_cache`, `layer`, `marker_glyphs`, `plan`, and
+//! `resource` import none, nor does a module take an item of this root.
 //! The test `engine_modules.rs` of `crates/arch-test` holds that direction, its tests aside, by a
 //! table in this order.
 
@@ -44,27 +44,28 @@ mod label_cache;
 mod label_styles;
 mod labels;
 mod layer;
+mod layer_reports;
 mod marker_glyphs;
 mod plan;
 mod render_resources;
 mod reproject;
 mod resource;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use forager_ports::{
     DeclaredProjection, Feature, FeatureQuery, FeatureSource, Geometry, ResourceLoader,
     ResourcePath, SourceError,
 };
-use forager_render::{DisplayItem, Draw, DrawOp, Point, Refused, Renderer, RgbaImage};
+use forager_render::{DisplayItem, Draw, DrawOp, Point, Renderer, RgbaImage};
 use forager_style_ir::c::opacity_alpha;
 use forager_style_ir::{
-    Diagnostic, Extent, GeomTransform, Layer, LayerProjection, LayerStatus, Map, NotDrawn,
-    RenderMode, Rgba, Style, Symbol, SymbolKind, TransformTree,
+    Diagnostic, Extent, Layer, LayerProjection, LayerStatus, Map, RenderMode, Rgba, Style, Symbol,
+    SymbolKind, TransformTree,
 };
 use forager_symbolize::{
-    Budget, Canvas, Factors, Pass, Refusals, Resolved, StyleTrees, SymbolResources, Undrawn,
-    can_draw, clip_pixmaps, draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
+    Budget, Canvas, Factors, Pass, Resolved, StyleTrees, SymbolResources, can_draw, clip_pixmaps,
+    draw_ops, label_pixmap, marked_pixmap, point_markers, resolve,
 };
 
 use forager_expr::Evaluator;
@@ -79,9 +80,9 @@ pub use crate::resource::MAX_FONT_OR_IMAGE_FILE_BYTES;
 pub use forager_symbolize::{MAX_MARKER_POINTS, View};
 
 use crate::labels::Labels;
-use crate::layer::{
-    Rotation, Selected, draw_items, layer_opacity, name, points_in_view, refusal_reports,
-    renderer_refusals,
+use crate::layer::{Rotation, Selected, draw_items, layer_opacity, name, points_in_view};
+use crate::layer_reports::{
+    StyleFailures, layer_reports, style_reports, transform_failed, transform_not_drawn,
 };
 
 pub use crate::labels::CachedLabel;
@@ -352,7 +353,8 @@ async fn draw_layer<S: FeatureSource, L: ResourceLoader, R: Renderer>(
     let trees = (style_failures, refusals.trees_over_limit.take());
     let (refused, diagnostics) = (renderer.take_refused(), &mut *binder.diagnostics);
     layer_reports(layer, refusals, refused, undrawn, diagnostics);
-    style_reports(layer, &shapes, &map.symbols, trees, diagnostics);
+    let paths = matches!(shapes, Shapes::Paths);
+    style_reports(layer, paths, &map.symbols, trees, diagnostics);
     // A point layer of the label cache holds its labels for the cache; a point layer of
     // POSTLABELCACHE TRUE, which may come here after the cache is drawn, has drawn its own at
     // once. A line, polygon, or circle layer's labels are not drawn, each reported, so none of
@@ -368,25 +370,6 @@ async fn draw_layer<S: FeatureSource, L: ResourceLoader, R: Renderer>(
         Shapes::Paths => labels.unlabelled(layer_index, &drawn, binder, labels::PATHS_UNLABELLED),
         Shapes::Circles(_) => labels.unlabelled(layer_index, &drawn, binder, circle::NO_LABELS),
     }
-}
-
-/// The reports on the styles of a layer drawn as `shapes` says: the symbols no symbol is named;
-/// but in a point layer, which draws them at its points, and a circle layer, which draws its
-/// circle whatever the transform (`src/mapdraw.c:2390-2396`), the styles of a GEOMTRANSFORM not
-/// drawn; and what the class styles' transform trees left undrawn, their failures and the bound
-/// they passed (see [`style_tree_reports`]).
-fn style_reports(
-    layer: &Layer,
-    shapes: &Shapes,
-    symbols: &[Symbol],
-    (failures, over_limit): (StyleFailures, Option<String>),
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    unknown_symbols(layer, symbols, diagnostics);
-    if matches!(shapes, Shapes::Paths) {
-        styles_not_drawn(layer, diagnostics);
-    }
-    style_tree_reports(layer, failures, over_limit.as_deref(), diagnostics);
 }
 
 /// The map's layers with their indexes in the order msDrawMap draws them, and the position at which
@@ -437,45 +420,6 @@ fn drawable<'f>(
         }
     }
     (drawable, undrawn)
-}
-
-/// Reports what `layer` left undrawn of `refusals`, its features' and those of its labels drawn
-/// at once: symbols past the budget of markers where they were left out, then its hatches and
-/// symbols (see [`refusal_reports`]); then what the renderer refused of it in `refused` (see
-/// [`renderer_refusals`]), then the geometries of `undrawn`, by kind, its render mode cannot draw.
-fn layer_reports(
-    layer: &Layer,
-    refusals: Refusals,
-    refused: Refused,
-    undrawn: BTreeMap<&'static str, usize>,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    if refusals.markers_spent {
-        let message = format!(
-            "layer {}: its symbols at its features, along its lines, or placed by a \
-             GEOMTRANSFORM exceed {MAX_MARKER_POINTS} points; those past the limit are not drawn",
-            name(layer)
-        );
-        diagnostics.push(Diagnostic::warning(
-            "line-markers-over-limit",
-            message,
-            layer.span.clone(),
-        ));
-    }
-    diagnostics.extend(refusal_reports(layer, refusals));
-    diagnostics.extend(renderer_refusals(layer, refused));
-    for (kind, count) in undrawn {
-        let message = format!(
-            "layer {} cannot draw {count} {kind} geometr{} in its render mode",
-            name(layer),
-            if count == 1 { "y" } else { "ies" }
-        );
-        diagnostics.push(Diagnostic::warning(
-            "geometry-not-drawn",
-            message,
-            layer.span.clone(),
-        ));
-    }
 }
 
 /// [`layer_opacity`], with a warning for an opacity outside 0 to 100, which a mapfile cannot give
@@ -567,10 +511,6 @@ fn truetype_fonts<'s>(
     }
     fonts
 }
-
-/// The first failure of each class style's transform tree in a layer's drawing, by the places of
-/// its class in the layer and of the style in its class.
-type StyleFailures = BTreeMap<(usize, usize), String>;
 
 /// What a layer's features are drawn with.
 struct Drawing<'a> {
@@ -1088,128 +1028,6 @@ async fn query<S: FeatureSource>(
     }
 }
 
-/// Warns once for each name that a style of `layer` gives its symbol and that none of `symbols`
-/// carries: such a style draws nothing, as a style document has no image file to read the name
-/// as. A mapfile's names never reach here, as its frontend resolves each to an index.
-fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diagnostic>) {
-    let mut reported = BTreeSet::new();
-    for style in layer.classes.iter().flat_map(|class| &class.styles) {
-        let Resolved::Unnamed(symbol) = resolve(&style.symbol, symbols) else {
-            continue;
-        };
-        if reported.insert(symbol) {
-            let message = format!(
-                "layer {}: no symbol is named `{symbol}`, so the styles that name it draw nothing",
-                name(layer)
-            );
-            diagnostics.push(Diagnostic::warning(
-                "symbol-unknown",
-                message,
-                style.span.clone().or_else(|| layer.span.clone()),
-            ));
-        }
-    }
-}
-
-/// Warns of each class style of a line or a polygon layer whose `GEOMTRANSFORM` the engine does
-/// not draw on a style: a transform tree `not_drawn`, naming its reason
-/// (ADR-0048, *Diagnostics*), which MapServer evaluates
-/// by msDrawTransformedShape, through GEOS or a JavaScript engine, or fails; and labelcenter, which
-/// fails the layer's draw there (src/mapgeomtransform.c:245), msDrawLabelCache alone drawing it on
-/// a label's style. The style draws nothing; the class's other styles draw in their passes as
-/// before. A point layer draws such a style at its points, as pointLayerDrawShape draws every
-/// style whatever its transform, and is not warned. The warning holds for a style document as for
-/// a mapfile, whose frontend does not warn of it again.
-fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
-    for style in layer.classes.iter().flat_map(|class| &class.styles) {
-        let message = match &style.geom_transform {
-            Some(GeomTransform::Expression(TransformTree::NotDrawn(reason))) => format!(
-                "layer {}: the GEOMTRANSFORM expression of a class's style holds {} \
-                 (not_drawn: {}), which the engine does not draw: the style draws nothing",
-                name(layer),
-                described(*reason),
-                reason.name()
-            ),
-            Some(GeomTransform::LabelCenter) => format!(
-                "layer {}: a class's style of GEOMTRANSFORM labelcenter is not drawn: only a \
-                 label's style draws labelcenter, and MapServer fails the layer's draw on it; the \
-                 style draws nothing",
-                name(layer),
-            ),
-            _ => continue,
-        };
-        diagnostics.push(Diagnostic::warning(
-            "geomtransform-not-drawn",
-            message,
-            style.span.clone().or_else(|| layer.span.clone()),
-        ));
-    }
-}
-
-/// Warns of the class styles' transform trees of `layer` that drew nothing
-/// (ADR-0048, *A class's style*): of each style in
-/// `failures`, its first failure, once, as `geomtransform-not-drawn`; and, where they passed
-/// `over_limit`, a bound of Q-9 they share with the layer's `GEOMTRANSFORM`, once for the layer as
-/// `geomtransform-over-limit`. MapServer makes no map where msDrawTransformedShape fails
-/// (src/mapdraw.c:1402-1405, 508-519); Forager draws nothing of the style on that shape, and the
-/// rest.
-fn style_tree_reports(
-    layer: &Layer,
-    failures: StyleFailures,
-    over_limit: Option<&str>,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    for ((c, s), why) in failures {
-        let class = &layer.classes[c];
-        let class_name = class
-            .name
-            .as_deref()
-            .map_or(String::new(), |n| format!(" `{n}`"));
-        let message = format!(
-            "layer {}: style {} of its class {}{class_name} draws nothing on a shape: its \
-             GEOMTRANSFORM expression {why}, where MapServer makes no map",
-            name(layer),
-            s + 1,
-            c + 1,
-        );
-        let span = class.styles[s]
-            .span
-            .clone()
-            .or_else(|| class.span.clone())
-            .or_else(|| layer.span.clone());
-        diagnostics.push(Diagnostic::warning(
-            "geomtransform-not-drawn",
-            message,
-            span,
-        ));
-    }
-    if let Some(why) = over_limit {
-        let message = format!(
-            "layer {}: a GEOMTRANSFORM expression of its styles, charged with the layer's \
-             GEOMTRANSFORM and its other styles', {why}: its styles' expressions draw nothing on \
-             the shape past the limit and on every later one",
-            name(layer),
-        );
-        diagnostics.push(Diagnostic::warning(
-            "geomtransform-over-limit",
-            message,
-            layer.span.clone(),
-        ));
-    }
-}
-
-/// What a transform tree's reason `not_drawn` stands for, as a warning names it.
-fn described(reason: NotDrawn) -> String {
-    match reason {
-        NotDrawn::Binding => "a property's value where a number or a text is due".to_owned(),
-        NotDrawn::Text => "a computed smoothsia preprocessing".to_owned(),
-        NotDrawn::Fromtext => "a shape fromtext reads from a text".to_owned(),
-        NotDrawn::Literal => "an operation of literals that folds to no finite number".to_owned(),
-        NotDrawn::Syntax => "an expression that does not parse as a shape".to_owned(),
-        function => format!("the function {}", function.name()),
-    }
-}
-
 /// Each feature of `selected` with the class that draws it, by which it is labelled, and its
 /// first style, in the order it is drawn.
 fn labelled<'a>(selected: &'a [Selected<'a>]) -> Vec<labels::Labelled<'a>> {
@@ -1243,39 +1061,6 @@ fn transformed(
     };
     selector.binder.diagnostics.push(warning);
     None
-}
-
-/// The warning that `layer` draws nothing, its `GEOMTRANSFORM` a transform tree of the reason
-/// `reason` (ADR-0048). MapServer evaluates a function the tree has no node
-/// for through GEOS, or a JavaScript engine, and fails on a syntax error or a binding where it
-/// makes no number; Forager draws none of the layer, and the rest of the map.
-fn transform_not_drawn(layer: &Layer, reason: NotDrawn) -> Diagnostic {
-    let message = format!(
-        "layer {} draws nothing: its GEOMTRANSFORM holds {} (not_drawn: {}), which the engine \
-         does not draw",
-        name(layer),
-        described(reason),
-        reason.name()
-    );
-    Diagnostic::warning("geomtransform-not-drawn", message, layer.span.clone())
-}
-
-/// The warning that `layer` draws nothing, its `GEOMTRANSFORM` failed on a shape or past a bound
-/// of Q-9. Where MapServer's parser fails the transform on a shape (densify on a point, a division
-/// by zero, outer on a line), msGeomTransformShape fails, msDrawVectorLayer returns MS_FAILURE
-/// (src/mapdraw.c:1427-1434), and msDrawMap frees the image and returns none
-/// (src/mapdraw.c:508-519): MapServer makes no map. Forager draws nothing of the layer, with the
-/// warning, and the rest of the map.
-fn transform_failed(layer: &Layer, undrawn: Undrawn) -> Diagnostic {
-    let (code, why) = match undrawn {
-        Undrawn::Failed(why) => ("geomtransform-not-drawn", why),
-        Undrawn::Limit(why) => ("geomtransform-over-limit", why),
-    };
-    let message = format!(
-        "layer {} draws nothing: its GEOMTRANSFORM {why}",
-        name(layer)
-    );
-    Diagnostic::warning(code, message, layer.span.clone())
 }
 
 /// The kind of a geometry, as a diagnostic names it.
