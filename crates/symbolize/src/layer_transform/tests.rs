@@ -570,13 +570,70 @@ fn simplifypt_keeps_the_points_of_a_multipoint_s_first_part() {
     );
 }
 
+/// The bounds of a ring, `[min x, min y, max x, max y]`.
+fn bounds(ring: &[Coord]) -> [f64; 4] {
+    ring.iter().fold(
+        [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ],
+        |[x0, y0, x1, y1], p| {
+            [
+                if p.x < x0 { p.x } else { x0 },
+                if p.y < y0 { p.y } else { y0 },
+                if p.x > x1 { p.x } else { x1 },
+                if p.y > y1 { p.y } else { y1 },
+            ]
+        },
+    )
+}
+
+/// Whether `ring` has `count` coordinates within `bounds` and each lies at the distance 1 from
+/// the nearest of `centres`, within 10⁻⁶, as the boundary of the union of their unit circles.
+fn unit_circles(ring: &[Coord], count: usize, expected: [f64; 4], centres: &[(f64, f64)]) -> bool {
+    let near = |a: f64, b: f64| (a - b).abs() < 1e-6;
+    ring.len() == count
+        && bounds(ring).iter().zip(expected).all(|(&a, b)| near(a, b))
+        && ring.iter().all(|&p| {
+            let nearest = centres
+                .iter()
+                .map(|&(x, y)| distance(p, c(x, y)))
+                .fold(f64::INFINITY, |a, d| if d < a { d } else { a });
+            near(nearest, 1.0)
+        })
+}
+
 #[test]
 fn buffer_buffers_the_first_part_of_a_multipoint() {
     // Verifies: ADR-0048, ADR-0041
-    // GEOSBuffer_r of the multipoint of shape->line[0]: the buffer of the first part alone.
-    assert_eq!(
-        apply(&buffered(1.0), &multipoint_of_three()),
-        apply(&buffered(1.0), &first_of_three())
+    // GEOSBuffer_r of the multipoint of shape->line[0], (0, 0), (1, 0), (4, 0), (4, 4), by 1:
+    // the union of their circles, three polygons. The circles of (0, 0) and (1, 0) overlap into
+    // one ring from x = -1 to 2, of 161 coordinates; those of (4, 0) and (4, 4) are a circle of
+    // 121 each, as a point's. The later parts, (9, 9) among them, are not buffered.
+    let mut rings = rings_of(apply(&buffered(1.0), &multipoint_of_three()));
+    rings.sort_by(|a, b| bounds(a).partial_cmp(&bounds(b)).unwrap());
+    assert_eq!(rings.len(), 3, "{rings:?}");
+    assert!(
+        unit_circles(
+            &rings[0],
+            161,
+            [-1.0, -1.0, 2.0, 1.0],
+            &[(0.0, 0.0), (1.0, 0.0)]
+        ),
+        "{:?}",
+        rings[0]
+    );
+    assert!(
+        unit_circles(&rings[1], 121, [3.0, -1.0, 5.0, 1.0], &[(4.0, 0.0)]),
+        "{:?}",
+        rings[1]
+    );
+    assert!(
+        unit_circles(&rings[2], 121, [3.0, 3.0, 5.0, 5.0], &[(4.0, 4.0)]),
+        "{:?}",
+        rings[2]
     );
 }
 
@@ -585,7 +642,7 @@ fn smoothsia_smooths_each_part_of_a_multipoint_as_a_line() {
     // Verifies: ADR-0048
     // msSmoothShapeSIA smooths each part of three points or more as a line, whatever the type,
     // and copies the part of one. A window of 3 weighs 0.5, 1, 0.5, summing to 2: (1.5, 0) =
-    // ((0 + 2 + 2) / 2, 0), (3.25, 1) = ((0.5 + 4 + 2) / 2, (0 + 0 + 2) / 2). The third part's
+    // ((0 + 1 + 2) / 2, 0), (3.25, 1) = ((0.5 + 4 + 2) / 2, (0 + 0 + 2) / 2). The third part's
     // window is cut to its count less one, 2, and to the odd 1, which keeps each point.
     assert_eq!(
         apply(&smooth(3.0, 1.0, None), &multipoint_of_three()),
@@ -603,9 +660,12 @@ fn a_geos_function_takes_no_part_of_a_multipoint_past_the_first() {
     // msGEOSShape2Geometry reads shape->line[0] alone, so a coordinate that is no finite number
     // in a later part reaches neither GEOS nor the guard of geo's buffer.
     let later = Geometry::MultiPoint(vec![coords(&[(3.0, 4.0)]), coords(&[(f64::NAN, 0.0)])]);
-    assert_eq!(
-        apply(&buffered(1.0), &later),
-        apply(&buffered(1.0), &Geometry::Point(c(3.0, 4.0)))
+    let rings = rings_of(apply(&buffered(1.0), &later));
+    assert_eq!(rings.len(), 1, "{rings:?}");
+    assert!(
+        unit_circles(&rings[0], 121, [2.0, 3.0, 4.0, 5.0], &[(3.0, 4.0)]),
+        "{:?}",
+        rings[0]
     );
     assert_eq!(
         apply(&simplified(1.0), &later),
