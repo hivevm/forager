@@ -1,4 +1,4 @@
-# ADR-draft-geometry-through-geo-and-own-circle: `simplify` and `buffer` are computed in `symbolize`, by a Douglas-Peucker and a point's circle ported from JTS and with the geo crate, and a simplified polygon is repaired as GEOS repairs it
+# ADR-0050: `simplify` and `buffer` are computed in `symbolize`, by a Douglas-Peucker and a point's circle ported from JTS and with the geo crate, and a simplified polygon is repaired as GEOS repairs it
 
 - **Status:** 🟢 accepted
 - **Date:** 2026-11-19
