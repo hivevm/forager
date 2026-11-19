@@ -1,43 +1,46 @@
-# Two layers' nested smoothsia within the visit budget run past the fuzz run's 10 s
+# A layer's nested smoothsia within the visit budget runs past the fuzz run's 10 s
 
 **Observed:** ticket backlog-deviations/03 (2026-11-19). The first 300-second run of the render
 fuzz target from `fuzz/seeds/render/`, after the ticket's decoding change, stopped about 46,000
-runs in on a timeout: `libFuzzer: timeout after 12 seconds`, past the 10 s limit of Q-3. Replayed
-alone on the fuzz build (`fuzz/target/x86_64-unknown-linux-gnu/release/render <file>`), the input
-takes 16.7 s. The same map, decoded through `render_input.rs` and drawn in a release build without
-the fuzz instrumentation, takes about 0.3 s, so nothing loops: the work is bounded, and the bound
-is what the instrumented build cannot finish in 10 s.
+runs in on a timeout: `libFuzzer: timeout after 12 seconds`, past the 10 s limit of Q-3. Its input
+decoded to two layers, the polygon and the line layer, sharing a nested `smoothsia` tree on a
+polygon of rings of 2, 0, and 7 points and on a multipoint; it took 16.7 s alone on the fuzz build
+and about 0.3 s in a release build without the fuzz instrumentation, so nothing loops: the work is
+bounded, and the bound is what the instrumented build cannot finish in 10 s. Its bytes are in
+commit 20a79cba. The review of ticket 03 changed the decoding, and on it those bytes decode to the
+two layers on the polygon alone and take some 11.1 to 11.6 s.
 
-What the input decodes to: the polygon and line layers share a layer `GEOMTRANSFORM` of
-`smoothsia(smoothsia([shape], [map_cellsize] % 7.5e25, [map_cellsize] ^ -1.5e306, all),
-[map_cellsize] / -1.4e265, [map_cellsize] / 2.0e243)`, and the features are a polygon whose
-first ring has two points and second none, at coordinates up to 1e260, and a multipoint of two
-parts, four points and none. Drawn alone in the release build, each layer spends about 108 ms
-on the polygon and 44 ms on the multipoint; no other layer takes more than 20 ms. The time lies in
+A 300-second run from the seeds on the reworked decoding timed out again, about 40,000 runs in,
+on the input below. One layer is enough: it decodes to no shapes, and to the layer `multipoints`,
+a line layer of the multipoint of two parts, of 6 points and 1, under the layer `GEOMTRANSFORM`
+`smoothsia(smoothsia(simplifypt([shape], [map_cellsize] / NaN), [map_cellsize] / NaN,
+[map_cellsize] / NaN, all), [map_cellsize] / NaN, [map_cellsize] / 8.3e-316)`, which the polygon
+and line layers share but draw on nothing. The map has no `MAXFEATURES`; the polygon and line
+layers carry a class style of `labelcenter`, the label a style of `labelpoly`. Replayed alone on
+the fuzz build (`fuzz/target/x86_64-unknown-linux-gnu/release/render <file>`), it takes 12.7 to
+13.7 s; the layer `multipoints` drawn alone in a release build takes about 0.54 s, and ends with
+`layer multipoints cannot draw 1 multipoint geometry in its render mode`: the transform succeeds,
+within its budget, and leaves a multipoint a line layer does not draw. The time lies in
 `smooth_sia` and `preprocess` of `crates/symbolize/src/layer_transform.rs`, which charge the
-layer's `Budget`: up to `MAX_TRANSFORM_VISITS`, 100,000,000 visits, for each of the two layers.
-How many visits the input charges was not measured, nor which of the two calls spends most.
+layer's `Budget`, up to `MAX_TRANSFORM_VISITS`, 100,000,000 visits. How many visits the input
+charges was not measured, nor which call spends most.
 
-The polygon's path is older than the ticket; the multipoint's share is new since ticket
+The polygon's path is older than ticket 03; the multipoint's is new since ticket
 backlog-deviations/02 let a multipoint reach a layer's transform, and the render target builds one
 since ticket 03. A probe run of ticket 03, which draws each input up to three times, timed out the
 same way on another input of two layers' `smoothsia` (8.9 s alone on the fuzz build).
 
-**Input** (754 bytes, base64; `bash scripts/fuzz.sh --replay render <file>` replays it on the
-target of ticket backlog-deviations/03):
+**Input** (430 bytes, base64; `bash scripts/fuzz.sh --replay render <file>` replays it on the
+target of ticket backlog-deviations/03 as its review left it, and fails with `libFuzzer: timeout
+after 11 seconds`):
 
 ```text
-eyJpbmUiOiAiRmVhdHVyZUNvbGxlSdR7InR5cGUiOgAiAQGBACAiRmVhdHUAARubpKf////3//////////////8HBwcHSQXv7+/v
-7+/v7+/v7+9w72nv73iPYXDv7+/v7+/vqIs6eO/vaHsibvX19fX19fUAARukCQAAcG9p7+/v7/X//wEBgQAA7e3t7e3t7e3tgQAg
-IkZlYXR1AAEbm6Sn////9///////////////BwcHB0kF7+/v7/X//wEBgQAA7e3t7e3t7e1hdHUAARsA9fX1JPX19fUR9WdseXBo
-LXBvaW50GBgYGBgYGBglIiwrInBlb21lAAAAAAAAAAZsCm1vYgoKCgoKCgrv7+/v71RVVVVXY2lyY2xlc/X19e9F9U5FSQXv7+/v
-9f//AQAAIAEBgf////////////////////r6+vr6+vr6+vr/B/////8AJm9uItvf29vb29vb29vb29vb29vb29vb29vb29sYGBgY
-GBgYGBgYGBgYGBgYGBgYGBgCjjjjjjjjjhgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBglIiwrInBlb21lAAAAAAAAAAZsCm1vYgoK
-CgoKCgrv7+/v71RVVVVXY2lyY2xlc/X19e9F9U5FSQXv7+/v9f//AQGB////////////////////+vr6+vr6+vr6+v9ORUkF7+/v
-7/X//wEBgf////////////////////r6+vr69vr6+vr///////9ycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJy
-cnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJycnJyACZvbiIsICJwXV1dfT4A
-An0KXX0AAK2t2wrb29vb29vb29vb29vb29vb29vb29vb39vb29vb25ukpKen29vb29vb29vb29vb29vb29vb29vf29vbf9vb29vb
-29vb2w==
+uBwAVAAAAAAAAEAAAAAAAAAAJQAAAAwAVAAAAAAAAEAA////////////////////////////////////////////AAAAAAAAJQAA
+AAAAAAAAkIeSlp5mZa/SkWluZTojOiAiAEZlYWF0dXR1cmVDb2xsZWN0h4eHh4eHh4eH/////////yItZv//////////////////
+////////////////////////////////////////////h4eHh4eHj4d+h4eHhwwAVAAAAAAAAED//////////////2VDb2xsZWN0
+aW9uIjBdXV19fQpdfQrv7+/v71RVVVVVVVUF7+/v7/X1IQtZyEIWsgDv7+/v9f//AQGBAAAAra2t30VORUnU+oV/f3/19f//////
+/////////////////////////////////////////////////////////////////wAAAAD/////////////CQAAAAAAAAD/////
+////////////////////////////////////////////////////AAAAAAAAACUAAAAAAAAAAA==
 ```
 
 **Where:** `smooth_sia`, `smooth_part`, and `preprocess` in
@@ -52,9 +55,8 @@ An0KXX0AAK2t2wrb29vb29vb29vb29vb29vb29vb29vb39vb29vb25ukpKen29vb29vb29vb29vb29vb
 - **A lower bound:** fewer visits per layer cut every transform's worst case, including the
   product's, and may leave undrawn a real map MapServer smooths; Q-9 sets the bound for the
   product, not for the fuzz build.
-- **A bound per render rather than per layer:** two layers of the same tree double the cost here;
-  a bound the layers share halves it, at the cost of a layer drawn or not by what the layers
-  before it spent.
-- **Leave the product as it is and keep the fuzz build in time:** the render target drawing one
-  transformed layer, not two, halves the case, but leaves a deeper tree or a slower host where it
-  is; and Q-3's 10 s is measured on the fuzz build.
+- **A bound per render rather than per layer:** layers of the same tree add up, as the first input's
+  two did; a bound the layers share cuts that, at the cost of a layer drawn or not by what the
+  layers before it spent, but not the input above, whose one layer is past 10 s alone.
+- **Leave the product as it is and keep the fuzz build in time:** fewer transformed layers in the
+  render target leave the input above where it is; and Q-3's 10 s is measured on the fuzz build.

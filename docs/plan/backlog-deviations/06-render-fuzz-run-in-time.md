@@ -1,4 +1,4 @@
-# Ticket: The render fuzz target's run holds Q-3's 10 s on two layers' nested smoothsia
+# Ticket: The render fuzz target's run holds Q-3's 10 s on a layer's nested smoothsia
 
 <!-- Copy to docs/plan/<spec>/<NN>-<slug>.md, next to the spec it slices, if it has one. A
      vertical slice: a narrow but complete path through every layer the change touches, demoable
@@ -13,7 +13,9 @@ Ticket 03's first 300-second run of the render target timed out on an input of t
 share a nested `smoothsia` tree, drawn on a polygon and on a multipoint: 16.7 s alone on the fuzz
 build, about 0.3 s in a release build. The backlog entry
 `docs/backlog/smoothsia-budget-outlasts-the-fuzz-timeout.md` holds the input, what it decodes to,
-the timings, and the options. The maintainer chose on 2026-11-19 to fix it in this plan, and moved
+the timings, and the options. The review of ticket 03 changed the target's decoding, and the
+entry's input is now one re-taken on it: one layer's nested `smoothsia` on a multipoint, past
+10 s alone. The maintainer chose on 2026-11-19 to fix it in this plan, and moved
 ticket 03's last criterion, a clean fuzz run, here.
 
 The session measures first: the visits the input charges, per layer and per call, and what one
