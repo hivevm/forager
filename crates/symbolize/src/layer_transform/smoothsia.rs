@@ -261,3 +261,6 @@ pub(super) fn preprocess(
         parts,
     })
 }
+
+#[cfg(test)]
+mod tests;
