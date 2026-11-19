@@ -210,11 +210,7 @@ impl Buffers {
 /// path is longer than 1.3 times the distance between its ends, or every such point where
 /// `force`, gets the midpoints towards its neighbours on either side; the last point of a ring
 /// becomes the first of the new one. The points added are charged to `budget`.
-pub(super) fn preprocess(
-    shape: &Shape,
-    force: bool,
-    budget: &mut Budget,
-) -> Result<Shape, Undrawn> {
+fn preprocess(shape: &Shape, force: bool, budget: &mut Budget) -> Result<Shape, Undrawn> {
     const WINDOW: usize = 5;
     let mut parts = Vec::with_capacity(shape.parts.len());
     for part in &shape.parts {
