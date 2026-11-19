@@ -179,6 +179,24 @@ expect_sensor 0 "the first numbering commit, which ADR-0002 has fail the docs ch
 commit "$d" "docs(adr): a todo"
 expect_sensor 0 "another commit typed docs(adr) is still judged" "$d" "docs(adr): a todo — fails: docs"
 
+d="$(repo shell-lint)"
+stub "$d" check-shell 'if [[ -d tools ]] && grep -rl BAD tools; then exit 1; fi'
+commit "$d" "feat: a shell lint"
+mkdir -p "$d/tools"
+printf 'BAD\n' > "$d/tools/run.sh"
+commit "$d" "feat: a script the lint refuses"
+bad="$(short "$d")"
+printf '# App\n' > "$d/README.md"
+commit "$d" "docs: a readme"
+readme="$(short "$d")"
+printf 'true\n' > "$d/tools/run.sh"
+commit "$d" "fix: the script passes"
+expect_sensor 0 "a commit that fails the commit's own shell lint is named with it" "$d" \
+  "$bad feat: a script the lint refuses — fails: shell lint (scripts/check-shell.sh)"
+REJECT="fix: the script passes" expect_sensor 0 \
+  "a commit that touches no shell script keeps the failing verdict, and the fix is not listed" "$d" \
+  "$readme docs: a readme — fails: shell lint (scripts/check-shell.sh)"
+
 d="$(repo green)"
 printf '# App\n' > "$d/README.md"
 commit "$d" "docs: a readme"

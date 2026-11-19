@@ -22,7 +22,8 @@
 # run on every commit. The checks run without the variables by which CI names the branch a change
 # lands on, so a draft ADR on a commit before its numbering is no finding (check 16 of
 # check-docs.sh), and without CI=true, so a ShellCheck of another version warns instead of
-# failing. Where cargo is missing, rustfmt is not run, and the report says so.
+# failing. Where cargo is missing, rustfmt is not run, and where ShellCheck is, each commit's shell
+# lint skips it and passes; the report's first line says so of either.
 #
 # The first of the two commits by which scripts/number-adrs.sh numbers the drafts, the one whose
 # subject starts 'docs(adr): number the drafts as', fails the documentation checks by design
@@ -78,8 +79,9 @@ inputs=("*.rs *Cargo.toml *rustfmt.toml rust-toolchain.toml"
         "crates fuzz THIRD-PARTY-NOTICES.md scripts/check-notice.sh scripts/lib"
         "")
 
-have_cargo=1
+have_cargo=1 have_shellcheck=1
 command -v cargo >/dev/null 2>&1 || have_cargo=0
+command -v shellcheck >/dev/null 2>&1 || have_shellcheck=0
 
 # The verdicts of earlier runs, by commit and check, under a key of the sensor's own code and the
 # versions of rustfmt and ShellCheck: a change of either judges every commit again.
@@ -87,7 +89,7 @@ cache="$(cd "$(git rev-parse --git-common-dir)" && pwd)/green-commits-verdicts"
 tool_key="$(
   { cat "$SELF" "$SELF_DIR/lib/git.sh"
     ((have_cargo)) && cargo fmt --version 2>&1
-    command -v shellcheck >/dev/null 2>&1 && shellcheck --version 2>&1
+    ((have_shellcheck)) && shellcheck --version 2>&1
   } | git hash-object --stdin
 )"
 declare -A cached # "<sha> <i>" → pass or fail, from an earlier run
@@ -131,7 +133,7 @@ run_check() {
 # known verdict is kept for the next run.
 declare -A verdict known
 new_entries=()
-findings=() count=0 rustfmt_seen=0
+findings=() count=0 rustfmt_seen=0 shell_seen=0
 while read -r sha; do
   count=$((count + 1))
   parent="$(git rev-parse -q --verify "$sha^1" 2>/dev/null)"
@@ -172,6 +174,7 @@ while read -r sha; do
       checked_out=1
     fi
     ((i == 0)) && [[ -f "$tree/Cargo.toml" ]] && rustfmt_seen=1
+    [[ "${scripts[i]}" == scripts/check-shell.sh && -f "$tree/${scripts[i]}" ]] && shell_seen=1
     # The checks of one commit run side by side; each only reads the clone.
     run_check "$i" &
     pids[i]=$!
@@ -208,6 +211,7 @@ short_base="$(git rev-parse --short "$base")"
 short_head="$(git rev-parse --short "$head")"
 note=""
 ((rustfmt_seen && !have_cargo)) && note=" rustfmt was not run: cargo is not on PATH."
+((shell_seen && !have_shellcheck)) && note+=" The shell lint ran without ShellCheck, which is not on PATH, so it passed what ShellCheck alone refuses."
 if ((${#findings[@]} == 0)); then
   echo "$NAME ($short_base..$short_head): nothing to report — each of $count commit(s) passes the fast checks.$note"
   exit 0
