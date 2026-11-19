@@ -6,7 +6,7 @@
 > is updated in the same change as the structure it describes
 > ([ADR-0001](adr/0001-agent-governance-model.md)).
 >
-> **Last design revision:** 2026-11-18, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-18 (2), due after 20 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
 > ([ADR-0005](adr/0005-feature-layer.md)).
@@ -230,8 +230,9 @@ golden path and the test pattern an agent copies from are named here.
   TrueType symbols whose font cannot be used or lacks the character, and geometries its render
   mode cannot draw (Q-9); the markers, hatches, pixmaps, and symbols, and the bound the transform
   trees of its class styles passed, are one value, `Refusals`, which a canvas yields in one call,
-  the labels keep per layer and merge, and the layer's reports turn into its diagnostics, its
-  symbols through one function of `layer.rs`. It loads the
+  the labels keep per layer and merge, and the layer's reports turn into its diagnostics, the
+  labels' refusals among them, in one module, `layer_reports.rs`, which writes the reports of a
+  layer's styles and transform trees too. It loads the
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
@@ -243,13 +244,13 @@ golden path and the test pattern an agent copies from are named here.
   operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It is the
   one core crate that awaits the ports. Its modules import one another in one direction only,
   `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `circle.rs`, `classes.rs`,
-  `render_resources.rs`, `reproject.rs`, `fonts.rs` and `images.rs`, and `bind.rs`,
-  `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`, `plan.rs`, and
-  `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs` lists them:
-  what the root and the modules share of a layer drawn and of the map's rotation lies in
-  `layer.rs`, and the address of a
-  label and the growth of the label cache's lists, which the labels and their styles share, in
-  `label_cache.rs`; `arch-test`'s `tests/engine_modules.rs` holds this direction.
+  `render_resources.rs`, `reproject.rs`, `layer_reports.rs`, `fonts.rs` and `images.rs`, and
+  `bind.rs`, `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`,
+  `plan.rs`, and `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs`
+  lists them: what the root and the modules share of a layer drawn and of the map's rotation lies
+  in `layer.rs`, and the address of a label and the growth of the label cache's lists, which the
+  labels and their styles share, in `label_cache.rs`; `arch-test`'s `tests/engine_modules.rs`
+  holds this direction.
   Every host binds its sources to the layers by name through the engine's `bind_sources`
   (`bind.rs`), which reports a source no layer is named for and one that cannot be read the same
   way for each.
@@ -479,13 +480,19 @@ manifest, every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer 
 toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push and runs
 its test `fuzz/tests/render_seeds.rs`, which decodes each seed of the render target through the
 target's own decoding, `fuzz_targets/render_input.rs`, and holds it to the path it was made for,
-told from the map it builds and from the display items a recorder in front of agg-rust sees.
-Beside it, `scripts/mutants.sh` runs cargo-mutants over the workspace every week through
-`.github/workflows/mutants.yml` and reports the edits no test notices. `scripts/package.sh` packs
-the CLI's archive and the browser bindings' package under `target/package/`, each with
-`THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive back for them, by the check
-of the notices that `scripts/check-notice.sh` shares (`scripts/lib/notice.sh`); nothing is
-published.
+told from the map it builds and from the display items a recorder in front of agg-rust sees;
+`scripts/check-fuzz-variants.sh` holds the render target to naming every node of the transform
+tree and every kind of symbol, but those its allow-list names with a reason. Beside it,
+`scripts/check-guards.sh` holds each guard against a third-party crate, marked
+`// Guard: <crate> <version>` in `render`, `render-agg`, and `symbolize`, to a version that
+`Cargo.lock` holds (ADR-0049), `scripts/check-comment-width.sh` holds each comment line of a Rust
+file under `crates/` and `fuzz/` to 100 characters, which rustfmt on the stable toolchain does not
+wrap, and `scripts/mutants.sh` runs cargo-mutants over the workspace every week through
+`.github/workflows/mutants.yml` and reports the edits no test notices.
+`scripts/package.sh` packs the CLI's archive and the browser bindings' package under
+`target/package/`, each with `THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive
+back for them, by the check of the notices that `scripts/check-notice.sh` shares
+(`scripts/lib/notice.sh`); nothing is published.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
 pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles, fonts,

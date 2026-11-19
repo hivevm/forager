@@ -142,9 +142,15 @@ stop() {
 }
 trap stop EXIT
 
+# drain <n> — wait until no more than n checks run, one 'wait -n' for each check that ends.
+# 'wait -n' returns each job once and then forgets it. A plain 'wait' does not forget the job of
+# the last check started when that check ended before 'wait' got to it, and a later 'wait -n'
+# returns that job again, as though a running check had ended.
+drain() { while ((running > $1)); do wait -n; running=$((running - 1)); done; }
+
 # settle — wait until every check started so far has ended, for a line of the list that needs
 # what an earlier one leaves behind.
-settle() { wait; running=0; }
+settle() { drain 0; }
 
 # run <label> <script> [args...] — start one check, its output and exit code kept under $out. The
 # subshell passes a TERM on to the check and waits for it, so stop() returns once each has ended;
@@ -160,7 +166,7 @@ run() {
     echo 0 > "$out/$i.rc"
     return
   fi
-  while ((running >= max_jobs)); do wait -n; running=$((running - 1)); done
+  drain $((max_jobs - 1))
   {
     # shellcheck disable=SC2046 # one process id per word
     trap 'kill $(jobs -p) 2>/dev/null; wait; exit 143' TERM
@@ -214,6 +220,8 @@ run "Refactor tests sensor self-test" scripts/test-sensor-refactor-tests.sh
 run "Refactor tests sensor" scripts/sensor-refactor-tests.sh
 run "Backlog commits sensor self-test" scripts/test-sensor-backlog-commits.sh
 run "Backlog commits sensor" scripts/sensor-backlog-commits.sh
+run "Green commits sensor self-test" scripts/test-sensor-green-commits.sh
+run "Green commits sensor" scripts/sensor-green-commits.sh
 run "Binding ADRs sensor self-test" scripts/test-sensor-binding-adrs.sh
 run "Binding ADRs sensor" scripts/sensor-binding-adrs.sh
 run "Plain rules sensor self-test" scripts/test-sensor-plain-rules.sh
@@ -243,6 +251,9 @@ run "Guard check self-test" scripts/test-check-guards.sh
 # Every guard against a third-party crate names a version Cargo.lock holds.
 # Verifies: ADR-0049
 run "Guard check" scripts/check-guards.sh
+run "Comment width check self-test" scripts/test-check-comment-width.sh
+# rustfmt wraps no comment on the stable toolchain; a Rust comment line fits in 100 characters.
+run "Comment width check" scripts/check-comment-width.sh
 run "Fuzz variants check self-test" scripts/test-check-fuzz-variants.sh
 # The render fuzz target builds every node of the transform tree and every kind of symbol (Q-3).
 run "Fuzz variants check" scripts/check-fuzz-variants.sh

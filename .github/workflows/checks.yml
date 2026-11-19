@@ -16,10 +16,12 @@ name: Checks
 # sensor on a human's instruction (ADR-0002); this workflow runs the self-test of each.
 #
 # The build, test, and lint job runs scripts/check-rust.sh after scripts/install-tools.sh
-# (ADR-0007) and the self-test of scripts/fuzz.sh, which reads manifests with the toolchain
-# installed; the one job of this workflow that installs a toolchain; ~/.cargo/bin and the
-# registry are cached, keyed on the files that decide their content, and so is the msautotest
-# suite check-rust.sh fetches, keyed on the script that holds its pin.
+# (ADR-0007), the green commits sensor after its self-test, which runs rustfmt and the pinned
+# ShellCheck on each commit since the base, and the self-test of scripts/fuzz.sh, which reads
+# manifests with the toolchain installed; the one job of this workflow that installs a
+# toolchain; ~/.cargo/bin and the registry are cached, keyed on the files that decide their
+# content, and so is the msautotest suite check-rust.sh fetches, keyed on the script that holds
+# its pin.
 #
 # The browser job runs the browser test of G-14 alone, against the Google Chrome and ChromeDriver
 # of the runner image, which CHROMEWEBDRIVER names (ADR-0040). It
@@ -211,6 +213,11 @@ jobs:
       # Every guard against a third-party crate names a version Cargo.lock holds (ADR-0049).
       - name: Check that every guard's marker names a version Cargo.lock holds
         run: bash scripts/check-guards.sh
+      - name: Self-test the comment width check
+        run: bash scripts/test-check-comment-width.sh
+      # rustfmt wraps no comment on the stable toolchain; a Rust comment line fits in 100 characters.
+      - name: Check that every comment line of a Rust file fits in 100 characters
+        run: bash scripts/check-comment-width.sh
       - name: Self-test the fuzz variants check
         run: bash scripts/test-check-fuzz-variants.sh
       # The render fuzz target builds every node of the transform tree and every kind of symbol
@@ -291,8 +298,21 @@ jobs:
         with:
           path: target/msautotest
           key: msautotest-${{ hashFiles('scripts/fetch-msautotest.sh') }}
+      # ~/.local/bin holds the ShellCheck install-tools.sh pins, which the green commits sensor
+      # runs through each commit's shell lint.
       - name: Install the toolchain and the cargo tools
-        run: bash scripts/install-tools.sh
+        run: |
+          bash scripts/install-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # The green commits sensor runs here, where rustfmt and the pinned ShellCheck are, and
+      # reads the full history the checkout fetches. The base is the pull request's base branch,
+      # or the previous tip on a push to main.
+      - name: Self-test the green commits sensor
+        run: bash scripts/test-sensor-green-commits.sh
+      - name: Report the commits since the base on which a fast check fails
+        run: bash scripts/sensor-green-commits.sh "$BASE"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       # The fuzz targets themselves run weekly (fuzz.yml); how they are read and refused is
       # decided here, with the pinned toolchain but without the nightly one or cargo-fuzz.
       - name: Self-test how the fuzz script reads its targets

@@ -17,10 +17,10 @@
 //! The rectangle a source is asked for: a map's extent reprojected into a layer's projection as
 //! `msProjectRect` reprojects it, with the `+over` it adds to both projections and its ring
 //! reprojected by `msProjectShapeLine` (`shape.rs`). Not ported here: `lon_wrap`, which no
-//! projection here reads, and the memory of a projection's `is_polar`. MapServer sets it on the map's
-//! projection, which every layer of a render shares, at the first rectangle it projects, so only
-//! the first layer of a polar map gets all longitudes and the later ones take the `+over` path;
-//! here every layer gets them, as the first does.
+//! projection here reads, and the memory of a projection's `is_polar`. MapServer sets it on the
+//! map's projection, which every layer of a render shares, at the first rectangle it projects, so
+//! only the first layer of a polar map gets all longitudes and the later ones take the `+over`
+//! path; here every layer gets them, as the first does.
 
 use forager_style_ir::{Coord, Extent};
 
