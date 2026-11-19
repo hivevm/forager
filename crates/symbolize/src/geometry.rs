@@ -7,11 +7,16 @@
 // and an invalid result repaired as `DPTransformer` of
 // modules/core/src/main/java/org/locationtech/jts/simplify/DouglasPeuckerSimplifier.java and
 // `transformPolygon` of
-// modules/core/src/main/java/org/locationtech/jts/geom/util/GeometryTransformer.java decide. JTS is
-// offered under the Eclipse Public License 2.0 or the Eclipse Distribution License 1.0; Forager
-// takes it under the latter:
+// modules/core/src/main/java/org/locationtech/jts/geom/util/GeometryTransformer.java decide. The
+// circle of a point's buffer follows JTS at its release 1.19.0: the circle as `createCircle` and
+// `addDirectedFillet` of
+// modules/core/src/main/java/org/locationtech/jts/operation/buffer/OffsetSegmentGenerator.java
+// draw it, and a vertex dropped and the ring closed as `addPt`, `isRedundant`, and `closeRing` of
+// OffsetSegmentString.java of the same package decide. JTS is offered under the Eclipse Public
+// License 2.0 or the Eclipse Distribution License 1.0; Forager takes it under the latter:
 //
 // Copyright (c) 2016 Vivid Solutions.
+// Copyright (c) 2016 Martin Davis.
 //
 // Eclipse Distribution License - v 1.0
 //
@@ -42,11 +47,12 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
 // WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//! The geometry of `simplify` and `buffer` (ADR-0041), and of `simplifypt`
-//! (ADR-0047) in [`topology`]: a line or a polygon simplified as
+//! The geometry of `simplify` and `buffer` (ADR-0050), and of
+//! `simplifypt` (ADR-0047) in [`topology`]: a line or a polygon simplified as
 //! GEOS's `DouglasPeuckerSimplifier` simplifies it, and a shape buffered by geo's
 //! `buffer_with_style` with round joins and caps of 30 segments a quadrant, as `GEOSBuffer_r`
-//! buffers it with 30. A line keeps the points of a Douglas-Peucker
+//! buffers it with 30, but for a point's circle, which [`circle`] draws as JTS draws it, with
+//! `cos` and `sin` from `libm`. A line keeps the points of a Douglas-Peucker
 //! ported from JTS, which keeps its pending sections on a stack of its own, so no line nests it
 //! deeper than the stack allows. A polygon's rings are simplified each as a line, then the steps
 //! of JTS follow: a ring's first point dropped, a ring of fewer than 4 coordinates removed, and a
@@ -66,8 +72,7 @@ use forager_style_ir::Coord;
 use forager_style_ir::c::{ms_max, ms_min};
 use geo::algorithm::buffer::{BufferStyle, LineCap, LineJoin};
 use geo::{
-    Buffer, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon, Validation,
-    unary_union,
+    BooleanOps, Buffer, LineString, MultiLineString, MultiPolygon, Polygon, Validation, unary_union,
 };
 
 pub(crate) use topology::{Line, simplify_preserving};
@@ -171,7 +176,8 @@ pub(crate) enum Buffered<'a> {
 }
 
 /// `shape` buffered by `distance`, a finite number, by geo's `buffer_with_style` with round
-/// joins and round caps of [`SEGMENT_ANGLE`]: the polygons of the result, none where it is empty.
+/// joins and round caps of [`SEGMENT_ANGLE`], a point's circle drawn by [`circle`], as
+/// [`buffer_with_style`] says: the polygons of the result, none where it is empty.
 /// A point or a line buffered by a distance not above 0 is empty; a polygon is shrunk by a
 /// negative one.
 ///
@@ -383,34 +389,103 @@ fn scaled(p: &Coord, n: i32) -> Coord {
 }
 
 /// `shape` buffered by `distance` by geo's `buffer_with_style` with round joins and round caps of
-/// [`SEGMENT_ANGLE`], uncharged.
+/// [`SEGMENT_ANGLE`], uncharged, but for the circles geo 0.33.1 draws about a point by its own
+/// loop, which takes `cos` and `sin` from the platform's libm: Forager draws each by [`circle`]
+/// and merges them as geo merges its own (`src/algorithm/buffer.rs:268-390`).
+///
+/// - A point's circle alone is its buffer.
+/// - A multipoint's circles are merged by `unary_union`.
+/// - A line whose points are all equal is a place: the circles of a shape's places are merged by
+///   `unary_union`, and joined by `union` to geo's buffer of its other lines, empty where it has
+///   none. A shape of lines without a place is geo's buffer as it stands.
+///
+/// A point or a line buffered by a distance not above 0 is empty, as geo leaves it.
 fn buffer_with_style(shape: Buffered<'_>, distance: f64) -> Vec<Area> {
     let style = BufferStyle::new(distance)
         .line_join(LineJoin::Round(SEGMENT_ANGLE))
         .line_cap(LineCap::Round(SEGMENT_ANGLE));
+    let circles = |places: &[Coord]| -> Vec<Polygon> {
+        places
+            .iter()
+            .filter_map(|&place| circle(place, distance))
+            .map(|ring| Polygon::new(to_line_string(&ring), Vec::new()))
+            .collect()
+    };
     let buffered = match shape {
-        Buffered::Points([point]) => Point::new(point.x, point.y).buffer_with_style(style),
-        Buffered::Points(points) => MultiPoint::from(
-            points
-                .iter()
-                .map(|p| Point::new(p.x, p.y))
-                .collect::<Vec<_>>(),
-        )
-        .buffer_with_style(style),
-        Buffered::Lines(lines) => MultiLineString(
-            lines
-                .iter()
-                .filter(|line| !line.is_empty())
-                .map(|line| to_line_string(line))
-                .collect(),
-        )
-        .buffer_with_style(style),
+        Buffered::Points(_) | Buffered::Lines(_) if distance <= 0.0 => {
+            MultiPolygon::new(Vec::new())
+        }
+        Buffered::Points([point]) => MultiPolygon::new(circles(std::slice::from_ref(point))),
+        Buffered::Points(points) => unary_union(&circles(points)),
+        Buffered::Lines(lines) => {
+            let lines = lines.iter().filter(|line| !line.is_empty());
+            let (places, others): (Vec<&Vec<Coord>>, Vec<&Vec<Coord>>) =
+                lines.partition(|line| line.iter().all(|p| *p == line[0]));
+            let stroked = MultiLineString(others.iter().map(|line| to_line_string(line)).collect())
+                .buffer_with_style(style);
+            if places.is_empty() {
+                stroked
+            } else {
+                let places: Vec<Coord> = places.iter().map(|line| line[0]).collect();
+                unary_union(&circles(&places)).union(&stroked)
+            }
+        }
         Buffered::Areas(areas) => {
             MultiPolygon(areas.iter().map(to_polygon).collect()).buffer_with_style(style)
         }
     };
     buffered.0.iter().map(from_polygon).collect()
 }
+
+/// The ring of the circle about `centre` by `distance`, above 0, as JTS 1.19.0's
+/// `OffsetSegmentGenerator.createCircle` draws it with 30 segments a quadrant, `cos` and `sin`
+/// taken from `libm`: the first point (x + d, y); then, clockwise, the vertex `i` from 0 to 119 at
+/// the angle −`i` × 2π/120 by `addDirectedFillet`, each dropped where it lies closer than
+/// d × 10⁻⁶ to the point before it, as `OffsetSegmentString.addPt` drops it; and the first point
+/// again, by `closeRing`. GEOS 3.12.1 draws the same circle by the platform's `cos`.
+///
+/// `None` where the vertices round onto fewer than 3 places, as they do far from the origin by a
+/// distance below a coordinate's last bit: such a ring bounds no area and is no ring of an
+/// [`Area`].
+fn circle(centre: Coord, distance: f64) -> Option<Vec<Coord>> {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a count of at most 120, exact in a double"
+    )]
+    let segments = CIRCLE_SEGMENTS as f64;
+    let increment = (2.0 * PI) / segments;
+    let least = distance * CURVE_VERTEX_SNAP_DISTANCE_FACTOR;
+    let mut ring = Vec::with_capacity(CIRCLE_SEGMENTS + 1);
+    ring.push(Coord {
+        x: centre.x + distance,
+        y: centre.y,
+    });
+    for i in 0..CIRCLE_SEGMENTS {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a count of at most 120, exact in a double"
+        )]
+        let angle = 0.0 + -(i as f64) * increment;
+        let p = Coord {
+            x: centre.x + distance * libm::cos(angle),
+            y: centre.y + distance * libm::sin(angle),
+        };
+        let last = ring[ring.len() - 1];
+        let (dx, dy) = (p.x - last.x, p.y - last.y);
+        if (dx * dx + dy * dy).sqrt() < least {
+            continue;
+        }
+        ring.push(p);
+    }
+    if ring.last() != ring.first() {
+        ring.push(ring[0]);
+    }
+    (ring.len() >= 4).then_some(ring)
+}
+
+/// The share of the distance below which JTS 1.19.0's `OffsetSegmentGenerator` drops a vertex of a
+/// curve as one with the point before it.
+const CURVE_VERTEX_SNAP_DISTANCE_FACTOR: f64 = 1.0e-6;
 
 /// The points the round joins and caps of `shape`'s buffer may add, one for each segment of
 /// their arcs: at each vertex the turn between its two segments in steps of [`SEGMENT_ANGLE`],

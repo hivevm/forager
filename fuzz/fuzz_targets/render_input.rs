@@ -284,6 +284,47 @@ impl Fidelity {
     }
 }
 
+/// The transforms of a style other than a tree, and a multipoint: a class style's `GEOMTRANSFORM`
+/// on the polygon and line layers, drawn with the vector symbol; whether the label draws a style
+/// of `labelpoly`, of the hatch symbol or of none; and the parts of a multipoint, the one feature
+/// of a line layer of its own under the polygon and line layers' `GEOMTRANSFORM`, which takes it
+/// as the point shape of its parts. A transform that fails on the multipoint leaves that layer
+/// undrawn, not the others.
+#[derive(Arbitrary, Debug, Default)]
+struct Transforms {
+    style: Option<StyleTransform>,
+    label_poly: Option<bool>,
+    multipoint: Vec<Vec<(f64, f64)>>,
+}
+
+/// A style's `GEOMTRANSFORM` other than an expression, whose tree [`Fidelity::transform`] builds.
+#[derive(Arbitrary, Debug)]
+enum StyleTransform {
+    Start,
+    End,
+    Vertices,
+    Bbox,
+    Centroid,
+    LabelPoint,
+    LabelPoly,
+    LabelCenter,
+}
+
+impl StyleTransform {
+    fn transform(&self) -> GeomTransform {
+        match self {
+            StyleTransform::Start => GeomTransform::Start,
+            StyleTransform::End => GeomTransform::End,
+            StyleTransform::Vertices => GeomTransform::Vertices,
+            StyleTransform::Bbox => GeomTransform::Bbox,
+            StyleTransform::Centroid => GeomTransform::Centroid,
+            StyleTransform::LabelPoint => GeomTransform::LabelPoint,
+            StyleTransform::LabelPoly => GeomTransform::LabelPoly,
+            StyleTransform::LabelCenter => GeomTransform::LabelCenter,
+        }
+    }
+}
+
 /// A TrueType symbol: its character, its font, the test font or the bytes given, and its style's
 /// `SIZE`, `ANGLE`, `GAP` along a line, and whether it has an `OUTLINECOLOR` of an outline width.
 #[derive(Arbitrary, Debug)]
@@ -349,12 +390,18 @@ fn layer(name: &str, mode: RenderMode, styles: Vec<Style>, exprs: &Expressions) 
     }
 }
 
+/// The name of the layer that draws the multipoint of [`Transforms`] under the polygon and line
+/// layers' `GEOMTRANSFORM`, and the one layer whose features are not the shapes.
+pub const MULTIPOINTS: &str = "multipoints";
+
 /// The map the render target draws, the features of each of its layers, and the files it loads,
 /// as the target decodes them from its bytes.
 pub struct Decoded {
     pub map: Map,
-    /// The features of every layer, each with its index among them as its id.
+    /// The features of every layer but [`MULTIPOINTS`], each with its index among them as its id.
     pub features: Vec<Feature>,
+    /// The one feature of the layer [`MULTIPOINTS`], where the map has the layer.
+    pub multipoint: Option<Feature>,
     files: Files,
 }
 
@@ -366,7 +413,14 @@ impl Decoded {
             .layers
             .iter()
             .filter_map(|layer| layer.name.clone())
-            .map(|name| (name, Shapes(self.features.clone())))
+            .map(|name| {
+                let features = if name == MULTIPOINTS {
+                    self.multipoint.iter().cloned().collect()
+                } else {
+                    self.features.clone()
+                };
+                (name, Shapes(features))
+            })
             .collect();
         let render = forager_engine::render_with_files(&self.map, &sources, &self.files, renderer);
         forager_ports::poll_once(render).expect("the engine waited on a port that never waits")
@@ -388,6 +442,11 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
             .tree();
     let head: Vec<u8> = data[..data.len() / 3].iter().rev().copied().collect();
     let fidelity = Fidelity::arbitrary_take_rest(Unstructured::new(&head)).unwrap_or_default();
+    // Back to front from the middle, where no other view starts, so that what it reads is not
+    // what another view reads from its first byte on.
+    let middle: Vec<u8> = data[..data.len() / 2].iter().rev().copied().collect();
+    let transforms =
+        Transforms::arbitrary_take_rest(Unstructured::new(&middle)).unwrap_or_default();
     let features: Vec<Feature> = input
         .shapes
         .iter()
@@ -407,6 +466,20 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
             },
         })
         .collect();
+    let multipoint = (!transforms.multipoint.is_empty() && transform.is_some()).then(|| Feature {
+        id: 0,
+        geometry: Geometry::MultiPoint(
+            transforms
+                .multipoint
+                .iter()
+                .map(|part| coords(part))
+                .collect(),
+        ),
+        properties: exprs
+            .values
+            .first()
+            .map_or_else(Properties::default, |values| expr_input::properties(values)),
+    });
     let computed = |tree: &Option<expr_input::Tree>| tree.as_ref().and_then(expr_input::Tree::expr);
     let style = Style {
         color: Some(
@@ -496,17 +569,25 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
         (cache.label_point, LabelTransform::Point),
         (cache.label_center, LabelTransform::Center),
     ];
+    let mut label_styles: Vec<Style<LabelTransform>> = markers
+        .into_iter()
+        .filter(|&(drawn, _)| drawn)
+        .map(|(_, transform)| pixmap_style.clone().with_transform(transform))
+        .collect();
+    if let Some(hatched) = transforms.label_poly {
+        let poly = Style {
+            symbol: hatched.then_some(Bound::Value(SymbolRef::Index(2))),
+            ..style.clone()
+        };
+        label_styles.push(poly.with_transform(LabelTransform::Poly));
+    }
     let label = Label {
         text: Some(Expr::String(input.text)),
         font: Some(Bound::Value("sans".to_owned())),
         size: Some(Bound::Value(input.label_size)),
         min_size: Some(input.min_size),
         max_size: Some(input.max_size),
-        styles: markers
-            .into_iter()
-            .filter(|&(drawn, _)| drawn)
-            .map(|(_, transform)| pixmap_style.clone().with_transform(transform))
-            .collect(),
+        styles: label_styles,
         ..Label::default()
     };
     let symbol_style = Style {
@@ -526,6 +607,10 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
     let class_transform = fidelity.transform.tree().map(|tree| Style {
         geom_transform: Some(GeomTransform::Expression(tree)),
         ..styles[0].clone()
+    });
+    let placed_transform = transforms.style.as_ref().map(|transform| Style {
+        geom_transform: Some(transform.transform()),
+        ..symbol_style.clone()
     });
     let mut points = layer("points", RenderMode::Point, styles.clone(), &exprs);
     for class in &mut points.classes {
@@ -580,11 +665,16 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
     };
     for layer in &mut map.layers[..2] {
         layer.geom_transform = transform.clone();
-        if let Some(style) = &class_transform {
+        for style in [&class_transform, &placed_transform].into_iter().flatten() {
             for class in &mut layer.classes {
                 class.styles.push(style.clone());
             }
         }
+    }
+    if multipoint.is_some() {
+        let mut layer = layer(MULTIPOINTS, RenderMode::Line, styles.clone(), &exprs);
+        layer.geom_transform = transform.clone();
+        map.layers.push(layer);
     }
     if fidelity.circle {
         let layer = layer("circles", RenderMode::Circle, styles.clone(), &exprs);
@@ -639,6 +729,7 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
     Some(Decoded {
         map,
         features,
+        multipoint,
         files,
     })
 }

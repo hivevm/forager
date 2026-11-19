@@ -413,7 +413,7 @@ fn package_dependents(ws: &Workspace, dependency: &str) -> BTreeSet<String> {
 
 #[test]
 fn only_render_agg_cuts_polygons_with_i_overlay() {
-    // Verifies: ADR-0042, ADR-0041
+    // Verifies: ADR-0042, ADR-0050
     // Of the resolved graph, render-agg and geo alone depend on i_overlay directly, which implies
     // that no other workspace crate does; symbolize alone of the workspace depends on geo.
     let ws = workspace();

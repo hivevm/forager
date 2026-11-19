@@ -667,7 +667,7 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-0041
+    // Verifies: ADR-0050
     zigzag_renders_alike_natively_and_on_wasm32("simplify");
 }
 
@@ -719,6 +719,53 @@ fn zigzag_renders_alike_natively_and_on_wasm32(function: &str) {
         pixels.chunks(4).any(|p| p[2] > p[0]),
         "the {function} zigzag is drawn in blue, not refused"
     );
+    let rendered = module
+        .render(&document, &files)
+        .expect("the module renders without a trap");
+    assert_eq!(wasm::difference(&native, &rendered), None);
+}
+
+/// A point, a multipoint whose circles overlap, and a line whose points are all equal, each
+/// buffered by a layer's `GEOMTRANSFORM` into the circles Forager draws with `libm`, where geo's
+/// took `cos` and `sin` from the platform's libm. No case of the suite buffers a point. The map
+/// renders natively and on wasm32 to the same RGBA buffer, each layer drawn (G-9). The unit tests
+/// of the geometry module decide the circles' bits; this holds the path from the layer to the
+/// image.
+#[test]
+#[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
+fn points_buffered_to_circles_render_alike_natively_and_on_wasm32() {
+    // Verifies: ADR-0050
+    let module = std::fs::read(conformance_module()).expect("the conformance module reads");
+    let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
+    let mapfile = "MAP SIZE 120 120 EXTENT 0 0 120 120 IMAGECOLOR 255 255 255\n\
+         LAYER NAME 'point' TYPE POINT STATUS ON GEOMTRANSFORM (buffer([shape], 17.3)) \
+         FEATURE POINTS 25.25 30.5 END END CLASS STYLE COLOR 255 0 0 SIZE 3 END END END\n\
+         LAYER NAME 'multipoint' TYPE POINT STATUS ON GEOMTRANSFORM (buffer([shape], 11.7)) \
+         FEATURE POINTS 70.1 30.3 85.6 31.9 END END CLASS STYLE COLOR 0 160 0 SIZE 3 END END END\n\
+         LAYER NAME 'place' TYPE LINE STATUS ON GEOMTRANSFORM (buffer([shape], 21.1)) \
+         FEATURE POINTS 60.4 85.2 60.4 85.2 END END CLASS STYLE COLOR 0 0 255 WIDTH 1.5 END END \
+         END\nEND\n";
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("circles");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("circles.map");
+    std::fs::write(&path, mapfile).unwrap();
+    let (base, name) = FileLoader::for_mapfile(&path, None).unwrap();
+    let path = ResourcePath::new(&name).unwrap();
+    let loaded = forager_cli::now(forager_mapfile::load(&path, &base.for_load(), None)).unwrap();
+    let map = loaded.document.expect("the mapfile loads").map;
+    let document = StyleDocument::new(map).to_json();
+    let (native, files) = wasm::native(&document, &base.for_load());
+    let (_, _, pixels) = native.as_ref().expect("the native render");
+    for (layer, colour) in [
+        ("point", [255, 0, 0]),
+        ("multipoint", [0, 160, 0]),
+        ("place", [0, 0, 255]),
+    ] {
+        assert!(
+            pixels.chunks(4).any(|p| p[..3] == colour),
+            "the layer {layer} is drawn"
+        );
+    }
     let rendered = module
         .render(&document, &files)
         .expect("the module renders without a trap");

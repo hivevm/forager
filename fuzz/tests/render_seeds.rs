@@ -41,6 +41,46 @@ enum Step {
     SmoothSia,
 }
 
+/// A class style's `GEOMTRANSFORM` other than a tree, by the name of its variant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Placed {
+    Start,
+    End,
+    Vertices,
+    Bbox,
+    Centroid,
+    LabelPoint,
+    LabelPoly,
+    LabelCenter,
+}
+
+impl Placed {
+    /// Whether the style's transform is this one.
+    fn is(self, transform: Option<&GeomTransform>) -> bool {
+        let variant = match transform {
+            Some(GeomTransform::Start) => Placed::Start,
+            Some(GeomTransform::End) => Placed::End,
+            Some(GeomTransform::Vertices) => Placed::Vertices,
+            Some(GeomTransform::Bbox) => Placed::Bbox,
+            Some(GeomTransform::Centroid) => Placed::Centroid,
+            Some(GeomTransform::LabelPoint) => Placed::LabelPoint,
+            Some(GeomTransform::LabelPoly) => Placed::LabelPoly,
+            Some(GeomTransform::LabelCenter) => Placed::LabelCenter,
+            Some(GeomTransform::Expression(_)) | None => return false,
+        };
+        variant == self
+    }
+
+    /// Whether a class style of the transform draws on a line or a polygon: the label transforms
+    /// draw nothing there, and labelcenter is reported.
+    fn draws(self) -> bool {
+        !matches!(
+            self,
+            Placed::LabelPoint | Placed::LabelPoly | Placed::LabelCenter
+        )
+    }
+}
+
 /// What a seed was made for.
 #[derive(Clone, Copy, Debug)]
 enum Path {
@@ -69,6 +109,17 @@ enum Path {
     /// A class's style on the polygon or the line layer applies a tree, and the layers transform a
     /// feature: see [`transforms`].
     ClassTransform,
+    /// A class's style on the polygon or the line layer has the transform, and the layers
+    /// transform a feature: see [`transforms`]. Of a transform that draws, the layers drawn alone
+    /// hand the renderer more items with the style than without it. Of a label's transform, which
+    /// draws nothing there, the layers drawn alone hand the renderer an item and neither reports
+    /// that its own `GEOMTRANSFORM` drew nothing, so that their class styles ran; of labelcenter,
+    /// the engine also warns of the style.
+    StyleTransform(Placed),
+    /// A multipoint of several parts is the feature of the layer `MULTIPOINTS`, which applies a
+    /// tree of its own that is more than `[shape]`, and the layer drawn alone hands the renderer
+    /// an item, which a line layer draws of no multipoint untransformed.
+    MultiPointLayerTransform,
     /// A polygon filled with a tile of the pixmap.
     TiledPixmap,
     /// The pixmap resampled at a point or along a line by the pixmap layers.
@@ -89,6 +140,9 @@ enum Path {
     /// The label's markers at its point and at the centre of its box, handed the renderer by the
     /// point layer drawn alone.
     LabelMarkers,
+    /// The label's style of `labelpoly`: the point layer drawn alone hands the renderer more items
+    /// with it than without it.
+    LabelPoly,
     /// The map has a view the engine refuses.
     ViewInvalid,
 }
@@ -106,6 +160,15 @@ impl fmt::Display for Path {
             }
             Path::LayerTransform => write!(f, "a layer's transform tree"),
             Path::ClassTransform => write!(f, "a class style's transform tree"),
+            Path::StyleTransform(placed) => {
+                write!(f, "a class style's GEOMTRANSFORM {placed:?}")
+            }
+            Path::MultiPointLayerTransform => {
+                write!(
+                    f,
+                    "a layer's transform tree drawn on a multipoint of several parts"
+                )
+            }
             Path::TiledPixmap => write!(f, "a tiled fill of the pixmap"),
             Path::ResampledPixmap => write!(f, "a resampled pixmap"),
             Path::BrushedLine => write!(f, "a brushed line"),
@@ -115,6 +178,7 @@ impl fmt::Display for Path {
             Path::MaxFeatures => write!(f, "a MAXFEATURES that holds features back"),
             Path::LabelCache => write!(f, "a label cached, walked with an edge buffer"),
             Path::LabelMarkers => write!(f, "a label's labelpoint and labelcenter markers"),
+            Path::LabelPoly => write!(f, "a label's labelpoly style"),
             Path::ViewInvalid => write!(f, "a view the engine refuses"),
         }
     }
@@ -130,8 +194,13 @@ const SEEDS: &[(&str, &[Path])] = &[
     ("far-end-rounds-to-its-parameter", &[Path::FarSegment]),
     ("far-end-rounds-to-its-parameter-slow", &[Path::FarSegment]),
     ("label-cache-edge-buffer", &[Path::LabelCache]),
+    ("label-labelpoly", &[Path::LabelPoly]),
     ("label-markers", &[Path::LabelMarkers]),
     ("layer-geomtransform", &[Path::LayerTransform]),
+    (
+        "layer-geomtransform-multipoint",
+        &[Path::MultiPointLayerTransform],
+    ),
     (
         "line-buffer-near-the-grid-step",
         &[Path::Step(Step::Buffer)],
@@ -145,6 +214,38 @@ const SEEDS: &[(&str, &[Path])] = &[
         &[Path::Step(Step::Simplify)],
     ),
     ("smoothsia-short-parts", &[Path::Step(Step::SmoothSia)]),
+    (
+        "style-geomtransform-bbox",
+        &[Path::StyleTransform(Placed::Bbox)],
+    ),
+    (
+        "style-geomtransform-centroid",
+        &[Path::StyleTransform(Placed::Centroid)],
+    ),
+    (
+        "style-geomtransform-end",
+        &[Path::StyleTransform(Placed::End)],
+    ),
+    (
+        "style-geomtransform-labelcenter",
+        &[Path::StyleTransform(Placed::LabelCenter)],
+    ),
+    (
+        "style-geomtransform-labelpoint",
+        &[Path::StyleTransform(Placed::LabelPoint)],
+    ),
+    (
+        "style-geomtransform-labelpoly",
+        &[Path::StyleTransform(Placed::LabelPoly)],
+    ),
+    (
+        "style-geomtransform-start",
+        &[Path::StyleTransform(Placed::Start)],
+    ),
+    (
+        "style-geomtransform-vertices",
+        &[Path::StyleTransform(Placed::Vertices)],
+    ),
     ("transform-buffer", &[Path::Step(Step::Buffer)]),
     ("transform-simplify", &[Path::Step(Step::Simplify)]),
     (
@@ -445,6 +546,68 @@ fn reaches(data: &[u8], path: Path) -> bool {
                 })
             });
             styled && transforms(&mut decoded)
+        }
+        Path::StyleTransform(placed) => {
+            let styled = transformed_layers(&decoded).any(|layer| {
+                layer.classes.iter().any(|class| {
+                    class
+                        .styles
+                        .iter()
+                        .any(|style| placed.is(style.geom_transform.as_ref()))
+                })
+            });
+            if !styled || !transforms(&mut decoded) {
+                return false;
+            }
+            if !placed.draws() {
+                decoded.map.layers.retain(|layer| {
+                    TRANSFORMED.contains(&layer.name.as_deref().unwrap_or_default())
+                });
+                let (ops, rendered) = drawn(&decoded);
+                let messages = || rendered.diagnostics.iter().map(|d| d.message.as_str());
+                let layer_undrawn =
+                    messages().any(|message| message.contains(" draws nothing: its GEOMTRANSFORM"));
+                let warned = placed != Placed::LabelCenter
+                    || messages()
+                        .any(|message| message.contains("style of GEOMTRANSFORM labelcenter"));
+                return !ops.is_empty() && !layer_undrawn && warned;
+            }
+            let with = drawn(&decoded).0.len();
+            for layer in &mut decoded.map.layers {
+                for class in &mut layer.classes {
+                    class
+                        .styles
+                        .retain(|style| !placed.is(style.geom_transform.as_ref()));
+                }
+            }
+            with > drawn(&decoded).0.len()
+        }
+        Path::MultiPointLayerTransform => {
+            let parts = decoded.multipoint.as_ref().is_some_and(|feature| {
+                matches!(&feature.geometry, Geometry::MultiPoint(parts) if parts.len() >= 2)
+            });
+            let own = decoded.map.layers.iter().any(|layer| {
+                layer.name.as_deref() == Some(render_input::MULTIPOINTS)
+                    && matches!(
+                        &layer.geom_transform,
+                        Some(TransformTree::Drawn(shape)) if *shape != TransformShape::Shape
+                    )
+            });
+            parts && own && !drawn_alone(&mut decoded, render_input::MULTIPOINTS).is_empty()
+        }
+        Path::LabelPoly => {
+            let mut without = decode(data).expect("decoded above");
+            for layer in &mut without.map.layers {
+                for class in &mut layer.classes {
+                    for label in &mut class.labels {
+                        label
+                            .styles
+                            .retain(|style| style.geom_transform != LabelTransform::Poly);
+                    }
+                }
+            }
+            let without = drawn_alone(&mut without, "points").len();
+            drawn_alone(&mut decoded, "points").len() > without
         }
         Path::TiledPixmap => drawn(&decoded)
             .0

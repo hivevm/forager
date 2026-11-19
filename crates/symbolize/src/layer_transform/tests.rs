@@ -484,14 +484,228 @@ fn numbers_are_computed_as_the_rules_of_math_exp_compute_them() {
 }
 
 #[test]
-fn a_multipoint_or_a_collection_is_refused() {
-    let multipoint = Geometry::MultiPoint(vec![coords(&[(0.0, 0.0), (1.0, 1.0)])]);
+fn a_collection_is_refused() {
     let generalized = generalize(TransformShape::Shape, n(1.0));
-    let why = failed(apply(&generalized, &multipoint));
-    assert!(why.contains("multipoint"), "{why}");
     let collection = Geometry::Collection(vec![line(ELL)]);
     let why = failed(apply(&generalized, &collection));
     assert!(why.contains("collection"), "{why}");
+}
+
+/// A point shape of three parts, as an inline feature of three `POINTS` blocks gives it: a first
+/// part of four points, a part of one, and a part of three.
+fn multipoint_of_three() -> Geometry {
+    Geometry::MultiPoint(vec![
+        coords(&[(0.0, 0.0), (1.0, 0.0), (4.0, 0.0), (4.0, 4.0)]),
+        coords(&[(9.0, 9.0)]),
+        coords(&[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0)]),
+    ])
+}
+
+#[test]
+fn shape_alone_keeps_each_part_of_a_multipoint() {
+    // Verifies: ADR-0048
+    let three = multipoint_of_three();
+    assert_eq!(apply(&TransformShape::Shape, &three), Ok(three.clone()));
+}
+
+#[test]
+fn generalize_keeps_the_first_part_of_a_multipoint() {
+    // Verifies: ADR-0048
+    // msGeneralize keeps shape->line[0] alone and the type: (1, 0) lies within 2 of (0, 0).
+    assert_eq!(
+        apply(
+            &generalize(TransformShape::Shape, n(2.0)),
+            &multipoint_of_three()
+        ),
+        Ok(Geometry::MultiPoint(vec![coords(&[
+            (0.0, 0.0),
+            (4.0, 0.0),
+            (4.0, 4.0)
+        ])]))
+    );
+}
+
+#[test]
+fn densify_outer_and_inner_fail_on_a_multipoint() {
+    // Verifies: ADR-0048
+    // msDensify and msRings2Shape return NULL for a point shape.
+    let three = multipoint_of_three();
+    let why = failed(apply(&densify(TransformShape::Shape, n(1.0)), &three));
+    assert!(why.contains("densify on a point shape"), "{why}");
+    let why = failed(apply(&TransformShape::Outer(shape()), &three));
+    assert!(why.contains("outer on a shape that is no polygon"), "{why}");
+    let why = failed(apply(&TransformShape::Inner(shape()), &three));
+    assert!(why.contains("inner on a shape that is no polygon"), "{why}");
+}
+
+/// The first part of [`multipoint_of_three`] alone, as msGEOSShape2Geometry builds it into GEOS's
+/// multipoint and msGEOSGeometry2Shape_multipoint returns it, one part.
+fn first_of_three() -> Geometry {
+    Geometry::MultiPoint(vec![coords(&[
+        (0.0, 0.0),
+        (1.0, 0.0),
+        (4.0, 0.0),
+        (4.0, 4.0),
+    ])])
+}
+
+#[test]
+fn simplify_keeps_the_points_of_a_multipoint_s_first_part() {
+    // Verifies: ADR-0048
+    // GEOS's Douglas-Peucker keeps a multipoint point by point; the other parts never reach it.
+    assert_eq!(
+        apply(&simplified(1.0), &multipoint_of_three()),
+        Ok(first_of_three())
+    );
+}
+
+#[test]
+fn simplifypt_keeps_the_points_of_a_multipoint_s_first_part() {
+    // Verifies: ADR-0048, ADR-0047
+    // GEOS's topology-preserving simplifier keeps a multipoint as it is; the other parts never
+    // reach it.
+    assert_eq!(
+        apply(&preserved(1.0), &multipoint_of_three()),
+        Ok(first_of_three())
+    );
+}
+
+/// The bounds of a ring, `[min x, min y, max x, max y]`.
+fn bounds(ring: &[Coord]) -> [f64; 4] {
+    ring.iter().fold(
+        [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ],
+        |[x0, y0, x1, y1], p| {
+            [
+                if p.x < x0 { p.x } else { x0 },
+                if p.y < y0 { p.y } else { y0 },
+                if p.x > x1 { p.x } else { x1 },
+                if p.y > y1 { p.y } else { y1 },
+            ]
+        },
+    )
+}
+
+/// Whether `ring` has `count` coordinates within `bounds` and each lies at the distance 1 from
+/// the nearest of `centres`, within 10⁻⁶, as the boundary of the union of their unit circles.
+fn unit_circles(ring: &[Coord], count: usize, expected: [f64; 4], centres: &[(f64, f64)]) -> bool {
+    let near = |a: f64, b: f64| (a - b).abs() < 1e-6;
+    ring.len() == count
+        && bounds(ring).iter().zip(expected).all(|(&a, b)| near(a, b))
+        && ring.iter().all(|&p| {
+            let nearest = centres
+                .iter()
+                .map(|&(x, y)| distance(p, c(x, y)))
+                .fold(f64::INFINITY, |a, d| if d < a { d } else { a });
+            near(nearest, 1.0)
+        })
+}
+
+#[test]
+fn buffer_buffers_the_first_part_of_a_multipoint() {
+    // Verifies: ADR-0048, ADR-0050
+    // GEOSBuffer_r of the multipoint of shape->line[0], (0, 0), (1, 0), (4, 0), (4, 4), by 1:
+    // the union of their circles, three polygons. The circles of (0, 0) and (1, 0) overlap into
+    // one ring from x = -1 to 2, of 161 coordinates; those of (4, 0) and (4, 4) are a circle of
+    // 121 each, as a point's. The later parts, (9, 9) among them, are not buffered.
+    let mut rings = rings_of(apply(&buffered(1.0), &multipoint_of_three()));
+    rings.sort_by(|a, b| bounds(a).partial_cmp(&bounds(b)).unwrap());
+    assert_eq!(rings.len(), 3, "{rings:?}");
+    assert!(
+        unit_circles(
+            &rings[0],
+            161,
+            [-1.0, -1.0, 2.0, 1.0],
+            &[(0.0, 0.0), (1.0, 0.0)]
+        ),
+        "{:?}",
+        rings[0]
+    );
+    assert!(
+        unit_circles(&rings[1], 121, [3.0, -1.0, 5.0, 1.0], &[(4.0, 0.0)]),
+        "{:?}",
+        rings[1]
+    );
+    assert!(
+        unit_circles(&rings[2], 121, [3.0, 3.0, 5.0, 5.0], &[(4.0, 4.0)]),
+        "{:?}",
+        rings[2]
+    );
+}
+
+#[test]
+fn smoothsia_smooths_each_part_of_a_multipoint_as_a_line() {
+    // Verifies: ADR-0048
+    // msSmoothShapeSIA smooths each part of three points or more as a line, whatever the type,
+    // and copies the part of one. A window of 3 weighs 0.5, 1, 0.5, summing to 2: (1.5, 0) =
+    // ((0 + 1 + 2) / 2, 0), (3.25, 1) = ((0.5 + 4 + 2) / 2, (0 + 0 + 2) / 2). The third part's
+    // window is cut to its count less one, 2, and to the odd 1, which keeps each point.
+    assert_eq!(
+        apply(&smooth(3.0, 1.0, None), &multipoint_of_three()),
+        Ok(Geometry::MultiPoint(vec![
+            coords(&[(0.0, 0.0), (1.5, 0.0), (3.25, 1.0), (4.0, 4.0)]),
+            coords(&[(9.0, 9.0)]),
+            coords(&[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0)]),
+        ]))
+    );
+}
+
+#[test]
+fn a_geos_function_takes_no_part_of_a_multipoint_past_the_first() {
+    // Verifies: ADR-0048, ADR-0049
+    // msGEOSShape2Geometry reads shape->line[0] alone, so a coordinate that is no finite number
+    // in a later part reaches neither GEOS nor the guard of geo's buffer.
+    let later = Geometry::MultiPoint(vec![coords(&[(3.0, 4.0)]), coords(&[(f64::NAN, 0.0)])]);
+    let rings = rings_of(apply(&buffered(1.0), &later));
+    assert_eq!(rings.len(), 1, "{rings:?}");
+    assert!(
+        unit_circles(&rings[0], 121, [2.0, 3.0, 4.0, 5.0], &[(3.0, 4.0)]),
+        "{:?}",
+        rings[0]
+    );
+    assert_eq!(
+        apply(&simplified(1.0), &later),
+        Ok(Geometry::Point(c(3.0, 4.0)))
+    );
+    // A multipoint without parts, or whose first part has no point, is not enough for a point to
+    // msGEOSShape2Geometry: the GEOS functions fail.
+    for empty in [
+        Geometry::MultiPoint(Vec::new()),
+        Geometry::MultiPoint(vec![Vec::new(), coords(&[(1.0, 1.0)])]),
+    ] {
+        for function in [simplified(1.0), preserved(1.0), buffered(1.0)] {
+            let why = failed(apply(&function, &empty));
+            assert!(why.contains("too few points"), "{empty:?}: {why}");
+        }
+    }
+}
+
+#[test]
+fn a_multipoint_of_one_point_draws_as_that_point_through_each_function() {
+    // Verifies: ADR-0048
+    // A point shape of one part of one point is the shape of the point: each function gives
+    // the same, or fails the same.
+    let one = Geometry::MultiPoint(vec![coords(&[(3.0, 4.0)])]);
+    let point = Geometry::Point(c(3.0, 4.0));
+    let trees = [
+        TransformShape::Shape,
+        generalize(TransformShape::Shape, n(2.0)),
+        densify(TransformShape::Shape, n(1.0)),
+        simplified(1.0),
+        preserved(1.0),
+        buffered(1.0),
+        TransformShape::Outer(shape()),
+        TransformShape::Inner(shape()),
+        smooth(3.0, 1.0, Some(Preprocessing::All)),
+    ];
+    for tree in &trees {
+        assert_eq!(apply(tree, &one), apply(tree, &point), "{tree:?}");
+    }
+    assert_eq!(apply(&TransformShape::Shape, &one), Ok(point));
 }
 
 #[test]
@@ -524,6 +738,69 @@ fn smoothsia_or_rings_past_the_points_a_layer_may_visit_is_a_limit() {
     assert!(why.contains("visits more than"), "{why}");
 }
 
+/// The transform of the render fuzz target's timeout of ticket backlog-deviations/06: a
+/// `smoothsia` of `iterations` about a `smoothsia` with the preprocessing `all` about a
+/// `simplifypt`, every other number `[map_cellsize] / NaN`, NaN.
+fn nested_smoothsia(iterations: f64) -> TransformShape {
+    TransformShape::SmoothSia {
+        shape: Box::new(TransformShape::SmoothSia {
+            shape: Box::new(preserved(f64::NAN)),
+            size: n(f64::NAN),
+            iterations: n(f64::NAN),
+            preprocessing: Some(Preprocessing::All),
+        }),
+        size: n(f64::NAN),
+        iterations: n(iterations),
+        preprocessing: None,
+    }
+}
+
+#[test]
+fn a_nested_smoothsia_charges_each_pass_its_points_by_its_window() {
+    // Verifies: Q-9
+    // The multipoint of the fuzz input, its parts of 6 points and 1. A size of NaN is INT_MIN,
+    // clamped to 3. The preprocessing makes 10 points of the first part, each pass reads its 8
+    // windows of 3 and keeps its 2 ends, and is charged 10 points by 3, 30.
+    let multipoint = Geometry::MultiPoint(vec![
+        coords(&[
+            (4.271_974_071_841_881e96, -1.410_854_973_847_188_7e-272),
+            (f64::NAN, f64::NAN),
+            (f64::NAN, f64::NAN),
+            (f64::NAN, f64::NAN),
+            (f64::NAN, -2.174_728_947_069_209e-272),
+            (1.440_081_921_904_806_5e214, 6.143_784_441_223_647e257),
+        ]),
+        coords(&[(1.213_397_622_620_004_8e-28, 1.842_989_922_346_347_2e185)]),
+    ]);
+    // 1 001 iterations run 1 000 passes, 30 000 visits, and the inner smoothsia's one 30.
+    let mut budget = Budget::default();
+    assert!(transformed(&nested_smoothsia(1001.0), &multipoint, 1.0, &mut budget).is_ok());
+    assert_eq!(budget.visited, 30 + 1000 * 30);
+    // The fuzz input's 2 933 747 iterations charge 88 012 410 visits, within the bound. 3 333 333
+    // iterations charge the inner smoothsia's 30 and 3 333 332 passes of 30, 99 999 990, within
+    // it; 3 333 334 charge 30 more, 100 000 020, past it: the layer draws nothing, and no pass
+    // runs.
+    let mut budget = Budget::default();
+    assert!(
+        transformed(
+            &nested_smoothsia(3_333_333.0),
+            &multipoint,
+            1.0,
+            &mut budget
+        )
+        .is_ok()
+    );
+    assert_eq!(budget.visited, 99_999_990);
+    let mut budget = Budget::default();
+    let why = limit(transformed(
+        &nested_smoothsia(3_333_334.0),
+        &multipoint,
+        1.0,
+        &mut budget,
+    ));
+    assert!(why.contains("visits more than 100000000 points"), "{why}");
+}
+
 #[test]
 fn a_size_or_iterations_past_an_int_is_int_min_and_clamped() {
     // The (int) cast gives INT_MIN for a double past an `int` (ADR-0017), which
@@ -540,7 +817,7 @@ fn simplified(tolerance: f64) -> TransformShape {
 
 #[test]
 fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
-    // Verifies: ADR-0048, ADR-0041
+    // Verifies: ADR-0048, ADR-0050
     // msGEOSSimplify: each part by GEOS's Douglas-Peucker, a part GEOS builds empty dropped from
     // the result by its transformer.
     let parts = Geometry::MultiLineString(vec![
@@ -562,7 +839,7 @@ fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
 
 #[test]
 fn simplify_groups_a_polygon_s_rings_as_mapserver_hands_them_to_geos() {
-    // Verifies: ADR-0041
+    // Verifies: ADR-0050
     // Three outer rings by msGetOuterList, each with the inner rings msGetInnerList finds inside
     // it, in the order of the outer ones: the hole listed after the third ring goes with the
     // second. A multipolygon of the three, valid, kept as simplified: each square's bend at 10.5
@@ -627,7 +904,7 @@ fn simplify_groups_a_polygon_s_rings_as_mapserver_hands_them_to_geos() {
 
 #[test]
 fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
-    // Verifies: ADR-0041
+    // Verifies: ADR-0050
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points or a polygon of
     // fewer than 4; GEOS cannot build a line of 1 point or a ring that is not closed; and its
     // DouglasPeuckerSimplifier refuses a tolerance below 0. Each fails "Executing simplify".
@@ -666,7 +943,7 @@ fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
 
 #[test]
 fn simplify_fails_on_a_polygon_with_a_coordinate_that_is_no_finite_number() {
-    // Verifies: ADR-0041, ADR-0049, Q-3
+    // Verifies: ADR-0050, ADR-0049, Q-3
     // geo's repair of an invalid polygon panics on a coordinate that is no number, which the
     // engine refuses instead. The ring is the render fuzz target's (revision-2026-11-16/20).
     let far = -6.450_106_543_526_558e30;
@@ -877,7 +1154,7 @@ fn rings_of(result: Result<Geometry, Undrawn>) -> Vec<Vec<Coord>> {
 
 #[test]
 fn buffer_turns_each_shape_into_a_polygon_as_msgeosbuffer_does() {
-    // Verifies: ADR-0048, ADR-0041
+    // Verifies: ADR-0048, ADR-0050
     // msGEOSBuffer: GEOSBuffer_r of the shape msGEOSShape2Geometry builds, converted back by
     // msGEOSGeometry2Shape, a polygon whatever the shape's type. A point is a circle of 121
     // coordinates; two lines are buffered as one geometry, a part without points dropped; a
@@ -948,7 +1225,7 @@ fn buffer_buffers_a_line_of_finite_coordinates() {
 
 #[test]
 fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
-    // Verifies: ADR-0041
+    // Verifies: ADR-0050
     // GEOS's buffer of a line by 0 or less, or of a polygon by less than its half width, is the
     // empty polygon, which msGEOSGeometry2Shape_polygon turns into one ring without points. The
     // shape keeps GEOS's geometry, which msGEOSBuffer and msGEOSSimplify take where a shape has
@@ -979,7 +1256,7 @@ fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
 
 #[test]
 fn buffer_fails_where_geos_is_given_no_shape_or_no_finite_distance() {
-    // Verifies: ADR-0041, ADR-0049
+    // Verifies: ADR-0050, ADR-0049
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points; GEOS cannot build
     // a line part of 1 point; and GEOSBuffer_r returns none for a distance that is no finite
     // number. Each fails "Executing buffer failed".
@@ -1001,7 +1278,7 @@ fn buffer_fails_where_geos_is_given_no_shape_or_no_finite_distance() {
 
 #[test]
 fn the_geos_functions_build_the_shape_before_they_check_their_number() {
-    // Verifies: ADR-0041, ADR-0047, ADR-0049
+    // Verifies: ADR-0050, ADR-0047, ADR-0049
     // msGEOSBuffer, msGEOSSimplify, and msGEOSTopologyPreservingSimplify call
     // msGEOSShape2Geometry before GEOS is given the tolerance or the distance, so a shape of too
     // few points fails as such whatever the number. The engine's refusal of a coordinate that is
@@ -1043,7 +1320,7 @@ fn the_geos_functions_build_the_shape_before_they_check_their_number() {
 
 #[test]
 fn the_geos_functions_return_geos_s_empty_polygon_whatever_the_number() {
-    // Verifies: ADR-0041, ADR-0047
+    // Verifies: ADR-0050, ADR-0047
     // msGEOSBuffer and msGEOSSimplify hand GEOS's empty polygon on without building it, so
     // neither the shape nor the number is checked; the engine's simplifypt does the same.
     let square = polygon(&[&[(0.0, 0.0), (0.0, 4.0), (4.0, 4.0), (4.0, 0.0), (0.0, 0.0)]]);
@@ -1059,7 +1336,7 @@ fn the_geos_functions_return_geos_s_empty_polygon_whatever_the_number() {
 
 #[test]
 fn the_geos_functions_charge_a_polygon_s_rings_before_they_check_their_number() {
-    // Verifies: Q-9, ADR-0041, ADR-0047
+    // Verifies: Q-9, ADR-0050, ADR-0047
     // 5 001 rings of 4 points, each tested against all twice as msGEOSShape2Geometry groups them:
     // 20 004 * 5 001 * 2 points, past 1e8, a limit before the number is checked.
     let ring = |i: f64| coords(&[(i, 0.0), (i + 0.5, 0.0), (i, 0.5), (i, 0.0)]);

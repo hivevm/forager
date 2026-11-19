@@ -123,8 +123,9 @@ more than 24 levels, each node and each operator of a chain one level, fails the
 **A layer's `GEOMTRANSFORM`.** A layer's `GEOMTRANSFORM` is an expression alone (RFC 89, read by
 `getSymbol(1, MS_EXPRESSION)`); anything else fails the load. `msLayerNextShape` in
 `src/maplayer.c` replaces each shape it reads by the expression, after the layer's filter passes
-it and before it is classed or drawn (`msGeomTransformShape`, `src/mapgeomtransform.c`). The
-engine draws its tree's functions:
+it and before it is classed or drawn (`msGeomTransformShape`, `src/mapgeomtransform.c`). A
+multipoint is the point shape of its parts: one for a GeoJSON or a shapefile multipoint, one per
+`POINTS` block of an inline feature. The engine draws its tree's functions:
 
 - `generalize(s, t)` (`msGeneralize`, `src/maputil.c`): the first part of `s` alone, of its points
   the first, each at least `t` from the last kept, and the last. A polygon's other rings and a
@@ -133,13 +134,16 @@ engine draws its tree's functions:
   longer than `t` cut into `floor(length / t) + 1` equal ones. It fails a point and a `t` not
   above 0.
 - `simplify(s, t)` (`msGEOSSimplify`, `src/mapgeos.c`): `s` as GEOS's Douglas-Peucker simplifies
-  it at the tolerance `t`, by a Douglas-Peucker ported from JTS (ADR-0041).
-  A point shape keeps its points. Each part of a line keeps its end points and the points the
-  Douglas-Peucker keeps, which splits a section at the first of its farthest points, as GEOS
-  does, and needs no recursion, so no line overflows the stack. A part without points is dropped. A
-  polygon's rings are grouped as `msGEOSShape2Geometry` groups them: each outer ring, by
-  `msIsOuterRing`, with the inner rings whose first or second point lies in it, one polygon where
-  one ring is outer, a multipolygon otherwise; a ring neither outer nor in an outer one is dropped.
+  it at the tolerance `t`, by a Douglas-Peucker ported from JTS
+  (ADR-0050). A point shape keeps the points of its first part,
+  which `msGEOSShape2Geometry` builds into a point or a multipoint, and loses its other parts. Each
+  part of a line keeps its end points and
+  the points the Douglas-Peucker keeps, which splits a section at the first of its farthest
+  points, as GEOS does, and needs no recursion, so no line overflows the stack. A part without
+  points is dropped. A polygon's rings are grouped as `msGEOSShape2Geometry` groups them: each
+  outer ring, by `msIsOuterRing`, with the inner rings whose first or second point lies in it, one
+  polygon where one ring is outer, a multipolygon otherwise; a ring neither outer nor in an outer
+  one is dropped.
   Each ring is simplified as a line, then loses its first point where it lies within `t` of the
   segment between its neighbours, and is removed below 4 coordinates. A polygon whose shell is
   removed is removed with its holes, and a shape without polygons draws nothing. The result is
@@ -154,9 +158,9 @@ engine draws its tree's functions:
   in GEOS's result, which turns the shape into a line; Forager removes the member with its holes.
 - `simplifypt(s, t)` (`msGEOSTopologyPreservingSimplify`, `src/mapgeos.c`): `s` as GEOS's
   topology-preserving simplifier simplifies it at the tolerance `t`, by a port of JTS's
-  `TopologyPreservingSimplifier` (ADR-0047). The shape is built as
-  for `simplify`, and a point shape keeps its points. The lines of the shape, each part of a line,
-  or each polygon's shell and then its holes, are simplified together, one after the other in the
+  `TopologyPreservingSimplifier` (ADR-0047). The shape is built as for `simplify`, and a point
+  shape keeps the points of its first part. The lines of the shape, each part of a line, or each
+  polygon's shell and then its holes, are simplified together, one after the other in the
   shape's order. Each is a Douglas-Peucker as for `simplify`, but a section is flattened only
   where its new segment meets no other segment of the shape, simplified or not yet, in a point
   interior to either, lies on no equal segment, and carries no other line of the shape to its other
@@ -172,32 +176,37 @@ engine draws its tree's functions:
   comparisons with it are false; a section whose distances are all no number is kept whole where
   the tests refuse to flatten it, where GEOS would split it again without end.
 - `buffer(s, d)` (`msGEOSBuffer`, `src/mapgeos.c`): `s` as `GEOSBuffer_r` buffers it by the distance
-  `d` with 30 segments a quadrant, by geo's buffer with round joins and round caps of π/60
-  (ADR-0041). The shape is built as for `simplify`: a point shape is the point, or the multipoint,
-  of its first part; a line's parts are one line or a multiline, a part without points dropped; a
-  polygon's rings are grouped into polygons as `simplify` groups them. The result is always a
-  polygon: each polygon's shell and holes, a point's circle of 120 segments, a line's outline with
-  round ends, and a polygon grown by a positive `d` and shrunk by a negative one. A line whose `d`
-  lies above 0 but below a floor is buffered by the floor, where GEOS keeps the thinner buffer: the
-  larger of 2^-24 of the size of its parts' joint bounds, the larger of their width and height, and
-  2^-40 of their reach, the largest magnitude of their coordinates. i_overlay 4.5.2, under geo,
-  may walk a thinner stroke without end or return no polygon. A point or a line
-  buffered by a `d` not above 0, and a polygon shrunk until nothing is left, is GEOS's empty
-  polygon, which `msGEOSGeometry2Shape` turns into one ring without points. The shape keeps GEOS's
-  geometry, so `buffer` or `simplify` after it returns it empty, as `msGEOSBuffer` and
-  `msGEOSSimplify` build no geometry for a shape that has one; a function of MapServer's own after
-  it fails on a ring without points. Forager knows that geometry by the shape alone, a polygon of
-  one ring without points. MapServer also keeps it through a function of its own, so in
-  `buffer(generalize(buffer([shape], 1), 5), 1)` the outer `buffer` takes the inner one's geometry,
-  not the generalized shape; Forager buffers the generalized shape. Each vertex lies within 10⁻⁶ of
-  GEOS's on the case's polygons (measured within 2.3 × 10⁻⁷ px, with GEOS's point count), but the
-  rings run the other way and start at another point, and the polygons of a multipolygon may come in
-  another order; that matters only to a function after `buffer` that reads the first point or the
-  first part, such as `generalize`. A point's circle takes geo's `cos` and `sin` from the platform's
-  libm, not from the `libm` crate, so its last bits need not be alike on every target (Q-2). geo's
-  buffer works on a grid of integers fitted to the shape and the distance: a distance or a
-  coordinate near the limits of a double, such as 10³⁰⁰, buffers to nothing or to a coarse ring,
-  where GEOS buffers it.
+  `d` with 30 segments a quadrant, by geo's buffer with round joins and round caps of π/60, but for
+  a point's circle (ADR-0050). The shape is built as for
+  `simplify`: a point shape is the point, or the multipoint, of its first part; a line's parts are
+  one line or a multiline, a part without points dropped; a polygon's rings are grouped into
+  polygons as `simplify` groups them. The result is always a polygon: each polygon's shell and
+  holes, a point's circle of 120 segments, a line's outline with round ends, and a polygon grown by
+  a positive `d` and shrunk by a negative one. A line whose `d` lies above 0 but below a floor is
+  buffered by the floor, where GEOS keeps the thinner buffer: the larger of 2^-24 of the size of its
+  parts' joint bounds, the larger of their width and height, and 2^-40 of their reach, the largest
+  magnitude of their coordinates. i_overlay 4.5.2, under geo, may walk a thinner stroke without end
+  or return no polygon. A point or a line buffered by a `d` not above 0, and a polygon shrunk until
+  nothing is left, is GEOS's empty polygon, which `msGEOSGeometry2Shape` turns into one ring without
+  points. The shape keeps GEOS's geometry, so `buffer` or `simplify` after it returns it empty, as
+  `msGEOSBuffer` and `msGEOSSimplify` build no geometry for a shape that has one; a function of
+  MapServer's own after it fails on a ring without points. Forager knows that geometry by the shape
+  alone, a polygon of one ring without points. MapServer also keeps it through a function of its
+  own, so in `buffer(generalize(buffer([shape], 1), 5), 1)` the outer `buffer` takes the inner one's
+  geometry, not the generalized shape; Forager buffers the generalized shape. A point's circle,
+  about a point, each point of a multipoint, and each line whose points are all equal, is drawn as
+  JTS 1.19.0 draws it, with `cos` and `sin` from the `libm` crate, so its bits are alike on every
+  target: from (x + d, y) clockwise, each vertex within 10⁻¹² of GEOS's at the unit circle. A vertex
+  that rounds onto the one before it is dropped, as GEOS drops it; a circle that rounds onto fewer
+  than 3 places, far from the origin by a `d` below the last bit of its coordinates, is no polygon.
+  The circles of a multipoint, and those of a line's parts whose points are all equal, are merged by
+  geo's union, and the latter joined to the outline of the other parts. Each vertex of another
+  buffer lies within 10⁻⁶ of GEOS's on the case's polygons (measured within 2.3 × 10⁻⁷ px, with
+  GEOS's point count), but the rings run the other way and start at another point, and the polygons
+  of a multipolygon may come in another order; that matters only to a function after `buffer` that
+  reads the first point or the first part, such as `generalize`. geo's buffer works on a grid of
+  integers fitted to the shape and the distance: a distance or a coordinate near the limits of a
+  double, such as 10³⁰⁰, buffers to nothing or to a coarse ring, where GEOS buffers it.
 - `outer(s)` and `inner(s)` (`msRings2Shape`, `msIsOuterRing`, `src/mapprimitive.cpp`): the rings
   of a polygon that are outer, or inner, in their order. A ring alone is outer; another is outer
   where its first point lies in an even number of the other rings by `msPointInPolygon`. Where its
@@ -229,17 +238,17 @@ fails nothing. `buffer` fails, with "Executing buffer failed", where `msGEOSShap
 geometry or GEOS cannot build one, as for `simplify`, and on a distance that is no finite number,
 for which `GEOSBuffer_r` returns none. `simplifypt` fails, with "Executing simplifypt failed", where
 `simplify` fails, a tolerance below 0 among them. The engine also fails `buffer` on a shape with a
-coordinate that is no finite number, on which geo's buffer panics; GEOS buffers such a shape into a
-polygon of its own. It fails `simplify` of a polygon with a coordinate that is no finite number, on
-which geo's repair of the simplified polygon may panic, as it does by a tolerance that is no number;
+coordinate that is no finite number, on which geo's buffer panics, anywhere `msGEOSShape2Geometry`
+reads it, so not in a point shape's later parts; GEOS buffers such a shape into a polygon of its
+own. It fails `simplify` of a polygon with a coordinate that is no finite number, on which geo's
+repair of the simplified polygon may panic, as it does by a tolerance that is no number;
 whether GEOS simplifies such a polygon is not confirmed. A line and a point shape with such a
 coordinate are simplified. The engine treats a geometry collection the same way. MapServer fails
 `msGeomTransformShape` on these:
 `msDrawVectorLayer` returns a failure (`src/mapdraw.c`, 1427–1434), and `msDrawMap` frees the image
 and returns none (508–519), so MapServer makes no map at all.
-Forager deviates: the layer draws nothing, with the warning, and the rest of the map is drawn. A
-layer draws nothing on a multipoint likewise, with the warning, as the engine's transforms do not
-yet take one, where MapServer transforms it. `msDrawVectorLayer` reads no shape past the first whose
+Forager deviates: the layer draws nothing, with the warning, and the rest of the map is drawn.
+`msDrawVectorLayer` reads no shape past the first whose
 class it finds beyond the layer's `MAXFEATURES` (`src/mapdraw.c:1282-1286`), so a shape past it, or
 one the filter leaves out, is never transformed and fails nothing. A layer draws nothing, with
 `geomtransform-over-limit`, where its transforms add more than 1,000,000 points or visit more than

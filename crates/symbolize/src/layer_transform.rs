@@ -23,8 +23,8 @@
 //! feature that passes the layer's filter before it is classed and drawn. The tree holds
 //! `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia`
 //! of `[shape]`, nested; the frontend has translated MapServer's text into it. `simplify` and
-//! `buffer` are computed by the geometry module (ADR-0041), and `simplifypt` by its port of JTS's
-//! topology-preserving simplifier (ADR-0047).
+//! `buffer` are computed by the geometry module (ADR-0050),
+//! and `simplifypt` by its port of JTS's topology-preserving simplifier (ADR-0047).
 //!
 //! A shape is MapServer's: a type, point, line, or polygon, and a list of parts, a polygon's
 //! rings listed flat, as a source delivers them. What the transforms add or visit is bounded per
@@ -106,8 +106,7 @@ impl Charge for Budget {
 
 /// `geometry` replaced by the transform `shape`, as msGeomTransformShape evaluates it with
 /// `[map_cellsize]` at `cellsize`, the map's cellsize in the layer's units; the reason where
-/// MapServer's parser fails it, or where the engine cannot hold the geometry as MapServer's
-/// shape: a collection, or a multipoint, whose parts it does not know.
+/// MapServer's parser fails it, or where the geometry is no shape of MapServer's: a collection.
 pub fn transformed(
     shape: &TransformShape,
     geometry: &Geometry,
@@ -213,12 +212,7 @@ impl Shape {
             Geometry::MultiLineString(lines) => (Kind::Line, lines.clone()),
             Geometry::Polygon(rings) => (Kind::Polygon, rings.clone()),
             Geometry::MultiPolygon(polygons) => (Kind::Polygon, polygons.concat()),
-            Geometry::MultiPoint(_) => {
-                return Err(Undrawn::Failed(
-                    "is not drawn on a multipoint, which the layer's transforms do not yet take"
-                        .to_owned(),
-                ));
-            }
+            Geometry::MultiPoint(parts) => (Kind::Point, parts.clone()),
             Geometry::Collection(_) => {
                 return Err(Undrawn::Failed(
                     "is not drawn on a geometry collection, which is no shape of MapServer's"
@@ -227,6 +221,15 @@ impl Shape {
             }
         };
         Ok(Self { kind, parts })
+    }
+
+    /// The parts msGEOSShape2Geometry (src/mapgeos.c:360-399) reads: a point shape's first part
+    /// alone, a point or a multipoint of its points (365-374), and every part of another shape.
+    fn given(&self) -> &[Vec<Coord>] {
+        match self.kind {
+            Kind::Point => &self.parts[..self.parts.len().min(1)],
+            Kind::Line | Kind::Polygon => &self.parts,
+        }
     }
 
     /// The geometry of the shape: a polygon of all its rings, a line string of a line of one
@@ -428,7 +431,8 @@ fn densify(shape: &Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
 /// msGEOSShape2Geometry ([`built`]), simplified by GEOS's Douglas-Peucker, and converted back by
 /// msGEOSGeometry2Shape (:686-746), as the geometry module computes it.
 ///
-/// - A point shape is its points, which the simplification keeps.
+/// - A point shape is the points of its first part, which the simplification keeps, its other
+///   parts dropped.
 /// - A line's parts are simplified each; a part without points is dropped.
 /// - A polygon's rings are grouped as [`built`] groups them. The result's rings are each
 ///   polygon's shell and holes.
@@ -447,7 +451,7 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
         )));
     }
     let parts = match shape.kind {
-        Kind::Point => shape.parts,
+        Kind::Point => shape.given().to_vec(),
         Kind::Line => shape
             .parts
             .iter()
@@ -459,7 +463,7 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
         // `lex_cmp`, which unwraps `partial_cmp` of a coordinate that is no number
         // (`utils.rs:92-97`), reached from `winding_order.rs:149` through `bool_ops/mod.rs:270`.
         // The layer fails with a diagnostic.
-        Kind::Polygon if !is_finite(&shape) => {
+        Kind::Polygon if !is_finite(&shape.parts) => {
             return Err(Undrawn::Failed(
                 "calls simplify on a polygon with a coordinate that is no finite number".to_owned(),
             ));
@@ -475,10 +479,9 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
     })
 }
 
-/// Whether each coordinate of the shape is a finite number.
-fn is_finite(shape: &Shape) -> bool {
-    shape
-        .parts
+/// Whether each coordinate of `parts` is a finite number.
+fn is_finite(parts: &[Vec<Coord>]) -> bool {
+    parts
         .iter()
         .flatten()
         .all(|p| p.x.is_finite() && p.y.is_finite())
@@ -489,7 +492,8 @@ fn is_finite(shape: &Shape) -> bool {
 /// simplifier, and converted back by msGEOSGeometry2Shape (:686-746), as the geometry module
 /// computes it.
 ///
-/// - A point shape is its points, which the simplification keeps.
+/// - A point shape is the points of its first part, which the simplification keeps, its other
+///   parts dropped.
 /// - A line's parts are simplified together; a part without points is dropped.
 /// - A polygon's rings are grouped as [`built`] groups them, and simplified together, each
 ///   polygon's shell before its holes. No ring is removed and nothing is repaired.
@@ -510,7 +514,12 @@ fn simplify_preserving(
         )));
     }
     let lines: Vec<geometry::Line<'_>> = match shape.kind {
-        Kind::Point => return Ok(shape),
+        Kind::Point => {
+            return Ok(Shape {
+                kind: Kind::Point,
+                parts: shape.given().to_vec(),
+            });
+        }
         Kind::Line => shape
             .parts
             .iter()
@@ -540,14 +549,15 @@ fn simplify_preserving(
 /// empty, GEOS's empty polygon, which msGEOSGeometry2Shape_polygon turns into one ring without
 /// points.
 ///
-/// - A point shape is the point of its first part, or the multipoint of its points.
+/// - A point shape is the point of its first part, or the multipoint of its points; its other
+///   parts are not read.
 /// - A line's parts are its lines; a part without points is dropped.
 /// - A polygon's rings are grouped as [`built`] groups them.
 ///
 /// It fails where [`built`] fails, and on a distance that is no finite number, for which
 /// `GEOSBuffer_r` returns no geometry. The engine also fails a shape with a coordinate that is no
-/// finite number, on which geo's buffer panics; GEOS buffers such a shape into a polygon of its
-/// own.
+/// finite number in what GEOS is given, on which geo's buffer panics; GEOS buffers such a shape
+/// into a polygon of its own.
 fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Undrawn> {
     let Some(areas) = given_to_geos(shape, ShapeOp::Buffer, budget)? else {
         return Ok(shape.clone());
@@ -563,13 +573,13 @@ fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Un
     // (`buffer.rs:377`), whose adapter takes a point that is no finite number outside its rect,
     // which fails the debug assertion of `float_to_int` (i_float's `adapter.rs:115-123`). The
     // layer fails with a diagnostic.
-    if !is_finite(shape) {
+    if !is_finite(shape.given()) {
         return Err(Undrawn::Failed(
             "calls buffer on a shape with a coordinate that is no finite number".to_owned(),
         ));
     }
     let given = match shape.kind {
-        Kind::Point => geometry::Buffered::Points(shape.parts.first().map_or(&[], Vec::as_slice)),
+        Kind::Point => geometry::Buffered::Points(shape.given().first().map_or(&[], Vec::as_slice)),
         Kind::Line => geometry::Buffered::Lines(&shape.parts),
         Kind::Polygon => geometry::Buffered::Areas(&areas),
     };
@@ -762,9 +772,12 @@ struct Window<'a> {
 
 impl<'a> Window<'a> {
     /// initLineWindow (src/mapsmoothing.c:46-65), `size` at least 1: the line is a ring where it
-    /// has two points or more and its first and last are equal within `FP_EQ`.
-    fn new(line: &'a [Coord], size: usize) -> Self {
+    /// has two points or more and its first and last are equal within `FP_EQ`. The window holds
+    /// its indices in `points`, a buffer of an earlier window or an empty one.
+    fn new(line: &'a [Coord], size: usize, mut points: Vec<usize>) -> Self {
         let size = size.max(1);
+        points.clear();
+        points.resize(size, 0);
         let ring = line.len() >= 2 && {
             let (first, last) = (line[0], line[line.len() - 1]);
             fp_eq(first.x, last.x) && fp_eq(first.y, last.y)
@@ -775,7 +788,7 @@ impl<'a> Window<'a> {
             started: false,
             index: size / 2,
             ring,
-            points: vec![0; size],
+            points,
         }
     }
 
@@ -838,7 +851,7 @@ fn smooth_sia(
     let points: usize = shape.parts.iter().map(Vec::len).sum();
     let per_pass = points.saturating_mul(size.min(points)).max(1);
     budget.visit(per_pass.saturating_mul(passes))?;
-    // `smooth_part` returns a part of fewer than three points as it is, so a pass that skips them
+    // `Buffers::smooth` keeps a part of fewer than three points as it is, so a pass that skips them
     // costs what it is charged, however many short parts the shape holds.
     let smoothed: Vec<usize> = (0..shape.parts.len())
         .filter(|&i| shape.parts[i].len() >= 3)
@@ -846,58 +859,76 @@ fn smooth_sia(
     if smoothed.is_empty() {
         return Ok(shape);
     }
-    for _ in 0..passes {
-        for &i in &smoothed {
-            shape.parts[i] = smooth_part(&shape.parts[i], size);
+    // The passes reuse one set of buffers, so that a pass after the first allocates nothing: under
+    // the fuzz build's sanitizer, a pass's own allocations cost more than the window walk it is
+    // charged for.
+    let mut buffers = Buffers::default();
+    for &i in &smoothed {
+        for _ in 0..passes {
+            buffers.smooth(&mut shape.parts[i], size);
         }
     }
     Ok(shape)
 }
 
-/// One part smoothed by one pass of msSmoothShapeSIA (src/mapsmoothing.c:230-300).
-fn smooth_part(part: &[Coord], size: usize) -> Vec<Coord> {
-    let n = part.len();
-    if n < 3 {
-        return part.to_vec();
-    }
-    let mut ws = size.min(n - 1).max(1);
-    if ws.is_multiple_of(2) {
-        ws -= 1;
-    }
-    let mut window = Window::new(part, ws);
-    let index = window.index;
-    let mut coeff = vec![0.0; ws];
-    coeff[index] = 1.0;
-    for k in 0..index {
-        coeff[index + (k + 1)] = coeff[index - k] / 2.0;
-        coeff[index - (k + 1)] = coeff[index + k] / 2.0;
-    }
-    let mut smoothed = Vec::with_capacity(n);
-    loop {
-        match window.next() {
-            Step::Done => break,
-            Step::Invalid => smoothed.push(window.point(index)),
-            Step::Valid => {
-                let (mut sum, mut sum_x, mut sum_y) = (0.0, 0.0, 0.0);
-                for (k, &c) in coeff.iter().enumerate() {
-                    let p = window.point(k);
-                    let (x, y) = if k == index {
-                        (p.x, p.y)
-                    } else {
-                        (p.x * c, p.y * c)
-                    };
-                    sum += c;
-                    sum_x += x;
-                    sum_y += y;
+/// What one pass of [`smooth_sia`] writes besides the part, kept for the next pass.
+#[derive(Default)]
+struct Buffers {
+    smoothed: Vec<Coord>,
+    window: Vec<usize>,
+    coeff: Vec<f64>,
+}
+
+impl Buffers {
+    /// `part` smoothed by one pass of msSmoothShapeSIA (src/mapsmoothing.c:230-300).
+    fn smooth(&mut self, part: &mut Vec<Coord>, size: usize) {
+        let n = part.len();
+        if n < 3 {
+            return;
+        }
+        let mut ws = size.min(n - 1).max(1);
+        if ws.is_multiple_of(2) {
+            ws -= 1;
+        }
+        let mut window = Window::new(part, ws, std::mem::take(&mut self.window));
+        let index = window.index;
+        let coeff = &mut self.coeff;
+        coeff.clear();
+        coeff.resize(ws, 0.0);
+        coeff[index] = 1.0;
+        for k in 0..index {
+            coeff[index + (k + 1)] = coeff[index - k] / 2.0;
+            coeff[index - (k + 1)] = coeff[index + k] / 2.0;
+        }
+        let smoothed = &mut self.smoothed;
+        smoothed.clear();
+        loop {
+            match window.next() {
+                Step::Done => break,
+                Step::Invalid => smoothed.push(window.point(index)),
+                Step::Valid => {
+                    let (mut sum, mut sum_x, mut sum_y) = (0.0, 0.0, 0.0);
+                    for (k, &c) in coeff.iter().enumerate() {
+                        let p = window.point(k);
+                        let (x, y) = if k == index {
+                            (p.x, p.y)
+                        } else {
+                            (p.x * c, p.y * c)
+                        };
+                        sum += c;
+                        sum_x += x;
+                        sum_y += y;
+                    }
+                    smoothed.push(Coord {
+                        x: sum_x / sum,
+                        y: sum_y / sum,
+                    });
                 }
-                smoothed.push(Coord {
-                    x: sum_x / sum,
-                    y: sum_y / sum,
-                });
             }
         }
+        self.window = window.points;
+        std::mem::swap(part, smoothed);
     }
-    smoothed
 }
 
 /// processShapePathDistance (src/mapsmoothing.c:114-181): each point of a window of five whose
@@ -908,7 +939,7 @@ fn preprocess(shape: &Shape, force: bool, budget: &mut Budget) -> Result<Shape, 
     const WINDOW: usize = 5;
     let mut parts = Vec::with_capacity(shape.parts.len());
     for part in &shape.parts {
-        let mut window = Window::new(part, WINDOW);
+        let mut window = Window::new(part, WINDOW, Vec::new());
         let index = window.index;
         let mut line: Vec<Coord> = Vec::with_capacity(part.len());
         let mid = |a: Coord, b: Coord| Coord {
