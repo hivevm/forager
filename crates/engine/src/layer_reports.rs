@@ -178,11 +178,11 @@ pub(crate) fn refused_hatches(layer: &Layer, refused: usize) -> Option<Diagnosti
     })
 }
 
-/// The reports on the styles of a layer, drawn by its paths where `paths` holds: the symbols no
-/// symbol is named; where it is drawn by its paths, the styles of a GEOMTRANSFORM not drawn, which
-/// a point layer draws at its points, and a circle layer ignores as it draws its circle whatever
-/// the transform (`src/mapdraw.c:2390-2396`); and what the class styles' transform trees left
-/// undrawn, their failures and the bound they passed (see [`style_tree_reports`]).
+/// The reports on the styles of a layer: the symbols no symbol is named; where it is drawn by its
+/// paths, as `paths` says, the styles of a GEOMTRANSFORM not drawn, which a point layer draws at
+/// its points, and a circle layer ignores as it draws its circle whatever the transform
+/// (`src/mapdraw.c:2390-2396`); and what the class styles' transform trees left undrawn, their
+/// failures and the bound they passed (see [`style_tree_reports`]).
 pub(crate) fn style_reports(
     layer: &Layer,
     paths: bool,

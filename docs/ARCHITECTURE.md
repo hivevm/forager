@@ -231,8 +231,8 @@ golden path and the test pattern an agent copies from are named here.
   mode cannot draw (Q-9); the markers, hatches, pixmaps, and symbols, and the bound the transform
   trees of its class styles passed, are one value, `Refusals`, which a canvas yields in one call,
   the labels keep per layer and merge, and the layer's reports turn into its diagnostics, the
-  labels' among them, in one module, `layer_reports.rs`, which writes the reports of a layer's
-  styles and transform trees too. It loads the
+  labels' refusals among them, in one module, `layer_reports.rs`, which writes the reports of a
+  layer's styles and transform trees too. It loads the
   images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
   pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
   hands them to it on the canvas, and to the labels, which size the marker a class's first style
@@ -245,13 +245,12 @@ golden path and the test pattern an agent copies from are named here.
   one core crate that awaits the ports. Its modules import one another in one direction only,
   `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `circle.rs`, `classes.rs`,
   `render_resources.rs`, `reproject.rs`, `layer_reports.rs`, `fonts.rs` and `images.rs`, and
-  `bind.rs`,
-  `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`, `plan.rs`, and
-  `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs` lists them:
-  what the root and the modules share of a layer drawn and of the map's rotation lies in
-  `layer.rs`, and the address of a
-  label and the growth of the label cache's lists, which the labels and their styles share, in
-  `label_cache.rs`; `arch-test`'s `tests/engine_modules.rs` holds this direction.
+  `bind.rs`, `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`,
+  `plan.rs`, and `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs`
+  lists them: what the root and the modules share of a layer drawn and of the map's rotation lies
+  in `layer.rs`, and the address of a label and the growth of the label cache's lists, which the
+  labels and their styles share, in `label_cache.rs`; `arch-test`'s `tests/engine_modules.rs`
+  holds this direction.
   Every host binds its sources to the layers by name through the engine's `bind_sources`
   (`bind.rs`), which reports a source no layer is named for and one that cannot be read the same
   way for each.
