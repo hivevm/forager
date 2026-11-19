@@ -738,6 +738,69 @@ fn smoothsia_or_rings_past_the_points_a_layer_may_visit_is_a_limit() {
     assert!(why.contains("visits more than"), "{why}");
 }
 
+/// The transform of the render fuzz target's timeout of ticket backlog-deviations/06: a
+/// `smoothsia` of `iterations` about a `smoothsia` with the preprocessing `all` about a
+/// `simplifypt`, every other number `[map_cellsize] / NaN`, NaN.
+fn nested_smoothsia(iterations: f64) -> TransformShape {
+    TransformShape::SmoothSia {
+        shape: Box::new(TransformShape::SmoothSia {
+            shape: Box::new(preserved(f64::NAN)),
+            size: n(f64::NAN),
+            iterations: n(f64::NAN),
+            preprocessing: Some(Preprocessing::All),
+        }),
+        size: n(f64::NAN),
+        iterations: n(iterations),
+        preprocessing: None,
+    }
+}
+
+#[test]
+fn a_nested_smoothsia_charges_each_pass_its_points_by_its_window() {
+    // Verifies: Q-9
+    // The multipoint of the fuzz input, its parts of 6 points and 1. A size of NaN is INT_MIN,
+    // clamped to 3. The preprocessing makes 10 points of the first part, each pass reads its 8
+    // windows of 3 and keeps its 2 ends, and is charged 10 points by 3, 30.
+    let multipoint = Geometry::MultiPoint(vec![
+        coords(&[
+            (4.271_974_071_841_881e96, -1.410_854_973_847_188_7e-272),
+            (f64::NAN, f64::NAN),
+            (f64::NAN, f64::NAN),
+            (f64::NAN, f64::NAN),
+            (f64::NAN, -2.174_728_947_069_209e-272),
+            (1.440_081_921_904_806_5e214, 6.143_784_441_223_647e257),
+        ]),
+        coords(&[(1.213_397_622_620_004_8e-28, 1.842_989_922_346_347_2e185)]),
+    ]);
+    // 1 001 iterations run 1 000 passes, 30 000 visits, and the inner smoothsia's one 30.
+    let mut budget = Budget::default();
+    assert!(transformed(&nested_smoothsia(1001.0), &multipoint, 1.0, &mut budget).is_ok());
+    assert_eq!(budget.visited, 30 + 1000 * 30);
+    // The fuzz input's 2 933 747 iterations charge 88 012 410 visits, within the bound. 3 333 333
+    // iterations charge the inner smoothsia's 30 and 3 333 332 passes of 30, 99 999 990, within
+    // it; 3 333 334 charge 30 more, 100 000 020, past it: the layer draws nothing, and no pass
+    // runs.
+    let mut budget = Budget::default();
+    assert!(
+        transformed(
+            &nested_smoothsia(3_333_333.0),
+            &multipoint,
+            1.0,
+            &mut budget
+        )
+        .is_ok()
+    );
+    assert_eq!(budget.visited, 99_999_990);
+    let mut budget = Budget::default();
+    let why = limit(transformed(
+        &nested_smoothsia(3_333_334.0),
+        &multipoint,
+        1.0,
+        &mut budget,
+    ));
+    assert!(why.contains("visits more than 100000000 points"), "{why}");
+}
+
 #[test]
 fn a_size_or_iterations_past_an_int_is_int_min_and_clamped() {
     // The (int) cast gives INT_MIN for a double past an `int` (ADR-0017), which

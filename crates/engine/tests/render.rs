@@ -31,8 +31,8 @@ use forager_render::{DrawOp, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
     Bound, Class, Expr, Extent, GeomTransform, Layer, LayerStatus, LineCap, LineJoin, LineOffset,
-    Map, NotDrawn, NumberOp, Op, RenderMode, Rgba, ShapeOp, SourceRef, Span, Style, Symbol,
-    SymbolKind, SymbolRef, TransformNumber, TransformShape, TransformTree, Units,
+    Map, NotDrawn, NumberOp, Op, Preprocessing, RenderMode, Rgba, ShapeOp, SourceRef, Span, Style,
+    Symbol, SymbolKind, SymbolRef, TransformNumber, TransformShape, TransformTree, Units,
 };
 
 const WHITE: Rgba = Rgba::opaque(255, 255, 255);
@@ -2705,6 +2705,46 @@ fn a_layer_whose_geomtransform_adds_too_many_points_draws_nothing_with_a_warning
     map.layers[0].geom_transform = Some(densified(0.000001));
     let rendered = render_with(&map, Some(PEAK));
     assert_eq!(codes(&rendered), ["geomtransform-over-limit"]);
+    let image = rendered.image.unwrap();
+    assert_eq!(
+        image.pixel(25, 60),
+        Some(WHITE),
+        "nothing of the layer is drawn"
+    );
+}
+
+#[test]
+fn a_layer_whose_nested_smoothsia_visits_too_many_points_draws_nothing_with_a_warning() {
+    // Verifies: Q-9
+    // The inner smoothsia's preprocessing keeps the 3 points of the line, whose windows of 5 run
+    // off it, and its one pass is charged the 3 points by a window of 3, 9 visits. Each pass of
+    // the outer one is charged 9 too. 11 111 111 iterations run 11 111 110 passes, 99 999 990
+    // visits, 99 999 999 with the inner 9, within the 100 000 000 a layer's transforms may visit;
+    // 11 111 112 iterations charge 9 more, 100 000 008, past it. They are charged before a pass
+    // runs.
+    let smoothed = |shape, iterations, preprocessing| TransformShape::SmoothSia {
+        shape: Box::new(shape),
+        size: TransformNumber::Number(3.0),
+        iterations: TransformNumber::Number(iterations),
+        preprocessing,
+    };
+    let inner = smoothed(TransformShape::Shape, 1.0, Some(Preprocessing::All));
+    let mut map = map(RenderMode::Line, line_style(BLUE, 3.0));
+    map.layers[0].geom_transform = Some(TransformTree::Drawn(smoothed(
+        inner.clone(),
+        11_111_111.0,
+        None,
+    )));
+    let within = render_with(&map, Some(PEAK));
+    assert!(within.diagnostics.is_empty(), "{:?}", within.diagnostics);
+    map.layers[0].geom_transform = Some(TransformTree::Drawn(smoothed(inner, 11_111_112.0, None)));
+    let rendered = render_with(&map, Some(PEAK));
+    assert_eq!(codes(&rendered), ["geomtransform-over-limit"]);
+    let message = &rendered.diagnostics[0].message;
+    assert!(
+        message.contains("visits more than 100000000 points"),
+        "{message}"
+    );
     let image = rendered.image.unwrap();
     assert_eq!(
         image.pixel(25, 60),
