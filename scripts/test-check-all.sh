@@ -243,9 +243,34 @@ at_once() {
 }
 
 d="$(repo capped)"
-check "CHECK_ALL_JOBS=2 runs no more than two checks at once" test "$(at_once "$d" 2)" -le 2
+most="$(at_once "$d" 2)"
+check "CHECK_ALL_JOBS=2 runs no more than two checks at once (most at once: $most)" test "$most" -le 2
 d="$(repo uncapped)"
 check "the checks run side by side" test "$(at_once "$d" "${#scripts[@]}")" -gt 2
+
+# The cap holds across the settle line when the last check before it ends first, as on a loaded
+# machine. The check before the last waits until the runner has reaped the last one's process, so
+# the runner's plain wait finds that check ended without having waited for it, and bash keeps its
+# job. A runner that counts that job again as a check ending starts a third check after the settle.
+before_settle=()
+while IFS= read -r line; do
+  [[ "$line" == settle ]] && break
+  [[ "$line" =~ ^[[:space:]]*run[[:space:]]+\"[^\"]*\"[[:space:]]+(scripts/[A-Za-z0-9._-]+\.sh) ]] \
+    && before_settle+=("${BASH_REMATCH[1]}")
+done < "$RUNNER"
+d="$(repo settled)"
+if ((${#before_settle[@]} < ${#scripts[@]} && ${#before_settle[@]} >= 2)); then
+  # shellcheck disable=SC2016 # the stub's variable, not this script's
+  printf 'echo $PPID > "%s/last"\n' "$d" >> "$d/${before_settle[-1]}"
+  # shellcheck disable=SC2016 # the stub's commands, not this script's
+  printf 'for _ in $(seq 300); do [[ -s "%s/last" ]] && ! kill -0 "$(< "%s/last")" 2>/dev/null && break; sleep 0.1; done\n' \
+    "$d" "$d" >> "$d/${before_settle[-2]}"
+  most="$(at_once "$d" 2)"
+  check "CHECK_ALL_JOBS=2 holds after the settle line when the last check before it ends first (most at once: $most)" \
+    test "$most" -le 2
+else
+  failed=$((failed + 1)); echo "FAIL: the runner has a settle line after two checks" >&2
+fi
 
 d="$(repo jobs-zero)"
 CHECK_ALL_JOBS=0 expect_exit "CHECK_ALL_JOBS=0 exits 2" 2 "$d"
