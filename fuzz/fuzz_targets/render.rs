@@ -19,21 +19,21 @@
 //! marker. The last third of the bytes is read once more for a layer's `GEOMTRANSFORM`, a
 //! transform tree of up to eight functions of arbitrary numbers, `[map_cellsize]` among them,
 //! which the polygon and line layers apply to their features (ADR-0048); its steps include
-//! `simplify` and `buffer` (ADR-0041) and `simplifypt` (ADR-0047). The first third of the bytes,
-//! back to front, is read once more for what the fidelity spec added: a class style's
-//! `GEOMTRANSFORM` tree of the same steps on the polygon and line layers (ADR-0048), the map's
-//! `ANGLE` with or without a projection of the map and its layers (ADR-0045), a circle layer,
-//! `ANTIALIAS FALSE` on the first style, and a TrueType symbol at the points, along the lines,
-//! and over the polygons, its glyph drawn through the glyph port (ADR-0044) from the test font or
-//! from a font of the fuzz bytes. The first half of the bytes, back to front from the middle, is
-//! read once more for a class style's `GEOMTRANSFORM` other than a tree on the polygon and line
-//! layers, from `start` to `labelcenter`, the label's style of `labelpoly`, and a multipoint, drawn
-//! by a line layer of its own under the polygon and line layers' `GEOMTRANSFORM`, which takes it
-//! as the point shape of its parts. What the target
-//! builds of its bytes is `render_input.rs`. A
-//! field added to a view changes what every older seed decodes to; `fuzz/tests/render_seeds.rs`
-//! holds each seed to the path it was made for.
-// Verifies: Q-3, ADR-0025, ADR-0016, ADR-0046, ADR-0041, ADR-0044, ADR-0045, ADR-0047, ADR-0048
+//! `simplify` and `buffer` (ADR-draft-geometry-through-geo-and-own-circle) and `simplifypt`
+//! (ADR-0047). The first third of the bytes, back to front, is read once more for what the fidelity
+//! spec added: a class style's `GEOMTRANSFORM` tree of the same steps on the polygon and line
+//! layers (ADR-0048), the map's `ANGLE` with or without a projection of the map and its layers
+//! (ADR-0045), a circle layer, `ANTIALIAS FALSE` on the first style, and a TrueType symbol at the
+//! points, along the lines, and over the polygons, its glyph drawn through the glyph port
+//! (ADR-0044) from the test font or from a font of the fuzz bytes. The first half of the bytes,
+//! back to front from the middle, is read once more for a class style's `GEOMTRANSFORM` other than
+//! a tree on the polygon and line layers, from `start` to `labelcenter`, the label's style of
+//! `labelpoly`, and a multipoint, drawn by a line layer of its own under the polygon and line
+//! layers' `GEOMTRANSFORM`, which takes it as the point shape of its parts. What the target builds
+//! of its bytes is `render_input.rs`. A field added to a view changes what every older seed decodes
+//! to; `fuzz/tests/render_seeds.rs` holds each seed to the path it was made for.
+// Verifies: Q-3, ADR-0025, ADR-0016, ADR-0046, ADR-0044, ADR-0045, ADR-0047, ADR-0048
+// Verifies: ADR-draft-geometry-through-geo-and-own-circle
 #![no_main]
 
 mod expr_input;

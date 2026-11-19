@@ -23,17 +23,21 @@ PNPOLY_ENDORSE='The name of W. Randolph Franklin may not be used to endorse or p
 PROJ_TERMS='All source, data files and other contents of the PROJ package are available'
 
 # JTS's notice, which a file under crates/symbolize that follows a JTS source holds
-# (ADR-0041): the copyright line of those sources, and the third condition
-# and the disclaimer of the Eclipse Distribution License 1.0, under which Forager takes JTS.
+# (ADR-draft-geometry-through-geo-and-own-circle): the copyright line of those sources, and the
+# third condition and the disclaimer of the Eclipse Distribution License 1.0, under which Forager
+# takes JTS.
 JTS_COPYRIGHT='Copyright (c) 2016 Vivid Solutions.'
 JTS_ENDORSE='Neither the name of the Eclipse Foundation, Inc. nor the names of its'
 JTS_DISCLAIMER='THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY'
 # The JTS sources whose copyright line is another than JTS_COPYRIGHT, as "<source>|<line>", read
-# from the sources at JTS's master 722a943c. A port that names such a source holds its line, and
-# THIRD-PARTY-NOTICES.md holds it too.
+# from the sources at JTS's master 722a943c, and at its tag 1.19.0 for the sources of the circle
+# of a point's buffer. A port that names such a source holds its line, and THIRD-PARTY-NOTICES.md
+# holds it too.
 JTS_SOURCE_COPYRIGHTS=(
   'RobustLineIntersector.java|Copyright (c) 2016 Vivid Solutions, and others.'
   'ComponentJumpChecker.java|Copyright (c) 2023 Martin Davis.'
+  'OffsetSegmentGenerator.java|Copyright (c) 2016 Martin Davis.'
+  'OffsetSegmentString.java|Copyright (c) 2016 Martin Davis.'
 )
 
 # The copyright lines each source of PROJ 9.4.0 holds that a port under crates/proj names, as

@@ -83,7 +83,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 The Douglas-Peucker and the simplification of a polygon in `crates/symbolize/src/geometry.rs`
 follow JTS's `DouglasPeuckerLineSimplifier`, `DouglasPeuckerSimplifier`, `GeometryTransformer`, and
-`Distance`. The topology-preserving simplification in
+`Distance`; the circle of a point's buffer there follows JTS 1.19.0's `OffsetSegmentGenerator` and
+`OffsetSegmentString`. The topology-preserving simplification in
 `crates/symbolize/src/geometry/topology.rs` follows JTS's `TopologyPreservingSimplifier`,
 `TaggedLinesSimplifier`, `TaggedLineStringSimplifier`, `TaggedLineString`, `ComponentJumpChecker`,
 `RobustLineIntersector`, `LineIntersector`, `RayCrossingCounter`, `LineSegment`, `Distance`,
@@ -96,6 +97,7 @@ this):
 Copyright (c) 2016 Vivid Solutions.
 Copyright (c) 2016 Vivid Solutions, and others.
 Copyright (c) 2023 Martin Davis.
+Copyright (c) 2016 Martin Davis.
 
 Eclipse Distribution License - v 1.0
 

@@ -300,11 +300,13 @@ golden path and the test pattern an agent copies from are named here.
   layer's transform to its styles' (`layer_transform.rs`, Q-9),
   `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
   collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
-  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant, a
+  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant, but
+  for a point's circle, which a port of JTS's draws with `libm` and geo's unions merge, a
   tiny shape scaled by a power of two around it and back, and a line's distance raised to a floor,
-  so that i_overlay's grid neither drops the shape nor loops on it
-  (`geometry.rs`, [ADR-0041](adr/0041-geometry-through-geo.md)), a polygon's `simplify` and any
-  `buffer` of a coordinate that is no finite number failing before geo sees it
+  so that i_overlay's grid neither drops the shape nor loops on it (`geometry.rs`,
+  [ADR-draft-geometry-through-geo-and-own-circle](adr/draft-geometry-through-geo-and-own-circle.md)),
+  a polygon's `simplify` and any `buffer` of a coordinate that is no finite number failing before
+  geo sees it
   (`layer_transform.rs`), and `simplifypt` by a port of
   JTS's topology-preserving simplifier without recursion and without a spatial index
   (`geometry/topology.rs`,

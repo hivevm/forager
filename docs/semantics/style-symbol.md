@@ -134,9 +134,10 @@ multipoint is the point shape of its parts: one for a GeoJSON or a shapefile mul
   longer than `t` cut into `floor(length / t) + 1` equal ones. It fails a point and a `t` not
   above 0.
 - `simplify(s, t)` (`msGEOSSimplify`, `src/mapgeos.c`): `s` as GEOS's Douglas-Peucker simplifies
-  it at the tolerance `t`, by a Douglas-Peucker ported from JTS (ADR-0041).
-  A point shape keeps the points of its first part, which `msGEOSShape2Geometry` builds into a
-  point or a multipoint, and loses its other parts. Each part of a line keeps its end points and
+  it at the tolerance `t`, by a Douglas-Peucker ported from JTS
+  (ADR-draft-geometry-through-geo-and-own-circle). A point shape keeps the points of its first part,
+  which `msGEOSShape2Geometry` builds into a point or a multipoint, and loses its other parts. Each
+  part of a line keeps its end points and
   the points the Douglas-Peucker keeps, which splits a section at the first of its farthest
   points, as GEOS does, and needs no recursion, so no line overflows the stack. A part without
   points is dropped. A polygon's rings are grouped as `msGEOSShape2Geometry` groups them: each
@@ -175,32 +176,37 @@ multipoint is the point shape of its parts: one for a GeoJSON or a shapefile mul
   comparisons with it are false; a section whose distances are all no number is kept whole where
   the tests refuse to flatten it, where GEOS would split it again without end.
 - `buffer(s, d)` (`msGEOSBuffer`, `src/mapgeos.c`): `s` as `GEOSBuffer_r` buffers it by the distance
-  `d` with 30 segments a quadrant, by geo's buffer with round joins and round caps of π/60
-  (ADR-0041). The shape is built as for `simplify`: a point shape is the point, or the multipoint,
-  of its first part; a line's parts are one line or a multiline, a part without points dropped; a
-  polygon's rings are grouped into polygons as `simplify` groups them. The result is always a
-  polygon: each polygon's shell and holes, a point's circle of 120 segments, a line's outline with
-  round ends, and a polygon grown by a positive `d` and shrunk by a negative one. A line whose `d`
-  lies above 0 but below a floor is buffered by the floor, where GEOS keeps the thinner buffer: the
-  larger of 2^-24 of the size of its parts' joint bounds, the larger of their width and height, and
-  2^-40 of their reach, the largest magnitude of their coordinates. i_overlay 4.5.2, under geo,
-  may walk a thinner stroke without end or return no polygon. A point or a line
-  buffered by a `d` not above 0, and a polygon shrunk until nothing is left, is GEOS's empty
-  polygon, which `msGEOSGeometry2Shape` turns into one ring without points. The shape keeps GEOS's
-  geometry, so `buffer` or `simplify` after it returns it empty, as `msGEOSBuffer` and
-  `msGEOSSimplify` build no geometry for a shape that has one; a function of MapServer's own after
-  it fails on a ring without points. Forager knows that geometry by the shape alone, a polygon of
-  one ring without points. MapServer also keeps it through a function of its own, so in
-  `buffer(generalize(buffer([shape], 1), 5), 1)` the outer `buffer` takes the inner one's geometry,
-  not the generalized shape; Forager buffers the generalized shape. Each vertex lies within 10⁻⁶ of
-  GEOS's on the case's polygons (measured within 2.3 × 10⁻⁷ px, with GEOS's point count), but the
-  rings run the other way and start at another point, and the polygons of a multipolygon may come in
-  another order; that matters only to a function after `buffer` that reads the first point or the
-  first part, such as `generalize`. A point's circle takes geo's `cos` and `sin` from the platform's
-  libm, not from the `libm` crate, so its last bits need not be alike on every target (Q-2). geo's
-  buffer works on a grid of integers fitted to the shape and the distance: a distance or a
-  coordinate near the limits of a double, such as 10³⁰⁰, buffers to nothing or to a coarse ring,
-  where GEOS buffers it.
+  `d` with 30 segments a quadrant, by geo's buffer with round joins and round caps of π/60, but for
+  a point's circle (ADR-draft-geometry-through-geo-and-own-circle). The shape is built as for
+  `simplify`: a point shape is the point, or the multipoint, of its first part; a line's parts are
+  one line or a multiline, a part without points dropped; a polygon's rings are grouped into
+  polygons as `simplify` groups them. The result is always a polygon: each polygon's shell and
+  holes, a point's circle of 120 segments, a line's outline with round ends, and a polygon grown by
+  a positive `d` and shrunk by a negative one. A line whose `d` lies above 0 but below a floor is
+  buffered by the floor, where GEOS keeps the thinner buffer: the larger of 2^-24 of the size of its
+  parts' joint bounds, the larger of their width and height, and 2^-40 of their reach, the largest
+  magnitude of their coordinates. i_overlay 4.5.2, under geo, may walk a thinner stroke without end
+  or return no polygon. A point or a line buffered by a `d` not above 0, and a polygon shrunk until
+  nothing is left, is GEOS's empty polygon, which `msGEOSGeometry2Shape` turns into one ring without
+  points. The shape keeps GEOS's geometry, so `buffer` or `simplify` after it returns it empty, as
+  `msGEOSBuffer` and `msGEOSSimplify` build no geometry for a shape that has one; a function of
+  MapServer's own after it fails on a ring without points. Forager knows that geometry by the shape
+  alone, a polygon of one ring without points. MapServer also keeps it through a function of its
+  own, so in `buffer(generalize(buffer([shape], 1), 5), 1)` the outer `buffer` takes the inner one's
+  geometry, not the generalized shape; Forager buffers the generalized shape. A point's circle,
+  about a point, each point of a multipoint, and each line whose points are all equal, is drawn as
+  JTS 1.19.0 draws it, with `cos` and `sin` from the `libm` crate, so its bits are alike on every
+  target: from (x + d, y) clockwise, each vertex within 10⁻¹² of GEOS's at the unit circle. A vertex
+  that rounds onto the one before it is dropped, as GEOS drops it; a circle that rounds onto fewer
+  than 3 places, far from the origin by a `d` below the last bit of its coordinates, is no polygon.
+  The circles of a multipoint, and those of a line's parts whose points are all equal, are merged by
+  geo's union, and the latter joined to the outline of the other parts. Each vertex of another
+  buffer lies within 10⁻⁶ of GEOS's on the case's polygons (measured within 2.3 × 10⁻⁷ px, with
+  GEOS's point count), but the rings run the other way and start at another point, and the polygons
+  of a multipolygon may come in another order; that matters only to a function after `buffer` that
+  reads the first point or the first part, such as `generalize`. geo's buffer works on a grid of
+  integers fitted to the shape and the distance: a distance or a coordinate near the limits of a
+  double, such as 10³⁰⁰, buffers to nothing or to a coarse ring, where GEOS buffers it.
 - `outer(s)` and `inner(s)` (`msRings2Shape`, `msIsOuterRing`, `src/mapprimitive.cpp`): the rings
   of a polygon that are outer, or inner, in their order. A ring alone is outer; another is outer
   where its first point lies in an even number of the other rings by `msPointInPolygon`. Where its
