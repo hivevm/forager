@@ -48,7 +48,7 @@ skimmed. The design revision drops what prevented nothing
   and its seeds lead to: the pixmap decoder of 1eec7a6 panicked in the png crate on a ragged
   `PLTE` until its target came in a later ticket, and the render target drew no pixmap through
   two changes that added resampling and tiled fills, until c39b845. For the nodes of the transform
-  tree and the kinds of symbol,
+  tree, the kinds of symbol, and the transforms of a class's and a label's style,
   [`scripts/check-fuzz-variants.sh`](../scripts/check-fuzz-variants.sh) decides that the render
   target names each variant, or that the check's allow-list names it with its reason. That each
   seed of the render target still builds the path it was made for, after a change to how the

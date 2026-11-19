@@ -3,8 +3,9 @@
 # Self-test of scripts/check-fuzz-variants.sh. Verifies: Q-3
 #
 # Each case writes a fixture with the three files the check reads, the transform tree's enums in
-# crates/style-ir/src/transform.rs, SymbolKind in crates/style-ir/src/model.rs, and what the
-# render fuzz target builds, fuzz/fuzz_targets/render_input.rs, laid out as rustfmt lays them out;
+# crates/style-ir/src/transform.rs, SymbolKind, GeomTransform, and LabelTransform in
+# crates/style-ir/src/model.rs, and what the render fuzz target builds,
+# fuzz/fuzz_targets/render_input.rs, laid out as rustfmt lays them out;
 # it changes one of them, runs the check against the fixture, and asserts the exit code and the
 # line that names the variant or the problem. The fixture's SymbolKind holds the two variants the
 # check's allow-list names, Simple and Svg, which its target does not name.
@@ -77,10 +78,24 @@ pub enum SymbolKind {
     Vector,
     Simple,
     Svg,
+}
+
+/// A style'"'"'s transform: a tuple variant last.
+pub enum GeomTransform {
+    Start,
+    Bbox,
+    #[serde(rename = "expression")]
+    Expression(TransformTree),
+}
+
+pub enum LabelTransform {
+    Point,
+    Poly,
 }'
 
 # The target: every variant named, but the allow-listed ones.
-TARGET='use forager_style_ir::{NumberOp, Preprocessing, ShapeOp, SymbolKind, TransformNumber, TransformShape};
+TARGET='use forager_style_ir::{GeomTransform, LabelTransform, NumberOp, Preprocessing, ShapeOp, SymbolKind};
+use forager_style_ir::{TransformNumber, TransformShape};
 
 fn build() {
     let mut shape = TransformShape::Shape;
@@ -95,6 +110,8 @@ fn build() {
     let _ = [NumberOp::Add, NumberOp::Pow];
     let _ = [TransformNumber::Number(1.0), TransformNumber::MapCellsize];
     let _ = SymbolKind::Vector;
+    let _ = [GeomTransform::Start, GeomTransform::Bbox, GeomTransform::Expression(tree())];
+    let _ = [LabelTransform::Point, LabelTransform::Poly];
 }'
 
 # repo <name> [<sed script> <file>]... — a fixture with the three files above, printed as its
@@ -124,7 +141,7 @@ expect_check() { expect "$1" "$3" "$4" bash "$CHECK" "$2"; }
 
 dir="$(repo named)"
 expect_check "a target that names every variant passes" "$dir" 0 \
-  "Fuzz variants check passed (6 enums, 15 variants, 2 allowed)."
+  "Fuzz variants check passed (8 enums, 20 variants, 2 allowed)."
 expect_check "a passing run lists each enum's variants, and only them, deeper lines not read" \
   "$dir" 0 $'TransformShape: Shape Generalize SmoothSia Buffer\nShapeOp: Densify Simplifypt\nTransformNumber: Number MapCellsize\n'
 expect_check "a passing run lists an allowed variant with its reason" "$dir" 0 \
@@ -141,6 +158,14 @@ expect_check "a variant new to an enum fails until the target names it" "$dir" 1
 dir="$(repo symbol '/SymbolKind::Vector/d' target)"
 expect_check "a symbol kind the target never names fails" "$dir" 1 \
   "fuzz/fuzz_targets/render_input.rs never names SymbolKind::Vector"
+
+dir="$(repo style-transform 's/GeomTransform::Bbox, //' target)"
+expect_check "a style's transform the target never names fails" "$dir" 1 \
+  "fuzz/fuzz_targets/render_input.rs never names GeomTransform::Bbox"
+
+dir="$(repo label-transform 's/, LabelTransform::Poly//' target)"
+expect_check "a label's transform the target never names fails" "$dir" 1 \
+  "fuzz/fuzz_targets/render_input.rs never names LabelTransform::Poly"
 
 dir="$(repo comment 's|^    shape = TransformShape::Buffer|    // TransformShape::Buffer|' target)"
 expect_check "a variant named only in a comment is not named" "$dir" 1 \
