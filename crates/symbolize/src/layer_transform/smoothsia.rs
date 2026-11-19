@@ -209,9 +209,12 @@ impl Buffers {
 /// The `points` of a window weighed by `coeff`, whose sum is `total`, as a pass of
 /// msSmoothShapeSIA sums them: the centre, of the weight 1, added as it is, every other point
 /// times its weight. The centre is told by its weight, not by its place: under the fuzz build, an
-/// integer comparison costs a call that records it, and a comparison of floats none. Which of two
+/// integer comparison costs a call that records it, and a comparison of floats none. The centre's
+/// is the only weight of 1, since every other one is halved from it once or more. Which of two
 /// NaNs an addition keeps follows the order the compiler gives its operands, which a change of
-/// this loop can move: `crates/symbolize/smoothsia-bits.sh` compares the bits with a commit's.
+/// this loop can move, and so can the build's profile: debug and release builds of the same code
+/// differ in 15,487 NaN signs of the probe's cases. `crates/symbolize/smoothsia-bits.sh` therefore
+/// compares the bits with a commit's within one profile, the release one.
 fn weighed(points: &[Coord], coeff: &[f64], total: f64) -> Coord {
     let (mut sum_x, mut sum_y) = (0.0, 0.0);
     for (q, &c) in points.iter().zip(coeff) {
