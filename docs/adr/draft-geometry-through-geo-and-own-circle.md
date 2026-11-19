@@ -1,6 +1,6 @@
 # ADR-draft-geometry-through-geo-and-own-circle: `simplify` and `buffer` are computed in `symbolize`, by a Douglas-Peucker and a point's circle ported from JTS and with the geo crate, and a simplified polygon is repaired as GEOS repairs it
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-19
 - **Deciders:** Markus Brigl
 - **Applies to:** the geometry module of `crates/symbolize` that computes `simplify` and `buffer` and its callers in `crates/symbolize/src/layer_transform.rs`, `crates/symbolize/Cargo.toml`, `Cargo.lock` for geo and the crates it brings, `scripts/check-notice.sh` and `THIRD-PARTY-NOTICES.md` for the notice of JTS, and the unit tests that hold coordinates taken from GEOS
