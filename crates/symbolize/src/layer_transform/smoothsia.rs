@@ -74,18 +74,24 @@ impl<'a> Window<'a> {
             self.pos += 1;
         }
         self.started = true;
-        let n = self.line.len();
-        if self.pos >= n {
+        if self.pos >= self.line.len() {
             return Step::Done;
         }
-        self.points[self.index] = self.pos;
+        self.at(self.pos)
+    }
+
+    /// The window about the point `pos`, below the line's count: its indices, and whether it is
+    /// valid, as nextLineWindow finds them.
+    fn at(&mut self, pos: usize) -> Step {
+        let n = self.line.len();
+        self.points[self.index] = pos;
         for i in 0..self.index {
-            let mut r = self.pos.checked_sub(i + 1);
-            let mut l = Some(self.pos + i + 1).filter(|&l| l < n);
+            let mut r = pos.checked_sub(i + 1);
+            let mut l = Some(pos + i + 1).filter(|&l| l < n);
             if self.ring {
                 // `r = numpoints - (i + 2)`, `l = 1 + (l - numpoints)`.
                 r = r.or_else(|| n.checked_sub(i + 2));
-                l = l.or_else(|| Some(1 + (self.pos + i + 1 - n)).filter(|&l| l < n));
+                l = l.or_else(|| Some(1 + (pos + i + 1 - n)).filter(|&l| l < n));
             }
             let (Some(r), Some(l)) = (r, l) else {
                 return Step::Invalid;
@@ -152,6 +158,7 @@ struct Buffers {
     smoothed: Vec<Coord>,
     window: Vec<usize>,
     coeff: Vec<f64>,
+    edge: Vec<Coord>,
 }
 
 impl Buffers {
@@ -175,34 +182,53 @@ impl Buffers {
             coeff[index + (k + 1)] = coeff[index - k] / 2.0;
             coeff[index - (k + 1)] = coeff[index + k] / 2.0;
         }
-        let smoothed = &mut self.smoothed;
+        // The weights' sum, added in the order the C adds them for each window: the same for all.
+        let total = coeff.iter().fold(0.0, |sum, &c| sum + c);
+        let (smoothed, edge) = (&mut self.smoothed, &mut self.edge);
         smoothed.clear();
-        loop {
-            match window.next() {
-                Step::Done => break,
-                Step::Invalid => smoothed.push(window.point(index)),
-                Step::Valid => {
-                    let (mut sum, mut sum_x, mut sum_y) = (0.0, 0.0, 0.0);
-                    for (k, &c) in coeff.iter().enumerate() {
-                        let p = window.point(k);
-                        let (x, y) = if k == index {
-                            (p.x, p.y)
-                        } else {
-                            (p.x * c, p.y * c)
-                        };
-                        sum += c;
-                        sum_x += x;
-                        sum_y += y;
-                    }
-                    smoothed.push(Coord {
-                        x: sum_x / sum,
-                        y: sum_y / sum,
-                    });
-                }
-            }
+        for pos in 0..n {
+            // A window that runs off neither end of the part holds its points `pos - index` to
+            // `pos + index` in order, on a ring as on a line: it is read from the part's slice,
+            // without the indices the window walk finds for one that runs off an end.
+            let p = if pos >= index && pos + index < n {
+                weighed(&part[pos - index..=pos + index], coeff, total)
+            } else if window.at(pos) == Step::Valid {
+                edge.clear();
+                edge.extend(window.points.iter().map(|&i| part[i]));
+                weighed(edge, coeff, total)
+            } else {
+                part[pos]
+            };
+            smoothed.push(p);
         }
         self.window = window.points;
         std::mem::swap(part, smoothed);
+    }
+}
+
+/// The `points` of a window weighed by `coeff`, whose sum is `total`, as a pass of
+/// msSmoothShapeSIA sums them: the centre, of the weight 1, added as it is, every other point
+/// times its weight. The centre is told by its weight, not by its place: under the fuzz build, an
+/// integer comparison costs a call that records it, and a comparison of floats none. The centre's
+/// is the only weight of 1, since every other one is halved from it once or more. Which of two
+/// NaNs an addition keeps follows the order the compiler gives its operands, which a change of
+/// this loop can move, and so can the build's profile: debug and release builds of the same code
+/// differ in 15,487 NaN signs of the probe's cases. `crates/symbolize/smoothsia-bits.sh` therefore
+/// compares the bits with a commit's within one profile, the release one.
+fn weighed(points: &[Coord], coeff: &[f64], total: f64) -> Coord {
+    let (mut sum_x, mut sum_y) = (0.0, 0.0);
+    for (q, &c) in points.iter().zip(coeff) {
+        let (x, y) = if c == 1.0 {
+            (q.x, q.y)
+        } else {
+            (q.x * c, q.y * c)
+        };
+        sum_x += x;
+        sum_y += y;
+    }
+    Coord {
+        x: sum_x / total,
+        y: sum_y / total,
     }
 }
 

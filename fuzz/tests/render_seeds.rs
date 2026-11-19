@@ -213,6 +213,10 @@ const SEEDS: &[(&str, &[Path])] = &[
         "simplify-coordinate-no-number",
         &[Path::Step(Step::Simplify)],
     ),
+    (
+        "smoothsia-nested-layers-of-one-tree",
+        &[Path::Step(Step::SmoothSia)],
+    ),
     ("smoothsia-short-parts", &[Path::Step(Step::SmoothSia)]),
     (
         "style-geomtransform-bbox",
