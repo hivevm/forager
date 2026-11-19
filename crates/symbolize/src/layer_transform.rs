@@ -772,9 +772,12 @@ struct Window<'a> {
 
 impl<'a> Window<'a> {
     /// initLineWindow (src/mapsmoothing.c:46-65), `size` at least 1: the line is a ring where it
-    /// has two points or more and its first and last are equal within `FP_EQ`.
-    fn new(line: &'a [Coord], size: usize) -> Self {
+    /// has two points or more and its first and last are equal within `FP_EQ`. The window holds
+    /// its indices in `points`, a buffer of an earlier window or an empty one.
+    fn new(line: &'a [Coord], size: usize, mut points: Vec<usize>) -> Self {
         let size = size.max(1);
+        points.clear();
+        points.resize(size, 0);
         let ring = line.len() >= 2 && {
             let (first, last) = (line[0], line[line.len() - 1]);
             fp_eq(first.x, last.x) && fp_eq(first.y, last.y)
@@ -785,7 +788,7 @@ impl<'a> Window<'a> {
             started: false,
             index: size / 2,
             ring,
-            points: vec![0; size],
+            points,
         }
     }
 
@@ -848,7 +851,7 @@ fn smooth_sia(
     let points: usize = shape.parts.iter().map(Vec::len).sum();
     let per_pass = points.saturating_mul(size.min(points)).max(1);
     budget.visit(per_pass.saturating_mul(passes))?;
-    // `smooth_part` returns a part of fewer than three points as it is, so a pass that skips them
+    // `Buffers::smooth` keeps a part of fewer than three points as it is, so a pass that skips them
     // costs what it is charged, however many short parts the shape holds.
     let smoothed: Vec<usize> = (0..shape.parts.len())
         .filter(|&i| shape.parts[i].len() >= 3)
@@ -856,58 +859,76 @@ fn smooth_sia(
     if smoothed.is_empty() {
         return Ok(shape);
     }
-    for _ in 0..passes {
-        for &i in &smoothed {
-            shape.parts[i] = smooth_part(&shape.parts[i], size);
+    // The passes reuse one set of buffers, so that a pass after the first allocates nothing: under
+    // the fuzz build's sanitizer, a pass's own allocations cost more than the window walk it is
+    // charged for.
+    let mut buffers = Buffers::default();
+    for &i in &smoothed {
+        for _ in 0..passes {
+            buffers.smooth(&mut shape.parts[i], size);
         }
     }
     Ok(shape)
 }
 
-/// One part smoothed by one pass of msSmoothShapeSIA (src/mapsmoothing.c:230-300).
-fn smooth_part(part: &[Coord], size: usize) -> Vec<Coord> {
-    let n = part.len();
-    if n < 3 {
-        return part.to_vec();
-    }
-    let mut ws = size.min(n - 1).max(1);
-    if ws.is_multiple_of(2) {
-        ws -= 1;
-    }
-    let mut window = Window::new(part, ws);
-    let index = window.index;
-    let mut coeff = vec![0.0; ws];
-    coeff[index] = 1.0;
-    for k in 0..index {
-        coeff[index + (k + 1)] = coeff[index - k] / 2.0;
-        coeff[index - (k + 1)] = coeff[index + k] / 2.0;
-    }
-    let mut smoothed = Vec::with_capacity(n);
-    loop {
-        match window.next() {
-            Step::Done => break,
-            Step::Invalid => smoothed.push(window.point(index)),
-            Step::Valid => {
-                let (mut sum, mut sum_x, mut sum_y) = (0.0, 0.0, 0.0);
-                for (k, &c) in coeff.iter().enumerate() {
-                    let p = window.point(k);
-                    let (x, y) = if k == index {
-                        (p.x, p.y)
-                    } else {
-                        (p.x * c, p.y * c)
-                    };
-                    sum += c;
-                    sum_x += x;
-                    sum_y += y;
+/// What one pass of [`smooth_sia`] writes besides the part, kept for the next pass.
+#[derive(Default)]
+struct Buffers {
+    smoothed: Vec<Coord>,
+    window: Vec<usize>,
+    coeff: Vec<f64>,
+}
+
+impl Buffers {
+    /// `part` smoothed by one pass of msSmoothShapeSIA (src/mapsmoothing.c:230-300).
+    fn smooth(&mut self, part: &mut Vec<Coord>, size: usize) {
+        let n = part.len();
+        if n < 3 {
+            return;
+        }
+        let mut ws = size.min(n - 1).max(1);
+        if ws.is_multiple_of(2) {
+            ws -= 1;
+        }
+        let mut window = Window::new(part, ws, std::mem::take(&mut self.window));
+        let index = window.index;
+        let coeff = &mut self.coeff;
+        coeff.clear();
+        coeff.resize(ws, 0.0);
+        coeff[index] = 1.0;
+        for k in 0..index {
+            coeff[index + (k + 1)] = coeff[index - k] / 2.0;
+            coeff[index - (k + 1)] = coeff[index + k] / 2.0;
+        }
+        let smoothed = &mut self.smoothed;
+        smoothed.clear();
+        loop {
+            match window.next() {
+                Step::Done => break,
+                Step::Invalid => smoothed.push(window.point(index)),
+                Step::Valid => {
+                    let (mut sum, mut sum_x, mut sum_y) = (0.0, 0.0, 0.0);
+                    for (k, &c) in coeff.iter().enumerate() {
+                        let p = window.point(k);
+                        let (x, y) = if k == index {
+                            (p.x, p.y)
+                        } else {
+                            (p.x * c, p.y * c)
+                        };
+                        sum += c;
+                        sum_x += x;
+                        sum_y += y;
+                    }
+                    smoothed.push(Coord {
+                        x: sum_x / sum,
+                        y: sum_y / sum,
+                    });
                 }
-                smoothed.push(Coord {
-                    x: sum_x / sum,
-                    y: sum_y / sum,
-                });
             }
         }
+        self.window = window.points;
+        std::mem::swap(part, smoothed);
     }
-    smoothed
 }
 
 /// processShapePathDistance (src/mapsmoothing.c:114-181): each point of a window of five whose
@@ -918,7 +939,7 @@ fn preprocess(shape: &Shape, force: bool, budget: &mut Budget) -> Result<Shape, 
     const WINDOW: usize = 5;
     let mut parts = Vec::with_capacity(shape.parts.len());
     for part in &shape.parts {
-        let mut window = Window::new(part, WINDOW);
+        let mut window = Window::new(part, WINDOW, Vec::new());
         let index = window.index;
         let mut line: Vec<Coord> = Vec::with_capacity(part.len());
         let mid = |a: Coord, b: Coord| Coord {
