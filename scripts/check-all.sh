@@ -214,6 +214,8 @@ run "Refactor tests sensor self-test" scripts/test-sensor-refactor-tests.sh
 run "Refactor tests sensor" scripts/sensor-refactor-tests.sh
 run "Backlog commits sensor self-test" scripts/test-sensor-backlog-commits.sh
 run "Backlog commits sensor" scripts/sensor-backlog-commits.sh
+run "Green commits sensor self-test" scripts/test-sensor-green-commits.sh
+run "Green commits sensor" scripts/sensor-green-commits.sh
 run "Binding ADRs sensor self-test" scripts/test-sensor-binding-adrs.sh
 run "Binding ADRs sensor" scripts/sensor-binding-adrs.sh
 run "Plain rules sensor self-test" scripts/test-sensor-plain-rules.sh
