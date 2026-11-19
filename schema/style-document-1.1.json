@@ -1280,7 +1280,7 @@
           "const": "to_timestamp"
         },
         {
-          "description": "`regexp_like(value, pattern, flags)`: the pattern in PCRE2's syntax, byte mode (ADR-0015), the flag `i`.",
+          "description": "`regexp_like(value, pattern, flags)`: the pattern in PCRE2's syntax, byte mode (ADR-0015),\nthe flag `i`.",
           "type": "string",
           "const": "regexp_like"
         },

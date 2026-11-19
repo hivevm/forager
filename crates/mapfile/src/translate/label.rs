@@ -188,8 +188,8 @@ impl Translator<'_> {
         Some(style.with_transform(transform))
     }
 
-    /// A property that may take a binding, `true` once `d` is one; `priority_binding` is the binding
-    /// [`Self::priority`] keeps.
+    /// A property that may take a binding, `true` once `d` is one; `priority_binding` is the
+    /// binding [`Self::priority`] keeps.
     fn bound_property(
         &mut self,
         d: &Directive,

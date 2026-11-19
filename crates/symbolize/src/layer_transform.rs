@@ -46,11 +46,11 @@ use crate::geometry::{self, Area, Charge};
 pub const MAX_ADDED_POINTS: usize = 1_000_000;
 
 /// The most points one layer's transforms visit beyond reading each once, `smoothsia`'s windows
-/// over its passes, the rings `outer`, `inner`, `simplify`, and `simplifypt` test each ring against,
-/// the points `simplify`'s Douglas-Peucker scans and its validity test and repair compare, the
-/// points `simplifypt` scans, the segments its indexes examine, and the lines and segments its jump
-/// test compares, and the points `buffer`'s offset curves may hold (Q-9): past it, the layer draws
-/// nothing.
+/// over its passes, the rings `outer`, `inner`, `simplify`, and `simplifypt` test each ring
+/// against, the points `simplify`'s Douglas-Peucker scans and its validity test and repair compare,
+/// the points `simplifypt` scans, the segments its indexes examine, and the lines and segments its
+/// jump test compares, and the points `buffer`'s offset curves may hold (Q-9): past it, the layer
+/// draws nothing.
 pub const MAX_TRANSFORM_VISITS: usize = 100_000_000;
 
 /// Why a layer's `GEOMTRANSFORM` draws nothing.

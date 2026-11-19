@@ -245,6 +245,9 @@ run "Guard check self-test" scripts/test-check-guards.sh
 # Every guard against a third-party crate names a version Cargo.lock holds.
 # Verifies: ADR-0049
 run "Guard check" scripts/check-guards.sh
+run "Comment width check self-test" scripts/test-check-comment-width.sh
+# rustfmt wraps no comment on the stable toolchain; a Rust comment line fits in 100 characters.
+run "Comment width check" scripts/check-comment-width.sh
 run "Fuzz variants check self-test" scripts/test-check-fuzz-variants.sh
 # The render fuzz target builds every node of the transform tree and every kind of symbol (Q-3).
 run "Fuzz variants check" scripts/check-fuzz-variants.sh

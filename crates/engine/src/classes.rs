@@ -1,7 +1,7 @@
 // The selection of a feature's class and the binding of its style's properties follow
-// msShapeGetClass, msEvalExpression, bindStyle, and bindColorAttribute of src/maputil.c, the layer's
-// filter as msLayerNextShape applies it and the attributes as msLayerWhichItems finds them in
-// src/maplayer.c, and the scale factor as msPrepareImage computes it in src/mapdraw.c, of the
+// msShapeGetClass, msEvalExpression, bindStyle, and bindColorAttribute of src/maputil.c, the
+// layer's filter as msLayerNextShape applies it and the attributes as msLayerWhichItems finds them
+// in src/maplayer.c, and the scale factor as msPrepareImage computes it in src/mapdraw.c, of the
 // release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
@@ -522,8 +522,8 @@ pub(crate) fn scales(map: &Map, view: &View, geo_cellsize: f64, width: u32) -> (
     (scale_denom, factors)
 }
 
-/// msPrepareImage's scale factor of `layer`, at msGetGeoCellSize's `cellsize`, scale `scale_denom`, and
-/// resolution factor `resolution`: for `SIZEUNITS` other than pixels, the inches of that unit
+/// msPrepareImage's scale factor of `layer`, at msGetGeoCellSize's `cellsize`, scale `scale_denom`,
+/// and resolution factor `resolution`: for `SIZEUNITS` other than pixels, the inches of that unit
 /// over those of the map's, over the cellsize; with a `SYMBOLSCALEDENOM` above 0 at a scale above
 /// 0, that over the scale, times the resolution factor; otherwise the resolution factor. The
 /// mapfile gives none of the layer's classes, styles, or labels a `SIZEUNITS` of its own

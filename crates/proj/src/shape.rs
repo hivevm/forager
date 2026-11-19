@@ -1,6 +1,6 @@
-// The reprojection of a shape's lines follows msProjectShapeEx, msProjectShapeLine, msProjectLineEx,
-// msProjectSegment, and msTestNeedWrap, src/mapproject.c, of MapServer at the release pinned in
-// scripts/fetch-msautotest.sh.
+// The reprojection of a shape's lines follows msProjectShapeEx, msProjectShapeLine,
+// msProjectLineEx, msProjectSegment, and msTestNeedWrap, src/mapproject.c, of MapServer at the
+// release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -79,8 +79,8 @@ impl Reprojection {
         shape
     }
 
-    /// `msProjectShapeLine` of a line, or of a ring where `polygon`, into the projection reprojected
-    /// into.
+    /// `msProjectShapeLine` of a line, or of a ring where `polygon`, into the projection
+    /// reprojected into.
     pub(crate) fn shape_line(&self, points: &[Coord], polygon: bool) -> ShapeLines {
         let mut out = ShapeLines::default();
         // Which line is written to: false for the line's own place, true for the last added.

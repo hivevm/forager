@@ -6,9 +6,10 @@
 // modules/core/src/main/java/org/locationtech/jts/algorithm/Distance.java; a collapsed ring removed
 // and an invalid result repaired as `DPTransformer` of
 // modules/core/src/main/java/org/locationtech/jts/simplify/DouglasPeuckerSimplifier.java and
-// `transformPolygon` of modules/core/src/main/java/org/locationtech/jts/geom/util/GeometryTransformer.java
-// decide. JTS is offered under the Eclipse Public License 2.0 or the Eclipse Distribution License
-// 1.0; Forager takes it under the latter:
+// `transformPolygon` of
+// modules/core/src/main/java/org/locationtech/jts/geom/util/GeometryTransformer.java decide. JTS is
+// offered under the Eclipse Public License 2.0 or the Eclipse Distribution License 1.0; Forager
+// takes it under the latter:
 //
 // Copyright (c) 2016 Vivid Solutions.
 //

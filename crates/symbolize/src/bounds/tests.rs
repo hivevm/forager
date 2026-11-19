@@ -1,5 +1,5 @@
-// The tests of the bounds of a style quote MapServer's MS_MIN and MS_MAX and its default bounds of a
-// style, src/mapserver.h, of the release pinned in scripts/fetch-msautotest.sh.
+// The tests of the bounds of a style quote MapServer's MS_MIN and MS_MAX and its default bounds of
+// a style, src/mapserver.h, of the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,

@@ -125,8 +125,8 @@ fn every_style_property_that_renders_is_carried_over() {
 
 #[test]
 fn an_opacity_number_beside_its_binding_sets_the_colours_alpha_at_load() {
-    // loadStyle keeps both, and applies the number's alpha, MS_NINT(50 × 2.55) = 127 in a double, to
-    // the colours at its END; bindStyle replaces it only for a bound value below 100.
+    // loadStyle keeps both, and applies the number's alpha, MS_NINT(50 × 2.55) = 127 in a double,
+    // to the colours at its END; bindStyle replaces it only for a bound value below 100.
     for text in [
         "MAP LAYER CLASS STYLE COLOR 1 2 3 OUTLINECOLOR 4 5 6 OPACITY [o] OPACITY 50 END END END \
          END",

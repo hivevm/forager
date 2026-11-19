@@ -631,8 +631,8 @@ impl Drawing<'_> {
                     resources.load_pixmap(path).await;
                 }
             }
-            // The pixmaps of its labels' labelpoint and labelcenter styles, which msDrawMarkerSymbol
-            // and msGetMarkerSize load as they draw and size them.
+            // The pixmaps of its labels' labelpoint and labelcenter styles, which
+            // msDrawMarkerSymbol and msGetMarkerSize load as they draw and size them.
             for label in &self.layer.classes[*class].labels {
                 for style in &label.styles {
                     if let Some(path) = label_pixmap(style, symbols) {
