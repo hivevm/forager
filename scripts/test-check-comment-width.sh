@@ -93,6 +93,9 @@ expect_check "the failure counts the wide comments" "$dir" 1 \
 dir="$(repo fuzz "$(line '// ' 101)" fuzz/fuzz_targets/render.rs)"
 expect_check "a file under fuzz/ is read" "$dir" 1 "fuzz/fuzz_targets/render.rs:1: 101 characters"
 
+dir="$(repo non-ascii "$(line '// ' 101)" crates/x/src/é.rs)"
+expect_check "a file whose name is not ASCII is read" "$dir" 1 "crates/x/src/é.rs:1: 101 characters"
+
 dir="$(repo elsewhere "$(line '// ' 101)" tools/x/src/lib.rs)"
 expect_check "a file outside crates/ and fuzz/ is not read" \
   "$dir" 0 "Comment width check passed (0 files)."

@@ -32,8 +32,10 @@ WIDTH=100
 export LC_ALL=C.UTF-8
 
 # The Rust files, collected first, so that a failing git fails the check instead of listing none.
-if ! files="$(git -C "$ROOT" ls-files --cached --others --exclude-standard -- \
-  'crates/*.rs' 'fuzz/*.rs' 2>/dev/null)"; then
+# Separated by NUL, so that git writes a name of non-ASCII characters as it is, not quoted.
+mapfile -t -d '' files < <(git -C "$ROOT" ls-files -z --cached --others --exclude-standard -- \
+  'crates/*.rs' 'fuzz/*.rs' 2>/dev/null)
+if ! wait "$!"; then
   echo "ERROR: cannot list the Rust files under $ROOT with git" >&2
   echo "Comment width check FAILED." >&2
   exit 1
@@ -41,8 +43,8 @@ fi
 
 failures=0
 count=0
-while IFS= read -r file; do
-  [[ -n "$file" && -f "$ROOT/$file" ]] || continue
+for file in "${files[@]}"; do
+  [[ -f "$ROOT/$file" ]] || continue
   count=$((count + 1))
   n=0
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -52,7 +54,7 @@ while IFS= read -r file; do
     echo "ERROR: $file:$n: ${#line} characters — wrap the comment at $WIDTH" >&2
     failures=$((failures + 1))
   done < "$ROOT/$file"
-done <<< "$files"
+done
 
 noun=files
 ((count == 1)) && noun="file"
