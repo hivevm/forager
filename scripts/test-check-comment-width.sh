@@ -81,7 +81,7 @@ expect_check "a line of a raw string that is no comment passes" \
   "$dir" 0 "Comment width check passed (1 file)."
 
 dir="$(repo trailing "$(line 'fn f() {} // ' 110)")"
-expect_check "a comment after code on its line is not this check's: rustfmt's" \
+expect_check "a comment after code on its line is beyond this check's reach" \
   "$dir" 0 "Comment width check passed (1 file)."
 
 dir="$(repo two "$(line '// ' 101)
