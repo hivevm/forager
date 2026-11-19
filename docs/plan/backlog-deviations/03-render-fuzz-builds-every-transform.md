@@ -20,6 +20,10 @@ reaches each. Every existing seed decodes to a different render then; the fuzz s
 has each seed run again and the render seed test decides that each still builds its path. The
 change deletes `docs/backlog/geomtransform-variants-unfuzzed.md`.
 
+Ticket 02 made a layer's transform draw on a multipoint, a path the render target does not reach,
+since it builds no multipoint. The review of ticket 02 left its seed to this ticket, which rewrites
+the decoding anyway: the target builds a multipoint of several parts under a layer's transform.
+
 ## Acceptance criteria
 
 - [ ] Given the fuzz variant check, when it runs, then it lists `GeomTransform` and
@@ -28,6 +32,8 @@ change deletes `docs/backlog/geomtransform-variants-unfuzzed.md`.
   then it fails naming the variant.
 - [ ] Given the render seeds, when `fuzz/tests/render_seeds.rs` runs, then each seed builds the
   path it names, and a new seed names each variant of both enums.
+- [ ] Given a seed that builds a multipoint of several parts under a layer's `GEOMTRANSFORM`, when
+  the render seed test runs, then it builds that path.
 - [ ] Given the render target, when it is fuzzed for the time the convention names, then it finds
   no panic, or each panic found is fixed or filed.
 
