@@ -77,6 +77,9 @@ if ! grep -qF " $CARGO_MUTANTS_VERSION" <<< "$(cargo mutants --version 2> /dev/n
   cargo install --locked cargo-mutants --version "$CARGO_MUTANTS_VERSION" || exit 1
 fi
 
+# cargo-mutants 27.1.0 makes its output directory but not that directory's parent, and the
+# weekly workflow's fresh checkout has no target/: the script makes the output on every path.
+mkdir -p target/mutants || exit 1
 # A run that finds nothing to mutate writes no report; an earlier run's must not stand for it.
 report=target/mutants/mutants.out
 rm -rf "$report" || exit 1
