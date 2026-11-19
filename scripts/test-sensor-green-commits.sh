@@ -207,6 +207,22 @@ REJECT="fix: the script passes" expect_sensor 0 \
   "a commit that touches no shell script keeps the failing verdict, and the fix is not listed" "$d" \
   "$readme docs: a readme — fails: shell lint (scripts/check-shell.sh)"
 
+# A run from the failing commit takes it, outside the range, for passing; the next run from the
+# base must not read that assumption back as a verdict of the commit after it.
+d="$(repo assumed)"
+lib "$d" "$UNFORMATTED"
+commit "$d" "feat: two in one line"
+git -C "${d:?}" tag a
+bad="$(short "$d")"
+printf '# App\n' > "$d/README.md"
+commit "$d" "docs: a readme"
+readme="$(short "$d")"
+expect_sensor 0 "a run from the failing commit lists nothing after it" "$d" "nothing to report" a
+expect_sensor 0 "a verdict assumed from a parent outside the range is not kept: the failing commit is listed" \
+  "$d" "$bad feat: two in one line — fails: rustfmt"
+expect_sensor 0 "a verdict assumed from a parent outside the range is not kept: the commit after it is listed" \
+  "$d" "$readme docs: a readme — fails: rustfmt"
+
 d="$(repo green)"
 printf '# App\n' > "$d/README.md"
 commit "$d" "docs: a readme"
