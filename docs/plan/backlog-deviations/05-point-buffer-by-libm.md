@@ -45,3 +45,30 @@ deletes `docs/backlog/point-buffer-platform-trig.md`.
 
 with the human: it needs a successor of ADR-0041, which the maintainer accepts before the
 implementation starts.
+
+## Where it stands
+
+2026-11-19: phase 1, the ADR, is done. The successor of ADR-0041 is proposed as
+`docs/adr/draft-geometry-through-geo-and-own-circle.md`, commit 5f0bcc39. It waits for the
+maintainer. Nothing is implemented.
+
+Found while drafting:
+
+- geo 0.33.1 reaches its own circle from a point, each point of a multipoint, a line whose points
+  are all equal, and each such line of a multiline. The draft covers all four and keeps geo's
+  `unary_union` and `union` that merge the circles.
+- No feature switch routes geo's `cos` and `sin` to `libm`. num-traits' `libm` is already on, but
+  num-traits 0.2.19 takes std's methods whenever `std` is on. geo, geo-types' `std`, and
+  serde-saphyr turn `std` on, and Cargo unifies features across one build.
+- On `wasm32-unknown-unknown`, std's `cos` is compiler-builtins' copy of libm 0.2.16. Natively on
+  glibc 2.41 it differs in the last bit at 5 `cos` and 7 `sin` of geo's 120 angles.
+- JTS 1.20.0 and `master` snap a `cos` or `sin` below 5 × 10⁻¹⁶ to 0, and GEOS took this up in
+  3.13.0. GEOS 3.12.1, the reference, does not. The draft ports JTS 1.19.0 for the circle.
+
+Open for the maintainer: the questions the hand-off lists, among them JTS 1.19.0 or `master`, geo's
+unions kept for a line of one place, and the circle's dropped-point step.
+
+Next: once the maintainer accepts the draft, implement it in `buffer_with_style` of
+`crates/symbolize/src/geometry.rs`, then the tests the draft's *Enforcement* names, remove the
+deviation from `docs/semantics/style-symbol.md`, and delete
+`docs/backlog/point-buffer-platform-trig.md`.
