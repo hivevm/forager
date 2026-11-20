@@ -19,5 +19,5 @@ first doc of that seed's path.
 - **A plain `i64` product,** with a comment that it holds MapServer's undefined `int` overflow
   as the exact value: no behaviour changes, and the code says what it does.
 - **Modelling C's `int`,** with the low 32 bits that x86's `imul` leaves: the pen follows
-  MapServer's build, at the cost of following behaviour C leaves undefined (ADR-0017 decides the
-  casts, not the overflow of a product).
+  MapServer's build, at the cost of following behaviour C leaves undefined (IR-c-ports-in-style-ir
+  decides the casts, not the overflow of a product).

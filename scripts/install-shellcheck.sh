@@ -1,13 +1,27 @@
 #!/usr/bin/env bash
-# Installs ShellCheck at the version scripts/check-shell.sh holds the shell lint to (ADR-0007):
+# Installs ShellCheck at the version scripts/check-shell.sh holds the shell lint to (OPS-pinned-stable-rust-toolchain):
 # the release binary of koalaman/shellcheck for this machine's architecture, verified against the
 # SHA-256 GitHub records for the release asset, which is pinned here, into a directory on PATH,
 # ~/.local/bin unless SHELLCHECK_BIN_DIR names another. A ShellCheck already at the version there
-# is kept. scripts/install-tools.sh runs it in the Dev Container (ADR-0009), and the shell job of
+# is kept. scripts/install-tools.sh runs it in the Dev Container (OPS-dev-container-adds-rust), and the shell job of
 # CI runs it before the lint. The download, the check, and the install are scripts/lib/install.sh.
 #
-# Usage: bash scripts/install-shellcheck.sh
+# Usage: bash scripts/install-shellcheck.sh [--root <dir>]
+# Exit code 0 when the tool is installed, 2 on an argument it does not read or a root that is no
+# directory, 1 otherwise.
 set -euo pipefail
+
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/install.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/install.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/install-shellcheck.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 
 SHELLCHECK_VERSION="0.11.0"
 BIN_DIR="${SHELLCHECK_BIN_DIR:-$HOME/.local/bin}"
@@ -28,8 +42,6 @@ case "$(uname -s).$(uname -m)" in
     ;;
 esac
 
-# shellcheck source-path=SCRIPTDIR source=lib/install.sh
-source "$(dirname "${BASH_SOURCE[0]}")/lib/install.sh"
 release="https://github.com/koalaman/shellcheck/releases/download/v$SHELLCHECK_VERSION"
 install_release shellcheck "$SHELLCHECK_VERSION" "$BIN_DIR" "version: $SHELLCHECK_VERSION" \
   "$release/shellcheck-v$SHELLCHECK_VERSION.$asset.tar.xz" "$sha256" \

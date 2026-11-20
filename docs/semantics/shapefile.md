@@ -1,7 +1,7 @@
 # Shapefiles
 
-**Where:** a layer whose `DATA` names an ESRI shapefile. **Adapter:** `adapter-shapefile`, a
-feature source ([ADR-0021](../adr/0021-shapefile-adapter.md)).
+**Where:** a layer whose `DATA` names an ESRI shapefile. **Adapter:** `adapter-shapefile`, a feature
+source ([API-shapefile-reader-from-mapserver](../adr/API-shapefile-reader-from-mapserver.md)).
 
 **Path.** A layer without `CONNECTIONTYPE` is local, and its `DATA` lies beneath the map's last
 `SHAPEPATH`, wherever it stands, against the main mapfile's directory, as `msBuildPath3` in
@@ -57,7 +57,7 @@ so is not settled here. An `AUTHORITY`
 is not followed: MapServer loads `init=epsg:<code>` for it, which needs the projection resolver
 the render does not have, so the string is written from the parameters. Anything else does not
 read, and the layer that takes it warns naming the file
-(ADR-0039).
+(API-source-declares-projection).
 
 **Headers** (`msSHPOpenVirtualFile`, `msDBFOpenVirtualFile`). An error opens no layer:
 
@@ -79,11 +79,12 @@ read, and the layer that takes it warns naming the file
   the update date, the record count, and the language driver are not checked
   (`a_dbf_header_mapserver_refuses_is_an_error`, `a_dbf_header_mapserver_accepts_opens`).
 
-**Properties** (`msDBFReadAttribute`, `msDBFGetFieldInfo`, `msDBFGetItemIndex`; ADR-0023). Record
-*i* of the `.dbf` holds the properties of the shape of entry *i*; it lies at the header length plus
-*i* times the record length. A shape whose record lies past the record count (bytes 4–7, read as 0
-where byte 7 is 128 or more) or past the end of the file carries no properties, as MapServer's shape
-carries no values there (`a_record_the_file_cuts_short_carries_no_properties`,
+**Properties** (`msDBFReadAttribute`, `msDBFGetFieldInfo`, `msDBFGetItemIndex`;
+API-typed-feature-properties). Record *i* of the `.dbf` holds the properties of the shape of entry
+*i*; it lies at the header length plus *i* times the record length. A shape whose record lies past
+the record count (bytes 4–7, read as 0 where byte 7 is 128 or more) or past the end of the file
+carries no properties, as MapServer's shape carries no values there
+(`a_record_the_file_cuts_short_carries_no_properties`,
 `a_record_count_whose_last_byte_is_128_or_more_counts_no_records`). A field's name is the first 11
 bytes of its descriptor up to a NUL; where none of them is NUL, blanks at byte 10 and down to byte 1
 are cut, and blanks before a NUL are kept. A property is found by its name without regard to ASCII
@@ -110,23 +111,22 @@ record whose stored box overlaps it, edges that touch overlapping. A box is the 
 the two doubles at byte 12. Only a comparison that holds separates two boxes, so a NaN anywhere but
 the least x of a record's box overlaps; the least x is checked only in files other than points, so a
 point whose x is not a number overlaps too. A record whose box cannot be read is not selected, and
-is counted as a skipped record (ADR-0022) where its `.shx` size is not 4
+is counted as a skipped record (API-skipped-records-reported) where its `.shx` size is not 4
 (`an_extent_outside_the_file_bounds_selects_nothing`,
 `an_extent_that_contains_the_file_bounds_selects_every_record`,
 `an_extent_across_the_file_bounds_selects_by_each_records_box`,
 `a_point_file_is_selected_by_the_point_itself`, `a_point_whose_x_is_not_a_number_is_selected`,
 `a_nan_in_a_box_beyond_its_least_x_compares_as_overlapping`).
 
-**Records** (`msSHPReadShape`, `msSHPLayerNextShape`). A selected record is read as a shape or as
-no shape; no shape is skipped and the next record read. A record that is no shape, a null shape
-apart, is reported, as MapServer does not report it: each query counts the records it visits so,
-and why the first is no shape, and the engine warns once for the layer with
-`source-records-skipped` (ADR-0022; `a_query_reports_each_broken_record_it_visits_once`,
-`a_null_shape_is_not_a_skipped_record`). A feature's id is its record's number in the `.shx`,
-from 0. The record's 8-byte header and its own shape type are never read: the file's
-shape type decides (`the_record_header_and_type_are_not_read`). The size below is the content
-length of the `.shx` entry, which does not count the record header; the offsets are into the
-content.
+**Records** (`msSHPReadShape`, `msSHPLayerNextShape`). A selected record is read as a shape or as no
+shape; no shape is skipped and the next record read. A record that is no shape, a null shape apart,
+is reported, as MapServer does not report it: each query counts the records it visits so, and why
+the first is no shape, and the engine warns once for the layer with `source-records-skipped`
+(API-skipped-records-reported; `a_query_reports_each_broken_record_it_visits_once`,
+`a_null_shape_is_not_a_skipped_record`). A feature's id is its record's number in the `.shx`, from
+0. The record's 8-byte header and its own shape type are never read: the file's shape type decides
+(`the_record_header_and_type_are_not_read`). The size below is the content length of the `.shx`
+entry, which does not count the record header; the offsets are into the content.
 
 - A size under 4 is no shape; a size of exactly 4 is a null shape, no shape too. An offset of 0 is
   no shape, and so is a record whose header and content run past the end of the `.shp`
@@ -161,7 +161,7 @@ The reading of each shape type is held by
 `every_shape_type_mapserver_reads_is_read_as_its_geometry`; no truncated or mutated file
 panics (`no_mutation_of_a_shapefile_panics`).
 
-**Departures from MapServer** (ADR-0021):
+**Departures from MapServer** (API-shapefile-reader-from-mapserver):
 
 - **A box that cannot be read.** Where the extent crosses the file's bounds and a record's box
   cannot be read — a size of 0 to 3, an offset of 0 or past the `.shp`, a box cut short by the end

@@ -1,7 +1,7 @@
 //! The modules of the engine import one another in one direction only, as its `lib.rs` states:
-//! ADR-0008 decides the direction between crates, and this test holds the one inside the crate,
-//! which `labels` and `label_styles` once broke by importing each other, and its modules by
-//! taking helpers from the crate's root.
+//! ARCH-crates-as-ports-and-adapters decides the direction between crates, and this test holds the
+//! one inside the crate, which `labels` and `label_styles` once broke by importing each other, and
+//! its modules by taking helpers from the crate's root.
 
 mod module_direction;
 

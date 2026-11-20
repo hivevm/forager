@@ -47,15 +47,16 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
 // WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//! The geometry of `simplify` and `buffer` (ADR-0050), and of `simplifypt` (ADR-0047) in
-//! [`topology`]: a line or a polygon simplified as GEOS's `DouglasPeuckerSimplifier` simplifies it,
-//! and a shape buffered by geo's `buffer_with_style` with round joins and caps of 30 segments a
-//! quadrant, as `GEOSBuffer_r` buffers it with 30, but for a point's circle, which [`circle`] draws
-//! as JTS draws it, with `cos` and `sin` from `libm`. A line keeps the points of a Douglas-Peucker
-//! ported from JTS, which keeps its pending sections on a stack of its own, so no line nests it
-//! deeper than the stack allows. A polygon's rings are simplified each as a line, then the steps of
-//! JTS follow: a ring's first point dropped, a ring of fewer than 4 coordinates removed, and a
-//! result geo's `Validation` finds invalid repaired by geo's `unary_union`.
+//! The geometry of `simplify` and `buffer` (GEO-own-circle-for-buffer), and of `simplifypt`
+//! (GEO-simplifypt-ported-from-jts) in [`topology`]: a line or a polygon simplified as GEOS's
+//! `DouglasPeuckerSimplifier` simplifies it, and a shape buffered by geo's `buffer_with_style` with
+//! round joins and caps of 30 segments a quadrant, as `GEOSBuffer_r` buffers it with 30, but for a
+//! point's circle, which [`circle`] draws as JTS draws it, with `cos` and `sin` from `libm`. A line
+//! keeps the points of a Douglas-Peucker ported from JTS, which keeps its pending sections on a
+//! stack of its own, so no line nests it deeper than the stack allows. A polygon's rings are
+//! simplified each as a line, then the steps of JTS follow: a ring's first point dropped, a ring of
+//! fewer than 4 coordinates removed, and a result geo's `Validation` finds invalid repaired by
+//! geo's `unary_union`.
 //!
 //! What the functions visit and add is charged to the caller's [`Charge`] as they go (Q-9): each
 //! section the Douglas-Peucker scans, before it scans it; the pairs of segments and of rings the
@@ -264,12 +265,12 @@ const LARGEST_SCALED: i32 = 512;
 /// by a tiny distance is not scaled, where a scaled coordinate would lie past
 /// 2^[`LARGEST_SCALED`].
 ///
-/// An exact guard (ADR-0049), read from i_overlay 4.5.2 and the i_float 1.16.0 it takes:
-/// `FloatPointAdapter::new` sets the grid to 2^(29 - log2 of the size) (i_float's
+/// An exact guard (ARCH-third-party-failures-guarded), read from i_overlay 4.5.2 and the i_float
+/// 1.16.0 it takes: `FloatPointAdapter::new` sets the grid to 2^(29 - log2 of the size) (i_float's
 /// `adapter.rs:37-41`), and the offset of an edge, `outline/builder.rs:192` and `Math::normal` of
 /// `mesh/math.rs:10-13` in i_overlay, normalizes the edge by `FloatPointMath::normalize`, which
-/// divides by its length without a check (i_float's `float/vector.rs:34-37`). The point offset
-/// by that infinite direction fails the debug assertion of `float_to_int` (i_float's
+/// divides by its length without a check (i_float's `float/vector.rs:34-37`). The point offset by
+/// that infinite direction fails the debug assertion of `float_to_int` (i_float's
 /// `adapter.rs:115-123`), and in a release build the shape vanishes.
 fn magnification(shape: Buffered<'_>, distance: f64) -> i32 {
     let Some((low, high)) = bounds(shape) else {
@@ -317,10 +318,11 @@ const REACH_FLOOR: i32 = -40;
 /// multiline as one. A distance not above 0, and that of a point or a polygon, is kept. GEOS keeps
 /// the thinner buffer; the two differ by at most the floor.
 ///
-/// A bounded change (ADR-0049), its bound the floor, read from i_overlay 4.5.2 and the i_float
-/// 1.16.0 it takes: the grid of `FloatPointAdapter::new`, 2^(29 - log2 of the size) (i_float's
-/// `adapter.rs:37-41`), and `find_contour` of i_overlay's `core/extract.rs:181-208`, whose walk
-/// of the stroke's graph does not end where the graph is inconsistent.
+/// A bounded change (ARCH-third-party-failures-guarded), its bound the floor, read from i_overlay
+/// 4.5.2 and the i_float 1.16.0 it takes: the grid of `FloatPointAdapter::new`, 2^(29 - log2 of the
+/// size) (i_float's `adapter.rs:37-41`), and `find_contour` of i_overlay's
+/// `core/extract.rs:181-208`, whose walk of the stroke's graph does not end where the graph is
+/// inconsistent.
 fn floored(shape: Buffered<'_>, distance: f64) -> f64 {
     if !matches!(shape, Buffered::Lines(_)) || distance <= 0.0 {
         return distance;

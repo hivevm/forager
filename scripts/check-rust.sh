@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
-# Builds, tests, and lints the Rust workspace (ADR-0007): formatting, clippy with warnings as
-# errors, the tests, the style document's JSON Schema against its checked-in file (ADR-0014),
+# Builds, tests, and lints the Rust workspace (OPS-pinned-stable-rust-toolchain): formatting, clippy with warnings as
+# errors, the tests, the style document's JSON Schema against its checked-in file (IR-schema-per-format-version),
 # the load of the msautotest suite at the pinned MapServer release (G-1, fetched once into
 # target/ by scripts/fetch-msautotest.sh) and the conformance harness over its cases, whose share
 # of passing cases scripts/check-fidelity.sh holds against the last release (Q-4), and which render
-# alike natively and in the bindings' wasm32 module run in wasmi (G-9, ADR-0034), the build
+# alike natively and in the bindings' wasm32 module run in wasmi (G-9, TST-wasm-renders-in-wasmi), the build
 # of every crate that must run in the browser for wasm32-unknown-unknown (Q-1), the WebAssembly
-# bindings and their size (Q-5) once they exist, and cargo deny (ADR-0011). scripts/check-all.sh
+# bindings and their size (Q-5) once they exist, and cargo deny (SEC-crates-locked-and-denied). scripts/check-all.sh
 # and the `rust` job of checks.yml run it; the tools come from scripts/install-tools.sh. Two
 # fixture workspaces show that cargo deny refuses a non-permissive licence, that clippy bans
 # hash maps, clocks, and randomness on the output path, hosts and tooling free (Q-2), that it
 # refuses a str sliced at an index it cannot see is a character's boundary, and that it refuses
 # f64::min and f64::max in the crates that port MapServer's drawing.
 #
-# Usage: bash scripts/check-rust.sh
+# Usage: bash scripts/check-rust.sh [--root <dir>]
+# Exit code 0 when every step passes, 2 on an argument it does not read or a root that is no
+# directory, non-zero otherwise.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-rust.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 
 # Crates that never run in the browser: hosts with a file system, and tooling.
 NATIVE_ONLY=(forager-cli forager-dev-server forager-arch-test)
@@ -35,7 +43,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 step "Tests"
 cargo test --workspace --locked
 
-step "The style document's JSON Schema is the one the IR derives (ADR-0014)"
+step "The style document's JSON Schema is the one the IR derives (IR-schema-per-format-version)"
 cargo clippy -p forager-style-ir --features schema --all-targets --locked -- -D warnings
 cargo test -p forager-style-ir --features schema --locked --test schema
 # The schema stays out of the browser bundle (Q-5): no crate the bindings build enables it.
@@ -43,7 +51,7 @@ if grep -q '^.*schemars ' <<< "$(cargo tree -p forager-bindings-wasm --locked -e
   echo "check-rust: the browser bindings depend on schemars; the schema feature is enabled" >&2
   exit 1
 fi
-step "The browser bindings' module of the conformance test (G-9, ADR-0034)"
+step "The browser bindings' module of the conformance test (G-9, TST-wasm-renders-in-wasmi)"
 # The bundle's crate and profile with the feature `conformance`, in a target directory of its own
 # so that the bundle built below stays without it, then through the wasm-bindgen CLI as the bundle
 # is, which gives its exports their names. Its exports for wasm32 alone are linted here, its input
@@ -64,7 +72,7 @@ step "msautotest: mapfiles load (G-1), cases hold their outcome and render alike
 suite="$(bash scripts/fetch-msautotest.sh)"
 fidelity="$ROOT/target/fidelity-counts.txt"
 rm -f "$fidelity"
-# The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (ADR-0033);
+# The noise measurement needs MapServer, which only .github/workflows/noise.yml builds (TST-noise-measured-against-mapserver);
 # without FORAGER_MAP2IMG and FORAGER_MAPSERVER_LABELS it skips itself.
 FORAGER_MSAUTOTEST="$suite" FORAGER_FIDELITY="$fidelity" \
   FORAGER_CONFORMANCE_WASM="$ROOT/target/conformance/web/forager_bindings_wasm_bg.wasm" \
@@ -186,7 +194,7 @@ step "cargo deny"
 cargo deny --locked check
 
 step "cargo deny refuses a non-permissive licence"
-# Verifies: ADR-0011, Q-6
+# Verifies: SEC-crates-locked-and-denied, Q-6
 # A fixture workspace whose dependency declares GPL-3.0-only; the licence check must fail on it.
 fixture="$(mktemp -d)"
 trap 'rm -rf "$lints" "$fixture"' EXIT

@@ -1,4 +1,4 @@
-# The points G-11's reference reprojects (ADR-0038): each line a
+# The points G-11's reference reprojects (TST-proj-references-from-mapserver): each line a
 # source and a target projection, as Forager's frontend writes them, and a point in the source,
 # tab-separated. The reader crates/cli/tests/conformance/mapserver_proj.c reprojects each through
 # MapServer's msProjectPoint in the noise run; the record mapserver.tsv beside it is its output.

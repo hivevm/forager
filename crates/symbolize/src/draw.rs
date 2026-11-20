@@ -298,7 +298,7 @@ fn transformed(
 
 /// A style of the transform tree `shape` on `geometry`, a shape of a line or a polygon layer, as
 /// msDrawTransformedShape draws it (`src/mapgeomtransform.c:198-240`,
-/// ADR-0048): the tree evaluated on the unclipped shape
+/// IR-geomtransform-with-simplifypt): the tree evaluated on the unclipped shape
 /// in pixels (see [`in_pixels`]), as msDrawShape hands it on; a line result drawn as
 /// msDrawLineSymbol draws it, a point or a polygon result as msDrawShadeSymbol draws it, a hatch
 /// refused counted (Q-9), each with the style the pass prepares. A shape left without a point in

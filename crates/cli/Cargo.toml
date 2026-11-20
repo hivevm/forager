@@ -24,14 +24,14 @@ forager-adapter-epsg.workspace = true
 forager-adapter-shapefile.workspace = true
 
 [dev-dependencies]
-# Parses each proj4 string the shapefile adapter's .prj reader writes (ADR-0039).
+# Parses each proj4 string the shapefile adapter's .prj reader writes (API-source-declares-projection).
 forager-proj.workspace = true
 forager-render.workspace = true
 # Decodes the reference images, palette and RGB ones included, for the metric, as the
-# conformance-harness spec decides; the same crate and version the encoder uses (ADR-0030).
+# conformance-harness spec decides; the same crate and version the encoder uses (REN-png-through-image-rs).
 png.workspace = true
 serde_json.workspace = true
-# Runs the wasm32 module of the conformance test (G-9, ADR-0034).
+# Runs the wasm32 module of the conformance test (G-9, TST-wasm-renders-in-wasmi).
 wasmi.workspace = true
 
 [lints]

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-guards.sh. Verifies: ADR-0049
+# Self-test of scripts/check-guards.sh. Verifies: ARCH-third-party-failures-guarded
 #
 # Each case writes a fixture with a Cargo.lock and one Rust file under crates/, runs the check
 # against it, and asserts the exit code and the line that names the marker or the problem.
@@ -53,7 +53,7 @@ repo() {
 
 # expect_check <name> <dir> <code> <needle> — run the check; it must exit with the code and its
 # output contain the needle (expect, scripts/lib/expect.sh).
-expect_check() { expect "$1" "$3" "$4" bash "$CHECK" "$2"; }
+expect_check() { expect "$1" "$3" "$4" bash "$CHECK" --root "$2"; }
 
 guard() { printf '// Guard: %s %s\nfn guard() {}' "$1" "$2"; }
 

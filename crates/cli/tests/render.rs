@@ -169,7 +169,7 @@ fn labelled(font: &str) -> PathBuf {
 
 #[test]
 fn the_fonts_a_label_names_are_read_from_the_base_context() {
-    // Verifies: ADR-0031
+    // Verifies: REN-label-glyphs-from-skrifa
     for (font, unusable) in [("sans", false), ("gone", true)] {
         let dir = labelled(font);
         let output = Command::new(env!("CARGO_BIN_EXE_forager"))
@@ -193,7 +193,7 @@ fn the_fonts_a_label_names_are_read_from_the_base_context() {
 
 #[test]
 fn a_numeric_in_list_reads_its_items_as_atof_does() {
-    // Verifies: ADR-0017
+    // Verifies: IR-c-ports-in-style-ir
     // The grammar's `math_exp IN string_exp` compares the number with `atof` of
     // each item, so `0x10` reads 16, as the frontend folds it at load and `expr` reads it.
     let dir = std::env::temp_dir().join(format!("forager-in-hex-{}", std::process::id()));
@@ -481,7 +481,7 @@ fn a_label_style_of_a_name_that_names_no_transform_is_drawn_at_the_label_point()
 
 #[test]
 fn a_geojson_layer_of_auto_is_reprojected_from_wgs84_longitude_and_latitude() {
-    // Verifies: ADR-0039, G-5
+    // Verifies: API-source-declares-projection, G-5
     let dir = std::env::temp_dir().join(format!("forager-auto-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let map = dir.join("auto.map");

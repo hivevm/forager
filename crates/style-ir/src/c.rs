@@ -1,12 +1,12 @@
 // C's and MapServer's small functions, ported once for the frontend, the core, and the adapters
-// (ADR-0017): glibc's strtod in the C locale and the atof and atoi it backs, its lrint on x86-64,
-// and the (int) cast of a double as x86-64 computes it; MapServer's MS_NINT, MS_MIN, MS_MAX, and
-// MS_DEG_TO_RAD of src/mapserver.h, the map's angle in radians of msMapComputeGeotransformEx,
-// src/mapobject.c, msRectOverlap and msPointInPolygon of src/mapsearch.c, msStringSplit of
-// src/mapstring.cpp, msComputeBounds of src/mapprimitive.cpp, msGetSymbolIndex's match of a name
-// of src/mapfile.c, and the alpha of an opacity of loadStyle, src/mapfile.c, bindStyle,
-// src/maputil.c, and aggCompositeRasterBufferNoPixman, src/mapagg.cpp, of the release pinned in
-// scripts/fetch-msautotest.sh.
+// (IR-c-ports-in-style-ir): glibc's strtod in the C locale and the atof and atoi it backs, its
+// lrint on x86-64, and the (int) cast of a double as x86-64 computes it; MapServer's MS_NINT,
+// MS_MIN, MS_MAX, and MS_DEG_TO_RAD of src/mapserver.h, the map's angle in radians of
+// msMapComputeGeotransformEx, src/mapobject.c, msRectOverlap and msPointInPolygon of
+// src/mapsearch.c, msStringSplit of src/mapstring.cpp, msComputeBounds of src/mapprimitive.cpp,
+// msGetSymbolIndex's match of a name of src/mapfile.c, and the alpha of an opacity of loadStyle,
+// src/mapfile.c, bindStyle, src/maputil.c, and aggCompositeRasterBufferNoPixman, src/mapagg.cpp, of
+// the release pinned in scripts/fetch-msautotest.sh.
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2007 Regents of the University of Minnesota (src/mapagg.cpp).
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
@@ -26,7 +26,7 @@
 //! cast of a `double`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD` and a map's angle
 //! in radians, `msRectOverlap`, `msPointInPolygon`,
 //! `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex`'s match of a symbol's name, and the
-//! alpha `MS_NINT(opacity * 2.55)` of an opacity (ADR-0017).
+//! alpha `MS_NINT(opacity * 2.55)` of an opacity (IR-c-ports-in-style-ir).
 
 use crate::Symbol;
 
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn atof_reads_the_longest_number_strtod_reads() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         let cases: &[(&str, f64)] = &[
             ("12abc", 12.0),
             ("abc", 0.0),
@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn strtod_reads_up_to_where_glibc_stops() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         let cases: &[(&str, usize)] = &[
             ("", 0),
             ("abc", 0),
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn atoi_reads_an_int_as_glibc_does() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         assert_eq!(atoi(b" 42x"), 42);
         assert_eq!(atoi(b"-7"), -7);
         assert_eq!(atoi(b"\t255"), 255);
@@ -529,7 +529,7 @@ mod tests {
 
     #[test]
     fn lrint_rounds_half_to_even_and_gives_long_min_past_a_long() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         assert_eq!(lrint(2.5), 2);
         assert_eq!(lrint(3.5), 4);
         assert_eq!(lrint(-2.5), -2);
@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn ms_nint_keeps_the_low_32_bits_of_lrint() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         assert_eq!(ms_nint(2.5), 2);
         assert_eq!(ms_nint(-2_147_483_648.5), i32::MIN);
         assert_eq!(ms_nint(2_147_483_648.0), i32::MIN);
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn opacity_alpha_is_ms_nint_of_the_opacity_times_2_55_kept_in_a_byte() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         // 50 × 2.55 is 127.4999…, 99 × 2.55 252.45, -1 × 2.55 -2.55, whose MS_NINT -3 is 253 in a
         // byte; MS_NINT(-1294967296 × 2.55) is 992800691, whose low byte is 179.
         assert_eq!(opacity_alpha(0), 0);
@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn int_cast_truncates_toward_zero_and_gives_int_min_past_an_int() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         assert_eq!(int_cast(2.9), 2);
         assert_eq!(int_cast(-2.9), -2);
         assert_eq!(int_cast(-0.5), 0);
@@ -602,7 +602,7 @@ mod tests {
 
     #[test]
     fn ms_min_and_ms_max_keep_their_second_operand_where_they_cannot_compare() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         // src/mapserver.h:78 and 81: `((a) < (b)) ? (a) : (b)` and `((a) > (b)) ? (a) : (b)`.
         assert_eq!(ms_min(1.0, 2.0), 1.0);
         assert_eq!(ms_max(1.0, 2.0), 2.0);
@@ -616,14 +616,14 @@ mod tests {
 
     #[test]
     fn deg_to_rad_is_mapservers_constant() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         assert_eq!(DEG_TO_RAD, ".0174532925199432958".parse::<f64>().unwrap());
         assert_eq!(DEG_TO_RAD, std::f64::consts::PI / 180.0);
     }
 
     #[test]
     fn a_maps_angle_is_multiplied_by_pi_before_it_is_divided() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         // -359.75 × MS_PI / 180 rounds apart from -359.75 × MS_DEG_TO_RAD.
         assert_eq!(ms_pi_over_180(-359.75), -6.278_821_984_049_6);
         assert_eq!(-359.75 * DEG_TO_RAD, -6.278_821_984_049_601);
@@ -632,7 +632,7 @@ mod tests {
 
     #[test]
     fn rect_overlap_holds_edges_and_lets_no_number_through() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         let a = [0.0, 0.0, 10.0, 10.0];
         assert!(rect_overlap(a, [10.0, 10.0, 20.0, 20.0]));
         assert!(rect_overlap(a, [2.0, 2.0, 3.0, 3.0]));
@@ -645,7 +645,7 @@ mod tests {
 
     #[test]
     fn point_in_polygon_takes_the_left_and_lower_edges_and_leaves_the_others() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         // The square 0..10 by 0..10, counter-clockwise; pnpoly's half-open crossings put the
         // left and the lower edge inside and the right and the upper one outside.
         let square = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
@@ -671,7 +671,7 @@ mod tests {
 
     #[test]
     fn ms_compute_bounds_folds_by_ms_min_and_ms_max_from_the_first_point() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         // src/mapprimitive.cpp:260-286: no line with a point leaves the bounds as they were.
         assert_eq!(ms_compute_bounds([]), None);
         assert_eq!(ms_compute_bounds([[1.0, 2.0]]), Some([1.0, 2.0, 1.0, 2.0]));
@@ -700,7 +700,7 @@ mod tests {
 
     #[test]
     fn ms_string_split_parts_a_run_once_and_keeps_empty_ends() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         fn split(text: &str) -> Vec<&[u8]> {
             ms_string_split(text.as_bytes(), b',')
         }
@@ -714,7 +714,7 @@ mod tests {
 
     #[test]
     fn a_c_string_ends_at_its_first_nul() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         assert_eq!(c_str("ab\0cd"), "ab");
         assert_eq!(c_str("ab"), "ab");
         assert_eq!(c_str("\0"), "");
@@ -724,7 +724,7 @@ mod tests {
 
     #[test]
     fn ms_get_symbol_index_finds_the_first_name_that_matches_from_index_1() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         // src/mapfile.c:416-420: from symbol 1, the first whose name strcasecmp finds equal.
         let symbols = [
             Symbol {
@@ -746,7 +746,7 @@ mod tests {
 
     #[test]
     fn two_names_have_one_key_exactly_where_they_match() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         let names = [
             "Pin", "pin", "PIN", "pín", "PÍN", "p_n", "P_N", "", "[", "{",
         ];

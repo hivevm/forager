@@ -14,7 +14,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The engine: renders the map of a style IR from the sources bound to its layers. It is the
-//! one core crate that awaits the ports (ADR-0008).
+//! one core crate that awaits the ports (ARCH-crates-as-ports-and-adapters).
 //!
 //! Its modules import one another in one direction only: `labels` imports `classes`, `fonts`,
 //! `inline`, `label_binding`, `label_cache`, `label_styles`, `layer`, `layer_reports`, and
@@ -29,7 +29,7 @@
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
-// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0017).
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (IR-c-ports-in-style-ir).
 #![deny(clippy::cast_possible_truncation)]
 
 mod bind;
@@ -143,10 +143,10 @@ impl ResourceLoader for NoFiles {
     }
 }
 
-/// Renders as [`render`] does, and reads the files the map names beyond its sources, the fonts
-/// of its labels and the images of its pixmap symbols, through `files`, the host's resource
-/// loader rooted at the base context (ADR-0031). The images are decoded once each and held until
-/// the render ends (ADR-0029).
+/// Renders as [`render`] does, and reads the files the map names beyond its sources, the fonts of
+/// its labels and the images of its pixmap symbols, through `files`, the host's resource loader
+/// rooted at the base context (REN-label-glyphs-from-skrifa). The images are decoded once each and
+/// held until the render ends (REN-pixmaps-held-once-per-render).
 pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>(
     map: &Map,
     sources: &BTreeMap<String, S>,
@@ -161,7 +161,8 @@ pub async fn render_with_files<S: FeatureSource, L: ResourceLoader, R: Renderer>
     renderer.begin(width, height, map.image_color.unwrap_or(DEFAULT_BACKGROUND));
     let mut layers = Layers {
         labels: Labels::new(map, &prepared.rotation, &prepared.factors, prepared.size),
-        // The store of what the render reads through `files`, dropped with the render (ADR-0029).
+        // The store of what the render reads through `files`, dropped with the render
+        // (REN-pixmaps-held-once-per-render).
         store: Resources::new(files),
         evaluator: Evaluator::new(),
         reports: Reports::default(),
@@ -484,7 +485,7 @@ fn layer_canvas<'c>(
 }
 
 /// The fonts the TrueType symbols of the `selected` features' styles name, each once, which their
-/// markers draw their glyphs from (ADR-0044); those of
+/// markers draw their glyphs from (API-truetype-marker-through-port); those of
 /// styles outside their scale range at the map's `scale` are left out, as their pixmaps are, but
 /// for the first style of a class for which `holds_marker` is true: the label cache sizes that
 /// marker by msGetMarkerSize whatever its scale range (`src/maplabel.c:344-352, 604-608`).
@@ -886,7 +887,7 @@ fn asked(
 }
 
 /// The projection the source bound to a layer of `PROJECTION AUTO` declares
-/// (ADR-0039), none for any other layer or one read from its inline
+/// (API-source-declares-projection), none for any other layer or one read from its inline
 /// features; one that does not read is none, with a warning naming the layer and the file, where
 /// MapServer writes a debug message.
 fn declared_projection<S: FeatureSource>(
@@ -918,7 +919,7 @@ fn declared_projection<S: FeatureSource>(
 
 /// The warning that `layer`, on a rotated map, is not reprojected, because it or the map has no
 /// projection, and lands in the frame of the image unrotated, where MapServer draws it. MapServer
-/// is silent; the warning tells the user why (ADR-0045).
+/// is silent; the warning tells the user why (GEO-map-rotation-in-reprojection).
 fn rotation_without_projection(layer: &Layer) -> Diagnostic {
     let message = format!(
         "layer {} is not rotated by the map's ANGLE: it or the map has no PROJECTION, so its \
@@ -929,8 +930,9 @@ fn rotation_without_projection(layer: &Layer) -> Diagnostic {
 }
 
 /// The features of a layer within `extent`, in its source's coordinates: those of its inline
-/// features where it is read from them ([`is_inline`], ADR-0018), whatever source is bound to it,
-/// which is not read and is reported; otherwise those of the source bound to its name.
+/// features where it is read from them ([`is_inline`], IR-inline-features-in-layer), whatever
+/// source is bound to it, which is not read and is reported; otherwise those of the source bound to
+/// its name.
 async fn source_features<S: FeatureSource>(
     layer: &Layer,
     sources: &BTreeMap<String, S>,
@@ -988,7 +990,8 @@ async fn query<S: FeatureSource>(
     let skip = |reason: String| skipped(layer, kind, reason);
     let query = FeatureQuery { extent };
     let delivered = source.features(&query).await.map(|delivered| {
-        // The records the source skipped, one warning for the layer however many (ADR-0022).
+        // The records the source skipped, one warning for the layer however many
+        // (API-skipped-records-reported).
         let skipped = &delivered.skipped;
         if skipped.count > 0 {
             let first = skipped.first.as_deref().unwrap_or("no reason given");
@@ -1040,7 +1043,7 @@ fn labelled<'a>(selected: &'a [Selected<'a>]) -> Vec<labels::Labelled<'a>> {
 /// The budget of Q-9 the layer of `selector` leaves to its class styles' transform trees, where
 /// it is drawn after its `GEOMTRANSFORM`: its `features` transformed, `[map_cellsize]` at
 /// `cellsize`, where it has one, whole where it has none; `None`, none drawn, with a warning,
-/// where its transform tree is `not_drawn` or fails (ADR-0048).
+/// where its transform tree is `not_drawn` or fails (IR-geomtransform-with-simplifypt).
 fn transformed(
     selector: &mut Selector<'_, '_>,
     mode: RenderMode,

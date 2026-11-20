@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/sensor-duplication.sh. Verifies: ADR-0007
+# Self-test of scripts/sensor-duplication.sh. Verifies: OPS-pinned-stable-rust-toolchain, NUC-checks-are-bash
 #
 # Each case builds a throwaway git repository under a temporary directory with the repository's
 # own .jscpd.json and tracked Rust or bash files, runs the sensor against it with the jscpd on
@@ -103,7 +103,7 @@ expect_sensor() {
   local want="$1" name="$2" dir="$3" out rc needle all=1
   shift 3
   fixture "$dir"
-  out="$(bash "$SENSOR" "$dir" 2>&1)"; rc=$?
+  out="$(bash "$SENSOR" --root "$dir" 2>&1)"; rc=$?
   for needle in "${@:2}"; do [[ "$out" == *"$needle"* ]] || all=0; done
   if ! verdict "$name" "$want" "$1" "$rc" "$out" "$all" && ((!all)); then
     echo "    (and every one of: ${*:2})" >&2
@@ -155,20 +155,21 @@ expect_sensor 1 "no .jscpd.json measures nothing" "$d" ".jscpd.json not found"
 
 d="$(repo tools)"
 put "$d" "crates/a/src/lib.rs" "$(rust_fn widen)"
-mkdir -p "$work/no-pin"
+mkdir -p "$work/no-pin/lib"
 cp "$SENSOR" "$work/no-pin/sensor-duplication.sh"
-out="$(bash "$work/no-pin/sensor-duplication.sh" "$d" 2>&1)"; rc=$?
+cp "$ROOT/scripts/lib/bash.sh" "$ROOT/scripts/lib/root.sh" "$work/no-pin/lib/"
+out="$(bash "$work/no-pin/sensor-duplication.sh" --root "$d" 2>&1)"; rc=$?
 check "no pinned version beside the sensor measures nothing and says so" \
   test "$rc" -eq 1 -a -n "$(grep -F 'no pinned version found' <<< "$out")"
 
-out="$(JSCPD="$work/no-such-jscpd" bash "$SENSOR" "$d" 2>&1)"; rc=$?
+out="$(JSCPD="$work/no-such-jscpd" bash "$SENSOR" --root "$d" 2>&1)"; rc=$?
 check "no jscpd measures nothing and names the installer" \
   test "$rc" -eq 1 -a -n "$(grep -F 'scripts/install-jscpd.sh installs it' <<< "$out")"
 
 mkdir -p "$work/bin"
 printf '#!/usr/bin/env bash\necho "jscpd 4.0.0"\n' > "$work/bin/jscpd-old"
 chmod +x "$work/bin/jscpd-old"
-out="$(JSCPD="$work/bin/jscpd-old" bash "$SENSOR" "$d" 2>&1)"; rc=$?
+out="$(JSCPD="$work/bin/jscpd-old" bash "$SENSOR" --root "$d" 2>&1)"; rc=$?
 check "a jscpd of another version names both versions and fails" \
   test "$rc" -eq 1 -a -n "$(grep -F "jscpd 4.0.0 runs, where jscpd $pinned is pinned" <<< "$out")"
 
@@ -179,7 +180,7 @@ echo "boom" >&2
 exit 3
 EOF
 chmod +x "$work/bin/jscpd-failing"
-out="$(JSCPD="$work/bin/jscpd-failing" bash "$SENSOR" "$d" 2>&1)"; rc=$?
+out="$(JSCPD="$work/bin/jscpd-failing" bash "$SENSOR" --root "$d" 2>&1)"; rc=$?
 check "a jscpd that fails fails the sensor with its output" \
   test "$rc" -eq 1 -a -n "$(grep -F 'jscpd exited 3 without a count of clones' <<< "$out")" \
   -a -n "$(grep -Fx 'boom' <<< "$out")"

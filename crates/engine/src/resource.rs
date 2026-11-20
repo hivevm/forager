@@ -1,6 +1,6 @@
 //! The one load of the files a render's fonts and pixmap symbols' images are read from: through
 //! the host's resource loader once per render and path, each file held to Q-9's bound
-//! (ADR-0029, ADR-0031).
+//! (REN-pixmaps-held-once-per-render, REN-label-glyphs-from-skrifa).
 
 use std::collections::BTreeMap;
 

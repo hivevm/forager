@@ -13,9 +13,10 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The ESRI shapefile feature source (ADR-0021): a `.shp` with its `.shx` and `.dbf`, read from
-//! the bytes the resource loader hands over, with the records MapServer reads and drops, and in
-//! memory that follows the files' size. `docs/semantics/shapefile.md` states each rule.
+//! The ESRI shapefile feature source (API-shapefile-reader-from-mapserver): a `.shp` with its
+//! `.shx` and `.dbf`, read from the bytes the resource loader hands over, with the records
+//! MapServer reads and drops, and in memory that follows the files' size.
+//! `docs/semantics/shapefile.md` states each rule.
 //!
 //! Nothing is allocated from a count or a size the files state: a record is a view into the
 //! `.shp`'s bytes, checked before its geometry is built, and the index is read where it lies.
@@ -55,7 +56,8 @@ pub struct ShapefileSource {
     entries: usize,
     /// The file's bounds, from the `.shx` header.
     bounds: Rect,
-    /// The `.dbf`, whose records the features share as their properties (ADR-0023).
+    /// The `.dbf`, whose records the features share as their properties
+    /// (API-typed-feature-properties).
     dbf: Rc<Dbf>,
     /// The projection the `.prj` beside the `.shp` declares, read once at open; none where it does
     /// not load.
@@ -154,7 +156,7 @@ impl ShapefileSource {
     /// Calls `f` with each record the extent selects and its shape, in record order, the records
     /// read as no shape skipped (`msShapefileWhichShapes`, `msSHPLayerNextShape`), and returns the
     /// records skipped as broken: each one the query visits once, a null shape not among them
-    /// (ADR-0022).
+    /// (API-skipped-records-reported).
     fn each_shape<'a>(&'a self, extent: &Rect, mut f: impl FnMut(usize, Shape<'a>)) -> Skipped {
         let mut skipped = Skipped::default();
         // The file's bounds outside the extent select none; inside it, all; across its edge,
@@ -163,7 +165,8 @@ impl ShapefileSource {
             return skipped;
         }
         let by_box = !self.bounds.contained_in(extent);
-        // The records read from the .shp add up to no more bytes than it holds (ADR-0021).
+        // The records read from the .shp add up to no more bytes than it holds
+        // (API-shapefile-reader-from-mapserver).
         let mut budget = self.shp.len() as u64;
         for i in 0..self.entries {
             if by_box {
@@ -186,8 +189,9 @@ impl ShapefileSource {
     }
 
     /// Record `i`'s stored box (`msSHPReadBounds`), `None` for a null shape. A record whose box
-    /// cannot be read is no shape: MapServer skips it where the `.shx` size is 4, a null shape,
-    /// and fails the layer otherwise, where the adapter reads on (ADR-0021) and counts it.
+    /// cannot be read is no shape: MapServer skips it where the `.shx` size is 4, a null shape, and
+    /// fails the layer otherwise, where the adapter reads on (API-shapefile-reader-from-mapserver)
+    /// and counts it.
     fn stored_box(&self, i: usize) -> Result<Option<Rect>, &'static str> {
         let (offset, size) = self.entry(i);
         if size == 4 {
@@ -254,14 +258,14 @@ const SIZE_UNDER_4: &str = "its .shx entry gives a size under 4 bytes";
 const NO_OFFSET: &str = "its .shx entry gives no offset";
 
 /// The projection a `.prj` named `file` declares, from its bytes, as the shapefile adapter reads it
-/// (ADR-0039): only its first 2047 bytes are read.
+/// (API-source-declares-projection): only its first 2047 bytes are read.
 pub fn declared_projection_of_prj(file: &str, bytes: &[u8]) -> DeclaredProjection {
     prj::declared(file, bytes)
 }
 
 impl FeatureSource for ShapefileSource {
     /// The projection of the `.prj` beside the `.shp`, none where there is none
-    /// (ADR-0039).
+    /// (API-source-declares-projection).
     fn declared_projection(&self) -> DeclaredProjection {
         self.prj.clone()
     }

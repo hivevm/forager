@@ -11,7 +11,7 @@
 # stand-in's calls. What the --jq expression makes of GitHub's JSON is not run here, since it needs
 # gh; that is review.
 #
-# Verifies: ADR-0002
+# Verifies: NUC-checks-are-bash
 # Inputs: scripts/sensor-scheduled-runs.sh scripts/lib/
 #
 # Usage:
@@ -89,7 +89,7 @@ repo() {
 # stand-in, or the command $GH_CMD names; the output must contain the needle, and not $REJECT when
 # that is set (expect, scripts/lib/expect.sh).
 expect_sensor() {
-  expect "$2" "$1" "$4" env GH="${GH_CMD:-$fake}" FIX="$3/fix" bash "$SENSOR" "$3"
+  expect "$2" "$1" "$4" env GH="${GH_CMD:-$fake}" FIX="$3/fix" bash "$SENSOR" --root "$3"
 }
 
 d="$(repo green)"

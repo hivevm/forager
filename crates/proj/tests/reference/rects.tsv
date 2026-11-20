@@ -1,4 +1,4 @@
-# The rectangles of the area asked of a source (ADR-0038, the plan's ticket 03): each line a map's
+# The rectangles of the area asked of a source (TST-proj-references-from-mapserver, the plan's ticket 03): each line a map's
 # projection and a layer's, as Forager's frontend writes them, and a map's extent in the first as
 # minx, miny, maxx, maxy, tab-separated. The reader crates/cli/tests/conformance/mapserver_proj.c
 # projects each through MapServer's msProjectRect in the noise run; the record mapserver-rects.tsv

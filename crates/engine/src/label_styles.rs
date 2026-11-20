@@ -1,7 +1,8 @@
-// The styles of a label follow msDrawLabelCache, its labelpoly, labelpoint, and labelcenter
-// styles, and computeMarkerBounds, src/mapdraw.c, msGetMarkerSize, src/mapsymbol.c, and
-// msDrawLabelBounds and msDrawMarkerSymbol, src/maprendering.c, of MapServer at the release pinned
-// in scripts/fetch-msautotest.sh, with the label cache of the label crate (ADR-0031).
+// The styles of a label follow msDrawLabelCache, its labelpoly, labelpoint, and labelcenter styles,
+// and computeMarkerBounds, src/mapdraw.c, msGetMarkerSize, src/mapsymbol.c, and msDrawLabelBounds
+// and msDrawMarkerSymbol, src/maprendering.c, of MapServer at the release pinned in
+// scripts/fetch-msautotest.sh, with the label cache of the label crate
+// (REN-label-glyphs-from-skrifa).
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and

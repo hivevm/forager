@@ -116,7 +116,7 @@ fn map() -> Map {
 
 #[test]
 fn the_image_that_would_pass_256_mib_is_refused_before_it_is_decoded() {
-    // Verifies: Q-9, ADR-0029
+    // Verifies: Q-9, REN-pixmaps-held-once-per-render
     let file = forager_encode::png(&RgbaImage {
         width: SIDE,
         height: SIDE,

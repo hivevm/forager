@@ -14,18 +14,29 @@
 # release fails here, naming both, instead of passing with other files. The suite is never
 # vendored; its licence is MapServer's (MIT-style, OSGeo and the University of Minnesota).
 #
-# Usage: bash scripts/fetch-msautotest.sh    (prints the directory of the suite)
+# Usage: bash scripts/fetch-msautotest.sh [--root <dir>]    (prints the directory of the suite)
+# The suite lands under target/ of the root, this repository unless --root names another. Exit code
+# 0 when the suite is there, 2 on an argument it does not read or a root that is no directory, 1
+# otherwise.
 set -euo pipefail
 # A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
 # repository instead of the one it names (docs/CONVENTIONS.md).
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/fetch-msautotest.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
+
 TAG="rel-8-6-6"
 COMMIT="7515cccfe75fb7554ea45bc87ba5eb4b6126db5d"
 REMOTE="https://github.com/MapServer/MapServer.git"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIR="$ROOT/target/msautotest/$COMMIT"
 
 tagged="$(git ls-remote --tags "$REMOTE" "refs/tags/$TAG^{}" | cut -f1)"

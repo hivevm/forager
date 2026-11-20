@@ -3,7 +3,7 @@
 # Check: a Rust or C file whose logic follows MapServer's C code keeps MapServer's copyright and
 # permission notice, as the specification's licence constraint requires, and one that follows
 # W. Randolph Franklin's pnpoly keeps his; the C file is the reader of the label cache, which
-# follows src/apps/map2img.c (ADR-0033).
+# follows src/apps/map2img.c (TST-noise-measured-against-mapserver).
 #
 # A Rust or C file under crates/ or fuzz/ that names a MapServer source file — src/map….c, .h,
 # .l, or .y, or a program's src/apps/….c — follows that code, and must hold the notice of those
@@ -20,14 +20,14 @@
 # which a binary carries as his second condition asks, must then hold the same lines, and
 # MapServer's copyright line.
 # A Rust file under crates/proj that names a source file of PROJ — src/….cpp or .h, in a
-# subdirectory or not — ports PROJ's formulas (ADR-0037) and must hold
+# subdirectory or not — ports PROJ's formulas (GEO-proj-ported-with-libm) and must hold
 # PROJ's notice: the first words of its terms, the permission sentence, and the disclaimer
 # (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then hold the same first words, as the MIT
 # licence asks of every copy, binaries included. Each source of PROJ such a file's header names
 # must stand in the table of scripts/lib/notice.sh, which holds the copyright lines each source
 # holds at PROJ 9.4.0, and the header must hold each of those lines.
 # A Rust file under crates/symbolize that names a JTS source — a Java file, such as
-# DouglasPeuckerLineSimplifier.java — follows JTS (ADR-0050) and must hold JTS's notice: the
+# DouglasPeuckerLineSimplifier.java — follows JTS (GEO-own-circle-for-buffer) and must hold JTS's notice: the
 # copyright line of its sources, and the third condition and the disclaimer of the Eclipse
 # Distribution License 1.0 (scripts/lib/notice.sh). THIRD-PARTY-NOTICES.md must then hold the same
 # lines, as the licence's second condition asks of a binary. A file that names a JTS source of
@@ -39,17 +39,24 @@
 #
 # Pure bash + grep; the notices' lines are in scripts/lib/notice.sh, which scripts/package.sh
 # shares. Usage:
-#     scripts/check-notice.sh [repository root]
+#     scripts/check-notice.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-notice.sh passes fixtures.
-# Exit code 0 when every such file holds the notice, 1 otherwise, 2 on a root that is no directory.
+# Exit code 0 when every such file holds the notice, 1 otherwise, 2 on an argument it does not read
+# or a root that is no directory.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
-  || { echo "Notice check: '${1:-}' is not a directory." >&2; exit 2; }
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
 
 # shellcheck source-path=SCRIPTDIR source=lib/notice.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/notice.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-notice.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 
 failures=0
 checked=0

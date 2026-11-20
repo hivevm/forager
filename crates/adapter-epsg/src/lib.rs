@@ -1,6 +1,7 @@
-//! Resolves EPSG codes to proj4 strings (ADR-0019). Built in are only EPSG:4326, EPSG:3857, and
-//! the WGS84 UTM zones, derived from the zone number; every other code comes from a table the host
-//! supplies in the format of PROJ's former `epsg` init file. The repository holds no EPSG data.
+//! Resolves EPSG codes to proj4 strings (API-init-projections-through-resolver). Built in are only
+//! EPSG:4326, EPSG:3857, and the WGS84 UTM zones, derived from the zone number; every other code
+//! comes from a table the host supplies in the format of PROJ's former `epsg` init file. The
+//! repository holds no EPSG data.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -254,7 +255,7 @@ mod tests {
 
     #[test]
     fn the_built_in_codes_resolve() {
-        // Verifies: ADR-0019
+        // Verifies: API-init-projections-through-resolver
         let table = EpsgTable::new();
         assert_eq!(
             table.resolve("EPSG", "4326").as_deref(),
@@ -282,7 +283,7 @@ mod tests {
 
     #[test]
     fn a_host_table_adds_and_overrides_codes() {
-        // Verifies: ADR-0019
+        // Verifies: API-init-projections-through-resolver
         let table = EpsgTable::with_table(
             "# British National Grid\n\
              <27700> +proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +units=m +no_defs <>\n\
@@ -314,7 +315,7 @@ mod tests {
 
     #[test]
     fn definitions_that_need_files_or_other_definitions_are_refused() {
-        // Verifies: ADR-0019
+        // Verifies: API-init-projections-through-resolver
         let errors = EpsgTable::with_table(
             "<1> +init=epsg:2 <>\n\
              <2> +proj=pipeline +step +proj=hgridshift +grids=foo.tif <>\n\
@@ -364,7 +365,7 @@ mod tests {
 
     #[test]
     fn the_table_is_read_as_proj_reads_an_init_file() {
-        // Verifies: ADR-0019
+        // Verifies: API-init-projections-through-resolver
         let (entries, errors) = parse(FORMAT);
         for line in FORMAT.lines() {
             let Some(expect) = line.strip_prefix("# expect ") else {
@@ -397,7 +398,7 @@ mod tests {
 
     #[test]
     fn a_tag_that_is_no_code_is_an_error_on_its_own_line() {
-        // Verifies: ADR-0019
+        // Verifies: API-init-projections-through-resolver
         let errors = EpsgTable::with_table(
             "<1 +proj=longlat\n\
              <2> +proj=merc <>\n\

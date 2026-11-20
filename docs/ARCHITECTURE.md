@@ -4,12 +4,12 @@
 > how they fit together. It holds no rule and no decision. It names the ADR behind each structural
 > choice; where it disagrees with an accepted ADR, the ADR is right and this document is stale. It
 > is updated in the same change as the structure it describes
-> ([ADR-0001](adr/0001-agent-governance-model.md)).
+> ([NUC-documents-are-fixed](adr/NUC-documents-are-fixed.md)).
 >
-> **Last design revision:** 2026-11-19, due after 20 changes. The revision that took the count
+> **Last design revision:** 2026-11-19, due after 50 changes. The revision that took the count
 > moves the date; the number is this project's to set; a sensor counts the changes outside
 > `docs/` since the commit that set the date and says when the next is due
-> ([ADR-0005](adr/0005-feature-layer.md)).
+> ([NUC-design-is-revised §4](adr/NUC-design-is-revised.md)).
 
 ## Context
 
@@ -31,229 +31,212 @@ The parts the system is made of, each with one responsibility, named in the voca
 golden path and the test pattern an agent copies from are named here.
 
 - **`style-ir`** — the data model of a map, its expressions a CQL2 tree
-  ([ADR-0015](adr/0015-expressions-as-cql2.md)), its `GEOMTRANSFORM` expressions, of a layer and
-  of a class's style, a transform tree of their shape functions in the same JSON shape, which holds
-  no text of the mapfile and is read to the same nesting bound (`transform.rs`,
-  [ADR-0048](adr/0048-transform-tree-with-simplifypt.md)),
-  the diagnostics with their source spans, and the
-  style document that serializes it as YAML or JSON through serde
-  ([ADR-0013](adr/0013-style-document-serde.md)). A style is generic over its transform: a
-  class's `Style` may leave it out, a label's `Style<LabelTransform>` always names `labelpoint`,
-  `labelpoly`, or `labelcenter`, and `symbolize` and the engine draw both through functions
-  generic over it. Its readers
-  ([ADR-0014](adr/0014-style-document-versions.md)) name each field they do not know by its
-  JSON Pointer; a document of a newer minor that does not read is read again from its value tree
-  with each unknown value dropped, each condition that does not read kept as `false`, and each
-  transform tree's unknown `not_drawn` reason kept not drawn, at most
-  a hundred times (Q-9); a document of an older major is migrated on its value tree by the chain
-  of steps in `migration.rs`, one major at a time, each step stamping it with the `.0` of the
-  major it migrates to, and then read by the current version's reader; a document read, of any
-  version, carries the current version afterwards and is written as it. The current format
-  version is 1.1, which adds a map's `projection_auto`, a map of `PROJECTION AUTO` held apart from
-  a map without a projection; a layer's projection is a proj4 string or `from_source`. Its
-  `schema` feature derives the JSON Schema of the current format version with schemars, checked
-  in under `schema/` (`style-document-1.1.json`); `tests/schema.rs` compares a fresh derivation
-  with that file on every push and, once a release tag `v<semver>` holds schema files, freezes
-  them and asks for the bump the change since the last release needs. The browser bindings never
-  enable the feature. Its
-  module `c.rs` ports C's and MapServer's small functions once for the frontend, the core, and
-  the adapters: glibc's `strtod`, `atof`, and `atoi`, MapServer's `MS_NINT` as `lrint` on
-  x86-64 narrowed to an `int`, C's `(int)` cast of a `double`, `int_cast`, `INT_MIN` past an
-  `int`, a C string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`,
-  `msPointInPolygon`, which the label cache and a layer's transform call, `msStringSplit`,
-  `msComputeBounds`, `msGetSymbolIndex`'s match of a symbol's name with the key the frontend's
-  map of names takes, and the alpha `MS_NINT(opacity * 2.55)` of a style's or a layer's opacity,
-  kept in a byte as AGG keeps it ([ADR-0017](adr/0017-c-ports-in-style-ir.md)).
-  `engine`, `symbolize`, and `label` deny clippy's `cast_possible_truncation`, so that such a
-  cast is not written as `as`. `style-ir` holds the geometry of a feature (`geometry.rs`), which
-  the ports deliver and `symbolize` draws, the one crate both may depend on. It holds the marker
-  a label's `labelpoint` style gives, a symbol's default anchor point, and the anchor arithmetic
-  (`marker.rs`): a computed value, not part of the style document, shared by `symbolize`, which
-  sizes and places the marker, and `label`, which bounds it; it lives here because ADR-0008 gives
-  `symbolize` no edge to `label`. It holds a map's fonts, `Fonts`, which finds a name without
-  case as MapServer's font set does and leaves a style document's name that matches one written
-  before it out with a warning, and the one reader of a label's font list, `font_list`,
-  which the frontend checks a label's fonts with and `label` takes its steps from (`font.rs`); it
-  lives here because ADR-0008 keeps `mapfile` from `label`. It depends on no other crate of the
-  workspace.
+  ([IR-expressions-as-cql2](adr/IR-expressions-as-cql2.md)), its `GEOMTRANSFORM` expressions, of a
+  layer and of a class's style, a transform tree of their shape functions in the same JSON shape,
+  which holds no text of the mapfile and is read to the same nesting bound (`transform.rs`,
+  [IR-geomtransform-with-simplifypt](adr/IR-geomtransform-with-simplifypt.md)), the diagnostics with
+  their source spans, and the style document that serializes it as YAML or JSON through serde
+  ([IR-serde-json-and-yaml](adr/IR-serde-json-and-yaml.md)). A style is generic over its transform:
+  a class's `Style` may leave it out, a label's `Style<LabelTransform>` always names `labelpoint`,
+  `labelpoly`, or `labelcenter`, and `symbolize` and the engine draw both through functions generic
+  over it. Its readers ([IR-schema-per-format-version](adr/IR-schema-per-format-version.md)) name
+  each field they do not know by its JSON Pointer; a document of a newer minor that does not read is
+  read again from its value tree with each unknown value dropped, each condition that does not read
+  kept as `false`, and each transform tree's unknown `not_drawn` reason kept not drawn, at most a
+  hundred times (Q-9); a document of an older major is migrated on its value tree by the chain of
+  steps in `migration.rs`, one major at a time, each step stamping it with the `.0` of the major it
+  migrates to, and then read by the current version's reader; a document read, of any version,
+  carries the current version afterwards and is written as it. The current format version is 1.1,
+  which adds a map's `projection_auto`, a map of `PROJECTION AUTO` held apart from a map without a
+  projection; a layer's projection is a proj4 string or `from_source`. Its `schema` feature derives
+  the JSON Schema of the current format version with schemars, checked in under `schema/`
+  (`style-document-1.1.json`); `tests/schema.rs` compares a fresh derivation with that file on every
+  push and, once a release tag `v<semver>` holds schema files, freezes them and asks for the bump
+  the change since the last release needs. The browser bindings never enable the feature. Its module
+  `c.rs` ports C's and MapServer's small functions once for the frontend, the core, and the
+  adapters: glibc's `strtod`, `atof`, and `atoi`, MapServer's `MS_NINT` as `lrint` on x86-64
+  narrowed to an `int`, C's `(int)` cast of a `double`, `int_cast`, `INT_MIN` past an `int`, a C
+  string's end, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, `msPointInPolygon`, which the
+  label cache and a layer's transform call, `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex`'s
+  match of a symbol's name with the key the frontend's map of names takes, and the alpha
+  `MS_NINT(opacity * 2.55)` of a style's or a layer's opacity, kept in a byte as AGG keeps it
+  ([IR-c-ports-in-style-ir](adr/IR-c-ports-in-style-ir.md)). `engine`, `symbolize`, and `label` deny
+  clippy's `cast_possible_truncation`, so that such a cast is not written as `as`. `style-ir` holds
+  the geometry of a feature (`geometry.rs`), which the ports deliver and `symbolize` draws, the one
+  crate both may depend on. It holds the marker a label's `labelpoint` style gives, a symbol's
+  default anchor point, and the anchor arithmetic (`marker.rs`): a computed value, not part of the
+  style document, shared by `symbolize`, which sizes and places the marker, and `label`, which
+  bounds it; it lives here because ARCH-crates-as-ports-and-adapters gives `symbolize` no edge to
+  `label`. It holds a map's fonts, `Fonts`, which finds a name without case as MapServer's font set
+  does and leaves a style document's name that matches one written before it out with a warning, and
+  the one reader of a label's font list, `font_list`, which the frontend checks a label's fonts with
+  and `label` takes its steps from (`font.rs`); it lives here because
+  ARCH-crates-as-ports-and-adapters keeps `mapfile` from `label`. It depends on no other crate of
+  the workspace.
 - **`ports`** — the port traits — the resource loader, the feature source with the projection
-  it declares (ADR-0039), the projection resolver — with the features a
+  it declares (API-source-declares-projection), the projection resolver — with the features a
   source delivers, their geometries, re-exported from `style-ir`,
   and properties
-  ([ADR-0023](adr/0023-typed-properties.md)), and the resource path that
+  ([API-typed-feature-properties](adr/API-typed-feature-properties.md)), and the resource path that
   cannot leave the base context (Q-8). Async lives here and in hosts and adapters, never `Send`;
   `poll_once` runs a future whose ports never wait in one poll, as every host and test that runs
   the frontend or the engine synchronously does.
 - **`mapfile`** — the mapfile frontend: a lexer that follows MapServer's, its keywords and their
-  token values in one table (`keywords.rs`), a generic parser of
-  blocks and directives driven by the statement keywords of each block kind, `INCLUDE` splicing
-  against the main mapfile's directory, bounded in depth, cycles, and total size (Q-9), the
-  symbol file and font set `SYMBOLSET` and `FONTSET` name and the init files an `init=` names by
-  a path, read through the resource loader against the same directory within the same bounds
-  (`init_file.rs`, [ADR-0019](adr/0019-projection-resolver.md)), and the
+  token values in one table (`keywords.rs`), a generic parser of blocks and directives driven by the
+  statement keywords of each block kind, `INCLUDE` splicing against the main mapfile's directory,
+  bounded in depth, cycles, and total size (Q-9), the symbol file and font set `SYMBOLSET` and
+  `FONTSET` name and the init files an `init=` names by a path, read through the resource loader
+  against the same directory within the same bounds (`init_file.rs`,
+  [API-init-projections-through-resolver](adr/API-init-projections-through-resolver.md)), and the
   translation into the style IR (`translate/`, a module per block it reads: symbols, font set,
-  labels, styles, projections, the output format's transparency, inline features, and the
-  defaults of `VALIDATION`, which a load substitutes into its expressions within a 16 MiB bound of
-  their own, apart from the total size (`translate/defaults.rs`, Q-9); `METADATA` and `VALIDATION`
-  read by one reader, as `loadHashTable` reads them, which reports a pair it cannot read
-  (`translate/hash_table.rs`); a load counts each of the two
-  bounds on text by a budget of one type that stops at its bound and reports the charge that passes
-  it once (`budget.rs`)), which appends
-  to the map's symbols a pixmap or SVG symbol for each name a style's `SYMBOL` gives that no
-  symbol carries, as `msAddImageSymbol` appends it, a name beginning `http` aside, its path
-  inside the base context and its file not read
-  (`translate/symbol.rs`), which reports
-  every keyword it does not carry over, reads the WKT of an inline feature with a reader of its
-  own, bounded in nesting (`wkt.rs`,
-  [ADR-0018](adr/0018-inline-features.md)), translates
-  MapServer's expressions with their typing into the CQL2 tree and a plain `TEXT`'s bindings into
-  a concatenation, both read by one scanner of the expression rules of MapServer's lexer
+  labels, styles, projections, the output format's transparency, inline features, and the defaults
+  of `VALIDATION`, which a load substitutes into its expressions within a 16 MiB bound of their own,
+  apart from the total size (`translate/defaults.rs`, Q-9); `METADATA` and `VALIDATION` read by one
+  reader, as `loadHashTable` reads them, which reports a pair it cannot read
+  (`translate/hash_table.rs`); a load counts each of the two bounds on text by a budget of one type
+  that stops at its bound and reports the charge that passes it once (`budget.rs`)), which appends
+  to the map's symbols a pixmap or SVG symbol for each name a style's `SYMBOL` gives that no symbol
+  carries, as `msAddImageSymbol` appends it, a name beginning `http` aside, its path inside the base
+  context and its file not read (`translate/symbol.rs`), which reports every keyword it does not
+  carry over, reads the WKT of an inline feature with a reader of its own, bounded in nesting
+  (`wkt.rs`, [IR-inline-features-in-layer](adr/IR-inline-features-in-layer.md)), translates
+  MapServer's expressions with their typing into the CQL2 tree and a plain `TEXT`'s bindings into a
+  concatenation, both read by one scanner of the expression rules of MapServer's lexer
   (`expression.rs`), which also reads a `GEOMTRANSFORM` expression of a layer or a style into its
   transform tree, its operations without `[map_cellsize]` folded, and every node and operator
   counted against the nesting bound before it recurses deeper (`expression/transform.rs`,
-  ADR-0048, Q-9), and resolves
-  every other `init=` through the host's projection resolver. A load reports at most a thousand
-  diagnostics (Q-9). It is the only crate that knows MapServer syntax; what each parameter it
-  carries means is described per parameter under `docs/semantics/`.
-- **`expr`** — evaluates the style IR's expressions against a feature's properties, which it
-  reads through a trait of its own, as MapServer's parser evaluates its expressions, and matches
+  IR-geomtransform-with-simplifypt, Q-9), and resolves every other `init=` through the host's
+  projection resolver. A load reports at most a thousand diagnostics (Q-9). It is the only crate
+  that knows MapServer syntax; what each parameter it carries means is described per parameter under
+  `docs/semantics/`.
+- **`expr`** — evaluates the style IR's expressions against a feature's properties, which it reads
+  through a trait of its own, as MapServer's parser evaluates its expressions, and matches
   `regexp_like` with the `regex` crate in byte mode, each pattern a tree writes compiled once per
   render and kept, at most 1024 of them, and one computed per feature compiled where it is used
-  ([ADR-0016](adr/0016-expression-evaluation.md)); C's `printf` and `strptime` it needs are
-  ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax in `pattern.rs`, and it reads
-  numbers with `style-ir`'s `c.rs`, as the engine reads a style's or a label's bound values.
-  Synchronous, without I/O; the only crate that uses `regex`.
+  ([IR-expressions-evaluated-as-mapserver](adr/IR-expressions-evaluated-as-mapserver.md)); C's
+  `printf` and `strptime` it needs are ported in `c.rs` and `time.rs`, the reading of PCRE2's syntax
+  in `pattern.rs`, and it reads numbers with `style-ir`'s `c.rs`, as the engine reads a style's or a
+  label's bound values. Synchronous, without I/O; the only crate that uses `regex`.
 - **`proj`** — the reprojection: its own port of PROJ 9.4.0's formulas, the version the pinned
   MapServer build links, every transcendental function from `libm`, so that a point reprojects to
-  the same bits on every target (ADR-0037, Q-2). It reads a
-  projection as the style IR's proj4 string, parameters and tables as PROJ's `pj_init` reads them
-  (`params.rs`), implements longitude and latitude, `lcc`, `merc`, `tmerc` with `utm` by
-  PROJ's Poder/Engsager algorithm, and `ortho`, with `+over` (`lcc.rs`, `merc.rs`, `tmerc.rs`,
-  `ortho.rs`, their shared functions in
+  the same bits on every target (GEO-proj-ported-with-libm, Q-2). It reads a projection as the style
+  IR's proj4 string, parameters and tables as PROJ's `pj_init` reads them (`params.rs`), implements
+  longitude and latitude, `lcc`, `merc`, `tmerc` with `utm` by PROJ's Poder/Engsager algorithm, and
+  `ortho`, with `+over` (`lcc.rs`, `merc.rs`, `tmerc.rs`, `ortho.rs`, their shared functions in
   `common.rs`), and shifts a datum through WGS84 by an exact Helmert transform of an explicit
-  `+towgs84`, as PROJ's cs2cs emulation chains it (`datum.rs`); a named `+datum` shifts nothing,
-  as MapServer's call of PROJ does not for NAD83.
-  Its tables hold only the datums, ellipsoids, and units the cases in scope name: WGS84 and NAD83,
-  their ellipsoids, and metres. Anything else is an error value naming it; a point that does not
-  transform is one too, never a panic. It decides whether two projections differ as
-  `msProjectionsDiffer` compares their parameters, and reprojects a rectangle as `msProjectRect`
-  does (`rect.rs`): its sides and a diagonal sampled, the horizon found where points fail, a grid
-  where none of them reprojects, all longitudes where a polar projection's pole lies inside it,
-  with the `+over` it adds. It reprojects a shape's lines as `msProjectShapeLine` does and a point
-  shape's as `msProjectLineEx` does (`shape.rs`): cut at the horizon, wrapped at the dateline;
-  it says where MapServer would cut a line shape with GEOS, which it does not port, for a
-  projected source whose origin is the north pole into longitude and latitude; MapServer's other
-  cases, a target written `init=epsg:3857` among them, it does not see. It computes a rotated
-  map's geotransform as `msMapComputeGeotransform` and `msMapSetFakedExtent` do
-  (`geotransform.rs`), and a reprojection may hold it on the map's side, the way into the map
-  applying its inverse after the formulas and the way back applying it before them; a way from a
-  CRS into itself runs no formula, so only the geotransform moves its points
-  (ADR-0045). These ports of MapServer's `mapproject.c` and
-  `mapobject.c` live here beside the port of PROJ. Its test `tests/reference.rs`
-  holds points, rectangles, and shapes against the records MapServer's call of PROJ wrote at the
-  pinned build, under `tests/reference/` (ADR-0038, G-11).
-  Synchronous, without I/O; it depends on `style-ir` and `libm` alone, and each file that ports a
-  PROJ source holds PROJ's notice (`scripts/check-notice.sh`).
+  `+towgs84`, as PROJ's cs2cs emulation chains it (`datum.rs`); a named `+datum` shifts nothing, as
+  MapServer's call of PROJ does not for NAD83. Its tables hold only the datums, ellipsoids, and
+  units the cases in scope name: WGS84 and NAD83, their ellipsoids, and metres. Anything else is an
+  error value naming it; a point that does not transform is one too, never a panic. It decides
+  whether two projections differ as `msProjectionsDiffer` compares their parameters, and reprojects
+  a rectangle as `msProjectRect` does (`rect.rs`): its sides and a diagonal sampled, the horizon
+  found where points fail, a grid where none of them reprojects, all longitudes where a polar
+  projection's pole lies inside it, with the `+over` it adds. It reprojects a shape's lines as
+  `msProjectShapeLine` does and a point shape's as `msProjectLineEx` does (`shape.rs`): cut at the
+  horizon, wrapped at the dateline; it says where MapServer would cut a line shape with GEOS, which
+  it does not port, for a projected source whose origin is the north pole into longitude and
+  latitude; MapServer's other cases, a target written `init=epsg:3857` among them, it does not see.
+  It computes a rotated map's geotransform as `msMapComputeGeotransform` and `msMapSetFakedExtent`
+  do (`geotransform.rs`), and a reprojection may hold it on the map's side, the way into the map
+  applying its inverse after the formulas and the way back applying it before them; a way from a CRS
+  into itself runs no formula, so only the geotransform moves its points
+  (GEO-map-rotation-in-reprojection). These ports of MapServer's `mapproject.c` and `mapobject.c`
+  live here beside the port of PROJ. Its test `tests/reference.rs` holds points, rectangles, and
+  shapes against the records MapServer's call of PROJ wrote at the pinned build, under
+  `tests/reference/` (TST-proj-references-from-mapserver, G-11). Synchronous, without I/O; it
+  depends on `style-ir` and `libm` alone, and each file that ports a PROJ source holds PROJ's notice
+  (`scripts/check-notice.sh`).
 - **`engine`** — renders a map: fits its extent to the image as MapServer does, asks each layer's
-  bound feature source for the features in view, or, for a layer with inline features, a source
-  in memory of its own over them, which reports a bound source as not read (`inline.rs`,
-  ADR-0018); for a layer whose projection differs from the map's, it asks for the map's extent
-  reprojected into the layer's and reprojects each feature's shape into the map's before anything
-  else touches it, as `msProjectShapeEx` does, with a warning for the points that do not
-  reproject, the horizon points held to a bound per layer (Q-9), and a map of `AUTO` taken as
+  bound feature source for the features in view, or, for a layer with inline features, a source in
+  memory of its own over them, which reports a bound source as not read (`inline.rs`,
+  IR-inline-features-in-layer); for a layer whose projection differs from the map's, it asks for the
+  map's extent reprojected into the layer's and reprojects each feature's shape into the map's
+  before anything else touches it, as `msProjectShapeEx` does, with a warning for the points that do
+  not reproject, the horizon points held to a bound per layer (Q-9), and a map of `AUTO` taken as
   each layer's base geographic CRS, and draws nothing of a layer whose projection does not read,
-  with a warning (`reproject.rs`, which warns of a layer's features as it reprojects them); a
-  layer of `PROJECTION AUTO` takes the projection its bound source declares (ADR-0039), longitude
-  and latitude with a warning where that does not read; a
-  layer with lines from such a polar source into longitude and latitude is drawn uncut with a
-  warning (`lines-not-cut`); on a map with an `ANGLE`, it computes the scale from the real
-  extent and the scale factors from `msGetGeoCellSize`'s cellsize, reprojects every layer with a
-  projection through the map's geotransform into the frame of the image, and draws everything
-  after in that frame, a layer without a projection unrotated with a warning
-  (`rotation-without-projection`, ADR-0045); replaces the shape of
-  each feature that passes the layer's filter by the layer's `GEOMTRANSFORM` through `symbolize`,
-  up to the first feature past its `MAXFEATURES`, and draws nothing of a layer whose transform
-  tree is `not_drawn` or fails, with a warning (`classes.rs`,
-  ADR-0048), hands the budget the layer's transform left to its class styles' trees and warns of
-  each style's first failure and of the bound they pass
-  (ADR-0048), draws each feature that passes the layer's
-  filter with the first class whose expression matches it, up to the layer's `MAXFEATURES`, which
-  the frontend takes from the layer, its metadata, the map's, or the output format, its styles'
-  bound and computed
+  with a warning (`reproject.rs`, which warns of a layer's features as it reprojects them); a layer
+  of `PROJECTION AUTO` takes the projection its bound source declares
+  (API-source-declares-projection), longitude and latitude with a warning where that does not read;
+  a layer with lines from such a polar source into longitude and latitude is drawn uncut with a
+  warning (`lines-not-cut`); on a map with an `ANGLE`, it computes the scale from the real extent
+  and the scale factors from `msGetGeoCellSize`'s cellsize, reprojects every layer with a projection
+  through the map's geotransform into the frame of the image, and draws everything after in that
+  frame, a layer without a projection unrotated with a warning (`rotation-without-projection`,
+  GEO-map-rotation-in-reprojection); replaces the shape of each feature that passes the layer's
+  filter by the layer's `GEOMTRANSFORM` through `symbolize`, up to the first feature past its
+  `MAXFEATURES`, and draws nothing of a layer whose transform tree is `not_drawn` or fails, with a
+  warning (`classes.rs`, IR-geomtransform-with-simplifypt), hands the budget the layer's transform
+  left to its class styles' trees and warns of each style's first failure and of the bound they pass
+  (IR-geomtransform-with-simplifypt), draws each feature that passes the layer's filter with the
+  first class whose expression matches it, up to the layer's `MAXFEATURES`, which the frontend takes
+  from the layer, its metadata, the map's, or the output format, its styles' bound and computed
   properties bound to it and every style and label scaled by its layer's scale factor, which
   `SIZEUNITS` or `SYMBOLSCALEDENOM` set and the map's `RESOLUTION` over its `DEFRESOLUTION`
-  otherwise, the bounds of a style and a label by that resolution factor alone (`classes.rs`,
-  the properties of a style a feature may bind listed once in `bindable.rs`),
-  and turns each feature and style into display items
-  by the layer's render mode; a circle layer's features it keeps in the layer's projection and
-  reprojects only each circle's centre, as `circleLayerDrawShape` does, and draws none of its
-  labels (`circle.rs`, which the one dispatch on a layer's render mode in `lib.rs` hands a circle
-  layer). A layer without a source, or whose source fails, is skipped with a
+  otherwise, the bounds of a style and a label by that resolution factor alone (`classes.rs`, the
+  properties of a style a feature may bind listed once in `bindable.rs`), and turns each feature and
+  style into display items by the layer's render mode; a circle layer's features it keeps in the
+  layer's projection and reprojects only each circle's centre, as `circleLayerDrawShape` does, and
+  draws none of its labels (`circle.rs`, which the one dispatch on a layer's render mode in `lib.rs`
+  hands a circle layer). A layer without a source, or whose source fails, is skipped with a
   diagnostic (G-8); a source that skips records yields one warning for its layer
-  ([ADR-0022](adr/0022-skipped-records.md)); the fonts a label names and the images its
-  pixmap symbols name it loads by one load, once per render and path through the host's resource
-  loader, each file held to the 32 MiB of Q-9 that a font file and a symbol image's file share
-  (`resource.rs`, the fonts and the face a line is drawn in `fonts.rs`); each image it decodes
-  once and holds within Q-9's bound on the bytes one render's images, tiles, and brushes' copies
-  come to
-  (`images.rs`,
-  [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)); one value holds what a render reads
-  through the loader, its fonts, images, tiles, and TrueType markers' glyphs, loads a pixmap by
-  one call, and lends the images and fonts to the labels and the images, tiles, and glyphs to the
-  canvas (`render_resources.rs`); it draws the labels of point
-  layers after every layer, as MapServer's label cache does, through `label` (ADR-0031), and
-  those of a point layer of `LABELCACHE OFF` at each point after its markers, before the next
-  point's, as `pointLayerDrawShape` draws them, without a test against other labels, markers, or
-  the image's edge ([label.md](semantics/label.md)): it holds each label as its glyphs' indices
-  and its point, draws each glyph once per font and size, and
-  builds a label's path only as it draws it; a label it cannot draw yet is left out with a
-  diagnostic. It draws a label's styles before its text, as `msDrawLabelCache` does, through
-  `symbolize`, which it hands the label's point and the box around its text (`labels.rs`, its
-  binding to a feature `label_binding.rs`, which reads a bound value as `classes.rs` does, its
-  styles held for the cache, which hand the cache their marker, and their drawing
-  `label_styles.rs`); a
-  label's `PRIORITY` it may compute per feature through `expr`. A label
-  takes its text from the label, the class, the `LABELITEM`, or last its inline feature's own
+  ([API-skipped-records-reported](adr/API-skipped-records-reported.md)); the fonts a label names and
+  the images its pixmap symbols name it loads by one load, once per render and path through the
+  host's resource loader, each file held to the 32 MiB of Q-9 that a font file and a symbol image's
+  file share (`resource.rs`, the fonts and the face a line is drawn in `fonts.rs`); each image it
+  decodes once and holds within Q-9's bound on the bytes one render's images, tiles, and brushes'
+  copies come to (`images.rs`,
+  [REN-pixmaps-held-once-per-render](adr/REN-pixmaps-held-once-per-render.md)); one value holds what
+  a render reads through the loader, its fonts, images, tiles, and TrueType markers' glyphs, loads a
+  pixmap by one call, and lends the images and fonts to the labels and the images, tiles, and glyphs
+  to the canvas (`render_resources.rs`); it draws the labels of point layers after every layer, as
+  MapServer's label cache does, through `label` (REN-label-glyphs-from-skrifa), and those of a point
+  layer of `LABELCACHE OFF` at each point after its markers, before the next point's, as
+  `pointLayerDrawShape` draws them, without a test against other labels, markers, or the image's
+  edge ([label.md](semantics/label.md)): it holds each label as its glyphs' indices and its point,
+  draws each glyph once per font and size, and builds a label's path only as it draws it; a label it
+  cannot draw yet is left out with a diagnostic. It draws a label's styles before its text, as
+  `msDrawLabelCache` does, through `symbolize`, which it hands the label's point and the box around
+  its text (`labels.rs`, its binding to a feature `label_binding.rs`, which reads a bound value as
+  `classes.rs` does, its styles held for the cache, which hand the cache their marker, and their
+  drawing `label_styles.rs`); a label's `PRIORITY` it may compute per feature through `expr`. A
+  label takes its text from the label, the class, the `LABELITEM`, or last its inline feature's own
   `TEXT`, which the port's `Feature` does not carry: the labels read it beside the port, from the
-  layer's inline features in the style IR at the place the feature's id names, which holds while
-  the in-memory source numbers every feature by its place (`inline.rs`, ADR-0018). It
-  reports every label of its cache in `Rendered.labels`, in the order the cache walks them, with
-  its member box, that of its text and its `labelpoint` marker, where it was drawn, or none where
-  it was discarded. It draws each feature in its styles through
-  `symbolize`, in the order MapServer's shape cache draws a line layer's styles and their outlines
-  (`plan.rs`, its `Drawing` in `lib.rs`, which draws a layer in `draw_layer`), into an image of
-  its own for a layer with an opacity, and
-  reports per layer what `symbolize` left undrawn: markers past their budget, hatches refused,
-  a label's `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache
-  refused, a label's among them, vector and TrueType symbols whose fill or brush tile the cache
-  refused,
-  TrueType symbols whose font cannot be used or lacks the character, and geometries its render
-  mode cannot draw (Q-9); the markers, hatches, pixmaps, and symbols, and the bound the transform
-  trees of its class styles passed, are one value, `Refusals`, which a canvas yields in one call,
-  the labels keep per layer and merge, and the layer's reports turn into its diagnostics, the
-  labels' refusals among them, in one module, `layer_reports.rs`, which writes the reports of a
-  layer's styles and transform trees too. It loads the
-  images of a layer's pixmap marks and fills, and of its labels' `labelpoint` and `labelcenter`
-  pixmaps, into the render's store before it draws the layer, since `symbolize` does no I/O, and
-  hands them to it on the canvas, and to the labels, which size the marker a class's first style
-  holds beneath each label, and a `labelpoint` style's marker, by them. It answers the glyph port
-  of a TrueType marker: it loads the fonts the render's TrueType symbols name before the layer
-  is drawn, into the store the labels' fonts use (`render_resources.rs`), and the glyphs are read
-  through `label` once per render by their font, character, and size (`marker_glyphs.rs`,
-  [ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md)). It turns every drawing
-  operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It is the
-  one core crate that awaits the ports. Its modules import one another in one direction only,
+  layer's inline features in the style IR at the place the feature's id names, which holds while the
+  in-memory source numbers every feature by its place (`inline.rs`, IR-inline-features-in-layer). It
+  reports every label of its cache in `Rendered.labels`, in the order the cache walks them, with its
+  member box, that of its text and its `labelpoint` marker, where it was drawn, or none where it was
+  discarded. It draws each feature in its styles through `symbolize`, in the order MapServer's shape
+  cache draws a line layer's styles and their outlines (`plan.rs`, its `Drawing` in `lib.rs`, which
+  draws a layer in `draw_layer`), into an image of its own for a layer with an opacity, and reports
+  per layer what `symbolize` left undrawn: markers past their budget, hatches refused, a label's
+  `labelpoly` hatches among them, pixmaps whose image the store or whose tile the cache refused, a
+  label's among them, vector and TrueType symbols whose fill or brush tile the cache refused,
+  TrueType symbols whose font cannot be used or lacks the character, and geometries its render mode
+  cannot draw (Q-9); the markers, hatches, pixmaps, and symbols, and the bound the transform trees
+  of its class styles passed, are one value, `Refusals`, which a canvas yields in one call, the
+  labels keep per layer and merge, and the layer's reports turn into its diagnostics, the labels'
+  refusals among them, in one module, `layer_reports.rs`, which writes the reports of a layer's
+  styles and transform trees too. It loads the images of a layer's pixmap marks and fills, and of
+  its labels' `labelpoint` and `labelcenter` pixmaps, into the render's store before it draws the
+  layer, since `symbolize` does no I/O, and hands them to it on the canvas, and to the labels, which
+  size the marker a class's first style holds beneath each label, and a `labelpoint` style's marker,
+  by them. It answers the glyph port of a TrueType marker: it loads the fonts the render's TrueType
+  symbols name before the layer is drawn, into the store the labels' fonts use
+  (`render_resources.rs`), and the glyphs are read through `label` once per render by their font,
+  character, and size (`marker_glyphs.rs`,
+  [API-truetype-marker-through-port](adr/API-truetype-marker-through-port.md)). It turns every
+  drawing operation into a display item of its feature in one place (`draw_items` in `layer.rs`). It
+  is the one core crate that awaits the ports. Its modules import one another in one direction only,
   `labels.rs` at the top, then `label_styles.rs`, `label_binding.rs`, `circle.rs`, `classes.rs`,
   `render_resources.rs`, `reproject.rs`, `layer_reports.rs`, `fonts.rs` and `images.rs`, and
   `bind.rs`, `bindable.rs`, `inline.rs`, `label_cache.rs`, `layer.rs`, `marker_glyphs.rs`,
   `plan.rs`, and `resource.rs` the leaves, and none takes an item of the crate's root, as `lib.rs`
-  lists them: what the root and the modules share of a layer drawn and of the map's rotation lies
-  in `layer.rs`, and the address of a label and the growth of the label cache's lists, which the
-  labels and their styles share, in `label_cache.rs`; `arch-test`'s `tests/engine_modules.rs`
-  holds this direction.
-  Every host binds its sources to the layers by name through the engine's `bind_sources`
-  (`bind.rs`), which reports a source no layer is named for and one that cannot be read the same
-  way for each.
+  lists them: what the root and the modules share of a layer drawn and of the map's rotation lies in
+  `layer.rs`, and the address of a label and the growth of the label cache's lists, which the labels
+  and their styles share, in `label_cache.rs`; `arch-test`'s `tests/engine_modules.rs` holds this
+  direction. Every host binds its sources to the layers by name through the engine's `bind_sources`
+  (`bind.rs`), which reports a source no layer is named for and one that cannot be read the same way
+  for each.
 - **`symbolize`** — the symbolization of a style, synchronous and without I/O: a feature's geometry
   in a style bound to it turned into drawing operations, as MapServer draws it. The dispatch of a
   style by the layer's render mode, the symbols a `GEOMTRANSFORM` places, and the paths of the
@@ -266,58 +249,58 @@ golden path and the test pattern an agent copies from are named here.
   image's transformation (`marker.rs`); a TrueType symbol's glyph at a point, anchored, along a
   line, and tiled over a polygon, asked of the port `Glyphs` the engine answers through `label`; the
   label cache sizes a class's TrueType marker by the same glyphs
-  ([ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md), `glyph.rs`, `glyph_marker.rs`); a
-  line's dashes, and the style of an outline pass, prepared once for a line and a `GEOMTRANSFORM`
-  alike (`line.rs`); the canvas a layer draws on, which holds the render's symbol resources, the
-  images of its pixmaps and the glyph port, in one value, `SymbolResources`, the label cache sizes a
-  marker with too, whose one lookup of a pixmap's image both share, and which yields what it left
-  undrawn (`canvas.rs`, `symbol.rs`); a label's styles, which of them are drawn, and their
-  operations on the label's point and the box around its text: a `labelpoly` style shaded on the
-  box, a `labelpoint` style's marker at the point, and a `labelcenter` style's at the centre of the
-  box, a vector, an ellipse, or a pixmap drawn as a point's marker is, MapServer's default symbol as
-  nothing, and a `labelpoint` style's marker sized and placed as `computeMarkerBounds` takes it,
-  `label_style_marker` (`label.rs`); a style's width and size bounds, one function per site of
-  MapServer's that bounds them, with the constants they bound by (`bounds.rs`); a property's value
-  as bound, the gamma, and degrees to radians (`style.rs`); the view that maps the extent to the
-  image, and a line's or a ring's vertices to the pixels msTransformShapeSimplify keeps
-  (`extent.rs`); a style's symbol resolved, its vector and ellipse symbols, a marker's size and
-  anchor point, a pixmap's scale, square, and transformation, in the order of operations of AGG's
-  `trans_affine`, and the images of a render's pixmaps by their path (`symbol.rs`); the class's clip
-  buffers, and the clip of a hatched polygon and of a line shape by them, as msDrawShape clips them
-  (`clip.rs`); hatches, and the reference point a hatch's lines count from (`hatch.rs`); a style's
-  symbol by its kind, `Mark`, placed along a line, each marker drawn and priced by one styled mark,
-  and asked as a brush or a fill tile, one dispatch over the kinds per placement (`mark.rs`); the
-  placement of symbols along a line, and the layer's budget of markers (`line_marker.rs`); a
-  polygon's fill tile and a line's brush tile, its size held to Q-9's bound, and the render's cache
-  of six tiles, counted with the decoded images and a brush's copy (`tile.rs`); line offsets
-  (`offset.rs`); and the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a
-  layer's `GEOMTRANSFORM`, its transform tree evaluated on each feature's shape before the engine
-  classes it, and a class style's tree evaluated on the shape in pixels as it is drawn (`draw.rs`),
-  what both add and visit held to one budget per layer and render, which the canvas carries from the
-  layer's transform to its styles' (`layer_transform.rs`, Q-9), `simplify` among them by a
-  Douglas-Peucker ported from JTS without recursion, a polygon's collapsed rings removed by the
-  steps of JTS, and an invalid result tested and repaired with the geo crate, and `buffer` by geo's
-  buffer with round joins and caps of 30 segments a quadrant, but for a point's circle, which a port
-  of JTS's draws with `libm` and geo's unions merge, a tiny shape scaled by a power of two around it
-  and back, and a line's distance raised to a floor, so that i_overlay's grid neither drops the
-  shape nor loops on it (`geometry.rs`,
-  [ADR-0050](adr/0050-geometry-through-geo-and-own-circle.md)), a polygon's `simplify` and any
+  ([API-truetype-marker-through-port](adr/API-truetype-marker-through-port.md), `glyph.rs`,
+  `glyph_marker.rs`); a line's dashes, and the style of an outline pass, prepared once for a line
+  and a `GEOMTRANSFORM` alike (`line.rs`); the canvas a layer draws on, which holds the render's
+  symbol resources, the images of its pixmaps and the glyph port, in one value, `SymbolResources`,
+  the label cache sizes a marker with too, whose one lookup of a pixmap's image both share, and
+  which yields what it left undrawn (`canvas.rs`, `symbol.rs`); a label's styles, which of them are
+  drawn, and their operations on the label's point and the box around its text: a `labelpoly` style
+  shaded on the box, a `labelpoint` style's marker at the point, and a `labelcenter` style's at the
+  centre of the box, a vector, an ellipse, or a pixmap drawn as a point's marker is, MapServer's
+  default symbol as nothing, and a `labelpoint` style's marker sized and placed as
+  `computeMarkerBounds` takes it, `label_style_marker` (`label.rs`); a style's width and size
+  bounds, one function per site of MapServer's that bounds them, with the constants they bound by
+  (`bounds.rs`); a property's value as bound, the gamma, and degrees to radians (`style.rs`); the
+  view that maps the extent to the image, and a line's or a ring's vertices to the pixels
+  msTransformShapeSimplify keeps (`extent.rs`); a style's symbol resolved, its vector and ellipse
+  symbols, a marker's size and anchor point, a pixmap's scale, square, and transformation, in the
+  order of operations of AGG's `trans_affine`, and the images of a render's pixmaps by their path
+  (`symbol.rs`); the class's clip buffers, and the clip of a hatched polygon and of a line shape by
+  them, as msDrawShape clips them (`clip.rs`); hatches, and the reference point a hatch's lines
+  count from (`hatch.rs`); a style's symbol by its kind, `Mark`, placed along a line, each marker
+  drawn and priced by one styled mark, and asked as a brush or a fill tile, one dispatch over the
+  kinds per placement (`mark.rs`); the placement of symbols along a line, and the layer's budget of
+  markers (`line_marker.rs`); a polygon's fill tile and a line's brush tile, its size held to Q-9's
+  bound, and the render's cache of six tiles, counted with the decoded images and a brush's copy
+  (`tile.rs`); line offsets (`offset.rs`); and the style's `GEOMTRANSFORM` and `POLAROFFSET`
+  (`geom_transform.rs`); and a layer's `GEOMTRANSFORM`, its transform tree evaluated on each
+  feature's shape before the engine classes it, and a class style's tree evaluated on the shape in
+  pixels as it is drawn (`draw.rs`), what both add and visit held to one budget per layer and
+  render, which the canvas carries from the layer's transform to its styles' (`layer_transform.rs`,
+  Q-9), `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
+  collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
+  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant, but
+  for a point's circle, which a port of JTS's draws with `libm` and geo's unions merge, a tiny shape
+  scaled by a power of two around it and back, and a line's distance raised to a floor, so that
+  i_overlay's grid neither drops the shape nor loops on it (`geometry.rs`,
+  [GEO-own-circle-for-buffer](adr/GEO-own-circle-for-buffer.md)), a polygon's `simplify` and any
   `buffer` of a coordinate that is no finite number failing before geo sees it
   (`layer_transform.rs`), and `simplifypt` by a port of JTS's topology-preserving simplifier without
   recursion and without a spatial index (`geometry/topology.rs`,
-  [ADR-0047](adr/0047-simplifypt-ported-from-jts.md)), and `smoothsia` by a port of MapServer's
-  `src/mapsmoothing.c`, its line window, its passes, and its preprocessing, in a module of its own
-  beneath the transform tree (`layer_transform/smoothsia.rs`). A line style's symbol with a `GAP` it
-  places along the line; those markers, a point layer's at its features, and the ones a
-  `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
-  taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
-  does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`,
-  `label.rs`, and `circle.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`, `mark.rs`,
-  `glyph_marker.rs`, `canvas.rs`, `clip.rs` and `hatch.rs`, `line_marker.rs` and `tile.rs`,
-  `symbol.rs`, `geom_transform.rs`, and `layer_transform.rs`, and `bounds.rs`, `style.rs`,
-  `extent.rs`, `geometry.rs`, `glyph.rs`, and `offset.rs` the leaves, as `lib.rs` lists them;
-  ADR-0008 decides the direction only between crates, and `arch-test`'s `tests/symbolize_modules.rs`
-  holds this one.
+  [GEO-simplifypt-ported-from-jts](adr/GEO-simplifypt-ported-from-jts.md)), and `smoothsia` by a
+  port of MapServer's `src/mapsmoothing.c`, its line window, its passes, and its preprocessing, in a
+  module of its own beneath the transform tree (`layer_transform/smoothsia.rs`). A line style's
+  symbol with a `GAP` it places along the line; those markers, a point layer's at its features, and
+  the ones a `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol
+  priced and taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which
+  MapServer does not draw, takes none of it. Its modules import one another in one direction only,
+  `draw.rs`, `label.rs`, and `circle.rs` at the top, then `shade.rs`, `marker.rs`, `line.rs`,
+  `mark.rs`, `glyph_marker.rs`, `canvas.rs`, `clip.rs` and `hatch.rs`, `line_marker.rs` and
+  `tile.rs`, `symbol.rs`, `geom_transform.rs`, and `layer_transform.rs`, and `bounds.rs`,
+  `style.rs`, `extent.rs`, `geometry.rs`, `glyph.rs`, and `offset.rs` the leaves, as `lib.rs` lists
+  them; ARCH-crates-as-ports-and-adapters decides the direction only between crates, and
+  `arch-test`'s `tests/symbolize_modules.rs` holds this one.
 - **`label`** — a label's text as MapServer lays out its Latin lines: its sizes, the fonts of its
   font list, read by `style-ir`'s `font_list`, in the order MapServer tries them, and its glyphs
   read with skrifa, unhinted with FreeType's arithmetic, laid out by their advances, broken into
@@ -334,7 +317,7 @@ golden path and the test pattern an agent copies from are named here.
   drawn or not, in its walk's order, with the box it filed a drawn one by, which the engine's report
   of the labels follows; it computes the box of the marker cached beneath a label and
   `msDrawLabelCache`'s offset of a label from its markers (`cache.rs`). It is the one crate that
-  depends on skrifa, and does no I/O (ADR-0031).
+  depends on skrifa, and does no I/O (REN-label-glyphs-from-skrifa).
 - **`render`** — the display list, its fills and hatches each with the gamma the engine gives them
   or none, a stroke's width, cap, join, inner join, dashes, and antialiasing as one value (`Pen`), a
   pixmap's image placed at a whole pixel or resampled into a square through an affine
@@ -342,66 +325,68 @@ golden path and the test pattern an agent copies from are named here.
   line brushed with one, by a counted reference to the tile, which holds its size within Q-9's
   bound, the bytes a brush's copy of it takes, the drawing that makes it, and its image once the
   renderer has built it (`tile.rs`), the renderer trait, whose `take_refused` hands the engine what
-  a renderer refused: brushed pieces by the kind of their tile's symbol, the paths the clip cut,
-  and the glyphs past their reach (`Refused`, [ADR-0049](adr/0049-third-party-failures-guarded.md)),
-  the RGBA image, and the premultiplied image a pixmap is decoded to (`PremultipliedImage`,
-  ADR-0029); the cost model that bounds a hatch before it is cut (`Hatch::is_bounded`, ADR-0042,
-  `hatch.rs`); and the clip of every path to the image, its segments, lines, and rings, each
-  saying whether it dropped a part, the image grown by its margin, the width a stroke is drawn at,
-  and the reach past the image a glyph's point may have (`MAX_GLYPH_REACH`), properties of the
-  display list in one module (`clip.rs`, [ADR-0027](adr/0027-clip-to-the-image.md)), which the
-  bound measures a hatch's lines with and every renderer clips with.
-- **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image
-  before rasterizing, by the clip of `render`, fills through the gamma it is given, strokes an
-  aliased line by blending each pixel agg-rust's scanlines cover at full cover, as AGG's
-  `renderer_scanline_bin_solid` does, blends premultiplied colours
-  in a pixel format of its own as MapServer's AGG 2.4 does, draws a layer with an opacity into an
-  image of its own and lays it over, fills glyphs as MapServer's AGG renderer does, blends a
-  pixmap's image as `blend_from` does, resamples a scaled or turned one with a port of AGG 2.4's
-  bilinear clip filter and linear interpolator, `iround` being `style-ir`'s `lrint` narrowed to an
-  `int`, over the packed scanlines of the square it fills (`resample.rs`,
-  [ADR-0026](adr/0026-agg-blender-and-resampler.md)), builds a tile the first time
-  it draws with it, in a transparent image of its own, and repeats it from the image's origin,
+  a renderer refused: brushed pieces by the kind of their tile's symbol, the paths the clip cut, and
+  the glyphs past their reach (`Refused`,
+  [ARCH-third-party-failures-guarded](adr/ARCH-third-party-failures-guarded.md)), the RGBA image,
+  and the premultiplied image a pixmap is decoded to (`PremultipliedImage`,
+  REN-pixmaps-held-once-per-render); the cost model that bounds a hatch before it is cut
+  (`Hatch::is_bounded`, REN-i-overlay-shared-with-geo, `hatch.rs`); and the clip of every path to
+  the image, its segments, lines, and rings, each saying whether it dropped a part, the image grown
+  by its margin, the width a stroke is drawn at, and the reach past the image a glyph's point may
+  have (`MAX_GLYPH_REACH`), properties of the display list in one module (`clip.rs`,
+  [ARCH-one-clip-to-image](adr/ARCH-one-clip-to-image.md)), which the bound measures a hatch's lines
+  with and every renderer clips with.
+- **`render-agg`** — the reference renderer on agg-rust; it clips every path near the image before
+  rasterizing, by the clip of `render`, fills through the gamma it is given, strokes an aliased line
+  by blending each pixel agg-rust's scanlines cover at full cover, as AGG's
+  `renderer_scanline_bin_solid` does, blends premultiplied colours in a pixel format of its own as
+  MapServer's AGG 2.4 does, draws a layer with an opacity into an image of its own and lays it over,
+  fills glyphs as MapServer's AGG renderer does, blends a pixmap's image as `blend_from` does,
+  resamples a scaled or turned one with a port of AGG 2.4's bilinear clip filter and linear
+  interpolator, `iround` being `style-ir`'s `lrint` narrowed to an `int`, over the packed scanlines
+  of the square it fills (`resample.rs`,
+  [REN-agg-blender-and-resampler](adr/REN-agg-blender-and-resampler.md)), builds a tile the first
+  time it draws with it, in a transparent image of its own, and repeats it from the image's origin,
   brushes a line with a tile through agg-rust's outline-image rasterizer, a port of AGG 2.4's
-  bilinear pattern filter, and the pattern's start carried across the clip, a piece whose
-  pattern's place or joins would pass agg-rust's `i32` left undrawn and counted as a pixmap's or
-  another symbol's by its tile's marks (`brush.rs`,
-  [ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)), bounds a glyph's outline width as a
-  stroke's (`glyphs.rs`), and
-  is the one crate that may use `unsafe` ([ADR-0025](adr/0025-agg-rust-rasterizer.md)); it cuts a
-  hatch from its polygon with i_overlay, the one crate of the workspace that depends on it
-  directly
-  ([ADR-0042](adr/0042-i-overlay-in-render-agg-and-geo.md);
-  geo brings its own i_overlay into `symbolize`).
+  bilinear pattern filter, and the pattern's start carried across the clip, a piece whose pattern's
+  place or joins would pass agg-rust's `i32` left undrawn and counted as a pixmap's or another
+  symbol's by its tile's marks (`brush.rs`,
+  [REN-symbol-line-brushed-by-tile](adr/REN-symbol-line-brushed-by-tile.md)), bounds a glyph's
+  outline width as a stroke's (`glyphs.rs`), and is the one crate that may use `unsafe`
+  ([REN-agg-rust-rasterizer](adr/REN-agg-rust-rasterizer.md)); it cuts a hatch from its polygon with
+  i_overlay, the one crate of the workspace that depends on it directly
+  ([REN-i-overlay-shared-with-geo](adr/REN-i-overlay-shared-with-geo.md); geo brings its own
+  i_overlay into `symbolize`).
 - **`encode`** — PNG from and to an RGBA image, and a pixmap symbol's PNG decoded as MapServer's
   `readPNG` decodes it, premultiplied, its header held to Q-9's 4096 × 4096 before anything is
-  allocated for it (`pixmap.rs`, [ADR-0030](adr/0030-png-encoder.md),
-  [ADR-0029](adr/0029-pixmaps-held-once-per-render.md)).
+  allocated for it (`pixmap.rs`, [REN-png-through-image-rs](adr/REN-png-through-image-rs.md),
+  [REN-pixmaps-held-once-per-render](adr/REN-pixmaps-held-once-per-render.md)).
 - **`adapter-geojson`** — a feature source over a GeoJSON document
-  ([ADR-0020](adr/0020-geojson-adapter.md)), declaring WGS84 longitude and latitude.
-- **`adapter-shapefile`** — a feature source over an ESRI shapefile, its `.shp`, `.shx`, and
-  `.dbf` loaded through the resource loader and read with the records MapServer reads, in memory
-  that follows the files' size ([ADR-0021](adr/0021-shapefile-adapter.md)), each rule of the
-  reading written down in `docs/semantics/shapefile.md`, and its `.prj`, loaded at every open
-  whatever the layer's projection, read into the projection it declares by a WKT reader of its
-  own (`prj.rs`, ADR-0039);
-  a record it cannot read is skipped and
-  counted, and the engine reports it per layer
-  ([ADR-0022](adr/0022-skipped-records.md)).
+  ([API-geojson-through-georust](adr/API-geojson-through-georust.md)), declaring WGS84 longitude and
+  latitude.
+- **`adapter-shapefile`** — a feature source over an ESRI shapefile, its `.shp`, `.shx`, and `.dbf`
+  loaded through the resource loader and read with the records MapServer reads, in memory that
+  follows the files' size
+  ([API-shapefile-reader-from-mapserver](adr/API-shapefile-reader-from-mapserver.md)), each rule of
+  the reading written down in `docs/semantics/shapefile.md`, and its `.prj`, loaded at every open
+  whatever the layer's projection, read into the projection it declares by a WKT reader of its own
+  (`prj.rs`, API-source-declares-projection); a record it cannot read is skipped and counted, and
+  the engine reports it per layer
+  ([API-skipped-records-reported](adr/API-skipped-records-reported.md)).
 - **`adapter-epsg`** — resolves `init=epsg:` projections for the frontend through the
   `ProjectionResolver` port: built in are only EPSG:4326, EPSG:3857, and the WGS84 UTM zones;
   every other code comes from a table the host supplies
-  ([ADR-0019](adr/0019-projection-resolver.md)).
+  ([API-init-projections-through-resolver](adr/API-init-projections-through-resolver.md)).
 - **`cli`** — the `forager` command, a host with a file loader rooted at the base context — the
-  mapfile's directory, or the directory `--base` names — that also refuses symbolic links out of
-  it, and that hands the frontend an `adapter-epsg` table, extended by the file `--epsg` names;
-  `forager render` binds each local layer the engine draws to the shapefile its `DATA` names, and
-  the GeoJSON files `--source` names to layers by name, and writes a PNG. A file is checked by its
-  path before it is opened, so one who can write into the base context during a load can swap it in
-  the window between, for a link out of the base or for a FIFO; `read_bounded` in `src/files.rs`
-  names the risk the maintainer accepted. Its binding of a map's sources and fonts to a base
-  context is the crate's library (`src/lib.rs`), on which the binary is built and through which
-  the conformance harness renders.
+  mapfile's directory, or the directory `--base` names — that also refuses symbolic links out of it,
+  and that hands the frontend an `adapter-epsg` table, extended by the file `--epsg` names; `forager
+  render` binds each local layer the engine draws to the shapefile its `DATA` names, and the GeoJSON
+  files `--source` names to layers by name, and writes a PNG. A file is checked by its path before
+  it is opened, so one who can write into the base context during a load can swap it in the window
+  between, for a link out of the base or for a FIFO; `read_bounded` in `src/files.rs` names the risk
+  the maintainer accepted. Its binding of a map's sources and fonts to a base context is the crate's
+  library (`src/lib.rs`), on which the binary is built and through which the conformance harness
+  renders.
 - **`bindings-wasm`** — the host for the browser: a mapfile, GeoJSON per layer name, an optional
   EPSG table, a viewport, and the files the mapfile names, such as its font set and fonts, in, the
   RGBA image and the diagnostics out; it keeps a layer's source reference only when that is a
@@ -409,14 +394,14 @@ golden path and the test pattern an agent copies from are named here.
   `scripts/build-web.sh` builds it into `target/web/`. Its feature `conformance` adds exports of
   plain integers that render a style document with inline features and the files of a render, for
   the comparison of G-9; `scripts/check-rust.sh` builds that module into `target/conformance/`
-  ([ADR-0034](adr/0034-wasm-renders-compared-in-wasmi.md)).
+  ([TST-wasm-renders-in-wasmi](adr/TST-wasm-renders-in-wasmi.md)).
 - **`dev-server`** — serves `examples/web/` and the bundle on localhost, for trying it out. The
   page shows the image, and a Leaflet map whose tiles each call the bindings with the tile's
   extent, grown by a buffer of a tile on every side that it cuts away, so that the label cache
   places a label beside a tile's edge as the neighbouring tile does; its labels use the font
   DejaVu Sans, which the page hands in beside the mapfile. Leaflet and the font are vendored
   copies that `scripts/check-vendor.sh` checks by checksum
-  ([ADR-0035](adr/0035-vendored-third-party-files.md)).
+  ([SEC-third-party-files-vendored](adr/SEC-third-party-files-vendored.md)).
   The sample's GeoJSON is a synthetic landscape of 4000 × 2500 map units that
   `scripts/generate-example.sh` writes from a fixed seed in bash and awk;
   `scripts/test-generate-example.sh` holds two runs of it to each other and to the checked-in
@@ -425,40 +410,40 @@ golden path and the test pattern an agent copies from are named here.
   WebDriver client of its own on `std` and `serde_json`, and compares the canvas and the list of
   diagnostics with the native render of `bindings-wasm` (G-14); `scripts/check-browser.sh` runs
   it, and only where `FORAGER_BROWSER_TEST=required`, as in the browser job of CI, does it open a
-  browser ([ADR-0040](adr/0040-browser-test-over-webdriver.md)).
-- **`arch-test`** — the dependency test of [ADR-0008](adr/0008-ports-and-adapters-crates.md):
-  the allowed edges between the crates, and no C code under the IR, the core, the ports, or the
-  frontend; it also refuses `unsafe` outside `render-agg`
-  ([ADR-0025](adr/0025-agg-rust-rasterizer.md)), skrifa outside `label` (ADR-0031), `regex`
-  outside `expr` ([ADR-0016](adr/0016-expression-evaluation.md)), i_overlay as a direct
-  dependency of any package but `render-agg` and geo, and geo outside `symbolize`
-  (ADR-0042), `adapter-shapefile` as a dependency of
-  `bindings-wasm` ([ADR-0024](adr/0024-browser-bindings-bind-geojson-only.md)), `wasmi` anywhere
-  but among the dev-dependencies of `cli` ([ADR-0034](adr/0034-wasm-renders-compared-in-wasmi.md)),
-  and a future polled with a no-op waker anywhere but `poll_once` of `ports`, and requires every
-  crate on the output path, the IR, the core, the ports, the frontend, and the adapters, to turn on
-  the lints of `clippy.toml` that ban hash maps, clocks, and random sources (Q-2) and to lift them
-  nowhere but the one test time bound it names; the hosts alone are free. It holds the
-  clippy.toml of `engine`, `label`, and `symbolize`, which clippy reads in place of the
-  workspace's, to those lists with the bans of `min` and `max` of `f64` and `f32` added, and
-  refuses one in any other crate, and a `.clippy.toml` anywhere under `crates/`.
-  `tests/c_numbers.rs` refuses a definition of one of `c.rs`'s ports, or one named `lrint_…` or
-  `ms_nint_…`, outside `style-ir`'s `c.rs`, and a `PI / 180` in code (ADR-0017).
-  `tests/symbolize_modules.rs` refuses an import between the modules of `symbolize`, outside its
-  tests, against the direction its `lib.rs` states, and a module of the crate its table has no row
-  for; `tests/engine_modules.rs` refuses the same of the engine's modules, and an item of its
-  root taken by one, both reading the imports by `tests/module_direction/`.
-  `tests/symbol_names.rs` refuses an `eq_ignore_ascii_case`, an ASCII case fold, or a
-  `to_uppercase` near a symbol's name outside `style-ir`'s `c.rs`, whose
+  browser ([TST-browser-test-over-webdriver](adr/TST-browser-test-over-webdriver.md)).
+- **`arch-test`** — the dependency test of
+  [ARCH-crates-as-ports-and-adapters](adr/ARCH-crates-as-ports-and-adapters.md): the allowed edges
+  between the crates, and no C code under the IR, the core, the ports, or the frontend; it also
+  refuses `unsafe` outside `render-agg` ([REN-agg-rust-rasterizer](adr/REN-agg-rust-rasterizer.md)),
+  skrifa outside `label` (REN-label-glyphs-from-skrifa), `regex` outside `expr`
+  ([IR-expressions-evaluated-as-mapserver](adr/IR-expressions-evaluated-as-mapserver.md)), i_overlay
+  as a direct dependency of any package but `render-agg` and geo, and geo outside `symbolize`
+  (REN-i-overlay-shared-with-geo), `adapter-shapefile` as a dependency of `bindings-wasm`
+  ([API-browser-binds-geojson-only](adr/API-browser-binds-geojson-only.md)), `wasmi` anywhere but
+  among the dev-dependencies of `cli`
+  ([TST-wasm-renders-in-wasmi](adr/TST-wasm-renders-in-wasmi.md)), and a future polled with a no-op
+  waker anywhere but `poll_once` of `ports`, and requires every crate on the output path, the IR,
+  the core, the ports, the frontend, and the adapters, to turn on the lints of `clippy.toml` that
+  ban hash maps, clocks, and random sources (Q-2) and to lift them nowhere but the one test time
+  bound it names; the hosts alone are free. It holds the clippy.toml of `engine`, `label`, and
+  `symbolize`, which clippy reads in place of the workspace's, to those lists with the bans of `min`
+  and `max` of `f64` and `f32` added, and refuses one in any other crate, and a `.clippy.toml`
+  anywhere under `crates/`. `tests/c_numbers.rs` refuses a definition of one of `c.rs`'s ports, or
+  one named `lrint_…` or `ms_nint_…`, outside `style-ir`'s `c.rs`, and a `PI / 180` in code
+  (IR-c-ports-in-style-ir). `tests/symbolize_modules.rs` refuses an import between the modules of
+  `symbolize`, outside its tests, against the direction its `lib.rs` states, and a module of the
+  crate its table has no row for; `tests/engine_modules.rs` refuses the same of the engine's
+  modules, and an item of its root taken by one, both reading the imports by
+  `tests/module_direction/`. `tests/symbol_names.rs` refuses an `eq_ignore_ascii_case`, an ASCII
+  case fold, or a `to_uppercase` near a symbol's name outside `style-ir`'s `c.rs`, whose
   `ms_get_symbol_index` and `symbol_name_key` the frontend, the engine, and `symbolize` call;
-  `tests/c_numbers.rs` refuses a function of either name outside it.
-  `tests/manifest_dir.rs` refuses code under `crates/` that takes the crate's directory from the
-  path compiled in rather than from `CARGO_MANIFEST_DIR` at run time, which `cargo test` and
-  `cargo run` set: a binary built in another checkout over the same `target/` holds that
-  checkout's path. The checks share the crate's directory and one walk of the `.rs` files under a
-  directory, `target` left out, from the crate's `src/lib.rs`; the other crates' tests keep a copy
-  of the directory's reading each, since a crate they shared would add an edge ADR-0008 does not
-  allow.
+  `tests/c_numbers.rs` refuses a function of either name outside it. `tests/manifest_dir.rs` refuses
+  code under `crates/` that takes the crate's directory from the path compiled in rather than from
+  `CARGO_MANIFEST_DIR` at run time, which `cargo test` and `cargo run` set: a binary built in
+  another checkout over the same `target/` holds that checkout's path. The checks share the crate's
+  directory and one walk of the `.rs` files under a directory, `target` left out, from the crate's
+  `src/lib.rs`; the other crates' tests keep a copy of the directory's reading each, since a crate
+  they shared would add an edge ARCH-crates-as-ports-and-adapters does not allow.
 
 Outside the workspace, `fuzz/` is a Cargo workspace of its own with the fuzz targets of Q-3 — the
 mapfile frontend, the style document readers with and without a migration step, the renderer on
@@ -467,32 +452,29 @@ points, along lines, and tiled over polygons, the layers' feature limit and draw
 cache, the cache's edge buffer, a layer's and a class style's transform tree, `simplify`,
 `simplifypt`, and `buffer` among its steps, a TrueType symbol at points, along lines, and over
 polygons, of the test font or of a font in the input, a circle layer, `ANTIALIAS FALSE`, a rotated
-map, and expressions built from the same bytes, the expression
-evaluator on arbitrary trees, patterns, and properties, the core's reprojection on pairs of
-projections and the points, rectangles, and shapes it moves, through a rotated map's geotransform
-too, the browser path on GeoJSON, the shapefile
-adapter on arbitrary `.shp`, `.shx`, and `.dbf` files and its `.prj` reader on arbitrary
-bytes, the text path on an arbitrary font file, and the pixmap decoder on an arbitrary image
-file — run by `scripts/fuzz.sh`, which reads them from the
-manifest, every Sunday through `.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly
-toolchain out of the product's build, and `scripts/check-rust.sh` lints it on every push and runs
-its test `fuzz/tests/render_seeds.rs`, which decodes each seed of the render target through the
-target's own decoding, `fuzz_targets/render_input.rs`, and holds it to the path it was made for,
-told from the map it builds and from the display items a recorder in front of agg-rust sees;
-`scripts/check-fuzz-variants.sh` holds the render target to naming every node of the transform
-tree, every kind of symbol, and every transform of a class's and a label's style, but those its
-allow-list names with a reason. Beside it,
-`scripts/check-guards.sh` holds each guard against a third-party crate, marked
-`// Guard: <crate> <version>` in `render`, `render-agg`, and `symbolize`, to a version that
-`Cargo.lock` holds (ADR-0049), `scripts/check-comment-width.sh` holds each comment line of a Rust
-file under `crates/` and `fuzz/` to 100 characters, which rustfmt on the stable toolchain does not
-wrap, and `scripts/mutants.sh` runs cargo-mutants every week through
+map, and expressions built from the same bytes, the expression evaluator on arbitrary trees,
+patterns, and properties, the core's reprojection on pairs of projections and the points,
+rectangles, and shapes it moves, through a rotated map's geotransform too, the browser path on
+GeoJSON, the shapefile adapter on arbitrary `.shp`, `.shx`, and `.dbf` files and its `.prj` reader
+on arbitrary bytes, the text path on an arbitrary font file, and the pixmap decoder on an arbitrary
+image file — run by `scripts/fuzz.sh`, which reads them from the manifest, every Sunday through
+`.github/workflows/fuzz.yml`; it keeps libFuzzer and the nightly toolchain out of the product's
+build, and `scripts/check-rust.sh` lints it on every push and runs its test
+`fuzz/tests/render_seeds.rs`, which decodes each seed of the render target through the target's own
+decoding, `fuzz_targets/render_input.rs`, and holds it to the path it was made for, told from the
+map it builds and from the display items a recorder in front of agg-rust sees;
+`scripts/check-fuzz-variants.sh` holds the render target to naming every node of the transform tree,
+every kind of symbol, and every transform of a class's and a label's style, but those its allow-list
+names with a reason. Beside it, `scripts/check-guards.sh` holds each guard against a third-party
+crate, marked `// Guard: <crate> <version>` in `render`, `render-agg`, and `symbolize`, to a version
+that `Cargo.lock` holds (ARCH-third-party-failures-guarded), `scripts/check-comment-width.sh` holds
+each comment line of a Rust file under `crates/` and `fuzz/` to 100 characters, which rustfmt on the
+stable toolchain does not wrap, and `scripts/mutants.sh` runs cargo-mutants every week through
 `.github/workflows/mutants.yml` over the Rust code the week changed on main, in 16 shards, and
-reports the edits no test notices.
-`scripts/package.sh` packs the CLI's archive and the browser bindings' package under
-`target/package/`, each with `THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive
-back for them, by the check of the notices that `scripts/check-notice.sh` shares
-(`scripts/lib/notice.sh`); nothing is published.
+reports the edits no test notices. `scripts/package.sh` packs the CLI's archive and the browser
+bindings' package under `target/package/`, each with `THIRD-PARTY-NOTICES.md` and the two licences,
+and reads each archive back for them, by the check of the notices that `scripts/check-notice.sh`
+shares (`scripts/lib/notice.sh`); nothing is published.
 
 The conformance suite is msautotest at the MapServer release that `scripts/fetch-msautotest.sh`
 pins, by tag and commit: a sparse checkout into `target/` of its mapfiles, the shapefiles, fonts,
@@ -500,64 +482,65 @@ and symbol images the cases of `misc` and `renderers` read, and the non-cairo PN
 those two directories, cached in CI, never in the repository. `scripts/check-rust.sh` loads every
 mapfile of it through the CLI on every push (G-1), with the suite's directory as the base context
 and the suite's own EPSG table `wxs/data/epsg2`, with a stand-in in longitude and latitude for each
-code it lacks (ADR-0037), and round-trips the style IR of
-each through YAML and JSON (G-3); `crates/cli/tests/msautotest.rs` names the files it skips with a
-reason each, and loads the one mapfile that names the suite's init file bare in-process with a
-stand-in for it. Its module `metric/` compares a rendering with a reference image as RGBA buffers,
-decoding the reference by the `png` crate whatever its colour type, and writes the rendering and a
-difference image when a case fails. Beside them, `.github/workflows/noise.yml` measures MapServer's
-own noise against the same references: `scripts/build-mapserver.sh` builds `map2img` from the pinned
-commit on the runner ([ADR-0033](adr/0033-noise-measurement.md)), and the harness's module
-`conformance/noise/` runs it over the cases in scope and reports the share of differing pixels per
-case at each threshold of a set, and its maximum over each category. Its ignored test runs where
-`FORAGER_MAP2IMG` and `FORAGER_MAPSERVER_LABELS` name MapServer's build and skips itself where
-neither is set, so `scripts/check-rust.sh` runs it without naming it and it measures nothing there;
-the workflow runs the ignored tests of that module and fails when its job summary holds no report.
-The conformance harness there reads the cases of `misc` and `renderers`, their
-`RUN_PARMS` lines, in its module `conformance/`, whose list `cases.txt` names each in scope with its
-category and expected outcome, passing or failing, or out of scope with its reason, and marks those
-whose reference is blank; it renders each case in scope in-process: with the suite's directory as
-the base context, the mapfile loads through the CLI's `FileLoader`, as `forager render --base`
-loads it, with the stand-in EPSG table and the case's `-i` applied, and the CLI's library binds its
-shapefiles and reads the fonts of its labels from the same `FileLoader` as `forager render` does;
-G-1's in-process load and G-3's round trips load through it too; it compares the rendering by the
-metric of its category, geometry and symbols or text, and holds its outcome, leaving the renderings
-of failing cases under Cargo's `target/tmp/msautotest/`. It counts the cases in scope and those that
-pass, the blank ones apart, and `scripts/check-fidelity.sh` holds the share of passing cases
-without a blank reference against that of the last release tag `v<semver>` in the record
-`crates/cli/tests/conformance/fidelity.txt`, to which each release adds its line (Q-4); no release
-is recorded yet, and until one is the check passes. For each text case it compares the labels the
-engine reports in its `Rendered` with MapServer's, recorded under `conformance/labels/`, and holds
-the list's mark `labels-hold` of the cases whose labels all match (G-10). A test that runs on every
-push without the suite holds the records under `conformance/labels/` and the text cases in scope of
-the list equal, naming each record no such case reads and each such case without its record. The
-noise measurement runs, for each text case, the C reader `conformance/mapserver_labels.c` beside
-`map2img`, which `scripts/build-mapserver.sh` compiles against the pinned build (ADR-0033); it holds
-the reader's image byte for byte equal to `map2img`'s and fails when the labels the reader takes
-from MapServer's label cache differ from the record, and keeps them in the run's artifact, from
-which a record is taken again. The same run builds the C reader
-`conformance/mapserver_proj.c` against the pinned build, which reprojects the points, rectangles,
-and shapes listed under `crates/proj/tests/reference/` by MapServer's `msProjectPoint`,
-`msProjectRect`, and `msProjectShape`, and keeps what it writes as the records `proj`'s test
-reads (ADR-0038).
+code it lacks (GEO-proj-ported-with-libm), and round-trips the style IR of each through YAML and
+JSON (G-3); `crates/cli/tests/msautotest.rs` names the files it skips with a reason each, and loads
+the one mapfile that names the suite's init file bare in-process with a stand-in for it. Its module
+`metric/` compares a rendering with a reference image as RGBA buffers, decoding the reference by the
+`png` crate whatever its colour type, and writes the rendering and a difference image when a case
+fails. Beside them, `.github/workflows/noise.yml` measures MapServer's own noise against the same
+references: `scripts/build-mapserver.sh` builds `map2img` from the pinned commit on the runner
+([TST-noise-measured-against-mapserver](adr/TST-noise-measured-against-mapserver.md)), and the
+harness's module `conformance/noise/` runs it over the cases in scope and reports the share of
+differing pixels per case at each threshold of a set, and its maximum over each category. Its
+ignored test runs where `FORAGER_MAP2IMG` and `FORAGER_MAPSERVER_LABELS` name MapServer's build and
+skips itself where neither is set, so `scripts/check-rust.sh` runs it without naming it and it
+measures nothing there; the workflow runs the ignored tests of that module and fails when its job
+summary holds no report. The conformance harness there reads the cases of `misc` and `renderers`,
+their `RUN_PARMS` lines, in its module `conformance/`, whose list `cases.txt` names each in scope
+with its category and expected outcome, passing or failing, or out of scope with its reason, and
+marks those whose reference is blank; it renders each case in scope in-process: with the suite's
+directory as the base context, the mapfile loads through the CLI's `FileLoader`, as `forager render
+--base` loads it, with the stand-in EPSG table and the case's `-i` applied, and the CLI's library
+binds its shapefiles and reads the fonts of its labels from the same `FileLoader` as `forager
+render` does; G-1's in-process load and G-3's round trips load through it too; it compares the
+rendering by the metric of its category, geometry and symbols or text, and holds its outcome,
+leaving the renderings of failing cases under Cargo's `target/tmp/msautotest/`. It counts the cases
+in scope and those that pass, the blank ones apart, and `scripts/check-fidelity.sh` holds the share
+of passing cases without a blank reference against that of the last release tag `v<semver>` in the
+record `crates/cli/tests/conformance/fidelity.txt`, to which each release adds its line (Q-4); no
+release is recorded yet, and until one is the check passes. For each text case it compares the
+labels the engine reports in its `Rendered` with MapServer's, recorded under `conformance/labels/`,
+and holds the list's mark `labels-hold` of the cases whose labels all match (G-10). A test that runs
+on every push without the suite holds the records under `conformance/labels/` and the text cases in
+scope of the list equal, naming each record no such case reads and each such case without its
+record. The noise measurement runs, for each text case, the C reader
+`conformance/mapserver_labels.c` beside `map2img`, which `scripts/build-mapserver.sh` compiles
+against the pinned build (TST-noise-measured-against-mapserver); it holds the reader's image byte
+for byte equal to `map2img`'s and fails when the labels the reader takes from MapServer's label
+cache differ from the record, and keeps them in the run's artifact, from which a record is taken
+again. The same run builds the C reader `conformance/mapserver_proj.c` against the pinned build,
+which reprojects the points, rectangles, and shapes listed under `crates/proj/tests/reference/` by
+MapServer's `msProjectPoint`, `msProjectRect`, and `msProjectShape`, and keeps what it writes as the
+records `proj`'s test reads (TST-proj-references-from-mapserver).
 
-The same harness holds G-9 (ADR-0034): its module `conformance/wasm.rs` writes the features of each
-case's shapefiles into its map, renders the style document natively and in the bindings' wasm32
-module, which wasmi runs, with the files the native render read, and compares the two RGBA buffers
-byte for byte, naming the case and the first pixel that differs; a case whose map does not load or
-whose shapefile does not read is a difference too. The native render and the module's input format
-are written in the test and again in `crates/bindings-wasm/src/conformance.rs`.
+The same harness holds G-9 (TST-wasm-renders-in-wasmi): its module `conformance/wasm.rs` writes the
+features of each case's shapefiles into its map, renders the style document natively and in the
+bindings' wasm32 module, which wasmi runs, with the files the native render read, and compares the
+two RGBA buffers byte for byte, naming the case and the first pixel that differs; a case whose map
+does not load or whose shapefile does not read is a difference too. The native render and the
+module's input format are written in the test and again in
+`crates/bindings-wasm/src/conformance.rs`.
 
-The crates and their allowed edges are [ADR-0008](adr/0008-ports-and-adapters-crates.md); the
-toolchain and its checks are [ADR-0007](adr/0007-rust-toolchain.md).
+The crates and their allowed edges are
+[ARCH-crates-as-ports-and-adapters](adr/ARCH-crates-as-ports-and-adapters.md); the toolchain and its
+checks are [OPS-pinned-stable-rust-toolchain](adr/OPS-pinned-stable-rust-toolchain.md).
 
-**Golden path:** `forager read`, from the CLI's argument through the file loader and the
-frontend's `load` to the style document — `crates/cli/src/main.rs`, `crates/cli/src/files.rs`,
-`crates/mapfile/src/lib.rs`.
-**Test pattern:** behaviour is tested at the highest seam that decides it — the frontend's `load`
-with files in memory (`crates/mapfile/src/tests.rs`, and beside each module of the translation
-that it tests), the binary as a process with fixtures (`crates/cli/tests/read.rs`) — each test
-naming the goal or ADR it verifies with `Verifies:`.
+**Golden path:** `forager read`, from the CLI's argument through the file loader and the frontend's
+`load` to the style document — `crates/cli/src/main.rs`, `crates/cli/src/files.rs`,
+`crates/mapfile/src/lib.rs`. **Test pattern:** behaviour is tested at the highest seam that decides
+it — the frontend's `load` with files in memory (`crates/mapfile/src/tests.rs`, and beside each
+module of the translation that it tests), the binary as a process with fixtures
+(`crates/cli/tests/read.rs`) — each test naming the goal or ADR it verifies with `Verifies:`.
 
 ## How it runs
 

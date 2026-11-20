@@ -2,7 +2,7 @@
 
 **Observed:** ticket revision-2026-11-18/11 (2026-11-18), its review, and the maintainer. The
 engine takes the renderer's refusals (`Renderer::take_refused`) after each layer and reports them
-on that layer (ADR-0049). Two drawings belong to no layer:
+on that layer (ARCH-third-party-failures-guarded). Two drawings belong to no layer:
 
 - **The label cache**, drawn after every layer but those of `POSTLABELCACHE TRUE`, and before
   those. The engine takes what the renderer refused while drawing it and discards it, so that the

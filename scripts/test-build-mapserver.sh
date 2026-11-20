@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Self-test of how MapServer runs on CI. Verifies: ADR-0033, ADR-0038
+# Self-test of how MapServer runs on CI. Verifies: TST-noise-measured-against-mapserver, TST-proj-references-from-mapserver
 #
 # The rules hold scripts/build-mapserver.sh and .github/workflows/noise.yml: the build script
 # reads the pin from scripts/fetch-msautotest.sh and names no tag or commit of its own, refuses to
 # run outside GitHub Actions, compiles the readers of the label cache and of the reprojection
-# (ADR-0038) outside the cached build, and patches nothing of the
+# (TST-proj-references-from-mapserver) outside the cached build, and patches nothing of the
 # checkout, and neither file adds an apt source; the workflow runs on
 # ubuntu-24.04 without a container, triggers on demand and on a push to the paths of the ADR only,
 # and keys the cache of the build on the two scripts alone. The real files must pass; each case
@@ -126,7 +126,8 @@ expect_pair() { expect "$1" "$4" "$5" check "$2" "$3"; }
 # copy <name> <sed expression for the build script> <sed expression for the workflow> — a pair of
 # changed copies, printed as two paths on one line.
 copy() {
-  mkdir -p "$work/$1"
+  mkdir -p "$work/$1/lib"
+  cp "$ROOT/scripts/lib/bash.sh" "$ROOT/scripts/lib/root.sh" "$work/$1/lib/"
   sed "$2" "$BUILD" > "$work/$1/build-mapserver.sh"
   sed "$3" "$WORKFLOW" > "$work/$1/noise.yml"
   echo "$work/$1/build-mapserver.sh $work/$1/noise.yml"

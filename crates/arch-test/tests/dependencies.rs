@@ -1,5 +1,6 @@
-//! The shape of the code (ADR-0008): the dependency edges allowed between workspace crates, and
-//! no crate that links C code under the IR, the core, the ports, or the frontend (Q-1).
+//! The shape of the code (ARCH-crates-as-ports-and-adapters): the dependency edges allowed between
+//! workspace crates, and no crate that links C code under the IR, the core, the ports, or the
+//! frontend (Q-1).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -8,7 +9,7 @@ use std::process::Command;
 use forager_arch_test::manifest_dir;
 use serde_json::Value;
 
-/// The groups of ADR-0008's table.
+/// The groups of ARCH-crates-as-ports-and-adapters's table.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Group {
     Ir,
@@ -31,11 +32,12 @@ enum Edges {
     OfItsGroup,
 }
 
-/// A row of ADR-0008's table: a crate by name without the `forager-` prefix, where a name ending
-/// in `*` stands for every crate it prefixes, its group, and its edges.
+/// A row of ARCH-crates-as-ports-and-adapters's table: a crate by name without the `forager-`
+/// prefix, where a name ending in `*` stands for every crate it prefixes, its group, and its edges.
 type Row = (&'static str, Group, Edges);
 
-/// ADR-0008's table, the one place a crate is named; crates not yet created are named too.
+/// ARCH-crates-as-ports-and-adapters's table, the one place a crate is named; crates not yet
+/// created are named too.
 const TABLE: &[Row] = &[
     ("style-ir", Group::Ir, Edges::To(&[])),
     ("expr", Group::Core, Edges::To(&["style-ir"])),
@@ -114,7 +116,7 @@ fn may_depend(table: &[Row], from: &str, to: &str) -> Option<bool> {
 }
 
 /// Whether a crate must link no C code, directly or transitively: the IR, the core, the ports,
-/// and the frontend (ADR-0008, Q-1).
+/// and the frontend (ARCH-crates-as-ports-and-adapters, Q-1).
 fn must_be_pure_rust(table: &[Row], name: &str) -> bool {
     matches!(
         group(table, name),
@@ -237,12 +239,14 @@ fn string(value: &Value) -> String {
 
 #[test]
 fn workspace_crates_depend_only_along_the_allowed_edges() {
-    // Verifies: ADR-0008
+    // Verifies: ARCH-crates-as-ports-and-adapters
     let ws = workspace();
     let mut violations = Vec::new();
     for (id, from) in &ws.members {
         if may_depend(TABLE, from, "style-ir").is_none() {
-            violations.push(format!("{from} is not a crate ADR-0008 names"));
+            violations.push(format!(
+                "{from} is not a crate ARCH-crates-as-ports-and-adapters names"
+            ));
             continue;
         }
         for dep in &ws.deps[id] {
@@ -255,13 +259,13 @@ fn workspace_crates_depend_only_along_the_allowed_edges() {
     }
     assert!(
         violations.is_empty(),
-        "edges ADR-0008 does not allow: {violations:?}"
+        "edges ARCH-crates-as-ports-and-adapters does not allow: {violations:?}"
     );
 }
 
 #[test]
 fn the_ir_core_ports_and_frontend_link_no_c_code() {
-    // Verifies: ADR-0008, Q-1
+    // Verifies: ARCH-crates-as-ports-and-adapters, Q-1
     let ws = workspace();
     let mut violations = BTreeSet::new();
     for (id, name) in ws
@@ -298,7 +302,7 @@ fn dependents(ws: &Workspace, dependency: &str) -> Vec<String> {
 
 #[test]
 fn only_label_reads_fonts_with_skrifa() {
-    // Verifies: ADR-0031
+    // Verifies: REN-label-glyphs-from-skrifa
     let ws = workspace();
     assert_eq!(dependents(&ws, "skrifa"), ["label"]);
     // The check itself sees a dependency: label depends on forager-render.
@@ -307,7 +311,7 @@ fn only_label_reads_fonts_with_skrifa() {
 
 #[test]
 fn the_browser_bindings_bind_no_shapefile() {
-    // Verifies: ADR-0024
+    // Verifies: API-browser-binds-geojson-only
     let ws = workspace();
     let binders = dependents(&ws, "forager-adapter-shapefile");
     assert!(
@@ -321,7 +325,7 @@ fn the_browser_bindings_bind_no_shapefile() {
 
 #[test]
 fn only_the_cli_s_tests_run_wasm_in_wasmi() {
-    // Verifies: ADR-0034
+    // Verifies: TST-wasm-renders-in-wasmi
     let ws = workspace();
     let declaring: Vec<_> = ws
         .declared
@@ -342,7 +346,7 @@ fn only_the_cli_s_tests_run_wasm_in_wasmi() {
 
 #[test]
 fn the_dev_server_s_tests_depend_on_the_bindings_and_serde_json_alone() {
-    // Verifies: ADR-0040
+    // Verifies: TST-browser-test-over-webdriver
     // The browser test's WebDriver client is the project's own, on std and serde_json: a crate
     // that drives a browser, or any other, comes in only by a revision of the ADR.
     let ws = workspace();
@@ -358,7 +362,7 @@ fn the_dev_server_s_tests_depend_on_the_bindings_and_serde_json_alone() {
 
 #[test]
 fn proj_depends_on_style_ir_and_libm_alone() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // The reprojection is the core's own port of PROJ's formulas: no crate that ports them, nor
     // any other, comes in beside the IR and the mathematics that round alike on every target.
     let ws = workspace();
@@ -375,7 +379,7 @@ fn proj_depends_on_style_ir_and_libm_alone() {
 }
 
 /// The methods of `f64` and `f32` that call the platform's libm, which the output path takes from
-/// the `libm` crate instead (ADR-0037, Q-2).
+/// the `libm` crate instead (GEO-proj-ported-with-libm, Q-2).
 const LIBM_METHODS: &[&str] = &[
     "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "ln", "powf", "sinh", "cosh",
     "tanh", "atanh", "cbrt", "hypot",
@@ -383,7 +387,7 @@ const LIBM_METHODS: &[&str] = &[
 
 #[test]
 fn the_output_path_takes_its_transcendental_functions_from_libm() {
-    // Verifies: ADR-0037, Q-2
+    // Verifies: GEO-proj-ported-with-libm, Q-2
     // The workspace's clippy.toml bans each, for f64 and f32, with the reason Q-2; the copies of
     // the three crates that port MapServer's drawing are held equal to it by the test below.
     let text = std::fs::read_to_string(manifest_dir().join("../../clippy.toml")).unwrap();
@@ -413,7 +417,7 @@ fn package_dependents(ws: &Workspace, dependency: &str) -> BTreeSet<String> {
 
 #[test]
 fn only_render_agg_cuts_polygons_with_i_overlay() {
-    // Verifies: ADR-0042, ADR-0050
+    // Verifies: REN-i-overlay-shared-with-geo, GEO-own-circle-for-buffer
     // Of the resolved graph, render-agg and geo alone depend on i_overlay directly, which implies
     // that no other workspace crate does; symbolize alone of the workspace depends on geo.
     let ws = workspace();
@@ -426,7 +430,7 @@ fn only_render_agg_cuts_polygons_with_i_overlay() {
 
 #[test]
 fn only_expr_depends_on_the_regex_crates() {
-    // Verifies: ADR-0016
+    // Verifies: IR-expressions-evaluated-as-mapserver
     // The patterns of the style IR are read as PCRE2 reads them and matched in one place; a crate
     // that reached for `regex` itself would match them otherwise.
     let ws = workspace();
@@ -493,7 +497,7 @@ fn the_rules_reject_a_wrong_edge_and_an_unnamed_crate() {
 
 #[test]
 fn only_render_agg_allows_unsafe_code() {
-    // Verifies: ADR-0025
+    // Verifies: REN-agg-rust-rasterizer
     // The workspace denies `unsafe_code`; any mention of the lint in a crate's code or manifest is
     // a way to lift it (`allow`, `expect`, a lint table), so it may appear in render-agg alone,
     // and every crate must take the workspace's lints.
@@ -627,7 +631,7 @@ const NAN_BANS: [&str; 4] = [
 
 #[test]
 fn the_crates_that_port_mapservers_drawing_ban_what_the_workspace_bans() {
-    // Verifies: Q-2, ADR-0007, ADR-0037
+    // Verifies: Q-2, OPS-pinned-stable-rust-toolchain, GEO-proj-ported-with-libm
     // Clippy reads the clippy.toml nearest a crate's manifest in place of the workspace's, so a
     // crate's own file would lift every ban it leaves out. The three crates that port MapServer's
     // drawing carry the workspace's lists with the bans of NAN_BANS added; no other crate, nor

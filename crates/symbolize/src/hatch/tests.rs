@@ -388,7 +388,7 @@ fn a_diagonal_hatch_is_bounded_by_the_lines_the_renderer_clips_it_to() {
 
 #[test]
 fn a_hatch_over_a_box_past_an_int_lays_no_line() {
-    // Verifies: ADR-0017
+    // Verifies: IR-c-ports-in-style-ir
     // msHatchPolygon's `(int)` of the box's size gives INT_MIN past an `int`, so the hatch is laid
     // over a box of negative size, and createHatch lays no line where `as` would lay them all.
     let huge = vec![vec![p(-2e9, -2e9), p(2e9, -2e9), p(2e9, 2e9), p(-2e9, 2e9)]];

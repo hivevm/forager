@@ -1,6 +1,7 @@
 //! The shapefile adapter's `.prj` reader and the core crate `proj` held to one reach
-//! (ADR-0039): every proj4 string the reader writes, for each projection it reads, parses in
-//! `proj`. The adapter may not depend on `proj` (ADR-0008); the CLI reaches both.
+//! (API-source-declares-projection): every proj4 string the reader writes, for each projection it
+//! reads, parses in `proj`. The adapter may not depend on `proj`
+//! (ARCH-crates-as-ports-and-adapters); the CLI reaches both.
 
 use forager_adapter_shapefile::declared_projection_of_prj;
 use forager_ports::DeclaredProjection;
@@ -135,7 +136,7 @@ fn fixtures() -> Vec<(&'static str, String)> {
 
 #[test]
 fn every_proj4_string_the_prj_reader_writes_parses_in_proj() {
-    // Verifies: ADR-0039
+    // Verifies: API-source-declares-projection
     let fixtures = fixtures();
     for (name, wkt) in &fixtures {
         let DeclaredProjection::Proj4(proj4) = declared_projection_of_prj("a.prj", wkt.as_bytes())

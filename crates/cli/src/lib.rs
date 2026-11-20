@@ -125,9 +125,9 @@ fn shapefile_exists(loader: &DataLoader, data: &str) -> bool {
 }
 
 /// The shapefiles the CLI opened, by the name the adapter cuts from a layer's `DATA`, so that the
-/// layers naming one shapefile share it and its files are read once (ADR-0021: a layer costs
-/// memory in proportion to its files, not to the layers that name them). A shapefile that failed
-/// to open is not tried again.
+/// layers naming one shapefile share it and its files are read once
+/// (API-shapefile-reader-from-mapserver: a layer costs memory in proportion to its files, not to
+/// the layers that name them). A shapefile that failed to open is not tried again.
 struct Shapefiles<'a, L> {
     loader: &'a L,
     opened: BTreeMap<String, Result<Rc<ShapefileSource>, String>>,
@@ -312,8 +312,8 @@ mod tests {
     #[test]
     fn layers_that_name_one_shapefile_read_its_files_once() {
         // Verifies: Q-9
-        // ADR-0021: a layer costs memory in proportion to its files, so a shapefile that several
-        // layers name is read, and held, once.
+        // API-shapefile-reader-from-mapserver: a layer costs memory in proportion to its files, so
+        // a shapefile that several layers name is read, and held, once.
         let loader = CountingLoader::new();
         let mut shapefiles = Shapefiles::new(&loader);
         let first = shapefiles.open("poly").unwrap();

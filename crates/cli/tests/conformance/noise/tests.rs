@@ -119,7 +119,7 @@ fn the_noise_measurement_runs_only_where_mapserver_is_named() {
 #[test]
 fn the_reprojection_s_output_of_points_rectangles_and_shapes_holds_its_record_within_a_millimetre()
 {
-    // Verifies: ADR-0038
+    // Verifies: TST-proj-references-from-mapserver
     let header = "# PROJ 9.4.0\n# MapServer abc\n";
     let ll = "+proj=longlat +datum=WGS84";
     let wm = "+proj=merc +a=6378137 +b=6378137";

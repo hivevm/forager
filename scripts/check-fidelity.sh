@@ -18,17 +18,34 @@
 # release adds its line, which the check prints from the current counts.
 #
 # Pure bash + coreutils. scripts/check-rust.sh runs it after the harness. Usage:
-#     scripts/check-fidelity.sh <counts> [record]
-# The record defaults to this repository's; scripts/test-check-fidelity.sh passes fixtures.
+#     scripts/check-fidelity.sh [--root <dir>] <counts> [record]
+# The record defaults to the root's, this repository unless --root names another;
+# scripts/test-check-fidelity.sh passes fixtures. A relative path is read from where the script is
+# called.
 # Exit code 0 when the share holds or no release is recorded yet, 1 when it falls or, with a
 # release recorded, when no case without a blank reference is in scope and the share is undefined,
-# 2 on a counts file or a record that cannot be read.
+# 2 on a counts file or a record that cannot be read, an argument it does not read, or a root
+# that is no directory.
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COUNTS="${1:-}"
-RECORD="${2:-$ROOT/crates/cli/tests/conformance/fidelity.txt}"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# The directory the script is called from, which a relative path is read from: enter_root changes
+# to the root.
+caller="$PWD"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-fidelity.sh [--root <dir>] <counts> [record]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 2 "$@"
+
+# from_caller <path> — the path as the caller named it, from the directory it called from.
+from_caller() { if [[ -z "$1" || "$1" == /* ]]; then echo "$1"; else echo "$caller/$1"; fi; }
+COUNTS="$(from_caller "${1:-}")"
+RECORD="$(from_caller "${2:-$ROOT/crates/cli/tests/conformance/fidelity.txt}")"
 
 # fail <message> — a counts file or a record that cannot be read.
 fail() { echo "Fidelity check: $1" >&2; exit 2; }
@@ -36,7 +53,7 @@ fail() { echo "Fidelity check: $1" >&2; exit 2; }
 # percent <passing> <in-scope> — the share, to one decimal.
 percent() { awk -v p="$1" -v n="$2" 'BEGIN { printf "%.1f%%", 100 * p / n }'; }
 
-[[ -n "$COUNTS" ]] || fail "usage: check-fidelity.sh <counts> [record]"
+[[ -n "$COUNTS" ]] || fail "usage: $usage"
 [[ -f "$COUNTS" ]] || fail "the counts '$COUNTS' are no file; did the harness run?"
 [[ -f "$RECORD" ]] || fail "the record '$RECORD' is no file"
 

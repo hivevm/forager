@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Check: every guard against a third-party crate is held to the version Cargo.lock pins
-# (ADR-0049).
+# (ARCH-third-party-failures-guarded).
 #
 # A guard carries the marker '// Guard: <crate> <version>' on a line of its own above it, in a Rust
 # file under crates/. This check lists each marker, and fails where:
@@ -14,18 +14,24 @@
 #   4. the tree has no Cargo.lock.
 #
 # That a guard was derived from the source lines it names, and that every guard carries a marker,
-# no check decides; the review does (ADR-0049, Enforcement).
+# no check decides; the review does (ARCH-third-party-failures-guarded, Enforcement).
 #
 # Pure bash + grep and awk. Usage:
-#     scripts/check-guards.sh [repository root]
+#     scripts/check-guards.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-guards.sh passes fixtures.
-# Exit code 0 when every marker names a locked version, 1 otherwise, 2 on a root that is no
-# directory.
+# Exit code 0 when every marker names a locked version, 1 otherwise, 2 on an argument it
+# does not read or a root that is no directory.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
-  || { echo "Guard check: '${1:-}' is not a directory." >&2; exit 2; }
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-guards.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 LOCK="$ROOT/Cargo.lock"
 
 failures=0
@@ -70,7 +76,7 @@ while IFS= read -r marker; do
     fail "$where names $crate $version, which Cargo.lock does not hold"
   elif ! grep -qxF "$version" <<< "${versions// /$'\n'}"; then
     fail "$where names $crate $version, but Cargo.lock holds $crate $versions; re-derive the" \
-      "guard from that version and update its marker (ADR-0049)"
+      "guard from that version and update its marker (ARCH-third-party-failures-guarded)"
   fi
 done <<< "$markers"
 

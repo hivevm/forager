@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Check: the vendored files of the browser example, its JavaScript and font (ADR-0035).
+# Check: the vendored files of the browser example, its JavaScript and font (SEC-third-party-files-vendored).
 #
 # The example loads third-party code only from copies under examples/web/vendor/, and those copies
 # are the published bytes. This check fails when:
@@ -13,14 +13,21 @@
 #      style is not read.
 #
 # Pure bash + coreutils (sha256sum, or shasum on macOS). Usage:
-#     scripts/check-vendor.sh [repository root]
+#     scripts/check-vendor.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-vendor.sh passes fixtures.
-# Exit code 0 when everything matches, 1 otherwise, 2 on a root that is no directory.
+# Exit code 0 when everything matches, 1 otherwise, 2 on an argument it does not read
+# or a root that is no directory.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
-  || { echo "Vendor check: '${1:-}' is not a directory." >&2; exit 2; }
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-vendor.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 VENDOR="$ROOT/examples/web/vendor"
 PAGE="$ROOT/examples/web/index.html"
 

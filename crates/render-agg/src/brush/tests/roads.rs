@@ -215,7 +215,7 @@ fn probe(roads: usize, edges: usize, seed: u64) -> Vec<(u32, Found)> {
     reason = "the probe's counts are its report, read with --nocapture"
 )]
 fn random_roads_the_probe_admits_draw_without_an_overflow() {
-    // Verifies: ADR-0049, Q-3
+    // Verifies: ARCH-third-party-failures-guarded, Q-3
     let count = |name: &str, otherwise: usize| {
         std::env::var(name)
             .ok()

@@ -48,13 +48,13 @@ use crate::glyph::{self, Glyphs};
 use crate::style::fixed;
 
 /// The images of a render's pixmap symbols by their resource path, each the decoded image or why
-/// it has none, as the engine's store of the render holds them (ADR-0029).
+/// it has none, as the engine's store of the render holds them (REN-pixmaps-held-once-per-render).
 pub type Pixmaps = std::collections::BTreeMap<String, Result<Rc<PremultipliedImage>, String>>;
 
-/// What a render's pixmap and TrueType symbols are drawn and sized from: the images of its
-/// pixmaps and the port its TrueType markers ask their glyphs of (ADR-0044). The canvas holds
-/// them, and the engine's label cache hands the same to [`marker_size_of`]. Without the images, a
-/// pixmap's image is not loaded; without the port, a TrueType symbol is not drawn.
+/// What a render's pixmap and TrueType symbols are drawn and sized from: the images of its pixmaps
+/// and the port its TrueType markers ask their glyphs of (API-truetype-marker-through-port). The
+/// canvas holds them, and the engine's label cache hands the same to [`marker_size_of`]. Without
+/// the images, a pixmap's image is not loaded; without the port, a TrueType symbol is not drawn.
 #[derive(Clone, Copy, Default)]
 pub struct SymbolResources<'a> {
     pub(crate) pixmaps: Option<&'a Pixmaps>,
@@ -107,8 +107,8 @@ pub enum Mark<'a> {
     Symbol(usize, &'a Symbol),
     /// A pixmap symbol, and its index among MapServer's symbols, from 1.
     Pixmap(usize, &'a Symbol),
-    /// A TrueType symbol, drawn as its character's glyph (ADR-0044), and its index among
-    /// MapServer's symbols, from 1.
+    /// A TrueType symbol, drawn as its character's glyph (API-truetype-marker-through-port), and
+    /// its index among MapServer's symbols, from 1.
     Glyph(usize, &'a Symbol),
     /// A hatch symbol, which shades a polygon (see `hatch`) and draws a square at a point.
     Hatch,

@@ -2,7 +2,7 @@
 # The project's self-tests' one counted assertion on a command, its exit code and a needle of its
 # output, and the commit of their fixture repositories. Sourced by the project's own
 # scripts/test-*.sh; the self-tests the template brought keep their copies, which a take-up
-# replaces (ADR-0004).
+# replaces (NUC-releases-are-semver-tags).
 #
 # The sourcing self-test holds the counters, 'passed' and 'failed', and the temporary directory
 # of its fixtures, 'work', as scripts/lib/selftest.sh defines them.

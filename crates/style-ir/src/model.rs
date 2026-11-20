@@ -284,15 +284,15 @@ pub struct Layer {
     /// counted once their class is found, are not drawn, nor their labels. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_features: Option<u32>,
-    /// The layer's `GEOMTRANSFORM`, its transform tree (ADR-0048), which
+    /// The layer's `GEOMTRANSFORM`, its transform tree (IR-geomtransform-with-simplifypt), which
     /// replaces the shape of each feature that passes the layer's filter before it is classed and
     /// drawn, as MapServer transforms each shape it reads. Absent, there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geom_transform: Option<TransformTree>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub classes: Vec<Class>,
-    /// The features written into the layer (ADR-0018). A layer with any is read from them alone,
-    /// whatever source it names or a host binds to it.
+    /// The features written into the layer (IR-inline-features-in-layer). A layer with any is read
+    /// from them alone, whatever source it names or a host binds to it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub features: Vec<InlineFeature>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -334,7 +334,7 @@ fn is_true(value: &bool) -> bool {
     *value
 }
 
-/// A feature written into a layer, a shape as MapServer holds one (ADR-0018).
+/// A feature written into a layer, a shape as MapServer holds one (IR-inline-features-in-layer).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct InlineFeature {
@@ -714,7 +714,7 @@ pub enum GeomTransform {
     #[serde(rename = "labelcenter")]
     LabelCenter,
     /// An expression of shape functions, its transform tree
-    /// (ADR-0048), which a class's style of a line or a
+    /// (IR-geomtransform-with-simplifypt), which a class's style of a line or a
     /// polygon layer draws: the tree is evaluated on the shape in pixels, `[map_cellsize]` at the
     /// layer's value, and a line result is stroked, a point or a polygon result shaded, in the
     /// style. A tree `not_drawn`, one that fails on a shape, or one past the bounds the layer's
@@ -936,8 +936,9 @@ pub enum Units {
 }
 
 /// A style property that may vary by feature: a value, a property bound as MapServer binds an
-/// attribute, or an expression (ADR-0015). It is read as an untagged enum would read it, a value
-/// before an expression, but an object by its keys, so that a key it does not know is named.
+/// attribute, or an expression (IR-expressions-as-cql2). It is read as an untagged enum would read
+/// it, a value before an expression, but an object by its keys, so that a key it does not know is
+/// named.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]

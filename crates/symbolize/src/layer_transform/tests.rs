@@ -448,14 +448,14 @@ fn multipoint_of_three() -> Geometry {
 
 #[test]
 fn shape_alone_keeps_each_part_of_a_multipoint() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     let three = multipoint_of_three();
     assert_eq!(apply(&TransformShape::Shape, &three), Ok(three.clone()));
 }
 
 #[test]
 fn generalize_keeps_the_first_part_of_a_multipoint() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // msGeneralize keeps shape->line[0] alone and the type: (1, 0) lies within 2 of (0, 0).
     assert_eq!(
         apply(
@@ -472,7 +472,7 @@ fn generalize_keeps_the_first_part_of_a_multipoint() {
 
 #[test]
 fn densify_outer_and_inner_fail_on_a_multipoint() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // msDensify and msRings2Shape return NULL for a point shape.
     let three = multipoint_of_three();
     let why = failed(apply(&densify(TransformShape::Shape, n(1.0)), &three));
@@ -496,7 +496,7 @@ fn first_of_three() -> Geometry {
 
 #[test]
 fn simplify_keeps_the_points_of_a_multipoint_s_first_part() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // GEOS's Douglas-Peucker keeps a multipoint point by point; the other parts never reach it.
     assert_eq!(
         apply(&simplified(1.0), &multipoint_of_three()),
@@ -506,7 +506,7 @@ fn simplify_keeps_the_points_of_a_multipoint_s_first_part() {
 
 #[test]
 fn simplifypt_keeps_the_points_of_a_multipoint_s_first_part() {
-    // Verifies: ADR-0048, ADR-0047
+    // Verifies: IR-geomtransform-with-simplifypt, GEO-simplifypt-ported-from-jts
     // GEOS's topology-preserving simplifier keeps a multipoint as it is; the other parts never
     // reach it.
     assert_eq!(
@@ -552,7 +552,7 @@ fn unit_circles(ring: &[Coord], count: usize, expected: [f64; 4], centres: &[(f6
 
 #[test]
 fn buffer_buffers_the_first_part_of_a_multipoint() {
-    // Verifies: ADR-0048, ADR-0050
+    // Verifies: IR-geomtransform-with-simplifypt, GEO-own-circle-for-buffer
     // GEOSBuffer_r of the multipoint of shape->line[0], (0, 0), (1, 0), (4, 0), (4, 4), by 1:
     // the union of their circles, three polygons. The circles of (0, 0) and (1, 0) overlap into
     // one ring from x = -1 to 2, of 161 coordinates; those of (4, 0) and (4, 4) are a circle of
@@ -584,7 +584,7 @@ fn buffer_buffers_the_first_part_of_a_multipoint() {
 
 #[test]
 fn smoothsia_smooths_each_part_of_a_multipoint_as_a_line() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // msSmoothShapeSIA smooths each part of three points or more as a line, whatever the type,
     // and copies the part of one. A window of 3 weighs 0.5, 1, 0.5, summing to 2: (1.5, 0) =
     // ((0 + 1 + 2) / 2, 0), (3.25, 1) = ((0.5 + 4 + 2) / 2, (0 + 0 + 2) / 2). The third part's
@@ -601,7 +601,7 @@ fn smoothsia_smooths_each_part_of_a_multipoint_as_a_line() {
 
 #[test]
 fn a_geos_function_takes_no_part_of_a_multipoint_past_the_first() {
-    // Verifies: ADR-0048, ADR-0049
+    // Verifies: IR-geomtransform-with-simplifypt, ARCH-third-party-failures-guarded
     // msGEOSShape2Geometry reads shape->line[0] alone, so a coordinate that is no finite number
     // in a later part reaches neither GEOS nor the guard of geo's buffer.
     let later = Geometry::MultiPoint(vec![coords(&[(3.0, 4.0)]), coords(&[(f64::NAN, 0.0)])]);
@@ -631,7 +631,7 @@ fn a_geos_function_takes_no_part_of_a_multipoint_past_the_first() {
 
 #[test]
 fn a_multipoint_of_one_point_draws_as_that_point_through_each_function() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // A point shape of one part of one point is the shape of the point: each function gives
     // the same, or fails the same.
     let one = Geometry::MultiPoint(vec![coords(&[(3.0, 4.0)])]);
@@ -748,7 +748,7 @@ fn a_nested_smoothsia_charges_each_pass_its_points_by_its_window() {
 
 #[test]
 fn a_size_or_iterations_past_an_int_is_int_min_and_clamped() {
-    // The (int) cast gives INT_MIN for a double past an `int` (ADR-0017), which
+    // The (int) cast gives INT_MIN for a double past an `int` (IR-c-ports-in-style-ir), which
     // msSmoothShapeSIA raises to 3 and 1.
     let zigzag = line(&[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (8.0, 4.0)]);
     let once = line(&[(0.0, 0.0), (3.0, 1.0), (5.0, 3.0), (8.0, 4.0)]);
@@ -762,7 +762,7 @@ fn simplified(tolerance: f64) -> TransformShape {
 
 #[test]
 fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
-    // Verifies: ADR-0048, ADR-0050
+    // Verifies: IR-geomtransform-with-simplifypt, GEO-own-circle-for-buffer
     // msGEOSSimplify: each part by GEOS's Douglas-Peucker, a part GEOS builds empty dropped from
     // the result by its transformer.
     let parts = Geometry::MultiLineString(vec![
@@ -784,7 +784,7 @@ fn simplify_simplifies_each_part_of_a_line_and_drops_one_without_points() {
 
 #[test]
 fn simplify_groups_a_polygon_s_rings_as_mapserver_hands_them_to_geos() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // Three outer rings by msGetOuterList, each with the inner rings msGetInnerList finds inside
     // it, in the order of the outer ones: the hole listed after the third ring goes with the
     // second. A multipolygon of the three, valid, kept as simplified: each square's bend at 10.5
@@ -849,7 +849,7 @@ fn simplify_groups_a_polygon_s_rings_as_mapserver_hands_them_to_geos() {
 
 #[test]
 fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points or a polygon of
     // fewer than 4; GEOS cannot build a line of 1 point or a ring that is not closed; and its
     // DouglasPeuckerSimplifier refuses a tolerance below 0. Each fails "Executing simplify".
@@ -888,7 +888,7 @@ fn simplify_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
 
 #[test]
 fn simplify_fails_on_a_polygon_with_a_coordinate_that_is_no_finite_number() {
-    // Verifies: ADR-0050, ADR-0049, Q-3
+    // Verifies: GEO-own-circle-for-buffer, ARCH-third-party-failures-guarded, Q-3
     // geo's repair of an invalid polygon panics on a coordinate that is no number, which the
     // engine refuses instead. The ring is the render fuzz target's (revision-2026-11-16/20).
     let far = -6.450_106_543_526_558e30;
@@ -913,7 +913,7 @@ fn simplify_fails_on_a_polygon_with_a_coordinate_that_is_no_finite_number() {
 
 #[test]
 fn simplify_simplifies_a_polygon_of_finite_coordinates() {
-    // Verifies: ADR-0049
+    // Verifies: ARCH-third-party-failures-guarded
     // The ordinary input beside the refusal of a polygon with a coordinate that is no finite
     // number: the square with a point 0.1 off its bottom edge, simplified by 1, loses that point.
     let square = [
@@ -936,7 +936,7 @@ fn simplify_simplifies_a_polygon_of_finite_coordinates() {
 
 #[test]
 fn simplify_keeps_a_line_or_a_point_with_a_coordinate_that_is_no_number() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // A line and a point shape run through the port of Douglas-Peucker, not through geo's
     // predicates, and are simplified as before (revision-2026-11-16/20).
     let parts = line(&[(0.0, 0.0), (f64::NAN, 1.0), (10.0, 0.0)]);
@@ -985,7 +985,7 @@ fn preserved(tolerance: f64) -> TransformShape {
 
 #[test]
 fn simplifypt_simplifies_the_parts_of_a_line_together_and_drops_one_without_points() {
-    // Verifies: ADR-0048, ADR-0047
+    // Verifies: IR-geomtransform-with-simplifypt, GEO-simplifypt-ported-from-jts
     // msGEOSTopologyPreservingSimplify: the parts are the lines of one geometry, so the bend keeps
     // (10 10), whose flattening would jump the short line; a part GEOS builds empty is dropped.
     let bend = [(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)];
@@ -1010,7 +1010,7 @@ fn simplifypt_simplifies_the_parts_of_a_line_together_and_drops_one_without_poin
 
 #[test]
 fn simplifypt_simplifies_a_polygon_s_rings_together_and_removes_none() {
-    // Verifies: ADR-0048, ADR-0047
+    // Verifies: IR-geomtransform-with-simplifypt, GEO-simplifypt-ported-from-jts
     // The hole lies inside the shell by msGetInnerList: dropping the shell's first point would
     // leave it outside, so the shell keeps it. GEOS 3.12.1 drops it.
     let shell = [
@@ -1049,7 +1049,7 @@ fn simplifypt_simplifies_a_polygon_s_rings_together_and_removes_none() {
 
 #[test]
 fn simplifypt_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
-    // Verifies: ADR-0047
+    // Verifies: GEO-simplifypt-ported-from-jts
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points, and GEOS's
     // TopologyPreservingSimplifier refuses a tolerance below 0. Each fails "Executing simplifypt".
     let why = failed(apply(&preserved(1.0), &line(&[(0.0, 0.0)])));
@@ -1066,7 +1066,7 @@ fn simplifypt_fails_where_geos_is_given_no_shape_or_refuses_the_tolerance() {
 
 #[test]
 fn simplifypt_past_the_points_a_layer_may_visit_is_a_limit() {
-    // Verifies: Q-9, ADR-0047
+    // Verifies: Q-9, GEO-simplifypt-ported-from-jts
     // A zigzag of 15,000 points whose amplitude shrinks keeps every point, its sections one point
     // shorter each: 14,998 * 14,999 / 2 points scanned, past 1e8, and the budget stops it as it
     // goes.
@@ -1099,7 +1099,7 @@ fn rings_of(result: Result<Geometry, Undrawn>) -> Vec<Vec<Coord>> {
 
 #[test]
 fn buffer_turns_each_shape_into_a_polygon_as_msgeosbuffer_does() {
-    // Verifies: ADR-0048, ADR-0050
+    // Verifies: IR-geomtransform-with-simplifypt, GEO-own-circle-for-buffer
     // msGEOSBuffer: GEOSBuffer_r of the shape msGEOSShape2Geometry builds, converted back by
     // msGEOSGeometry2Shape, a polygon whatever the shape's type. A point is a circle of 121
     // coordinates; two lines are buffered as one geometry, a part without points dropped; a
@@ -1148,7 +1148,7 @@ fn buffer_turns_each_shape_into_a_polygon_as_msgeosbuffer_does() {
 
 #[test]
 fn buffer_buffers_a_line_of_finite_coordinates() {
-    // Verifies: ADR-0049
+    // Verifies: ARCH-third-party-failures-guarded
     // The ordinary input beside the refusal of a shape with a coordinate that is no finite
     // number: the line from (0, 0) to (0, 1) buffered by 1 is one ring from x = -1 to 1 and from
     // y = -1 to 2.
@@ -1170,7 +1170,7 @@ fn buffer_buffers_a_line_of_finite_coordinates() {
 
 #[test]
 fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // GEOS's buffer of a line by 0 or less, or of a polygon by less than its half width, is the
     // empty polygon, which msGEOSGeometry2Shape_polygon turns into one ring without points. The
     // shape keeps GEOS's geometry, which msGEOSBuffer and msGEOSSimplify take where a shape has
@@ -1201,7 +1201,7 @@ fn an_empty_buffer_is_a_polygon_of_one_ring_without_points() {
 
 #[test]
 fn buffer_fails_where_geos_is_given_no_shape_or_no_finite_distance() {
-    // Verifies: ADR-0050, ADR-0049
+    // Verifies: GEO-own-circle-for-buffer, ARCH-third-party-failures-guarded
     // msGEOSShape2Geometry returns no geometry for a line of fewer than 2 points; GEOS cannot build
     // a line part of 1 point; and GEOSBuffer_r returns none for a distance that is no finite
     // number. Each fails "Executing buffer failed".
@@ -1223,7 +1223,8 @@ fn buffer_fails_where_geos_is_given_no_shape_or_no_finite_distance() {
 
 #[test]
 fn the_geos_functions_build_the_shape_before_they_check_their_number() {
-    // Verifies: ADR-0050, ADR-0047, ADR-0049
+    // Verifies: GEO-own-circle-for-buffer GEO-simplifypt-ported-from-jts
+    // Verifies: ARCH-third-party-failures-guarded
     // msGEOSBuffer, msGEOSSimplify, and msGEOSTopologyPreservingSimplify call
     // msGEOSShape2Geometry before GEOS is given the tolerance or the distance, so a shape of too
     // few points fails as such whatever the number. The engine's refusal of a coordinate that is
@@ -1265,7 +1266,7 @@ fn the_geos_functions_build_the_shape_before_they_check_their_number() {
 
 #[test]
 fn the_geos_functions_return_geos_s_empty_polygon_whatever_the_number() {
-    // Verifies: ADR-0050, ADR-0047
+    // Verifies: GEO-own-circle-for-buffer, GEO-simplifypt-ported-from-jts
     // msGEOSBuffer and msGEOSSimplify hand GEOS's empty polygon on without building it, so
     // neither the shape nor the number is checked; the engine's simplifypt does the same.
     let square = polygon(&[&[(0.0, 0.0), (0.0, 4.0), (4.0, 4.0), (4.0, 0.0), (0.0, 0.0)]]);
@@ -1281,7 +1282,7 @@ fn the_geos_functions_return_geos_s_empty_polygon_whatever_the_number() {
 
 #[test]
 fn the_geos_functions_charge_a_polygon_s_rings_before_they_check_their_number() {
-    // Verifies: Q-9, ADR-0050, ADR-0047
+    // Verifies: Q-9, GEO-own-circle-for-buffer, GEO-simplifypt-ported-from-jts
     // 5 001 rings of 4 points, each tested against all twice as msGEOSShape2Geometry groups them:
     // 20 004 * 5 001 * 2 points, past 1e8, a limit before the number is checked.
     let ring = |i: f64| coords(&[(i, 0.0), (i + 0.5, 0.0), (i, 0.5), (i, 0.0)]);

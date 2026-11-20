@@ -137,7 +137,7 @@ repo() {
 
 # expect_check <name> <dir> <code> <needle> — run the check; it must exit with the code and its
 # output contain the needle (expect, scripts/lib/expect.sh).
-expect_check() { expect "$1" "$3" "$4" bash "$CHECK" "$2"; }
+expect_check() { expect "$1" "$3" "$4" bash "$CHECK" --root "$2"; }
 
 dir="$(repo named)"
 expect_check "a target that names every variant passes" "$dir" 0 \
@@ -193,11 +193,12 @@ REJECT="does not declare" expect_check \
 dir="$(repo unlisted)"
 awk '{ print } /^ALLOWED=\($/ { print "  \"Unlisted::Variant a reason\"" }' "$CHECK" \
   > "$dir/check.sh"
-mkdir -p "$dir/scripts/lib" && cp "$ROOT/scripts/lib/check.sh" "$dir/scripts/lib/"
+mkdir -p "$dir/scripts/lib" && cp "$ROOT/scripts/lib/check.sh" "$ROOT/scripts/lib/bash.sh" \
+  "$ROOT/scripts/lib/root.sh" "$dir/scripts/lib/"
 mv "$dir/check.sh" "$dir/scripts/check-fuzz-variants.sh"
 expect "an allowed variant of an enum the check does not list fails" 1 \
   "the allow-list names Unlisted::Variant, but ENUMS lists no Unlisted" \
-  bash "$dir/scripts/check-fuzz-variants.sh" "$dir"
+  bash "$dir/scripts/check-fuzz-variants.sh" --root "$dir"
 
 dir="$(repo no-enum 's/^pub enum Preprocessing {$/pub enum Preprocess {/' transform)"
 expect_check "an enum the file no longer declares fails" "$dir" 1 \

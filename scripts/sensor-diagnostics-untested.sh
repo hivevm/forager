@@ -11,23 +11,28 @@
 # line, as rustfmt writes it. A test of any crate counts, and it names a code when it holds it
 # between two characters that are no part of a kebab-case code. A code passed as a variable or
 # through a helper of its own, such as the mapfile parser's 'error', is not read, nor is a call a
-# test makes. It reports and never fails (ADR-0005): a code no test names is one whose test the
+# test makes. It reports and never fails (NUC-checks-are-bash §4): a code no test names is one whose test the
 # reviewer asks for, through the load or render that pushes it.
 #
 # Pure bash + grep + coreutils. Usage:
 #     scripts/sensor-diagnostics-untested.sh [--root <dir>]
 # It reads the repository it lives in, as the checks do; --root names another tree, as its
 # self-test does with each fixture.
-# Exit code 0, except 2 on a root that is not a directory.
+# Exit code 0, except 2 on an argument it does not read or a root that is not a directory.
 
 set -uo pipefail
 shopt -s nullglob globstar
 
-# shellcheck source-path=SCRIPTDIR source=lib/git.sh
-source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/sensor-diagnostics-untested.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 
 NAME="Diagnostics untested sensor"
-enter_root "$NAME" "${BASH_SOURCE[0]}" "$@"
 
 CALL='Diagnostic::(warning|error)\('
 CODE='^[[:space:]]*"([a-z0-9][a-z0-9-]*)"'

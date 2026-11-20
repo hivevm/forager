@@ -12,7 +12,7 @@ fn rgba8(r: u8, g: u8, b: u8, a: u8) -> Rgba8 {
 
 #[test]
 fn the_filter_rounds_as_agg_2_4_s_bilinear_filter_rounds() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     let buf = vec![
         vec![rgba8(1, 10, 0, 255), rgba8(2, 20, 0, 255)],
         vec![rgba8(2, 0, 0, 255), rgba8(2, 0, 0, 255)],
@@ -38,7 +38,7 @@ fn the_filter_rounds_as_agg_2_4_s_bilinear_filter_rounds() {
 
 #[test]
 fn a_coordinate_is_saturated_then_rounded_half_to_even() {
-    // Verifies: ADR-0046, ADR-0049
+    // Verifies: REN-symbol-line-brushed-by-tile, ARCH-third-party-failures-guarded
     assert_eq!(line_coord_sat(0.5 / 256.0), 0);
     assert_eq!(line_coord_sat(1.5 / 256.0), 2);
     assert_eq!(line_coord_sat(-2.5 / 256.0), -2);
@@ -49,7 +49,7 @@ fn a_coordinate_is_saturated_then_rounded_half_to_even() {
 
 #[test]
 fn the_filter_drops_a_vertex_within_384_subpixels_and_at_the_end_the_one_before_the_last() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     // B lies 256 from A: AGG keeps A, C, and D, and sums 2560 for A to C, not 256 + 2573.
     let line = [(0, 0), (0, 256), (2560, 0), (2560, 2560)];
     assert_eq!(filtered(&line), [(0, 2560), (2, 2560), (3, 0)]);
@@ -77,7 +77,7 @@ fn square() -> ([(i32, i32); 4], Vec<i64>) {
 
 #[test]
 fn a_piece_starts_at_agg_s_start_of_its_first_whole_segment_less_its_fragment() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     let (vertices, at) = square();
     // Cut 6400 into the second segment: 38400 - 6400, so that the fragment brings V2 to 38400.
     let piece = [(25600, 6400), (25600, 12800), (0, 12800)];
@@ -96,7 +96,7 @@ fn a_piece_starts_at_agg_s_start_of_its_first_whole_segment_less_its_fragment() 
 
 #[test]
 fn a_line_within_the_reach_is_left_whole() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     let rect = Rect::around_image(40, 20, 5.0);
     let line = vec![p(-6.0, 3.0), p(20.0, 10.0), p(46.0, -6.5)];
     let (vertices, at) = {
@@ -157,7 +157,7 @@ fn brushed(width: u32, height: u32, paths: Vec<Vec<Point>>, reach: f64) -> RgbaI
 
 #[test]
 fn a_line_is_brushed_with_its_tile_as_wide_as_the_tile_is_high() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     let image = brushed(40, 20, vec![vec![p(2.0, 10.0), p(37.0, 10.0)]], 3.0);
     let white = Some(Rgba::opaque(255, 255, 255));
     // Within the tile's height about the line the pixels are the tile's; beyond it, untouched.
@@ -173,7 +173,7 @@ fn a_line_is_brushed_with_its_tile_as_wide_as_the_tile_is_high() {
 
 #[test]
 fn a_line_that_leaves_the_image_and_comes_back_draws_the_whole_line_s_pixels_on_it() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     // Out over the top edge, along far above, and back in: the reach of 3 cuts the second and
     // the fourth segment, and the last runs along y = 30 well inside.
     let line = vec![
@@ -202,7 +202,7 @@ fn a_line_that_leaves_the_image_and_comes_back_draws_the_whole_line_s_pixels_on_
 
 #[test]
 fn the_start_carries_over_the_paths_of_a_shape() {
-    // Verifies: ADR-0046, ADR-0049
+    // Verifies: REN-symbol-line-brushed-by-tile, ARCH-third-party-failures-guarded
     // The second path starts where the first, 10 pixels long, left the pattern, so its pixel at x
     // shows the pattern where the first path's does at x - 8, or a whole repeat of 7 from there.
     let image = brushed(
@@ -222,7 +222,7 @@ fn the_start_carries_over_the_paths_of_a_shape() {
 
 #[test]
 fn a_path_whose_start_passes_i32_draws_without_a_panic() {
-    // Verifies: ADR-0046, ADR-0049, Q-3
+    // Verifies: REN-symbol-line-brushed-by-tile, ARCH-third-party-failures-guarded, Q-3
     // 90 segments of 100,000 pixels each: 9,000,000 pixels, past the 8,388,607 the start holds in
     // subpixels. The last segment crosses the image.
     let mut line: Vec<Point> = (0..90)
@@ -235,7 +235,7 @@ fn a_path_whose_start_passes_i32_draws_without_a_panic() {
 
 #[test]
 fn hostile_coordinates_brush_without_a_panic() {
-    // Verifies: ADR-0049, Q-3
+    // Verifies: ARCH-third-party-failures-guarded, Q-3
     // Unsaturated, a coordinate of 1e12 within the reach of 1e300 overflows the subtraction of
     // agg-rust's `calc_distance` (`rasterizer_outline_aa.rs:39`).
     let paths = vec![
@@ -330,7 +330,7 @@ fn joins_admit(path: &[Point]) -> bool {
 
 #[test]
 fn a_piece_whose_join_lies_far_past_its_short_segment_is_not_drawn_and_does_not_panic() {
-    // Verifies: ADR-0049, Q-3
+    // Verifies: ARCH-third-party-failures-guarded, Q-3
     // Ticket 21's fuzz input: the short first segment's join with the segment of some 8650 pixels
     // after it lies thousands of pixels away, past what `DistanceInterpolator4` multiplies in
     // `i32`, so the piece, the whole path, is not drawn.
@@ -347,7 +347,7 @@ fn a_piece_whose_join_lies_far_past_its_short_segment_is_not_drawn_and_does_not_
 
 #[test]
 fn a_long_segment_after_a_short_one_at_a_gentle_angle_is_drawn() {
-    // Verifies: ADR-0046, ADR-0049, Q-3
+    // Verifies: REN-symbol-line-brushed-by-tile, ARCH-third-party-failures-guarded, Q-3
     // A segment of 2 pixels, then one of 2100 at 10°: their join lies some 2100 × 0.17 pixels
     // from the vertex, far within the bound, and the line is drawn as agg-rust draws it unbounded.
     let line = vec![
@@ -416,7 +416,7 @@ fn widely(path: Vec<Point>) -> RgbaImage {
 
 #[test]
 fn a_piece_at_a_sharp_turn_below_agg_rust_s_overflow_is_drawn() {
-    // Verifies: ADR-0046, ADR-0049, Q-3
+    // Verifies: REN-symbol-line-brushed-by-tile, ARCH-third-party-failures-guarded, Q-3
     // The join's distance and the pixel's offset from the turn point the same way, so adding
     // them as scalars refused the piece; the box its pixels lie in admits it, and agg-rust draws
     // it, as it draws it unbounded (`roads::draws`).
@@ -430,7 +430,7 @@ const SHARP_TURN_DRAWN: usize = 110_632;
 
 #[test]
 fn a_piece_at_a_sharp_turn_past_agg_rust_s_overflow_is_not_drawn_and_does_not_panic() {
-    // Verifies: ADR-0049, Q-3
+    // Verifies: ARCH-third-party-failures-guarded, Q-3
     // Scaled by 1.2, agg-rust's `DistanceInterpolator4` multiplies past `i32` on the turn's
     // join (`roads::draws` panics on it): the probe refuses it, and nothing is drawn.
     let tile = roads::tile(64, 40);
@@ -486,7 +486,7 @@ fn a_piece_whose_place_would_pass_i32_is_not_drawn_and_a_short_one_beside_it_is(
 
 #[test]
 fn the_probe_admits_a_segment_at_the_place_bound_and_refuses_one_past_it() {
-    // Verifies: ADR-0049, Q-3
+    // Verifies: ARCH-third-party-failures-guarded, Q-3
     let k = DIAGONAL_HALF;
     let at = [p(-k / 256.0, -k / 256.0), p(k / 256.0, k / 256.0)];
     let past = [
@@ -529,7 +529,7 @@ fn refused(tile: &Rc<Tile>, paths: Vec<Vec<Point>>, in_layer: bool) -> Refused {
 
 #[test]
 fn a_refused_piece_counts_once_by_its_tile_s_kind_and_a_drawn_one_does_not() {
-    // Verifies: ADR-0049
+    // Verifies: ARCH-third-party-failures-guarded
     let k = DIAGONAL_HALF;
     let past = vec![
         p(-k / 256.0, -k / 256.0),

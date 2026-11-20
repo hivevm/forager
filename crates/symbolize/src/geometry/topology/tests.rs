@@ -27,7 +27,7 @@ fn assert_bits(ours: &[Vec<Coord>], expected: &[&[(f64, f64)]]) {
 
 #[test]
 fn the_case_s_lines_keep_geos_s_points_in_pixels() {
-    // Verifies: ADR-0047
+    // Verifies: GEO-simplifypt-ported-from-jts
     // The style simplifypt([shape],50) of renderers/geomtransform-vertex.map, each line a shape of
     // its own.
     let expected: [&[(f64, f64)]; 3] = [
@@ -55,7 +55,7 @@ fn the_case_s_lines_keep_geos_s_points_in_pixels() {
 
 #[test]
 fn the_polygons_of_world_testpoly_keep_geos_s_points_in_map_units() {
-    // Verifies: ADR-0047
+    // Verifies: GEO-simplifypt-ported-from-jts
     // msautotest's misc/data/world_testpoly.shp at 20: the first polygon's ring loses its first
     // point; the fourth is a shell with a hole, simplified together.
     let polygons: [&[&[(f64, f64)]]; 4] = [
@@ -141,7 +141,7 @@ fn the_polygons_of_world_testpoly_keep_geos_s_points_in_map_units() {
 
 #[test]
 fn a_flattening_that_would_cross_another_line_of_the_shape_is_refused() {
-    // Verifies: ADR-0047
+    // Verifies: GEO-simplifypt-ported-from-jts
     // The whole first line lies within 20 of (0 0, 20 0), which would cross the second line: it
     // is split at (10 10), and each half flattens. GEOS: MULTILINESTRING ((0 0, 10 10, 20 0),
     // (10 5, 10 -5)).
@@ -161,7 +161,7 @@ fn a_flattening_that_would_cross_another_line_of_the_shape_is_refused() {
 
 #[test]
 fn a_closed_line_keeps_its_first_point_and_4_coordinates() {
-    // Verifies: ADR-0047
+    // Verifies: GEO-simplifypt-ported-from-jts
     // A closed line keeps 4 coordinates however large the tolerance. GEOS: LINESTRING (0 0, 20 0,
     // 10 20, 0 0) at 50.
     let closed: &[(f64, f64)] = &[
@@ -194,7 +194,7 @@ fn a_closed_line_keeps_its_first_point_and_4_coordinates() {
 
 #[test]
 fn a_flattening_that_jumps_another_line_keeps_its_bend_as_jts_decides() {
-    // Verifies: ADR-0047
+    // Verifies: GEO-simplifypt-ported-from-jts
     // Flattening the bend to (0 0, 20 0) would leave the short line on its other side, which
     // ComponentJumpChecker refuses. GEOS 3.12.1 lacks that test: MULTILINESTRING ((0 0, 20 0),
     // (9 4, 11 4)) at 20.
@@ -208,7 +208,7 @@ fn a_flattening_that_jumps_another_line_keeps_its_bend_as_jts_decides() {
 
 #[test]
 fn a_shell_keeps_the_first_point_whose_drop_would_leave_its_hole_outside() {
-    // Verifies: ADR-0047
+    // Verifies: GEO-simplifypt-ported-from-jts
     // Dropping the shell's first point, (10 -2), would make (0 0, 20 0) its edge, and the hole
     // below it would lie outside the shell. GEOS 3.12.1 drops it without the jump test:
     // POLYGON ((0 0, 20 0, 20 20, 0 20, 0 0), (9 -1, 11 -1, 10 -0.5, 9 -1)) at 5.
@@ -240,7 +240,7 @@ fn a_shell_keeps_the_first_point_whose_drop_would_leave_its_hole_outside() {
 
 #[test]
 fn a_section_whose_distances_are_no_number_is_kept_whole_without_a_hang() {
-    // Verifies: ADR-0047
+    // Verifies: GEO-simplifypt-ported-from-jts
     // The inner point is no number, so the section's split point is its first end; the second
     // line crosses its flattening, so JTS and GEOS would split it at that end again without end.
     // The port keeps it whole.
@@ -268,7 +268,7 @@ fn a_section_whose_distances_are_no_number_is_kept_whole_without_a_hang() {
 
 #[test]
 fn the_scanned_points_examined_segments_and_compared_lines_are_charged_before_each_runs() {
-    // Verifies: Q-9, ADR-0047
+    // Verifies: Q-9, GEO-simplifypt-ported-from-jts
     // The bend (0 0, 5 1, 10 0) lies within 2 of its flattening: its 1 inner point is scanned,
     // the output index's 0 segments and the input index's 3 are examined, the 1 other line is
     // compared, and its point (6 0.5), inside the section's envelope, has its crossings counted
@@ -312,7 +312,7 @@ fn the_scanned_points_examined_segments_and_compared_lines_are_charged_before_ea
 
 #[test]
 fn a_zigzag_that_keeps_every_point_needs_no_recursion() {
-    // Verifies: Q-9, ADR-0047
+    // Verifies: Q-9, GEO-simplifypt-ported-from-jts
     // Every section lies farther than the tolerance, so none is tested against the indexes: the
     // 10,000 points scan 49,985,001 inner points in all, as the Douglas-Peucker of `simplify`.
     let input = zigzag(10_000);

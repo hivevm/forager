@@ -1,9 +1,10 @@
 # Specification — Forager
 
 > The **specification** of this project: the problem it solves, where it is going, and what has to
-> be true for it to have succeeded, written in the vocabulary of [`GLOSSARY.md`](GLOSSARY.md). It
-> is the **constitution**: every Architecture Decision Record in [`adr/`](adr/) derives from it and
-> must not contradict it ([ADR-0001](adr/0001-agent-governance-model.md)).
+> be true for it to have succeeded, written in the vocabulary of [`GLOSSARY.md`](GLOSSARY.md). It is
+> the **constitution**: every Architecture Decision Record in [`adr/`](adr/) derives from it and
+> must not contradict it
+> ([NUC-decisions-are-proposed-then-accepted §7](adr/NUC-decisions-are-proposed-then-accepted.md)).
 
 ## Problem
 
@@ -42,8 +43,9 @@ against msautotest at the pinned MapServer release, and the native and wasm32 re
 Acceptance criteria a test can decide, where it helps in the form *When <trigger>, the system
 shall <response>*. Each starts with a bold `G-n`, which a test cites with `Verifies: G-n`. Until
 that test exists the criterion is pending work, and the traceability check lists it
-([ADR-0002](adr/0002-decisions-verified-by-tests.md)). Identifiers are never reused.
-Only a normalization renumbers them ([`AGENTS.md` §3](../AGENTS.md#3-adr-rules), rule 5).
+([NUC-decisions-cite-tests §5](adr/NUC-decisions-cite-tests.md)). Identifiers are never reused.
+Only a normalization renumbers them
+([NUC-decisions-cite-tests §1](adr/NUC-decisions-cite-tests.md)).
 
 1. **G-1** — When a mapfile of the msautotest suite is loaded with a resource loader for its
    `INCLUDE`, `SYMBOLSET`, and `FONTSET` files and the init files it names by a path, and with a

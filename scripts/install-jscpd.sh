@@ -1,15 +1,29 @@
 #!/usr/bin/env bash
-# Installs jscpd at the version scripts/sensor-duplication.sh runs (ADR-0007):
+# Installs jscpd at the version scripts/sensor-duplication.sh runs (OPS-pinned-stable-rust-toolchain):
 # the static (musl) Linux release binary of kucherenko/jscpd for this machine's architecture,
 # verified against the SHA-256 the release's checksums.txt lists for the asset, which is pinned
 # here, into a directory on PATH, ~/.local/bin unless JSCPD_BIN_DIR names another. A jscpd
 # already at the version there is kept. scripts/install-tools.sh runs it in the Dev Container
-# (ADR-0009). In CI, the sensors job runs it before the duplication sensor and its self-test, and
+# (OPS-dev-container-adds-rust). In CI, the sensors job runs it before the duplication sensor and its self-test, and
 # the docs and shell jobs before the self-tests that run that self-test. The download, the check,
 # and the install are scripts/lib/install.sh.
 #
-# Usage: bash scripts/install-jscpd.sh
+# Usage: bash scripts/install-jscpd.sh [--root <dir>]
+# Exit code 0 when the tool is installed, 2 on an argument it does not read or a root that is no
+# directory, 1 otherwise.
 set -euo pipefail
+
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/install.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/install.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/install-jscpd.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 
 JSCPD_VERSION="5.4.3"
 BIN_DIR="${JSCPD_BIN_DIR:-$HOME/.local/bin}"
@@ -30,8 +44,6 @@ case "$(uname -s).$(uname -m)" in
     ;;
 esac
 
-# shellcheck source-path=SCRIPTDIR source=lib/install.sh
-source "$(dirname "${BASH_SOURCE[0]}")/lib/install.sh"
 install_release jscpd "$JSCPD_VERSION" "$BIN_DIR" "jscpd $JSCPD_VERSION" \
   "https://github.com/kucherenko/jscpd/releases/download/v$JSCPD_VERSION/jscpd-$asset.tar.gz" \
   "$sha256" jscpd

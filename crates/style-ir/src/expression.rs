@@ -1,5 +1,6 @@
 //! Expressions of the style IR: a lean CQL2 tree, serialized in the shape of CQL2-JSON
-//! (ADR-0015). What CQL2 lacks is written as functions in the same `{"op", "args"}` shape.
+//! (IR-expressions-as-cql2). What CQL2 lacks is written as functions in the same `{"op", "args"}`
+//! shape.
 
 use std::fmt;
 
@@ -92,8 +93,8 @@ pub enum Op {
     /// A property's value as a time, as MapServer's `msParseTime` reads it.
     #[serde(rename = "to_timestamp")]
     ToTimestamp,
-    /// `regexp_like(value, pattern, flags)`: the pattern in PCRE2's syntax, byte mode (ADR-0015),
-    /// the flag `i`.
+    /// `regexp_like(value, pattern, flags)`: the pattern in PCRE2's syntax, byte mode
+    /// (IR-expressions-as-cql2), the flag `i`.
     #[serde(rename = "regexp_like")]
     RegexpLike,
     #[serde(rename = "concat")]
@@ -154,7 +155,7 @@ pub(crate) fn nesting<'a, T>(root: &'a T, children: impl Fn(&'a T) -> &'a [T]) -
 
 /// The keys of an expression's object, or of a binding's, read one by one. A key this build
 /// does not know is read as ignored, so that the style document's reader names it with its path
-/// (ADR-0014), where an untagged enum would have skipped it unseen.
+/// (IR-schema-per-format-version), where an untagged enum would have skipped it unseen.
 #[derive(Default)]
 pub(crate) struct Keys {
     op: Option<Op>,
@@ -307,7 +308,7 @@ mod tests {
 
     #[test]
     fn expressions_serialize_in_the_shape_of_cql2_json() {
-        // Verifies: ADR-0015
+        // Verifies: IR-expressions-as-cql2
         let expr = Expr::call(
             Op::And,
             vec![

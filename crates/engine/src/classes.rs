@@ -17,7 +17,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! Which class draws a feature, and the values its style's bound and computed properties take for
-//! it (ADR-0016).
+//! it (IR-expressions-evaluated-as-mapserver).
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;

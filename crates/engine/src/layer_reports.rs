@@ -96,10 +96,10 @@ pub(crate) fn refusal_reports(
         .chain(glyphs)
 }
 
-/// The warnings that `layer` left undrawn what the renderer counted in `refused` (ADR-0049): one
-/// for the pieces of its brushed lines of pixmap symbols, then one for those of the other symbols,
-/// then one for its TrueType markers' glyphs out of reach, then one for its paths the clip cut,
-/// each where there are any.
+/// The warnings that `layer` left undrawn what the renderer counted in `refused`
+/// (ARCH-third-party-failures-guarded): one for the pieces of its brushed lines of pixmap symbols,
+/// then one for those of the other symbols, then one for its TrueType markers' glyphs out of reach,
+/// then one for its paths the clip cut, each where there are any.
 pub(crate) fn renderer_refusals(
     layer: &Layer,
     refused: Refused,
@@ -226,7 +226,7 @@ fn unknown_symbols(layer: &Layer, symbols: &[Symbol], diagnostics: &mut Vec<Diag
 
 /// Warns of each class style of a line or a polygon layer whose `GEOMTRANSFORM` the engine does
 /// not draw on a style: a transform tree `not_drawn`, naming its reason
-/// (ADR-0048, *Diagnostics*), which MapServer evaluates
+/// (IR-geomtransform-with-simplifypt, *Diagnostics*), which MapServer evaluates
 /// by msDrawTransformedShape, through GEOS or a JavaScript engine, or fails; and labelcenter, which
 /// fails the layer's draw there (src/mapgeomtransform.c:245), msDrawLabelCache alone drawing it on
 /// a label's style. The style draws nothing; the class's other styles draw in their passes as
@@ -260,7 +260,7 @@ fn styles_not_drawn(layer: &Layer, diagnostics: &mut Vec<Diagnostic>) {
 }
 
 /// Warns of the class styles' transform trees of `layer` that drew nothing
-/// (ADR-0048, *A class's style*): of each style in
+/// (IR-geomtransform-with-simplifypt, *A class's style*): of each style in
 /// `failures`, its first failure, once, as `geomtransform-not-drawn`; and, where they passed
 /// `over_limit`, a bound of Q-9 they share with the layer's `GEOMTRANSFORM`, once for the layer as
 /// `geomtransform-over-limit`. MapServer makes no map where msDrawTransformedShape fails
@@ -324,7 +324,7 @@ fn described(reason: NotDrawn) -> String {
 }
 
 /// The warning that `layer` draws nothing, its `GEOMTRANSFORM` a transform tree of the reason
-/// `reason` (ADR-0048). MapServer evaluates a function the tree has no node
+/// `reason` (IR-geomtransform-with-simplifypt). MapServer evaluates a function the tree has no node
 /// for through GEOS, or a JavaScript engine, and fails on a syntax error or a binding where it
 /// makes no number; Forager draws none of the layer, and the rest of the map.
 pub(crate) fn transform_not_drawn(layer: &Layer, reason: NotDrawn) -> Diagnostic {

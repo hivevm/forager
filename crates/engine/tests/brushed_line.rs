@@ -1,6 +1,6 @@
 //! A line brushed with a pixmap symbol's tile, end to end, where the renderer refuses a piece of it
-//! to keep agg-rust within `i32` (ADR-0049): the layer that draws it carries the warning, once for
-//! the symbol's kind, and a line the renderer draws carries none.
+//! to keep agg-rust within `i32` (ARCH-third-party-failures-guarded): the layer that draws it
+//! carries the warning, once for the symbol's kind, and a line the renderer draws carries none.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -172,7 +172,7 @@ fn drawn(rendered: &Rendered) -> usize {
 
 #[test]
 fn a_brushed_piece_whose_join_would_pass_i32_warns_on_its_layer_once() {
-    // Verifies: ADR-0049, Q-3
+    // Verifies: ARCH-third-party-failures-guarded, Q-3
     // Two such parts of one feature are two pieces refused, and the layer still warns once.
     let path = far_join();
     let map = brushed_map(123, 101, pin());
@@ -184,7 +184,7 @@ fn a_brushed_piece_whose_join_would_pass_i32_warns_on_its_layer_once() {
 
 #[test]
 fn a_piece_brushed_with_an_ellipse_symbol_warns_symbol_not_drawn_once() {
-    // Verifies: ADR-0049, Q-3
+    // Verifies: ARCH-third-party-failures-guarded, Q-3
     let path = far_join();
     let map = brushed_map(123, 101, dot());
     let twice = rendered(&map, &[&path, &path]);
@@ -193,7 +193,7 @@ fn a_piece_brushed_with_an_ellipse_symbol_warns_symbol_not_drawn_once() {
 
 #[test]
 fn a_long_segment_after_a_short_one_at_a_gentle_angle_is_drawn_and_warns_nothing() {
-    // Verifies: ADR-0049
+    // Verifies: ARCH-third-party-failures-guarded
     // The line of render-agg's `a_long_segment_after_a_short_one_at_a_gentle_angle_is_drawn`: a
     // segment of 2 pixels, then one of 2100 at 10°, whose join lies far within the bound.
     let path = [

@@ -1,6 +1,6 @@
-//! The geometry of a feature, as a source delivers it through the ports and the symbolization
-//! draws it. It lives in the IR, the one crate both may depend on (ADR-0008); the ports re-export
-//! it.
+//! The geometry of a feature, as a source delivers it through the ports and the symbolization draws
+//! it. It lives in the IR, the one crate both may depend on (ARCH-crates-as-ports-and-adapters);
+//! the ports re-export it.
 
 /// A position in the coordinates of its source.
 #[derive(Clone, Copy, Debug, PartialEq)]

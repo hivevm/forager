@@ -42,7 +42,7 @@ repo() {
 
 # expect_check <name> <dir> <code> <needle> — run the check; it must exit with the code and its
 # output contain the needle (expect, scripts/lib/expect.sh).
-expect_check() { expect "$1" "$3" "$4" bash "$CHECK" "$2"; }
+expect_check() { expect "$1" "$3" "$4" bash "$CHECK" --root "$2"; }
 
 expect_check "a file that cites src/mapfile.c without the notice fails, by name" \
   "$(repo bare '// As loadStyle in src/mapfile.c reads it.')" 1 "crates/x/src/lib.rs follows MapServer"

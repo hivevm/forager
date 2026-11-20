@@ -21,7 +21,7 @@ use crate::test_support::{binding, codes, first_style, load_files};
 
 #[test]
 fn style_properties_bind_to_attributes() {
-    // Verifies: ADR-0015
+    // Verifies: IR-expressions-as-cql2
     let (loaded, style) = first_style(
         "MAP LAYER CLASS STYLE
            SIZE [VAL] WIDTH [w] ANGLE [a] COLOR [c] OUTLINECOLOR [o]
@@ -38,7 +38,7 @@ fn style_properties_bind_to_attributes() {
 
 #[test]
 fn a_size_expression_is_evaluated_as_mapserver_evaluates_it() {
-    // Verifies: ADR-0015
+    // Verifies: IR-expressions-as-cql2
     let (loaded, style) = first_style("MAP LAYER CLASS STYLE SIZE ([a] * 2) END END END END");
     assert_eq!(codes(&loaded), Vec::<&str>::new());
     assert_eq!(
@@ -55,7 +55,7 @@ fn a_size_expression_is_evaluated_as_mapserver_evaluates_it() {
 
 #[test]
 fn bound_style_properties_read_back_equal_from_yaml_and_json() {
-    // Verifies: ADR-0015
+    // Verifies: IR-expressions-as-cql2
     let loaded = load_files(&[(
         "m.map",
         "MAP LAYER CLASS STYLE
@@ -337,7 +337,7 @@ fn angle_auto_is_the_bare_keyword_only() {
 
 #[test]
 fn opacity_is_truncated_toward_zero_then_clamped() {
-    // Verifies: ADR-0017
+    // Verifies: IR-c-ports-in-style-ir
     // MS_MAX(MS_MIN((int)msyynumber, 100), 0) (src/mapfile.c:2903-2904): the cast truncates
     // toward zero, and past an `int` is INT_MIN, which the clamp makes 0.
     assert_eq!(style_of("OPACITY 100.4").opacity, Some(Bound::Value(100.0)));
@@ -594,7 +594,7 @@ fn value(r: u8, g: u8, b: u8, a: u8) -> Option<Bound<Rgba>> {
 
 #[test]
 fn each_colour_channel_is_checked_by_load_color_before_it_is_truncated() {
-    // Verifies: ADR-0017
+    // Verifies: IR-c-ports-in-style-ir
     // loadColor checks the first channel's msyynumber, and getInteger the others' through
     // msCheckNumber, each before the cast to `int`.
     for body in [
@@ -761,7 +761,7 @@ fn a_bare_keyword_is_no_symbol_name_and_a_quoted_one_is() {
 
 #[test]
 fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // loadStyle's getSymbol(2, MS_STRING, MS_EXPRESSION) keeps the expression; the engine reports
     // it as it draws the layer, so the load does not, but for a syntax error, at its place.
     let (loaded, style) = first_style(
@@ -809,7 +809,7 @@ fn a_geomtransform_expression_is_carried_as_its_tree_without_a_warning_at_load()
 
 #[test]
 fn a_style_of_buffer_holds_its_node_and_round_trips() {
-    // Verifies: ADR-0048, G-3
+    // Verifies: IR-geomtransform-with-simplifypt, G-3
     // The two styles of renderers/polygon-as-line-offset.map: `buffer` is a node of the tree, its
     // distance kept negative as it is written.
     let loaded = load_files(&[(

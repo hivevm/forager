@@ -3,21 +3,26 @@
 # Runs every consistency check this repository enforces, in one command.
 #
 # AGENTS.md §5 requires these checks to pass before pushing. This script is the local equivalent of
-# .github/workflows/checks.yml; check 9 of check-docs.sh holds the two lists, the required status
+# .github/workflows/checks.yml; the rule docs/check-lists of check-docs.sh holds the two lists, the required status
 # checks named in CONTRIBUTING.md, and the scripts under scripts/ together. A script that runs on a
 # human's instruction, or only inside another script, is named on an '# On instruction:' line
 # below, and a workflow that is no gate, one that publishes, such as a release, or one that
-# measures on a schedule, on a '# Not a gate:' line.
+# measures on a schedule
+# (OPS-measurements-are-no-gate), on a '# Not a gate:' line.
 #
 # Every check runs even after an earlier one fails, so a single run reports everything that is
 # wrong instead of the first thing. The exit code is what a pre-push decision is made on.
 #
 # A check or self-test that passes shows its last line, its summary, and any line that says it
-# skipped something, such as the shell lint without ShellCheck. A sensor shows its first line, the
+# skipped something, such as the shell lint without ShellCheck; so does a sensor run with
+# --require, which is a check (NUC-checks-are-bash §4). A sensor shows its first line, the
 # headline that says what it found, and how many more lines its report has, blank ones not
 # counted. One that fails shows all it printed. A session reads every line a run prints, so a
 # green run costs a line a check. With --verbose every check and sensor shows all it printed; the
-# reviewer is handed that output.
+# reviewer is handed that output. Each label is followed by the whole seconds the check ran, and
+# the run names the slowest and its own time before its result, so a slow check or a slow
+# platform shows in every local run; CI runs each script as a step of its own and shows the
+# step's time. A check skipped in changed mode shows no time.
 #
 # With --changed, a self-test (scripts/test-*.sh) runs only where the branch changed what it
 # tests: the self-test itself or a path its '# Inputs:' header line names, changed in the working
@@ -44,18 +49,8 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
-# The checks need bash 4.4 or later (ADR-0002). This guard runs first and is written for bash
-# 3.2, so an older bash, such as the one macOS ships, gets a message instead of a check failing
-# on a construct it lacks. CHECK_ALL_BASH_VERSION stands in for the version found, for the
-# self-test.
-bash_found="${CHECK_ALL_BASH_VERSION:-${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}}"
-bash_major="${bash_found%%.*}" bash_minor="${bash_found#*.}"
-bash_minor="${bash_minor%%.*}"
-if ((bash_major < 4 || (bash_major == 4 && bash_minor < 4))); then
-  echo "check-all: the checks need bash 4.4 or later (ADR-0002); this is bash $bash_found — run them in the Dev Container, or install a current bash" >&2
-  exit 2
-fi
-
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
 
@@ -165,7 +160,7 @@ run() {
   local label="$1" script="$2" i="${#labels[@]}"
   shift 2
   labels+=("$label")
-  kinds+=("$([[ "$script" == scripts/sensor-*.sh ]] && echo sensor || echo check)")
+  kinds+=("$([[ "$script" == scripts/sensor-*.sh && " $* " != *" --require "* ]] && echo sensor || echo check)")
   if ((changed_mode)) && ! needs_run "$script"; then
     echo "skipped — neither it nor its inputs changed against main; CI runs it" > "$out/$i"
     echo 0 > "$out/$i.rc"
@@ -173,17 +168,19 @@ run() {
   fi
   drain $((max_jobs - 1))
   {
+    start=$SECONDS
     # shellcheck disable=SC2046 # one process id per word
     trap 'kill $(jobs -p) 2>/dev/null; wait; exit 143' TERM
     bash "$ROOT/$script" "$@" > "$out/$i" 2>&1 &
     wait $!
     echo $? > "$out/$i.rc"
+    echo $((SECONDS - start)) > "$out/$i.s"
   } &
   running=$((running + 1))
 }
 
 # The weekly workflows measure rather than gate, and a push cannot wait for them: the fuzz run of
-# Q-3, the mutation testing of ADR-0007, and the noise measurement of G-6. Their scripts run on a
+# Q-3, the mutation testing of OPS-pinned-stable-rust-toolchain, and the noise measurement of G-6. Their scripts run on a
 # human's instruction locally, and their self-tests run here.
 # Not a gate: .github/workflows/fuzz.yml
 # Not a gate: .github/workflows/mutants.yml
@@ -203,11 +200,7 @@ run() {
 run "Documentation self-test" scripts/test-check-docs.sh
 run "Documentation consistency" scripts/check-docs.sh
 run "Normalize map self-test" scripts/test-normalize-remap.sh
-# The numbering script commits and runs on a human's instruction, before the pull request that
-# brings drafts to main (ADR-0002); its self-test runs here.
-# On instruction: scripts/number-adrs.sh
-run "Numbering script self-test" scripts/test-number-adrs.sh
-# The readiness script merges and commits on a human's instruction, as step 7 of
+# The readiness script rebases a branch on a human's instruction, as step 7 of
 # Integration branches in CONTRIBUTING.md; its self-test runs here.
 # On instruction: scripts/ready-for-main.sh
 run "Readiness script self-test" scripts/test-ready-for-main.sh
@@ -230,7 +223,7 @@ run "Green commits sensor" scripts/sensor-green-commits.sh
 run "Binding ADRs sensor self-test" scripts/test-sensor-binding-adrs.sh
 run "Binding ADRs sensor" scripts/sensor-binding-adrs.sh
 run "Plain rules sensor self-test" scripts/test-sensor-plain-rules.sh
-run "Plain rules sensor" scripts/sensor-plain-rules.sh
+run "Plain rules check" scripts/sensor-plain-rules.sh --require
 run "Revision-due sensor self-test" scripts/test-sensor-revision-due.sh
 run "Revision-due sensor" scripts/sensor-revision-due.sh
 run "Plan frontier sensor self-test" scripts/test-sensor-plan-frontier.sh
@@ -240,12 +233,12 @@ run "Backlog sensor" scripts/sensor-backlog.sh
 run "Diagnostics untested sensor self-test" scripts/test-sensor-diagnostics-untested.sh
 run "Diagnostics untested sensor" scripts/sensor-diagnostics-untested.sh
 run "Action references sensor self-test" scripts/test-sensor-action-refs.sh
-# The check of ADR-0010: every action by its major version tag.
-# Verifies: ADR-0010
+# The check of OPS-actions-by-major-tag: every action by its major version tag.
+# Verifies: OPS-actions-by-major-tag
 run "Action references" scripts/sensor-action-refs.sh --require major-tag
 run "Mutation sensor self-test" scripts/test-mutants.sh
 # How MapServer runs on CI for the noise measurement of G-6.
-# Verifies: ADR-0033
+# Verifies: TST-noise-measured-against-mapserver
 run "MapServer build self-test" scripts/test-build-mapserver.sh
 run "Vendor check self-test" scripts/test-check-vendor.sh
 run "Vendor check" scripts/check-vendor.sh
@@ -254,7 +247,7 @@ run "Notice check self-test" scripts/test-check-notice.sh
 run "MapServer notice check" scripts/check-notice.sh
 run "Guard check self-test" scripts/test-check-guards.sh
 # Every guard against a third-party crate names a version Cargo.lock holds.
-# Verifies: ADR-0049
+# Verifies: ARCH-third-party-failures-guarded
 run "Guard check" scripts/check-guards.sh
 run "Comment width check self-test" scripts/test-check-comment-width.sh
 # rustfmt wraps no comment on the stable toolchain; a Rust comment line fits in 100 characters.
@@ -270,13 +263,26 @@ run "Package check self-test" scripts/test-package.sh
 run "Fidelity check self-test" scripts/test-check-fidelity.sh
 run "Review binding sensor self-test" scripts/test-sensor-review-binding.sh
 run "Review binding sensor" scripts/sensor-review-binding.sh
-# The sensors of the GitHub repository read GitHub and run on a human's instruction (ADR-0002):
-# the repository settings, and the latest scheduled run on main of each scheduled workflow. Their
-# self-tests run here.
+# The sensors of the GitHub repository read GitHub and run on a human's instruction
+# (NUC-checks-are-bash §7):
+# the repository settings, and the latest scheduled run on main of each scheduled workflow.
+# Their self-tests run here.
 # On instruction: scripts/sensor-repo-settings.sh
 # On instruction: scripts/sensor-scheduled-runs.sh
 run "Repository settings sensor self-test" scripts/test-sensor-repo-settings.sh
 run "Scheduled runs sensor self-test" scripts/test-sensor-scheduled-runs.sh
+# The work measures sensor reads the pull requests on GitHub and runs on a human's instruction
+# (NUC-checks-are-bash §7); its self-test runs here.
+# On instruction: scripts/sensor-work-measures.sh
+run "Work measures sensor self-test" scripts/test-sensor-work-measures.sh
+# The release notes sensor reads the pull requests on GitHub and runs on a human's instruction
+# (NUC-checks-are-bash §7); its self-test runs here.
+# On instruction: scripts/sensor-release-notes.sh
+run "Release notes sensor self-test" scripts/test-sensor-release-notes.sh
+# The red commits sensor runs the checks of every commit it reads and runs on a human's
+# instruction for its cost (NUC-checks-are-bash §7); its self-test runs here.
+# On instruction: scripts/sensor-red-commits.sh
+run "Red commits sensor self-test" scripts/test-sensor-red-commits.sh
 run "Check runner self-test" scripts/test-check-all.sh
 run "Git hooks self-test" scripts/test-git-hooks.sh
 run "ADR index merge self-test" scripts/test-merge-adr-index.sh
@@ -300,27 +306,35 @@ run "Duplication sensor" scripts/sensor-duplication.sh
 wait
 
 failed=()
+slowest="" slowest_s=-1
 for i in "${!labels[@]}"; do
+  # The seconds the check ran, after its label; a check skipped in changed mode did not run.
+  secs="$(cat "$out/$i.s" 2>/dev/null)" took=""
+  if [[ -n "$secs" ]]; then
+    took=" ($secs s)"
+    ((secs > slowest_s)) && slowest="${labels[i]}" slowest_s="$secs"
+  fi
   if [[ "$(cat "$out/$i.rc" 2>/dev/null)" != 0 ]]; then
     failed+=("${labels[i]}")
   elif ((!verbose)) && [[ "${kinds[i]}" == check ]]; then
     last="$(grep -v '^[[:space:]]*$' "$out/$i" | tail -n 1)"
-    printf 'ok: %s%s\n' "${labels[i]}" "${last:+ — $last}"
+    printf 'ok: %s%s%s\n' "${labels[i]}" "$took" "${last:+ — $last}"
     grep -iE 'skip' "$out/$i" | grep -vxF -- "$last" | sed 's/^/    /'
     continue
   elif ((!verbose)); then
     first="$(grep -m1 -v '^[[:space:]]*$' "$out/$i")"
     more="$(grep -cv '^[[:space:]]*$' "$out/$i")"
     more=$((more - 1))
-    printf 'sensor: %s%s%s\n' "${labels[i]}" "${first:+ — $first}" \
+    printf 'sensor: %s%s%s%s\n' "${labels[i]}" "$took" "${first:+ — $first}" \
       "$( ((more > 0)) && echo " (+$more line$( ((more == 1)) || echo s); --verbose shows them)")"
     continue
   fi
-  printf '\n==> %s\n' "${labels[i]}"
+  printf '\n==> %s%s\n' "${labels[i]}" "$took"
   cat "$out/$i"
 done
 
 printf '\n'
+[[ -n "$slowest" ]] && echo "Slowest: $slowest, $slowest_s s; the run took $SECONDS s."
 if ((${#failed[@]})); then
   echo "FAILED:" >&2
   printf '  - %s\n' "${failed[@]}" >&2

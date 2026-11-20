@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn geocentric_coordinates_read_back() {
-        // Verifies: ADR-0037
+        // Verifies: GEO-proj-ported-with-libm
         let wgs84 = Ellipsoid::wgs84();
         let at = cartesian(0.0, 0.0, &wgs84);
         assert_eq!((at.x, at.y, at.z), (6_378_137.0, 0.0, 0.0));
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn a_helmert_shift_reverses() {
-        // Verifies: ADR-0037
+        // Verifies: GEO-proj-ported-with-libm
         let datum = Datum::Geocentric(Helmert::new(&[
             446.448, -125.157, 542.06, 0.1502, 0.247, 0.8421, -20.4894,
         ]));

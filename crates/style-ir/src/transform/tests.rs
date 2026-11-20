@@ -36,7 +36,7 @@ fn round_trip(tree: &TransformTree) -> String {
 
 #[test]
 fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     let cases = [
         (
             TransformTree::Drawn(TransformShape::Shape),
@@ -109,7 +109,7 @@ fn each_node_and_number_reads_and_writes_in_the_shape_of_cql2_json() {
 
 #[test]
 fn every_not_drawn_reason_reads_and_writes_by_its_name() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     let reasons = [
         (NotDrawn::Centerline, "centerline"),
         (NotDrawn::Difference, "difference"),
@@ -213,7 +213,7 @@ fn depth_counts_the_levels_of_the_tree_as_an_expressions_depth() {
 
 #[test]
 fn a_function_the_tree_does_not_know_is_refused_naming_each_function_of_a_shape() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // The reader of a style document reports the message with the path of the transform.
     let error = serde_json::from_str::<TransformTree>(r#"{"op":"twist","args":[]}"#).unwrap_err();
     assert!(

@@ -70,7 +70,9 @@ repo() {
   local dir="$work/$1"
   mkdir -p "$dir/scripts" "$dir/src"
   git -C "${dir:?}" init -q -b main
+  mkdir -p "$dir/scripts/lib"
   cp "$SCRIPT" "$dir/scripts/mutants.sh"
+  cp "$ROOT/scripts/lib/bash.sh" "$ROOT/scripts/lib/root.sh" "$dir/scripts/lib/"
   printf 'target/\n' > "$dir/.gitignore"
   printf 'pub fn one() -> u8 {\n    1\n}\n' > "$dir/src/lib.rs"
   printf '# fixture\n' > "$dir/README.md"
@@ -215,8 +217,8 @@ d="$(repo bad-base)"
 expect_mutants 1 "a base that does not resolve" "$d" "does not resolve to a commit" "" --base nosuchref
 expect_mutants 1 "--base without a revision" "$d" "--base needs a revision" "" --base
 expect_mutants 1 "--base= without a revision" "$d" "--base needs a revision" "" --base=
-expect_mutants 1 "an unknown option" "$d" "unknown option '--all'" "" --all
-expect_mutants 1 "two shards" "$d" "more than one shard" "" 1/4 2/4
+expect_mutants 2 "an unknown option" "$d" "mutants.sh: unknown argument '--all'" "" --all
+expect_mutants 2 "two shards" "$d" "mutants.sh: unknown argument '2/4'" "" 1/4 2/4
 expect_mutants 1 "two bases" "$d" "more than one base" "" --base main --base=HEAD
 expect_mutants 1 "--since without a time" "$d" "--since needs a time" "" --since
 expect_mutants 1 "two times" "$d" "more than one --since" "" --since 2026-01-01 --since 2026-01-02

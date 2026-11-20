@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The mutation testing of ADR-0007: cargo-mutants changes the code one small edit at a time and
+# The mutation testing of OPS-pinned-stable-rust-toolchain: cargo-mutants changes the code one small edit at a time and
 # reports each edit no test notices — a test that runs without deciding. A sensor: it reports
 # what survived and fails only when the run itself breaks, not on what it counts. With a base,
 # only the Rust code changed since it is mutated: the lines changed from the merge base to the
@@ -24,22 +24,32 @@
 # baseline run, some 1,000 seconds on a runner, and a mutant that turns a parser's step into a
 # loop spent all of it. 300 seconds stay above the 205 the whole workspace's tests take there.
 #
-# Usage: bash scripts/mutants.sh [--base <revision> | --since <time>] [shard, e.g. 1/4]
+# Usage: bash scripts/mutants.sh [--root <dir>] [--base <revision> | --since <time>] [shard, e.g. 1/4]
 #   e.g. bash scripts/mutants.sh --base origin/main
 #        bash scripts/mutants.sh --since 2026-11-13T04:17:00Z 3/16
+# The root, this repository unless --root names another, is the workspace mutated. An argument it
+# does not read, such as an unknown option or a second shard, and a root that is no directory exit
+# 2; a usage error of its own options exits 1.
 set -uo pipefail
 # The diff is taken in this repository, never in one a caller names through git's variables
 # (docs/CONVENTIONS.md).
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/mutants.sh [--root <dir>] [--base <revision> | --since <time>] [shard]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
 CARGO_MUTANTS_VERSION="27.1.0"
-USAGE="usage: bash scripts/mutants.sh [--base <revision> | --since <time>] [shard]"
+USAGE="usage: bash $usage"
 
 BASE=""
 SINCE=""
-SHARD=""
+rest=()
 while (($#)); do
   case "$1" in
     --since)
@@ -61,21 +71,20 @@ while (($#)); do
       [[ -n "$BASE" ]] || { echo "mutants: --base needs a revision; $USAGE" >&2; exit 1; }
       shift
       ;;
-    -*) echo "mutants: unknown option '$1'; $USAGE" >&2; exit 1 ;;
     *)
-      [[ -z "$SHARD" ]] || { echo "mutants: more than one shard; $USAGE" >&2; exit 1; }
-      SHARD="$1"
+      rest+=("$1")
       shift
       ;;
   esac
 done
+rest_args "${BASH_SOURCE[0]}" "$usage" 1 "${rest[@]}"
+SHARD="${rest[0]:-}"
 
 if [[ -n "$BASE" && -n "$SINCE" ]]; then
   echo "mutants: --base or --since, not both; $USAGE" >&2
   exit 1
 fi
 
-cd "$ROOT" || exit 1
 if [[ -n "$SINCE" ]]; then
   BASE="$(git rev-list -1 --first-parent --before="$SINCE" HEAD)" || exit 1
   if [[ -n "$BASE" ]]; then

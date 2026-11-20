@@ -6,7 +6,7 @@
 # run on main without a pull request, so a red run reaches no one: a pull request shows only the
 # checks of its own head. This sensor asks the GitHub CLI for the latest scheduled run on main of
 # each workflow under .github/workflows/ whose triggers hold a 'schedule:', and lists each one that
-# did not succeed, with its workflow, its date, and its URL (ADR-0002, sensors of the GitHub
+# did not succeed, with its workflow, its date, and its URL (NUC-checks-are-bash §7, sensors of the GitHub
 # repository). An older failure before a later success is not listed: the latest run is the state.
 # A workflow without a scheduled run on main is listed too, since GitHub disables a schedule after
 # 60 days without activity in a public repository.
@@ -18,14 +18,20 @@
 #
 # Bash + coreutils + grep + sed, plus the GitHub CLI, authenticated through its web flow (AGENTS.md,
 # section 6); the JSON is read by gh's own --jq. Usage:
-#     scripts/sensor-scheduled-runs.sh [repository root]
+#     scripts/sensor-scheduled-runs.sh [--root <dir>]
 # The repository is the one gh resolves from the root's git remote. Exit code 0 always, except
-# 2 when the root does not exist, gh is missing, or gh cannot resolve the repository.
+# 2 on an argument it does not read, when the root does not exist, gh is missing, or gh cannot resolve the repository.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
-  || { echo "Scheduled runs sensor: '${1:-}' is not a directory." >&2; exit 2; }
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/sensor-scheduled-runs.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 GH="${GH:-gh}"
 NAME="Scheduled runs sensor"
 

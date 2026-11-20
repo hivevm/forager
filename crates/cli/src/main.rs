@@ -137,8 +137,9 @@ fn parse_render(args: &[OsString]) -> Result<RenderArgs, String> {
 }
 
 /// Loads a mapfile inside `base`, by default its directory, resolving `init=` projections with the
-/// built-in EPSG definitions and those of `epsg` (ADR-0019), and prints every diagnostic. The
-/// loader of the base context comes with the document, for the files its layers read.
+/// built-in EPSG definitions and those of `epsg` (API-init-projections-through-resolver), and
+/// prints every diagnostic. The loader of the base context comes with the document, for the files
+/// its layers read.
 #[expect(
     clippy::print_stderr,
     reason = "the CLI reports the loader's diagnostics on stderr"
@@ -234,8 +235,8 @@ fn render(args: &RenderArgs) -> ExitCode {
     }
 }
 
-/// The EPSG table a host file supplies (ADR-0019), within the size limit of a source. Each
-/// unusable line is a line of the message.
+/// The EPSG table a host file supplies (API-init-projections-through-resolver), within the size
+/// limit of a source. Each unusable line is a line of the message.
 fn read_epsg(file: &Path) -> Result<EpsgTable, String> {
     EpsgTable::with_table(&read_text(file)?).map_err(|errors| {
         errors

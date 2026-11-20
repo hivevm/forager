@@ -1,7 +1,7 @@
-//! The reader of a newer minor's document that does not read as this build's version (ADR-0014,
-//! ADR-0014): it finds where the typed read failed, drops what this build does not know there
-//! with a warning, keeps a condition that does not read as one that never matches, and reads
-//! again, at most [`MAX_DROPPED_VALUES`] times.
+//! The reader of a newer minor's document that does not read as this build's version
+//! (IR-schema-per-format-version, IR-schema-per-format-version): it finds where the typed read
+//! failed, drops what this build does not know there with a warning, keeps a condition that does
+//! not read as one that never matches, and reads again, at most [`MAX_DROPPED_VALUES`] times.
 
 use std::fmt;
 
@@ -177,9 +177,9 @@ fn value_depth(value: &Value) -> usize {
     })
 }
 
-/// The first operator in `value` that this build does not know: in an expression, one that is
-/// no operator of ADR-0015's tree; in a transform tree, where `transform`, one that is none of its
-/// functions either.
+/// The first operator in `value` that this build does not know: in an expression, one that is no
+/// operator of IR-expressions-as-cql2's tree; in a transform tree, where `transform`, one that is
+/// none of its functions either.
 fn unknown_operator(value: &Value, transform: bool) -> Option<String> {
     match value {
         Value::Object(object) => {
@@ -221,7 +221,7 @@ fn required_dropped(
 
 /// The field that holds what failed at `at`: a class style's transform tree is the whole
 /// `geom_transform`, so that unset, the style draws the feature's shape
-/// (ADR-0048).
+/// (IR-geomtransform-with-simplifypt).
 fn whole_transform(at: Pointer) -> Pointer {
     match at.segments() {
         [.., Segment::Key(field), Segment::Key(expression)]
@@ -272,7 +272,7 @@ fn never_matching(
 /// A transform tree's `not_drawn` reason at `path` that this build does not know, as serde's
 /// `reason` says, read as not drawn: the reason `syntax`, the one of the closed list that names no
 /// construct, which the engine's later warning names, with a warning naming the reason and its
-/// path. A reason added in a minor version so fails closed (ADR-0048).
+/// path. A reason added in a minor version so fails closed (IR-geomtransform-with-simplifypt).
 fn unknown_reason(value: &mut Value, path: &Pointer, reason: &str) -> Option<Diagnostic> {
     if !matches!(path.segments(), [.., Segment::Key(k)] if k == "not_drawn")
         || !is_unknown_variant(reason)
@@ -310,11 +310,12 @@ fn remove(value: &mut Value, at: &Pointer) {
     }
 }
 
-/// Reads `value`, a document of a newer minor that does not read as this build's version,
-/// dropping each value this build does not know with a warning naming it and its path: an enum
-/// value unsets its field, and an expression with an unknown operator or function becomes one
-/// that never matches, so that its class, label, or filter is kept (ADR-0015, ADR-0014). Anything
-/// else that does not read is the error `code`, naming its path.
+/// Reads `value`, a document of a newer minor that does not read as this build's version, dropping
+/// each value this build does not know with a warning naming it and its path: an enum value unsets
+/// its field, and an expression with an unknown operator or function becomes one that never
+/// matches, so that its class, label, or filter is kept (IR-expressions-as-cql2,
+/// IR-schema-per-format-version). Anything else that does not read is the error `code`, naming its
+/// path.
 pub(crate) fn read(mut value: Value, code: &str) -> Result<Read, Diagnostic> {
     let mut dropped = Vec::new();
     // Where a value was dropped, and the value, for an error that its absence causes.

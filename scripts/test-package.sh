@@ -128,7 +128,8 @@ check "check_archives, sourced, returns non-zero on a missing file and the shell
 tree="$work/tree"
 mkdir -p "$tree/scripts/lib" "$tree/stubs" "$tree/target/web"
 cp "$ROOT/scripts/package.sh" "$tree/scripts/"
-cp "$ROOT/scripts/lib/notice.sh" "$ROOT/scripts/lib/package.sh" "$tree/scripts/lib/"
+cp "$ROOT/scripts/lib/notice.sh" "$ROOT/scripts/lib/package.sh" "$ROOT/scripts/lib/bash.sh" \
+  "$ROOT/scripts/lib/root.sh" "$tree/scripts/lib/"
 cp "$ROOT/THIRD-PARTY-NOTICES.md" "$ROOT/LICENSE" "$ROOT/LICENSE-APACHE" "$tree/"
 printf '[workspace]\nmembers = []\n\n[workspace.package]\nversion = "9.9.9"\nedition = "2024"\n' \
   > "$tree/Cargo.toml"

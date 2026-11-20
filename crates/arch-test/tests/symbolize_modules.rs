@@ -1,6 +1,7 @@
 //! The modules of `symbolize` import one another in one direction only, as its `lib.rs` states:
-//! ADR-0008 decides the direction between crates, and this test holds the one inside the crate,
-//! which the pixmap work once broke by an alias `symbol` imported from `draw`, above it.
+//! ARCH-crates-as-ports-and-adapters decides the direction between crates, and this test holds the
+//! one inside the crate, which the pixmap work once broke by an alias `symbol` imported from
+//! `draw`, above it.
 
 mod module_direction;
 

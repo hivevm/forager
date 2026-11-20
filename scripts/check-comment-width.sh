@@ -3,7 +3,7 @@
 # Check: a comment line of a Rust file is at most 100 characters wide.
 #
 # rustfmt wraps code at 100 columns but not comments: its wrap_comments and comment_width are
-# unstable, and the pinned toolchain is stable (ADR-0007). This check fails on each line of a .rs
+# unstable, and the pinned toolchain is stable (OPS-pinned-stable-rust-toolchain). This check fails on each line of a .rs
 # file under crates/ or fuzz/ that git does not ignore where:
 #
 #   - the line is a comment: its first characters after the indentation are '//', which takes in
@@ -16,9 +16,10 @@
 # with '//' would be taken for a comment.
 #
 # Pure bash + git. Usage:
-#     scripts/check-comment-width.sh [repository root]
+#     scripts/check-comment-width.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-comment-width.sh passes fixtures.
-# Exit code 0 when every comment line fits, 1 otherwise, 2 on a root that is no directory.
+# Exit code 0 when every comment line fits, 1 otherwise, 2 on an argument it does not read
+# or a root that is no directory.
 
 set -uo pipefail
 # A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
@@ -26,8 +27,14 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
-  || { echo "Comment width check: '${1:-}' is not a directory." >&2; exit 2; }
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-comment-width.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 WIDTH=100
 export LC_ALL=C.UTF-8
 

@@ -27,7 +27,7 @@ reprojected through the geotransform into that frame of the image, and drawn the
 size in units other than pixels from `msGetGeoCellSize` ([scale](scale.md)). In the frame, the
 map's units are the image's pixels: a layer's `GEOMTRANSFORM` and its `[map_cellsize]`, the clip,
 and the labels work in pixels, as in MapServer
-(ADR-0045). A rotated map's centre sits half a pixel off an
+(GEO-map-rotation-in-reprojection). A rotated map's centre sits half a pixel off an
 unrotated one's, as MapServer centres the geotransform on the image's width and height over two.
 
 **Symbols and labels on a rotated map.** `pointLayerDrawShape` in `src/mapdraw.c` subtracts the

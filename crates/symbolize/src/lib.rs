@@ -1,7 +1,7 @@
 //! The symbolization of a style: a feature's geometry drawn in a style, bound to the feature,
-//! turned into the drawing operations of the display list, as MapServer draws it. It is
-//! synchronous and does no I/O (ADR-0008); the engine orders what it draws, as MapServer's shape
-//! cache orders it, and reports what a layer left undrawn.
+//! turned into the drawing operations of the display list, as MapServer draws it. It is synchronous
+//! and does no I/O (ARCH-crates-as-ports-and-adapters); the engine orders what it draws, as
+//! MapServer's shape cache orders it, and reports what a layer left undrawn.
 //!
 //! Its modules import one another in one direction only: `draw` imports `canvas`, `clip`,
 //! `extent`, `geom_transform`, `layer_transform`, `line`, `marker`, `shade`, and `symbol`; `label`
@@ -21,7 +21,7 @@
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
-// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0017).
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (IR-c-ports-in-style-ir).
 #![deny(clippy::cast_possible_truncation)]
 
 mod bounds;

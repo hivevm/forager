@@ -167,7 +167,7 @@ fn a_style_of_a_geomtransform_draws_its_circle_unwarned() {
 
 #[test]
 fn only_the_centre_of_a_circle_is_reprojected() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // From Mercator into Mercator of scale 2, the centre (10, -20) lands at (20, -40); the
     // radius of 10 stays 10 map units, as circleLayerDrawShape reprojects only the centre and
     // divides the radius by the map's cellsize, where a whole reprojection would make it 20.
@@ -194,7 +194,7 @@ fn only_the_centre_of_a_circle_is_reprojected() {
 
 #[test]
 fn a_circle_whose_centre_does_not_reproject_is_drawn_about_it_unreprojected_with_a_warning() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // An orthographic map about 0° 0°, a layer in longitude and latitude: the centre (180, 0), on
     // the far side, does not reproject, and circleLayerDrawShape draws the circle about it as
     // msProjectPoint leaves it, at 180 metres east, a radius of 180 metres, some 9 pixels each.

@@ -10,7 +10,7 @@
 # sensor runs each commit's own scripts. The rustfmt cases need cargo with rustfmt, as the rust
 # job of CI has it.
 #
-# Verifies: ADR-0002
+# Verifies: NUC-checks-are-bash
 # Inputs: scripts/sensor-green-commits.sh scripts/lib/
 #
 # Usage:
@@ -136,7 +136,7 @@ d="$(repo ci-names-no-branch)"
 stub "$d" check-docs 'if [[ -n "${GITHUB_BASE_REF:-}${GITHUB_ACTIONS:-}" ]]; then exit 1; fi'
 commit "$d" "feat: a docs check that reads CI's branch"
 GITHUB_BASE_REF=main GITHUB_ACTIONS=true expect_sensor 0 \
-  "a check reads no branch CI names, so a draft ADR on a commit before its numbering is no finding" \
+  "a check reads no branch CI names, so a commit is judged by itself alone" \
   "$d" "nothing to report"
 
 d="$(repo merge)"
@@ -181,26 +181,6 @@ cp -R "$ROOT/scripts/lib" "$work/changed-sensor/scripts/"
 { cat "$SENSOR"; echo "# changed"; } > "$work/changed-sensor/scripts/sensor-green-commits.sh"
 bash "$work/changed-sensor/scripts/sensor-green-commits.sh" --root "$d" base >/dev/null 2>&1
 check "a changed sensor judges every commit again" [ "$(judged)" -eq 11 ]
-
-d="$(repo numbering)"
-stub "$d" check-docs 'if [[ -e docs/adr/TODO || -e TODO ]]; then exit 1; fi'
-commit "$d" "feat: a docs check"
-mkdir -p "$d/docs/adr"
-: > "$d/docs/adr/TODO"
-commit "$d" "docs(adr): number the drafts as ADR-0001"
-rm "$d/docs/adr/TODO"
-commit "$d" "docs: cite the drafts by their numbers"
-expect_sensor 0 "the first numbering commit, which ADR-0002 has fail the docs checks, is no finding" \
-  "$d" "nothing to report"
-: > "$d/TODO"
-commit "$d" "docs(adr): a todo"
-expect_sensor 0 "another commit typed docs(adr) is still judged" "$d" "docs(adr): a todo — fails: docs"
-rm "$d/TODO"
-commit "$d" "docs: no todo"
-: > "$d/TODO"
-commit "$d" "docs(adr): number the drafts as ADR-0002"
-expect_sensor 0 "a commit with the numbering subject that changes a path outside docs/adr/ is still judged" \
-  "$d" "docs(adr): number the drafts as ADR-0002 — fails: docs"
 
 d="$(repo shell-lint)"
 stub "$d" check-shell 'if [[ -d tools ]] && grep -rl BAD tools; then exit 1; fi'

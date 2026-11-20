@@ -90,18 +90,19 @@ outside the part.
 **A `GEOMTRANSFORM` expression.** An expression of a layer or of a style is read as MapServer's
 lexer and grammar read it (`src/maplexer.l`, `src/mapparser.y`, the rules `shape_exp`, `math_exp`,
 and `string_exp`), function names without regard to case, without the parentheses `loadLayer` and
-`loadStyle` strip. The frontend translates it into a transform tree (ADR-0048): `[shape]`, and
-`generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia` of a
-shape, nested. A number is written, `[map_cellsize]`, or computed of those by `+ - * / % ^` and
-parentheses, as the grammar reduces them; the frontend folds every operation without
-`[map_cellsize]` to one number. A unary `-` leaves its operand as it is, as the rule `'-' math_exp
-%prec NEG { $$ = $2; }` does, while `-3` written together is one negative number, so
-`[map_cellsize]-2` does not parse. `%` takes its operands cut to `int`s, `INT_MIN` past an `int`
-(ADR-0017). `[data_cellsize]` is 0, as `msGeomTransformShape` binds it on every layer but a contour
-layer (`src/mapgeomtransform.c:285-291`), which Forager does not carry. `smoothsia`'s size and
-iterations are 3 and 1 where they are not written, as the grammar calls `msSmoothShapeSIA(s, 3, 1,
-NULL)`; its preprocessing `all` or `angle` is read without regard to case, as `strcasecmp` reads it,
-and any other text is none.
+`loadStyle` strip. The frontend translates it into a transform tree
+(IR-geomtransform-with-simplifypt): `[shape]`, and `generalize`, `densify`, `simplify`,
+`simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia` of a shape, nested. A number is written,
+`[map_cellsize]`, or computed of those by `+ - * / % ^` and parentheses, as the grammar reduces
+them; the frontend folds every operation without `[map_cellsize]` to one number. A unary `-` leaves
+its operand as it is, as the rule `'-' math_exp %prec NEG { $$ = $2; }` does, while `-3` written
+together is one negative number, so `[map_cellsize]-2` does not parse. `%` takes its operands cut to
+`int`s, `INT_MIN` past an `int` (IR-c-ports-in-style-ir). `[data_cellsize]` is 0, as
+`msGeomTransformShape` binds it on every layer but a contour layer
+(`src/mapgeomtransform.c:285-291`), which Forager does not carry. `smoothsia`'s size and iterations
+are 3 and 1 where they are not written, as the grammar calls `msSmoothShapeSIA(s, 3, 1, NULL)`; its
+preprocessing `all` or `angle` is read without regard to case, as `strcasecmp` reads it, and any
+other text is none.
 
 An expression the grammar parses that holds any other construct is the tree `not_drawn`, naming the
 first such construct in the expression's reading order: a function the tree lacks, `centerline`,
@@ -134,57 +135,57 @@ multipoint is the point shape of its parts: one for a GeoJSON or a shapefile mul
   longer than `t` cut into `floor(length / t) + 1` equal ones. It fails a point and a `t` not
   above 0.
 - `simplify(s, t)` (`msGEOSSimplify`, `src/mapgeos.c`): `s` as GEOS's Douglas-Peucker simplifies it
-  at the tolerance `t`, by a Douglas-Peucker ported from JTS (ADR-0050). A point shape keeps the
-  points of its first part, which `msGEOSShape2Geometry` builds into a point or a multipoint, and
-  loses its other parts. Each part of a line keeps its end points and the points the Douglas-Peucker
-  keeps, which splits a section at the first of its farthest points, as GEOS does, and needs no
-  recursion, so no line overflows the stack. A part without points is dropped. A polygon's rings are
-  grouped as `msGEOSShape2Geometry` groups them: each outer ring, by `msIsOuterRing`, with the inner
-  rings whose first or second point lies in it, one polygon where one ring is outer, a multipolygon
-  otherwise; a ring neither outer nor in an outer one is dropped. Each ring is simplified as a line,
-  then loses its first point where it lies within `t` of the segment between its neighbours, and is
-  removed below 4 coordinates. A polygon whose shell is removed is removed with its holes, and a
-  shape without polygons draws nothing. The result is kept where geo's `Validation` finds it valid,
-  a multipolygon as a whole, and is otherwise replaced by geo's `unary_union` of its polygons, where
-  GEOS takes a buffer of 0: the two agree on most results, within 10⁻⁶ in the shape's unit and in
-  another order of the vertices, but where the simplified ring crosses itself `unary_union` may keep
-  another lobe than GEOS, as it did for 7 of 40 repaired random polygons; no case in scope
-  simplifies a polygon. A tolerance of 0 drops the points that lie on the segment of their section,
-  as GEOS does; a tolerance that is no number keeps every point, as GEOS's comparisons with it are
-  false. A multipolygon's member whose shell is removed while one of its holes is kept leaves the
-  hole as a stray line in GEOS's result, which turns the shape into a line; Forager removes the
-  member with its holes.
+  at the tolerance `t`, by a Douglas-Peucker ported from JTS (GEO-own-circle-for-buffer). A point
+  shape keeps the points of its first part, which `msGEOSShape2Geometry` builds into a point or a
+  multipoint, and loses its other parts. Each part of a line keeps its end points and the points the
+  Douglas-Peucker keeps, which splits a section at the first of its farthest points, as GEOS does,
+  and needs no recursion, so no line overflows the stack. A part without points is dropped. A
+  polygon's rings are grouped as `msGEOSShape2Geometry` groups them: each outer ring, by
+  `msIsOuterRing`, with the inner rings whose first or second point lies in it, one polygon where
+  one ring is outer, a multipolygon otherwise; a ring neither outer nor in an outer one is dropped.
+  Each ring is simplified as a line, then loses its first point where it lies within `t` of the
+  segment between its neighbours, and is removed below 4 coordinates. A polygon whose shell is
+  removed is removed with its holes, and a shape without polygons draws nothing. The result is kept
+  where geo's `Validation` finds it valid, a multipolygon as a whole, and is otherwise replaced by
+  geo's `unary_union` of its polygons, where GEOS takes a buffer of 0: the two agree on most
+  results, within 10⁻⁶ in the shape's unit and in another order of the vertices, but where the
+  simplified ring crosses itself `unary_union` may keep another lobe than GEOS, as it did for 7 of
+  40 repaired random polygons; no case in scope simplifies a polygon. A tolerance of 0 drops the
+  points that lie on the segment of their section, as GEOS does; a tolerance that is no number keeps
+  every point, as GEOS's comparisons with it are false. A multipolygon's member whose shell is
+  removed while one of its holes is kept leaves the hole as a stray line in GEOS's result, which
+  turns the shape into a line; Forager removes the member with its holes.
 - `simplifypt(s, t)` (`msGEOSTopologyPreservingSimplify`, `src/mapgeos.c`): `s` as GEOS's
   topology-preserving simplifier simplifies it at the tolerance `t`, by a port of JTS's
-  `TopologyPreservingSimplifier` (ADR-0047). The shape is built as for `simplify`, and a point
-  shape keeps the points of its first part. The lines of the shape, each part of a line, or each
-  polygon's shell and then its holes, are simplified together, one after the other in the
-  shape's order. Each is a Douglas-Peucker as for `simplify`, but a section is flattened only
-  where its new segment meets no other segment of the shape, simplified or not yet, in a point
-  interior to either, lies on no equal segment, and carries no other line of the shape to its other
-  side; a line keeps at least 2 points, and a closed one 4. A polygon's ring then loses its first
-  point where it lies within `t` of the segment between its neighbours, the ring holds more than 4
-  coordinates, and the new segment passes the same tests; a closed line keeps its first point. No
-  ring is removed and nothing is repaired. The port follows JTS's `master`, not GEOS 3.12.1, which
-  lacks the test of an equal segment and of a line carried across: where a flattening carries one
-  line of a shape across another, or a hole out of its shell by its ring's first point, MapServer
-  at the pin flattens it and Forager keeps the points. GEOS 3.12.1's results for a polygon with
-  holes also vary from run to run. On the case's lines and on `world_testpoly.shp` the two agree
-  bit for bit. A tolerance that is no number flattens every section the tests allow, as GEOS's
-  comparisons with it are false; a section whose distances are all no number is kept whole where
-  the tests refuse to flatten it, where GEOS would split it again without end.
+  `TopologyPreservingSimplifier` (GEO-simplifypt-ported-from-jts). The shape is built as for
+  `simplify`, and a point shape keeps the points of its first part. The lines of the shape, each
+  part of a line, or each polygon's shell and then its holes, are simplified together, one after the
+  other in the shape's order. Each is a Douglas-Peucker as for `simplify`, but a section is
+  flattened only where its new segment meets no other segment of the shape, simplified or not yet,
+  in a point interior to either, lies on no equal segment, and carries no other line of the shape to
+  its other side; a line keeps at least 2 points, and a closed one 4. A polygon's ring then loses
+  its first point where it lies within `t` of the segment between its neighbours, the ring holds
+  more than 4 coordinates, and the new segment passes the same tests; a closed line keeps its first
+  point. No ring is removed and nothing is repaired. The port follows JTS's `master`, not GEOS
+  3.12.1, which lacks the test of an equal segment and of a line carried across: where a flattening
+  carries one line of a shape across another, or a hole out of its shell by its ring's first point,
+  MapServer at the pin flattens it and Forager keeps the points. GEOS 3.12.1's results for a polygon
+  with holes also vary from run to run. On the case's lines and on `world_testpoly.shp` the two
+  agree bit for bit. A tolerance that is no number flattens every section the tests allow, as GEOS's
+  comparisons with it are false; a section whose distances are all no number is kept whole where the
+  tests refuse to flatten it, where GEOS would split it again without end.
 - `buffer(s, d)` (`msGEOSBuffer`, `src/mapgeos.c`): `s` as `GEOSBuffer_r` buffers it by the distance
   `d` with 30 segments a quadrant, by geo's buffer with round joins and round caps of π/60, but for
-  a point's circle (ADR-0050). The shape is built as for `simplify`: a point shape is the point, or
-  the multipoint, of its first part; a line's parts are one line or a multiline, a part without
-  points dropped; a polygon's rings are grouped into polygons as `simplify` groups them. The result
-  is always a polygon: each polygon's shell and holes, a point's circle of 120 segments, a line's
-  outline with round ends, and a polygon grown by a positive `d` and shrunk by a negative one. A
-  line whose `d` lies above 0 but below a floor is buffered by the floor, where GEOS keeps the
-  thinner buffer: the larger of 2^-24 of the size of its parts' joint bounds, the larger of their
-  width and height, and 2^-40 of their reach, the largest magnitude of their coordinates. i_overlay
-  4.5.2, under geo, may walk a thinner stroke without end or return no polygon. A point or a line
-  buffered by a `d` not above 0, and a polygon shrunk until nothing is left, is GEOS's empty
+  a point's circle (GEO-own-circle-for-buffer). The shape is built as for `simplify`: a point shape
+  is the point, or the multipoint, of its first part; a line's parts are one line or a multiline, a
+  part without points dropped; a polygon's rings are grouped into polygons as `simplify` groups
+  them. The result is always a polygon: each polygon's shell and holes, a point's circle of 120
+  segments, a line's outline with round ends, and a polygon grown by a positive `d` and shrunk by a
+  negative one. A line whose `d` lies above 0 but below a floor is buffered by the floor, where GEOS
+  keeps the thinner buffer: the larger of 2^-24 of the size of its parts' joint bounds, the larger
+  of their width and height, and 2^-40 of their reach, the largest magnitude of their coordinates.
+  i_overlay 4.5.2, under geo, may walk a thinner stroke without end or return no polygon. A point or
+  a line buffered by a `d` not above 0, and a polygon shrunk until nothing is left, is GEOS's empty
   polygon, which `msGEOSGeometry2Shape` turns into one ring without points. The shape keeps GEOS's
   geometry, so `buffer` or `simplify` after it returns it empty, as `msGEOSBuffer` and
   `msGEOSSimplify` build no geometry for a shape that has one; a function of MapServer's own after
@@ -295,7 +296,7 @@ same failures.
 `msDrawTransformedShape` leaves its parser's `dblval` unset, so a style's `[map_cellsize]` reads an
 uninitialised double at the pin (`src/mapparser.y:1121-1128`). No case of msautotest uses it;
 Forager deviates to the one value the name has on a layer
-(ADR-0048).
+(IR-geomtransform-with-simplifypt).
 
 Where a style's tree fails on a shape, MapServer's draw of the layer fails and `msDrawMap` makes no
 map (`src/mapdraw.c:1402-1405`, `508-519`). Forager deviates: the style draws nothing on that

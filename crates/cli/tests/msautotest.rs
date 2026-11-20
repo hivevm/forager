@@ -94,18 +94,20 @@ const SKIPPED: &[(&str, &str)] = &[
     ),
 ];
 
-/// The EPSG codes the suite names beyond those built into the resolver (ADR-0019). The suite's own
-/// init file [`EPSG_FILE`] defines some; each code it lacks has a stand-in in longitude and
-/// latitude, so that the test carries no EPSG data (ADR-0037): G-1
-/// decides that a mapfile loads, and a case whose layer is in a stand-in is not drawn right.
+/// The EPSG codes the suite names beyond those built into the resolver
+/// (API-init-projections-through-resolver). The suite's own init file [`EPSG_FILE`] defines some;
+/// each code it lacks has a stand-in in longitude and latitude, so that the test carries no EPSG
+/// data (GEO-proj-ported-with-libm): G-1 decides that a mapfile loads, and a case whose layer is in
+/// a stand-in is not drawn right.
 const EPSG_CODES: &[u32] = &[
     2157, 3347, 3395, 3978, 21781, 25833, 26711, 26915, 26917, 27700, 102977,
 ];
 
 /// The suite's own init file, `wxs/data/epsg2`. Named by a path, as in `init=./data/epsg2:42304`,
-/// the frontend reads it (ADR-0019); named bare, as `init=epsg2:42304`, PROJ finds it through
-/// `PROJ_DATA`, which msautotest's run sets and the CLI has no counterpart of, so the CLI fails
-/// that mapfile and the test loads it again with a stand-in for the file.
+/// the frontend reads it (API-init-projections-through-resolver); named bare, as
+/// `init=epsg2:42304`, PROJ finds it through `PROJ_DATA`, which msautotest's run sets and the CLI
+/// has no counterpart of, so the CLI fails that mapfile and the test loads it again with a stand-in
+/// for the file.
 const INIT_FILE: &str = "epsg2";
 
 /// The suite's EPSG codes, and a stand-in for every code of its init file named bare.
@@ -193,7 +195,7 @@ fn epsg_table() -> String {
 #[ignore = "needs the msautotest suite; scripts/check-rust.sh fetches it and runs this test"]
 fn every_msautotest_mapfile_loads_without_an_error() {
     // Verifies: G-1
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     let suite = suite();
     let table =
         std::env::temp_dir().join(format!("forager-msautotest-{}.epsg", std::process::id()));
@@ -243,7 +245,7 @@ fn every_msautotest_mapfile_loads_without_an_error() {
     std::fs::remove_file(&table).unwrap();
     assert_eq!(
         with_init_file, 1,
-        "only the mapfile that names the init file bare needs the stand-in (ADR-0019)"
+        "only the mapfile that names the init file bare needs the stand-in (API-init-projections-through-resolver)"
     );
 
     assert_eq!(
@@ -593,17 +595,18 @@ fn conformance_module() -> PathBuf {
     ))
 }
 
-/// G-9: every case in scope, its shapefiles' features written into its map, renders natively and
-/// on wasm32 to the same RGBA buffer, byte for byte (Q-2). The module is the browser bindings'
-/// wasm32 build, of the same core crates and profile as the bundle, run in wasmi (ADR-0034).
+/// G-9: every case in scope, its shapefiles' features written into its map, renders natively and on
+/// wasm32 to the same RGBA buffer, byte for byte (Q-2). The module is the browser bindings' wasm32
+/// build, of the same core crates and profile as the bundle, run in wasmi
+/// (TST-wasm-renders-in-wasmi).
 #[test]
 #[ignore = "needs the msautotest suite and the conformance module; scripts/check-rust.sh builds \
             them and runs this test"]
 fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
     // Verifies: G-9
     // Verifies: Q-2
-    // Verifies: ADR-0034
-    // Verifies: ADR-0037, for misc/quoting.map, reprojected from the
+    // Verifies: TST-wasm-renders-in-wasmi
+    // Verifies: GEO-proj-ported-with-libm, for misc/quoting.map, reprojected from the
     // suite's EPSG:3978 natively and on wasm32
     let suite = suite();
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
@@ -667,7 +670,7 @@ fn every_case_in_scope_renders_alike_natively_and_on_wasm32() {
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     zigzag_renders_alike_natively_and_on_wasm32("simplify");
 }
 
@@ -676,7 +679,7 @@ fn a_simplified_zigzag_of_thousands_of_points_renders_alike_natively_and_on_wasm
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn a_zigzag_simplified_with_its_topology_renders_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-0047
+    // Verifies: GEO-simplifypt-ported-from-jts
     zigzag_renders_alike_natively_and_on_wasm32("simplifypt");
 }
 
@@ -734,7 +737,7 @@ fn zigzag_renders_alike_natively_and_on_wasm32(function: &str) {
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn points_buffered_to_circles_render_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
     let mapfile = "MAP SIZE 120 120 EXTENT 0 0 120 120 IMAGECOLOR 255 255 255\n\
@@ -780,7 +783,7 @@ fn points_buffered_to_circles_render_alike_natively_and_on_wasm32() {
 #[test]
 #[ignore = "needs the conformance module; scripts/check-rust.sh builds it and runs this test"]
 fn lines_brushed_with_their_tiles_render_alike_natively_and_on_wasm32() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     let module = std::fs::read(conformance_module()).expect("the conformance module reads");
     let module = wasm::Wasm::new(&module).expect("wasmi compiles the conformance module");
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("brushed");
@@ -930,8 +933,9 @@ fn render_and_compare(
     Ok(((comparison.passes(), comparison.to_string()), labels))
 }
 
-/// What differs between the labels of `case` Forager renders and MapServer's, as the record
-/// beside the list holds them (G-10, ADR-0033); an error is a record missing or unreadable.
+/// What differs between the labels of `case` Forager renders and MapServer's, as the record beside
+/// the list holds them (G-10, TST-noise-measured-against-mapserver); an error is a record missing
+/// or unreadable.
 fn labels_against_record(case: &Case, rendered: &[CachedLabel]) -> Result<Vec<String>, String> {
     let path = labels::record_path(case);
     let text = std::fs::read_to_string(&path)

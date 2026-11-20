@@ -14,7 +14,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The `.dbf` beside a shapefile: its header is checked when the shapefile opens, and its records
-//! are read as the features' properties where a property is read (ADR-0023).
+//! are read as the features' properties where a property is read (API-typed-feature-properties).
 
 use std::borrow::Cow;
 
@@ -146,8 +146,9 @@ impl Dbf {
     }
 
     /// The value of `field` in `record` as `msDBFReadAttribute` reads it: up to its first NUL,
-    /// trailing blanks cut, leading blanks cut from an `N`, `F`, or `D` field, and a null `N`,
-    /// `F`, or `D` read as `0`; decoded as UTF-8, an invalid byte replaced (ADR-0021).
+    /// trailing blanks cut, leading blanks cut from an `N`, `F`, or `D` field, and a null `N`, `F`,
+    /// or `D` read as `0`; decoded as UTF-8, an invalid byte replaced
+    /// (API-shapefile-reader-from-mapserver).
     fn value<'a>(&self, record: &'a [u8], field: &Field) -> Value<'a> {
         let (offset, size) = (field.offset as usize, field.size as usize);
         let raw = &record[offset..offset + size];

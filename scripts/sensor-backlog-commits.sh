@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Sensor: commits that add a backlog entry beside other changes (ADR-0005 — a session creates a
+# Sensor: commits that add a backlog entry beside other changes (NUC-large-work-is-planned §7 — a session creates a
 # backlog entry in a commit of its own, so a branch that is dropped can hand the entry on).
 #
 # Lists, between a base and a head, each commit that adds a file under 'docs/backlog/' and
@@ -20,15 +20,23 @@
 # Without a base, the merge base of head with origin/main (else main) is used; CI passes the
 # pull request's base. A base of zeros, which a push event reports for a new branch, counts as
 # none. With nothing to compare — on main without a remote, or base and head the same — it says
-# so. Exit code 0 always, except 2 on a base or head that does not resolve.
+# so. Exit code 0 always, except 2 on a base or head that does not resolve, an argument it does
+# not read, or a root that is no directory.
 
 set -uo pipefail
+
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
 
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
 
-enter_root "Backlog commits sensor" "${BASH_SOURCE[0]}" "$@"
-shift "$ROOT_TAKEN"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/sensor-backlog-commits.sh [--root <dir>] [base [head]]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 2 "$@"
 
 resolve_change "Backlog commits sensor" "${1:-}" "${2:-HEAD}" || exit 0
 base="$CHANGE_BASE" head="$CHANGE_HEAD"
@@ -60,6 +68,6 @@ if ((${#findings[@]} == 0)); then
   echo "Backlog commits sensor ($short_base..$short_head): nothing to report."
   exit 0
 fi
-echo "Backlog commits sensor ($short_base..$short_head): ${#findings[@]} commit(s) that add a backlog entry beside other changes than a ticket deleted — ADR-0005 has a session create each entry in a commit of its own, so a dropped branch can hand it on:"
+echo "Backlog commits sensor ($short_base..$short_head): ${#findings[@]} commit(s) that add a backlog entry beside other changes than a ticket deleted — NUC-large-work-is-planned §7 has a session create each entry in a commit of its own, so a dropped branch can hand it on:"
 printf '  - %s\n' "${findings[@]}"
 exit 0

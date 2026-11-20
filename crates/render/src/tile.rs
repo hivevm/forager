@@ -7,11 +7,11 @@ use std::cell::OnceCell;
 use crate::{DrawOp, PremultipliedImage};
 
 /// A fill tile or a brush tile, a display item's counted reference to one image however many
-/// polygons it fills or lines it brushes (ADR-0029): `width` by `height` pixels, transparent but
-/// for the drawings `marks` in them, drawn in turn. Whoever keeps count of the bytes of a render's
-/// images counts [`Tile::bytes`] from the moment the tile exists, so that one past the bound is
-/// refused before anything is allocated for it; the renderer builds the pixels from the marks when
-/// it first draws with the tile.
+/// polygons it fills or lines it brushes (REN-pixmaps-held-once-per-render): `width` by `height`
+/// pixels, transparent but for the drawings `marks` in them, drawn in turn. Whoever keeps count of
+/// the bytes of a render's images counts [`Tile::bytes`] from the moment the tile exists, so that
+/// one past the bound is refused before anything is allocated for it; the renderer builds the
+/// pixels from the marks when it first draws with the tile.
 #[derive(Debug, PartialEq)]
 pub struct Tile {
     width: u32,

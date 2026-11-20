@@ -57,7 +57,7 @@ glyph of its `CHARACTER`, its first character or a numeric entity such as `&#873
 its start, as `msUTF8ToUniChar` reads it, in the font the font set names by its `FONT`, at each
 point inside the map's extent, as the TrueType branch of `msDrawMarkerSymbolInternal` and
 `drawGlyphMarker` in `src/maprendering.c` and `agg2RenderGlyphsPath` in `src/mapagg.cpp` draw it
-([ADR-0044](../adr/0044-truetype-marker-glyph-through-a-port.md)).
+([API-truetype-marker-through-port](../adr/API-truetype-marker-through-port.md)).
 Its colours are a filled symbol's: the glyph is filled with `COLOR` and outlined with
 `OUTLINECOLOR`, at the style's `WIDTH` cut to an integer, plus 1. The glyph is read as a label's is,
 unhinted, at `MS_MAX(MS_NINT(scale), 1)` points, the scale the style's size bounded by `MINSIZE` and
@@ -78,7 +78,7 @@ unscaled. The label cache sizes the marker of a class's first style the same way
 whatever the style's scale range, as a pixmap's image is. A glyph with a point more than 4194304
 pixels past the image, `MAX_GLYPH_REACH`, is not drawn, where AGG's fixed-point coordinates would
 overflow, and the layer warns with `symbol-not-drawn`, once
-([ADR-0049](../adr/0049-third-party-failures-guarded.md)).
+([ARCH-third-party-failures-guarded](../adr/ARCH-third-party-failures-guarded.md)).
 
 **A TrueType symbol along a line.** A line layer's style whose symbol is a TrueType symbol and whose
 `GAP` is not 0 draws its glyph along the line as `msImagePolylineMarkers` places a vector symbol,
@@ -90,50 +90,48 @@ tile, as under *A symbol along a line without a `GAP`* below.
 
 **A pixmap at a point.** A point layer's style whose symbol is a pixmap draws its image at each
 point inside the map's extent, as `msDrawMarkerSymbolInternal` in `src/maprendering.c` and
-`agg2RenderPixmapSymbol` in `src/mapagg.cpp` draw it. The image is read through the resource
-loader the first time a feature the layer draws names it, in a style within its scale range,
-from the path its `IMAGE` names, within 32 MiB, the bound of a font file, and decoded once for
-the whole render, which every point draws from
-([ADR-0029](../adr/0029-pixmaps-held-once-per-render.md)); a PNG is read as `readPNG`
-in `src/mapimageio.c` reads it, its colours premultiplied by their alpha. The image is read, and
-counted against the bytes of the render's images, even where none of the feature's points lies
-inside the map's extent; MapServer reads it only when `msDrawMarkerSymbol` runs, so there a pixmap
-no point draws is never read, and one that does not load fails nothing. Its scale is the
-style's size, its default the image's height, bounded by `MINSIZE` and `MAXSIZE`, over the
-image's height; so without a size, and with `MAXSIZE` not below the height, it is 1. The point is
-moved by the style's `OFFSET` and `POLAROFFSET` as a symbol's is, and by the symbol's anchor point,
-turned with the image, as a vector symbol's (`msAdjustMarkerPos`), at the size `msGetMarkerSize`
-gives a pixmap: the style's size, or the image's height without one, times the scale factor, cut to
-whole pixels, then bounded by `MINSIZE` and `MAXSIZE` unscaled and cut again; at a size of 1 the
-image's own width and height, otherwise that size high and as wide as the image is at that height. A
-40 × 20 image is 40 × 20 at `SIZE 1`, 20 × 10 at `SIZE 10.9`, and 60 × 30 without a size at a scale
-factor of 1.5. Unturned and at a scale of 1, the image is blended unscaled at the point so moved,
-every pixel at full cover, its top-left pixel at `MS_NINT(x - width / 2.)` and
-`MS_NINT(y - height / 2.)`: a point at the pixel (50.5, 41.5) puts a 32 × 32 image's top-left
-pixel at (34, 26), `lrint` rounding 34.5 and 25.5 half to even. Neither the style's colour nor
-its opacity reaches the image (`computeSymbolStyle`). A scale of 0 draws nothing
-(`msDrawMarkerSymbolInternal`). At a scale other than 1, or turned by an `ANGLE` whose radians,
-`ANGLE × MS_DEG_TO_RAD`, are neither 0 nor `MS_PI × 2` (360 is, exactly, in `double`), the image
-is resampled as `agg2RenderPixmapSymbol` resamples it: the square of half-side
-`MS_NINT(max(width, height) × scale × 1.415) / 2 + 1`, in integer division, about the point is
-filled under the non-zero rule without a gamma, each of its pixels the image sampled bilinearly,
-transparent beyond it, at the position the inverse of the image's transformation takes the pixel's
-centre to: a translation by minus half the image, a rotation by minus the angle, so
-counter-clockwise on the map, the scaling, and a translation to the point, in the order of
+`agg2RenderPixmapSymbol` in `src/mapagg.cpp` draw it. The image is read through the resource loader
+the first time a feature the layer draws names it, in a style within its scale range, from the path
+its `IMAGE` names, within 32 MiB, the bound of a font file, and decoded once for the whole render,
+which every point draws from
+([REN-pixmaps-held-once-per-render](../adr/REN-pixmaps-held-once-per-render.md)); a PNG is read as
+`readPNG` in `src/mapimageio.c` reads it, its colours premultiplied by their alpha. The image is
+read, and counted against the bytes of the render's images, even where none of the feature's points
+lies inside the map's extent; MapServer reads it only when `msDrawMarkerSymbol` runs, so there a
+pixmap no point draws is never read, and one that does not load fails nothing. Its scale is the
+style's size, its default the image's height, bounded by `MINSIZE` and `MAXSIZE`, over the image's
+height; so without a size, and with `MAXSIZE` not below the height, it is 1. The point is moved by
+the style's `OFFSET` and `POLAROFFSET` as a symbol's is, and by the symbol's anchor point, turned
+with the image, as a vector symbol's (`msAdjustMarkerPos`), at the size `msGetMarkerSize` gives a
+pixmap: the style's size, or the image's height without one, times the scale factor, cut to whole
+pixels, then bounded by `MINSIZE` and `MAXSIZE` unscaled and cut again; at a size of 1 the image's
+own width and height, otherwise that size high and as wide as the image is at that height. A 40 × 20
+image is 40 × 20 at `SIZE 1`, 20 × 10 at `SIZE 10.9`, and 60 × 30 without a size at a scale factor
+of 1.5. Unturned and at a scale of 1, the image is blended unscaled at the point so moved, every
+pixel at full cover, its top-left pixel at `MS_NINT(x - width / 2.)` and `MS_NINT(y - height / 2.)`:
+a point at the pixel (50.5, 41.5) puts a 32 × 32 image's top-left pixel at (34, 26), `lrint`
+rounding 34.5 and 25.5 half to even. Neither the style's colour nor its opacity reaches the image
+(`computeSymbolStyle`). A scale of 0 draws nothing (`msDrawMarkerSymbolInternal`). At a scale other
+than 1, or turned by an `ANGLE` whose radians, `ANGLE × MS_DEG_TO_RAD`, are neither 0 nor `MS_PI ×
+2` (360 is, exactly, in `double`), the image is resampled as `agg2RenderPixmapSymbol` resamples it:
+the square of half-side `MS_NINT(max(width, height) × scale × 1.415) / 2 + 1`, in integer division,
+about the point is filled under the non-zero rule without a gamma, each of its pixels the image
+sampled bilinearly, transparent beyond it, at the position the inverse of the image's transformation
+takes the pixel's centre to: a translation by minus half the image, a rotation by minus the angle,
+so counter-clockwise on the map, the scaling, and a translation to the point, in the order of
 operations of AGG's `trans_affine`. The filter and the interpolator are AGG 2.4's, ported
-([ADR-0026](../adr/0026-agg-blender-and-resampler.md)). A 32 × 32 image at
-`SIZE 55` has the half-side `lrint(77.825) / 2 + 1 = 40`. The square is clipped to the image
-grown by its margin, as every path is
-([ADR-0027](../adr/0027-clip-to-the-image.md)); MapServer
-rasterizes it whole. Where the square reaches more than that margin past the image, each row's
-span of full cover then starts at the margin, not at the square's edge, and the interpolator,
-which rounds a span's two ends to 256ths of a pixel and steps between them, may sample a pixel
-of that row a 256th of a pixel apart from MapServer, a channel off by one at most. Farther still,
-the two part more: MapServer's rasterizer has no clip box (`agg2RenderPixmapSymbol` sets none),
-so it takes the square's corners in 24.8 fixed point, which overflows past some 8 million pixels,
-and its packed scanline (`scanline_p8`) holds a span's position in 16 bits, which wraps on an image
-wider than 32,767 pixels. Forager clips first and models neither; a square that large, or an image
-that wide, draws as the clip leaves it, not as MapServer would.
+([REN-agg-blender-and-resampler](../adr/REN-agg-blender-and-resampler.md)). A 32 × 32 image at `SIZE
+55` has the half-side `lrint(77.825) / 2 + 1 = 40`. The square is clipped to the image grown by its
+margin, as every path is ([ARCH-one-clip-to-image](../adr/ARCH-one-clip-to-image.md)); MapServer
+rasterizes it whole. Where the square reaches more than that margin past the image, each row's span
+of full cover then starts at the margin, not at the square's edge, and the interpolator, which
+rounds a span's two ends to 256ths of a pixel and steps between them, may sample a pixel of that row
+a 256th of a pixel apart from MapServer, a channel off by one at most. Farther still, the two part
+more: MapServer's rasterizer has no clip box (`agg2RenderPixmapSymbol` sets none), so it takes the
+square's corners in 24.8 fixed point, which overflows past some 8 million pixels, and its packed
+scanline (`scanline_p8`) holds a span's position in 16 bits, which wraps on an image wider than
+32,767 pixels. Forager clips first and models neither; a square that large, or an image that wide,
+draws as the clip leaves it, not as MapServer would.
 
 **A pixmap that does not load** — its file missing, past 32 MiB, of a format other than PNG, broken,
 past 4096 × 4096 pixels by its header, or past what the images and tiles one render holds
@@ -150,7 +148,7 @@ each image as at a point. Without a `GAP` it brushes the line with its image, as
 ellipse, a pixmap, or a TrueType symbol and whose `GAP` is 0 brushes the line with the symbol's
 brush tile, as `msDrawLineSymbol` in `src/maprendering.c` and `agg2RenderLineTiled` in
 `src/mapagg.cpp` draw it
-([ADR-0046](../adr/0046-symbol-line-brushed-by-its-tile.md)).
+([REN-symbol-line-brushed-by-tile](../adr/REN-symbol-line-brushed-by-tile.md)).
 The tile's sides are the symbol's extent, a pixmap's image, a TrueType symbol's 1 × 1, times the
 scale, `MS_NINT`, half to even, or at a scale of 1 the extent truncated, at least 1 each; a `GAP`
 plays no part. The symbol is drawn once at the tile's centre, as in a polygon's tile, in
@@ -162,16 +160,17 @@ serves the line, as `searchTileCache` lets it. So the arrow's 3 × 2 at `SIZE 10
 15 × 10, and at `SIZE 5` of 8 × 5.
 
 The line, moved by the `OFFSET`, is brushed as wide as the tile is high. Along each segment the
-tile's columns follow one another from the line's start, turned with the segment, each pixel
-sampled bilinearly from the tile's premultiplied pixels, as AGG 2.4's
-`pattern_filter_bilinear_rgba8` samples them, its rounding included, and blended as a pixmap's
-are. The tile's place along the line starts at 0 and carries over every segment and every line of
-the shape; a vertex within 1.5 pixels of the one before it is passed over, as AGG passes it.
-Each coordinate is held to AGG's `line_max_coord`, 2^28 - 1 subpixels, some 1,048,576 pixels,
-before it is rounded, as MapServer's `line_coord_sat` holds it: the bound of agg-rust's guard
-([ADR-0049](../adr/0049-third-party-failures-guarded.md)), which does not differ from MapServer.
-The style's `WIDTH`, `PATTERN`, `LINECAP`, and `LINEJOIN` play no part. A pixmap needs no
-`COLOR`, and a later style of a cached line layer draws it without one ([`line.md`](line.md)).
+tile's columns follow one another from the line's start, turned with the segment, each pixel sampled
+bilinearly from the tile's premultiplied pixels, as AGG 2.4's `pattern_filter_bilinear_rgba8`
+samples them, its rounding included, and blended as a pixmap's are. The tile's place along the line
+starts at 0 and carries over every segment and every line of the shape; a vertex within 1.5 pixels
+of the one before it is passed over, as AGG passes it. Each coordinate is held to AGG's
+`line_max_coord`, 2^28 - 1 subpixels, some 1,048,576 pixels, before it is rounded, as MapServer's
+`line_coord_sat` holds it: the bound of agg-rust's guard
+([ARCH-third-party-failures-guarded](../adr/ARCH-third-party-failures-guarded.md)), which does not
+differ from MapServer. The style's `WIDTH`, `PATTERN`, `LINECAP`, and `LINEJOIN` play no part. A
+pixmap needs no `COLOR`, and a later style of a cached line layer draws it without one
+([`line.md`](line.md)).
 
 Its bounds (Q-9) are a polygon's tile's: 4096 × 4096 pixels, and the 256 MiB of what one render
 holds decoded, which count beside the tile the copy its brush makes of it while it draws, the tile
@@ -193,23 +192,23 @@ takes, the `GAP` scaled as the size is; each side:
 | 1 | no | the image's side |
 | 1 | yes | the larger of the `GAP` and the image's side, truncated |
 
-and at least 1. So a 32 × 32 image at `SIZE 15.5` has tiles of 16 × 16, at `SIZE 15.5 GAP 10` of
-15 × 15, and at `GAP 40.7` without a size of 40 × 40. The tile is a new transparent image of that
-size with the image drawn in it as at a point at its centre, at `(width / 2., height / 2.)`, scaled
-and turned as there and unmoved by the symbol's `ANCHORPOINT`. The polygon is filled under the
-even-odd rule, without the gamma of a polygon's fill, each pixel the tile's at its position modulo
-the tile's size, so that the tiles start at the image's origin wherever the polygon lies, and a
-tile's translucent pixels blend as a pixmap's do (ADR-0026). A tile's transparent pixels, the
-image's or those a `GAP` adds around it, leave what lies beneath.
+and at least 1. So a 32 × 32 image at `SIZE 15.5` has tiles of 16 × 16, at `SIZE 15.5 GAP 10` of 15
+× 15, and at `GAP 40.7` without a size of 40 × 40. The tile is a new transparent image of that size
+with the image drawn in it as at a point at its centre, at `(width / 2., height / 2.)`, scaled and
+turned as there and unmoved by the symbol's `ANCHORPOINT`. The polygon is filled under the even-odd
+rule, without the gamma of a polygon's fill, each pixel the tile's at its position modulo the tile's
+size, so that the tiles start at the image's origin wherever the polygon lies, and a tile's
+translucent pixels blend as a pixmap's do (REN-agg-blender-and-resampler). A tile's transparent
+pixels, the image's or those a `GAP` adds around it, leave what lies beneath.
 
 **Its bounds** (Q-9). A tile past 4096 × 4096 pixels, whatever its size or gap asks, and one that
 would bring the images and tiles one render holds decoded past 256 MiB
-([ADR-0029](../adr/0029-pixmaps-held-once-per-render.md)) are not built: nothing is
-allocated for them, the style is not drawn, and the layer warns with `pixmap-not-drawn`, once per
-symbol, naming the limit. MapServer has neither: it allocates what is asked, and a size past an
-`int` that `MS_NINT` rounds wraps there, while one it only truncates, at a scale of 1 or the larger
-of a gap and the image, is past what C defines. A tile is built once for a symbol, its size, its
-scale, and its rotation, the first time a polygon is filled with it, and six are held, as
+([REN-pixmaps-held-once-per-render](../adr/REN-pixmaps-held-once-per-render.md)) are not built:
+nothing is allocated for them, the style is not drawn, and the layer warns with `pixmap-not-drawn`,
+once per symbol, naming the limit. MapServer has neither: it allocates what is asked, and a size
+past an `int` that `MS_NINT` rounds wraps there, while one it only truncates, at a scale of 1 or the
+larger of a gap and the image, is past what C defines. A tile is built once for a symbol, its size,
+its scale, and its rotation, the first time a polygon is filled with it, and six are held, as
 `MS_IMAGECACHESIZE` holds them in `addTileCache`: a seventh drops the one built longest ago,
 wherever else that was used, so that styles cycling through more than six build theirs again, as
 MapServer's do. The time of building tiles has no bound of its own, by the maintainer's decision of
@@ -279,12 +278,12 @@ transformation, to the image so grown. Each line runs across the clipped polygon
 grown by 0.7072 widths, so that the box sets where its dashes fall, is dashed by `PATTERN` from its
 first point, the lengths scaled by the factor the bounds applied to the width, and is stroked with
 butt caps. The stroke is cut from the polygon as MapServer's Clipper cuts it
-([ADR-0042](../adr/0042-i-overlay-in-render-agg-and-geo.md)): the intersection of the polygon with
-the stroke's rectangles, both read under the even-odd rule, every coordinate rounded to a hundredth
-of a pixel; so where stroked lines overlap, at a `SIZE` below the `WIDTH`, and where the polygon's
-rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the pattern by 0, and AGG
-draws its infinite dashes as solid lines. `OFFSET` moves the polygon after the clip. The cut is
-filled under the non-zero rule through the AGG output format's gamma
+([REN-i-overlay-shared-with-geo](../adr/REN-i-overlay-shared-with-geo.md)): the intersection of the
+polygon with the stroke's rectangles, both read under the even-odd rule, every coordinate rounded to
+a hundredth of a pixel; so where stroked lines overlap, at a `SIZE` below the `WIDTH`, and where the
+polygon's rings overlap, the hatch is empty. A `WIDTH` of 0 makes MapServer divide the pattern by 0,
+and AGG draws its infinite dashes as solid lines. `OFFSET` moves the polygon after the clip. The cut
+is filled under the non-zero rule through the AGG output format's gamma
 ([`style-symbol.md`](style-symbol.md)).
 
 A hatch that would not end or that costs past its bounds is not drawn, and the layer warns with

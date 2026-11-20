@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Sensor: duplication (ADR-0007).
+# Sensor: duplication (OPS-pinned-stable-rust-toolchain).
 #
 # Runs jscpd on the Rust and bash files git tracks, and reports each clone with its two places,
 # then jscpd's table of the files, lines, and tokens read per format. The sensor names jscpd every
@@ -17,9 +17,10 @@
 #
 # Needs jscpd, which scripts/install-jscpd.sh installs; JSCPD names another binary, for the
 # self-test. Usage:
-#     scripts/sensor-duplication.sh [repository root]
+#     scripts/sensor-duplication.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-sensor-duplication.sh passes fixtures.
-# Exit code 0 when jscpd ran and counted, 1 otherwise.
+# Exit code 0 when jscpd ran and counted, 2 on an argument it does not read or a root that is no
+# directory, 1 otherwise.
 
 set -uo pipefail
 # A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
@@ -27,7 +28,18 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" && pwd)" || exit 1
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# The version scripts/install-jscpd.sh pins, beside this script, not under the root it reads:
+# found before enter_root changes the directory.
+installer="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install-jscpd.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/sensor-duplication.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 JSCPD="${JSCPD:-jscpd}"
 
 if [[ ! -f "$ROOT/.jscpd.json" ]]; then
@@ -35,8 +47,6 @@ if [[ ! -f "$ROOT/.jscpd.json" ]]; then
   exit 1
 fi
 
-# The version scripts/install-jscpd.sh pins, beside this script, not under the root it reads.
-installer="$(dirname "${BASH_SOURCE[0]}")/install-jscpd.sh"
 pinned="$(sed -n 's/^JSCPD_VERSION="\(.*\)"$/\1/p' "$installer" 2>/dev/null)"
 if [[ -z "$pinned" ]]; then
   echo "Duplication sensor: no pinned version found — $installer names none on a JSCPD_VERSION=\"…\" line." >&2

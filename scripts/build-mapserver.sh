@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Builds map2img of the reference release of MapServer, the instrument of the noise measurement
-# of G-6 (ADR-0033): from the commit scripts/fetch-msautotest.sh pins, which this script reads and
+# of G-6 (TST-noise-measured-against-mapserver): from the commit scripts/fetch-msautotest.sh pins, which this script reads and
 # never names itself, with MapServer's default build options, SVG symbols through librsvg, and
 # curl, as MapServer's own CI builds the references, and the Ubuntu archive's packages below, into
 # target/mapserver/<commit>/. It then compiles the reader of MapServer's label cache,
 # crates/cli/tests/conformance/mapserver_labels.c, against that build's unmodified library and
-# headers, outside the cached build, into target/mapserver-labels/<commit>/ (ADR-0033), and the
+# headers, outside the cached build, into target/mapserver-labels/<commit>/ (TST-noise-measured-against-mapserver), and the
 # reader of MapServer's reprojection, crates/cli/tests/conformance/mapserver_proj.c, the same way
-# into target/mapserver-proj/<commit>/ (ADR-0038), and prints the
+# into target/mapserver-proj/<commit>/ (TST-proj-references-from-mapserver), and prints the
 # path of map2img and, on a second and a third line, those of the two readers. It adds no apt source. It runs on a
 # GitHub-hosted runner only, where .github/workflows/noise.yml calls it, and refuses anywhere else,
 # the dev container included.
@@ -18,19 +18,32 @@
 # other than the archive is seen. A build already in target/ is kept, as the workflow restores it
 # from its cache; the packages are installed on every run, as map2img links them.
 #
-# Usage: bash scripts/build-mapserver.sh    (prints the paths of map2img and of the two readers)
+# Usage: bash scripts/build-mapserver.sh [--root <dir>]    (prints the paths of map2img and of the
+#        two readers)
+# The pin and the readers' sources are read from the root, this repository unless --root names
+# another, and the builds land under its target/. Exit code 0 when the builds are there, 2 on an
+# argument it does not read, a root that is no directory, or a run outside GitHub Actions, 1
+# otherwise.
 set -euo pipefail
 # A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
 # repository instead of the one it names (docs/CONVENTIONS.md).
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/build-mapserver.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
+
 if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
-  echo "build-mapserver: runs on a GitHub-hosted runner only, never in the dev container (ADR-0033)" >&2
+  echo "build-mapserver: runs on a GitHub-hosted runner only, never in the dev container (TST-noise-measured-against-mapserver)" >&2
   exit 2
 fi
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PIN="$ROOT/scripts/fetch-msautotest.sh"
 TAG="$(sed -n 's/^TAG="\([^"]*\)"$/\1/p' "$PIN")"
 COMMIT="$(sed -n 's/^COMMIT="\([^"]*\)"$/\1/p' "$PIN")"

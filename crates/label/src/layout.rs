@@ -34,7 +34,7 @@ use crate::font::Font;
 use crate::place::TextBox;
 use crate::size::pixel_size;
 
-/// Why a label's text is not laid out as Latin lines (ADR-0031).
+/// Why a label's text is not laid out as Latin lines (REN-label-glyphs-from-skrifa).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LineError {
     /// A code point at or above U+02B0, which MapServer shapes with HarfBuzz, and the index of
@@ -167,7 +167,7 @@ pub struct MarkerGlyph {
 }
 
 /// The glyph of `character` in `font` at `glyph_size` points, as the TrueType branch of
-/// `msDrawMarkerSymbolInternal` takes it (ADR-0044): the
+/// `msDrawMarkerSymbolInternal` takes it (API-truetype-marker-through-port): the
 /// character mapped through the font's Unicode character map, glyph 0 where the font lacks it, as
 /// `FT_Get_Char_Index` maps it; drawn unhinted at the pixel size of `glyph_size` (see
 /// [`pixel_size`]), or the font's `?` where it cannot be, as `msGetGlyphByIndex` falls back;

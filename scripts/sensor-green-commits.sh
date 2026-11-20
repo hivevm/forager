@@ -21,16 +21,10 @@
 # commit keeps its parent's verdict, and a parent outside the range counts as passing, as the base
 # passed the gate that brought it to main. The documentation checks read every text file, so they
 # run on every commit. The checks run without the variables by which CI names the branch a change
-# lands on, so a draft ADR on a commit before its numbering is no finding (check 16 of
-# check-docs.sh), and without CI=true, so a ShellCheck of another version warns instead of
-# failing. Where cargo is missing, rustfmt is not run, and where ShellCheck is, each commit's shell
-# lint skips it and passes; the report's first line says so of either.
-#
-# The first of the two commits by which scripts/number-adrs.sh numbers the drafts, the one whose
-# subject starts 'docs(adr): number the drafts as' and that changes nothing outside docs/adr/
-# against its first parent, fails the documentation checks by design
-# (ADR-0002): it renumbers the ADRs, and the second commit moves the references. The
-# documentation checks are not run on it.
+# lands on, so that a check judges a commit by the commit alone, and without CI=true, so a
+# ShellCheck of another version warns instead of failing. Where cargo is missing, rustfmt is not
+# run, and where ShellCheck is, each commit's shell lint skips it and passes; the report's first
+# line says so of either.
 #
 # Each passing verdict, by commit and check, is kept in 'green-commits-verdicts' of the repository's
 # git directory, shared by its worktrees, as the pre-push hook keeps its green trees. A later run
@@ -49,7 +43,8 @@
 # Without a base, the merge base of head with origin/main (else main) is used; CI passes the
 # pull request's base. A base of zeros, which a push event reports for a new branch, counts as
 # none. With nothing to compare — on main without a remote, or base and head the same — it says
-# so. Exit code 0 always, except 2 on a base or head that does not resolve.
+# so. Exit code 0 always, except 2 on a base or head that does not resolve, an argument it does
+# not read, or a root that is no directory.
 
 set -uo pipefail
 # A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
@@ -57,14 +52,22 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
 
 NAME="Green commits sensor"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="$SELF_DIR/$(basename "${BASH_SOURCE[0]}")"
-enter_root "$NAME" "${BASH_SOURCE[0]}" "$@"
-shift "$ROOT_TAKEN"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/sensor-green-commits.sh [--root <dir>] [base [head]]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 2 "$@"
 
 resolve_change "$NAME" "${1:-}" "${2:-HEAD}" || exit 0
 base="$CHANGE_BASE" head="$CHANGE_HEAD"
@@ -145,17 +148,8 @@ while read -r sha; do
   count=$((count + 1))
   parent="$(git rev-parse -q --verify "$sha^1" 2>/dev/null)"
   failed=() pids=() checked_out=0 unchecked=0
-  numbering=0
-  if [[ -n "$parent" && "$(git log -1 --format=%s "$sha")" == "docs(adr): number the drafts as "* ]] \
-    && [[ -z "$(git diff --name-only "$parent" "$sha" -- . ':(exclude)docs/adr/')" ]]; then
-    numbering=1
-  fi
   for i in "${!labels[@]}"; do
     pids[i]=""
-    if ((numbering)) && [[ "${scripts[i]}" == scripts/check-docs.sh ]]; then
-      verdict["$sha $i"]=pass known["$sha $i"]=1
-      continue
-    fi
     if [[ -n "${cached["$sha $i"]:-}" ]]; then
       verdict["$sha $i"]="${cached["$sha $i"]}" known["$sha $i"]=1
       continue
