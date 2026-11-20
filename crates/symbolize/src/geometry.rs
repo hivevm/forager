@@ -47,15 +47,14 @@
 // WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY
 // WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-//! The geometry of `simplify` and `buffer` (ADR-0050), and of
-//! `simplifypt` (ADR-0047) in [`topology`]: a line or a polygon simplified as
-//! GEOS's `DouglasPeuckerSimplifier` simplifies it, and a shape buffered by geo's
-//! `buffer_with_style` with round joins and caps of 30 segments a quadrant, as `GEOSBuffer_r`
-//! buffers it with 30, but for a point's circle, which [`circle`] draws as JTS draws it, with
-//! `cos` and `sin` from `libm`. A line keeps the points of a Douglas-Peucker
+//! The geometry of `simplify` and `buffer` (ADR-0050), and of `simplifypt` (ADR-0047) in
+//! [`topology`]: a line or a polygon simplified as GEOS's `DouglasPeuckerSimplifier` simplifies it,
+//! and a shape buffered by geo's `buffer_with_style` with round joins and caps of 30 segments a
+//! quadrant, as `GEOSBuffer_r` buffers it with 30, but for a point's circle, which [`circle`] draws
+//! as JTS draws it, with `cos` and `sin` from `libm`. A line keeps the points of a Douglas-Peucker
 //! ported from JTS, which keeps its pending sections on a stack of its own, so no line nests it
-//! deeper than the stack allows. A polygon's rings are simplified each as a line, then the steps
-//! of JTS follow: a ring's first point dropped, a ring of fewer than 4 coordinates removed, and a
+//! deeper than the stack allows. A polygon's rings are simplified each as a line, then the steps of
+//! JTS follow: a ring's first point dropped, a ring of fewer than 4 coordinates removed, and a
 //! result geo's `Validation` finds invalid repaired by geo's `unary_union`.
 //!
 //! What the functions visit and add is charged to the caller's [`Charge`] as they go (Q-9): each
