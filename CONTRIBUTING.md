@@ -29,8 +29,13 @@ Authority runs **specification → accepted ADRs → task**
    pull request, and the repository's git hooks run them for you ([Git hooks](#git-hooks)). They
    need bash 4.4 or later and coreutils, already in the Dev Container. Only the shell lint
    additionally needs [ShellCheck](https://www.shellcheck.net), at the version
-   `scripts/install-shellcheck.sh` pins and installs, as the Dev Container and CI do; elsewhere
-   the lint skips itself where it is missing, and warns where another version runs.
+   `scripts/install-shellcheck.sh` pins and installs, as the Dev Container and CI do; elsewhere the
+   lint skips itself where it is missing, and warns where another version runs. On macOS, whose bash
+   is 3.2, install a current one, such as Homebrew's. On Windows they run under Git Bash in a clone
+   made with `git clone -c core.symlinks=true`, so that `.claude/skills/` holds links and not
+   copies; links need the Developer Mode of Windows. `ln -s` makes a link there under
+   `MSYS=winsymlinks:nativestrict`; without such a setting it copies, and the documentation check
+   refuses the copy.
 3. **Open a pull request** against `main` and fill in the PR template.
 
 ## Project Layout
@@ -68,15 +73,16 @@ scripts/sensor-*.sh   # sensors: report for the reviewer; sensor-repo-settings.s
                       # sensor-scheduled-runs.sh run by hand
 scripts/test-*.sh     # self-tests of the checks, the sensors, the hooks, and the scripts run by hand
 scripts/fixtures/     # the cases of a check as a table, which its self-test reads
-scripts/lib/          # what the scripts share: adr.sh the ADR header, check.sh the findings,
-                      # expect.sh the project's self-tests' expect, verdict, and the fixtures'
-                      # commit, git.sh git, install.sh the install of a pinned release binary,
-                      # notice.sh the notices, package.sh the artefacts, rules.sh the rules,
-                      # selftest.sh the self-tests, ticket.sh the ticket path
+scripts/lib/          # what the scripts share: bash.sh the bash floor, adr.sh the ADR header,
+                      # check.sh the findings, expect.sh the project's self-tests' expect,
+                      # verdict, and the fixtures' commit, git.sh git, install.sh the install of a
+                      # pinned release binary, notice.sh the notices, package.sh the artefacts,
+                      # rules.sh the rules, selftest.sh the self-tests, ticket.sh the ticket path
 scripts/*.sh          # run by hand, steps 7 and 8 of the integration branches:
                       # ready-for-main.sh, drop-merged-branch.sh; and the project's tools:
                       # install-tools.sh, build-web.sh, fuzz.sh, mutants.sh, and the like
-.githooks/            # git hooks: nothing lands on main locally; checks before a merge and a push
+.githooks/            # git hooks: nothing lands on main locally; checks before a commit, a merge,
+                      # and a push
 .github/workflows/    # checks.yml runs the checks; review-binding.yml reads each pull request's hand-off;
                       # fuzz.yml, mutants.yml, and noise.yml run weekly
 .github/              # Dependabot, issue & pull request templates, code owners

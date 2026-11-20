@@ -47,6 +47,9 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
   || { echo "Shell lint: '${1:-}' is not a directory." >&2; exit 2; }
 

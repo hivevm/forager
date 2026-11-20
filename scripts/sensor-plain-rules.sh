@@ -16,7 +16,7 @@
 # that the line break of a paragraph splits counts when either line is added, on the line it
 # starts on if that line is added, else on the next; the gap a code span or an italic leaves at
 # the end of a line stays. A paragraph or a list item ends a sentence; so do '.', '!', and '?'
-# before a space or the end.
+# before a space or the end, also after what a link whose text is a code span leaves.
 #
 # Without '--require' it reports for the reviewer and never fails on what it counts. With
 # '--require' it fails on a soft modal verb or an avoided word in a project ADR; in a 'NUC-' ADR
@@ -30,6 +30,9 @@
 # base or head that does not resolve and on a reader of the rules that fails.
 
 set -uo pipefail
+
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
 
 # shellcheck source-path=SCRIPTDIR source=lib/adr.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/adr.sh"
@@ -73,7 +76,7 @@ out="$(AVOID="$avoid" awk -F '\t' -v max="$MAX_WORDS" '
         split(rows[i], kv, "\t")
         if (kv[1] == "A") { word[++na] = kv[2]; term[na] = kv[3] }
         else if (kv[1] == "T") terms[++nt] = kv[2]
-        else if (kv[1] == "U") print "docs/GLOSSARY.md:" kv[2] ": cannot read \"" kv[3] "\" under _Avoid:_ of \"" kv[4] "\""
+        else if (kv[1] == "U") print "docs/GLOSSARY.md:" kv[2] ": cannot read \"" kv[3] "\" under _Avoid:_ of \"" kv[4] "\" [rules/avoid-list:unread]"
       }
     }
     # bare <text> <i> — the text with each longer term of the glossary that holds the word of
@@ -91,7 +94,7 @@ out="$(AVOID="$avoid" awk -F '\t' -v max="$MAX_WORDS" '
       if (count > max) {
         any = 0
         for (i in seen) if (seen[i] == 1) any = 1
-        if (any) print file ":" start ": a sentence of " count " words"
+        if (any) print file ":" start ": a sentence of " count " words [rules/long-sentence:words]"
       }
       count = 0; start = 0; split("", seen)
     }
@@ -112,7 +115,7 @@ out="$(AVOID="$avoid" awk -F '\t' -v max="$MAX_WORDS" '
     function avoided(nr, i) {
       if ((nr, i) in told) return
       told[nr, i] = 1
-      print fails file ":" nr ": \"" word[i] "\" is listed under _Avoid:_ in docs/GLOSSARY.md — write \"" term[i] "\""
+      print fails file ":" nr ": \"" word[i] "\" is listed under _Avoid:_ in docs/GLOSSARY.md — write \"" term[i] "\" [rules/avoided-term:listed]"
     }
     # A finding that fails with --require is marked "!": in a project ADR, not in a NUC- ADR or AGENTS.md.
     $1 == "F" { flush(); file = $2; prev = ""; split("", told); fails = (file ~ /^docs\/adr\/[^\/]+$/ && file !~ /^docs\/adr\/NUC-/) ? "!" : ""; next }
@@ -127,12 +130,13 @@ out="$(AVOID="$avoid" awk -F '\t' -v max="$MAX_WORDS" '
       if ($3 == 1) {
         n = split("should could might ideally", soft, " ")
         for (i = 1; i <= n; i++)
-          if (low ~ ("[^a-z0-9_]" soft[i] "[^a-z0-9_]")) print fails file ":" nr ": the soft modal verb \"" soft[i] "\""
+          if (low ~ ("[^a-z0-9_]" soft[i] "[^a-z0-9_]")) print fails file ":" nr ": the soft modal verb \"" soft[i] "\" [rules/soft-modal:verb]"
         for (i = 1; i <= na; i++) if (found(bare(low, i), word[i], 0)) avoided(nr, i)
       }
       w = split(text, words, /[[:space:]]+/)
       for (i = 1; i <= w; i++) {
-        if (words[i] !~ /[A-Za-z0-9]/) { if (count && words[i] ~ /^[.!?]/) flush(); continue }
+        # A token without a letter or a digit, such as what a link leaves, ends a sentence by a stop.
+        if (words[i] !~ /[A-Za-z0-9]/) { if (count && words[i] ~ /[.!?]/) flush(); continue }
         if (!count) start = nr
         count++; if (!(nr in seen) || $3 == 1) seen[nr] = $3
         if (words[i] ~ /[.!?][)*_"]*$/) flush()
@@ -147,7 +151,7 @@ failing=0
 for i in "${!findings[@]}"; do
   [[ "${findings[i]}" == '!'* ]] || continue
   findings[i]="${findings[i]#!}"
-  ((require)) && { failing=$((failing + 1)); findings[i]+=" (fails)"; }
+  ((require)) && { failing=$((failing + 1)); findings[i]="${findings[i]% \[*} (fails) [${findings[i]##* \[}"; }
 done
 if ((${#findings[@]} == 0)); then
   echo "Plain rules sensor ($range): no long sentence, no soft modal verb, and no avoided term on the lines the change adds to the rules."

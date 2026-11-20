@@ -157,6 +157,9 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=lib/adr.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/adr.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/check.sh
@@ -289,7 +292,7 @@ collect_text_files() {
   # over.
   ((${#paths[@]})) && mapfile -t TEXT_FILES < <(grep -Il -- . "${paths[@]}" 2>/dev/null)
   if ((${#TEXT_FILES[@]} == 0)); then
-    add_error "no text files found under $ROOT — the file list is empty, so nothing was checked"
+    add_error "no text files found under $ROOT — the file list is empty, so nothing was checked [docs/files:empty]"
   fi
 }
 
@@ -322,7 +325,7 @@ is_inactive_adr() {
 
 check_adr_index() {  # check 1
   if [[ ! -f "$ADR_INDEX" ]]; then
-    add_error "ADR index not found: docs/adr/README.md"
+    add_error "ADR index not found: docs/adr/README.md [docs/adr-index:absent]"
     return
   fi
 
@@ -353,17 +356,17 @@ check_adr_index() {  # check 1
     indexed_applies+=("$applies")
     indexed_status+=("$status")
     [[ "$number" == NUC-* ]] && add_error \
-      "ADR index: lists $number, an ADR of the base — the index links the base in one line and lists no NUC- ADR (NUC-adrs-are-named-by-category §5)"
+      "ADR index: lists $number, an ADR of the base — the index links the base in one line and lists no NUC- ADR (NUC-adrs-are-named-by-category §5) [docs/adr-index:base]"
     [[ "$filename" == "$number.md" ]] \
-      || add_error "ADR index: row for $number links to '$filename', not to '$number.md'"
+      || add_error "ADR index: row for $number links to '$filename', not to '$number.md' [docs/adr-index:link]"
     case "$status" in
       ⚪|🔴)
         ((archive)) \
-          || add_error "ADR index: row for $number is $status but sits above the 'Superseded and rejected' heading — move it there, a session reads the first table as binding"
+          || add_error "ADR index: row for $number is $status but sits above the 'Superseded and rejected' heading — move it there, a session reads the first table as binding [docs/adr-index:above]"
         ;;
       🟢|🟡)
         ((archive)) \
-          && add_error "ADR index: row for $number is $status but sits below the 'Superseded and rejected' heading — move it up, a binding decision there is never read"
+          && add_error "ADR index: row for $number is $status but sits below the 'Superseded and rejected' heading — move it up, a binding decision there is never read [docs/adr-index:below]"
         ;;
     esac
   done < "$ADR_INDEX"
@@ -372,7 +375,7 @@ check_adr_index() {  # check 1
   local -A seen_rows=()
   for f in "${indexed_files[@]}"; do
     [[ -v seen_rows["$f"] ]] \
-      && add_error "ADR index: lists '$f' twice — keep the row that matches the file, delete the other"
+      && add_error "ADR index: lists '$f' twice — keep the row that matches the file, delete the other [docs/adr-index:twice]"
     seen_rows["$f"]=1
   done
 
@@ -380,7 +383,7 @@ check_adr_index() {  # check 1
   local d
   for d in "${disk_files[@]}"; do
     if [[ ! -v seen_rows["$d"] ]]; then
-      add_error "ADR index: file '$d' exists but is not listed in the index"
+      add_error "ADR index: file '$d' exists but is not listed in the index [docs/adr-index:unlisted]"
     fi
   done
 
@@ -391,23 +394,23 @@ check_adr_index() {  # check 1
     status="${indexed_status[$i]}"
     applies="${indexed_applies[$i]}"
     if [[ ! -f "$ADR_DIR/$f" ]]; then
-      add_error "ADR index: lists '$f', but no such ADR file exists"
+      add_error "ADR index: lists '$f', but no such ADR file exists [docs/adr-index:missing]"
       continue
     fi
     adr_header "$ADR_DIR/$f"
     status_emoji "$HEADER_STATUS"
     file_status="$EMOJI"
     if [[ -z "$file_status" ]]; then
-      add_error "$f: no '**Status:**' line with a status emoji found"
+      add_error "$f: no '**Status:**' line with a status emoji found [docs/adr-index:nostatus]"
     elif [[ "$file_status" != "$status" ]]; then
-      add_error "ADR index: status for '$f' is ${status:-<none>} in the index but $file_status in the file"
+      add_error "ADR index: status for '$f' is ${status:-<none>} in the index but $file_status in the file [docs/adr-index:status]"
     fi
     applies_to_of
     file_applies="$TRIMMED"
     if [[ -z "$file_applies" ]]; then
-      add_error "$f: no '**Applies to:**' line naming what the decision constrains"
+      add_error "$f: no '**Applies to:**' line naming what the decision constrains [docs/adr-index:noapplies]"
     elif [[ "$file_applies" != "$applies" ]]; then
-      add_error "ADR index: 'Applies to' for '$f' is '${applies:-<none>}' in the index but '$file_applies' in the file"
+      add_error "ADR index: 'Applies to' for '$f' is '${applies:-<none>}' in the index but '$file_applies' in the file [docs/adr-index:applies]"
     fi
   done
 }
@@ -419,20 +422,20 @@ check_adr_identifiers() {  # check 2
   local f base heading id commit
   local -A deleted=()
   [[ -d "$ADR_DIR" ]] && while IFS= read -r f; do
-    add_error "${f##*/}: a numbered ADR, a form no check reads — map it to '<CAT>-<slug>' with .agents/skills/normalize/remap.sh, as the normalize skill's migration says"
+    add_error "${f##*/}: a numbered ADR, a form no check reads — map it to '<CAT>-<slug>' with .agents/skills/normalize/remap.sh, as the normalize skill's migration says [docs/adr-numbering:numbered]"
   done < <(LC_ALL=C find "$ADR_DIR" -maxdepth 1 -type f -name '[0-9]*-*.md' | LC_ALL=C sort)
   for f in "${ADR_LIST[@]}"; do
     base="${f##*/}"
     adr_key_of "$base"
     if [[ ! "$ADR_ID" =~ ^$ADR_NEW_RE$ ]]; then
-      add_error "$base: the identifier is not '<CAT>-<slug>': two to five capital letters, a hyphen, and two to five lower case words or numbers joined by hyphens"
+      add_error "$base: the identifier is not '<CAT>-<slug>': two to five capital letters, a hyphen, and two to five lower case words or numbers joined by hyphens [docs/adr-numbering:form]"
       continue
     elif ! _contains "${ADR_ID%%-*}" "${ADR_CATEGORIES[@]}"; then
-      add_error "$base: the category ${ADR_ID%%-*} is neither fixed nor in the category list of docs/adr/README.md"
+      add_error "$base: the category ${ADR_ID%%-*} is neither fixed nor in the category list of docs/adr/README.md [docs/adr-numbering:category]"
     fi
     heading="${ADR_HEADING["$f"]-}"
     [[ "$heading" == "# $ADR_ID:"* ]] \
-      || add_error "$base: heading says '${heading:-<none>}', but the filename says $ADR_ID"
+      || add_error "$base: heading says '${heading:-<none>}', but the filename says $ADR_ID [docs/adr-numbering:heading]"
   done
   # Without a commit there is no history; a git that cannot read it, such as one before 2.31
   # without --diff-merges, is an error, not a pass.
@@ -442,7 +445,7 @@ check_adr_identifiers() {  # check 2
                 --format='commit %h' HEAD -- ":(glob)docs/adr/$ADR_GLOB")
     # stderr stays out of the list: a warning on a success would be read as a file name.
     log="$(git -C "$ROOT" "${args[@]}" 2>/dev/null)" || { log="$(git -C "$ROOT" "${args[@]}" 2>&1 >/dev/null)"
-      add_error "ADR identifiers: git log cannot read the deleted ADRs (git 2.31 or later is needed): ${log%%$'\n'*}"; log=""; }
+      add_error "ADR identifiers: git log cannot read the deleted ADRs (git 2.31 or later is needed): ${log%%$'\n'*} [docs/adr-numbering:history]"; log=""; }
   fi
   while IFS= read -r f; do
     if [[ "$f" == commit\ * ]]; then commit="${f#commit }"; elif [[ -n "$f" && ! -v deleted["${f##*/}"] ]]; then deleted["${f##*/}"]="$commit"; fi
@@ -451,7 +454,7 @@ check_adr_identifiers() {  # check 2
     base="${f##*/}"
     [[ -v deleted["$base"] ]] || continue
     id="${base%.md}"
-    add_error "$base: the identifier $id was taken by a deleted ADR, deleted in ${deleted["$base"]} — a successor takes a new slug"
+    add_error "$base: the identifier $id was taken by a deleted ADR, deleted in ${deleted["$base"]} — a successor takes a new slug [docs/adr-numbering:taken]"
   done
 }
 
@@ -478,7 +481,7 @@ check_adr_headers() {  # check 7
     base="${f##*/}"
     while IFS= read -r stray; do
       [[ -n "$stray" ]] || continue
-      add_error "$base:${stray%%:*}: a header field not written as the list item '- **<Name>:** …' of template.md — every script reads only that form"
+      add_error "$base:${stray%%:*}: a header field not written as the list item '- **<Name>:** …' of template.md — every script reads only that form [docs/adr-header:field]"
     done <<< "${ADR_STRAY["$f"]-}"
     line="${ADR_STATUS["$f"]-}"
     status_emoji "$line"
@@ -491,13 +494,13 @@ check_adr_headers() {  # check 7
       esac
       read -r word _ <<<"${line#*"$EMOJI"}"
       if ((EMOJI_COUNT > 1)); then
-        add_error "$base: status line carries $EMOJI_COUNT status emoji — keep exactly one"
+        add_error "$base: status line carries $EMOJI_COUNT status emoji — keep exactly one [docs/adr-header:emojis]"
       elif [[ "$word" != "$expected" ]]; then
-        add_error "$base: status line reads '$EMOJI ${word:-<nothing>}', but $EMOJI means '$expected'"
+        add_error "$base: status line reads '$EMOJI ${word:-<nothing>}', but $EMOJI means '$expected' [docs/adr-header:word]"
       fi
     fi
     if [[ -v ADR_NEEDLE["$f"] ]]; then
-      add_error "$base: still carries the instruction paragraph from template.md — delete it"
+      add_error "$base: still carries the instruction paragraph from template.md — delete it [docs/adr-header:instruction]"
     fi
   done
 }
@@ -548,12 +551,12 @@ check_adr_supersessions() {  # check 8
     adr_refs "${ADR_SUPERSEDES["$f"]-}"
     for target in "${REFS[@]}"; do
       [[ "$target" == NUC-* && "$base" != NUC-* ]] && add_error \
-        "$base: supersedes $target — no project ADR supersedes the base; extend or narrow its clause, or fork the template (NUC-base-is-fixed §1)"
+        "$base: supersedes $target — no project ADR supersedes the base; extend or narrow its clause, or fork the template (NUC-base-is-fixed §1) [docs/adr-supersessions:base]"
       target_file="${ADR_BY_ID["$target"]-}"
       if [[ -n "$target_file" ]] && ((accepted)); then
         superseding_id "${ADR_STATUS["$target_file"]-}"
         [[ "$SUCCESSOR" == "$nr" ]] || add_error \
-          "${target_file##*/}: $base supersedes it, but its status line does not say 'superseded by $nr'"
+          "${target_file##*/}: $base supersedes it, but its status line does not say 'superseded by $nr' [docs/adr-supersessions:unflipped]"
       fi
     done
 
@@ -561,18 +564,18 @@ check_adr_supersessions() {  # check 8
     superseding_id "$line"
     if [[ -z "$SUCCESSOR" ]]; then
       status_emoji "$line"
-      [[ "$EMOJI" == "⚪" ]] && add_error "$base: status is ⚪ but the line names no superseding ADR"
+      [[ "$EMOJI" == "⚪" ]] && add_error "$base: status is ⚪ but the line names no superseding ADR [docs/adr-supersessions:unnamed]"
     else
       succ_file="${ADR_BY_ID["$SUCCESSOR"]-}"
       if [[ -n "$succ_file" ]]; then
         adr_refs "${ADR_SUPERSEDES["$succ_file"]-}"
         named=0
         for target in "${REFS[@]}"; do [[ "$target" == "$nr" ]] && named=1; done
-        ((named)) || add_error "${succ_file##*/}: $base says it supersedes, but it carries no '**Supersedes:**' field naming $nr"
+        ((named)) || add_error "${succ_file##*/}: $base says it supersedes, but it carries no '**Supersedes:**' field naming $nr [docs/adr-supersessions:unclaimed]"
         # A successor superseded in its turn was accepted before: a chain of supersessions.
         status_emoji "${ADR_STATUS["$succ_file"]-}"
         [[ "$EMOJI" == "🟢" || "$EMOJI" == "⚪" ]] || add_error \
-          "$base: superseded by $SUCCESSOR, which is not accepted — the status line flips when the human accepts $SUCCESSOR"
+          "$base: superseded by $SUCCESSOR, which is not accepted — the status line flips when the human accepts $SUCCESSOR [docs/adr-supersessions:unaccepted]"
       fi
     fi
 
@@ -580,12 +583,12 @@ check_adr_supersessions() {  # check 8
     for field in Extends Narrows; do
       rest="${ADR_REL["$field $f"]-}"
       [[ -n "$rest" ]] || continue
-      [[ "$rest" =~ $re ]] || add_error "$base: the $field field names no clause of a NUC- ADR, 'NUC-<slug> §n' (NUC-base-is-fixed §1)"
+      [[ "$rest" =~ $re ]] || add_error "$base: the $field field names no clause of a NUC- ADR, 'NUC-<slug> §n' (NUC-base-is-fixed §1) [docs/adr-supersessions:field]"
       while [[ "$rest" =~ $re ]]; do
         rest="${rest#*"${BASH_REMATCH[0]}"}" target="${BASH_REMATCH[1]} §${BASH_REMATCH[-1]}"
         target_file="${ADR_BY_ID["${BASH_REMATCH[1]}"]-}"
         [[ -z "$target_file" ]] || grep -qE "^${BASH_REMATCH[-1]}\. " <<< "$(adr_section Decision < "$target_file")" \
-          || add_error "$base: $field $target, a clause its Decision does not have"
+          || add_error "$base: $field $target, a clause its Decision does not have [docs/adr-supersessions:clause]"
       done
     done
   done
@@ -737,14 +740,14 @@ check_relative_links() {  # check 3
       else
         target_file="$dir/$path_part"
         if [[ ! -e "$target_file" ]]; then
-          add_error "$rel: broken relative link -> '$target'"
+          add_error "$rel: broken relative link -> '$target' [docs/links:broken]"
           continue
         fi
       fi
       # Validate the anchor fragment against the resolved file, when there is one.
       if [[ -n "$frag" && -f "$target_file" ]]; then
         anchor_resolves "$target_file" "$frag" \
-          || add_error "$rel: link '$target' has no matching anchor '#$frag' in ${target_file#"$ROOT"/}"
+          || add_error "$rel: link '$target' has no matching anchor '#$frag' in ${target_file#"$ROOT"/} [docs/links:anchor]"
       fi
     done <<< "${MD_LINKS["$md"]-}"
   done
@@ -784,7 +787,7 @@ clauses_out() {
 check_section_refs() {  # check 4
   local agents="$ROOT/AGENTS.md"
   if [[ ! -f "$agents" ]]; then
-    add_error "AGENTS.md not found in the repository root"
+    add_error "AGENTS.md not found in the repository root [docs/section-refs:absent]"
     return
   fi
 
@@ -794,7 +797,7 @@ check_section_refs() {  # check 4
     valid_sections+=("$n")
   done < <(sed -nE 's/^## ([0-9]+)\..*/\1/p' "$agents")
   if ((${#valid_sections[@]} == 0)); then
-    add_error "AGENTS.md: no numbered '## N.' section headings found"
+    add_error "AGENTS.md: no numbered '## N.' section headings found [docs/section-refs:unnumbered]"
     return
   fi
 
@@ -804,7 +807,7 @@ check_section_refs() {  # check 4
   for i in "${!valid_sections[@]}"; do
     expected=$((i + 1))
     if [[ "${valid_sections[$i]}" != "$expected" ]]; then
-      add_error "AGENTS.md: numbered sections must run 1..N in order — expected '## $expected.' at position $expected, found '## ${valid_sections[$i]}.'"
+      add_error "AGENTS.md: numbered sections must run 1..N in order — expected '## $expected.' at position $expected, found '## ${valid_sections[$i]}.' [docs/section-refs:order]"
       break
     fi
   done
@@ -828,7 +831,7 @@ check_section_refs() {  # check 4
       while IFS=: read -r lineno line; do
         n="${line##* }"
         _contains "$n" "${valid_sections[@]}" \
-          || add_error "$rel:$lineno: reference 'AGENTS.md, section $n' matches no numbered section in AGENTS.md"
+          || add_error "$rel:$lineno: reference 'AGENTS.md, section $n' matches no numbered section in AGENTS.md [docs/section-refs:unmatched]"
       done < <(grep -noE 'AGENTS\.md,? section [0-9]+' "$f")
     fi
     is_doc_file "$f" || continue
@@ -861,7 +864,7 @@ check_section_refs() {  # check 4
             [[ "$linkexpr" =~ §([0-9]+) ]] || continue
             n="${BASH_REMATCH[1]}"
             if ! _contains "$n" "${valid_sections[@]}"; then
-              add_error "$rel:$lineno: reference '§$n' matches no numbered section in AGENTS.md"
+              add_error "$rel:$lineno: reference '§$n' matches no numbered section in AGENTS.md [docs/section-refs:unmatched]"
               continue
             fi
             link_target "$linkexpr"
@@ -869,9 +872,9 @@ check_section_refs() {  # check 4
             frag=""
             [[ "$target" == *"#"* ]] && frag="${target#*#}"
             if [[ -z "$frag" ]]; then
-              add_error "$rel:$lineno: '§$n' is cited without an anchor — point the link at '#${section_slug[$n]}'"
+              add_error "$rel:$lineno: '§$n' is cited without an anchor — point the link at '#${section_slug[$n]}' [docs/section-refs:anchorless]"
             elif [[ "$frag" != "${section_slug[$n]}" ]]; then
-              add_error "$rel:$lineno: '§$n' links to anchor '#$frag', but section $n of AGENTS.md anchors as '#${section_slug[$n]}'"
+              add_error "$rel:$lineno: '§$n' links to anchor '#$frag', but section $n of AGENTS.md anchors as '#${section_slug[$n]}' [docs/section-refs:anchor]"
             fi
           done
           rest="$clean"
@@ -879,9 +882,9 @@ check_section_refs() {  # check 4
             n="${BASH_REMATCH[1]}"
             rest="${rest#*"${BASH_REMATCH[0]}"}"
             if _contains "$n" "${valid_sections[@]}"; then
-              add_error "$rel:$lineno: '§$n' stands outside a link — cite a section as a link to its anchor, e.g. [\`AGENTS.md\` §$n](AGENTS.md#${section_slug[$n]})"
+              add_error "$rel:$lineno: '§$n' stands outside a link — cite a section as a link to its anchor, e.g. [\`AGENTS.md\` §$n](AGENTS.md#${section_slug[$n]}) [docs/section-refs:unlinked]"
             else
-              add_error "$rel:$lineno: reference '§$n' matches no numbered section in AGENTS.md"
+              add_error "$rel:$lineno: reference '§$n' matches no numbered section in AGENTS.md [docs/section-refs:unmatched]"
             fi
           done
         done <<< "${MD_SECT["$f"]-}"
@@ -892,7 +895,7 @@ check_section_refs() {  # check 4
           while [[ "$LINE" =~ §([0-9]+) ]]; do
             n="${BASH_REMATCH[1]}" LINE="${LINE#*"${BASH_REMATCH[0]}"}"
             _contains "$n" "${valid_sections[@]}" \
-              || add_error "$rel:$lineno: reference '§$n' matches no numbered section in AGENTS.md"
+              || add_error "$rel:$lineno: reference '§$n' matches no numbered section in AGENTS.md [docs/section-refs:unmatched]"
           done
         done < <(grep -nE '§[0-9]+' "$f")
         ;;
@@ -914,7 +917,7 @@ check_adr_refs() {  # check 5
     while [[ "$line" =~ $ADR_REF_WORD_RE ]]; do
       match="${BASH_REMATCH[2]}" line="${line#*"${BASH_REMATCH[0]}"}"
       [[ -v ADR_BY_ID["$match"] ]] \
-        || add_error "${f#"$ROOT"/}:$lineno: reference '$match' matches no ADR file in docs/adr/"
+        || add_error "${f#"$ROOT"/}:$lineno: reference '$match' matches no ADR file in docs/adr/ [docs/adr-refs:unmatched]"
     done
   done < <(grep -Hn --null -E "$ADR_REF_RE" "${files[@]}")
 }
@@ -950,10 +953,10 @@ check_inactive_adr_refs() {  # check 17
       successor="${inactive["$id"]}"
       if [[ -n "$successor" ]]; then
         [[ -v named["$successor"] ]] && continue
-        add_error "${f#"$ROOT"/}:$lineno: cites $id, which is superseded by $successor — cite $successor, or name it on the same line to cite $id as history"
+        add_error "${f#"$ROOT"/}:$lineno: cites $id, which is superseded by $successor — cite $successor, or name it on the same line to cite $id as history [docs/inactive-adr-refs:superseded]"
       else
         [[ "$text" == *rejected* ]] && continue
-        add_error "${f#"$ROOT"/}:$lineno: cites $id, which is rejected — cite the decision in force, or say on the same line that $id was rejected"
+        add_error "${f#"$ROOT"/}:$lineno: cites $id, which is rejected — cite the decision in force, or say on the same line that $id was rejected [docs/inactive-adr-refs:rejected]"
       fi
     done
   done < <(grep -Hn --null -E "$ADR_REF_RE" "${files[@]}")
@@ -983,7 +986,7 @@ check_adr_link_targets() {  # check 6
       adr_is_file "$base" || continue
       [[ "$(cd "$dir" 2>/dev/null && pwd)" == "$ADR_DIR" ]] || continue
       adr_key_of "$base"
-      [[ "$ADR_ID" == "$id" ]] || add_error "$rel: link '$linkexpr' cites $id but points at '$base'"
+      [[ "$ADR_ID" == "$id" ]] || add_error "$rel: link '$linkexpr' cites $id but points at '$base' [docs/adr-link-targets:other]"
     done <<< "${MD_LINKS["$f"]-}"
   done
 }
@@ -994,7 +997,7 @@ check_check_lists() {  # check 9
   local f
   for f in "$wf" "$all" "$readme"; do
     if [[ ! -f "$f" ]]; then
-      add_error "${f#"$ROOT"/}: not found — the check lists cannot be compared"
+      add_error "${f#"$ROOT"/}: not found — the check lists cannot be compared [docs/check-lists:absent]"
       return
     fi
   done
@@ -1011,9 +1014,9 @@ check_check_lists() {  # check 9
   local not_gate=() name
   while IFS= read -r name; do
     if [[ "$ROOT/$name" == "$wf" ]]; then
-      add_error "$rel_all: '# Not a gate: $name' names the workflow of the required checks"
+      add_error "$rel_all: '# Not a gate: $name' names the workflow of the required checks [docs/check-lists:gate]"
     elif [[ ! "$name" =~ ^\.github/workflows/[A-Za-z0-9._-]+\.ya?ml$ || ! -f "$ROOT/$name" ]]; then
-      add_error "$rel_all: '# Not a gate: $name' names no workflow of this repository"
+      add_error "$rel_all: '# Not a gate: $name' names no workflow of this repository [docs/check-lists:nonworkflow]"
     fi
     not_gate+=("$name")
   done < <(sed -n 's/^#[[:space:]]*Not a gate:[[:space:]]*\([^[:space:]]*\).*/\1/p' "$all")
@@ -1022,7 +1025,7 @@ check_check_lists() {  # check 9
   # job_done — report the job just parsed when none of its steps ran a script.
   job_done() {
     [[ -n "$job" ]] && ((is_gate && job_scripts == 0)) \
-      && add_error "$rel: job '$job' runs no script under scripts/ — the local gate cannot run what it does"
+      && add_error "$rel: job '$job' runs no script under scripts/ — the local gate cannot run what it does [docs/check-lists:inline]"
     job=""
   }
   for file in "$ROOT"/.github/workflows/*.yml "$ROOT"/.github/workflows/*.yaml; do
@@ -1057,7 +1060,7 @@ check_check_lists() {  # check 9
     job_done
   done
   if ((${#wf_jobs[@]} == 0)); then
-    add_error "$rel_wf: no jobs found under 'jobs:' — the check lists cannot be compared"
+    add_error "$rel_wf: no jobs found under 'jobs:' — the check lists cannot be compared [docs/check-lists:jobless]"
     return
   fi
 
@@ -1068,7 +1071,7 @@ check_check_lists() {  # check 9
       && all_scripts+=("${BASH_REMATCH[1]}")
   done < "$all"
   if ((${#all_scripts[@]} == 0)); then
-    add_error "$rel_all: no 'run <label> <script>' invocations found — the check lists cannot be compared"
+    add_error "$rel_all: no 'run <label> <script>' invocations found — the check lists cannot be compared [docs/check-lists:runless]"
     return
   fi
 
@@ -1084,11 +1087,11 @@ check_check_lists() {  # check 9
   for s in "${wf_scripts[@]}"; do
     _contains "$s" "${all_scripts[@]}" && continue
     ! _contains "$s" "${gate_scripts[@]}" && _contains "$s" "${on_instruction[@]}" && continue
-    add_error "$rel_all: does not run '$s', which a workflow runs — CI and the local gate disagree"
+    add_error "$rel_all: does not run '$s', which a workflow runs — CI and the local gate disagree [docs/check-lists:unrun]"
   done
   for s in "${all_scripts[@]}"; do
     _contains "$s" "${wf_scripts[@]}" \
-      || add_error "$rel_all: runs '$s', which no job of a workflow runs — CI and the local gate disagree"
+      || add_error "$rel_all: runs '$s', which no job of a workflow runs — CI and the local gate disagree [docs/check-lists:extra]"
   done
 
   # Every script under scripts/ runs in the two lists, unless the local runner names it on a line
@@ -1101,7 +1104,7 @@ check_check_lists() {  # check 9
     s="scripts/${name##*/}"
     [[ "$s" == "$rel_all" ]] && continue
     _contains "$s" "${all_scripts[@]}" "${on_instruction[@]}" \
-      || add_error "$s: no workflow and not $rel_all runs it — add it to both lists, or name it on an '# On instruction:' line of $rel_all"
+      || add_error "$s: no workflow and not $rel_all runs it — add it to both lists, or name it on an '# On instruction:' line of $rel_all [docs/check-lists:orphan]"
   done < <(find "$ROOT/scripts" -maxdepth 1 -type f -name '*.sh' | LC_ALL=C sort)
 
   # The contributing guide: the check names fenced by the 'required-checks' markers, which a maintainer copies
@@ -1120,7 +1123,7 @@ check_check_lists() {  # check 9
     done < <(grep -oE '`[a-z][a-z0-9-]*( \([^`()]+\))?`' <<< "$line" | tr -d '`')
   done < "$readme"
   if ((${#readme_names[@]} == 0)); then
-    add_error "CONTRIBUTING.md: no job names between the 'required-checks' markers — the required status checks are unverifiable"
+    add_error "CONTRIBUTING.md: no job names between the 'required-checks' markers — the required status checks are unverifiable [docs/check-lists:unnamed]"
     return
   fi
 
@@ -1128,23 +1131,23 @@ check_check_lists() {  # check 9
     base="${name%% (*}"
     readme_jobs+=("$base")
     if ! _contains "$base" "${wf_jobs[@]}"; then
-      add_error "CONTRIBUTING.md: required check '$name' is not a job of $rel_wf — a ruleset would wait for a check that never reports"
+      add_error "CONTRIBUTING.md: required check '$name' is not a job of $rel_wf — a ruleset would wait for a check that never reports [docs/check-lists:unreported]"
     elif [[ "$name" == "$base" ]] && _contains "$base" "${matrix_jobs[@]}"; then
-      add_error "CONTRIBUTING.md: required check '$name' is a job with a matrix, which reports as '$name (<values>)' — name each check run"
+      add_error "CONTRIBUTING.md: required check '$name' is a job with a matrix, which reports as '$name (<values>)' — name each check run [docs/check-lists:matrix]"
     elif [[ "$name" != "$base" ]] && ! _contains "$base" "${matrix_jobs[@]}"; then
-      add_error "CONTRIBUTING.md: required check '$name' names a check run of '$base', which has no matrix and reports as '$base'"
+      add_error "CONTRIBUTING.md: required check '$name' names a check run of '$base', which has no matrix and reports as '$base' [docs/check-lists:nomatrix]"
     fi
   done
   for job in "${wf_jobs[@]}"; do
     _contains "$job" "${readme_jobs[@]}" \
-      || add_error "CONTRIBUTING.md: job '$job' of $rel_wf is missing from the required checks — it would run without gating a merge"
+      || add_error "CONTRIBUTING.md: job '$job' of $rel_wf is missing from the required checks — it would run without gating a merge [docs/check-lists:ungated]"
   done
 }
 
 check_project_layout() {  # check 10
   local readme="$ROOT/CONTRIBUTING.md"
   if [[ ! -f "$readme" ]]; then
-    add_error "CONTRIBUTING.md: not found — the Project Layout block cannot be checked"
+    add_error "CONTRIBUTING.md: not found — the Project Layout block cannot be checked [docs/project-layout:absent]"
     return
   fi
 
@@ -1168,19 +1171,19 @@ check_project_layout() {  # check 10
     listed+=("$path")
     if [[ "$path" == *"*"* ]]; then
       compgen -G "$ROOT/$path" >/dev/null \
-        || add_error "CONTRIBUTING.md: Project Layout lists '$path', which matches nothing in this repository"
+        || add_error "CONTRIBUTING.md: Project Layout lists '$path', which matches nothing in this repository [docs/project-layout:unmatched]"
     elif [[ "$path" == */ ]]; then
       # Open work lives under docs/plan/ only while there is some (NUC-large-work-is-planned §2).
       [[ -d "$ROOT/${path%/}" || "$path" == "docs/plan/" ]] \
-        || add_error "CONTRIBUTING.md: Project Layout lists '$path', which is not a directory of this repository"
+        || add_error "CONTRIBUTING.md: Project Layout lists '$path', which is not a directory of this repository [docs/project-layout:notdir]"
     else
       [[ -f "$ROOT/$path" ]] \
-        || add_error "CONTRIBUTING.md: Project Layout lists '$path', which does not exist"
+        || add_error "CONTRIBUTING.md: Project Layout lists '$path', which does not exist [docs/project-layout:missing]"
     fi
   done < "$readme"
 
   if ((entries == 0)); then
-    add_error "CONTRIBUTING.md: no paths found under '## Project Layout' — the inventory is unverifiable"
+    add_error "CONTRIBUTING.md: no paths found under '## Project Layout' — the inventory is unverifiable [docs/project-layout:empty]"
     return
   fi
 
@@ -1191,7 +1194,7 @@ check_project_layout() {  # check 10
     for path in "${listed[@]}"; do
       [[ "$path" == "$top" || "$path" == "$top/"* ]] && { covered=1; break; }
     done
-    ((covered)) || add_error "CONTRIBUTING.md: Project Layout does not name '$top', a top-level part of this repository"
+    ((covered)) || add_error "CONTRIBUTING.md: Project Layout does not name '$top', a top-level part of this repository [docs/project-layout:unnamed]"
   done < <(git -C "$ROOT" ls-files --cached 2>/dev/null | cut -d/ -f1 | LC_ALL=C sort -u)
 }
 
@@ -1210,14 +1213,14 @@ check_skill_pointers() {  # check 11
       /^name:/ { v = $0; sub(/^name:[ \t]*/, "", v); gsub(/^["\047]|["\047]?[ \t]*$/, "", v); n = v == name }
       /^description:/ { desc = 1 }
       END { exit !(closed && n && desc) }' "$d/SKILL.md" \
-      || add_error ".agents/skills/$name/SKILL.md: no front matter an agent reads — '---' first, a 'name: $name' and a 'description:' line, unindented lines only keys, then '---' (NUC-procedures-are-skills §7)"
+      || add_error ".agents/skills/$name/SKILL.md: no front matter an agent reads — '---' first, a 'name: $name' and a 'description:' line, unindented lines only keys, then '---' (NUC-procedures-are-skills §7) [docs/skill-pointers:frontmatter]"
     p="$pointers/$name"
     if [[ -L "$p" ]]; then
       continue
     elif [[ -e "$p" ]]; then
-      add_error ".claude/skills/$name: is a copy of the skill, not a symlink — a second source drifts; replace it: rm -r .claude/skills/$name && ln -s ../../.agents/skills/$name .claude/skills/$name"
+      add_error ".claude/skills/$name: is a copy of the skill, not a symlink — a second source drifts; replace it: rm -r .claude/skills/$name && ln -s ../../.agents/skills/$name .claude/skills/$name [docs/skill-pointers:copy]"
     else
-      add_error ".claude/skills/$name: no pointer — the skill .agents/skills/$name is invisible to Claude Code; add it: ln -s ../../.agents/skills/$name .claude/skills/$name"
+      add_error ".claude/skills/$name: no pointer — the skill .agents/skills/$name is invisible to Claude Code; add it: ln -s ../../.agents/skills/$name .claude/skills/$name [docs/skill-pointers:missing]"
     fi
   done
   for p in "$pointers"/*; do
@@ -1226,16 +1229,16 @@ check_skill_pointers() {  # check 11
     if [[ ! -L "$p" ]]; then
       # A copy of an existing skill was reported above; what is left is a skill living here only.
       [[ -f "$skills/$name/SKILL.md" ]] \
-        || add_error ".claude/skills/$name: is not a symlink into .agents/skills/ — a skill lives there, where every agent reads it, and is pointed at from here (NUC-procedures-are-skills §6)"
+        || add_error ".claude/skills/$name: is not a symlink into .agents/skills/ — a skill lives there, where every agent reads it, and is pointed at from here (NUC-procedures-are-skills §6) [docs/skill-pointers:stray]"
       continue
     fi
     if ! target="$(cd -P "$p" 2>/dev/null && pwd -P)"; then
-      add_error ".claude/skills/$name: dangles — its target does not exist; point it at .agents/skills/$name or delete it"
+      add_error ".claude/skills/$name: dangles — its target does not exist; point it at .agents/skills/$name or delete it [docs/skill-pointers:dangles]"
       continue
     fi
     want="$(cd -P "$skills/$name" 2>/dev/null && pwd -P)"
     [[ -n "$want" && "$target" == "$want" && -f "$want/SKILL.md" ]] \
-      || add_error ".claude/skills/$name: points at '${target#"$ROOT"/}', not at the skill .agents/skills/$name"
+      || add_error ".claude/skills/$name: points at '${target#"$ROOT"/}', not at the skill .agents/skills/$name [docs/skill-pointers:target]"
   done
 }
 
@@ -1244,23 +1247,23 @@ check_base_blobs() {  # check 12
   local list="$ADR_DIR/NUC.blobs" f name blob fix out
   fix="a derived project restores the file of its release and narrows a rule by an ADR of its own; the template rewrites the list: bash -c 'source scripts/lib/adr.sh && adr_blobs docs/adr' > docs/adr/NUC.blobs (NUC-base-is-fixed §2)"
   local -A want=() have=()
-  out="$(adr_blobs "$ADR_DIR" 2>&1)" || { add_error "docs/adr/NUC.blobs: no blob identifiers computed: ${out##*$'\n'}"; return; }
+  out="$(adr_blobs "$ADR_DIR" 2>&1)" || { add_error "docs/adr/NUC.blobs: no blob identifiers computed: ${out##*$'\n'} [docs/base-blobs:compute]"; return; }
   while read -r blob name; do [[ -n "$name" ]] && have["$name"]="$blob"; done <<< "$out"
   if [[ ! -f "$list" ]]; then
     ((${#have[@]})) || return 0
     # shellcheck disable=SC2016  # the backticks are Markdown to match, not a command substitution
     grep -qE '^[[:space:]]*([-*] )?\*\*Template release:\*\*[[:space:]]*[[`]?v[0-9]+\.[0-9]+\.[0-9]+[]`]?(\([^)]*\))?, forked([^[:alnum:]]|$)' \
       "$ROOT/README.md" 2>/dev/null \
-      || add_error "docs/adr/NUC.blobs: not found — it names each NUC- file and AGENTS.md with its blob; a fork names the release it forked on the Template release line of README.md, 'vX.Y.Z, forked' (NUC-base-is-fixed §1)"
+      || add_error "docs/adr/NUC.blobs: not found — it names each NUC- file and AGENTS.md with its blob; a fork names the release it forked on the Template release line of README.md, 'vX.Y.Z, forked' (NUC-base-is-fixed §1) [docs/base-blobs:absent]"
     return
   fi
   while read -r blob name; do [[ -n "$name" ]] && want["$name"]="$blob"; done < "$list"
   for name in "${!want[@]}"; do
-    [[ -v have["$name"] ]] || add_error "docs/adr/NUC.blobs: names $name, which does not exist — $fix"
+    [[ -v have["$name"] ]] || add_error "docs/adr/NUC.blobs: names $name, which does not exist — $fix [docs/base-blobs:gone]"
   done
   for name in "${!have[@]}"; do
-    if [[ ! -v want["$name"] ]]; then add_error "$name: has no line in docs/adr/NUC.blobs — $fix"
-    elif [[ "${want["$name"]}" != "${have["$name"]}" ]]; then add_error "$name: differs from its line in docs/adr/NUC.blobs — $fix"; fi
+    if [[ ! -v want["$name"] ]]; then add_error "$name: has no line in docs/adr/NUC.blobs — $fix [docs/base-blobs:unlisted]"
+    elif [[ "${want["$name"]}" != "${have["$name"]}" ]]; then add_error "$name: differs from its line in docs/adr/NUC.blobs — $fix [docs/base-blobs:differs]"; fi
   done
 }
 
@@ -1268,37 +1271,37 @@ check_base_blobs() {  # check 12
 # it does not exist, so a project that dropped one of them is not asked to edit it.
 check_template_identity() {  # check 13
   [[ -f "$ROOT/TEMPLATE-SETUP.md" ]] && return
-  # placeholder <file> <grep -E pattern> <message>
+  # placeholder <file> <grep -E pattern> <message> <reason>
   placeholder() {
     [[ -f "$ROOT/$1" ]] || return 0
-    grep -qE "$2" "$ROOT/$1" && add_error "$1: $3"
+    grep -qE "$2" "$ROOT/$1" && add_error "$1: $3 [docs/template-identity:$4]"
   }
-  placeholder README.md '^# NUC — an Agentic' "the title is still the template's; give the project its name"
-  placeholder README.md '^\*\*NUC\*\* is named after' "the intro still explains the template's name; say what the project is"
-  placeholder README.md '^## Why NUC$' "the Why NUC section still presents the template; delete it"
-  placeholder README.md '^Describe what this project does' "the Overview is still the scaffold's sentence; describe the project"
-  placeholder README.md '^TODO — show a minimal example' "the Usage section is still TODO; show how the project is used, or say there is nothing to use yet"
+  placeholder README.md '^# NUC — an Agentic' "the title is still the template's; give the project its name" title
+  placeholder README.md '^\*\*NUC\*\* is named after' "the intro still explains the template's name; say what the project is" intro
+  placeholder README.md '^## Why NUC$' "the Why NUC section still presents the template; delete it" why
+  placeholder README.md '^Describe what this project does' "the Overview is still the scaffold's sentence; describe the project" overview
+  placeholder README.md '^TODO — show a minimal example' "the Usage section is still TODO; show how the project is used, or say there is nothing to use yet" usage
   # Anchored to a badge line: the Template section links the template's repository on purpose,
   # and that link stays. The name ends where a URL goes on, so that a derived repository named
   # after the template, as hivevm/nuc-tools, is not taken for it.
-  placeholder README.md '^\[!\[[^]]*\]\([^)]*hivevm/nuc([/)?#&]|\.svg|$)' "a badge still points at the template's repository; repoint or delete it"
-  placeholder .devcontainer/devcontainer.json '"name": "NUC DevContainer"' "the Dev Container still carries the template's name"
-  placeholder LICENSE '^Copyright\b.*\bMaintainer\b' "the copyright holder is still the placeholder; name the maintainer"
-  placeholder SECURITY.md 'TODO: add a security contact' "the security contact is still the placeholder"
-  placeholder CODE_OF_CONDUCT.md 'TODO: add a contact address' "the reporting contact is still the placeholder"
-  placeholder .github/CODEOWNERS '^# TODO: add a code owner' "the instruction to add a code owner is still there; remove it once the rules are active"
+  placeholder README.md '^\[!\[[^]]*\]\([^)]*hivevm/nuc([/)?#&]|\.svg|$)' "a badge still points at the template's repository; repoint or delete it" badge
+  placeholder .devcontainer/devcontainer.json '"name": "NUC DevContainer"' "the Dev Container still carries the template's name" container
+  placeholder LICENSE '^Copyright\b.*\bMaintainer\b' "the copyright holder is still the placeholder; name the maintainer" copyright
+  placeholder SECURITY.md 'TODO: add a security contact' "the security contact is still the placeholder" security
+  placeholder CODE_OF_CONDUCT.md 'TODO: add a contact address' "the reporting contact is still the placeholder" conduct
+  placeholder .github/CODEOWNERS '^# TODO: add a code owner' "the instruction to add a code owner is still there; remove it once the rules are active" instruction
   if [[ -f "$ROOT/.github/CODEOWNERS" ]] && ! grep -qE '^[^#[:space:]]' "$ROOT/.github/CODEOWNERS"; then
-    add_error ".github/CODEOWNERS: no active rule; name the code owner and uncomment the two rules"
+    add_error ".github/CODEOWNERS: no active rule; name the code owner and uncomment the two rules [docs/template-identity:codeowners]"
   fi
   local doc
   for doc in SPECIFICATION ARCHITECTURE GLOSSARY CONVENTIONS; do
-    placeholder "docs/$doc.md" '^# .*<Project Name>' "the title still carries '<Project Name>'; give the project its name"
+    placeholder "docs/$doc.md" '^# .*<Project Name>' "the title still carries '<Project Name>'; give the project its name" projectname
   done
-  placeholder docs/SPECIFICATION.md '\*\*[GQ]-[0-9]+\*\* — (…|<Quality)' "a criterion is still the scaffold's placeholder; write it, or delete the item"
-  placeholder docs/ARCHITECTURE.md '^- \*\*<Part>\*\*' "the scaffold's building block is still listed; describe the parts, or delete the entry"
-  placeholder docs/GLOSSARY.md '^- \*\*<Term>\*\*' "the scaffold's entry is still listed; write the first term, or delete the entry"
-  placeholder docs/CONVENTIONS.md '^- \*\*<Convention>\*\*' "the scaffold's entry is still listed; write the first convention, or delete the entry"
-  placeholder README.md '^- \*\*(Build|Test|Lint|Run):\*\* TODO' "a Build, Test, Lint, or Run command is still TODO; name the command the toolchain ADR chose"
+  placeholder docs/SPECIFICATION.md '\*\*[GQ]-[0-9]+\*\* — (…|<Quality)' "a criterion is still the scaffold's placeholder; write it, or delete the item" criterion
+  placeholder docs/ARCHITECTURE.md '^- \*\*<Part>\*\*' "the scaffold's building block is still listed; describe the parts, or delete the entry" part
+  placeholder docs/GLOSSARY.md '^- \*\*<Term>\*\*' "the scaffold's entry is still listed; write the first term, or delete the entry" term
+  placeholder docs/CONVENTIONS.md '^- \*\*<Convention>\*\*' "the scaffold's entry is still listed; write the first convention, or delete the entry" convention
+  placeholder README.md '^- \*\*(Build|Test|Lint|Run):\*\* TODO' "a Build, Test, Lint, or Run command is still TODO; name the command the toolchain ADR chose" command
   local role n f
   for role in "${ADR_ROLES[@]}"; do
     n=0
@@ -1306,18 +1309,26 @@ check_template_identity() {  # check 13
       adr_field_value "${ADR_REL["Role $f"]-}" Role && trim "$ADR_VALUE"
       [[ "$TRIMMED" == "$role" && "${ADR_STATUS["$f"]-}" == *🟢* ]] && n=$((n + 1))
     done
-    ((n == 0)) && add_error "docs/adr/: no accepted ADR fills the role $role — one carries '- **Role:** $role' (NUC-base-is-fixed §3)"
-    ((n > 1)) && add_error "docs/adr/: $n accepted ADRs fill the role $role — exactly one does (NUC-base-is-fixed §3)"
+    ((n == 0)) && add_error "docs/adr/: no accepted ADR fills the role $role — one carries '- **Role:** $role' (NUC-base-is-fixed §3) [docs/template-identity:unfilled]"
+    ((n > 1)) && add_error "docs/adr/: $n accepted ADRs fill the role $role — exactly one does (NUC-base-is-fixed §3) [docs/template-identity:several]"
   done
 }
 
 # LINK_SPACE_RE — a space inside the text of a link; check 15 reads a link as one word.
 LINK_SPACE_RE='(\[[^] ]*) ([^]]*\]\()'
 
+# columns <text> — sets COLUMNS_OF to the characters of the text: its bytes less the UTF-8
+# continuation bytes, so a bash that counts UTF-16 units, as Git Bash does, counts an emoji once.
+columns() {
+  local LC_ALL=C cont
+  cont="${1//[!$'\x80'-$'\xbf']/}"
+  COLUMNS_OF=$((${#1} - ${#cont}))
+}
+
 # Check 15 (see the header). Characters are counted, not bytes, so an em dash is one column;
 # scan_markdown hands over only the lines longer than 100 bytes outside front matter and fences.
 check_prose_width() {  # check 15
-  local f rel n line indent body in_adr attr
+  local f rel n line indent body in_adr attr COLUMNS_OF
   local LC_ALL=C.UTF-8
   # A file git marks as generated is written by a tool, not wrapped by hand; asked once for all.
   local -A generated=()
@@ -1339,7 +1350,8 @@ check_prose_width() {  # check 15
       [[ -n "$line" ]] || continue
       n="${line%%:*}"
       line="${line#*:}"
-      ((${#line} > 100)) || continue
+      columns "$line"
+      ((COLUMNS_OF > 100)) || continue
       # A table row, a heading, and an ADR header field are one line by their syntax.
       [[ "$line" =~ ^[[:space:]]*\| || "$line" =~ ^# ]] && continue
       [[ in_adr -eq 1 && "$line" =~ $ADR_FIELD_ITEM_RE ]] && continue
@@ -1351,7 +1363,7 @@ check_prose_width() {  # check 15
         body="${body/"${BASH_REMATCH[0]}"/"${BASH_REMATCH[1]}_${BASH_REMATCH[2]}"}"
       done
       [[ "$body" == *" "* ]] \
-        && add_error "$rel:$n: ${#line} columns — wrap the prose at 100 (a link that does not fit stands on a line of its own)"
+        && add_error "$rel:$n: $COLUMNS_OF columns — wrap the prose at 100 (a link that does not fit stands on a line of its own) [docs/prose-width:wide]"
     done <<< "${MD_WIDE["$f"]}"
   done
 }
@@ -1364,13 +1376,13 @@ check_prose_width() {  # check 15
 check_template_release() {  # check 14
   local readme="$ROOT/README.md"
   if [[ ! -f "$readme" ]]; then
-    add_error "README.md: not found — the Template section names the release this repository carries (NUC-releases-are-semver-tags §4)"
+    add_error "README.md: not found — the Template section names the release this repository carries (NUC-releases-are-semver-tags §4) [docs/template-release:absent]"
     return
   fi
   local line value
   line="$(grep -m1 -E '^[[:space:]]*([-*] )?\*\*Template release:\*\*' "$readme")"
   if [[ -z "$line" ]]; then
-    add_error "README.md: no '**Template release:**' line — the Template section names the release of the template this repository carries, or 'unreleased' (NUC-releases-are-semver-tags §4)"
+    add_error "README.md: no '**Template release:**' line — the Template section names the release of the template this repository carries, or 'unreleased' (NUC-releases-are-semver-tags §4) [docs/template-release:line]"
     return
   fi
   value="${line#*\*\*Template release:\*\*}"
@@ -1379,7 +1391,7 @@ check_template_release() {  # check 14
   # shellcheck disable=SC2016  # the backticks are Markdown to match, not a command substitution
   local re='^[[`]?(v'"$num"'\.'"$num"'\.'"$num"'|unreleased)($|[][:space:],;:)`]|\.([[:space:]]|$))'
   [[ "$value" =~ $re ]] \
-    || add_error "README.md: the Template release line names neither a 'vX.Y.Z' tag nor 'unreleased' — a release moves it to the tag it cuts (NUC-releases-are-semver-tags §1, §4)"
+    || add_error "README.md: the Template release line names neither a 'vX.Y.Z' tag nor 'unreleased' — a release moves it to the tag it cuts (NUC-releases-are-semver-tags §1, §4) [docs/template-release:version]"
 }
 
 collect_text_files

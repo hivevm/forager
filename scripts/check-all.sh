@@ -45,18 +45,8 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
-# The checks need bash 4.4 or later (NUC-checks-are-bash §1). This guard runs first and is
-# written for bash 3.2, so an older bash, such as the one macOS ships, gets a message instead of
-# a check failing on a construct it lacks. CHECK_ALL_BASH_VERSION stands in for the version
-# found, for the self-test.
-bash_found="${CHECK_ALL_BASH_VERSION:-${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}}"
-bash_major="${bash_found%%.*}" bash_minor="${bash_found#*.}"
-bash_minor="${bash_minor%%.*}"
-if ((bash_major < 4 || (bash_major == 4 && bash_minor < 4))); then
-  echo "check-all: the checks need bash 4.4 or later (NUC-checks-are-bash §1); this is bash $bash_found — run them in the Dev Container, or install a current bash" >&2
-  exit 2
-fi
-
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
 

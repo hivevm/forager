@@ -43,6 +43,9 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=lib/adr.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/adr.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/check.sh
@@ -145,11 +148,11 @@ while IFS= read -r -d '' rel; do
         _contains "$id" "${criteria[@]}" \
           || add_error "$rel:$lineno: cites '$id', which is not a criterion of $SPEC"
       elif [[ ! "$id" =~ ^$ADR_NEW_RE$ ]]; then
-        add_error "$rel:$lineno: cites '$id', which is no identifier: <CAT>-<slug> of two to five words, G-n, or Q-n"
+        add_error "$rel:$lineno: cites '$id', which is no identifier: <CAT>-<slug> of two to five words, G-n, or Q-n [traceability/citations:malformed]"
       elif ! _contains "$id" "${known_adrs[@]}"; then
-        add_error "$rel:$lineno: cites '$id', which does not exist in $ADR_DIR/"
+        add_error "$rel:$lineno: cites '$id', which does not exist in $ADR_DIR/ [traceability/citations:missing]"
       elif _contains "$id" "${inactive[@]}"; then
-        add_error "$rel:$lineno: cites '$id', which is superseded or rejected — a test cannot verify a decision no longer in force"
+        add_error "$rel:$lineno: cites '$id', which is superseded or rejected — a test cannot verify a decision no longer in force [traceability/citations:inactive]"
       fi
     done
   done < <(grep -nE "Verifies:[[:space:]]*($ID_RE)" "$f")
@@ -161,13 +164,13 @@ done < <(git -C "$ROOT" ls-files --cached --others --exclude-standard -z)
 while IFS= read -r -d '' rel; do
   [[ "$rel" =~ ^scripts/sensor-([^/]+)\.sh$ && -f "$ROOT/$rel" ]] || continue
   if [[ ! -f "$ROOT/$ADR_DIR/$CHECKS_ADR.md" ]]; then
-    add_error "$CHECKS_ADR, which the self-test of each sensor cites, is not in $ADR_DIR/"; break
+    add_error "$CHECKS_ADR, which the self-test of each sensor cites, is not in $ADR_DIR/ [traceability/sensor-tests:adr]"; break
   fi
   self_test="scripts/test-sensor-${BASH_REMATCH[1]}.sh"
   if [[ ! -f "$ROOT/$self_test" ]]; then
-    add_error "$rel has no self-test $self_test — each sensor runs after one that cites $CHECKS_ADR"
+    add_error "$rel has no self-test $self_test — each sensor runs after one that cites $CHECKS_ADR [traceability/sensor-tests:absent]"
   elif [[ " ${cited_in[$self_test]:-}" != *" $CHECKS_ADR "* ]]; then
-    add_error "$self_test does not cite $CHECKS_ADR — the self-test of a sensor cites the ADR that decides the checks"
+    add_error "$self_test does not cite $CHECKS_ADR — the self-test of a sensor cites the ADR that decides the checks [traceability/sensor-tests:uncited]"
   fi
 done < <(git -C "$ROOT" ls-files --cached --others --exclude-standard -z -- scripts)
 
@@ -177,7 +180,7 @@ done < <(git -C "$ROOT" ls-files --cached --others --exclude-standard -z -- scri
 for id in "${accepted[@]}"; do
   _contains "$id" "${exempt[@]}" && continue
   _contains "$id" "${cited[@]}" \
-    || add_error "$id is accepted but no test cites it — add a 'Verifies' marker or declare it not mechanically decidable in its Enforcement section"
+    || add_error "$id is accepted but no test cites it — add a 'Verifies' marker or declare it not mechanically decidable in its Enforcement section [traceability/coverage:uncited]"
 done
 
 uncovered=()

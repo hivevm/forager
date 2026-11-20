@@ -176,6 +176,20 @@ outside="$(mktemp -d)"
 # The library's trap removes $work only; this one removes $outside too, whatever ends the test.
 trap 'rm -rf "$work" "$outside"' EXIT
 mkdir -p "$outside/.git"
+# A host whose git sets core.autocrlf=true, as Git for Windows does, checks a fixture out as it
+# was written and warns of no line ending, and MSYS makes a fixture's 'ln -s' a native link.
+printf '[core]\n\tautocrlf = true\n' > "$outside/crlf.gitconfig"
+# shellcheck disable=SC2016 # expanded by the inner shell
+crlf="$(GIT_CONFIG_GLOBAL="$outside/crlf.gitconfig" MSYS='' bash -c 'source "$1"; f="$work/f"
+  git init -q "$f" && printf "a\n" > "$f/a" && git -C "$f" add a \
+    && git -C "$f" -c user.name=f -c user.email=f@x commit -q -m a && rm "$f/a" \
+    && git -C "$f" checkout -q -- a
+  if printf "a\n" | cmp -s - "$f/a"; then echo LF; else od -c "$f/a"; fi
+  echo "|$MSYS"' _ "$lib" 2>&1)"
+check "a fixture under core.autocrlf=true is checked out with LF and no warning" \
+  test "${crlf%%|*}" = $'LF\n'
+[[ "${crlf%%|*}" == $'LF\n' ]] || printf '    %s\n' "${crlf%%|*}" >&2
+check "a self-test asks MSYS for native symlinks, once" test "${crlf#*|}" = "winsymlinks:nativestrict"
 # shellcheck disable=SC2016 # expanded by the inner shell
 for target in '' '$ROOT' '$outside' '$work/plain' '$work/fixture'; do
   out="$(outside="$outside" bash -c 'source "$1"; mkdir -p "$work/plain" "$work/fixture/.git"; fixture "'"$target"'" && echo accepted' _ "$lib" 2>&1)"

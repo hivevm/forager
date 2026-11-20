@@ -14,7 +14,9 @@ skimmed. The design revision drops what prevented nothing
 
 - **A check's cases are a table** — a new or changed check writes its cases into a table under
   `scripts/fixtures/` before its code, and its self-test reads the table, so a port of the
-  checks is held to the same cases.
+  checks is held to the same cases. A case expects a key, a rule identifier and a reason word that
+  the message ends in, such as `[docs/adr-index:twice]`, and the data of the finding, never its
+  wording, so that rewording a message breaks no port.
 - **Diagnostic codes are kebab-case and stable** — tests and tools match on `code`, never on the
   message, so messages can be reworded freely and a code once used keeps its meaning.
 - **A test that expects a refusal asserts its reason** — the diagnostic's code in a Rust test,

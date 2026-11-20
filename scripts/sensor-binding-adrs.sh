@@ -38,6 +38,9 @@
 
 set -uo pipefail
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=lib/adr.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/adr.sh"
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh

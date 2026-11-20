@@ -29,6 +29,9 @@
 # session was first, 1 on anything else.
 set -uo pipefail
 
+# shellcheck source-path=SCRIPTDIR source=../../../scripts/lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../../../scripts/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=../../../scripts/lib/ticket.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../../../scripts/lib/ticket.sh"
 

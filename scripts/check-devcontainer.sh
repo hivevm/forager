@@ -47,6 +47,9 @@
 
 set -uo pipefail
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=lib/check.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/check.sh"
 
@@ -112,25 +115,25 @@ top_level_value() {
 
 features=()
 if [[ ! -d "$ROOT/.devcontainer" ]]; then
-  echo "Dev Container check passed: no .devcontainer/, so nothing binds (NUC-container-hides-host-daemon §1)."
+  echo "Dev Container check passed: no .devcontainer/, so nothing binds (NUC-container-hides-host-daemon §1). [devcontainer/check:unbound]"
   exit 0
 fi
 if [[ ! -f "$ROOT/$CONFIG" ]]; then
-  add_error "$CONFIG: not found — a .devcontainer/ without its definition (NUC-container-hides-host-daemon §1)"
+  add_error "$CONFIG: not found — a .devcontainer/ without its definition (NUC-container-hides-host-daemon §1) [devcontainer/definition:absent]"
 else
   # §2 Socket.
   if grep -qE 'docker\.sock|/var/run/docker' <<< "$(uncommented "$ROOT/$CONFIG")"; then
-    add_error "$CONFIG: mounts the host Docker socket — the Dev Container never reaches the host engine (NUC-container-hides-host-daemon §2); manage host containers from the host-side extension instead"
+    add_error "$CONFIG: mounts the host Docker socket — the Dev Container never reaches the host engine (NUC-container-hides-host-daemon §2); manage host containers from the host-side extension instead [devcontainer/socket:mount]"
   fi
 
   mapfile -t features < <(feature_ids "$ROOT/$CONFIG")
   for id in "${features[@]}"; do
     if [[ "$id" == *docker-outside-of-docker* ]]; then
-      add_error "$CONFIG: Feature '$id' would mount the host Docker socket — it is not added (NUC-container-hides-host-daemon §2)"
+      add_error "$CONFIG: Feature '$id' would mount the host Docker socket — it is not added (NUC-container-hides-host-daemon §2) [devcontainer/socket:feature]"
     fi
     # §3 Pinning.
     [[ "$id" =~ :[0-9]+$ ]] \
-      || add_error "$CONFIG: Feature '$id' is not pinned by its major version tag alone ('<ref>:N') — an untagged, mutable, or fully versioned reference is not what the lock resolves (NUC-container-hides-host-daemon §3)"
+      || add_error "$CONFIG: Feature '$id' is not pinned by its major version tag alone ('<ref>:N') — an untagged, mutable, or fully versioned reference is not what the lock resolves (NUC-container-hides-host-daemon §3) [devcontainer/lock:tag]"
   done
 
   # GitHub CLI login: each mount is a 'source=…,target=…' string on a line of its own.
@@ -138,24 +141,24 @@ else
     source="$(grep -oE 'source=[^,"]*' <<< "$mount")"
     target="$(grep -oE 'target=[^,"]*' <<< "$mount")"
     if [[ "$source" =~ \.config/gh/?$ ]]; then
-      add_error "$CONFIG: binds the host's own '.config/gh' — the container keeps its login in '~/.config/gh-devcontainer' on the host (SEC-gh-login-stays-on-host)"
+      add_error "$CONFIG: binds the host's own '.config/gh' — the container keeps its login in '~/.config/gh-devcontainer' on the host (SEC-gh-login-stays-on-host) [devcontainer/gh-login:host]"
     elif [[ "$target" =~ ^target=/home/vscode/\.config/gh/?$ && ! "$source" =~ \.config/gh-devcontainer/?$ ]]; then
-      add_error "$CONFIG: binds /home/vscode/.config/gh from '${source#source=}' — it comes from '~/.config/gh-devcontainer' on the host (SEC-gh-login-stays-on-host)"
+      add_error "$CONFIG: binds /home/vscode/.config/gh from '${source#source=}' — it comes from '~/.config/gh-devcontainer' on the host (SEC-gh-login-stays-on-host) [devcontainer/gh-login:source]"
     fi
   done < <(uncommented "$ROOT/$CONFIG" | grep -E 'source=[^,]*,[[:space:]]*target=')
 
   # §3 Lock.
   if [[ ! -f "$ROOT/$LOCK" ]]; then
-    add_error "$LOCK: not found — the lock is committed so that the same commit yields the same Features (NUC-container-hides-host-daemon §3)"
+    add_error "$LOCK: not found — the lock is committed so that the same commit yields the same Features (NUC-container-hides-host-daemon §3) [devcontainer/lock:absent]"
   else
     mapfile -t locked < <(feature_ids "$ROOT/$LOCK")
     for id in "${features[@]}"; do
       _contains "$id" "${locked[@]}" \
-        || add_error "$LOCK: has no entry for Feature '$id' — regenerate the lock (rebuild the container) so the Feature builds from a resolved digest (NUC-container-hides-host-daemon §3)"
+        || add_error "$LOCK: has no entry for Feature '$id' — regenerate the lock (rebuild the container) so the Feature builds from a resolved digest (NUC-container-hides-host-daemon §3) [devcontainer/lock:missing]"
     done
     for id in "${locked[@]}"; do
       _contains "$id" "${features[@]}" \
-        || add_error "$LOCK: lists Feature '$id', which $CONFIG no longer adds — the lock was not regenerated (NUC-container-hides-host-daemon §3)"
+        || add_error "$LOCK: lists Feature '$id', which $CONFIG no longer adds — the lock was not regenerated (NUC-container-hides-host-daemon §3) [devcontainer/lock:stale]"
     done
   fi
 
@@ -165,7 +168,7 @@ else
   for setting in "core.hooksPath .githooks" "merge.ff false" "pull.ff only" \
     "merge.adr-index.driver '.githooks/merge-adr-index %O %A %B %S %X %Y'"; do
     [[ "$post" == *"git config $setting"* ]] \
-      || add_error "$CONFIG: postStartCommand does not run 'git config $setting' — the git hooks and the merge settings they rely on are enabled on every start (NUC-container-hides-host-daemon §6)"
+      || add_error "$CONFIG: postStartCommand does not run 'git config $setting' — the git hooks and the merge settings they rely on are enabled on every start (NUC-container-hides-host-daemon §6) [devcontainer/git-settings:absent]"
   done
 
   # §5 Mount path: a key the file leaves out takes the default, which is the path itself.
@@ -173,7 +176,7 @@ else
   own='/workspaces/${localWorkspaceFolderBasename}'
   folder="$(top_level_value "$ROOT/$CONFIG" workspaceFolder)"
   [[ -z "$folder" || "$folder" == *"\"$own\""* ]] \
-    || add_error "$CONFIG: workspaceFolder is not '$own' — a path every project shares gives every project one agent memory (NUC-container-hides-host-daemon §5)"
+    || add_error "$CONFIG: workspaceFolder is not '$own' — a path every project shares gives every project one agent memory (NUC-container-hides-host-daemon §5) [devcontainer/mount-path:folder]"
   # The target is one of the mount's comma-separated options, under any of its names.
   mount="$(top_level_value "$ROOT/$CONFIG" workspaceMount | tr -d '" \t\n')"
   mount_own=0
@@ -183,17 +186,17 @@ else
     case "${option#:}" in target="$own" | dst="$own" | destination="$own") mount_own=1 ;; esac
   done
   ((mount_own)) \
-    || add_error "$CONFIG: workspaceMount does not target '$own' — a path every project shares gives every project one agent memory (NUC-container-hides-host-daemon §5)"
+    || add_error "$CONFIG: workspaceMount does not target '$own' — a path every project shares gives every project one agent memory (NUC-container-hides-host-daemon §5) [devcontainer/mount-path:mount]"
 fi
 
 # §4 Host side, only in a tree that uses VS Code: the pair has to sit inside the
 # 'remote.extensionKind' object, so the text is flattened and matched from that key up to the
 # first closing brace.
 if [[ -d "$ROOT/.vscode" && ! -f "$ROOT/$SETTINGS" ]]; then
-  add_error "$SETTINGS: not found — it pins the container-management extension to the host side (NUC-container-hides-host-daemon §4)"
+  add_error "$SETTINGS: not found — it pins the container-management extension to the host side (NUC-container-hides-host-daemon §4) [devcontainer/settings:absent]"
 elif [[ -d "$ROOT/.vscode" ]] && ! grep -qE '"remote\.extensionKind":\{[^}]*"ms-azuretools\.vscode-containers":\["ui"\]' \
        <<< "$(uncommented "$ROOT/$SETTINGS" | tr -d ' \t\n')"; then
-  add_error "$SETTINGS: does not pin 'ms-azuretools.vscode-containers' to [\"ui\"] under 'remote.extensionKind' — without it the extension runs in the container and asks for the socket (NUC-container-hides-host-daemon §4)"
+  add_error "$SETTINGS: does not pin 'ms-azuretools.vscode-containers' to [\"ui\"] under 'remote.extensionKind' — without it the extension runs in the container and asks for the socket (NUC-container-hides-host-daemon §4) [devcontainer/settings:unpinned]"
 fi
 
 if ((${#errors[@]})); then
@@ -202,5 +205,5 @@ if ((${#errors[@]})); then
   exit 1
 fi
 
-echo "Dev Container check passed (${#features[@]} Features pinned and locked, no host socket, git hooks enabled, a path of its own)."
+echo "Dev Container check passed (${#features[@]} Features pinned and locked, no host socket, git hooks enabled, a path of its own). [devcontainer/check:passed]"
 exit 0

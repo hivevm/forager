@@ -285,9 +285,12 @@ expect_with 0 "--sections prints the ADRs with prose when nothing changed" "$d" 
   "- $(adr_id 1): the plan under" --sections base
 
 # An Applies to whose prose comes before a list longer than a pipe holds: a grep that exits at
-# the prose before the list is written cuts the writer off, and the ADR goes unlisted.
+# the prose before the list is written cuts the writer off, and the ADR goes unlisted. Each pad
+# of 70,000 characters is longer than a pipe of 64 KiB holds, so the writer is cut off on every
+# run; two pads of 40,000 let it pass with the cut restored. Longer pads only cost time: the
+# field is read by pattern removals that are quadratic in the length of the line.
 d="$(repo sections-long)"
-pad="$(printf '%*s' 200000 '' | tr ' ' z)"
+pad="$(printf '%*s' 70000 '' | tr ' ' z)"
 adr "$d" 0007 "🟢 accepted" "every document, \`$pad\`, and \`$pad\`"
 base "$d"
 expect_with 0 "--sections prints prose before a list longer than a pipe holds" "$d" \

@@ -35,7 +35,7 @@
 #
 # The files are the ones git tracks plus new ones it does not ignore, as check-docs.sh reads
 # them. A file is written only when the map changes its text, and then keeps every other byte,
-# a missing final newline included; a file with a NUL byte, which git takes for binary, is
+# a missing final newline included; a file with a NUL byte, which grep -I takes for binary, is
 # skipped, and so is the map file itself, so that a map shipped in the tree applies as it stands.
 #
 # Pure bash, git, and awk. Usage, anywhere in the repository:
@@ -45,6 +45,9 @@
 # nothing, prints each reference the map would move as 'file:line: OLD -> NEW' and each rename as
 # 'OLD -> NEW', lists the references it would leave, and exits 1 when one would move.
 set -uo pipefail
+
+# shellcheck source-path=SCRIPTDIR source=../../../scripts/lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../../../scripts/lib/bash.sh"
 
 # The script may rewrite its own text, so bash reads all of it before running any: one block.
 {
@@ -59,6 +62,9 @@ map="$(cd "$(dirname "$map")" && pwd -P)/$(basename "$map")"
 
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "remap: not inside a git repository" >&2; exit 1; }
 cd "$top" || exit 1
+# The map's path comes from pwd -P, so the top's does too: Git for Windows names it C:/…, where
+# Git Bash names the map /c/…, and the map would not know itself.
+top="$(pwd -P)"
 
 id_re='[A-Z]{2,5}-[a-z0-9]+(-[a-z0-9]+){1,4}'
 new_re="^$id_re(§[0-9]+)?\$"

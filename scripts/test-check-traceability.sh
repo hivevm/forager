@@ -87,8 +87,7 @@ expect() {
   local out rc
   git -C "${dir:?}" add -A
   out="$(bash "$CHECK" "$dir" 2>&1)"; rc=$?
-  if [[ "$want" == "pass" && $rc -eq 0 && ( -z "$needle" || "$out" == *"$needle"* ) ]] \
-     || [[ "$want" == "fail" && $rc -ne 0 && ( -z "$needle" || "$out" == *"$needle"* ) ]]; then
+  if output_holds "$out" "$needle" && [[ ( "$want" == "pass" && $rc -eq 0 ) || ( "$want" == "fail" && $rc -ne 0 ) ]]; then
     passed=$((passed + 1))
     return
   fi
@@ -115,7 +114,7 @@ d="$(repo uncited-adr)"
 spec "$d" "**G-1** — it works."
 adr "$d" 0001 "🟢 accepted"
 mark G-1 > "$d/tests/t.txt"
-expect fail "accepted ADR without a citing test" "$d" "$(adr_id 1) is accepted but no test cites it"
+expect fail "accepted ADR without a citing test" "$d" "[traceability/coverage:uncited] @ $(adr_id 1)"
 
 d="$(repo proposed-out-of-scope)"
 spec "$d" "**G-1** — it works."
@@ -178,21 +177,21 @@ d="$(repo unknown-adr)"
 spec "$d" "**G-1** — it works."
 adr "$d" 0001 "🟡 proposed"
 mark "G-1 $unknown" > "$d/tests/t.txt"
-expect fail "marker citing an ADR that does not exist" "$d" "'$unknown', which does not exist"
+expect fail "marker citing an ADR that does not exist" "$d" "[traceability/citations:missing] @ $unknown"
 
 # The numbered form of the retired ADRs is no identifier any more.
 numbered="$(printf '%s-%04d' ADR 1)"
 d="$(repo numbered-form)"
 spec "$d" "**G-1** — it works."
 mark "G-1 $numbered" > "$d/tests/t.txt"
-expect fail "marker citing the numbered form" "$d" "'$numbered', which is no identifier"
+expect fail "marker citing the numbered form" "$d" "[traceability/citations:malformed] @ $numbered"
 
 d="$(repo superseded-adr)"
 spec "$d" "**G-1** — it works."
 adr "$d" 0001 "⚪ superseded by $(adr_id 2)"
 adr "$d" 0002 "🟢 accepted"
 mark "G-1 $(adr_id 1) $(adr_id 2)" > "$d/tests/t.txt"
-expect fail "marker citing a superseded ADR" "$d" "'$(adr_id 1)', which is superseded or rejected"
+expect fail "marker citing a superseded ADR" "$d" "[traceability/citations:inactive] @ $(adr_id 1)"
 
 # --- cases: identifiers of the new form, read from the fixture table ----------------------
 
@@ -210,7 +209,6 @@ while IFS= read -r line; do
   n=$((n + 1))
   line="$(table_hyphens "${line//NUC:checks-are-bash/$checks_adr}")"
   IFS=$'\x1f' read -r want needle name tree <<< "${line// | /$'\x1f'}"
-  [[ "$needle" == - ]] && needle=""
   d="$(repo "table-$n")"
   while IFS= read -r s; do
     read -r op id arg <<< "$s"
@@ -227,7 +225,9 @@ while IFS= read -r line; do
       *) echo "fixture table: unknown step '$op'" >&2; exit 1 ;;
     esac
   done <<< "${tree//; /$'\n'}"
-  expect "$want" "$name" "$d" "$needle"
+  git -C "${d:?}" add -A
+  out="$(bash "$CHECK" "$d" 2>&1)"
+  table_case "$name" "$want" "$needle" "$?" "$out"
 done < "$TABLE"
 ((n > 0)) || { echo "FAIL: no case read from $TABLE" >&2; failed=$((failed + 1)); }
 
@@ -235,7 +235,7 @@ d="$(repo markdown-not-counted)"
 spec "$d" "**G-1** — it works."
 adr "$d" 0001 "🟢 accepted"
 { mark "$(adr_id 1)"; mark G-1; } > "$d/tests/notes.md"
-expect fail "markers in Markdown do not count" "$d" "$(adr_id 1) is accepted but no test cites it"
+expect fail "markers in Markdown do not count" "$d" "[traceability/coverage:uncited] @ $(adr_id 1)"
 
 d="$(repo ignored-not-counted)"
 spec "$d" "**G-1** — it works."
@@ -243,7 +243,7 @@ adr "$d" 0001 "🟢 accepted"
 echo "build/" > "$d/.gitignore"
 mkdir -p "$d/build"
 { mark "$(adr_id 1)"; mark G-1; } > "$d/build/t.txt"
-expect fail "markers in gitignored files do not count" "$d" "$(adr_id 1) is accepted but no test cites it"
+expect fail "markers in gitignored files do not count" "$d" "[traceability/coverage:uncited] @ $(adr_id 1)"
 
 # --- the template's own promise ------------------------------------------------------------
 #
