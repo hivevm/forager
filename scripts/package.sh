@@ -20,31 +20,49 @@
 # no workflow builds a release. A distribution of a binary starts from these archives.
 #
 # Usage:
-#     scripts/package.sh                    build both artefacts, then check them
-#     scripts/package.sh --check <archive>...   check the archives only
+#     scripts/package.sh [--root <dir>]          build both artefacts, then check them
+#     scripts/package.sh --check <archive>...    check the archives only
+# The root, this repository unless --root names another, is the workspace built and the one whose
+# notices are packed; an archive to check is read from where the script is called.
 # scripts/test-package.sh checks fixture archives with --check, and runs the build on a fixture
 # tree with cargo, rustc, and scripts/build-web.sh stubbed.
 # Exit code 0 when every artefact carries the notices, 1 when one does not or a build fails, 2 on
-# a usage error.
+# a usage error: an argument it does not read, or a root that is no directory.
 
 set -uo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=lib/notice.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/notice.sh"
 
 # shellcheck source-path=SCRIPTDIR source=lib/package.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/package.sh"
 
+# The directory the script is called from, which an archive to check is read from: enter_root
+# changes to the root.
+caller="$PWD"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/package.sh [--root <dir>] [--check <archive>...]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+
 if [[ "${1:-}" == --check ]]; then
   shift
   (($#)) || { echo "package: --check needs at least one archive" >&2; exit 2; }
-  check_archives "$@"
+  rest_args "${BASH_SOURCE[0]}" "$usage" "$#" "$@"
+  archives=()
+  for archive in "$@"; do
+    [[ "$archive" == /* ]] || archive="$caller/$archive"
+    archives+=("$archive")
+  done
+  check_archives "${archives[@]}"
   exit
 fi
-(($# == 0)) || { echo "package: unknown argument '$1' — usage: scripts/package.sh [--check <archive>...]" >&2; exit 2; }
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "$@"
 
-cd "$ROOT" || exit 1
 version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)"
 host="$(rustc -vV | sed -n 's/^host: //p')"
 [[ -n "$version" && -n "$host" ]] || { echo "package: no version or host target found" >&2; exit 1; }

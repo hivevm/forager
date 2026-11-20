@@ -21,34 +21,52 @@
 # weekly run's supply chain and not one input's replay, and needs no seeds. A target the manifest
 # does not list and an input file that does not exist are refused before anything is installed.
 #
-# Usage: bash scripts/fuzz.sh [seconds per target, default 300 [target]]
-#        bash scripts/fuzz.sh --replay <target> <input>
+# Usage: bash scripts/fuzz.sh [--root <dir>] [seconds per target, default 300 [target]]
+#        bash scripts/fuzz.sh [--root <dir>] --replay <target> <input>
+# The root, this repository unless --root names another, holds fuzz/ and is where it runs; an
+# input to replay is read from where the script is called. An argument it does not read, such as
+# an option, and a root that is no directory exit 2.
 # Verifies: Q-3
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# The directory the script is called from, which an input to replay is read from: enter_root
+# changes to the root.
+caller="$PWD"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/fuzz.sh [--root <dir>] {[seconds [target]] | --replay <target> <input>}"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+
 NIGHTLY="nightly-2026-10-20"
 CARGO_FUZZ_VERSION="0.13.2"
 LIMITS=(-timeout=10 -rss_limit_mb=2048)
 
 usage() {
-  echo "usage: bash scripts/fuzz.sh [seconds per target, default 300 [target]]" >&2
-  echo "       bash scripts/fuzz.sh --replay <target> <input>" >&2
+  echo "usage: bash scripts/fuzz.sh [--root <dir>] [seconds per target, default 300 [target]]" >&2
+  echo "       bash scripts/fuzz.sh [--root <dir>] --replay <target> <input>" >&2
   exit 2
 }
 
 REPLAY=""
 if [[ "${1:-}" == --replay ]]; then
   (($# == 3)) || usage
+  rest_args "${BASH_SOURCE[0]}" "$usage" 2 "${@:2}"
   ONLY="$2"
-  if [[ ! -f "$3" ]]; then
+  # The input as the caller named it, from wherever the script is called; it runs from $ROOT.
+  input="$3"
+  [[ "$input" == /* ]] || input="$caller/$input"
+  if [[ ! -f "$input" ]]; then
     echo "the input to replay, $3, is no file" >&2
     exit 1
   fi
-  # The input as the caller named it, from wherever the script is called; it runs from $ROOT.
-  REPLAY="$(cd "$(dirname "$3")" && pwd)/$(basename "$3")"
+  REPLAY="$(cd "$(dirname "$input")" && pwd)/$(basename "$input")"
 else
   (($# <= 2)) || usage
+  rest_args "${BASH_SOURCE[0]}" "$usage" 2 "$@"
   SECONDS_PER_TARGET="${1-300}"
   ONLY="${2:-}"
   if [[ ! "$SECONDS_PER_TARGET" =~ ^[1-9][0-9]*$ ]]; then
@@ -57,7 +75,6 @@ else
   fi
 fi
 
-cd "$ROOT"
 # The name of every binary target of the fuzz manifest, as cargo reads it, so that no way of
 # writing a [[bin]] entry hides a target. The names are read into a variable first, so that a
 # failing cargo or jq stops the run with its own message.

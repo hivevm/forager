@@ -40,7 +40,7 @@ line() {
 
 # expect_check <name> <dir> <code> <needle> — run the check; it must exit with the code and its
 # output contain the needle (expect, scripts/lib/expect.sh).
-expect_check() { expect "$1" "$3" "$4" bash "$CHECK" "$2"; }
+expect_check() { expect "$1" "$3" "$4" bash "$CHECK" --root "$2"; }
 
 export LC_ALL=C.UTF-8
 

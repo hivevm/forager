@@ -44,7 +44,7 @@ repo() {
 
 # expect_check <name> <dir> <code> <needle> — run the check; it must exit with the code and its
 # output contain the needle (expect, scripts/lib/expect.sh).
-expect_check() { expect "$1" "$3" "$4" bash "$CHECK" "$2"; }
+expect_check() { expect "$1" "$3" "$4" bash "$CHECK" --root "$2"; }
 
 expect_check "the listed, unchanged copy passes" "$(repo clean)" 0 "Vendor check passed."
 
@@ -100,7 +100,7 @@ dir="$(repo unreadable)"
 mkdir -p "$dir/bin"
 printf '#!/usr/bin/env bash\nexit 2\n' > "$dir/bin/grep"
 chmod +x "$dir/bin/grep"
-out="$(PATH="$dir/bin:$PATH" bash "$CHECK" "$dir" 2>&1)"
+out="$(PATH="$dir/bin:$PATH" bash "$CHECK" --root "$dir" 2>&1)"
 if [[ $? == 1 && "$out" == *"cannot read examples/web/index.html"* ]]; then
   passed=$((passed + 1))
 else

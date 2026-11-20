@@ -4,11 +4,19 @@
 # wasm-bindgen CLI, which scripts/install-tools.sh installs at the crate's version. The dev server
 # serves the result under /pkg/; scripts/check-rust.sh measures it.
 #
-# Usage: bash scripts/build-web.sh
+# Usage: bash scripts/build-web.sh [--root <dir>]
+# Exit code 0 when the bundle is built, 2 on an argument it does not read or a root that is no
+# directory, else the failing step's.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/build-web.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 
 cargo build --locked --profile wasm --target wasm32-unknown-unknown -p forager-bindings-wasm
 # A Dev Container just created may still be compiling the tools in its postCreateCommand, and one

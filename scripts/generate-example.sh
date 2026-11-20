@@ -23,14 +23,28 @@
 # scripts/test-generate-example.sh runs it twice and compares both runs with the checked-in files.
 #
 # Pure bash + POSIX awk (run with mawk, the awk of Debian and Ubuntu). Usage:
-#     scripts/generate-example.sh [output directory]
-# The directory defaults to examples/web/ of this repository.
-# Exit code 0 when the files are written, 1 otherwise.
+#     scripts/generate-example.sh [--root <dir>] [output directory]
+# The directory defaults to examples/web/ of the root, this repository unless --root names
+# another; a relative one is read from where the script is called.
+# Exit code 0 when the files are written, 2 on an argument it does not read or a root that is no
+# directory, 1 otherwise.
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# The directory the script is called from, which a relative output directory is read from:
+# enter_root changes to the root.
+caller="$PWD"
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/generate-example.sh [--root <dir>] [output directory]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 1 "$@"
 OUT="${1:-$ROOT/examples/web}"
+[[ "$OUT" == /* ]] || OUT="$caller/$OUT"
 mkdir -p "$OUT"
 
 program="$(cat <<'AWK'

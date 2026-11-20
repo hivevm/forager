@@ -89,7 +89,7 @@ repo() {
 # stand-in, or the command $GH_CMD names; the output must contain the needle, and not $REJECT when
 # that is set (expect, scripts/lib/expect.sh).
 expect_sensor() {
-  expect "$2" "$1" "$4" env GH="${GH_CMD:-$fake}" FIX="$3/fix" bash "$SENSOR" "$3"
+  expect "$2" "$1" "$4" env GH="${GH_CMD:-$fake}" FIX="$3/fix" bash "$SENSOR" --root "$3"
 }
 
 d="$(repo green)"

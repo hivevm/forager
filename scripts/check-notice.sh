@@ -39,17 +39,24 @@
 #
 # Pure bash + grep; the notices' lines are in scripts/lib/notice.sh, which scripts/package.sh
 # shares. Usage:
-#     scripts/check-notice.sh [repository root]
+#     scripts/check-notice.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-notice.sh passes fixtures.
-# Exit code 0 when every such file holds the notice, 1 otherwise, 2 on a root that is no directory.
+# Exit code 0 when every such file holds the notice, 1 otherwise, 2 on an argument it does not read
+# or a root that is no directory.
 
 set -uo pipefail
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
-  || { echo "Notice check: '${1:-}' is not a directory." >&2; exit 2; }
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
 
 # shellcheck source-path=SCRIPTDIR source=lib/notice.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/notice.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-notice.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 
 failures=0
 checked=0

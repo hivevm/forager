@@ -69,7 +69,9 @@ fixture() {
   local dir="$work/$1" body="$2"
   shift 2
   mkdir -p "$dir/scripts" "$dir/fuzz/src" "$dir/fuzz/fuzz_targets" "$dir/fuzz/elsewhere"
+  mkdir -p "$dir/scripts/lib"
   cp "$SCRIPT" "$dir/scripts/fuzz.sh"
+  cp "$ROOT/scripts/lib/bash.sh" "$ROOT/scripts/lib/root.sh" "$dir/scripts/lib/"
   cp "$ROOT/rust-toolchain.toml" "$dir/rust-toolchain.toml"
   printf '[package]\nname = "fixture-fuzz"\nversion = "0.0.0"\nedition = "2021"\n' \
     > "$dir/fuzz/Cargo.toml"
@@ -117,11 +119,11 @@ expect_fuzz 2 "a target's name where the seconds belong fails, naming the second
 expect_fuzz 2 "zero seconds fail" "$d" \
   "the seconds per target are a positive whole number, not '0'" "" 0
 expect_fuzz 2 "a replay without its input fails, with the usage" "$d" \
-  "bash scripts/fuzz.sh --replay <target> <input>" "" --replay one
+  "bash scripts/fuzz.sh [--root <dir>] --replay <target> <input>" "" --replay one
 expect_fuzz 2 "a replay with an argument past its input fails, with the usage" "$d" \
-  "bash scripts/fuzz.sh --replay <target> <input>" "" --replay one "$d/scripts/fuzz.sh" more
+  "bash scripts/fuzz.sh [--root <dir>] --replay <target> <input>" "" --replay one "$d/scripts/fuzz.sh" more
 expect_fuzz 2 "a run with an argument past its target fails, with the usage" "$d" \
-  "usage: bash scripts/fuzz.sh [seconds per target, default 300 [target]]" "" 30 one more
+  "usage: bash scripts/fuzz.sh [--root <dir>] [seconds per target, default 300 [target]]" "" 30 one more
 expect_fuzz 2 "seconds that are no whole number fail" "$d" \
   "the seconds per target are a positive whole number, not '1.5'" "" 1.5
 expect_fuzz 2 "empty seconds fail, not the default" "$d" \

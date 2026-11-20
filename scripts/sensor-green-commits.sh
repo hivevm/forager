@@ -43,7 +43,8 @@
 # Without a base, the merge base of head with origin/main (else main) is used; CI passes the
 # pull request's base. A base of zeros, which a push event reports for a new branch, counts as
 # none. With nothing to compare — on main without a remote, or base and head the same — it says
-# so. Exit code 0 always, except 2 on a base or head that does not resolve.
+# so. Exit code 0 always, except 2 on a base or head that does not resolve, an argument it does
+# not read, or a root that is no directory.
 
 set -uo pipefail
 # A caller's GIT_DIR, such as a hook's in a linked worktree, would turn this script's git on its
@@ -51,14 +52,22 @@ set -uo pipefail
 # shellcheck disable=SC2046
 unset $(git rev-parse --local-env-vars)
 
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
 # shellcheck source-path=SCRIPTDIR source=lib/git.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/git.sh"
 
 NAME="Green commits sensor"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="$SELF_DIR/$(basename "${BASH_SOURCE[0]}")"
-enter_root "$NAME" "${BASH_SOURCE[0]}" "$@"
-shift "$ROOT_TAKEN"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/sensor-green-commits.sh [--root <dir>] [base [head]]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+set -- "${ARGS[@]}"
+rest_args "${BASH_SOURCE[0]}" "$usage" 2 "$@"
 
 resolve_change "$NAME" "${1:-}" "${2:-HEAD}" || exit 0
 base="$CHANGE_BASE" head="$CHANGE_HEAD"

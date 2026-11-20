@@ -11,12 +11,19 @@
 # or bundle fails the test. Elsewhere, as in the Dev Container, which has no browser (OPS-dev-container-adds-rust),
 # the test's cases return at once with a note on stderr, and the bundle is not built.
 #
-# Usage: bash scripts/check-browser.sh
-# Exit code 0 when the test passes or does not run, non-zero otherwise.
+# Usage: bash scripts/check-browser.sh [--root <dir>]
+# Exit code 0 when the test passes or does not run, 2 on an argument it does not read or a root
+# that is no directory, non-zero otherwise.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-browser.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 
 if [[ "${FORAGER_BROWSER_TEST:-}" == required ]]; then
   bash scripts/build-web.sh

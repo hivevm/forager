@@ -7,10 +7,24 @@
 # (OPS-pinned-stable-rust-toolchain). A tool already at its version is skipped. The Dev Container
 # runs this after creation (OPS-dev-container-adds-rust) and CI before the build, with ~/.cargo/bin cached.
 #
-# Usage: bash scripts/install-tools.sh
+# Usage: bash scripts/install-tools.sh [--root <dir>]
+# The toolchain and the wasm-bindgen version are read from the root, this repository unless --root
+# names another; ShellCheck and jscpd come from the installers beside this script.
+# Exit code 0 when every tool is installed, 2 on an argument it does not read or a root that is no
+# directory, 1 otherwise.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# The installers beside this script, found before enter_root changes the directory.
+SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/install-tools.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 CARGO_DENY_VERSION="0.20.2"
 
 if ! command -v rustup > /dev/null 2>&1; then
@@ -18,7 +32,6 @@ if ! command -v rustup > /dev/null 2>&1; then
   exit 1
 fi
 
-cd "$ROOT"
 # Without arguments, rustup installs the toolchain rust-toolchain.toml names, with its components
 # and targets.
 rustup toolchain install
@@ -47,5 +60,5 @@ else
   echo "install-tools: no wasm-bindgen in Cargo.lock; the wasm-bindgen CLI is not needed yet"
 fi
 
-bash "$ROOT/scripts/install-shellcheck.sh"
-bash "$ROOT/scripts/install-jscpd.sh"
+bash "$SCRIPTS/install-shellcheck.sh"
+bash "$SCRIPTS/install-jscpd.sh"

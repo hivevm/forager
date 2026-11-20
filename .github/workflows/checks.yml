@@ -5,7 +5,7 @@ name: Checks
 # (OPS-pinned-stable-rust-toolchain), jscpd, which the jobs that run its self-test install at the version
 # scripts/install-jscpd.sh pins for the duplication sensor (OPS-pinned-stable-rust-toolchain), and the toolchain of the
 # rust job. scripts/check-all.sh is the local equivalent;
-# check 9 of scripts/check-docs.sh holds its list, the jobs of this workflow, and the required
+# the rule docs/check-lists of scripts/check-docs.sh holds its list, the jobs of this workflow, and the required
 # checks named in CONTRIBUTING.md together. Each job runs a check after its own self-test, and
 # each script's header says what it checks and which ADR it holds.
 #
@@ -70,7 +70,8 @@ jobs:
       # working tree: a documentation link into a submodule would otherwise break in CI while
       # working locally. Their *contents* are never read — check-docs.sh enumerates via
       # `git ls-files`, which lists a submodule as one gitlink entry, not as its files. The whole
-      # history is fetched: check 2 reads the identifiers of deleted ADRs off it.
+      # history is fetched: the rule docs/adr-identifiers reads the identifiers of deleted ADRs
+      # off it, and the rule docs/template-release the release line at the merge base with main.
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
@@ -243,6 +244,15 @@ jobs:
         run: bash scripts/test-sensor-duplication.sh
       - name: Report the clones of Rust and bash in the tree, each with its two places
         run: bash scripts/sensor-duplication.sh
+      # The work measures sensor itself runs on a human's instruction (NUC-checks-are-bash §7).
+      - name: Self-test the work measures sensor
+        run: bash scripts/test-sensor-work-measures.sh
+      # The release notes sensor itself runs on a human's instruction (NUC-checks-are-bash §7).
+      - name: Self-test the release notes sensor
+        run: bash scripts/test-sensor-release-notes.sh
+      # The red commits sensor itself runs on a human's instruction, for its cost.
+      - name: Self-test the red commits sensor
+        run: bash scripts/test-sensor-red-commits.sh
 
   shell:
     runs-on: ubuntu-latest

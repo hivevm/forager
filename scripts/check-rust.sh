@@ -13,11 +13,19 @@
 # refuses a str sliced at an index it cannot see is a character's boundary, and that it refuses
 # f64::min and f64::max in the crates that port MapServer's drawing.
 #
-# Usage: bash scripts/check-rust.sh
+# Usage: bash scripts/check-rust.sh [--root <dir>]
+# Exit code 0 when every step passes, 2 on an argument it does not read or a root that is no
+# directory, non-zero otherwise.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
+
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-rust.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 
 # Crates that never run in the browser: hosts with a file system, and tooling.
 NATIVE_ONLY=(forager-cli forager-dev-server forager-arch-test)

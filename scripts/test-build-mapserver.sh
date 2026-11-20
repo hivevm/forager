@@ -126,7 +126,8 @@ expect_pair() { expect "$1" "$4" "$5" check "$2" "$3"; }
 # copy <name> <sed expression for the build script> <sed expression for the workflow> — a pair of
 # changed copies, printed as two paths on one line.
 copy() {
-  mkdir -p "$work/$1"
+  mkdir -p "$work/$1/lib"
+  cp "$ROOT/scripts/lib/bash.sh" "$ROOT/scripts/lib/root.sh" "$work/$1/lib/"
   sed "$2" "$BUILD" > "$work/$1/build-mapserver.sh"
   sed "$3" "$WORKFLOW" > "$work/$1/noise.yml"
   echo "$work/$1/build-mapserver.sh $work/$1/noise.yml"

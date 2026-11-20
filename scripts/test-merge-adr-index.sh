@@ -138,7 +138,7 @@ if g "$repo" merge -q --no-ff -m "merge two" two > /dev/null 2>&1; then
   # Without the branch CI names: the fixture's merge is into its own main, which no check of the
   # branch a pull request names is to read.
   if GITHUB_BASE_REF="" GITHUB_REF_NAME="" GITHUB_ACTIONS="" \
-    bash "$repo/scripts/check-docs.sh" "$repo" > "$work/out" 2>&1; then
+    bash "$repo/scripts/check-docs.sh" --root "$repo" > "$work/out" 2>&1; then
     passed=$((passed + 1))
   else
     failed=$((failed + 1))

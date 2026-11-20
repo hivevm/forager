@@ -25,18 +25,24 @@
 # fuzz/tests/render_seeds.rs decides.
 #
 # Pure bash + grep, sed, and awk, and _contains of scripts/lib/check.sh. Usage:
-#     scripts/check-fuzz-variants.sh [repository root]
+#     scripts/check-fuzz-variants.sh [--root <dir>]
 # The root defaults to this repository; scripts/test-check-fuzz-variants.sh passes fixtures.
-# Exit code 0 when the target names every variant the allow-list leaves out, 1 otherwise, 2 on a
-# root that is no directory.
+# Exit code 0 when the target names every variant the allow-list leaves out, 1 otherwise, 2 on an
+# argument it does not read or a root that is no directory.
 
 set -uo pipefail
+
+# shellcheck source-path=SCRIPTDIR source=lib/bash.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/bash.sh"
 
 # shellcheck source-path=SCRIPTDIR source=lib/check.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/check.sh"
 
-ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/..}" 2>/dev/null && pwd)" \
-  || { echo "Fuzz variants check: '${1:-}' is not a directory." >&2; exit 2; }
+# shellcheck source-path=SCRIPTDIR source=lib/root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/root.sh"
+usage="scripts/check-fuzz-variants.sh [--root <dir>]"
+enter_root "${BASH_SOURCE[0]}" "$usage" "$@"
+rest_args "${BASH_SOURCE[0]}" "$usage" 0 "${ARGS[@]}"
 TARGET=fuzz/fuzz_targets/render_input.rs
 
 # '<file> <enum>': each enum whose variants the target must name, and the file that declares it.
