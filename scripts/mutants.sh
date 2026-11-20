@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # The mutation testing of ADR-0007: cargo-mutants changes the code one small edit at a time and
 # reports each edit no test notices — a test that runs without deciding. A sensor: it reports
-# what survived and fails only when the run itself breaks, not on what it counts. The weekly
-# workflow mutants.yml runs it without a base over the whole workspace; locally a shard, such as
-# 1/20, keeps it short. The review runs it with a base, the branch the change leaves from, and
-# then only the Rust code the change touches is mutated: the lines changed from the merge base to
-# the working tree, so that a branch no test decides is reported before the merge, not a week
-# after it. A change that touches no Rust code has nothing to mutate. Files git does not track
-# are not part of the diff: a new file is mutated once it is added.
+# what survived and fails only when the run itself breaks, not on what it counts. With a base,
+# only the Rust code changed since it is mutated: the lines changed from the merge base to the
+# working tree. The review runs it with the branch the change leaves from, so that a branch no
+# test decides is reported before the merge, not a week after it. The weekly workflow
+# mutants.yml runs it with main as it stood a week before, so that each week's code is mutated
+# once. Without a base it mutates the whole workspace, some 12,000 mutants and far more hours
+# than a runner's job may take; a shard, such as 1/50, cuts it to a share that fits. A change
+# that touches no Rust code has nothing to mutate. Files git does not track are not part of the
+# diff: a new file is mutated once it is added.
+#
+# Each mutant's tests stop after 300 seconds. cargo-mutants would set five times the tests'
+# baseline run, some 1,000 seconds on a runner, and a mutant that turns a parser's step into a
+# loop spent all of it. 300 seconds stay above the 205 the whole workspace's tests take there.
 #
 # Usage: bash scripts/mutants.sh [--base <revision>] [shard, e.g. 1/4; default all]
 #   e.g. bash scripts/mutants.sh --base origin/main
@@ -48,7 +54,7 @@ while (($#)); do
 done
 
 cd "$ROOT" || exit 1
-args=(--workspace --test-workspace=false --no-shuffle --output target/mutants)
+args=(--workspace --test-workspace=false --no-shuffle --timeout 300 --output target/mutants)
 
 if [[ -n "$BASE" ]]; then
   if ! git rev-parse --verify --quiet "$BASE^{commit}" > /dev/null; then
@@ -71,7 +77,9 @@ if [[ -n "$BASE" ]]; then
   fi
   args+=(--in-diff "$diff_file")
 fi
-[[ -n "$SHARD" ]] && args+=(--shard "$SHARD")
+# A shard takes every n-th mutant, not a slice: cargo-mutants 27.1.0 slices by default, which
+# put all of one crate's mutants, and its slow tests, in one shard.
+[[ -n "$SHARD" ]] && args+=(--shard "$SHARD" --sharding round-robin)
 
 if ! grep -qF " $CARGO_MUTANTS_VERSION" <<< "$(cargo mutants --version 2> /dev/null)"; then
   cargo install --locked cargo-mutants --version "$CARGO_MUTANTS_VERSION" || exit 1

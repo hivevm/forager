@@ -1,25 +1,41 @@
 name: Mutants
 
-# The mutation testing of ADR-0007: scripts/mutants.sh over the workspace, once a week and on
-# demand; about 800 mutants take some 15 minutes. A sensor: the surviving mutants are reported in the job summary and kept as an
-# artifact; the run fails only when it breaks.
+# The mutation testing of ADR-0007, a sensor: the surviving mutants are reported in the job
+# summary and kept as an artifact; the run fails only when it breaks. Once a week,
+# scripts/mutants.sh mutates the Rust code changed on main since its last commit at least seven
+# days old, so that each week's code is mutated once. A week's code held some 5,700 mutants on
+# 2026-11-20, so the mutants are split into 16 shards, each a job of its own; the repository is
+# public, and its jobs on GitHub's runners cost nothing. The whole workspace, some 12,000
+# mutants, does not fit 16 jobs of two hours; on demand, another base is mutated instead.
 
 on:
   schedule:
     - cron: "17 4 * * 0"
   workflow_dispatch:
+    inputs:
+      base:
+        description: "The revision whose changes are mutated; empty takes main a week ago"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
   mutants:
+    name: mutants ${{ matrix.shard }}/16
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # The week's base is a commit of main's history.
+          fetch-depth: 0
       - uses: actions/cache@v6
         with:
           path: |
@@ -31,12 +47,20 @@ jobs:
       # `shell: bash` runs with pipefail, so a broken run is not hidden behind tee.
       - name: Mutate the workspace
         shell: bash
-        run: bash scripts/mutants.sh | tee mutants.log
+        env:
+          BASE: ${{ inputs.base }}
+          SHARD: ${{ matrix.shard }}/16
+        run: |
+          base="${BASE:-$(git rev-list -1 --before='7 days ago' HEAD)}"
+          # A history younger than a week has no such commit: its first commit stands in.
+          [[ -n "$base" ]] || base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
+          echo "Mutating shard $SHARD of the Rust code changed since $base"
+          bash scripts/mutants.sh --base "$base" "$SHARD" | tee mutants.log
       - name: Report the mutants no test caught
         if: always()
         run: |
           {
-            echo "### Mutants no test caught"
+            echo "### Mutants no test caught, shard ${{ matrix.shard }}/16"
             echo '```'
             sed -n '/^Mutants no test caught/,$p' mutants.log
             echo '```'
@@ -45,5 +69,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mutants
+          name: mutants-${{ matrix.shard }}
           path: target/mutants/mutants.out/
