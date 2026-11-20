@@ -43,6 +43,10 @@ if ((${#workflows[@]} == 0)); then
   exit 0
 fi
 
+# gh's errors, whose first line is the reason a workflow's runs could not be read.
+err="$(mktemp)"
+trap 'rm -f "$err"' EXIT
+
 findings=()
 for path in "${workflows[@]}"; do
   file="${path##*/}"
@@ -53,10 +57,11 @@ for path in "${workflows[@]}"; do
   # creation time, and URL, split by a tab.
   line="$(cd "$ROOT" && "$GH" run list --repo "$repo" --all --workflow "$file" \
     --branch main --event schedule --limit 1 --json conclusion,status,createdAt,url \
-    --jq '.[] | "\(.conclusion)\t\(.status)\t\(.createdAt)\t\(.url)"' 2>/dev/null)"
+    --jq '.[] | "\(.conclusion)\t\(.status)\t\(.createdAt)\t\(.url)"' 2>"$err")"
   rc=$?
   if ((rc)); then
-    findings+=("$label: its scheduled runs could not be read")
+    reason="$(grep -m1 -v '^[[:space:]]*$' "$err")"
+    findings+=("$label: its scheduled runs could not be read${reason:+ — $reason}")
     continue
   fi
   if [[ -z "$line" ]]; then

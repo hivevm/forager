@@ -27,9 +27,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
 SENSOR="$ROOT/scripts/sensor-scheduled-runs.sh"
 
 # The stand-in for gh: 'repo view' prints the repository, 'run list' the first --limit lines of
-# the fixture file of its --workflow, 20 without one as gh's default, and fails where there is no
-# such file or the query is not for main's scheduled runs of enabled and disabled workflows
-# alike (--all). Every call is logged to $FIX/calls.
+# the fixture file of its --workflow, 20 without one as gh's default. It fails where the query is
+# not for main's scheduled runs of enabled and disabled workflows alike (--all), and where there is
+# no such file, saying so on its errors as gh does. Every call is logged to $FIX/calls.
 fake="$work/gh"
 cat > "$fake" <<'EOF'
 #!/usr/bin/env bash
@@ -51,7 +51,8 @@ case "$1 $2" in
       shift
     done
     [[ -n "$all" && "$branch" == main && "$event" == schedule ]] || exit 1
-    [[ -f "$FIX/runs_$workflow" ]] || exit 1
+    [[ -f "$FIX/runs_$workflow" ]] \
+      || { echo "could not find any workflows named $workflow" >&2; exit 1; }
     head -n "$limit" "$FIX/runs_$workflow"
     ;;
   *) exit 1 ;;
@@ -138,8 +139,8 @@ expect_sensor 0 "a workflow without a scheduled run on main says so" "$d" \
 
 d="$(repo unreadable)"
 rm "$d/fix/runs_fuzz.yml"
-expect_sensor 0 "a workflow whose runs gh cannot list says so" "$d" \
-  "Fuzz (fuzz.yml): its scheduled runs could not be read"
+expect_sensor 0 "a workflow whose runs gh cannot list says so, with gh's reason" "$d" \
+  "Fuzz (fuzz.yml): its scheduled runs could not be read — could not find any workflows named"
 
 d="$(repo no-schedule)"
 rm "$d/.github/workflows/"{checks,fuzz,mutants}.yml
