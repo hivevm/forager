@@ -486,8 +486,9 @@ allow-list names with a reason. Beside it,
 `// Guard: <crate> <version>` in `render`, `render-agg`, and `symbolize`, to a version that
 `Cargo.lock` holds (ADR-0049), `scripts/check-comment-width.sh` holds each comment line of a Rust
 file under `crates/` and `fuzz/` to 100 characters, which rustfmt on the stable toolchain does not
-wrap, and `scripts/mutants.sh` runs cargo-mutants over the workspace every week through
-`.github/workflows/mutants.yml` and reports the edits no test notices.
+wrap, and `scripts/mutants.sh` runs cargo-mutants every week through
+`.github/workflows/mutants.yml` over the Rust code the week changed on main, in 16 shards, and
+reports the edits no test notices.
 `scripts/package.sh` packs the CLI's archive and the browser bindings' package under
 `target/package/`, each with `THIRD-PARTY-NOTICES.md` and the two licences, and reads each archive
 back for them, by the check of the notices that `scripts/check-notice.sh` shares

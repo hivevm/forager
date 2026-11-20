@@ -1,25 +1,51 @@
 name: Mutants
 
-# The mutation testing of ADR-0007: scripts/mutants.sh over the workspace, once a week and on
-# demand; about 800 mutants take some 15 minutes. A sensor: the surviving mutants are reported in the job summary and kept as an
-# artifact; the run fails only when it breaks.
+# The mutation testing of ADR-0007, a sensor: the surviving mutants are reported in the job
+# summary and kept as an artifact; the run fails only when it breaks. Once a week,
+# scripts/mutants.sh mutates the Rust code changed on main since main as it stood seven days
+# before the run, so that each week's code is mutated once. A week's code held thousands of
+# mutants in November 2026, so they are split into 16 shards, each a job of its own; the
+# repository is public, and its jobs on GitHub's runners cost nothing. The time is taken once,
+# so that every shard splits the same mutants. The whole workspace, some 12,000 mutants, does
+# not fit 16 jobs of two hours; on demand, the changes since another base are mutated instead.
 
 on:
   schedule:
     - cron: "17 4 * * 0"
   workflow_dispatch:
+    inputs:
+      base:
+        description: "The revision whose changes since are mutated; empty takes the ref a week ago"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
+  since:
+    runs-on: ubuntu-latest
+    outputs:
+      time: ${{ steps.time.outputs.time }}
+    steps:
+      - id: time
+        run: echo "time=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
   mutants:
+    needs: since
+    name: mutants ${{ matrix.shard }}/16
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # The week's base is a commit of the ref's history.
+          fetch-depth: 0
       - uses: actions/cache@v6
         with:
           path: |
@@ -31,12 +57,21 @@ jobs:
       # `shell: bash` runs with pipefail, so a broken run is not hidden behind tee.
       - name: Mutate the workspace
         shell: bash
-        run: bash scripts/mutants.sh | tee mutants.log
+        env:
+          BASE: ${{ inputs.base }}
+          SINCE: ${{ needs.since.outputs.time }}
+          SHARD: ${{ matrix.shard }}/16
+        run: |
+          if [[ -n "$BASE" ]]; then
+            bash scripts/mutants.sh --base "$BASE" "$SHARD" | tee mutants.log
+          else
+            bash scripts/mutants.sh --since "$SINCE" "$SHARD" | tee mutants.log
+          fi
       - name: Report the mutants no test caught
         if: always()
         run: |
           {
-            echo "### Mutants no test caught"
+            echo "### Mutants no test caught, shard ${{ matrix.shard }}/16"
             echo '```'
             sed -n '/^Mutants no test caught/,$p' mutants.log
             echo '```'
@@ -45,5 +80,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: mutants
+          name: mutants-${{ matrix.shard }}
           path: target/mutants/mutants.out/

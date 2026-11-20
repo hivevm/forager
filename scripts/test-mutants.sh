@@ -6,8 +6,9 @@
 # runs it with a stand-in 'cargo' first on PATH that records its arguments and answers with the
 # pinned version, the exit code, and the missed mutants a case asks for. The case asserts the
 # exit code, a line of the output, and the arguments cargo-mutants would have been given. Without
-# a base the arguments are those of the weekly run; with one, the diff of the Rust code from the
-# merge base is handed over, or nothing runs when there is none.
+# a base the whole workspace is mutated; with one, as the review runs it, or with a time, as the
+# weekly workflow does, the diff of the Rust code from the merge base is handed over, or nothing
+# runs when there is none.
 #
 # Usage:
 #     scripts/test-mutants.sh
@@ -32,14 +33,15 @@ passed=0
 source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
 
 # The stand-in cargo: 'mutants --version' prints the pinned version; any other call appends its
-# arguments as one line to $FAKE_LOG, refuses as cargo-mutants 27.1.0 does when the parent of its
-# --output does not exist, writes $FAKE_MISSED as the report's missed.txt when set, and exits
-# with $FAKE_STATUS.
+# arguments as one line to $FAKE_LOG, writes its address-space limit in KiB to $FAKE_LIMIT when
+# set, refuses as cargo-mutants 27.1.0 does when the parent of its --output does not exist, writes
+# $FAKE_MISSED as the report's missed.txt when set, and exits with $FAKE_STATUS.
 mkdir -p "$work/bin"
 cat > "$work/bin/cargo" << 'EOF'
 #!/usr/bin/env bash
 if [[ "$*" == "mutants --version" ]]; then echo "cargo-mutants 27.1.0"; exit 0; fi
 echo "$*" >> "$FAKE_LOG"
+[[ -n "${FAKE_LIMIT:-}" ]] && ulimit -v > "$FAKE_LIMIT"
 output=""
 while (($#)); do
   [[ "$1" == "--output" ]] && output="${2:-}"
@@ -57,7 +59,7 @@ exit "${FAKE_STATUS:-0}"
 EOF
 chmod +x "$work/bin/cargo"
 
-WEEKLY="mutants --workspace --test-workspace=false --no-shuffle --output target/mutants"
+COMMON="mutants --workspace --test-workspace=false --no-shuffle --timeout 300 --output target/mutants"
 
 # fixture <dir> — refuse an empty fixture path: 'git -C ""' would act on this repository.
 fixture() { [[ -n "${1:-}" && -d "$1/.git" ]] || { echo "fixture: '$1' is no fixture repository" >&2; exit 1; }; }
@@ -95,16 +97,23 @@ expect_mutants() {
   while IFS= read -r l; do printf '    cargo calls got:      %s\n' "$l"; done < "$log" >&2
 }
 
-# --- without a base: the weekly run --------------------------------------------------------
+# --- without a base: the whole workspace ----------------------------------------------------------
 
 d="$(repo weekly)"
-expect_mutants 0 "no argument mutates the whole workspace" "$d" "" "$WEEKLY"
-expect_mutants 0 "a shard is handed over" "$d" "" "$WEEKLY --shard 1/4" 1/4
+expect_mutants 0 "no argument mutates the whole workspace" "$d" "" "$COMMON"
+expect_mutants 0 "a shard is handed over" "$d" "" "$COMMON --shard 1/4 --sharding round-robin" 1/4
 FAKE_STATUS=2 FAKE_MISSED="src/lib.rs:2:5: replace one -> u8 with 0" \
   expect_mutants 0 "missed mutants are listed and the run passes" "$d" \
-  "Mutants no test caught (1):"$'\n'"src/lib.rs:2:5: replace one -> u8 with 0" "$WEEKLY"
-FAKE_STATUS=3 expect_mutants 0 "timed-out mutants are a finding, not a broken run" "$d" "" "$WEEKLY"
-FAKE_STATUS=1 expect_mutants 1 "a broken run fails" "$d" "the run failed (exit 1)" "$WEEKLY"
+  "Mutants no test caught (1):"$'\n'"src/lib.rs:2:5: replace one -> u8 with 0" "$COMMON"
+FAKE_STATUS=3 expect_mutants 0 "timed-out mutants are a finding, not a broken run" "$d" "" "$COMMON"
+FAKE_LIMIT="$work/limit" expect_mutants 0 "cargo-mutants runs under the address-space limit" "$d" "" "$COMMON"
+if [[ "$(cat "$work/limit" 2> /dev/null)" == "6291456" ]]; then
+  passed=$((passed + 1))
+else
+  failed=$((failed + 1))
+  echo "FAIL: cargo-mutants runs with 6 GiB of address space, not '$(cat "$work/limit" 2> /dev/null)'" >&2
+fi
+FAKE_STATUS=1 expect_mutants 1 "a broken run fails" "$d" "the run failed (exit 1)" "$COMMON"
 
 # The weekly workflow caches no target/, so its fresh checkout has none: the script makes the
 # parent of the output, which cargo-mutants does not.
@@ -114,15 +123,15 @@ if [[ -e "$d/target" ]]; then
   echo "FAIL: the fixture of a checkout without target/ has one" >&2
 fi
 REJECT="create output parent directory" \
-  expect_mutants 0 "a checkout without a target directory gives cargo-mutants the parent of its output" "$d" "" "$WEEKLY"
+  expect_mutants 0 "a checkout without a target directory gives cargo-mutants the parent of its output" "$d" "" "$COMMON"
 
-# --- with a base: the review's run ---------------------------------------------------------
+# --- with a base: the review's run ----------------------------------------------------------------
 
 d="$(repo rust-changed)"
 printf 'pub fn two(x: bool) -> u8 {\n    if x { 2 } else { 0 }\n}\n' >> "$d/src/lib.rs"
 commit "$d" "a Rust change"
 expect_mutants 0 "a Rust change is handed over as the diff" "$d" "" \
-  "$WEEKLY --in-diff target/mutants.diff" --base main
+  "$COMMON --in-diff target/mutants.diff" --base main
 if grep -qF '+pub fn two(x: bool) -> u8 {' "$d/target/mutants.diff" \
   && ! grep -qF 'README' "$d/target/mutants.diff"; then
   passed=$((passed + 1))
@@ -131,17 +140,17 @@ else
   echo "FAIL: the diff holds the Rust change and nothing else" >&2
 fi
 expect_mutants 0 "--base= and a shard together" "$d" "" \
-  "$WEEKLY --in-diff target/mutants.diff --shard 2/3" 2/3 --base=main
+  "$COMMON --in-diff target/mutants.diff --shard 2/3 --sharding round-robin" 2/3 --base=main
 FAKE_STATUS=2 FAKE_MISSED="src/lib.rs:5:12: replace == with != in two" \
   expect_mutants 0 "a surviving mutant in the diff is listed and the run passes" "$d" \
-  "src/lib.rs:5:12: replace == with != in two" "$WEEKLY --in-diff target/mutants.diff" --base main
+  "src/lib.rs:5:12: replace == with != in two" "$COMMON --in-diff target/mutants.diff" --base main
 
 # A user's git config must not change the diff cargo-mutants reads: it strips only the b/
 # prefix and reads no colour.
 mkdir -p "$work/hostile"
 printf '[diff]\n\tmnemonicPrefix = true\n[color]\n\tui = always\n' > "$work/hostile/.gitconfig"
 HOME="$work/hostile" expect_mutants 0 "a hostile git config still gives cargo-mutants its diff" "$d" "" \
-  "$WEEKLY --in-diff target/mutants.diff" --base main
+  "$COMMON --in-diff target/mutants.diff" --base main
 if grep -qxF '+++ b/src/lib.rs' "$d/target/mutants.diff" && ! grep -q $'\e' "$d/target/mutants.diff"; then
   passed=$((passed + 1))
 else
@@ -154,12 +163,12 @@ fi
 mkdir -p "$d/target/mutants/mutants.out"
 printf 'src/lib.rs:2:5: a stale mutant\n' > "$d/target/mutants/mutants.out/missed.txt"
 REJECT="a stale mutant" expect_mutants 0 "an earlier run's report is not this run's" "$d" "" \
-  "$WEEKLY --in-diff target/mutants.diff" --base main
+  "$COMMON --in-diff target/mutants.diff" --base main
 
 d="$(repo rust-uncommitted)"
 printf '// more\n' >> "$d/src/lib.rs"
 expect_mutants 0 "a change not yet committed counts, as cargo-mutants mutates the working tree" "$d" "" \
-  "$WEEKLY --in-diff target/mutants.diff" --base main
+  "$COMMON --in-diff target/mutants.diff" --base main
 
 d="$(repo no-rust)"
 printf 'more\n' >> "$d/README.md"
@@ -176,6 +185,32 @@ git -C "${d:?}" checkout -q work
 expect_mutants 0 "a Rust change on the base after the fork is not the branch's" "$d" "nothing to mutate" "" \
   --base main
 
+# --- with --since: the weekly run -----------------------------------------------------------------
+
+# A branch's commit made before the time but merged after it is the week's code: the base is the
+# last commit before the time on main's own line, not the branch commit, which is younger.
+old_date() { GIT_AUTHOR_DATE="$1" GIT_COMMITTER_DATE="$1" "${@:2}"; }
+d="$(old_date 2026-01-01T00:00:00Z repo since-merge)"
+printf 'pub fn two() -> u8 {\n    2\n}\n' >> "$d/src/lib.rs"
+old_date 2026-01-05T00:00:00Z commit "$d" "a Rust change on a branch"
+git -C "${d:?}" checkout -q main
+old_date 2026-01-15T00:00:00Z git -C "${d:?}" -c user.name=fixture -c user.email=fixture@example.invalid \
+  merge -q --no-ff -m "merge the branch" work
+expect_mutants 0 "--since takes the base from main's first-parent line" "$d" \
+  "the last commit before 2026-01-10T00:00:00Z" "$COMMON --in-diff target/mutants.diff" \
+  --since 2026-01-10T00:00:00Z
+if grep -qF '+pub fn two() -> u8 {' "$d/target/mutants.diff"; then
+  passed=$((passed + 1))
+else
+  failed=$((failed + 1))
+  echo "FAIL: the diff since the time holds the branch's change merged after it" >&2
+fi
+expect_mutants 0 "--since before the first commit mutates the whole workspace" "$d" \
+  "the whole workspace is mutated" "$COMMON" --since 2025-01-01T00:00:00Z
+expect_mutants 0 "--since and a shard together" "$d" "" \
+  "$COMMON --in-diff target/mutants.diff --shard 3/16 --sharding round-robin" \
+  --since 2026-01-10T00:00:00Z 3/16
+
 d="$(repo bad-base)"
 expect_mutants 1 "a base that does not resolve" "$d" "does not resolve to a commit" "" --base nosuchref
 expect_mutants 1 "--base without a revision" "$d" "--base needs a revision" "" --base
@@ -183,6 +218,9 @@ expect_mutants 1 "--base= without a revision" "$d" "--base needs a revision" "" 
 expect_mutants 1 "an unknown option" "$d" "unknown option '--all'" "" --all
 expect_mutants 1 "two shards" "$d" "more than one shard" "" 1/4 2/4
 expect_mutants 1 "two bases" "$d" "more than one base" "" --base main --base=HEAD
+expect_mutants 1 "--since without a time" "$d" "--since needs a time" "" --since
+expect_mutants 1 "two times" "$d" "more than one --since" "" --since 2026-01-01 --since 2026-01-02
+expect_mutants 1 "a base and a time" "$d" "--base or --since, not both" "" --base main --since 2026-01-01
 
 # --- summary ---------------------------------------------------------------------------------
 
