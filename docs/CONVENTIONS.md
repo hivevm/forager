@@ -145,6 +145,13 @@ skimmed. The design revision drops what prevented nothing
 - **A rule changes everywhere it is stated** — a change to a rule, a step, or a name searches
   the tree for its old wording and for every citation of its anchor, and corrects them in the
   same change. A link check sees the anchor, never a sentence that restates it.
+- **A measurement a later change is to repeat is kept in the tree** — a probe, a sampler, or a
+  timing whose numbers a ticket, a backlog entry, or a criterion cites, to be run again on a later
+  version of the code, is committed as a script or an example beside the code it measures,
+  never left in `.scratch/` or `/tmp`. Otherwise the next change rebuilds it from prose, and its
+  numbers can no longer be compared. Ticket 21 of revision-2026-11-16's adversarial road probe
+  was lost that way, and ticket 04 of backlog-deviations had to rebuild it and restate its
+  criterion in relative terms.
 - **A self-test asserts what it builds** — it takes its fixtures from the tree it copies or writes
   them itself, never from the template's own ADRs, scripts, or numbers, so it holds in a derived
   project and after a normalization.

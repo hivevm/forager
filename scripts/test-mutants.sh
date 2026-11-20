@@ -32,13 +32,23 @@ passed=0
 source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
 
 # The stand-in cargo: 'mutants --version' prints the pinned version; any other call appends its
-# arguments as one line to $FAKE_LOG, writes $FAKE_MISSED as the report's missed.txt when set,
-# and exits with $FAKE_STATUS.
+# arguments as one line to $FAKE_LOG, refuses as cargo-mutants 27.1.0 does when the parent of its
+# --output does not exist, writes $FAKE_MISSED as the report's missed.txt when set, and exits
+# with $FAKE_STATUS.
 mkdir -p "$work/bin"
 cat > "$work/bin/cargo" << 'EOF'
 #!/usr/bin/env bash
 if [[ "$*" == "mutants --version" ]]; then echo "cargo-mutants 27.1.0"; exit 0; fi
 echo "$*" >> "$FAKE_LOG"
+output=""
+while (($#)); do
+  [[ "$1" == "--output" ]] && output="${2:-}"
+  shift
+done
+if [[ -n "$output" && ! -d "$(dirname "$output")" ]]; then
+  printf 'Error: create output parent directory "%s"\nCaused by:\n    No such file or directory (os error 2)\n' "$output" >&2
+  exit 1
+fi
 if [[ -n "${FAKE_MISSED:-}" ]]; then
   mkdir -p target/mutants/mutants.out
   printf '%s\n' "$FAKE_MISSED" > target/mutants/mutants.out/missed.txt
@@ -95,6 +105,16 @@ FAKE_STATUS=2 FAKE_MISSED="src/lib.rs:2:5: replace one -> u8 with 0" \
   "Mutants no test caught (1):"$'\n'"src/lib.rs:2:5: replace one -> u8 with 0" "$WEEKLY"
 FAKE_STATUS=3 expect_mutants 0 "timed-out mutants are a finding, not a broken run" "$d" "" "$WEEKLY"
 FAKE_STATUS=1 expect_mutants 1 "a broken run fails" "$d" "the run failed (exit 1)" "$WEEKLY"
+
+# The weekly workflow caches no target/, so its fresh checkout has none: the script makes the
+# parent of the output, which cargo-mutants does not.
+d="$(repo no-target)"
+if [[ -e "$d/target" ]]; then
+  failed=$((failed + 1))
+  echo "FAIL: the fixture of a checkout without target/ has one" >&2
+fi
+REJECT="create output parent directory" \
+  expect_mutants 0 "a checkout without a target directory gives cargo-mutants the parent of its output" "$d" "" "$WEEKLY"
 
 # --- with a base: the review's run ---------------------------------------------------------
 

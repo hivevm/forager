@@ -561,11 +561,11 @@ const LIFTED: &[(&str, &str)] = &[
     )]",
     ),
     (
-        "symbolize/src/layer_transform/tests.rs",
+        "symbolize/src/layer_transform/smoothsia/tests.rs",
         SMOOTHSIA_TIME_BOUND,
     ),
     (
-        "symbolize/src/layer_transform/tests.rs",
+        "symbolize/src/layer_transform/smoothsia/tests.rs",
         SMOOTHSIA_TIME_BOUND,
     ),
 ];

@@ -103,11 +103,13 @@ from the threats below.
 - **Q-3** — Robustness: mapfiles and data come from users, and a panic in the browser loses the
   whole map. Invalid geometries, broken files, and errors of third-party crates become
   diagnostics; an input a guard leaves undrawn to keep a third-party crate from failing is a
-  diagnostic too. Each failure a fuzz run finds is held by a test of its input. Measured by a
-  weekly scheduled fuzz run of 5 minutes per target — the mapfile parser, the YAML/JSON loader,
-  the reader of each data format a source adapter reads, the expression evaluator, the
-  reprojection, the reader of fonts, the decoder of symbol images, and the renderer — that ends
-  without a panic, a crash, a hang past 10 s, or more than 2 GiB of memory.
+  diagnostic too. Each failure a fuzz run finds is held by a test of its input. Measured by the
+  weekly scheduled fuzz run in CI, 5 minutes per target on the runner its workflow names — the
+  mapfile parser, the YAML/JSON loader, the reader of each data format a source adapter reads,
+  the expression evaluator, the reprojection, the reader of fonts, the decoder of symbol images,
+  and the renderer — that ends without a panic, a crash, a hang past 10 s on that runner, or more
+  than 2 GiB of memory. A run elsewhere finds inputs, and a panic or a crash it finds counts as
+  the weekly run's would. A time it takes decides no hang.
 - **Q-4** — Fidelity: the point of Forager is MapServer's semantics. The share of in-scope
   msautotest cases that pass G-6 and G-13 does not fall from one release to the next.
 - **Q-5** — Bundle size: the core is downloaded by every browser that shows a map. The gzipped

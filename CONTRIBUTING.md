@@ -63,7 +63,8 @@ deny.toml             # cargo-deny: licences, advisories, sources (ADR-0011)
 .jscpd.json           # jscpd's formats, paths, and minimum clone size for sensor-duplication.sh
 scripts/check-all.sh  # runs the checks, sensors, self-tests, and the Rust build, as the hooks and CI do
 scripts/check-*.sh    # checks: each fails on what breaks a rule
-scripts/sensor-*.sh   # sensors: report for the reviewer; sensor-repo-settings.sh runs by hand
+scripts/sensor-*.sh   # sensors: report for the reviewer; sensor-repo-settings.sh and
+                      # sensor-scheduled-runs.sh run by hand
 scripts/test-*.sh     # self-tests of the checks, the sensors, the hooks, and the scripts run by hand
 scripts/lib/          # what the scripts share: adr.sh the ADR header, check.sh the findings,
                       # expect.sh the project's self-tests' expect, verdict, and the fixtures'
