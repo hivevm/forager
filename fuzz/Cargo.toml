@@ -37,6 +37,10 @@ forager-adapter-shapefile = { path = "../crates/adapter-shapefile" }
 forager-proj = { path = "../crates/proj" }
 forager-encode = { path = "../crates/encode" }
 
+# The glyph size and the lines of a label, as fuzz/tests/render_seeds.rs reads a seed's path.
+[dev-dependencies]
+forager-label = { path = "../crates/label" }
+
 [[bin]]
 name = "proj"
 path = "fuzz_targets/proj.rs"

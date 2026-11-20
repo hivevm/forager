@@ -24,7 +24,8 @@ use forager_render::clip::drawn_width;
 use forager_render::{DisplayItem, Draw, DrawOp, Point, Refused, Renderer, RgbaImage};
 use forager_render_agg::AggRenderer;
 use forager_style_ir::{
-    GeomTransform, LabelTransform, Layer, Rgba, ShapeOp, SymbolKind, TransformShape, TransformTree,
+    Bound, Expr, GeomTransform, LabelTransform, Layer, Rgba, ShapeOp, SymbolKind, TransformShape,
+    TransformTree,
 };
 use render_input::{Decoded, decode};
 
@@ -143,6 +144,15 @@ enum Path {
     /// The label's style of `labelpoly`: the point layer drawn alone hands the renderer more items
     /// with it than without it.
     LabelPoly,
+    /// A label of two lines or more at a glyph size whose line height, times the rows of its first
+    /// line with glyphs above its last, passes C's `int`, held in the label cache of the point
+    /// layer drawn alone, with no `label-*` diagnostic: the pen of its first line with glyphs
+    /// stands past C's `int`, where MapServer's arithmetic overflows. The weekly runs of
+    /// 2026-11-01 and 11-08 panicked on another path, an `i64` product of a line height saturated
+    /// from a glyph size past an `i64`, which c39b8450 made saturate. That path is dead since
+    /// ef639d7a cut the line height to an `int`, so this path, its nearest reachable neighbour,
+    /// holds them; this seed never panicked.
+    LabelLinesPastAnInt,
     /// The map has a view the engine refuses.
     ViewInvalid,
 }
@@ -179,6 +189,7 @@ impl fmt::Display for Path {
             Path::LabelCache => write!(f, "a label cached, walked with an edge buffer"),
             Path::LabelMarkers => write!(f, "a label's labelpoint and labelcenter markers"),
             Path::LabelPoly => write!(f, "a label's labelpoly style"),
+            Path::LabelLinesPastAnInt => write!(f, "a label whose lines stand past an int"),
             Path::ViewInvalid => write!(f, "a view the engine refuses"),
         }
     }
@@ -195,6 +206,7 @@ const SEEDS: &[(&str, &[Path])] = &[
     ("far-end-rounds-to-its-parameter-slow", &[Path::FarSegment]),
     ("label-cache-edge-buffer", &[Path::LabelCache]),
     ("label-labelpoly", &[Path::LabelPoly]),
+    ("label-lines-past-an-int", &[Path::LabelLinesPastAnInt]),
     ("label-markers", &[Path::LabelMarkers]),
     ("layer-geomtransform", &[Path::LayerTransform]),
     (
@@ -215,6 +227,10 @@ const SEEDS: &[(&str, &[Path])] = &[
     ),
     (
         "smoothsia-nested-layers-of-one-tree",
+        &[Path::Step(Step::SmoothSia)],
+    ),
+    (
+        "smoothsia-parts-of-no-point-and-one",
         &[Path::Step(Step::SmoothSia)],
     ),
     ("smoothsia-short-parts", &[Path::Step(Step::SmoothSia)]),
@@ -486,6 +502,46 @@ fn truetype(decoded: &Decoded) -> Option<&forager_style_ir::Symbol> {
         .find(|symbol| symbol.kind == SymbolKind::Truetype)
 }
 
+/// Whether the label of the point layer has a line with glyphs at a glyph size whose line height
+/// times the rows of that line above the last passes `i32::MAX`, for the first such line:
+/// `Layout::line` computes a pen only for a line with glyphs, and an empty line takes none.
+/// It repeats three steps of
+/// the engine, each true of the target alone:
+/// - the scale is the map's resolution over 72, as `resolution_factor` and `layer_scale_factor`
+///   of `crates/engine/src/classes.rs` give it without `DEFRESOLUTION`, `SIZEUNITS`, or
+///   `SYMBOLSCALEDENOM`, none of which the target sets;
+/// - the text ends at its first NUL;
+/// - the line height is `ceil(trunc(glyph_size) × 1.33)`, as `Layout::new` sets it.
+fn lines_past_an_int(decoded: &Decoded) -> bool {
+    let label = decoded
+        .map
+        .layers
+        .iter()
+        .find(|layer| layer.name.as_deref() == Some("points"))
+        .and_then(|layer| layer.classes.first())
+        .and_then(|class| class.labels.first());
+    let Some(label) = label else {
+        return false;
+    };
+    let (Some(Expr::String(text)), Some(Bound::Value(size)), Some(min), Some(max)) =
+        (&label.text, &label.size, label.min_size, label.max_size)
+    else {
+        return false;
+    };
+    let text = text.split('\0').next().unwrap_or_default();
+    let Ok(lines) = forager_label::lines(text, None, 0) else {
+        return false;
+    };
+    let Some(first) = lines.iter().position(|line| !line.is_empty()) else {
+        return false;
+    };
+    let rows = lines.len() - 1 - first;
+    let resolution = decoded.map.resolution.unwrap_or(72.0) / 72.0;
+    let glyph_size = forager_label::glyph_size(*size, resolution, min, max, resolution);
+    let line_height = (glyph_size.trunc() * 1.33).ceil();
+    rows as f64 * line_height.abs() > f64::from(i32::MAX)
+}
+
 /// Whether the seed of `data` builds `path`.
 fn reaches(data: &[u8], path: Path) -> bool {
     let Some(mut decoded) = decode(data) else {
@@ -671,6 +727,20 @@ fn reaches(data: &[u8], path: Path) -> bool {
                     .iter()
                     .any(|layer| layer.post_label_cache)
                 && !drawn(&decoded).1.labels.is_empty()
+        }
+        Path::LabelLinesPastAnInt => {
+            lines_past_an_int(&decoded) && {
+                decoded
+                    .map
+                    .layers
+                    .retain(|layer| layer.name.as_deref() == Some("points"));
+                let rendered = drawn(&decoded).1;
+                let refused = rendered
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.code.starts_with("label-"));
+                !rendered.labels.is_empty() && !refused
+            }
         }
         Path::LabelMarkers => {
             drawn_alone(&mut decoded, "points")
