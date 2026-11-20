@@ -6,7 +6,7 @@
 # run on main without a pull request, so a red run reaches no one: a pull request shows only the
 # checks of its own head. This sensor asks the GitHub CLI for the latest scheduled run on main of
 # each workflow under .github/workflows/ whose triggers hold a 'schedule:', and lists each one that
-# did not succeed, with its workflow, its date, and its URL (ADR-0002, sensors of the GitHub
+# did not succeed, with its workflow, its date, and its URL (NUC-checks-are-bash §7, sensors of the GitHub
 # repository). An older failure before a later success is not listed: the latest run is the state.
 # A workflow without a scheduled run on main is listed too, since GitHub disables a schedule after
 # 60 days without activity in a public repository.

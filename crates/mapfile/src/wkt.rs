@@ -14,11 +14,11 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The frontend's own reader of the WKT of an inline feature (ADR-0018): it re-implements the
-//! grammar GEOS's `WKTReader` accepts for two-dimensional points, lines, polygons, their multi
-//! forms, and collections, no GEOS code, and converts what it reads into a shape as
-//! `msGEOSGeometry2Shape` does, an inner ring that is not simple left out. An empty geometry,
-//! one with Z or M coordinates, and a `LINEARRING`, which `msGEOSGeometry2Shape` does not
+//! The frontend's own reader of the WKT of an inline feature (IR-inline-features-in-layer): it
+//! re-implements the grammar GEOS's `WKTReader` accepts for two-dimensional points, lines,
+//! polygons, their multi forms, and collections, no GEOS code, and converts what it reads into a
+//! shape as `msGEOSGeometry2Shape` does, an inner ring that is not simple left out. An empty
+//! geometry, one with Z or M coordinates, and a `LINEARRING`, which `msGEOSGeometry2Shape` does not
 //! convert, are refused. Collections nest at most [`MAX_NESTING`] deep, so that the reader's
 //! recursion is bounded whatever the text (Q-9); its memory follows the text's length.
 
@@ -749,7 +749,7 @@ mod tests {
 
     #[test]
     fn an_inner_ring_that_crosses_itself_is_left_out() {
-        // Verifies: ADR-0018
+        // Verifies: IR-inline-features-in-layer
         let square = vec![[1.0, 1.0], [2.0, 1.0], [2.0, 2.0], [1.0, 2.0], [1.0, 1.0]];
         let exterior = vec![
             [0.0, 0.0],

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The mutation testing of ADR-0007: cargo-mutants changes the code one small edit at a time and
+# The mutation testing of OPS-pinned-stable-rust-toolchain: cargo-mutants changes the code one small edit at a time and
 # reports each edit no test notices — a test that runs without deciding. A sensor: it reports
 # what survived and fails only when the run itself breaks, not on what it counts. With a base,
 # only the Rust code changed since it is mutated: the lines changed from the merge base to the

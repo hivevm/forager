@@ -407,7 +407,7 @@ fn a_pixmap_that_does_not_load_leaves_its_style_undrawn_and_the_map_drawn() {
 
 #[test]
 fn a_pixmap_along_a_line_without_a_gap_brushes_it_with_its_tile() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     // msDrawLineSymbol asks getTile for the pin's own 32 × 32 at a scale of 1 and brushes the line
     // with it (agg2RenderLineTiled), 32 pixels wide: the pin's top half, opaque and of blue 160
     // in every pixel, on the left of the line's way, above it here, and its bottom half, of alpha
@@ -467,7 +467,7 @@ fn a_pixmap_along_a_line_without_a_gap_brushes_it_with_its_tile() {
 
 #[test]
 fn a_pixmap_along_a_line_without_a_gap_that_does_not_load_warns_and_draws_nothing() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     let style = Style {
         color: Some(Bound::Value(BLUE)),
         width: Some(Bound::Value(3.0)),
@@ -496,7 +496,7 @@ fn a_pixmap_along_a_line_without_a_gap_that_does_not_load_warns_and_draws_nothin
 
 #[test]
 fn a_vector_symbol_s_brush_tile_past_its_bound_warns_symbol_not_drawn() {
-    // Verifies: ADR-0046, Q-9
+    // Verifies: REN-symbol-line-brushed-by-tile, Q-9
     // A circle of 1 × 1 at SIZE 5000, its MAXSIZE raised past MapServer's 500: a brush tile of
     // 5000 × 5000, past 4096 a side. The line is not drawn, and the layer warns once.
     let circle = Symbol {
@@ -753,7 +753,7 @@ fn a_polygon_s_pixmap_that_does_not_load_is_not_drawn_nor_its_colour_and_warns()
 
 #[test]
 fn a_thousand_polygons_of_one_pixmap_style_share_one_tile() {
-    // Verifies: ADR-0029
+    // Verifies: REN-pixmaps-held-once-per-render
     // searchTileCache finds the tile getTile built for the first polygon.
     let features: Vec<_> = (0..1000)
         .map(|i| {
@@ -823,7 +823,7 @@ impl Renderer for TilesAlive {
 
 #[test]
 fn seven_styles_of_distinct_tiles_hold_at_most_six_at_once() {
-    // Verifies: Q-9, ADR-0029
+    // Verifies: Q-9, REN-pixmaps-held-once-per-render
     // addTileCache holds MS_IMAGECACHESIZE, 6, of them. Each new tile drops the one built longest
     // ago, so a second polygon through the same seven styles, in the same order, finds none: 14.
     let styles = (10..17)
@@ -861,7 +861,7 @@ fn a_polygon_s_pixmap_at_a_size_of_0_has_a_tile_of_a_pixel_and_draws_without_a_f
 
 #[test]
 fn a_pixmap_of_a_hatched_class_counts_in_the_clip_buffer_loaded_outside_its_scale_range() {
-    // Verifies: ADR-0042
+    // Verifies: REN-i-overlay-shared-with-geo
     // msDrawShape loads every pixmap of the class before the clip, whatever its scale range: the
     // style of the 16 × 48 image never draws, yet it counts at its height: MS_NINT(48 + 1) + 2 =
     // 51 pixels around the extent, where the hatch of SIZE 10 alone would give 13.

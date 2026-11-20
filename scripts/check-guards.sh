@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Check: every guard against a third-party crate is held to the version Cargo.lock pins
-# (ADR-0049).
+# (ARCH-third-party-failures-guarded).
 #
 # A guard carries the marker '// Guard: <crate> <version>' on a line of its own above it, in a Rust
 # file under crates/. This check lists each marker, and fails where:
@@ -14,7 +14,7 @@
 #   4. the tree has no Cargo.lock.
 #
 # That a guard was derived from the source lines it names, and that every guard carries a marker,
-# no check decides; the review does (ADR-0049, Enforcement).
+# no check decides; the review does (ARCH-third-party-failures-guarded, Enforcement).
 #
 # Pure bash + grep and awk. Usage:
 #     scripts/check-guards.sh [repository root]
@@ -70,7 +70,7 @@ while IFS= read -r marker; do
     fail "$where names $crate $version, which Cargo.lock does not hold"
   elif ! grep -qxF "$version" <<< "${versions// /$'\n'}"; then
     fail "$where names $crate $version, but Cargo.lock holds $crate $versions; re-derive the" \
-      "guard from that version and update its marker (ADR-0049)"
+      "guard from that version and update its marker (ARCH-third-party-failures-guarded)"
   fi
 done <<< "$markers"
 

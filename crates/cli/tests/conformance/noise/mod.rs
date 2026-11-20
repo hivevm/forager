@@ -1,10 +1,11 @@
-//! The noise measurement of G-6 and G-13 (ADR-0033): MapServer at the pinned release renders the
-//! cases in scope, and the harness compares its renderings with the references and the labels of
-//! its label cache with the records beside the list, and its reprojection of G-11's reference
-//! points with the record beside the test of `proj` (ADR-0038).
-//! Only `.github/workflows/noise.yml` builds MapServer; the measurement runs where
-//! `FORAGER_MAP2IMG`, `FORAGER_MAPSERVER_LABELS`, and `FORAGER_MAPSERVER_PROJ` name it and skips
-//! itself where none does, so the push checks never run it, whatever it is named.
+//! The noise measurement of G-6 and G-13 (TST-noise-measured-against-mapserver): MapServer at the
+//! pinned release renders the cases in scope, and the harness compares its renderings with the
+//! references and the labels of its label cache with the records beside the list, and its
+//! reprojection of G-11's reference points with the record beside the test of `proj`
+//! (TST-proj-references-from-mapserver). Only `.github/workflows/noise.yml` builds MapServer; the
+//! measurement runs where `FORAGER_MAP2IMG`, `FORAGER_MAPSERVER_LABELS`, and
+//! `FORAGER_MAPSERVER_PROJ` name it and skips itself where none does, so the push checks never run
+//! it, whatever it is named.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -22,27 +23,27 @@ mod tests;
 const NOISE_THRESHOLDS: &[u8] = &[0, 1, 2, 4, 8, 16, 32, 64, 128];
 
 /// The noise of G-6 and G-13: MapServer at the pinned release, which `.github/workflows/noise.yml`
-/// builds (ADR-0033), renders every case the list puts in scope, of every category, as
-/// msautotest's test library runs it, and each rendering is compared with its reference at each of
-/// [`NOISE_THRESHOLDS`]. The report, a table of the share per case and threshold and its maximum
-/// over each category, goes to standard output and to the job summary; it names apart each case
-/// MapServer does not reproduce: `map2img` fails, writes no PNG, writes one of another size, or
-/// differs beyond its category's tolerance at every threshold of the set. The list moves such a
-/// case out of scope, so the test fails when one is in scope. For each text case the reader of
-/// MapServer's label cache (ADR-0033) renders it beside `map2img`, its image byte for byte the
-/// same, and its labels must hold the record beside the list, each box within [`labels::NOISE`] and
-/// every other field exactly; the test fails on a record that differs or is missing, and the
-/// reader's labels stay in `noise/labels/` to take the record from. The renderings stay in
-/// `noise/` under the test's target directory. Last, the reader of MapServer's reprojection
-/// reprojects G-11's reference points, rectangles, and shapes ([`reference_points`]); the test
-/// fails where its output and a record beside the test of `proj` disagree, and the output stays in
-/// `noise/proj/`.
+/// builds (TST-noise-measured-against-mapserver), renders every case the list puts in scope, of
+/// every category, as msautotest's test library runs it, and each rendering is compared with its
+/// reference at each of [`NOISE_THRESHOLDS`]. The report, a table of the share per case and
+/// threshold and its maximum over each category, goes to standard output and to the job summary; it
+/// names apart each case MapServer does not reproduce: `map2img` fails, writes no PNG, writes one
+/// of another size, or differs beyond its category's tolerance at every threshold of the set. The
+/// list moves such a case out of scope, so the test fails when one is in scope. For each text case
+/// the reader of MapServer's label cache (TST-noise-measured-against-mapserver) renders it beside
+/// `map2img`, its image byte for byte the same, and its labels must hold the record beside the
+/// list, each box within [`labels::NOISE`] and every other field exactly; the test fails on a
+/// record that differs or is missing, and the reader's labels stay in `noise/labels/` to take the
+/// record from. The renderings stay in `noise/` under the test's target directory. Last, the reader
+/// of MapServer's reprojection reprojects G-11's reference points, rectangles, and shapes
+/// ([`reference_points`]); the test fails where its output and a record beside the test of `proj`
+/// disagree, and the output stays in `noise/proj/`.
 #[test]
 #[ignore = "needs MapServer; .github/workflows/noise.yml builds it and runs this test, and \
             without it the test skips itself"]
 fn mapserver_renders_the_cases_in_scope_within_its_noise() {
-    // Verifies: ADR-0033
-    // Verifies: ADR-0038
+    // Verifies: TST-noise-measured-against-mapserver
+    // Verifies: TST-proj-references-from-mapserver
     let mapserver = mapserver(
         std::env::var_os("FORAGER_MAP2IMG"),
         std::env::var_os("FORAGER_MAPSERVER_LABELS"),
@@ -126,7 +127,7 @@ fn mapserver_renders_the_cases_in_scope_within_its_noise() {
 
 /// The lists of G-11's reference points, rectangles, and shapes, each with the record of
 /// MapServer's reprojection of it and the name of the reader's output, from the workspace root
-/// (ADR-0038).
+/// (TST-proj-references-from-mapserver).
 const REFERENCES: [(&str, &str, &str); 3] = [
     (
         "crates/proj/tests/reference/points.tsv",
@@ -283,9 +284,9 @@ fn record_differences(record: &str, output: &str) -> Vec<String> {
 #[derive(Debug, PartialEq)]
 struct MapServer {
     map2img: PathBuf,
-    /// The reader of the label cache (ADR-0033).
+    /// The reader of the label cache (TST-noise-measured-against-mapserver).
     labels: PathBuf,
-    /// The reader of the reprojection (ADR-0038).
+    /// The reader of the reprojection (TST-proj-references-from-mapserver).
     proj: PathBuf,
 }
 

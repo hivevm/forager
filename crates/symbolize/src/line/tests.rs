@@ -486,7 +486,7 @@ fn a_pixmap_along_a_line_costs_one_point_of_the_layer_s_budget() {
 
 #[test]
 fn a_later_cached_pixmap_brush_without_a_colour_brushes_the_line() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     // The cache's later pass draws a pixmap without a COLOR (src/mapdraw.c:1487-1494), and
     // msDrawLineSymbol brushes one with a GAP of 0 along the line with its tile
     // (src/maprendering.c:687-707), not a line in the OUTLINECOLOR.
@@ -614,7 +614,7 @@ fn brush_tile(ops: &[DrawOp]) -> (u32, u32) {
 
 #[test]
 fn a_vector_ellipse_pixmap_or_truetype_symbol_without_a_gap_brushes_the_line() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     for index in 1..=4 {
         let style = Style {
             offset: Some([Bound::Value(0.0), Bound::Value(2.0)]),
@@ -662,7 +662,7 @@ fn a_vector_ellipse_pixmap_or_truetype_symbol_without_a_gap_brushes_the_line() {
 
 #[test]
 fn a_brush_tile_s_sides_are_ms_draw_line_symbol_s() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     let size = |index, size| brush_tile(&brushed(&brush(index, size), &mut Tiles::default()).0);
     // The arrow's 3 × 2 at SIZE 10, a scale of 10 / 2: MS_NINT(15) by MS_NINT(10).
     assert_eq!(size(1, 10.0), (15, 10));
@@ -687,7 +687,7 @@ fn a_brush_tile_s_sides_are_ms_draw_line_symbol_s() {
 
 #[test]
 fn a_polygon_s_cached_seamless_tile_serves_a_line_of_the_same_key() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     // searchTileCache compares no seamless mode: the arrow's seamless fill tile at SIZE 10,
     // 15 × 10, serves the line's brush of the same symbol, size, scale, rotation, and colours.
     let symbols = brushes();
@@ -715,7 +715,7 @@ fn a_polygon_s_cached_seamless_tile_serves_a_line_of_the_same_key() {
 
 #[test]
 fn a_brush_tile_past_4096_pixels_a_side_draws_nothing_and_says_why() {
-    // Verifies: ADR-0046, Q-9
+    // Verifies: REN-symbol-line-brushed-by-tile, Q-9
     // MAXSIZE lets the SIZE past MapServer's default bound of 500.
     let huge = |index, size| Style {
         max_size: Some(1e6),
@@ -738,7 +738,7 @@ fn a_brush_tile_past_4096_pixels_a_side_draws_nothing_and_says_why() {
 
 #[test]
 fn a_brush_tile_whose_copy_would_pass_256_mib_draws_nothing_and_says_why() {
-    // Verifies: ADR-0046, Q-9
+    // Verifies: REN-symbol-line-brushed-by-tile, Q-9
     // The arrow at SIZE 200: a tile of 300 × 200, 240,000 bytes, and the brush's copy of
     // 304 × 204 × 4 = 248,064 more. With 300,000 bytes left the polygon's fill tile fits, and
     // the line's brush of the same tile does not, built new or found held.
@@ -779,7 +779,7 @@ fn a_brush_tile_whose_copy_would_pass_256_mib_draws_nothing_and_says_why() {
 
 #[test]
 fn a_brush_whose_image_or_glyph_is_not_found_draws_nothing_and_says_why() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     let symbols = [pixmap_symbol(Some("gone.png")), truetype()];
     let mut tiles = Tiles::default();
     let mut canvas = Canvas::new(&symbols, 101, 101, Factors::new(1.0, 1.0)).with_tiles(&mut tiles);
@@ -809,7 +809,7 @@ fn unit_view() -> crate::extent::View {
 
 #[test]
 fn a_polygon_s_vector_symbol_without_a_color_brushes_its_outline() {
-    // Verifies: ADR-0046
+    // Verifies: REN-symbol-line-brushed-by-tile
     // msDrawShadeSymbol hands a polygon of a symbol other than a pixmap, without a COLOR and with
     // an OUTLINECOLOR, to msDrawLineSymbol in the same style, which brushes it with the tile
     // without a GAP; the ring is a line that ends on its first point.

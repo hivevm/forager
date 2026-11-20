@@ -172,7 +172,8 @@ pub fn label_style_marker(
     pixmaps: &Pixmaps,
     factor: f64,
 ) -> Result<LabelMarker, String> {
-    // A TrueType symbol as a label's marker is out of ADR-0044's scope: no glyph is asked.
+    // A TrueType symbol as a label's marker is out of API-truetype-marker-through-port's scope: no
+    // glyph is asked.
     let resources = SymbolResources::default().with_pixmaps(pixmaps);
     let size = marker_size_with(style, values.size, symbol, symbols, resources, factor)
         .map_err(|what| format!("its labelpoint style draws {what}"))?;
@@ -235,8 +236,8 @@ mod tests {
 
     #[test]
     fn a_labelpnt_marker_of_a_truetype_symbol_is_not_sized() {
-        // A TrueType symbol as a label's marker is out of ADR-0044's scope: the label's styles ask
-        // no glyph of the port.
+        // A TrueType symbol as a label's marker is out of API-truetype-marker-through-port's scope:
+        // the label's styles ask no glyph of the port.
         let symbols = [Symbol {
             name: None,
             kind: SymbolKind::Truetype,

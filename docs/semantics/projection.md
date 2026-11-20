@@ -41,7 +41,7 @@ polar map is asked for every longitude about the pole; Forager asks each such la
 asks the first. A
 projection the core does not implement leaves its layer undrawn with a warning. The core implements
 longitude and latitude, `lcc`, `merc`, `tmerc` with `utm`, and `ortho`, a datum's shift by
-`+towgs84`, and the datums WGS84 and NAD83, as PROJ 9.4.0 computes them (ADR-0037).
+`+towgs84`, and the datums WGS84 and NAD83, as PROJ 9.4.0 computes them (GEO-proj-ported-with-libm).
 
 **A rotated map.** On a map with an [`ANGLE`](angle.md), `msMapSetFakedExtent` puts the map's
 geotransform on the map's projection, and `msProjectionsDiffer` finds every layer where both sides
@@ -59,28 +59,28 @@ by other than a multiple of 180°. A layer without a projection, or under a map 
 not reprojected: its source is asked for the faked extent itself, and its coordinates are drawn
 as the frame's pixels, unrotated, as MapServer draws them; Forager warns
 `rotation-without-projection`, naming the layer, where MapServer is silent
-(ADR-0045).
+(GEO-map-rotation-in-reprojection).
 
 **Parameters.** MapServer hands every parameter to PROJ, so the frontend writes each one with a
 leading `+` and joins them with spaces. `init=<authority>:<code>` is resolved by the resolver the
-host passes in (ADR-0019); without one, or for a code it does not know, it is a load error. As in
-PROJ's `pj_expand_init`, there is at most one `init=`, it is matched case-sensitively, and its
-expansion follows the explicit parameters, which take precedence.
+host passes in (API-init-projections-through-resolver); without one, or for a code it does not know,
+it is a load error. As in PROJ's `pj_expand_init`, there is at most one `init=`, it is matched
+case-sensitively, and its expansion follows the explicit parameters, which take precedence.
 
-**Init files.** MapServer hands `init=<file>:<code>` to PROJ, which opens a name beginning with
-`/`, `./`, or `../` as a path from the working directory and searches any other in its search
-paths, `PROJ_DATA` first, before the working directory (`pj_open_lib_internal` in PROJ's
-`src/filemanager.cpp`); msautotest runs each mapfile from its own directory. The frontend reads
-a file whose name holds a `/`, such as `./data/epsg2` or `data/epsg2`, through the resource loader
-against the main mapfile's directory inside the base context, as `INCLUDE` and `FONTSET` are
-(Q-8), once per load and within the size limit of the mapfile (Q-9), and takes the code's
-definition from it, in the format of PROJ's former `epsg` init file as PROJ reads it
-(`get_init_string` in its `src/init.cpp`): `<code>` and the parameters up to the next `<`, across
-lines, `#` starting a comment, the first definition of a code holding, and the code after the last
-`:` of the reference. A file outside the base context, one that cannot be
-read, a code it does not hold, and a definition that names a grid file or refers on with `init=`
-are each the load error `projection-unresolved`, naming the file or the code. A name without a
-`/`, such as `epsg2`, is an authority like `epsg` and goes to the resolver (ADR-0019).
+**Init files.** MapServer hands `init=<file>:<code>` to PROJ, which opens a name beginning with `/`,
+`./`, or `../` as a path from the working directory and searches any other in its search paths,
+`PROJ_DATA` first, before the working directory (`pj_open_lib_internal` in PROJ's
+`src/filemanager.cpp`); msautotest runs each mapfile from its own directory. The frontend reads a
+file whose name holds a `/`, such as `./data/epsg2` or `data/epsg2`, through the resource loader
+against the main mapfile's directory inside the base context, as `INCLUDE` and `FONTSET` are (Q-8),
+once per load and within the size limit of the mapfile (Q-9), and takes the code's definition from
+it, in the format of PROJ's former `epsg` init file as PROJ reads it (`get_init_string` in its
+`src/init.cpp`): `<code>` and the parameters up to the next `<`, across lines, `#` starting a
+comment, the first definition of a code holding, and the code after the last `:` of the reference. A
+file outside the base context, one that cannot be read, a code it does not hold, and a definition
+that names a grid file or refers on with `init=` are each the load error `projection-unresolved`,
+naming the file or the code. A name without a `/`, such as `epsg2`, is an authority like `epsg` and
+goes to the resolver (API-init-projections-through-resolver).
 
 **`AUTO`.** A first parameter that is `AUTO` and nothing else, in any case, leaves the projection to
 the layer's source: `msProcessProjection` sets no PROJ object for it, and the source declares one
@@ -90,7 +90,7 @@ none, the layer keeps `AUTO` without a PROJ object, which `msProjectionsDiffer` 
 the map's, and `msProjectCreateReprojector` in `src/mapproject.c` takes its coordinates as longitude
 and latitude in the datum of the map's projection; only a map without a projection, or a geographic
 one, leaves them as they are. The IR holds this as `from_source`; the engine asks the source bound
-to the layer for the projection it declares (ADR-0039): a shapefile its
+to the layer for the projection it declares (API-source-declares-projection): a shapefile its
 `.prj` (docs/semantics/shapefile.md), a GeoJSON source WGS84 longitude and latitude. A source that
 declares none leaves the layer as MapServer leaves it, and one whose declaration does not read
 does too, with a warning naming the layer and the file, where MapServer writes a debug message.

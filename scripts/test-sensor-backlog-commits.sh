@@ -8,7 +8,7 @@
 # commit that adds a backlog entry beside other changes, or holds the sensor silent on one it
 # must not list.
 #
-# Verifies: ADR-0005
+# Verifies: OPS-backlog-commits-are-sensed, NUC-checks-are-bash
 # Inputs: scripts/sensor-backlog-commits.sh scripts/lib/
 #
 # Usage:

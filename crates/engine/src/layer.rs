@@ -87,9 +87,10 @@ pub(crate) fn quoted(text: &str) -> String {
     }
 }
 
-/// The rotation of a map by its `angle`: its frame, geotransform, and geo cellsize, as ADR-0045
-/// decides them, and the turn of a style's or a label's angle by the map's, which ADR-0045 leaves
-/// out of its scope and pointLayerDrawShape, lineLayerDrawShape, and polygonLayerDrawShape give.
+/// The rotation of a map by its `angle`: its frame, geotransform, and geo cellsize, as
+/// GEO-map-rotation-in-reprojection decides them, and the turn of a style's or a label's angle by
+/// the map's, which GEO-map-rotation-in-reprojection leaves out of its scope and
+/// pointLayerDrawShape, lineLayerDrawShape, and polygonLayerDrawShape give.
 pub(crate) struct Rotation {
     /// The view everything after the reprojection is drawn in: on a rotated map, the frame of its
     /// image, `0, 0, width, height` at a cellsize of 1, as msMapSetFakedExtent fakes it.

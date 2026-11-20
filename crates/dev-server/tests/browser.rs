@@ -1,11 +1,12 @@
-//! The browser example in a real browser (G-14, ADR-0040): the dev
+//! The browser example in a real browser (G-14, TST-browser-test-over-webdriver): the dev
 //! server serves `examples/web/` and the bundle `scripts/build-web.sh` wrote, headless Chrome
 //! opens the page over WebDriver, and the canvas and the list of diagnostics are compared with
 //! the native render of the same input.
 //!
 //! The cases run only where `FORAGER_BROWSER_TEST=required`, as in the browser job of
 //! `.github/workflows/checks.yml`; there a missing ChromeDriver, Chrome, or bundle fails them.
-//! Elsewhere, as in the Dev Container, which has no browser (ADR-0009), they return at once.
+//! Elsewhere, as in the Dev Container, which has no browser (OPS-dev-container-adds-rust), they
+//! return at once.
 
 // The client, beside the test in a directory of its own, which Cargo does not take for a test.
 #[path = "browser/webdriver.rs"]
@@ -206,7 +207,7 @@ fn first_difference(a: &[u8], b: &[u8]) -> Option<usize> {
 
 #[test]
 fn the_page_shows_the_image_the_bindings_return_for_its_sample() {
-    // Verifies: G-14, ADR-0040
+    // Verifies: G-14, TST-browser-test-over-webdriver
     if !required("the_page_shows_the_image_the_bindings_return_for_its_sample") {
         return;
     }
@@ -265,7 +266,7 @@ END
 
 #[test]
 fn the_page_lists_each_diagnostic_of_a_faulty_mapfile() {
-    // Verifies: ADR-0040
+    // Verifies: TST-browser-test-over-webdriver
     if !required("the_page_lists_each_diagnostic_of_a_faulty_mapfile") {
         return;
     }
@@ -295,7 +296,7 @@ fn the_page_lists_each_diagnostic_of_a_faulty_mapfile() {
 /// answer of the protocol's errors is returned as an error with its code and message.
 #[test]
 fn the_webdriver_client_reads_answers_and_the_protocol_s_errors() {
-    // Verifies: ADR-0040
+    // Verifies: TST-browser-test-over-webdriver
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let address = listener.local_addr().unwrap();

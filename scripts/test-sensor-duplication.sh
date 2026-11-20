@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/sensor-duplication.sh. Verifies: ADR-0007
+# Self-test of scripts/sensor-duplication.sh. Verifies: OPS-pinned-stable-rust-toolchain, NUC-checks-are-bash
 #
 # Each case builds a throwaway git repository under a temporary directory with the repository's
 # own .jscpd.json and tracked Rust or bash files, runs the sensor against it with the jscpd on

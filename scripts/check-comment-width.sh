@@ -3,7 +3,7 @@
 # Check: a comment line of a Rust file is at most 100 characters wide.
 #
 # rustfmt wraps code at 100 columns but not comments: its wrap_comments and comment_width are
-# unstable, and the pinned toolchain is stable (ADR-0007). This check fails on each line of a .rs
+# unstable, and the pinned toolchain is stable (OPS-pinned-stable-rust-toolchain). This check fails on each line of a .rs
 # file under crates/ or fuzz/ that git does not ignore where:
 #
 #   - the line is a comment: its first characters after the indentation are '//', which takes in

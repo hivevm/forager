@@ -124,7 +124,7 @@ pub(super) const TESTLINES_PX: [&[(f64, f64)]; 3] = [
 
 #[test]
 fn the_case_s_lines_keep_geos_s_points_in_map_units() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // The layer vertex2 of renderers/geomtransform-vertex.map: simplify([shape],25).
     let expected: [&[(f64, f64)]; 3] = [
         &[
@@ -153,7 +153,7 @@ fn the_case_s_lines_keep_geos_s_points_in_map_units() {
 
 #[test]
 fn the_case_s_lines_keep_geos_s_points_in_pixels() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // The style simplify([shape],10) of renderers/geomtransform-vertex.map, on the lines in pixels.
     let expected: [&[(f64, f64)]; 3] = [
         &[
@@ -184,7 +184,7 @@ fn the_case_s_lines_keep_geos_s_points_in_pixels() {
 
 #[test]
 fn a_ring_loses_its_first_point_where_it_lies_within_the_tolerance_of_its_neighbours() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // GEOS: POLYGON ((0 0, 0 10.5, 10.25 10.75, 10.5 0.25, 0 0)) at 2.
     let input = area(
         &[
@@ -212,7 +212,7 @@ fn a_ring_loses_its_first_point_where_it_lies_within_the_tolerance_of_its_neighb
 
 #[test]
 fn a_hole_that_collapses_is_removed() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // GEOS: POLYGON ((0 0, 0 100, 100 100, 100 0, 0 0)) at 2.
     let input = area(
         &[
@@ -239,7 +239,7 @@ fn a_hole_that_collapses_is_removed() {
 
 #[test]
 fn a_shell_that_collapses_leaves_no_polygon() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // GEOS: POLYGON EMPTY at 2, the hole removed with its shell.
     let input = area(
         &[
@@ -256,7 +256,7 @@ fn a_shell_that_collapses_leaves_no_polygon() {
 
 #[test]
 fn a_valid_result_is_kept_as_it_is() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // GEOS: POLYGON ((0 0, 0 100, 100 99.75, 100 0, 0 0), (20 20, 40 20, 40 40, 20 40, 20 20)) at
     // 2: the shell's and the hole's slight bends are dropped, and nothing is repaired.
     let input = area(
@@ -299,7 +299,7 @@ fn a_valid_result_is_kept_as_it_is() {
 
 #[test]
 fn an_invalid_result_is_repaired_within_a_millionth_of_geos_s() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // At 10 the ring keeps 51.46 30.09, 26.46 46.85, 73.13 65.88, and 59.31 62.82, whose last
     // edge crosses its first: GEOS's buffer of 0 gives POLYGON ((51.460000000000001 30.09,
     // 26.460000000000001 46.850000000000001, 58.625411520418055 59.965658479399089,
@@ -366,7 +366,7 @@ fn a_tolerance_that_is_no_number_keeps_every_point() {
 
 #[test]
 fn each_section_is_charged_before_it_is_scanned() {
-    // Verifies: Q-9, ADR-0050
+    // Verifies: Q-9, GEO-own-circle-for-buffer
     // A line of 5 points at 0.5: the whole line's 3 inner points, split at (1, 1), the first of
     // two farthest; then (1, 1) to (4, 0), whose 2 inner points lie equally far, split at the
     // first; then (2, 0) to (4, 0), its 1 inner point. Every point is kept.
@@ -385,7 +385,7 @@ fn each_section_is_charged_before_it_is_scanned() {
 
 #[test]
 fn equally_far_points_split_at_the_first_as_geos_splits() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // (1, 1) and (2, 1) lie 1 from the segment between the ends: GEOS splits at the first and
     // keeps it, LINESTRING (0 0, 1 1, 3 0) at 0.5, where geo's Simplify keeps (2, 1).
     let input = [(0.0, 0.0), (1.0, 1.0), (2.0, 1.0), (3.0, 0.0)];
@@ -430,7 +430,7 @@ pub(super) fn zigzag(n: u32) -> Vec<Coord> {
 
 #[test]
 fn a_zigzag_that_keeps_every_point_needs_no_recursion() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // geo's recursive Simplify overflowed a stack of 1 MiB at 4,500 such points. The sections
     // shrink by one point each, so 10,000 points visit 49,985,001 inner points in all.
     let input = zigzag(10_000);
@@ -441,7 +441,7 @@ fn a_zigzag_that_keeps_every_point_needs_no_recursion() {
 
 #[test]
 fn the_points_a_repair_adds_are_charged_as_added() {
-    // Verifies: Q-9, ADR-0050
+    // Verifies: Q-9, GEO-own-circle-for-buffer
     // Two bars that cross, a multipolygon GEOS finds invalid: the union's outline is a cross of 12
     // corners and its closing point, 13 points from the bars' 10, so 3 are added.
     let rectangle = |x0: f64, y0: f64, x1: f64, y1: f64| {
@@ -506,7 +506,7 @@ fn ring_distance(ours: &[Coord], theirs: &[Coord]) -> Option<f64> {
 
 #[test]
 fn the_case_s_polygons_buffer_to_geos_s_rings_within_a_millionth_of_a_pixel() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // The polygons of renderers/polygon-as-line-offset.map in its pixels, buffered by 1 and by -1
     // with 30 segments a quadrant: each ring of GEOS's result has a ring of Forager's of its point
     // count, each vertex within 1e-6 px, whatever point the ring starts at and its direction. The
@@ -555,7 +555,7 @@ fn the_case_s_polygons_buffer_to_geos_s_rings_within_a_millionth_of_a_pixel() {
 
 #[test]
 fn a_line_buffers_to_geos_s_ring_and_not_at_all_by_a_distance_not_above_0() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // GEOSBuffer_r(LINESTRING (0 0, 10 0, 10 10), 1, 30): 155 coordinates, round caps and the
     // round join outside the corner; a line buffered by 0 or less is GEOS's empty polygon.
     let line = [vec![c(0.0, 0.0), c(10.0, 0.0), c(10.0, 10.0)]];
@@ -603,7 +603,7 @@ fn jts_circle(x: f64, y: f64, d: f64) -> Vec<Coord> {
 
 #[test]
 fn a_point_buffers_to_a_circle_of_120_segments() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // GEOSBuffer_r(POINT (0 0), 1, 30): 121 coordinates, from (1, 0) clockwise, the vertex k at
     // −k × π/60. Forager's circle is JTS's by `libm`, bit for bit, the same on every target, each
     // vertex within 1e-12 of GEOS's; geo's started at (−1, 0) and ran the other way.
@@ -632,7 +632,7 @@ fn a_point_buffers_to_a_circle_of_120_segments() {
 
 #[test]
 fn a_point_away_from_the_origin_buffers_to_jts_s_circle_bit_for_bit() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // Each vertex is x + d × cos a and y + d × sin a, `cos` and `sin` from `libm`.
     for (x, y, d) in [
         (100.25, -3.5, 7.3),
@@ -652,7 +652,7 @@ fn a_point_away_from_the_origin_buffers_to_jts_s_circle_bit_for_bit() {
 
 #[test]
 fn a_circle_drops_a_vertex_that_rounds_onto_the_one_before_it() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // At (1e9, 1e9) a coordinate's last bit is about 1.2e-7, so the vertices of a circle of 1e-6,
     // some 5.2e-8 apart, round onto one another: JTS's OffsetSegmentString drops a vertex closer
     // than d × 1e-6 to the point before it, and the ring closes on its first point.
@@ -682,7 +682,7 @@ fn a_circle_drops_a_vertex_that_rounds_onto_the_one_before_it() {
 
 #[test]
 fn a_circle_that_rounds_onto_fewer_than_3_places_is_no_polygon() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // At (1e10, 1e10) a last bit is about 1.9e-6: a circle of 1e-7 rounds onto its centre, a ring
     // of one coordinate, which bounds no area and is no ring of a polygon (`Area`).
     let point = [c(1e10, 1e10)];
@@ -735,7 +735,7 @@ fn shells(areas: &[Area]) -> (Vec<(usize, [f64; 4])>, usize) {
 
 #[test]
 fn a_multipoint_buffers_to_geo_s_union_of_jts_s_circles() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // geo's MultiPoint buffer merges its circles by unary_union; Forager merges its own circles
     // the same way. The circles of (0, 0) and (1, 0) overlap into one ring from x = -1 to 2 of 161
     // coordinates, as GEOSBuffer_r gives it (`buffer_buffers_the_first_part_of_a_multipoint`);
@@ -763,7 +763,7 @@ fn a_multipoint_buffers_to_geo_s_union_of_jts_s_circles() {
 
 #[test]
 fn a_line_of_equal_points_buffers_to_geo_s_union_of_jts_s_circle() {
-    // Verifies: ADR-0050
+    // Verifies: GEO-own-circle-for-buffer
     // geo buffers a line whose points are all equal as a point: its circles merged by unary_union,
     // joined by union to the stroke of the other lines, empty where there are none. Forager joins
     // its own circles the same way. The line of one place at (2, 3) alone is one ring of 121
@@ -811,7 +811,7 @@ fn a_line_of_equal_points_buffers_to_geo_s_union_of_jts_s_circle() {
 
 #[test]
 fn a_buffer_charges_its_offset_curves_before_it_runs_and_its_added_points_after() {
-    // Verifies: Q-9, ADR-0050
+    // Verifies: Q-9, GEO-own-circle-for-buffer
     // A square of 5 coordinates turns a quarter at each of its 4 corners, 30 steps of π/60 each:
     // 120 points of arcs, charged as added before the buffer runs, and with the 2 ends of each
     // point's offset segments, 130, as visited. The result's points beyond the square's 5 and those
@@ -855,7 +855,7 @@ fn a_buffer_charges_its_offset_curves_before_it_runs_and_its_added_points_after(
 
 #[test]
 fn a_repeated_point_hides_no_turn_from_the_charge() {
-    // Verifies: Q-9, ADR-0050
+    // Verifies: Q-9, GEO-own-circle-for-buffer
     // i_overlay drops a point equal to the one before it and still rounds the turn at the next:
     // a zigzag line and a jagged ring with each point doubled are charged the arcs of the same
     // turns as without the repeats.
@@ -964,7 +964,7 @@ fn assert_covers(buffered: &[Area], given: &[Coord], distance: f64) {
 
 #[test]
 fn a_point_s_tiny_circle_buffers_by_a_tinier_distance_to_a_ring_that_covers_it() {
-    // Verifies: Q-3, ADR-0050, ADR-0049
+    // Verifies: Q-3, GEO-own-circle-for-buffer, ARCH-third-party-failures-guarded
     // The render fuzzer's input: the point (3.07847e-319, 0) buffered by 6.6e-163 is a circle
     // some 1.3e-162 across, whose shortest edge is 3.46e-164, so the square of its direction
     // underflows to 0 in i_overlay's offset. That ring buffered by 9.6e-281 neither panics nor
@@ -985,7 +985,7 @@ fn a_point_s_tiny_circle_buffers_by_a_tinier_distance_to_a_ring_that_covers_it()
 
 #[test]
 fn a_ring_with_edges_too_short_to_square_buffers_by_its_own_size() {
-    // Verifies: Q-3, ADR-0050
+    // Verifies: Q-3, GEO-own-circle-for-buffer
     // The fuzzer's circle buffered by 1e-163, a distance about its own size: the squares of its
     // edges underflow as they do by the fuzzer's distance.
     let point = [c(3.07847e-319, 0.0)];
@@ -1001,7 +1001,7 @@ fn a_ring_with_edges_too_short_to_square_buffers_by_its_own_size() {
 
 #[test]
 fn a_line_with_edges_too_short_to_square_buffers_by_its_own_size() {
-    // Verifies: Q-3, ADR-0050
+    // Verifies: Q-3, GEO-own-circle-for-buffer
     // A line of edges 1.4e-164 long buffered by 1e-164: the squares of its edges underflow too.
     let line = [vec![c(0.0, 0.0), c(1e-164, 1e-164), c(2e-164, 0.0)]];
     let buffered = buffer(Buffered::Lines(&line), 1e-164, &mut Recorder::default()).unwrap();
@@ -1029,7 +1029,7 @@ fn raised(distance: f64, line: &[Coord]) -> f64 {
 
 #[test]
 fn a_tiny_line_buffered_near_the_grid_step_returns_a_buffer_that_covers_it() {
-    // Verifies: Q-3, Q-9, ADR-0050, ADR-0049
+    // Verifies: Q-3, Q-9, GEO-own-circle-for-buffer, ARCH-third-party-failures-guarded
     // The render fuzzer's input: a line some 4.3e-304 long buffered by 5.4e-312, about 1.25e-8 of
     // its length. Scaled near 1, its stroke's width is a few steps of i_overlay's grid, where
     // find_contour walks the stroke's graph without end and grows the contour until an
@@ -1045,7 +1045,7 @@ fn a_tiny_line_buffered_near_the_grid_step_returns_a_buffer_that_covers_it() {
 
 #[test]
 fn a_line_buffered_by_some_grid_steps_does_not_loop() {
-    // Verifies: Q-3, Q-9, ADR-0050
+    // Verifies: Q-3, Q-9, GEO-own-circle-for-buffer
     // i_overlay's grid is about 2^-30 of the line's size: by 1e-8 its stroke allocates gigabytes.
     let line = [vec![c(0.0, 0.0), c(1.0, 0.0)]];
     let buffered = buffer(Buffered::Lines(&line), 1e-8, &mut Recorder::default()).unwrap();
@@ -1054,7 +1054,7 @@ fn a_line_buffered_by_some_grid_steps_does_not_loop() {
 
 #[test]
 fn a_line_buffered_by_a_grid_step_or_less_does_not_vanish() {
-    // Verifies: Q-3, ADR-0050
+    // Verifies: Q-3, GEO-own-circle-for-buffer
     // By 3e-9 and less, about three grid steps and fewer, the stroke returns no polygon.
     let line = [vec![c(0.0, 0.0), c(1.0, 0.0)]];
     for distance in [3e-9, 1e-9, 1e-12] {
@@ -1065,7 +1065,7 @@ fn a_line_buffered_by_a_grid_step_or_less_does_not_vanish() {
 
 #[test]
 fn a_line_far_from_the_origin_buffered_by_a_few_ulps_neither_loops_nor_vanishes() {
-    // Verifies: Q-3, Q-9, ADR-0050
+    // Verifies: Q-3, Q-9, GEO-own-circle-for-buffer
     // Far from the origin the coordinates are coarser than i_overlay's grid: a zigzag 0.1 across
     // at (2e7, 2e7), as in Web Mercator's metres, buffered by 1e-300 and by 1e-9, and a line 1
     // long at 1e12 buffered by 8 ulps of its coordinates, each loop or vanish under a floor of the
@@ -1087,7 +1087,7 @@ fn a_line_far_from_the_origin_buffered_by_a_few_ulps_neither_loops_nor_vanishes(
 
 #[test]
 fn a_ring_buffered_as_a_line_near_the_grid_step_does_not_panic() {
-    // Verifies: Q-3, ADR-0050
+    // Verifies: Q-3, GEO-own-circle-for-buffer
     // A closed ring of 200 points buffered as a line by 1e-9 breaks i_overlay's debug assertion
     // that each extracted contour's top runs direct.
     let ring: Vec<Coord> = (0..=200)
@@ -1103,7 +1103,7 @@ fn a_ring_buffered_as_a_line_near_the_grid_step_does_not_panic() {
 
 #[test]
 fn a_buffer_of_at_least_2_to_the_minus_450_is_buffered_unscaled() {
-    // Verifies: ADR-0049
+    // Verifies: ARCH-third-party-failures-guarded
     // The ordinary input beside the scaling of a tiny buffer: a point buffered by 2^-449, a size
     // of at least 2^-450, is buffered as it is, to the same circle geo's buffer gives unscaled.
     let point = [c(0.0, 0.0)];
@@ -1119,7 +1119,7 @@ fn a_buffer_of_at_least_2_to_the_minus_450_is_buffered_unscaled() {
 
 #[test]
 fn a_line_s_distance_at_or_above_its_floor_is_kept() {
-    // Verifies: ADR-0049
+    // Verifies: ARCH-third-party-failures-guarded
     // The ordinary input beside the floor of a line's buffer: a line 1 long at the origin has a
     // floor of 2^-24, and a distance of 2^-24 or 0.5 is buffered as it is, as geo's buffer gives
     // it unfloored.

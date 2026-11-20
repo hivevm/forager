@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Self-test of scripts/check-guards.sh. Verifies: ADR-0049
+# Self-test of scripts/check-guards.sh. Verifies: ARCH-third-party-failures-guarded
 #
 # Each case writes a fixture with a Cargo.lock and one Rust file under crates/, runs the check
 # against it, and asserts the exit code and the line that names the marker or the problem.

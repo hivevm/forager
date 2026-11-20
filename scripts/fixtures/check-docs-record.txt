@@ -1,0 +1,123 @@
+# Cases of the record checks, of check 4's clause lists, and of the skill front matter (check 11)
+# of scripts/check-docs.sh, read by scripts/test-check-docs.sh.
+#
+# One case per line, five fields separated by ' | ':
+#
+#   <check> | <pass or fail> | <text the output contains, or -> | <name> | <tree>
+#
+# The tree is a list of steps separated by '; ', applied in order to a repository that passes
+# every check, its setup done: a record of the two ADRs that fill the required roles, accepted,
+# OPS:fixture-harness and OPS:fixture-toolchain, and an index with a category list and its two
+# tables.
+#
+#   adr <id> <status>           the ADR file, headed '# <id>: decision', and its index row, in the
+#                               table its status belongs to
+#   file <id> <status>          the ADR file alone
+#   row <table> <id> <status>   an index row alone, in 'binding' or 'archive'
+#   status <id> <status>        the status line of the file alone
+#   field <id> <name> <text>    a header field of the name with the text, such as Role
+#   supersedes <id> <ids>       a Supersedes field linking each id of the comma-separated list;
+#                               an id after '+' stands on a continuation line
+#   heading <id> <text>         the first line of the file replaced by the text
+#   text <file> <text>          a line of text appended to the file
+#   category <key>              a project category in the category list of the index
+#   blobs                       the blob list docs/adr/NUC.blobs written from the files
+#   release <text>              the README's Template release line reading the text
+#   setup                       TEMPLATE-SETUP.md present, as before the setup is done
+#   commit                      every file committed
+#   delete <id>                 the file and its row deleted and committed
+#   branch <name>               a new branch, checked out
+#   back                        the branch checked out before
+#   merge <name>                the branch merged by a merge commit
+#   skill <text>                the SKILL.md of the fixture's skill 'review' replaced by the text,
+#                               each '\n' in it a line break
+#
+# In the expected text, '<deleted>' stands for the short hash of the commit of the last delete.
+#
+# An id is '<CAT>:<slug>', the file <CAT>-<slug>.md. A
+# status is accepted, proposed, rejected, or superseded:<id>. Everywhere in a line, a colon after
+# two to five capital letters, not preceded by a letter, a digit, or '_', and before a letter or a
+# digit reads as a hyphen: the file then cites no ADR of this repository, and the map script of the
+# normalize skill leaves it as it is.
+
+1 | fail | status for 'SEC:decision-1.md' is 🟡 | an index status that disagrees with the ADR | adr SEC:decision-1 proposed; status SEC:decision-1 accepted
+1 | fail | sits above the 'Superseded and rejected' heading | a rejected row in the binding table | file SEC:decision-1 rejected; row binding SEC:decision-1 rejected
+1 | fail | sits below the 'Superseded and rejected' heading | a proposed row in the archive table | file SEC:decision-1 proposed; row archive SEC:decision-1 proposed
+1 | fail | lists 'SEC:decision-1.md' twice | a row both sides of a union merge kept | adr SEC:decision-1 proposed; row binding SEC:decision-1 proposed
+1 | pass | - | an ADR and its row | adr SEC:host-socket-closed proposed
+1 | fail | file 'SEC:host-socket-closed.md' exists but is not listed | an ADR without its row | file SEC:host-socket-closed proposed
+1 | fail | lists 'OPS:gone-rule.md', but no such ADR file exists | a row without its file | row binding OPS:gone-rule proposed
+2 | fail | SEC:Host_socket.md: the identifier is not | a slug with capitals and an underscore | adr SEC:Host_socket proposed
+2 | fail | API:one-two-three-four-five-six.md: the identifier is not | a slug of six words | adr API:one-two-three-four-five-six proposed
+2 | fail | XYZ:some-thing.md: the category XYZ is neither fixed nor in the category list | a category nobody defined | adr XYZ:some-thing proposed
+2 | fail | SEC:once.md: the identifier is not | a slug of one word | adr SEC:once proposed
+2 | fail | Sec-host-socket.md: the identifier is not | a category key not in capitals, visible to the check | adr Sec-host-socket proposed
+2 | pass | - | a category of the project's list | category UX; adr UX:dark-mode proposed
+2 | fail | SEC:a-rule.md: heading says '# SEC:b-rule: decision' | a heading that names another identifier | adr SEC:a-rule proposed; heading SEC:a-rule # SEC:b-rule: decision
+2 | fail | OPS:old-rule.md: the identifier OPS:old-rule was taken by a deleted ADR, deleted in <deleted> — | an identifier a deleted ADR carried, the deleting commit named | adr OPS:old-rule proposed; commit; delete OPS:old-rule; adr OPS:old-rule proposed
+2 | pass | - | an ADR a merged side branch deleted and wrote anew, as a normalization does | adr OPS:kept-rule proposed; commit; branch side; delete OPS:kept-rule; adr OPS:kept-rule accepted; commit; back; merge side
+2 | fail | OPS:gone-rule.md: the identifier OPS:gone-rule was taken | an ADR a merged side branch deleted, taken again | adr OPS:gone-rule proposed; commit; branch side; delete OPS:gone-rule; back; merge side; adr OPS:gone-rule proposed
+2 | pass | - | a deleted ADR whose identifier nobody takes again | adr OPS:old-rule proposed; commit; delete OPS:old-rule; adr OPS:new-rule proposed
+2 | fail | 0001-old.md: a numbered ADR, a form no check reads | a numbered ADR file left from before the migration | text docs/adr/0001-old.md # old decision
+4 | pass | - | a list of clauses after one identifier, in Markdown | adr SEC:x-rule proposed; text README.md See SEC:x-rule §4, §5, SEC:x-rule §4 and §5, SEC:x-rule §4, §5, and §6, and SEC:x-rule §2–§5.
+4 | pass | - | a list of clauses after one identifier, in a script | adr SEC:x-rule proposed; text scripts/lib/run.sh # SEC:x-rule §1, §9.
+4 | fail | reference '§9' matches no numbered section | a section after a list of clauses | adr SEC:x-rule proposed; text scripts/lib/run.sh # SEC:x-rule §1, §2, not AGENTS.md §9.
+5 | pass | - | a clause citation of an existing ADR | adr SEC:x-rule proposed; text README.md See [SEC:x-rule §3](docs/adr/SEC:x-rule.md) and SEC:x-rule §1.
+5 | fail | reference 'SEC:y-rule' matches no ADR file | a clause citation of a missing ADR | adr SEC:x-rule proposed; text README.md See SEC:y-rule §3.
+5 | fail | reference 'UX:dark-mode' matches no ADR file | a project category cited and missing | category UX; text README.md See UX:dark-mode.
+5 | pass | - | an identifier in a code span is no citation | text README.md An identifier such as `SEC:host-socket-closed`.
+5 | pass | - | a slug of one word is no citation | text README.md API:v2, OPS:team, NUC:based, and https://example.invalid/SEC:advisories/x.
+5 | pass | - | a slug of one word in a shell script is no citation | text scripts/lib/note.sh # An API:first design.
+5 | pass | - | a chain longer than an identifier is no citation, not one cut short | text README.md NUC:adrs-record-decisions-and-a-b.
+5 | pass | - | a hyphenated word of no category is no citation | text README.md UTF:8 and SHA:256 and CVE:2025-30066.
+6 | fail | cites SEC:x-rule but points at 'SEC:decision-1.md' | a link that cites one ADR and points at another | adr SEC:decision-1 accepted; adr SEC:x-rule proposed; text README.md See [SEC:x-rule](docs/adr/SEC:decision-1.md).
+6 | pass | - | a link that cites an ADR and points at its file | adr SEC:x-rule proposed; text README.md See [SEC:x-rule §2](docs/adr/SEC:x-rule.md#decision).
+6 | pass | - | a link that cites an ADR and points outside docs/adr/ is no claim | adr SEC:x-rule proposed; text docs/notes/threat-model.md # Threat model; text README.md See [SEC:x-rule](docs/notes/threat-model.md).
+8 | pass | - | one ADR superseding two, both flipped | adr SEC:decision-1 superseded:SEC:decision-3; adr SEC:decision-2 superseded:SEC:decision-3; adr SEC:decision-3 accepted; supersedes SEC:decision-3 SEC:decision-1,SEC:decision-2
+8 | fail | SEC:decision-2.md: SEC:decision-3.md supersedes it | one ADR superseding two, the second not flipped | adr SEC:decision-1 superseded:SEC:decision-3; adr SEC:decision-2 proposed; adr SEC:decision-3 accepted; supersedes SEC:decision-3 SEC:decision-1,SEC:decision-2
+8 | pass | - | a Supersedes field wrapped onto a second line, both flipped | adr SEC:decision-1 superseded:SEC:decision-3; adr SEC:decision-2 superseded:SEC:decision-3; adr SEC:decision-3 accepted; supersedes SEC:decision-3 SEC:decision-1,+SEC:decision-2
+8 | fail | SEC:decision-2.md: SEC:decision-3.md supersedes it | a wrapped Supersedes field, the name on the second line not flipped | adr SEC:decision-1 superseded:SEC:decision-3; adr SEC:decision-2 proposed; adr SEC:decision-3 accepted; supersedes SEC:decision-3 SEC:decision-1,+SEC:decision-2
+8 | pass | - | a proposed supersession, the old ADR still accepted | adr SEC:decision-1 accepted; adr SEC:decision-2 proposed; supersedes SEC:decision-2 SEC:decision-1
+8 | fail | SEC:decision-1.md: superseded by SEC:decision-2, which is not accepted | an old ADR flipped while its successor is only proposed | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 proposed; supersedes SEC:decision-2 SEC:decision-1
+8 | pass | - | a chain of supersessions, the last successor accepted | adr SEC:decision-1 superseded:SEC:decision-2; adr SEC:decision-2 superseded:SEC:decision-3; adr SEC:decision-3 accepted; supersedes SEC:decision-2 SEC:decision-1; supersedes SEC:decision-3 SEC:decision-2
+8 | pass | - | an ADR superseding an old one, accepted and flipped | adr SEC:decision-1 superseded:SEC:new-rule; adr SEC:new-rule accepted; supersedes SEC:new-rule SEC:decision-1
+8 | fail | SEC:decision-1.md: SEC:new-rule.md supersedes it, but its status line does not say 'superseded by SEC:new-rule' | an ADR accepted, the old one not flipped | adr SEC:decision-1 accepted; adr SEC:new-rule accepted; supersedes SEC:new-rule SEC:decision-1
+8 | fail | SEC:new-rule.md: SEC:decision-1.md says it supersedes, but it carries no '**Supersedes:**' field naming SEC:decision-1 | an old ADR naming a successor that does not claim it | adr SEC:decision-1 superseded:SEC:new-rule; adr SEC:new-rule accepted
+12 | pass | - | a base and AGENTS.md unchanged since their blob list | file NUC:base-rule accepted; blobs
+12 | pass | - | a list written out with the git blob identifier of each file's content | file NUC:base-rule accepted; text docs/adr/NUC.blobs 2bb3f08bb1f9ab0e5ef83df15d5ec1f6ede8c83b NUC:base-rule.md; text docs/adr/NUC.blobs 0d50ef0267858460aa089fffce7f6923f2f62b0a AGENTS.md
+12 | fail | AGENTS.md: has no line in docs/adr/NUC.blobs | a list that names the NUC- files only | file NUC:base-rule accepted; text docs/adr/NUC.blobs 2bb3f08bb1f9ab0e5ef83df15d5ec1f6ede8c83b NUC:base-rule.md
+12 | fail | NUC:base-rule.md: differs from its line | a list written out with another identifier | file NUC:base-rule accepted; text docs/adr/NUC.blobs 2bb3f08bb1f9ab0e5ef83df15d5ec1f6ede8c83c NUC:base-rule.md
+12 | fail | NUC:base-rule.md: differs from its line in docs/adr/NUC.blobs | a base file changed after its list was written | file NUC:base-rule accepted; blobs; text docs/adr/NUC:base-rule.md A clause of the project.
+12 | fail | AGENTS.md: differs from its line in docs/adr/NUC.blobs | a derived project that edits AGENTS.md | file NUC:base-rule accepted; blobs; text AGENTS.md A rule of the project.
+12 | pass | - | the template rewrites the list in the change to AGENTS.md | file NUC:base-rule accepted; blobs; text AGENTS.md A rule of the template.; blobs
+12 | fail | NUC:more-rules.md: has no line in docs/adr/NUC.blobs | a base file the list does not name | file NUC:base-rule accepted; blobs; file NUC:more-rules accepted
+12 | fail | docs/adr/NUC.blobs: names NUC:gone-rule.md, which does not exist | a line whose file is gone | file NUC:base-rule accepted; file NUC:gone-rule accepted; blobs; commit; delete NUC:gone-rule
+12 | fail | docs/adr/NUC.blobs: not found | a base without a list and no fork named | file NUC:base-rule accepted
+12 | pass | - | a fork without a list, the README naming the release it forked | file NUC:base-rule accepted; text docs/adr/NUC:base-rule.md A clause the fork changed.; release v0.8.1, forked
+12 | fail | docs/adr/NUC.blobs: not found | a fork that names no release | file NUC:base-rule accepted; release unreleased, forked
+12 | fail | docs/adr/NUC.blobs: not found | a release line that says 'not forked' | file NUC:base-rule accepted; release v0.8.1, not forked
+1 | pass | - | a base ADR, which the index does not list | file NUC:base-rule accepted; blobs
+1 | fail | ADR index: lists NUC:base-rule, an ADR of the base | a base ADR listed in the index | adr NUC:base-rule accepted; blobs
+8 | fail | SEC:x-rule.md: supersedes NUC:base-rule | a project ADR superseding a base ADR | file NUC:base-rule accepted; blobs; adr SEC:x-rule proposed; supersedes SEC:x-rule NUC:base-rule
+8 | pass | - | a narrowing of an existing base clause | file NUC:base-rule accepted; text docs/adr/NUC:base-rule.md 2. **Two.** A rule.; blobs; adr SEC:x-rule proposed; field SEC:x-rule Narrows [NUC:base-rule §2](NUC:base-rule.md)
+8 | fail | SEC:x-rule.md: Narrows NUC:base-rule §3, a clause its Decision does not have | a narrowing of a missing clause | file NUC:base-rule accepted; text docs/adr/NUC:base-rule.md 2. **Two.** A rule.; blobs; adr SEC:x-rule proposed; field SEC:x-rule Narrows NUC:base-rule §3
+8 | fail | SEC:x-rule.md: the Extends field names no clause of a NUC- ADR | an extension of a project ADR | adr SEC:y-rule proposed; adr SEC:x-rule proposed; field SEC:x-rule Extends SEC:y-rule §1
+13 | pass | - | a second harness ADR, only proposed, after the setup | adr SEC:x-rule proposed; field SEC:x-rule Role harness
+13 | fail | no accepted ADR fills the role harness | after the setup, no harness ADR | commit; delete OPS:fixture-harness
+13 | fail | 2 accepted ADRs fill the role harness | after the setup, two accepted harness ADRs | adr SEC:x-rule accepted; field SEC:x-rule Role harness
+13 | pass | - | while the setup file exists, no role is required | setup; commit; delete OPS:fixture-harness
+11 | fail | review/SKILL.md: no front matter an agent reads | the ticket-10 break: a description wrapped unindented and the fence ending its line | skill ---\nname: review\ndescription: Review a change,\nwrapped onto a second line. ---\n\n# Review\n
+11 | fail | review/SKILL.md: no front matter an agent reads | a front matter never closed | skill ---\nname: review\ndescription: Review a change.\n\n# Review\n
+11 | fail | review/SKILL.md: no front matter an agent reads | a first line that is not the opening fence | skill # Review\nname: review\ndescription: Review a change.\n---\n
+11 | fail | review/SKILL.md: no front matter an agent reads | a name that is not the skill's directory | skill ---\nname: other\ndescription: Review a change.\n---\n
+11 | fail | review/SKILL.md: no front matter an agent reads | no description | skill ---\nname: review\n---\n\n# Review\n
+11 | fail | review/SKILL.md: no front matter an agent reads | an unindented line that starts no key, the fence closed | skill ---\nname: review\ndescription: Review a change,\nwrapped unindented.\n---\n
+11 | pass | - | quoted values | skill ---\nname: "review"\ndescription: 'Review: a change.'\n---\n
+11 | pass | - | a folded and a literal block scalar | skill ---\nname: review\ndescription: >\n  Review a change,\n  folded.\ncompatibility: |-\n  Any agent.\n---\n
+11 | pass | - | nested metadata | skill ---\nname: review\ndescription: Review a change.\nmetadata:\n  author: example\n  version: "1.0"\n---\n
+11 | pass | - | a description wrapped onto an indented line | skill ---\nname: review\ndescription: Review a change,\n  wrapped indented.\n---\n
+11 | fail | review/SKILL.md: no front matter an agent reads | a description only nested under metadata | skill ---\nname: review\nmetadata:\n  description: Review a change.\n---\n
+11 | pass | - | a name in single quotes | skill ---\nname: 'review'\ndescription: Review a change.\n---\n
+11 | pass | - | an unindented block sequence | skill ---\nname: review\ndescription: Review a change.\nallowed-tools:\n- Read\n- Grep\n---\n
+11 | pass | - | fences with trailing spaces | skill ---  \nname: review\ndescription: Review a change.\n--- \n
+11 | pass | - | a comment and an empty line inside the fences | skill ---\n# the skill\nname: review\n\ndescription: Review a change.\n---\n

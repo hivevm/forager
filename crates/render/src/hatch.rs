@@ -1,4 +1,4 @@
-//! The hatch of the display list and the bounds on its cost (Q-9, ADR-0042).
+//! The hatch of the display list and the bounds on its cost (Q-9, REN-i-overlay-shared-with-geo).
 
 use std::collections::BTreeSet;
 
@@ -75,7 +75,7 @@ impl Hatch {
             .iter()
             .map(|&[a, b]| {
                 // A measure, not a drawing: what the clip drops here the renderer's own clip
-                // drops and reports (ADR-0049).
+                // drops and reports (ARCH-third-party-failures-guarded).
                 segment(a, b, &rect, &mut false).map_or(0.0, |(s, e)| {
                     // IEEE's square root, exact on every target, where `hypot` is the
                     // platform's (Q-2).

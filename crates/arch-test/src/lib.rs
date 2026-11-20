@@ -1,9 +1,9 @@
 //! The architecture checks of the workspace, each a test binary under `tests/`: the edges between
-//! the crates (ADR-0008), the direction of the modules of the engine and of `symbolize`, the ports
-//! of ADR-0017 defined once, a symbol's name compared once, and the crate's directory read at run
-//! time; `docs/ARCHITECTURE.md` says what each refuses. This lib holds what the checks that read
-//! the tree share, the crate's directory and the walk of the `.rs` files under a directory; no
-//! other crate depends on it.
+//! the crates (ARCH-crates-as-ports-and-adapters), the direction of the modules of the engine and
+//! of `symbolize`, the ports of IR-c-ports-in-style-ir defined once, a symbol's name compared once,
+//! and the crate's directory read at run time; `docs/ARCHITECTURE.md` says what each refuses. This
+//! lib holds what the checks that read the tree share, the crate's directory and the walk of the
+//! `.rs` files under a directory; no other crate depends on it.
 
 use std::path::{Path, PathBuf};
 

@@ -131,7 +131,7 @@ fn connection_type(d: &Directive) -> Option<&'static str> {
 /// `loadLayer` reads it (src/mapfile.c), and a `CONNECTIONTYPE` of `MS_GRATICULE` after the last
 /// one makes it a graticule again, which `msInitializeVirtualTable` (src/maplayer.c) does not
 /// read features for; so that the style IR carries features only where they are the layer's
-/// source (ADR-0018).
+/// source (IR-inline-features-in-layer).
 fn exempts_features(block: &Block) -> bool {
     block
         .nodes
@@ -153,7 +153,8 @@ pub struct Files<'a> {
     pub main: &'a ResourcePath,
     pub symbol_set: Option<&'a (ResourcePath, Block)>,
     pub font_set: Option<&'a (ResourcePath, String)>,
-    /// The init files the projections name by a path, by the name as written (ADR-0019).
+    /// The init files the projections name by a path, by the name as written
+    /// (API-init-projections-through-resolver).
     pub init_files: &'a BTreeMap<String, Result<InitFile, String>>,
 }
 

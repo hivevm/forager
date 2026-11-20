@@ -1,5 +1,5 @@
 //! The reader of a shapefile's `.prj` on arbitrary bytes: a declared projection, readable or not,
-//! never a panic or a hang (Q-3, ADR-0039).
+//! never a panic or a hang (Q-3, API-source-declares-projection).
 // Verifies: Q-3
 #![no_main]
 

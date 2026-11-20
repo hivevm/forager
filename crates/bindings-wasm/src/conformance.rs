@@ -1,9 +1,9 @@
-//! The module the conformance test runs in an interpreter and compares with the native render
-//! (G-9, ADR-0034): a style document with its features inline (ADR-0018) and the files its render
-//! reads, rendered by the engine and the reference renderer, built only with the feature
-//! `conformance`. The workspace denies `unsafe` code, so the exports take and give plain integers
-//! through `wasm_bindgen`, and the host writes the input into, and reads the output from, the
-//! module's memory at the addresses they return:
+//! The module the conformance test runs in an interpreter and compares with the native render (G-9,
+//! TST-wasm-renders-in-wasmi): a style document with its features inline
+//! (IR-inline-features-in-layer) and the files its render reads, rendered by the engine and the
+//! reference renderer, built only with the feature `conformance`. The workspace denies `unsafe`
+//! code, so the exports take and give plain integers through `wasm_bindgen`, and the host writes
+//! the input into, and reads the output from, the module's memory at the addresses they return:
 //!
 //! 1. `conformance_input(len)` makes room for an input of `len` bytes and returns its address;
 //! 2. `conformance_render()` renders the input and returns the length of the output;

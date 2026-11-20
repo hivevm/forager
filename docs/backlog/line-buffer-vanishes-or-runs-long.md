@@ -41,5 +41,5 @@ larger distance only coarsens:
 - **The tiny part:** stroking each part of a multiline on its own and joining the results keeps it,
   at the cost of a union geo would otherwise not run.
 - **The long overlay:** a charge for the overlay needs its cost known first, from a profile of
-  i_overlay's overlay on such lines; the i_overlay 9 that geo is to take up (ADR-0042) may change
-  it.
+  i_overlay's overlay on such lines; the i_overlay 9 that geo is to take up
+  (REN-i-overlay-shared-with-geo) may change it.

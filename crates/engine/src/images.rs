@@ -1,6 +1,6 @@
 //! The images a render's pixmap symbols name, loaded through the resource loader the first time
 //! the render needs each by the load the fonts share (`resource.rs`), decoded once, and held until
-//! the render ends (ADR-0029, ADR-0031).
+//! the render ends (REN-pixmaps-held-once-per-render, REN-label-glyphs-from-skrifa).
 
 use std::rc::Rc;
 
@@ -12,7 +12,8 @@ use forager_symbolize::{MAX_DECODED_IMAGE_BYTES, Pixmaps, Tiles};
 use crate::resource::load_once;
 
 /// The images of one render, by their path, each the decoded image or why it has none, and the
-/// tiles of its polygons' fills, whose bytes count with the images' (ADR-0029).
+/// tiles of its polygons' fills, whose bytes count with the images'
+/// (REN-pixmaps-held-once-per-render).
 #[derive(Default)]
 pub(crate) struct Images {
     loaded: Pixmaps,

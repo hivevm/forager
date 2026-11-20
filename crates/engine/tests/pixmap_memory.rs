@@ -1,7 +1,8 @@
-//! One pixmap placed at many points is held once per render (ADR-0029): every item the renderer
-//! is handed for it refers to the same decoded image, the image is loaded once, and the memory of
-//! the render is released when it ends. Measured under the counting allocator of
-//! `label_memory.rs`; one test, so that no other test's allocations are counted with it.
+//! One pixmap placed at many points is held once per render (REN-pixmaps-held-once-per-render):
+//! every item the renderer is handed for it refers to the same decoded image, the image is loaded
+//! once, and the memory of the render is released when it ends. Measured under the counting
+//! allocator of `label_memory.rs`; one test, so that no other test's allocations are counted with
+//! it.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -133,7 +134,7 @@ fn map() -> Map {
 
 #[test]
 fn one_pixmap_at_ten_thousand_points_is_one_image_released_when_the_render_ends() {
-    // Verifies: ADR-0029
+    // Verifies: REN-pixmaps-held-once-per-render
     let png = forager_encode::png(&RgbaImage {
         width: SIDE,
         height: SIDE,

@@ -1,6 +1,6 @@
 //! The fonts a render's labels name, loaded through the resource loader once per render when a
 //! label first needs them, and the one a line is drawn in, chosen as `get_face_for_run` of
-//! MapServer's src/textlayout.c chooses it (ADR-0031).
+//! MapServer's src/textlayout.c chooses it (REN-label-glyphs-from-skrifa).
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -88,9 +88,9 @@ impl<'r, L: ResourceLoader> Fonts<'r, L> {
     }
 
     /// The font the font set names `name`, loaded once per render into the store the labels' fonts
-    /// use, as a TrueType marker takes it (ADR-0044): its
-    /// path and its bytes, or why it cannot be used, naming the font and its path. A font this
-    /// renderer cannot read a character map or outlines of cannot be used (ADR-0031).
+    /// use, as a TrueType marker takes it (API-truetype-marker-through-port): its path and its
+    /// bytes, or why it cannot be used, naming the font and its path. A font this renderer cannot
+    /// read a character map or outlines of cannot be used (REN-label-glyphs-from-skrifa).
     pub(crate) async fn named(
         &mut self,
         map: &Map,

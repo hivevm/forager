@@ -11,7 +11,7 @@
 # stand-in's calls. What the --jq expression makes of GitHub's JSON is not run here, since it needs
 # gh; that is review.
 #
-# Verifies: ADR-0002
+# Verifies: NUC-checks-are-bash
 # Inputs: scripts/sensor-scheduled-runs.sh scripts/lib/
 #
 # Usage:

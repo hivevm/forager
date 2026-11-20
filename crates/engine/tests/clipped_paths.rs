@@ -1,7 +1,7 @@
 //! A plain line and a filled polygon whose vertex the renderer's clip drops, end to end: a vertex
-//! that is no finite number in pixels, or two whose difference overflows (ADR-0027). The layer
-//! that draws them carries the warning `path-not-drawn` once (ADR-0049), and a path the clip keeps
-//! whole carries none.
+//! that is no finite number in pixels, or two whose difference overflows (ARCH-one-clip-to-image).
+//! The layer that draws them carries the warning `path-not-drawn` once
+//! (ARCH-third-party-failures-guarded), and a path the clip keeps whole carries none.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -140,7 +140,7 @@ fn line(between: &[f64]) -> String {
 
 #[test]
 fn a_line_the_clip_keeps_whole_warns_nothing() {
-    // Verifies: ADR-0049
+    // Verifies: ARCH-third-party-failures-guarded
     let whole = rendered(&line_map(), &line(&[0.05]));
     assert!(whole.diagnostics.is_empty(), "{:?}", whole.diagnostics);
     assert!(drawn(&whole) > 0);
@@ -148,7 +148,7 @@ fn a_line_the_clip_keeps_whole_warns_nothing() {
 
 #[test]
 fn a_line_with_a_vertex_that_is_no_finite_number_in_pixels_warns_once() {
-    // Verifies: ADR-0027, ADR-0049, Q-3
+    // Verifies: ARCH-one-clip-to-image, ARCH-third-party-failures-guarded, Q-3
     // 1e306 map units are 1e309 pixels, past every finite number. Two such vertices, in one line
     // and in another part, still warn once.
     warns_once(&rendered(&line_map(), &line(&[1e306])), "1 path is drawn");
@@ -161,7 +161,7 @@ fn a_line_with_a_vertex_that_is_no_finite_number_in_pixels_warns_once() {
 
 #[test]
 fn a_line_whose_two_vertices_differ_past_every_finite_number_warns_once() {
-    // Verifies: ADR-0027, ADR-0049, Q-3
+    // Verifies: ARCH-one-clip-to-image, ARCH-third-party-failures-guarded, Q-3
     // ±1e305 map units are ±1e308 pixels, each finite, their difference not.
     warns_once(
         &rendered(&line_map(), &line(&[1e305, -1e305])),
@@ -182,7 +182,7 @@ fn polygon(far: f64) -> String {
 
 #[test]
 fn a_polygon_the_clip_keeps_whole_warns_nothing() {
-    // Verifies: ADR-0049
+    // Verifies: ARCH-third-party-failures-guarded
     let whole = rendered(&polygon_map(), &polygon(1.6e306 * 20.0));
     assert!(whole.diagnostics.is_empty(), "{:?}", whole.diagnostics);
     assert!(drawn(&whole) > 0);
@@ -190,7 +190,7 @@ fn a_polygon_the_clip_keeps_whole_warns_nothing() {
 
 #[test]
 fn a_filled_polygon_with_a_vertex_that_is_no_finite_number_in_pixels_warns_once() {
-    // Verifies: ADR-0027, ADR-0049, Q-3
+    // Verifies: ARCH-one-clip-to-image, ARCH-third-party-failures-guarded, Q-3
     // 1.7e308 map units lie 2.5e308 map units right of the extent's left edge, past every finite
     // number, before they are scaled to pixels.
     warns_once(

@@ -16,7 +16,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The class that draws each feature, the layer's filter, and the properties bound to each
-//! feature, through the engine's display list (ADR-0016).
+//! feature, through the engine's display list (IR-expressions-evaluated-as-mapserver).
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -170,7 +170,7 @@ fn text(name: &str) -> Expr {
 
 #[test]
 fn each_feature_is_drawn_with_the_first_class_that_matches() {
-    // Verifies: ADR-0016
+    // Verifies: IR-expressions-evaluated-as-mapserver
     let classes = vec![
         class(
             Some(Expr::call(Op::Gt, vec![number("n"), Expr::Number(1.0)])),
@@ -226,7 +226,7 @@ fn a_class_without_an_expression_draws_every_feature_that_reaches_it() {
 
 #[test]
 fn features_that_fail_the_layer_s_filter_are_not_drawn() {
-    // Verifies: ADR-0016
+    // Verifies: IR-expressions-evaluated-as-mapserver
     let filter = Expr::call(
         Op::Eq,
         vec![
@@ -242,7 +242,7 @@ fn features_that_fail_the_layer_s_filter_are_not_drawn() {
 
 #[test]
 fn bound_and_computed_sizes_and_colours_are_each_feature_s_own() {
-    // Verifies: ADR-0016
+    // Verifies: IR-expressions-evaluated-as-mapserver
     let bound = Style {
         color: Some(Bound::Binding {
             binding: "color".into(),
@@ -383,7 +383,7 @@ fn a_line_layer_draws_cached_styles_after_every_feature_whatever_its_class() {
 
 #[test]
 fn a_pattern_the_crate_cannot_match_is_reported_once_per_render() {
-    // Verifies: ADR-0016
+    // Verifies: IR-expressions-evaluated-as-mapserver
     let classes = vec![
         class(
             Some(Expr::call(
@@ -632,7 +632,7 @@ fn a_line_class_whose_outline_width_is_bound_is_cached_whatever_its_value() {
 
 #[test]
 fn a_pattern_of_a_style_s_expression_is_reported_once_per_render() {
-    // Verifies: ADR-0016
+    // Verifies: IR-expressions-evaluated-as-mapserver
     let size = Expr::call(
         Op::ToNumber,
         vec![Expr::call(
@@ -803,7 +803,7 @@ fn a_layer_without_an_opacity_is_recorded_as_items_onto_the_map() {
 
 #[test]
 fn an_opacity_past_an_int_is_rounded_as_ms_nint_rounds_at_the_pin() {
-    // Verifies: ADR-0017
+    // Verifies: IR-c-ports-in-style-ir
     // bindIntegerAttribute stores MS_NINT(atof("3e9")), lrint's long 3000000000, in an int, which
     // keeps its low 32 bits: -1294967296, below 100, so bindStyle sets the alpha to
     // MS_NINT(-1294967296 × 2.55), -3302166605, whose low bits are 992800691, 179 in a byte.
@@ -828,7 +828,7 @@ fn an_opacity_past_an_int_is_rounded_as_ms_nint_rounds_at_the_pin() {
 
 #[test]
 fn a_style_s_opacity_of_100_4_or_of_minus_1_gives_the_alpha_bind_style_gives() {
-    // Verifies: ADR-0017
+    // Verifies: IR-c-ports-in-style-ir
     // bindIntegerAttribute stores MS_NINT(100.4) = 100, not below 100, so the colour keeps its
     // alpha; MS_NINT(-1) = -1 is, and bindStyle sets the alpha MS_NINT(-1 × 2.55) = -3, which
     // AGG's int8u keeps as 253 (src/maputil.c:80-86, 268-274).
@@ -863,7 +863,7 @@ fn a_style_s_opacity_of_100_4_or_of_minus_1_gives_the_alpha_bind_style_gives() {
 
 #[test]
 fn a_layer_s_opacity_of_100_4_or_of_minus_1_is_laid_over_as_mapserver_lays_it() {
-    // Verifies: ADR-0017
+    // Verifies: IR-c-ports-in-style-ir
     // A layer's opacity, cast to an `int` and bounded to 0 to 100 as a mapfile's must be: 100.4
     // is 100, laid over at MS_NINT(100 × 2.55) = 255 (src/mapagg.cpp:1389-1395); 99.6 is 99, at
     // MS_NINT(252.45) = 252; -1 is 0, a layer msDrawLayer skips.

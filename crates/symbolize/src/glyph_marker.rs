@@ -19,7 +19,7 @@
 
 //! A TrueType symbol at a point, anchored, and the glyph that `mark` places along a line and draws
 //! into a tile: its glyph asked of the port [`crate::glyph::Glyphs`], placed as drawGlyphMarker
-//! places it and drawn as agg2RenderGlyphsPath draws it (ADR-0044).
+//! places it and drawn as agg2RenderGlyphsPath draws it (API-truetype-marker-through-port).
 
 use std::rc::Rc;
 
@@ -358,7 +358,7 @@ mod tests {
 
     #[test]
     fn a_glyph_is_centred_on_its_point_by_its_control_box_as_draw_glyph_marker_centres_it() {
-        // Verifies: ADR-0044
+        // Verifies: API-truetype-marker-through-port
         // A box from (1, -2) to (11, 18) in the font's coordinates, y up, is (1, -18) to (11, 2)
         // y down. drawGlyphMarker's centre is (6, 8); unturned, the origin is (100 - 6, 50 + 8).
         let bounds = (1.0, -18.0, 11.0, 2.0);

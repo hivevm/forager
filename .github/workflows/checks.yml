@@ -2,21 +2,22 @@ name: Checks
 
 # Enforces the repository's rules as CI. Pure bash + coreutils — nothing is installed but
 # ShellCheck, which the shell job installs at the version scripts/install-shellcheck.sh pins
-# (ADR-0007), jscpd, which the jobs that run its self-test install at the version
-# scripts/install-jscpd.sh pins for the duplication sensor (ADR-0007), and the toolchain of the
+# (OPS-pinned-stable-rust-toolchain), jscpd, which the jobs that run its self-test install at the version
+# scripts/install-jscpd.sh pins for the duplication sensor (OPS-pinned-stable-rust-toolchain), and the toolchain of the
 # rust job. scripts/check-all.sh is the local equivalent;
 # check 9 of scripts/check-docs.sh holds its list, the jobs of this workflow, and the required
 # checks named in CONTRIBUTING.md together. Each job runs a check after its own self-test, and
 # each script's header says what it checks and which ADR it holds.
 #
-# The sensors report for the reviewer and fail on nothing they count, except the action
-# references, which this project runs with --require major-tag as the check of ADR-0010; their
-# self-tests fail like any check's. The sensors job checks out the full history because five
-# sensors read it. The review binding sensor runs in review-binding.yml, the repository settings
-# sensor on a human's instruction (ADR-0002); this workflow runs the self-test of each.
+# The sensors report for the reviewer and fail on nothing they count, except the plain rules,
+# which this workflow runs with --require, and the action references, which this project runs with
+# --require major-tag as the check of OPS-actions-by-major-tag; their self-tests fail like any check's. The sensors
+# job checks out the full history because five sensors read it. The review binding sensor runs in
+# review-binding.yml, the repository settings sensor on a human's instruction
+# (NUC-checks-are-bash §7); this workflow runs the self-test of each.
 #
 # The build, test, and lint job runs scripts/check-rust.sh after scripts/install-tools.sh
-# (ADR-0007), the green commits sensor after its self-test, which runs rustfmt and the pinned
+# (OPS-pinned-stable-rust-toolchain), the green commits sensor after its self-test, which runs rustfmt and the pinned
 # ShellCheck on each commit since the base, and the self-test of scripts/fuzz.sh, which reads
 # manifests with the toolchain installed; the one job of this workflow that installs a
 # toolchain; ~/.cargo/bin and the registry are cached, keyed on the files that decide their
@@ -24,7 +25,7 @@ name: Checks
 # its pin.
 #
 # The browser job runs the browser test of G-14 alone, against the Google Chrome and ChromeDriver
-# of the runner image, which CHROMEWEBDRIVER names (ADR-0040). It
+# of the runner image, which CHROMEWEBDRIVER names (TST-browser-test-over-webdriver). It
 # installs the toolchain as the rust job does, from the same cache, and runs
 # scripts/check-browser.sh with FORAGER_BROWSER_TEST=required, which builds the bundle first, so
 # that a missing driver, browser, or bundle fails it; elsewhere, as in the rust job and in
@@ -37,12 +38,10 @@ name: Checks
 
 on:
   pull_request:
-    # ready_for_review runs check 16 of check-docs.sh again on a draft pull request marked ready.
-    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   # Started by hand on a pushed branch that has no pull request yet, such as a feat/ branch
-  # under rework (AGENTS.md, section 6): gh workflow run checks.yml --ref <branch>. GitHub offers
+  # under rework (NUC-main-only-via-pr §5): gh workflow run checks.yml --ref <branch>. GitHub offers
   # it only once this trigger is on the default branch.
   workflow_dispatch:
   # Once a week against main without a change: catches what moves without a commit, the runner
@@ -70,31 +69,26 @@ jobs:
       # Submodules are checked out because the link check resolves relative targets against the
       # working tree: a documentation link into a submodule would otherwise break in CI while
       # working locally. Their *contents* are never read — check-docs.sh enumerates via
-      # `git ls-files`, which lists a submodule as one gitlink entry, not as its files.
+      # `git ls-files`, which lists a submodule as one gitlink entry, not as its files. The whole
+      # history is fetched: check 2 reads the identifiers of deleted ADRs off it.
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
           submodules: recursive
+          fetch-depth: 0
       # The check's own tests run first: a check that is wrong passes nothing worth trusting.
       - name: Self-test the documentation checks
         run: bash scripts/test-check-docs.sh
-      # Check 16 reads the branch the change lands on from GitHub's own variables: a draft ADR
-      # fails on a pull request into main once it is ready for review, and on a push to main
-      # (ADR-0002). A draft pull request tests a feat/ branch still under rework, and passes.
       - name: Check documentation consistency
         run: bash scripts/check-docs.sh
-        env:
-          PULL_REQUEST_DRAFT: ${{ github.event.pull_request.draft }}
       # The self-test below runs every self-test, the duplication sensor's among them, which runs
-      # jscpd at the version scripts/install-jscpd.sh pins (ADR-0007).
+      # jscpd at the version scripts/install-jscpd.sh pins (OPS-pinned-stable-rust-toolchain).
       - name: Install jscpd at its pinned version
         run: |
           bash scripts/install-jscpd.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Self-test the map script of the normalize skill
         run: bash scripts/test-normalize-remap.sh
-      - name: Self-test the numbering script of the drafts
-        run: bash scripts/test-number-adrs.sh
       - name: Self-test the readiness script of the pull request into main
         run: bash scripts/test-ready-for-main.sh
       - name: Self-test the drop script of a merged branch
@@ -162,8 +156,8 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       - name: Self-test the plain rules sensor
         run: bash scripts/test-sensor-plain-rules.sh
-      - name: Report long sentences and soft modal verbs the change adds to the rules
-        run: bash scripts/sensor-plain-rules.sh "$BASE"
+      - name: Check the rules the change adds to a project ADR, and report the rest
+        run: bash scripts/sensor-plain-rules.sh --require "$BASE"
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
       - name: Self-test the revision-due sensor
@@ -184,8 +178,8 @@ jobs:
         run: bash scripts/sensor-diagnostics-untested.sh
       - name: Self-test the action references sensor
         run: bash scripts/test-sensor-action-refs.sh
-      # The check of ADR-0010: every action by its major version tag, kept current by Dependabot.
-      # Verifies: ADR-0010
+      # The check of OPS-actions-by-major-tag: every action by its major version tag, kept current by Dependabot.
+      # Verifies: OPS-actions-by-major-tag
       - name: Check that every action is referenced by its major version tag
         run: bash scripts/sensor-action-refs.sh --require major-tag
       # The mutation sensor itself runs weekly (mutants.yml) and in the review; its arguments are
@@ -193,7 +187,7 @@ jobs:
       - name: Self-test the mutation sensor's arguments
         run: bash scripts/test-mutants.sh
       # How MapServer runs on CI for the noise measurement (noise.yml), decided without building it.
-      # Verifies: ADR-0033
+      # Verifies: TST-noise-measured-against-mapserver
       - name: Self-test how MapServer is built and run on CI
         run: bash scripts/test-build-mapserver.sh
       - name: Self-test the vendor check
@@ -210,7 +204,7 @@ jobs:
         run: bash scripts/check-notice.sh
       - name: Self-test the guard check
         run: bash scripts/test-check-guards.sh
-      # Every guard against a third-party crate names a version Cargo.lock holds (ADR-0049).
+      # Every guard against a third-party crate names a version Cargo.lock holds (ARCH-third-party-failures-guarded).
       - name: Check that every guard's marker names a version Cargo.lock holds
         run: bash scripts/check-guards.sh
       - name: Self-test the comment width check
@@ -232,14 +226,15 @@ jobs:
         run: bash scripts/test-check-fidelity.sh
       - name: Self-test the review binding sensor
         run: bash scripts/test-sensor-review-binding.sh
-      # The repository settings sensor itself runs on a human's instruction (ADR-0002).
+      # The repository settings sensor itself runs on a human's instruction
+      # (NUC-checks-are-bash §7).
       - name: Self-test the repository settings sensor
         run: bash scripts/test-sensor-repo-settings.sh
-      # The scheduled runs sensor itself runs on a human's instruction (ADR-0002).
+      # The scheduled runs sensor itself runs on a human's instruction (NUC-checks-are-bash §7).
       - name: Self-test the scheduled runs sensor
         run: bash scripts/test-sensor-scheduled-runs.sh
       # The duplication sensor runs jscpd at the version scripts/install-jscpd.sh pins
-      # (ADR-0007).
+      # (OPS-pinned-stable-rust-toolchain).
       - name: Install jscpd at its pinned version
         run: |
           bash scripts/install-jscpd.sh
@@ -267,7 +262,7 @@ jobs:
       - name: Self-test the ADR index's merge driver
         run: bash scripts/test-merge-adr-index.sh
       # The self-test below runs every self-test, the duplication sensor's among them, which runs
-      # jscpd at the version scripts/install-jscpd.sh pins (ADR-0007).
+      # jscpd at the version scripts/install-jscpd.sh pins (OPS-pinned-stable-rust-toolchain).
       - name: Install jscpd at its pinned version
         run: |
           bash scripts/install-jscpd.sh
@@ -286,7 +281,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # The schema check reads the release tags, whose schema files are frozen (ADR-0014), and
+          # The schema check reads the release tags, whose schema files are frozen (IR-schema-per-format-version), and
           # refuses a shallow checkout, which has none.
           fetch-depth: 0
       # The tools are compiled by cargo install on a cache miss, which takes minutes; the key
@@ -342,7 +337,7 @@ jobs:
       - name: Install the toolchain and the cargo tools
         run: bash scripts/install-tools.sh
       # Builds the bundle, then runs the browser test alone.
-      # Verifies: ADR-0040
+      # Verifies: TST-browser-test-over-webdriver
       - name: Open the browser example in headless Chrome and compare it with the native render
         run: bash scripts/check-browser.sh
         env:

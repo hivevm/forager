@@ -1,6 +1,6 @@
-//! The images of a render's pixmap symbols, loaded through the host's resource loader and
-//! decoded once per render and path (ADR-0029), each held to the bounds of Q-9 on its file and
-//! its pixels.
+//! The images of a render's pixmap symbols, loaded through the host's resource loader and decoded
+//! once per render and path (REN-pixmaps-held-once-per-render), each held to the bounds of Q-9 on
+//! its file and its pixels.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -151,7 +151,7 @@ fn render(map: &Map, files: &Files) -> (Rendered, Vec<Rc<PremultipliedImage>>) {
 
 #[test]
 fn an_image_two_layers_draw_is_loaded_and_decoded_once() {
-    // Verifies: ADR-0029
+    // Verifies: REN-pixmaps-held-once-per-render
     let files = Files::default().with("icons/pin.png", png(2, 3, [200, 100, 50, 128]));
     let (rendered, images) = render(&map(&["icons/pin.png"]), &files);
     assert!(

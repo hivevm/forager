@@ -29,7 +29,7 @@ fn read(name: &str, format: &str) -> Output {
 
 #[test]
 fn a_mapfile_is_printed_as_a_style_document_with_its_warnings() {
-    // Verifies: G-2, ADR-0007
+    // Verifies: G-2, OPS-pinned-stable-rust-toolchain
     let output = read("world.map", "yaml");
     assert!(output.status.success(), "{output:?}");
     let stdout = String::from_utf8(output.stdout).unwrap();
@@ -193,7 +193,7 @@ fn a_symbolic_link_out_of_the_mapfile_directory_is_refused() {
 
 #[test]
 fn a_built_in_epsg_code_resolves_without_a_table() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     let output = read("wgs84.map", "json");
     assert!(output.status.success(), "{output:?}");
     let document = StyleDocument::from_json(&String::from_utf8(output.stdout).unwrap())
@@ -207,7 +207,7 @@ fn a_built_in_epsg_code_resolves_without_a_table() {
 
 #[test]
 fn other_epsg_codes_need_the_hosts_table() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     let without = read("national-grid.map", "json");
     assert_eq!(without.status.code(), Some(1));
     assert!(

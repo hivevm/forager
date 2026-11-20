@@ -149,7 +149,7 @@ const WGS84_RF: f64 = 298.257_223_563;
 
 /// The ellipsoids of PROJ's table, by their semimajor axis and reverse flattening, that the
 /// datums below and the cases in scope name; another `+ellps` is unsupported until a case or a
-/// ticket needs it (ADR-0037).
+/// ticket needs it (GEO-proj-ported-with-libm).
 const ELLIPSOIDS: &[(&str, f64, f64)] = &[
     ("WGS84", WGS84_A, WGS84_RF),
     ("GRS80", 6_378_137.0, 298.257_222_101),

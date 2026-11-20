@@ -1,7 +1,7 @@
-//! The ports: the traits at the edge of the core through which a host supplies data and
-//! resources (ADR-0008), and `poll_once`, which runs a future over them that never waits. They
-//! are the only place async appears, and none of them requires `Send`, because the browser is
-//! single-threaded.
+//! The ports: the traits at the edge of the core through which a host supplies data and resources
+//! (ARCH-crates-as-ports-and-adapters), and `poll_once`, which runs a future over them that never
+//! waits. They are the only place async appears, and none of them requires `Send`, because the
+//! browser is single-threaded.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -10,7 +10,8 @@ use std::fmt;
 use std::rc::Rc;
 
 use forager_style_ir::Extent;
-/// The geometry of a feature, a type of the IR, which the symbolization reads too (ADR-0008).
+/// The geometry of a feature, a type of the IR, which the symbolization reads too
+/// (ARCH-crates-as-ports-and-adapters).
 pub use forager_style_ir::{Coord, Geometry};
 
 /// A path inside the base context: relative, normalized, and unable to leave it (Q-8).
@@ -304,7 +305,7 @@ mod tests {
 
     #[test]
     fn a_source_that_declares_nothing_declares_no_projection() {
-        // Verifies: ADR-0039
+        // Verifies: API-source-declares-projection
         struct Silent;
         impl FeatureSource for Silent {
             async fn features(&self, _: &FeatureQuery) -> Result<Features, SourceError> {
@@ -324,9 +325,9 @@ pub struct Feature {
     pub properties: Properties,
 }
 
-/// The value of a property as a reader gets it (ADR-0023). A number keeps the text its source
-/// gives it, so that a reader that wants a string gets those digits and one that wants a number
-/// parses them.
+/// The value of a property as a reader gets it (API-typed-feature-properties). A number keeps the
+/// text its source gives it, so that a reader that wants a string gets those digits and one that
+/// wants a number parses them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value<'a> {
     Null,
@@ -366,8 +367,8 @@ pub trait Table: fmt::Debug {
     fn each(&self, record: u64, f: &mut dyn FnMut(&str, Value<'_>));
 }
 
-/// The properties of a feature (ADR-0023): none, a list of its own, or a record of a table its
-/// source shares.
+/// The properties of a feature (API-typed-feature-properties): none, a list of its own, or a record
+/// of a table its source shares.
 #[derive(Clone, Default)]
 pub struct Properties(Held);
 
@@ -468,7 +469,8 @@ pub struct FeatureQuery {
     pub extent: Extent,
 }
 
-/// What a source delivers for a query: its features, and the records it skipped (ADR-0022).
+/// What a source delivers for a query: its features, and the records it skipped
+/// (API-skipped-records-reported).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Features {
     pub features: Vec<Feature>,
@@ -486,7 +488,7 @@ impl From<Vec<Feature>> for Features {
 }
 
 /// The records a query would have considered had they been readable: how many, and why the first
-/// was skipped. Each record counts once per query (ADR-0022).
+/// was skipped. Each record counts once per query (API-skipped-records-reported).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Skipped {
     pub count: u64,
@@ -510,14 +512,14 @@ pub trait FeatureSource {
     async fn features(&self, query: &FeatureQuery) -> Result<Features, SourceError>;
 
     /// The projection the source declares, which a layer of `PROJECTION AUTO` takes, as MapServer's
-    /// layer takes it at open (ADR-0039); by default none. Synchronous: a source reads what it
-    /// needs for it when it opens.
+    /// layer takes it at open (API-source-declares-projection); by default none. Synchronous: a
+    /// source reads what it needs for it when it opens.
     fn declared_projection(&self) -> DeclaredProjection {
         DeclaredProjection::None
     }
 }
 
-/// The projection a feature source declares (ADR-0039).
+/// The projection a feature source declares (API-source-declares-projection).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DeclaredProjection {
     /// No declaration: a layer of `AUTO` keeps it, its coordinates taken as longitude and latitude
@@ -536,9 +538,9 @@ pub enum DeclaredProjection {
     },
 }
 
-/// Resolves a projection a style names by authority and code, as `init=epsg:4326` does, to a
-/// proj4 string (ADR-0019). Synchronous: a host that fetches its definitions loads them before it
-/// loads the style.
+/// Resolves a projection a style names by authority and code, as `init=epsg:4326` does, to a proj4
+/// string (API-init-projections-through-resolver). Synchronous: a host that fetches its definitions
+/// loads them before it loads the style.
 pub trait ProjectionResolver {
     /// The proj4 string for `code` of `authority` (such as `epsg`, case-insensitive), or `None`
     /// when the resolver does not know it.

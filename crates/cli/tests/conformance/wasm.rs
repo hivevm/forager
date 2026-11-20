@@ -1,9 +1,9 @@
-//! The comparison of G-9 (ADR-0034): a case's map, its shapefiles' features written into its
-//! layers (ADR-0018), rendered natively and by the browser bindings' wasm32 build, which
-//! `crates/bindings-wasm` compiles with its feature `conformance` and wasmi runs here. The module's
-//! exports and the format of its input and output are those `crates/bindings-wasm/src/
-//! conformance.rs` states; it renders the document with no source bound and reads the files of
-//! the native render, each as the native render's loader gave it.
+//! The comparison of G-9 (TST-wasm-renders-in-wasmi): a case's map, its shapefiles' features
+//! written into its layers (IR-inline-features-in-layer), rendered natively and by the browser
+//! bindings' wasm32 build, which `crates/bindings-wasm` compiles with its feature `conformance` and
+//! wasmi runs here. The module's exports and the format of its input and output are those
+//! `crates/bindings-wasm/src/ conformance.rs` states; it renders the document with no source bound
+//! and reads the files of the native render, each as the native render's loader gave it.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;

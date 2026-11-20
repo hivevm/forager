@@ -29,7 +29,7 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
   extension, or any DevContainer-compatible IDE
 - Docker / Podman (rootless) available on the host
 - Outside the Dev Container: bash 4.4 or later for the checks, 3.2 for the git hooks
-  ([ADR-0002](docs/adr/0002-decisions-verified-by-tests.md)); macOS ships 3.2
+  ([NUC-checks-are-bash §1](docs/adr/NUC-checks-are-bash.md)); macOS ships 3.2
 
 ## Getting Started
 
@@ -45,7 +45,7 @@ statement and goals live in [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md), th
 The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml); rustup installs it on
 first use. [`scripts/install-tools.sh`](scripts/install-tools.sh) installs it with the cargo
 tools the checks need and the release binaries of ShellCheck and jscpd, and the Dev Container runs
-it after creation (ADR-0007, ADR-0009).
+it after creation (OPS-pinned-stable-rust-toolchain, OPS-dev-container-adds-rust).
 
 - **Build:** `cargo build --workspace`
 - **Test:** `cargo test --workspace`
@@ -71,7 +71,7 @@ it after creation (ADR-0007, ADR-0009).
   `bash scripts/fuzz.sh --replay <target> <input>` runs the target once on one input, such as a
   crash's under `fuzz/artifacts/`, on that toolchain, and exits with the target's result
 - **Mutants:** `bash scripts/mutants.sh [shard such as 1/20]` — the weekly mutation testing of
-  ADR-0007, locally; it reports the mutants no test caught
+  OPS-pinned-stable-rust-toolchain, locally; it reports the mutants no test caught
 
 ## Usage
 
@@ -117,7 +117,7 @@ use; edit the mapfile or the GeoJSON and press **Render**. At the top of the pag
 [Leaflet](https://leafletjs.com/) map pans and zooms over the same map, from zoom 0, one map unit
 a pixel, with streets and houses a few levels in, each tile rendered by Forager for its extent;
 Leaflet and the font DejaVu Sans are checked copies under `examples/web/vendor/`
-([ADR-0035](docs/adr/0035-vendored-third-party-files.md)).
+([SEC-third-party-files-vendored](docs/adr/SEC-third-party-files-vendored.md)).
 
 ```console
 $ bash scripts/build-web.sh
@@ -133,9 +133,9 @@ is refused in the browser.
 
 ## Template
 
-- **Template release:** v0.8.1 — the release of [NUC](https://github.com/hivevm/nuc) this
+- **Template release:** v0.9.0 — the release of [NUC](https://github.com/hivevm/nuc) this
   repository carries; a project moves the line when it takes up a later one
-  ([ADR-0004](docs/adr/0004-template-releases.md)).
+  ([NUC-releases-are-semver-tags §5](docs/adr/NUC-releases-are-semver-tags.md)).
 
 ## Contributing
 

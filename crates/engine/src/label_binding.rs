@@ -1,9 +1,8 @@
-// The binding of a label's properties to a feature follows bindLabel, src/maputil.c, the
-// defaults of initLabel and loadLabel, src/mapfile.c, and the bounds of msAddLabelGroup,
-// src/maplabel.c, of MapServer at the release pinned in scripts/fetch-msautotest.sh (ADR-0031).
-// Copyright (c) 1996-2005 Regents of the University of Minnesota.
-// Copyright (c) 1996-2011 Regents of the University of Minnesota.
-// Copyright (c) 1996-2013 Regents of the University of Minnesota.
+// The binding of a label's properties to a feature follows bindLabel, src/maputil.c, the defaults
+// of initLabel and loadLabel, src/mapfile.c, and the bounds of msAddLabelGroup, src/maplabel.c, of
+// MapServer at the release pinned in scripts/fetch-msautotest.sh (REN-label-glyphs-from-skrifa).
+// Copyright (c) 1996-2005 Regents of the University of Minnesota. Copyright (c) 1996-2011 Regents
+// of the University of Minnesota. Copyright (c) 1996-2013 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
 // including without limitation the rights to use, copy, modify, merge, publish, distribute,

@@ -13,9 +13,9 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! The evaluator of the style IR's expressions (ADR-0016): synchronous, without I/O, reading a
-//! feature's properties through [`Lookup`]. Each operator and function means what MapServer's
-//! grammar means by it; `docs/semantics/expression.md` states each.
+//! The evaluator of the style IR's expressions (IR-expressions-evaluated-as-mapserver):
+//! synchronous, without I/O, reading a feature's properties through [`Lookup`]. Each operator and
+//! function means what MapServer's grammar means by it; `docs/semantics/expression.md` states each.
 //!
 //! The grammar evaluates every operand before an operator, so a failure anywhere in a tree, a
 //! division by zero say, fails the whole expression, which then does not match.
@@ -48,7 +48,8 @@ pub enum Failure {
     /// operands of types the grammar does not combine, a tree past the depth the IR allows.
     Undefined,
     /// A pattern with a construct PCRE2 reads and the `regex` crate cannot match as PCRE2 does
-    /// (ADR-0016), to be reported once per render with what carries it.
+    /// (IR-expressions-evaluated-as-mapserver), to be reported once per render with what carries
+    /// it.
     Pattern {
         pattern: String,
         construct: &'static str,
@@ -378,7 +379,8 @@ fn conditions(args: &[Val]) -> Result<Vec<bool>, Failure> {
 
 /// C's `(int)a % (int)b`, undefined for a zero divisor, an operand past an `int`, and the one
 /// quotient past it. An operand past an `int` is C's undefined behaviour, which fails here
-/// (ADR-0016), where the cast's port gives the x86-64 build's `INT_MIN`.
+/// (IR-expressions-evaluated-as-mapserver), where the cast's port gives the x86-64 build's
+/// `INT_MIN`.
 fn modulo(a: f64, b: f64) -> Result<i32, Failure> {
     let int = |x: f64| {
         let truncated = x.trunc();

@@ -1,7 +1,7 @@
 //! G-11: the core's reprojection agrees with PROJ, as MapServer at the pinned build calls it, over
 //! the reference points of `tests/reference/points.tsv`. The record `tests/reference/mapserver.tsv`
 //! is the output of the reader `crates/cli/tests/conformance/mapserver_proj.c` in the noise run,
-//! taken from its artifact (ADR-0038); this test needs neither PROJ
+//! taken from its artifact (TST-proj-references-from-mapserver); this test needs neither PROJ
 //! nor MapServer. Beside it, the rectangles of `tests/reference/rects.tsv` and their record
 //! `tests/reference/mapserver-rects.tsv`, by the same reader through `msProjectRect`, hold the area
 //! asked of a source to MapServer's within the same tolerance.
@@ -90,7 +90,7 @@ fn record(path: &str) -> (String, String, Vec<String>) {
     let record = std::fs::read_to_string(manifest_dir().join(path)).unwrap_or_else(|e| {
         panic!(
             "the record {path} ({e}) is taken from the noise run's artifact, noise/proj/ \
-             (ADR-0038)"
+             (TST-proj-references-from-mapserver)"
         )
     });
     let mut lines = record.lines().map(str::to_owned);
@@ -114,7 +114,7 @@ fn report(text: &str) {
 #[test]
 fn the_core_s_reprojection_agrees_with_mapserver_s_call_of_proj_within_g_11() {
     // Verifies: G-11
-    // Verifies: ADR-0038
+    // Verifies: TST-proj-references-from-mapserver
     let (proj, mapserver, recorded) = record(RECORD_PATH);
     let points = points();
     assert_eq!(
@@ -178,7 +178,7 @@ fn the_core_s_reprojection_agrees_with_mapserver_s_call_of_proj_within_g_11() {
 #[test]
 fn the_area_asked_of_a_source_is_mapserver_s_rectangle_within_g_11() {
     // Verifies: G-11
-    // Verifies: ADR-0038
+    // Verifies: TST-proj-references-from-mapserver
     let (proj, mapserver, recorded) = record(RECTS_RECORD_PATH);
     let rects = lines(RECTS, 4);
     assert_eq!(
@@ -298,7 +298,7 @@ fn reprojected_shape(
 #[test]
 fn the_core_cuts_and_wraps_shapes_as_mapserver_reprojects_them_within_g_11() {
     // Verifies: G-11
-    // Verifies: ADR-0038
+    // Verifies: TST-proj-references-from-mapserver
     let (proj, mapserver, recorded) = record(SHAPES_RECORD_PATH);
     let shapes: Vec<&str> = SHAPES
         .lines()

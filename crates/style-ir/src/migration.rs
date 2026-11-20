@@ -1,5 +1,5 @@
 //! The migration of a style document of an older major to the current one, one major at a time,
-//! on its value tree before it is read as the current version (ADR-0014).
+//! on its value tree before it is read as the current version (IR-schema-per-format-version).
 
 use serde_json::Value;
 

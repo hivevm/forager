@@ -1,15 +1,15 @@
 //! The core's reprojection on arbitrary text: two proj4 strings, as a mapfile or a style document
 //! may hold them, and the coordinates of points, a rectangle, and the lines of a shape, each read,
 //! reprojected, and cut at the horizon or wrapped at the dateline — an error or a result, never a
-//! panic or a hang (Q-3, ADR-0037).
+//! panic or a hang (Q-3, GEO-proj-ported-with-libm).
 //!
 //! The input is UTF-8 text: its first line the source projection, its second the target, and the
 //! rest numbers separated by white space, taken in pairs as points (at most 256), the first four
 //! also as a rectangle. The fifth, where there is one, is the angle of a rotated map whose
 //! extent is that rectangle, 400 × 300 pixels: the same points, rectangle, and lines go through
 //! the reprojection into that map and its way back, and through the way that runs no formula
-//! (ADR-0045).
-// Verifies: Q-3, ADR-0037
+//! (GEO-map-rotation-in-reprojection).
+// Verifies: Q-3, GEO-proj-ported-with-libm
 #![no_main]
 
 use forager_proj::{Geotransform, Projection, Reprojection};

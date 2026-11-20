@@ -1,5 +1,6 @@
 //! A symbol's anchor point, and the marker of a label's `labelpoint` style, which `symbolize`
-//! computes and `label` bounds (ADR-0008 lets neither depend on the other).
+//! computes and `label` bounds (ARCH-crates-as-ports-and-adapters lets neither depend on the
+//! other).
 
 /// The anchor point of a symbol without an `ANCHORPOINT`: its centre, as `msInitSymbol` sets it.
 pub const ANCHOR_CENTRE: [f64; 2] = [0.5, 0.5];

@@ -60,5 +60,5 @@ differences of Forager's:
 ## Mode
 
 with the human: it replaces the inherited ADRs, renames every ADR of Forager's, and proposes new
-ones, and ADR-0006 keeps every ADR with the maintainer. The maintainer reviews the map before the
-files move, and accepts each new ADR before the pull request merges.
+ones, and OPS-parallel-sessions-capped-at-three keeps every ADR with the maintainer. The maintainer
+reviews the map before the files move, and accepts each new ADR before the pull request merges.

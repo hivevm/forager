@@ -29,7 +29,7 @@ fn degrees(d: f64, m: f64) -> f64 {
 
 #[test]
 fn the_lambert_conic_of_two_parallels_matches_iogps_worked_example() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // Guidance Note 7-2, Lambert Conic Conformal (2SP): NAD27 / Texas South Central on Clarke
     // 1866; 28°30'N 96°00'W is E 2963503.91 ftUS, N 254759.80 ftUS.
     let geographic = "+proj=longlat +a=6378206.4 +rf=294.9786982";
@@ -54,7 +54,7 @@ fn the_lambert_conic_of_two_parallels_matches_iogps_worked_example() {
 
 #[test]
 fn the_mercator_of_an_ellipsoid_matches_iogps_worked_example() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // Guidance Note 7-2, Mercator (variant A): Makassar / NEIEZ on Bessel 1841; 3°S 120°E is
     // E 5009726.58 m, N 569150.82 m.
     let geographic = "+proj=longlat +a=6377397.155 +rf=299.1528128";
@@ -72,7 +72,7 @@ fn the_mercator_of_an_ellipsoid_matches_iogps_worked_example() {
 
 #[test]
 fn the_transverse_mercator_matches_iogps_worked_example() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // Guidance Note 7-2, Transverse Mercator: OSGB 1936 / British National Grid on Airy 1830;
     // 50°30'N 0°30'E is E 577274.99 m, N 69740.50 m.
     let geographic = "+proj=longlat +a=6377563.396 +rf=299.3249646";
@@ -90,7 +90,7 @@ fn the_transverse_mercator_matches_iogps_worked_example() {
 
 #[test]
 fn a_utm_zone_as_adapter_epsg_builds_it_in_projects_as_utm_does() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let zone_32 = "+proj=utm +zone=32 +datum=WGS84 +units=m +no_defs";
     let to_utm = way(LONGLAT_WGS84, zone_32);
     // On the central meridian at the equator: the false easting, northing 0.
@@ -125,7 +125,7 @@ fn a_utm_zone_as_adapter_epsg_builds_it_in_projects_as_utm_does() {
 
 #[test]
 fn web_mercator_takes_wgs84_longitude_and_latitude_on_its_sphere_without_a_shift() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let projected = way(LONGLAT_WGS84, EPSG_3857).point(at(10.0, 50.0)).unwrap();
     assert!(
         (projected.x - 1_113_194.907_932_735_7).abs() < 1e-6,
@@ -139,7 +139,7 @@ fn web_mercator_takes_wgs84_longitude_and_latitude_on_its_sphere_without_a_shift
 
 #[test]
 fn the_canadian_lambert_conic_of_the_suite_has_its_origin_at_49n_95w() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // A zero `towgs84` shifts nothing, as MapServer's call of PROJ does not.
     let projected = way(LONGLAT_WGS84, EPSG_3978)
         .point(at(-95.0, 49.0))
@@ -166,7 +166,7 @@ fn the_canadian_lambert_conic_of_the_suite_has_its_origin_at_49n_95w() {
 
 #[test]
 fn a_seven_parameter_shift_moves_a_point_by_some_metres_and_back() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // OSGB36 on Airy 1830, as PROJ's table of datums defines it.
     let osgb36 = "+proj=longlat +a=6377563.396 +rf=299.3249646 \
                   +towgs84=446.448,-125.157,542.060,0.1502,0.2470,0.8421,-20.4894";
@@ -185,7 +185,7 @@ fn a_seven_parameter_shift_moves_a_point_by_some_metres_and_back() {
 
 #[test]
 fn a_named_datum_shifts_nothing_and_an_explicit_zero_towgs84_changes_the_ellipsoid() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // +datum=NAD83 is read as its EPSG datum, which MapServer's call of PROJ does not shift, as
     // the record of tests/reference/ shows; an explicit zero towgs84 on GRS80 is a bound CRS
     // whose null Helmert step still changes the ellipsoid, by about a tenth of a millimetre.
@@ -207,7 +207,7 @@ fn a_named_datum_shifts_nothing_and_an_explicit_zero_towgs84_changes_the_ellipso
 
 #[test]
 fn an_unknown_projection_or_parameter_is_an_error_naming_it() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let error = |text: &str| Projection::parse(text).unwrap_err();
     assert_eq!(
         error("+proj=omerc +lat_0=4"),
@@ -268,7 +268,7 @@ fn an_unknown_projection_or_parameter_is_an_error_naming_it() {
 
 #[test]
 fn a_point_that_does_not_transform_is_an_error_not_a_panic() {
-    // Verifies: ADR-0037, Q-3
+    // Verifies: GEO-proj-ported-with-libm, Q-3
     let to_lcc = way(LONGLAT_WGS84, EPSG_3978);
     // The pole the cone opens away from has no place on it.
     assert_eq!(to_lcc.point(at(0.0, -90.0)), Err(NotTransformed));
@@ -295,14 +295,14 @@ fn a_point_that_does_not_transform_is_an_error_not_a_panic() {
 
 #[test]
 fn the_angles_of_proj_are_those_of_its_literals() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     assert_eq!(DEG_TO_RAD, ".017453292519943296".parse::<f64>().unwrap());
     assert_eq!(RAD_TO_DEG, "57.295779513082321".parse::<f64>().unwrap());
 }
 
 #[test]
 fn projections_differ_as_mapserver_compares_their_parameters() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     assert!(!differ("", LONGLAT_WGS84), "a layer without parameters");
     assert!(!differ(LONGLAT_WGS84, "  "), "a map without parameters");
     assert!(!differ(
@@ -315,7 +315,7 @@ fn projections_differ_as_mapserver_compares_their_parameters() {
 
 #[test]
 fn an_extent_reprojects_to_a_rectangle_that_holds_its_reprojected_points() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // misc/quoting.map's extent, in longitude and latitude, asked of its layer in EPSG:3978.
     let map = Extent {
         min_x: -67.5725,
@@ -350,7 +350,7 @@ fn an_extent_reprojects_to_a_rectangle_that_holds_its_reprojected_points() {
 
 #[test]
 fn a_rectangle_of_the_whole_world_or_of_no_size_takes_mapserver_s_shortcuts() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let world = Extent {
         min_x: -180.0,
         min_y: -90.0,
@@ -386,7 +386,7 @@ fn a_rectangle_of_the_whole_world_or_of_no_size_takes_mapserver_s_shortcuts() {
 
 #[test]
 fn a_side_that_leaves_the_projection_ends_at_its_horizon() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // The conic opens away from the south pole: the side along it does not reproject, and the
     // rectangle reaches as far south as the halving of the sides to it finds points that do.
     let to = way(LONGLAT_WGS84, EPSG_3978);
@@ -404,7 +404,7 @@ fn a_side_that_leaves_the_projection_ends_at_its_horizon() {
 
 #[test]
 fn over_keeps_a_longitude_past_the_antimeridian_on_the_way_in_and_out() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let over = "+proj=latlong +datum=WGS84 +over";
     let merc_over = "+proj=merc +datum=WGS84 +over";
     let east = way(over, merc_over).point(at(190.0, 10.0)).unwrap();
@@ -443,7 +443,7 @@ fn rot_out() -> Geotransform {
 
 #[test]
 fn a_rotated_maps_geotransform_is_mapservers_to_the_bit() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // misc/rot_out.map, ANGLE 30, as msMapComputeGeotransform and msMapSetFakedExtent compute it
     // in IEEE doubles.
     let map = geotransform::map_geotransform(&ROT_OUT, 400, 300, 30.0).unwrap();
@@ -494,7 +494,7 @@ fn a_rotated_maps_geotransform_is_mapservers_to_the_bit() {
 
 #[test]
 fn a_point_in_the_maps_projection_lands_where_the_geotransform_puts_it() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // The extent's centre lands on (200, 150.00000000017462) of the frame, y up, as the C's
     // formulas give it; an unrotated map puts it on (199.5, 149.5).
     let way = Reprojection::identity(false, false).onto_rotated_map(rot_out());
@@ -517,7 +517,7 @@ fn a_point_in_the_maps_projection_lands_where_the_geotransform_puts_it() {
 
 #[test]
 fn the_area_asked_of_a_rotated_map_holds_the_corners_of_its_view() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // msProjectRect samples the faked extent 0, 0, 400, 300 and moves each sample by the map's
     // geotransform; the PROJ step from the CRS into itself runs no formula.
     let asked = Reprojection::identity(false, false)
@@ -543,7 +543,7 @@ fn the_area_asked_of_a_rotated_map_holds_the_corners_of_its_view() {
 
 #[test]
 fn a_rotated_map_skips_the_polar_branches_of_the_area_asked() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // A map in a polar ortho, rotated by -45°, its view placed so that the frame's origin lands a
     // tenth of a millimetre east of the pole: msProjectRect's test of a polar projection would
     // find the pole there and take every longitude up to 90°, but it does not run where a side
@@ -598,7 +598,7 @@ fn a_rotated_map_skips_the_polar_branches_of_the_area_asked() {
 
 #[test]
 fn the_dateline_wrap_into_a_rotated_map_is_measured_in_the_frame() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // A map in longitude and latitude, 2° a pixel. A line from 170° to 190° in a Mercator of
     // +over comes back at -170°, more than 180° from where it started. Rotated by 30°, term 2 of
     // the geotransform is not 0, so msProjectShapeLine measures the distance in the frame's

@@ -17,6 +17,6 @@ refactor changed nothing a test sees.
 - **Price a glyph by its path's commands**, as a vector is priced by its points: the budget then
   bounds the renderer's work on a font's glyphs too. Fewer glyphs of a complex font would be
   drawn before the budget is spent, which no reference case reaches today; a resource limit's
-  count changes, which ADR-0006 keeps with the human.
+  count changes, which OPS-parallel-sessions-capped-at-three keeps with the human.
 - **Keep one point:** no work. A glyph's path is bounded only by its font's file, which a render
   loads up to `MAX_FONT_OR_IMAGE_FILE_BYTES` (`crates/engine/src/resource.rs`, Q-9).

@@ -1,7 +1,7 @@
 // How a line is brushed with a tile follows agg2RenderLineTiled of MapServer's src/mapagg.cpp, at
 // the release pinned in scripts/fetch-msautotest.sh; its bilinear filter is a port of
 // pattern_filter_bilinear_rgba, and the saturation of its coordinates of line_coord_sat, of the
-// AGG 2.4 MapServer bundles (ADR-0046).
+// AGG 2.4 MapServer bundles (REN-symbol-line-brushed-by-tile).
 // Copyright (c) 1996-2007 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -114,9 +114,9 @@ impl ImagePatternSource for Source<'_> {
 /// is rounded, as `saturation<line_max_coord>::iround` holds it, and rounded with `lrint`, half
 /// to even, as MapServer's AGG rounds.
 ///
-/// A bounded change (ADR-0049), its bound `LINE_MAX_COORD`, 2^28 - 1 subpixels
-/// (`line_aa_basics.rs:15`), read from agg-rust 1.2.0, which takes the coordinates as given:
-/// past it, `LineAaVertex::calc_distance` subtracts two of them in `i32`
+/// A bounded change (ARCH-third-party-failures-guarded), its bound `LINE_MAX_COORD`, 2^28 - 1
+/// subpixels (`line_aa_basics.rs:15`), read from agg-rust 1.2.0, which takes the coordinates as
+/// given: past it, `LineAaVertex::calc_distance` subtracts two of them in `i32`
 /// (`rasterizer_outline_aa.rs:38-39`), which overflows. MapServer's AGG holds them to the same
 /// bound, so the change moves no pixel of MapServer's drawing.
 pub(crate) fn line_coord_sat(x: f64) -> i32 {
@@ -270,9 +270,10 @@ fn piece_start(
 /// agg-rust's outline-image renderer, its start reduced by whole widths of the pattern after each
 /// segment, which moves no pixel, so that it stays within `i32` however long the path is (Q-3).
 ///
-/// An exact guard, ADR-0046's *No panic* (ADR-0049), read from agg-rust 1.2.0: `line3_no_clip`
-/// adds the start to the pattern's place in `i32` (`renderer_outline_image.rs:937`), which a
-/// path of some 8.4e6 pixels passes unreduced.
+/// An exact guard, REN-symbol-line-brushed-by-tile's *No panic*
+/// (ARCH-third-party-failures-guarded), read from agg-rust 1.2.0: `line3_no_clip` adds the start to
+/// the pattern's place in `i32` (`renderer_outline_image.rs:937`), which a path of some 8.4e6
+/// pixels passes unreduced.
 struct Carried<'r, 'p, 'b> {
     inner: RendererOutlineImage<'r, PixfmtMapserver<'b>, LineImagePattern<BilinearRgba8>>,
     pattern: &'p LineImagePattern<BilinearRgba8>,
@@ -332,10 +333,10 @@ const MAX_HALF_WIDTH: i64 = 64;
 // Guard: agg-rust 1.2.0
 /// A renderer that draws nothing and learns, from the segments and join points
 /// `rasterizer_outline_aa` hands its `line3`, whether agg-rust's outline-image renderer stays
-/// within `i32` on each segment of a piece, as AGG's filter keeps them. Where it would pass,
-/// AGG's C++ is undefined, and the piece is not drawn (Q-3, ADR-0049). Only `line3` matters,
-/// since agg-rust's `line0` to `line2` draw nothing for the outline-image renderer, which asks
-/// for accurate joins. It bounds two things, read from agg-rust 1.2.0's
+/// within `i32` on each segment of a piece, as AGG's filter keeps them. Where it would pass, AGG's
+/// C++ is undefined, and the piece is not drawn (Q-3, ARCH-third-party-failures-guarded). Only
+/// `line3` matters, since agg-rust's `line0` to `line2` draw nothing for the outline-image
+/// renderer, which asks for accurate joins. It bounds two things, read from agg-rust 1.2.0's
 /// `renderer_outline_image.rs`:
 ///
 /// - the pattern's place: `line3_no_clip` offsets the start, below one width of the pattern when
@@ -478,13 +479,13 @@ fn of_pixmap(tile: &Tile) -> bool {
 impl AggRenderer {
     /// Brushes `paths` with `tile` as `agg2RenderLineTiled` brushes a shape's lines: the tile
     /// copied into AGG's `line_image_pattern` through [`BilinearRgba8`], drawn by agg-rust's
-    /// `renderer_outline_image` through `rasterizer_outline_aa` with no clip box, a scale of 1,
-    /// and a start of 0 carried over every segment and path. Each path is clipped first to the
-    /// image grown by `reach` (ADR-0027) and fed as integers by [`line_coord_sat`]. A path the clip
-    /// leaves whole starts where AGG starts it; each piece of one it cuts starts where AGG starts
-    /// it at the piece's first segment (see [`piece_start`]). A piece [`JoinProbe`] refuses is not
-    /// drawn and counts among the refusals of the tile's kind, and a path the clip drops a segment
-    /// of counts among the paths refused (ADR-0049).
+    /// `renderer_outline_image` through `rasterizer_outline_aa` with no clip box, a scale of 1, and
+    /// a start of 0 carried over every segment and path. Each path is clipped first to the image
+    /// grown by `reach` (ARCH-one-clip-to-image) and fed as integers by [`line_coord_sat`]. A path
+    /// the clip leaves whole starts where AGG starts it; each piece of one it cuts starts where AGG
+    /// starts it at the piece's first segment (see [`piece_start`]). A piece [`JoinProbe`] refuses
+    /// is not drawn and counts among the refusals of the tile's kind, and a path the clip drops a
+    /// segment of counts among the paths refused (ARCH-third-party-failures-guarded).
     pub(crate) fn brushed_line(&mut self, paths: &[Vec<Point>], tile: &Tile, reach: f64) {
         let image = tile.image(built_tile);
         let pattern = LineImagePattern::<BilinearRgba8>::with_source(&Source(image));

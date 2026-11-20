@@ -49,7 +49,7 @@ enum Side<'a> {
 }
 
 /// How `layer` is reprojected into `map`'s projection, `declared` the projection its source
-/// declares for a layer of `AUTO` (ADR-0039): not where either has no
+/// declares for a layer of `AUTO` (API-source-declares-projection): not where either has no
 /// parameters or they do not differ as `msProjectionsDiffer` finds it; an error where either does
 /// not read. A side of `AUTO` without a PROJ object is taken as longitude and latitude in the
 /// other's base geographic CRS, as `msProjectCreateReprojector` takes it, and nothing is
@@ -59,7 +59,7 @@ enum Side<'a> {
 /// reprojected, as `msProjectionsDiffer` finds a geotransform different from any projection, and
 /// lands in the frame of the image. Where MapServer creates no PROJ object, or one from a CRS into
 /// the same CRS, the way runs no formula and only the geotransform moves a point
-/// (ADR-0045).
+/// (GEO-map-rotation-in-reprojection).
 pub(crate) fn for_layer(
     map: &Map,
     layer: &Layer,
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn a_ring_through_a_point_that_does_not_reproject_is_cut_at_the_horizon() {
-        // Verifies: ADR-0037
+        // Verifies: GEO-proj-ported-with-libm
         // The conic has no place for the south pole: msProjectShapeLine halves the sides to it
         // down to the horizon, and the ring keeps its place, its hole after it.
         let mut features = vec![polygon(vec![
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn a_line_that_leaves_the_projection_is_cut_into_parts() {
-        // Verifies: ADR-0037
+        // Verifies: GEO-proj-ported-with-libm
         let line = |points: &[(f64, f64)]| Feature {
             id: 0,
             geometry: Geometry::LineString(ring(points)),
@@ -564,7 +564,7 @@ mod tests {
 
     #[test]
     fn a_ring_moved_after_a_short_run_stays_with_its_own_polygon() {
-        // Verifies: ADR-0037
+        // Verifies: GEO-proj-ported-with-libm
         let through_the_pole = ring(&[
             (-64.0, 45.0),
             (-62.0, 45.0),
@@ -598,7 +598,7 @@ mod tests {
 
     #[test]
     fn a_polar_layer_into_longitude_and_latitude_is_one_mapserver_cuts_with_geos() {
-        // Verifies: ADR-0037
+        // Verifies: GEO-proj-ported-with-libm
         let way = |layer: &str| {
             let map = Map {
                 projection: Some("+proj=longlat +datum=WGS84".into()),
@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn a_reprojected_polygon_keeps_its_rings_beside_another_polygon() {
-        // Verifies: ADR-0037
+        // Verifies: GEO-proj-ported-with-libm
         // The engine fills each polygon of a multipolygon apart, so the rings MapServer moves after
         // a shape's others stay with the polygon they came from: each polygon of the reference
         // shapes, beside a ring that reprojects whole, keeps the rings proj's shape gives it.

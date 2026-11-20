@@ -1,5 +1,5 @@
 //! The engine's answer to the glyph port of a TrueType marker
-//! (ADR-0044): the fonts the render's TrueType symbols name,
+//! (API-truetype-marker-through-port): the fonts the render's TrueType symbols name,
 //! loaded before a layer is drawn into the store the labels' fonts use, and each glyph read
 //! through `label` once per render by its font, character, and size, as MapServer's glyph cache
 //! holds it per face and size.

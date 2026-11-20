@@ -8,8 +8,8 @@ the renderer as a stroke is, grows it to cover the image. Only a `WIDTH` and `MA
 `int` reach it; below that the two agree.
 
 **Where:** `crates/symbolize/src/glyph_marker.rs` (`glyph_op`); the C cast helpers of
-`crates/style-ir/src/c.rs` (ADR-0017), which a label's outline width already goes through
-(`ms_nint` in `crates/engine/src/labels.rs`).
+`crates/style-ir/src/c.rs` (IR-c-ports-in-style-ir), which a label's outline width already goes
+through (`ms_nint` in `crates/engine/src/labels.rs`).
 
 **What a change weighs:**
 

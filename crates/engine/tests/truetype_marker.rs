@@ -1,7 +1,7 @@
 //! A TrueType symbol: its glyph read from the render's fonts through the port the symbolizer asks,
 //! drawn as MapServer's drawGlyphMarker draws it at a point, anchored, along a line, and tiled over
 //! a polygon, and what is reported where the font or the character is missing or the fill's tile
-//! is refused (ADR-0044).
+//! is refused (API-truetype-marker-through-port).
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -146,7 +146,7 @@ fn a_truetype_symbol_draws_its_glyph_centred_on_its_point() {
 
 #[test]
 fn a_character_the_font_lacks_draws_glyph_0_and_warns() {
-    // Verifies: ADR-0044
+    // Verifies: API-truetype-marker-through-port
     let rendered = render(&map("sans", "☃"));
     assert_eq!(codes(&rendered), ["symbol-glyph-missing"]);
     let message = &rendered.diagnostics[0].message;
@@ -161,7 +161,7 @@ fn a_character_the_font_lacks_draws_glyph_0_and_warns() {
 
 #[test]
 fn a_font_the_font_set_lacks_draws_nothing_and_warns() {
-    // Verifies: ADR-0044
+    // Verifies: API-truetype-marker-through-port
     let rendered = render(&map("serif", "A"));
     assert_eq!(codes(&rendered), ["symbol-not-drawn"]);
     let message = &rendered.diagnostics[0].message;
@@ -246,7 +246,7 @@ impl ResourceLoader for Recorded {
 
 #[test]
 fn a_font_a_truetype_marker_and_a_label_share_is_loaded_once() {
-    // Verifies: ADR-0044
+    // Verifies: API-truetype-marker-through-port
     // The marker's font is loaded into the store the labels' fonts use: the label in the same
     // font, laid out after the marker's font is loaded, asks the loader for nothing more.
     let mut map = map("sans", "A");
@@ -425,7 +425,7 @@ fn each_layer_whose_fill_lacks_its_character_warns_though_the_tile_is_held() {
 
 #[test]
 fn a_truetype_symbol_with_an_outline_wider_than_any_stroke_renders_without_a_panic() {
-    // Verifies: ADR-0025
+    // Verifies: REN-agg-rust-rasterizer
     // The glyph's outline is bounded as a stroke's width is, so that its contour stays within
     // agg-rust's fixed-point coordinates. As computeSymbolStyle, a marker's outline is as wide as
     // the style's `WIDTH`, not its `OUTLINEWIDTH`, and bounded by its `MAXWIDTH`, 32 by default;
@@ -441,7 +441,7 @@ fn a_truetype_symbol_with_an_outline_wider_than_any_stroke_renders_without_a_pan
 
 #[test]
 fn a_truetype_marker_whose_glyph_passes_the_reach_is_not_drawn_and_warns_once() {
-    // Verifies: ADR-0027, ADR-0049, Q-3
+    // Verifies: ARCH-one-clip-to-image, ARCH-third-party-failures-guarded, Q-3
     // Moved 4,194,400 pixels right by its `OFFSET`, the `A` of 20 points lies past
     // `MAX_GLYPH_REACH` of the image, 4,194,304 pixels, so the renderer draws none of it. Two
     // such markers of the layer warn once.

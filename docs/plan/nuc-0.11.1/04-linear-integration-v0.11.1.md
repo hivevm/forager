@@ -53,5 +53,6 @@ line reads v0.11.1, and the spec is ready for its design revision.
 
 ## Mode
 
-with the human: the release replaces `NUC-` ADRs, clause 5 of NUC-main-only-via-pr among them,
-and it changes how every later branch integrates. ADR-0006 keeps the ADRs with the maintainer.
+with the human: the release replaces `NUC-` ADRs, clause 5 of NUC-main-only-via-pr among them, and
+it changes how every later branch integrates. OPS-parallel-sessions-capped-at-three keeps the ADRs
+with the maintainer.

@@ -34,7 +34,7 @@ fn projcs(geogcs: &str, projection: &str, parameters: &[(&str, f64)]) -> String 
 
 #[test]
 fn a_prj_in_longitude_and_latitude_utm_or_a_conic_declares_its_proj4_string() {
-    // Verifies: ADR-0039
+    // Verifies: API-source-declares-projection
     assert_eq!(proj4(GCS_WGS84), "+proj=longlat +datum=WGS84 +no_defs");
     assert_eq!(proj4(GCS_NAD83), "+proj=longlat +datum=NAD83 +no_defs");
     let utm = |y0: f64| {
@@ -98,7 +98,7 @@ fn a_prj_in_longitude_and_latitude_utm_or_a_conic_declares_its_proj4_string() {
 
 #[test]
 fn a_local_cs_declares_no_projection_and_what_does_not_read_says_why() {
-    // Verifies: ADR-0039
+    // Verifies: API-source-declares-projection
     assert_eq!(
         read(r#"LOCAL_CS["engineering",UNIT["Meter",1.0]]"#),
         DeclaredProjection::NoProjection
@@ -128,7 +128,7 @@ fn a_local_cs_declares_no_projection_and_what_does_not_read_says_why() {
 
 #[test]
 fn only_the_first_2047_bytes_of_a_prj_are_read() {
-    // Verifies: ADR-0039
+    // Verifies: API-source-declares-projection
     // Padded past what MapServer reads, the WKT is cut short and does not read.
     let padded = format!("{}{GCS_WGS84}", " ".repeat(MAX_PRJ_BYTES));
     assert!(matches!(
@@ -146,7 +146,7 @@ fn only_the_first_2047_bytes_of_a_prj_are_read() {
 
 #[test]
 fn an_ogc_prj_with_axes_a_scaled_conic_and_esri_s_orthographic_read_as_gdal_reads_them() {
-    // Verifies: ADR-0039
+    // Verifies: API-source-declares-projection
     // An OGC WKT, as PostGIS writes one: its AXIS values are bare words.
     let ogc = r#"PROJCS["WGS 84 / UTM zone 32N",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AXIS["Latitude",NORTH],AXIS["Longitude",EAST]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",9],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",0],UNIT["metre",1],AXIS["Easting",EAST],AXIS["Northing",NORTH]]"#;
     assert_eq!(

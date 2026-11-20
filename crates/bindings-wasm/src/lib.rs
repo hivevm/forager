@@ -36,18 +36,19 @@ pub struct Output {
 }
 
 /// Renders `mapfile` with the GeoJSON in `sources`, a JSON object from layer name to a GeoJSON
-/// object or to GeoJSON text. Source references that carry credentials are dropped (Q-7).
-/// `init=` projections resolve with the built-in EPSG codes and those of `epsg`, a table in the
-/// format of PROJ's former `epsg` init file (ADR-0019). The mapfile is the only file of its base
-/// context.
+/// object or to GeoJSON text. Source references that carry credentials are dropped (Q-7). `init=`
+/// projections resolve with the built-in EPSG codes and those of `epsg`, a table in the format of
+/// PROJ's former `epsg` init file (API-init-projections-through-resolver). The mapfile is the only
+/// file of its base context.
 pub fn render_map(mapfile: &str, sources: &str, epsg: Option<&str>, viewport: &Viewport) -> Output {
     render_map_with_files(mapfile, sources, epsg, viewport, &BTreeMap::new())
 }
 
-/// Renders as [`render_map`] does, with `files` beside the mapfile in its base context, by the
-/// path the mapfile names them: a font set and its fonts, an `INCLUDE`, a symbol set (ADR-0031),
-/// the image of a pixmap symbol (ADR-0029). Nothing else is read; a font or an image past
-/// [`forager_engine::MAX_FONT_OR_IMAGE_FILE_BYTES`] is refused by the engine.
+/// Renders as [`render_map`] does, with `files` beside the mapfile in its base context, by the path
+/// the mapfile names them: a font set and its fonts, an `INCLUDE`, a symbol set
+/// (REN-label-glyphs-from-skrifa), the image of a pixmap symbol (REN-pixmaps-held-once-per-render).
+/// Nothing else is read; a font or an image past [`forager_engine::MAX_FONT_OR_IMAGE_FILE_BYTES`]
+/// is refused by the engine.
 pub fn render_map_with_files(
     mapfile: &str,
     sources: &str,
@@ -250,9 +251,10 @@ impl RenderResult {
 }
 
 /// Renders a mapfile in the browser. `sources` is a JSON object from layer name to GeoJSON (an
-/// object or its text). `width`, `height`, and `extent` (`[minx, miny, maxx, maxy]`) override
-/// the mapfile's SIZE and EXTENT when given. `epsg` is a table of further EPSG definitions
-/// (ADR-0019). The mapfile is the only file of its base context; [`render_with`] adds others.
+/// object or its text). `width`, `height`, and `extent` (`[minx, miny, maxx, maxy]`) override the
+/// mapfile's SIZE and EXTENT when given. `epsg` is a table of further EPSG definitions
+/// (API-init-projections-through-resolver). The mapfile is the only file of its base context;
+/// [`render_with`] adds others.
 #[wasm_bindgen]
 pub fn render(
     mapfile: &str,
@@ -342,7 +344,7 @@ mod tests {
     /// there, and from nowhere else.
     #[test]
     fn the_fonts_a_page_hands_in_reach_the_engine() {
-        // Verifies: ADR-0031
+        // Verifies: REN-label-glyphs-from-skrifa
         let mapfile = |font: &str| {
             format!(
                 "MAP SIZE 10 10 EXTENT 0 0 10 10 FONTSET 'fonts.lst'\n\
@@ -402,7 +404,7 @@ mod tests {
     /// skipped as unbound, so the bytes of its files need not be a shapefile.
     #[test]
     fn a_shapefile_among_the_pages_files_leaves_its_layer_skipped() {
-        // Verifies: ADR-0024
+        // Verifies: API-browser-binds-geojson-only
         let mapfile = "MAP SIZE 10 10 EXTENT 0 0 10 10\n\
                        LAYER NAME 'roads' TYPE POINT STATUS ON DATA 'data/roads.shp'\n\
                        CLASS STYLE COLOR 0 0 0 SIZE 3 END END END END\n";
@@ -702,7 +704,7 @@ mod projections {
 
     #[test]
     fn the_browser_resolves_built_in_codes_and_takes_a_table_for_others() {
-        // Verifies: ADR-0019
+        // Verifies: API-init-projections-through-resolver
         let wgs84 = render_map(
             "MAP SIZE 10 10 EXTENT 0 0 1 1 PROJECTION 'init=epsg:4326' END END",
             "{}",
@@ -737,7 +739,7 @@ mod projections {
     /// and latitude, as its source declares (G-5).
     #[test]
     fn a_geojson_layer_of_auto_is_reprojected_from_wgs84_longitude_and_latitude() {
-        // Verifies: ADR-0039, G-5
+        // Verifies: API-source-declares-projection, G-5
         let mapfile = |projection: &str| {
             format!(
                 "MAP SIZE 11 11 EXTENT 400000 5450000 600000 5650000\n\

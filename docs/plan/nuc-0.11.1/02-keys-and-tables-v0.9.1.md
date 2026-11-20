@@ -42,7 +42,7 @@ the four checks, its own findings end in a key too. The `Template release` line 
 
 ## Mode
 
-with the human: the release replaces files that `NUC.blobs` holds, and it changes the checks of
-the record. ADR-0006 keeps the ADRs with the maintainer. The step is otherwise mechanical, and
-`scripts/check-all.sh` decides it. Stop and hand off where a merge would change what one of
-Forager's checks decides.
+with the human: the release replaces files that `NUC.blobs` holds, and it changes the checks of the
+record. OPS-parallel-sessions-capped-at-three keeps the ADRs with the maintainer. The step is
+otherwise mechanical, and `scripts/check-all.sh` decides it. Stop and hand off where a merge would
+change what one of Forager's checks decides.

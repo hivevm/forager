@@ -19,13 +19,14 @@
 // DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (ADR-0048) replaces the shape of each
-//! feature that passes the layer's filter before it is classed and drawn. The tree holds
-//! `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia`
-//! of `[shape]`, nested; the frontend has translated MapServer's text into it. `simplify` and
-//! `buffer` are computed by the geometry module (ADR-0050), and `simplifypt` by its port of JTS's
-//! topology-preserving simplifier (ADR-0047). `smoothsia` is computed by the port of MapServer's
-//! smoothing in [`smoothsia`].
+//! A layer's `GEOMTRANSFORM` (RFC 89): its transform tree (IR-geomtransform-with-simplifypt)
+//! replaces the shape of each feature that passes the layer's filter before it is classed and
+//! drawn. The tree holds `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`,
+//! `inner`, and `smoothsia` of `[shape]`, nested; the frontend has translated MapServer's text into
+//! it. `simplify` and `buffer` are computed by the geometry module (GEO-own-circle-for-buffer), and
+//! `simplifypt` by its port of JTS's topology-preserving simplifier
+//! (GEO-simplifypt-ported-from-jts). `smoothsia` is computed by the port of MapServer's smoothing
+//! in [`smoothsia`].
 //!
 //! A shape is MapServer's: a type, point, line, or polygon, and a list of parts, a polygon's
 //! rings listed flat, as a source delivers them. What the transforms add or visit is bounded per
@@ -131,7 +132,7 @@ fn evaluated(
 }
 
 /// What the transform trees of a layer's class styles share in one render
-/// (ADR-0048, *A class's style*): the layer's [`Budget`],
+/// (IR-geomtransform-with-simplifypt, *A class's style*): the layer's [`Budget`],
 /// which its `GEOMTRANSFORM` charged first; the value of `[map_cellsize]`; the bound of Q-9 once
 /// an evaluation passed it, after which none is evaluated; and the failure of the last
 /// evaluation, until the engine takes it.
@@ -461,10 +462,10 @@ fn simplify(shape: Shape, tolerance: f64, budget: &mut Budget) -> Result<Shape, 
             .map(|part| geometry::simplify_line(part, tolerance, budget))
             .collect::<Result<_, _>>()?,
         // Guard: geo 0.33.1
-        // A refusal (ADR-0049): geo's repair of the simplified polygon orders its points by
-        // `lex_cmp`, which unwraps `partial_cmp` of a coordinate that is no number
-        // (`utils.rs:92-97`), reached from `winding_order.rs:149` through `bool_ops/mod.rs:270`.
-        // The layer fails with a diagnostic.
+        // A refusal (ARCH-third-party-failures-guarded): geo's repair of the
+        // simplified polygon orders its points by `lex_cmp`, which unwraps `partial_cmp` of a
+        // coordinate that is no number (`utils.rs:92-97`), reached from `winding_order.rs:149`
+        // through `bool_ops/mod.rs:270`. The layer fails with a diagnostic.
         Kind::Polygon if !is_finite(&shape.parts) => {
             return Err(Undrawn::Failed(
                 "calls simplify on a polygon with a coordinate that is no finite number".to_owned(),
@@ -571,10 +572,10 @@ fn buffer(shape: &Shape, distance: f64, budget: &mut Budget) -> Result<Shape, Un
     }
     // Guard: geo 0.33.1
     // Guard: i_float 1.16.0
-    // A refusal (ADR-0049): geo's `buffer_with_style` strokes a line through i_overlay
-    // (`buffer.rs:377`), whose adapter takes a point that is no finite number outside its rect,
-    // which fails the debug assertion of `float_to_int` (i_float's `adapter.rs:115-123`). The
-    // layer fails with a diagnostic.
+    // A refusal (ARCH-third-party-failures-guarded): geo's
+    // `buffer_with_style` strokes a line through i_overlay (`buffer.rs:377`), whose adapter takes a
+    // point that is no finite number outside its rect, which fails the debug assertion of
+    // `float_to_int` (i_float's `adapter.rs:115-123`). The layer fails with a diagnostic.
     if !is_finite(shape.given()) {
         return Err(Undrawn::Failed(
             "calls buffer on a shape with a coordinate that is no finite number".to_owned(),

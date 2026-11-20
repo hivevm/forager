@@ -1,7 +1,8 @@
 //! What one render reads through the host's resource loader, held in one place from its first use
-//! until the render ends: the fonts of its labels and TrueType markers (`fonts.rs`, ADR-0031,
-//! ADR-0044), the images of its pixmap symbols and the tiles of its fills (`images.rs`,
-//! ADR-0029), and the TrueType markers' glyphs (`marker_glyphs.rs`).
+//! until the render ends: the fonts of its labels and TrueType markers (`fonts.rs`,
+//! REN-label-glyphs-from-skrifa, API-truetype-marker-through-port), the images of its pixmap
+//! symbols and the tiles of its fills (`images.rs`, REN-pixmaps-held-once-per-render), and the
+//! TrueType markers' glyphs (`marker_glyphs.rs`).
 
 use forager_ports::ResourceLoader;
 use forager_style_ir::Map;

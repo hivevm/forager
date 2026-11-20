@@ -534,7 +534,7 @@ fn the_stand_in_squares_of_symbols_not_drawn_yet_pay_the_budget_and_symbol_0_s_d
     // An SVG, a hatch, or a bound symbol is drawn at a point as Forager's square, which spends
     // the layer's budget as the symbol would, by the maintainer's decision of 2026-11-08; the
     // square of no symbol or symbol 0, which MapServer draws nothing for, spends none. A TrueType
-    // symbol draws its glyph instead (ADR-0044).
+    // symbol draws its glyph instead (API-truetype-marker-through-port).
     let three = Geometry::MultiPoint(vec![coords(&[(10.0, 50.0), (50.0, 50.0), (90.0, 50.0)])]);
     let of_kind = |kind| Symbol {
         kind,

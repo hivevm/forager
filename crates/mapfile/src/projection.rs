@@ -14,7 +14,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 //! The parameters of a `PROJECTION` block, read once: for the init files the frontend reads before
-//! translation, and for the proj4 string the translation builds from them (ADR-0019).
+//! translation, and for the proj4 string the translation builds from them
+//! (API-init-projections-through-resolver).
 
 use forager_style_ir::Span;
 

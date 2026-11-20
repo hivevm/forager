@@ -1,4 +1,4 @@
-# The shapes of G-11's reference (ADR-0038, the plan's tickets 05 and 06): each line a source and
+# The shapes of G-11's reference (TST-proj-references-from-mapserver, the plan's tickets 05 and 06): each line a source and
 # a target projection, as Forager's frontend writes them, the shape's type, point, line, or
 # polygon, and its lines, each "x,y x,y ...", separated by "|", tab-separated. The reader
 # crates/cli/tests/conformance/mapserver_proj.c reprojects each through MapServer's

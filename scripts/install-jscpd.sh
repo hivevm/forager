@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Installs jscpd at the version scripts/sensor-duplication.sh runs (ADR-0007):
+# Installs jscpd at the version scripts/sensor-duplication.sh runs (OPS-pinned-stable-rust-toolchain):
 # the static (musl) Linux release binary of kucherenko/jscpd for this machine's architecture,
 # verified against the SHA-256 the release's checksums.txt lists for the asset, which is pinned
 # here, into a directory on PATH, ~/.local/bin unless JSCPD_BIN_DIR names another. A jscpd
 # already at the version there is kept. scripts/install-tools.sh runs it in the Dev Container
-# (ADR-0009). In CI, the sensors job runs it before the duplication sensor and its self-test, and
+# (OPS-dev-container-adds-rust). In CI, the sensors job runs it before the duplication sensor and its self-test, and
 # the docs and shell jobs before the self-tests that run that self-test. The download, the check,
 # and the install are scripts/lib/install.sh.
 #

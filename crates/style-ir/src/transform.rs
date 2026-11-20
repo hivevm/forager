@@ -1,7 +1,8 @@
 //! The transform tree: a `GEOMTRANSFORM` expression of a layer or of a class's style as a typed
-//! tree of its shape functions, serialized in the shape of CQL2-JSON (ADR-0048).
-//! The mapfile frontend alone translates MapServer's text into it; the tree holds no text of the
-//! mapfile, and a transform the engine does not draw is the whole tree `{"not_drawn": reason}`.
+//! tree of its shape functions, serialized in the shape of CQL2-JSON
+//! (IR-geomtransform-with-simplifypt). The mapfile frontend alone translates MapServer's text into
+//! it; the tree holds no text of the mapfile, and a transform the engine does not draw is the whole
+//! tree `{"not_drawn": reason}`.
 
 use std::fmt;
 
@@ -325,9 +326,9 @@ impl Serialize for TransformNumber {
     }
 }
 
-/// A node as the reader meets it, before it is typed by its place: a number, a text, a call,
-/// or a `not_drawn`. Its keys are read one by one, and a key it does not know is read as
-/// ignored, so that the style document's reader names it with its path (ADR-0014).
+/// A node as the reader meets it, before it is typed by its place: a number, a text, a call, or a
+/// `not_drawn`. Its keys are read one by one, and a key it does not know is read as ignored, so
+/// that the style document's reader names it with its path (IR-schema-per-format-version).
 enum Read {
     Number(f64),
     Text(String),

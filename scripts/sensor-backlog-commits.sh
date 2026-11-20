@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Sensor: commits that add a backlog entry beside other changes (ADR-0005 — a session creates a
+# Sensor: commits that add a backlog entry beside other changes (NUC-large-work-is-planned §7 — a session creates a
 # backlog entry in a commit of its own, so a branch that is dropped can hand the entry on).
 #
 # Lists, between a base and a head, each commit that adds a file under 'docs/backlog/' and
@@ -60,6 +60,6 @@ if ((${#findings[@]} == 0)); then
   echo "Backlog commits sensor ($short_base..$short_head): nothing to report."
   exit 0
 fi
-echo "Backlog commits sensor ($short_base..$short_head): ${#findings[@]} commit(s) that add a backlog entry beside other changes than a ticket deleted — ADR-0005 has a session create each entry in a commit of its own, so a dropped branch can hand it on:"
+echo "Backlog commits sensor ($short_base..$short_head): ${#findings[@]} commit(s) that add a backlog entry beside other changes than a ticket deleted — NUC-large-work-is-planned §7 has a session create each entry in a commit of its own, so a dropped branch can hand it on:"
 printf '  - %s\n' "${findings[@]}"
 exit 0

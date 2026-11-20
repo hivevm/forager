@@ -2,12 +2,15 @@
 
 > The **vocabulary** of this project: the terms everyone, humans and agents alike, uses in code,
 > comments, documentation, and ADRs. It defines words and decides nothing. Whoever resolves a term
-> adds it here in the same change ([ADR-0001](adr/0001-agent-governance-model.md)).
+> adds it here in the same change ([NUC-documents-are-fixed §5](adr/NUC-documents-are-fixed.md)).
 
 One term per concept, only terms specific to this domain. Say what a term *is* in one or two
 sentences, and list under _Avoid:_ the synonyms it displaces, where there are any. A term the
 specification, an ADR, or the code uses without an entry here is a gap to close, not a convention
 to invent.
+
+List each synonym under _Avoid:_ as one to three words, without prose around them. A synonym
+inside a longer term of this glossary, such as "shape" in **Node shape**, is no synonym there.
 
 - **Adapter** — The implementation of a port for one kind of source or resource, such as
   Shapefile, GeoJSON, or FlatGeobuf; it depends on the ports and the style IR, never on the core.
@@ -21,7 +24,7 @@ to invent.
   `GAP` brushes the line with: the symbol centred in a transparent image of the size
   `msDrawLineSymbol` computes, sampled along each segment and across it, turned with the segment.
   It shares the render's cache and key with the fill tile, so one serves as the other
-  ([ADR-0046](adr/0046-symbol-line-brushed-by-its-tile.md)). The
+  ([REN-symbol-line-brushed-by-tile](adr/REN-symbol-line-brushed-by-tile.md)). The
   code's `Tile`, drawn by `DrawOp::BrushedLine`.
   _Avoid:_ line pattern, line tile.
 - **Core** — The crates that turn a style IR and features into pixels: no I/O, no C code, no
@@ -32,8 +35,8 @@ to invent.
   _Avoid:_ warning (for the general concept), log message.
 - **Display list** — The ordered sequence of drawing operations the core hands a renderer, each
   tagged with the feature it came from.
-- **Expression** — A condition or value over a feature's properties in the style IR: a CQL2
-  tree ([ADR-0015](adr/0015-expressions-as-cql2.md)) the mapfile frontend translates from an
+- **Expression** — A condition or value over a feature's properties in the style IR: a CQL2 tree
+  ([IR-expressions-as-cql2](adr/IR-expressions-as-cql2.md)) the mapfile frontend translates from an
   `EXPRESSION`, a `FILTER`, a `TEXT`, or an attribute binding. Its semantics per parameter are in
   [`semantics/`](semantics/README.md).
 - **Feature source** — The port through which the host supplies a layer's features, implemented by
@@ -44,7 +47,7 @@ to invent.
   `msDrawShadeSymbol` computes, or, for a vector symbol without a `GAP`, drawn nine times as
   getTile's seamless mode draws it. Built once per symbol, size, scale, and rotation in a render,
   for any symbol but a pixmap also per outline width and colour, and counted with its decoded images
-  ([ADR-0029](adr/0029-pixmaps-held-once-per-render.md)). The code's `Tile`.
+  ([REN-pixmaps-held-once-per-render](adr/REN-pixmaps-held-once-per-render.md)). The code's `Tile`.
   _Avoid:_ tile alone beside a map's raster tiles, pattern.
 - **Format version** — The `MAJOR.MINOR` version of the style document format, independent of
   crate versions and of the core's API.
@@ -54,13 +57,13 @@ to invent.
   _Avoid:_ fake extent, pixel space.
 - **Geotransform** — The affine step between a rotated map's coordinates and the frame of its
   image, which MapServer holds on the map's projection and applies inside each layer's
-  reprojection (ADR-0045).
+  reprojection (GEO-map-rotation-in-reprojection).
   _Avoid:_ rotation matrix, affine.
 - **Host** — The program that embeds the core and owns all I/O: the CLI, a browser page through
   the WASM bindings, or a server.
 - **Inline feature** — A feature written into a layer of the style IR, a mapfile's `FEATURE`: a
   shape's type and parts, its properties, and its text
-  ([ADR-0018](adr/0018-inline-features.md)).
+  ([IR-inline-features-in-layer](adr/IR-inline-features-in-layer.md)).
 - **Label cache** — MapServer's deferred placement of labels: labels are collected over all layers
   and placed in a separate pass, after the geometry.
 - **Labelpoly** — The box around a label's text grown by a pixel, or its turned polygon where the
@@ -86,7 +89,7 @@ to invent.
 - **Premultiplied image** — The image of a pixmap symbol as a render holds it decoded, each
   colour already multiplied by its alpha, as MapServer's `readPNG` premultiplies it: once per
   render and path, shared by every display item that draws it
-  ([ADR-0029](adr/0029-pixmaps-held-once-per-render.md)). The code's
+  ([REN-pixmaps-held-once-per-render](adr/REN-pixmaps-held-once-per-render.md)). The code's
   `PremultipliedImage`, apart from the straight-alpha `RgbaImage` a render returns.
   _Avoid:_ pixmap buffer, for the decoded image.
 - **Property** — A named value of a feature, which a mapfile calls an item and binds as
@@ -120,10 +123,11 @@ to invent.
 - **Style IR** — The data model of a map, its layers, classes, styles, symbols, and labels, free
   of MapServer syntax, with expressions as CQL2.
   _Avoid:_ model, AST (for the whole map).
-- **Symbol resources** — What a render's pixmap and TrueType symbols are drawn and sized from:
-  the decoded images of its pixmaps and the glyph port of its TrueType markers
-  ([ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md)). The canvas holds them, and the
-  label cache sizes a class's marker with the same. The code's `SymbolResources` of `symbolize`.
+- **Symbol resources** — What a render's pixmap and TrueType symbols are drawn and sized from: the
+  decoded images of its pixmaps and the glyph port of its TrueType markers
+  ([API-truetype-marker-through-port](adr/API-truetype-marker-through-port.md)). The canvas holds
+  them, and the label cache sizes a class's marker with the same. The code's `SymbolResources` of
+  `symbolize`.
 - **Text path** — A label's glyphs laid out from its point on the baseline, each at its pen
   position, with the box they span, as MapServer's `textPathObj` holds them.
 - **Transform tree** — A `GEOMTRANSFORM` expression of a layer or a class's style in the style
@@ -131,7 +135,7 @@ to invent.
   reason the engine does not draw it, translated by the mapfile frontend. Its nodes are `shape`,
   `generalize`, `densify`, `simplify`, `simplifypt`, `buffer`, `outer`, `inner`, and `smoothsia`.
   A layer's tree replaces each feature's shape in map units; a class style's tree is drawn on the
-  shape in pixels ([ADR-0048](adr/0048-transform-tree-with-simplifypt.md);
+  shape in pixels ([IR-geomtransform-with-simplifypt](adr/IR-geomtransform-with-simplifypt.md);
   [`semantics/style-symbol.md`](semantics/style-symbol.md)).
   _Avoid:_ shape expression, geometry expression.
 - **Viewport** — The part of a map that is drawn: an image size and an extent. A page asks the WASM

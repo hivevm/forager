@@ -1,5 +1,5 @@
-//! The JSON Schema of the current format version, derived from the IR's types, is the one
-//! checked in under `schema/` (ADR-0014). `FORAGER_WRITE_SCHEMA=1` writes it instead of
+//! The JSON Schema of the current format version, derived from the IR's types, is the one checked
+//! in under `schema/` (IR-schema-per-format-version). `FORAGER_WRITE_SCHEMA=1` writes it instead of
 //! comparing, the command the failure names.
 //!
 //! Once a release tag `v<semver>` of Forager holds schema files, those files are frozen, and the
@@ -37,7 +37,7 @@ fn schema_file(version: &str) -> String {
 
 #[test]
 fn the_checked_in_schema_is_the_one_the_ir_derives() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     let derived = derived();
     let checked_in = root().join(schema_file(FORMAT_VERSION));
     if std::env::var_os("FORAGER_WRITE_SCHEMA").is_some() {
@@ -55,7 +55,7 @@ fn the_checked_in_schema_is_the_one_the_ir_derives() {
 
 #[test]
 fn the_bump_matches_the_change_since_the_last_release() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     let released = released(&root()).unwrap_or_else(|e| panic!("{e}"));
     frozen(&released, |path| {
         std::fs::read_to_string(root().join(path)).ok()
@@ -65,7 +65,7 @@ fn the_bump_matches_the_change_since_the_last_release() {
     verdict(last(&released), FORMAT_VERSION, &derived).unwrap_or_else(|e| panic!("{e}"));
 }
 
-/// What changed between two schemas, as ADR-0014's version rule sorts it.
+/// What changed between two schemas, as IR-schema-per-format-version's version rule sorts it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Change {
     None,
@@ -424,7 +424,7 @@ fn released_at(version: (u32, u32), schema: &Value) -> Option<((u32, u32), Value
 
 #[test]
 fn an_added_optional_field_asks_for_the_next_minor() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     let old = fixture(json!({}), &["a"]);
     let new = fixture(json!({ "b": { "type": "number" } }), &["a"]);
     let error = verdict(released_at((1, 0), &old), "1.0", &new).unwrap_err();
@@ -456,7 +456,7 @@ fn an_added_optional_field_asks_for_the_next_minor() {
 
 #[test]
 fn a_removed_renamed_or_required_field_asks_for_the_next_major() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     let old = fixture(json!({ "b": { "type": "number" } }), &["a"]);
     let removed = fixture(json!({}), &["a"]);
     let error = verdict(released_at((1, 0), &old), "1.1", &removed).unwrap_err();
@@ -475,7 +475,7 @@ fn a_removed_renamed_or_required_field_asks_for_the_next_major() {
 
 #[test]
 fn an_unchanged_schema_keeps_its_version_and_a_released_file_is_frozen() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     let old = fixture(json!({}), &["a"]);
     assert_eq!(verdict(released_at((1, 0), &old), "1.0", &old), Ok(()));
     assert!(verdict(released_at((1, 0), &old), "1.1", &old).is_err());
@@ -494,7 +494,7 @@ fn an_unchanged_schema_keeps_its_version_and_a_released_file_is_frozen() {
 
 #[test]
 fn without_a_release_only_the_file_must_be_fresh() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     let new = fixture(json!({ "b": { "type": "number" } }), &["a", "b"]);
     assert_eq!(verdict(None, "1.0", &new), Ok(()));
     assert_eq!(frozen(&[], |_| None), Ok(()));
@@ -502,7 +502,7 @@ fn without_a_release_only_the_file_must_be_fresh() {
 
 #[test]
 fn definitions_compare_where_they_are_referred_to_not_by_their_number() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     // schemars numbers each use of a generic type: an added `Bound<u32>` renumbers the others.
     let old = json!({
         "type": "object",
@@ -531,7 +531,7 @@ fn definitions_compare_where_they_are_referred_to_not_by_their_number() {
 
 #[test]
 fn a_documented_variant_is_no_change_and_a_new_shape_of_a_union_is_major() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     let plain = json!({ "type": "string", "enum": ["butt", "round"] });
     let documented = json!({ "oneOf": [
         { "type": "string", "const": "butt", "description": "Flat at the end." },
@@ -587,7 +587,7 @@ fn a_release_tag_from_before_the_schema_holds_no_schema_file() {
 
 #[test]
 fn the_fixture_repository_is_the_only_one_its_git_touches() {
-    // Verifies: ADR-0002
+    // Verifies: NUC-checks-are-bash
     // The tag test again, in a process whose GIT_DIR names a decoy, as a hook in a linked
     // worktree would set it: the decoy has no new commit and no tag afterwards.
     if std::env::var_os("FORAGER_DECOY").is_some() {
@@ -652,7 +652,7 @@ fn the_fixture_repository_is_the_only_one_its_git_touches() {
 
 #[test]
 fn a_clone_without_its_history_is_refused_and_one_without_a_release_passes() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     let base = std::env::temp_dir().join(format!("forager-schema-shallow-{}", std::process::id()));
     let origin = base.join("origin");
     let git = |dir: &Path, args: &[&str]| {
@@ -755,7 +755,7 @@ fn schema<T: schemars::JsonSchema>() -> Value {
 
 #[test]
 fn an_optional_field_of_another_bound_is_minor_in_derived_schemas() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     use derived::*;
     assert_eq!(
         change(&schema::<V1>(), &schema::<V2Optional>()),
@@ -773,7 +773,7 @@ fn an_optional_field_of_another_bound_is_minor_in_derived_schemas() {
 
 #[test]
 fn a_documented_variant_is_no_change_and_a_new_one_minor_in_derived_schemas() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     use derived::*;
     assert_eq!(
         change(&schema::<Cap>(), &schema::<CapDocumented>()),
@@ -791,7 +791,7 @@ fn a_documented_variant_is_no_change_and_a_new_one_minor_in_derived_schemas() {
 
 #[test]
 fn a_new_alternative_of_an_untagged_union_is_major_in_derived_schemas() {
-    // Verifies: ADR-0014
+    // Verifies: IR-schema-per-format-version
     use derived::*;
     assert_eq!(
         change(&schema::<Union>(), &schema::<UnionWider>()),
@@ -857,7 +857,7 @@ fn open_strings(schema: &Value, defs: &Map<String, Value>) -> Vec<String> {
 
 #[test]
 fn the_transform_tree_and_a_styles_transform_hold_no_text_of_the_mapfile() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // Every string the schemas of the transform tree and of a style's transform admit is a value
     // of a closed enum, so the tree can hold no text a mapfile wrote.
     let derived: Value = serde_json::from_str(&derived()).unwrap();

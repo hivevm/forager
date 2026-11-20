@@ -1,10 +1,9 @@
-//! A layer in another projection than the map's, drawn in the map's: its features reprojected
-//! after its source delivers them, and its source asked for the map's extent in its own
-//! coordinates (ADR-0037). On a map with an `ANGLE`, each layer with a projection reprojected
+//! A layer in another projection than the map's, drawn in the map's: its features reprojected after
+//! its source delivers them, and its source asked for the map's extent in its own coordinates
+//! (GEO-proj-ported-with-libm). On a map with an `ANGLE`, each layer with a projection reprojected
 //! through the map's geotransform into the frame of the image, its source asked for the rotated
-//! view, its scale factors from msGetGeoCellSize's cellsize
-//! (ADR-0045); the expected numbers are those the C's formulas
-//! give at the pin for `misc/rot_out.map`.
+//! view, its scale factors from msGetGeoCellSize's cellsize (GEO-map-rotation-in-reprojection); the
+//! expected numbers are those the C's formulas give at the pin for `misc/rot_out.map`.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -171,7 +170,7 @@ fn assert_square_drawn(rendered: &Rendered) {
 
 #[test]
 fn a_layer_in_another_projection_is_drawn_in_the_maps() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let source = Recording::new(vec![Geometry::Polygon(vec![square_in(LCC)])]);
     let (rendered, _) = render_from(&map(LONGLAT, MAP_EXTENT, Some(LCC)), source);
     assert!(
@@ -184,7 +183,7 @@ fn a_layer_in_another_projection_is_drawn_in_the_maps() {
 
 #[test]
 fn a_layer_without_a_projection_or_in_the_maps_is_not_reprojected() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let in_longlat = || Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
     for layer_projection in [None, Some(LONGLAT)] {
         let (rendered, asked) =
@@ -251,7 +250,7 @@ fn auto_layer(map_projection: &str, extent: Extent) -> Map {
 
 #[test]
 fn a_layer_of_auto_takes_the_projection_its_source_declares() {
-    // Verifies: ADR-0039
+    // Verifies: API-source-declares-projection
     let declared = DeclaredProjection::Proj4(LCC.to_owned());
     let in_lcc = Recording::new(vec![Geometry::Polygon(vec![square_in(LCC)])]).declaring(declared);
     let (rendered, asked) = render_from(&auto_layer(LONGLAT, MAP_EXTENT), in_lcc);
@@ -275,7 +274,7 @@ fn a_layer_of_auto_takes_the_projection_its_source_declares() {
 
 #[test]
 fn a_layer_of_auto_whose_source_declares_nothing_is_in_the_longitude_and_latitude_of_the_map() {
-    // Verifies: ADR-0039
+    // Verifies: API-source-declares-projection
     // Under a map in the conic, its coordinates are taken as longitude and latitude in the map's
     // datum, as msProjectCreateReprojector takes an AUTO without a PROJ object.
     let extent = way(LONGLAT, LCC).extent(&MAP_EXTENT).unwrap();
@@ -323,7 +322,7 @@ fn a_layer_of_auto_whose_source_declares_nothing_is_in_the_longitude_and_latitud
 
 #[test]
 fn lines_mapserver_cuts_with_geos_are_drawn_uncut_with_a_warning() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let polar = "+proj=ortho +lat_0=90 +lon_0=0 +datum=WGS84";
     let mut map = map(
         LONGLAT,
@@ -372,7 +371,7 @@ fn lines_mapserver_cuts_with_geos_are_drawn_uncut_with_a_warning() {
 
 #[test]
 fn the_source_is_asked_for_the_maps_extent_in_its_own_coordinates() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let source = Recording::new(Vec::new());
     let (_, asked) = render_from(&map(LONGLAT, MAP_EXTENT, Some(LCC)), source);
     let [asked] = asked[..] else {
@@ -406,7 +405,7 @@ fn the_source_is_asked_for_the_maps_extent_in_its_own_coordinates() {
 
 #[test]
 fn a_map_around_a_pole_asks_its_source_for_every_longitude_as_mapserver_asks_its_first() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     // A conic whose origin is the north pole, as msProjectRect detects polar stereographic: the
     // pole lies in the map's extent, so the source is asked for all longitudes up to the pole.
     // MapServer does so for the first layer of a render only, as it then remembers the map's
@@ -435,7 +434,7 @@ fn a_map_around_a_pole_asks_its_source_for_every_longitude_as_mapserver_asks_its
 
 #[test]
 fn a_point_that_does_not_reproject_is_left_out_with_a_warning_naming_the_layer() {
-    // Verifies: ADR-0037, Q-3
+    // Verifies: GEO-proj-ported-with-libm, Q-3
     // A map in the conic, a layer in longitude and latitude: the south pole, which the conic
     // opens away from, has no place on it.
     let extent = way(LONGLAT, LCC).extent(&MAP_EXTENT).unwrap();
@@ -484,7 +483,7 @@ fn a_layer_whose_projection_the_map_s_extent_misses_is_not_drawn_with_a_warning(
 
 #[test]
 fn a_projection_not_supported_leaves_its_layer_undrawn_with_a_warning() {
-    // Verifies: ADR-0037
+    // Verifies: GEO-proj-ported-with-libm
     let source = Recording::new(vec![Geometry::Polygon(vec![square_in(LONGLAT)])]);
     let (rendered, asked) = render_from(
         &map(
@@ -510,7 +509,7 @@ fn a_projection_not_supported_leaves_its_layer_undrawn_with_a_warning() {
 
 #[test]
 fn inline_features_in_another_projection_are_reprojected() {
-    // Verifies: ADR-0037, ADR-0018
+    // Verifies: GEO-proj-ported-with-libm, IR-inline-features-in-layer
     let mut inline_map = map(LONGLAT, MAP_EXTENT, Some(LCC));
     inline_map.layers[0].features = vec![InlineFeature {
         shape_type: ShapeType::Polygon,
@@ -623,7 +622,7 @@ fn square(centre: Coord, half: f64) -> Geometry {
 
 #[test]
 fn a_layer_in_the_maps_projection_is_asked_for_the_rotated_view() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // msDrawVectorLayer asks for the faked extent 0, 0, 400, 300 through msProjectRect: the
     // bounding box of the rotated view's four corners.
     let rotated_map = rotated(Some(30.0), RenderMode::Polygon, Some(UTM), filled(None));
@@ -646,7 +645,7 @@ fn a_layer_in_the_maps_projection_is_asked_for_the_rotated_view() {
 
 #[test]
 fn a_point_of_a_layer_in_the_maps_projection_lands_where_the_geotransform_puts_it() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     let rotated_map = rotated(Some(30.0), RenderMode::Point, Some(UTM), filled(Some(7.0)));
     let points = vec![Geometry::Point(CENTRE), Geometry::Point(AT_100_100)];
     let (rendered, _) = render_rotated(&rotated_map, points);
@@ -686,7 +685,7 @@ fn a_point_of_a_layer_in_the_maps_projection_lands_where_the_geotransform_puts_i
 
 #[test]
 fn a_width_in_meters_on_a_rotated_map_is_scaled_by_the_geo_cellsize() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // msGetGeoCellSize: the diagonal of the real extent's cell over width and height, over the
     // square root of 2, 9.10380514271694 for rot_out, where the cellsize is 9.130434782608695.
     // A line 91 meters wide is drawn as the one 91 / that many pixels wide.
@@ -725,7 +724,7 @@ fn a_width_in_meters_on_a_rotated_map_is_scaled_by_the_geo_cellsize() {
 
 #[test]
 fn a_layers_buffer_on_a_rotated_map_is_taken_in_the_images_pixels() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // After the reprojection the map's units are the frame's pixels, as in MapServer: a buffer
     // of 10 grows a square of 50 meters a side by 10 pixels, not by 10 meters.
     let mut buffered = rotated(Some(30.0), RenderMode::Polygon, Some(UTM), filled(None));
@@ -750,7 +749,7 @@ fn a_layers_buffer_on_a_rotated_map_is_taken_in_the_images_pixels() {
 
 #[test]
 fn a_layer_without_a_projection_on_a_rotated_map_is_drawn_unrotated_with_a_warning() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // msProjectionsDiffer finds no difference where a side has no parameters: the layer's
     // coordinates are drawn as the frame's, y up, and its source is asked for the frame itself.
     let rotated_map = rotated(Some(30.0), RenderMode::Polygon, None, filled(None));
@@ -785,7 +784,7 @@ fn a_layer_without_a_projection_on_a_rotated_map_is_drawn_unrotated_with_a_warni
 
 #[test]
 fn a_map_of_angle_0_draws_as_one_without_angle() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     let square = || vec![square(CENTRE, 400.0)];
     let (without, asked_without) = render_rotated(
         &rotated(None, RenderMode::Polygon, Some(UTM), filled(None)),
@@ -816,7 +815,7 @@ fn an_angle_that_gives_no_geotransform_draws_no_map() {
 
 #[test]
 fn a_layer_in_another_projection_lands_through_the_formulas_and_the_geotransform() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // msProjectPointEx: PROJ's step from longitude and latitude into UTM, then the inverse
     // geotransform. The centre of the view, in longitude and latitude, lands on (200, 150).
     let centre = way(UTM, LONGLAT).point(CENTRE).unwrap();
@@ -846,7 +845,7 @@ fn a_layer_in_another_projection_lands_through_the_formulas_and_the_geotransform
 
 #[test]
 fn under_a_rotated_map_of_auto_a_layer_of_auto_moves_by_the_geotransform_alone() {
-    // Verifies: ADR-0045
+    // Verifies: GEO-map-rotation-in-reprojection
     // A layer of AUTO whose source declares no projection keeps AUTO; under a map of AUTO both
     // sides are the one argument AUTO, MapServer creates no PROJ object, and only the geotransform
     // moves a point: the extent's centre lands on (200, 150).

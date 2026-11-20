@@ -266,7 +266,7 @@ fn invalid_values_are_errors() {
 
 #[test]
 fn a_map_size_is_checked_from_1_and_cast_as_load_map_casts_it() {
-    // Verifies: ADR-0017
+    // Verifies: IR-c-ports-in-style-ir
     // loadMap (src/mapfile.c:6824-6829): getInteger checks each number against 1 and MAXSIZE, an
     // `int`, before its `(int)` cast (src/mapfile.c:276-290, 312-317), so a fraction is cut and a
     // number below 1 or above INT_MAX, 2147483647.5 among them, fails the load.
@@ -345,7 +345,7 @@ fn the_image_colour_keeps_its_alpha_and_takes_every_channel_as_a_byte() {
 
 #[test]
 fn the_maps_angle_loads_within_360_and_none_for_0() {
-    // Verifies: G-3, ADR-0045
+    // Verifies: G-3, GEO-map-rotation-in-reprojection
     let angle = |text: &'static str| load_files(&[("m.map", text)]).document.unwrap().map.angle;
     assert_eq!(angle("MAP ANGLE 30 END"), Some(30.0));
     assert_eq!(angle("MAP ANGLE -315 END"), Some(-315.0));
@@ -467,7 +467,7 @@ fn load_with_resolver(text: &'static str) -> Loaded {
 
 #[test]
 fn an_init_projection_is_resolved_by_the_hosts_resolver() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     let loaded = load_with_resolver("MAP PROJECTION 'init=epsg:4326' END END");
     assert!(loaded.diagnostics.is_empty(), "{:?}", loaded.diagnostics);
     assert_eq!(
@@ -492,7 +492,7 @@ fn an_init_projection_is_resolved_by_the_hosts_resolver() {
 
 #[test]
 fn an_init_projection_the_resolver_does_not_know_is_a_load_error() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     let loaded = load_with_resolver("MAP PROJECTION 'init=epsg:27700' END END");
     assert!(loaded.document.is_none());
     assert_eq!(codes(&loaded), ["projection-unresolved"]);
@@ -523,7 +523,7 @@ fn expressions(text: &'static str) -> (Loaded, Vec<String>, String) {
 
 #[test]
 fn the_four_kinds_of_class_expression_compare_against_the_classitem() {
-    // Verifies: ADR-0015
+    // Verifies: IR-expressions-as-cql2
     let (loaded, classes, _) = expressions(
         r#"MAP LAYER
              CLASS EXPRESSION "road" END
@@ -552,7 +552,7 @@ fn the_four_kinds_of_class_expression_compare_against_the_classitem() {
 
 #[test]
 fn a_logical_expression_states_the_type_of_each_attribute() {
-    // Verifies: ADR-0015
+    // Verifies: IR-expressions-as-cql2
     let (loaded, classes, _) = expressions(
         r#"MAP LAYER CLASS EXPRESSION ([pop] >= 1000 AND "[name]" =* "x") END END END"#,
     );
@@ -570,7 +570,7 @@ fn a_logical_expression_states_the_type_of_each_attribute() {
 
 #[test]
 fn operators_bind_as_in_mapserver() {
-    // Verifies: ADR-0015
+    // Verifies: IR-expressions-as-cql2
     let (_, classes, _) = expressions(
         r#"MAP LAYER
              CLASS EXPRESSION ([a] + 2 * 3 ^ 2 ^ 1 > 5 OR NOT [b] = 1 AND [c]) END
@@ -614,7 +614,7 @@ fn operators_bind_as_in_mapserver() {
 
 #[test]
 fn a_layer_filter_splits_in_lists_at_load_and_compares_times() {
-    // Verifies: ADR-0015
+    // Verifies: IR-expressions-as-cql2
     let (loaded, _, filter) = expressions(
         r#"MAP LAYER FILTER ('[a]' in 'A,B,C' AND `[t]` > `2010-12-01` AND [n] IN "1,2") END END"#,
     );
@@ -637,7 +637,7 @@ fn a_layer_filter_splits_in_lists_at_load_and_compares_times() {
 
 #[test]
 fn an_expression_outside_the_subset_is_a_warning_and_never_matches() {
-    // Verifies: ADR-0015
+    // Verifies: IR-expressions-as-cql2
     for text in [
         "MAP LAYER CLASS EXPRESSION (intersects([shape], fromtext('POINT(1 1)'))) END END END",
         r#"MAP LAYER CLASS EXPRESSION ("a" IN ("b" + "c")) END END END"#,
@@ -666,7 +666,7 @@ fn an_expression_mapserver_cannot_parse_is_a_warning_and_never_matches() {
 
 #[test]
 fn an_expression_nested_past_the_limit_fails_the_load() {
-    // Verifies: Q-9, ADR-0015
+    // Verifies: Q-9, IR-expressions-as-cql2
     let depth = forager_style_ir::MAX_EXPRESSION_DEPTH;
     let nots = |n: usize| -> &'static str {
         format!(
@@ -694,7 +694,7 @@ fn an_expression_nested_past_the_limit_fails_the_load() {
 
 #[test]
 fn every_expression_reads_back_equal_from_yaml_and_json() {
-    // Verifies: ADR-0015
+    // Verifies: IR-expressions-as-cql2
     let loaded = load_files(&[(
         "m.map",
         r#"MAP LAYER
@@ -1162,7 +1162,7 @@ fn true_and_on_false_and_off_stand_for_each_other() {
 
 #[test]
 fn a_layers_projection_resolves_as_the_maps_does() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     use forager_style_ir::LayerProjection;
     let text = "MAP LAYER PROJECTION 'init=epsg:4326' END END END";
     let loaded = load_with_resolver(text);
@@ -1287,7 +1287,7 @@ fn layer_projection(files: &[(&'static str, &'static str)]) -> Loaded {
 
 #[test]
 fn an_init_file_named_by_a_path_is_read_inside_the_base_context() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     use forager_style_ir::LayerProjection;
     let lcc = "+proj=lcc +lat_1=49 +lat_2=77 +units=m +no_defs +no_defs";
     for (map, init) in [
@@ -1321,7 +1321,7 @@ fn an_init_file_named_by_a_path_is_read_inside_the_base_context() {
 
 #[test]
 fn an_init_file_outside_the_base_context_or_without_the_code_is_a_load_error() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     for (text, named) in [
         (
             "MAP LAYER PROJECTION 'init=../epsg2:42304' END END END",
@@ -1367,7 +1367,7 @@ fn an_init_file_outside_the_base_context_or_without_the_code_is_a_load_error() {
 
 #[test]
 fn an_init_file_is_read_once_and_counts_toward_the_size_limit() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     let text = "MAP LAYER PROJECTION 'init=./data/epsg2:42304' END END
       LAYER PROJECTION 'init=data/epsg2:42304' END END END";
     let reads = std::cell::RefCell::new(Vec::new());
@@ -1397,7 +1397,7 @@ fn an_init_file_is_read_once_and_counts_toward_the_size_limit() {
 
 #[test]
 fn an_init_file_is_read_as_proj_reads_it() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     use forager_style_ir::LayerProjection;
     let file = "<1> +proj=first\n  +ellps=GRS80 # a comment\n <>\n<1> +proj=second <>\n";
     let loaded = layer_projection(&[
@@ -1429,7 +1429,7 @@ fn an_init_file_is_read_as_proj_reads_it() {
 
 #[test]
 fn an_init_file_reads_the_format_cases_both_readers_share() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     let format = include_str!("../../adapter-epsg/tests/fixtures/init-file-format.txt");
     let file = crate::init_file::InitFile::new(ResourcePath::new("epsg2").unwrap(), format);
     for line in format.lines() {
@@ -1508,7 +1508,7 @@ fn an_error_past_the_limit_still_fails_the_load() {
 
 #[test]
 fn an_auto_projection_names_no_init_file() {
-    // Verifies: ADR-0019
+    // Verifies: API-init-projections-through-resolver
     use forager_style_ir::LayerProjection;
     let loaded = layer_projection(&[(
         "m.map",
@@ -1996,7 +1996,7 @@ fn a_maxfeatures_of_zero_is_an_error() {
 
 #[test]
 fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
-    // Verifies: ADR-0048
+    // Verifies: IR-geomtransform-with-simplifypt
     // loadLayer reads GEOMTRANSFORM by getSymbol(1, MS_EXPRESSION): an expression alone.
     let layer_transform = |text: &'static str| {
         let loaded = load_files(&[("m.map", text)]);
@@ -2040,7 +2040,7 @@ fn a_layers_geomtransform_is_an_expression_carried_as_its_tree() {
 
 #[test]
 fn a_geomtransform_past_the_nesting_bound_fails_the_load() {
-    // Verifies: Q-9, ADR-0048
+    // Verifies: Q-9, IR-geomtransform-with-simplifypt
     let chain = vec!["1"; 26].join(" + ");
     for place in [
         format!("MAP LAYER NAME 'a' GEOMTRANSFORM (densify([shape], {chain})) END END"),

@@ -1,5 +1,5 @@
 // The drawing of glyphs follows agg2RenderGlyphsPath of MapServer's src/mapagg.cpp, at the release
-// pinned in scripts/fetch-msautotest.sh (ADR-0031).
+// pinned in scripts/fetch-msautotest.sh (REN-label-glyphs-from-skrifa).
 // Copyright (c) 1996-2007 Regents of the University of Minnesota.
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 // associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -28,16 +28,16 @@ use crate::AggRenderer;
 
 impl AggRenderer {
     /// Draws `path` as `agg2RenderGlyphsPath` draws a text path, its curves flattened by
-    /// `conv_curve`, under the non-zero rule, with no gamma: first its outline, the
-    /// `conv_contour` of the curves at the outline's width, then its fill in `color`. A path with
-    /// a point past [`forager_render::clip::MAX_GLYPH_REACH`] of the image, or one that is no
-    /// number, is not drawn and counts among the glyphs refused (ADR-0049): the engine leaves out
-    /// and reports a label's glyph before it reaches the display list by the same predicate, so
-    /// only another glyph, a TrueType marker's, is refused here.
-    /// The outline's width is bounded by [`drawn_width`] as a stroke's is, so that the contour's
-    /// margin past the path stays within agg-rust's fixed-point coordinates (ADR-0025); a
-    /// negative width, which shrinks the contour, by the same bound on its magnitude, since the
-    /// label's width the engine wraps into an `int` as MapServer does can come out negative.
+    /// `conv_curve`, under the non-zero rule, with no gamma: first its outline, the `conv_contour`
+    /// of the curves at the outline's width, then its fill in `color`. A path with a point past
+    /// [`forager_render::clip::MAX_GLYPH_REACH`] of the image, or one that is no number, is not
+    /// drawn and counts among the glyphs refused (ARCH-third-party-failures-guarded): the engine
+    /// leaves out and reports a label's glyph before it reaches the display list by the same
+    /// predicate, so only another glyph, a TrueType marker's, is refused here. The outline's width
+    /// is bounded by [`drawn_width`] as a stroke's is, so that the contour's margin past the path
+    /// stays within agg-rust's fixed-point coordinates (REN-agg-rust-rasterizer); a negative width,
+    /// which shrinks the contour, by the same bound on its magnitude, since the label's width the
+    /// engine wraps into an `int` as MapServer does can come out negative.
     pub(crate) fn glyphs(
         &mut self,
         path: &[PathCommand],
@@ -68,10 +68,10 @@ impl AggRenderer {
             let curves = ConvCurve::new(&mut storage);
             let mut contour = ConvContour::new(curves);
             // Guard: agg-rust 1.2.0
-            // An exact guard (ADR-0049), read from agg-rust 1.2.0: unbounded, the contour of a
-            // huge width lies past the 24.8 fixed point `iround` saturates at `i32`
-            // (`rasterizer_sl_clip.rs:20-22`), and the clip box subtracts its points in `i32`
-            // (`rasterizer_sl_clip.rs:128`), which overflows.
+            // An exact guard (ARCH-third-party-failures-guarded), read from
+            // agg-rust 1.2.0: unbounded, the contour of a huge width lies past the 24.8 fixed point
+            // `iround` saturates at `i32` (`rasterizer_sl_clip.rs:20-22`), and the clip box
+            // subtracts its points in `i32` (`rasterizer_sl_clip.rs:128`), which overflows.
             let width = drawn_width(outline.width, self.width, self.height);
             contour.set_width(width.copysign(outline.width));
             self.fill_glyphs(&mut contour, outline.color);
@@ -91,8 +91,8 @@ impl AggRenderer {
             let mut scanline = ScanlineU8::new();
             rasterizer.filling_rule(FillingRule::NonZero);
             // A glyph's curves cannot be clipped as a polygon is, so the rasterizer clips its
-            // flattened lines to the image enlarged by the margin, as ADR-0025 clips every path;
-            // the cells of a glyph far larger than the image then stay within it.
+            // flattened lines to the image enlarged by the margin, as REN-agg-rust-rasterizer clips
+            // every path; the cells of a glyph far larger than the image then stay within it.
             let [min_x, min_y, max_x, max_y] = rect.bounds();
             rasterizer.clip_box(min_x, min_y, max_x, max_y);
             rasterizer.add_path(source, 0);

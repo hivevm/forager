@@ -1,5 +1,5 @@
 /*
- * The reader of MapServer's reprojection for G-11's reference (ADR-0038): it reads the list named
+ * The reader of MapServer's reprojection for G-11's reference (TST-proj-references-from-mapserver): it reads the list named
  * as its one argument, one of crates/proj/tests/reference/points.tsv, rects.tsv, and shapes.tsv,
  * and reprojects each point, rectangle, or shape from its line's source projection into its
  * target projection as MapServer does, each projection loaded by msLoadProjectionString of

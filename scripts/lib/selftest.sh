@@ -33,6 +33,11 @@ fixture() {
     || { echo "fixture: '${1:-}' is no fixture repository under $work" >&2; exit 1; }
 }
 
+# table_hyphens <text> — the notation of the fixture tables under scripts/fixtures/ read: a colon
+# after two to five capital letters, not preceded by a letter, a digit, or '_', and before a letter
+# or a digit is a hyphen.
+table_hyphens() { sed -E 's/(^|[^A-Za-z0-9_])([A-Z]{2,5}):([A-Za-z0-9])/\1\2-\3/g' <<< "$1"; }
+
 # check <name> <condition...> — count one assertion.
 check() {
   local name="$1"; shift

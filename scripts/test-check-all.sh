@@ -120,9 +120,9 @@ expect_exit() {
 d="$(repo full)"
 expect "without --changed everything runs" "$d" "${scripts[*]}" ""
 
-# The bash floor (ADR-0002): below it the runner stops before any check and names both versions;
-# at it, the guard says nothing.
-# Verifies: ADR-0002
+# The bash floor (NUC-checks-are-bash §1): below it the runner stops before any check and names
+# both versions; at it, the guard says nothing.
+# Verifies: NUC-checks-are-bash
 d="$(repo old-bash)"
 out="$(CHECK_ALL_BASH_VERSION=3.2 bash "$d/scripts/check-all.sh" 2>&1)"; rc=$?
 if ((rc == 2)) && [[ "$out" == *"need bash 4.4 or later"* && "$out" == *"this is bash 3.2"* && "$out" != *"RAN "* ]]; then
@@ -224,6 +224,9 @@ check "a sensor shows its headline and counts the rest" \
 check "a sensor hides the rest of its report" test "${out/RAN $sensor/}" = "$out"
 check "a passing check keeps a line that says it skipped something" \
   grep -qxF "    ShellCheck skipped" <<< "$out"
+required="$(grep -m1 -E '^run "[^"]*" scripts/sensor-[^ ]+ --require' "$RUNNER")"
+check "a sensor run with --require shows its line as a check does" \
+  grep -qxF "ok: $(cut -d'"' -f2 <<< "$required") — RAN $(grep -oE 'scripts/sensor-[^ ]+' <<< "$required")" <<< "$out"
 out="$(bash "$d/scripts/check-all.sh" --verbose 2>&1)"
 check "--verbose shows a sensor's report in full" grep -qF "RAN $sensor" <<< "$out"
 

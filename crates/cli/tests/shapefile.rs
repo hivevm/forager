@@ -368,8 +368,8 @@ fn a_link_out_of_the_base_context_tells_nothing_of_what_it_points_at() {
 
 #[test]
 fn a_layer_with_inline_features_draws_them_and_leaves_its_data_unread() {
-    // ADR-0018: an inline layer's DATA is not bound, so nothing is read and nothing reported,
-    // as MapServer ignores it (msInitializeVirtualTable).
+    // IR-inline-features-in-layer: an inline layer's DATA is not bound, so nothing is read and
+    // nothing reported, as MapServer ignores it (msInitializeVirtualTable).
     let dir = scratch("inline");
     write_square(&dir, "poly", ["shp", "shx", "dbf"]);
     let map = mapfile("", "poly").replace(
@@ -392,7 +392,7 @@ fn a_layer_with_inline_features_draws_them_and_leaves_its_data_unread() {
 
 #[test]
 fn a_layer_of_auto_takes_the_projection_of_its_shapefile_s_prj() {
-    // Verifies: ADR-0039
+    // Verifies: API-source-declares-projection
     // Under a map in Web Mercator's metres, a layer of AUTO without a .prj takes its coordinates
     // as degrees, and the square of 50 degrees covers the whole map of 100 metres; a .prj of a
     // LOCAL_CS declares no projection, and the square is drawn where its coordinates stand.

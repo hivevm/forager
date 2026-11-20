@@ -1,5 +1,5 @@
-//! The display list and the renderer trait: what is drawn, in pixel coordinates, independent of
-//! the backend that rasterizes it (ADR-0008). Only `style-ir` is known here.
+//! The display list and the renderer trait: what is drawn, in pixel coordinates, independent of the
+//! backend that rasterizes it (ARCH-crates-as-ports-and-adapters). Only `style-ir` is known here.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -44,9 +44,9 @@ pub enum DrawOp {
     },
     /// Fills the part of the hatch's stroked lines that lies inside its rings.
     Hatch(Hatch),
-    /// Draws a label's glyph outlines as MapServer's AGG renderer draws text (ADR-0031), their
-    /// curves flattened: first its outline, where it has one, then its fill under the non-zero
-    /// rule, where it has a colour.
+    /// Draws a label's glyph outlines as MapServer's AGG renderer draws text
+    /// (REN-label-glyphs-from-skrifa), their curves flattened: first its outline, where it has one,
+    /// then its fill under the non-zero rule, where it has a colour.
     Glyphs {
         path: Vec<PathCommand>,
         color: Option<Rgba>,
@@ -56,7 +56,7 @@ pub enum DrawOp {
     /// pixel (`left`, `top`), every pixel at full cover, as AGG's `blend_from` lays one
     /// premultiplied image over another; what lies outside the image drawn on is left out. The
     /// image is the one the render decoded, shared by every item that draws it, never a copy
-    /// (ADR-0029).
+    /// (REN-pixmaps-held-once-per-render).
     Pixmap {
         image: Rc<PremultipliedImage>,
         left: i32,
@@ -66,8 +66,9 @@ pub enum DrawOp {
     /// `agg2RenderPixmapSymbol` draws an image turned or scaled: the square filled under the
     /// non-zero rule without a gamma, each pixel's colour the image sampled at the position
     /// `inverse` takes the pixel's centre to, bilinearly, transparent beyond the image
-    /// (ADR-0026). The square is clipped to the image as every path is (ADR-0027). The image is
-    /// the one the render decoded, never a copy (ADR-0029).
+    /// (REN-agg-blender-and-resampler). The square is clipped to the image as every path is
+    /// (ARCH-one-clip-to-image). The image is the one the render decoded, never a copy
+    /// (REN-pixmaps-held-once-per-render).
     ResampledPixmap {
         image: Rc<PremultipliedImage>,
         at: Point,
@@ -77,18 +78,19 @@ pub enum DrawOp {
     /// Fills the area the rings enclose under the even-odd rule without a gamma, each pixel's
     /// colour the pixel of `tile` at its position modulo the tile's size, as
     /// `agg2RenderPolygonTiled` repeats a tile from the image's origin. The rings are clipped to
-    /// the image as every path is (ADR-0027). The tile is the one the render holds, shared by
-    /// every item it fills (ADR-0029).
+    /// the image as every path is (ARCH-one-clip-to-image). The tile is the one the render holds,
+    /// shared by every item it fills (REN-pixmaps-held-once-per-render).
     TiledFill {
         rings: Vec<Vec<Point>>,
         tile: Rc<Tile>,
     },
     /// Brushes the paths of one shape in one style with `tile`, its brush tile, as
     /// `agg2RenderLineTiled` brushes a line: the tile sampled along each segment and across it, as
-    /// wide as the tile is high, turned with the segment, its position along the line starting at
-    /// 0 and carried over every segment and path. The paths are clipped to the image grown by
-    /// `reach`, the class's `clip_buf` in pixels, as every path is (ADR-0027). The tile is the one
-    /// the render holds, shared by every item it brushes or fills (ADR-0029).
+    /// wide as the tile is high, turned with the segment, its position along the line starting at 0
+    /// and carried over every segment and path. The paths are clipped to the image grown by
+    /// `reach`, the class's `clip_buf` in pixels, as every path is (ARCH-one-clip-to-image). The
+    /// tile is the one the render holds, shared by every item it brushes or fills
+    /// (REN-pixmaps-held-once-per-render).
     BrushedLine {
         paths: Vec<Vec<Point>>,
         tile: Rc<Tile>,
@@ -207,9 +209,10 @@ impl RgbaImage {
     }
 }
 
-/// An image as rows of premultiplied RGBA bytes, top row first: each colour already multiplied
-/// by its alpha, as MapServer's `readPNG` premultiplies a pixmap (ADR-0029). A type apart from
-/// [`RgbaImage`], whose alpha is straight, so that the one is never read as the other.
+/// An image as rows of premultiplied RGBA bytes, top row first: each colour already multiplied by
+/// its alpha, as MapServer's `readPNG` premultiplies a pixmap (REN-pixmaps-held-once-per-render). A
+/// type apart from [`RgbaImage`], whose alpha is straight, so that the one is never read as the
+/// other.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PremultipliedImage {
     width: u32,
@@ -245,7 +248,8 @@ impl PremultipliedImage {
     }
 }
 
-/// What a renderer left undrawn, since it would make a third-party crate fail (ADR-0049).
+/// What a renderer left undrawn, since it would make a third-party crate fail
+/// (ARCH-third-party-failures-guarded).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Refused {
     /// The pieces of brushed lines whose tile was drawn from a pixmap symbol.
@@ -253,7 +257,8 @@ pub struct Refused {
     /// The pieces of brushed lines whose tile was drawn from a vector, an ellipse, or a TrueType
     /// symbol.
     pub symbols: usize,
-    /// The paths of which the clip dropped a point, a segment, or a crossing (ADR-0027).
+    /// The paths of which the clip dropped a point, a segment, or a crossing
+    /// (ARCH-one-clip-to-image).
     pub paths: usize,
     /// The glyph paths with a point past the reach of a glyph, drawn not at all.
     pub glyphs: usize,

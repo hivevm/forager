@@ -1,4 +1,4 @@
-//! C's and MapServer's small ports live once (ADR-0017): `atof`,
+//! C's and MapServer's small ports live once (IR-c-ports-in-style-ir): `atof`,
 //! `atoi`, `strtod`, `lrint`, C's `(int)` cast of a `double` and its string end, and MapServer's
 //! `MS_NINT`, `MS_MIN`, `MS_MAX`, `MS_DEG_TO_RAD`, `msRectOverlap`, its test of a point in a
 //! polygon, `msStringSplit`, `msComputeBounds`, `msGetSymbolIndex` with the key of its match of a
@@ -73,7 +73,7 @@ fn degrees_to_radians(source: &str) -> impl Iterator<Item = usize> + '_ {
 
 #[test]
 fn c_number_reading_is_defined_only_in_the_module_of_style_ir() {
-    // Verifies: ADR-0017
+    // Verifies: IR-c-ports-in-style-ir
     let root = manifest_dir().join("../..");
     let mut files = rust_files(&root.join("crates"));
     files.extend(rust_files(&root.join("fuzz")));

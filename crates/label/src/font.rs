@@ -43,7 +43,7 @@ pub struct Font<'a> {
     unreadable: Option<Unusable>,
 }
 
-/// Why a font that opens cannot draw a label's line (ADR-0031).
+/// Why a font that opens cannot draw a label's line (REN-label-glyphs-from-skrifa).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unusable {
     /// The font has no Unicode character map, and FreeType would read it through one it builds
@@ -51,10 +51,11 @@ pub enum Unusable {
     NoUnicodeCharacterMap,
     /// The font's character map is of format 2 or 8, which this crate does not read.
     UnreadCharacterMapFormat,
-    /// The font is read through its Symbol character map, out of the scope of ADR-0031.
+    /// The font is read through its Symbol character map, out of the scope of
+    /// REN-label-glyphs-from-skrifa.
     SymbolCharacterMap,
     /// The font is read through its Apple Roman character map, as it has neither a Unicode nor a
-    /// Symbol one, out of the scope of ADR-0031.
+    /// Symbol one, out of the scope of REN-label-glyphs-from-skrifa.
     AppleRomanCharacterMap,
     /// The font's outlines are not TrueType's `glyf`.
     NoGlyfOutlines,

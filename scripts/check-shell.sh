@@ -9,7 +9,7 @@
 # are the repository's entire enforcement layer, so they are held to a lint gate themselves.
 #
 # ShellCheck is the one check dependency beyond bash + coreutils/git, held to the one version
-# scripts/install-shellcheck.sh pins (ADR-0007), which the Dev Container installs on creation
+# scripts/install-shellcheck.sh pins (OPS-pinned-stable-rust-toolchain), which the Dev Container installs on creation
 # through scripts/install-tools.sh and the shell job of CI before the lint, so that a script
 # passes or fails alike in both. Elsewhere, when shellcheck is not on PATH, the check skips itself
 # with a notice instead of failing (CI remains the enforcing gate); in a CI run (CI=true) a
@@ -25,8 +25,10 @@
 # It refuses a pipe into grep with -q (or --quiet, --silent) as well. Under pipefail, grep exits
 # at its first match, and a producer that writes on after that dies of SIGPIPE: the pipeline fails
 # and reads as no match, but only when the scheduler runs grep between two writes, so under load.
-# A here-string, a variable, or grep -c reads the input whole. The same limits as for sed apply:
-# comment lines are not read, the rule reads text, and a pipe on the line before is not seen.
+# A here-string, a variable, or grep -c reads the input whole. A script whose shebang names sh and
+# that sets no pipefail is spared: its pipe has grep's status, and sh has no here-string. The same
+# limits as for sed apply: comment lines are not read, the rule reads text, and a pipe on the line
+# before is not seen, nor is pipefail set in a file the script sources.
 #
 # And it refuses a script under scripts/, outside scripts/lib/ whose scripts are sourced, that
 # starts with a shebang but is not executable: its mode in git where git tracks it, its mode on
@@ -107,6 +109,8 @@ for f in "${scripts[@]}"; do
     echo "    $text"
     failed=1
   done < <(grep -nE "$IN_PLACE" "$f" | grep -vE '^[0-9]+:[[:space:]]*#')
+  [[ "$(head -n 1 "$f")" =~ ^#!.*[/[:space:]]sh([[:space:]]|$) ]] \
+    && ! grep -qE '^[^#]*pipefail' "$f" && continue
   while IFS=: read -r line text; do
     echo "${f#"$ROOT"/}:$line: a pipe into grep -q fails under pipefail when grep exits at its" \
       "match before the producer has written its last line; read the input whole instead:" \

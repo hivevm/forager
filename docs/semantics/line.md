@@ -72,24 +72,25 @@ rectangle ends there, and one that comes back is a line of its own from there. I
 - A polygon's rings outlined in a line layer, which `msDrawShape` clips with
   `msClipPolygonRect` and a buffer 2 larger, are not clipped; they are simplified whole, so
   where one crosses the edge of the map the vertices kept near the edge can differ.
-- The renderer clips every path near the image ([ADR-0027](../adr/0027-clip-to-the-image.md)),
-  2 pixels beyond it and the stroke's reach, and dashes a line from where that clip begins it. A
-  line `msDrawShape` leaves longer, one of `POLYLINE_NO_CLIP` or one whose class's buffer is
-  wider than the renderer's margin, a stroke wider than 2 pixels with round or bevel joins, has
-  its dashes counted from the renderer's clip, where MapServer counts them from the line's start.
+- The renderer clips every path near the image
+  ([ARCH-one-clip-to-image](../adr/ARCH-one-clip-to-image.md)), 2 pixels beyond it and the stroke's
+  reach, and dashes a line from where that clip begins it. A line `msDrawShape` leaves longer, one
+  of `POLYLINE_NO_CLIP` or one whose class's buffer is wider than the renderer's margin, a stroke
+  wider than 2 pixels with round or bevel joins, has its dashes counted from the renderer's clip,
+  where MapServer counts them from the line's start.
 - The renderer's clip drops a vertex that is no finite number in pixels, a segment whose ends
   lie farther apart than any finite number, and a crossing of its edge that is no finite number,
   and draws the line or polygon through what is left. The layer warns with `path-not-drawn`, once
-  ([ADR-0049](../adr/0049-third-party-failures-guarded.md)).
+  ([ARCH-third-party-failures-guarded](../adr/ARCH-third-party-failures-guarded.md)).
 - A line brushed with its tile, of a `GAP` of 0, that the renderer's clip cuts, as one of
   `POLYLINE_NO_CLIP` beyond the class's buffer and 2 pixels, draws the segment cut from an end
   rounded to the clip's edge, without the join before it, where MapServer saturates the line's
   coordinates instead. The pattern's place along the rest of the line is MapServer's.
 - A piece of a brushed line is not drawn where AGG's C++ is undefined: where the pattern's place
-  would pass an `int`, beside a tile some 4096 pixels high, or where a join lies so far from a
-  short segment that the distances to it would pass an `int`. The layer warns with
-  `pixmap-not-drawn` for a pixmap's tile and `symbol-not-drawn` for any other, once for each
-  kind, naming no symbol ([ADR-0049](../adr/0049-third-party-failures-guarded.md)).
+  would pass an `int`, beside a tile some 4096 pixels high, or where a join lies so far from a short
+  segment that the distances to it would pass an `int`. The layer warns with `pixmap-not-drawn` for
+  a pixmap's tile and `symbol-not-drawn` for any other, once for each kind, naming no symbol
+  ([ARCH-third-party-failures-guarded](../adr/ARCH-third-party-failures-guarded.md)).
 - A brushed line's segment longer than 1024 pixels close to 45°, or a join whose bisectrix falls
   on an exact half, can differ from MapServer by a pixel's shade: agg-rust divides such a
   segment, and rounds a half away from zero, otherwise than AGG 2.4.

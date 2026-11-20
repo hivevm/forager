@@ -18,7 +18,8 @@
 //! The fill tile of a polygon and the brush tile of a line: its size, as MapServer computes it,
 //! held to Q-9's bound before anything is allocated for it, and the cache of a render's tiles,
 //! which builds each once and holds as many as MapServer holds, their bytes counted with the
-//! render's decoded images and, for a brush tile, the copy its brush makes (ADR-0029).
+//! render's decoded images and, for a brush tile, the copy its brush makes
+//! (REN-pixmaps-held-once-per-render).
 
 use std::collections::VecDeque;
 use std::rc::{Rc, Weak};
@@ -533,7 +534,7 @@ mod tests {
 
     #[test]
     fn a_tile_let_go_counts_until_nothing_refers_to_it() {
-        // Verifies: Q-9, ADR-0029
+        // Verifies: Q-9, REN-pixmaps-held-once-per-render
         let mut tiles = Tiles::default();
         let referred = gapped(&mut tiles, 2).unwrap();
         for side in 3..9 {
@@ -547,7 +548,7 @@ mod tests {
 
     #[test]
     fn the_tile_that_would_pass_256_mib_with_the_images_is_refused_and_none_let_go_for_it() {
-        // Verifies: Q-9, ADR-0029
+        // Verifies: Q-9, REN-pixmaps-held-once-per-render
         let mut tiles = Tiles::default();
         tiles.count_images(MAX_DECODED_IMAGE_BYTES - 16);
         let fits = gapped(&mut tiles, 2).unwrap();

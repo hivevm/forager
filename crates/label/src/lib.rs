@@ -1,12 +1,12 @@
-//! The text of labels (ADR-0031): a label's sizes, the fonts of its font list in the order
-//! MapServer tries them, its glyphs read with skrifa, laid out and drawn as MapServer lays out
-//! and draws Latin lines, where a label stands about its point, and which labels the label cache
-//! draws. It does no I/O: the engine loads the font files and hands their bytes here. It is the
-//! one crate that depends on skrifa.
+//! The text of labels (REN-label-glyphs-from-skrifa): a label's sizes, the fonts of its font list
+//! in the order MapServer tries them, its glyphs read with skrifa, laid out and drawn as MapServer
+//! lays out and draws Latin lines, where a label stands about its point, and which labels the label
+//! cache draws. It does no I/O: the engine loads the font files and hands their bytes here. It is
+//! the one crate that depends on skrifa.
 
 // The crate's own clippy.toml adds bans to Q-2's; its header says which.
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
-// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (ADR-0017).
+// C's `(int)` cast is `forager_style_ir::c::int_cast`, never `as` (IR-c-ports-in-style-ir).
 #![deny(clippy::cast_possible_truncation)]
 
 mod cache;

@@ -1,6 +1,7 @@
-//! Init files that a mapfile names by a path in an `init=<file>:<code>` projection (ADR-0019):
-//! read before translation through the resource loader, as `FONTSET` and `SYMBOLSET` are, and
-//! parsed in the format of PROJ's former `epsg` init file, `<code> +proj=… <>`.
+//! Init files that a mapfile names by a path in an `init=<file>:<code>` projection
+//! (API-init-projections-through-resolver): read before translation through the resource loader, as
+//! `FONTSET` and `SYMBOLSET` are, and parsed in the format of PROJ's former `epsg` init file,
+//! `<code> +proj=… <>`.
 
 use std::collections::BTreeMap;
 
@@ -66,10 +67,11 @@ pub fn named(map: &Block) -> Vec<(String, Span)> {
 
 /// Each code's definition, as PROJ 9.5.0's reader takes it (`get_init_string` in its
 /// `src/init.cpp`): `<code>` at the start of a line, the code compared as written, and the
-/// parameters up to the next `<`, across lines, `#` starting a comment to the end of its line;
-/// the first definition of a code holds, an empty one too. A `<` whose `>` is not on its line, or
-/// a `<code>` inside a line, is no code. A definition that cannot be used is kept as the reason
-/// (ADR-0019). The host table of `adapter-epsg` is read by the same rules.
+/// parameters up to the next `<`, across lines, `#` starting a comment to the end of its line; the
+/// first definition of a code holds, an empty one too. A `<` whose `>` is not on its line, or a
+/// `<code>` inside a line, is no code. A definition that cannot be used is kept as the reason
+/// (API-init-projections-through-resolver). The host table of `adapter-epsg` is read by the same
+/// rules.
 fn parse(text: &str) -> BTreeMap<String, Result<String, String>> {
     let mut definitions = BTreeMap::new();
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);

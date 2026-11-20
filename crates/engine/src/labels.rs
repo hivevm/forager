@@ -1,9 +1,9 @@
 // The labels of point layers follow pointLayerDrawShape, msDrawLabelCache, its choice of a point
 // label's position and offsets and its member's box, src/mapdraw.c, msAddLabelGroup and
 // msComputeTextPath, src/maplabel.c, bindLabel, bindIntegerAttribute, and
-// msShapeGetLabelAnnotation, src/maputil.c, msGetMarkerSize, src/mapsymbol.c, and
-// msDrawTextSymbol, src/maprendering.c, of MapServer at the release pinned in
-// scripts/fetch-msautotest.sh, with the label cache of the label crate (ADR-0031).
+// msShapeGetLabelAnnotation, src/maputil.c, msGetMarkerSize, src/mapsymbol.c, and msDrawTextSymbol,
+// src/maprendering.c, of MapServer at the release pinned in scripts/fetch-msautotest.sh, with the
+// label cache of the label crate (REN-label-glyphs-from-skrifa).
 // Copyright (c) 1996-2005 Regents of the University of Minnesota.
 // Copyright (c) 1996-2011 Regents of the University of Minnesota.
 // Copyright (c) 1996-2013 Regents of the University of Minnesota.
@@ -908,7 +908,8 @@ impl<'r> Labels<'r> {
         }
         let mut cached = false;
         for point in points_in_view(&self.rotation.frame, &feature.geometry) {
-            // The label cache holds at most MAX_LABELS labels a render (Q-9, ADR-0032).
+            // The label cache holds at most MAX_LABELS labels a render (Q-9,
+            // REN-label-cache-wrapping-grid).
             if self.cached.len() >= MAX_LABELS {
                 let first = self
                     .over_limit

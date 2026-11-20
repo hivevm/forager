@@ -4,7 +4,7 @@
 > a module may know, what a test asserts and never does, the shape of an error, how a thing is
 > named when the glossary has no word for it. Whoever settles a convention updates this file
 > inline, an agent included, in the same change as the review or code that settled it. The
-> reviewer always has it ([ADR-0001](adr/0001-agent-governance-model.md)).
+> reviewer always has it ([NUC-documents-are-fixed §6](adr/NUC-documents-are-fixed.md)).
 
 An entry says in a sentence or two what is done and why; the why tells a convention from a habit.
 A convention a check can decide is the check, not an entry. One that constrains future choices is
@@ -12,6 +12,9 @@ an ADR. What the golden path already shows needs none. Few entries that hold bea
 skimmed. The design revision drops what prevented nothing
 ([`AGENTS.md` §5](../AGENTS.md#5-quality-bar--definition-of-done)).
 
+- **A check's cases are a table** — a new or changed check writes its cases into a table under
+  `scripts/fixtures/` before its code, and its self-test reads the table, so a port of the
+  checks is held to the same cases.
 - **Diagnostic codes are kebab-case and stable** — tests and tools match on `code`, never on the
   message, so messages can be reworded freely and a code once used keeps its meaning.
 - **A test that expects a refusal asserts its reason** — the diagnostic's code in a Rust test,
@@ -36,12 +39,13 @@ skimmed. The design revision drops what prevented nothing
   function it read, and claims no more than the cases measured, as ff9641de, e0ed507f, and
   9a2b860c did not.
 - **A reader of untrusted bytes allocates nothing from a count or a size the bytes state before
-  checking it against the bytes present** — a header's record count, a part count, a length
-  field: each is compared with what the input holds, in checked arithmetic, before anything is
-  reserved for it, so that memory follows the input's size and Q-9's limit on it means something.
-  Its test states counts past the bytes present and bounds the peak allocation under a counting
-  allocator, as the shapefile adapter's tests do; the same test, run against a crate's reader,
-  shows whether that reader keeps to it ([ADR-0021](adr/0021-shapefile-adapter.md)).
+  checking it against the bytes present** — a header's record count, a part count, a length field:
+  each is compared with what the input holds, in checked arithmetic, before anything is reserved for
+  it, so that memory follows the input's size and Q-9's limit on it means something. Its test states
+  counts past the bytes present and bounds the peak allocation under a counting allocator, as the
+  shapefile adapter's tests do; the same test, run against a crate's reader, shows whether that
+  reader keeps to it
+  ([API-shapefile-reader-from-mapserver](adr/API-shapefile-reader-from-mapserver.md)).
 - **A change that gives a target of Q-3 a new reader or a new path brings the fuzz seed that
   reaches it** — a decoder, a parser, or a path of the renderer is fuzzed from the change that
   adds it, not from a ticket after it, because a fuzz target reaches only what its harness builds
@@ -116,17 +120,17 @@ skimmed. The design revision drops what prevented nothing
   results agree: a text case marked `labels-hold` that rendered nothing held its mark until
   b1f2c29, and a shapefile that did not read left both sides of G-9 empty until f3a9c8f.
 - **A port cuts a value where C's declared type cuts it** — a value MapServer keeps in an `int`, a
-  label's `SIZE`, its `MAXLENGTH`, a line's pen, is cut, narrowed, or bounded at the step C does,
-  an implicit assignment to an `int` field included, and an overflow that ADR-0017 and ADR-0016 do
-  not decide is decided and named beside the code. No check sees such a step in a port that writes
-  no cast: `msComputeTextPath` assigns `glyph_size`, an `int` (`mapserver.h:2385`), three times
-  (`maplabel.c:71-75`), and the work of ef639d7 first rounded it once, so `SIZE 23` at a scale
-  factor of 0.5 drew at 12 where MapServer draws at 11, until its review found it.
-  [ADR-0017](adr/0017-c-ports-in-style-ir.md) decides how a port carries out a C cast, a C
-  assignment of a `double` to an `int`, and C's rounding, with the `INT_MIN` of the `(int)` cast
-  and the low 32 bits of `MS_NINT`; [ADR-0016](adr/0016-expression-evaluation.md) decides the
-  undefined behaviour of `expr`. Neither places the step where a value is cut, narrowed, or
-  bounded.
+  label's `SIZE`, its `MAXLENGTH`, a line's pen, is cut, narrowed, or bounded at the step C does, an
+  implicit assignment to an `int` field included, and an overflow that IR-c-ports-in-style-ir and
+  IR-expressions-evaluated-as-mapserver do not decide is decided and named beside the code. No check
+  sees such a step in a port that writes no cast: `msComputeTextPath` assigns `glyph_size`, an `int`
+  (`mapserver.h:2385`), three times (`maplabel.c:71-75`), and the work of ef639d7 first rounded it
+  once, so `SIZE 23` at a scale factor of 0.5 drew at 12 where MapServer draws at 11, until its
+  review found it. [IR-c-ports-in-style-ir](adr/IR-c-ports-in-style-ir.md) decides how a port
+  carries out a C cast, a C assignment of a `double` to an `int`, and C's rounding, with the
+  `INT_MIN` of the `(int)` cast and the low 32 bits of `MS_NINT`;
+  [IR-expressions-evaluated-as-mapserver](adr/IR-expressions-evaluated-as-mapserver.md) decides the
+  undefined behaviour of `expr`. Neither places the step where a value is cut, narrowed, or bounded.
 - **A minimum or maximum over values that may be NaN decides the NaN first** — `ms_min` and
   `ms_max` hand on their second operand where one is no number, so the operand that may be NaN
   goes first and is dropped, as the maintainer kept it on 2026-11-14, unless the port keeps
@@ -139,9 +143,9 @@ skimmed. The design revision drops what prevented nothing
   62bd3f17).
 - **An ADR that decides how code is written is tried against the workspace's lints before it is
   proposed** — an attribute, an export, or a pattern it names is compiled once under
-  `[workspace.lints]` and the ADRs that bind the crate, because ADR-0034 first decided exports of
-  the C ABI, which need the `unsafe` that ADR-0025 denies outside `render-agg`, and was found
-  unworkable only by its implementation.
+  `[workspace.lints]` and the ADRs that bind the crate, because TST-wasm-renders-in-wasmi first
+  decided exports of the C ABI, which need the `unsafe` that REN-agg-rust-rasterizer denies outside
+  `render-agg`, and was found unworkable only by its implementation.
 - **A rule changes everywhere it is stated** — a change to a rule, a step, or a name searches
   the tree for its old wording and for every citation of its anchor, and corrects them in the
   same change. A link check sees the anchor, never a sentence that restates it.

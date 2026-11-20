@@ -5,25 +5,29 @@
 # Enforces — as CI, not just convention — the documentation rules from AGENTS.md and
 # docs/adr/README.md:
 #
-#   1. ADR index integrity: every docs/adr/NNNN-*.md file and every draft docs/adr/draft-*.md
-#      (ADR-0002) is listed in the index table in
-#      docs/adr/README.md once, every index row points to an existing file, and the status and the
-#      'Applies to' cell shown in the index match the **Status:** and **Applies to:** lines
-#      inside each ADR — the index routes a reader from a change to the ADRs that bind it
-#      (AGENTS.md, section 2), so a row that misstates what its ADR governs misroutes them.
+#   1. ADR index integrity: every ADR file, docs/adr/<CAT>-<slug>.md, but the 'NUC-' base,
+#      which it lists in no row, is listed in the index
+#      table in docs/adr/README.md once, every index row points to an existing file, and the
+#      status and the 'Applies to' cell shown in the index match the **Status:** and **Applies
+#      to:** lines inside each ADR — the index routes a reader from a change to the ADRs that bind
+#      it (AGENTS.md, section 2), so a row that misstates what its ADR governs misroutes them.
 #      A superseded or rejected row sits below the 'Superseded and rejected' heading and an
 #      accepted or proposed one above it: the first table is what a session reads, and a
 #      row in the wrong one is either a dead decision read as binding or a binding one
 #      never read (docs/adr/README.md).
-#   2. ADR numbering integrity: the ADR files run 0001..N without gaps, and every file's
-#      '# ADR-NNNN' heading matches its filename (docs/adr/README.md). A draft is outside the
-#      count: its slug is lower case letters and digits joined by hyphens, and its heading reads
-#      '# ADR-draft-<slug>' for the file 'draft-<slug>.md' (ADR-0002).
+#   2. ADR identifier integrity: every identifier has the form of NUC-adrs-are-named-by-category
+#      clause 1, its category is fixed or in the category list of the index (clause 2), and the
+#      file's heading starts with '# <identifier>:'. No ADR deleted on the first-parent line of
+#      HEAD carried the identifier; the message names the commit that deleted it, and a git that
+#      cannot read the history fails the check. Every file in docs/adr/ named with letters before
+#      a hyphen counts, so a misnamed ADR fails here, and so does a numbered ADR file, 'NNNN-*.md',
+#      which no reader takes any more: a derived project maps it once, with the map script of the
+#      normalize skill.
 #   3. Relative-link integrity: every relative Markdown link in every tracked .md file resolves
 #      to a file or directory that exists. Links inside fenced code blocks are illustrations,
 #      not claims about files on disk, and are skipped (here and in check 6); so is a target that
-#      still carries the 'NNNN' placeholder of docs/adr/template.md; an optional link title
-#      ('[text](file "title")') is not part of the path. Reference-style links
+#      still carries the placeholder '<CAT>' of docs/adr/template.md; an optional link
+#      title ('[text](file "title")') is not part of the path. Reference-style links
 #      ('[text][label]') are not resolved — this repository uses inline links only.
 #
 #      Checks 3 to 6 skip ⚪ superseded and 🔴 rejected ADRs (see is_inactive_adr): both
@@ -35,11 +39,13 @@
 #      Markdown. AGENTS.md is the only numbered document in this repository; extend the check if
 #      another one appears. The headings there must themselves run 1..N in order: a gap or a
 #      repeat is a botched renumbering, and it is the only half of the renumbering hazard a check
-#      can see (AGENTS.md, section 3).
-#   5. ADR-reference integrity: every 'ADR-NNNN' reference (with actual digits) and every
-#      'ADR-draft-<slug>' reference (with an actual slug) names an ADR file that exists in
-#      docs/adr/ — anticipated follow-ups are described by topic, never by a number that does
-#      not exist yet (docs/adr/README.md).
+#      can see (NUC-documents-are-fixed §3). A clause citation, an ADR's identifier, a space, and
+#      the section sign with a number or a list of them, cites that ADR and no section.
+#   5. ADR-reference integrity: every identifier of a known category, a clause citation's among
+#      them, names an ADR file that exists in docs/adr/ — anticipated follow-ups are described by
+#      topic, never by an identifier that does not exist yet (NUC-adrs-are-named-by-category §6).
+#      A reference is a word of its own: a one-word slug, such as API-first, or a longer chain is
+#      none. An identifier in a Markdown code span is no citation (clause 6) and is not read.
 #   6. ADR link agreement: a Markdown link whose text cites an ADR points at that ADR's own
 #      file — the identifier and the file it links to must name the same decision
 #      (docs/adr/README.md).
@@ -52,13 +58,15 @@
 #      '- **<Name>:** …' of template.md, since scripts/lib/adr.sh reads only that form: a field
 #      in another form would pass here and be skipped by the binding ADRs sensor.
 #   8. Supersession agreement: once the new ADR is accepted, its '**Supersedes:**' field and the
-#      '⚪ superseded by ADR-NNNN' status line of every old one it names — one, or several it
-#      consolidates — name each other; the field names a draft by its identifier. While it is
+#      '⚪ superseded by <identifier>' status line of every old one it names — one, or several it
+#      consolidates — name each other, in either form of identifier. While it is
 #      proposed or rejected, no old one names it as its successor: only a human changes a status,
 #      and the human flips the old lines when accepting the new one (docs/adr/README.md). A new
 #      ADR superseded in its turn counts as accepted, so a chain stays whole. Check 1 cannot
 #      see a missing half: it only mirrors the index against whatever status the file carries.
-#      Every name of a Supersedes field counts, on whichever line it sits.
+#      Every name of a Supersedes field counts, on whichever line it sits. No project ADR
+#      supersedes a 'NUC-' ADR, and each clause an 'Extends:' or 'Narrows:' field names, as
+#      'NUC-<slug> §n', is a numbered clause of that ADR's Decision (NUC-base-is-fixed §1).
 #   9. Check-list agreement: the jobs of .github/workflows/checks.yml and the required status
 #      checks named between the 'required-checks' markers in CONTRIBUTING.md list the same jobs, and
 #      the workflows under .github/workflows/ and scripts/check-all.sh run the same scripts. A
@@ -67,70 +75,69 @@
 #      run in CI and never in the local gate; a workflow check-all.sh names on a '# Not a gate:'
 #      line, one that publishes rather than checks, is exempt, while the scripts it runs still
 #      count, unless only such a workflow runs one and check-all.sh names it on an
-#      '# On instruction:' line, as for a weekly fuzz run (this project's exemption). A script
-#      under scripts/ that neither list runs fails as well, unless check-all.sh names it on an
-#      '# On instruction:' line. A job with a matrix reports one check run per entry, so
-#      CONTRIBUTING.md names it by those, '<job> (<values>)', and never by its bare name.
+#      '# On instruction:' line, as for a weekly fuzz run (this project's exemption,
+#      OPS-measurements-are-no-gate). A script under scripts/ that neither list runs fails as
+#      well, unless check-all.sh names it on an '# On instruction:' line. A job with a matrix
+#      reports one check run per entry, so CONTRIBUTING.md names it by those, '<job> (<values>)',
+#      and never by its bare name.
 #  10. Project Layout integrity: every path listed in the 'Project Layout' block of CONTRIBUTING.md
 #      exists, a trailing '/' meaning a directory. The block is written by hand and nothing else
 #      tells a reader that one of its lines has gone stale. A path with a '*' matches at least one
 #      file, and docs/plan/ may be absent, since open work lives there only while there is some
-#      (ADR-0005). The reverse holds for the top level only: every tracked top-level file and
-#      directory is named, by itself or by a path under it. Below it the block is a tour of the
-#      parts a newcomer needs, not a file listing.
-#  11. Skill pointer integrity: every skill under .agents/skills/ (a directory with a SKILL.md)
-#      has a symlink of the same name under .claude/skills/ that resolves to it, and every entry
-#      under .claude/skills/ is such a symlink (ADR-0003). Claude Code reads only the pointer
-#      directory, so a skill without its pointer is invisible to it and to no other agent —
-#      nobody notices; a copy instead of a symlink is a second source that drifts, and a skill
-#      that lives only in the pointer directory is one no other agent finds. Each message says
-#      the command that fixes it. A repository with neither directory has nothing to check.
-#  12. Inherited ADRs decided: once TEMPLATE-SETUP.md is gone, every ADR in force whose
-#      '**Deciders:**' field names the NUC maintainer also names a decider of this project and is
-#      not 🟡 proposed. An inherited ADR binds a derived project once its own maintainer has added
-#      their name and accepted it, or it is superseded (docs/adr/README.md): an inherited ADR
-#      nobody here decided is a rule nobody decided. A superseded or rejected one is not read.
-#      While the setup file exists the decision is pending by design, and the check is silent.
-#  13. Template identity replaced: once TEMPLATE-SETUP.md is gone, none of the template's
-#      placeholders is left. Step 1 of the setup: the project name NUC in the README title, its
+#      (NUC-large-work-is-planned §2). The reverse holds for the top level only: every tracked
+#      top-level file and directory is named, by itself or by a path under it. Below it the block
+#      is a tour of the parts a newcomer needs, not a file listing.
+#  11. Skills an agent reads: every skill under .agents/skills/ (a directory with a SKILL.md) has
+#      a symlink of its name under .claude/skills/ that resolves to it, and every entry there is
+#      such a symlink (NUC-procedures-are-skills §6); Claude Code reads only that directory, and a
+#      copy drifts. Each SKILL.md opens with '---', closes with '---', and between them has a
+#      'name' equal to its directory and a 'description' (§7); an unindented line there starts a
+#      key or a '- ' item, as a wrap that hides the skill does not, and indented lines pass
+#      unread. Each message says the fix. A repository with neither directory has nothing to check.
+#  12. Base held by its blob list (NUC-base-is-fixed §2): every 'NUC-' file in
+#      docs/adr/ and the rule file AGENTS.md has the git blob identifier its line in
+#      docs/adr/NUC.blobs names, and every line names a file that exists. The template rewrites
+#      the list in the commit that changes one, and a derived project never changes one. Without
+#      a list the check passes when no 'NUC-' file exists, or when the Template release line of
+#      README.md names the release a fork forked, 'vX.Y.Z, forked'.
+#  13. Setup done: once TEMPLATE-SETUP.md is gone, each required role of ADR_ROLES in
+#      scripts/lib/adr.sh has exactly one 🟢 accepted ADR whose 'Role:' field names it
+#      (NUC-base-is-fixed §3), and none of the template's placeholders is left.
+#      Step 1 of the setup: the project name NUC in the README title, its
 #      intro, its Why NUC section, and the Dev Container name, the template's repository in the
 #      README badges, the copyright holder in LICENSE, the security contact in SECURITY.md, the
-#      reporting contact in CODE_OF_CONDUCT.md, and a CODEOWNERS with no active rule or with its TODO. Step 3: the
-#      '<Project Name>' title of the specification, the overview, the glossary, and the
+#      reporting contact in CODE_OF_CONDUCT.md, and a CODEOWNERS with no active rule or with its
+#      TODO. Step 3: the '<Project Name>' title of the specification, the overview, the glossary, and the
 #      conventions, a criterion of the specification still reading '…' or '<Quality', and the
 #      scaffold's '<Part>', '<Term>', and '<Convention>' entries. Step 5: a 'TODO' as the Build,
 #      Test, Lint, or Run command of the README, its Overview sentence, and its Usage TODO. A
 #      placeholder that survives the setup describes the template, not the project. A file that
 #      does not exist has nothing to check.
 #  14. Template release named: README.md carries a '**Template release:**' line naming a
-#      'vX.Y.Z' tag or 'unreleased' (ADR-0004). Tags do not travel with GitHub's template
-#      mechanism, so the line is the one thing that tells a derived project which release of the
-#      template it carries; a release moves it, and a project that takes a release up moves it.
+#      'vX.Y.Z' tag or 'unreleased' (NUC-releases-are-semver-tags §4). Tags do not travel with
+#      GitHub's template mechanism, so the line is the one thing that tells a derived project
+#      which release of the template it carries; a release moves it, and a project that takes a
+#      release up moves it (§5).
 #  15. Prose width: a line of Markdown prose is at most 100 columns, so a diff shows the sentence
 #      that changed. Fenced code, front matter, table rows, headings, and ADR header fields are
 #      exempt, and so is a line that cannot break, such as a link standing on a line of its own.
 #      Superseded and rejected ADRs are not read, nor is a file .gitattributes marks
 #      'linguist-generated', such as a changelog a tool writes. Indented code blocks are read as
 #      prose.
-#  16. No draft on main: a change that lands on main carries no draft ADR — a draft takes its
-#      number on the branch whose pull request brings it there, by scripts/number-adrs.sh
-#      (ADR-0002). The branch a change lands on is the one CI names: the base of a pull request,
-#      else the branch a push runs on. A draft pull request passes, since it tests a feat/ branch
-#      still under rework, and so does a run outside CI, where nothing names the branch; the
-#      workflow says in PULL_REQUEST_DRAFT whether a pull request is a draft.
-#  17. No inactive ADR cited outside the record: an 'ADR-NNNN' reference to a ⚪ superseded or
-#      🔴 rejected ADR in a file outside docs/adr/ is an error naming the file, the line, and the
-#      ADR that supersedes it. Such an ADR explains why and is not a rule (AGENTS.md, section 2),
-#      so a reader sent to it as the decision in force is sent to one the project has left; check
-#      5 passes it, as the file exists. Inside docs/adr/ it is cited by right, as the history a
+#  17. No inactive ADR cited outside the record: a reference to a ⚪ superseded or 🔴 rejected ADR
+#      in a file outside docs/adr/ is an error naming the file, the line, the ADR, and the ADR that
+#      supersedes it. Such an ADR explains why and is not a rule (AGENTS.md, section 2), so a
+#      reader sent to it as the decision in force is sent to one the project has left; check 5
+#      passes it, as the file exists. Inside docs/adr/ it is cited by right, as the history a
 #      successor answers. A line outside that names a superseded ADR as history names its
-#      successor too, and one that names a rejected ADR says 'rejected'.
+#      successor too, and one that names a rejected ADR says 'rejected'. The number 16 is not
+#      reused: it named a check the template has since dropped.
 #
-# Checks 5, 6, and 17 read every text file of the repository, not a list of documentation extensions:
-# docs/adr/README.md states that code may reference an ADR number, so a verifier restricted to
-# documentation file types would leave the references most likely to go stale — those in source
-# comments, which no reviewer reads alongside the ADR index — unchecked. Check 4 reads the
-# section sign only in documentation file types on purpose: 'ADR-NNNN' and the words
+# Checks 5, 6, and 17 read every text file of the repository, not a list of documentation
+# extensions: docs/adr/README.md states that code may reference an ADR, so a verifier restricted
+# to documentation file types would leave the references most likely to go stale — those in
+# source comments, which no reviewer reads alongside the ADR index — unchecked. Check 4 reads the
+# section sign only in documentation file types on purpose: an ADR's identifier and the words
 # 'AGENTS.md, section N' mean one thing wherever they appear, but '§' in source code is an
 # ordinary character (see is_doc_file), and flagging it there would make a project's own string
 # literals fail this repository's CI.
@@ -187,31 +194,32 @@ trim() {
 
 # The header of every ADR, read by one awk pass over the record instead of a grep per field, per
 # ADR, and per check. Keyed by the ADR's path: the first line of each header field anywhere in the
-# file, as adr_field_line reads it (ADR_STATUS, ADR_APPLIES); the Supersedes and Deciders fields
-# with their continuation lines, since a header field wraps (ADR_SUPERSEDES, ADR_DECIDERS); the
-# first '# ADR-' heading (ADR_HEADING); every header field written in another form, as
-# adr_stray_fields reports it (ADR_STRAY); and whether the file still carries the template's
-# instruction paragraph (ADR_NEEDLE). ADR_LIST is every ADR file in the order adr_files gives, ADR_BY_KEY the file each
-# key names.
+# file, as adr_field_line reads it (ADR_STATUS, ADR_APPLIES); the Supersedes, Extends, and Narrows
+# fields with their continuation lines, since a header field wraps (ADR_SUPERSEDES, and ADR_REL
+# keyed '<field> <path>' with the Role field); the first '# ' heading (ADR_HEADING); every header
+# field written in another form, as adr_stray_fields reports it (ADR_STRAY); and whether the file
+# still carries the template's instruction paragraph (ADR_NEEDLE). ADR_LIST is every ADR file in
+# the order adr_files gives, ADR_BY_ID the file each identifier names.
 ADR_LIST=()
-declare -A ADR_KNOWN=() ADR_BY_KEY=() ADR_STATUS=() ADR_APPLIES=() ADR_SUPERSEDES=() ADR_DECIDERS=() ADR_HEADING=() \
-  ADR_STRAY=() ADR_NEEDLE=()
+declare -A ADR_KNOWN=() ADR_BY_ID=() ADR_STATUS=() ADR_APPLIES=() ADR_SUPERSEDES=() ADR_HEADING=() \
+  ADR_STRAY=() ADR_NEEDLE=() ADR_REL=()
 read_adr_headers() {
   local file field value
+  adr_categories "$ADR_INDEX"
   [[ -d "$ADR_DIR" ]] || return 0
   mapfile -t ADR_LIST < <(adr_files "$ADR_DIR")
   ((${#ADR_LIST[@]})) || return 0
   for file in "${ADR_LIST[@]}"; do
     ADR_KNOWN["$file"]=1
     adr_key_of "$file"
-    [[ -v ADR_BY_KEY["$ADR_KEY"] ]] || ADR_BY_KEY["$ADR_KEY"]="$file"
+    [[ -v ADR_BY_ID["$ADR_ID"] ]] || ADR_BY_ID["$ADR_ID"]="$file"
   done
   while IFS=$'\x1f' read -r file field value; do
     case "$field" in
       Status) ADR_STATUS["$file"]="$value" ;;
       "Applies to") ADR_APPLIES["$file"]="$value" ;;
       Supersedes) ADR_SUPERSEDES["$file"]+="$value"$'\n' ;;
-      Deciders) ADR_DECIDERS["$file"]+="$value"$'\n' ;;
+      Extends | Narrows | Role) ADR_REL["$field $file"]+="$value"$'\n' ;;
       heading) ADR_HEADING["$file"]="$value" ;;
       stray) ADR_STRAY["$file"]+="$value"$'\n' ;;
       needle) ADR_NEEDLE["$file"]=1 ;;
@@ -223,14 +231,14 @@ read_adr_headers() {
       if (head && /^## /) head = 0
       if (head && $0 ~ mark && $0 !~ item) out("stray", FNR ":" $0)
       if (needle != "" && !("needle" in seen) && index($0, needle)) { seen["needle"]; out("needle", 1) }
-      if (!("heading" in seen) && /^# ADR-/) { seen["heading"]; out("heading", $0) }
+      if (!("heading" in seen) && /^# /) { seen["heading"]; out("heading", $0) }
       if (cont != "" && /^[[:space:]]+[^[:space:]]/) { out(cont, $0); next }
       cont = ""
       if (match($0, field)) {
         name = substr($0, 5, RLENGTH - 7)
         if (!(name in seen)) {
           seen[name]; out(name, $0)
-          if (name == "Supersedes" || name == "Deciders") cont = name
+          if (name == "Supersedes" || name == "Extends" || name == "Narrows") cont = name
         }
       }
     }
@@ -290,7 +298,8 @@ collect_text_files() {
 # and in source code, the section sign is an ordinary character with its own meanings — a statute
 # cited in a German string literal, a translated message, a test fixture — none of which are
 # claims about a section of AGENTS.md.
-# The ADR checks scan every text file because 'ADR-NNNN' is unambiguous; this notation is not.
+# The ADR checks scan every text file because an identifier of a known category is unambiguous;
+# this notation is not.
 is_doc_file() {
   case "$1" in
     *.md | *.yml | *.yaml | *.sh | "$ROOT"/.githooks/*) return 0 ;;
@@ -311,23 +320,23 @@ is_inactive_adr() {
   [[ "$status" == *⚪* || "$status" == *🔴* ]]
 }
 
-check_adr_index() {
+check_adr_index() {  # check 1
   if [[ ! -f "$ADR_INDEX" ]]; then
     add_error "ADR index not found: docs/adr/README.md"
     return
   fi
 
-  # ADR files on disk (basenames), numbered and drafts; the template is neither.
+  # ADR files on disk (basenames), of either form, but the base; the template is neither.
   local disk_files=()
   local f
-  for f in "${ADR_LIST[@]}"; do disk_files+=("${f##*/}"); done
+  for f in "${ADR_LIST[@]}"; do [[ "${f##*/}" == NUC-* ]] || disk_files+=("${f##*/}"); done
 
   # Parse the index into parallel arrays: filename, 'Applies to' cell, and status emoji per row.
   # Columns are '| ADR | Title | Applies to | Status |'; the cell is compared verbatim.
   local indexed_files=() indexed_applies=() indexed_status=()
   local line number target filename applies status archive=0
   local -a cells
-  local row_re="^\\|[[:space:]]*\\[($ADR_NUMBER_RE|draft-[^]]+)\\]\\(([^)]+)\\)"
+  local row_re="^\\|[[:space:]]*\\[([A-Za-z]+-[^]]+)\\]\\(([^)]+)\\)"
   while IFS= read -r line; do
     [[ "$line" =~ ^#+[[:space:]]+Superseded\ and\ rejected[[:space:]]*$ ]] && { archive=1; continue; }
     [[ "$line" =~ $row_re ]] || continue
@@ -343,12 +352,10 @@ check_adr_index() {
     indexed_files+=("$filename")
     indexed_applies+=("$applies")
     indexed_status+=("$status")
-    if adr_is_draft "$number"; then
-      [[ "$filename" == "$number.md" ]] \
-        || add_error "ADR index: row for $number links to '$filename', not to '$number.md'"
-    elif [[ "$filename" != "$number"-* ]]; then
-      add_error "ADR index: row for $number links to '$filename', which does not start with '$number-'"
-    fi
+    [[ "$number" == NUC-* ]] && add_error \
+      "ADR index: lists $number, an ADR of the base — the index links the base in one line and lists no NUC- ADR (NUC-adrs-are-named-by-category §5)"
+    [[ "$filename" == "$number.md" ]] \
+      || add_error "ADR index: row for $number links to '$filename', not to '$number.md'"
     case "$status" in
       ⚪|🔴)
         ((archive)) \
@@ -405,62 +412,47 @@ check_adr_index() {
   done
 }
 
-# ADR numbers run 0001..N without gaps, and each file's heading carries its own number.
-# Superseded ADRs stay on disk, so a gap can only ever mean a deleted ADR or a botched rename.
-check_adr_numbering() {
-  local f base expected heading key n=0
+# Check 2 (see the header). An identifier is never reused, so a deleted one, read off the
+# history, stays taken. The history is the first-parent line of HEAD, each merge read against the
+# branch it landed on: a side branch that deleted an ADR and wrote it anew deleted nothing there.
+check_adr_identifiers() {  # check 2
+  local f base heading id commit
+  local -A deleted=()
+  [[ -d "$ADR_DIR" ]] && while IFS= read -r f; do
+    add_error "${f##*/}: a numbered ADR, a form no check reads — map it to '<CAT>-<slug>' with .agents/skills/normalize/remap.sh, as the normalize skill's migration says"
+  done < <(LC_ALL=C find "$ADR_DIR" -maxdepth 1 -type f -name '[0-9]*-*.md' | LC_ALL=C sort)
   for f in "${ADR_LIST[@]}"; do
     base="${f##*/}"
-    adr_is_draft "$base" && continue
     adr_key_of "$base"
-    n=$((n + 1))
-    printf -v expected '%04d' "$n"
-    if [[ "$ADR_KEY" != "$expected" ]]; then
-      add_error "ADR numbering: expected '$expected-*.md' at position $n, found '$base' — numbers must run 0001..N without gaps"
-      break
+    if [[ ! "$ADR_ID" =~ ^$ADR_NEW_RE$ ]]; then
+      add_error "$base: the identifier is not '<CAT>-<slug>': two to five capital letters, a hyphen, and two to five lower case words or numbers joined by hyphens"
+      continue
+    elif ! _contains "${ADR_ID%%-*}" "${ADR_CATEGORIES[@]}"; then
+      add_error "$base: the category ${ADR_ID%%-*} is neither fixed nor in the category list of docs/adr/README.md"
     fi
-    heading=""
-    [[ "${ADR_HEADING["$f"]-}" =~ ^#\ ADR-$ADR_NUMBER_RE ]] && heading="${BASH_REMATCH[0]}"
-    if [[ "$heading" != "# ADR-$ADR_KEY" ]]; then
-      add_error "$base: heading says '${heading:-<none>}', but the filename says ADR-$ADR_KEY"
-    fi
+    heading="${ADR_HEADING["$f"]-}"
+    [[ "$heading" == "# $ADR_ID:"* ]] \
+      || add_error "$base: heading says '${heading:-<none>}', but the filename says $ADR_ID"
   done
-
-  # A draft stands outside the count; its slug and heading follow its file name (ADR-0002).
+  # Without a commit there is no history; a git that cannot read it, such as one before 2.31
+  # without --diff-merges, is an error, not a pass.
+  local log=""
+  if git -C "$ROOT" rev-parse -q --verify 'HEAD^{commit}' > /dev/null 2>&1; then
+    local args=(log --first-parent --diff-merges=first-parent --no-renames --diff-filter=D --name-only
+                --format='commit %h' HEAD -- ":(glob)docs/adr/$ADR_GLOB")
+    # stderr stays out of the list: a warning on a success would be read as a file name.
+    log="$(git -C "$ROOT" "${args[@]}" 2>/dev/null)" || { log="$(git -C "$ROOT" "${args[@]}" 2>&1 >/dev/null)"
+      add_error "ADR identifiers: git log cannot read the deleted ADRs (git 2.31 or later is needed): ${log%%$'\n'*}"; log=""; }
+  fi
+  while IFS= read -r f; do
+    if [[ "$f" == commit\ * ]]; then commit="${f#commit }"; elif [[ -n "$f" && ! -v deleted["${f##*/}"] ]]; then deleted["${f##*/}"]="$commit"; fi
+  done <<< "$log"
   for f in "${ADR_LIST[@]}"; do
     base="${f##*/}"
-    adr_is_draft "$base" || continue
-    key="${base%.md}"
-    if [[ ! "$key" =~ ^draft-$ADR_SLUG_RE$ ]]; then
-      add_error "$base: a draft's slug is lower case letters and digits joined by single hyphens"
-      continue
-    fi
-    heading=""
-    [[ "${ADR_HEADING["$f"]-}" =~ ^#\ $ADR_REF_RE ]] && heading="${BASH_REMATCH[0]}"
-    if [[ "$heading" != "# ADR-$key" ]]; then
-      add_error "$base: heading says '${heading:-<none>}', but the filename says ADR-$key"
-    fi
+    [[ -v deleted["$base"] ]] || continue
+    id="${base%.md}"
+    add_error "$base: the identifier $id was taken by a deleted ADR, deleted in ${deleted["$base"]} — a successor takes a new slug"
   done
-}
-
-# Check 16 (see the header). lands_on — the branch CI says the change lands on: the base of a pull
-# request, else the branch a push or a run by hand runs on; nothing outside CI.
-lands_on() {
-  if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
-    printf '%s\n' "$GITHUB_BASE_REF"
-  elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-    printf '%s\n' "${GITHUB_REF_NAME:-}"
-  fi
-}
-
-check_no_draft_on_main() {
-  [[ "$(lands_on)" == "main" ]] || return
-  # A draft pull request tests a feat/ branch still under rework; marking it ready runs this again.
-  [[ "${PULL_REQUEST_DRAFT:-}" == "true" ]] && return
-  local f
-  while IFS= read -r f; do
-    add_error "$(basename "$f"): a draft lands on main — give it its number first with scripts/number-adrs.sh (ADR-0002)"
-  done < <(adr_files "$ADR_DIR" draft)
 }
 
 # instruction_needle — the opening of the instruction paragraph in docs/adr/template.md: the first
@@ -480,7 +472,7 @@ instruction_needle() {
 # list of alternatives ('🟡 proposed | 🟢 accepted | …') as whatever stands first, and a line whose word
 # and emoji disagree passes there on the strength of the emoji — while the word is what a reader
 # believes. A missing or emoji-less status line is left to check_adr_index, which reports it.
-check_adr_headers() {
+check_adr_headers() {  # check 7
   local f base line expected word stray
   for f in "${ADR_LIST[@]}"; do
     base="${f##*/}"
@@ -510,13 +502,12 @@ check_adr_headers() {
   done
 }
 
-# superseding_key <status line> — sets SUCCESSOR to the key, a four-digit number or
-# 'draft-<slug>', that a '⚪ superseded by ADR-NNNN' status line names, empty when it names none.
-# The citation may be plain or a Markdown link, so the bracket is optional (docs/adr/README.md
-# asks for the link form).
+# superseding_id <status line> — sets SUCCESSOR to the identifier that a '⚪ superseded by <id>'
+# status line names, empty when it names none. The citation may be plain or a Markdown link, so
+# the bracket is optional (docs/adr/README.md asks for the link form).
 SUCCESSOR=""
-superseding_key() {
-  local re="superseded by \\[?$ADR_REF_RE"
+superseding_id() {
+  local re="superseded by \\[?($ADR_REF_RE)([^$ADR_WORD_CHARS]|\$)"
   SUCCESSOR=""
   [[ "$1" =~ $re ]] && SUCCESSOR="${BASH_REMATCH[1]}"
   return 0
@@ -527,8 +518,8 @@ REFS=()
 adr_refs() {
   local rest="$1"
   REFS=()
-  while [[ "$rest" =~ $ADR_REF_RE ]]; do
-    REFS+=("${BASH_REMATCH[0]}")
+  while [[ "$rest" =~ $ADR_REF_WORD_RE ]]; do
+    REFS+=("${BASH_REMATCH[2]}")
     rest="${rest#*"${BASH_REMATCH[0]}"}"
   done
 }
@@ -540,12 +531,12 @@ adr_refs() {
 # are verified here; a cited number that names no file is left to check_adr_refs, which reports
 # it repository-wide. A Supersedes field wraps at the line width like any other header field,
 # and a name on its second line counts.
-check_adr_supersessions() {
-  local f base nr line target target_file succ_file named accepted
+check_adr_supersessions() {  # check 8
+  local f base nr line target target_file succ_file named accepted field rest re="(NUC-$ADR_SLUG_RE) ?§ ?([0-9]+)"
   for f in "${ADR_LIST[@]}"; do
     base="${f##*/}"
     adr_key_of "$f"
-    nr="$ADR_KEY"
+    nr="$ADR_ID"
     line="${ADR_STATUS["$f"]-}"
 
     # Forward: once this one is accepted, every ADR it claims to supersede — one, or several
@@ -556,32 +547,47 @@ check_adr_supersessions() {
     [[ "$EMOJI" == "🟢" || "$EMOJI" == "⚪" ]] && accepted=1
     adr_refs "${ADR_SUPERSEDES["$f"]-}"
     for target in "${REFS[@]}"; do
-      target_file="${ADR_BY_KEY["${target#ADR-}"]-}"
+      [[ "$target" == NUC-* && "$base" != NUC-* ]] && add_error \
+        "$base: supersedes $target — no project ADR supersedes the base; extend or narrow its clause, or fork the template (NUC-base-is-fixed §1)"
+      target_file="${ADR_BY_ID["$target"]-}"
       if [[ -n "$target_file" ]] && ((accepted)); then
-        superseding_key "${ADR_STATUS["$target_file"]-}"
+        superseding_id "${ADR_STATUS["$target_file"]-}"
         [[ "$SUCCESSOR" == "$nr" ]] || add_error \
-          "${target_file##*/}: $base supersedes it, but its status line does not say 'superseded by ADR-$nr'"
+          "${target_file##*/}: $base supersedes it, but its status line does not say 'superseded by $nr'"
       fi
     done
 
     # Backward: a superseded ADR names its successor, and the successor claims it.
-    superseding_key "$line"
+    superseding_id "$line"
     if [[ -z "$SUCCESSOR" ]]; then
       status_emoji "$line"
       [[ "$EMOJI" == "⚪" ]] && add_error "$base: status is ⚪ but the line names no superseding ADR"
     else
-      succ_file="${ADR_BY_KEY["$SUCCESSOR"]-}"
+      succ_file="${ADR_BY_ID["$SUCCESSOR"]-}"
       if [[ -n "$succ_file" ]]; then
         adr_refs "${ADR_SUPERSEDES["$succ_file"]-}"
         named=0
-        for target in "${REFS[@]}"; do [[ "$target" == "ADR-$nr" ]] && named=1; done
-        ((named)) || add_error "${succ_file##*/}: $base says it supersedes, but it carries no '**Supersedes:**' field naming ADR-$nr"
+        for target in "${REFS[@]}"; do [[ "$target" == "$nr" ]] && named=1; done
+        ((named)) || add_error "${succ_file##*/}: $base says it supersedes, but it carries no '**Supersedes:**' field naming $nr"
         # A successor superseded in its turn was accepted before: a chain of supersessions.
         status_emoji "${ADR_STATUS["$succ_file"]-}"
         [[ "$EMOJI" == "🟢" || "$EMOJI" == "⚪" ]] || add_error \
-          "$base: superseded by ADR-$SUCCESSOR, which is not accepted — the status line flips when the human accepts ADR-$SUCCESSOR"
+          "$base: superseded by $SUCCESSOR, which is not accepted — the status line flips when the human accepts $SUCCESSOR"
       fi
     fi
+
+    # An extension or a narrowing names clauses of the base that exist.
+    for field in Extends Narrows; do
+      rest="${ADR_REL["$field $f"]-}"
+      [[ -n "$rest" ]] || continue
+      [[ "$rest" =~ $re ]] || add_error "$base: the $field field names no clause of a NUC- ADR, 'NUC-<slug> §n' (NUC-base-is-fixed §1)"
+      while [[ "$rest" =~ $re ]]; do
+        rest="${rest#*"${BASH_REMATCH[0]}"}" target="${BASH_REMATCH[1]} §${BASH_REMATCH[-1]}"
+        target_file="${ADR_BY_ID["${BASH_REMATCH[1]}"]-}"
+        [[ -z "$target_file" ]] || grep -qE "^${BASH_REMATCH[-1]}\. " <<< "$(adr_section Decision < "$target_file")" \
+          || add_error "$base: $field $target, a clause its Decision does not have"
+      done
+    done
   done
 }
 
@@ -705,7 +711,7 @@ link_target() {
   LINK_TARGET="$target"
 }
 
-check_relative_links() {
+check_relative_links() {  # check 3
   local md rel linkexpr target path_part frag dir target_file
   for md in "${TEXT_FILES[@]}"; do
     case "$md" in *.md) ;; *) continue ;; esac
@@ -719,10 +725,9 @@ check_relative_links() {
       case "$target" in
         http://*|https://*|mailto:*) continue ;;
       esac
-      # 'NNNN' is the placeholder docs/adr/template.md uses where a real ADR carries its number,
-      # so such a target names no file and claims none exists — the convention checks 5 and 6
-      # follow by matching only references with actual digits.
-      case "$target" in *NNNN*) continue ;; esac
+      # '<CAT>' is the placeholder docs/adr/template.md uses where a real ADR carries its
+      # identifier, so such a target names no file and claims none exists.
+      case "$target" in *'<CAT>'*) continue ;; esac
       # Split into a path part and an optional '#fragment'. An empty path is a same-file anchor.
       path_part="${target%%#*}"
       frag=""
@@ -745,6 +750,26 @@ check_relative_links() {
   done
 }
 
+# code_spans_out <line> — sets LINE to the line without its inline code spans. A span runs from a
+# backtick to the next one; an unpaired backtick stays.
+LINE=""
+code_spans_out() {
+  local rest="$1"
+  LINE=""
+  while [[ "$rest" == *'`'*'`'* ]]; do
+    LINE+="${rest%%\`*}" rest="${rest#*\`}" rest="${rest#*\`}"
+  done
+  LINE+="$rest"
+}
+
+# clauses_out <line> — sets LINE to the line without its clause citations, an ADR's identifier, a
+# space, and the section sign with a number, or a list of them ('§4, §5', '§4 and §5', '§2–§5').
+clauses_out() {
+  local re="($ADR_REF_RE) §[0-9]+((, |,? and |–)§[0-9]+)*"
+  LINE="$1"
+  while [[ "$LINE" =~ $re ]]; do LINE="${LINE/"${BASH_REMATCH[0]}"/}"; done
+}
+
 # Section references point into AGENTS.md, whose sections are numbered '## N.' headings. Inserting
 # or removing a section renumbers the ones after it, and a bare '§N' would keep pointing at
 # whatever now carries that number — valid-looking and wrong. In Markdown a reference is therefore
@@ -756,7 +781,7 @@ check_relative_links() {
 # Named gap (AGENTS.md, section 5): outside Markdown there are no links, so a '§N' in a workflow or
 # a script comment is still only checked for the number existing. Those references live in files a
 # maintainer edits next to AGENTS.md; the weaker guarantee is recorded here rather than hidden.
-check_section_refs() {
+check_section_refs() {  # check 4
   local agents="$ROOT/AGENTS.md"
   if [[ ! -f "$agents" ]]; then
     add_error "AGENTS.md not found in the repository root"
@@ -817,15 +842,10 @@ check_section_refs() {
           line="${line#*:}"
           # Inline code spans hold literals, not citations: '`§1`' in a sentence about references
           # is the notation itself. Dropping them also strips the '`AGENTS.md`' inside a link text,
-          # which leaves the link expression itself intact. A span runs from a backtick to the
-          # next one; an unpaired backtick stays.
-          rest="$line" line=""
-          while [[ "$rest" == *'`'*'`'* ]]; do
-            line+="${rest%%\`*}"
-            rest="${rest#*\`}"
-            rest="${rest#*\`}"
-          done
-          line+="$rest"
+          # which leaves the link expression itself intact.
+          code_spans_out "$line"
+          clauses_out "$LINE"
+          line="$LINE"
           [[ "$line" == *§* ]] || continue
           # Split the line into its links and what is left once every link is removed, which is a
           # reference nothing verifies. Each match is the leftmost one, so cutting the text up to
@@ -868,20 +888,20 @@ check_section_refs() {
         ;;
       *)
         while IFS=: read -r lineno line; do
-          n="${line#§}"
-          _contains "$n" "${valid_sections[@]}" \
-            || add_error "$rel:$lineno: reference '§$n' matches no numbered section in AGENTS.md"
-        done < <(grep -noE '§[0-9]+' "$f")
+          clauses_out "$line"
+          while [[ "$LINE" =~ §([0-9]+) ]]; do
+            n="${BASH_REMATCH[1]}" LINE="${LINE#*"${BASH_REMATCH[0]}"}"
+            _contains "$n" "${valid_sections[@]}" \
+              || add_error "$rel:$lineno: reference '§$n' matches no numbered section in AGENTS.md"
+          done
+        done < <(grep -nE '§[0-9]+' "$f")
         ;;
     esac
   done
 }
 
-# Every 'ADR-NNNN' reference (with digits — the literal 'ADR-NNNN' placeholder never matches)
-# must name an ADR file that already exists. Anticipated follow-up decisions are described by
-# topic, not by a reserved number (docs/adr/README.md).
-check_adr_refs() {
-  local f files=() lineno match
+check_adr_refs() {  # check 5
+  local f files=() lineno line match
   for f in "${TEXT_FILES[@]}"; do
     [[ "$f" == "$ADR_DIR/template.md" ]] && continue
     is_inactive_adr "$f" && continue
@@ -889,10 +909,14 @@ check_adr_refs() {
   done
   ((${#files[@]})) || return 0
   # One grep over every file; --null ends each file name with a NUL, which no path carries.
-  while IFS= read -r -d '' f && IFS=: read -r lineno match; do
-    [[ -v ADR_BY_KEY["${match#ADR-}"] ]] \
-      || add_error "${f#"$ROOT"/}:$lineno: reference '$match' matches no ADR file in docs/adr/"
-  done < <(grep -Hno --null -E "$ADR_REF_RE" "${files[@]}")
+  while IFS= read -r -d '' f && IFS=: read -r lineno line; do
+    [[ "$f" == *.md ]] && code_spans_out "$line" && line="$LINE"
+    while [[ "$line" =~ $ADR_REF_WORD_RE ]]; do
+      match="${BASH_REMATCH[2]}" line="${line#*"${BASH_REMATCH[0]}"}"
+      [[ -v ADR_BY_ID["$match"] ]] \
+        || add_error "${f#"$ROOT"/}:$lineno: reference '$match' matches no ADR file in docs/adr/"
+    done
+  done < <(grep -Hn --null -E "$ADR_REF_RE" "${files[@]}")
 }
 
 # A superseded or rejected ADR cited outside docs/adr/ sends a reader to a decision the project
@@ -900,47 +924,43 @@ check_adr_refs() {
 # ADR after its successor landed until a review found it. A line that names the successor as
 # well, or says the ADR was rejected, tells the history apart from the decision in force and
 # passes.
-check_inactive_adr_refs() {
-  local f adr rel lineno text key successor
-  local -A inactive=() seen=()
+check_inactive_adr_refs() {  # check 17
+  local f adr lineno text id successor
+  local -A inactive=() seen=() named=()
   for adr in "${ADR_LIST[@]}"; do
     is_inactive_adr "$adr" || continue
     adr_key_of "$adr"
-    superseding_key "${ADR_STATUS["$adr"]-}"
-    inactive["$ADR_KEY"]="$SUCCESSOR"
+    superseding_id "${ADR_STATUS["$adr"]-}"
+    inactive["$ADR_ID"]="$SUCCESSOR"
   done
   ((${#inactive[@]})) || return 0
+  local files=()
   for f in "${TEXT_FILES[@]}"; do
-    [[ "$f" == "$ADR_DIR"/* ]] && continue
-    rel="${f#"$ROOT"/}"
-    while IFS=: read -r lineno text; do
-      adr_refs "$text"
-      seen=()
-      for key in "${REFS[@]}"; do
-        key="${key#ADR-}"
-        [[ -v "inactive[$key]" && ! -v "seen[$key]" ]] || continue
-        seen["$key"]=1
-        successor="${inactive[$key]}"
-        if [[ -n "$successor" ]]; then
-          [[ "$text" == *"ADR-$successor"* ]] && continue
-          add_error "$rel:$lineno: cites ADR-$key, which is superseded by ADR-$successor — cite ADR-$successor, or name it on the same line to cite ADR-$key as history"
-        else
-          [[ "$text" == *rejected* ]] && continue
-          add_error "$rel:$lineno: cites ADR-$key, which is rejected — cite the decision in force, or say on the same line that ADR-$key was rejected"
-        fi
-      done
-    done < <(grep -nE "$ADR_REF_RE" "$f")
+    [[ "$f" == "$ADR_DIR"/* ]] || files+=("$f")
   done
+  ((${#files[@]})) || return 0
+  # One grep over every file; --null ends each file name with a NUL, which no path carries.
+  while IFS= read -r -d '' f && IFS=: read -r lineno text; do
+    adr_refs "$text"
+    seen=() named=()
+    for id in "${REFS[@]}"; do named["$id"]=1; done
+    for id in "${REFS[@]}"; do
+      [[ -v inactive["$id"] && ! -v seen["$id"] ]] || continue
+      seen["$id"]=1
+      successor="${inactive["$id"]}"
+      if [[ -n "$successor" ]]; then
+        [[ -v named["$successor"] ]] && continue
+        add_error "${f#"$ROOT"/}:$lineno: cites $id, which is superseded by $successor — cite $successor, or name it on the same line to cite $id as history"
+      else
+        [[ "$text" == *rejected* ]] && continue
+        add_error "${f#"$ROOT"/}:$lineno: cites $id, which is rejected — cite the decision in force, or say on the same line that $id was rejected"
+      fi
+    done
+  done < <(grep -Hn --null -E "$ADR_REF_RE" "${files[@]}")
 }
 
-# A Markdown link that cites 'ADR-NNNN' in its text must point at that ADR's own file. Both
-# halves resolve on their own — the number names a file that exists, the target is a file that
-# exists — so a renumbering, a copied line, or a consolidated decision set leaves the two naming
-# different ADRs without any single check noticing. Only links into docs/adr/ are compared; a
-# reference that deliberately points elsewhere (an index, a section about the decision) is left
-# alone.
-check_adr_link_targets() {
-  local f rel linkexpr text target base number
+check_adr_link_targets() {  # check 6
+  local f rel linkexpr text target base id dir
   for f in "${TEXT_FILES[@]}"; do
     case "$f" in *.md) ;; *) continue ;; esac
     rel="${f#"$ROOT"/}"
@@ -951,30 +971,24 @@ check_adr_link_targets() {
       # The text runs from the opening bracket to the first closing one, which it cannot contain.
       text="${linkexpr#\[}"
       text="${text%%]*}"
-      [[ "$text" =~ $ADR_REF_RE ]] || continue
-      number="${BASH_REMATCH[1]}"
+      [[ "$text" =~ $ADR_REF_WORD_RE ]] || continue
+      id="${BASH_REMATCH[2]}"
       link_target "$linkexpr"
       target="${LINK_TARGET%%#*}"
       base="${target##*/}"
-      # Compare only against ADR filenames; anything else is not a claim about which ADR it is.
+      # Compare only against an ADR file in docs/adr/; anything else is not a claim about which
+      # ADR it is.
+      dir="${f%/*}"
+      [[ "$target" == */* ]] && dir+="/${target%/*}"
       adr_is_file "$base" || continue
-      if adr_is_draft "$number"; then
-        [[ "$base" == "$number.md" ]]
-      else
-        [[ "$base" == "$number"-* ]]
-      fi || add_error "$rel: link '$linkexpr' cites ADR-$number but points at '$base'"
+      [[ "$(cd "$dir" 2>/dev/null && pwd)" == "$ADR_DIR" ]] || continue
+      adr_key_of "$base"
+      [[ "$ADR_ID" == "$id" ]] || add_error "$rel: link '$linkexpr' cites $id but points at '$base'"
     done <<< "${MD_LINKS["$f"]-}"
   done
 }
 
-# The three places that list this repository's checks have to agree: the jobs in
-# .github/workflows/checks.yml, the invocations in scripts/check-all.sh, and the required status
-# checks named in CONTRIBUTING.md. AGENTS.md, section 5 makes check-all.sh the local equivalent of
-# the workflow, and that list is what a maintainer configures the ruleset from — a check that runs
-# in only one of the three is a gate somebody believes in and does not have. Both files say in their
-# own header that a check added to one is added to the other in the same change; this is that
-# sentence, verified.
-check_check_lists() {
+check_check_lists() {  # check 9
   local rel_wf=".github/workflows/checks.yml" rel_all="scripts/check-all.sh"
   local wf="$ROOT/$rel_wf" all="$ROOT/$rel_all" readme="$ROOT/CONTRIBUTING.md"
   local f
@@ -1060,7 +1074,8 @@ check_check_lists() {
 
   # A script that only a workflow named on a '# Not a gate:' line runs, such as a weekly fuzz
   # run, may instead be named on an '# On instruction:' line: it runs for hours, and a push
-  # cannot wait for it. This exemption is the project's, not the template's.
+  # cannot wait for it. This exemption is the project's, not the template's
+  # (OPS-measurements-are-no-gate).
   local on_instruction=() name
   while IFS= read -r name; do on_instruction+=("$name"); done \
     < <(sed -n 's/^#[[:space:]]*On instruction:[[:space:]]*\(scripts\/[A-Za-z0-9._-]*\.sh\).*/\1/p' "$all")
@@ -1077,8 +1092,11 @@ check_check_lists() {
   done
 
   # Every script under scripts/ runs in the two lists, unless the local runner names it on a line
-  # '# On instruction: scripts/<name>.sh', as for a sensor that reads GitHub (ADR-0002). A script
-  # in neither list is a check nobody runs.
+  # '# On instruction: scripts/<name>.sh', as for a sensor that reads GitHub
+  # (NUC-checks-are-bash §7). A script in neither list is a check nobody runs.
+  local on_instruction=() name
+  while IFS= read -r name; do on_instruction+=("$name"); done \
+    < <(sed -n 's/^#[[:space:]]*On instruction:[[:space:]]*\(scripts\/[A-Za-z0-9._-]*\.sh\).*/\1/p' "$all")
   while IFS= read -r name; do
     s="scripts/${name##*/}"
     [[ "$s" == "$rel_all" ]] && continue
@@ -1123,14 +1141,7 @@ check_check_lists() {
   done
 }
 
-# The Project Layout block in CONTRIBUTING.md is a hand-written inventory, and nothing tells a
-# reader that a line of it has gone stale: a renamed or deleted path leaves the block describing a
-# repository that no longer exists. Every path it lists therefore has to exist, a trailing '/'
-# meaning a directory.
-#
-# Only that direction is checked. The block is a tour of the parts a newcomer needs, not a listing
-# of every file, so a path missing from it is an editorial judgment rather than a defect.
-check_project_layout() {
+check_project_layout() {  # check 10
   local readme="$ROOT/CONTRIBUTING.md"
   if [[ ! -f "$readme" ]]; then
     add_error "CONTRIBUTING.md: not found — the Project Layout block cannot be checked"
@@ -1159,7 +1170,7 @@ check_project_layout() {
       compgen -G "$ROOT/$path" >/dev/null \
         || add_error "CONTRIBUTING.md: Project Layout lists '$path', which matches nothing in this repository"
     elif [[ "$path" == */ ]]; then
-      # Open work lives under docs/plan/ only while there is some (ADR-0005).
+      # Open work lives under docs/plan/ only while there is some (NUC-large-work-is-planned §2).
       [[ -d "$ROOT/${path%/}" || "$path" == "docs/plan/" ]] \
         || add_error "CONTRIBUTING.md: Project Layout lists '$path', which is not a directory of this repository"
     else
@@ -1186,12 +1197,20 @@ check_project_layout() {
 
 # Check 11 (see the header). A pointer is resolved with 'cd -P', which every shell has, rather
 # than realpath, whose flags differ between GNU and BSD.
-check_skill_pointers() {
+check_skill_pointers() {  # check 11
   local skills="$ROOT/.agents/skills" pointers="$ROOT/.claude/skills"
   local d name p target want
   for d in "$skills"/*/; do
     [[ -f "$d/SKILL.md" ]] || continue
     name="$(basename "$d")"
+    awk -v name="$name" 'NR == 1 { if ($0 !~ /^---[ \t]*$/) exit; next }
+      /^---[ \t]*$/ { closed = 1; exit }
+      /^([ \t#]|-([ \t]|$)|$)/ { next }
+      !/^[A-Za-z0-9_-]+:([ \t]|$)/ { exit }
+      /^name:/ { v = $0; sub(/^name:[ \t]*/, "", v); gsub(/^["\047]|["\047]?[ \t]*$/, "", v); n = v == name }
+      /^description:/ { desc = 1 }
+      END { exit !(closed && n && desc) }' "$d/SKILL.md" \
+      || add_error ".agents/skills/$name/SKILL.md: no front matter an agent reads — '---' first, a 'name: $name' and a 'description:' line, unindented lines only keys, then '---' (NUC-procedures-are-skills §7)"
     p="$pointers/$name"
     if [[ -L "$p" ]]; then
       continue
@@ -1207,7 +1226,7 @@ check_skill_pointers() {
     if [[ ! -L "$p" ]]; then
       # A copy of an existing skill was reported above; what is left is a skill living here only.
       [[ -f "$skills/$name/SKILL.md" ]] \
-        || add_error ".claude/skills/$name: is not a symlink into .agents/skills/ — a skill lives there, where every agent reads it, and is pointed at from here (ADR-0003)"
+        || add_error ".claude/skills/$name: is not a symlink into .agents/skills/ — a skill lives there, where every agent reads it, and is pointed at from here (NUC-procedures-are-skills §6)"
       continue
     fi
     if ! target="$(cd -P "$p" 2>/dev/null && pwd -P)"; then
@@ -1220,31 +1239,34 @@ check_skill_pointers() {
   done
 }
 
-# Check 12 (see the header). Inherited means the Deciders field still names the template's
-# maintainer, on whichever of its lines; a derived project's own ADRs never do. Another decider
-# is whatever is left of the field once that name, commas, and the word 'and' are removed.
-check_inherited_adrs() {
-  [[ -f "$ROOT/TEMPLATE-SETUP.md" ]] && return
-  local f base deciders others status
-  for f in "${ADR_LIST[@]}"; do
-    deciders="${ADR_DECIDERS["$f"]-}"
-    [[ "$deciders" == *"NUC maintainer"* ]] || continue
-    status_emoji "${ADR_STATUS["$f"]-}"
-    status="$EMOJI"
-    [[ "$status" == "⚪" || "$status" == "🔴" ]] && continue
-    base="${f##*/}"
-    others="$(sed -E "s/${ADR_ITEM_RE}Deciders:[*][*]//"'; s/NUC maintainer//g; s/(^|[[:space:],])and([[:space:],]|$)/ /g; s/[[:space:],]//g' <<< "$deciders" | tr -d '\n')"
-    if [[ -z "$others" ]]; then
-      add_error "$base: inherited from the template and not decided by this project — add your name to Deciders and accept it, or supersede it (docs/adr/README.md)"
-    elif [[ "$status" == "🟡" ]]; then
-      add_error "$base: inherited from the template and still proposed after setup — flip the status to accepted, or supersede it (docs/adr/README.md)"
-    fi
+# Check 12 (see the header), both ways, one message for the template and a derived project.
+check_base_blobs() {  # check 12
+  local list="$ADR_DIR/NUC.blobs" f name blob fix out
+  fix="a derived project restores the file of its release and narrows a rule by an ADR of its own; the template rewrites the list: bash -c 'source scripts/lib/adr.sh && adr_blobs docs/adr' > docs/adr/NUC.blobs (NUC-base-is-fixed §2)"
+  local -A want=() have=()
+  out="$(adr_blobs "$ADR_DIR" 2>&1)" || { add_error "docs/adr/NUC.blobs: no blob identifiers computed: ${out##*$'\n'}"; return; }
+  while read -r blob name; do [[ -n "$name" ]] && have["$name"]="$blob"; done <<< "$out"
+  if [[ ! -f "$list" ]]; then
+    ((${#have[@]})) || return 0
+    # shellcheck disable=SC2016  # the backticks are Markdown to match, not a command substitution
+    grep -qE '^[[:space:]]*([-*] )?\*\*Template release:\*\*[[:space:]]*[[`]?v[0-9]+\.[0-9]+\.[0-9]+[]`]?(\([^)]*\))?, forked([^[:alnum:]]|$)' \
+      "$ROOT/README.md" 2>/dev/null \
+      || add_error "docs/adr/NUC.blobs: not found — it names each NUC- file and AGENTS.md with its blob; a fork names the release it forked on the Template release line of README.md, 'vX.Y.Z, forked' (NUC-base-is-fixed §1)"
+    return
+  fi
+  while read -r blob name; do [[ -n "$name" ]] && want["$name"]="$blob"; done < "$list"
+  for name in "${!want[@]}"; do
+    [[ -v have["$name"] ]] || add_error "docs/adr/NUC.blobs: names $name, which does not exist — $fix"
+  done
+  for name in "${!have[@]}"; do
+    if [[ ! -v want["$name"] ]]; then add_error "$name: has no line in docs/adr/NUC.blobs — $fix"
+    elif [[ "${want["$name"]}" != "${have["$name"]}" ]]; then add_error "$name: differs from its line in docs/adr/NUC.blobs — $fix"; fi
   done
 }
 
 # Check 13 (see the header). Each placeholder is a pattern in one file; the file is skipped when
 # it does not exist, so a project that dropped one of them is not asked to edit it.
-check_template_identity() {
+check_template_identity() {  # check 13
   [[ -f "$ROOT/TEMPLATE-SETUP.md" ]] && return
   # placeholder <file> <grep -E pattern> <message>
   placeholder() {
@@ -1277,6 +1299,16 @@ check_template_identity() {
   placeholder docs/GLOSSARY.md '^- \*\*<Term>\*\*' "the scaffold's entry is still listed; write the first term, or delete the entry"
   placeholder docs/CONVENTIONS.md '^- \*\*<Convention>\*\*' "the scaffold's entry is still listed; write the first convention, or delete the entry"
   placeholder README.md '^- \*\*(Build|Test|Lint|Run):\*\* TODO' "a Build, Test, Lint, or Run command is still TODO; name the command the toolchain ADR chose"
+  local role n f
+  for role in "${ADR_ROLES[@]}"; do
+    n=0
+    for f in "${ADR_LIST[@]}"; do
+      adr_field_value "${ADR_REL["Role $f"]-}" Role && trim "$ADR_VALUE"
+      [[ "$TRIMMED" == "$role" && "${ADR_STATUS["$f"]-}" == *🟢* ]] && n=$((n + 1))
+    done
+    ((n == 0)) && add_error "docs/adr/: no accepted ADR fills the role $role — one carries '- **Role:** $role' (NUC-base-is-fixed §3)"
+    ((n > 1)) && add_error "docs/adr/: $n accepted ADRs fill the role $role — exactly one does (NUC-base-is-fixed §3)"
+  done
 }
 
 # LINK_SPACE_RE — a space inside the text of a link; check 15 reads a link as one word.
@@ -1284,7 +1316,7 @@ LINK_SPACE_RE='(\[[^] ]*) ([^]]*\]\()'
 
 # Check 15 (see the header). Characters are counted, not bytes, so an em dash is one column;
 # scan_markdown hands over only the lines longer than 100 bytes outside front matter and fences.
-check_prose_width() {
+check_prose_width() {  # check 15
   local f rel n line indent body in_adr attr
   local LC_ALL=C.UTF-8
   # A file git marks as generated is written by a tool, not wrapped by hand; asked once for all.
@@ -1328,17 +1360,17 @@ check_prose_width() {
 # bold label is allowed, the version may be written as a link or in backticks, and what follows
 # it — a sentence, a link target — is not read. After the version only a space, a punctuation
 # mark, or the end of the line may follow: a pre-release suffix, build metadata, and a fourth
-# number are not a tag ADR-0004 cuts, and SemVer allows no leading zero.
-check_template_release() {
+# number are not a tag NUC-releases-are-semver-tags §1 cuts, and SemVer allows no leading zero.
+check_template_release() {  # check 14
   local readme="$ROOT/README.md"
   if [[ ! -f "$readme" ]]; then
-    add_error "README.md: not found — the Template section names the release this repository carries (ADR-0004)"
+    add_error "README.md: not found — the Template section names the release this repository carries (NUC-releases-are-semver-tags §4)"
     return
   fi
   local line value
   line="$(grep -m1 -E '^[[:space:]]*([-*] )?\*\*Template release:\*\*' "$readme")"
   if [[ -z "$line" ]]; then
-    add_error "README.md: no '**Template release:**' line — the Template section names the release of the template this repository carries, or 'unreleased' (ADR-0004)"
+    add_error "README.md: no '**Template release:**' line — the Template section names the release of the template this repository carries, or 'unreleased' (NUC-releases-are-semver-tags §4)"
     return
   fi
   value="${line#*\*\*Template release:\*\*}"
@@ -1347,15 +1379,14 @@ check_template_release() {
   # shellcheck disable=SC2016  # the backticks are Markdown to match, not a command substitution
   local re='^[[`]?(v'"$num"'\.'"$num"'\.'"$num"'|unreleased)($|[][:space:],;:)`]|\.([[:space:]]|$))'
   [[ "$value" =~ $re ]] \
-    || add_error "README.md: the Template release line names neither a 'vX.Y.Z' tag nor 'unreleased' — a release moves it to the tag it cuts (ADR-0004)"
+    || add_error "README.md: the Template release line names neither a 'vX.Y.Z' tag nor 'unreleased' — a release moves it to the tag it cuts (NUC-releases-are-semver-tags §1, §4)"
 }
 
 collect_text_files
 read_adr_headers
 scan_markdown
 check_adr_index
-check_adr_numbering
-check_no_draft_on_main
+check_adr_identifiers
 check_adr_headers
 check_adr_supersessions
 check_relative_links
@@ -1366,7 +1397,7 @@ check_adr_link_targets
 check_check_lists
 check_project_layout
 check_skill_pointers
-check_inherited_adrs
+check_base_blobs
 check_template_identity
 check_template_release
 check_prose_width

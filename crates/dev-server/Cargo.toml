@@ -12,7 +12,7 @@ publish.workspace = true
 forager-ports.workspace = true
 
 # The browser test's native reference and its WebDriver client, and nothing else
-# (ADR-0040; crates/arch-test/tests/dependencies.rs holds the list).
+# (TST-browser-test-over-webdriver; crates/arch-test/tests/dependencies.rs holds the list).
 [dev-dependencies]
 forager-bindings-wasm.workspace = true
 serde_json.workspace = true

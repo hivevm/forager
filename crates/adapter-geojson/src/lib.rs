@@ -1,5 +1,5 @@
-//! The GeoJSON feature source (ADR-0020): an RFC 7946 document, parsed once, delivered as the
-//! features that touch a query's extent.
+//! The GeoJSON feature source (API-geojson-through-georust): an RFC 7946 document, parsed once,
+//! delivered as the features that touch a query's extent.
 
 #![warn(clippy::disallowed_types, clippy::disallowed_methods)]
 
@@ -55,7 +55,7 @@ impl GeoJsonSource {
 
 impl FeatureSource for GeoJsonSource {
     /// WGS84 longitude and latitude, the only coordinates RFC 7946 allows, as OGR declares them for
-    /// MapServer (ADR-0039).
+    /// MapServer (API-source-declares-projection).
     fn declared_projection(&self) -> DeclaredProjection {
         DeclaredProjection::Proj4("+proj=longlat +datum=WGS84 +no_defs".to_owned())
     }
@@ -69,14 +69,14 @@ impl FeatureSource for GeoJsonSource {
             .map(|(feature, _)| feature.clone())
             .collect();
         // JSON holds no number that is not finite, and an empty geometry, which RFC 7946 allows,
-        // is a feature with nothing to draw, not a skipped record (ADR-0022).
+        // is a feature with nothing to draw, not a skipped record (API-skipped-records-reported).
         Ok(features.into())
     }
 }
 
-/// A feature's `properties` as values of the port (ADR-0023), sorted by name as the parser keeps
-/// them, of two of one name the last: a number as the text `serde_json` prints for it, an array or
-/// object as its JSON text.
+/// A feature's `properties` as values of the port (API-typed-feature-properties), sorted by name as
+/// the parser keeps them, of two of one name the last: a number as the text `serde_json` prints for
+/// it, an array or object as its JSON text.
 fn properties(object: JsonObject) -> Properties {
     let list = object
         .into_iter()
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn every_geometry_type_is_read_in_document_order() {
-        // Verifies: ADR-0020
+        // Verifies: API-geojson-through-georust
         let source = GeoJsonSource::parse(ALL_TYPES).unwrap();
         let features = ready(source.features(&query(-100.0, -100.0, 100.0, 100.0)))
             .unwrap()
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn a_feature_carries_each_property_of_its_kind() {
-        // Verifies: ADR-0023
+        // Verifies: API-typed-feature-properties
         let source = GeoJsonSource::parse(
             r#"{"type": "FeatureCollection", "features": [
                 {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2]},
@@ -263,7 +263,7 @@ mod tests {
 
     #[test]
     fn a_feature_with_an_empty_geometry_is_left_out_and_not_reported() {
-        // Verifies: ADR-0022
+        // Verifies: API-skipped-records-reported
         let source = GeoJsonSource::parse(
             r#"{"type": "FeatureCollection", "features": [
                 {"type": "Feature", "properties": {}, "geometry": {"type": "Point", "coordinates": [1, 2]}},
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn a_query_edge_of_no_number_overlaps_as_rect_overlap_decides() {
-        // Verifies: ADR-0017
+        // Verifies: IR-c-ports-in-style-ir
         // `rect_overlap`, msRectOverlap's port, refuses an overlap only by a comparison that
         // holds, and none holds with NaN: every feature meets an extent with a NaN edge.
         let source = GeoJsonSource::parse(ALL_TYPES).unwrap();
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn malformed_documents_are_errors_not_panics() {
-        // Verifies: ADR-0020, Q-3
+        // Verifies: API-geojson-through-georust, Q-3
         for text in [
             "",
             "{",

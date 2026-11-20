@@ -49,7 +49,8 @@ It gets there in four steps. Each lands on `main` by a pull request of its own a
 
 ## Goals served
 
-None of the specification's criteria. The work is the take-up that ADR-0004 asks of a derived
+None of the specification's criteria. The work is the take-up that
+[NUC-releases-are-semver-tags](../../adr/NUC-releases-are-semver-tags.md) asks of a derived
 project, the unit in which a template change reaches it. It changes no output of Forager.
 
 ## User stories
@@ -99,7 +100,7 @@ project, the unit in which a template change reaches it. It changes no output of
   what one of Forager's checks decides goes to the maintainer.
 - **The revision line** moves from 20 to 50 changes in the v0.10.0 step (the maintainer,
   2026-11-20). v0.10.0 keeps a project's own number until the project edits it.
-- **The template findings** of NUC-template-learns-from-projects arrive with v0.10.0. Forager's
+- **The template findings** of `NUC-template-learns-from-projects` arrive with v0.10.0. Forager's
   setup is closed, so it does not take up the issue template. Drafts under `.scratch/` are sent
   only by the maintainer.
 
@@ -124,12 +125,13 @@ project, the unit in which a template change reaches it. It changes no output of
 
 ## ADR impact
 
-- ADR-0004 decides the take-up. Its clauses move to NUC-releases-are-semver-tags with the
-  migration.
-- The migration replaces ADR-0001 to ADR-0005 and the template's part of ADR-0009 with the
-  `NUC-` base. Each clause Forager added becomes a `proposed` ADR in the v0.9.0 step, accepted by
-  the maintainer before the step merges.
-- ADR-0006, the harness ADR, keeps every ADR with the maintainer, so no step runs unattended.
+- [NUC-releases-are-semver-tags](../../adr/NUC-releases-are-semver-tags.md) decides the
+  take-up; it carries the clauses of Forager's former numbered ADR on template releases.
+- The migration replaced Forager's former numbered ADRs 1 to 5 and the template's part of its
+  former ADR 9 with the `NUC-` base. Each clause Forager added becomes a `proposed` ADR in the
+  v0.9.0 step, accepted by the maintainer before the step merges.
+- [OPS-parallel-sessions-capped-at-three](../../adr/OPS-parallel-sessions-capped-at-three.md),
+  the harness ADR, keeps every ADR with the maintainer, so no step runs unattended.
 - The v0.10.0 step checks each ADR that names a check of `check-docs.sh` by number, or cites
   clause 7 or 9 of NUC-checks-are-bash or clause 3 of NUC-design-is-revised. An ADR that no
   longer holds against the wider clause is superseded.

@@ -21,16 +21,10 @@
 # commit keeps its parent's verdict, and a parent outside the range counts as passing, as the base
 # passed the gate that brought it to main. The documentation checks read every text file, so they
 # run on every commit. The checks run without the variables by which CI names the branch a change
-# lands on, so a draft ADR on a commit before its numbering is no finding (check 16 of
-# check-docs.sh), and without CI=true, so a ShellCheck of another version warns instead of
-# failing. Where cargo is missing, rustfmt is not run, and where ShellCheck is, each commit's shell
-# lint skips it and passes; the report's first line says so of either.
-#
-# The first of the two commits by which scripts/number-adrs.sh numbers the drafts, the one whose
-# subject starts 'docs(adr): number the drafts as' and that changes nothing outside docs/adr/
-# against its first parent, fails the documentation checks by design
-# (ADR-0002): it renumbers the ADRs, and the second commit moves the references. The
-# documentation checks are not run on it.
+# lands on, so that a check judges a commit by the commit alone, and without CI=true, so a
+# ShellCheck of another version warns instead of failing. Where cargo is missing, rustfmt is not
+# run, and where ShellCheck is, each commit's shell lint skips it and passes; the report's first
+# line says so of either.
 #
 # Each passing verdict, by commit and check, is kept in 'green-commits-verdicts' of the repository's
 # git directory, shared by its worktrees, as the pre-push hook keeps its green trees. A later run
@@ -145,17 +139,8 @@ while read -r sha; do
   count=$((count + 1))
   parent="$(git rev-parse -q --verify "$sha^1" 2>/dev/null)"
   failed=() pids=() checked_out=0 unchecked=0
-  numbering=0
-  if [[ -n "$parent" && "$(git log -1 --format=%s "$sha")" == "docs(adr): number the drafts as "* ]] \
-    && [[ -z "$(git diff --name-only "$parent" "$sha" -- . ':(exclude)docs/adr/')" ]]; then
-    numbering=1
-  fi
   for i in "${!labels[@]}"; do
     pids[i]=""
-    if ((numbering)) && [[ "${scripts[i]}" == scripts/check-docs.sh ]]; then
-      verdict["$sha $i"]=pass known["$sha $i"]=1
-      continue
-    fi
     if [[ -n "${cached["$sha $i"]:-}" ]]; then
       verdict["$sha $i"]="${cached["$sha $i"]}" known["$sha $i"]=1
       continue

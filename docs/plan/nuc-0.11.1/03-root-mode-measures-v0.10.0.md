@@ -51,7 +51,7 @@ documents, and the scheduled workflows. The `Template release` line reads v0.10.
 
 ## Mode
 
-with the human: the release changes `NUC-` ADRs and can supersede ADRs of Forager's, and ADR-0006
-keeps both with the maintainer. Stop and hand off with the state on this ticket if the scripts of
-Forager's own do not all reach `--root` within the session. Split the rest into a ticket of its
-own rather than land a half-moved caller.
+with the human: the release changes `NUC-` ADRs and can supersede ADRs of Forager's, and
+OPS-parallel-sessions-capped-at-three keeps both with the maintainer. Stop and hand off with the
+state on this ticket if the scripts of Forager's own do not all reach `--root` within the session.
+Split the rest into a ticket of its own rather than land a half-moved caller.

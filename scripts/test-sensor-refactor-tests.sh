@@ -7,7 +7,7 @@
 # base, and asserts the exit code and the line the reviewer would read. A case either lists one
 # commit typed refactor that changes a test, or holds the sensor silent on one it must not list.
 #
-# Verifies: ADR-0002
+# Verifies: NUC-checks-are-bash
 # Inputs: scripts/sensor-refactor-tests.sh scripts/lib/
 #
 # Usage:
