@@ -2,11 +2,12 @@ name: Mutants
 
 # The mutation testing of ADR-0007, a sensor: the surviving mutants are reported in the job
 # summary and kept as an artifact; the run fails only when it breaks. Once a week,
-# scripts/mutants.sh mutates the Rust code changed on main since its last commit at least seven
-# days old, so that each week's code is mutated once. A week's code held some 5,700 mutants on
-# 2026-11-20, so the mutants are split into 16 shards, each a job of its own; the repository is
-# public, and its jobs on GitHub's runners cost nothing. The whole workspace, some 12,000
-# mutants, does not fit 16 jobs of two hours; on demand, another base is mutated instead.
+# scripts/mutants.sh mutates the Rust code changed on main since main as it stood seven days
+# before the run, so that each week's code is mutated once. A week's code held thousands of
+# mutants in November 2026, so they are split into 16 shards, each a job of its own; the
+# repository is public, and its jobs on GitHub's runners cost nothing. The time is taken once,
+# so that every shard splits the same mutants. The whole workspace, some 12,000 mutants, does
+# not fit 16 jobs of two hours; on demand, the changes since another base are mutated instead.
 
 on:
   schedule:
@@ -14,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       base:
-        description: "The revision whose changes are mutated; empty takes main a week ago"
+        description: "The revision whose changes since are mutated; empty takes the ref a week ago"
         required: false
         default: ""
 
@@ -22,7 +23,16 @@ permissions:
   contents: read
 
 jobs:
+  since:
+    runs-on: ubuntu-latest
+    outputs:
+      time: ${{ steps.time.outputs.time }}
+    steps:
+      - id: time
+        run: echo "time=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
   mutants:
+    needs: since
     name: mutants ${{ matrix.shard }}/16
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -34,7 +44,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # The week's base is a commit of main's history.
+          # The week's base is a commit of the ref's history.
           fetch-depth: 0
       - uses: actions/cache@v6
         with:
@@ -49,13 +59,14 @@ jobs:
         shell: bash
         env:
           BASE: ${{ inputs.base }}
+          SINCE: ${{ needs.since.outputs.time }}
           SHARD: ${{ matrix.shard }}/16
         run: |
-          base="${BASE:-$(git rev-list -1 --before='7 days ago' HEAD)}"
-          # A history younger than a week has no such commit: its first commit stands in.
-          [[ -n "$base" ]] || base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
-          echo "Mutating shard $SHARD of the Rust code changed since $base"
-          bash scripts/mutants.sh --base "$base" "$SHARD" | tee mutants.log
+          if [[ -n "$BASE" ]]; then
+            bash scripts/mutants.sh --base "$BASE" "$SHARD" | tee mutants.log
+          else
+            bash scripts/mutants.sh --since "$SINCE" "$SHARD" | tee mutants.log
+          fi
       - name: Report the mutants no test caught
         if: always()
         run: |
