@@ -1,6 +1,6 @@
 # OPS-container-reaches-no-engine: The Dev Container gives no access to any container engine, not even one inside it
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-20
 - **Deciders:** Markus Brigl
 - **Applies to:** the `features`, `mounts`, and `runArgs` of `.devcontainer/devcontainer.json`

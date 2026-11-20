@@ -1,6 +1,6 @@
 # SEC-gh-login-stays-on-host: The GitHub CLI's login lives in a host directory of the container's own and outlives every rebuild
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-20
 - **Deciders:** Markus Brigl
 - **Applies to:** the `mounts`, `initializeCommand`, and `postCreateCommand` of `.devcontainer/devcontainer.json`, and `scripts/check-devcontainer.sh`

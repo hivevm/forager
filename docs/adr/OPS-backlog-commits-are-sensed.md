@@ -1,6 +1,6 @@
 # OPS-backlog-commits-are-sensed: A sensor lists each commit that adds a backlog entry beside a change outside the backlog
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-20
 - **Deciders:** Markus Brigl
 - **Applies to:** `scripts/sensor-backlog-commits.sh` and its self-test

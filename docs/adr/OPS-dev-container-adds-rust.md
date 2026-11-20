@@ -1,6 +1,6 @@
 # OPS-dev-container-adds-rust: The Dev Container adds Rust to the template's Debian base image through a locked Feature, and installs the pinned tools on creation
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-20
 - **Deciders:** Markus Brigl
 - **Applies to:** the `features` and the `postCreateCommand` of `.devcontainer/devcontainer.json`, and `.devcontainer/devcontainer-lock.json`

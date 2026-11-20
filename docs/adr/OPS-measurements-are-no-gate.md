@@ -1,6 +1,6 @@
 # OPS-measurements-are-no-gate: A workflow that measures on a schedule is no gate, and a script only it runs stands on an `# On instruction:` line
 
-- **Status:** 🟡 proposed
+- **Status:** 🟢 accepted
 - **Date:** 2026-11-20
 - **Deciders:** Markus Brigl
 - **Applies to:** `.github/workflows/fuzz.yml`, `.github/workflows/mutants.yml`, `.github/workflows/noise.yml`, the `# Not a gate:` and `# On instruction:` lines of `scripts/check-all.sh`, and the rule of those lines in `scripts/check-docs.sh`
