@@ -32,14 +32,15 @@ passed=0
 source "$(dirname "${BASH_SOURCE[0]}")/lib/expect.sh"
 
 # The stand-in cargo: 'mutants --version' prints the pinned version; any other call appends its
-# arguments as one line to $FAKE_LOG, refuses as cargo-mutants 27.1.0 does when the parent of its
-# --output does not exist, writes $FAKE_MISSED as the report's missed.txt when set, and exits
-# with $FAKE_STATUS.
+# arguments as one line to $FAKE_LOG, writes its address-space limit in KiB to $FAKE_LIMIT when
+# set, refuses as cargo-mutants 27.1.0 does when the parent of its --output does not exist, writes
+# $FAKE_MISSED as the report's missed.txt when set, and exits with $FAKE_STATUS.
 mkdir -p "$work/bin"
 cat > "$work/bin/cargo" << 'EOF'
 #!/usr/bin/env bash
 if [[ "$*" == "mutants --version" ]]; then echo "cargo-mutants 27.1.0"; exit 0; fi
 echo "$*" >> "$FAKE_LOG"
+[[ -n "${FAKE_LIMIT:-}" ]] && ulimit -v > "$FAKE_LIMIT"
 output=""
 while (($#)); do
   [[ "$1" == "--output" ]] && output="${2:-}"
@@ -104,6 +105,13 @@ FAKE_STATUS=2 FAKE_MISSED="src/lib.rs:2:5: replace one -> u8 with 0" \
   expect_mutants 0 "missed mutants are listed and the run passes" "$d" \
   "Mutants no test caught (1):"$'\n'"src/lib.rs:2:5: replace one -> u8 with 0" "$COMMON"
 FAKE_STATUS=3 expect_mutants 0 "timed-out mutants are a finding, not a broken run" "$d" "" "$COMMON"
+FAKE_LIMIT="$work/limit" expect_mutants 0 "cargo-mutants runs under the address-space limit" "$d" "" "$COMMON"
+if [[ "$(cat "$work/limit" 2> /dev/null)" == "6291456" ]]; then
+  passed=$((passed + 1))
+else
+  failed=$((failed + 1))
+  echo "FAIL: cargo-mutants runs with 6 GiB of address space, not '$(cat "$work/limit" 2> /dev/null)'" >&2
+fi
 FAKE_STATUS=1 expect_mutants 1 "a broken run fails" "$d" "the run failed (exit 1)" "$COMMON"
 
 # The weekly workflow caches no target/, so its fresh checkout has none: the script makes the

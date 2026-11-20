@@ -11,6 +11,12 @@
 # that touches no Rust code has nothing to mutate. Files git does not track are not part of the
 # diff: a new file is mutated once it is added.
 #
+# Each process cargo-mutants starts may hold 6 GiB of address space. A mutant that lets a loop
+# grow a vector, such as one in the label cache's placement or in a circle's step, filled a
+# runner's 16 GB within its 300 seconds, and GitHub shut the runner down; under the limit the
+# allocation fails and the mutant's tests fail with it. The build and the tests of the whole
+# workspace stay under 4 GiB, 24 test threads included.
+#
 # Each mutant's tests stop after 300 seconds. cargo-mutants would set five times the tests'
 # baseline run, some 1,000 seconds on a runner, and a mutant that turns a parser's step into a
 # loop spent all of it. 300 seconds stay above the 205 the whole workspace's tests take there.
@@ -91,6 +97,7 @@ mkdir -p target/mutants || exit 1
 # A run that finds nothing to mutate writes no report; an earlier run's must not stand for it.
 report=target/mutants/mutants.out
 rm -rf "$report" || exit 1
+ulimit -v $((6 * 1024 * 1024)) || exit 1
 cargo mutants "${args[@]}"
 status=$?
 
