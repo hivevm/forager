@@ -64,7 +64,6 @@ for path in "${workflows[@]}"; do
     continue
   fi
   # Split by hand: read would merge the tabs around a run's empty conclusion.
-  line="${line%%$'\n'*}"
   conclusion="${line%%$'\t'*}" line="${line#*$'\t'}"
   status="${line%%$'\t'*}" line="${line#*$'\t'}"
   date="${line%%T*}" url="${line#*$'\t'}"
