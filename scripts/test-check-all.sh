@@ -23,7 +23,8 @@ RUNNER="$ROOT/scripts/check-all.sh"
 # g <dir> <git args...> — git in the fixture with an identity, so that commits need no config.
 g() {
   local dir="$1"; shift
-  git -C "${dir:?}" -c user.name=t -c user.email=t@example.invalid "$@"
+  fixture "$dir"
+  git -C "$dir" -c user.name=t -c user.email=t@example.invalid "$@"
 }
 
 # The scripts the runner runs, in its order, read with the pattern the rule docs/check-lists

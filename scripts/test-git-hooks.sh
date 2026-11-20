@@ -28,9 +28,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/selftest.sh"
 HOOKS="$ROOT/.githooks"
 
 # g <dir> <git args...> — git in the fixture with an identity, so that commits need no config.
+# It refuses a path that is no fixture: a helper that printed git output with its path would
+# otherwise hand this repository a relative path inside it.
 g() {
   local dir="$1"; shift
-  git -C "${dir:?}" -c user.name=t -c user.email=t@example.invalid "$@"
+  fixture "$dir"
+  git -C "$dir" -c user.name=t -c user.email=t@example.invalid "$@"
 }
 
 # repo <name> — a fixture repository with one commit on main, the hooks and the Dev Container's
@@ -50,12 +53,14 @@ repo() {
 
 # checks <dir> <exit code> — give the fixture a scripts/check-all.sh that exits as told.
 checks() {
+  fixture "$1"
   mkdir -p "$1/scripts"
   printf '#!/usr/bin/env bash\necho "check output for the test, args: $*"\nexit %s\n' "$2" > "$1/scripts/check-all.sh"
 }
 
 # docs <dir> <exit code> — give the fixture a scripts/check-docs.sh that exits as told.
 docs() {
+  fixture "$1"
   mkdir -p "$1/scripts"
   printf '#!/usr/bin/env bash\necho "docs output for the test"\nexit %s\n' "$2" > "$1/scripts/check-docs.sh"
 }
@@ -125,6 +130,7 @@ expect pass "a push while the checks are green" "$d" "" push -q origin feature
 # verdict from outside the tree, so the same tree can turn red. A rework that keeps the tree, an
 # amend here, passes on the record; local changes, an untracked file, or a new tree run them.
 d="$(repo green-tree)"
+fixture "$d"
 git -C "${d:?}" switch -q -c feature
 mkdir -p "$d/scripts"
 # shellcheck disable=SC2016  # the command substitution is the fixture script's, not this one's
@@ -191,15 +197,32 @@ check "a fixture under core.autocrlf=true is checked out with LF and no warning"
 [[ "${crlf%%|*}" == $'LF\n' ]] || printf '    %s\n' "${crlf%%|*}" >&2
 check "a self-test asks MSYS for native symlinks, once" test "${crlf#*|}" = "winsymlinks:nativestrict"
 # shellcheck disable=SC2016 # expanded by the inner shell
-for target in '' '$ROOT' '$outside' '$work/plain' '$work/fixture'; do
-  out="$(outside="$outside" bash -c 'source "$1"; mkdir -p "$work/plain" "$work/fixture/.git"; fixture "'"$target"'" && echo accepted' _ "$lib" 2>&1)"
-  want="refused"; [[ "$target" == '$work/fixture' ]] && want="accepted"
+for target in '' '$ROOT' '$outside' '$work/plain' '$work/fixture' '$work/linked'; do
+  out="$(outside="$outside" bash -c 'source "$1"; mkdir -p "$work/plain" "$work/fixture/.git" "$work/linked"; echo "gitdir: x" > "$work/linked/.git"; fixture "'"$target"'" && echo accepted' _ "$lib" 2>&1)"
+  want="refused"; [[ "$target" == '$work/fixture' || "$target" == '$work/linked' ]] && want="accepted"
   if [[ ("$want" == "accepted" && "$out" == "accepted") || ("$want" == "refused" && "$out" == *"no fixture repository"*) ]]; then
     passed=$((passed + 1))
   else
     failed=$((failed + 1)); echo "FAIL: the fixture guard on '$target' (expected $want): $out" >&2
   fi
 done
+
+# A helper whose git command failed prints git's output before its path. Run from inside a
+# repository, the relative path that results lies in that repository. A helper refuses it rather
+# than create it; g refuses it even where it exists, rather than act on the repository around it.
+host="$work/host"
+git init -q -b main "$host" && g "$host" commit -q --allow-empty -m host
+bad=$'On branch feature\n'"$work/stray"
+out="$(cd "$host" && docs "$bad" 0 2>&1)"
+check "a helper refuses a path that git output put before a fixture's" \
+  grep -q "no fixture repository" <<< "$out"
+check "a helper's refused path creates nothing in the directory it was run from" \
+  test "$(ls -A "$host")" = .git
+out="$(cd "$host" && mkdir -p "$bad" && g "$bad" switch -q -c feature 2>&1)"
+check "g refuses a path that git output put before a fixture's, where it exists" \
+  grep -q "no fixture repository" <<< "$out"
+check "g's refused path leaves the repository it was run from on its branch" \
+  test "$(git -C "$host" branch --format='%(refname:short)')" = main
 
 # A clone without the merge settings still commits and pushes; the push gates what a
 # fast-forward brought past pre-merge-commit.
@@ -247,7 +270,7 @@ fi
 
 # merging <name> <docs exit code> <checks exit code> — a fixture with documentation check and
 # check output as told, a branch 'feature' one commit ahead of main that a fast-forward could
-# take, and the integration branch 'feat/x' at main checked out.
+# take, and the branch 'topic' at main checked out.
 merging() {
   local d
   d="$(repo "$1")"
@@ -257,7 +280,7 @@ merging() {
   echo feature > "$d/f"
   g "$d" add f
   g "$d" commit -q --no-verify -m feature
-  git -C "${d:?}" switch -q -c feat/x main
+  git -C "${d:?}" switch -q -c topic main
   echo "$d"
 }
 
@@ -284,12 +307,24 @@ d="$(merging merge-main 0 0)"
 git -C "${d:?}" switch -q main
 expect refuse "a merge on main, though the checks are green" "$d" "on 'main'" merge -q -m m feature
 
-# conflict <name> <checks exit code> <branch> — a merge into the branch stopped on a conflict,
-# resolved and staged, with a green documentation check.
+d="$(merging merge-feat 0 0)"
+git -C "${d:?}" switch -q -c feat/x main
+expect refuse "a merge on a feat/ branch, though the checks are green" "$d" \
+  "which carries no merge commit (NUC-main-only-via-pr §5)" merge -q -m m feature
+
+d="$(merging merge-feat-ff 1 0)"
+git -C "${d:?}" switch -q -c feat/x main
+expect pass "a feat/ branch moves forward by a fast-forward, which runs no hook" "$d" "" merge -q --ff-only feature
+check "the feat/ branch stands at the branch it took up" \
+  test "$(git -C "$d" rev-parse feat/x)" = "$(git -C "$d" rev-parse feature)"
+
+# conflict <name> <checks exit code> <branch> — a merge into the branch, created at main where it
+# is missing, stopped on a conflict, resolved and staged, with a green documentation check.
 conflict() {
   local d
   d="$(merging "$1" 0 "$2")"
-  git -C "${d:?}" switch -q "$3"
+  fixture "$d"
+  git -C "${d:?}" switch -q "$3" 2>/dev/null || git -C "${d:?}" switch -q -c "$3" main
   echo other > "$d/f"
   g "$d" add f
   g "$d" commit -q --no-verify -m other
@@ -299,18 +334,22 @@ conflict() {
   echo "$d"
 }
 
-d="$(conflict conflict-red 1 feat/x)"
+d="$(conflict conflict-red 1 topic)"
 expect refuse "concluding a conflicted merge while the checks are red" "$d" "pre-commit: refused — the checks are red" commit -q --no-edit
 
-d="$(conflict conflict-red-clause 1 feat/x)"
+d="$(conflict conflict-red-clause 1 topic)"
 expect refuse "the refusal of a conflicted merge names the clause that runs the checks" "$d" \
   "takes up another (NUC-checks-are-bash §6)" commit -q --no-edit
 
-d="$(conflict conflict-changed 1 feat/x)"
+d="$(conflict conflict-changed 1 topic)"
 expect refuse "concluding a conflicted merge runs the checks with --changed" "$d" "args: --changed" commit -q --no-edit
 
-d="$(conflict conflict-green 0 feat/x)"
+d="$(conflict conflict-green 0 topic)"
 expect pass "concluding a conflicted merge while the checks are green" "$d" "" commit -q --no-edit
+
+d="$(conflict conflict-feat 0 feat/x)"
+expect refuse "concluding a conflicted merge on a feat/ branch, though the checks are green" "$d" \
+  "which carries no merge commit (NUC-main-only-via-pr §5)" commit -q --no-edit
 
 d="$(conflict conflict-main 0 main)"
 expect refuse "concluding a conflicted merge on main, though the checks are green" "$d" "on 'main'" commit -q --no-edit
@@ -325,14 +364,15 @@ edit_index() {
   ' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
 }
 
-# indexed <name> <rule on feature> <rule on feat/x> <line below the table on feat/x> [driver] — a
+# indexed <name> <rule on feature> <rule on topic> <line below the table on topic> [driver] — a
 # fixture whose ADR index holds a rule, a row, and a line right below the table, with the
-# repository's .gitattributes and green checks; 'feature' and 'feat/x' each append a row and set the
-# rule as told, and feat/x the line below. The merge driver is configured as CONTRIBUTING.md says,
+# repository's .gitattributes and green checks; 'feature' and 'topic' each append a row and set the
+# rule as told, and topic the line below. The merge driver is configured as CONTRIBUTING.md says,
 # unless the fifth argument is 'none'.
 indexed() {
   local d index
   d="$(merging "$1" 0 0)"
+  fixture "$d"
   index="$d/docs/adr/README.md"
   [[ "${5:-}" == none ]] \
     || git -C "${d:?}" config merge.adr-index.driver "$HOOKS/merge-adr-index %O %A %B %S %X %Y"
@@ -346,7 +386,7 @@ indexed() {
   g "$d" merge -q --no-verify -m main main
   edit_index "$index" "$2" "| [0002](0002-b.md) |" one
   g "$d" commit -q --no-verify -am row
-  git -C "${d:?}" switch -q -C feat/x main
+  git -C "${d:?}" switch -q -C topic main
   edit_index "$index" "$3" "| [0003](0003-c.md) |" "$4"
   g "$d" commit -q --no-verify -am row
   echo "$d"
