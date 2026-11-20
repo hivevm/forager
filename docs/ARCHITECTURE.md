@@ -257,64 +257,58 @@ golden path and the test pattern an agent copies from are named here.
 - **`symbolize`** — the symbolization of a style, synchronous and without I/O: a feature's geometry
   in a style bound to it turned into drawing operations, as MapServer draws it. The dispatch of a
   style by the layer's render mode, the symbols a `GEOMTRANSFORM` places, and the paths of the
-  images a layer's styles will draw, which the engine loads before it draws the layer
-  (`draw.rs`); the circle a circle layer draws of a shape of two points, as a polygon in pixels
-  (`circle.rs`); a polygon's fill through MapServer's default gamma, and a polygon filled with its
-  pixmap's tile (`shade.rs`); a line brushed with its symbol's brush tile, where its `GAP` is 0
-  (`line.rs`); a point's marker, and a pixmap's image placed at a point, unscaled
-  at a whole pixel or, scaled or turned, as the square `agg2RenderPixmapSymbol` fills about the
-  point and the inverse of the image's transformation (`marker.rs`); a TrueType symbol's glyph at
-  a point, anchored, along a line, and tiled over a polygon, asked of the port `Glyphs` the engine
-  answers through `label`; the label cache sizes a class's TrueType marker by the same glyphs
-  ([ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md),
-  `glyph.rs`, `glyph_marker.rs`); a line's dashes, and the
-  style of an outline pass, prepared once for a line and a `GEOMTRANSFORM` alike (`line.rs`); the
-  canvas a layer draws on, which holds the render's symbol resources, the images of its pixmaps and
-  the glyph port, in one value, `SymbolResources`, the label cache sizes a marker with too, whose
-  one lookup of a pixmap's image both share, and which yields what it left undrawn (`canvas.rs`,
-  `symbol.rs`); a label's styles, which of them are drawn, and their
+  images a layer's styles will draw, which the engine loads before it draws the layer (`draw.rs`);
+  the circle a circle layer draws of a shape of two points, as a polygon in pixels (`circle.rs`); a
+  polygon's fill through MapServer's default gamma, and a polygon filled with its pixmap's tile
+  (`shade.rs`); a line brushed with its symbol's brush tile, where its `GAP` is 0 (`line.rs`); a
+  point's marker, and a pixmap's image placed at a point, unscaled at a whole pixel or, scaled or
+  turned, as the square `agg2RenderPixmapSymbol` fills about the point and the inverse of the
+  image's transformation (`marker.rs`); a TrueType symbol's glyph at a point, anchored, along a
+  line, and tiled over a polygon, asked of the port `Glyphs` the engine answers through `label`; the
+  label cache sizes a class's TrueType marker by the same glyphs
+  ([ADR-0044](adr/0044-truetype-marker-glyph-through-a-port.md), `glyph.rs`, `glyph_marker.rs`); a
+  line's dashes, and the style of an outline pass, prepared once for a line and a `GEOMTRANSFORM`
+  alike (`line.rs`); the canvas a layer draws on, which holds the render's symbol resources, the
+  images of its pixmaps and the glyph port, in one value, `SymbolResources`, the label cache sizes a
+  marker with too, whose one lookup of a pixmap's image both share, and which yields what it left
+  undrawn (`canvas.rs`, `symbol.rs`); a label's styles, which of them are drawn, and their
   operations on the label's point and the box around its text: a `labelpoly` style shaded on the
   box, a `labelpoint` style's marker at the point, and a `labelcenter` style's at the centre of the
-  box, a vector, an ellipse, or a pixmap drawn as a point's marker is, MapServer's default symbol
-  as nothing, and a `labelpoint` style's marker sized and placed as `computeMarkerBounds` takes it,
-  `label_style_marker` (`label.rs`); a style's width
-  and size bounds, one function per site of MapServer's that bounds them, with the constants they
-  bound by (`bounds.rs`); a property's value as bound, the gamma, and degrees to radians
-  (`style.rs`); the view that maps the extent to the image, and a line's or a ring's vertices to
-  the pixels msTransformShapeSimplify keeps (`extent.rs`); a style's symbol
-  resolved, its vector and ellipse symbols, a marker's size and anchor point, a pixmap's scale,
-  square, and transformation, in the order of operations of AGG's `trans_affine`, and the images
-  of a render's pixmaps by their path (`symbol.rs`); the class's clip buffers, and the clip of a
-  hatched polygon and of a line shape by them, as msDrawShape clips them (`clip.rs`); hatches,
-  and the reference point a hatch's lines count from (`hatch.rs`); a style's symbol by its kind,
-  `Mark`, placed along a line, each marker drawn and priced by one styled mark, and asked as a
-  brush or a fill tile, one dispatch over the kinds per placement (`mark.rs`); the placement of
-  symbols along a line, and the layer's budget of markers (`line_marker.rs`); a polygon's fill
-  tile and a line's brush tile, its size held to Q-9's bound, and the render's cache of six tiles,
-  counted with the decoded images and a brush's copy
-  (`tile.rs`); line offsets (`offset.rs`); and
-  the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a layer's
-  `GEOMTRANSFORM`, its transform tree evaluated on each feature's shape before the engine classes
-  it, and a class style's tree evaluated on the shape in pixels as it is drawn (`draw.rs`), what
-  both add and visit held to one budget per layer and render, which the canvas carries from the
-  layer's transform to its styles' (`layer_transform.rs`, Q-9),
-  `simplify` among them by a Douglas-Peucker ported from JTS without recursion, a polygon's
-  collapsed rings removed by the steps of JTS, and an invalid result tested and repaired with the
-  geo crate, and `buffer` by geo's buffer with round joins and caps of 30 segments a quadrant, but
-  for a point's circle, which a port of JTS's draws with `libm` and geo's unions merge, a
-  tiny shape scaled by a power of two around it and back, and a line's distance raised to a floor,
-  so that i_overlay's grid neither drops the shape nor loops on it (`geometry.rs`,
-  [ADR-0050](adr/0050-geometry-through-geo-and-own-circle.md)),
-  a polygon's `simplify` and any `buffer` of a coordinate that is no finite number failing before
-  geo sees it
-  (`layer_transform.rs`), and `simplifypt` by a port of
-  JTS's topology-preserving simplifier without recursion and without a spatial index
-  (`geometry/topology.rs`,
+  box, a vector, an ellipse, or a pixmap drawn as a point's marker is, MapServer's default symbol as
+  nothing, and a `labelpoint` style's marker sized and placed as `computeMarkerBounds` takes it,
+  `label_style_marker` (`label.rs`); a style's width and size bounds, one function per site of
+  MapServer's that bounds them, with the constants they bound by (`bounds.rs`); a property's value
+  as bound, the gamma, and degrees to radians (`style.rs`); the view that maps the extent to the
+  image, and a line's or a ring's vertices to the pixels msTransformShapeSimplify keeps
+  (`extent.rs`); a style's symbol resolved, its vector and ellipse symbols, a marker's size and
+  anchor point, a pixmap's scale, square, and transformation, in the order of operations of AGG's
+  `trans_affine`, and the images of a render's pixmaps by their path (`symbol.rs`); the class's clip
+  buffers, and the clip of a hatched polygon and of a line shape by them, as msDrawShape clips them
+  (`clip.rs`); hatches, and the reference point a hatch's lines count from (`hatch.rs`); a style's
+  symbol by its kind, `Mark`, placed along a line, each marker drawn and priced by one styled mark,
+  and asked as a brush or a fill tile, one dispatch over the kinds per placement (`mark.rs`); the
+  placement of symbols along a line, and the layer's budget of markers (`line_marker.rs`); a
+  polygon's fill tile and a line's brush tile, its size held to Q-9's bound, and the render's cache
+  of six tiles, counted with the decoded images and a brush's copy (`tile.rs`); line offsets
+  (`offset.rs`); and the style's `GEOMTRANSFORM` and `POLAROFFSET` (`geom_transform.rs`); and a
+  layer's `GEOMTRANSFORM`, its transform tree evaluated on each feature's shape before the engine
+  classes it, and a class style's tree evaluated on the shape in pixels as it is drawn (`draw.rs`),
+  what both add and visit held to one budget per layer and render, which the canvas carries from the
+  layer's transform to its styles' (`layer_transform.rs`, Q-9), `simplify` among them by a
+  Douglas-Peucker ported from JTS without recursion, a polygon's collapsed rings removed by the
+  steps of JTS, and an invalid result tested and repaired with the geo crate, and `buffer` by geo's
+  buffer with round joins and caps of 30 segments a quadrant, but for a point's circle, which a port
+  of JTS's draws with `libm` and geo's unions merge, a tiny shape scaled by a power of two around it
+  and back, and a line's distance raised to a floor, so that i_overlay's grid neither drops the
+  shape nor loops on it (`geometry.rs`,
+  [ADR-0050](adr/0050-geometry-through-geo-and-own-circle.md)), a polygon's `simplify` and any
+  `buffer` of a coordinate that is no finite number failing before geo sees it
+  (`layer_transform.rs`), and `simplifypt` by a port of JTS's topology-preserving simplifier without
+  recursion and without a spatial index (`geometry/topology.rs`,
   [ADR-0047](adr/0047-simplifypt-ported-from-jts.md)), and `smoothsia` by a port of MapServer's
   `src/mapsmoothing.c`, its line window, its passes, and its preprocessing, in a module of its own
-  beneath the transform tree (`layer_transform/smoothsia.rs`). A
-  line style's symbol with a
-  `GAP` it places along the line; those markers, a point layer's at its features, and the ones a
+  beneath the transform tree (`layer_transform/smoothsia.rs`). A line style's symbol with a `GAP` it
+  places along the line; those markers, a point layer's at its features, and the ones a
   `GEOMTRANSFORM` places share one budget per layer, `MAX_MARKER_POINTS`, each symbol priced and
   taken from it one way (Q-9); the square Forager draws at a point for symbol 0, which MapServer
   does not draw, takes none of it. Its modules import one another in one direction only, `draw.rs`,
