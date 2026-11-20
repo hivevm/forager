@@ -75,7 +75,8 @@ What binds:
   `scripts/check-all.sh` pass in the Dev Container. `scripts/check-browser.sh` runs this test
   alone, and builds the bundle with `scripts/build-web.sh` first where the variable is set. The
   CI job sets the variable and runs that script. `scripts/check-all.sh` runs it too, because the
-  local gate runs every script a workflow runs (check 9 of `scripts/check-docs.sh`).
+  local gate runs every script a workflow runs (the rule `docs/check-lists` of
+  `scripts/check-docs.sh`).
 
 **Out of scope:**
 

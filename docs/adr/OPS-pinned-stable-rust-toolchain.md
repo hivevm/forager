@@ -329,9 +329,9 @@ runs:
 ## Enforcement
 
 - The golden path's tests cite this ADR with a `Verifies:` marker.
-- Check 9 of `scripts/check-docs.sh` holds the `rust` and `sensors` jobs, the `run` lines of
-  `scripts/check-all.sh`, and the required checks of `CONTRIBUTING.md` together. The sensors this
-  ADR names are those `run` lines, so check 9 holds that list too.
+- The rule `docs/check-lists` of `scripts/check-docs.sh` holds the `rust` and `sensors` jobs, the
+  `run` lines of `scripts/check-all.sh`, and the required checks of `CONTRIBUTING.md` together.
+  The sensors this ADR names are those `run` lines, so the rule holds that list too.
 - `scripts/test-check-shell.sh` decides that a ShellCheck of another version than the pinned is
   named with it and fails the lint in a CI run. It cites this ADR with `Verifies:`. The `shell` job
   runs it before the lint, and the lint after the install step.
