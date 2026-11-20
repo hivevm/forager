@@ -235,6 +235,9 @@ jobs:
       # The repository settings sensor itself runs on a human's instruction (ADR-0002).
       - name: Self-test the repository settings sensor
         run: bash scripts/test-sensor-repo-settings.sh
+      # The scheduled runs sensor itself runs on a human's instruction (ADR-0002).
+      - name: Self-test the scheduled runs sensor
+        run: bash scripts/test-sensor-scheduled-runs.sh
       # The duplication sensor runs jscpd at the version scripts/install-jscpd.sh pins
       # (ADR-0007).
       - name: Install jscpd at its pinned version

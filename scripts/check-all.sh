@@ -270,10 +270,13 @@ run "Package check self-test" scripts/test-package.sh
 run "Fidelity check self-test" scripts/test-check-fidelity.sh
 run "Review binding sensor self-test" scripts/test-sensor-review-binding.sh
 run "Review binding sensor" scripts/sensor-review-binding.sh
-# The repository settings sensor reads GitHub and runs on a human's instruction (ADR-0002); its
-# self-test runs here.
+# The sensors of the GitHub repository read GitHub and run on a human's instruction (ADR-0002):
+# the repository settings, and the latest scheduled run on main of each scheduled workflow. Their
+# self-tests run here.
 # On instruction: scripts/sensor-repo-settings.sh
+# On instruction: scripts/sensor-scheduled-runs.sh
 run "Repository settings sensor self-test" scripts/test-sensor-repo-settings.sh
+run "Scheduled runs sensor self-test" scripts/test-sensor-scheduled-runs.sh
 run "Check runner self-test" scripts/test-check-all.sh
 run "Git hooks self-test" scripts/test-git-hooks.sh
 run "ADR index merge self-test" scripts/test-merge-adr-index.sh
